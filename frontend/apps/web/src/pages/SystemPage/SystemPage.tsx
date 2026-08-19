@@ -111,7 +111,7 @@ function Navigation() {
         )}
 
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/connections">
+          <Link to="/sources/connect">
             <Cable className="h-4 w-4" />
             Connections
           </Link>

@@ -4,14 +4,16 @@ import { useSearchParams } from 'react-router-dom';
 
 import {
   DateGroupHeader,
-  Empty,
   ErrorState,
   ListSkeleton,
+  MemoryEmptyState,
+  formatLoadedCount,
   formatRowTime,
   getEntityTimestamp,
   groupEntitiesByBucket,
   isChronologicalSort,
 } from '@/pages/MemoryPage/Components';
+import { countActiveFilters } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
 
 import { useEntityService, type EntityItem } from '../useEntityService';
 
@@ -30,8 +32,10 @@ import { PlaceRow } from './rows/PlaceRow';
 import { ThreadRow } from './rows/ThreadRow';
 
 export function ListView() {
-  const [{ data, loading, hasNextPage, loadingMore, loadMore, error, refetch }, { setActiveEntity }] =
-    useEntityService();
+  const [
+    { data, loading, hasNextPage, loadingMore, loadMore, error, refetch, totalCount },
+    { setActiveEntity },
+  ] = useEntityService();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -66,7 +70,10 @@ export function ListView() {
     searchParams.get('sortBy'),
     Boolean(searchParams.get('search')?.trim()),
   );
+  // groupEntitiesByBucket already collects undated entities into one trailing
+  // group; the flat (relevance/name-sorted) branch keeps the server's order.
   const groups = useMemo(() => (grouped ? groupEntitiesByBucket(data) : null), [grouped, data]);
+  const filteredBrowse = countActiveFilters(searchParams) > 0 || Boolean(searchParams.get('search')?.trim());
 
   // Every row opens the same shared details drawer (incl. File/Item media).
   const renderRow = (item: EntityItem) => {
@@ -134,7 +141,7 @@ export function ListView() {
   // First load (no data yet): skeletons over a bare spinner.
   if (loading && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ListSkeleton count={10} />
       </div>
     );
@@ -143,7 +150,7 @@ export function ListView() {
   // Hard error with nothing to show.
   if (error && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ErrorState onRetry={refetch} />
       </div>
     );
@@ -151,16 +158,14 @@ export function ListView() {
 
   if (data.length === 0) {
     return (
-      <Empty
-        title="No results"
-        description="Try clearing your filters or searching for something else."
-        icon="🔍"
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <MemoryEmptyState filtered={filteredBrowse} />
+      </div>
     );
   }
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       <div className="flex flex-col">
         {groups
           ? groups.map((group) => (
@@ -177,7 +182,7 @@ export function ListView() {
       {hasNextPage && <div ref={sentinelRef} className="h-8" />}
 
       <div className="py-3 text-center text-xs text-muted-foreground">
-        {data.length} loaded{loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+        {formatLoadedCount({ loaded: data.length, totalCount, loadingMore, hasNextPage })}
       </div>
     </div>
   );

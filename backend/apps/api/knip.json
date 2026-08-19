@@ -3,6 +3,7 @@
 
   "entry": [
     "src/main.ts",
+    "src/domains/import/cli/main.ts",
     "scripts/**/*.ts"
   ],
 

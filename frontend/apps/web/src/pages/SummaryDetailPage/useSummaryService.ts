@@ -1,8 +1,58 @@
-import { useQuery } from '@apollo/client';
+import { gql, useQuery } from '@apollo/client';
 
-import { gql } from '@/graphql';
+interface InsightNode {
+  title: string;
+  summaryText: string;
+  keyActions: string[];
+  relevanceScore: number;
+  tags: string[];
+  relatedEntityIds?: string[] | null;
+}
 
-const GET_SUMMARY = gql(`
+interface SummaryDetail {
+  id: string;
+  title?: string | null;
+  periodType: string;
+  periodStart: string;
+  periodEnd: string;
+  summaryText: string;
+  keyInsights: string[];
+  notableEvents: string[];
+  anomalies: string[];
+  tags: string[];
+  activityCounts: {
+    total: number;
+    browserActivity?: number | null;
+    communications?: number | null;
+    files?: number | null;
+    events?: number | null;
+    messages?: number | null;
+    screenCaptures?: number | null;
+    apiLogs?: number | null;
+    positions?: number | null;
+    activities?: number | null;
+    measurements?: number | null;
+  };
+  insights: InsightNode[];
+  dailyRhythm?: string[] | null;
+  productivityPatterns?: string[] | null;
+  socialInteractions?: string[] | null;
+  keyAccomplishments?: string[] | null;
+  moodIndicators?: string[] | null;
+  confidenceScore?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface GetSummaryQueryResult {
+  summary?: SummaryDetail | null;
+}
+
+interface GetSummaryQueryVariables {
+  id: string;
+}
+
+const GET_SUMMARY = gql`
   query GetSummary($id: ID!) {
     summary(id: $id) {
       id
@@ -28,6 +78,14 @@ const GET_SUMMARY = gql(`
         activities
         measurements
       }
+      insights {
+        title
+        summaryText
+        keyActions
+        relevanceScore
+        tags
+        relatedEntityIds
+      }
       dailyRhythm
       productivityPatterns
       socialInteractions
@@ -38,10 +96,10 @@ const GET_SUMMARY = gql(`
       updatedAt
     }
   }
-`);
+`;
 
 export function useSummaryService(id: string) {
-  const { data, loading, error } = useQuery(GET_SUMMARY, {
+  const { data, loading, error } = useQuery<GetSummaryQueryResult, GetSummaryQueryVariables>(GET_SUMMARY, {
     variables: { id: btoa(`summary:${id}`) },
     skip: !id,
   });

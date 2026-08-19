@@ -79,19 +79,25 @@ export function clearCsrfCookie(req: Request, res: Response): void {
 }
 
 /**
- * Reuse the browser's existing csrf token when its signature is valid, minting
- * one only when it is absent or invalid. Always re-sets the cookie so the
- * maxAge slides alongside the session. Returns the token in effect, for
- * embedding in server-rendered forms.
+ * Reuse the browser's existing csrf token when its signature is valid AND it
+ * is bound to `sessionId` (`null` = anonymous request), minting one for that
+ * principal otherwise. Always re-sets the cookie so the maxAge slides
+ * alongside the session. Returns the token in effect, for embedding in
+ * server-rendered forms.
  *
  * Note: two concurrent requests that both find NO cookie will each mint a
  * different token, and the later Set-Cookie wins — inherent to a stateless
  * double-submit scheme. The client's one-shot 403 retry (useAuth) and the
  * consent page's self-heal redirect both recover from that, and it cannot
- * happen once any valid cookie exists, which is the steady state.
+ * happen once any valid same-scope cookie exists, which is the steady state.
  */
-export function ensureCsrfCookie(csrfService: CsrfService, req: Request, res: Response): string {
-  const token = csrfService.ensureToken(req.cookies?.[CSRF_COOKIE_NAME]);
+export function ensureCsrfCookie(
+  csrfService: CsrfService,
+  req: Request,
+  res: Response,
+  sessionId: string | null,
+): string {
+  const token = csrfService.ensureToken(req.cookies?.[CSRF_COOKIE_NAME], sessionId);
 
   setCsrfCookie(req, res, token);
 

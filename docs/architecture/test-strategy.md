@@ -8,7 +8,7 @@
 | Layer | Tooling | What exists |
 |---|---|---|
 | Unit / controller | Jest + `@nestjs/testing` + `supertest` (`backend/apps/api/jest.config.mjs`, swc transform) | **82 spec/test files** colocated with source (`*.spec.ts` + `__tests__/*.test.ts`) — auth, memory bulk-ingest services, maintenance backfills, saved-search sharing, persistence helpers, graphql resolvers, and more. `yarn workspace @ci/be-api test`. |
-| Integration | Jest (same runner), Docker-backed Postgres + Minio + Temporal via `make dev`. | Used by the `Routes.e2e.test.ts` patterns in `auth/` and `files/`. |
+| Integration | Jest (same runner), Docker-backed Postgres + Minio via `make dev`. | Used by the `Routes.e2e.test.ts` patterns in `auth/` and `files/`. |
 | Browser / E2E | Playwright — `tests/BetaOneLoginFlow.spec.ts` plus the full-stack suite in `tests/e2e/` (auth, chat, memory views/search/map, mobile, onboarding, settings). | The frontend additionally has its own vitest + Playwright harness under `frontend/apps/web/src/test/`. |
 | Coverage gate | Jest `coverageThreshold` | **Not currently set** in `jest.config.mjs` — the ratchet below (§4) remains the plan, not the present. |
 

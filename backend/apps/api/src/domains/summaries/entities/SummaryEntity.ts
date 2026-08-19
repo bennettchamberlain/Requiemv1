@@ -59,6 +59,12 @@ export class SummaryEntity {
   static toEgressType(entity: SummaryEntity): Summary {
     const content = entity.content || {};
     const structuredData = (content.structured_data as Record<string, unknown>) || {};
+    const structuredContext = entity.structuredContext || {};
+    const metadata = entity.metadata || {};
+
+    const tags = Array.isArray(entity.tags as unknown)
+      ? (entity.tags as unknown as string[])
+      : Object.keys(entity.tags || {});
 
     const keyInsights = (content.key_insights || structuredData.key_insights || []) as string[];
     const notableEvents = (content.events || structuredData.notable_events || []) as string[];
@@ -71,7 +77,37 @@ export class SummaryEntity {
     const socialInteractions = structuredData.social_interactions as string[] | undefined;
     const keyAccomplishments = structuredData.key_accomplishments as string[] | undefined;
     const moodIndicators = structuredData.mood_indicators as string[] | undefined;
-    const insights = (content.insights || []) as Record<string, unknown>[];
+    let insights = (content.insights || []) as Record<string, unknown>[];
+
+    // Insight rows store the payload on the summary itself (content + structured_context),
+    // not as a nested content.insights array. Synthesize one item for GraphQL/UI consumers.
+    if (entity.periodType === 'insight' && insights.length === 0) {
+      const keyActions =
+        (content.key_actions as string[] | undefined) ||
+        (structuredContext.key_actions as string[] | undefined) ||
+        [];
+      const relatedEntityIds =
+        (structuredContext.related_entity_ids as string[] | undefined) || entity.participants || [];
+      const relevanceScore = Number(
+        metadata.relevance_score ?? structuredContext.relevance_score ?? entity.confidenceScore ?? 0,
+      );
+      const insightTags = Array.isArray(structuredContext.tags) ? (structuredContext.tags as string[]) : tags;
+
+      insights = [
+        {
+          title: entity.title || (structuredContext.title as string) || 'Proactive Insight',
+          summary_text:
+            summaryText ||
+            (structuredContext.summary_text as string) ||
+            (structuredContext.summaryText as string) ||
+            '',
+          key_actions: keyActions,
+          relevance_score: relevanceScore,
+          tags: insightTags,
+          related_entity_ids: relatedEntityIds,
+        },
+      ];
+    }
 
     return {
       summaryId: entity.summaryId,
@@ -88,9 +124,7 @@ export class SummaryEntity {
       // This might be an oversight in the current database schema, but for the
       // sake of velocity we're keeping it as is for now and implementing the
       // conversion here.
-      tags: Array.isArray(entity.tags as unknown)
-        ? (entity.tags as unknown as string[])
-        : Object.keys(entity.tags || {}),
+      tags,
       participants: entity.participants,
       confidenceScore: entity.confidenceScore,
       metadata: entity.metadata,

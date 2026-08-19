@@ -1,42 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Portal } from '@ci/common';
-import { Button, DropdownMenu, Separator, useToast } from '@ci/shadcn';
-import { NotebookPen, Upload, Camera, Plus, Cable, Search, User, Lightbulb, Package } from '@ci/shadcn/icons';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Separator } from '@ci/shadcn';
+import { useLocation } from 'react-router-dom';
 
-import { useUploadFile, useTriggerHbpe } from '@/api';
-import { AddPersonModal } from '@/components/modals/AddItemModal';
-import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
-import { CaptureModal } from '@/components/modals/CaptureModal';
-import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
-import { UploadModal } from '@/components/modals/UploadModal';
+import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { GlobalSearchBox } from '@/components/SearchBox';
-import { useModalControls } from '@/hooks';
 
-import { NavUser } from './NavUser';
+import { AddMenu } from '../AddMenu';
 
 export function PrimaryNavigation() {
-  const navigate = useNavigate();
+  const location = useLocation();
   // The global search box searches the VIEWER's own memory. On a shared-search
   // page the body shows someone else's results, so the prominent search would be
   // misleading (and navigate the viewer away). Hide it there; the page's own view
   // tabs (nav-views) still render.
-  const isSharedView = useLocation().pathname.startsWith('/shared/');
-  const { toast } = useToast();
-  const [, { trigger }] = useTriggerHbpe();
-
-  const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
-    useModalControls();
-  const [{ isOpen: isUploadModalOpen }, { open: openUploadModal, close: closeUploadModal }] =
-    useModalControls();
-  const [{ isOpen: isAddPersonModalOpen }, { open: openAddPersonModal, close: closeAddPersonModal }] =
-    useModalControls();
-  const [{ isOpen: isAddConceptModalOpen }, { open: openAddConceptModal, close: closeAddConceptModal }] =
-    useModalControls();
-  const [{ isOpen: isItemModalOpen }, { open: openItemModal, close: closeItemModal }] = useModalControls();
-
-  const [, { upload, reset: resetUploader }] = useUploadFile();
+  const isSharedView = location.pathname.startsWith('/shared/');
+  const isMemoryExplorer = location.pathname === '/memory/events' || location.pathname === '/memory';
 
   const [hasActions, setHasActions] = useState(false);
   const observer = useRef<MutationObserver | null>(null);
@@ -64,153 +44,49 @@ export function PrimaryNavigation() {
     };
   }, []);
 
-  const handleUpload = (files: FileList) => {
-    return upload(Array.from(files));
-  };
-
   return (
-    <>
-      <header className="flex flex-row items-center gap-2 p-2 px-4">
-        {/* Left + center: breadcrumbs, Memory's view switcher, then the collapsed
-            search button right-aligned next to the actions cluster. All share one
-            relative region — the expanded search (GlobalSearchBox) overlays the
-            whole region, GitHub-style, instead of competing with them for width.
-            The right cluster stays visible. */}
-        <div className="relative flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex shrink-0 flex-row items-center gap-2">
-            <Portal id="breadcrumbs" />
-          </div>
-          <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
-          <div className="flex min-w-0 flex-1 items-center justify-end">
-            {!isSharedView && <GlobalSearchBox />}
-          </div>
+    <header className="flex flex-row items-center gap-2 p-2 px-4">
+      {/* Memory explorer: search left (no breadcrumb); view tabs after search.
+          Other pages: breadcrumb + nav-views, then search fills remaining width. */}
+      <div className="relative flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:items-center md:gap-3">
+        {isMemoryExplorer ? (
+          <>
+            {!isSharedView && (
+              <div className="w-full min-w-0 flex-1">
+                <GlobalSearchBox />
+              </div>
+            )}
+            <Portal id="nav-views" className="flex shrink-0 flex-row items-center empty:hidden" />
+          </>
+        ) : (
+          <>
+            <div className="flex min-w-0 shrink-0 flex-row flex-wrap items-center gap-2">
+              <Portal id="nav-views" className="flex flex-row items-center empty:hidden" />
+            </div>
+            {!isSharedView && (
+              <div className="w-full min-w-0 flex-1">
+                <GlobalSearchBox />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Right: status chips, page actions, and the primary Add control.
+          Account/settings live in the left rail now. The chips sit in the
+          header's flow rather than in a viewport-pinned overlay. */}
+      <div className="flex shrink-0 flex-row items-center gap-2">
+        <div className="flex flex-row items-center gap-1.5 empty:hidden">
+          <ConnectionModeIndicator />
+          <OutboxQueueIndicator />
         </div>
 
-        {/* Right: page actions, new, account (Tags lives in the account menu) */}
-        <div className="flex shrink-0 flex-row items-center gap-2">
-          <Portal ref={actionsRef} id="actions" className="flex flex-row items-center empty:hidden" />
+        <Portal ref={actionsRef} id="actions" className="flex flex-row items-center empty:hidden" />
 
-          {hasActions && <Separator orientation="vertical" className="data-[orientation=vertical]:h-6" />}
+        {hasActions && <Separator orientation="vertical" className="data-[orientation=vertical]:h-6" />}
 
-          <div className="flex items-center">
-            <DropdownMenu modal={false}>
-              <DropdownMenu.Trigger asChild>
-                <Button variant="ghost" size="icon" aria-label="More Options">
-                  <Plus strokeWidth={1.5} />
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
-                <div className="text-center text-sm font-semibold mb-3 mt-1">Add</div>
-                <div className="grid grid-cols-4 gap-2">
-                  <DropdownMenu.Item
-                    onSelect={() => navigate('/notes/new')}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <NotebookPen className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs">Note</span>
-                  </DropdownMenu.Item>
-
-                  <DropdownMenu.Item
-                    onSelect={openAddPersonModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <User className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs text-center">Person</span>
-                  </DropdownMenu.Item>
-
-                  <DropdownMenu.Item
-                    onSelect={openAddConceptModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <Lightbulb className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs text-center">Concept</span>
-                  </DropdownMenu.Item>
-
-                  <DropdownMenu.Item
-                    onSelect={openItemModal}
-                    className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                  >
-                    <Package className="h-6! w-6!" strokeWidth={1.25} />
-                    <span className="text-xs text-center">Item</span>
-                  </DropdownMenu.Item>
-                </div>
-                <div className="mt-2 -mx-2 -mb-2 bg-muted/50 p-4 rounded-b-lg">
-                  <div className="text-center text-sm font-semibold mb-3">Actions</div>
-                  <div className="grid grid-cols-4 gap-2">
-                    <DropdownMenu.Item
-                      onSelect={openUploadModal}
-                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
-                    >
-                      <Upload className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Upload</span>
-                    </DropdownMenu.Item>
-
-                    <DropdownMenu.Item
-                      onSelect={openCaptureModal}
-                      className="h-16 w-16 flex flex-col items-center justify-center gap-2 cursor-pointer rounded-md p-1"
-                    >
-                      <Camera className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Capture</span>
-                    </DropdownMenu.Item>
-
-                    <DropdownMenu.Item
-                      onSelect={() => navigate('/connect')}
-                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                    >
-                      <Cable className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Connect</span>
-                    </DropdownMenu.Item>
-
-                    <DropdownMenu.Item
-                      onSelect={async (e) => {
-                        e.preventDefault();
-                        const status = await trigger();
-                        if (status === 'already_running') {
-                          toast.info('Prediction pipeline is already running');
-                        } else if (status === 'triggered') {
-                          toast.success('Prediction pipeline started');
-                        } else if (status === 'error' || !status) {
-                          toast.error('Failed to trigger prediction pipeline');
-                        } else {
-                          toast.success('Prediction pipeline started');
-                        }
-                      }}
-                      className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
-                    >
-                      <Search className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Predict</span>
-                    </DropdownMenu.Item>
-                  </div>
-                </div>
-              </DropdownMenu.Content>
-            </DropdownMenu>
-          </div>
-          <NavUser />
-        </div>
-      </header>
-
-      <UploadModal
-        open={isUploadModalOpen}
-        onClose={() => {
-          resetUploader();
-          closeUploadModal();
-        }}
-        onSubmit={handleUpload}
-      />
-
-      <CaptureModal
-        open={isCaptureModalOpen}
-        onClose={() => {
-          resetUploader();
-          closeCaptureModal();
-        }}
-      />
-
-      <AddPersonModal open={isAddPersonModalOpen} onClose={closeAddPersonModal} />
-
-      <AddConceptModal open={isAddConceptModalOpen} onClose={closeAddConceptModal} />
-
-      <InventoryItemModal open={isItemModalOpen} onClose={closeItemModal} item={null} create={true} />
-    </>
+        <AddMenu />
+      </div>
+    </header>
   );
 }

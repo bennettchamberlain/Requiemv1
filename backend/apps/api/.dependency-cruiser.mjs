@@ -51,7 +51,17 @@ export default {
       },
       to: {
         path: '^src/domains/',
-        pathNot: ['^src/domains/$1/', '^src/domains/[^/]+/index\\.ts$', '^src/domains/[^/]+/events\\.ts$'],
+        pathNot: [
+          '^src/domains/$1/',
+          '^src/domains/[^/]+/index\\.ts$',
+          '^src/domains/[^/]+/events\\.ts$',
+          // Not a domain. Shared TEST machinery sits above the domains precisely
+          // because every domain's specs need it — the capture group reads the
+          // first path segment, so without this `src/domains/__tests__/` looks
+          // like a domain called `__tests__` and importing it looks like reaching
+          // into another domain's internals.
+          '^src/domains/__tests__/',
+        ],
       },
     },
 

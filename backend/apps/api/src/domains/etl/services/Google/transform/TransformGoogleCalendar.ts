@@ -4,7 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection, ConnectionService } from '@ci/domains/connections';
-import { GeocodeService } from '@ci/domains/geocode';
+import { GeocodeService, isUriLocation } from '@ci/domains/geocode';
 import { EventService as MemoryEventService, type CreateEventDto } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
@@ -68,6 +68,9 @@ interface Participant {
   isSelf: boolean;
 }
 
+/** Process calendar events in small batches to avoid unbounded Promise.all memory spikes. */
+const CALENDAR_TRANSFORM_BATCH_SIZE = 10;
+
 @Injectable()
 export class GoogleCalendarTransformService {
   constructor(
@@ -109,16 +112,20 @@ export class GoogleCalendarTransformService {
         eventCount: events.length,
       });
 
-      await Promise.all(
-        events.map(
-          async (event) =>
-            await this.processCalendarEvent({
-              event,
-              connectionId: connection.id,
-              userId,
-            }),
-        ),
-      );
+      for (let i = 0; i < events.length; i += CALENDAR_TRANSFORM_BATCH_SIZE) {
+        const batch = events.slice(i, i + CALENDAR_TRANSFORM_BATCH_SIZE);
+
+        await Promise.all(
+          batch.map(
+            async (event) =>
+              await this.processCalendarEvent({
+                event,
+                connectionId: connection.id,
+                userId,
+              }),
+          ),
+        );
+      }
 
       this.logger.log('Google Calendar event transformation completed', {
         userId,
@@ -180,7 +187,7 @@ export class GoogleCalendarTransformService {
     try {
       const eventDetails = this.extractEventDetails(event);
 
-      this.logger.log('Processing Google Calendar event', {
+      this.logger.debug('Processing Google Calendar event', {
         eventId: eventDetails.id,
         summary: eventDetails.summary,
         participantCount: eventDetails.participants.length,
@@ -200,12 +207,11 @@ export class GoogleCalendarTransformService {
         eventDetails.endTime,
       );
 
-      this.logger.log('Google Calendar event saved successfully', {
+      this.logger.debug('Google Calendar event saved successfully', {
         eventId: eventDetails.id,
         summary: eventDetails.summary,
       });
     } catch (error) {
-      console.log('error', error);
       this.logger.error('Error processing individual calendar event', {
         userId,
         connectionId,
@@ -291,7 +297,9 @@ export class GoogleCalendarTransformService {
       category: 'google_calendar',
       start_time,
       end_time: end_time || undefined,
-      location_name: eventDetails.location || undefined,
+      // A meeting-join link is not a place name — see isUriLocation.
+      location_name:
+        eventDetails.location && !isUriLocation(eventDetails.location) ? eventDetails.location : undefined,
       location_coordinates: location_coordinates || undefined,
       // Inferred / coarse coords carry < 1.0 so HBPE/RAG don't treat them as
       // ground truth; leave the default 1.0 when there are no coordinates.

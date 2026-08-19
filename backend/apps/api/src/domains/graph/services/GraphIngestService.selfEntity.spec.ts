@@ -52,21 +52,27 @@ function makeService(opts: { selfExists: boolean }) {
     return Promise.resolve([]);
   }) as unknown as typeof node.repo.manager.query;
 
-  const entityIdentifierService = { upsertForEntities: jest.fn() };
+  const entityIdentifierService = {
+    upsertForEntities: jest.fn(),
+    claimForSelf: jest.fn(async () => 0),
+    repointToEntity: jest.fn(async () => null),
+  };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new GraphIngestService(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    node.repo as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rel.repo as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    entityIdentifierService as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logger as any,
+    node.repo as never,
+    rel.repo as never,
+    entityIdentifierService as never,
+    logger as never,
+    {
+      entityCreated: jest.fn(async () => undefined),
+      entityUpdated: jest.fn(async () => undefined),
+      entityDeleted: jest.fn(async () => undefined),
+      recordMany: jest.fn(async () => undefined),
+    } as never,
   );
 
-  return { service, node, rel, usersUpdate };
+  return { service, node, rel, usersUpdate, entityIdentifierService };
 }
 
 // One preference: a Concept node + a self -> PREFERS -> Concept edge, exactly
@@ -88,7 +94,9 @@ const PREFERENCE_BATCH = {
 
 describe('GraphIngestService self-entity provisioning', () => {
   it('provisions a Person + links ci.users.entity_id when the owner has no self entity, then writes the self edge', async () => {
-    const { service, node, rel, usersUpdate } = makeService({ selfExists: false });
+    const { service, node, rel, usersUpdate, entityIdentifierService } = makeService({
+      selfExists: false,
+    });
 
     const result = await service.ingest({ userId: USER }, PREFERENCE_BATCH);
 
@@ -106,6 +114,20 @@ describe('GraphIngestService self-entity provisioning', () => {
     expect(usersUpdate).toHaveBeenCalledTimes(1);
     expect(usersUpdate.mock.calls[0][0]).toEqual([USER, selfRow!.entityId]);
 
+    // Owner identifiers are claimed onto the new self Person.
+    expect(entityIdentifierService.claimForSelf).toHaveBeenCalledWith(
+      USER,
+      selfRow!.entityId,
+      expect.objectContaining({ emails: ['liam@ci.computer'], names: ['Liam'] }),
+    );
+    expect(entityIdentifierService.repointToEntity).toHaveBeenCalledWith(
+      USER,
+      selfRow!.entityId,
+      'email',
+      'liam@ci.computer',
+      'self',
+    );
+
     // The edge anchors on the provisioned self.
     const edge = rel.inserted[0];
     expect(edge.fromNodeId).toBe(selfRow!.entityId);
@@ -113,7 +135,9 @@ describe('GraphIngestService self-entity provisioning', () => {
   });
 
   it('reuses an existing self entity without provisioning or relinking', async () => {
-    const { service, node, rel, usersUpdate } = makeService({ selfExists: true });
+    const { service, node, rel, usersUpdate, entityIdentifierService } = makeService({
+      selfExists: true,
+    });
 
     const result = await service.ingest({ userId: USER }, PREFERENCE_BATCH);
 
@@ -123,6 +147,13 @@ describe('GraphIngestService self-entity provisioning', () => {
     // No self Person provisioned, no relink.
     expect(node.inserted.some((row) => (row.properties as Record<string, unknown>)?.is_self)).toBe(false);
     expect(usersUpdate).not.toHaveBeenCalled();
+
+    // Existing self still claims owner identifiers (idempotent heal on ingest).
+    expect(entityIdentifierService.claimForSelf).toHaveBeenCalledWith(
+      USER,
+      EXISTING_SELF,
+      expect.objectContaining({ emails: ['liam@ci.computer'], names: ['Liam'] }),
+    );
 
     // The edge anchors on the existing self.
     expect(rel.inserted[0].fromNodeId).toBe(EXISTING_SELF);

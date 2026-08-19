@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 
+import { apiKeyHeaders, buildApiUrl } from '@ci/common';
+
 import { useAuth } from '@/hooks';
 
 export interface NodeDetailsResponse {
@@ -123,12 +125,25 @@ function buildSubgraphFromGraphData(
   maxNodes: number,
   maxEdges: number,
 ): Subgraph {
+  // /api/graph/node's traversal has returned each relationship once per BFS layer it touched;
+  // an id-set filter downstream keeps every duplicate ENTRY, so dedupe the raw array itself.
+  const seenLinkIds = new Set<string>();
+  const uniqueLinks = data.links.filter((link) => {
+    if (seenLinkIds.has(link.id)) {
+      return false;
+    }
+
+    seenLinkIds.add(link.id);
+
+    return true;
+  });
+
   const visited = new Set<string>([seedId]);
   const queue: Array<{ id: string; depth: number }> = [{ id: seedId, depth: 0 }];
   const adjacency = new Map<string, GraphLink[]>();
   const includedLinkIds = new Set<string>();
 
-  for (const link of data.links) {
+  for (const link of uniqueLinks) {
     adjacency.set(link.source, [...(adjacency.get(link.source) ?? []), link]);
     adjacency.set(link.target, [...(adjacency.get(link.target) ?? []), link]);
   }
@@ -158,7 +173,7 @@ function buildSubgraphFromGraphData(
 
   const nodes = data.nodes.filter((node) => visited.has(node.id));
   const nodeIds = new Set(nodes.map((node) => node.id));
-  const links = data.links
+  const links = uniqueLinks
     .filter((link) => includedLinkIds.has(link.id) && nodeIds.has(link.source) && nodeIds.has(link.target))
     .slice(0, maxEdges);
 
@@ -204,8 +219,11 @@ export function useNodeGraphService({ entityId, nodeLimit = 25, maxDepth = 1, sk
         maxEdges: String(requestedMaxEdges),
       });
 
-      const response = await fetch(`/api/graph/node?${params.toString()}`, {
-        headers: tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : undefined,
+      const response = await fetch(buildApiUrl(`/api/graph/node?${params.toString()}`), {
+        headers: {
+          ...apiKeyHeaders(),
+          ...(tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : {}),
+        },
       });
 
       if (!response.ok) {
@@ -228,8 +246,11 @@ export function useNodeGraphService({ entityId, nodeLimit = 25, maxDepth = 1, sk
 
       if (depth > 1) {
         try {
-          const fallbackResponse = await fetch('/api/graph/data', {
-            headers: tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : undefined,
+          const fallbackResponse = await fetch(buildApiUrl('/api/graph/data'), {
+            headers: {
+              ...apiKeyHeaders(),
+              ...(tokenRef.current ? { Authorization: `Bearer ${tokenRef.current}` } : {}),
+            },
           });
 
           if (fallbackResponse.ok) {

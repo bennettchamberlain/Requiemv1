@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
@@ -19,6 +20,7 @@ export class ThreadService {
     private readonly threadRepository: Repository<ThreadEntity>,
     private readonly messageService: MessageService,
     private readonly eventService: EventService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(context: UserServiceContext, data: CreateThreadDto): Promise<Thread> {
@@ -153,6 +155,8 @@ export class ThreadService {
       return false;
     }
 
+    this.eventEmitter.emit(ThreadRemovedEvent, { threadId: id });
+
     await this.eventService.send(ThreadRemovedEvent, {
       threadId: id,
     });
@@ -179,6 +183,8 @@ export class ThreadService {
     if (result.affected === 0) {
       return false;
     }
+
+    this.eventEmitter.emit(ThreadRemovedEvent, { threadId: id });
 
     await this.eventService.send(ThreadRemovedEvent, {
       threadId: id,

@@ -15,5 +15,8 @@
     "parser": {
       "host": "http://localhost:8003"
     }
+  },
+  "features": {
+    "smart.rotation": true
   }
 }

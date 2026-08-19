@@ -17,7 +17,7 @@ import {
   GithubPushEvent,
   GithubReleaseEvent,
 } from '@ci/domains/etl/services/GitHub/sync/SyncEvents';
-import { ContentService, EventService } from '@ci/domains/memory';
+import { ContentService, EventService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -84,6 +84,7 @@ export class GitHubEventsTransformService {
                 text: comment.body,
                 url: comment.html_url,
                 external_id: `${comment.commit_id}:${comment.id}`,
+                external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               },
             );
           }
@@ -227,6 +228,7 @@ export class GitHubEventsTransformService {
                 text: thisEvent.payload.comment.body,
                 url: thisEvent.payload.comment.html_url,
                 external_id: thisEvent.payload.comment.id.toString(),
+                external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
               },
             );
           }

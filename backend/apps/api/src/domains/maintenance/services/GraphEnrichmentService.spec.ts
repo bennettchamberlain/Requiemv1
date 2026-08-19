@@ -92,6 +92,10 @@ function makeService(opts: {
   });
   const graphQuery = { getNodes };
 
+  const personalizationService = {
+    decideAction: jest.fn().mockResolvedValue('auto'),
+  };
+
   const service = new GraphEnrichmentService(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     dataSource as any,
@@ -101,6 +105,8 @@ function makeService(opts: {
     graphIngestService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     graphQuery as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    personalizationService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     makeLogger() as any,
   );
@@ -158,6 +164,7 @@ describe('GraphEnrichmentService.cleanExtraction', () => {
         { concept: 'Politics', type: 'topic', sentiment: 'dislike' }, // unknown type -> dropped
       ],
       familyRelations: [],
+      generalRelations: [],
     });
 
     expect(preferences).toEqual([{ concept: 'Sushi', type: 'cuisine', sentiment: 'like' }]);
@@ -171,9 +178,12 @@ describe('GraphEnrichmentService.cleanExtraction', () => {
         { person: 'Liam', relatedPerson: 'Bob', relationship: 'coworker' }, // not family -> dropped
         { person: 'Liam', relatedPerson: 'Liam', relationship: 'SPOUSE' }, // self-ref -> dropped
       ],
+      generalRelations: [],
     });
 
-    expect(family).toEqual([{ person: 'Liam', relatedPerson: 'Sarah', relationship: 'SPOUSE' }]);
+    expect(family).toEqual([
+      { person: 'Liam', relatedPerson: 'Sarah', relationship: 'SPOUSE', confidence: 0.75 },
+    ]);
     // The relationship type is one the family tool queries.
     expect(FAMILY_RELATIONSHIP_TYPES).toContain(family[0].relationship);
   });
@@ -187,12 +197,14 @@ describe('GraphEnrichmentService.parseLlmContent', () => {
 
     expect(parsed.preferences).toEqual([{ concept: 'Thai', type: 'cuisine', sentiment: 'like' }]);
     expect(parsed.familyRelations).toEqual([]);
+    expect(parsed.generalRelations).toEqual([]);
   });
 
   it('returns empty arrays on malformed JSON', () => {
     expect(GraphEnrichmentService.parseLlmContent('not json at all')).toEqual({
       preferences: [],
       familyRelations: [],
+      generalRelations: [],
     });
   });
 });
@@ -207,6 +219,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
           { concept: 'Seafood', type: 'food', sentiment: 'dislike' },
         ],
         familyRelations: [],
+        generalRelations: [],
       },
     });
 
@@ -235,6 +248,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
           { person: 'Liam', relatedPerson: 'Sarah', relationship: 'SPOUSE' },
           { person: 'Liam', relatedPerson: 'Emma', relationship: 'SIBLING_OF' },
         ],
+        generalRelations: [],
       },
       persons: { liam: SELF, sarah: SPOUSE_ID, emma: SIBLING_ID },
     });
@@ -271,14 +285,55 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
     }
   });
 
-  it('skips a family relation when a person is not in the graph (never invents Person nodes)', async () => {
+  it('stubs a Person node for a plausibly-named family relation with no existing match', async () => {
     const { service, ingest } = makeService({
       comms: [{ subject: null, content: 'My spouse Dana.', summary: null }],
       extraction: {
         preferences: [],
         familyRelations: [{ person: 'Liam', relatedPerson: 'Dana', relationship: 'SPOUSE' }],
+        generalRelations: [],
       },
-      persons: { liam: SELF }, // Dana has no Person node
+      persons: { liam: SELF }, // Dana has no Person node yet -> gets stubbed, not skipped
+    });
+
+    const result = await service.enrich(USER, { maxEvents: 0 });
+
+    expect(result.familyRelationsExtracted).toBe(1);
+    expect(result.familyRelationsResolved).toBe(1);
+    expect(result.familyEdgesWritten).toBe(1);
+
+    const familyBatch = batchOf(ingest, 0);
+    expect(familyBatch.entities).toEqual([
+      expect.objectContaining({
+        key: `graph-enrichment:person:${USER}:dana`,
+        entityType: 'Person',
+        name: 'Dana',
+        sourceSystem: 'graph-enrichment:person',
+      }),
+    ]);
+    // The stub has no id yet, so the edge references it by key, not fromEntityId/toEntityId.
+    expect(familyBatch.relationships).toEqual([
+      expect.objectContaining({
+        type: 'SPOUSE',
+        fromEntityId: SELF,
+        fromEntityType: 'Person',
+        toKey: `graph-enrichment:person:${USER}:dana`,
+      }),
+    ]);
+    expect(familyBatch.relationships[0]).not.toHaveProperty('toEntityId');
+  });
+
+  it('skips a family relation when the unresolved name does not look like a real person (never invents garbage nodes)', async () => {
+    const { service, ingest } = makeService({
+      comms: [{ subject: null, content: 'My spouse works with the person from accounting.', summary: null }],
+      extraction: {
+        preferences: [],
+        familyRelations: [
+          { person: 'Liam', relatedPerson: 'the person from accounting', relationship: 'SPOUSE' },
+        ],
+        generalRelations: [],
+      },
+      persons: { liam: SELF },
     });
 
     const result = await service.enrich(USER, { maxEvents: 0 });
@@ -286,7 +341,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
     expect(result.familyRelationsExtracted).toBe(1);
     expect(result.familyRelationsResolved).toBe(0);
     expect(result.familyEdgesWritten).toBe(0);
-    // Nothing to write -> ingest is never called.
+    // Nothing plausible to write -> ingest is never called.
     expect(ingest).not.toHaveBeenCalled();
   });
 
@@ -294,7 +349,7 @@ describe('GraphEnrichmentService.enrich (end-to-end with mocked LLM)', () => {
     const { service, chat, ingest } = makeService({
       comms: [],
       events: [],
-      extraction: { preferences: [], familyRelations: [] },
+      extraction: { preferences: [], familyRelations: [], generalRelations: [] },
     });
 
     const result = await service.enrich(USER);

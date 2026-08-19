@@ -4,7 +4,7 @@ import type { ApolloError } from '@apollo/client';
 import { useQuery } from '@apollo/client';
 import { createHookContext } from '@ci/common';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
-import { type ResultOf } from '@graphql-typed-document-node/core';
+import { type ResultOf, type VariablesOf } from '@graphql-typed-document-node/core';
 
 import { gql } from '@/graphql';
 
@@ -41,6 +41,9 @@ const SEARCH_QUERY = gql(`
             galleryFilename: filename
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: sourceUrl
+            # Original byte size, so a tile can decline to use a huge original
+            # as its thumbnail when no PREVIEW variant has been generated.
+            galleryMediaSize: size
           }
 
           ... on ContentType {
@@ -48,6 +51,13 @@ const SEARCH_QUERY = gql(`
             galleryTitle: title
             galleryContentUrl: url
             galleryContentSourceUrl: sourceUrl
+            # Media content rows carry no url/sourceUrl of their own — the
+            # binary is reachable only through external_id -> ci.files, which
+            # ContentResolver resolves into these three fields (mirrors the
+            # EventType media aliases below).
+            galleryPreviewUrl: previewUrl
+            galleryFileUrl: mediaUrl
+            galleryMediaSize: mediaSize
           }
 
           ...AnswerGridItemData
@@ -95,6 +105,10 @@ const SEARCH_QUERY = gql(`
 
           ... on EventType {
             bucketStartTime: startTime
+            # The event's kind (visited / messaged / traveled / …), unmasked so
+            # the Events tab can group its timeline by activity without
+            # unmasking the card fragment.
+            eventType
             # Coordinates for the map. Events carry a PostGIS Point in
             # locationCoordinates (GeoJSON [lng, lat]) even with no resolved
             # location PlaceType; aliased + unmasked so the map can read it
@@ -112,6 +126,7 @@ const SEARCH_QUERY = gql(`
             galleryMediaContentType: mediaContentType
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: mediaUrl
+            galleryMediaSize: mediaSize
             galleryTitle: title
             galleryLocationName: locationName
           }
@@ -154,6 +169,65 @@ export type MemoryEntityOf<TName extends MemoryEntity['__typename']> = Extract<
   { __typename: TName }
 >;
 
+/**
+ * Apollo's normalized cache key for an explorer node (`EventType:<globalId>`),
+ * or null for anything that isn't cache-backed — graph nodes arrive as a
+ * synthetic `GenericEntity` and members of the search union that don't
+ * implement `Node` carry no `id`.
+ */
+function entityCacheKey(entity: MemoryEntity | null | undefined): string | null {
+  if (entity == null || entity.__typename === 'GenericEntity') {
+    return null;
+  }
+
+  const { id } = entity as { id?: string | null };
+
+  return id ? `${entity.__typename}:${id}` : null;
+}
+
+/**
+ * Re-resolve the entity backing the open detail drawer against the live query
+ * result.
+ *
+ * `setActiveEntity` is handed the node object the clicked row was rendered
+ * from — a snapshot frozen at click time. When the drawer saves, the mutation
+ * writes the new field values into the Apollo cache, every watcher of the
+ * search query re-reads, and the list row behind the drawer picks up a *new*
+ * node object with the new values. Holding the snapshot meant the drawer alone
+ * kept rendering the pre-save values, so a successful edit looked like it had
+ * been thrown away.
+ *
+ * Falling back to the snapshot keeps drawers whose entity is no longer in the
+ * result set (filters changed underneath it, graph-node drawers) rendering
+ * exactly what they render today.
+ */
+export function resolveLiveEntity<TEntity extends MemoryEntity>(
+  selected: TEntity | null,
+  results: ReadonlyArray<EntityItem>,
+): TEntity | null {
+  const key = entityCacheKey(selected);
+
+  if (key == null) {
+    return selected;
+  }
+
+  const live = results.find((node) => entityCacheKey(node) === key);
+
+  return (live as TEntity | undefined) ?? selected;
+}
+
+/**
+ * The filter half of the search variables — everything except paging.
+ *
+ * Exposed so a view that needs its own read of the SAME filtered set can issue
+ * it without re-deriving the filters from the URL (which is how the map and the
+ * explorer would drift apart). The map's pin query is the one caller: it asks
+ * `mapPins` for every located event matching these filters instead of walking
+ * this hook's 30-row pages. Paging (`first`/`after`) is deliberately excluded —
+ * it belongs to the feed, not to the filter.
+ */
+export type SearchFilterVariables = Omit<VariablesOf<typeof SEARCH_QUERY>, 'first' | 'after'>;
+
 type ReturnType = [
   {
     data: Array<EntityItem>;
@@ -163,6 +237,8 @@ type ReturnType = [
     totalCount: number;
     error: ApolloError | undefined;
     activeEntity: MemoryEntity | null;
+    /** The current filters, minus paging. See {@link SearchFilterVariables}. */
+    searchVariables: SearchFilterVariables;
     loadMore: () => void;
     refetch: () => void;
   },
@@ -209,40 +285,43 @@ function useEntityService({
   // this drives the read-only /shared viewer with the same view components.
   shareToken?: string;
 }): ReturnType {
+  const searchVariables: SearchFilterVariables = {
+    query: searchQuery,
+    // Map display names to the backend IndexableEntity values via the shared
+    // map — naive toLowerCase() turned 'Browser'/'Thing' into 'browser'/'thing'
+    // (not 'browser-activity'/'item'), so those two filters silently no-op'd.
+    includeTypes:
+      includeTypes?.map(
+        (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
+      ) || [],
+    excludeTypes:
+      excludeTypes?.map(
+        (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
+      ) || [],
+    eventTypes: eventTypes || [],
+    tags: tags && tags.length > 0 ? tags : undefined,
+    startTime: startTime || undefined,
+    endTime: endTime || undefined,
+    sortBy: sortBy || undefined,
+    sortOrder: sortOrder || undefined,
+    connectors: connectors && connectors.length > 0 ? connectors : undefined,
+    people: people && people.length > 0 ? people : undefined,
+    places: places && places.length > 0 ? places : undefined,
+    hasLocation: hasLocation || undefined,
+    bbox: bbox && bbox.length === 4 ? bbox : undefined,
+    semantic: semantic || undefined,
+    shareToken: shareToken || undefined,
+  };
+
   const { data, loading, error, fetchMore, refetch } = useQuery(SEARCH_QUERY, {
-    variables: {
-      query: searchQuery,
-      // Map display names to the backend IndexableEntity values via the shared
-      // map — naive toLowerCase() turned 'Browser'/'Thing' into 'browser'/'thing'
-      // (not 'browser-activity'/'item'), so those two filters silently no-op'd.
-      includeTypes:
-        includeTypes?.map(
-          (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
-        ) || [],
-      excludeTypes:
-        excludeTypes?.map(
-          (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
-        ) || [],
-      eventTypes: eventTypes || [],
-      tags: tags && tags.length > 0 ? tags : undefined,
-      startTime: startTime || undefined,
-      endTime: endTime || undefined,
-      sortBy: sortBy || undefined,
-      sortOrder: sortOrder || undefined,
-      connectors: connectors && connectors.length > 0 ? connectors : undefined,
-      people: people && people.length > 0 ? people : undefined,
-      places: places && places.length > 0 ? places : undefined,
-      hasLocation: hasLocation || undefined,
-      bbox: bbox && bbox.length === 4 ? bbox : undefined,
-      semantic: semantic || undefined,
-      shareToken: shareToken || undefined,
-      first: PAGE_SIZE,
-    },
+    variables: { ...searchVariables, first: PAGE_SIZE },
     fetchPolicy: 'cache-and-network',
     notifyOnNetworkStatusChange: true,
   });
 
-  const [activeEntity, setActiveEntity] = useState<MemoryEntity | null>(null);
+  // The node object captured when a row was clicked. Never rendered directly —
+  // see `activeEntity` below, which keeps the drawer in step with the cache.
+  const [selectedEntity, setActiveEntity] = useState<MemoryEntity | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
   const pageInfo = data?.search?.pageInfo;
@@ -280,6 +359,11 @@ function useEntityService({
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);
 
+  // Read the open drawer's entity back out of the live result on every render,
+  // so a save made in the drawer is reflected in the drawer and not only in the
+  // list behind it.
+  const activeEntity = useMemo(() => resolveLiveEntity(selectedEntity, results), [selectedEntity, results]);
+
   const refetchSearch = useCallback(() => {
     void refetch();
   }, [refetch]);
@@ -293,6 +377,7 @@ function useEntityService({
       totalCount,
       error,
       activeEntity,
+      searchVariables,
       loadMore,
       refetch: refetchSearch,
     },

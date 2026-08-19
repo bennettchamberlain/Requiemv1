@@ -16,10 +16,8 @@ IMAGE_LOCAL=(
   ci/database
   ci/gateway
   ci/object-store
-  ci/orchestrator
   ci/summary-service
   ci/setup-database
-  ci/setup-orchestrator
   ci/setup-secrets
   ci/hbpe-service
 )
@@ -28,10 +26,8 @@ IMAGE_REMOTE=(
   companion/database
   companion/gateway
   companion/object-store
-  companion/orchestrator
   companion/summary-service
   companion/setup-database
-  companion/setup-orchestrator
   companion/setup-secrets
   companion/hbpe-service
 )

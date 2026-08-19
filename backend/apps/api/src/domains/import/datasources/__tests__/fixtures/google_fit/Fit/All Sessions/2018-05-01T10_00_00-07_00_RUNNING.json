@@ -1,0 +1,10 @@
+{
+  "fitnessActivity": "running",
+  "startTime": "2018-05-01T17:00:00Z",
+  "endTime": "2018-05-01T17:45:00Z",
+  "duration": "2700s",
+  "aggregate": [{
+    "metricName": "com.google.step_count.delta",
+    "intValue": 4200
+  }]
+}

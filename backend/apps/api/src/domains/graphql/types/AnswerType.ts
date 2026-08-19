@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { Field, Float, ID, ObjectType } from '@nestjs/graphql';
 // import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Answer } from '@ci/domains/intelligence';
@@ -18,8 +18,18 @@ export class AnswerType implements Node {
   @Field(() => String)
   answer!: string;
 
-  // @Field(() => Float, { nullable: true })
-  // answerConfidence?: number;
+  /**
+   * How sure the writer was, in [0,1]. Null means nothing ever scored this row:
+   * the user typed it, it was imported, or it predates confidence capture.
+   * Meaningful only alongside `answerSource` — a confidence on a user-authored
+   * answer would be nonsense, and the UI reads the pair, never the number alone.
+   */
+  @Field(() => Float, { nullable: true })
+  answerConfidence?: number | null;
+
+  /** One line naming the evidence behind an inferred answer. Null otherwise. */
+  @Field(() => String, { nullable: true })
+  answerRationale?: string | null;
 
   @Field(() => String, { nullable: true })
   answerSource!: string;
@@ -60,7 +70,8 @@ export class AnswerType implements Node {
       __source: answer,
       id: GlobalUID.encode('answer', answer.id),
       answer: answer.answer,
-      // answerConfidence: answer.answerConfidence,
+      answerConfidence: answer.answerConfidence ?? null,
+      answerRationale: answer.answerRationale ?? null,
       answerSource: answer.answerSource,
       answerMethod: answer.answerMethod,
       answeredAt: answer.answeredAt,

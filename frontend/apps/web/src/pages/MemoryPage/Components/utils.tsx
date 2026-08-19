@@ -300,12 +300,47 @@ export function isChronologicalSort(sortBy: string | null | undefined, hasQuery 
   return !hasQuery;
 }
 
+/** Bucket id + label for the single trailing group of entities with no date. */
+export const UNDATED_BUCKET = 'undated';
+const UNDATED_LABEL = 'No date';
+
+/**
+ * Move every entity {@link getEntityTimestamp} cannot date to the end, keeping
+ * the server's order within each half.
+ *
+ * Ten of the thirteen result types (Content, Person, Place, Item, Note, File,
+ * Concept, Answer, Thread, FileChunk) have no domain timestamp, so the server
+ * orders them by `created_at` — the row-write time. After a bulk import that is
+ * *now*, which parks tens of thousands of import artifacts ahead of the user's
+ * real timeline. They are still results worth showing, just not worth showing
+ * first, so the browse leads with what can actually be placed in time.
+ *
+ * Only a within-page reordering: it cannot pull a dated memory forward from a
+ * page the client has not fetched. Ordering the undated types by something
+ * other than write time is a server-side fix (SearchResolver.getEntityTimestamp).
+ */
+export function orderDatedFirst(entities: EntityItem[]): EntityItem[] {
+  const dated: EntityItem[] = [];
+  const undated: EntityItem[] = [];
+
+  for (const entity of entities) {
+    (getEntityTimestamp(entity) ? dated : undated).push(entity);
+  }
+
+  return undated.length === 0 ? entities : [...dated, ...undated];
+}
+
 /**
  * Segment an already-ordered list of entities into contiguous date groups,
  * preserving the incoming (server-provided) order rather than re-sorting. A new
  * group starts whenever the bucket changes, so appended pages merge seamlessly
  * into the trailing group. Used by both List and Timeline for a consistent
  * Today / Yesterday / This Week / … layout.
+ *
+ * Undated entities are the exception: they are collected into ONE group at the
+ * end rather than segmenting wherever they happen to fall. Interleaved with
+ * dated rows they otherwise chopped the run into dozens of alternating
+ * "No date" / "Today" sections (see {@link orderDatedFirst}).
  *
  * Only meaningful when the results are in chronological order (see
  * {@link isChronologicalSort}); under a relevance/name sort a bucket can recur
@@ -314,13 +349,17 @@ export function isChronologicalSort(sortBy: string | null | undefined, hasQuery 
  */
 export function groupEntitiesByBucket(entities: EntityItem[], now: Date = new Date()): EntityDateGroup[] {
   const groups: EntityDateGroup[] = [];
+  const undated: EntityItem[] = [];
 
   for (const entity of entities) {
     const timestamp = getEntityTimestamp(entity);
-    const { key: bucket, label } = timestamp
-      ? getDateBucket(timestamp, now)
-      : { key: 'undated', label: 'No date' };
 
+    if (!timestamp) {
+      undated.push(entity);
+      continue;
+    }
+
+    const { key: bucket, label } = getDateBucket(timestamp, now);
     const current = groups[groups.length - 1];
 
     if (current && current.bucket === bucket) {
@@ -330,7 +369,46 @@ export function groupEntitiesByBucket(entities: EntityItem[], now: Date = new Da
     }
   }
 
+  if (undated.length > 0) {
+    groups.push({
+      key: `${UNDATED_BUCKET}-${groups.length}`,
+      bucket: UNDATED_BUCKET,
+      label: UNDATED_LABEL,
+      entities: undated,
+    });
+  }
+
   return groups;
+}
+
+/**
+ * The scroll-footer status line shared by List and Gallery.
+ *
+ * The point is the denominator: "30 loaded" says nothing against a corpus of
+ * 900k, so the count the server already returns (`search.totalCount`) is shown
+ * alongside it — the user can tell a 12-result filter from a 700,000-result one
+ * before deciding to scroll. `totalCount` is omitted only when the server did
+ * not supply one (0 while the first page is still in flight) or when it would
+ * contradict what is on screen.
+ */
+export function formatLoadedCount(input: {
+  loaded: number;
+  totalCount: number;
+  loadingMore: boolean;
+  hasNextPage: boolean;
+}): string {
+  const { loaded, totalCount, loadingMore, hasNextPage } = input;
+
+  const count =
+    totalCount > 0 && totalCount >= loaded
+      ? `${loaded.toLocaleString()} of ${totalCount.toLocaleString()} loaded`
+      : `${loaded.toLocaleString()} loaded`;
+
+  if (loadingMore) {
+    return `${count} · loading…`;
+  }
+
+  return hasNextPage ? count : `${count} · end`;
 }
 
 /** Compact per-row timestamp: time-of-day for today, "Mon D" this year, otherwise "Mon D, YYYY". */

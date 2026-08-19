@@ -5,6 +5,7 @@ import bowling from './assets/bowling.png';
 import hiking from './assets/hiking.png';
 import skating from './assets/skating.png';
 import { OptionGrid } from './OptionGrid';
+import { StepHeader } from './StepHeader';
 
 const options = [
   {
@@ -33,13 +34,13 @@ export function ActivityPreferences() {
   const form = useFormContext();
 
   return (
-    <>
-      <div className="text-center text-2xl mb-6 md:mb-10">Would you rather go?</div>
+    <div className="space-y-6 w-full">
+      <StepHeader title="Would you rather go?" />
       <Form.Field
         control={form.control}
         name="activity_preference"
         render={({ field }) => <OptionGrid options={options} onValueChange={field.onChange} />}
       />
-    </>
+    </div>
   );
 }

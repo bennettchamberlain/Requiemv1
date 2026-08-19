@@ -21,7 +21,7 @@ const GRAPHQL_PATH = '/graphql';
 
 /**
  * The `/v1/*` machine-ingest plane carries bulk payloads: `POST /v1/events`
- * perception snapshots from CI-Applet (a single vizier baseline snapshot
+ * perception snapshots from Companion Capture (a single vizier baseline snapshot
  * serializes to ~1MB+), and the batch ingest endpoints
  * (`/v1/communications`, `/v1/contents`, `/v1/inventory`,
  * `/v1/browser-activity`, `/v1/positions` — see BulkIngestController) which
@@ -33,6 +33,7 @@ const GRAPHQL_PATH = '/graphql';
  */
 const BULK_INGEST_BODY_LIMIT = '10mb';
 const BULK_INGEST_PREFIX = '/v1';
+const PORTABILITY_IMPORT_PATH = '/api/account/import/stream';
 
 /**
  * NDJSON bulk streams (`Content-Type: application/x-ndjson`) on `/v1/*` are
@@ -75,12 +76,13 @@ export class BodyParserMiddleware implements NestMiddleware {
     const isGraphql =
       req.baseUrl === GRAPHQL_PATH || routePath === GRAPHQL_PATH || routePath.startsWith(`${GRAPHQL_PATH}/`);
     const isBulkIngest = routePath === BULK_INGEST_PREFIX || routePath.startsWith(`${BULK_INGEST_PREFIX}/`);
+    const isPortabilityImport = routePath === PORTABILITY_IMPORT_PATH;
 
     // NDJSON streaming bypass: hand the raw, unconsumed stream to the /v1
-    // route handler (see NDJSON_CONTENT_TYPE above).
+    // route handler (see NDJSON_CONTENT_TYPE above) and to account import/stream.
     const contentType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
 
-    if (isBulkIngest && contentType === NDJSON_CONTENT_TYPE) {
+    if ((isBulkIngest || isPortabilityImport) && contentType === NDJSON_CONTENT_TYPE) {
       return next();
     }
 

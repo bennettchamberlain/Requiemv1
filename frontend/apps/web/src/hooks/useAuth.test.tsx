@@ -2,7 +2,7 @@ import { type ReactNode } from 'react';
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { jwtDecode } from 'jwt-decode';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider, useAuth } from './useAuth';
@@ -18,6 +18,12 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 
 function emptyResponse(ok = true, status = 200): Response {
   return { ok, status, text: async () => '' } as Response;
+}
+
+// The native CSRF fetch reads the signed token via `response.json()` (not the cookie),
+// so it needs a real `json()` in addition to `text()`.
+function jsonBodyResponse(body: unknown, ok = true, status = 200): Response {
+  return { ok, status, json: async () => body, text: async () => JSON.stringify(body) } as Response;
 }
 
 type Handler = (url: string, init?: RequestInit) => Response | Promise<Response>;
@@ -44,6 +50,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.cookie = 'csrfToken=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  // Drop the native runtime stub so the web-path tests aren't seen as native.
+  delete (window as unknown as { Capacitor?: unknown }).Capacitor;
 });
 
 describe('useAuth', () => {
@@ -106,6 +114,70 @@ describe('useAuth', () => {
     expect(authCall?.[1]?.headers).toMatchObject({ 'X-CSRF-Token': 'csrf-abc' });
   });
 
+  it('native: logs in cookie-less — body CSRF token, credentials:omit, and mints an API key', async () => {
+    // Simulate the Capacitor native runtime: isNativePlatform() → true, plus a keystore.
+    // In the cross-origin webview the SameSite CSRF cookie can't be used, so the token
+    // must come from the response body and the request must not be credentialed.
+    const secureStore = new Map<string, string>();
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        SecureStoragePlugin: {
+          get: vi.fn(async ({ key }: { key: string }) => {
+            if (!secureStore.has(key)) {
+              throw new Error('not found'); // no stored key on mount → logged out
+            }
+
+            return { value: secureStore.get(key) };
+          }),
+          set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+            secureStore.set(key, value);
+
+            return { value: true };
+          }),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    const fetchMock = setFetch((url) => {
+      if (url.endsWith('/api/authenticate/csrf')) {
+        return jsonBodyResponse({ csrfToken: 'native-csrf' });
+      }
+
+      if (url.endsWith('/api/authenticate')) {
+        return jsonResponse({ accessToken: 'native-jwt' });
+      }
+
+      if (url.endsWith('/api/keys')) {
+        return jsonResponse({ id: 'key-1', key: 'stored-api-key' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+
+    await act(async () => {
+      await result.current[1].login('jsmith@example.com', 'pw');
+    });
+
+    // Authenticated via the native API key (no JWT lands in authToken on native).
+    expect(result.current[0].authenticated).toBe(true);
+    expect(result.current[0].error).toBeNull();
+
+    // CSRF token came from the body (not the cookie) and rode as the header; the request
+    // was NOT credentialed, so it doesn't require Access-Control-Allow-Credentials.
+    const authCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/authenticate'));
+    expect(authCall?.[1]?.headers).toMatchObject({ 'X-CSRF-Token': 'native-csrf' });
+    expect(authCall?.[1]?.credentials).toBe('omit');
+
+    // The JWT was traded for a durable API key, minted via /api/keys and stored.
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/keys'))).toBe(true);
+    expect(secureStore.get('ci.apiKey')).toBe('stored-api-key');
+  });
+
   it('captures the error when login fails', async () => {
     setFetch((url) => {
       if (url.endsWith('/api/authenticate/refresh')) {
@@ -132,6 +204,49 @@ describe('useAuth', () => {
 
     expect(result.current[0].authToken).toBeNull();
     expect(result.current[0].error).toBeTruthy();
+  });
+
+  it('drops a login error when the user navigates to another page', async () => {
+    // This state lives in a provider above the router, so a rejected login used
+    // to follow the user: failing on /login left "Invalid credentials" on the
+    // signup form they moved to next, above fields they had not submitted.
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        return emptyResponse(false, 401);
+      }
+
+      if (url.endsWith('/api/authenticate/csrf')) {
+        return emptyResponse();
+      }
+
+      if (url.endsWith('/api/authenticate')) {
+        return emptyResponse(false, 401);
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => ({ auth: useAuth(), navigate: useNavigate() }), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <MemoryRouter initialEntries={['/login']}>
+          <AuthProvider args={[]}>{children}</AuthProvider>
+        </MemoryRouter>
+      ),
+    });
+
+    await waitFor(() => expect(result.current.auth[0].loading).toBe(false));
+
+    await act(async () => {
+      await result.current.auth[1].login('jsmith@example.com', 'wrong');
+    });
+
+    expect(result.current.auth[0].error).toBeTruthy();
+
+    await act(async () => {
+      result.current.navigate('/signup');
+    });
+
+    await waitFor(() => expect(result.current.auth[0].error).toBeNull());
   });
 
   it('logs out, clearing the token and calling the logout endpoint', async () => {
@@ -332,5 +447,86 @@ describe('useAuth', () => {
     await waitFor(() => expect(result.current[0].loading).toBe(false));
     expect(result.current[0].authToken).toBeNull();
     expect(refreshCalls).toBe(1);
+  });
+
+  it('iOS: finishes Memory OIDC from getLaunchUrl after a Safari cold start', async () => {
+    const getLaunchUrl = vi.fn(async () => ({ url: 'companion://oidc/callback?code=otc-ios' }));
+    const addListener = vi.fn(async () => ({ remove: async () => undefined }));
+    const secureStore = new Map<string, string>();
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: {
+        App: { getLaunchUrl, addListener },
+        SecureStoragePlugin: {
+          get: vi.fn(async ({ key }: { key: string }) => {
+            if (!secureStore.has(key)) {
+              throw new Error('not found');
+            }
+
+            return { value: secureStore.get(key) };
+          }),
+          set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+            secureStore.set(key, value);
+
+            return { value: true };
+          }),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    const fetchMock = setFetch((url) => {
+      if (url.endsWith('/api/authenticate/oidc/native/exchange')) {
+        return jsonResponse({ accessToken: 'native-jwt' });
+      }
+
+      if (url.endsWith('/api/keys')) {
+        return jsonResponse({ id: 'key-1', key: 'stored-api-key' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].authenticated).toBe(true));
+    expect(getLaunchUrl).toHaveBeenCalled();
+    expect(addListener.mock.invocationCallOrder[0]!).toBeLessThan(getLaunchUrl.mock.invocationCallOrder[0]!);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).endsWith('/api/authenticate/oidc/native/exchange'),
+      ),
+    ).toBe(true);
+    expect(secureStore.get('ci.apiKey')).toBe('stored-api-key');
+  });
+
+  it('Android: does not consume getLaunchUrl for Memory OIDC', async () => {
+    const getLaunchUrl = vi.fn(async () => ({ url: 'companion://oidc/callback?code=otc-android' }));
+    const addListener = vi.fn(async () => ({ remove: async () => undefined }));
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'android',
+      Plugins: {
+        App: { getLaunchUrl, addListener },
+        SecureStoragePlugin: {
+          get: vi.fn(async () => {
+            throw new Error('not found');
+          }),
+          set: vi.fn(async () => ({ value: true })),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    setFetch(() => emptyResponse());
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(getLaunchUrl).not.toHaveBeenCalled();
+    expect(result.current[0].authenticated).toBe(false);
   });
 });

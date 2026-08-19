@@ -16,8 +16,9 @@ import config from '@ci/configuration';
 import { ConnectController } from '../controllers/ConnectController';
 import { ConnectRequestAuthGuard } from '../guards/ConnectRequestAuthGuard';
 import { CsrfGuard } from '../guards/CsrfGuard';
+import { AuthService } from '../services/AuthService';
 import { ConnectService } from '../services/ConnectService';
-import { CsrfService } from '../services/CsrfService';
+import { CsrfService, CsrfValidationError } from '../services/CsrfService';
 
 const SESSION_COOKIE = config.auth.cookies.sessionTokenName;
 const RETURN_URL = 'https://hub.example.com/apps/urn:app:x/memory-connect/callback';
@@ -33,6 +34,10 @@ const mockConnectService = {
   buildDenyUrl: jest.fn(),
 };
 
+const mockAuthService = {
+  resolveCsrfScope: jest.fn().mockReturnValue(null),
+};
+
 const mockCsrfService = {
   generateToken: jest.fn().mockReturnValue('csrf-token-value'),
   // No-op by default (valid). Individual tests override to throw for the
@@ -40,11 +45,14 @@ const mockCsrfService = {
   validateToken: jest.fn(),
   verifyToken: jest.fn().mockReturnValue(true),
   // Mirrors the real reuse-if-valid implementation on top of the mocked
-  // primitives, so tests steer behavior via verifyToken/generateToken. The
-  // explicit return type is required: the body references `mockCsrfService`
-  // while it is still being initialised, so inference would be circular.
-  ensureToken: jest.fn((value?: string): string =>
-    value && mockCsrfService.verifyToken(value) ? value : mockCsrfService.generateToken(),
+  // primitives, so tests steer behavior via verifyToken/generateToken (scope
+  // matching itself is unit-tested in CsrfService.test.ts). The explicit
+  // return type is required: the body references `mockCsrfService` while it is
+  // still being initialised, so inference would be circular.
+  ensureToken: jest.fn((value: unknown, _sessionId: string | null): string =>
+    value && mockCsrfService.verifyToken(value)
+      ? (value as string)
+      : mockCsrfService.generateToken(_sessionId),
   ),
 };
 
@@ -61,6 +69,7 @@ const mockLogger = {
   providers: [
     { provide: ConnectService, useValue: mockConnectService },
     { provide: CsrfService, useValue: mockCsrfService },
+    { provide: AuthService, useValue: mockAuthService },
     { provide: LoggerService, useValue: mockLogger },
   ],
 })
@@ -110,6 +119,7 @@ describe('ConnectController', () => {
     mockCsrfService.generateToken.mockReturnValue('csrf-token-value');
     mockCsrfService.validateToken.mockImplementation(() => undefined);
     mockCsrfService.verifyToken.mockReturnValue(true);
+    mockAuthService.resolveCsrfScope.mockReturnValue(null);
   });
 
   describe('GET /connect', () => {
@@ -247,6 +257,25 @@ describe('ConnectController', () => {
       expect(mockCsrfService.generateToken).not.toHaveBeenCalled();
     });
 
+    it('ensures the csrf token under the scope resolved from the session cookie', async () => {
+      // The consent page is only rendered signed-in, so the ensured token must
+      // be bound to that session — the ensure receives the resolved scope, not
+      // a hardcoded anon.
+      mockConnectService.resolveSessionUser.mockResolvedValue({
+        userId: 'user-1',
+        email: 'owner@example.com',
+      });
+      mockAuthService.resolveCsrfScope.mockReturnValue('session-id-1');
+
+      await request(app.getHttpServer())
+        .get('/connect')
+        .query({ app: 'urn:app:x', state: 's', return: RETURN_URL })
+        .set('Cookie', [`${SESSION_COOKIE}=tok`])
+        .expect(200);
+
+      expect(mockCsrfService.ensureToken).toHaveBeenCalledWith(undefined, 'session-id-1');
+    });
+
     it('round-trips csrf_retry and app_name into the re-rendered form', async () => {
       mockConnectService.resolveSessionUser.mockResolvedValue({
         userId: 'user-1',
@@ -278,7 +307,7 @@ describe('ConnectController', () => {
       // would block a cross-origin redirect from this form POST.
       const res = await request(app.getHttpServer()).post('/connect/approve').send(approveBody).expect(200);
 
-      expect(mockCsrfService.validateToken).toHaveBeenCalledWith(undefined, 'csrf-token-value');
+      expect(mockCsrfService.validateToken).toHaveBeenCalledWith(undefined, 'csrf-token-value', null);
       expect(mockConnectService.approve).toHaveBeenCalledWith('user-1', 'urn:app:x');
       // URL is HTML-escaped (& → &amp;) in the meta content + href.
       expect(res.text).toContain(
@@ -291,8 +320,11 @@ describe('ConnectController', () => {
       // A stale hidden field (e.g. the cookie changed after this page rendered)
       // must NOT dead-end on raw JSON — the redirect re-renders the consent page
       // against the browser's current cookie, so one extra click recovers.
+      // Thrown as the service's own CsrfValidationError (a ForbiddenException
+      // subclass): the self-heal gate is `instanceof ForbiddenException`, and
+      // this pins that the binding rejections still pass through it.
       mockCsrfService.validateToken.mockImplementation(() => {
-        throw new ForbiddenException('CSRF token mismatch');
+        throw new CsrfValidationError('session-mismatch', 'CSRF token is not bound to this session');
       });
 
       const res = await request(app.getHttpServer())

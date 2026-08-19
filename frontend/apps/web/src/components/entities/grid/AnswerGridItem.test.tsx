@@ -26,6 +26,26 @@ describe('AnswerGridItem', () => {
     expect(screen.getByText('Because it terminates at the base case.')).toBeInTheDocument();
   });
 
+  it('marks an inferred answer as inferred, with its confidence band', () => {
+    renderWithProviders(
+      <AnswerGridItem
+        answer={makeAnswer({
+          answerSource: 'inferred',
+          answerConfidence: 0.93,
+          answerRationale: 'You said so in the coffee question.',
+        })}
+      />,
+    );
+
+    expect(screen.getByText('Inferred · high confidence')).toBeInTheDocument();
+  });
+
+  it('marks a user-authored answer as Manual', () => {
+    renderWithProviders(<AnswerGridItem answer={makeAnswer({ answerSource: 'user_input' })} />);
+
+    expect(screen.getByText('Manual')).toBeInTheDocument();
+  });
+
   it('fires onClick', () => {
     const onClick = vi.fn();
     renderWithProviders(<AnswerGridItem answer={makeAnswer()} onClick={onClick} />);

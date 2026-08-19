@@ -1,0 +1,6 @@
+DateTime,DeviceId,AccuracyRadius,Latitude,Longitude,Time,Title,Url,SearchTerms
+"01/15/2024 08:05:12 +00:00",,65,47.641944,-122.127222,,,,weather redmond wa
+"01/15/2024 08:06:40 +00:00",,65,47.641944,-122.127222,"01/15/2024 08:06:52 +00:00",Weather - Bing,https://www.bing.com/weather,weather redmond wa
+"01/16/2024 18:41:03 +00:00",,120,47.603243,-122.330286,,,,pizza places near me
+"01/17/2024 09:12:55 +00:00",,45,47.610378,-122.200676,"01/17/2024 09:13:08 +00:00","Contoso Ltd. - Official Site, Products & Support",https://www.contoso.example/,contoso support
+"01/18/2024 23:03:27 +00:00",,30,47.674409,-122.121788,,,,how to export microsoft account data

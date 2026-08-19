@@ -10,23 +10,69 @@ describe('graphTypesToExclude', () => {
   it('excludes graph types mapped from deselected explorer types, keeping the selected ones', () => {
     const excluded = graphTypesToExclude(['person', 'place']);
 
-    // Selected: person -> Person/Contact, place -> Location/Place must survive.
+    // Selected: person → Person/Contact, place → Location/Place must survive.
     expect(excluded).not.toContain('Person');
     expect(excluded).not.toContain('Contact');
     expect(excluded).not.toContain('Location');
     expect(excluded).not.toContain('Place');
 
-    // Deselected: event/content/file/item map to graph types that must be excluded.
+    // Deselected: event/content/file/item/communication map to graph types that must be excluded.
     expect(excluded).toContain('Event');
     expect(excluded).toContain('Content');
     expect(excluded).toContain('File');
-    expect(excluded).toEqual(expect.arrayContaining(['Object', 'Thing', 'Item']));
+    expect(excluded).toContain('Communication');
+    expect(excluded).toEqual(expect.arrayContaining(['Object', 'Item', 'Thing']));
   });
 
-  it('never excludes connective NER types (no explorer equivalent)', () => {
+  // Regression: the mapping is many-to-many (note+content -> Content, browser-activity ->
+  // Event+Content), so an exclusion set built only from the deselected types excluded the graph
+  // type the user had *selected*. Every single-type selection must survive its own mapping.
+  it.each(Object.keys(EXPLORER_TO_GRAPH_ENTITY_TYPES))(
+    'keeps every graph type mapped from the only selected explorer type: %s',
+    (explorerType) => {
+      const excluded = new Set(graphTypesToExclude([explorerType]));
+
+      for (const graphType of EXPLORER_TO_GRAPH_ENTITY_TYPES[explorerType]) {
+        expect(excluded.has(graphType)).toBe(false);
+      }
+    },
+  );
+
+  it('keeps Event when only events are selected, even though browser-activity also maps to it', () => {
+    const excluded = graphTypesToExclude(['event']);
+
+    expect(excluded).not.toContain('Event');
+    // browser-activity's other graph type has no selected owner, so it still goes.
+    expect(excluded).toContain('Content');
+    expect(excluded).toContain('Communication');
+    expect(excluded).toContain('File');
+  });
+
+  it('keeps Content when only content (or only note) is selected', () => {
+    expect(graphTypesToExclude(['content'])).not.toContain('Content');
+    expect(graphTypesToExclude(['note'])).not.toContain('Content');
+  });
+
+  it('keeps both of browser-activity’s graph types when it is the only selection', () => {
+    const excluded = graphTypesToExclude(['browser-activity']);
+
+    expect(excluded).not.toContain('Event');
+    expect(excluded).not.toContain('Content');
+    expect(excluded).toContain('Person');
+  });
+
+  it('keeps a selected type that a deselected type shares, in a multi-type selection', () => {
+    const excluded = graphTypesToExclude(['event', 'communication']);
+
+    expect(excluded).not.toContain('Event');
+    expect(excluded).not.toContain('Communication');
+    expect(excluded).toContain('Content');
+  });
+
+  it('never excludes connective CTI types (Pet, Group, Concept)', () => {
     const excluded = graphTypesToExclude(['person']);
 
-    for (const connective of ['Concept', 'Goal', 'Tag']) {
+    for (const connective of ['Concept', 'Goal', 'Tag', 'Pet', 'Group']) {
       expect(excluded).not.toContain(connective);
     }
   });

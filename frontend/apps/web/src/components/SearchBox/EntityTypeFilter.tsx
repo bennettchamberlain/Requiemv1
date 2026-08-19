@@ -51,7 +51,7 @@ export function EntityTypeFilter({ modal = true, label }: Props) {
   const menuLabel = label ? 'Types' : 'Entity Types';
 
   return (
-    <DropdownMenu modal={modal} onOpenChange={() => setIsOpen(!isOpen)}>
+    <DropdownMenu modal={modal} open={isOpen} onOpenChange={setIsOpen}>
       <Trigger asChild>
         <Button type="button" variant="outline">
           {label && <Shapes className="mr-2 h-4 w-4 text-muted-foreground" />}

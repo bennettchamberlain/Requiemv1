@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useMutation } from '@apollo/client';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
@@ -22,6 +22,7 @@ import {
   ChevronDown,
   Clock,
   Database,
+  EyeOff,
   Filter,
   Map as MapIcon,
   MapPin,
@@ -40,23 +41,37 @@ import { useSearchParams } from 'react-router-dom';
 import { useFeatures } from '@/common/feature';
 import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
-import { isFilterDrag, readFilterDrag, type FilterDragKind } from '@/components/SearchBox/filterDrag';
-import { AVAILABLE_ENTITY_TYPES, DropdownProvider, useDropdown } from '@/components/SearchBox/useDropdown';
-import { gql, type FragmentType } from '@/graphql';
+import {
+  FILTER_DRAG_TYPE,
+  isFilterDrag,
+  readFilterDrag,
+  type FilterDragKind,
+} from '@/components/SearchBox/filterDrag';
+import { AVAILABLE_ENTITY_TYPES, useDropdown } from '@/components/SearchBox/useDropdown';
+import { type FragmentType } from '@/graphql';
 
+import { CREATE_SAVED_SEARCH } from '../../../SavedSearchesPage/CreateSavedSearchModal';
 import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/SavedSearch';
 import { ShareSavedSearchModal } from '../../../SavedSearchesPage/ShareSavedSearchModal';
 import { buildSavedSearchFilters } from '../../savedSearchFilters';
 
 import {
+  WHEN_PRESET_GRID,
+  datePresetLabel,
+  isRollingDatePreset,
+  type DatePresetSelection,
+} from './datePresets';
+import {
   FILTER_PARAMS,
   addEntityFilter,
+  countActiveFilters,
   filterValueKey,
   narrowedEntityTypes,
   readCsvParam,
   removeEntityFilter,
   writeCsvFilterParam,
 } from './filterParams';
+import { droppedFilters, readMemoryView, unsupportedReason, type FilterDimension } from './viewFilterSupport';
 
 // Single-select sort presets that map to the backend's sortBy + sortOrder pair.
 const SORT_OPTIONS = [
@@ -70,20 +85,6 @@ const SORT_OPTIONS = [
 
 const START_OF_DAY_TIME = '00:00';
 const END_OF_DAY_TIME = '23:59';
-
-const CREATE_SAVED_SEARCH = gql(`
-  mutation CreateSavedSearch($input: CreateSavedSearchInput!) {
-    createSavedSearch(input: $input) {
-      success
-      savedSearch {
-        id
-        # Full grid fragment (incl. isPublic/shareToken/filters) so the created
-        # search can be handed straight to the share modal from "Save & share".
-        ...SavedSearchGridItemFragment
-      }
-    }
-  }
-`);
 
 function localDateInputValue(date: Date): string {
   const year = date.getFullYear();
@@ -191,30 +192,72 @@ function formatDateLabel(dateFrom: string, dateTo: string): string {
   return 'Any time';
 }
 
-/** One removable filter chip inside the drop area. */
+/**
+ * One removable filter chip inside the drop area.
+ *
+ * `inactiveReason` marks a filter the current view cannot apply: the chip stays
+ * (it is still set, and still applies in the other views) but reads as struck
+ * through and dimmed, with the reason in a tooltip. Silently dropping it would
+ * make the same URL mean different things view to view with nothing on screen
+ * to say so — see viewFilterSupport.
+ */
 function FilterChip({
   icon: Icon,
   label,
   removeLabel,
   onRemove,
+  inactiveReason,
 }: {
   icon: typeof Users;
   label: string;
   removeLabel: string;
   onRemove: () => void;
+  inactiveReason?: string | null;
 }) {
-  return (
-    <Badge variant="secondary" className="h-fit max-w-full gap-1.5 pl-2">
+  const body = (
+    <span className="flex min-w-0 items-center gap-1">
       <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-      <span className="max-w-[220px] truncate">{label}</span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={removeLabel}
-        className="-mr-1 rounded p-0.5 hover:bg-background/60"
-      >
-        <X className="h-3 w-3" />
-      </button>
+      <span className={cn('max-w-[220px] truncate', inactiveReason && 'line-through')}>{label}</span>
+      {inactiveReason && <EyeOff className="h-3 w-3 shrink-0 text-muted-foreground" />}
+    </span>
+  );
+
+  return (
+    <Badge
+      variant="secondary"
+      className={cn('h-7 max-w-full shrink-0 gap-1 pl-2 pr-1', inactiveReason && 'opacity-60')}
+    >
+      {inactiveReason ? (
+        <Tooltip delayDuration={200}>
+          <Tooltip.Content className="max-w-[260px]">
+            Not applied in this view. {inactiveReason}
+          </Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <span
+              tabIndex={0}
+              className="flex min-w-0 items-center rounded"
+              aria-label={`${label} — not applied in this view. ${inactiveReason}`}
+            >
+              {body}
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
+      ) : (
+        body
+      )}
+      <Tooltip delayDuration={600}>
+        <Tooltip.Content>{removeLabel}</Tooltip.Content>
+        <Tooltip.Trigger asChild>
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={removeLabel}
+            className="-mr-1 rounded p-0.5 hover:bg-background/60"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </Tooltip.Trigger>
+      </Tooltip>
     </Badge>
   );
 }
@@ -239,6 +282,42 @@ const DROP_FILTER_ICONS: Record<FilterDragKind, typeof Users> = {
  * top-right corner resets the full filter set but leaves the search query
  * alone — the query lives in the header search box, whose X clears it.
  */
+function isNativeFilterDrag(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes(FILTER_DRAG_TYPE) ?? false;
+}
+
+function readNativeFilterDrag(event: DragEvent): ReturnType<typeof readFilterDrag> {
+  const raw = event.dataTransfer?.getData(FILTER_DRAG_TYPE);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'kind' in parsed &&
+      (parsed.kind === 'person' || parsed.kind === 'place' || parsed.kind === 'tag') &&
+      'name' in parsed &&
+      typeof parsed.name === 'string'
+    ) {
+      return { kind: parsed.kind, name: parsed.name };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+/**
+ * Drag-and-drop filter target — hidden until a filter drag is in flight or
+ * applied filters need chips. Document-level listeners catch drags from the
+ * header search box even when this area isn't visible yet.
+ */
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selections = useMemo(
@@ -261,10 +340,15 @@ function FilterDropArea() {
   const activities = readCsvParam(searchParams, 'eventTypes');
   const dateFrom = searchParams.get('from') ?? '';
   const dateTo = searchParams.get('to') ?? '';
-  const hasDateRange = Boolean(dateFrom || dateTo);
+  const whenPreset = searchParams.get('when');
+  const hasDateRange = Boolean(dateFrom || dateTo || isRollingDatePreset(whenPreset));
   const hasLocation = searchParams.get('hasLocation') === '1';
   const semantic = searchParams.get('semantic') === '1';
   const hasMapArea = Boolean(searchParams.get('bbox'));
+  // Which view the chips are being read against: a filter this view cannot
+  // apply is shown struck through rather than quietly ignored.
+  const view = readMemoryView(searchParams.get('view'));
+  const reasonFor = (dimension: FilterDimension) => unsupportedReason(view, dimension);
   const hasSelections =
     selectedTypes !== null ||
     sources.length > 0 ||
@@ -316,16 +400,74 @@ function FilterDropArea() {
     });
   };
 
-  const add = (kind: FilterDragKind, rawName: string) => {
-    const next = new URLSearchParams(searchParams);
-    const validation = addEntityFilter(next, kind, rawName);
+  const add = useCallback(
+    (kind: FilterDragKind, rawName: string) => {
+      const next = new URLSearchParams(searchParams);
+      const validation = addEntityFilter(next, kind, rawName);
 
-    setError(validation);
+      setError(validation);
 
-    if (validation === null) {
-      setSearchParams(next);
-    }
-  };
+      if (validation === null) {
+        setSearchParams(next);
+      }
+    },
+    [searchParams, setSearchParams],
+  );
+
+  useEffect(() => {
+    const handleDragEnter = (event: DragEvent) => {
+      if (isNativeFilterDrag(event)) {
+        event.preventDefault();
+        setDragDepth((depth) => depth + 1);
+      }
+    };
+
+    const handleDragLeave = (event: DragEvent) => {
+      if (isNativeFilterDrag(event)) {
+        setDragDepth((depth) => Math.max(0, depth - 1));
+      }
+    };
+
+    const handleDragOver = (event: DragEvent) => {
+      if (isNativeFilterDrag(event)) {
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      }
+    };
+
+    const handleDrop = (event: DragEvent) => {
+      if (!isNativeFilterDrag(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      setDragDepth(0);
+
+      const payload = readNativeFilterDrag(event);
+
+      if (payload) {
+        add(payload.kind, payload.name);
+      }
+    };
+
+    document.addEventListener('dragenter', handleDragEnter);
+    document.addEventListener('dragleave', handleDragLeave);
+    document.addEventListener('dragover', handleDragOver);
+    document.addEventListener('drop', handleDrop);
+
+    return () => {
+      document.removeEventListener('dragenter', handleDragEnter);
+      document.removeEventListener('dragleave', handleDragLeave);
+      document.removeEventListener('dragover', handleDragOver);
+      document.removeEventListener('drop', handleDrop);
+    };
+  }, [add]);
+
+  if (!hasSelections && !isDropTarget) {
+    return null;
+  }
 
   const DropIcon = isDropTarget ? Scan : Filter;
   const dropText = isDropTarget
@@ -333,175 +475,196 @@ function FilterDropArea() {
     : 'Drag a person, place, or tag from the search results here to filter';
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div
-        aria-label="Filter drop area"
-        onDragEnter={(event) => {
-          if (isFilterDrag(event)) {
+    <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <div
+          aria-label="Filter drop area"
+          onDragEnter={(event) => {
+            if (isFilterDrag(event)) {
+              event.preventDefault();
+              setDragDepth((depth) => depth + 1);
+            }
+          }}
+          onDragOver={(event) => {
+            if (isFilterDrag(event)) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'copy';
+            }
+          }}
+          onDragLeave={(event) => {
+            if (isFilterDrag(event)) {
+              setDragDepth((depth) => Math.max(0, depth - 1));
+            }
+          }}
+          onDrop={(event) => {
+            if (!isFilterDrag(event)) {
+              return;
+            }
+
             event.preventDefault();
-            setDragDepth((depth) => depth + 1);
-          }
-        }}
-        onDragOver={(event) => {
-          if (isFilterDrag(event)) {
-            event.preventDefault();
-            event.dataTransfer.dropEffect = 'copy';
-          }
-        }}
-        onDragLeave={(event) => {
-          if (isFilterDrag(event)) {
-            setDragDepth((depth) => Math.max(0, depth - 1));
-          }
-        }}
-        onDrop={(event) => {
-          if (!isFilterDrag(event)) {
-            return;
-          }
+            setDragDepth(0);
 
-          event.preventDefault();
-          setDragDepth(0);
+            const payload = readFilterDrag(event);
 
-          const payload = readFilterDrag(event);
+            if (payload) {
+              add(payload.kind, payload.name);
+            }
+          }}
+          className={cn(
+            'relative flex h-9 min-h-9 min-w-0 flex-1 select-none items-center gap-1.5 overflow-hidden transition-colors',
+            isDropTarget && 'rounded-md bg-accent/40',
+          )}
+        >
+          {hasSelections ? (
+            <>
+              <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain">
+                {selectedTypes !== null && (
+                  <FilterChip
+                    icon={Shapes}
+                    label={
+                      selectedTypes.length === 1
+                        ? selectedTypes[0]
+                        : `${selectedTypes.length} of ${AVAILABLE_ENTITY_TYPES.length} types`
+                    }
+                    removeLabel="Remove entity types"
+                    inactiveReason={reasonFor('entityTypes')}
+                    onRemove={() =>
+                      setSearchParams((params) => {
+                        params.delete('includedEntityTypes');
+                        params.delete('excludedEntityTypes');
 
-          if (payload) {
-            add(payload.kind, payload.name);
-          }
-        }}
-        className={cn(
-          'relative flex min-h-24 select-none rounded-lg border-8 p-2 transition-colors',
-          isDropTarget && 'border-primary/40 bg-accent/40',
-        )}
-      >
-        {hasSelections && (
-          <Button
-            // Explicit: the drop area can render inside the header SearchBox's
-            // <form>, where a default (submit) button would commit the search
-            // right after clearing.
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="absolute right-1 top-1 h-6 px-2 text-xs text-muted-foreground"
-            onClick={clearAll}
-          >
-            Clear all
-          </Button>
-        )}
-        {hasSelections ? (
-          <div className="flex flex-wrap content-start gap-1.5 pr-16">
-            {selectedTypes !== null && (
-              <FilterChip
-                icon={Shapes}
-                label={
-                  selectedTypes.length === 1
-                    ? selectedTypes[0]
-                    : `${selectedTypes.length} of ${AVAILABLE_ENTITY_TYPES.length} types`
-                }
-                removeLabel="Remove entity types"
-                onRemove={() =>
-                  setSearchParams((params) => {
-                    params.delete('includedEntityTypes');
-                    params.delete('excludedEntityTypes');
+                        return params;
+                      })
+                    }
+                  />
+                )}
+                {(Object.keys(DROP_FILTER_ICONS) as FilterDragKind[]).flatMap((kind) =>
+                  selections[kind].map((name) => (
+                    <FilterChip
+                      key={`${kind}:${name}`}
+                      icon={DROP_FILTER_ICONS[kind]}
+                      label={kind === 'tag' ? `#${name}` : name}
+                      removeLabel={`Remove ${name}`}
+                      inactiveReason={reasonFor(
+                        kind === 'person' ? 'people' : kind === 'place' ? 'places' : 'tags',
+                      )}
+                      onRemove={() => remove(kind, name)}
+                    />
+                  )),
+                )}
+                {sources.map((name) => (
+                  <FilterChip
+                    key={`source:${name}`}
+                    icon={Database}
+                    label={name}
+                    removeLabel={`Remove source ${name}`}
+                    inactiveReason={reasonFor('connectors')}
+                    onRemove={() => removeCsvValue('connectors', name)}
+                  />
+                ))}
+                {activities.map((name) => (
+                  <FilterChip
+                    key={`activity:${name}`}
+                    icon={Activity}
+                    label={name}
+                    removeLabel={`Remove activity ${name}`}
+                    inactiveReason={reasonFor('eventTypes')}
+                    onRemove={() => removeCsvValue('eventTypes', name)}
+                  />
+                ))}
+                {hasDateRange && (
+                  <FilterChip
+                    icon={CalendarIcon}
+                    label={
+                      isRollingDatePreset(whenPreset)
+                        ? (datePresetLabel(whenPreset) ?? 'When')
+                        : formatDateLabel(dateFrom, dateTo)
+                    }
+                    removeLabel="Remove date range"
+                    inactiveReason={reasonFor('date')}
+                    onRemove={() =>
+                      setSearchParams((params) => {
+                        params.delete('from');
+                        params.delete('to');
+                        params.delete('when');
 
-                    return params;
-                  })
-                }
-              />
-            )}
-            {(Object.keys(DROP_FILTER_ICONS) as FilterDragKind[]).flatMap((kind) =>
-              selections[kind].map((name) => (
-                <FilterChip
-                  key={`${kind}:${name}`}
-                  icon={DROP_FILTER_ICONS[kind]}
-                  label={kind === 'tag' ? `#${name}` : name}
-                  removeLabel={`Remove ${name}`}
-                  onRemove={() => remove(kind, name)}
-                />
-              )),
-            )}
-            {sources.map((name) => (
-              <FilterChip
-                key={`source:${name}`}
-                icon={Database}
-                label={name}
-                removeLabel={`Remove source ${name}`}
-                onRemove={() => removeCsvValue('connectors', name)}
-              />
-            ))}
-            {activities.map((name) => (
-              <FilterChip
-                key={`activity:${name}`}
-                icon={Activity}
-                label={name}
-                removeLabel={`Remove activity ${name}`}
-                onRemove={() => removeCsvValue('eventTypes', name)}
-              />
-            ))}
-            {hasDateRange && (
-              <FilterChip
-                icon={CalendarIcon}
-                label={formatDateLabel(dateFrom, dateTo)}
-                removeLabel="Remove date range"
-                onRemove={() =>
-                  setSearchParams((params) => {
-                    params.delete('from');
-                    params.delete('to');
+                        return params;
+                      })
+                    }
+                  />
+                )}
+                {hasLocation && (
+                  <FilterChip
+                    icon={MapPin}
+                    label="Has a location"
+                    removeLabel="Remove has a location"
+                    inactiveReason={reasonFor('hasLocation')}
+                    onRemove={() =>
+                      setSearchParams((params) => {
+                        params.delete('hasLocation');
 
-                    return params;
-                  })
-                }
-              />
-            )}
-            {hasLocation && (
-              <FilterChip
-                icon={MapPin}
-                label="Has a location"
-                removeLabel="Remove has a location"
-                onRemove={() =>
-                  setSearchParams((params) => {
-                    params.delete('hasLocation');
+                        return params;
+                      })
+                    }
+                  />
+                )}
+                {semantic && (
+                  <FilterChip
+                    icon={Sparkles}
+                    label="Semantic"
+                    removeLabel="Remove semantic"
+                    inactiveReason={reasonFor('semantic')}
+                    onRemove={() =>
+                      setSearchParams((params) => {
+                        params.delete('semantic');
 
-                    return params;
-                  })
-                }
-              />
-            )}
-            {semantic && (
-              <FilterChip
-                icon={Sparkles}
-                label="Semantic"
-                removeLabel="Remove semantic"
-                onRemove={() =>
-                  setSearchParams((params) => {
-                    params.delete('semantic');
+                        return params;
+                      })
+                    }
+                  />
+                )}
+                {hasMapArea && (
+                  <FilterChip
+                    icon={MapIcon}
+                    label="Map area"
+                    removeLabel="Remove map area"
+                    inactiveReason={reasonFor('bbox')}
+                    onRemove={() =>
+                      setSearchParams((params) => {
+                        params.delete('bbox');
 
-                    return params;
-                  })
-                }
-              />
-            )}
-            {hasMapArea && (
-              <FilterChip
-                icon={MapIcon}
-                label="Map area"
-                removeLabel="Remove map area"
-                onRemove={() =>
-                  setSearchParams((params) => {
-                    params.delete('bbox');
-
-                    return params;
-                  })
-                }
-              />
-            )}
-          </div>
-        ) : (
-          // pointer-events-none keeps the icon swap from firing its own
-          // dragenter/dragleave and corrupting the depth counter mid-drag.
-          <div className="pointer-events-none flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-            <DropIcon className="h-6 w-6" strokeWidth={1.5} />
-            <div className="text-sm">{dropText}</div>
-          </div>
-        )}
+                        return params;
+                      })
+                    }
+                  />
+                )}
+              </div>
+              <Button
+                // Explicit: the drop area can render inside the header SearchBox's
+                // <form>, where a default (submit) button would commit the search
+                // right after clearing.
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+                onClick={clearAll}
+              >
+                Clear all
+              </Button>
+            </>
+          ) : (
+            // pointer-events-none keeps the icon swap from firing its own
+            // dragenter/dragleave and corrupting the depth counter mid-drag.
+            <div className="pointer-events-none flex min-w-0 flex-1 items-center justify-center gap-1.5 truncate px-1 text-xs text-muted-foreground">
+              <DropIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="truncate">{dropText}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <FilterCountLabel />
+          <SaveSearchButton />
+        </div>
       </div>
       {error && (
         <p className="text-xs text-destructive" role="alert">
@@ -512,15 +675,34 @@ function FilterDropArea() {
   );
 }
 
-/** A boolean URL flag rendered as a toggle button (used for located-only / semantic). */
-function ToggleChip({ param, label, icon }: { param: string; label: string; icon: React.ReactNode }) {
+/**
+ * A boolean URL flag rendered as a toggle button (used for located-only /
+ * semantic). `dimension` lets the control say when the current view cannot
+ * apply the flag: it stays clickable — the flag is a property of the query, not
+ * of the view, and it still applies everywhere else — but reads as struck
+ * through with the reason in a tooltip.
+ */
+function ToggleChip({
+  param,
+  label,
+  icon,
+  dimension,
+}: {
+  param: string;
+  label: string;
+  icon: React.ReactNode;
+  dimension: FilterDimension;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const active = searchParams.get(param) === '1';
+  const reason = unsupportedReason(readMemoryView(searchParams.get('view')), dimension);
 
-  return (
+  const button = (
     <Button
       type="button"
       variant={active ? 'secondary' : 'outline'}
+      className={cn(reason && 'opacity-70')}
+      aria-label={reason ? `${label} — not applied in this view. ${reason}` : undefined}
       onClick={() =>
         setSearchParams((params) => {
           if (active) {
@@ -534,14 +716,30 @@ function ToggleChip({ param, label, icon }: { param: string; label: string; icon
       }
     >
       {icon}
-      <span className="ml-1">{label}</span>
+      <span className={cn('ml-1', reason && 'line-through')}>{label}</span>
+      {reason && <EyeOff className="ml-1 h-3.5 w-3.5 text-muted-foreground" />}
     </Button>
+  );
+
+  if (!reason) {
+    return button;
+  }
+
+  return (
+    <Tooltip delayDuration={200}>
+      <Tooltip.Content className="max-w-[260px]">Not applied in this view. {reason}</Tooltip.Content>
+      <Tooltip.Trigger asChild>{button}</Tooltip.Trigger>
+    </Tooltip>
   );
 }
 
-/** Date-range picker bound to the `from`/`to` URL params. */
+/** Date-range picker bound to the `when` / `from` / `to` URL params. */
 function DateControl() {
-  const [{ dateFrom, dateTo }, { setDateRange }] = useDropdown();
+  const [{ dateFrom, dateTo, whenPreset }, { setDateRange, setDatePreset }] = useDropdown();
+  const [open, setOpen] = useState(false);
+  const [customMode, setCustomMode] = useState(
+    () => whenPreset === 'custom' || (!isRollingDatePreset(whenPreset) && Boolean(dateFrom || dateTo)),
+  );
   const [timeExpanded, setTimeExpanded] = useState(() => rangeHasDetailedTime(dateFrom, dateTo));
 
   const selectedRange =
@@ -615,129 +813,199 @@ function DateControl() {
     );
   };
 
+  const activePreset: DatePresetSelection | null = isRollingDatePreset(whenPreset)
+    ? whenPreset
+    : dateFrom || dateTo
+      ? 'custom'
+      : null;
+
+  const triggerLabel = isRollingDatePreset(whenPreset)
+    ? datePresetLabel(whenPreset)
+    : dateFrom || dateTo
+      ? formatDateLabel(dateFrom, dateTo)
+      : 'When';
+
+  const showCustomPicker = customMode || activePreset === 'custom';
+
   return (
-    <Popover>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+
+        if (next) {
+          setCustomMode(
+            whenPreset === 'custom' || (!isRollingDatePreset(whenPreset) && Boolean(dateFrom || dateTo)),
+          );
+        }
+      }}
+    >
       <Popover.Trigger asChild>
         <Button variant="outline" className="group">
           <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-          When
+          {triggerLabel}
           <ChevronDown className="ml-2 h-4 w-4 opacity-50 transition-transform group-data-[state=open]:rotate-180" />
         </Button>
       </Popover.Trigger>
-      <Popover.Content className="w-auto p-0" align="start">
-        <Calendar
-          mode="range"
-          selected={selectedRange}
-          onSelect={(range) => {
-            const fromDate = range?.from ? localDateInputValue(range.from) : '';
-            const toDate = range?.to ? localDateInputValue(range.to) : '';
-            const from = fromDate
-              ? dateTimeIso(fromDate, timeExpanded ? fromTimeValue : START_OF_DAY_TIME, 'start')
-              : undefined;
-            let to: string | undefined;
+      <Popover.Content className="w-64 p-0" align="start">
+        <div className="grid grid-cols-2 gap-2 p-2">
+          {WHEN_PRESET_GRID.map(({ value, label }) => {
+            const selected = activePreset === value;
 
-            if (toDate) {
-              to = dateTimeIso(toDate, timeExpanded ? toTimeValue : END_OF_DAY_TIME, 'end');
-            }
-
-            setDateRange(from, to);
-          }}
-          numberOfMonths={1}
-        />
-        <div className="space-y-3 border-t p-3">
-          <div className="flex items-center justify-between gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-xs"
-              onClick={() => setTimeExpanded((open) => !open)}
-            >
-              <Clock className="mr-2 h-3.5 w-3.5" />
-              Specific time
-              <ChevronDown
-                className={`ml-2 h-3.5 w-3.5 opacity-60 transition-transform ${timeExpanded ? 'rotate-180' : ''}`}
-              />
-            </Button>
-            {timeExpanded && (dateFrom || dateTo) && (
-              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={clearDetailedTime}>
-                All day
+            return (
+              <Button
+                key={value}
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-pressed={selected}
+                className={cn(
+                  'h-10 justify-center rounded-md border bg-background px-2 text-sm font-medium shadow-sm transition-[box-shadow,border-color,background-color]',
+                  selected
+                    ? 'border-green-500 bg-green-50/90 shadow-md ring-1 ring-green-500/25 dark:bg-green-950/40'
+                    : 'border-green-500/35 hover:border-green-500/70 hover:bg-green-50/40 hover:shadow-md dark:hover:bg-green-950/20',
+                )}
+                onClick={() => {
+                  if (value === 'custom') {
+                    setDatePreset('custom');
+                    setCustomMode(true);
+                  } else {
+                    setDatePreset(value);
+                    setCustomMode(false);
+                    setOpen(false);
+                  }
+                }}
+              >
+                {label}
               </Button>
-            )}
-          </div>
-
-          {timeExpanded && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="memory-filter-start-time" className="text-xs text-muted-foreground">
-                  Start time
-                </Label>
-                <Input
-                  id="memory-filter-start-time"
-                  type="time"
-                  value={draftFromTime}
-                  disabled={!fromDateValue}
-                  onChange={(event) => handleTimeChange('from', event.target.value)}
-                  onBlur={(event) => commitTime('from', event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      commitTime('from', event.currentTarget.value);
-                      event.currentTarget.blur();
-                    }
-                  }}
-                  className="h-8"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="memory-filter-end-time" className="text-xs text-muted-foreground">
-                  End time
-                </Label>
-                <Input
-                  id="memory-filter-end-time"
-                  type="time"
-                  value={draftToTime}
-                  disabled={!toDateValue}
-                  onChange={(event) => handleTimeChange('to', event.target.value)}
-                  onBlur={(event) => commitTime('to', event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      commitTime('to', event.currentTarget.value);
-                      event.currentTarget.blur();
-                    }
-                  }}
-                  className="h-8"
-                />
-              </div>
-            </div>
-          )}
-
-          {(dateFrom || dateTo) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-full text-xs text-muted-foreground"
-              onClick={() => {
-                setTimeExpanded(false);
-                setDateRange(undefined, undefined);
-              }}
-            >
-              Clear range
-            </Button>
-          )}
+            );
+          })}
         </div>
+
+        {showCustomPicker && (
+          <>
+            <Calendar
+              mode="range"
+              selected={selectedRange}
+              onSelect={(range) => {
+                const fromDate = range?.from ? localDateInputValue(range.from) : '';
+                const toDate = range?.to ? localDateInputValue(range.to) : '';
+                const from = fromDate
+                  ? dateTimeIso(fromDate, timeExpanded ? fromTimeValue : START_OF_DAY_TIME, 'start')
+                  : undefined;
+                let to: string | undefined;
+
+                if (toDate) {
+                  to = dateTimeIso(toDate, timeExpanded ? toTimeValue : END_OF_DAY_TIME, 'end');
+                }
+
+                setDateRange(from, to);
+              }}
+              numberOfMonths={1}
+            />
+            <div className="space-y-3 border-t p-3">
+              <div className="flex items-center justify-between gap-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={() => setTimeExpanded((expanded) => !expanded)}
+                >
+                  <Clock className="mr-2 h-3.5 w-3.5" />
+                  Specific time
+                  <ChevronDown
+                    className={`ml-2 h-3.5 w-3.5 opacity-60 transition-transform ${timeExpanded ? 'rotate-180' : ''}`}
+                  />
+                </Button>
+                {timeExpanded && (dateFrom || dateTo) && (
+                  <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={clearDetailedTime}>
+                    All day
+                  </Button>
+                )}
+              </div>
+
+              {timeExpanded && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="memory-filter-start-time" className="text-xs text-muted-foreground">
+                      Start time
+                    </Label>
+                    <Input
+                      id="memory-filter-start-time"
+                      type="time"
+                      value={draftFromTime}
+                      disabled={!fromDateValue}
+                      onChange={(event) => handleTimeChange('from', event.target.value)}
+                      onBlur={(event) => commitTime('from', event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          commitTime('from', event.currentTarget.value);
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      className="h-8"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="memory-filter-end-time" className="text-xs text-muted-foreground">
+                      End time
+                    </Label>
+                    <Input
+                      id="memory-filter-end-time"
+                      type="time"
+                      value={draftToTime}
+                      disabled={!toDateValue}
+                      onChange={(event) => handleTimeChange('to', event.target.value)}
+                      onBlur={(event) => commitTime('to', event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          commitTime('to', event.currentTarget.value);
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      className="h-8"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {(dateFrom || dateTo) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-full text-xs text-muted-foreground"
+                  onClick={() => {
+                    setTimeExpanded(false);
+                    setDatePreset(null);
+                    setCustomMode(false);
+                  }}
+                >
+                  Clear range
+                </Button>
+              )}
+            </div>
+          </>
+        )}
       </Popover.Content>
     </Popover>
   );
 }
 
-/** Sort preset selector bound to the `sortBy`/`sortOrder` URL params. */
+/**
+ * Sort preset selector bound to the `sortBy`/`sortOrder` URL params. The graph
+ * has no result order to sort, so there the control says so instead of
+ * accepting a choice that quietly does nothing.
+ */
 function SortControl() {
   const [{ sortBy, sortOrder }, { setSort }] = useDropdown();
+  const [searchParams] = useSearchParams();
+  const reason = unsupportedReason(readMemoryView(searchParams.get('view')), 'sort');
 
   const currentSort =
     SORT_OPTIONS.find((option) => option.sortBy === sortBy && option.sortOrder === sortOrder)?.value ??
     'default';
 
-  return (
+  const select = (
     <Select
       value={currentSort}
       onValueChange={(value) => {
@@ -746,7 +1014,7 @@ function SortControl() {
         setSort(option?.sortBy || undefined, option?.sortOrder || undefined);
       }}
     >
-      <Select.Trigger className="w-[150px]">
+      <Select.Trigger className={cn('w-[150px]', reason && 'opacity-70')}>
         <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
         <Select.Value placeholder="Sort" />
       </Select.Trigger>
@@ -759,45 +1027,149 @@ function SortControl() {
       </Select.Content>
     </Select>
   );
+
+  if (!reason) {
+    return select;
+  }
+
+  // The marker sits beside the control rather than inside its trigger: the sort
+  // choice is still a property of the query — it applies the moment you switch
+  // back to a list-shaped view — so the control stays live and the marker
+  // carries the explanation.
+  return (
+    <span className="inline-flex items-center gap-1">
+      {select}
+      <Tooltip delayDuration={200}>
+        <Tooltip.Content className="max-w-[260px]">Not applied in this view. {reason}</Tooltip.Content>
+        <Tooltip.Trigger asChild>
+          <span
+            role="note"
+            tabIndex={0}
+            aria-label={`Sort — not applied in this view. ${reason}`}
+            className="rounded text-muted-foreground"
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+          </span>
+        </Tooltip.Trigger>
+      </Tooltip>
+    </span>
+  );
+}
+
+/** When / How / toggles / sort — shared by the inline explorer toolbar and header panel. */
+function FilterControlsRow({
+  modal,
+  includeEntityTypeFilter = false,
+  showSave = true,
+}: {
+  modal: boolean;
+  /** Off on `/memory` — entity types live in MemoryEntityTypeNav instead. */
+  includeEntityTypeFilter?: boolean;
+  /** Save sits with the filter chip row on `/memory`; stays here in the header panel. */
+  showSave?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {includeEntityTypeFilter && <EntityTypeFilter modal={modal} label="What" />}
+      <DateControl />
+
+      <ConnectorFilter modal={modal} label="How" />
+
+      <ToggleChip
+        param="hasLocation"
+        label="Has a location"
+        icon={<MapPin className="h-4 w-4" />}
+        dimension="hasLocation"
+      />
+      <ToggleChip
+        param="semantic"
+        label="Semantic"
+        icon={<Sparkles className="h-4 w-4" />}
+        dimension="semantic"
+      />
+
+      <SortControl />
+
+      {showSave && (
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <FilterCountLabel />
+          <SaveSearchButton />
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
- * The advanced search controls: the drag-and-drop filter area (people,
- * places & tags) on top, then the What / When / How dropdowns and the
- * located-only toggle followed by semantic and sort, with the save action
- * right-aligned on the same row. `modal` is forwarded to the portaled Radix
- * dropdowns so they behave inside a modal Sheet/Dialog.
+ * Advanced filters for the header search dropdown on non-`/memory` pages. Includes
+ * the What picker here; the main Memory explorer uses MemoryEntityTypeNav instead.
  */
-export function AdvancedFilters({ modal }: { modal: boolean }) {
+export function SearchPanelFilters({ modal }: { modal: boolean }) {
   return (
-    <div className="flex w-full min-w-0 flex-col gap-3">
-      <FilterDropArea />
-
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <EntityTypeFilter modal={modal} label="What" />
-
-        <DateControl />
-
-        {/* Place-name filtering moved to the drag-and-drop filter area; the
-            located-only flag keeps its own toggle since no search result
-            represents "anything with coordinates". */}
-
-        <ConnectorFilter modal={modal} label="How" />
-
-        <span className="mx-1 h-6 w-px self-center bg-border" />
-
-        <ToggleChip param="hasLocation" label="Has a location" icon={<MapPin className="h-4 w-4" />} />
-        <ToggleChip param="semantic" label="Semantic" icon={<Sparkles className="h-4 w-4" />} />
-
-        <span className="mx-1 h-6 w-px self-center bg-border" />
-
-        <SortControl />
-
-        <div className="ml-auto">
-          <SaveSearchButton />
-        </div>
-      </div>
+    <div className="p-3">
+      <FilterControlsRow modal={modal} includeEntityTypeFilter />
     </div>
+  );
+}
+
+/**
+ * When / How / toggles / sort for the Memory explorer — rendered inline after
+ * the What categories in MemoryEntityTypeNav.
+ */
+export function MemoryExplorerFilterControls() {
+  return <FilterControlsRow modal={false} showSave={false} />;
+}
+
+/**
+ * Inline explorer filters: applied-filter chip drop area with Save on the same
+ * row. When / How / toggles / sort live in MemoryEntityTypeNav beside What.
+ */
+export function AdvancedFilters() {
+  return <FilterDropArea />;
+}
+
+/**
+ * "Save" — captures a name and persists the current query + selected
+ * entity types + tags as a SavedSearch (shown on the Saved Searches page).
+ */
+function FilterCountLabel() {
+  const [searchParams] = useSearchParams();
+  const activeFilterCount = countActiveFilters(searchParams);
+  const view = readMemoryView(searchParams.get('view'));
+  // Filters that are set but which the current view can't apply. They still
+  // count as active — they're in the URL and they bite in the other views — so
+  // the label reports them alongside the total rather than deducting them.
+  // Sort isn't part of `countActiveFilters` (it reorders rather than narrows),
+  // so a graph with only a sort set still has something to report here.
+  const dropped = droppedFilters(view, searchParams);
+
+  if (activeFilterCount === 0 && dropped.length === 0) {
+    return null;
+  }
+
+  return (
+    <span className="whitespace-nowrap text-xs text-muted-foreground">
+      {activeFilterCount > 0 && `${activeFilterCount} ${activeFilterCount === 1 ? 'filter' : 'filters'}`}
+      {dropped.length > 0 && (
+        <Tooltip delayDuration={200}>
+          <Tooltip.Content className="max-w-[260px]">
+            {dropped.map((dimension) => unsupportedReason(view, dimension)).join(' ')}
+          </Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <span
+              tabIndex={0}
+              className={cn(
+                'rounded underline decoration-dotted underline-offset-2',
+                activeFilterCount > 0 && 'ml-1',
+              )}
+            >
+              {activeFilterCount > 0 ? '· ' : ''}
+              {dropped.length} not applied here
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
+      )}
+    </span>
   );
 }
 
@@ -966,7 +1338,6 @@ export function AdvancedSearchToggle({
             onMouseDown={(e) => e.preventDefault()}
             aria-label={label}
             aria-expanded={open}
-            title={label}
             className={cn('h-10 w-10 flex-shrink-0', open && 'rounded-b-none', className)}
           >
             <ChevronDown className={cn('h-4 w-4 transition-transform duration-100', open && 'rotate-180')} />
@@ -1044,11 +1415,5 @@ export function ExplorerToolbar({ open }: { open: boolean }) {
     return null;
   }
 
-  return (
-    <DropdownProvider args={[{ changeSearchParams: true }]}>
-      <div className="rounded-lg border border-border/60 bg-muted/20 p-3 shadow-sm">
-        <AdvancedFilters modal={false} />
-      </div>
-    </DropdownProvider>
-  );
+  return <AdvancedFilters />;
 }

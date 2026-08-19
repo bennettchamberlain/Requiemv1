@@ -21,6 +21,13 @@ function makeResolver() {
   const communicationService = {
     getEntitiesForCommunications: jest.fn().mockResolvedValue([] as Identifier[]),
   };
+  const conceptService = { getEntitiesForConcepts: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const contentService = { getEntitiesForContents: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const itemService = { getEntitiesForItems: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const noteService = { getEntitiesForNotes: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const personService = { getEntitiesForPeople: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const placeService = { getEntitiesForPlaces: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const answerService = { getEntitiesForAnswers: jest.fn().mockResolvedValue([] as Identifier[]) };
   const entityResolutionService = { resolve: jest.fn().mockResolvedValue(new Map()) };
   const savedSearchService = { findByShareToken: jest.fn().mockResolvedValue(null) };
 
@@ -29,10 +36,17 @@ function makeResolver() {
   const resolver = new SearchResolver(
     browserActivityService as never,
     communicationService as never,
+    conceptService as never,
+    contentService as never,
     entityResolutionService as never,
     eventService as never,
     fileService as never,
     fileChunkService as never,
+    itemService as never,
+    noteService as never,
+    personService as never,
+    placeService as never,
+    answerService as never,
     savedSearchService as never,
     searchService as never,
     tagService as never,

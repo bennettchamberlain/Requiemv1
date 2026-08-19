@@ -1,6 +1,7 @@
 import { type CSSProperties, useMemo } from 'react';
 
-import { Button } from '@ci/shadcn';
+import { Button, Tooltip } from '@ci/shadcn';
+import { useTranslation } from 'react-i18next';
 
 import {
   TEXTURE_PATTERNS,
@@ -17,6 +18,7 @@ const TEXTURE_OPACITY_MAX = 0.8;
 const TEXTURE_OPACITY_STEP = 0.05;
 
 export function TexturePicker() {
+  const { t } = useTranslation();
   const { themeState } = useTheme();
   const { backgroundState, setTexture, setTextureOpacity } = useBackground();
 
@@ -74,10 +76,12 @@ export function TexturePicker() {
           };
 
           return (
-            <button
-              key={pattern.id}
-              onClick={() => setTexture(pattern.id)}
-              className={`
+            <Tooltip key={pattern.id} delayDuration={600}>
+              <Tooltip.Content>{pattern.description}</Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <button
+                  onClick={() => setTexture(pattern.id)}
+                  className={`
                   group relative rounded-lg border p-2 text-left transition-all focus-visible:outline-none
                   ${
                     isSelected
@@ -85,21 +89,22 @@ export function TexturePicker() {
                       : 'border-border hover:border-primary/40'
                   }
                 `}
-              title={pattern.description}
-            >
-              <div
-                className="aspect-square w-full rounded-md border border-border overflow-hidden"
-                style={styles}
-              />
-              <div className="mt-2 text-xs font-medium text-foreground">{pattern.name}</div>
-            </button>
+                >
+                  <div
+                    className="aspect-square w-full rounded-md border border-border overflow-hidden"
+                    style={styles}
+                  />
+                  <div className="mt-2 text-xs font-medium text-foreground">{pattern.name}</div>
+                </button>
+              </Tooltip.Trigger>
+            </Tooltip>
           );
         })}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Texture opacity</span>
+          <span>{t('THEME_TEXTURE_OPACITY')}</span>
           <span>{Math.round(textureOpacity * 100)}%</span>
         </div>
         <input
@@ -110,6 +115,7 @@ export function TexturePicker() {
           value={textureOpacity}
           onChange={(event) => setTextureOpacity(parseFloat(event.target.value))}
           className="w-full"
+          aria-label={t('THEME_TEXTURE_OPACITY')}
         />
         <div className="flex justify-between text-[10px] text-muted-foreground">
           <span>Subtle</span>

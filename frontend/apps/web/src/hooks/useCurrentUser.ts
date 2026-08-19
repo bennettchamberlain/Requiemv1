@@ -11,6 +11,7 @@ const USER_DATA_QUERY = gql(`
       name
       email
       onboarded
+      needsIdentityStep
       timezone
 
       entity {
@@ -21,15 +22,20 @@ const USER_DATA_QUERY = gql(`
 `);
 
 export function useCurrentUser() {
-  const [{ authToken }] = useAuth();
+  // `authenticated` is true for a web JWT session OR a native API key, so the `me`
+  // query runs (and gates "logged in") under either credential.
+  const [{ authenticated }] = useAuth();
 
   const { data, loading, error, refetch } = useQuery(USER_DATA_QUERY, {
-    skip: !authToken,
+    skip: !authenticated,
+    // `entity` resolves independently; a graph lookup failure must not discard
+    // the rest of `me` and strand the session behind an infinite spinner.
+    errorPolicy: 'all',
   });
 
   return {
     user: data?.me || null,
-    loading: loading || (!!authToken && !data && !error),
+    loading: loading || (authenticated && data == null && !error),
     error,
     refetch,
   };

@@ -1,5 +1,7 @@
 import { Entity, Column, PrimaryColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
+import { type ApiKeyCapability, DEFAULT_API_KEY_CAPABILITY } from '@ci/common/decorators';
+
 import type { ApiKeyProvenance } from '../types';
 
 @Entity({ schema: 'ci', name: 'api_keys' })
@@ -18,6 +20,15 @@ export class ApiKeyEntity {
 
   @Column({ type: 'text', array: true, default: '{}' })
   scopes!: string[];
+
+  /**
+   * What this key may DO on the surfaces its {@link scopes} reach — the second, orthogonal
+   * axis. A CHECK constraint pins the column to the three known values, but reads still go
+   * through `coerceApiKeyCapability`: a rolled-back deploy could leave a value this build
+   * does not know, and the safe reading of an unreadable authority level is the smallest one.
+   */
+  @Column({ type: 'text', default: DEFAULT_API_KEY_CAPABILITY })
+  capability!: ApiKeyCapability;
 
   @Column({ type: 'timestamptz', nullable: true })
   expires_at!: Date | null;
@@ -52,6 +63,7 @@ export class ApiKeyEntity {
       name: entity.name,
       prefix: entity.prefix,
       scopes: entity.scopes,
+      capability: entity.capability,
       expires_at: entity.expires_at,
       last_used_at: entity.last_used_at,
       created_at: entity.created_at,

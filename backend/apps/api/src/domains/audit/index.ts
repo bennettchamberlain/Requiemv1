@@ -1,7 +1,12 @@
 /**
  * @module AuditModule
  *
- * Tracks changes to graph entities (nodes and relationships) for audit purposes.
+ * The READ side of `ci.graph_deltas`: history of what changed in the knowledge
+ * graph, served to the API and to the summary app.
+ *
+ * Writers live in MemoryModule ({@link GraphDeltaWriter}) — app code inserts
+ * into `ci.graph_deltas` in the same transaction as domain writes. DB triggers
+ * were removed (20260811210000). See #1941 / PR #1942.
  */
 
 import { Module } from '@nestjs/common';
@@ -12,15 +17,14 @@ import { GraphModule } from '@ci/domains/graph';
 import { AuditController } from './controllers/AuditController';
 import { DeltaEntity } from './entities/DeltaEntity';
 import { DeltaService } from './services/DeltaService';
-import { DeltaEntitySubscriber } from './subscribers/DeltaEntitySubscriber';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DeltaEntity]),
-    GraphModule, // For NodeEntity and RelationshipEntity used by the subscriber
+    GraphModule, // For NodeService, injected by AuditController
   ],
   controllers: [AuditController],
-  providers: [DeltaService, DeltaEntitySubscriber],
+  providers: [DeltaService],
   exports: [DeltaService],
 })
 export class AuditModule {}

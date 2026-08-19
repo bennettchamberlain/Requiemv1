@@ -1,0 +1,74 @@
+import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
+
+import { narrowedEntityTypes } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
+
+export interface ActivityTimelineFilterVariables {
+  includeTypes?: string[];
+  excludeTypes?: string[];
+  eventTypes?: string[];
+  connectors?: string[];
+  people?: string[];
+  places?: string[];
+  tags?: string[];
+  query?: string;
+}
+
+function toIndexableTypes(displayTypes: string[]): string[] {
+  return displayTypes.map(
+    (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
+  );
+}
+
+/**
+ * Derive the Memory explorer filters that should constrain the activity heatmap.
+ * When no entity-type filter is active, omit include/exclude so the server uses
+ * its full browse set — matching an unfiltered search.
+ */
+export function activityTimelineFiltersFromSearchParams(
+  params: URLSearchParams,
+): ActivityTimelineFilterVariables | undefined {
+  const narrowed = narrowedEntityTypes(params);
+  const search = params.get('search')?.trim();
+  const tags =
+    params
+      .get('tags')
+      ?.split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean) ?? [];
+  const eventTypes = params.get('eventTypes')?.split(',').filter(Boolean) ?? [];
+  const connectors = params.get('connectors')?.split(',').filter(Boolean) ?? [];
+  const people = params.get('people')?.split(',').filter(Boolean) ?? [];
+  const places = params.get('places')?.split(',').filter(Boolean) ?? [];
+
+  const filters: ActivityTimelineFilterVariables = {};
+
+  if (narrowed) {
+    filters.includeTypes = toIndexableTypes(narrowed);
+  }
+
+  if (eventTypes.length > 0) {
+    filters.eventTypes = eventTypes;
+  }
+
+  if (connectors.length > 0) {
+    filters.connectors = connectors;
+  }
+
+  if (people.length > 0) {
+    filters.people = people;
+  }
+
+  if (places.length > 0) {
+    filters.places = places;
+  }
+
+  if (tags.length > 0) {
+    filters.tags = tags;
+  }
+
+  if (search) {
+    filters.query = search;
+  }
+
+  return Object.keys(filters).length > 0 ? filters : undefined;
+}

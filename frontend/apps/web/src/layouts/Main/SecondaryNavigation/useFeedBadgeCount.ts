@@ -1,5 +1,7 @@
 import { gql, useQuery } from '@apollo/client';
 
+import { useFeatures } from '@/common/feature';
+
 const FEED_BADGE_ACTION_LIMIT = 5;
 const FEED_BADGE_SUMMARY_LIMIT = 10;
 
@@ -63,17 +65,21 @@ interface FeedBadgeCountQueryVariables {
 }
 
 export function useFeedBadgeCount() {
+  const { isFeatureEnabled } = useFeatures();
+  const actionsEnabled = isFeatureEnabled('actions');
+
   const { data } = useQuery<FeedBadgeCountQueryResult, FeedBadgeCountQueryVariables>(GET_FEED_BADGE_COUNT, {
     variables: {
-      actionLimit: FEED_BADGE_ACTION_LIMIT,
+      actionLimit: actionsEnabled ? FEED_BADGE_ACTION_LIMIT : 0,
       summaryFirst: FEED_BADGE_SUMMARY_LIMIT,
     },
     fetchPolicy: 'no-cache',
     notifyOnNetworkStatusChange: true,
   });
 
-  const unseenActionsCount =
-    data?.feedActions?.filter((action) => action.dismissed !== true && action.seen !== true).length ?? 0;
+  const unseenActionsCount = actionsEnabled
+    ? (data?.feedActions?.filter((action) => action.dismissed !== true && action.seen !== true).length ?? 0)
+    : 0;
   const unseenSummariesCount =
     data?.summaries?.edges?.filter(({ node }) => node.dismissed !== true && node.seen !== true).length ?? 0;
 

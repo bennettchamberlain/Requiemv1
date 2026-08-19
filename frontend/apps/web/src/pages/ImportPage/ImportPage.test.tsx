@@ -1,0 +1,150 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { ImportSurface } from './ImportPage';
+
+// `className` is rendered, not swallowed: the ceiling this page puts on the
+// region is the fix for a real layout failure (see the test below), and a mock
+// that dropped the prop would let it be deleted without a red test.
+vi.mock('@/components/ImportActivity', () => ({
+  ImportActivity: ({ className }: { className?: string }) => <div className={className}>import activity</div>,
+}));
+vi.mock('./wizard/ImportWizard', () => ({ ImportWizard: () => <div>wizard surface</div> }));
+vi.mock('./InboxPanel', () => ({ InboxPanel: () => <div>inbox surface</div> }));
+vi.mock('./HistoryTab', () => ({ HistoryTab: () => <div>history surface</div> }));
+
+/**
+ * One machinery, one navigation row: the wizard's three steps are the default
+ * surface (the page exists to walk someone through an import), with the Inbox
+ * folder and History one click away on the same row. There is no "Import" tab
+ * — the steps are it, and clicking one is the way back.
+ *
+ * Not a tablist: the wizard has no trigger of its own, and a tablist whose
+ * selected panel has no trigger is malformed. Two toggle buttons instead.
+ */
+describe('ImportSurface', () => {
+  // The defect the pinned region exists for: /sources/import opens on Pick — a
+  // service picker — and a 13-source import could run for an hour behind it
+  // with nothing on screen saying so. It has to be above the navigation row and
+  // present on EVERY surface, not just the one that happened to start the run.
+  it('pins live import progress above everything, on every surface', () => {
+    render(<ImportSurface />);
+
+    const activity = screen.getByText('import activity');
+
+    expect(activity).toBeInTheDocument();
+    // First child of the surface — above the step row, not tucked under a tab.
+    expect(activity.parentElement?.firstElementChild).toBe(activity);
+
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    expect(screen.getByText('import activity')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
+    expect(screen.getByText('import activity')).toBeInTheDocument();
+  });
+
+  /**
+   * The other half of "pinned": it must not eat the page it is pinned to.
+   *
+   * Measured at 1280×800 with a real 13-run batch and no ceiling: the region
+   * rendered 489px tall inside a 440px column that does not scroll, and the
+   * step row, the source picker and the Pick step's Continue button were all
+   * below the bottom of the window with no way to reach them. The cap is set
+   * here rather than inside the component because it is a fact about this
+   * host — the Jobs page, whose own page scrolls, deliberately passes none.
+   */
+  it('caps the region so the wizard keeps the space it needs', () => {
+    render(<ImportSurface />);
+
+    const activity = screen.getByText('import activity');
+
+    // A MEASURED ceiling, and the number is the assertion. At 1280x800 this
+    // column is 440px: at the old 50% the region took 220px and the picker's
+    // service grid — the default step's entire content — measured ZERO. The cap
+    // is fixed rather than proportional because the thing that must survive is
+    // a grid of fixed-height rows. Raising it re-breaks the picker, so the test
+    // names the value.
+    expect(activity.className).toContain('sm:max-h-[8.5rem]');
+    // And no cap on a phone, where this column is ~200px and half of it is
+    // less than the region's own summary — that clipped it mid-sentence.
+    expect(activity.className).toContain('max-h-none');
+  });
+
+  it('opens on the wizard', () => {
+    render(<ImportSurface />);
+
+    expect(screen.getByText('wizard surface')).toBeInTheDocument();
+    expect(screen.queryByText('inbox surface')).not.toBeInTheDocument();
+    expect(screen.queryByText('history surface')).not.toBeInTheDocument();
+  });
+
+  it('switches to the Inbox', () => {
+    render(<ImportSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
+    expect(screen.getByText('inbox surface')).toBeInTheDocument();
+  });
+
+  it('switches to History, and a step button is the way back', () => {
+    render(<ImportSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    expect(screen.getByText('history surface')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Pick/ }));
+    expect(screen.getByText('wizard surface')).toBeInTheDocument();
+  });
+
+  it('pressing the surface you are on returns to the wizard', () => {
+    render(<ImportSurface />);
+
+    const inbox = screen.getByRole('button', { name: /inbox/i });
+
+    fireEvent.click(inbox);
+    expect(inbox).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(inbox);
+    expect(inbox).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('inbox surface')).not.toBeInTheDocument();
+  });
+
+  // A tablist whose selected panel has no trigger is malformed: Radix labels
+  // every panel `aria-labelledby` its trigger id, so the wizard's panel pointed
+  // at an element that had been removed.
+  it('is not a tablist at all', () => {
+    render(<ImportSurface />);
+
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(screen.queryAllByRole('tabpanel')).toHaveLength(0);
+  });
+
+  it('marks no step current while another surface is showing', () => {
+    render(<ImportSurface />);
+
+    expect(screen.getByRole('button', { name: /Pick/ })).toHaveAttribute('aria-current', 'step');
+
+    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
+
+    // Saying "you are on Pick" while the Inbox is on screen would be a lie.
+    expect(screen.getByRole('button', { name: /Pick/ })).not.toHaveAttribute('aria-current');
+  });
+
+  // The defect this file exists to pin: the wizard holds the services you
+  // picked, the export card you are on and the runs each card started. It used
+  // to be UNMOUNTED on a trip to History, so coming back via the Export step
+  // landed you on an Export screen with nothing in it.
+  it('keeps the wizard mounted across a trip to History', () => {
+    render(<ImportSurface />);
+
+    const wizard = screen.getByText('wizard surface');
+
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+
+    // Still in the DOM, merely hidden — so none of its state was thrown away.
+    expect(wizard).toBeInTheDocument();
+    expect(wizard.closest('[hidden], .hidden')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Pick/ }));
+    expect(screen.getByText('wizard surface')).toBe(wizard);
+  });
+});

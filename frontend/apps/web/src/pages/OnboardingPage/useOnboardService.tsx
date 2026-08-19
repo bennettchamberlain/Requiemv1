@@ -23,7 +23,7 @@ export function useOnboardService(): ReturnType {
   const [{ authToken }] = useAuth();
   const { refetch: refetchCurrentUser } = useCurrentUser();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown | null>(null);
 
   const form = useFormContext();

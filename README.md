@@ -225,8 +225,8 @@ brew services start ollama
 Test that Ollama is running using:
 
 ```bash
-ollama pull gemma3:1b
-ollama run gemma3:1b "say hello"
+ollama pull gemma4:e4b
+ollama run gemma4:e4b "say hello"
 
 ollama pull nomic-embed-text
 ollama run nomic-embed-text "embed this"
@@ -244,7 +244,7 @@ make dev
 
 1. checks prerequisites (Node version, overmind, Caddy + its admin API on `:2019`, Ollama + required models);
 2. installs dependencies and builds the local service images;
-3. brings up this worktree's Docker stack — **PostgreSQL** (primary DB + PGBoss job queue), **Minio** (S3 object storage), **Temporal** (durable workflow orchestration), and the **summary** / **hbpe** services — preferring the conventional host ports when free and falling back to ephemeral ports otherwise, so multiple worktrees never collide;
+3. brings up this worktree's Docker stack — **PostgreSQL** (primary DB + PGBoss job queue), **Minio** (S3 object storage), and the **summary** / **hbpe** services — preferring the conventional host ports when free and falling back to ephemeral ports otherwise, so multiple worktrees never collide;
 4. runs database migrations;
 5. registers a **Caddy** route at `https://<project>.localhost` and runs the `api` + `web` dev servers via overmind, in the foreground.
 
@@ -286,7 +286,7 @@ Then open `https://<project>.localhost` (e.g. **https://ci-server.localhost**) a
 
 ```
 Username: jsmith@example.com
-Password: ]60.a6{CJ}lB*rHAp;w;
+Password: replace-me-pw-000000
 ```
 
 If something is wedged, reset the environment (stops the stack and removes this project's volumes/networks):
@@ -306,6 +306,16 @@ Run `make` from the project root to see all available commands with descriptions
 | `make init` | Initialize repository after checkout (installs dependencies, sets up VS Code, prepares git hooks) |
 | `make install` | Install project dependencies only |
 | `make health` | Check prerequisites (Node.js version, Yarn version) and report per-stack data volumes |
+
+`frontend/` consumes `@companionintelligence/*` packages from GitHub Packages, which requires a
+`NODE_AUTH_TOKEN` with `read:packages` (see `.yarnrc.yml`). `make init`/`make install` get this
+for free via [`scripts/gh-packages-auth.sh`](scripts/gh-packages-auth.sh), which reuses your `gh`
+CLI login (`gh auth login` first if you haven't). To get the token in your own shell — e.g. to
+run `yarn install` directly — run:
+
+```bash
+source scripts/gh-packages-auth.sh
+```
 
 ### Development
 
@@ -334,11 +344,65 @@ Run `make` from the project root to see all available commands with descriptions
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Build images (`ENV=local\|staging\|production`, default `local`; `GPU=cpu\|cuda\|rocm`, default `cpu`) |
+| `make build` | Build images (`ENV=local\|staging\|production`, default `local`; `GPU=cpu\|cuda\|rocm`, auto-detected from this host's GPU if not passed — see `scripts/detect-gpu.sh`) |
 | `make staging` | Run the staging deployment |
 | `make production` | Run the production deployment |
 | `make publish` | Publish CI-Server images and metadata to the CI-Portal store |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
+
+#### GPU acceleration (HBPE)
+
+`GPU` picks which HBPE image is built. It is auto-detected, so passing it is
+only needed to override the detection:
+
+```bash
+make build GPU=rocm                        # AMD, gfx target auto-detected
+make build GPU=rocm AMDGPU_TARGETS=gfx1030 # …or named explicitly
+make build GPU=cpu                         # no GPU
+```
+
+On AMD, `AMDGPU_TARGETS` is the gfx architecture llama.cpp's HIP backend
+compiles for — `gfx1100` for an RX 7900, `gfx1030` for a 6800/6900.
+`scripts/detect-gpu.sh --amdgpu-arch` reports this host's. Override it on a
+machine with both an APU and a discrete card, where detection takes whichever
+`rocminfo` lists first.
+
+Building the image is only half of it: the container also needs the GPU passed
+in at runtime, which `docker-compose.rocm.yml` does. `make dev` layers that
+file in automatically when `/dev/kfd` and `/dev/dri` exist. For staging or
+production, add it explicitly:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+               -f docker-compose.rocm.yml --profile production up -d
+```
+
+Without it the service still starts and still answers — it just finds no HSA
+agent and runs on the CPU, silently. If you are unsure which you have, ask the
+container rather than assuming:
+
+```bash
+docker compose exec hbpe-service python -c \
+  "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+### Releasing & image tags
+
+Pushing a git tag triggers `.github/workflows/publish.yml`, which builds every `companion/*` image
+natively per architecture, merges the legs into a multi-arch manifest list, and registers the result
+with CI-Portal.
+
+| Tag | Meaning |
+|---------|-------------|
+| `v<YYYY>.<M>.<D>` | A release. Use `v<YYYY>.<M>.<D>.<N>` for a second release the same day. |
+| `<version>` (no `v`) | What the images are tagged with — the leading `v` is stripped by both the workflow and `make publish`, so `v2026.7.27` publishes `companion/*:2026.7.27`. This is the form CI-Marketplace pins. |
+| `latest` | The **newest release tag only**. Repointed by the publish workflow when, and only when, the tag being built is release-shaped *and* sorts newest. A back-tagged or re-cut older release leaves it alone. |
+| `dev-<short-sha>` | What an untagged local `make publish` produces. Never `latest` — see below. |
+
+`:latest` must never be minted by hand. It was a stale, single-arch, three-month-old orphan for exactly
+that reason: `scripts/publish/publish.sh` used to fall back to `VERSION=latest` for untagged commits, so
+any `REGISTRY=ghcr.io/... make publish` from an untagged checkout overwrote it with a local dev build
+pointing at no release at all.
 
 ### HBPE
 

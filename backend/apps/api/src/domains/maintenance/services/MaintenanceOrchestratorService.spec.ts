@@ -4,6 +4,10 @@ import { EventEntity } from '@ci/domains/memory';
 import { GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import { IndexSkipEntity } from '@ci/domains/search-ingress';
 
+jest.mock('./HealSelfCollationService', () => ({
+  HealSelfCollationService: class HealSelfCollationService {},
+}));
+
 import { MaintenanceOrchestratorService, ORCHESTRATE_STAGES } from './MaintenanceOrchestratorService';
 
 const USER_ID = 'user-1';
@@ -66,7 +70,7 @@ function makeService() {
   };
   const commLink = {
     // Params kept so mockImplementationOnce overrides below can type their (userId, options) impls.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     backfill: jest.fn(async (_userId: string, _options?: unknown) => {
       callOrder.push('link_communications');
 
@@ -80,9 +84,25 @@ function makeService() {
       return { examined: 0, organizersLinked: 0, participantsLinked: 0, pages: 0 };
     }),
   };
+  const healSelf = {
+    heal: jest.fn(async () => {
+      callOrder.push('heal_self_collation');
+
+      return {
+        selfEntityId: null,
+        trustMode: 'balanced',
+        examined: 0,
+        merged: 0,
+        reviewed: 0,
+        skipped: 0,
+        errors: [],
+        mergedSourceIds: [],
+      };
+    }),
+  };
   const graphEnrich = {
     // Params kept so the mockImplementationOnce override below can type its (userId, options) impl.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     enrich: jest.fn(async (_userId: string, _options?: unknown) => {
       callOrder.push('extract_graph');
 
@@ -103,26 +123,58 @@ function makeService() {
       return { enqueued: 0, perType: {} as Record<string, number> };
     }),
   };
+  const edgeMaterialize = {
+    backfill: jest.fn(async () => {
+      callOrder.push('materialize_edges');
+
+      return { edgesCreated: 0, rules: [] };
+    }),
+  };
+  const relationshipNormalize = {
+    normalize: jest.fn(async () => {
+      callOrder.push('normalize_relationships');
+
+      return { renamed: 0, swapped: 0, deletedIs: 0, bidirectionalStamped: 0 };
+    }),
+  };
+  const derivedRelationships = {
+    derive: jest.fn(async () => {
+      callOrder.push('derive_relationships');
+
+      return { communicatesWith: 0, frequents: 0, groupsReified: 0 };
+    }),
+  };
+  const noteFold = {
+    fold: jest.fn(async () => {
+      callOrder.push('fold_notes');
+
+      return { notesFolded: 0 };
+    }),
+  };
+  const inventoryReverse = {
+    reverse: jest.fn(async () => {
+      callOrder.push('reverse_inventory');
+
+      return { examined: 0, placed: 0, skipped: 0, status: 'noop' };
+    }),
+  };
 
   const service = new MaintenanceOrchestratorService(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    dataSource as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    events as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logger as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    personStub as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    commLink as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    eventPart as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    graphEnrich as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    locationEstimate as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    searchIndex as any,
+    dataSource as never,
+    events as never,
+    logger as never,
+    personStub as never,
+    commLink as never,
+    eventPart as never,
+    healSelf as never,
+    edgeMaterialize as never,
+    relationshipNormalize as never,
+    derivedRelationships as never,
+    noteFold as never,
+    graphEnrich as never,
+    locationEstimate as never,
+    searchIndex as never,
+    inventoryReverse as never,
   );
 
   // Kill the progress throttle by default so forwarding tests see every line;
@@ -201,7 +253,7 @@ describe('MaintenanceOrchestratorService', () => {
 
     const starts = lines.filter((l) => l.type === 'leg-start');
     expect(starts.map((l) => l.leg)).toEqual([...ORCHESTRATE_STAGES]);
-    expect(starts.map((l) => l.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(starts.map((l) => l.index)).toEqual(ORCHESTRATE_STAGES.map((_, i) => i + 1));
     expect(starts.every((l) => l.of === ORCHESTRATE_STAGES.length)).toBe(true);
     expect(summary.legs).toHaveLength(ORCHESTRATE_STAGES.length);
     expect(summary.ok).toBe(true);

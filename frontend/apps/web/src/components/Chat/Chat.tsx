@@ -43,6 +43,7 @@ interface Props extends ChatInputProps {
   emptyState?: ReactNode;
   children?: ReactNode;
   onResponseFinished?: (text: string) => void;
+  initialDraft?: string;
 }
 
 const textDecoder = new TextDecoder();
@@ -59,6 +60,7 @@ export function Chat({
   onSubmit,
   children,
   onResponseFinished,
+  initialDraft,
   ...chatInputProps
 }: Props) {
   const autoFocusRef = useRef<HTMLTextAreaElement | null>(null);
@@ -249,22 +251,22 @@ export function Chat({
 
   const handleSubmit = useCallback(
     async (data: FormData, e?: FormEvent<HTMLFormElement>) => {
-      const success = await onSubmit?.(data, e);
-
-      if (success === true) {
-        try {
-          const block = <UserMessage key={uuid7()} content={data.message} createdAt={new Date().toJSON()} />;
-
-          flushStream(block);
-          maybeAutoScroll(true);
-        } catch (err) {
-          console.error('Error inserting user block', err);
-        }
+      if (!data.message.trim()) {
+        return false;
       }
 
-      return success;
+      try {
+        const block = <UserMessage key={uuid7()} content={data.message} createdAt={new Date().toJSON()} />;
+
+        flushStream(block);
+        maybeAutoScroll(true);
+      } catch (err) {
+        console.error('Error inserting user block', err);
+      }
+
+      return (await onSubmit?.(data, e)) ?? false;
     },
-    [onSubmit, flushStream],
+    [onSubmit, flushStream, maybeAutoScroll],
   );
 
   const handleFinished = useCallback(() => {
@@ -387,6 +389,7 @@ export function Chat({
           loading={loading}
           streaming={streaming}
           onSubmit={handleSubmit}
+          initialDraft={initialDraft}
           {...chatInputProps}
         />
       </div>

@@ -1,4 +1,5 @@
 export { Empty } from './Empty';
+export { MemoryEmptyState } from './MemoryEmptyState';
 export { ErrorState } from './ErrorState';
 export { DateGroupHeader } from './DateGroupHeader';
 export { ListSkeleton, TimelineSkeleton } from './MemorySkeletons';

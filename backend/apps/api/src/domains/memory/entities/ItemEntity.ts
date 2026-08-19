@@ -1,17 +1,44 @@
 import { AfterLoad, Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Point } from 'typeorm';
 
+import type { AcquisitionMethod, UnitSystem } from '../physicalProperties';
+
+import { numericMeasurementTransformer } from './numericMeasurement';
+
 export type InventoryCondition = 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'broken' | 'n/a';
+
+/**
+ * Ownership state. Mirrors the inventory_lifecycle_state_check constraint —
+ * widening one without the other fails the write, so change both together.
+ */
+export type InventoryLifecycleState =
+  | 'active'
+  | 'stored'
+  | 'lent_out'
+  | 'lost'
+  | 'disposed'
+  | 'consumed'
+  | 'returned'
+  | 'archived';
+
+/** How this unit's identity was established. Mirrors inventory_identity_method_check. */
+export type InventoryIdentityMethod = 'user' | 'barcode' | 'receipt' | 'vision' | 'import' | 'inferred';
 
 @Entity({ schema: 'ci', name: 'inventory' })
 export class ItemEntity {
   @PrimaryColumn('uuid', { name: 'object_id' })
   id!: string;
 
-  @Column('text', { name: 'name' })
-  name!: string;
+  /**
+   * CTI discriminator pin (migration 20260811061402): always 'Item'. Pairs
+   * with object_id in the composite FK to ci.entities(entity_id, entity_type)
+   * so a detail row can never point at a base row of another type. DEFAULTed
+   * and CHECKed in the schema; never written by the application.
+   */
+  @Column({ type: 'text', name: 'entity_type', default: 'Item', insert: false, update: false })
+  entityType!: string;
 
-  @Column('text', { name: 'description', nullable: true })
-  description!: string | null;
+  // name/description live ONLY on the CTI base row (ci.entities, see
+  // ItemBaseEntity); the egress type composes them back on via toEgressType.
 
   @Column('text', { name: 'category', nullable: true })
   category!: string | null;
@@ -117,6 +144,160 @@ export class ItemEntity {
   @Column('text', { name: 'source_id', nullable: true })
   sourceId!: string | null;
 
+  // ---------------------------------------------------------------------------
+  // Object identity (migration 20260803223025_extend_inventory_object_identity)
+  //
+  // ci.inventory stays the table of record for OWNED UNITS; these columns give
+  // a unit its catalog model, its purchase provenance, an honest lifecycle, and
+  // a merge tombstone — the four things it could not express before.
+  // ---------------------------------------------------------------------------
+
+  /** The catalog model this unit is an instance of. NULL = unit is real, product not yet known. */
+  @Column('uuid', { name: 'product_id', nullable: true })
+  productId!: string | null;
+
+  @Column('uuid', { name: 'acquisition_receipt_id', nullable: true })
+  acquisitionReceiptId!: string | null;
+
+  /** The receipt line this unit was minted from — the back half of the provenance chain. */
+  @Column('uuid', { name: 'acquisition_line_item_id', nullable: true })
+  acquisitionLineItemId!: string | null;
+
+  /**
+   * Queryable ownership state. Supersedes disposedAt/disposalMethod as the
+   * filter (those keep the when and the how, and are not deprecated).
+   */
+  @Column('text', { name: 'lifecycle_state', default: 'active' })
+  lifecycleState!: InventoryLifecycleState;
+
+  @Column('int', { name: 'quantity', default: 1 })
+  quantity!: number;
+
+  /**
+   * 1.0 = user-entered or barcode-scanned; ~0.7 receipt-derived; ~0.4
+   * vision-guessed. 1.0 reads as ground truth to HBPE and RAG, so never write
+   * it for an inferred unit.
+   */
+  @Column('real', { name: 'identity_confidence', default: 1.0 })
+  identityConfidence!: number;
+
+  @Column('text', { name: 'identity_method', nullable: true })
+  identityMethod!: InventoryIdentityMethod | null;
+
+  /** Last confirmed sighting, denormalized from ci.object_observations for sort/filter. */
+  @Column('timestamptz', { name: 'last_seen_at', nullable: true })
+  lastSeenAt!: Date | null;
+
+  @Column('uuid', { name: 'last_seen_place_entity_id', nullable: true })
+  lastSeenPlaceEntityId!: string | null;
+
+  /** Merge tombstone. Non-NULL means this row lost a merge; every read filters IS NULL. */
+  @Column('uuid', { name: 'merged_into_object_id', nullable: true })
+  mergedIntoObjectId!: string | null;
+
+  // ---------------------------------------------------------------------------
+  // Physical properties (migration 20260818020839_expand_inventory_physical_properties)
+  //
+  // What the object IS, as opposed to what it cost. Every measurement is stored
+  // in one canonical unit and is strictly positive — NULL is the only way to
+  // say "unmeasured". Callers never convert: `normalizePhysicalProperties` in
+  // ../physicalProperties.ts is the single place units are resolved, and it
+  // enforces the same bounds as the CHECK constraints.
+  //
+  // NUMERIC comes back from node-postgres as a string, so these carry
+  // numericMeasurementTransformer to make the declared `number` true — see the
+  // purchasePrice/currentValue columns above, which predate it and still lie.
+  // ---------------------------------------------------------------------------
+
+  /** Longest dimension in MILLIMETRES. */
+  @Column('numeric', {
+    name: 'length_mm',
+    precision: 14,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  lengthMm!: number | null;
+
+  /** Width in MILLIMETRES. */
+  @Column('numeric', {
+    name: 'width_mm',
+    precision: 14,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  widthMm!: number | null;
+
+  /** Height in MILLIMETRES. */
+  @Column('numeric', {
+    name: 'height_mm',
+    precision: 14,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  heightMm!: number | null;
+
+  /** As-owned mass in GRAMS. */
+  @Column('numeric', {
+    name: 'mass_g',
+    precision: 16,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  massG!: number | null;
+
+  /** Capacity — what it HOLDS — in MILLILITRES, not the bounding volume. */
+  @Column('numeric', {
+    name: 'volume_ml',
+    precision: 16,
+    scale: 3,
+    nullable: true,
+    transformer: numericMeasurementTransformer,
+  })
+  volumeMl!: number | null;
+
+  /** Display preference the measurements were entered in. Presentation only. */
+  @Column('text', { name: 'unit_system', nullable: true })
+  unitSystem!: UnitSystem | null;
+
+  /** Lowercase colour names, dominant first. */
+  @Column('text', { name: 'colors', array: true, nullable: true })
+  colors!: string[] | null;
+
+  /** Dominant colour as lowercase `#rrggbb`, for UI swatches. */
+  @Column('text', { name: 'color_hex', nullable: true })
+  colorHex!: string | null;
+
+  /** Lowercase material names — what the object is made of. */
+  @Column('text', { name: 'materials', array: true, nullable: true })
+  materials!: string[] | null;
+
+  /** `{material: fraction}`, fractions in (0,1] summing to at most 1. `{}` = proportions unknown. */
+  @Column('jsonb', { name: 'composition', default: {} })
+  composition!: Record<string, number>;
+
+  /** How it came to be owned — a purchase and a gift mean different things by `acquiredAt`. */
+  @Column('text', { name: 'acquisition_method', nullable: true })
+  acquisitionMethod!: AcquisitionMethod | null;
+
+  /** Seller/giver as free text, for counterparties not (yet) resolved to a graph entity. */
+  @Column('text', { name: 'acquired_from', nullable: true })
+  acquiredFrom!: string | null;
+
+  @Column('uuid', { name: 'acquired_from_entity_id', nullable: true })
+  acquiredFromEntityId!: string | null;
+
+  /** When the object was made — the start of its physical life, not of ownership. */
+  @Column('timestamptz', { name: 'manufactured_at', nullable: true })
+  manufacturedAt!: Date | null;
+
+  /** When it stops being usable. Distinct from warrantyExpiresAt, which is a contract. */
+  @Column('timestamptz', { name: 'expires_at', nullable: true })
+  expiresAt!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -130,11 +311,20 @@ export class ItemEntity {
     this.sourceFileId = (this.metadata?.source_file_id as string) || null;
   }
 
-  static toEgressType(entity: ItemEntity): Item {
+  /**
+   * Composes the egress item from the CTI pair: the ci.inventory detail row
+   * plus its ci.entities base row, which is the sole owner of
+   * name/description. Callers that only have the detail (e.g. straight after
+   * an insert they themselves composed) may pass the base values inline.
+   */
+  static toEgressType(
+    entity: ItemEntity,
+    base?: { name: string | null; description: string | null } | null,
+  ): Item {
     return {
       id: entity.id,
-      name: entity.name,
-      description: entity.description,
+      name: base?.name ?? null,
+      description: base?.description ?? null,
       category: entity.category,
       subcategory: entity.subcategory,
       brand: entity.brand,
@@ -170,10 +360,41 @@ export class ItemEntity {
       sourceId: entity.sourceId,
       sourceFileId: entity.sourceFileId,
 
+      productId: entity.productId,
+      acquisitionReceiptId: entity.acquisitionReceiptId,
+      acquisitionLineItemId: entity.acquisitionLineItemId,
+      lifecycleState: entity.lifecycleState,
+      quantity: entity.quantity,
+      identityConfidence: entity.identityConfidence,
+      identityMethod: entity.identityMethod,
+      lastSeenAt: entity.lastSeenAt,
+      lastSeenPlaceEntityId: entity.lastSeenPlaceEntityId,
+      mergedIntoObjectId: entity.mergedIntoObjectId,
+
+      lengthMm: entity.lengthMm,
+      widthMm: entity.widthMm,
+      heightMm: entity.heightMm,
+      massG: entity.massG,
+      volumeMl: entity.volumeMl,
+      unitSystem: entity.unitSystem,
+      colors: entity.colors,
+      colorHex: entity.colorHex,
+      materials: entity.materials,
+      composition: entity.composition ?? {},
+      acquisitionMethod: entity.acquisitionMethod,
+      acquiredFrom: entity.acquiredFrom,
+      acquiredFromEntityId: entity.acquiredFromEntityId,
+      manufacturedAt: entity.manufacturedAt,
+      expiresAt: entity.expiresAt,
+
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
   }
 }
 
-export type Item = Readonly<Omit<ItemEntity, 'loadMetadataProperties'>>;
+export type Item = Readonly<Omit<ItemEntity, 'loadMetadataProperties' | 'entityType'>> & {
+  // Owned by the CTI base row (ci.entities); composed on egress.
+  readonly name: string | null;
+  readonly description: string | null;
+};

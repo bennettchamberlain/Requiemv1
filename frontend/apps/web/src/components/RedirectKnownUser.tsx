@@ -1,13 +1,20 @@
 import { LoadingPage } from '@ci/common';
 import { Navigate } from 'react-router-dom';
 
+import { useFeatures } from '@/common/feature';
 import { useAuth, useCurrentUser } from '@/hooks';
+import { appHomePath } from '@/lib/appHome';
 
 export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
-  const [{ expired, authToken, loading: authLoading }] = useAuth();
+  // `initializing`, not `loading`: the latter is also true while a login or
+  // signup POST is in flight, and swapping in LoadingPage then unmounts the
+  // very form awaiting the response — wiping the user's input and the local
+  // state needed to attach the server's field errors.
+  const [{ expired, authToken, initializing }] = useAuth();
   const { user, loading: userLoading } = useCurrentUser();
+  const { isFeatureEnabled, loading: featuresLoading } = useFeatures();
 
-  if (authLoading || userLoading) {
+  if (initializing || userLoading || (user?.onboarded && featuresLoading)) {
     return <LoadingPage />;
   }
 
@@ -15,13 +22,15 @@ export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
     return children;
   }
 
+  // A valid token with no resolved user means the profile query failed or the
+  // account no longer exists — do not spin forever (see ProtectedRoute).
   if (authToken && !user) {
-    return <LoadingPage />;
+    return <Navigate to="/login" replace />;
   }
 
   if (user) {
     if (user.onboarded) {
-      return <Navigate to="/feed" />;
+      return <Navigate to={appHomePath(isFeatureEnabled('planning.page'))} />;
     }
 
     return <Navigate to="/onboarding" />;

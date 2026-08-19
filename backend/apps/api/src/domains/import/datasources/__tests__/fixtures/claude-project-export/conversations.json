@@ -1,0 +1,22 @@
+[
+  {
+    "uuid": "44444444-4444-4444-4444-444444444444",
+    "name": "Book club planning",
+    "created_at": "2026-04-01T09:00:00Z",
+    "updated_at": "2026-04-01T09:05:00Z",
+    "chat_messages": [
+      {
+        "uuid": "pm-1",
+        "text": "What should our book club read next?",
+        "sender": "human",
+        "created_at": "2026-04-01T09:00:00Z"
+      },
+      {
+        "uuid": "pm-2",
+        "text": "Based on your reading list project, how about starting with something shorter?",
+        "sender": "assistant",
+        "created_at": "2026-04-01T09:01:00Z"
+      }
+    ]
+  }
+]

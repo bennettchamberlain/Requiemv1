@@ -1,0 +1,9 @@
+# Importer fixtures are byte-for-byte copies of real vendor export archives, and
+# several importers are tested precisely on how they handle line endings — the
+# `google-voice-export-crlf-vcf` corpus exists to prove the vCard parser copes
+# with CRLF. Git's default eol normalization would rewrite those bytes on
+# checkout and silently turn that test into a duplicate of the LF one.
+#
+# -text disables all normalization here: what was committed is what lands on
+# disk, on every platform.
+* -text

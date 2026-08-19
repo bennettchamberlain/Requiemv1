@@ -5,8 +5,12 @@ import { DataSource } from 'typeorm';
 import type { ServiceContext } from '@ci/common/context';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 
+import { EventBaseEntity } from '../../entities/EventBaseEntity';
 import { EventEntity } from '../../entities/EventEntity';
 import { EventService } from '../EventService';
+import { GraphDeltaWriter } from '../GraphDeltaWriter';
+
+import { noopGraphDeltaWriter } from './harness/noopGraphDeltaWriter';
 
 /** Chainable query-builder mock that records every call and returns a
  * configurable `getRawMany` result. */
@@ -51,8 +55,10 @@ describe('EventService — event-type ("how") filtering', () => {
       providers: [
         EventService,
         { provide: getRepositoryToken(EventEntity), useValue: {} },
+        { provide: getRepositoryToken(EventBaseEntity), useValue: { find: jest.fn(async () => []) } },
         { provide: SignallingEventService, useValue: { send: jest.fn() } },
         { provide: DataSource, useValue: dataSource },
+        { provide: GraphDeltaWriter, useValue: noopGraphDeltaWriter() },
       ],
     })
       .compile()

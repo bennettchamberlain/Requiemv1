@@ -6,8 +6,9 @@
 #     root lockfile (/yarn.lock). All workspaces (backend/apps/*, frontend/apps/*,
 #     frontend/packages/*) resolve through it, so the npm ecosystem targets "/" only.
 #     Dependabot's "npm" ecosystem understands Yarn (including Berry) lockfiles.
-#   - Python services each have their own pyproject.toml + uv.lock:
-#       backend/apps/hbpe, backend/apps/summary  -> "pip" ecosystem.
+#   - Python is a uv workspace with ONE root lockfile (/uv.lock). All members
+#     (backend/apps/*, backend/packages/*) resolve through it, so the uv
+#     ecosystem targets "/" only, mirroring the npm entry above.
 #   - GitHub Actions workflows -> "github-actions" ecosystem.
 #
 # This PR is config-only: version updates are opened as PRs and remediated
@@ -24,19 +25,9 @@ updates:
       - "dependencies"
       - "javascript"
 
-  # ── Python service: HBPE (Hierarchical Behavioral Prediction Engine) ──
-  - package-ecosystem: "pip"
-    directory: "/backend/apps/hbpe"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "python"
-
-  # ── Python service: Summary (Temporal summarization) ──
-  - package-ecosystem: "pip"
-    directory: "/backend/apps/summary"
+  # ── Python (uv workspace, single root lockfile) ──
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10

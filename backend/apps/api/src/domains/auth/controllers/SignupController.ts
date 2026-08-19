@@ -17,7 +17,7 @@ import { setCsrfCookie, setSessionCookie } from '../utils/authCookies';
 const signupSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 chars'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
   signup_code: z.string().optional(),
 });
 
@@ -75,7 +75,7 @@ export class SignupController {
       });
     }
 
-    const sessionToken = await this.authService.issueSessionToken(
+    const { sessionToken, sessionId } = await this.authService.issueSessionToken(
       user.id,
       this.authService.getSessionMetadata(req),
     );
@@ -84,10 +84,10 @@ export class SignupController {
 
     setSessionCookie(req, res, sessionToken);
 
-    // Identity boundary: mint a fresh CSRF token for authenticated requests
-    // (e.g. /refresh). Auth boundaries are the only rotation points — see
-    // utils/authCookies.ts.
-    setCsrfCookie(req, res, this.csrfService.generateToken());
+    // Identity boundary: mint a fresh CSRF token bound to the new session, for
+    // authenticated requests (e.g. /refresh). Auth boundaries are the only
+    // rotation points — see utils/authCookies.ts.
+    setCsrfCookie(req, res, this.csrfService.generateToken(sessionId));
 
     return {
       accessToken,

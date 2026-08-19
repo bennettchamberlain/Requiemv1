@@ -1,8 +1,9 @@
 import { type MouseEvent, type MouseEventHandler, type ReactNode, useCallback } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
-import { Button, cn } from '@ci/shadcn';
+import { Button, cn, IconButton } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
+import { useTranslation } from 'react-i18next';
 
 import { Tag } from '@/components/Tag';
 
@@ -26,9 +27,10 @@ export function BentoCard({
   className,
   onClick,
   onDismiss,
-  dismissLabel = 'Dismiss card',
+  dismissLabel,
   showUnseenIndicator = false,
 }: Props) {
+  const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
 
   const handleClick = useCallback(
@@ -46,67 +48,94 @@ export function BentoCard({
     [onDismiss],
   );
 
-  const dismissButton = onDismiss ? (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      className="absolute right-3 top-3 z-30 h-7 w-7 bg-background/80 backdrop-blur-sm"
-      onClick={handleDismiss}
-      aria-label={dismissLabel}
-      title={dismissLabel}
-    >
-      <X className="h-4 w-4" />
-    </Button>
+  // Dismiss hangs 1 off the card so it sits on the corner, mirroring the unseen
+  // dot opposite. Chat is the card click itself — a second button under the X
+  // was a duplicate. No deeper than 1: the carousel viewport clips at `pt-1`.
+  const cardActions = onDismiss ? (
+    <div className="absolute -right-1 -top-1 z-30">
+      <IconButton
+        type="button"
+        variant="outline"
+        className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
+        onClick={handleDismiss}
+        label={dismissLabel ?? t('FEED_CARD_DISMISS')}
+      >
+        <X className="h-4 w-4" />
+      </IconButton>
+    </div>
   ) : null;
 
+  // The dismiss button is 7 wide and hangs 1 past the edge, so it reaches 6
+  // back into the card; the extra 3 keeps a right-aligned tag from butting up
+  // against it.
+  const actionGutter = onDismiss ? 'pr-9' : undefined;
+
   const unseenIndicator = showUnseenIndicator ? (
-    <span
-      className="pointer-events-none absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
-      aria-label="New item"
-      title="New item"
-    />
+    <>
+      {/* The dot overhangs the card by a third of its size, so it must stay out
+          of the hit test or it swallows clicks meant for the neighbouring card.
+          That also rules out hovering it, hence the sr-only text rather than a
+          tooltip: a decorative span carries no role, so aria-label on it would
+          be ignored anyway. */}
+      <span
+        className="pointer-events-none absolute left-0 top-0 z-30 h-3 w-3 -translate-x-1/3 -translate-y-1/3 rounded-full bg-primary ring-2 ring-background"
+        aria-hidden="true"
+      />
+      <span className="sr-only">{t('FEED_CARD_UNSEEN')}</span>
+    </>
   ) : null;
 
   if (isMobile) {
+    // Compact preview row — tap opens the existing write-up. Hover does not
+    // exist on a phone, so dismiss is a 44px control in the layout, not a
+    // corner affordance that only appears on mouseover.
     return (
       <div
         className={cn(
-          'h-full w-full flex flex-col border border-border bg-card text-card-foreground rounded-lg cursor-pointer select-none p-4 gap-4',
+          'relative flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left',
+          'cursor-pointer select-none text-card-foreground active:bg-accent/15',
           className,
-          'relative',
         )}
         onClick={handleClick}
       >
         {unseenIndicator}
-        {dismissButton}
-        {imageUrl && (
+        {imageUrl ? (
+          <img src={imageUrl} alt="" className="h-14 w-14 shrink-0 rounded-md object-cover bg-muted" />
+        ) : (
           <div
-            className="relative top-0 left-0 right-0 min-h-42 bg-cover bg-center rounded-t-lg -mx-4 -mt-4 text-4xl font-bold text-center text-white p-4"
-            style={{
-              backgroundImage: `
-              linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,0)),
-              url(${imageUrl})
-            `,
-            }}
+            aria-hidden
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-muted px-1 text-center text-[10px] font-medium leading-tight text-muted-foreground"
           >
-            {title}
+            {tags[0] ?? ''}
           </div>
         )}
 
-        {!imageUrl && <div className="text-4xl font-bold text-center">{title}</div>}
-
-        {(tags?.length ?? 0) > 0 && (
-          <div className="flex flex-wrap gap-1 justify-center">
-            {tags.map((tag) => (
-              <Tag key={tag} text={tag} />
-            ))}
+        <div className="min-w-0 flex-1">
+          <h3 className="line-clamp-1 text-base font-semibold leading-snug text-foreground">{title}</h3>
+          <div
+            className={cn(
+              'mt-0.5 line-clamp-2 text-sm leading-snug text-muted-foreground',
+              '[&_p]:m-0 [&_p]:inline [&_p+p]:hidden',
+              '[&_ul]:hidden [&_ol]:hidden [&_h1]:hidden [&_h2]:hidden [&_h3]:hidden',
+              '[&_.inline-flex]:hidden [&_img]:hidden',
+            )}
+          >
+            {description}
           </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto">
-          <div>{description}</div>
         </div>
+
+        {onDismiss ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0 text-muted-foreground"
+            aria-label={dismissLabel ?? t('FEED_CARD_DISMISS')}
+            onClick={handleDismiss}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
     );
   }
@@ -121,13 +150,13 @@ export function BentoCard({
         onClick={handleClick}
       >
         {unseenIndicator}
-        {dismissButton}
-        <div className="flex w-full justify-between content-start">
+        {cardActions}
+        <div className={cn('flex w-full justify-between content-start', actionGutter)}>
           <h1 className="text-2xl font-semibold">{title}</h1>
 
           {(tags?.length ?? 0) > 0 && (
             <div>
-              <div className={cn('flex flex-wrap gap-1 justify-end', onDismiss && 'pr-10')}>
+              <div className="flex flex-wrap gap-1 justify-end">
                 {tags.map((tag) => (
                   <Tag key={tag} text={tag} />
                 ))}
@@ -153,7 +182,7 @@ export function BentoCard({
       onClick={handleClick}
     >
       {unseenIndicator}
-      {dismissButton}
+      {cardActions}
       <div className="flex flex-col flex-1 gap-4 justify-between p-4">
         <div>
           <h1 className="text-2xl font-semibold">{title}</h1>
@@ -170,7 +199,7 @@ export function BentoCard({
           <div
             className={cn(
               'flex flex-wrap gap-1 justify-end relative z-10 p-4 [background-image:radial-gradient(circle_at_top_right,_rgba(255,255,255,0.9),_rgba(255,255,255,0.1))]',
-              onDismiss && 'pr-12',
+              actionGutter,
             )}
           >
             {tags.map((tag) => (
