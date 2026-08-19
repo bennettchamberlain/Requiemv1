@@ -844,23 +844,98 @@ const POSITION_SOURCE_BY_LOCATION_SOURCE: Record<
   wifi: 'wifi',
 };
 
+// Two signed decimals separated by a comma. Shared by both arms of
+// isCoordinateText below, and mirrored in SQL by the two backfills that recover
+// rows written before each arm existed:
+// db/postgres/migrations/20260818212254_backfill_position_coordinate_names.sql
+// (bare) and 20260818235752_backfill_position_non_place_names.sql (labelled).
+const COORDINATE_PAIR = String.raw`[-+]?\d{1,3}(?:\.\d+)?\s*,\s*[-+]?\d{1,3}(?:\.\d+)?`;
+
+// A closed vocabulary of GENERIC geolocation nouns — words that mean "a point
+// on the earth" and nothing more specific. Deliberately not a venue vocabulary:
+// "Cafe", "Pier", "Park" are absent, so a real place whose name happens to be
+// followed by numbers is never swallowed by the label arm.
+const GEO_LABEL = String.raw`(?:location|position|coordinates?|coords?|point|waypoint|fix|gps)`;
+
+// `[-:]` and not `[:-]`: the same two characters, ordered so the SQL twin of
+// this pattern in the backfill migration cannot be misread as the start of a
+// POSIX character-class name (`[:alpha:]`).
+const COORDINATE_TEXT = new RegExp(String.raw`^\s*(?:${GEO_LABEL}\s*[-:]?\s*)?${COORDINATE_PAIR}\s*$`, 'i');
+
+/**
+ * Is this string just a coordinate pair — "33.51469, -117.72169" — or the same
+ * pair wearing a generic label, "Location 33.51469, -117.72169"?
+ *
+ * Deliberately narrow: two signed decimals separated by a comma and nothing
+ * else, optionally preceded by ONE generic geolocation noun. "Cafe 40.7, 74.0"
+ * keeps its name, because a place whose name happens to contain numbers is
+ * still a name and "Cafe" is not a word that means "a point on the earth".
+ *
+ * The label arm is not hypothetical. The original anchor (`^\s*[-+]?\d`)
+ * required the string to START with the number, so every labelled variant
+ * sailed through untouched: `google_location`, `kmlgx` and `nmea` each
+ * manufactured `Location ${lat.toFixed(5)}, ${lon.toFixed(5)}` and it landed in
+ * `ci.position.name` exactly like google_fit's bare pair did. Those three no
+ * longer mint the string at all (that is the real fix — see each datasource),
+ * but this stays the structural backstop: an importer we do not control, a
+ * third-party export, or a re-import of already-corrupted data can all present
+ * the same shape, and the guard should not depend on owning every producer.
+ */
+export function isCoordinateText(value: string): boolean {
+  return COORDINATE_TEXT.test(value);
+}
+
+// Extensions of things that are FILES, not places. Any name ending in one of
+// these is a media filename that rode in as the item's display title. Mirrored
+// in SQL by 20260818235752_backfill_position_non_place_names.sql.
+const MEDIA_EXTENSION = /\.(?:jpe?g|png|heic|heif|gif|mov|mp4|m4v|avi|webp|dng|tiff?)$/i;
+
+// A bare UUID stem, with or without Apple's `_N` burst/segment suffix
+// ("A20CEAAC-8F30-403E-A17B-E60DBC744DBB_3"). Same defect one step further
+// along: an export that strips the extension leaves an opaque identifier that
+// is even less of a place name than the filename it came from.
+const BARE_UUID_STEM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[_-]\d+)?$/i;
+
+/**
+ * Is this string a media filename rather than a place name — "IMG_0139.JPG",
+ * "A20CEAAC-8F30-403E-A17B-E60DBC744DBB_3.mov"?
+ *
+ * Every GPS-bearing photo donates a position row, and `titleFor` gives a
+ * `capture.*` item its filename as a display title (correctly — that is the
+ * only label a photo has). `toPositionInput` then read that title as the
+ * position's NAME, so 2,085 rows on a real appliance had a filename where the
+ * place should be, and the Places view rendered them as such.
+ *
+ * Structural like its two neighbours: a file extension / opaque identifier
+ * grammar, not a per-importer denylist, so a camera roll from a source we have
+ * never seen is caught too.
+ */
+export function isMediaFilename(value: string): boolean {
+  const trimmed = value.trim();
+
+  return MEDIA_EXTENSION.test(trimmed) || BARE_UUID_STEM.test(trimmed);
+}
+
+/**
+ * The three structural rejects, read as one rule: a coordinate pair, a URI, and
+ * a media filename are each provably NOT the name of a place, whatever slot the
+ * importer put them in.
+ *
+ * Rejecting leaves `ci.position.name` NULL, which is the point — a null name is
+ * what makes the row a candidate for the reverse-geocoder to fill with a real
+ * one. A fake name is strictly worse than no name: it displays as though the
+ * place were already known.
+ */
+export function isNotAPlaceName(value: string): boolean {
+  return isCoordinateText(value) || isUriLocation(value) || isMediaFilename(value);
+}
+
 /**
  * Map a canonical record to a CreatePositionDto. Called for the `position`
  * partition produced by destinationsFor (raw GPS, place visits, GPS-bearing
  * photos). Skips records without coordinates by returning null — those have
  * nothing useful to donate to the location estimator.
  */
-/**
- * Is this string just a coordinate pair — "33.51469, -117.72169"?
- *
- * Deliberately narrow: two signed decimals separated by a comma, and nothing
- * else. "Cafe 40.7, 74.0" keeps its name, because a place whose name happens to
- * contain numbers is still a name.
- */
-function isCoordinateText(value: string): boolean {
-  return /^\s*[-+]?\d{1,3}(?:\.\d+)?\s*,\s*[-+]?\d{1,3}(?:\.\d+)?\s*$/.test(value);
-}
-
 export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null {
   if (!rec.coordinates) {
     return null;
@@ -912,9 +987,9 @@ export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null 
     input.address = address;
   }
 
-  // Prefer a human title (place name, photo filename) over the empty default so
-  // a position row keeps a readable label when viewed in isolation — but a
-  // COORDINATE PAIR RENDERED AS TEXT IS NOT A NAME.
+  // Prefer a human title over the empty default so a position row keeps a
+  // readable label when viewed in isolation — but a COORDINATE PAIR, A URI, OR
+  // A MEDIA FILENAME RENDERED AS TEXT IS NOT A NAME. See isNotAPlaceName.
   //
   // It is the geometry this row already stores, and writing it into `name`
   // makes the row look already-named to everything downstream. The
@@ -931,8 +1006,29 @@ export function toPositionInput(rec: CanonicalRecord): CreatePositionDto | null 
   // title and wrong for a place name, so the filtering belongs here, where the
   // two meanings separate — and it holds for any importer that titles a fix
   // with its own coordinates.
+  //
+  // The same split explains the media-filename arm: `titleFor` gives a
+  // GPS-bearing photo its filename as a display title, which is the right title
+  // and the wrong place name. 2,085 positions on a real appliance read
+  // "IMG_0139.JPG" where the place should be.
+  // The record's OWN staged filename is never its place name. `titleFor` falls
+  // back to `basename(row.filename)` when a record carries no title-worthy
+  // metadata (canonical.ts), so removing a datasource's manufactured pseudo-name
+  // does not leave the slot empty — it lets the file's name slide into it:
+  // google_location's `Records.json` fixes would read 'location.txt', kmlgx
+  // '<file>.kml', nmea '<file>.nmea', and gpx already writes 'track.gpx' on main
+  // for any nameless trkpt. An extension allowlist cannot catch that class,
+  // because the extension is whatever the export happened to use. Comparing
+  // against the filename canonical.ts:1001 already stamped catches all of them.
+  const stagedName = str(m.filename);
+  const stagedBasename = stagedName?.split('/').pop()?.trim();
+
   const name = [rec.title, str(m.Name), str(m.Title)].find(
-    (candidate): candidate is string => candidate != null && candidate !== '' && !isCoordinateText(candidate),
+    (candidate): candidate is string =>
+      candidate != null &&
+      candidate !== '' &&
+      !isNotAPlaceName(candidate) &&
+      !(stagedBasename != null && stagedBasename !== '' && candidate.trim() === stagedBasename),
   );
 
   if (name) {
