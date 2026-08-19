@@ -66,7 +66,7 @@ function makeService(
   const ds = makeDataSource(insertedByType, bounds);
   const deltaWriter = {
     // Params typed so the assertion on mock.calls[0] can destructure them.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     recordMany: jest.fn(async (_deltas: Array<Record<string, unknown>>, _manager?: unknown) => undefined),
   };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };

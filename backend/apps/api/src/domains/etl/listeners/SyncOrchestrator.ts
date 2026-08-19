@@ -352,7 +352,6 @@ export class SyncOrchestrator {
       //Some providers explicitly return null for refreshToken, which was overwriting the
       //existing refreshToken. Strip it out in those cases.
       if (refreshCredentials.refreshToken == null) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { refreshToken, ...stripped } = refreshCredentials;
         newCredentials = stripped;
       } else {

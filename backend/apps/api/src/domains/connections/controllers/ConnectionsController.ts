@@ -111,7 +111,6 @@ export class ConnectionsController {
 
     const connection = await this.connectionService.create(serviceContext, input);
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
@@ -125,7 +124,6 @@ export class ConnectionsController {
     const connections = await this.connectionService.findAll(serviceContext);
 
     return connections.map((connection) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { accessToken, refreshToken, ...returnedConnection } = connection;
 
       return returnedConnection;
@@ -143,7 +141,6 @@ export class ConnectionsController {
       throw new NotFoundException();
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
@@ -164,7 +161,6 @@ export class ConnectionsController {
       throw new NotFoundException();
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { accessToken, refreshToken, ...returnedConnection } = connection;
 
     return returnedConnection;
