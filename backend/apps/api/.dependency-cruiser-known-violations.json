@@ -74,6 +74,24 @@
   },
   {
     "type": "dependency",
+    "from": "src/domains/personalization/index.ts",
+    "to": "src/domains/llm/image-description-preference.module.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/personalization/controllers/PersonalizationController.ts",
+    "to": "src/domains/llm/image-description-preference.module.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/domains/personalization/services/ContextPromptGenerateService.ts",
     "to": "src/domains/llm/services/OllamaService.ts",
     "rule": {

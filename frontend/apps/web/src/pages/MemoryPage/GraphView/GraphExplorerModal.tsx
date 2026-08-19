@@ -262,15 +262,18 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     sectionKeyRef.current = '';
   }, [dotNodes]);
 
-  const handleViewportChange = useCallback(
-    (visibleNodeIds: string[], zoomedIn: boolean) => {
-      if (!dotsEligible || focusEntityId || isSearchMode || !zoomedIn || visibleNodeIds.length === 0) {
+  /**
+   * Relationships among a set of overview nodes (POST /graph/edges). 2D calls
+   * this for the zoomed-in viewport; 3D has no onViewportChange, so it preloads
+   * the busiest dots in the universe so hover can light threads in overview.
+   */
+  const fetchSectionEdges = useCallback(
+    (nodeIds: string[]) => {
+      if (!dotsEligible || focusEntityId || isSearchMode || nodeIds.length === 0) {
         return;
       }
 
-      // The endpoint caps the id list; send the busiest nodes in frame, whose edges are the ones
-      // most worth drawing.
-      const ids = [...visibleNodeIds]
+      const ids = [...nodeIds]
         .sort((a, b) => (dotDegreeById.get(b) ?? 0) - (dotDegreeById.get(a) ?? 0))
         .slice(0, SECTION_EDGE_ID_LIMIT);
 
@@ -284,7 +287,7 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
       const controller = new AbortController();
       sectionAbortRef.current = controller;
 
-      (async () => {
+      void (async () => {
         try {
           const response = await fetch(buildApiUrl('/api/graph/edges'), {
             method: 'POST',
@@ -315,6 +318,25 @@ export function GraphTabPanel({ variant }: GraphTabPanelProps) {
     },
     [authToken, dotDegreeById, dotsEligible, focusEntityId, isSearchMode],
   );
+
+  const handleViewportChange = useCallback(
+    (visibleNodeIds: string[], zoomedIn: boolean) => {
+      if (!zoomedIn) {
+        return;
+      }
+
+      fetchSectionEdges(visibleNodeIds);
+    },
+    [fetchSectionEdges],
+  );
+
+  useEffect(() => {
+    if (!is3D || !dotsEligible || focusEntityId || isSearchMode) {
+      return;
+    }
+
+    fetchSectionEdges(dotNodes.map((node) => node.id));
+  }, [is3D, dotsEligible, focusEntityId, isSearchMode, fetchSectionEdges, dotNodes]);
 
   useEffect(() => () => sectionAbortRef.current?.abort(), []);
 

@@ -342,6 +342,47 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
       expect(screen.queryAllByTestId('force-link')).toHaveLength(0);
     });
 
+    it('preloads edges among busy dots when switching to 3D overview', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo) => {
+        const url = typeof input === 'string' ? input : input.url;
+
+        if (url.includes('/api/graph/edges')) {
+          return {
+            ok: true,
+            json: async () => ({
+              data: { links: [link('rel-dot', 'user-1', 'friend-1')] },
+            }),
+          };
+        }
+
+        return { ok: false, json: async () => ({}) };
+      });
+      const previousFetch = globalThis.fetch;
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      try {
+        renderShell(['/']);
+        fireEvent.click(screen.getByTestId('graph-dimension-toggle'));
+
+        const canvas3d = await screen.findByTestId('graph-canvas-3d');
+        expect(canvas3d).toBeInTheDocument();
+
+        await waitFor(() => {
+          expect(fetchMock).toHaveBeenCalled();
+          expect(screen.getByTestId('graph-canvas-3d')).toHaveAttribute('data-link-count', '1');
+        });
+
+        const edgeCall = fetchMock.mock.calls.find(([input]) =>
+          String(typeof input === 'string' ? input : (input as Request).url).includes('/api/graph/edges'),
+        );
+        expect(edgeCall).toBeDefined();
+        const body = JSON.parse((edgeCall![1] as RequestInit).body as string) as { ids: string[] };
+        expect(body.ids[0]).toBe('user-1');
+      } finally {
+        globalThis.fetch = previousFetch;
+      }
+    });
+
     it('expands a clicked dot straight into focus mode', async () => {
       renderShell(['/']);
 
