@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { usePowerRail } from '../PowerRailContext';
-import { RailEdgeToggle } from '../RailEdgeToggle';
 import { SecondaryNavigation } from '../SecondaryNavigation';
 
 const EDGE_PX = 28;
@@ -12,12 +11,11 @@ const THRESHOLD_PX = 48;
 /**
  * Phone chrome around the glass Power Rail.
  *
- * Closed: a `|→` control at the top-left, below the status bar, and a swipe
- * right from the left edge. Open: the same rail as desktop, glassed, with `←|`
- * on its trailing edge. Everything lives in that rail — no bottom tab bar.
+ * Closed: a chevron in the top bar and a swipe right from the left edge.
+ * Open: the same rail as desktop, glassed. Search lives in the top bar.
  */
 export function MobileNavigation() {
-  const { expanded, toggle, openOverlay, closeOverlay } = usePowerRail();
+  const { expanded, openOverlay, closeOverlay } = usePowerRail();
   const { pathname } = useLocation();
   const start = useRef<{ x: number; y: number; tracking: boolean } | null>(null);
 
@@ -82,12 +80,6 @@ export function MobileNavigation() {
 
   return (
     <>
-      {!expanded && (
-        <div className="ci-mobile-chrome-top fixed left-[max(0.5rem,env(safe-area-inset-left,0px))] z-50">
-          <RailEdgeToggle open={false} onClick={toggle} />
-        </div>
-      )}
-
       {expanded && (
         <button
           type="button"

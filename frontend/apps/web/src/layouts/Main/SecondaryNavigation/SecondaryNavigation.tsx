@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
-import { Camera, ChevronRight, CircleHelp, MonitorCog, Search } from '@ci/shadcn/icons';
+import { Camera, ChevronRight, CircleHelp, MonitorCog } from '@ci/shadcn/icons';
 
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { useCaptureModal } from '@/hooks';
@@ -144,9 +144,6 @@ function OverlayRail({
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
             {destinationsList}
             <div className="flex flex-col gap-1">
-              <NavLink to="/search" label="Search">
-                <Search className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
               <button
                 type="button"
                 onClick={() => {

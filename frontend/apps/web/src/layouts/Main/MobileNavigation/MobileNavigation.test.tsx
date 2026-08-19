@@ -5,6 +5,7 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { PowerRailProvider } from '../PowerRailContext';
 
+import { MobileTopBar } from './MobileTopBar';
 import { MobileNavigation } from './MobileNavigation';
 
 vi.mock('@/common/feature', async () => {
@@ -21,6 +22,24 @@ vi.mock('../SecondaryNavigation/useFeedBadgeCount', () => ({ useFeedBadgeCount: 
 vi.mock('@/components/modals/CaptureModal', () => ({
   CaptureModal: () => <div data-testid="capture-modal" />,
 }));
+vi.mock('@/components/modals/UploadModal', () => ({ UploadModal: () => null }));
+vi.mock('@/components/modals/AddItemModal', () => ({
+  AddEventModal: () => null,
+  AddPersonModal: () => null,
+  AddPlaceModal: () => null,
+}));
+vi.mock('@/components/modals/AddItemModal/AddConceptModal.tsx', () => ({ AddConceptModal: () => null }));
+vi.mock('@/components/modals/InventoryItemModal', () => ({ InventoryItemModal: () => null }));
+
+vi.mock('@/api', async () => {
+  const actual = await vi.importActual<typeof import('@/api')>('@/api');
+
+  return {
+    ...actual,
+    useUploadFile: () => [null, { upload: vi.fn(), reset: vi.fn() }],
+    useTriggerHbpe: () => [null, { trigger: vi.fn() }],
+  };
+});
 
 vi.mock('@/hooks', async () => {
   const actual = await vi.importActual<typeof import('@/hooks')>('@/hooks');
@@ -33,9 +52,19 @@ vi.mock('@/hooks', async () => {
   };
 });
 
+vi.mock('@/components/SearchBox', () => ({
+  GlobalSearchBox: () => <input aria-label="Search memory" />,
+}));
+
+vi.mock('@/components/ConnectionModeIndicator', () => ({
+  ConnectionModeIndicator: () => null,
+  OutboxQueueIndicator: () => null,
+}));
+
 function renderMobileNav(route = '/today') {
   return renderWithProviders(
     <PowerRailProvider variant="overlay">
+      <MobileTopBar />
       <MobileNavigation />
     </PowerRailProvider>,
     { route },
@@ -47,10 +76,12 @@ describe('MobileNavigation', () => {
     vi.clearAllMocks();
   });
 
-  it('starts closed, with the open-edge control and no tab bar', () => {
+  it('starts closed, with chevron, search, and Add in the top row', () => {
     renderMobileNav();
 
     expect(screen.getByRole('button', { name: 'Open menu' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Search memory' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Plan' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
     expect(document.querySelector('img[src*="logo"]')).toBeNull();
@@ -63,8 +94,7 @@ describe('MobileNavigation', () => {
 
     expect(await screen.findByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
     expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
-    expect(screen.getByRole('link', { name: 'Search' })).toHaveAttribute('href', '/search');
-    expect(screen.getByRole('button', { name: 'Close menu' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Close menu' }).length).toBeGreaterThanOrEqual(1);
   });
 
   it('opens on a right swipe from the left edge', async () => {

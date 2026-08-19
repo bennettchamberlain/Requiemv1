@@ -5,11 +5,11 @@ import { Toaster } from '@ci/shadcn';
 import { Outlet } from 'react-router-dom';
 
 import { AnimatedBackground } from '@/components/AnimatedBackground';
-import { ConnectionModeIndicator, OutboxQueueIndicator } from '@/components/ConnectionModeIndicator';
 import { useTheme } from '@/components/ThemePicker';
 import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
+import { MobileTopBar } from './MobileNavigation/MobileTopBar';
 import { PowerRailProvider } from './PowerRailContext';
 import { PowerRailToggle } from './PowerRailToggle';
 import { PrimaryNavigation } from './PrimaryNavigation';
@@ -26,12 +26,9 @@ export function Main() {
   if (isMobile) {
     return (
       <PowerRailProvider variant="overlay">
-        <div className="flex h-lvh flex-col pt-[var(--safe-area-top)]">
+        <div className="flex h-lvh flex-col pt-[calc(var(--safe-area-top)+0.5rem)]">
           <Toaster position="top-right" theme={themeState.mode} />
-          <div className="ci-mobile-chrome-top fixed right-[max(0.5rem,env(safe-area-inset-right,0px))] z-40 flex items-center gap-1.5">
-            <ConnectionModeIndicator />
-            <OutboxQueueIndicator />
-          </div>
+          <MobileTopBar />
           <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
             <Suspense fallback={<LoadingPage />}>
               <Outlet />
