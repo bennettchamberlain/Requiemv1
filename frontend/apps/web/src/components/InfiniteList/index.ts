@@ -1,0 +1,1 @@
+export { InfiniteListFooter } from './InfiniteListFooter';
