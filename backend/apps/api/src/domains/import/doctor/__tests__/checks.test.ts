@@ -71,6 +71,10 @@ describe('doctor check registry', () => {
     expect(findCheck('events-dated-in-future')?.severity).toBe('medium');
     // A phone-shaped name is the honest fallback when the export named nobody.
     expect(findCheck('person-bare-phone-name')?.severity).toBe('medium');
+    // HIGH, unlike its neighbour above: a contact card filed as a Concept is not
+    // a judgement call. Four parsers have shipped this exact omission, the repair
+    // is known, and the predicate reaches zero on a clean corpus — the bar for high.
+    expect(findCheck('contact-cards-typed-as-concept')?.severity).toBe('high');
   });
 
   it('covers every defect class the 2026-08 import audit found', () => {

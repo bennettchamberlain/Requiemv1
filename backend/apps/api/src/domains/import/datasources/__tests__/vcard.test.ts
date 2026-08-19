@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'path';
 
-import { entityTypeFor } from '../../push/entities';
-import { resolveEntityType } from '../../staging/identity';
+import { entityTypeFor, naturalKeyFor } from '../../push/entities';
+import { entityIdentityKey, resolveEntityType } from '../../staging/identity';
 import type { EntityAttribute, ImportParams } from '../timeline';
 import {
   VCardFileImporter,
@@ -577,5 +577,51 @@ describe('a card with no phone or email is still a contact', () => {
     )!;
 
     expect(stagedEntityType(built.entity)).toBe('Person');
+  });
+
+  /**
+   * The other half of declaring the type, and the half a repair migration depends
+   * on: `naturalKeyFor` folds the staged type INTO the natural key, and
+   * `GraphIngestService` derives `linked_id = uuidv5(key)` from it. So fixing the
+   * type MOVES the row's upsert coordinate — which is why the cards written before
+   * the fix are not healed by re-importing, and why
+   * `20260819092314_retype_contact_sourced_concepts_as_people.sql` has to re-key as
+   * well as re-type.
+   *
+   * These two pin both key spaces because that migration hard-codes both strings,
+   * as does `20260819145716_propose_contact_card_person_name_merge_candidates.sql`
+   * when it selects the rows the re-type moved. If either derivation drifted, those
+   * migrations would silently stop matching the importer -- re-keying rows onto a
+   * coordinate nothing computes, and proposing nothing at all.
+   */
+  const stagedNaturalKey = (entity: Parameters<typeof resolveEntityType>[0]): string | null =>
+    naturalKeyFor({
+      type: resolveEntityType(entity),
+      identityKey: entityIdentityKey(entity),
+      name: entity.name,
+    } as never);
+
+  it('keys a handle-less card as contact:<lowercased name>', () => {
+    const built = buildContact(
+      contentLines('BEGIN:VCARD\nFN:Nadia Whitlock\nURL:https://example.invalid/in/nadia\nEND:VCARD\n'),
+      'contacts.vcf',
+    )!;
+
+    // Before the type was declared this same card keyed as
+    // `entity:nadia whitlock` — the `entity:` prefix being `type ?? 'entity'`
+    // with a NULL type, which is the coordinate the migration reads FROM.
+    expect(stagedNaturalKey(built.entity)).toBe('contact:nadia whitlock');
+  });
+
+  it('keys a handle-bearing card on its handle, not its name', () => {
+    const built = buildContact(
+      contentLines('BEGIN:VCARD\nFN:Bob Reachable\nTEL:+15551110000\nEND:VCARD\n'),
+      'contacts.vcf',
+    )!;
+
+    // Why the migration cannot collide: a correctly-typed card has always keyed on
+    // its handle, so re-keying the handle-less rows onto `contact:<name>` lands in
+    // a disjoint key space. Verified as 0 collisions on the live corpus too.
+    expect(stagedNaturalKey(built.entity)).toBe('contact:5551110000');
   });
 });
