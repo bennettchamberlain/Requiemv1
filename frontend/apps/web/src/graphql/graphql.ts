@@ -2952,6 +2952,7 @@ export type QuestionEdge = Edge & {
 
 export type QuestionType = Node & {
   __typename?: 'QuestionType';
+  answerTier?: Maybe<Scalars['String']['output']>;
   category: Scalars['String']['output'];
   createdByLlm?: Maybe<Scalars['Boolean']['output']>;
   id: Scalars['ID']['output'];

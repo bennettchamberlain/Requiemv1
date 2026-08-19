@@ -222,7 +222,7 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Things' })).toHaveAttribute('href', '/memory/things');
     expect(screen.getByRole('link', { name: 'Content' })).toHaveAttribute('href', '/memory/content');
     expect(screen.getByRole('link', { name: 'Tags' })).toHaveAttribute('href', '/memory/tags');
-    expect(screen.getByRole('link', { name: 'Questions' })).toHaveAttribute('href', '/memory/questions');
+    expect(screen.getByRole('link', { name: 'Reflections' })).toHaveAttribute('href', '/memory/reflections');
     expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
   });
 

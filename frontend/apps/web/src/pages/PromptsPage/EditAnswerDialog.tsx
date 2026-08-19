@@ -106,7 +106,7 @@ export function EditAnswerDialog({ open, answer, onClose, onSave }: Props) {
         <form ref={formRef} onSubmit={handleSave} className="flex flex-col gap-4 p-4" key={answer.id}>
           {answer.question && (
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">Question</label>
+              <label className="text-sm font-medium text-muted-foreground mb-1 block">Reflection</label>
               <div className="text-sm text-foreground p-2 bg-muted rounded-md">{answer.question.text}</div>
             </div>
           )}
