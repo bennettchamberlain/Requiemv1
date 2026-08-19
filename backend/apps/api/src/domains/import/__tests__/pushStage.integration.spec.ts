@@ -5,7 +5,12 @@ import {
   NodeEntity,
   RelationshipEntity,
 } from '@ci/domains/graph';
-import { SEARCH_INDEX_BACKFILL_QUEUE, SearchIndexBackfillRequestEvent } from '@ci/domains/maintenance/events';
+import {
+  GRAPH_EDGE_BACKFILL_QUEUE,
+  GraphEdgeBackfillRequestEvent,
+  SEARCH_INDEX_BACKFILL_QUEUE,
+  SearchIndexBackfillRequestEvent,
+} from '@ci/domains/maintenance/events';
 import { GraphDeltaWriter } from '@ci/domains/memory';
 
 import { PushStage } from '../stages/PushStage';
@@ -108,9 +113,14 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     const communications = { createManyDetailed: overrides.communicationCreate ?? record('communications') };
     const positions = { create: record('position') };
 
-    // The post-push kick rides pg-boss to the maintenance domain's sweep,
-    // tested in its own spec; here it only needs to record what was requested.
-    const signals = { send: jest.fn(async () => ['job-1']) };
+    // The post-push kicks ride pg-boss to the maintenance domain's sweeps,
+    // tested in their own specs; here they only need to record what was
+    // requested. There is more than one of them and they fail independently, so
+    // the parameters are spelled out rather than elided — a test that wants to
+    // poison one kick has to be able to tell them apart.
+    const signals = {
+      send: jest.fn(async (_event: string, _payload: unknown, _options: unknown) => ['job-1']),
+    };
 
     const stage = new PushStage(
       harness.dataSource,
@@ -127,6 +137,29 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     );
 
     return { stage, sent, graph, communications, positions, signals };
+  }
+
+  /**
+   * What the stage requested for ONE event, selected by name rather than by
+   * position in the call log.
+   *
+   * The search assertion used to read `mock.calls[0]` behind a
+   * `toHaveBeenCalledTimes(1)`, which quietly encoded "search is the only thing
+   * a push kicks" into a test about what search is *asked for*. That stopped
+   * being true when the graph-edge projection got its own sibling kick, and
+   * this spec then failed for a reason it does not describe — while the
+   * behaviour it names was working. Selecting by event id keeps each kick's
+   * test about that kick and leaves the next sibling additive, without giving
+   * up the assertion that matters: each event is requested exactly ONCE. The
+   * sweeps are idempotent, but a duplicate request is a duplicate full pass.
+   */
+  function kicksFor<TPayload>(
+    signals: { send: jest.Mock },
+    event: string,
+  ): Array<{ payload: TPayload; options: unknown }> {
+    return signals.send.mock.calls
+      .filter((call: unknown[]) => call[0] === event)
+      .map((call: unknown[]) => ({ payload: call[1] as TPayload, options: call[2] }));
   }
 
   function contextFor(runId: string): StageRunContext {
@@ -226,17 +259,16 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
 
     const outcome = await stage.run(contextFor(runId));
 
+    const kicks = kicksFor<{ userId: string; entityTypes: string[]; requestedBy: string }>(
+      signals,
+      SearchIndexBackfillRequestEvent,
+    );
+    expect(kicks).toHaveLength(1);
+    const [{ payload, options }] = kicks;
+    expect(options).toEqual({ queue: SEARCH_INDEX_BACKFILL_QUEUE });
+    const { userId, entityTypes, requestedBy } = payload;
     // One email pushed to communications + three contacts resolved: the kick
     // asks for exactly those types, never the server's full default sweep.
-    expect(signals.send).toHaveBeenCalledTimes(1);
-    const [event, payload, options] = signals.send.mock.calls[0] as unknown[];
-    expect(event).toBe(SearchIndexBackfillRequestEvent);
-    expect(options).toEqual({ queue: SEARCH_INDEX_BACKFILL_QUEUE });
-    const { userId, entityTypes, requestedBy } = payload as {
-      userId: string;
-      entityTypes: string[];
-      requestedBy: string;
-    };
     expect(new Set(entityTypes)).toEqual(new Set(['communication', 'person']));
     expect(requestedBy).toBe(`import-run:${runId}`);
     // The pipeline sweeps the listener starts are user-scoped; the request
@@ -247,15 +279,81 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     });
   });
 
+  it('requests a graph-edge projection for what it wrote, so pushed rows are reachable and not merely findable', async () => {
+    // Searchable and reachable are different properties with different writers,
+    // and for a long time a push kicked only the first: the QA corpus came out
+    // fully searchable and 0.29% connected, so the graph view rendered a dust
+    // cloud. `edgeProjectionSourcesFor` is unit-tested next door; what only a
+    // real push can show is that this stage kicks it at all, scoped to the
+    // destinations the push actually reached.
+    const runId = await stageEmailWithParticipants();
+    const { stage, signals } = makeStage();
+
+    const outcome = await stage.run(contextFor(runId));
+
+    const kicks = kicksFor<{ userId: string; sources: string[]; requestedBy: string }>(
+      signals,
+      GraphEdgeBackfillRequestEvent,
+    );
+    expect(kicks).toHaveLength(1);
+    const [{ payload, options }] = kicks;
+    // Its own queue, not the search one: an event id is a wire contract, and a
+    // `search-index-backfill` carrying graph work lies to whoever greps for it.
+    expect(options).toEqual({ queue: GRAPH_EDGE_BACKFILL_QUEUE });
+    const { userId, sources, requestedBy } = payload;
+    // The email landed in communications and nowhere else, so that is the whole
+    // request — never every source the matrix knows, which would turn a narrow
+    // import into a full-corpus pass.
+    expect(sources).toEqual(['communications']);
+    expect(requestedBy).toBe(`import-run:${runId}`);
+    expect(userId).toBe(harness.userId);
+    expect(outcome.detail.graphEdges).toMatchObject({ requested: ['communications'] });
+  });
+
   it('reports a search-index request failure in detail without failing the push — the rows are already in ci.*', async () => {
     const runId = await stageEmailWithParticipants();
     const { stage, signals } = makeStage();
-    signals.send.mockRejectedValueOnce(new Error('pgboss down'));
+    // Poisoned by EVENT rather than by call order: `mockRejectedValueOnce`
+    // fails whichever kick the stage happens to send first, which makes this
+    // spec depend on that order instead of on the kick it names.
+    signals.send.mockImplementation(async (event: string) => {
+      if (event === SearchIndexBackfillRequestEvent) {
+        throw new Error('pgboss down');
+      }
+
+      return ['job-1'];
+    });
 
     const outcome = await stage.run(contextFor(runId));
 
     expect(outcome.partial).toBe(false);
     expect(outcome.detail.searchIndex).toMatchObject({ error: 'pgboss down' });
+    // And the sibling is not collateral damage. They are two requests on two
+    // queues answering two questions; a queue that dropped the search request
+    // still gets asked for the edges.
+    expect(outcome.detail.graphEdges).toMatchObject({ requested: ['communications'] });
+    expect(outcome.detail.graphEdges).not.toHaveProperty('error');
+  });
+
+  it('reports a graph-edge request failure the same way, with the search kick unaffected', async () => {
+    const runId = await stageEmailWithParticipants();
+    const { stage, signals } = makeStage();
+    signals.send.mockImplementation(async (event: string) => {
+      if (event === GraphEdgeBackfillRequestEvent) {
+        throw new Error('pgboss down');
+      }
+
+      return ['job-1'];
+    });
+
+    const outcome = await stage.run(contextFor(runId));
+
+    // Same fail-soft policy as its sibling, and for the same reason: the rows
+    // are already in `ci.*` and the sweep is idempotent, so a failure to enqueue
+    // is reported in the detail — never retried, and never a failed push.
+    expect(outcome.partial).toBe(false);
+    expect(outcome.detail.graphEdges).toMatchObject({ error: 'pgboss down' });
+    expect(outcome.detail.searchIndex).not.toHaveProperty('error');
   });
 
   it('counts entities in its own total, so Read and Save agree on one import', async () => {
