@@ -25,7 +25,7 @@ export function Main() {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col h-lvh">
+      <div className="flex h-lvh flex-col pt-[var(--safe-area-top)]">
         <Toaster position="top-right" theme={themeState.mode} />
         <div className="fixed top-2 right-2 z-40 flex items-center gap-1.5">
           <ConnectionModeIndicator />

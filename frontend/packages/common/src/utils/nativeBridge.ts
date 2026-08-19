@@ -49,6 +49,7 @@ interface LocalHubPlugin {
 
 interface BrowserPlugin {
   open(options: { url: string }): Promise<void>;
+  close(): Promise<void>;
 }
 
 interface PluginListenerHandle {
@@ -68,6 +69,7 @@ interface AppPlugin {
     eventName: 'appUrlOpen',
     listener: (event: { url?: string }) => void,
   ): Promise<PluginListenerHandle>;
+  getLaunchUrl(): Promise<{ url?: string } | undefined>;
   exitApp(): Promise<void>;
 }
 
@@ -321,6 +323,39 @@ export async function openExternalUrl(url: string): Promise<void> {
 
   if (typeof window !== 'undefined') {
     window.location.assign(url);
+  }
+}
+
+/** Dismiss the in-app browser after an OIDC redirect. No-op on web or if already closed. */
+export async function closeBrowser(): Promise<void> {
+  const browser = plugins()?.Browser;
+
+  if (isNativePlatform() && browser?.close) {
+    try {
+      await browser.close();
+    } catch {
+      // Already dismissed — ignore.
+    }
+  }
+}
+
+/**
+ * URL that launched the app (custom-scheme cold start). Used to finish Portal PKCE
+ * after iOS killed the webview while Safari was on the Portal. Null on web.
+ */
+export async function getLaunchUrl(): Promise<string | null> {
+  const app = plugins()?.App;
+
+  if (!isNativePlatform() || !app?.getLaunchUrl) {
+    return null;
+  }
+
+  try {
+    const result = await app.getLaunchUrl();
+
+    return result?.url ?? null;
+  } catch {
+    return null;
   }
 }
 

@@ -77,6 +77,22 @@ describe('native app config — OIDC deep-link scheme stays in sync', () => {
     // backend redirects to `<scheme>://oidc/callback` — so the host/path must agree too.
     expect(OIDC_NATIVE_CALLBACK_URL).toBe(`${OIDC_NATIVE_SCHEME}://oidc/callback`);
     expect(androidManifest()).toContain('android:host="oidc"');
+    expect(androidManifest()).toContain('android:host="auth"');
+  });
+
+  it('Portal cloud-connect PKCE returns on companion://auth/callback, not oidc/callback', () => {
+    const oidc = read('frontend/apps/web/src/pages/DeviceConnectPage/oidc.ts');
+
+    expect(oidc).toContain("OIDC_CLIENT_ID = 'ci-server'");
+    expect(oidc).toContain("OIDC_REDIRECT_URI = 'companion://auth/callback'");
+    expect(infoPlist()).toContain('<string>companion</string>');
+  });
+
+  it('iOS launch screen letterboxes the splash mark instead of blowing it up', () => {
+    const storyboard = readFileSync(join(IOS, 'ios/App/App/Base.lproj/LaunchScreen.storyboard'), 'utf8');
+
+    expect(storyboard).toContain('scaleAspectFit');
+    expect(storyboard).not.toContain('scaleAspectFill');
   });
 });
 
