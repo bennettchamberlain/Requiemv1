@@ -243,6 +243,32 @@ describe('PositionPlacePromoteStage — the applicability predicate', () => {
     expect(predicate).toMatch(/waypoint/i);
   });
 
+  it('rejects a TITLE too — the fifth upstream, listed in the docblock but never covered', () => {
+    // A message body, a social post and a ride narration all reach this column,
+    // and "non-blank" read every one of them as a venue: on the corpus this
+    // stage had already minted 7 Location entities with names like "Uber ride
+    // from 520 4th St, San Francisco, CA 94107, US to 999 California St, San
+    // Francisco, CA 94108, US (request)", out of 44 title-shaped names in 203
+    // positions.
+    //
+    // Mirrors `isTitleText` (domains/import/push/inputs.ts) arm for arm. The
+    // behavioural coverage lives there; what is asserted here is that the SQL
+    // twin exists at all, because the two drifting is the failure this
+    // predicate was written to prevent.
+
+    // clip()'s truncation mark: the value is a PREFIX of a longer text.
+    expect(predicate).toContain(String.raw`'…$'`);
+    // Sentence punctuation — and NOT `.` or `@`, which real place names use
+    // ('A.G. Bartlett Building', 'On Jane Stanford Way @ Gilbert Biological
+    // Sciences' are both live ci.position.name values).
+    expect(predicate).toContain(String.raw`'[!?]'`);
+    expect(predicate).not.toContain('[.@]');
+    // Longer than any place name observed, in words — MAX_PLACE_NAME_WORDS.
+    expect(predicate).toContain(
+      String.raw`array_length(regexp_split_to_array(btrim(s.name), '\s+'), 1) > 14`,
+    );
+  });
+
   it('sweeps ci.position keyed by id and scoped by user_id', () => {
     expect(PROMOTE_PLACE_POSITION_SOURCE).toEqual(
       expect.objectContaining({
