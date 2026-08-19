@@ -28,6 +28,7 @@ const PLANNING_ACTION_KINDS = new Set<PersonalizationActionKind>([
   'task_mutate',
   'task_complete',
   'event_revise',
+  'schedule_accept',
 ]);
 
 @Injectable()
