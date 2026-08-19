@@ -7,7 +7,9 @@ import { DataSource } from 'typeorm';
 import { LoggerService } from '@ci/common/logging';
 
 import { dataSourcesRecognize, type DataSourceRecognition, type DirEntry } from '../datasources/registry';
-import { StagedWriter, type StagedCounts } from '../staging/StagedWriter';
+import { COLLAPSED_DISTINCT_PATH, StagedWriter, type StagedCounts } from '../staging/StagedWriter';
+import { describeStageFailure, withStageContext } from '../telemetry/stageError';
+import { buildStageSummary, SUMMARY_KEY, type StageUnitInput } from '../telemetry/stageSummary';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
 
 /**
@@ -62,44 +64,75 @@ export class ParseStage implements ImportStageRunner {
         processed: 0,
         total: 0,
         partial: true,
-        detail: { recognized: [], reason: 'no recognized data sources in the uploaded tree' },
+        detail: {
+          recognized: [],
+          reason: 'no recognized data sources in the uploaded tree',
+          [SUMMARY_KEY]: buildStageSummary({
+            stage: 'parse',
+            unitKind: 'data_source',
+            units: [],
+            zeroInputReason: 'no_input',
+          }),
+        },
       };
     }
 
     const perSource: Array<Record<string, unknown>> = [];
     const failures: Array<{ dataSource: string; error: string }> = [];
+    const units: StageUnitInput[] = [];
     let staged = 0;
 
     for (const [index, match] of recognized.entries()) {
       const name = match.data_source.name;
+      const matchedPath = match.matchedPath ?? context.scratchDir;
+      // Relative to the run's scratch tree. The absolute form is an appliance
+      // path with a run uuid in it — noise in an error line, and it names a
+      // directory that is reclaimed the moment the run ends.
+      const where = path.relative(context.scratchDir, matchedPath) || '.';
+      const phase = `parsing ${name} (${index + 1}/${recognized.length})`;
 
-      await context.progress({
-        processed: staged,
-        total: null,
-        phase: `parsing ${name} (${index + 1}/${recognized.length})`,
-      });
+      await context.progress({ processed: staged, total: null, phase });
+
+      // Counts are read off the writer whether the parser returned or threw. A
+      // parser that staged 300,000 rows and then met one unreadable file used
+      // to report NOTHING for this source — the throw skipped the `perSource`
+      // push entirely — so a run's biggest source could vanish from its own
+      // report while its rows sat in `staged_items`. The rows are real either
+      // way; the ledger must say so.
+      const writer = this.writerFor(context, name);
+      let error: string | null = null;
 
       try {
-        const counts = await this.parseOne(context, match, (live) =>
-          context.progress({
-            processed: staged + live,
-            total: null,
-            phase: `parsing ${name} (${index + 1}/${recognized.length})`,
-          }),
+        // Both halves matter here. `withStageContext` is this branch's telemetry
+        // frame; the `report` callback is main's live-progress sampler, which
+        // keeps `processed` moving during the hour a 73k-file source parses.
+        // The writer stays hoisted (see above) so its counts survive a throw.
+        await withStageContext({ stage: 'parse', phase, dataSource: name, file: where }, () =>
+          this.parseOne(context, match, writer, (live) =>
+            context.progress({
+              processed: staged + live,
+              total: null,
+              phase,
+            }),
+          ),
         );
-
-        staged += counts.items + counts.entities;
-        perSource.push({ dataSource: name, ...counts });
       } catch (err) {
-        const error = (err as Error).message;
+        error = describeStageFailure(err, { stage: 'parse', phase });
 
         failures.push({ dataSource: name, error });
         this.logger.warn('Parser failed; continuing with the other sources', {
           runId: context.runId,
           dataSource: name,
+          matchedPath: where,
           error,
         });
       }
+
+      const counts = writer.totals;
+
+      staged += counts.items + counts.entities;
+      perSource.push({ dataSource: name, ...counts, ...(error != null ? { error } : {}) });
+      units.push(parseUnit(name, where, counts, error));
     }
 
     await this.recordDataSources(context.runId, perSource);
@@ -112,8 +145,33 @@ export class ParseStage implements ImportStageRunner {
         recognized: recognized.map((match) => match.data_source.name),
         sources: perSource,
         failures,
+        // Additive. `recognized` and `sources` are read by ImportRunsController
+        // and the web RunPipeline and keep their exact shape; this is the
+        // aggregated, reconciled view — 13 units instead of the Takeout's 56
+        // unordered entries, each saying what it consumed, produced and lost.
+        [SUMMARY_KEY]: buildStageSummary({
+          stage: 'parse',
+          unitKind: 'data_source',
+          units,
+          // Every unit in this list WAS attempted: it is here because
+          // recognition matched it and this loop ran its parser. So a zero is
+          // never "no input" — it is a parser that read its match and found
+          // nothing, which is the case that used to look identical to a parser
+          // that never ran. On the QA corpus that was 9 of 56 entries,
+          // including `google_photos` inside a real Google Takeout.
+          zeroInputReason: 'recognized_not_read',
+        }),
       },
     };
+  }
+
+  /** The writer one source stages through. Held by `run` so a throw cannot lose its counts. */
+  private writerFor(context: StageRunContext, dataSource: string): StagedWriter {
+    return new StagedWriter(this.dataSource.manager, {
+      userId: context.userId,
+      runId: context.runId,
+      dataSource,
+    });
   }
 
   /**
@@ -164,6 +222,7 @@ export class ParseStage implements ImportStageRunner {
   private async parseOne(
     context: StageRunContext,
     match: DataSourceRecognition,
+    writer: StagedWriter,
     report: (staged: number) => Promise<void>,
   ): Promise<StagedCounts> {
     const name = match.data_source.name;
@@ -172,12 +231,6 @@ export class ParseStage implements ImportStageRunner {
     if (importer == null) {
       throw new Error(`${name} recognized the tree but has no file importer`);
     }
-
-    const writer = new StagedWriter(this.dataSource.manager, {
-      userId: context.userId,
-      runId: context.runId,
-      dataSource: name,
-    });
 
     // The path that actually matched, not the scratch root: recognition may have
     // found this source several levels down, and running it against the root
@@ -230,12 +283,67 @@ export class ParseStage implements ImportStageRunner {
       clearInterval(ticker);
     }
 
-    const counts = writer.totals;
+    this.logger.log('Staged a data source', {
+      runId: context.runId,
+      dataSource: name,
+      ...writer.totals,
+    });
 
-    this.logger.log('Staged a data source', { runId: context.runId, dataSource: name, ...counts });
-
-    return counts;
+    // Returned for main's contract, but the caller deliberately reads
+    // `writer.totals` itself AFTER its try/catch instead: a parser that staged
+    // 300,000 rows and then hit one unreadable file never reaches this return,
+    // and those rows are real. The writer is the honest ledger either way.
+    return writer.totals;
   }
+}
+
+/**
+ * One parser's pass, as a reconciled unit.
+ *
+ * The two counters that were NOT in any ledger get one here, which is what
+ * makes `consumed = produced + dropped` hold for a parse:
+ *
+ *  - `itemsDeduped` — the album-replicated photo collapsing. Expected, and
+ *    counted as `duplicate_in_run`. The `collapsed-distinct-path` subset is
+ *    subtracted out because `StagedWriter.recordCollapse` already put those in
+ *    the drop ledger under their own slug, and double-counting them would make
+ *    the unit fail to reconcile.
+ *  - `entitiesGrown` — a repeat sighting of a person or a dish merged into the
+ *    row already staged. Also a record consumed that did not become a new row.
+ *
+ * `consumed` is left to be derived rather than measured: no parser reports how
+ * many records it read, so `produced + dropped` is the honest floor and the
+ * summary says as much by construction. Claiming a measured figure the parsers
+ * do not supply would be worse than deriving one.
+ */
+function parseUnit(
+  dataSource: string,
+  where: string,
+  counts: StagedCounts,
+  error: string | null,
+): StageUnitInput {
+  const collapsedAmbiguous = counts.drops[COLLAPSED_DISTINCT_PATH] ?? 0;
+  const drops: Record<string, number> = { ...counts.drops };
+
+  if (counts.itemsDeduped - collapsedAmbiguous > 0) {
+    drops.duplicate_in_run = counts.itemsDeduped - collapsedAmbiguous;
+  }
+
+  if (counts.entitiesGrown > 0) {
+    drops.entity_merged = counts.entitiesGrown;
+  }
+
+  return {
+    unit: dataSource,
+    produced: counts.items + counts.entities,
+    drops,
+    // Recorded on the unit and not only in a failure line, because a
+    // false-positive recognition is a PATH question — `facebook` matched
+    // 0/0/{} inside both an Instagram export and a vCard/calendar export on
+    // the QA corpus, and the answer is always "look at what it matched".
+    path: where,
+    ...(error != null ? { error } : {}),
+  };
 }
 
 /**

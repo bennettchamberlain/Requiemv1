@@ -56,6 +56,8 @@ import {
   readDatabaseSpace,
   type DatabaseSpace,
 } from '../storage/databaseSpace';
+import { dropReasonFor } from '../telemetry/dropReasons';
+import { buildStageSummary, SUMMARY_KEY, type StageSummary } from '../telemetry/stageSummary';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
 
 /** Mirrors personalization TrustMode without importing that domain (cycle risk). */
@@ -75,6 +77,27 @@ const PUSH_BATCH = 500;
  * dead attempt already settled — see {@link PushStage.settledCounts}.
  */
 const UNRESOLVED_ENTITY_REASON = 'no stable name or handle to resolve by';
+
+/**
+ * `staged_items.push_error` for a row {@link destinationsFor} routed NOWHERE.
+ *
+ * Not an error, and not a duplicate either — the third thing hiding inside
+ * `deduped`. `destinationsFor` legitimately returns `[]` for records this
+ * appliance has decided have no home: an Amazon subscription fee line, whose
+ * `metadata.Subscription` marks it as a service rather than a thing, is the
+ * shipping example. Such a row reaches no destination, so `plan.wrote` stays
+ * false, so `recordOutcomes` files it under `skipped`, so it was counted as
+ * `deduped` and reported as "the record is in ci.*, it just arrived earlier".
+ *
+ * It is not in ci.*. It was never offered to anything. That is a routing
+ * decision worth being able to count — and worth telling apart from a genuine
+ * re-import, which is what makes a run that wrote 0 rows legible.
+ *
+ * Written as `push_error` on a `skipped` row, exactly as
+ * {@link UNRESOLVED_ENTITY_REASON} is for entities, so a RESUMED push can
+ * still separate the two from rows a dead attempt settled.
+ */
+const NO_DESTINATION_REASON = 'no destination for this record';
 
 /**
  * The order a batch's destinations are written in.
@@ -351,8 +374,159 @@ export class PushStage implements ImportStageRunner {
         // nothing the deterministic-edge matrix has a rule for — a
         // browser-activity-only import is the ordinary case.
         ...(graphEdges ? { graphEdges } : {}),
+        // Additive. `pushed`, `deduped`, `failed`, `destinations` and
+        // `entities` above are read by RunPipeline and ImportRunService and
+        // keep their exact meaning; this is the per-data-source, reconciled
+        // account, and the only place `deduped`'s three constituent outcomes
+        // are told apart.
+        [SUMMARY_KEY]: await this.summarize(context.runId),
       },
     };
+  }
+
+  /**
+   * The stage's account of itself, read back out of the ledger it wrote.
+   *
+   * Two grouped queries, not a set of in-process counters, for the same three
+   * reasons MediaStage does it this way — and one more that is specific to the
+   * push:
+   *
+   *  - it covers a RESUME. The counters describe this attempt; a push killed at
+   *    50k of 305k and restarted would otherwise report the tail.
+   *  - it is per DATA SOURCE, which is what the request asked for and what the
+   *    in-process counters cannot give: `counts` is keyed by destination table,
+   *    and one Takeout push writes thirteen sources into six tables. The row
+   *    carries its own `data_source`, so the group is free.
+   *  - it separates the three outcomes that `deduped` merged: already in the
+   *    destination, routed nowhere at all (NO_DESTINATION_REASON), and
+   *    quarantined. That merge is the reason a re-import and a total failure to
+   *    produce anything read identically in the run detail.
+   *  - it is O(sources), not O(rows). This stage's largest single run on the QA
+   *    corpus is 703,956 staged items.
+   *
+   * Entities ride in as their own unit rather than being spread across the data
+   * sources: `staged_entities.data_source` exists, but an entity is not a
+   * record of that source in the sense the rest of this summary counts — and
+   * folding people into a per-source "produced" would make the source numbers
+   * disagree with the parse stage's, which counts them separately too.
+   */
+  private async summarize(runId: string): Promise<StageSummary> {
+    const itemRows = await this.dataSource.query<
+      Array<{ dataSource: string | null; status: string; unrouted: boolean; count: string }>
+    >(
+      `SELECT data_source AS "dataSource",
+              push_status AS status,
+              -- IS NOT DISTINCT FROM rather than plain equality: the ordinary
+              -- skip leaves push_error NULL, and NULL = 'text' is NULL, not
+              -- false. Plain equality therefore split every already-present row
+              -- into its own NULL group and made the flag three-valued.
+              (push_status = 'skipped' AND push_error IS NOT DISTINCT FROM $2::text) AS unrouted,
+              count(*) AS count
+         FROM ci_import.staged_items
+        WHERE run_id = $1::uuid
+        GROUP BY 1, 2, 3`,
+      [runId, NO_DESTINATION_REASON],
+    );
+
+    const entityRows = await this.dataSource.query<
+      Array<{ status: string; reason: string | null; count: string }>
+    >(
+      `SELECT push_status AS status, push_error AS reason, count(*) AS count
+         FROM ci_import.staged_entities
+        WHERE run_id = $1::uuid
+        GROUP BY 1, 2`,
+      [runId],
+    );
+
+    const perSource = new Map<string, { produced: number; drops: Record<string, number> }>();
+
+    for (const row of itemRows) {
+      const unit = row.dataSource ?? '(unknown)';
+      const count = Number(row.count);
+      const entry = perSource.get(unit) ?? { produced: 0, drops: {} };
+
+      if (row.status === 'pushed') {
+        entry.produced += count;
+      } else if (row.status === 'failed') {
+        entry.drops.row_push_failed = (entry.drops.row_push_failed ?? 0) + count;
+      } else if (row.status === 'skipped') {
+        const slug = row.unrouted ? 'no_destination' : 'already_in_destination';
+
+        entry.drops[slug] = (entry.drops[slug] ?? 0) + count;
+      } else {
+        // Still 'pending': the stage stopped early (out of disk) or is being
+        // summarized mid-flight. Counted so `consumed` is the whole run rather
+        // than the part that got looked at, and named so the remainder is not
+        // mistaken for a loss.
+        entry.drops.not_yet_attempted = (entry.drops.not_yet_attempted ?? 0) + count;
+      }
+
+      perSource.set(unit, entry);
+    }
+
+    let entitiesResolved = 0;
+    const entityDrops: Record<string, number> = {};
+
+    for (const row of entityRows) {
+      const count = Number(row.count);
+
+      if (row.status === 'pushed') {
+        entitiesResolved += count;
+      } else if (row.status === 'failed') {
+        entityDrops.row_push_failed = (entityDrops.row_push_failed ?? 0) + count;
+      } else if (row.status === 'skipped') {
+        // The one entity-skip reason that is a GAP rather than bookkeeping:
+        // an entity with neither a handle nor a name will not resolve on a
+        // retry either. Everything else skipped here is `isGraphExcluded`
+        // doing its job — an `email_thread` row per gmail thread — and must
+        // not be reported as a loss.
+        const slug = row.reason === UNRESOLVED_ENTITY_REASON ? 'entity_unresolved' : 'entity_excluded';
+
+        entityDrops[slug] = (entityDrops[slug] ?? 0) + count;
+      } else {
+        entityDrops.not_yet_attempted = (entityDrops.not_yet_attempted ?? 0) + count;
+      }
+    }
+
+    // Up to five quarantined rows, one per data source, with what they are and
+    // why they would not go. Never one per row — see the class comment on
+    // scale. `push_error` is the exception's own message, which is the only
+    // thing that says WHY, so it is kept verbatim and clipped.
+    const samples = await this.dataSource.query<
+      Array<{ dataSource: string | null; id: string; error: string | null }>
+    >(
+      `SELECT DISTINCT ON (data_source) data_source AS "dataSource", id::text AS id,
+              left(push_error, 200) AS error
+         FROM ci_import.staged_items
+        WHERE run_id = $1::uuid AND push_status = 'failed'
+        ORDER BY data_source, id
+        LIMIT 5`,
+      [runId],
+    );
+
+    return buildStageSummary({
+      stage: 'push',
+      unitKind: 'data_source',
+      units: [
+        ...[...perSource.entries()].map(([unit, entry]) => ({
+          unit,
+          produced: entry.produced,
+          drops: entry.drops,
+        })),
+        ...(entitiesResolved > 0 || Object.keys(entityDrops).length > 0
+          ? [{ unit: '(entities)', produced: entitiesResolved, drops: entityDrops }]
+          : []),
+      ],
+      // A push unit exists because rows were staged for it, so it always had
+      // input. A zero here means every one of those rows settled without a
+      // write, and the drop ledger says under which reason.
+      zeroInputReason: 'nothing_pending',
+      samples: samples.map((row) => ({
+        reason: dropReasonFor('row_push_failed'),
+        slug: 'row_push_failed',
+        detail: `${row.dataSource ?? '(unknown)'} ${row.id}: ${row.error ?? '(no message recorded)'}`,
+      })),
+    });
   }
 
   /**
@@ -1021,7 +1195,7 @@ export class PushStage implements ImportStageRunner {
     counts: DestinationCounts,
     isSelf: IsSelf,
     selfEntityId: string | null,
-  ): Promise<{ pushed: number; failed: number; deduped: number }> {
+  ): Promise<{ pushed: number; failed: number; deduped: number; unrouted: number }> {
     const ctx = { userId: context.userId };
 
     // ONE query for the batch's edges, not one per row.
@@ -1150,9 +1324,12 @@ export class PushStage implements ImportStageRunner {
   private async recordOutcomes(
     context: StageRunContext,
     plans: RowPlan[],
-  ): Promise<{ pushed: number; failed: number; deduped: number }> {
+  ): Promise<{ pushed: number; failed: number; deduped: number; unrouted: number }> {
     const pushedByDestinations = new Map<string, string[]>();
     const skipped: string[] = [];
+    // Rows `destinationsFor` routed nowhere. Kept apart from `skipped` from
+    // here down — see NO_DESTINATION_REASON.
+    const unrouted: string[] = [];
     const failures: Array<{ id: string; error: string }> = [];
 
     for (const plan of plans) {
@@ -1178,6 +1355,15 @@ export class PushStage implements ImportStageRunner {
         continue;
       }
 
+      // A row with NO destinations was never offered to anything, so "already
+      // there" is not what happened to it. Both are terminal and neither is a
+      // failure, but only one of them means the record exists.
+      if (plan.destinations.length === 0) {
+        unrouted.push(plan.row.id);
+
+        continue;
+      }
+
       // Marked the same way as a row whose duplicate surfaced as a 23505,
       // because it is the same outcome reached by a quieter route: every
       // destination already held this record.
@@ -1191,7 +1377,8 @@ export class PushStage implements ImportStageRunner {
       pushed += ids.length;
     }
 
-    await this.markSkippedMany(skipped);
+    await this.markSkippedMany(skipped, null);
+    await this.markSkippedMany(unrouted, NO_DESTINATION_REASON);
 
     for (const failure of failures) {
       await this.markFailed(failure.id, failure.error);
@@ -1204,7 +1391,15 @@ export class PushStage implements ImportStageRunner {
       });
     }
 
-    return { pushed, failed: failures.length, deduped: skipped.length };
+    // `deduped` keeps its old meaning for the caller's counters and for
+    // `detail.deduped`, which RunPipeline renders: both outcomes are "the row
+    // settled without a write". The summary is where they are told apart.
+    return {
+      pushed,
+      failed: failures.length,
+      deduped: skipped.length + unrouted.length,
+      unrouted: unrouted.length,
+    };
   }
 
   /**
@@ -1499,17 +1694,25 @@ export class PushStage implements ImportStageRunner {
     );
   }
 
-  /** Considered and deliberately not written, because it is already there. */
-  private async markSkippedMany(stagedItemIds: string[]): Promise<void> {
+  /**
+   * Considered and deliberately not written.
+   *
+   * `reason` is NULL for the ordinary case — the destination already held the
+   * record — and {@link NO_DESTINATION_REASON} for a row nothing was willing to
+   * take. Both are `skipped`, because both are terminal and neither is a
+   * failure; the reason is what lets a resumed push, and the stage summary,
+   * tell "already there" from "never offered to anything".
+   */
+  private async markSkippedMany(stagedItemIds: string[], reason: string | null): Promise<void> {
     if (stagedItemIds.length === 0) {
       return;
     }
 
     await this.dataSource.query(
       `UPDATE ci_import.staged_items
-          SET push_status = 'skipped', pushed_at = now(), push_error = NULL
+          SET push_status = 'skipped', pushed_at = now(), push_error = $2::text
         WHERE id = ANY($1::uuid[])`,
-      [stagedItemIds],
+      [stagedItemIds, reason],
     );
   }
 
