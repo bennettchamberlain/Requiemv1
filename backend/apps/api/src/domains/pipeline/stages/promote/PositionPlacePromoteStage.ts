@@ -167,12 +167,43 @@ promotePlacePositionStageVersion();
  * index on `id` every hop full-scans all of them, which is why a capped sweep
  * never drains. Migration `..._add_position_id_index.sql` lands it.
  */
+/**
+ * The structural rejects, mirrored from `isNotAPlaceName`
+ * (domains/import/push/inputs.ts) into SQL.
+ *
+ * A non-blank `ci.position.name` is NOT the same thing as a venue name. The
+ * column's upstream is at least five-way — a real waypoint name, a
+ * reverse-geocoded POI, a street address, a media filename, and a message/post
+ * text snippet all reach it, because `titleFor` hands a geotagged capture.* its
+ * own filename and a geotagged message its clipped body, and `toPositionInput`
+ * writes whatever it got. Treating "non-blank" as "a place" would mint a
+ * Location entity per camera-roll photo: 2,085 rows / 2,063 distinct filenames
+ * on this corpus alone (measured on the branch of #2087), burying the real
+ * venues in noise no later stage could tell them apart from.
+ *
+ * Kept as a predicate here rather than relying solely on the write-side guard
+ * because this stage also runs over rows written BEFORE that guard existed —
+ * exactly the population the paired backfill is repairing.
+ */
+const NOT_A_PLACE_NAME_SQL = [
+  // A media filename, and the bare-UUID stem an export leaves when it drops the
+  // extension.
+  String.raw`btrim(s.name) ~* '\.(jpe?g|png|heic|heif|gif|mov|mp4|m4v|avi|webp|dng|tiff?)$'`,
+  String.raw`btrim(s.name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}([-_][0-9]+)?$'`,
+  // A URI, bare or labelled.
+  String.raw`btrim(s.name) ~* '^[a-z][a-z0-9+.-]*://\S+$'`,
+  // A coordinate pair, bare or wearing a generic geolocation noun.
+  String.raw`btrim(s.name) ~* '^(location|position|coordinates?|coords?|point|waypoint|fix|gps)?\s*[-:]?\s*[-+]?[0-9]{1,3}(\.[0-9]+)?\s*,\s*[-+]?[0-9]{1,3}(\.[0-9]+)?$'`,
+].join(' OR ');
+
 export const PROMOTE_PLACE_POSITION_SOURCE: StageSource = {
   schema: 'ci',
   table: 'position',
   idColumn: 'id',
   userColumn: 'user_id',
-  predicate: `s.location IS NOT NULL AND s.id IS NOT NULL AND s.name IS NOT NULL AND btrim(s.name) <> ''`,
+  predicate:
+    `s.location IS NOT NULL AND s.id IS NOT NULL AND s.name IS NOT NULL AND btrim(s.name) <> '' ` +
+    `AND NOT (${NOT_A_PLACE_NAME_SQL})`,
 };
 
 // ---------------------------------------------------------------------------

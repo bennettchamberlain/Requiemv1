@@ -221,6 +221,28 @@ describe('PositionPlacePromoteStage — the applicability predicate', () => {
     expect(predicate).toMatch(/btrim\(s\.name\)/i);
   });
 
+  it('rejects the non-place strings that reach ci.position.name', () => {
+    // "Non-blank" is not "a place". The column's upstream is at least five-way:
+    // a real waypoint name, a reverse-geocoded POI, a street address, a media
+    // filename (titleFor hands a geotagged capture.* its own filename) and a
+    // clipped message body all land in it. Promoting on non-blank alone mints a
+    // Location per camera-roll photo — 2,085 rows / 2,063 distinct filenames on
+    // this corpus — and buries the real venues.
+    //
+    // Asserted as SQL text because the predicate is a string handed to the
+    // sweep; an integration test would need the hypertable. The paired
+    // behavioural coverage lives with isNotAPlaceName in inputs.test.ts.
+    expect(predicate).toMatch(/NOT \(/i);
+    // media filename
+    expect(predicate).toMatch(/jpe\?g\|png\|heic/i);
+    // bare UUID stem
+    expect(predicate).toMatch(/\[0-9a-f\]\{8\}-/i);
+    // URI
+    expect(predicate).toContain('[a-z][a-z0-9+.-]*://');
+    // coordinate pair, bare or labelled
+    expect(predicate).toMatch(/waypoint/i);
+  });
+
   it('sweeps ci.position keyed by id and scoped by user_id', () => {
     expect(PROMOTE_PLACE_POSITION_SOURCE).toEqual(
       expect.objectContaining({
