@@ -1,7 +1,7 @@
 import config from '@ci/configuration';
+import { EventListenerRegistry } from '@ci/domains/events';
 
 import { IMPORT_QUEUE, IMPORT_STAGE_QUEUE_BY_KIND } from '../../constants';
-import { EventListenerRegistry } from '@ci/domains/events/event-registration';
 import { ImportStageListener } from '../ImportStageListener';
 
 /**

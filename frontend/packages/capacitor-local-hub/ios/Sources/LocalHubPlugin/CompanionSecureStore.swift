@@ -113,10 +113,7 @@ final class CompanionSecureStore {
             throw CompanionSecureStoreError.corruptValue(key)
         }
 
-        var attributes = baseQuery(for: key)
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
+        let attributes = addAttributes(for: key, data: data)
         let addStatus = SecItemAdd(attributes as CFDictionary, nil)
         if addStatus == errSecSuccess {
             return
@@ -130,11 +127,19 @@ final class CompanionSecureStore {
         // time it is rewritten, rather than keeping its original, backup-eligible class forever.
         let updates: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            kSecAttrAccessible as String: Self.accessible
         ]
         let updateStatus = SecItemUpdate(baseQuery(for: key) as CFDictionary, updates as CFDictionary)
-        guard updateStatus == errSecSuccess else {
-            throw CompanionSecureStoreError.keychainFailed(key, updateStatus)
+        if updateStatus == errSecSuccess {
+            return
+        }
+
+        // Simulator uninstalls leave Keychain items behind with the old attribute set, so Add
+        // reports duplicate and Update matches nothing. Drop the stale row and write ours.
+        try remove(key)
+        let retryStatus = SecItemAdd(attributes as CFDictionary, nil)
+        guard retryStatus == errSecSuccess else {
+            throw CompanionSecureStoreError.keychainFailed(key, retryStatus)
         }
     }
 
@@ -154,7 +159,9 @@ final class CompanionSecureStore {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service
         ]
+        #if !targetEnvironment(simulator)
         query[kSecUseDataProtectionKeychain as String] = true
+        #endif
 
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
@@ -162,16 +169,37 @@ final class CompanionSecureStore {
         }
     }
 
+    /// Device builds seal the item to this hardware and exclude it from backups.
+    /// The simulator has no device UID for `ThisDeviceOnly`, so SecItemAdd fails and
+    /// login cannot persist `ci.apiKey`.
+    private static var accessible: CFString {
+        #if targetEnvironment(simulator)
+        kSecAttrAccessibleAfterFirstUnlock
+        #else
+        kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        #endif
+    }
+
+    private func addAttributes(for key: String, data: Data) -> [String: Any] {
+        var attributes = baseQuery(for: key)
+        attributes[kSecValueData as String] = data
+        attributes[kSecAttrAccessible as String] = Self.accessible
+        return attributes
+    }
+
     private func baseQuery(for key: String) -> [String: Any] {
-        [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            // Scopes the lookup to the modern data-protection keychain, matching how the item
-            // was written. Omitting it here while setting it on write is a classic way to make
-            // reads mysteriously miss.
-            kSecUseDataProtectionKeychain as String: true
+            kSecAttrAccount as String: key
         ]
+        #if !targetEnvironment(simulator)
+        // Scopes the lookup to the modern data-protection keychain, matching how the item
+        // was written. Omitting it here while setting it on write is a classic way to make
+        // reads mysteriously miss. The simulator's keychain rejects this flag.
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
+        return query
     }
 }
 

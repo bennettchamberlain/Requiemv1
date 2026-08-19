@@ -48,10 +48,7 @@ export class TaskResolver {
   }
 
   @ResolveField(() => [TaskType])
-  async children(
-    @Context() context: RequestContext,
-    @Parent() parent: TaskType,
-  ): Promise<TaskType[]> {
+  async children(@Context() context: RequestContext, @Parent() parent: TaskType): Promise<TaskType[]> {
     if (!(await this.isPlanningEnabled())) {
       return [];
     }

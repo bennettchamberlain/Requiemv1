@@ -31,7 +31,10 @@ function streamFrom(
   return generator;
 }
 
-function buildService(chatStream: jest.Mock, messageService = { findByThreadId: jest.fn(), update: jest.fn() }) {
+function buildService(
+  chatStream: jest.Mock,
+  messageService = { findByThreadId: jest.fn(), update: jest.fn() },
+) {
   const broker = new ChatGenerationBroker();
   const threadService = {
     findById: jest.fn(async () => ({ id: 'thread-1', name: null, generationStatus: 'queued' })),
@@ -138,7 +141,9 @@ describe('ChatTurnService.execute providers', () => {
   });
 
   it('still writes streamed thinking+text when the provider yields no accumulated messages', async () => {
-    const chatStream = jest.fn(async () => streamFrom([{ message: { thinking: 'a' } }, { message: { content: 'b' } }], []));
+    const chatStream = jest.fn(async () =>
+      streamFrom([{ message: { thinking: 'a' } }, { message: { content: 'b' } }], []),
+    );
     const { service, messageService } = buildService(chatStream);
 
     await service.execute(payload);

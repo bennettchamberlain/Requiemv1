@@ -331,10 +331,9 @@ export class JobMonitorService {
         // Never fired since boot.
       }
 
-      const times = [
-        durable?.getTime(),
-        memoryLastRunAt ? Date.parse(memoryLastRunAt) : Number.NaN,
-      ].filter((value): value is number => Number.isFinite(value));
+      const times = [durable?.getTime(), memoryLastRunAt ? Date.parse(memoryLastRunAt) : Number.NaN].filter(
+        (value): value is number => Number.isFinite(value),
+      );
 
       schedules.push({
         name,

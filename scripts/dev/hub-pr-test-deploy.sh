@@ -31,11 +31,14 @@ HUB_APP_DIR="/data/apps/${APP_STORE_ID}/${APP_NAME}"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--skip-build] [--skip-migrate]
+Usage: $(basename "$0") [--frontend] [--skip-build] [--skip-migrate]
 
   Builds (unless --skip-build) and swaps ci-memory api + gateway + hbpe-service
   + summary-service to local images tagged ${PR_TAG}. Passes the same compose
   env files Hub uses: app.env plus optional user-config/app.env.
+
+  --frontend        Rebuild only the web UI + gateway image, recreate gateway,
+                    skip migrate. Use this for chrome/CSS/JS-only swaps.
 
 Environment:
   PR_TAG            Image tag for local test images (default: pr-onboarding-test)
@@ -49,8 +52,10 @@ EOF
 
 SKIP_BUILD=0
 SKIP_MIGRATE=0
+FRONTEND_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --frontend) FRONTEND_ONLY=1; SKIP_MIGRATE=1; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --skip-migrate) SKIP_MIGRATE=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -63,16 +68,29 @@ if [[ ! -f "$APP_ENV_HOST" ]]; then
   exit 1
 fi
 
+RECREATE="api gateway hbpe-service summary-service"
+if [[ "$FRONTEND_ONLY" -eq 1 ]]; then
+  RECREATE="gateway"
+fi
+
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
-  echo "==> Building production images (GPU=${GPU}) in ${REPO_ROOT}..."
-  (cd "$REPO_ROOT" && make build ENV=production GPU="$GPU")
+  if [[ "$FRONTEND_ONLY" -eq 1 ]]; then
+    echo "==> Building web frontend + gateway image in ${REPO_ROOT}..."
+    (cd "$REPO_ROOT/frontend/apps/web" && yarn build)
+    (cd "$REPO_ROOT" && docker build -f infrastructure/gateway/Dockerfile -t ci/gateway:latest .)
+  else
+    echo "==> Building production images (GPU=${GPU}) in ${REPO_ROOT}..."
+    (cd "$REPO_ROOT" && make build ENV=production GPU="$GPU")
+  fi
 fi
 
 echo "==> Tagging local images as ${PR_TAG}..."
-docker tag ci/api:latest "$API_IMAGE"
+if [[ "$FRONTEND_ONLY" -eq 0 ]]; then
+  docker tag ci/api:latest "$API_IMAGE"
+  docker tag ci/hbpe-service:latest "$HBPE_IMAGE"
+  docker tag ci/summary-service:latest "$SUMMARY_IMAGE"
+fi
 docker tag ci/gateway:latest "$GATEWAY_IMAGE"
-docker tag ci/hbpe-service:latest "$HBPE_IMAGE"
-docker tag ci/summary-service:latest "$SUMMARY_IMAGE"
 
 # env_file must be declared on the services for the user-config overlay
 # (NODE_OPTIONS, LLM endpoints, …) to reach the container environment —
@@ -128,8 +146,8 @@ if [[ "$SKIP_MIGRATE" -eq 0 ]]; then
   run_compose "run --rm migrate-database"
 fi
 
-echo "==> Recreating api + gateway + hbpe-service + summary-service with PR images..."
-run_compose "up -d --force-recreate --no-deps api gateway hbpe-service summary-service"
+echo "==> Recreating ${RECREATE} with PR images..."
+run_compose "up -d --force-recreate --no-deps ${RECREATE}"
 
 # Gateway gets a new Docker IP on recreate; Hub's Traefik file provider still points at the old one → 502.
 echo "==> Refreshing Traefik upstream for ci-memory gateway..."

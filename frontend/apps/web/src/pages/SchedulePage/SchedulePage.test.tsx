@@ -312,6 +312,55 @@ describe('SchedulePage — week paging', () => {
     expect(heading.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  describe('phone layout', () => {
+    function setViewport(mobile: boolean) {
+      window.matchMedia = ((query: string) => ({
+        matches: query.includes('max-width') ? mobile : query.includes('landscape') ? !mobile : false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })) as unknown as typeof window.matchMedia;
+    }
+
+    afterEach(() => setViewport(false));
+
+    it('replaces the story strip with now and next, and keeps a tappable week', async () => {
+      setViewport(true);
+
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(startOfToday);
+      endOfToday.setHours(23, 59, 0, 0);
+
+      setSchedule({
+        events: [
+          event({
+            title: 'Afternoon review',
+            isAllDay: true,
+            startTime: startOfToday.toISOString(),
+            endTime: endOfToday.toISOString(),
+          }),
+        ],
+      });
+
+      renderWithProviders(<SchedulePage />);
+
+      await waitFor(() => expect(screen.queryByText('today-story')).not.toBeInTheDocument());
+      expect(screen.getByText('Afternoon review')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Show week' })).toBeInTheDocument();
+      expect(screen.getAllByRole('tab')).toHaveLength(7);
+      expect(screen.getByText('stub-drop')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show week' }));
+      expect(screen.getByRole('button', { name: 'Hide week' })).toBeInTheDocument();
+      expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    });
+  });
+
   /**
    * Embedded in Today, this page contributes content and no chrome.
    *

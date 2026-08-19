@@ -333,9 +333,9 @@ export function ModelSection() {
                   Describe images
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Run vision passes on uploads (titles and captions). Keep this off unless a loaded
-                  model actually understands images. Turning it on requeues undescribed photos that
-                  were skipped or failed earlier.
+                  Run vision passes on uploads (titles and captions). Keep this off unless a loaded model
+                  actually understands images. Turning it on requeues undescribed photos that were skipped or
+                  failed earlier.
                 </p>
               </div>
 
@@ -347,7 +347,9 @@ export function ModelSection() {
               />
             </div>
 
-            {imageDescriptionError ? <p className="text-sm text-destructive">{imageDescriptionError}</p> : null}
+            {imageDescriptionError ? (
+              <p className="text-sm text-destructive">{imageDescriptionError}</p>
+            ) : null}
           </div>
         </Card.Content>
       </Card>

@@ -120,7 +120,7 @@ final class SpeechRecognitionController: NSObject {
     ///
     /// - Important: requesting speech authorization without `NSSpeechRecognitionUsageDescription`
     ///   in the app's `Info.plist` crashes the app, per Apple. The key is added in
-    ///   `frontend/apps/mobile/ios/App/App/Info.plist`.
+    ///   `frontend/apps/ios/ios/App/App/Info.plist`.
     static func requestAuthorizations(microphone: Bool, recognition: Bool, completion: @escaping () -> Void) {
         let group = DispatchGroup()
 

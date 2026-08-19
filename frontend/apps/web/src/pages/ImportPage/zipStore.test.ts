@@ -185,7 +185,11 @@ describe('zipFilesStore', () => {
     // Every entry's own CRC-32 is independently correct, not just copied
     // from a neighbour or left at zero.
     for (const [i, local] of locals.entries()) {
-      const expectedContent = ['{"mapping":{"a":1}}', 'not-really-a-png-but-bytes-all-the-same', 'video-bytes'][i];
+      const expectedContent = [
+        '{"mapping":{"a":1}}',
+        'not-really-a-png-but-bytes-all-the-same',
+        'video-bytes',
+      ][i];
 
       expect(new TextDecoder().decode(local.data)).toBe(expectedContent);
       expect(local.crc32).toBe(crc32(new TextEncoder().encode(expectedContent)));

@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
-import { Button, Card, Skeleton } from '@ci/shadcn';
+import { Button, Card, Skeleton, cn } from '@ci/shadcn';
 import {
   Area,
   AreaChart,
@@ -16,7 +16,7 @@ import {
 
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 
-import { COMPACT_CARD } from './layout';
+import { FoldBody, FoldCard, FoldTrigger, cardPad, usePhone } from './Fold';
 import { HISTORY_WINDOWS, type JobHistoryPoint, type JobHistoryResponse } from './useJobHistory';
 
 type Props = {
@@ -45,153 +45,211 @@ type Props = {
  *    image-description averages ~33s while search-index averages ~0.5s, and one
  *    aggregate number across both is meaningless.
  */
+const CHARTS = [
+  { key: 'backlog', title: 'Backlog' },
+  { key: 'throughput', title: 'Throughput' },
+  { key: 'duration', title: 'Duration' },
+] as const;
+
+type ChartKey = (typeof CHARTS)[number]['key'];
+
 export function JobHistoryCharts({ data, loading, error, windowHours, onWindowChange, queue }: Props) {
+  const phone = usePhone();
+  const [activeChart, setActiveChart] = useState<ChartKey>('backlog');
   const points = useMemo(() => (data?.points ?? []).map(toChartPoint), [data?.points]);
 
   const hasThroughput = points.some((point) => point.completed > 0 || point.failed > 0);
   const hasBacklog = points.some((point) => point.backlog > 0);
   const hasLatency = points.some((point) => point.avgSeconds != null || point.p95Seconds != null);
 
+  const windowButtons = (
+    <div className="flex flex-wrap gap-1" role="group" aria-label="History window">
+      {HISTORY_WINDOWS.map((option) => (
+        <Button
+          key={option.hours}
+          size="sm"
+          variant={option.hours === windowHours ? 'secondary' : 'ghost'}
+          aria-pressed={option.hours === windowHours}
+          onClick={() => onWindowChange(option.hours)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+
+  const backlogChart = (
+    <ChartPanel
+      title="Backlog"
+      hint="Jobs waiting, running or retrying. Rising means work is arriving faster than it clears."
+      empty={!hasBacklog}
+      emptyMessage="No backlog recorded in this window."
+    >
+      <AreaChart data={points} margin={CHART_MARGIN}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis dataKey="label" {...AXIS_PROPS} />
+        <YAxis {...AXIS_PROPS} width={44} allowDecimals={false} />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Legend {...LEGEND_PROPS} />
+        <Area
+          type="monotone"
+          dataKey="pending"
+          name="Waiting"
+          stackId="backlog"
+          stroke="var(--chart-1)"
+          fill="var(--chart-1)"
+          fillOpacity={0.25}
+        />
+        <Area
+          type="monotone"
+          dataKey="active"
+          name="Running"
+          stackId="backlog"
+          stroke="var(--chart-2)"
+          fill="var(--chart-2)"
+          fillOpacity={0.35}
+        />
+        <Area
+          type="monotone"
+          dataKey="retry"
+          name="Retrying"
+          stackId="backlog"
+          stroke="var(--chart-4)"
+          fill="var(--chart-4)"
+          fillOpacity={0.4}
+        />
+      </AreaChart>
+    </ChartPanel>
+  );
+
+  const throughputChart = (
+    <ChartPanel
+      title="Throughput"
+      hint="Jobs that settled in each bucket. The red band is the share that failed."
+      empty={!hasThroughput}
+      emptyMessage="Nothing settled in this window."
+    >
+      <BarChart data={points} margin={CHART_MARGIN}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis dataKey="label" {...AXIS_PROPS} />
+        {/* Throughput is the one axis that reaches six figures during a
+            bulk import — a 44px gutter silently clipped "100000" to
+            "00000". Compact notation keeps it narrow AND readable. */}
+        <YAxis {...AXIS_PROPS} width={52} allowDecimals={false} tickFormatter={formatCompact} />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Legend {...LEGEND_PROPS} />
+        <Bar dataKey="completed" name="Completed" stackId="flow" fill="var(--chart-2)" />
+        <Bar dataKey="failed" name="Failed" stackId="flow" fill="var(--destructive)" />
+      </BarChart>
+    </ChartPanel>
+  );
+
+  const durationChart = (
+    <ChartPanel
+      title="Duration"
+      hint="How long a job took. p95 alongside the mean, because the mean hides the tail."
+      empty={!hasLatency}
+      emptyMessage="No timing recorded in this window."
+    >
+      <LineChart data={points} margin={CHART_MARGIN}>
+        <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
+        <XAxis dataKey="label" {...AXIS_PROPS} />
+        <YAxis {...AXIS_PROPS} width={52} unit="s" />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Legend {...LEGEND_PROPS} />
+        <Line
+          type="monotone"
+          dataKey="avgSeconds"
+          name="Mean"
+          stroke="var(--chart-1)"
+          strokeWidth={2}
+          dot={false}
+          connectNulls
+        />
+        <Line
+          type="monotone"
+          dataKey="p95Seconds"
+          name="p95"
+          stroke="var(--chart-5)"
+          strokeWidth={2}
+          strokeDasharray="4 3"
+          dot={false}
+          connectNulls
+        />
+      </LineChart>
+    </ChartPanel>
+  );
+
+  const charts: Record<ChartKey, ReactNode> = {
+    backlog: backlogChart,
+    throughput: throughputChart,
+    duration: durationChart,
+  };
+
   return (
-    <Card className={COMPACT_CARD}>
-      <Card.Header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
+    <FoldCard fold>
+      <Card.Header
+        className={cn(
+          'flex gap-2',
+          phone ? 'flex-col' : 'flex-col md:flex-row md:items-center md:justify-between',
+          cardPad(phone),
+        )}
+      >
+        <FoldTrigger>
           <Card.Title className="text-base">History</Card.Title>
           <Card.Description>
             {queue ? `${queue} — ` : 'All queues — '}
             {data ? `${data.bucketMinutes}-minute buckets` : 'loading'}
           </Card.Description>
-        </div>
-        <div className="flex flex-wrap gap-1" role="group" aria-label="History window">
-          {HISTORY_WINDOWS.map((option) => (
-            <Button
-              key={option.hours}
-              size="sm"
-              variant={option.hours === windowHours ? 'secondary' : 'ghost'}
-              aria-pressed={option.hours === windowHours}
-              onClick={() => onWindowChange(option.hours)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
+        </FoldTrigger>
+        {phone ? null : windowButtons}
       </Card.Header>
 
-      <Card.Content className="space-y-4">
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            Could not load history: {error}
-          </p>
-        ) : null}
+      <FoldBody>
+        <Card.Content className={cn('space-y-4', cardPad(phone))}>
+          {phone ? windowButtons : null}
 
-        {loading && !points.length ? (
-          <Skeleton className="h-[170px] w-full" />
-        ) : !points.length ? (
-          <p className="text-sm text-muted-foreground">
-            No history recorded yet. Samples are written every 5 minutes — the first points appear once the
-            collector has run.
-          </p>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-3">
-            <ChartPanel
-              title="Backlog"
-              hint="Jobs waiting, running or retrying. Rising means work is arriving faster than it clears."
-              empty={!hasBacklog}
-              emptyMessage="No backlog recorded in this window."
-            >
-              <AreaChart data={points} margin={CHART_MARGIN}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" {...AXIS_PROPS} />
-                <YAxis {...AXIS_PROPS} width={44} allowDecimals={false} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Legend {...LEGEND_PROPS} />
-                <Area
-                  type="monotone"
-                  dataKey="pending"
-                  name="Waiting"
-                  stackId="backlog"
-                  stroke="var(--chart-1)"
-                  fill="var(--chart-1)"
-                  fillOpacity={0.25}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="active"
-                  name="Running"
-                  stackId="backlog"
-                  stroke="var(--chart-2)"
-                  fill="var(--chart-2)"
-                  fillOpacity={0.35}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="retry"
-                  name="Retrying"
-                  stackId="backlog"
-                  stroke="var(--chart-4)"
-                  fill="var(--chart-4)"
-                  fillOpacity={0.4}
-                />
-              </AreaChart>
-            </ChartPanel>
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              Could not load history: {error}
+            </p>
+          ) : null}
 
-            <ChartPanel
-              title="Throughput"
-              hint="Jobs that settled in each bucket. The red band is the share that failed."
-              empty={!hasThroughput}
-              emptyMessage="Nothing settled in this window."
-            >
-              <BarChart data={points} margin={CHART_MARGIN}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" {...AXIS_PROPS} />
-                {/* Throughput is the one axis that reaches six figures during a
-                    bulk import — a 44px gutter silently clipped "100000" to
-                    "00000". Compact notation keeps it narrow AND readable. */}
-                <YAxis {...AXIS_PROPS} width={52} allowDecimals={false} tickFormatter={formatCompact} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Legend {...LEGEND_PROPS} />
-                <Bar dataKey="completed" name="Completed" stackId="flow" fill="var(--chart-2)" />
-                <Bar dataKey="failed" name="Failed" stackId="flow" fill="var(--destructive)" />
-              </BarChart>
-            </ChartPanel>
-
-            <ChartPanel
-              title="Duration"
-              hint="How long a job took. p95 alongside the mean, because the mean hides the tail."
-              empty={!hasLatency}
-              emptyMessage="No timing recorded in this window."
-            >
-              <LineChart data={points} margin={CHART_MARGIN}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" {...AXIS_PROPS} />
-                <YAxis {...AXIS_PROPS} width={52} unit="s" />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Legend {...LEGEND_PROPS} />
-                <Line
-                  type="monotone"
-                  dataKey="avgSeconds"
-                  name="Mean"
-                  stroke="var(--chart-1)"
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="p95Seconds"
-                  name="p95"
-                  stroke="var(--chart-5)"
-                  strokeWidth={2}
-                  strokeDasharray="4 3"
-                  dot={false}
-                  connectNulls
-                />
-              </LineChart>
-            </ChartPanel>
-          </div>
-        )}
-      </Card.Content>
-    </Card>
+          {loading && !points.length ? (
+            <Skeleton className="h-[170px] w-full" />
+          ) : !points.length ? (
+            <p className="text-sm text-muted-foreground">
+              No history recorded yet. Samples are written every 5 minutes — the first points appear once the
+              collector has run.
+            </p>
+          ) : phone ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-1" role="tablist" aria-label="History chart">
+                {CHARTS.map((chart) => (
+                  <Button
+                    key={chart.key}
+                    size="sm"
+                    role="tab"
+                    aria-selected={chart.key === activeChart}
+                    variant={chart.key === activeChart ? 'secondary' : 'ghost'}
+                    onClick={() => setActiveChart(chart.key)}
+                  >
+                    {chart.title}
+                  </Button>
+                ))}
+              </div>
+              {charts[activeChart]}
+            </div>
+          ) : (
+            <div className="grid gap-4 xl:grid-cols-3">
+              {backlogChart}
+              {throughputChart}
+              {durationChart}
+            </div>
+          )}
+        </Card.Content>
+      </FoldBody>
+    </FoldCard>
   );
 }
 

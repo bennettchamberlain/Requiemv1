@@ -5,6 +5,8 @@ import {
   hasNotificationPermission,
   hideSplashScreen,
   openExternalUrl,
+  closeBrowser,
+  getLaunchUrl as readLaunchUrl,
   requestNotificationPermission,
   scheduleLocalNotification,
   secureStorageGet,
@@ -68,6 +70,8 @@ describe('nativeBridge — native uses the Capacitor plugins', () => {
   function fakeNativeWindow() {
     const secureStore = new Map<string, string>();
     const browserOpen = vi.fn(async () => {});
+    const browserClose = vi.fn(async () => {});
+    const getLaunchUrl = vi.fn(async () => ({ url: 'companion://auth/callback?code=x' }));
 
     const win = {
       Capacitor: {
@@ -92,12 +96,13 @@ describe('nativeBridge — native uses the Capacitor plugins', () => {
               return { value: true };
             }),
           },
-          Browser: { open: browserOpen },
+          Browser: { open: browserOpen, close: browserClose },
+          App: { getLaunchUrl },
         },
       },
     };
 
-    return { win, secureStore, browserOpen };
+    return { win, secureStore, browserOpen, browserClose, getLaunchUrl };
   }
 
   it('falls back to the legacy SecureStoragePlugin on a shell without LocalHub', async () => {
@@ -122,6 +127,32 @@ describe('nativeBridge — native uses the Capacitor plugins', () => {
     await openExternalUrl('https://idp.example.com/auth');
 
     expect(browserOpen).toHaveBeenCalledWith({ url: 'https://idp.example.com/auth' });
+  });
+
+  it('openExternalUrl prefers LocalHub.openUrl (system Safari) over Capacitor Browser', async () => {
+    const hubOpenUrl = vi.fn(async () => {});
+    const { win, browserOpen } = fakeNativeWindow();
+    (win as { Capacitor: { Plugins: Record<string, unknown> } }).Capacitor.Plugins.LocalHub = {
+      openUrl: hubOpenUrl,
+    };
+    setWindow(win);
+
+    await openExternalUrl('https://hub.companionintelligence.com/api/auth/oauth2/authorize');
+
+    expect(hubOpenUrl).toHaveBeenCalledWith({
+      url: 'https://hub.companionintelligence.com/api/auth/oauth2/authorize',
+    });
+    expect(browserOpen).not.toHaveBeenCalled();
+  });
+
+  it('closeBrowser and getLaunchUrl call the plugins', async () => {
+    const { win, browserClose, getLaunchUrl } = fakeNativeWindow();
+    setWindow(win);
+
+    await closeBrowser();
+    expect(browserClose).toHaveBeenCalledTimes(1);
+    expect(await readLaunchUrl()).toBe('companion://auth/callback?code=x');
+    expect(getLaunchUrl).toHaveBeenCalledTimes(1);
   });
 });
 

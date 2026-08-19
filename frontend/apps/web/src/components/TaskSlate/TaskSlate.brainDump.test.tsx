@@ -230,7 +230,10 @@ describe('Personalize — "How you\'d do it"', () => {
     fireEvent.click(await screen.findByRole('button', { name: /add steps to possibilities/i }));
 
     await screen.findByText('Added 2 steps.');
-    expect(mockedApply).toHaveBeenCalledWith('test-token', expect.objectContaining({ personaBrief: 'Call before 9am.' }));
+    expect(mockedApply).toHaveBeenCalledWith(
+      'test-token',
+      expect.objectContaining({ personaBrief: 'Call before 9am.' }),
+    );
   });
 
   it('says there was nothing to add when apply reports zero', async () => {

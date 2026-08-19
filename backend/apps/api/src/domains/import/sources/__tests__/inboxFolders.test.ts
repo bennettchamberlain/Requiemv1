@@ -27,17 +27,15 @@ describe('serviceInboxFolders', () => {
   it('creates no folder for a source whose importer is not ready', () => {
     const topSegment = (inboxPath: string) => inboxPath.split('/')[0];
     const readyTops = new Set(
-      WIZARD_SOURCES.filter((source) => source.importerReady && source.inboxPath != null).map(
-        (source) => topSegment(source.inboxPath as string),
+      WIZARD_SOURCES.filter((source) => source.importerReady && source.inboxPath != null).map((source) =>
+        topSegment(source.inboxPath as string),
       ),
     );
     const offered = new Set(serviceInboxFolders());
 
     // Only folders no ready source shares — 'browser' style sharing means a
     // stub sibling cannot suppress a ready importer's folder.
-    const stubOnly = WIZARD_SOURCES.filter(
-      (source) => source.inboxPath != null && !source.importerReady,
-    )
+    const stubOnly = WIZARD_SOURCES.filter((source) => source.inboxPath != null && !source.importerReady)
       .map((source) => topSegment(source.inboxPath as string))
       .filter((top) => !readyTops.has(top));
 
@@ -77,9 +75,7 @@ describe('declaredSourcesForInboxUnit', () => {
     expect(declaredSourcesForInboxUnit('google-takeout')).toEqual(
       expect.arrayContaining(['gmail', 'google_photos', 'google_chrome']),
     );
-    expect(declaredSourcesForInboxUnit('microsoft')).toEqual(
-      expect.arrayContaining(['microsoft_account']),
-    );
+    expect(declaredSourcesForInboxUnit('microsoft')).toEqual(expect.arrayContaining(['microsoft_account']));
     expect(declaredSourcesForInboxUnit('apple')).not.toBeNull();
   });
 

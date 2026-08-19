@@ -101,6 +101,7 @@ describe('useNativeShell — native mount', () => {
 
     expect(h.hideSplashScreen).toHaveBeenCalledTimes(1);
     expect(h.syncNativeIntentConfig).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.classList.contains('ci-native')).toBe(true);
   });
 
   it('re-syncs the App Intent config every time the app returns to the foreground', async () => {
@@ -130,7 +131,7 @@ describe('useNativeShell — status bar sync', () => {
 
     renderHook(() => useNativeShell());
 
-    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('DARK', '#ffffff'));
+    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('LIGHT', '#ffffff'));
   });
 
   it('applies light glyphs over a dark bar for the dark theme, converting the real rgb() background', async () => {
@@ -141,7 +142,7 @@ describe('useNativeShell — status bar sync', () => {
 
     renderHook(() => useNativeShell());
 
-    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('LIGHT', '#0b1f28'));
+    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('DARK', '#0b1f28'));
   });
 
   it('falls back to the brand color when the background does not resolve to an rgb() (e.g. an unresolved oklch())', async () => {
@@ -153,7 +154,7 @@ describe('useNativeShell — status bar sync', () => {
 
     renderHook(() => useNativeShell());
 
-    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('DARK', '#ffffff'));
+    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('LIGHT', '#ffffff'));
   });
 
   it('falls back to the brand color rather than crashing when getComputedStyle itself throws', async () => {
@@ -166,7 +167,7 @@ describe('useNativeShell — status bar sync', () => {
 
     renderHook(() => useNativeShell());
 
-    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('LIGHT', '#0b1f28'));
+    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('DARK', '#0b1f28'));
   });
 
   it('re-applies the status bar style when the theme class changes after mount', async () => {
@@ -178,7 +179,7 @@ describe('useNativeShell — status bar sync', () => {
 
     renderHook(() => useNativeShell());
 
-    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('DARK', '#ffffff'));
+    await waitFor(() => expect(h.setStatusBarStyle).toHaveBeenCalledWith('LIGHT', '#ffffff'));
     const callsBefore = h.setStatusBarStyle.mock.calls.length;
 
     act(() => {
@@ -186,7 +187,7 @@ describe('useNativeShell — status bar sync', () => {
     });
 
     await waitFor(() => expect(h.setStatusBarStyle.mock.calls.length).toBeGreaterThan(callsBefore));
-    expect(h.setStatusBarStyle).toHaveBeenLastCalledWith('LIGHT', expect.any(String));
+    expect(h.setStatusBarStyle).toHaveBeenLastCalledWith('DARK', expect.any(String));
   });
 });
 
@@ -234,6 +235,7 @@ describe('useNativeShell — cleanup', () => {
 
     expect(appState.unsubscribe).toHaveBeenCalledTimes(1);
     expect(backButton.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.classList.contains('ci-native')).toBe(false);
   });
 
   it('unsubscribes the back-button listener immediately once it resolves after an early unmount', async () => {

@@ -231,7 +231,11 @@ const RELATION_STUB_SOURCE_SYSTEM = 'graph-enrichment:person';
 function isPlausiblePersonName(name: string): boolean {
   const trimmed = name.trim();
 
-  return trimmed.length >= 2 && trimmed.length <= 60 && /^[A-Z][A-Za-z'-]*(\s+[A-Z][A-Za-z'-]*){0,3}$/.test(trimmed);
+  return (
+    trimmed.length >= 2 &&
+    trimmed.length <= 60 &&
+    /^[A-Z][A-Za-z'-]*(\s+[A-Z][A-Za-z'-]*){0,3}$/.test(trimmed)
+  );
 }
 
 const PROMPT_HEADER = `You analyze a person's own messages and calendar events to extract their personal preferences and close relationships.

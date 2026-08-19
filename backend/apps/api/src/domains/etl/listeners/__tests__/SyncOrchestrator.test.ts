@@ -610,16 +610,14 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
         findActiveConnections: jest.fn().mockResolvedValue([{ connection, lastSyncedAt: null }]),
       },
       connectionSyncJobService: {
-        search: jest
-          .fn()
-          .mockResolvedValue([
-            makeSyncJob({
-              type: 'historical',
-              status: 'success',
-              nextCursor: { page: 2 },
-              completedAt: new Date(),
-            }),
-          ]),
+        search: jest.fn().mockResolvedValue([
+          makeSyncJob({
+            type: 'historical',
+            status: 'success',
+            nextCursor: { page: 2 },
+            completedAt: new Date(),
+          }),
+        ]),
       },
     });
 

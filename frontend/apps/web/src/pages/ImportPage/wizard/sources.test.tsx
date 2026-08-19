@@ -133,7 +133,7 @@ describe('pickableSections', () => {
     expect(music?.items.map((item) => item.ready)).toEqual([true, true, false, false]);
   });
 
-  it('names the bundle\'s members on its tile', () => {
+  it("names the bundle's members on its tile", () => {
     const sections = pickableSections(catalog);
     const google = sections.find((section) => section.key === 'google');
 

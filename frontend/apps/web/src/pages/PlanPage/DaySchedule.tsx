@@ -26,8 +26,12 @@ export function DaySchedule({ events, onEdit }: Props) {
   if (events.length === 0) {
     return (
       <section className="rounded-lg border border-dashed border-border px-4 py-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">On the calendar</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Nothing on the calendar yet. Schedule a task below.</p>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          On the calendar
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Nothing on the calendar yet. Schedule a task below.
+        </p>
       </section>
     );
   }
@@ -56,7 +60,9 @@ export function DaySchedule({ events, onEdit }: Props) {
                 {end}
               </span>
               <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-              {planned ? <span className="shrink-0 text-xs text-teal-600 dark:text-teal-400">Planned</span> : null}
+              {planned ? (
+                <span className="shrink-0 text-xs text-teal-600 dark:text-teal-400">Planned</span>
+              ) : null}
               {onEdit ? (
                 <IconButton
                   variant="ghost"

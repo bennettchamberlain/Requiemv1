@@ -133,7 +133,9 @@ export function EditEventModal({ event, onClose, onSaved }: Props) {
       }
 
       if (event.taskId) {
-        const minutes = endAt ? Math.max(1, Math.round((endAt.getTime() - startAt.getTime()) / 60_000)) : null;
+        const minutes = endAt
+          ? Math.max(1, Math.round((endAt.getTime() - startAt.getTime()) / 60_000))
+          : null;
 
         await updateTask({
           variables: {
