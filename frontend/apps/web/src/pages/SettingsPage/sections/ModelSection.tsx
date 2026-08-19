@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { fetchJson } from '@ci/common';
 import { Button, Card, Input, Label, Select, Switch } from '@ci/shadcn';
 import { Brain, Eye, Server, Wrench } from '@ci/shadcn/icons';
 
 import { ModelSelector } from '@/components/ModelSelector';
-import { useModel } from '@/hooks';
+import { useAuth, useModel } from '@/hooks';
 import { useLlmEndpoint, type LlmBackendKind } from '@/hooks/useLlmEndpoint';
 
 const BACKEND_OPTIONS: { value: LlmBackendKind; label: string; defaultPort: number; hint: string }[] = [
@@ -26,6 +27,7 @@ const BACKEND_OPTIONS: { value: LlmBackendKind; label: string; defaultPort: numb
  * Account-level LLM settings: inference endpoint, active model, and tool/thinking toggles.
  */
 export function ModelSection() {
+  const [{ authToken }] = useAuth();
   const [
     { selectedModel, thinkingSupported, thinkingEnabled, toolsSupported, toolsEnabled, error: modelsError },
     { toggleThinking, toggleTools, refetch: refetchModels },
@@ -37,6 +39,10 @@ export function ModelSection() {
   const [port, setPort] = useState('11434');
   const [apiKey, setApiKey] = useState('');
   const [saved, setSaved] = useState(false);
+  const [imageDescriptionEnabled, setImageDescriptionEnabled] = useState(false);
+  const [imageDescriptionLoading, setImageDescriptionLoading] = useState(true);
+  const [imageDescriptionSaving, setImageDescriptionSaving] = useState(false);
+  const [imageDescriptionError, setImageDescriptionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!config) {
@@ -47,6 +53,39 @@ export function ModelSection() {
     setPort(String(config.port));
     setApiKey(config.apiKey ?? '');
   }, [config]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setImageDescriptionLoading(false);
+
+      return;
+    }
+
+    let cancelled = false;
+    setImageDescriptionLoading(true);
+    void fetchJson<{ enabled: boolean }>('/api/personalization/image-description', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then((payload) => {
+        if (!cancelled) {
+          setImageDescriptionEnabled(payload?.enabled === true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setImageDescriptionError('Could not load image-description setting.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setImageDescriptionLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
 
   const selectedBackend = useMemo(
     () => BACKEND_OPTIONS.find((option) => option.value === backend) ?? BACKEND_OPTIONS[0],
@@ -84,6 +123,34 @@ export function ModelSection() {
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2500);
       refetchModels();
+    }
+  };
+
+  const handleImageDescriptionToggle = async (enabled: boolean) => {
+    if (!authToken) {
+      return;
+    }
+
+    const previous = imageDescriptionEnabled;
+    setImageDescriptionEnabled(enabled);
+    setImageDescriptionSaving(true);
+    setImageDescriptionError(null);
+
+    try {
+      const payload = await fetchJson<{ enabled: boolean }>('/api/personalization/image-description', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enabled }),
+      });
+      setImageDescriptionEnabled(payload?.enabled === true);
+    } catch {
+      setImageDescriptionEnabled(previous);
+      setImageDescriptionError('Could not save image-description setting.');
+    } finally {
+      setImageDescriptionSaving(false);
     }
   };
 
@@ -257,6 +324,31 @@ export function ModelSection() {
               </div>
             </>
           )}
+
+          <div className="space-y-4 border-t border-border pt-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="model-image-description" className="flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  Describe images
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Run vision passes on uploads (titles and captions). Keep this off unless a loaded
+                  model actually understands images. Turning it on requeues undescribed photos that
+                  were skipped or failed earlier.
+                </p>
+              </div>
+
+              <Switch
+                id="model-image-description"
+                checked={imageDescriptionEnabled}
+                onCheckedChange={(checked) => void handleImageDescriptionToggle(checked)}
+                disabled={imageDescriptionLoading || imageDescriptionSaving || !authToken}
+              />
+            </div>
+
+            {imageDescriptionError ? <p className="text-sm text-destructive">{imageDescriptionError}</p> : null}
+          </div>
         </Card.Content>
       </Card>
     </>

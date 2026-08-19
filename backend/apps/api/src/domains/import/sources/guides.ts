@@ -174,9 +174,14 @@ export interface WizardSource {
    */
   alsoImporters?: string[];
   /**
-   * Where files are expected to land in `data/inbox/`. Relative path; may be
-   * a glob-ish pattern. Used by the inbox scanner to decide whether this
-   * source's bytes have arrived. Absent for `api` sources.
+   * This source's drop folder inside the import inbox, relative to its root.
+   * The inbox creates the TOP-LEVEL segment (when the importer is ready) —
+   * `google-takeout/Mail` yields a `google-takeout/` folder shared by every
+   * Takeout source — and a unit imported from inside it declares this
+   * source's importers on the run, the same `declared_sources` a wizard card
+   * sets, so the usage roll-up credits what was dropped there instead of only
+   * the dominant detected source. See `sources/inboxFolders.ts`. Absent for
+   * `api` sources.
    */
   inboxPath?: string;
   /**
@@ -604,12 +609,14 @@ export const WIZARD_SOURCES: WizardSource[] = [
     category: 'social',
     tier: 1,
     acquisition: 'web-export',
-    wait: 'days',
-    url: 'https://www.instagram.com/download/request/',
+    wait: 'hours',
+    url: 'https://accountscenter.facebook.com/info_and_permissions/dyi/?entry_point=download_your_information&target_id',
     steps: [
-      'Open the link and sign in.',
-      'Select "Download your information" → JSON format.',
-      "Submit. You'll get a notification + email when ready (1–14 days).",
+      'Open Meta Accounts Center → “Download your information”, signed in with the Facebook account your Instagram is linked to.',
+      'If your Instagram account is not listed, link it first: Accounts Center → Manage Accounts → “Add accounts”. Only accounts in this Accounts Center can be exported.',
+      'Choose your Instagram profile. Instagram exports separately from Facebook — request Facebook as its own export if you want both.',
+      'Set Date range to “All time”, Format to “JSON”, and Media quality to “High”.',
+      'Click “Create files”. You’ll get an email when the download is ready (minutes to a few hours).',
       UPLOAD_STEP,
     ],
     expectedFormat:
@@ -619,7 +626,9 @@ export const WIZARD_SOURCES: WizardSource[] = [
       'Direct-message threads',
       'Followers, following, and likes',
     ],
-    caveats: ['Choose JSON format when you request the export.'],
+    caveats: [
+      'Choose JSON format when you request the export.',
+    ],
     inboxPath: 'instagram',
     importer: 'instagram',
     importerReady: true,

@@ -413,6 +413,32 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       expect(sendsFor(run.id).map((payload) => payload.stageId)).toEqual([stages[1].id]);
     });
 
+    it('keys every stage job on its stage id, so a waiting stage cannot collect duplicates', async () => {
+      // The staleness gate above cannot actually distinguish "waiting its turn"
+      // from "its job was lost": both look like a queued stage nothing has
+      // touched, because nothing touches a stage while it waits. Stage jobs run
+      // at localConcurrency 1 appliance-wide, so on a real multi-source import
+      // that wait is long — a measured 13-source run had a single Google Takeout
+      // parse hold the worker for 45 minutes, and the twelve stages queued
+      // behind it had accumulated 107 pending jobs across 16 stage ids.
+      //
+      // pg-boss refuses the duplicate at insert time when the send carries a
+      // singletonKey, which is why the key is asserted here rather than the
+      // sweep being taught a distinction it has no data for.
+      const { run, stages } = await startRun(await stageDrop());
+
+      events.send.mockClear();
+      await age(stages[0].id);
+      await service.resumeInterrupted();
+
+      const call = events.send.mock.calls.find(
+        (each) => (each[1] as Record<string, unknown>).runId === run.id,
+      );
+
+      expect(call).toBeDefined();
+      expect(call?.[2]).toMatchObject({ singletonKey: stages[0].id });
+    });
+
     it('closes out a run whose last stage completed but never finished', async () => {
       const { run, stages } = await startRun(await stageDrop());
 

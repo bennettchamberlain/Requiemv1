@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 
 import { Context, type RequestContext } from '@ci/common/context/';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
@@ -6,6 +7,12 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { JobDashboardDto, JobMonitorService } from '../services/JobMonitorService';
 import { JobHistoryDto, JobListDto, JobQueryService } from '../services/JobQueryService';
 import { JOB_CATEGORIES, JOB_TYPES } from '../taxonomy';
+
+function isLoopback(request: Request): boolean {
+  const ip = request.socket.remoteAddress ?? '';
+
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
 
 @Controller('jobs')
 export class JobsController {
@@ -18,6 +25,31 @@ export class JobsController {
   @Get('dashboard')
   getDashboard(@Context() context: RequestContext): Promise<JobDashboardDto> {
     return this.jobMonitorService.getDashboard(context);
+  }
+
+  /**
+   * Fire every Nest `@Cron` (or one named job) the way the scheduler would.
+   *
+   * Loopback-only: operators `docker exec` into the api container and curl
+   * localhost. Authenticated remote callers use the Jobs UI / JWT surface
+   * instead of an open stampede endpoint on the public host.
+   */
+  @Post('crons/run')
+  runCrons(
+    @Req() request: Request,
+    @Query('name') name?: string,
+  ): {
+    fired: string[];
+    skipped: string[];
+    errors: { name: string; error: string }[];
+  } {
+    if (!isLoopback(request)) {
+      throw new ForbiddenException('POST /jobs/crons/run is only allowed from inside the api container');
+    }
+
+    const names = name?.trim() ? [name.trim()] : undefined;
+
+    return this.jobMonitorService.fireCronJobs(names);
   }
 
   /**

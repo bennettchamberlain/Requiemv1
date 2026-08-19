@@ -1,5 +1,6 @@
 /* GeoJSON datasource (basic TypeScript port) */
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { asRecord, asString, type JsonRecord } from './json';
@@ -41,15 +42,18 @@ export class GeoJSONFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (
-      fs.existsSync(full) &&
-      fs.statSync(full).isFile() &&
-      path.extname(full).toLowerCase() === '.geojson'
-    ) {
+    let st: fs.Stats;
+    try {
+      st = await stat(full);
+    } catch {
+      return { confidence: 0 };
+    }
+
+    if (st.isFile() && path.extname(full).toLowerCase() === '.geojson') {
       return { confidence: 1.0 };
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isDirectory()) {
+    if (st.isDirectory()) {
       return { confidence: 0, dir_threshold: 0.9 };
     }
 

@@ -4,6 +4,7 @@
    header with an empty ID are running-balance/summary rows and are skipped.
 */
 import fs from 'node:fs';
+import { open, readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSVRows } from './csv';
@@ -111,7 +112,7 @@ export class VenmoFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -121,18 +122,18 @@ export class VenmoFileImporter implements FileImporter {
         return { confidence: 0 };
       }
 
-      return this.headerMatches(root) ? { confidence: 0.9 } : { confidence: 0 };
+      return (await this.headerMatches(root)) ? { confidence: 0.9 } : { confidence: 0 };
     }
 
     if (stat.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         for (const name of names) {
           if (path.extname(name).toLowerCase() !== '.csv') {
             continue;
           }
 
-          if (this.headerMatches(path.join(root, name))) {
+          if (await this.headerMatches(path.join(root, name))) {
             return { confidence: 0.9 };
           }
         }
@@ -148,24 +149,19 @@ export class VenmoFileImporter implements FileImporter {
 
   // Read only the first ~8KB to inspect for the Venmo header line (it lives
   // after a few preamble lines, so a single header line check is not enough).
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
     try {
-      fd = fs.openSync(fpath, 'r');
-      const buf = Buffer.alloc(8192);
-      const n = fs.readSync(fd, buf, 0, 8192, 0);
+      const fh = await open(fpath, 'r');
+      try {
+        const buf = Buffer.alloc(8192);
+        const { bytesRead } = await fh.read(buf, 0, 8192, 0);
 
-      return textHasVenmoHeader(stripBOM(buf.toString('utf8', 0, n)));
+        return textHasVenmoHeader(stripBOM(buf.toString('utf8', 0, bytesRead)));
+      } finally {
+        await fh.close().catch(() => {});
+      }
     } catch {
       return false;
-    } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 
@@ -198,7 +194,7 @@ export class VenmoFileImporter implements FileImporter {
         }
 
         const fpath = path.join(root, name);
-        if (this.headerMatches(fpath)) {
+        if (await this.headerMatches(fpath)) {
           await this.processFile(fpath, params);
         }
       }

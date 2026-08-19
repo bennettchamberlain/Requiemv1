@@ -1,6 +1,7 @@
 /* Kindle — My Clippings.txt highlights and notes from a Kindle device. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -68,14 +69,14 @@ export class KindleFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (base === 'my clippings.txt') {
         return { confidence: 0.97 };
@@ -84,9 +85,9 @@ export class KindleFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root).map((n) => n.toLowerCase());
+        const names = (await readdir(root)).map((n) => n.toLowerCase());
         if (names.includes('my clippings.txt')) {
           return { confidence: 0.97 };
         }

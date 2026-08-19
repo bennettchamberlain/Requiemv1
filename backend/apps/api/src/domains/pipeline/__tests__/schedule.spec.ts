@@ -215,6 +215,55 @@ describe('the declared cadences', () => {
     }
   });
 
+  it('runs every deterministic-edge projection hourly, at any hour', () => {
+    // THE REGRESSION THIS PINS. These ten legs were nightly and windowed, on a
+    // batch-affinity argument borrowed from their producers. Their input does
+    // not arrive at their producers' rate: a bulk import writes
+    // `communications.from_entity_id` / `to_entity_ids` for the whole corpus at
+    // ingest, with no linker involved. On the QA corpus that put 598,146
+    // resolved senders and 525,706 recipient lists in the table minutes after a
+    // sweep had already started — so `minInterval: 1 * DAYS`, measured from the
+    // sweep's START, held ~1.5M derivable edges for twenty-four hours and left
+    // the graph traversal (which reads `ci.relationships` and nothing else)
+    // with 2,880 of 1,001,475 entities reachable.
+    //
+    // They are `cost: 'local'` — ten INSERT…SELECTs, no provider, no Ollama —
+    // so the enrichment window, which exists to bound spend and Ollama
+    // contention, was never bounding anything here.
+    const edgeLegs = [
+      STAGE_IDS.PROMOTE_EDGE_COMMUNICATION,
+      STAGE_IDS.PROMOTE_EDGE_EVENT,
+      STAGE_IDS.PROMOTE_EDGE_CONTENT,
+      STAGE_IDS.PROMOTE_EDGE_INVENTORY,
+      STAGE_IDS.PROMOTE_EDGE_RECEIPT,
+      STAGE_IDS.PROMOTE_EDGE_OBSERVATION,
+      STAGE_IDS.PROMOTE_EDGE_POSITION,
+      STAGE_IDS.PROMOTE_EDGE_DEVICE,
+      STAGE_IDS.PROMOTE_EDGE_FILE,
+      STAGE_IDS.PROMOTE_EDGE_PLACE,
+    ];
+
+    for (const stageId of edgeLegs) {
+      const schedule = stageSchedule(stageId);
+
+      expect(schedule.cost).toBe('local');
+      expect(schedule.window).toBe('any');
+      expect(schedule.minInterval).toBe(60 * 60);
+      expect(schedule.maxStaleness).toBe(6 * 60 * 60);
+    }
+
+    // And the property that makes the tier safe rather than merely fast: with
+    // the window shut — every hour of the day outside the nightly box — they are
+    // still due once the interval has elapsed.
+    const now = at(14);
+
+    for (const stageId of edgeLegs) {
+      expect(
+        stageDueness({ stageId, lastStartedAt: ago(now, 90 * 60 * SECONDS), windowOpen: SHUT, now }).due,
+      ).toBe(true);
+    }
+  });
+
   it('accounts for every stage in exactly one tier', () => {
     // No stage may be forgotten by the two lists above — the failure mode of a
     // hand-maintained tier table is a stage nobody assigned a cost to.

@@ -17,10 +17,36 @@ export interface PersonDuplicateGroup {
   /** The shared normalized value the group collapsed on. */
   value: string;
   people: Person[];
+  /**
+   * People sharing `value` in total, before {@link MAX_GROUP_SIZE} truncation.
+   * Greater than `people.length` for the huge call-log-heading groups.
+   */
+  totalPeople: number;
 }
 
-/** Max people surfaced per group — a huge group is a junk value, not a dupe. */
+export interface PersonDuplicatePage {
+  groups: PersonDuplicateGroup[];
+  /**
+   * Candidate groups matching the filter, counted in SQL before the per-group
+   * rejection filtering below — the size of the queue, not a per-page promise.
+   */
+  totalCount: number;
+  hasMore: boolean;
+}
+
+/**
+ * Max people surfaced per group.
+ *
+ * A group far above this is usually one junk value — 899 people literally named
+ * "Missed call from" — but it used to be DROPPED entirely, which put the worst
+ * import artifacts in the library permanently out of reach of the merge UI. The
+ * group is now returned truncated, carrying `totalPeople` so the UI can say
+ * "showing 6 of 899" instead of pretending it does not exist.
+ */
 const MAX_GROUP_SIZE = 6;
+
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 100;
 
 /**
  * Remove members until no rejected pair remains in the group.
@@ -80,13 +106,22 @@ export class PersonDuplicateService {
 
   async findDuplicateGroups(
     context: UserServiceContext,
-    options: { limit?: number } = {},
-  ): Promise<PersonDuplicateGroup[]> {
-    const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
+    options: { limit?: number; offset?: number; reasons?: DuplicateReason[] } = {},
+  ): Promise<PersonDuplicatePage> {
+    const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
+    const offset = Math.max(options.offset ?? 0, 0);
+    // An empty (or absent) filter means every reason; the SQL takes NULL for it
+    // so one statement serves both.
+    const reasons = options.reasons?.length ? [...new Set(options.reasons)] : null;
 
-    const rows: Array<{ kind: DuplicateReason; val: string; entity_ids: string[] }> =
-      await this.personRepository.manager.query(
-        `WITH people AS (
+    const rows: Array<{
+      kind: DuplicateReason;
+      val: string;
+      entity_ids: string[];
+      n: number | string;
+      total: number | string;
+    }> = await this.personRepository.manager.query(
+      `WITH people AS (
            SELECT entity_id, name, properties
              FROM ci.entities
             WHERE owner_user_id = $1
@@ -122,26 +157,34 @@ export class PersonDuplicateService {
            SELECT p.entity_id, 'name', lower(btrim(regexp_replace(p.name, '\\s+', ' ', 'g')))
              FROM people p
             WHERE p.name IS NOT NULL AND length(btrim(p.name)) >= 3
+         ),
+         grouped AS (
+           SELECT kind, val,
+                  (array_agg(DISTINCT entity_id))[1:$3] AS entity_ids,
+                  COUNT(DISTINCT entity_id) AS n
+             FROM keys
+            WHERE $4::text[] IS NULL OR kind = ANY($4::text[])
+            GROUP BY kind, val
+           HAVING COUNT(DISTINCT entity_id) > 1
          )
-         SELECT kind, val,
-                (array_agg(DISTINCT entity_id))[1:$3] AS entity_ids,
-                COUNT(DISTINCT entity_id) AS n
-           FROM keys
-          GROUP BY kind, val
-         HAVING COUNT(DISTINCT entity_id) > 1
-            AND NOT (kind = 'name' AND COUNT(DISTINCT entity_id) > $3)
+         SELECT kind, val, entity_ids, n, COUNT(*) OVER () AS total
+           FROM grouped
           ORDER BY CASE kind WHEN 'email' THEN 0 WHEN 'phone' THEN 1 ELSE 2 END,
-                   COUNT(DISTINCT entity_id) DESC,
+                   n DESC,
                    val ASC
-          LIMIT $2`,
-        [context.userId, limit, MAX_GROUP_SIZE],
-      );
+          LIMIT $2 OFFSET $5`,
+      [context.userId, limit + 1, MAX_GROUP_SIZE, reasons, offset],
+    );
 
     if (rows.length === 0) {
-      return [];
+      return { groups: [], totalCount: 0, hasMore: false };
     }
 
-    const allIds = [...new Set(rows.flatMap((row) => row.entity_ids))];
+    const totalCount = Number(rows[0].total ?? rows.length);
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+
+    const allIds = [...new Set(page.flatMap((row) => row.entity_ids))];
     const entities = await this.personRepository
       .createQueryBuilder('person')
       .where('person.owner_user_id = :userId', { userId: context.userId })
@@ -159,7 +202,7 @@ export class PersonDuplicateService {
     // strictly-weaker groups that add no new members over an earlier one.
     const seenMemberSets = new Set<string>();
 
-    for (const row of rows) {
+    for (const row of page) {
       const people = dropBlocked(
         row.entity_ids.map((id) => byId.get(id)).filter((person): person is Person => person != null),
         blocked,
@@ -179,7 +222,12 @@ export class PersonDuplicateService {
 
       seenMemberSets.add(memberKey);
 
-      groups.push({ reason: row.kind, value: row.val, people });
+      groups.push({
+        reason: row.kind,
+        value: row.val,
+        people,
+        totalPeople: Math.max(Number(row.n), people.length),
+      });
     }
 
     // Self-containing groups first so multi-platform owner stubs are obvious
@@ -194,6 +242,6 @@ export class PersonDuplicateService {
       return 0;
     });
 
-    return groups;
+    return { groups, totalCount, hasMore };
   }
 }

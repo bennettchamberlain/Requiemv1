@@ -43,26 +43,26 @@ describe('unpackArchives', () => {
     }
   });
 
-  it('by default keeps the zip and writes the .unpacked marker (unchanged behavior)', () => {
+  it('by default keeps the zip and writes the .unpacked marker (unchanged behavior)', async () => {
     const d = dir();
     const archive = path.join(d, 'export.zip');
     fs.writeFileSync(archive, zipWith({ 'walk.gpx': '<gpx/>' }));
 
-    const res = unpackArchives(d);
+    const res = await unpackArchives(d);
     expect(res).toHaveLength(1);
     expect(fs.existsSync(path.join(d, 'walk.gpx'))).toBe(true);
     expect(fs.existsSync(archive)).toBe(true);
     expect(fs.existsSync(`${archive}.unpacked`)).toBe(true);
   });
 
-  it('deleteArchives reclaims each zip after its extraction and writes no marker', () => {
+  it('deleteArchives reclaims each zip after its extraction and writes no marker', async () => {
     const d = dir();
     const a = path.join(d, 'part-1.zip');
     const b = path.join(d, 'part-2.zip');
     fs.writeFileSync(a, zipWith({ 'one.txt': '1' }));
     fs.writeFileSync(b, zipWith({ 'two.txt': '2' }));
 
-    const res = unpackArchives(d, undefined, { deleteArchives: true });
+    const res = await unpackArchives(d, undefined, { deleteArchives: true });
     expect(res).toHaveLength(2);
     expect(fs.existsSync(path.join(d, 'one.txt'))).toBe(true);
     expect(fs.existsSync(path.join(d, 'two.txt'))).toBe(true);
@@ -72,7 +72,7 @@ describe('unpackArchives', () => {
     expect(fs.existsSync(`${b}.unpacked`)).toBe(false);
   });
 
-  it('quarantines a TRUNCATED zip (the real OneDrive failure) and says the download did not finish', () => {
+  it('quarantines a TRUNCATED zip (the real OneDrive failure) and says the download did not finish', async () => {
     const d = dir();
     const full = zipWith({ 'photos/img.jpg': 'bytes', 'notes.txt': 'hello' });
     const archive = path.join(d, 'OneDrive_2.zip');
@@ -82,7 +82,9 @@ describe('unpackArchives', () => {
 
     const rejected: RejectedArchive[] = [];
     const logs: string[] = [];
-    expect(unpackArchives(d, (m) => logs.push(m), { onRejected: (r) => rejected.push(r) })).toHaveLength(0);
+    expect(
+      await unpackArchives(d, (m) => logs.push(m), { onRejected: (r) => rejected.push(r) }),
+    ).toHaveLength(0);
 
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason).toMatch(/truncated .* end-of-central-directory record is missing/);
@@ -94,7 +96,7 @@ describe('unpackArchives', () => {
     expect(fs.existsSync(path.join(d, '.rejected', 'OneDrive_2.zip'))).toBe(true);
   });
 
-  it('reports every bad archive while the good ones still import', () => {
+  it('reports every bad archive while the good ones still import', async () => {
     const d = dir();
     const full = zipWith({ 'a.txt': 'a' });
     fs.writeFileSync(path.join(d, 'part-1.zip'), full.subarray(0, full.length - 40));
@@ -102,7 +104,7 @@ describe('unpackArchives', () => {
     fs.writeFileSync(path.join(d, 'part-3.zip'), zipWith({ 'c.txt': 'c' }));
 
     const rejected: RejectedArchive[] = [];
-    const res = unpackArchives(d, undefined, {
+    const res = await unpackArchives(d, undefined, {
       deleteArchives: true,
       onRejected: (r) => rejected.push(r),
     });
@@ -117,15 +119,30 @@ describe('unpackArchives', () => {
     expect(fs.existsSync(path.join(d, '.rejected', 'part-2.zip'))).toBe(true);
   });
 
-  it('still flattens a Takeout/ wrapper when archives are reclaimed', () => {
+  it('reports per-archive progress: a leading zero tick, then one per settled archive', async () => {
+    const d = dir();
+    fs.writeFileSync(path.join(d, 'part-1.zip'), zipWith({ 'one.txt': '1' }));
+    fs.writeFileSync(path.join(d, 'part-2.zip'), zipWith({ 'two.txt': '2' }));
+
+    const ticks: Array<{ done: number; total: number; current?: string }> = [];
+    await unpackArchives(d, undefined, { onProgress: (progress) => void ticks.push(progress) });
+
+    // "0 of 2" the moment the preflight admits the set, a tick before each
+    // archive, and a final tick squaring done with total.
+    expect(ticks[0]).toMatchObject({ done: 0, total: 2, current: 'part-1.zip' });
+    expect(ticks[1]).toMatchObject({ done: 1, total: 2, current: 'part-2.zip' });
+    expect(ticks[ticks.length - 1]).toEqual({ done: 2, total: 2 });
+  });
+
+  it('still flattens a Takeout/ wrapper when archives are reclaimed', async () => {
     const d = dir();
     fs.writeFileSync(path.join(d, 'takeout-001.zip'), zipWith({ 'Takeout/Google Photos/img.jpg': 'bytes' }));
-    unpackArchives(d, undefined, { deleteArchives: true });
+    await unpackArchives(d, undefined, { deleteArchives: true });
     expect(fs.existsSync(path.join(d, 'Google Photos', 'img.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(d, 'Takeout'))).toBe(false);
   });
 
-  it('fails the whole pass up front (nothing extracted) when free disk cannot fit the declared bytes', () => {
+  it('fails the whole pass up front (nothing extracted) when free disk cannot fit the declared bytes', async () => {
     const d = dir();
     const archive = path.join(d, 'export.zip');
     fs.writeFileSync(archive, zipWith({ 'walk.gpx': '<gpx/>' }));
@@ -135,19 +152,19 @@ describe('unpackArchives', () => {
       bsize: 1,
     } as unknown as fs.StatsFsBase<number>);
 
-    expect(() => unpackArchives(d)).toThrow(InsufficientDiskError);
-    expect(() => unpackArchives(d)).toThrow(/not enough disk space/);
+    await expect(unpackArchives(d)).rejects.toThrow(InsufficientDiskError);
+    await expect(unpackArchives(d)).rejects.toThrow(/not enough disk space/);
     expect(fs.existsSync(path.join(d, 'walk.gpx'))).toBe(false);
     expect(fs.existsSync(archive)).toBe(true);
   });
 
-  it('skips the preflight (extracts normally) when statfs is unavailable', () => {
+  it('skips the preflight (extracts normally) when statfs is unavailable', async () => {
     const d = dir();
     fs.writeFileSync(path.join(d, 'export.zip'), zipWith({ 'walk.gpx': '<gpx/>' }));
     jest.spyOn(fs, 'statfsSync').mockImplementation(() => {
       throw new Error('ENOSYS');
     });
-    expect(unpackArchives(d)).toHaveLength(1);
+    expect(await unpackArchives(d)).toHaveLength(1);
     expect(fs.existsSync(path.join(d, 'walk.gpx'))).toBe(true);
   });
 });

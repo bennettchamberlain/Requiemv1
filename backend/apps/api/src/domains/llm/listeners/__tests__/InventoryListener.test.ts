@@ -69,6 +69,11 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
   };
 
   const ollamaService = {
+    resolveModel: jest.fn(async (_ctx: unknown, opts?: { requestedModel?: string | null }) => ({
+      model: opts?.requestedModel?.trim() ? opts.requestedModel : 'Qwen3-8B',
+      enableThinking: false,
+      enableTools: false,
+    })),
     chat: jest.fn(async () => ({ message: { content } })),
   };
 
@@ -90,6 +95,10 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
 
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
+  const imageDescriptionPreference = {
+    isEnabled: jest.fn(async () => true),
+  };
+
   const listener = new InventoryListener(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fileService as any,
@@ -100,10 +109,12 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     observationService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    imageDescriptionPreference as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     logger as any,
   );
 
-  return { listener, fileService, ollamaService, itemService, observationService, logger };
+  return { listener, fileService, ollamaService, itemService, observationService, imageDescriptionPreference, logger };
 }
 
 function upload(overrides: Record<string, unknown> = {}) {
@@ -117,6 +128,16 @@ function upload(overrides: Record<string, unknown> = {}) {
 }
 
 describe('InventoryListener — a vision guess is recorded as a sighting', () => {
+  it('skips quietly when image description is disabled', async () => {
+    const { listener, imageDescriptionPreference, ollamaService, observationService } = makeListener();
+    imageDescriptionPreference.isEnabled.mockResolvedValueOnce(false);
+
+    await listener.handleFileUploaded(upload());
+
+    expect(ollamaService.chat).not.toHaveBeenCalled();
+    expect(observationService.create).not.toHaveBeenCalled();
+  });
+
   it('records one sighting per identified item', async () => {
     const { listener, observationService } = makeListener();
 

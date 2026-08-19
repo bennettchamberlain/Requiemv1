@@ -5,6 +5,7 @@
    every non-empty metric column as metadata. The signature is generic (*.csv)
    so recognition sniffs the header to avoid false-matching other CSV importers. */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -32,13 +33,13 @@ function headerLooksLikeOura(header: string): boolean {
 }
 
 // Read the first ~4KB and inspect the CSV header row.
-function sniffHeader(fpath: string): string | undefined {
-  let fd: number | undefined;
+async function sniffHeader(fpath: string): Promise<string | undefined> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    handle = await open(fpath, 'r');
     const buf = Buffer.alloc(4096);
-    const n = fs.readSync(fd, buf, 0, 4096, 0);
-    let text = buf.toString('utf8', 0, n);
+    const { bytesRead } = await handle.read(buf, 0, 4096, 0);
+    let text = buf.toString('utf8', 0, bytesRead);
     if (text.charCodeAt(0) === 0xfeff) {
       text = text.slice(1);
     }
@@ -47,18 +48,12 @@ function sniffHeader(fpath: string): string | undefined {
   } catch {
     return undefined;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
-function csvMatches(fpath: string): boolean {
-  const header = sniffHeader(fpath);
+async function csvMatches(fpath: string): Promise<boolean> {
+  const header = await sniffHeader(fpath);
 
   return header !== undefined && headerLooksLikeOura(header);
 }
@@ -97,30 +92,30 @@ export class OuraFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (path.extname(root).toLowerCase() !== '.csv') {
         return { confidence: 0 };
       }
 
-      return csvMatches(root) ? { confidence: 0.9 } : { confidence: 0 };
+      return (await csvMatches(root)) ? { confidence: 0.9 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         for (const name of names) {
           if (path.extname(name).toLowerCase() !== '.csv') {
             continue;
           }
 
-          if (csvMatches(path.join(root, name))) {
+          if (await csvMatches(path.join(root, name))) {
             return { confidence: 0.9 };
           }
         }
@@ -163,7 +158,7 @@ export class OuraFileImporter implements FileImporter {
         }
 
         const fpath = path.join(root, name);
-        if (csvMatches(fpath)) {
+        if (await csvMatches(fpath)) {
           await this.processFile(fpath, params);
         }
       }

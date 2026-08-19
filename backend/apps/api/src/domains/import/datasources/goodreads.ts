@@ -1,5 +1,6 @@
 /* Goodreads — library CSV export (goodreads_library_export.csv). */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -37,29 +38,29 @@ export class GoodreadsFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       if (base === GOODREADS_FILENAME) {
         return { confidence: 0.97 };
       }
 
-      if (path.extname(base) === '.csv' && this.headerMatches(root)) {
+      if (path.extname(base) === '.csv' && (await this.headerMatches(root))) {
         return { confidence: 0.7 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         if (names.some((n) => n.toLowerCase() === GOODREADS_FILENAME)) {
           return { confidence: 0.97 };
         }
@@ -69,7 +70,7 @@ export class GoodreadsFileImporter implements FileImporter {
             continue;
           }
 
-          if (this.headerMatches(path.join(root, name))) {
+          if (await this.headerMatches(path.join(root, name))) {
             return { confidence: 0.7 };
           }
         }
@@ -84,24 +85,18 @@ export class GoodreadsFileImporter implements FileImporter {
   }
 
   // Read only the first ~4KB to inspect the CSV header row.
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
     try {
-      fd = fs.openSync(fpath, 'r');
+      handle = await open(fpath, 'r');
       const buf = Buffer.alloc(4096);
-      const n = fs.readSync(fd, buf, 0, 4096, 0);
+      const { bytesRead: n } = await handle.read(buf, 0, 4096, 0);
 
       return headerHasGoodreadsCols(buf.toString('utf8', 0, n));
     } catch {
       return false;
     } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
+      await handle?.close().catch(() => undefined);
     }
   }
 
@@ -138,7 +133,7 @@ export class GoodreadsFileImporter implements FileImporter {
           }
 
           const fpath = path.join(root, name);
-          if (this.headerMatches(fpath)) {
+          if (await this.headerMatches(fpath)) {
             await this.processFile(fpath, params);
           }
         }

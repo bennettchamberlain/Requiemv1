@@ -346,6 +346,12 @@ export const JOB_TYPES: Readonly<Record<string, JobTypeDescriptor>> = {
     description:
       'Recall the last stretch of memory, surface possible to-dos, dedupe against the backlog, and auto-add or propose based on the trust dial.',
   },
+  'planning.inbox_scan': {
+    label: 'Triage inbox into to-dos',
+    category: JOB_CATEGORIES.planning,
+    description:
+      'Read recent inbound email and messages, surface possible to-dos, and auto-add or propose based on the trust dial. Hands-off may also place them on the calendar.',
+  },
   'planning.todo_process': {
     label: 'Process open to-dos',
     category: JOB_CATEGORIES.planning,
