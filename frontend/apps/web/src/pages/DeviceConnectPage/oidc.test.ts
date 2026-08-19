@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_PORTAL_URL } from './portal-client';
 import {
   emailFromIdToken,
   loginWithPortalOidc,
@@ -9,6 +8,7 @@ import {
   OidcCancelledError,
   resumePendingOidcLogin,
 } from './oidc';
+import { DEFAULT_PORTAL_URL } from './portal-client';
 
 const openExternalUrl = vi.fn<(url: string) => Promise<void>>(async () => {});
 const closeBrowser = vi.fn(async () => {});
@@ -108,9 +108,8 @@ describe('loginWithPortalOidc', () => {
     await promise;
 
     const challenge = authorizeUrl.searchParams.get('code_challenge') ?? '';
-    const verifier = new URLSearchParams(String((vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body)).get(
-      'code_verifier',
-    ) ?? '';
+    const tokenInit = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit | undefined;
+    const verifier = new URLSearchParams(String(tokenInit?.body)).get('code_verifier') ?? '';
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
     const expected = btoa(String.fromCharCode(...new Uint8Array(digest)))
       .replace(/\+/g, '-')
@@ -171,7 +170,8 @@ describe('resumePendingOidcLogin', () => {
     getLaunchUrl.mockResolvedValue(`${OIDC_REDIRECT_URI}?code=cold-code&state=${state}`);
     await expect(resumePendingOidcLogin()).resolves.toMatchObject({ accessToken: 'AT' });
 
-    const body = new URLSearchParams(String((vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body));
+    const tokenInit = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = new URLSearchParams(String(tokenInit?.body));
     expect(body.get('code')).toBe('cold-code');
     expect(body.get('code_verifier')).toMatch(/^[A-Za-z0-9_-]{20,}$/);
 

@@ -84,10 +84,90 @@ export interface ImportStage {
   /** Null means the work is not yet countable — draw an indeterminate bar, never 0%. */
   readonly total: number | null;
   readonly weight: number;
+  /** Measured throughput. Separates "this parse is slow" from "this parse is big". */
+  readonly itemsPerSec?: number | null;
   readonly etaSeconds: number | null;
+  /** Wall clock for a FINISHED stage. Null while it is still going — use `startedAt`. */
   readonly durationMs: number | null;
   readonly error: string | null;
   readonly detail: Record<string, unknown>;
+  readonly startedAt?: string | null;
+  readonly finishedAt?: string | null;
+}
+
+/**
+ * Where a stage sits relative to the appliance's single execution slot.
+ *
+ * `waiting` and `blocked` are BOTH `status: 'queued'` in the database and they
+ * mean completely different things — see {@link ActiveImportSnapshot}.
+ */
+export type StageQueueState = 'running' | 'waiting' | 'blocked' | 'done';
+
+export interface ActiveImportStage extends ImportStage {
+  readonly queueState: StageQueueState;
+  /** 1-based place in this user's ready queue. Null unless `waiting`. */
+  readonly queuePosition: number | null;
+  readonly waitingSince: string | null;
+  /**
+   * Live: how long the stage has been running, or waiting for the slot, or how
+   * long it took. Null for `blocked`, which is not waiting on anything yet.
+   */
+  readonly elapsedMs: number | null;
+}
+
+export interface ActiveImportRun extends ImportRun {
+  /**
+   * The archive or folder this run is importing — `google-takeout`, `amazon`.
+   * THE field that tells a thirteen-run batch apart; see the server's note.
+   */
+  readonly unit: string | null;
+  readonly records: number;
+  readonly elapsedMs: number | null;
+  readonly stages: readonly ActiveImportStage[];
+}
+
+/**
+ * Everything importing right now, in one object.
+ *
+ * `GET /import/runs/active`. One request per tick however many runs are in
+ * flight, and it carries the things a per-run poll could not compute on its own:
+ * which source each run is (`unit`), whether a queued stage is enqueued and
+ * waiting for the appliance's single slot or simply has not been reached yet
+ * (`queueState`), where it sits in line (`queuePosition`), and how long
+ * everything has taken.
+ */
+export interface ActiveImportSnapshot {
+  readonly generatedAt: string;
+  /** Is anything still going? The one boolean that decides whether to render. */
+  readonly active: boolean;
+  readonly batch: {
+    readonly total: number;
+    readonly running: number;
+    readonly queued: number;
+    readonly completed: number;
+    readonly failed: number;
+    readonly cancelled: number;
+    readonly percent: number;
+    readonly records: number;
+    readonly startedAt: string | null;
+    readonly elapsedMs: number | null;
+  };
+  readonly queue: {
+    /**
+     * Slots per stage KIND — the appliance runs one queue per kind, so a parse
+     * waits behind other parses only. One each today except `media`, which
+     * takes two; that asymmetry is why this is a map rather than a number.
+     */
+    readonly concurrency: Readonly<Record<string, number>>;
+    /** Every kind's slots added up. What can be in flight across the batch. */
+    readonly slots: number;
+    readonly running: number;
+    readonly waiting: number;
+    readonly blocked: number;
+    readonly longestWaitMs: number | null;
+  };
+  readonly runs: readonly ActiveImportRun[];
+  readonly truncated: boolean;
 }
 
 export interface ImportRun {
@@ -259,6 +339,19 @@ export function useImportApi() {
   const getRun = useCallback(
     async (runId: string): Promise<ImportRunDetail | null> =>
       (await fetchJson<ImportRunDetail>(`/api/import/runs/${runId}`, { headers: authHeaders() })) ?? null,
+    [authHeaders],
+  );
+
+  /**
+   * Everything importing right now, with stages, in ONE request.
+   *
+   * Declared before `getRun` in intent if not in source order: this is what a
+   * surface watching a whole batch should call. `getRun` is for one run someone
+   * deliberately opened.
+   */
+  const getActiveImports = useCallback(
+    async (): Promise<ActiveImportSnapshot | null> =>
+      (await fetchJson<ActiveImportSnapshot>('/api/import/runs/active', { headers: authHeaders() })) ?? null,
     [authHeaders],
   );
 
@@ -456,6 +549,7 @@ export function useImportApi() {
       listRuns,
       listUnpushed,
       getRun,
+      getActiveImports,
       uploadFile,
       uploadFolder,
       startRun,
@@ -473,6 +567,7 @@ export function useImportApi() {
       listRuns,
       listUnpushed,
       getRun,
+      getActiveImports,
       uploadFile,
       uploadFolder,
       startRun,
@@ -623,6 +718,140 @@ export function useRunsProgress(
   }, [idsKey, intervalMs, listRuns, ready]);
 
   return runs;
+}
+
+/**
+ * The whole appliance's import activity, on one poll, for a whole page.
+ *
+ * ## Why this is not another per-run poll
+ *
+ * {@link useRunProgress} is one request per run per tick. {@link useRunsProgress}
+ * already had to exist because mounting one of those per card flooded
+ * `/import/runs` — the comment on it documents the tab pegging its renderer at a
+ * Takeout's 140 runs. This hook is the same lesson applied to the DETAILED view:
+ * one request, `GET /import/runs/active`, however many runs are in flight, with
+ * the stage rows and queue reasoning already assembled server-side. A page
+ * mounts exactly one, and it is the only thing the pinned progress region needs.
+ *
+ * ## Why it does not simply stop
+ *
+ * `useRunsProgress` watches a FIXED set of ids and can go quiet forever once
+ * they are all terminal. This one has no id set: it is the answer to "is
+ * anything importing", which becomes true again when someone starts an import
+ * from the CLI, the inbox, another tab, or the wizard three steps away. So
+ * instead of stopping it slows down, hard:
+ *
+ *  - **2s while something is active** — the cadence people expect of a progress
+ *    bar, and the same one every other import poll uses.
+ *  - **30s while nothing is** — one request every thirty seconds is not a
+ *    "flood" by any measure (it is 2/min against the 30/min a single active run
+ *    already costs), and it is what makes the region appear on its own when an
+ *    import starts elsewhere instead of requiring a reload.
+ *  - **no REPEAT polling while the tab is hidden** — the case that actually
+ *    mattered: this page is left open for hours while a 40GB Takeout runs, and
+ *    a background tab polling for a progress bar nobody is looking at is pure
+ *    waste. A `visibilitychange` listener resumes immediately on return, so
+ *    coming back shows current state rather than a stale bar catching up.
+ *
+ * The FIRST read happens regardless of visibility, which is not an oversight —
+ * it was a bug, found by rendering the page in an offscreen browser pane that
+ * reports `visibilityState: 'hidden'` for its whole life. Skipping the initial
+ * fetch there meant the region never appeared at all, and nothing would ever
+ * fire `visibilitychange` to rescue it. Prerendered pages and tabs restored in
+ * the background have the same shape. One request costs nothing; it is the
+ * repetition this is trying to avoid.
+ */
+export function useActiveImports(
+  activeIntervalMs = 2_000,
+  idleIntervalMs = 30_000,
+): { snapshot: ActiveImportSnapshot | null; error: string | null; refresh: () => void } {
+  const { getActiveImports, ready } = useImportApi();
+  const [snapshot, setSnapshot] = useState<ActiveImportSnapshot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // The pending timer, so `refresh` and the visibility listener can pre-empt a
+  // scheduled tick instead of racing it into a double fetch.
+  const timer = useRef<number | undefined>(undefined);
+  const kick = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+
+    let cancelled = false;
+    // Whether this mount has ever got an answer. Gates the hidden-tab pause, so
+    // a page that is hidden for its entire life still renders something.
+    let loaded = false;
+
+    const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+
+    const schedule = (delayMs: number) => {
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => void tick(), delayMs);
+    };
+
+    const tick = async () => {
+      // Pause REPEATS on a hidden tab, never the first read — see the note
+      // above on the offscreen-pane bug.
+      if (isHidden() && loaded) {
+        return;
+      }
+
+      try {
+        const next = await getActiveImports();
+
+        if (cancelled) {
+          return;
+        }
+
+        loaded = true;
+        setSnapshot(next);
+        setError(null);
+
+        // A hidden tab schedules nothing; `visibilitychange` below restarts it.
+        if (!isHidden()) {
+          schedule(next?.active ? activeIntervalMs : idleIntervalMs);
+        }
+      } catch (err: unknown) {
+        if (cancelled) {
+          return;
+        }
+
+        loaded = true;
+
+        // A blip mid-import must not replace a progress bar someone is watching
+        // with an error banner, and must not kill the poll — the same bargain
+        // useRunProgress makes. The error is reported only when there is no
+        // snapshot to show instead.
+        setError(err instanceof Error ? err.message : String(err));
+
+        if (!isHidden()) {
+          schedule(idleIntervalMs);
+        }
+      }
+    };
+
+    kick.current = () => void tick();
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void tick();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    void tick();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [activeIntervalMs, getActiveImports, idleIntervalMs, ready]);
+
+  const refresh = useCallback(() => kick.current(), []);
+
+  return { snapshot, error, refresh };
 }
 
 async function post<T>(url: string, headers: Record<string, string>, body: unknown): Promise<T> {

@@ -4,7 +4,7 @@ import type { ApolloError } from '@apollo/client';
 import { useQuery } from '@apollo/client';
 import { createHookContext } from '@ci/common';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
-import { type ResultOf } from '@graphql-typed-document-node/core';
+import { type ResultOf, type VariablesOf } from '@graphql-typed-document-node/core';
 
 import { gql } from '@/graphql';
 
@@ -41,6 +41,9 @@ const SEARCH_QUERY = gql(`
             galleryFilename: filename
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: sourceUrl
+            # Original byte size, so a tile can decline to use a huge original
+            # as its thumbnail when no PREVIEW variant has been generated.
+            galleryMediaSize: size
           }
 
           ... on ContentType {
@@ -48,6 +51,13 @@ const SEARCH_QUERY = gql(`
             galleryTitle: title
             galleryContentUrl: url
             galleryContentSourceUrl: sourceUrl
+            # Media content rows carry no url/sourceUrl of their own — the
+            # binary is reachable only through external_id -> ci.files, which
+            # ContentResolver resolves into these three fields (mirrors the
+            # EventType media aliases below).
+            galleryPreviewUrl: previewUrl
+            galleryFileUrl: mediaUrl
+            galleryMediaSize: mediaSize
           }
 
           ...AnswerGridItemData
@@ -116,6 +126,7 @@ const SEARCH_QUERY = gql(`
             galleryMediaContentType: mediaContentType
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: mediaUrl
+            galleryMediaSize: mediaSize
             galleryTitle: title
             galleryLocationName: locationName
           }
@@ -205,6 +216,18 @@ export function resolveLiveEntity<TEntity extends MemoryEntity>(
   return (live as TEntity | undefined) ?? selected;
 }
 
+/**
+ * The filter half of the search variables — everything except paging.
+ *
+ * Exposed so a view that needs its own read of the SAME filtered set can issue
+ * it without re-deriving the filters from the URL (which is how the map and the
+ * explorer would drift apart). The map's pin query is the one caller: it asks
+ * `mapPins` for every located event matching these filters instead of walking
+ * this hook's 30-row pages. Paging (`first`/`after`) is deliberately excluded —
+ * it belongs to the feed, not to the filter.
+ */
+export type SearchFilterVariables = Omit<VariablesOf<typeof SEARCH_QUERY>, 'first' | 'after'>;
+
 type ReturnType = [
   {
     data: Array<EntityItem>;
@@ -214,6 +237,8 @@ type ReturnType = [
     totalCount: number;
     error: ApolloError | undefined;
     activeEntity: MemoryEntity | null;
+    /** The current filters, minus paging. See {@link SearchFilterVariables}. */
+    searchVariables: SearchFilterVariables;
     loadMore: () => void;
     refetch: () => void;
   },
@@ -260,35 +285,36 @@ function useEntityService({
   // this drives the read-only /shared viewer with the same view components.
   shareToken?: string;
 }): ReturnType {
+  const searchVariables: SearchFilterVariables = {
+    query: searchQuery,
+    // Map display names to the backend IndexableEntity values via the shared
+    // map — naive toLowerCase() turned 'Browser'/'Thing' into 'browser'/'thing'
+    // (not 'browser-activity'/'item'), so those two filters silently no-op'd.
+    includeTypes:
+      includeTypes?.map(
+        (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
+      ) || [],
+    excludeTypes:
+      excludeTypes?.map(
+        (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
+      ) || [],
+    eventTypes: eventTypes || [],
+    tags: tags && tags.length > 0 ? tags : undefined,
+    startTime: startTime || undefined,
+    endTime: endTime || undefined,
+    sortBy: sortBy || undefined,
+    sortOrder: sortOrder || undefined,
+    connectors: connectors && connectors.length > 0 ? connectors : undefined,
+    people: people && people.length > 0 ? people : undefined,
+    places: places && places.length > 0 ? places : undefined,
+    hasLocation: hasLocation || undefined,
+    bbox: bbox && bbox.length === 4 ? bbox : undefined,
+    semantic: semantic || undefined,
+    shareToken: shareToken || undefined,
+  };
+
   const { data, loading, error, fetchMore, refetch } = useQuery(SEARCH_QUERY, {
-    variables: {
-      query: searchQuery,
-      // Map display names to the backend IndexableEntity values via the shared
-      // map — naive toLowerCase() turned 'Browser'/'Thing' into 'browser'/'thing'
-      // (not 'browser-activity'/'item'), so those two filters silently no-op'd.
-      includeTypes:
-        includeTypes?.map(
-          (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
-        ) || [],
-      excludeTypes:
-        excludeTypes?.map(
-          (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP] ?? type.toLowerCase(),
-        ) || [],
-      eventTypes: eventTypes || [],
-      tags: tags && tags.length > 0 ? tags : undefined,
-      startTime: startTime || undefined,
-      endTime: endTime || undefined,
-      sortBy: sortBy || undefined,
-      sortOrder: sortOrder || undefined,
-      connectors: connectors && connectors.length > 0 ? connectors : undefined,
-      people: people && people.length > 0 ? people : undefined,
-      places: places && places.length > 0 ? places : undefined,
-      hasLocation: hasLocation || undefined,
-      bbox: bbox && bbox.length === 4 ? bbox : undefined,
-      semantic: semantic || undefined,
-      shareToken: shareToken || undefined,
-      first: PAGE_SIZE,
-    },
+    variables: { ...searchVariables, first: PAGE_SIZE },
     fetchPolicy: 'cache-and-network',
     notifyOnNetworkStatusChange: true,
   });
@@ -351,6 +377,7 @@ function useEntityService({
       totalCount,
       error,
       activeEntity,
+      searchVariables,
       loadMore,
       refetch: refetchSearch,
     },

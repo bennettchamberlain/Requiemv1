@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, mkdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, realpath, stat, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -95,6 +95,16 @@ async function freshInbox(): Promise<string> {
   await mkdir(dir);
 
   return dir;
+}
+
+/**
+ * Where a run's claim on an inbox unit is RECORDED — the RESOLVED path, since
+ * every inbox surface reaches the bytes through a resolver that realpaths
+ * before it checks containment. A fixture that spells the claim any other way
+ * describes a row the importer never writes.
+ */
+async function claimedPath(inbox: string, unit: string): Promise<string> {
+  return path.join(await realpath(inbox), unit);
 }
 
 beforeEach(() => {
@@ -256,7 +266,7 @@ describe('ImportInboxService.scan', () => {
 
   it('marks units an unfinished run already claims', async () => {
     const inbox = await freshInbox();
-    const file = path.join(inbox, 'export.zip');
+    const file = await claimedPath(inbox, 'export.zip');
 
     await writeFile(file, 'bytes');
 
@@ -271,6 +281,33 @@ describe('ImportInboxService.scan', () => {
     });
   });
 
+  it('matches those claims through a SYMLINKED inbox path, where the two disagree', async () => {
+    // The claim half of the same namespace split the declaration test pins:
+    // a run records the path the resolver produced — a realpath — so a lookup
+    // spelled the configured way matches nothing once the inbox crosses a
+    // symlink, and a unit another run is already importing reads as free.
+    const real = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-real-'));
+    const linkRoot = `${real}-link`;
+
+    await symlink(real, linkRoot);
+    await mkdir(path.join(real, USER_FOLDER), { recursive: true });
+    await writeFile(path.join(real, USER_FOLDER, 'export.zip'), 'bytes');
+
+    const claimed = path.join(await realpath(real), USER_FOLDER, 'export.zip');
+    const { service, findActiveByPaths } = build({
+      findActiveByPaths: jest.fn(async () => [{ sourcePath: claimed, runId: 'run-9', userId: ctx.userId }]),
+    });
+
+    // Point config at the LINK, so inboxDir and the recorded claim differ.
+    await withInbox(path.join(linkRoot, USER_FOLDER), async () => {
+      const scan = await service.scan(ctx);
+
+      expect(scan.units[0]).toMatchObject({ activeRunId: 'run-9', claimed: true });
+    });
+
+    expect(findActiveByPaths).toHaveBeenCalledWith([claimed]);
+  });
+
   /**
    * The inbox is ONE folder shared by every account on the appliance. Reporting
    * only the caller's own claims let two users start runs over the same
@@ -281,7 +318,7 @@ describe('ImportInboxService.scan', () => {
    */
   it('marks a unit another account is importing as claimed, without exposing their run', async () => {
     const inbox = await freshInbox();
-    const file = path.join(inbox, 'export.zip');
+    const file = await claimedPath(inbox, 'export.zip');
 
     await writeFile(file, 'bytes');
 
@@ -306,7 +343,7 @@ describe('ImportInboxService.scan', () => {
 
   it('does not offer a unit another account is importing', async () => {
     const inbox = await freshInbox();
-    const claimed = path.join(inbox, 'claimed.zip');
+    const claimed = await claimedPath(inbox, 'claimed.zip');
 
     await writeFile(claimed, 'bytes');
 
@@ -355,6 +392,7 @@ describe('ImportInboxService.scan', () => {
     for (let index = 0; index < 25_000; index += 1) {
       await writeFile(path.join(big, `f${String(index).padStart(6, '0')}.txt`), 'x');
     }
+
     await mkdir(path.join(inbox, 'zzz'));
     await writeFile(path.join(inbox, 'zzz', 'export.csv'), 'x');
 
@@ -471,7 +509,7 @@ describe('ImportInboxService.startBatch', () => {
 
   it('imports everything the scan yields when no units are named, skipping claimed ones', async () => {
     const inbox = await freshInbox();
-    const claimed = path.join(inbox, 'claimed.zip');
+    const claimed = await claimedPath(inbox, 'claimed.zip');
 
     await writeFile(path.join(inbox, 'a.vcf'), 'BEGIN:VCARD');
     await writeFile(claimed, 'bytes');
@@ -550,6 +588,39 @@ describe('service drop folders', () => {
     );
   });
 
+  it('declares through a SYMLINKED inbox path, where the two paths disagree', async () => {
+    // The regression this pins: `resolveWithinRoots` resolves symlinks before
+    // its containment check, so the resolved unit path is a realpath, while the
+    // inbox directory is composed from config and is not. Where the configured
+    // inbox crosses a symlink, `path.relative` between them returns a `../../…`
+    // escape whose first segment is never a service folder — so every unit
+    // declared NOTHING, silently, and only the usage roll-up degraded.
+    //
+    // macOS hides this in plain sight (/tmp and /var are symlinks to /private),
+    // and any bind-mounted appliance data dir does the same.
+    const real = await mkdtemp(path.join(os.tmpdir(), 'ci-inbox-real-'));
+    const linkRoot = `${real}-link`;
+    await symlink(real, linkRoot);
+
+    const userDirReal = path.join(real, USER_FOLDER);
+    await mkdir(path.join(userDirReal, 'reddit'), { recursive: true });
+    await writeFile(path.join(userDirReal, 'reddit', 'export.zip'), 'bytes');
+
+    const startRun = jest.fn(async (_ctx: unknown, _input: { declaredSources?: string[] }) => ({
+      run: { id: 'run-1', label: 'x' },
+    }));
+    const { service } = build({ startRun });
+
+    // Point config at the LINK, so inboxDir and the resolved unit path differ.
+    await withInbox(path.join(linkRoot, USER_FOLDER), async () => {
+      await service.startBatch(ctx, { units: ['reddit/export.zip'], source: 'api' });
+    });
+
+    const [, input] = startRun.mock.calls[0];
+
+    expect(input.declaredSources).toEqual(['reddit']);
+  });
+
   it('declares the shared-folder union when several services share one folder', async () => {
     const inbox = await freshInbox();
 
@@ -574,7 +645,7 @@ describe('service drop folders', () => {
 });
 
 describe('ImportInboxService.onModuleInit', () => {
-  it('creates every existing account\'s subtree at boot, before any scan', async () => {
+  it("creates every existing account's subtree at boot, before any scan", async () => {
     // The folders are drop targets for files moved in BEFORE the app is ever
     // opened, so boot — not the first scan — must be what creates them, for
     // every account the appliance already has.
@@ -802,8 +873,8 @@ describe('folder-scoped recognition', () => {
     });
 
     const optsFor = (suffix: string) =>
-      dataSourcesRecognize.mock.calls.find(
-        (call) => (call[1] as { fullPath: string }).fullPath.endsWith(suffix),
+      dataSourcesRecognize.mock.calls.find((call) =>
+        (call[1] as { fullPath: string }).fullPath.endsWith(suffix),
       )?.[3] as { only?: ReadonlySet<string> };
 
     // The reddit FOLDER is the unit, recognized with only its importer —
@@ -828,11 +899,9 @@ describe('folder-scoped recognition', () => {
     const call = dataSourcesRecognize.mock.calls.find((c) =>
       (c[1] as { fullPath: string }).fullPath.endsWith('/amazon'),
     );
-    const only = (call?.[3] as { only?: ReadonlySet<string> }).only;
+    const only = (call?.[3] as { only?: ReadonlySet<string> } | undefined)?.only;
 
-    expect(only).toEqual(
-      new Set(['amazon', 'prime_video', 'audible', 'kindle_reading', 'amazon_music']),
-    );
+    expect(only).toEqual(new Set(['amazon', 'prime_video', 'audible', 'kindle_reading', 'amazon_music']));
   });
 });
 
@@ -856,9 +925,7 @@ describe('unit chips', () => {
     await withInbox(inbox, async () => {
       const scan = await service.scan(ctx);
 
-      expect(scan.units[0].recognized).toEqual([
-        { dataSource: 'email', title: 'Email', confidence: 0.9 },
-      ]);
+      expect(scan.units[0].recognized).toEqual([{ dataSource: 'email', title: 'Email', confidence: 0.9 }]);
     });
   });
 
@@ -911,11 +978,7 @@ describe('startBatch enqueue order', () => {
       // monster takes its slot.
       expect(started).toEqual(['small.zip', 'medium.zip', 'big.zip']);
       // But a client that lined its rows up with its request sees its order.
-      expect(batch.results.map((result) => result.unit)).toEqual([
-        'big.zip',
-        'medium.zip',
-        'small.zip',
-      ]);
+      expect(batch.results.map((result) => result.unit)).toEqual(['big.zip', 'medium.zip', 'small.zip']);
     });
   });
 });

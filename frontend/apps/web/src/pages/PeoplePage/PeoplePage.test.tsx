@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { gql } from '@/graphql';
@@ -75,6 +75,32 @@ const GET_PERSON_DUPLICATES = gql(`
   }
 `);
 
+const GET_MERGED_PERSON = gql(`
+  query GetMergedPerson($id: ID!) {
+    person(id: $id) {
+      id
+      name
+      description
+      firstName
+      lastName
+      avatarUrl
+      birthDate
+      isSelf
+      identifiers {
+        kind
+        value
+        rawValue
+        label
+      }
+      interactionStats {
+        eventCount
+        communicationCount
+        lastInteractionAt
+      }
+    }
+  }
+`);
+
 const GET_MERGE_CANDIDATES = gql(`
   query GetMergeCandidates($first: Int, $after: String) {
     mergeCandidates(first: $first, after: $after) {
@@ -104,6 +130,18 @@ const GET_MERGE_CANDIDATES = gql(`
             isSelf
           }
         }
+      }
+    }
+  }
+`);
+
+const MERGE_PEOPLE = gql(`
+  mutation MergePeople($input: MergePeopleInput!) {
+    mergePeople(input: $input) {
+      success
+      person {
+        id
+        name
       }
     }
   }
@@ -604,6 +642,164 @@ describe('PeoplePage', () => {
     expect(await screen.findByText('Merge into one person?')).toBeInTheDocument();
     expect(screen.getByText(/Events, messages, and contact methods/)).toBeInTheDocument();
     expect(screen.getByText(/\(You\)/)).toBeInTheDocument();
+  });
+
+  /**
+   * Regression: the page used to call refetch() after a merge. refetch replays
+   * the hook's ORIGINAL variables (first: PAGE_SIZE, no cursor), so it
+   * overwrote the cache entry fetchMore had been appending to and collapsed the
+   * list back to page one — on 21k people, throwing the user back to row 30 on
+   * every merge of a 2,947-group backlog.
+   */
+  it('keeps scrolled-in pages after a merge instead of collapsing back to page one', async () => {
+    const BEATRICE_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff710';
+    const BEATRICE_GLOBAL_ID = btoa(`person:${BEATRICE_UUID}`);
+    const observer = captureIntersectionObserver();
+
+    const group = duplicateGroup([
+      {
+        __typename: 'PersonType' as const,
+        id: PERSON_GLOBAL_ID,
+        name: 'Ada Lovelace',
+        description: null,
+        avatarUrl: null,
+        isSelf: true,
+      },
+      {
+        __typename: 'PersonType' as const,
+        id: DUPLICATE_GLOBAL_ID,
+        name: 'A. Lovelace',
+        description: null,
+        avatarUrl: null,
+        isSelf: false,
+      },
+    ]);
+
+    try {
+      renderWithProviders(<PeoplePage />, {
+        mocks: [
+          {
+            request: { query: GET_PEOPLE, variables: { query: null, first: PAGE_SIZE } },
+            result: {
+              data: {
+                people: {
+                  __typename: 'PersonConnection' as const,
+                  totalCount: 3,
+                  pageInfo: pageInfo({ hasNextPage: true, endCursor: PERSON_GLOBAL_ID }),
+                  edges: [
+                    { __typename: 'PersonEdge' as const, cursor: PERSON_GLOBAL_ID, node: personNode() },
+                    {
+                      __typename: 'PersonEdge' as const,
+                      cursor: DUPLICATE_GLOBAL_ID,
+                      node: personNode({ id: DUPLICATE_GLOBAL_ID, name: 'A. Lovelace' }),
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            request: {
+              query: GET_PEOPLE,
+              variables: { query: null, first: PAGE_SIZE, after: PERSON_GLOBAL_ID },
+            },
+            result: {
+              data: {
+                people: {
+                  __typename: 'PersonConnection' as const,
+                  totalCount: 3,
+                  pageInfo: pageInfo(),
+                  edges: [
+                    {
+                      __typename: 'PersonEdge' as const,
+                      cursor: BEATRICE_GLOBAL_ID,
+                      node: personNode({ id: BEATRICE_GLOBAL_ID, name: 'Beatrice Clarke' }),
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+            result: duplicatesResult([group]),
+          },
+          {
+            request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+            result: candidatesResult([]),
+          },
+          {
+            request: {
+              query: MERGE_PEOPLE,
+              variables: { input: { targetId: PERSON_GLOBAL_ID, sourceIds: [DUPLICATE_GLOBAL_ID] } },
+            },
+            result: {
+              data: {
+                mergePeople: {
+                  __typename: 'MergePeoplePayload' as const,
+                  success: true,
+                  person: {
+                    __typename: 'PersonType' as const,
+                    id: PERSON_GLOBAL_ID,
+                    name: 'Ada Lovelace',
+                  },
+                },
+              },
+            },
+          },
+          // The one row whose aggregates the merge changed is re-read on its
+          // own — NOT by re-running the list query.
+          {
+            request: { query: GET_MERGED_PERSON, variables: { id: PERSON_GLOBAL_ID } },
+            result: {
+              data: {
+                person: personNode({
+                  interactionStats: {
+                    __typename: 'PersonInteractionStatsType' as const,
+                    eventCount: 7,
+                    communicationCount: 4,
+                    lastInteractionAt: null,
+                  },
+                }),
+              },
+            },
+          },
+          // Both suggestion sources are re-read after the merge; neither
+          // re-runs the people list.
+          {
+            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
+            result: duplicatesResult([]),
+          },
+          {
+            request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+            result: candidatesResult([]),
+          },
+        ],
+      });
+
+      expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
+
+      await observer.scrollSentinelIntoView();
+      expect(await screen.findByText('Beatrice Clarke')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Merge into one person' }));
+      // The dialog's confirm carries the same label as the card's trigger; the
+      // last match is the one inside the dialog.
+      await screen.findByText('Merge into one person?');
+      const confirmButtons = screen.getAllByRole('button', { name: 'Merge into one person' });
+      fireEvent.click(confirmButtons[confirmButtons.length - 1]!);
+
+      // The merged-away row goes; the page-two row that refetch() used to wipe
+      // out stays, and the kept row picks up its new aggregates.
+      await waitFor(() => expect(screen.queryByText('A. Lovelace')).not.toBeInTheDocument());
+      expect(screen.getByText('Beatrice Clarke')).toBeInTheDocument();
+      expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+      await screen.findByText(/7 events · 4 messages/);
+      // totalCount is decremented too, so the footer does not claim a row it dropped.
+      expect(screen.getByText(/loaded/).textContent).toContain('2 of 2 loaded');
+    } finally {
+      observer.restore();
+    }
   });
 
   /**

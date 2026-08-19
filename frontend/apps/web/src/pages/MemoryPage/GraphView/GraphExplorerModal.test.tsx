@@ -453,6 +453,10 @@ describe('GraphTabPanel (webbed-feet spike)', () => {
     });
 
     it('preloads edges among busy dots when switching to 3D overview', async () => {
+      // `init` is declared even though the mock ignores it: the assertion below
+      // reads `edgeCall[1]` to check the POSTed body, and vi.fn types its
+      // `mock.calls` from this signature — a one-parameter mock makes that a
+      // 1-tuple and the read a type error.
       const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 

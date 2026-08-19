@@ -10,7 +10,12 @@ import { UserService } from '@ci/domains/user';
 
 import { allDataSources, dataSourcesRecognize, type DirEntry } from '../datasources/registry';
 import type { ImportRunSource } from '../entities/ImportRunEntity';
-import { inboxRoot, resolveWithinUserInbox, userInboxDir } from '../sources/importRoots';
+import {
+  inboxRoot,
+  realUserInboxDir,
+  resolveWithinUserInbox,
+  userInboxDir,
+} from '../sources/importRoots';
 import { declaredSourcesForInboxUnit, serviceInboxFolders } from '../sources/inboxFolders';
 
 import { ImportRunService } from './ImportRunService';
@@ -290,7 +295,7 @@ export class ImportInboxService implements OnModuleInit {
    * of an unchanged inbox agree.
    */
   async scan(ctx: UserServiceContext): Promise<InboxScan> {
-    const { dir: inboxDir } = await this.userDir(ctx);
+    const { dir: inboxDir, email } = await this.userDir(ctx);
 
     try {
       // Re-ensured on every scan, not only at boot: a whole-folder unit
@@ -326,13 +331,21 @@ export class ImportInboxService implements OnModuleInit {
     // to the caller's subtree means another account SHOULD never hold one of
     // these paths, but the claim registry is the truth about the bytes —
     // belt-and-braces beats assuming the folder layout was always this shape.
+    //
+    // Keyed off the RESOLVED root for the same reason the declaration below
+    // is: what a claim RECORDS is the path `resolveWithinUserInbox` handed
+    // back, which is a realpath. Asked in the configured spelling, a symlinked
+    // inbox matches no stored row at all — so every claimed unit reads as
+    // free, the scan offers bytes another run already holds, and starting them
+    // dies on the staged-source unique violation instead.
+    const claimRoot = await realUserInboxDir(email);
     const active = await this.stagedSources.findActiveByPaths(
-      units.map((unit) => path.join(inboxDir, unit.path)),
+      units.map((unit) => path.join(claimRoot, unit.path)),
     );
     const claimedBy = new Map(active.map((row) => [row.sourcePath, row]));
 
     for (const unit of units) {
-      const claim = claimedBy.get(path.join(inboxDir, unit.path));
+      const claim = claimedBy.get(path.join(claimRoot, unit.path));
 
       unit.claimed = claim != null;
       // The run id only when it is theirs to look at. A client uses it to open
@@ -380,6 +393,10 @@ export class ImportInboxService implements OnModuleInit {
     }
 
     const { dir: inboxDir, email } = await this.userDir(ctx);
+    // Resolved once per batch, not per unit. Falls back to the configured path
+    // when the directory does not exist yet — every unit then fails its own
+    // resolve anyway, and a throw here would take the whole batch with it.
+    const inboxRealDir = await realUserInboxDir(email);
     const resultByUnit = new Map<string, InboxUnitResult>();
 
     // Two passes so the runs can start SMALLEST FIRST. The stage queue is
@@ -423,8 +440,19 @@ export class ImportInboxService implements OnModuleInit {
         // credits declared ∩ detected instead of dominant-only. Computed from
         // the RESOLVED path so the declaration matches where the bytes really
         // sit, not how the caller spelled the unit.
+        // Both sides of this `relative` must be realpaths. `resolved` already is
+        // — resolveWithinRoots resolves symlinks BEFORE its containment check,
+        // deliberately — while `inboxDir` is composed from config. When the
+        // configured inbox traverses a symlink the two disagree and
+        // `path.relative` returns a `../../…` escape, whose first segment is
+        // never a service folder, so EVERY unit silently declared nothing.
+        //
+        // Not hypothetical and not test-only: macOS puts /tmp and /var behind
+        // symlinks (/private/…), and any bind-mounted or symlinked appliance
+        // data dir does the same. The failure is invisible — the run starts
+        // fine and only the usage roll-up quietly falls back to dominant-only.
         const declared = declaredSourcesForInboxUnit(
-          path.relative(inboxDir, resolved).split(path.sep).join('/'),
+          path.relative(inboxRealDir, resolved).split(path.sep).join('/'),
         );
 
         const { run } = await this.runs.startRun(ctx, {

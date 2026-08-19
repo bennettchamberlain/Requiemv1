@@ -79,6 +79,14 @@ export const IMPORT_STAGE_QUEUE_BY_KIND: Record<ImportStageKindName, string> = {
  * is fast enough that serial costs nothing. `media` is I/O-bound against the
  * object store, so two overlap fine. `unpack` stays at 1 so two archives'
  * disk preflights cannot both pass and then jointly fill the volume.
+ *
+ * The progress UI reads these and states them — the active-import snapshot
+ * reports them as `queue.concurrency`, and the region pinned to the import and
+ * jobs pages turns them into a sentence. Thirteen runs against one parse slot
+ * is what makes "queued for 51 minutes" the NORMAL state of a batch import
+ * rather than a stall, and nobody can tell those two apart unless the surface
+ * says how many stages of that kind run at once. A UI holding its own copy
+ * would go on claiming the old number after someone changed one here.
  */
 export const IMPORT_STAGE_CONCURRENCY: Record<ImportStageKindName, number> = {
   unpack: 1,

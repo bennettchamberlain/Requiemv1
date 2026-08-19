@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { registerNativePushToken } from './registerNativePushToken';
 
@@ -64,8 +64,7 @@ describe('registerNativePushToken', () => {
       expect(register).toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalled();
     });
-    expect(JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string).push_token).toBe(
-      'apns-token',
-    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(JSON.parse(String(init?.body)).push_token).toBe('apns-token');
   });
 });

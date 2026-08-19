@@ -308,8 +308,14 @@ function AppRoutes() {
           {isFeatureEnabled('files.page') && (
             <>
               <Route path="/files" element={<Navigate to="/memory/content" replace />} />
+              {/*
+                The optional :fileId gives an individual file a shareable URL and
+                makes Back close the viewer. It is one route rather than two so
+                FilesPage stays mounted when the param changes — a second route
+                would remount it and throw away every page the user scrolled in.
+              */}
               <Route
-                path="/memory/content"
+                path="/memory/content/:fileId?"
                 element={
                   <ProtectedRoute>
                     <FilesPage />
