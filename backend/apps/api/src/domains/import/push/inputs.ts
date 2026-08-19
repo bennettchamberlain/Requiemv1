@@ -34,6 +34,7 @@ import {
   discordAttachmentUrls,
   isMediaType,
   contentFileRef,
+  isAttachmentPlaceholderOnly,
   isDiscordAttachmentOnly,
   isRedditComment,
   isRedditPost,
@@ -476,9 +477,13 @@ export function communicationTypeFor(kind: string, metadata?: Record<string, unk
  */
 export function toCommunicationInput(rec: CanonicalRecord): CreateCommunicationDto {
   const m = rec.metadata;
-  // An attachment-only Discord message has no text of its own — see
-  // isDiscordAttachmentOnly for why the title fallbacks must not fill it in.
-  const content = isDiscordAttachmentOnly(rec) ? '' : (rec.description ?? rec.title ?? '');
+  // A message whose only payload is its attachments has no text of its own —
+  // see isDiscordAttachmentOnly / isAttachmentPlaceholderOnly for why the title
+  // fallbacks must not fill it in with a synthesized "Message — <sender>".
+  const content =
+    isDiscordAttachmentOnly(rec) || isAttachmentPlaceholderOnly(rec)
+      ? ''
+      : (rec.description ?? rec.title ?? '');
   const input: CreateCommunicationDto = {
     communication_type: communicationTypeFor(rec.kind, m),
     time: new Date(rec.startTime),

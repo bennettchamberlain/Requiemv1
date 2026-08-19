@@ -3,11 +3,13 @@ import {
   destinationsFor,
   discordAttachmentFilename,
   discordAttachmentUrls,
+  isAttachmentPlaceholderOnly,
   isDiscordAttachmentOnly,
   isRedditComment,
   isRedditPost,
   kindFor,
   redditMediaUrl,
+  str,
   toCanonical,
   type CanonicalRecord,
 } from '../canonical';
@@ -396,6 +398,90 @@ describe('Discord attachments', () => {
 
     it('is false for a Discord message with no attachments at all', () => {
       expect(isDiscordAttachmentOnly(recordFor({ dataSource: 'discord' }))).toBe(false);
+    });
+  });
+
+  // U+FFFC OBJECT REPLACEMENT CHARACTER is what macOS writes into
+  // `message.text` where an inline attachment sits. It is a control glyph, not
+  // text: a live appliance database held 21,781 iMessage rows whose ENTIRE
+  // ci.communications.content was one of them.
+  describe('str() strips the U+FFFC attachment placeholder', () => {
+    it('collapses a body that is nothing but placeholders to null', () => {
+      expect(str('\uFFFC')).toBeNull();
+      expect(str('\uFFFC\uFFFC')).toBeNull();
+      expect(str('\uFFFC ')).toBeNull();
+    });
+
+    it('leaves a CAPTIONED attachment as just the caption', () => {
+      expect(str('\uFFFC look at this')).toBe('look at this');
+      expect(str('\uFFFC\uFFFCGood morning see you tomorrow')).toBe('Good morning see you tomorrow');
+      expect(str('Also, what is this thing called?\uFFFC\uFFFC')).toBe('Also, what is this thing called?');
+    });
+
+    it('still repairs lone surrogates, and never splices two into a fake pair', () => {
+      // The FFFC strip runs AFTER the surrogate repair, so removing the glyph
+      // between a high and a low surrogate cannot fabricate an emoji that was
+      // never in the source.
+      expect(str('\uD83D\uFFFC\uDE00')).toBe('\uFFFD\uFFFD');
+      // A genuine pair is untouched.
+      expect(str('\uD83D\uDE00')).toBe('\uD83D\uDE00');
+    });
+
+    it('does NOT strip U+FFFD — sanitizeText mints it for broken surrogates', () => {
+      expect(str('\uFFFD')).toBe('\uFFFD');
+    });
+  });
+
+  describe('isAttachmentPlaceholderOnly', () => {
+    it('is true for an iMessage body that is only the U+FFFC placeholder', () => {
+      const attachmentOnly = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Sender: '+15551234567' },
+      });
+
+      expect(attachmentOnly.description).toBeNull();
+      expect(isAttachmentPlaceholderOnly(attachmentOnly)).toBe(true);
+    });
+
+    it('is true for a body that is only U+FFFD mojibake', () => {
+      const mojibake = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFD\uFFFD', Sender: '+15551234567' },
+      });
+
+      expect(isAttachmentPlaceholderOnly(mojibake)).toBe(true);
+    });
+
+    it('is false once the placeholder is joined by real caption text', () => {
+      const captioned = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC Merry Christmas' },
+      });
+
+      expect(captioned.description).toBe('Merry Christmas');
+      expect(isAttachmentPlaceholderOnly(captioned)).toBe(false);
+    });
+
+    it('is false for a message with no body metadata at all', () => {
+      expect(
+        isAttachmentPlaceholderOnly(recordFor({ classification: 'message', dataSource: 'imessage' })),
+      ).toBe(false);
+    });
+
+    it('is false when a lower-priority body key carries the real text', () => {
+      // descriptionFor prefers Text, but falls through to Body — a placeholder
+      // in the preferred key must not blank a record that has real prose.
+      const rec = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Body: 'the real message' },
+      });
+
+      expect(rec.description).toBe('the real message');
+      expect(isAttachmentPlaceholderOnly(rec)).toBe(false);
     });
   });
 });
