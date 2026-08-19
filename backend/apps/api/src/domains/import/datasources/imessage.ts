@@ -2,6 +2,7 @@
    Consolidated minimal importer: fetches messages with basic metadata, timeframe filtering.
 */
 import fs from 'fs';
+import { stat } from 'node:fs/promises';
 import path from 'path';
 
 import Database from 'better-sqlite3';
@@ -44,8 +45,12 @@ class iMessageFileImporter implements FileImporter {
     ];
 
     for (const dbPath of chatDbPaths) {
-      if (fs.existsSync(dbPath)) {
+      try {
+        await stat(dbPath);
+
         return { confidence: 0.9 };
+      } catch {
+        /* not present */
       }
     }
 

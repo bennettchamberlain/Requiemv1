@@ -6,6 +6,7 @@
    Unix epoch. Trashed notes are skipped.
 */
 import fs from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -97,22 +98,22 @@ export class GoogleKeepFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
-      return path.extname(root).toLowerCase() === '.json' && this.looksLikeNote(root)
+    if (st.isFile()) {
+      return path.extname(root).toLowerCase() === '.json' && (await this.looksLikeNote(root))
         ? { confidence: 0.9 }
         : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         // A Keep export ships Labels.txt alongside the note JSONs — a strong tell.
         const hasLabels = names.some((n) => n.toLowerCase() === 'labels.txt');
         for (const n of names) {
@@ -120,7 +121,7 @@ export class GoogleKeepFileImporter implements FileImporter {
             continue;
           }
 
-          if (this.looksLikeNote(path.join(root, n))) {
+          if (await this.looksLikeNote(path.join(root, n))) {
             return { confidence: hasLabels ? 0.95 : 0.85, dir_threshold: 0.7 };
           }
         }
@@ -135,10 +136,10 @@ export class GoogleKeepFileImporter implements FileImporter {
   }
 
   // A Keep note JSON has the signature timestamp + a note-shaped key.
-  private looksLikeNote(fpath: string): boolean {
+  private async looksLikeNote(fpath: string): Promise<boolean> {
     let raw: string;
     try {
-      raw = fs.readFileSync(fpath, 'utf8');
+      raw = await readFile(fpath, 'utf8');
     } catch {
       return false;
     }

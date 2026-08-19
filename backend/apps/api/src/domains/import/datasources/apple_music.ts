@@ -2,6 +2,8 @@
    The "Apple Music Play Activity.csv" file (also exported as
    "Apple Music - Play Activity.csv") holds one play event per row. */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -29,33 +31,33 @@ export class AppleMusicFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
       if (filenameMatches(base)) {
         return { confidence: 0.95 };
       }
 
-      if (path.extname(base).toLowerCase() === '.csv' && this.headerMatches(root)) {
+      if (path.extname(base).toLowerCase() === '.csv' && (await this.headerMatches(root))) {
         return { confidence: 0.85 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      for (const f of this.walkCsvFiles(root)) {
+    if (st.isDirectory()) {
+      for await (const f of this.walkCsvFiles(root)) {
         if (filenameMatches(path.basename(f))) {
           return { confidence: 0.95 };
         }
 
-        if (this.headerMatches(f)) {
+        if (await this.headerMatches(f)) {
           return { confidence: 0.85 };
         }
       }
@@ -68,14 +70,14 @@ export class AppleMusicFileImporter implements FileImporter {
 
   // Yield .csv files within root, recursing up to two levels (Apple nests the
   // CSV under "Apple Media Services information/Apple Music Activity/").
-  private *walkCsvFiles(root: string, depth = 0): Generator<string> {
+  private async *walkCsvFiles(root: string, depth = 0): AsyncGenerator<string> {
     if (depth > 2) {
       return;
     }
 
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(root, { withFileTypes: true });
+      entries = await readdir(root, { withFileTypes: true });
     } catch {
       return;
     }
@@ -91,24 +93,20 @@ export class AppleMusicFileImporter implements FileImporter {
   }
 
   // Read only the first ~8KB to inspect the CSV header row.
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
+    let handle: FileHandle | undefined;
     try {
-      fd = fs.openSync(fpath, 'r');
+      handle = await open(fpath, 'r');
       const buf = Buffer.alloc(8192);
-      const n = fs.readSync(fd, buf, 0, 8192, 0);
+      const { bytesRead } = await handle.read(buf, 0, 8192, 0);
 
-      return headerHasPlayCols(buf.toString('utf8', 0, n));
+      return headerHasPlayCols(buf.toString('utf8', 0, bytesRead));
     } catch {
       return false;
     } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
+      await handle?.close().catch(() => {
+        /* ignore */
+      });
     }
   }
 
@@ -118,18 +116,18 @@ export class AppleMusicFileImporter implements FileImporter {
       return;
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = fs.statSync(root);
     } catch {
       return;
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       await this.processFile(root, params);
-    } else if (stat.isDirectory()) {
-      for (const f of this.walkCsvFiles(root)) {
-        if (filenameMatches(path.basename(f)) || this.headerMatches(f)) {
+    } else if (st.isDirectory()) {
+      for await (const f of this.walkCsvFiles(root)) {
+        if (filenameMatches(path.basename(f)) || (await this.headerMatches(f))) {
           await this.processFile(f, params);
         }
       }

@@ -1,5 +1,6 @@
 /* NMEA GPS sentences datasource (MVP) */
 import fs from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, DirEntry, Recognition } from './registry';
@@ -17,10 +18,10 @@ export class NMEAFileImporter implements FileImporter {
     }
 
     try {
-      if (fs.statSync(full).isFile()) {
+      if ((await stat(full)).isFile()) {
         const ext = path.extname(full).toLowerCase();
         if (ext === '.nmea' || ext === '.log' || ext === '.txt') {
-          const first = fs.readFileSync(full, 'utf8').split(/\n/).slice(0, 5).join('\n');
+          const first = (await readFile(full, 'utf8')).split(/\n/).slice(0, 5).join('\n');
           if (/^\$GP(RMC|GGA)/m.test(first)) {
             return { confidence: 0.8 };
           }

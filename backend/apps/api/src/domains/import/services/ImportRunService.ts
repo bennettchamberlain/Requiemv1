@@ -11,6 +11,7 @@ import { EventService } from '@ci/domains/events';
 import {
   IMPORT_QUEUE,
   IMPORT_STAGE_KINDS,
+  IMPORT_STAGE_QUEUE_BY_KIND,
   IMPORT_STAGE_WEIGHTS,
   type ImportStageKindName,
 } from '../constants';
@@ -56,8 +57,11 @@ export interface StartRunInput {
   source?: ImportRunSource;
 
   /**
-   * The importer(s) the user's service card stood for — validated by the
-   * controller against the registry. Stored verbatim; NULL means undeclared.
+   * The importer(s) the user's intent stood for — a wizard service card, or
+   * the inbox service folder the unit was dropped in. The controller validates
+   * caller-supplied lists against the registry; the inbox derives its own from
+   * the catalog (`sources/inboxFolders.ts`). Stored verbatim; NULL means
+   * undeclared.
    */
   declaredSources?: readonly string[];
 
@@ -1218,11 +1222,36 @@ export class ImportRunService {
   // Internals
   // -------------------------------------------------------------------------
 
-  private async enqueueStage(userId: string, runId: string, stage: ImportStage): Promise<void> {
+  /**
+   * Enqueue one stage job on ITS KIND's queue, so stage kinds overlap across
+   * runs (see IMPORT_STAGE_QUEUE_BY_KIND). Several callers hold only the
+   * stage id — the kind is looked up rather than demanded, because routing a
+   * job to the wrong kind's queue would let one kind's long job block
+   * another's slot, which is the exact head-of-line problem the split exists
+   * to remove.
+   */
+  private async enqueueStage(
+    userId: string,
+    runId: string,
+    stage: Pick<ImportStage, 'id'> & { kind?: ImportStageKindName },
+  ): Promise<void> {
+    let kind = stage.kind;
+
+    if (kind == null) {
+      const rows = await this.dataSource.query<Array<{ kind: ImportStageKindName }>>(
+        `SELECT kind FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stage.id],
+      );
+
+      kind = rows[0]?.kind;
+    }
+
     await this.eventService.send(
       ImportStageEvent,
       { runId, stageId: stage.id, userId },
-      { queue: IMPORT_QUEUE },
+      // An unknown kind (a deleted stage racing the enqueue) falls back to the
+      // legacy shared queue, which still drains — never dropped on the floor.
+      { queue: kind != null ? IMPORT_STAGE_QUEUE_BY_KIND[kind] : IMPORT_QUEUE },
     );
   }
 

@@ -56,6 +56,7 @@ import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 import { PositionModule } from '@ci/domains/position';
+import { UserModule } from '@ci/domains/user';
 
 import { ImportInboxController } from './controllers/ImportInboxController';
 import { ImportRunsController } from './controllers/ImportRunsController';
@@ -68,6 +69,7 @@ import { StagedItemEntity } from './entities/StagedItemEntity';
 import { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
 import { StagedSourceEntity } from './entities/StagedSourceEntity';
 import { ImportStageListener } from './listeners/ImportStageListener';
+import { InboxProvisionListener } from './listeners/InboxProvisionListener';
 import { StagedUploadPurgeCron } from './listeners/StagedUploadPurgeCron';
 import { DataSourceCatalogService } from './services/DataSourceCatalogService';
 import { ImportInboxService } from './services/ImportInboxService';
@@ -103,6 +105,7 @@ import { UnpackStage } from './stages/UnpackStage';
     GraphModule,
     MemoryModule,
     PositionModule,
+    UserModule,
   ],
   providers: [
     DataSourceCatalogService,
@@ -115,6 +118,7 @@ import { UnpackStage } from './stages/UnpackStage';
     MediaStage,
     PushStage,
     ImportStageListener,
+    InboxProvisionListener,
     StagedUploadPurgeCron,
   ],
   controllers: [ImportUploadsController, ImportRunsController, ImportInboxController],

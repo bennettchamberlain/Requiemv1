@@ -14,6 +14,8 @@ import {
   uploadsRoot,
 } from '@ci/domains/import';
 
+import { UserService } from '@ci/domains/user';
+
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';
 
@@ -55,7 +57,7 @@ export class ImportPathTool extends BaseTool<ImportPathInput, unknown> {
       'Start importing an archive the appliance can see on disk. Returns a run id immediately — ' +
       'the import continues in the background across three stages. Use import.run_status to follow ' +
       'it. Re-importing the same archive is safe and creates no duplicates. Only paths under the ' +
-      'configured import roots may be imported.',
+      'configured import roots or your own import-inbox folder may be imported.',
     category: 'database',
     parameters: {
       type: 'object',
@@ -76,6 +78,7 @@ export class ImportPathTool extends BaseTool<ImportPathInput, unknown> {
   constructor(
     private readonly sources: StagedSourceService,
     private readonly runs: ImportRunService,
+    private readonly users: UserService,
     protected readonly logger: LoggerService,
   ) {
     super();
@@ -91,10 +94,13 @@ export class ImportPathTool extends BaseTool<ImportPathInput, unknown> {
       throw new Error('path is required');
     }
 
+    // The caller's email scopes which inbox subtree they may read — their own.
+    const user = await this.users.findById({ userId: context.userId }, context.userId);
+
     let resolved: string;
 
     try {
-      resolved = await resolveWithinImportRoots(input.path);
+      resolved = await resolveWithinImportRoots(input.path, user?.email ?? null);
     } catch (err) {
       if (err instanceof PathOutsideImportRootsError) {
         return { started: false, reason: err.message };

@@ -18,6 +18,7 @@
        workout itself deduped away against its JSON twin.
 */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -267,14 +268,14 @@ export class GoogleFitFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
       // A bare YYYY-MM-DD.csv whose parent is the daily-metrics folder.
       if (DAILY_CSV.test(base) && path.basename(path.dirname(root)).toLowerCase() === DAILY_DIR) {
@@ -284,9 +285,9 @@ export class GoogleFitFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       // The Fit root, or any directory whose tree contains the Fit subfolders.
-      if (this.findFitRoot(root)) {
+      if (await this.findFitRoot(root)) {
         return { confidence: 0.95 };
       }
 
@@ -298,14 +299,14 @@ export class GoogleFitFileImporter implements FileImporter {
 
   // Find a directory that has the Google Fit signature subfolders. Accepts the
   // Fit folder itself, a Takeout root containing it, or a daily-metrics folder.
-  private findFitRoot(root: string, depth = 0): string | undefined {
+  private async findFitRoot(root: string, depth = 0): Promise<string | undefined> {
     if (depth > 3) {
       return undefined;
     }
 
     let names: string[];
     try {
-      names = fs.readdirSync(root);
+      names = await readdir(root);
     } catch {
       return undefined;
     }
@@ -323,7 +324,7 @@ export class GoogleFitFileImporter implements FileImporter {
       const p = path.join(root, n);
       let st: fs.Stats;
       try {
-        st = fs.statSync(p);
+        st = await stat(p);
       } catch {
         continue;
       }
@@ -336,7 +337,7 @@ export class GoogleFitFileImporter implements FileImporter {
         return p;
       }
 
-      const nested = this.findFitRoot(p, depth + 1);
+      const nested = await this.findFitRoot(p, depth + 1);
       if (nested) {
         return nested;
       }
@@ -366,7 +367,7 @@ export class GoogleFitFileImporter implements FileImporter {
       return;
     }
 
-    const fitRoot = this.findFitRoot(root) || root;
+    const fitRoot = (await this.findFitRoot(root)) || root;
     // Daily metrics.
     const dailyDir = this.childDir(fitRoot, DAILY_DIR);
     if (dailyDir) {

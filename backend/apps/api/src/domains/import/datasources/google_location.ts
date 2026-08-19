@@ -2,6 +2,7 @@
    Recognizes directory containing Records.json and parses minimal location points.
 */
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, DirEntry, Recognition } from './registry';
@@ -31,8 +32,16 @@ export class GoogleLocationFileImporter implements FileImporter {
     }
 
     try {
-      if (fs.statSync(base).isDirectory()) {
-        if (fs.existsSync(path.join(base, 'Records.json'))) {
+      if ((await stat(base)).isDirectory()) {
+        let hasRecords = false;
+        try {
+          await stat(path.join(base, 'Records.json'));
+          hasRecords = true;
+        } catch {
+          /* Records.json absent */
+        }
+
+        if (hasRecords) {
           // heuristic similar to Go: folder name contains "Location History" + file present
           const name = path.basename(base);
           if (/location history/i.test(name)) {
