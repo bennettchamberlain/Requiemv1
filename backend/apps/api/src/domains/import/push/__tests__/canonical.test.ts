@@ -87,6 +87,18 @@ describe('kindFor', () => {
     expect(kindFor('media', 'video/mp4')).toBe('capture.video');
   });
 
+  it('does not call a non-media MIME a photo just because the classification says "media"', () => {
+    // The Instagram HTML importer used to stamp 'media' on text/plain entries
+    // that carried no file at all; the photo default turned each into a
+    // capture.photo event with no photo behind it (six in the live database).
+    // A present, non-media mimetype is a statement about the bytes and beats a
+    // coarse classification label.
+    expect(kindFor('media', 'text/plain')).toBe('import.archive_item');
+    expect(kindFor('media', 'application/pdf')).toBe('import.archive_item');
+    // No MIME at all still defaults to photo, as it always has.
+    expect(kindFor('media', null)).toBe('capture.photo');
+  });
+
   it('maps the messaging classifications apart rather than into one bucket', () => {
     expect(kindFor('message', null)).toBe('communication.message');
     expect(kindFor('email', null)).toBe('communication.email');
