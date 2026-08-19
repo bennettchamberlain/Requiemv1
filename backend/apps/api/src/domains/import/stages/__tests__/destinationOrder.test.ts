@@ -30,8 +30,27 @@ describe('DESTINATION_ORDER agrees with destinationsFor', () => {
     'writes %s destinations in the same relative order destinationsFor lists them',
     (kind) => {
       // A file-bearing record, so the branches gated on a file are exercised too.
-      const rec = { kind, mediaType: 'image/jpeg', mediaPath: '/tmp/x.jpg' } as never;
-      const destinations = destinationsFor(rec).filter((d) => rank(d) >= 0);
+      // `metadata` is NOT optional on a CanonicalRecord — all eleven reads in
+      // canonical.ts dereference it directly. Omitting it here made this
+      // fixture pass only for as long as no branch on the path happened to
+      // read it; #2152 added `isSocialAffiliation`, which reads
+      // `rec.metadata.Kind`, and the test began throwing instead of asserting.
+      const rec = {
+        kind,
+        metadata: {},
+        mediaType: 'image/jpeg',
+        mediaPath: '/tmp/x.jpg',
+      } as never;
+      const destinations = destinationsFor(rec);
+
+      // Assert membership BEFORE ordering. Filtering unranked destinations out
+      // — which this test did — discards precisely the drift it exists to
+      // catch: a destination dropped from DESTINATION_ORDER ranks -1, gets
+      // filtered away, and the remaining list is still sorted, so the test
+      // passes while that destination is never written at all.
+      for (const destination of destinations) {
+        expect(DESTINATION_ORDER).toContain(destination);
+      }
 
       const ranks = destinations.map(rank);
       expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
