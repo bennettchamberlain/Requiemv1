@@ -1218,11 +1218,38 @@ export class ImportRunService {
   // Internals
   // -------------------------------------------------------------------------
 
+  /**
+   * Put one stage on the queue, at most once while a job for it is still
+   * pending.
+   *
+   * `singletonKey` is the whole point. Stage jobs run at `localConcurrency: 1`
+   * appliance-wide (see ImportStageListener), so on a multi-source import every
+   * stage but one is legitimately QUEUED, sometimes for a long time: a real
+   * 13-source run measured a single Google Takeout parse at 703,956 items over
+   * 45 minutes with twelve runs waiting behind it.
+   *
+   * `resumeInterrupted` re-enqueues a queued stage it judges stale, and judges
+   * staleness from `import_stages.updated_at` — which nothing advances while a
+   * stage waits its turn. So every waiting stage crosses STALE_STAGE_MINUTES
+   * and collects a fresh job on EVERY sweep, every 5 minutes, for as long as
+   * the import runs. That is not hypothetical: 16 distinct stages had
+   * accumulated 107 pending jobs after 47 minutes, and the count grew linearly.
+   *
+   * The duplicates were harmless per-job — `beginStage` is a claim and a
+   * redelivered job no-ops — but the queue growth is unbounded and it is the
+   * NORMAL case for exactly the imports that take longest.
+   *
+   * Keying on the stage id lets pg-boss refuse the duplicate at insert time,
+   * which fixes it without teaching the sweep to distinguish "waiting" from
+   * "lost" (it cannot, from the stage row alone). Crash recovery still works:
+   * the key only suppresses a job while one is pending, so once a lost job's
+   * has left the queue the sweep can enqueue again.
+   */
   private async enqueueStage(userId: string, runId: string, stage: ImportStage): Promise<void> {
     await this.eventService.send(
       ImportStageEvent,
       { runId, stageId: stage.id, userId },
-      { queue: IMPORT_QUEUE },
+      { queue: IMPORT_QUEUE, singletonKey: stage.id },
     );
   }
 
