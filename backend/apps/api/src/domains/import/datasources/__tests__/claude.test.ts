@@ -232,6 +232,47 @@ describe('Claude datasource', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  // The conversation UUID, not its name: a claude.ai conversation can be
+  // renamed and an untitled one has no name at all, so the uuid is the stable
+  // thread key — and mediaForMessage already stamped it that way. The message
+  // path stamped only `Conversation`, so its rows reached
+  // ci.communications.thread_id with no key at all (4 NULL rows on the live
+  // database) and disagreed with the media items from the same conversation.
+  it('threads every message in a conversation on the conversation uuid, not its renameable name', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-thread-'));
+    const fpath = path.join(dir, 'conversations.json');
+    fs.writeFileSync(
+      fpath,
+      JSON.stringify([
+        {
+          uuid: 'conv-threaded',
+          name: 'A name the user can change',
+          chat_messages: [
+            { uuid: 'm-1', text: 'first', sender: 'human', created_at: '2024-03-01T09:00:00Z' },
+            { uuid: 'm-2', text: 'second', sender: 'assistant', created_at: '2024-03-01T09:00:01Z' },
+          ],
+        },
+        {
+          uuid: 'conv-untitled',
+          chat_messages: [
+            { uuid: 'm-3', text: 'alone', sender: 'human', created_at: '2024-03-01T10:00:00Z' },
+          ],
+        },
+      ]),
+    );
+
+    const pipeline = await run({ filename: 'conversations.json', fullPath: fpath });
+    const threadOf = (id: string): unknown => pipeline.find((p) => p.item.id === id)!.item.metadata!.ThreadId;
+
+    expect(threadOf('m-1')).toBe('conv-threaded');
+    expect(threadOf('m-2')).toBe('conv-threaded');
+    // An untitled conversation has no name to fall back on — the uuid is the
+    // only thread key it will ever have.
+    expect(threadOf('m-3')).toBe('conv-untitled');
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('empty input yields no items', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-empty-'));
     const fpath = path.join(dir, 'conversations.json');

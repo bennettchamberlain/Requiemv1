@@ -112,6 +112,22 @@ class iMessageFileImporter implements FileImporter {
         { identifier: string | null; displayName: string | null; participants: string[] }
       >();
       const chatIdByMessage = new Map<number, number>();
+      /**
+       * Handles that iMessage itself uses as the identifier of a 1:1 chat —
+       * `chat.chat_identifier` equal to the chat's single other participant.
+       *
+       * This is the evidence the thread fallback below needs. A message with no
+       * `chat_message_join` row has no conversation of its own, but if its
+       * correspondent is a handle that IS a 1:1 chat identifier in this same
+       * database, then the thread it belongs to is not a guess — it is a chat
+       * that demonstrably exists, under the exact key its other messages
+       * already use. When the correspondent is NOT such an identifier the
+       * message might equally be an orphaned group message, so nothing is
+       * invented and the thread stays empty. On the live corpus that splits
+       * 45,280 chat-less rows into 8,099 recoverable and 37,181 that honestly
+       * cannot be placed.
+       */
+      const oneToOneChatIdentifiers = new Set<string>();
       try {
         const chatRows = db
           .prepare(
@@ -148,6 +164,16 @@ class iMessageFileImporter implements FileImporter {
           .prepare('SELECT message_id, chat_id FROM chat_message_join')
           .iterate() as Iterable<{ message_id: number; chat_id: number }>) {
           chatIdByMessage.set(r.message_id, r.chat_id);
+        }
+
+        for (const entry of chatById.values()) {
+          if (
+            entry.identifier &&
+            entry.participants.length === 1 &&
+            entry.participants[0] === entry.identifier
+          ) {
+            oneToOneChatIdentifiers.add(entry.identifier);
+          }
         }
       } catch (e) {
         // Older / partial chat.db dumps (and test fixtures) may not have these
@@ -242,6 +268,18 @@ class iMessageFileImporter implements FileImporter {
               ? chat.participants.filter((p) => p !== senderHandle)
               : chat.participants.slice()
             : [];
+          // The conversation grouping key. `chat.chat_identifier` is Apple's
+          // own stable per-conversation id and is used whenever the message has
+          // a chat. When it does NOT — no chat_message_join row — the only
+          // other evidence is the correspondent handle, and it is trusted only
+          // when iMessage itself already uses that handle as a 1:1 chat
+          // identifier (see oneToOneChatIdentifiers). Anything else stays
+          // undefined rather than risk filing an orphaned group message into
+          // one participant's private thread.
+          const correspondent = row.contact_id ?? null;
+          const threadIdentifier =
+            chat?.identifier ??
+            (correspondent && oneToOneChatIdentifiers.has(correspondent) ? correspondent : undefined);
           const item: Item = {
             id: row.guid ? row.guid : `imessage_${row.message_id}`,
             classification: 'message',
@@ -263,6 +301,12 @@ class iMessageFileImporter implements FileImporter {
                   ? { To: row.contact_id }
                   : {}),
               ...(chat?.identifier && { ChatId: chat.identifier }),
+              // ChatId is display metadata; push/inputs.ts toCommunicationInput
+              // only reads ThreadId (then Thread/Conversation/MessageID) to
+              // populate ci.communications.thread_id, so without this key every
+              // iMessage row landed with thread_id NULL despite chat.db
+              // carrying a perfectly good conversation id.
+              ...(threadIdentifier && { ThreadId: threadIdentifier }),
               ...(chat?.displayName && { GroupName: chat.displayName }),
               ...(row.date_read && { ReadAt: parseCocoaDate(row.date_read).toISOString() }),
               ...(row.date_delivered && { DeliveredAt: parseCocoaDate(row.date_delivered).toISOString() }),

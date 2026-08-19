@@ -13,6 +13,46 @@ interface GVEntity {
   phone?: string;
 }
 
+/** Prefix marking a Google Voice thread id that names a FILE, not a contact. */
+export const GV_FILE_THREAD_PREFIX = 'googlevoice:file:';
+
+/**
+ * The per-conversation grouping key for one exported HTML file.
+ *
+ * Google Voice exports one file per conversation, and names most of them
+ * "<contact> - <Type> - <timestamp>.html", so the contact prefix IS the thread
+ * — that is `conversation`, and it is used as the contact NAME elsewhere in
+ * this file, which is why it must stay undefined when the filename names
+ * nobody ("Group Conversation - 2019-11-11T23_27_25Z.html", "Missed -
+ * 2025-01-15T09_30_00Z.html"). See the comment at the `conversation` site.
+ *
+ * A thread id has no such constraint: it only has to group the right messages
+ * and be reproducible. So when the name carries no contact, fall back to the
+ * FILE's own identity. On the live corpus that is 12,962 items across 1,655
+ * "Group Conversation" files — up to 265 messages each — which otherwise land
+ * with ci.communications.thread_id NULL and no grouping at all.
+ *
+ * Deliberately NOT derived from the participant set. Google Voice records only
+ * the owner's own number in a group file's per-message recipients (verified on
+ * the live data: every "to" in a group file is the owner), so the only
+ * participant set available is "senders who happened to speak in this file" —
+ * i.e. exactly this file, but computed in a way that changes whenever a member
+ * stays quiet. The file id is the same grouping, stable across re-imports, and
+ * can never merge two different group chats.
+ *
+ * The extension is stripped so the value does not read as a filename, and the
+ * `googlevoice:file:` prefix marks it as synthetic rather than a contact.
+ */
+export function threadKeyFor(fpath: string, conversation: string | undefined): string {
+  if (conversation) {
+    return conversation;
+  }
+
+  const base = path.basename(fpath);
+
+  return `${GV_FILE_THREAD_PREFIX}${base.replace(/\.[^.]+$/, '')}`;
+}
+
 export class GoogleVoiceFileImporter implements FileImporter {
   private owner?: { name?: string; phones: string[] };
 
@@ -157,6 +197,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
       .replace(/\s*-\s*(Text|Received|Placed|Missed|Voicemail|Recorded|Group Conversation)\b[\s\S]*$/i, '')
       .trim();
     const conversation = label && label !== basename ? label : undefined;
+    const thread = threadKeyFor(fpath, conversation);
 
     // Call / voicemail records ("Missed"/"Placed"/"Received"/"Recorded"/"Voicemail"
     // HTML files) use a completely different markup shape: a single
@@ -230,6 +271,12 @@ export class GoogleVoiceFileImporter implements FileImporter {
             Source: 'GoogleVoice',
             Sender: sender.name || sender.phone || undefined,
             Conversation: conversation,
+            // The grouping key, separate from Conversation because Conversation
+            // doubles as the contact NAME and must stay undefined when the
+            // filename names nobody. push/inputs.ts toCommunicationInput reads
+            // ThreadId first, so this is what lands in
+            // ci.communications.thread_id. See threadKeyFor.
+            ThreadId: thread,
             Text: text || undefined,
             Direction: isOutbound ? 'outgoing' : 'incoming',
             To: to || undefined,
@@ -271,7 +318,19 @@ export class GoogleVoiceFileImporter implements FileImporter {
           mediaType: '',
           data: async () => fs.promises.readFile(filename),
         },
-        metadata: { Source: 'GoogleVoice', Attachment: 'image' },
+        // An MMS attachment belongs to the conversation whose HTML file
+        // referenced it. It carried neither key before, so every one of the
+        // 7,427 attachment rows on the live database landed with thread_id
+        // NULL and detached from the conversation it is part of. The keys come
+        // from the PARENT file (fpath), never from the attachment's own name —
+        // Google Voice suffixes those with a per-message index ("… -1-1.jpg"),
+        // which would mint a separate thread per attachment.
+        metadata: {
+          Source: 'GoogleVoice',
+          Attachment: 'image',
+          Conversation: conversation,
+          ThreadId: thread,
+        },
       };
       params.pipeline.push({ item });
     }
@@ -344,6 +403,10 @@ export class GoogleVoiceFileImporter implements FileImporter {
           Contact: contact || undefined,
           Number: sender.phone || undefined,
           Conversation: conversation,
+          // Same split as the message path: Conversation is the contact label
+          // (undefined when the filename names nobody), ThreadId is the
+          // grouping key and always resolves. See threadKeyFor.
+          ThreadId: threadKeyFor(fpath, conversation),
           CallType: callType,
           Direction: direction,
           Duration: durationSeconds,
@@ -390,7 +453,8 @@ function decodeHtml(h: string): string {
  * entities called "Missed call from" (900 of them with no name after the
  * phrase at all), which is 30% of everyone in the address book.
  */
-const CALL_LOG_HEADING = /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
+const CALL_LOG_HEADING =
+  /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
 
 function extractSender(block: string): GVEntity {
   // Real Google Voice exports wrap the OUTBOUND sender ("Me") in
@@ -403,9 +467,8 @@ function extractSender(block: string): GVEntity {
   // nested inside the phone-number anchor is the contact and nothing else. The
   // bare `fn` match below is the fallback, and it is the one that can pick up a
   // heading.
-  const telName = /<a class="tel"[^>]*>[\s\S]*?<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(
-    block,
-  );
+  const telName =
+    /<a class="tel"[^>]*>[\s\S]*?<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
   const nameMatch = telName ?? /<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
   const telMatch = /<a class="tel" href="tel:([^"']+)"/i.exec(block);
 

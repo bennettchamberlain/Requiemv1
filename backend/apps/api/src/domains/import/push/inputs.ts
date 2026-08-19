@@ -534,7 +534,21 @@ export function toCommunicationInput(rec: CanonicalRecord): CreateCommunicationD
     input.direction = direction;
   }
 
-  const thread = str(m.ThreadId) || str(m.Thread) || str(m.MessageID);
+  // `Conversation` is the key eleven datasources already stamp the per-chat
+  // identity onto (claude, chatgpt, discord, facebook, googlevoice, grok,
+  // instagram, linkedin, telegram, tiktok, whatsapp) — it is this codebase's
+  // most common spelling of "which conversation is this", not a display-only
+  // label. It was missing from this chain, so every source that did not ALSO
+  // stamp ThreadId lost its grouping here and landed with
+  // ci.communications.thread_id NULL: 4,840 LinkedIn rows, 228 Instagram and 4
+  // Claude, measured on the live database. Both special-case mappers below
+  // (Messenger, WhatsApp) had to read it themselves precisely because this
+  // chain did not.
+  //
+  // It sits AFTER Thread (a source that stamps both means the explicit one) and
+  // BEFORE MessageID, which is a per-MESSAGE id — a last-resort key that makes
+  // every message its own thread, so a real conversation key must beat it.
+  const thread = str(m.ThreadId) || str(m.Thread) || str(m.Conversation) || str(m.MessageID);
   if (thread) {
     input.thread_id = thread;
   }
@@ -757,13 +771,9 @@ export function toWhatsAppCommunicationInput(
   const input = toCommunicationInput(rec);
   const sender = str(rec.metadata.Sender);
   input.direction = sender && isSelf(sender) ? 'outbound' : 'inbound';
-  // toCommunicationInput only reads ThreadId/Thread/MessageID for threadId —
-  // the WhatsApp importer stamps the chat name onto `Conversation`, so without
-  // this every WhatsApp message loses its thread grouping.
-  const conversation = str(rec.metadata.Conversation);
-  if (conversation) {
-    input.thread_id = conversation;
-  }
+  // thread_id needs no override here any more: `Conversation` — the chat name
+  // the WhatsApp importer stamps — is now part of toCommunicationInput's own
+  // fallback chain. Direction is the only thing this wrapper still decides.
 
   return input;
 }

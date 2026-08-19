@@ -339,3 +339,121 @@ describe('imessage importer', () => {
     ]);
   });
 });
+
+/**
+ * The conversation grouping key.
+ *
+ * chat.db resolves `chat.chat_identifier` per conversation, but the importer
+ * only ever wrote it to `ChatId` — a key push/inputs.ts toCommunicationInput
+ * does not read — so all 432,173 iMessage rows on the live database landed with
+ * ci.communications.thread_id NULL. `ThreadId` is the key that reaches the
+ * column.
+ *
+ * The interesting half is the messages with NO chat: 45,280 of those rows have
+ * no chat_message_join entry at all. Their correspondent is usable as the
+ * thread ONLY when iMessage itself already uses that handle as a 1:1 chat
+ * identifier; otherwise the message could equally be an orphaned group message
+ * and filing it under one participant would invent a conversation.
+ */
+describe('imessage thread ids', () => {
+  const importFrom = async (build: (db: InstanceType<typeof Database>) => void): Promise<EmittedGraph[]> => {
+    const importer = getImporter('imessage');
+    const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-thread-'));
+    const db = new Database(path.join(dir, 'chat.db'));
+    db.exec(`
+      CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+      CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, date INTEGER, text TEXT, is_from_me INTEGER, service TEXT, handle_id INTEGER);
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+      CREATE TABLE chat (ROWID INTEGER PRIMARY KEY, chat_identifier TEXT, display_name TEXT);
+      CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+      CREATE TABLE chat_handle_join (chat_id INTEGER, handle_id INTEGER);
+    `);
+    build(db);
+    db.close();
+
+    const pushed: EmittedGraph[] = [];
+    await importer.fileImport(
+      {},
+      { filename: dir, fullPath: dir } as DirEntry,
+      { pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph) } } as unknown as ImportParams,
+    );
+
+    return pushed;
+  };
+
+  const insertMessage = (
+    db: InstanceType<typeof Database>,
+    row: { id: number; guid: string; handle?: number | null; fromMe?: number },
+  ): void => {
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (?,?,?,?,?,?,?)',
+    ).run(row.id, row.guid, 600000000, 'hi', row.fromMe ?? 0, 'iMessage', row.handle ?? null);
+  };
+
+  it('carries chat_identifier as ThreadId, so every message in a chat groups together', async () => {
+    const pushed = await importFrom((db) => {
+      db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(1, '+15551110002');
+      db.prepare('INSERT INTO chat (ROWID, chat_identifier, display_name) VALUES (?,?,?)').run(
+        200,
+        'chat200',
+        'Lunch Crew',
+      );
+      db.prepare('INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)').run(200, 1);
+      insertMessage(db, { id: 10, guid: 'in-guid', handle: 1 });
+      insertMessage(db, { id: 11, guid: 'out-guid', fromMe: 1 });
+      db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(200, 10);
+      db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(200, 11);
+    });
+
+    expect(pushed.find((g) => g.item?.id === 'in-guid')!.item.metadata.ThreadId).toBe('chat200');
+    expect(pushed.find((g) => g.item?.id === 'out-guid')!.item.metadata.ThreadId).toBe('chat200');
+  });
+
+  it('threads a chat-less message on its correspondent when that handle IS a 1:1 chat here', async () => {
+    const pushed = await importFrom((db) => {
+      db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(1, '+15551110001');
+      // A real 1:1 chat with this handle: chat_identifier IS the participant.
+      db.prepare('INSERT INTO chat (ROWID, chat_identifier, display_name) VALUES (?,?,?)').run(
+        100,
+        '+15551110001',
+        null,
+      );
+      db.prepare('INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)').run(100, 1);
+      insertMessage(db, { id: 20, guid: 'in-chat-guid', handle: 1 });
+      db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(100, 20);
+      // Same correspondent, but this row never made it into chat_message_join.
+      insertMessage(db, { id: 21, guid: 'orphan-guid', handle: 1 });
+    });
+
+    const orphan = pushed.find((g) => g.item?.id === 'orphan-guid')!;
+    expect(orphan.item.metadata.ChatId).toBeUndefined();
+    expect(orphan.item.metadata.ThreadId).toBe('+15551110001');
+    // and it joins the chat its sibling is already in, rather than a new one
+    expect(orphan.item.metadata.ThreadId).toBe(
+      pushed.find((g) => g.item?.id === 'in-chat-guid')!.item.metadata.ThreadId,
+    );
+  });
+
+  it('leaves a chat-less message unthreaded when its correspondent is only ever a group member', async () => {
+    // The handle appears solely inside a group chat, so nothing in this
+    // database says a 1:1 conversation with them exists. Filing the orphan
+    // under their handle would invent one.
+    const pushed = await importFrom((db) => {
+      db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(1, '+15551110002');
+      db.prepare('INSERT INTO handle (ROWID, id) VALUES (?, ?)').run(2, '+15551110003');
+      db.prepare('INSERT INTO chat (ROWID, chat_identifier, display_name) VALUES (?,?,?)').run(
+        200,
+        'chat200',
+        'Lunch Crew',
+      );
+      db.prepare('INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)').run(200, 1);
+      db.prepare('INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)').run(200, 2);
+      insertMessage(db, { id: 30, guid: 'grouped-guid', handle: 1 });
+      db.prepare('INSERT INTO chat_message_join (chat_id, message_id) VALUES (?, ?)').run(200, 30);
+      insertMessage(db, { id: 31, guid: 'unknown-orphan-guid', handle: 1 });
+    });
+
+    expect(pushed.find((g) => g.item?.id === 'unknown-orphan-guid')!.item.metadata.ThreadId).toBeUndefined();
+  });
+});
