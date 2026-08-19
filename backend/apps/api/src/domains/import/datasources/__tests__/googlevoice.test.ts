@@ -767,6 +767,28 @@ describe('a short code is a correspondent, not a person', () => {
     expect(staged.map(graphType)).toEqual(['Concept']);
   });
 
+  it('does not file a short code that arrives as the NAME as a Person', async () => {
+    // The gap #2150 left. Google Voice names most exports
+    // "<contact> - <Type> - <timestamp>.html" and that prefix becomes the
+    // contact NAME, so a marketing sender frequently arrives with a short code
+    // for a name and NO tel: at all. `participantType` read only the phone, so
+    // this typed as `contact` and became a Person.
+    //
+    // Measured on a fresh full-corpus import: 141 short-code participants typed
+    // correctly, 4 leaked through this path (1311, 14242, ...).
+    const pipeline = await importHtml(
+      `<html><body><div class="haudio">
+         <span class="fn">Received call from 262966</span>
+         <abbr class="published" title="2025-01-15T09:30:00.000Z">Jan 15</abbr>
+       </div></body></html>`,
+      '262966 - Received - 2025-01-15T09_30_00Z.html',
+    );
+    const staged = stagedEntities(pipeline);
+
+    expect(staged.map((e) => e.name)).toEqual(['262966']);
+    expect(staged.map(graphType)).toEqual(['Concept']);
+  });
+
   /*
    * The cases that already worked, kept so the short-code rule cannot be
    * satisfied by simply refusing to type anybody.

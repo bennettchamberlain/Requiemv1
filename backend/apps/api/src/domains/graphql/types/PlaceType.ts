@@ -39,8 +39,21 @@ export class PlaceType implements Node, Taggable {
   @Field(() => GraphQLJSONObject, { nullable: true })
   geolocation!: Record<string, unknown> | null;
 
+  /**
+   * LEGACY: the LifeScope-era `properties.location_boundary` JSONB blob, which
+   * nothing validates. Prefer {@link boundary}, the typed PostGIS polygon that
+   * placesContaining actually queries.
+   */
   @Field(() => GraphQLJSONObject, { nullable: true })
   locationBoundary!: Record<string, unknown> | null;
+
+  /**
+   * The place's polygon footprint as a GeoJSON Polygon (SRID 4326), from the
+   * typed `ci.entities.location_boundary` geography column. Null for places
+   * known only as a point.
+   */
+  @Field(() => GraphQLJSONObject, { nullable: true })
+  boundary!: Record<string, unknown> | null;
 
   @Field(() => Boolean, { nullable: true })
   estimated!: boolean | null;
@@ -88,6 +101,7 @@ export class PlaceType implements Node, Taggable {
       geoFormat: place.geoFormat,
       geolocation: place.geolocation,
       locationBoundary: place.locationBoundary,
+      boundary: (place.boundary as Record<string, unknown> | null) ?? null,
       estimated: place.estimated,
       tracked: place.tracked,
       properties: place.properties,

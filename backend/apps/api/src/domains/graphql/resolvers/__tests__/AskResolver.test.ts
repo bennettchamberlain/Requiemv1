@@ -51,6 +51,8 @@ function makeResolver(enabled: boolean) {
     ),
     findByAskId: jest.fn(),
   };
+  const peerLinkService = { findById: jest.fn().mockResolvedValue(null) };
+  const outboundAskService = { send: jest.fn() };
   const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(enabled) };
 
   const resolver = new AskResolver(
@@ -60,6 +62,8 @@ function makeResolver(enabled: boolean) {
     rateLimitService as never,
     executorService as never,
     answerService as never,
+    peerLinkService as never,
+    outboundAskService as never,
     featureService as never,
   );
 
@@ -70,6 +74,8 @@ function makeResolver(enabled: boolean) {
     rateLimitService,
     executorService,
     answerService,
+    peerLinkService,
+    outboundAskService,
     featureService,
   };
 }

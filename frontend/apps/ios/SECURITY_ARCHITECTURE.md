@@ -100,7 +100,7 @@ underneath: the data the boundary protects is on disk in the clear.
 |---|---|---|
 | `android:usesCleartextTraffic="true"` app-wide; **no** `networkSecurityConfig`; `res/xml/` contains only `config.xml` and `file_paths.xml` | `AndroidManifest.xml`, `android/app/src/main/res/xml/` | **[V]** |
 | `androidScheme: 'https'` + `android.allowMixedContent: true` | [`capacitor.config.ts`](./capacitor.config.ts) | **[V]** |
-| iOS is already narrower: `NSAllowsArbitraryLoadsInWebContent`, not the app-wide `NSAllowsArbitraryLoads` | [`Info.plist`](./ios/App/App/Info.plist) | **[V]** |
+| iOS ATS carries **two** exceptions — `NSAllowsArbitraryLoadsInWebContent` (WKWebView content only) and `NSAllowsLocalNetworking` (`.local` + unqualified/private-range LAN, for the plain-`URLSession` App Intents clients). Still narrower than the app-wide `NSAllowsArbitraryLoads`, and neither needs a review justification. Reaching a LAN address additionally requires `NSLocalNetworkUsageDescription`, which is set — Local Network Privacy is a separate gate from ATS | [`Info.plist`](./ios/App/App/Info.plist) | **[V]** |
 
 ### 1e. Server-side revocation
 

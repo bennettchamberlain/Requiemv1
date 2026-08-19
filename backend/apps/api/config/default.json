@@ -57,6 +57,9 @@
       },
       "steam": {
         "id": "019d6470-f9e1-720f-a3ce-299842abaece"
+      },
+      "slack": {
+        "id": "019e3c66-b5d2-7f03-c9e5-1a4f6b9d0c08"
       }
     },
     "oauth": {
@@ -207,10 +210,11 @@
     "onboarding.preference.steps": false,
     "actions": true,
     "smart.rotation": false,
-    "ask": false,
+    "ask": true,
     "grounded.prompts": true,
     "derivation.engines": true,
-    "ingest.selfHeal": true
+    "ingest.selfHeal": true,
+    "solid.protocol": false
   },
   "environment": {
     "database.query.logging": false
@@ -226,5 +230,12 @@
     "rateLimitPerSecond": 10,
     "provider": "portal",
     "portalBaseUrl": "https://hub.ci.computer"
+  },
+  "peers": {
+    "directoryUrl": "",
+    "memoryEndpoint": "",
+    "handle": "",
+    "audience": "",
+    "timeoutMs": 10000
   }
 }

@@ -21,6 +21,8 @@ import TimeAgo from 'react-timeago';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
+import { useEntityReference } from './useEntityReference';
+
 const AUTOSAVE_THROTTLE_MS = 1000;
 
 const GET_NOTE = gql(`
@@ -65,6 +67,7 @@ const CREATE_NOTE = gql(`
 export function NotePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { reference, onReferenceClick } = useEntityReference();
 
   const { data, loading, refetch } = useQuery(GET_NOTE, {
     variables: { id: GlobalUID.encode('note', id!) },
@@ -365,7 +368,12 @@ export function NotePage() {
       {/* `authoredContent` carries an offline note across the remount that navigating to
           its minted id forces (`key` changes), where there is no server `note` to rebuild
           from. See the state declaration. */}
-      <Editor key={id} content={note?.content ?? authoredContent ?? undefined} onUpdate={handleUpdate}>
+      <Editor
+        key={id}
+        content={note?.content ?? authoredContent ?? undefined}
+        onUpdate={handleUpdate}
+        reference={reference}
+      >
         <div className="flex h-full flex-col overflow-hidden">
           <Editor.Menu>
             <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
@@ -408,7 +416,7 @@ export function NotePage() {
 
           <div className="flex-1 min-h-0">
             <PageContent className="p-0">
-              <Editor.Content />
+              <Editor.Content onReferenceClick={onReferenceClick} />
             </PageContent>
           </div>
         </div>

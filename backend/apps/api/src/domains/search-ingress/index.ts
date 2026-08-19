@@ -30,6 +30,7 @@ import { EntityEmbeddingListener } from './listeners/EntityEmbeddingListener';
 import { EventSearchIndexListener } from './listeners/EventSearchIndexListener';
 import { FileChunkSearchIndexListener } from './listeners/FileChunkSearchIndexListener';
 import { FileSearchIndexListener } from './listeners/FileSearchIndexListener';
+import { GraphNodeSearchIndexListener } from './listeners/GraphNodeSearchIndexListener';
 import { ItemSearchIndexListener } from './listeners/ItemSearchIndexListener';
 import { MessageSearchIndexListener } from './listeners/MessageSearchIndexListener';
 import { NoteSearchIndexListener } from './listeners/NoteSearchIndexListener';
@@ -71,6 +72,7 @@ import { VectorService } from './services/VectorService';
     EventSearchIndexListener,
     FileChunkSearchIndexListener,
     FileSearchIndexListener,
+    GraphNodeSearchIndexListener,
     IndexSkipService,
     ItemSearchIndexListener,
     MessageSearchIndexListener,

@@ -9,6 +9,7 @@ import { GoogleClient } from './GoogleClient';
 import { MicrosoftClient } from './MicrosoftClient';
 import { RedditClient } from './RedditClient';
 import { SignalClient } from './SignalClient';
+import { SlackClient } from './SlackClient';
 import { SpotifyClient } from './SpotifyClient';
 import { SteamClient } from './SteamClient';
 
@@ -24,6 +25,7 @@ export class ClientFactory {
     private readonly redditClient: RedditClient,
     private readonly spotifyClient: SpotifyClient,
     private readonly signalClient: SignalClient,
+    private readonly slackClient: SlackClient,
     private readonly steamClient: SteamClient,
   ) {
     this.providers.set(config.auth.providers.google.id, this.googleClient);
@@ -33,6 +35,7 @@ export class ClientFactory {
     this.providers.set(config.auth.providers.reddit.id, this.redditClient);
     this.providers.set(config.auth.providers.spotify.id, this.spotifyClient);
     this.providers.set(config.auth.providers.signal.id, this.signalClient);
+    this.providers.set(config.auth.providers.slack.id, this.slackClient);
     this.providers.set(config.auth.providers.steam.id, this.steamClient);
   }
 

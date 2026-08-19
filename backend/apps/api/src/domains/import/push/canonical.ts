@@ -206,6 +206,10 @@ const KIND_BY_CLASSIFICATION: Record<string, string> = {
   // the MIME isn't image/video/audio): same kind a non-media mail attachment
   // gets, so documents from either origin land alike.
   file: 'import.archive_item',
+  // A vCard / Address Book / contact-list card. Its own kind so the routing
+  // below can refuse it a body row; without an entry here it fell to the
+  // default and the undated-file rule filed it as `import.archive_item`.
+  contact: 'contact.card',
   // NOTE: the generic 'media' classification is intentionally NOT in this map —
   // google_photos (and others) stamp 'media' on photos AND videos AND audio, so
   // the classification alone can't pick the kind. kindFor decides it by MIME.
@@ -812,6 +816,25 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
 
   if (kind === 'note' || kind === 'reading.annotation') {
     return ['content'];
+  }
+
+  // A contact card is a PERSON, and the parser already emits it as one on the
+  // entity lane (vcard.ts, contactlist.ts, applecontacts.ts each push an entity
+  // beside the item). It is not a document, and being undated it is not an
+  // occurrence either, so neither `content` nor `events` is a home for it.
+  //
+  // Routing it nowhere is the same answer `isSocialAffiliation` gives a LinkedIn
+  // connection, and for the same reason: the row records a thing that already
+  // exists somewhere honest, so a body row is a second, empty copy of it.
+  // `NO_DESTINATION_REASON` counts these as routed-nowhere rather than hiding
+  // them in `deduped`, so the decision stays visible in the run.
+  //
+  // Measured on a fresh full-corpus import carrying every fix merged 2026-08-19:
+  // 4,870 `ci.content` rows with `type='file'` from vcard, 2,085 of them with no
+  // text AND no url — a "file" pointing at no file. #2152 removed the LinkedIn
+  // half of this shape; this is the other half.
+  if (kind === 'contact.card') {
+    return [];
   }
 
   if (kind.startsWith('social.')) {

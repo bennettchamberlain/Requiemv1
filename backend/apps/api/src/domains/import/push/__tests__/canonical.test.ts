@@ -620,3 +620,44 @@ describe('edgeProjectionSourcesFor', () => {
     ]);
   });
 });
+
+describe('a contact card is a person, not a document', () => {
+  /**
+   * The other half of the shape #2152 fixed for LinkedIn connections. A vCard /
+   * Address Book / contact-list card has no `KIND_BY_CLASSIFICATION` entry, so
+   * it fell to the default and the undated-file rule filed it as
+   * `import.archive_item` -> a `ci.content` row with `type='file'` and a NULL
+   * url: a file pointing at no file.
+   *
+   * Measured on a fresh full-corpus import carrying every fix merged
+   * 2026-08-19: 4,870 such rows from vcard, 2,085 of them with no text and no
+   * url. The same parsers already emit each card correctly on the entity lane,
+   * so the content row was a second, empty copy.
+   */
+  const contactRecord = (overrides: Record<string, unknown> = {}) =>
+    ({
+      kind: kindFor('contact', null),
+      metadata: {},
+      sourceSystem: 'vcard',
+      title: 'Nadia Whitlock',
+      description: null,
+      coordinates: null,
+      time: null,
+      mediaType: null,
+      mediaPath: null,
+      ...overrides,
+    }) as never;
+
+  it('gives a contact classification its own kind', () => {
+    expect(kindFor('contact', null)).toBe('contact.card');
+  });
+
+  it('routes a contact card nowhere — the entity lane already has it', () => {
+    expect(destinationsFor(contactRecord())).toEqual([]);
+  });
+
+  it('still routes a plain file to content, so the file rule is untouched', () => {
+    expect(kindFor('file', null)).toBe('import.archive_item');
+    expect(destinationsFor(contactRecord({ kind: kindFor('file', null) })).length).toBeGreaterThan(0);
+  });
+});

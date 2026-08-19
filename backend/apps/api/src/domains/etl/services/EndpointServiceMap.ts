@@ -49,6 +49,10 @@ import { syncContacts as syncSignalContacts } from './Signal/sync/SyncContacts';
 import { syncMessages as syncSignalMessages } from './Signal/sync/SyncMessages';
 import { SignalContactsTransformService } from './Signal/transform/TransformContacts';
 import { SignalMessagesTransformService } from './Signal/transform/TransformMessages';
+import { syncChannels as syncSlackChannels } from './Slack/sync/SyncChannels';
+import { syncMessages as syncSlackMessages } from './Slack/sync/SyncMessages';
+import { SlackChannelsTransformService } from './Slack/transform/TransformChannels';
+import { SlackMessagesTransformService } from './Slack/transform/TransformMessages';
 import { syncPlaylists } from './Spotify/sync/SyncPlaylists';
 import { syncRecentlyPlayed } from './Spotify/sync/SyncRecentlyPlayed';
 import { syncSavedAudiobooks } from './Spotify/sync/SyncSavedAudiobooks';
@@ -109,6 +113,8 @@ export class EndpointServiceMap {
     private readonly redditSavedTransformService: RedditSavedTransformService,
     private readonly signalMessagesTransformService: SignalMessagesTransformService,
     private readonly signalContactsTransformService: SignalContactsTransformService,
+    private readonly slackMessagesTransformService: SlackMessagesTransformService,
+    private readonly slackChannelsTransformService: SlackChannelsTransformService,
   ) {
     this.logger.setContext(EndpointServiceMap.name);
     this.endpointServiceMap = {
@@ -160,6 +166,10 @@ export class EndpointServiceMap {
         Signal: {
           Messages: syncSignalMessages,
           Contacts: syncSignalContacts,
+        },
+        Slack: {
+          Messages: syncSlackMessages,
+          Channels: syncSlackChannels,
         },
       },
       transform: {
@@ -246,6 +256,10 @@ export class EndpointServiceMap {
         Signal: {
           Messages: this.signalMessagesTransformService.transform.bind(this.signalMessagesTransformService),
           Contacts: this.signalContactsTransformService.transform.bind(this.signalContactsTransformService),
+        },
+        Slack: {
+          Messages: this.slackMessagesTransformService.transform.bind(this.slackMessagesTransformService),
+          Channels: this.slackChannelsTransformService.transform.bind(this.slackChannelsTransformService),
         },
       },
     };

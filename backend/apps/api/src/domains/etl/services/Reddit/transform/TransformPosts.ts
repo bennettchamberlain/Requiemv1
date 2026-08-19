@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService, EventService } from '@ci/domains/memory';
+import { ContentService, EventService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 import type { RedditPost } from '../sync/redditListing';
@@ -52,6 +52,7 @@ export class RedditPostsTransformService {
             text: post.selftext || post.title,
             url: permalink,
             external_id: post.name,
+            external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
             source_url: permalink,
             source_data: {
               reddit_post_id: post.id,

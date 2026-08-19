@@ -10,6 +10,7 @@ import {
 } from '@ci/domains/search-next';
 
 import { type Ask } from '../entities/AskEntity';
+import { canonicalDataClass } from '../grantMatch';
 import type { AskQuery } from '../types';
 
 /** Coarse data-class → candidate entity-type hints (validated against the taxonomy). */
@@ -52,6 +53,13 @@ export class AskExecutorService {
     ask: Ask,
     options: { maxResults?: number } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    // Only an ask with a LOCAL responder has memory here to search. An outbound
+    // ask is answered by the peer's box, so reaching the executor with one is a
+    // programming error, not a runtime condition to paper over.
+    if (ask.responderUserId == null) {
+      throw new Error(`Ask ${ask.id} has no local responder and cannot be executed here`);
+    }
+
     const responderContext: UserServiceContext = { userId: ask.responderUserId };
     const includeTypes = toIncludeTypes(ask.query);
     const base = {
@@ -71,7 +79,14 @@ function toIncludeTypes(query: AskQuery): IndexableEntity[] | undefined {
     return undefined;
   }
 
-  const hints = CLASS_TYPE_HINTS[query.dataClass.toLowerCase()];
+  // Same canonical form the grant evaluator matched on — if these diverged, a
+  // peer could satisfy one and evade the other.
+  const canonical = canonicalDataClass(query.dataClass);
+  if (canonical == null) {
+    return undefined;
+  }
+
+  const hints = CLASS_TYPE_HINTS[canonical];
   if (hints == null) {
     return undefined; // unknown class → unfiltered (still responder-scoped)
   }

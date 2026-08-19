@@ -68,8 +68,26 @@ export {
   AskExecutorService,
   AskAnswerService,
 };
-export { evaluateGrant } from './grantMatch';
+export { evaluateGrant, canonicalDataClass } from './grantMatch';
+export { checkSlidingWindow } from './rateLimit';
 export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems } from './disclosure';
+export {
+  DISCLOSURE_RUNGS,
+  applyDisclosureCeiling,
+  disclosureCeiling,
+  minRung,
+  rungAtLeast,
+  rungForForm,
+} from './policy';
+export {
+  ASK_ARCHETYPES,
+  askGrammarSchema,
+  dataClassesIn,
+  formForArchetype,
+  parseAskGrammar,
+  toAskQuery,
+} from './askGrammar';
+export type { AskArchetype, AskGrammar, AskQuerySpec, ClaimQuery } from './askGrammar';
 export {
   ASK_TRANSITIONS,
   TERMINAL_ASK_STATUSES,
@@ -100,4 +118,6 @@ export type {
   DisclosedItem,
   DisclosedAnswer,
   CreateAskAnswerDto,
+  TrustTier,
+  DisclosureRung,
 } from './types';

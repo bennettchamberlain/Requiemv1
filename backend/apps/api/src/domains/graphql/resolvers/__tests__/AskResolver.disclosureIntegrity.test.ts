@@ -76,6 +76,8 @@ function makeResolver(ask: Ask) {
     { consume: jest.fn() } as never,
     executorService as never,
     answerService as never,
+    { findById: jest.fn().mockResolvedValue(null) } as never,
+    { send: jest.fn() } as never,
     { isFeatureEnabled: jest.fn().mockResolvedValue(true) } as never,
   );
 

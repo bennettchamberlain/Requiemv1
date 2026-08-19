@@ -4,7 +4,49 @@ import { v7 as uuidv7 } from 'uuid';
 import { LoggerService } from '@ci/common/logging';
 import { type EventPayloads, Events, EventService, OnEvent } from '@ci/domains/events';
 
+import {
+  ConceptCreatedEvent,
+  ConceptUpdatedEvent,
+  PersonCreatedEvent,
+  PersonUpdatedEvent,
+  PlaceCreatedEvent,
+  PlaceUpdatedEvent,
+} from '../events';
 import { GraphUtilityService } from '../services/GraphUtilityService';
+
+/**
+ * The domains whose graph node lives in `ci.entities` AND is resolvable by their
+ * own service, so re-emitting the per-type `*Created`/`*UpdatedEvent` is enough
+ * to get the node indexed: the matching
+ * `*SearchIndexListener` re-reads the row and writes BOTH the `ci_search.vectors`
+ * tsvector (the search CANDIDATE source) and the `ci_search.embeddings` vector
+ * (only a re-rank boost).
+ *
+ * Every other graph type is NOT indexed today. Its row has no detail half in
+ * whatever table its own domain service reads (`ci.events`, `ci.inventory`,
+ * `ci.content`, `ci.files`, ...), so that per-type listener would find nothing
+ * and log "not found, skipping indexing" if invoked — and
+ * `GraphNodeSearchIndexListener` in search-ingress, which DOES see the payload
+ * for these types, deliberately declines them too, for the identical reason: a
+ * `ci_search.vectors` row for something `EntityResolutionService` can never
+ * resolve is a paid-for row that can never be returned. See that listener's
+ * `RESOLVABLE_FROM_ENTITIES_ALONE` for the full argument and what would need to
+ * be true to change it.
+ */
+type IndexedDomain = 'person' | 'place' | 'concept';
+
+/**
+ * Graph vocabulary (`ci.entities.entity_type`, lower-cased) aliased onto the
+ * domains above. Mirrors `GRAPH_TYPE_ALIASES` in `@ci/common/embeddings`,
+ * restricted to the types this listener can re-emit for.
+ */
+const GRAPH_TYPE_TO_DOMAIN: Record<string, IndexedDomain> = {
+  person: 'person',
+  contact: 'person',
+  place: 'place',
+  location: 'place',
+  concept: 'concept',
+};
 
 @Injectable()
 export class GraphEventListener {
@@ -244,7 +286,7 @@ export class GraphEventListener {
   @OnEvent(Events.GRAPH_NODE_UPSERTED)
   async handleNodeUpserted(payload: EventPayloads[Events.GRAPH_NODE_UPSERTED]) {
     try {
-      await this.graphUtility.createOrUpdateNode(payload.ownerId, {
+      const { node, created } = await this.graphUtility.createOrUpdateNode(payload.ownerId, {
         entityId: payload.node.entityId,
         entityType: payload.node.entityType,
         name: payload.node.name ?? null,
@@ -255,6 +297,15 @@ export class GraphEventListener {
         linkedId: payload.node.linkedId ?? null,
         mergeProperties: payload.node.mergeProperties,
       });
+
+      // The write above is the ONLY thing that used to happen here: the
+      // `created` flag `createOrUpdateNode` returns was discarded and no search
+      // event was ever emitted, so everything an agent wrote through
+      // `write_knowledge` (`GraphEventService.upsertNode`) landed in
+      // `ci.entities` and was invisible to search and to /api/memory/recall.
+      // Concept is not even in the backfill sweep's BACKFILLABLE_ENTITIES, so
+      // nothing recovered it later either.
+      await this.emitSearchIndexEvent(node.entity_type, node.entity_id, created);
     } catch (error) {
       this.logger.error('Failed to handle GRAPH_NODE_UPSERTED', {
         ownerId: payload.ownerId,
@@ -298,6 +349,52 @@ export class GraphEventListener {
         relationshipId: payload.relationship.relationshipId,
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  /**
+   * Re-emit the per-type `*Created`/`*UpdatedEvent` for a graph node whose row
+   * its own domain service can resolve, so the existing `*SearchIndexListener`
+   * indexes it. Emitting AFTER the node write (rather than letting search-ingress
+   * subscribe to `GRAPH_NODE_UPSERTED` directly) is deliberate: the two queues
+   * are worked concurrently, so a listener racing the write would find no row.
+   *
+   * Updates re-emit too — an `entity.update` through `write_knowledge` can change
+   * the name or description, and a stale tsvector is its own bug.
+   *
+   * Types with no entry fall through silently; `GraphNodeSearchIndexListener`
+   * picks those up from the event payload instead.
+   */
+  private async emitSearchIndexEvent(
+    entityType: string | null | undefined,
+    entityId: string,
+    created: boolean,
+  ): Promise<void> {
+    const domain = GRAPH_TYPE_TO_DOMAIN[(entityType ?? '').trim().toLowerCase()];
+
+    if (!domain) {
+      return;
+    }
+
+    switch (domain) {
+      case 'person':
+        await this.eventService.send(created ? PersonCreatedEvent : PersonUpdatedEvent, {
+          personId: entityId,
+        });
+
+        return;
+      case 'place':
+        await this.eventService.send(created ? PlaceCreatedEvent : PlaceUpdatedEvent, {
+          placeId: entityId,
+        });
+
+        return;
+      case 'concept':
+        await this.eventService.send(created ? ConceptCreatedEvent : ConceptUpdatedEvent, {
+          conceptId: entityId,
+        });
+
+        return;
     }
   }
 

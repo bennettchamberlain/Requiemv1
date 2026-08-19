@@ -36,6 +36,7 @@ const CONNECTOR_LABELS: Readonly<Record<string, string>> = {
   reddit_comments: 'Reddit',
   reddit_saved: 'Reddit',
   signal: 'Signal',
+  slack: 'Slack',
   // Communication `type` values (CommunicationType.type, not a connector).
   email: 'Email',
   sms: 'SMS',

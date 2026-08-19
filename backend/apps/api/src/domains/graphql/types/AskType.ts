@@ -57,13 +57,22 @@ export class AskType {
   @Field(() => ID)
   id!: string;
 
-  /** Opaque user id of the asker. */
-  @Field(() => ID)
-  askerId!: string;
+  /** Opaque user id of the asker. NULL for an inbound peer ask. */
+  @Field(() => ID, { nullable: true })
+  askerId!: string | null;
+
+  /** The peer this ask came from (inbound) or was sent to (outbound). */
+  @Field(() => String, { nullable: true })
+  peerHandle!: string | null;
+
+  /** 'local' | 'outbound' | 'inbound'. */
+  @Field(() => String)
+  direction!: string;
 
   /** Opaque user id of the responder (owner). */
-  @Field(() => ID)
-  responderId!: string;
+  /** NULL for an OUTBOUND ask — the responder is the peer, not a local user. */
+  @Field(() => ID, { nullable: true })
+  responderId!: string | null;
 
   @Field(() => AskQueryType)
   query!: AskQueryType;
@@ -103,8 +112,10 @@ export class AskType {
 
     return {
       id: GlobalUID.encode('ask', ask.id),
-      askerId: GlobalUID.encode('user', ask.askerUserId),
-      responderId: GlobalUID.encode('user', ask.responderUserId),
+      askerId: ask.askerUserId ? GlobalUID.encode('user', ask.askerUserId) : null,
+      peerHandle: null,
+      direction: ask.direction,
+      responderId: ask.responderUserId ? GlobalUID.encode('user', ask.responderUserId) : null,
       query: AskQueryType.toType(ask.query),
       status: ask.status as AskStatusEnum,
       consentBasis: isResponder ? ask.consentBasis : null,
@@ -121,8 +132,13 @@ export class AskGrantType {
   @Field(() => ID)
   id!: string;
 
-  @Field(() => ID)
-  granteeId!: string;
+  /** Opaque user id of the grantee. NULL for a grant addressed to a peer. */
+  @Field(() => ID, { nullable: true })
+  granteeId!: string | null;
+
+  /** Opaque id of the peer link this grant addresses, when it is a peer grant. */
+  @Field(() => ID, { nullable: true })
+  granteePeerLinkId!: string | null;
 
   @Field(() => String)
   queryType!: string;
@@ -145,7 +161,8 @@ export class AskGrantType {
   static toType(grant: AskGrant): AskGrantType {
     return {
       id: GlobalUID.encode('ask-grant', grant.id),
-      granteeId: GlobalUID.encode('user', grant.granteeUserId),
+      granteeId: grant.granteeUserId ? GlobalUID.encode('user', grant.granteeUserId) : null,
+      granteePeerLinkId: grant.granteePeerLinkId,
       queryType: grant.queryType,
       dataClass: grant.dataClass,
       mode: grant.mode as GrantModeEnum,
@@ -165,11 +182,17 @@ export class AskAuditType {
   @Field(() => ID, { nullable: true })
   askId!: string | null;
 
-  @Field(() => ID)
-  askerId!: string;
+  /** Opaque user id of the asker. NULL when a peer asked. */
+  @Field(() => ID, { nullable: true })
+  askerId!: string | null;
 
-  @Field(() => ID)
-  responderId!: string;
+  /** The peer's handle at disclosure time, for an inbound federated ask. */
+  @Field(() => String, { nullable: true })
+  peerHandle!: string | null;
+
+  /** NULL for an OUTBOUND ask — the responder is the peer, not a local user. */
+  @Field(() => ID, { nullable: true })
+  responderId!: string | null;
 
   @Field(() => AskQueryType)
   query!: AskQueryType;
@@ -187,8 +210,9 @@ export class AskAuditType {
     return {
       id: GlobalUID.encode('ask-audit', audit.id),
       askId: audit.askId ? GlobalUID.encode('ask', audit.askId) : null,
-      askerId: GlobalUID.encode('user', audit.askerUserId),
-      responderId: GlobalUID.encode('user', audit.responderUserId),
+      askerId: audit.askerUserId ? GlobalUID.encode('user', audit.askerUserId) : null,
+      peerHandle: audit.peerHandle,
+      responderId: audit.responderUserId ? GlobalUID.encode('user', audit.responderUserId) : null,
       query: AskQueryType.toType(audit.query),
       consentBasis: audit.consentBasis,
       outcome: audit.outcome as AskAuditOutcomeEnum,
