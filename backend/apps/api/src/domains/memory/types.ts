@@ -72,6 +72,10 @@ export interface CreateEventDto {
   created_by?: string;
   user_id?: string;
   duration_minutes?: number;
+  /** Task this planned block schedules (`event_type = 'planned_block'`). */
+  task_id?: string;
+  /** Intended duration; `duration_minutes` stays generated actual. */
+  planned_minutes?: number;
   user?: {
     id: string;
   };
