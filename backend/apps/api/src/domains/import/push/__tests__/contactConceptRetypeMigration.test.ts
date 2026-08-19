@@ -3,7 +3,8 @@ import path from 'node:path';
 
 import { v5 as uuidv5 } from 'uuid';
 
-import { GraphIngestService } from '../../../graph/services/GraphIngestService';
+import { GraphIngestService } from '@ci/domains/graph';
+
 import {
   type ContentLine,
   buildContact,
