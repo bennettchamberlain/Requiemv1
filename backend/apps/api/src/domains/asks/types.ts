@@ -31,6 +31,20 @@ export type GrantMode = 'auto' | 'review' | 'block';
 export type GrantDecision = 'auto' | 'review' | 'deny';
 
 /**
+ * Relationship tier of an asker, coarsest trust last. `household` is a member of
+ * the owner's own box; the rest mirror `PeerTrustTier` in the peers domain
+ * (declared here rather than imported because peers depends on asks, not the
+ * reverse).
+ */
+export type TrustTier = 'household' | 'family' | 'trusted' | 'peer' | 'stranger';
+
+/**
+ * How much an answer may disclose, coarsest first. See {@link DISCLOSURE_RUNGS}
+ * in policy.ts — the ladder the owner's review UI exposes as "share less".
+ */
+export type DisclosureRung = 'none' | 'boolean' | 'count' | 'summary' | 'redacted' | 'full';
+
+/**
  * The shape of an answer, which drives disclosure minimization (see
  * {@link inferAnswerForm}). Only `retrieval` returns item references; the rest
  * disclose a yes-no / count / synthesized value only.
@@ -84,10 +98,30 @@ export interface AskQuery {
   filters?: Record<string, unknown>;
 }
 
-/** Optional structured scope attached to a grant. */
+/**
+ * Structured scope attached to a grant — the grant vocabulary (ROADMAP Epic 2).
+ *
+ * Modelled on DWN's `ProtocolsConfigure` `$actions` pattern (borrowed as a
+ * pattern, not a dependency): a grant names WHO may ask WHAT, and how much of an
+ * answer they may receive. Every field only ever NARROWS the grant — an absent
+ * field means "no restriction from this dimension", never "allow more".
+ */
 export interface AskGrantScope {
   /** If set, the grant only covers asks whose `dataClass` is in this list. */
   dataClasses?: string[];
+  /** If set, the grant only covers these ask archetypes. */
+  archetypes?: string[];
+  /**
+   * Caps how much any answer under this grant may disclose. Combined with the
+   * tier ceiling by taking the LESSER of the two, so a grant can tighten the
+   * tier default but never loosen it.
+   */
+  maxDisclosure?: DisclosureRung;
+  /** Inclusive ISO bounds; asks outside the window do not match. */
+  notBefore?: string;
+  notAfter?: string;
+  /** Purpose the grant is limited to, matched against the ask's stated purpose. */
+  purpose?: string;
   [key: string]: unknown;
 }
 
@@ -96,18 +130,37 @@ export interface GrantEvaluation {
   decision: GrantDecision;
   /** The grant that decided the outcome, when one matched. */
   grantId?: string;
+  /**
+   * Ceiling the deciding grant imposes on any answer (its `scope.maxDisclosure`).
+   * The caller combines this with the asker's tier ceiling by taking the LESSER
+   * of the two, so neither can loosen the other.
+   */
+  maxDisclosure?: DisclosureRung;
 }
+
+/** Whether an ask is local to this box, sent to a peer, or received from one. */
+export type AskDirection = 'local' | 'outbound' | 'inbound';
 
 export interface CreateAskDto {
   id?: string;
-  responderUserId: string;
+  /** NULL for an OUTBOUND ask — the responder is the peer named by `peerLinkId`. */
+  responderUserId: string | null;
   query: AskQuery;
   expiresAt?: Date | null;
+  /**
+   * Set for a federated ask. When `direction` is `inbound` the asker is the
+   * peer (no local asker id); `outbound` records which peer we sent it to.
+   */
+  peerLinkId?: string | null;
+  direction?: AskDirection;
 }
 
 export interface CreateAskGrantDto {
   id?: string;
-  granteeUserId: string;
+  /** Exactly one of granteeUserId / granteePeerLinkId identifies the grantee. */
+  granteeUserId?: string | null;
+  /** Grant addressed to a linked peer Companion (federated asks). */
+  granteePeerLinkId?: string | null;
   queryType: string;
   dataClass?: string | null;
   scope?: AskGrantScope | null;
@@ -117,8 +170,11 @@ export interface CreateAskGrantDto {
 
 export interface RecordAskAuditDto {
   askId: string;
-  askerUserId: string;
-  responderUserId: string;
+  /** NULL for an inbound peer ask — the asker is identified by `peerLinkId`. */
+  askerUserId: string | null;
+  peerLinkId?: string | null;
+  peerHandle?: string | null;
+  responderUserId: string | null;
   query: AskQuery;
   consentBasis?: string | null;
   outcome: AskAuditOutcome;

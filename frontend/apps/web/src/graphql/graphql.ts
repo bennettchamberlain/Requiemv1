@@ -187,13 +187,14 @@ export type AskAuditOutcome =
 export type AskAuditType = {
   __typename?: 'AskAuditType';
   askId?: Maybe<Scalars['ID']['output']>;
-  askerId: Scalars['ID']['output'];
+  askerId?: Maybe<Scalars['ID']['output']>;
   consentBasis?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
   id: Scalars['ID']['output'];
   outcome: AskAuditOutcome;
+  peerHandle?: Maybe<Scalars['String']['output']>;
   query: AskQueryType;
-  responderId: Scalars['ID']['output'];
+  responderId?: Maybe<Scalars['ID']['output']>;
 };
 
 export type AskGrantPayload = {
@@ -206,7 +207,8 @@ export type AskGrantType = {
   __typename?: 'AskGrantType';
   createdAt: Scalars['DateTime']['output'];
   dataClass?: Maybe<Scalars['String']['output']>;
-  granteeId: Scalars['ID']['output'];
+  granteeId?: Maybe<Scalars['ID']['output']>;
+  granteePeerLinkId?: Maybe<Scalars['ID']['output']>;
   id: Scalars['ID']['output'];
   mode: GrantMode;
   purpose?: Maybe<Scalars['String']['output']>;
@@ -244,13 +246,15 @@ export type AskStatus =
 
 export type AskType = {
   __typename?: 'AskType';
-  askerId: Scalars['ID']['output'];
+  askerId?: Maybe<Scalars['ID']['output']>;
   consentBasis?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
+  direction: Scalars['String']['output'];
   expiresAt?: Maybe<Scalars['DateTime']['output']>;
   id: Scalars['ID']['output'];
+  peerHandle?: Maybe<Scalars['String']['output']>;
   query: AskQueryType;
-  responderId: Scalars['ID']['output'];
+  responderId?: Maybe<Scalars['ID']['output']>;
   status: AskStatus;
   updatedAt: Scalars['DateTime']['output'];
 };
@@ -1624,6 +1628,7 @@ export type Mutation = {
   runAsk: RunAskPayload;
   /** Place an open task into the next free workday gap as a planned calendar block. The click is consent — trust dial does not re-ask. */
   scheduleTask: ScheduleTaskPayload;
+  sendPeerAsk: SendPeerAskPayload;
   setSavedSearchSharing: UpdateSavedSearchPayload;
   /** Defer a candidate until a future instant */
   snoozeCandidate: ScheduleCandidateType;
@@ -2063,6 +2068,11 @@ export type MutationScheduleTaskArgs = {
   date?: InputMaybe<Scalars['String']['input']>;
   estimatedMinutes?: InputMaybe<Scalars['Int']['input']>;
   id: Scalars['ID']['input'];
+};
+
+
+export type MutationSendPeerAskArgs = {
+  input: SendPeerAskInput;
 };
 
 
@@ -3305,6 +3315,28 @@ export type SearchResultEdge = {
 };
 
 export type SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType;
+
+export type SendPeerAskInput = {
+  archetype: Scalars['String']['input'];
+  dataClass?: InputMaybe<Scalars['String']['input']>;
+  from?: InputMaybe<Scalars['String']['input']>;
+  handle: Scalars['String']['input'];
+  minMinutes?: InputMaybe<Scalars['Int']['input']>;
+  peerAccessToken: Scalars['String']['input'];
+  prompt: Scalars['String']['input'];
+  purpose?: InputMaybe<Scalars['String']['input']>;
+  subject?: InputMaybe<Scalars['String']['input']>;
+  to?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SendPeerAskPayload = {
+  __typename?: 'SendPeerAskPayload';
+  answer?: Maybe<AskAnswerType>;
+  ask?: Maybe<AskType>;
+  reason?: Maybe<Scalars['String']['output']>;
+  status?: Maybe<Scalars['String']['output']>;
+  success: Scalars['Boolean']['output'];
+};
 
 export type SetSavedSearchSharingInput = {
   id: Scalars['ID']['input'];

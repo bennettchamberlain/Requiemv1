@@ -174,13 +174,14 @@ enum AskAuditOutcome {
 
 type AskAuditType {
   askId: ID
-  askerId: ID!
+  askerId: ID
   consentBasis: String
   createdAt: DateTime!
   id: ID!
   outcome: AskAuditOutcome!
+  peerHandle: String
   query: AskQueryType!
-  responderId: ID!
+  responderId: ID
 }
 
 type AskGrantPayload {
@@ -191,7 +192,8 @@ type AskGrantPayload {
 type AskGrantType {
   createdAt: DateTime!
   dataClass: String
-  granteeId: ID!
+  granteeId: ID
+  granteePeerLinkId: ID
   id: ID!
   mode: GrantMode!
   purpose: String
@@ -227,13 +229,15 @@ enum AskStatus {
 }
 
 type AskType {
-  askerId: ID!
+  askerId: ID
   consentBasis: String
   createdAt: DateTime!
+  direction: String!
   expiresAt: DateTime
   id: ID!
+  peerHandle: String
   query: AskQueryType!
-  responderId: ID!
+  responderId: ID
   status: AskStatus!
   updatedAt: DateTime!
 }
@@ -1648,6 +1652,7 @@ type Mutation {
     estimatedMinutes: Int
     id: ID!
   ): ScheduleTaskPayload!
+  sendPeerAsk(input: SendPeerAskInput!): SendPeerAskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
   """Defer a candidate until a future instant"""
@@ -2358,6 +2363,27 @@ type SearchResultEdge {
 }
 
 union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+
+input SendPeerAskInput {
+  archetype: String!
+  dataClass: String
+  from: String
+  handle: String!
+  minMinutes: Int
+  peerAccessToken: String!
+  prompt: String!
+  purpose: String
+  subject: String
+  to: String
+}
+
+type SendPeerAskPayload {
+  answer: AskAnswerType
+  ask: AskType
+  reason: String
+  status: String
+  success: Boolean!
+}
 
 input SetSavedSearchSharingInput {
   id: ID!

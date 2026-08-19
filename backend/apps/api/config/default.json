@@ -207,7 +207,7 @@
     "onboarding.preference.steps": false,
     "actions": true,
     "smart.rotation": false,
-    "ask": false,
+    "ask": true,
     "grounded.prompts": true,
     "derivation.engines": true,
     "ingest.selfHeal": true
@@ -226,5 +226,12 @@
     "rateLimitPerSecond": 10,
     "provider": "portal",
     "portalBaseUrl": "https://hub.ci.computer"
+  },
+  "peers": {
+    "directoryUrl": "",
+    "memoryEndpoint": "",
+    "handle": "",
+    "audience": "",
+    "timeoutMs": 10000
   }
 }

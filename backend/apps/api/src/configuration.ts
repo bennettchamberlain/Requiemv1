@@ -603,9 +603,16 @@ export const ConfigSchema = z.object({
     'smart.rotation': booleanStringSchema,
     /**
      * Interpersonal "ask" feature (epic #1712): questions directed at another
-     * user's memory, gated by consent. Off by default while the surface and the
-     * disclosure filter are built; the whole ask GraphQL surface stays dark
-     * (mutations report failure, queries return empty) until enabled.
+     * user's memory, gated by consent.
+     *
+     * ON by default now that the consent gate, disclosure filter, tier ceilings
+     * and per-item redaction are all in place — the reason it shipped dark
+     * ("while the surface is being built") no longer holds.
+     *
+     * Enabling this does NOT open federation: an inbound peer ask additionally
+     * requires `peers.audience` to be configured, and the peer route refuses
+     * every request until it is. What this flag turns on is the LOCAL ask
+     * surface, where every ask still defaults to owner review.
      */
     ask: booleanStringSchema,
     /**
@@ -634,6 +641,26 @@ export const ConfigSchema = z.object({
     url: z.string().optional(),
     deviceId: z.string().optional(),
     apiKey: z.string().optional(),
+  }),
+  // Peer federation (CI-Server #1711 Phase 3). `directoryUrl` is CI-Portal's
+  // peer-discovery API base (handle → Companion endpoint + issuer); empty
+  // disables discovery, and with it any outbound ask. Inbound peer asks are
+  // additionally gated by the `ask` feature flag.
+  peers: z.object({
+    directoryUrl: z.string().optional(),
+    /** This box's own Companion endpoint, published to the directory. */
+    memoryEndpoint: z.string().optional(),
+    /** This box's Portal handle. */
+    handle: z.string().optional(),
+    /**
+     * The audience value CI-Portal mints into tokens addressed to THIS box.
+     * Required for the inbound peer surface: without it a token issued for any
+     * first-party client would be accepted here, so a token minted for another
+     * Companion could be replayed against this one.
+     */
+    audience: z.string().optional(),
+    /** Bound on every outbound call to a peer or the directory. */
+    timeoutMs: z.coerce.number().int().positive().default(10_000),
   }),
   // Geocoding, both directions (address <-> coordinates). Egress normally goes
   // through CI-Portal, which holds the provider key and fronts a cache shared by

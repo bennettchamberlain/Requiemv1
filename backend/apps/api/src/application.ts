@@ -53,6 +53,7 @@ import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PeersModule } from '@ci/domains/peers';
 import { PersonaModule } from '@ci/domains/persona';
 import { PersonalizationModule } from '@ci/domains/personalization';
 import { PipelineModule } from '@ci/domains/pipeline';
@@ -103,6 +104,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     ActivityModule,
     AgentModule,
     AsksModule,
+    PeersModule,
     AuditModule,
     AuthModule,
     PortalAuthModule,

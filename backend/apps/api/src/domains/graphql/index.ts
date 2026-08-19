@@ -20,6 +20,7 @@ import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
+import { PeersModule } from '@ci/domains/peers';
 import { PlanningModule } from '@ci/domains/planning';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { PythonFunctionsModule } from '@ci/domains/python-functions';
@@ -108,6 +109,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
       graphiql: false,
     }),
     AsksModule,
+    PeersModule,
     PairingModule,
     ActivityModule,
     BrowserActivityModule,
