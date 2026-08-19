@@ -187,20 +187,51 @@ export class FilePreviewGenerationListener {
         sourceDimensions,
       };
     } catch (err: unknown) {
-      // A decode failure is a SKIP, not a job failure. Routing on the MIME
-      // prefix alone means anything labelled image/* reaches sharp, and
-      // libvips throws "Input buffer contains unsupported image format" for
-      // every byte sequence it has no loader for. That throw used to
-      // propagate to the pg-boss worker, which bought 3 retries and then a
-      // permanent dead letter per file — 32 of them on the QA appliance, all
-      // image/jpeg, and re-earned on every re-import. Nothing about the bytes
-      // changes between attempts, so the retries can only cost work.
+      // A decode failure on INTACT bytes is a SKIP; on truncated bytes it is a
+      // retry. Routing on the MIME prefix alone means anything labelled image/*
+      // reaches sharp, and libvips throws "Input buffer contains unsupported
+      // image format" for every byte sequence it has no loader for — a verdict
+      // it returns identically for "this format has no loader" and "this read
+      // came back short". Those need opposite handling, and the exception alone
+      // cannot tell them apart.
       //
-      // Returning null lands in the `result == null` branch of
-      // generatePreview: logged, job completes. fileId + contentType are on
-      // the warn line so the undecodable corpus is countable from the logs
-      // (`grep 'Image decode failed'`), which is what tells us whether a
-      // whole format is missing a loader rather than a few odd files.
+      // `file.size` is the recorded length at upload, so comparing it against
+      // what we just read is the discriminator. It matters here specifically:
+      // the 32 dead letters that motivated this fix turned out to be COMPLETE,
+      // valid JPEGs that decode cleanly today, i.e. the failures were transient
+      // and the retries were the only recovery they ever had. Skipping on the
+      // first attempt would have removed it.
+      const expected = file.size;
+      const truncated = expected != null && expected > 0 && original.length !== expected;
+
+      if (truncated) {
+        this.logger.warn('Image decode failed on a short read; retrying', {
+          fileId: file.id,
+          contentType: file.contentType,
+          bytes: original.length,
+          expectedBytes: expected,
+          error: errorMessage(err),
+        });
+
+        throw err;
+      }
+
+      // Intact and still undecodable: the format genuinely has no loader.
+      // Returning null lands in the `result == null` branch of generatePreview:
+      // logged, job completes. fileId + contentType are on the warn line so the
+      // undecodable corpus is countable from the logs (`grep 'Image decode
+      // failed'`), which is what tells us whether a whole format is missing a
+      // loader rather than a few odd files.
+      //
+      // The dimensions probe above already succeeded on these bytes more often
+      // than not (MediaDimensionsService uses its own tolerant path), so persist
+      // what it found before giving up — it is free, already in hand, and the
+      // drawer's "Dimensions" row is the one thing a preview-less file can still
+      // show. The caller only reaches setDimensions on the success path.
+      if (sourceDimensions != null) {
+        await this.fileService.setDimensions(context, file.id, sourceDimensions);
+      }
+
       this.logger.warn('Image decode failed, skipping preview generation', {
         fileId: file.id,
         contentType: file.contentType,
@@ -234,15 +265,35 @@ export class FilePreviewGenerationListener {
       // collapsing it to a single frame.
       const sourceDimensions = await this.mediaDimensionsService.fromVideoFile(tempInput);
 
-      // Extract a single frame
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg(tempInput)
-          .frames(1)
-          .output(tempOutput)
-          .on('end', () => resolve())
-          .on('error', (err: Error) => reject(err))
-          .run();
-      });
+      // Extract a single frame. Classified the same way the image path is: a
+      // container or codec ffmpeg cannot decode is a FORMAT gap — retrying it
+      // three times and dead-lettering buys nothing — while the spool above and
+      // the read below are IO and stay retryable, so they deliberately sit
+      // outside this catch.
+      try {
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(tempInput)
+            .frames(1)
+            .output(tempOutput)
+            .on('end', () => resolve())
+            .on('error', (err: Error) => reject(err))
+            .run();
+        });
+      } catch (err: unknown) {
+        this.logger.warn('Video frame extraction failed, skipping preview generation', {
+          fileId: file.id,
+          contentType: file.contentType,
+          error: errorMessage(err),
+        });
+
+        // Dimensions survive a failed frame extract — fromVideoFile read them
+        // off the spooled container above and returns null rather than throwing.
+        if (sourceDimensions != null) {
+          await this.fileService.setDimensions(context, file.id, sourceDimensions);
+        }
+
+        return null;
+      }
 
       const frame = await fs.readFile(tempOutput);
 
@@ -273,6 +324,10 @@ export class FilePreviewGenerationListener {
           bytes: frame.length,
           error: errorMessage(err),
         });
+
+        if (sourceDimensions != null) {
+          await this.fileService.setDimensions(context, file.id, sourceDimensions);
+        }
 
         return null;
       }

@@ -41,7 +41,14 @@ function makeLogger() {
   return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 }
 
-function makeListener(fileBytes: Buffer | (() => Promise<Buffer>), contentType = 'image/jpeg') {
+function makeListener(
+  fileBytes: Buffer | (() => Promise<Buffer>),
+  contentType = 'image/jpeg',
+  // The length recorded at upload. Defaults to whatever the read returns, i.e.
+  // "the bytes are all there"; a test passing a different number is simulating
+  // a short read.
+  recordedSize?: number,
+) {
   const created: unknown[] = [];
   const logger = makeLogger();
   const fileService = {
@@ -51,6 +58,7 @@ function makeListener(fileBytes: Buffer | (() => Promise<Buffer>), contentType =
       bucket: 'files',
       key: 'user/file-1',
       contentType,
+      size: recordedSize ?? (Buffer.isBuffer(fileBytes) ? fileBytes.length : null),
     })),
     getFileContent: jest.fn(async () => (typeof fileBytes === 'function' ? fileBytes() : fileBytes)),
     setDimensions: jest.fn(async () => {}),
@@ -126,6 +134,40 @@ describe('FilePreviewGenerationListener', () => {
 
     expect(decodeWarn).toBeDefined();
     expect(decodeWarn?.[1]).toMatchObject({ fileId: 'file-1', contentType: 'image/heic' });
+  });
+
+  /**
+   * libvips returns the SAME verdict — "Input buffer contains unsupported image
+   * format" — for "this format has no loader" and "this read came back short",
+   * and those need opposite handling. The 32 dead letters that motivated the
+   * skip turned out to be complete, valid JPEGs that decode cleanly, i.e. the
+   * failures were transient and the retries were their only recovery. Skipping
+   * on the first attempt would have removed it, so the skip is gated on the
+   * bytes being all there.
+   */
+  it('retries rather than skipping when the bytes came back short', async () => {
+    const truncated = Buffer.from('this is not an image at all');
+    const { listener, fileService } = makeListener(truncated, 'image/jpeg', truncated.length + 4096);
+
+    await expect(
+      listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false }),
+    ).rejects.toThrow();
+
+    expect(fileService.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps the probed dimensions on a decode skip', async () => {
+    // The probe uses its own tolerant path and usually succeeds on bytes sharp
+    // will not resize. Those dimensions are the one thing a preview-less file
+    // can still show in the drawer, and they are already in hand.
+    const { listener, fileService } = makeListener(Buffer.from('not an image'), 'image/heic');
+
+    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false });
+
+    expect(fileService.setDimensions).toHaveBeenCalledWith(expect.anything(), 'file-1', {
+      width: 64,
+      height: 64,
+    });
   });
 
   /**
