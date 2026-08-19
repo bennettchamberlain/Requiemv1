@@ -469,11 +469,13 @@ export class PushStage implements ImportStageRunner {
       [context.runId],
     );
 
-    const identity = await readSelfIdentity(this.dataSource, context.userId).catch((): SelfIdentity => ({
-      names: [],
-      email: null,
-      phones: [],
-    }));
+    const identity = await readSelfIdentity(this.dataSource, context.userId).catch(
+      (): SelfIdentity => ({
+        names: [],
+        email: null,
+        phones: [],
+      }),
+    );
 
     // Several staged rows can share a natural key — the same artist reached by
     // two parsers in one archive — so the key maps to a LIST. Ingest is given
@@ -994,7 +996,7 @@ export class PushStage implements ImportStageRunner {
 
     for (const plan of group) {
       try {
-        if (await this.send(ctx, destination, plan.record, plan.participants, isSelf)) {
+        if (await this.send(ctx, destination, plan.record, plan.participants, isSelf, selfEntityId)) {
           counts[destination] = (counts[destination] ?? 0) + 1;
           plan.wrote = true;
         }
@@ -1186,11 +1188,7 @@ export class PushStage implements ImportStageRunner {
               ? toFacebookMessengerCommunicationInput(plan.record, isSelf)
               : toCommunicationInput(plan.record);
 
-          const { from, to } = this.resolveCorrespondents(
-            plan.participants,
-            input.direction,
-            selfEntityId,
-          );
+          const { from, to } = this.resolveCorrespondents(plan.participants, input.direction, selfEntityId);
 
           if (from) {
             input.from_entity_id = from;
@@ -1287,6 +1285,7 @@ export class PushStage implements ImportStageRunner {
     record: CanonicalRecord,
     participants: Map<string, string[]>,
     isSelf: IsSelf,
+    selfEntityId: string | null,
   ): Promise<boolean> {
     switch (destination) {
       case 'communications': {
@@ -1309,7 +1308,15 @@ export class PushStage implements ImportStageRunner {
         // The whole point of staging edges: a message reaches ci.* with a sender
         // and recipients rather than as text from nobody. `from` is single by
         // definition; everything else addressed is a recipient.
-        const { from, to } = this.resolveCorrespondents(participants, input.direction, null);
+        //
+        // `selfEntityId` is threaded through rather than passed as null. This is
+        // the row-by-row RETRY of a batch that failed, so it must decide
+        // correspondents identically to `sendMany` — and with null it did not:
+        // an outbound message got `from` undefined instead of the owner, and a
+        // group chat kept the owner's own entity in `to_entity_ids` because
+        // `stripSelf` had nothing to strip. A retried batch produced quietly
+        // different rows from a batch that happened to succeed.
+        const { from, to } = this.resolveCorrespondents(participants, input.direction, selfEntityId);
 
         if (from) {
           input.from_entity_id = from;

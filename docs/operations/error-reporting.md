@@ -107,8 +107,12 @@ silently put the entire SDK back into a sibling repo's DSN-less bundle.
 One project per component, matching the CI-Hub convention:
 
 CI-Server reports into the **`ci-memory`** project in the `companion-intelligence`
-org (named for the marketplace app id, matching `ci-import-tools`; CI-Hub's
-`hub-backend` / `hub-frontend` / `hub-desktop` predate the convention).
+org, named for the marketplace app id. The convention was set alongside
+`ci-import-tools`, whose marketplace app is no longer published — the tool is
+[retired](https://github.com/companionintelligence/ZARCHIVED-CI-Import-Tools/)
+and its import functionality now lives natively in CI-Server — so `ci-memory` is
+the only project still following it. CI-Hub's `hub-backend` / `hub-frontend` /
+`hub-desktop` predate the convention.
 
 Each component still gets its own DSN variable, and every event carries a
 `component` tag, so one project or four both work:

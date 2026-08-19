@@ -65,9 +65,12 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
     icon: TagIcon,
   },
   {
-    to: '/memory/questions',
-    label: 'Questions',
-    match: (p) => p === '/memory/questions',
+    to: '/memory/reflections',
+    // Renamed from "Questions" — `/memory/questions` still resolves here via a
+    // redirect in App.tsx, so it stays in the matcher for any link still in
+    // flight when the redirect runs.
+    label: 'Reflections',
+    match: (p) => p === '/memory/reflections' || p === '/memory/questions',
     flag: 'insights.page',
     icon: AnswerIcon,
   },

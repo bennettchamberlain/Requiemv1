@@ -2076,6 +2076,7 @@ type QuestionEdge implements Edge {
 }
 
 type QuestionType implements Node {
+  answerTier: String
   category: String!
   createdByLlm: Boolean
   id: ID!

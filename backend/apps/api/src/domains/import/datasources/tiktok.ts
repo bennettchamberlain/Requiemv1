@@ -1,5 +1,6 @@
 /* TikTok — "Download your data" JSON export (user_data_tiktok.json). */
 import fs from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { asArray, asRecord, asString, dig, type JsonRecord } from './json';
@@ -31,10 +32,10 @@ function looksLikeTikTok(obj: unknown): boolean {
   return 'Activity' in o || 'Direct Messages' in o;
 }
 
-function parseFile(fpath: string): JsonRecord | undefined {
+async function parseFile(fpath: string): Promise<JsonRecord | undefined> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -56,31 +57,31 @@ export class TikTokFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (!TIKTOK_FILES.includes(path.basename(root).toLowerCase())) {
         return { confidence: 0 };
       }
 
-      return parseFile(root) ? { confidence: 0.95 } : { confidence: 0 };
+      return (await parseFile(root)) ? { confidence: 0.95 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       let names: string[];
       try {
-        names = fs.readdirSync(root);
+        names = await readdir(root);
       } catch {
         return { confidence: 0, dir_threshold: 0.7 };
       }
 
       for (const name of names) {
-        if (TIKTOK_FILES.includes(name.toLowerCase()) && parseFile(path.join(root, name))) {
+        if (TIKTOK_FILES.includes(name.toLowerCase()) && (await parseFile(path.join(root, name)))) {
           return { confidence: 0.9 };
         }
       }

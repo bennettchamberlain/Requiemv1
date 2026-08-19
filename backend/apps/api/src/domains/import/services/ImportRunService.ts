@@ -11,6 +11,7 @@ import { EventService } from '@ci/domains/events';
 import {
   IMPORT_QUEUE,
   IMPORT_STAGE_KINDS,
+  IMPORT_STAGE_QUEUE_BY_KIND,
   IMPORT_STAGE_WEIGHTS,
   type ImportStageKindName,
 } from '../constants';
@@ -56,8 +57,11 @@ export interface StartRunInput {
   source?: ImportRunSource;
 
   /**
-   * The importer(s) the user's service card stood for — validated by the
-   * controller against the registry. Stored verbatim; NULL means undeclared.
+   * The importer(s) the user's intent stood for — a wizard service card, or
+   * the inbox service folder the unit was dropped in. The controller validates
+   * caller-supplied lists against the registry; the inbox derives its own from
+   * the catalog (`sources/inboxFolders.ts`). Stored verbatim; NULL means
+   * undeclared.
    */
   declaredSources?: readonly string[];
 
@@ -1219,37 +1223,58 @@ export class ImportRunService {
   // -------------------------------------------------------------------------
 
   /**
-   * Put one stage on the queue, at most once while a job for it is still
-   * pending.
+   * Put one stage job on ITS KIND's queue, at most once while a job for it is
+   * still pending.
    *
-   * `singletonKey` is the whole point. Stage jobs run at `localConcurrency: 1`
-   * appliance-wide (see ImportStageListener), so on a multi-source import every
-   * stage but one is legitimately QUEUED, sometimes for a long time: a real
-   * 13-source run measured a single Google Takeout parse at 703,956 items over
-   * 45 minutes with twelve runs waiting behind it.
+   * TWO independent properties, both required:
    *
-   * `resumeInterrupted` re-enqueues a queued stage it judges stale, and judges
-   * staleness from `import_stages.updated_at` — which nothing advances while a
-   * stage waits its turn. So every waiting stage crosses STALE_STAGE_MINUTES
-   * and collects a fresh job on EVERY sweep, every 5 minutes, for as long as
-   * the import runs. That is not hypothetical: 16 distinct stages had
-   * accumulated 107 pending jobs after 47 minutes, and the count grew linearly.
+   * ROUTING (IMPORT_STAGE_QUEUE_BY_KIND). Stage kinds get their own queues so
+   * they overlap across runs. Several callers hold only the stage id, so the
+   * kind is looked up rather than demanded — routing a job to the wrong kind's
+   * queue would let one kind's long job block another's slot, the exact
+   * head-of-line problem the split exists to remove.
    *
-   * The duplicates were harmless per-job — `beginStage` is a claim and a
-   * redelivered job no-ops — but the queue growth is unbounded and it is the
-   * NORMAL case for exactly the imports that take longest.
+   * DEDUPE (singletonKey). Within a kind's queue a stage still waits its turn,
+   * and `resumeInterrupted` re-enqueues a queued stage it judges stale — judging
+   * staleness from `import_stages.updated_at`, which nothing advances while a
+   * stage waits. So every waiting stage crossed STALE_STAGE_MINUTES and
+   * collected a fresh job on EVERY sweep, every 5 minutes, for as long as the
+   * import ran: 16 distinct stages holding 107 pending jobs after 47 minutes on
+   * a real 13-source import, growing linearly. The duplicates were harmless per
+   * job (`beginStage` is a claim, so a redelivered job no-ops) but the growth is
+   * unbounded, and it is the NORMAL case for the longest imports.
    *
-   * Keying on the stage id lets pg-boss refuse the duplicate at insert time,
-   * which fixes it without teaching the sweep to distinguish "waiting" from
-   * "lost" (it cannot, from the stage row alone). Crash recovery still works:
-   * the key only suppresses a job while one is pending, so once a lost job's
-   * has left the queue the sweep can enqueue again.
+   * Splitting the queues narrows the window; it does not close it, because a
+   * kind's queue is still ordered and a big parse still makes its siblings wait.
+   * Keying on the stage id lets pg-boss refuse the duplicate at insert time.
+   * Crash recovery is unaffected: the key only suppresses a job while one is
+   * pending, so once a lost job has left the queue the sweep enqueues again.
    */
-  private async enqueueStage(userId: string, runId: string, stage: ImportStage): Promise<void> {
+  private async enqueueStage(
+    userId: string,
+    runId: string,
+    stage: Pick<ImportStage, 'id'> & { kind?: ImportStageKindName },
+  ): Promise<void> {
+    let kind = stage.kind;
+
+    if (kind == null) {
+      const rows = await this.dataSource.query<Array<{ kind: ImportStageKindName }>>(
+        `SELECT kind FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [stage.id],
+      );
+
+      kind = rows[0]?.kind;
+    }
+
     await this.eventService.send(
       ImportStageEvent,
       { runId, stageId: stage.id, userId },
-      { queue: IMPORT_QUEUE, singletonKey: stage.id },
+      // An unknown kind (a deleted stage racing the enqueue) falls back to the
+      // legacy shared queue, which still drains — never dropped on the floor.
+      {
+        queue: kind != null ? IMPORT_STAGE_QUEUE_BY_KIND[kind] : IMPORT_QUEUE,
+        singletonKey: stage.id,
+      },
     );
   }
 

@@ -1,5 +1,6 @@
 /* Strava — activities.csv + per-activity GPX files from a Strava archive request. */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -22,9 +23,9 @@ export class StravaFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -33,17 +34,17 @@ export class StravaFileImporter implements FileImporter {
     // export might use; Strava's header is what makes it Strava's.
     const isStravaActivities = (fpath: string) => csvHeaderHas(fpath, ['activity id', 'activity date']);
 
-    if (stat.isFile()) {
-      return path.basename(root).toLowerCase() === 'activities.csv' && isStravaActivities(root)
+    if (st.isFile()) {
+      return path.basename(root).toLowerCase() === 'activities.csv' && (await isStravaActivities(root))
         ? { confidence: 0.9 }
         : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root).map((n) => n.toLowerCase());
+        const names = (await readdir(root)).map((n) => n.toLowerCase());
         const activitiesOk =
-          names.includes('activities.csv') && isStravaActivities(path.join(root, 'activities.csv'));
+          names.includes('activities.csv') && (await isStravaActivities(path.join(root, 'activities.csv')));
         if (activitiesOk && names.includes('activities')) {
           return { confidence: 0.95 };
         }
