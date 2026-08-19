@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ImportSurface } from './ImportPage';
 
+// `className` is rendered, not swallowed: the ceiling this page puts on the
+// region is the fix for a real layout failure (see the test below), and a mock
+// that dropped the prop would let it be deleted without a red test.
+vi.mock('@/components/ImportActivity', () => ({
+  ImportActivity: ({ className }: { className?: string }) => <div className={className}>import activity</div>,
+}));
 vi.mock('./wizard/ImportWizard', () => ({ ImportWizard: () => <div>wizard surface</div> }));
 vi.mock('./InboxPanel', () => ({ InboxPanel: () => <div>inbox surface</div> }));
 vi.mock('./HistoryTab', () => ({ HistoryTab: () => <div>history surface</div> }));
@@ -17,6 +23,47 @@ vi.mock('./HistoryTab', () => ({ HistoryTab: () => <div>history surface</div> })
  * selected panel has no trigger is malformed. Two toggle buttons instead.
  */
 describe('ImportSurface', () => {
+  // The defect the pinned region exists for: /sources/import opens on Pick — a
+  // service picker — and a 13-source import could run for an hour behind it
+  // with nothing on screen saying so. It has to be above the navigation row and
+  // present on EVERY surface, not just the one that happened to start the run.
+  it('pins live import progress above everything, on every surface', () => {
+    render(<ImportSurface />);
+
+    const activity = screen.getByText('import activity');
+
+    expect(activity).toBeInTheDocument();
+    // First child of the surface — above the step row, not tucked under a tab.
+    expect(activity.parentElement?.firstElementChild).toBe(activity);
+
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    expect(screen.getByText('import activity')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
+    expect(screen.getByText('import activity')).toBeInTheDocument();
+  });
+
+  /**
+   * The other half of "pinned": it must not eat the page it is pinned to.
+   *
+   * Measured at 1280×800 with a real 13-run batch and no ceiling: the region
+   * rendered 489px tall inside a 440px column that does not scroll, and the
+   * step row, the source picker and the Pick step's Continue button were all
+   * below the bottom of the window with no way to reach them. The cap is set
+   * here rather than inside the component because it is a fact about this
+   * host — the Jobs page, whose own page scrolls, deliberately passes none.
+   */
+  it('caps the region so the wizard keeps the space it needs', () => {
+    render(<ImportSurface />);
+
+    const activity = screen.getByText('import activity');
+
+    expect(activity.className).toContain('sm:max-h-[50%]');
+    // And no cap on a phone, where this column is ~200px and half of it is
+    // less than the region's own summary — that clipped it mid-sentence.
+    expect(activity.className).toContain('max-h-none');
+  });
+
   it('opens on the wizard', () => {
     render(<ImportSurface />);
 

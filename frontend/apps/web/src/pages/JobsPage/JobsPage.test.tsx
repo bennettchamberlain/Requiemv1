@@ -59,6 +59,13 @@ let lastFilters: Record<string, unknown> = {};
 /** Window (hours) the page handed the history hook. */
 let lastWindowHours = 0;
 
+// Same reason as `useDeadLetters` above: the pinned import region reads the
+// auth context that `renderWithProviders` deliberately does not supply. It has
+// its own test file; what the PAGE owes is mounting it, above Queue Activity.
+vi.mock('@/components/ImportActivity', () => ({
+  ImportActivity: ({ className }: { className?: string }) => <div className={className}>import activity</div>,
+}));
+
 vi.mock('./useJobsDashboard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./useJobsDashboard')>();
 
@@ -478,5 +485,40 @@ describe('JobsPage dead letters', () => {
     fireEvent.click(screen.getByRole('button', { name: /Refresh/ }));
 
     expect(deadLetterState.refresh).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The import an operator is actually asking about.
+ *
+ * This page answers "what is the queue doing" in pg-boss's own terms, and on a
+ * live 13-source import that read `import-stages: 142 created, 1 active` — a
+ * number that is not even the backlog, because a redelivered stage job is a
+ * deliberate no-op and leaves its row behind (those 142 rows covered 19
+ * distinct stages). Nothing here said which archive was importing, how far
+ * along it was, or which stage had been waiting an hour.
+ */
+describe('JobsPage live imports', () => {
+  it('pins import progress above the queue summary', () => {
+    renderWithProviders(<JobsPage />);
+
+    const activity = screen.getByText('import activity');
+
+    expect(activity).toBeInTheDocument();
+    // Above Queue Activity: while an import is in flight it outranks the raw
+    // queue, which is the thing an operator came here unable to interpret.
+    expect(
+      activity.compareDocumentPosition(screen.getByText('Queue Activity')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('lets the region size to its content, unlike the import surface', () => {
+    // The import surface caps it, because that column is bounded and the wizard
+    // has to keep its share. This page scrolls, so a cap here would only hide
+    // the runs an operator opened the page to read. Asserted so the two hosts
+    // cannot quietly converge on one wrong answer.
+    renderWithProviders(<JobsPage />);
+
+    expect(screen.getByText('import activity').className).toBe('');
   });
 });

@@ -2,6 +2,8 @@ import { useCallback, useState } from 'react';
 
 import { cn } from '@ci/shadcn';
 
+import { ImportActivity } from '@/components/ImportActivity';
+
 import { HistoryTab } from './HistoryTab';
 import { InboxPanel } from './InboxPanel';
 import { ImportWizard } from './wizard/ImportWizard';
@@ -59,6 +61,44 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {/* PINNED, above everything, on every step and both tabs.
+
+          Before this, an import in flight was invisible from the page whose
+          entire subject is importing. `/sources/import` opens on Pick — a
+          service picker — and the run pipeline lived inside History, or on the
+          Export/Sync card that had happened to start the run. A real 13-source
+          import ran for an hour with a source picker on screen and no
+          indication that anything was happening at all.
+
+          Outside the step-switching region on purpose: the wizard is a flow
+          someone walks, and what the appliance is doing right now is not part
+          of that flow — it is true on every step, including the ones that are
+          about a completely different archive.
+
+          Renders nothing when nothing is unfinished, which is what lets it be
+          mounted unconditionally. Onboarding gets it too — a first-run import
+          is exactly when someone most needs to see that it started.
+
+          The ceiling is set HERE, not inside the component, because it is a
+          fact about this host and not about progress: this column is bounded
+          (the page around it does not scroll on a desktop viewport), so a
+          region that sizes to its content takes the wizard's space and keeps
+          it. Measured before the cap existed: 489px of card inside a 440px
+          column at 1280×800, which put the step row and the Pick step's
+          Continue button below the bottom of an unscrollable page. Half is the
+          largest share that still leaves the wizard its step row, a band of the
+          picker and the pinned Continue at 1280×800 — the region scrolls inside
+          whatever that comes to.
+
+          Below `sm` there is deliberately NO cap: a phone gives this column
+          about 200px, half of which is less than the region's own heading, so
+          capping there clipped the summary mid-sentence and left no room for a
+          single run. That viewport scrolls instead, and the region sizes to
+          what it has to say. The Jobs page passes no cap for the same reason —
+          there the page itself scrolls, and clipping the region would hide the
+          very thing an operator opened it to read. */}
+      <ImportActivity className="max-h-none sm:max-h-[50%]" />
+
       {/* ONE navigation row, not two. The wizard's step buttons used to sit in
           a row of their own directly under an Import/Inbox/History tab bar —
           two bands of chrome, and the tab bar's first entry ("Import") named

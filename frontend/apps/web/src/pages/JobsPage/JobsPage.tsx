@@ -4,6 +4,7 @@ import { usePageTitle } from '@ci/common';
 import { Badge, Button, Card, Skeleton } from '@ci/shadcn';
 import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
 
+import { ImportActivity } from '@/components/ImportActivity';
 import { PageContent } from '@/components/layout';
 
 import { describeCron } from './cronDescriptor';
@@ -60,6 +61,23 @@ export function JobsPage() {
     <>
       <PageContent>
         <div className="flex flex-col gap-3">
+          {/* Above Queue Activity, because it outranks it while it exists.
+
+              This page answers "what is the queue doing" for an operator, and
+              pg-boss answers that in pg-boss's terms: on a live 13-source
+              import it read `import-stages: 142 created, 1 active` — a number
+              that is not even the backlog (a redelivered stage job is a
+              deliberate no-op and leaves its row behind; those 142 rows covered
+              19 distinct stages). Nothing on this page said which archive was
+              importing, how far along it was, or which stage had been waiting
+              an hour.
+
+              The SAME component the import surface pins, not a second copy —
+              two implementations of a progress card drift, and the one nobody
+              is looking at is the one that rots. Renders nothing when no import
+              is in flight, so the page is unchanged the rest of the time. */}
+          <ImportActivity />
+
           <SummaryCard
             summary={dashboard.data?.summary}
             loading={dashboard.loading}

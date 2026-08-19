@@ -24,6 +24,24 @@ import type { StageOutcome } from '../types';
 import { StagedSourceService } from './StagedSourceService';
 
 /**
+ * Unfinished runs the active snapshot will report on.
+ *
+ * A ceiling rather than a page: the snapshot is polled every two seconds while
+ * an import runs, and one Takeout session has produced ~150 runs (oversized
+ * media exports arrive as loose files, one run each). Sixty covers every batch
+ * import the appliance actually performs — 13 top-level sources is the big one
+ * — while capping what a pathological account can make the poll fetch.
+ */
+const ACTIVE_RUN_LIMIT = 60;
+
+/**
+ * Finished runs of the same batch carried alongside, so the header can say
+ * "3 of 13 done" instead of watching its own denominator shrink as runs finish.
+ * Beyond this the tail is dropped and `truncated` says so; History has them all.
+ */
+const FINISHED_SIBLING_LIMIT = 40;
+
+/**
  * An inbox unit this run will consume in place of an uploaded drop. The path
  * must already be resolved through `resolveWithinInbox` — this service trusts
  * its callers on containment because the batch surface is the only code that
@@ -577,17 +595,11 @@ export class ImportRunService {
     // entity resolutions that are not records at all. `detail.pushed` is the
     // count of rows this run actually wrote.
     //
-    // One extra query for the whole page, not one per run.
-    const rows = await this.dataSource.query<Array<{ run_id: string; records: string | null }>>(
-      `SELECT run_id, SUM((detail->>'pushed')::bigint)::bigint AS records
-         FROM ci_import.import_stages
-        WHERE run_id = ANY($1::uuid[]) AND kind = 'push'
-          AND detail ? 'pushed'
-        GROUP BY run_id`,
-      [runs.map((run) => run.id)],
-    );
-
-    const recordsByRun = new Map(rows.map((row) => [row.run_id, Number(row.records ?? 0)]));
+    // One extra query for the whole page, not one per run. Extracted to
+    // `recordsFor` so the active snapshot reports the same number by the same
+    // rule rather than growing a second, subtly different definition of
+    // "records imported".
+    const recordsByRun = await this.recordsFor(runs.map((run) => run.id));
 
     return runs.map((run) => ({ ...run, records: recordsByRun.get(run.id) ?? 0 }));
   }
@@ -604,6 +616,152 @@ export class ImportRunService {
     }
 
     return { run, stages: await this.stagesFor(runId) };
+  }
+
+  /**
+   * Everything this user has in flight, with its stages, in one round trip.
+   *
+   * ## Why an endpoint of its own
+   *
+   * The alternative — the surfaces poll `GET /import/runs/:id` per run — is what
+   * the wizard did, and it is unusable on the shape people actually run. A batch
+   * import of an inbox is one run per top-level folder: the 13-source corpus
+   * this was built against meant 13 detail requests every two seconds, each with
+   * its own re-render clock. `useRunsProgress` already fixed the same problem
+   * for the wizard's summary cards by collapsing many polls into one list call;
+   * this does it for the DETAILED view, which the list endpoint cannot serve
+   * because it carries no stages.
+   *
+   * ## What counts as "in flight"
+   *
+   * Every unfinished run, plus the runs finished since the OLDEST unfinished one
+   * was created. The second half is what lets a caller say "1 of 13 done" — a
+   * finished run is no longer in flight, but it is still part of the batch a
+   * person is watching, and dropping it would make the counter read "1 of 12"
+   * and then "1 of 11" as the batch drains, which is worse than useless.
+   *
+   * ## Cost
+   *
+   * Four queries, and only while something is unfinished — the first one returns
+   * empty on an idle appliance and the rest are skipped, so a page left open
+   * overnight costs one indexed lookup per idle poll. The unfinished lookup
+   * rides `import_runs_active_idx` (partial, `WHERE finished_at IS NULL`); the
+   * finished tail rides `import_runs_user_created_idx`.
+   */
+  async activeBatch(
+    ctx: UserServiceContext,
+    options: { finishedLimit?: number } = {},
+  ): Promise<{
+    runs: ImportRun[];
+    stages: ImportStage[];
+    units: Map<string, string>;
+    records: Map<string, number>;
+    truncated: boolean;
+  } | null> {
+    const repository = this.dataSource.getRepository(ImportRunEntity);
+
+    // Oldest first: under a single execution slot that is also the order they
+    // will finish, so it is the order to show them in.
+    const unfinished = await repository
+      .createQueryBuilder('run')
+      .where('run.user_id = :userId', { userId: ctx.userId })
+      .andWhere('run.finished_at IS NULL')
+      .orderBy('run.created_at', 'ASC')
+      .take(ACTIVE_RUN_LIMIT)
+      .getMany();
+
+    if (unfinished.length === 0) {
+      return null;
+    }
+
+    // The batch's floor. `createdAt`, not `startedAt`: a run that is still
+    // `queued` has no start, and it is unambiguously part of the batch.
+    const since = unfinished[0].createdAt;
+    const finishedLimit = options.finishedLimit ?? FINISHED_SIBLING_LIMIT;
+    const finished = await repository
+      .createQueryBuilder('run')
+      .where('run.user_id = :userId', { userId: ctx.userId })
+      .andWhere('run.finished_at IS NOT NULL')
+      .andWhere('run.created_at >= :since', { since })
+      // Newest first for the CAP — if a batch overflows, the recently-finished
+      // runs are the ones somebody is still looking at. Re-sorted into
+      // execution order by the snapshot builder.
+      .orderBy('run.created_at', 'DESC')
+      .take(finishedLimit + 1)
+      .getMany();
+
+    const truncated = finished.length > finishedLimit;
+    const runs = [...unfinished, ...finished.slice(0, finishedLimit)];
+    const runIds = runs.map((run) => run.id);
+
+    const [stages, units, records] = await Promise.all([
+      this.dataSource.getRepository(ImportStageEntity).find({ where: { runId: In(runIds) } }),
+      this.unitsFor(runIds),
+      this.recordsFor(runIds),
+    ]);
+
+    return { runs, stages, units, records, truncated };
+  }
+
+  /**
+   * Run id → the staged upload or inbox folder it is importing.
+   *
+   * The name that tells thirteen runs of one batch apart. Every one of them
+   * carries the same `label` (the batch name the caller passed) and an empty
+   * `dataSources` until its parse finishes, so before this the run list showed
+   * thirteen rows reading "qa-full-corpus" with no way to tell which was the
+   * 700k-item Takeout and which was the 298-item Lyft export.
+   *
+   * `original_filename` first (an upload knows what the user called it),
+   * falling back to the source path, which the caller reduces to a basename —
+   * inbox units have no `original_filename` and their path IS their name.
+   *
+   * DISTINCT ON because a run consumes exactly one staged source today, and a
+   * future one consuming several should still get a stable answer rather than
+   * whichever row the planner happened to emit first.
+   */
+  async unitsFor(runIds: readonly string[]): Promise<Map<string, string>> {
+    if (runIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.dataSource.query<Array<{ run_id: string; unit: string | null }>>(
+      `SELECT DISTINCT ON (run_id) run_id, COALESCE(original_filename, source_path) AS unit
+         FROM ci_import.staged_sources
+        WHERE run_id = ANY($1::uuid[])
+        ORDER BY run_id, created_at ASC`,
+      [[...runIds]],
+    );
+
+    return new Map(
+      rows
+        .filter((row): row is { run_id: string; unit: string } => row.unit != null)
+        .map((row) => [row.run_id, row.unit]),
+    );
+  }
+
+  /**
+   * Run id → rows actually written into `ci.*`.
+   *
+   * `detail.pushed`, NOT the push stage's `processed` — see the long note in
+   * {@link listRuns}, which this was lifted out of so the active snapshot could
+   * report the same number by the same rule instead of inventing a second one.
+   */
+  async recordsFor(runIds: readonly string[]): Promise<Map<string, number>> {
+    if (runIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.dataSource.query<Array<{ run_id: string; records: string | null }>>(
+      `SELECT run_id, SUM((detail->>'pushed')::bigint)::bigint AS records
+         FROM ci_import.import_stages
+        WHERE run_id = ANY($1::uuid[]) AND kind = 'push'
+          AND detail ? 'pushed'
+        GROUP BY run_id`,
+      [[...runIds]],
+    );
+
+    return new Map(rows.map((row) => [row.run_id, Number(row.records ?? 0)]));
   }
 
   /**

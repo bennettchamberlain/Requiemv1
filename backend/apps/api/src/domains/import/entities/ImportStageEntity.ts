@@ -1,14 +1,20 @@
 import { Column, Entity, Index, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 
 /**
- * The importer's three-step pipeline. A closed vocabulary by construction — the
+ * The importer's four-step pipeline. A closed vocabulary by construction — the
  * stage bar in the UI draws one box per value.
+ *
+ * `media` was missing from this union long after the kind shipped: the database
+ * CHECK, `IMPORT_STAGE_KINDS` and `IMPORT_STAGE_WEIGHTS` all carry it, so every
+ * media row round-tripped fine and nothing ever failed — the type just quietly
+ * lied, and a `switch` over it would have been narrowed to three arms against
+ * four real values. The same four the constant lists; the two must agree.
  *
  * Everything downstream of `push` (graph extraction, search indexing) belongs to
  * ci-server's own pipeline control plane (`ci.pipeline_runs`) and is
  * deliberately NOT re-modelled here.
  */
-export type ImportStageKind = 'unpack' | 'parse' | 'push';
+export type ImportStageKind = 'unpack' | 'parse' | 'media' | 'push';
 
 export type ImportStageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled';
 
