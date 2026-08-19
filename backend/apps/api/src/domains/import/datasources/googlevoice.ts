@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams, EntityAttribute } from './timeline';
+import type { ImportParams, EntityAttribute, Relationship } from './timeline';
 
 type GoogleVoiceOptions = Record<string, never>;
 
@@ -186,16 +186,22 @@ export class GoogleVoiceFileImporter implements FileImporter {
     let contactName: string | undefined;
     let contactPhone: string | undefined;
     const owner = this.owner?.name || this.owner?.phones?.[0];
+    // Which message block each inline <img> came from, keyed by the raw `src`
+    // stub the attachment loop below re-reads.
+    //
+    // An MMS whose only content is a picture has NO <q> body, so the `continue`
+    // below skips it and the picture reaches ci.communications as a standalone
+    // item — 7,318 of them in the live corpus, every one with no sender, no
+    // recipient and no conversation, because the attachment loop scanned the
+    // whole file and had no idea which message each <img> belonged to. The
+    // block DOES carry a <cite class="sender vcard">, so remember it here while
+    // we still know which block we are in.
+    const attachmentSenders = new Map<string, { isOutbound: boolean; sender: GVEntity }>();
     while ((match = msgRegex.exec(raw)) !== null) {
       const block = match[1];
-      const qHtml = /<q>([\s\S]*?)<\/q>/i.exec(block)?.[1];
-      if (qHtml == null) {
-        continue;
-      } // call log / missed call without a text body
-
-      const text = decodeHtml(stripTags(qHtml)).trim();
-      const whenStr = /<(?:abbr|span) class="dt"[^>]*title="([^"]+)"/i.exec(block)?.[1];
-      const ts = whenStr ? new Date(whenStr) : undefined;
+      // Read the sender BEFORE the no-body bail-out: an image-only MMS is still
+      // a message from somebody, and both `participants` and the contact
+      // tracking below are strictly better for knowing about it.
       const sender = extractSender(block);
       if (sender.phone) {
         participants[sender.phone] = sender;
@@ -212,10 +218,29 @@ export class GoogleVoiceFileImporter implements FileImporter {
         }
       }
 
-      const counterpart = contactName || contactPhone || conversation;
+      let blockImg: RegExpExecArray | null;
+      const blockImgRegex = /<img[^>]*src="([^"]+)"/gi;
+      while ((blockImg = blockImgRegex.exec(block)) !== null) {
+        attachmentSenders.set(blockImg[1], { isOutbound, sender });
+      }
+
+      const qHtml = /<q>([\s\S]*?)<\/q>/i.exec(block)?.[1];
+      if (qHtml == null) {
+        continue;
+      } // call log / missed call without a text body
+
+      const text = decodeHtml(stripTags(qHtml)).trim();
+      const whenStr = /<(?:abbr|span) class="dt"[^>]*title="([^"]+)"/i.exec(block)?.[1];
+      const ts = whenStr ? new Date(whenStr) : undefined;
+
+      // The other end of the conversation, as the file has revealed it so far.
+      const counterpart: GVEntity = {
+        name: contactName || contactPhone || conversation,
+        phone: contactPhone,
+      };
       // Outbound: Sender='Me' is the from, the contact is the recipient (To).
       // Inbound: Sender=contact is the from; the owner is the recipient.
-      const to = isOutbound ? counterpart : owner;
+      const to = isOutbound ? counterpart.name : owner;
       params.pipeline.push({
         item: {
           classification: 'message',
@@ -235,6 +260,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
             To: to || undefined,
           },
         },
+        edges: counterpartEdges(isOutbound, sender, counterpart),
       });
     }
 
@@ -262,6 +288,21 @@ export class GoogleVoiceFileImporter implements FileImporter {
         continue;
       }
 
+      // Who this picture was between. `attachmentSenders` has the answer
+      // whenever the <img> sat inside a <div class="message"> block — which is
+      // where Google Voice puts MMS attachments — so an image-only MMS is
+      // attributed exactly the way a text message in the same file is, rather
+      // than landing as a picture from nobody.
+      //
+      // No entry means the stub was not inside any message block we could
+      // parse. `Conversation` still names the thread the file is, but nothing
+      // here says which way the picture travelled, so no Sender / To / edge is
+      // claimed: a filename label is not evidence of authorship.
+      const attributed = attachmentSenders.get(stub);
+      const counterpart: GVEntity = {
+        name: contactName || contactPhone || conversation,
+        phone: contactPhone,
+      };
       const item = {
         classification: 'message',
         timestamp: tsFromAttachmentFilename(filename),
@@ -271,9 +312,25 @@ export class GoogleVoiceFileImporter implements FileImporter {
           mediaType: '',
           data: async () => fs.promises.readFile(filename),
         },
-        metadata: { Source: 'GoogleVoice', Attachment: 'image' },
+        metadata: {
+          Source: 'GoogleVoice',
+          Attachment: 'image',
+          Conversation: conversation,
+          ...(attributed
+            ? {
+                Sender: attributed.sender.name || attributed.sender.phone || undefined,
+                Direction: attributed.isOutbound ? 'outgoing' : 'incoming',
+                To: (attributed.isOutbound ? counterpart.name : owner) || undefined,
+              }
+            : {}),
+        },
       };
-      params.pipeline.push({ item });
+      params.pipeline.push({
+        item,
+        edges: attributed
+          ? counterpartEdges(attributed.isOutbound, attributed.sender, counterpart)
+          : undefined,
+      });
     }
   }
 
@@ -367,6 +424,57 @@ export class GoogleVoiceFileImporter implements FileImporter {
   }
 }
 
+/**
+ * The `participant` edge naming the other end of one Google Voice message.
+ *
+ * This file used to stage NO edges at all — every message travelled as raw
+ * `Sender`/`To` strings in metadata and depended entirely on a post-load sweep
+ * reading `participants_metadata` to turn them into people. Anything that
+ * reached ci.communications without those strings (image-only MMS: 7,318 rows)
+ * had no second chance, and PushStage's `resolveCorrespondents` had nothing to
+ * work with either, so `from_entity_id` / `to_entity_ids` were left for someone
+ * else to fill. An edge says the same thing the metadata says, in the shape the
+ * push already knows how to resolve.
+ *
+ * Asymmetric on purpose:
+ *
+ * - OUTBOUND — the counterpart is a RECIPIENT, and `To` already falls back to
+ *   the conversation label parsed off the filename, so the edge may use it too.
+ * - INBOUND — the counterpart is the SENDER, and an edge is emitted only when
+ *   the block's `<cite class="sender vcard">` actually named somebody. A
+ *   filename is not evidence of who wrote a message; guessing there is how this
+ *   importer previously minted 241 Person entities named after .html files.
+ */
+function counterpartEdges(
+  isOutbound: boolean,
+  sender: GVEntity,
+  counterpart: GVEntity,
+): Relationship[] | undefined {
+  const name = isOutbound ? counterpart.name : sender.name || sender.phone;
+  if (!name) {
+    return undefined;
+  }
+
+  // The phone is an IDENTITY attribute (see imessage.ts contactEntity): without
+  // it the entity is keyed by name and never gets a ci.entity_identifiers row,
+  // so it can never be cross-referenced with the same number from a vCard.
+  const phone = isOutbound ? counterpart.phone : sender.phone;
+
+  return [
+    {
+      relation: 'participant',
+      to: {
+        entity: {
+          type: 'contact',
+          name,
+          attributes: phone ? [{ name: 'phone', value: phone, identity: true } as EntityAttribute] : [],
+        },
+      },
+      metadata: { direction: isOutbound ? 'outgoing' : 'incoming' },
+    },
+  ];
+}
+
 function stripTags(h: string): string {
   return h.replace(/<[^>]+>/g, '');
 }
@@ -390,7 +498,8 @@ function decodeHtml(h: string): string {
  * entities called "Missed call from" (900 of them with no name after the
  * phrase at all), which is 30% of everyone in the address book.
  */
-const CALL_LOG_HEADING = /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
+const CALL_LOG_HEADING =
+  /^\s*(?:missed|placed|received|recorded|voicemail)\b[^\n]*?\b(?:call\s+)?(?:from|to|with)\b\s*/i;
 
 function extractSender(block: string): GVEntity {
   // Real Google Voice exports wrap the OUTBOUND sender ("Me") in
@@ -403,9 +512,8 @@ function extractSender(block: string): GVEntity {
   // nested inside the phone-number anchor is the contact and nothing else. The
   // bare `fn` match below is the fallback, and it is the one that can pick up a
   // heading.
-  const telName = /<a class="tel"[^>]*>[\s\S]*?<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(
-    block,
-  );
+  const telName =
+    /<a class="tel"[^>]*>[\s\S]*?<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
   const nameMatch = telName ?? /<(?:span|abbr) class="fn"(?:\s[^>]*)?>([^<]*)<\/(?:span|abbr)>/i.exec(block);
   const telMatch = /<a class="tel" href="tel:([^"']+)"/i.exec(block);
 

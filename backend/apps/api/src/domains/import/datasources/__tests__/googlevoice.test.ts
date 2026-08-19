@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 
 import { GoogleVoiceFileImporter } from '../googlevoice';
-import type { ImportParams } from '../timeline';
+import type { ImportParams, Relationship } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
 
@@ -225,5 +225,138 @@ describe('Google Voice datasource', () => {
     expect(inbound!.item.metadata.Direction).toBe('incoming');
     expect(inbound!.item.metadata.To).toBe('+15559998888');
     expect(inbound!.item.metadata.To).not.toBe('\r');
+  });
+});
+
+/*
+ * Regression (defect F2): 7,318 Google Voice rows reached ci.communications
+ * with from_entity_id NULL and to_entity_ids empty. Every one of them was an
+ * image attachment, and every one carried exactly two metadata keys — Source
+ * and Attachment. There was nothing for any later linking sweep to read,
+ * because this importer staged no participant edges at all and the attachment
+ * loop scanned the whole file with no idea which message each <img> came from.
+ *
+ * An image-only MMS has no <q> body, so the message loop's `continue` skipped
+ * it — but its <div class="message"> block still names a sender.
+ */
+describe('Google Voice participants', () => {
+  const importFixture = async (name: string): Promise<EmittedGraph[]> => {
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport(
+      {},
+      { filename: name, fullPath: path.join(FIXTURES_DIR, name) },
+      { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
+    );
+
+    return pipeline;
+  };
+
+  const importInline = async (html: string, attachments: string[] = []): Promise<EmittedGraph[]> => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-part-'));
+    fs.mkdirSync(path.join(dir, 'Calls'));
+    fs.writeFileSync(
+      path.join(dir, 'Phones.vcf'),
+      'BEGIN:VCARD\nVERSION:3.0\nFN:My Phone\nTEL:+15551234567\nEND:VCARD\n',
+    );
+    fs.writeFileSync(path.join(dir, 'Calls', 'Dana Wu - Text - 2025-03-01T12_00_00Z.html'), html);
+    for (const a of attachments) {
+      fs.writeFileSync(path.join(dir, 'Calls', a), 'jpeg-bytes');
+    }
+
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline;
+  };
+
+  const participantEdges = (g: EmittedGraph): Relationship[] =>
+    (g.edges ?? []).filter((e) => e.relation === 'participant');
+
+  it('attributes an image-only MMS to the sender of the block it came from', async () => {
+    const pipeline = await importFixture('google-voice-export');
+    const attachment = pipeline.find((p) => p.item?.metadata?.Attachment === 'image')!;
+    expect(attachment).toBeDefined();
+
+    // The third block of the fixture is Bob Smith's, and has no <q> body.
+    expect(attachment.item.metadata.Sender).toBe('Bob Smith');
+    expect(attachment.item.metadata.Direction).toBe('incoming');
+    expect(attachment.item.metadata.To).toBe('My Phone');
+
+    const edges = participantEdges(attachment);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].to.entity?.name).toBe('Bob Smith');
+    expect(edges[0].metadata?.direction).toBe('incoming');
+    // Identity attribute, or the contact can never be joined to the same
+    // number arriving from a vCard (see imessage.ts contactEntity).
+    expect(edges[0].to.entity?.attributes).toEqual([
+      { name: 'phone', value: '+15559876543', identity: true },
+    ]);
+  });
+
+  it('stages a participant edge for text messages in both directions', async () => {
+    const pipeline = await importFixture('google-voice-export');
+    const graphs = pipeline.filter((p) => p.item?.metadata?.Text);
+
+    const inbound = graphs.find((g) => g.item.metadata.Sender === 'Bob Smith')!;
+    expect(participantEdges(inbound).map((e) => e.to.entity?.name)).toEqual(['Bob Smith']);
+    expect(participantEdges(inbound)[0].metadata?.direction).toBe('incoming');
+
+    // Outbound: the sender is the owner, so the edge names the RECIPIENT.
+    const outbound = graphs.find((g) => g.item.metadata.Sender === 'Me')!;
+    expect(participantEdges(outbound).map((e) => e.to.entity?.name)).toEqual(['Bob Smith']);
+    expect(participantEdges(outbound)[0].metadata?.direction).toBe('outgoing');
+  });
+
+  it('attributes an image the owner sent to the owner, not to the contact', async () => {
+    const pipeline = await importInline(
+      `<html><body>
+         <div class="message">
+           <abbr class="dt" title="2025-03-01T12:00:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15558887777"><span class="fn">Dana Wu</span></a></cite>:
+           <q>look at this</q>
+         </div>
+         <div class="message">
+           <abbr class="dt" title="2025-03-01T12:01:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15551234567"><abbr class="fn" title="">Me</abbr></a></cite>:
+           <img src="Dana Wu - Text - 2025-03-01T12_01_00Z-1-1">
+         </div>
+       </body></html>`,
+      ['Dana Wu - Text - 2025-03-01T12_01_00Z-1-1.jpg'],
+    );
+
+    const attachment = pipeline.find((p) => p.item?.metadata?.Attachment === 'image')!;
+    expect(attachment).toBeDefined();
+    expect(attachment.item.metadata.Direction).toBe('outgoing');
+    expect(attachment.item.metadata.Sender).toBe('Me');
+    expect(attachment.item.metadata.To).toBe('Dana Wu');
+
+    const edges = participantEdges(attachment);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].to.entity?.name).toBe('Dana Wu');
+    expect(edges[0].metadata?.direction).toBe('outgoing');
+  });
+
+  it('claims no sender for an image that sits outside every message block', async () => {
+    // The filename label names the THREAD, never the author. Filing it as a
+    // sender is how this importer previously minted 241 Person entities named
+    // after .html files, so an unattributable image stays unattributed.
+    const pipeline = await importInline(
+      `<html><body>
+         <img src="Dana Wu - Text - 2025-03-01T12_02_00Z-1-1">
+       </body></html>`,
+      ['Dana Wu - Text - 2025-03-01T12_02_00Z-1-1.jpg'],
+    );
+
+    const attachment = pipeline.find((p) => p.item?.metadata?.Attachment === 'image')!;
+    expect(attachment).toBeDefined();
+    expect(attachment.item.metadata.Conversation).toBe('Dana Wu');
+    expect(attachment.item.metadata.Sender).toBeUndefined();
+    expect(attachment.item.metadata.Direction).toBeUndefined();
+    expect(attachment.item.metadata.To).toBeUndefined();
+    expect(participantEdges(attachment)).toHaveLength(0);
   });
 });
