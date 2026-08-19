@@ -45,6 +45,7 @@ import { PreviewLoader } from './loaders/PreviewLoader';
 import { ProviderKeyLoader } from './loaders/ProviderKeyLoader';
 import { ProviderLoader } from './loaders/ProviderLoader';
 import { QuestionLoader } from './loaders/QuestionLoader';
+import { TagAssignmentCountLoader } from './loaders/TagAssignmentCountLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
@@ -180,6 +181,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     SavedSearchResolver,
     SearchResolver,
     SummaryResolver,
+    TagAssignmentCountLoader,
     TagLoader,
     TagResolver,
     ThreadLoader,

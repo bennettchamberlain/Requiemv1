@@ -188,6 +188,10 @@ type Documents = {
     "\n  query GetSharedSavedSearch($token: String!) {\n    sharedSavedSearch(token: $token) {\n      id\n      name\n      description\n    }\n  }\n": typeof types.GetSharedSavedSearchDocument,
     "\n  query StatsDailyMetrics($from: String!, $to: String!) {\n    dailyMetrics(from: $from, to: $to) {\n      date\n      nMessages\n      nPlaces\n      kmTraveled\n    }\n  }\n": typeof types.StatsDailyMetricsDocument,
     "\n  query GetSummary($id: ID!) {\n    summary(id: $id) {\n      id\n      title\n      periodType\n      periodStart\n      periodEnd\n      summaryText\n      keyInsights\n      notableEvents\n      anomalies\n      tags\n      activityCounts {\n        total\n        browserActivity\n        communications\n        files\n        events\n        messages\n        screenCaptures\n        apiLogs\n        positions\n        activities\n        measurements\n      }\n      insights {\n        title\n        summaryText\n        keyActions\n        relevanceScore\n        tags\n        relatedEntityIds\n      }\n      dailyRhythm\n      productivityPatterns\n      socialInteractions\n      keyAccomplishments\n      moodIndicators\n      confidenceScore\n      createdAt\n      updatedAt\n    }\n  }\n": typeof types.GetSummaryDocument,
+    "\n  mutation DeleteTag($input: DeleteByIdInput!) {\n    deleteTag(input: $input) {\n      success\n      deletedId\n    }\n  }\n": typeof types.DeleteTagDocument,
+    "\n  query ListTagsForTest {\n    tags {\n      edges {\n        node {\n          id\n          label\n        }\n      }\n    }\n  }\n": typeof types.ListTagsForTestDocument,
+    "\n  mutation UpdateTag($input: UpdateTagInput!) {\n    updateTag(input: $input) {\n      success\n      merged\n      movedEntityCount\n      updatedSavedSearchCount\n      tag {\n        id\n        label\n        description\n        entityCount\n      }\n    }\n  }\n": typeof types.UpdateTagDocument,
+    "\n  query GetTagsWithUsage {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n          entityCount\n        }\n      }\n    }\n  }\n": typeof types.GetTagsWithUsageDocument,
     "\n  query GetOAuthCallbackUrl {\n    oAuthCallbackUrl\n  }\n": typeof types.GetOAuthCallbackUrlDocument,
 };
 const documents: Documents = {
@@ -361,6 +365,10 @@ const documents: Documents = {
     "\n  query GetSharedSavedSearch($token: String!) {\n    sharedSavedSearch(token: $token) {\n      id\n      name\n      description\n    }\n  }\n": types.GetSharedSavedSearchDocument,
     "\n  query StatsDailyMetrics($from: String!, $to: String!) {\n    dailyMetrics(from: $from, to: $to) {\n      date\n      nMessages\n      nPlaces\n      kmTraveled\n    }\n  }\n": types.StatsDailyMetricsDocument,
     "\n  query GetSummary($id: ID!) {\n    summary(id: $id) {\n      id\n      title\n      periodType\n      periodStart\n      periodEnd\n      summaryText\n      keyInsights\n      notableEvents\n      anomalies\n      tags\n      activityCounts {\n        total\n        browserActivity\n        communications\n        files\n        events\n        messages\n        screenCaptures\n        apiLogs\n        positions\n        activities\n        measurements\n      }\n      insights {\n        title\n        summaryText\n        keyActions\n        relevanceScore\n        tags\n        relatedEntityIds\n      }\n      dailyRhythm\n      productivityPatterns\n      socialInteractions\n      keyAccomplishments\n      moodIndicators\n      confidenceScore\n      createdAt\n      updatedAt\n    }\n  }\n": types.GetSummaryDocument,
+    "\n  mutation DeleteTag($input: DeleteByIdInput!) {\n    deleteTag(input: $input) {\n      success\n      deletedId\n    }\n  }\n": types.DeleteTagDocument,
+    "\n  query ListTagsForTest {\n    tags {\n      edges {\n        node {\n          id\n          label\n        }\n      }\n    }\n  }\n": types.ListTagsForTestDocument,
+    "\n  mutation UpdateTag($input: UpdateTagInput!) {\n    updateTag(input: $input) {\n      success\n      merged\n      movedEntityCount\n      updatedSavedSearchCount\n      tag {\n        id\n        label\n        description\n        entityCount\n      }\n    }\n  }\n": types.UpdateTagDocument,
+    "\n  query GetTagsWithUsage {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n          entityCount\n        }\n      }\n    }\n  }\n": types.GetTagsWithUsageDocument,
     "\n  query GetOAuthCallbackUrl {\n    oAuthCallbackUrl\n  }\n": types.GetOAuthCallbackUrlDocument,
 };
 
@@ -1058,6 +1066,22 @@ export function gql(source: "\n  query StatsDailyMetrics($from: String!, $to: St
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetSummary($id: ID!) {\n    summary(id: $id) {\n      id\n      title\n      periodType\n      periodStart\n      periodEnd\n      summaryText\n      keyInsights\n      notableEvents\n      anomalies\n      tags\n      activityCounts {\n        total\n        browserActivity\n        communications\n        files\n        events\n        messages\n        screenCaptures\n        apiLogs\n        positions\n        activities\n        measurements\n      }\n      insights {\n        title\n        summaryText\n        keyActions\n        relevanceScore\n        tags\n        relatedEntityIds\n      }\n      dailyRhythm\n      productivityPatterns\n      socialInteractions\n      keyAccomplishments\n      moodIndicators\n      confidenceScore\n      createdAt\n      updatedAt\n    }\n  }\n"): (typeof documents)["\n  query GetSummary($id: ID!) {\n    summary(id: $id) {\n      id\n      title\n      periodType\n      periodStart\n      periodEnd\n      summaryText\n      keyInsights\n      notableEvents\n      anomalies\n      tags\n      activityCounts {\n        total\n        browserActivity\n        communications\n        files\n        events\n        messages\n        screenCaptures\n        apiLogs\n        positions\n        activities\n        measurements\n      }\n      insights {\n        title\n        summaryText\n        keyActions\n        relevanceScore\n        tags\n        relatedEntityIds\n      }\n      dailyRhythm\n      productivityPatterns\n      socialInteractions\n      keyAccomplishments\n      moodIndicators\n      confidenceScore\n      createdAt\n      updatedAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeleteTag($input: DeleteByIdInput!) {\n    deleteTag(input: $input) {\n      success\n      deletedId\n    }\n  }\n"): (typeof documents)["\n  mutation DeleteTag($input: DeleteByIdInput!) {\n    deleteTag(input: $input) {\n      success\n      deletedId\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query ListTagsForTest {\n    tags {\n      edges {\n        node {\n          id\n          label\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query ListTagsForTest {\n    tags {\n      edges {\n        node {\n          id\n          label\n        }\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation UpdateTag($input: UpdateTagInput!) {\n    updateTag(input: $input) {\n      success\n      merged\n      movedEntityCount\n      updatedSavedSearchCount\n      tag {\n        id\n        label\n        description\n        entityCount\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation UpdateTag($input: UpdateTagInput!) {\n    updateTag(input: $input) {\n      success\n      merged\n      movedEntityCount\n      updatedSavedSearchCount\n      tag {\n        id\n        label\n        description\n        entityCount\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetTagsWithUsage {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n          entityCount\n        }\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetTagsWithUsage {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n          entityCount\n        }\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

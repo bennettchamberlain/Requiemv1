@@ -1562,6 +1562,7 @@ type Mutation {
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteTag(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
   ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
@@ -1658,6 +1659,7 @@ type Mutation {
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateRelationship(input: UpdateRelationshipInput!): UpdateRelationshipPayload!
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
+  updateTag(input: UpdateTagInput!): UpdateTagPayload!
   updateTask(input: UpdateTaskInput!): UpdateTaskPayload!
 }
 
@@ -2392,6 +2394,7 @@ input TagEntitiesInput {
 type TagType implements Node {
   description: String
   entities(after: String, before: String, first: Int, last: Int): TaggableEntityConnection!
+  entityCount: Int!
   id: ID!
   label: String!
 }
@@ -2820,6 +2823,20 @@ input UpdateSavedSearchInput {
 type UpdateSavedSearchPayload {
   savedSearch: SavedSearchType
   success: Boolean!
+}
+
+input UpdateTagInput {
+  description: String
+  id: ID!
+  label: String
+}
+
+type UpdateTagPayload {
+  merged: Boolean!
+  movedEntityCount: Int!
+  success: Boolean!
+  tag: TagType
+  updatedSavedSearchCount: Int!
 }
 
 input UpdateTaskInput {
