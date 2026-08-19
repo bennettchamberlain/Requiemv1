@@ -460,6 +460,10 @@ function isDigitalGood(rec: CanonicalRecord): boolean {
  *   note|annotation     -> content
  *   social.*            -> events + content      timeline + searchable post/comment body
  *                          (+ position when geotagged)
+ *   social affiliation  -> events                 a LinkedIn connection / a moderated or
+ *                                                 subscribed subreddit is an edge or a
+ *                                                 membership, not a body: content would be an
+ *                                                 empty row (see isSocialAffiliation)
  *   reddit post/comment -> communications (+ content only for attached media)
  *                                                posts and comments are authored communications,
  *                                                not events; the content row (if any) is the
@@ -623,6 +627,43 @@ export function isRedditComment(rec: CanonicalRecord): boolean {
   );
 }
 
+/**
+ * A social record that states an AFFILIATION — who someone is connected to, or
+ * what they belong to — rather than something they wrote.
+ *
+ * A LinkedIn connection ("Connected with Morgan Spadone") and a moderated or
+ * subscribed subreddit ("r/bitscoop") are both this shape: an edge, or a
+ * membership. Neither carries a body, and neither importer gives the record a
+ * `Text`/`Body`/`URL` to become one — the LinkedIn profile URL rides on the
+ * PERSON entity the same parser emits, not on the item.
+ *
+ * That matters because the generic `social.*` route sends every record to
+ * `content` as well as `events`, and `toContentInput` fills a content row from
+ * exactly those three keys. With none of them present the row lands typed
+ * `post` with a NULL `text` and a NULL `url` — and `ci.content` has no title
+ * column, so nothing about it renders anywhere. A real clean-room import of one
+ * person's corpus produced 1,977 such rows (1,975 LinkedIn connections, 2
+ * moderated subreddits), i.e. 100% of what those two sources sent to content.
+ *
+ * The facts are not lost by skipping the row: a connection is already a
+ * `ci.entities` Person carrying the profile URL plus a dated `social` event,
+ * and a moderated subreddit is already an event titled with the subreddit.
+ * The content row was a third, empty copy of both.
+ */
+export function isSocialAffiliation(rec: CanonicalRecord): boolean {
+  const kind = str(rec.metadata.Kind);
+
+  if (rec.sourceSystem === 'linkedin') {
+    return kind === 'connection';
+  }
+
+  if (rec.sourceSystem === 'reddit') {
+    return kind === 'moderated_subreddit' || kind === 'subscribed_subreddit';
+  }
+
+  return false;
+}
+
 // Reddit's GDPR export is CSV-only — media exists solely as URLs. Direct-media
 // hosts, or any URL whose path ends in a media extension, count; imgur PAGE
 // links (imgur.com/abc) don't. .gifv is imgur's video wrapper, hence video.
@@ -774,10 +815,16 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
   }
 
   if (kind.startsWith('social.')) {
+    // An affiliation (a LinkedIn connection, a moderated subreddit) has no body
+    // to make searchable, so it keeps its event home and skips content —
+    // see isSocialAffiliation for why the row was empty and what still carries
+    // the facts. Everything else authored keeps both homes.
+    const homes: Destination[] = isSocialAffiliation(rec) ? ['events'] : ['events', 'content'];
+
     // Same rule as geotagged captures and messages: a post made from a place
     // (a geotagged retweet) keeps its timeline + searchable homes AND donates
     // its fix to the position table.
-    return rec.coordinates ? ['events', 'content', 'position'] : ['events', 'content'];
+    return rec.coordinates ? [...homes, 'position'] : homes;
   }
 
   // A ride is an event, not a document: its "body" was only the route string
