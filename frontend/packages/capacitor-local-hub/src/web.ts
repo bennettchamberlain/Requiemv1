@@ -45,4 +45,8 @@ export class LocalHubWeb extends WebPlugin implements LocalHubPlugin {
   async secureRemove(): Promise<void> {
     throw this.unavailable('LocalHub secure storage is only available in the native app.');
   }
+
+  async openUrl(): Promise<void> {
+    throw this.unavailable('LocalHub openUrl is only available in the native app.');
+  }
 }

@@ -45,6 +45,7 @@ interface LocalHubPlugin {
   secureGet(options: { key: string }): Promise<{ value: string | null }>;
   secureSet(options: { key: string; value: string }): Promise<void>;
   secureRemove(options: { key: string }): Promise<void>;
+  openUrl(options: { url: string }): Promise<void>;
 }
 
 interface BrowserPlugin {
@@ -310,10 +311,21 @@ export async function secureStorageRemove(key: string): Promise<void> {
 
 /**
  * Open a URL outside the app's webview: the system browser on native (so OAuth/OIDC
- * runs in a real browser, not the in-app webview), or a normal navigation on web.
+ * runs in Safari / Chrome, not the in-app webview), or a normal navigation on web.
+ *
+ * iOS prefers LocalHub.openUrl (`UIApplication.shared.open`) over Capacitor Browser.
+ * Browser presents SFSafariViewController from the Capacitor bridge VC, which never
+ * appears under our UIScene SceneDelegate — Sign in then spins with no Safari window.
  */
 export async function openExternalUrl(url: string): Promise<void> {
+  const hub = plugins()?.LocalHub;
   const browser = plugins()?.Browser;
+
+  if (isNativePlatform() && hub?.openUrl) {
+    await hub.openUrl({ url });
+
+    return;
+  }
 
   if (isNativePlatform() && browser) {
     await browser.open({ url });
@@ -444,10 +456,9 @@ export async function hideSplashScreen(): Promise<void> {
 }
 
 /**
- * Apply the native status-bar appearance: glyph `style` ('DARK' = dark glyphs for a
- * light background, 'LIGHT' = light glyphs for a dark background) and, on Android, the
- * bar `backgroundColor`. The capacitor.config.ts StatusBar block sets the launch
- * default; call this to react to theme changes at runtime. No-op on web.
+ * Apply the native status-bar appearance. Capacitor's names are backwards from English:
+ * `'DARK'` is *light* glyphs for a dark background, `'LIGHT'` is *dark* glyphs for a
+ * light background. `backgroundColor` is Android-only.
  */
 export async function setStatusBarStyle(style: 'DARK' | 'LIGHT', backgroundColor?: string): Promise<void> {
   const statusBar = plugins()?.StatusBar;

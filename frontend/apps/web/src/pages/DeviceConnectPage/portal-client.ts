@@ -22,7 +22,13 @@ function portalUrlFromEnv(): string {
       return baked.replace(/\/+$/, '');
     }
 
-    return env?.VITE_CI_HUB_ENVIRONMENT === 'production' ? PRODUCTION_PORTAL_URL : DEVELOPMENT_PORTAL_URL;
+    // Native simulator/device talks to CI cloud *dev* unless the web build was
+    // explicitly marked production. Prod is hub.ci.computer.
+    if (env?.VITE_CI_HUB_ENVIRONMENT === 'production') {
+      return PRODUCTION_PORTAL_URL;
+    }
+
+    return DEVELOPMENT_PORTAL_URL;
   } catch {
     return DEVELOPMENT_PORTAL_URL;
   }

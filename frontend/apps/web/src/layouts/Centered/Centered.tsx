@@ -4,13 +4,13 @@ import { ThemeToggle } from '@/components/ThemePicker';
 
 export function Centered() {
   return (
-    <div className="safe-area-inset relative flex min-h-dvh w-full flex-col items-stretch justify-start overflow-y-auto p-6 sm:items-center sm:justify-center md:p-10">
-      <div className="absolute top-0 left-0 h-[max(0.5rem,var(--safe-area-top))] w-full">
-        <div className="absolute top-full right-2 z-10">
-          <ThemeToggle />
-        </div>
+    <div className="safe-area-inset flex min-h-dvh w-full flex-col overflow-y-auto px-6 pb-6 md:px-10 md:pb-10">
+      <div className="flex justify-end">
+        <ThemeToggle />
       </div>
-      <Outlet />
+      <div className="flex flex-1 flex-col items-stretch justify-start sm:items-center sm:justify-center">
+        <Outlet />
+      </div>
     </div>
   );
 }

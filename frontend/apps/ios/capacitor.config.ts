@@ -24,7 +24,8 @@ const config: CapacitorConfig = {
       splashImmersive: false,
     },
     StatusBar: {
-      style: 'DARK',
+      // Capacitor LIGHT = dark glyphs. Launch splash is white, so icons must be black.
+      style: 'LIGHT',
       backgroundColor: '#ffffff',
       // Edge-to-edge so `env(safe-area-inset-*)` is non-zero. CSS `.safe-area-inset`
       // then pads the notch / home indicator the way Hub does on iOS.

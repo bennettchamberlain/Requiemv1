@@ -42,11 +42,9 @@ function rgbToHex(value: string): string | undefined {
 }
 
 /**
- * Match the native status bar to the web app's current theme. The ThemeProvider toggles
- * a `dark`/`light` class on `<html>`, so we read that: dark theme → light glyphs over a
- * dark bar, light theme → dark glyphs over a light bar. The Android bar background is
- * taken from the app's resolved `<body>` background when possible (exact match), with a
- * brand fallback. iOS ignores the background (the bar overlays the webview translucently).
+ * Match the native status bar to the web app's current theme. Capacitor's `DARK` style
+ * is light (white) glyphs, `LIGHT` is dark (black) glyphs — the opposite of English.
+ * Dark theme → DARK (white icons), light theme → LIGHT (black icons).
  */
 function applyStatusBarForTheme(): void {
   const isDark = document.documentElement.classList.contains('dark');
@@ -58,7 +56,7 @@ function applyStatusBarForTheme(): void {
     // getComputedStyle can throw if body isn't ready — fall back below.
   }
 
-  void setStatusBarStyle(isDark ? 'LIGHT' : 'DARK', background ?? (isDark ? '#0b1f28' : '#ffffff'));
+  void setStatusBarStyle(isDark ? 'DARK' : 'LIGHT', background ?? (isDark ? '#0b1f28' : '#ffffff'));
 }
 
 /**
