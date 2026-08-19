@@ -474,6 +474,73 @@ export function isDiscordAttachmentOnly(rec: CanonicalRecord): boolean {
   return rec.sourceSystem === 'discord' && !str(rec.metadata.Text) && discordAttachmentUrls(rec).length > 0;
 }
 
+/**
+ * The metadata keys `descriptionFor` draws a body from, in its exact order —
+ * so a placeholder check can inspect the RAW value the body would have come
+ * from, before sanitizeText() strips U+FFFC out of it.
+ */
+const BODY_METADATA_KEYS = [
+  'Text',
+  'Body',
+  'Message',
+  'Description',
+  'Notes',
+  'Note',
+  'Highlight',
+  'Comment',
+  'Caption',
+] as const;
+
+/**
+ * A body that consists ENTIRELY of placeholder glyphs and whitespace — no
+ * letters, no digits, no punctuation the user typed.
+ *
+ * U+FFFC (OBJECT REPLACEMENT CHARACTER) is what macOS stores in
+ * `message.text` where an inline attachment sits, so an attachment sent with
+ * no caption has a body of exactly "\uFFFC". U+FFFD (REPLACEMENT CHARACTER)
+ * is what a mis-decoded byte run collapses to; a body that is nothing but
+ * those carries no recoverable text either.
+ */
+const PLACEHOLDER_ONLY_BODY = /^[\uFFFC\uFFFD\s]+$/;
+
+/**
+ * A record whose source body existed but held nothing except attachment /
+ * mojibake placeholder glyphs.
+ *
+ * Same contract as {@link isDiscordAttachmentOnly}, generalised: the row is
+ * still worth keeping (its attachments, participants and timestamp are the
+ * payload) but `content` must stay EMPTY. Without this, `toCommunicationInput`
+ * falls through `rec.description ?? rec.title`, and `titleFor` synthesizes
+ * "Message — <sender>" (or, with no sender, the `message_<id>.txt` source
+ * filename) — a label the user never wrote, presented as the message they
+ * sent. A live appliance database held 21,781 iMessage rows whose entire
+ * `content` was a single U+FFFC, plus 313 that were only U+FFFD.
+ *
+ * Two cases, in this order:
+ *
+ *  - the description SURVIVED sanitization but is still nothing but glyphs —
+ *    that is the U+FFFD mojibake case, which sanitizeText deliberately leaves
+ *    alone (it mints U+FFFD itself for lone surrogates);
+ *  - the description came back null, and a raw body key held only U+FFFC —
+ *    the attachment case, invisible after the fact because sanitizeText has
+ *    already stripped the glyph, so it has to be read off the raw metadata.
+ *
+ * Checking the description FIRST is what keeps a record with real prose under
+ * a lower-priority key (Text a placeholder, Body actual text) from being
+ * blanked.
+ */
+export function isAttachmentPlaceholderOnly(rec: CanonicalRecord): boolean {
+  if (rec.description !== null) {
+    return PLACEHOLDER_ONLY_BODY.test(rec.description);
+  }
+
+  return BODY_METADATA_KEYS.some((k) => {
+    const raw = rec.metadata[k];
+
+    return typeof raw === 'string' && PLACEHOLDER_ONLY_BODY.test(raw);
+  });
+}
+
 /** A Reddit comment (a reply authored on a post, or a saved one). */
 export function isRedditComment(rec: CanonicalRecord): boolean {
   return (
@@ -704,12 +771,30 @@ function sanitizeText(s: string): string {
   // Drop NUL + C0 control chars (keep tab/newline/CR); replace lone UTF-16
   // surrogates with U+FFFD. Otherwise Postgres TEXT/JSONB ingest fails with
   // "invalid byte sequence for encoding UTF8" on real mbox/SMS cruft.
+  //
+  // U+FFFC OBJECT REPLACEMENT CHARACTER goes too. It is not text — it is the
+  // placeholder macOS writes into `message.text` at the position an inline
+  // attachment sits, so a photo sent with no caption arrives as a body of
+  // exactly "\uFFFC" and a captioned one as "\uFFFC look at this". Keeping it
+  // put a bare control glyph in `ci.communications.content` for 21,781 iMessage
+  // rows (and a leading glyph on ~6k captioned ones). Stripping it here —
+  // rather than at one importer — means every str()/descriptionFor()/titleFor()
+  // caller sees the caption alone, and an attachment-only body collapses to
+  // null so isAttachmentPlaceholderOnly can blank the content outright.
+  //
+  // U+FFFD is deliberately NOT stripped: the two replaces below MINT it for
+  // lone surrogates, so removing it would undo the repair this function
+  // exists to do. Bodies that are nothing BUT U+FFFD are handled by
+  // isAttachmentPlaceholderOnly instead, which reads the raw value.
   return (
     s
       // eslint-disable-next-line no-control-regex -- stripping control bytes is the point
       .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
       .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '\uFFFD')
       .replace(/(^|[^\uD800-\uDBFF])([\uDC00-\uDFFF])/g, '$1\uFFFD')
+      // Last, so removing it can never splice two lone surrogates into a
+      // valid pair and fabricate a character that was not in the source.
+      .replace(/\uFFFC/g, '')
   );
 }
 

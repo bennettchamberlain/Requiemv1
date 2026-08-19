@@ -4,14 +4,15 @@ import path from 'path';
 
 import Database from 'better-sqlite3';
 
+// The named import doubles as the side-effect import that registers the
+// datasource with the registry `getImporter` reads.
+import { imessageAttachmentCandidates } from '../imessage';
 import { allDataSources } from '../registry';
 import type { DirEntry } from '../registry';
 import type { Graph, ImportParams, Relationship } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
 import { metaAttachments } from './support/emitted';
-
-import '../imessage';
 
 function getImporter(name: string) {
   const ds = allDataSources().find((d) => d.name === name);
@@ -82,6 +83,160 @@ describe('imessage importer', () => {
     expect(atts[0].type).toBe('image');
     expect(atts[0].filename).toBe('photo.jpg');
     expect(atts[0].path.endsWith(path.join('Attachments', 'photo.jpg'))).toBe(true);
+  });
+
+  // chat.db does NOT store a bare basename. It stores the path the file had on
+  // the Mac that wrote it — tilde-rooted on every modern macOS. The old code
+  // joined that whole value onto `<chat.db dir>/Attachments/`, producing
+  // `<dir>/Attachments/~/Library/Messages/Attachments/…`, which exists nowhere:
+  // existsSync was false for essentially every attachment in a real export and
+  // the descriptor was dropped on the floor.
+  describe('imessageAttachmentCandidates', () => {
+    it('resolves a tilde-rooted path against the export root', () => {
+      const candidates = imessageAttachmentCandidates(
+        '~/Library/Messages/Attachments/ab/12/AT-UUID/IMG_0042.HEIC',
+        '/export/root',
+        '/export/root/Library/Messages/chat.db',
+      );
+
+      expect(candidates[0]).toBe('/export/root/Library/Messages/Attachments/ab/12/AT-UUID/IMG_0042.HEIC');
+      // Never the old nonsense shape.
+      expect(candidates.some((c) => c.includes('Attachments/~/'))).toBe(false);
+    });
+
+    it('falls back to <chat.db dir>/Attachments/<store key> for a flat export', () => {
+      // chat.db sits at the export root with its own sibling Attachments/ tree,
+      // so the tilde prefix is meaningless — the store-relative tail is what
+      // has to be joined on.
+      const candidates = imessageAttachmentCandidates(
+        '~/Library/Messages/Attachments/ab/12/AT-UUID/IMG_0042.HEIC',
+        '/export/root',
+        '/export/root/chat.db',
+      );
+
+      expect(candidates).toContain('/export/root/Attachments/ab/12/AT-UUID/IMG_0042.HEIC');
+    });
+
+    it('keeps an absolute path, and still offers the store-relative fallback', () => {
+      const candidates = imessageAttachmentCandidates(
+        '/Users/someone/Library/Messages/Attachments/ab/12/AT-UUID/IMG_0042.HEIC',
+        '/export/root',
+        '/export/root/chat.db',
+      );
+
+      expect(candidates[0]).toBe('/Users/someone/Library/Messages/Attachments/ab/12/AT-UUID/IMG_0042.HEIC');
+      expect(candidates).toContain('/export/root/Attachments/ab/12/AT-UUID/IMG_0042.HEIC');
+    });
+
+    it('still handles the historical bare-basename shape', () => {
+      expect(imessageAttachmentCandidates('photo.jpg', '/export/root', '/export/root/chat.db')).toContain(
+        '/export/root/Attachments/photo.jpg',
+      );
+    });
+
+    it('returns nothing for an empty filename', () => {
+      expect(imessageAttachmentCandidates('   ', '/export/root', '/export/root/chat.db')).toEqual([]);
+    });
+  });
+
+  it('resolves a tilde-rooted attachment path against the export root (real chat.db)', async () => {
+    const importer = getImporter('imessage');
+    const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-'));
+    // Mirror a real Mac export: chat.db under Library/Messages, attachments in
+    // the content-addressed store beside it.
+    const messagesDir = path.join(dir, 'Library', 'Messages');
+    const storeDir = path.join(messagesDir, 'Attachments', 'ab', '12', 'AT-UUID');
+    await fs.promises.mkdir(storeDir, { recursive: true });
+    await fs.promises.writeFile(path.join(storeDir, 'IMG_0042.HEIC'), 'heic-bytes');
+
+    const db = new Database(path.join(messagesDir, 'chat.db'));
+    db.exec(`
+      CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, date INTEGER, text TEXT, is_from_me INTEGER, service TEXT, handle_id INTEGER);
+      CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+    `);
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (1, ?)').run('+15551234567');
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (1, ?, ?, ?, 0, ?, 1)',
+    ).run('tilde-guid', 600000000, '\uFFFC', 'iMessage');
+    db.prepare('INSERT INTO attachment (ROWID, guid, filename, mime_type) VALUES (1, ?, ?, ?)').run(
+      'att-tilde',
+      '~/Library/Messages/Attachments/ab/12/AT-UUID/IMG_0042.HEIC',
+      'image/heic',
+    );
+    db.prepare('INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (1, 1)').run();
+    db.close();
+
+    const pushed: EmittedGraph[] = [];
+    await importer.fileImport(
+      {},
+      { filename: dir, fullPath: dir } as DirEntry,
+      {
+        pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph) },
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams,
+    );
+
+    const atts = metaAttachments(
+      pushed.find((g) => g.item?.id === 'tilde-guid')!.item.metadata.MediaAttachments,
+    );
+    expect(atts).toHaveLength(1);
+    expect(atts[0].path).toBe(path.join(storeDir, 'IMG_0042.HEIC'));
+    expect(atts[0].filename).toBe('IMG_0042.HEIC');
+    expect(atts[0].guid).toBe('att-tilde');
+    expect(atts[0].type).toBe('image');
+  });
+
+  // Regression for the 21,781 iMessage rows whose entire ci.communications
+  // content was a bare U+FFFC: chat.db knew the guid, the filename and the MIME
+  // type of the attachment that glyph stood for, and the importer threw all
+  // three away because the BYTES were not on disk. The row then recorded
+  // neither the text nor what replaced it.
+  it('records the attachment descriptor even when the bytes are missing', async () => {
+    const importer = getImporter('imessage');
+    const dir = await fs.promises.mkdtemp(path.join(tmpdir(), 'imsg-'));
+    const db = new Database(path.join(dir, 'chat.db'));
+    db.exec(`
+      CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, date INTEGER, text TEXT, is_from_me INTEGER, service TEXT, handle_id INTEGER);
+      CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT);
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+    `);
+    db.prepare('INSERT INTO handle (ROWID, id) VALUES (1, ?)').run('+15551234567');
+    db.prepare(
+      'INSERT INTO message (ROWID, guid, date, text, is_from_me, service, handle_id) VALUES (1, ?, ?, ?, 0, ?, 1)',
+    ).run('purged-guid', 600000000, '\uFFFC', 'iMessage');
+    db.prepare('INSERT INTO attachment (ROWID, guid, filename, mime_type) VALUES (1, ?, ?, ?)').run(
+      'att-purged',
+      '~/Library/Messages/Attachments/cd/34/GONE-UUID/IMG_9999.HEIC',
+      'image/heic',
+    );
+    db.prepare('INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (1, 1)').run();
+    db.close();
+
+    const pushed: EmittedGraph[] = [];
+    await importer.fileImport(
+      {},
+      { filename: dir, fullPath: dir } as DirEntry,
+      {
+        pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph) },
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams,
+    );
+
+    const message = pushed.find((g) => g.item?.id === 'purged-guid')!;
+    const atts = metaAttachments(message.item.metadata.MediaAttachments);
+    expect(atts).toHaveLength(1);
+    // No bytes to upload — the push lane drops path-less descriptors — but the
+    // identity of what was attached survives.
+    expect(atts[0].path).toBeUndefined();
+    expect(atts[0].guid).toBe('att-purged');
+    expect(atts[0].filename).toBe('IMG_9999.HEIC');
+    expect(atts[0].mimetype).toBe('image/heic');
+    expect(atts[0].type).toBe('image');
   });
 
   // Regression: reactions/replies used to emit a *placeholder* message item for

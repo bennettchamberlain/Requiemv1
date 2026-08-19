@@ -350,6 +350,68 @@ describe('toCommunicationInput', () => {
       expect(toCommunicationInput(captioned).content).toBe('look at this');
     });
   });
+
+  // macOS puts U+FFFC OBJECT REPLACEMENT CHARACTER in `message.text` where an
+  // inline attachment sits, so an uncaptioned photo arrives with a body of
+  // exactly that one glyph. Storing it verbatim is what left 21,781 iMessage
+  // rows in a live appliance database whose entire content was a control
+  // character; falling through to the title fallbacks instead would be worse,
+  // because titleFor synthesizes "Message — <sender>" — words the user never
+  // wrote, presented as their message.
+  describe('iMessage attachment placeholders', () => {
+    it('blanks a body that is only the U+FFFC placeholder, and sets no preview', () => {
+      const attachmentOnly = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Sender: '+15551234567' },
+      });
+
+      const input = toCommunicationInput(attachmentOnly);
+
+      expect(input.content).toBe('');
+      expect(input.preview).toBeUndefined();
+    });
+
+    it('does not fall back to the synthesized "Message — sender" label', () => {
+      const attachmentOnly = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC', Sender: '+15551234567' },
+      });
+
+      expect(toCommunicationInput(attachmentOnly).content).not.toContain('Message —');
+    });
+
+    it('blanks a body that is only U+FFFD mojibake', () => {
+      const mojibake = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFD\uFFFD', Sender: '+15551234567' },
+      });
+
+      expect(toCommunicationInput(mojibake).content).toBe('');
+    });
+
+    it('keeps the CAPTION of a captioned attachment, minus the placeholder', () => {
+      const captioned = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: '\uFFFC look at this', Sender: '+15551234567' },
+      });
+
+      expect(toCommunicationInput(captioned).content).toBe('look at this');
+    });
+
+    it('strips a placeholder that sits INSIDE an otherwise real message', () => {
+      const trailing = recordFor({
+        classification: 'message',
+        dataSource: 'imessage',
+        metadata: { Text: 'Also, what is this thing called?\uFFFC\uFFFC' },
+      });
+
+      expect(toCommunicationInput(trailing).content).toBe('Also, what is this thing called?');
+    });
+  });
 });
 
 describe('discordAttachmentContentInputs', () => {
