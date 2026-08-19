@@ -1,6 +1,6 @@
 import type { RequestContext } from '@ci/common/context';
 
-import { ContentType } from '../../types/ContentType';
+import type { ContentType } from '../../types/ContentType';
 import { ContentResolver } from '../ContentResolver';
 
 /**
