@@ -91,16 +91,17 @@
 	     this to `true` if counsel wants the questionnaire answered per-upload instead. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- iPhone-only build (TARGETED_DEVICE_FAMILY = 1). The `~ipad` orientation
+	     variants were deliberately REMOVED so the plist and the build setting agree:
+	     leaving them behind declares iPad support the binary does not have, and that
+	     declaration is what puts the app in front of an iPad reviewer. On iPad this
+	     ships as an iPhone-compatibility app (Apple's own scaled phone window), which
+	     the @ci/fe-web mobile layout is actually designed for. If iPad becomes a real
+	     target, restore the key *and* add a tablet tier to `useDeviceLayout` in
+	     @ci/common — see DELIVERY.md §1a. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
@@ -149,13 +150,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
