@@ -8,6 +8,7 @@ import { UserService } from '@ci/domains/user';
 
 import {
   PlanningEventNowEvent,
+  PlanningInboxScanEvent,
   PlanningTodoProcessEvent,
   PlanningTodoScanEvent,
   PlanningVerifyDoneEvent,
@@ -17,6 +18,8 @@ import {
 const TODO_SCAN_CRON = '0 6 * * *';
 /** Revisit open tasks several times a day. */
 const TODO_PROCESS_CRON = '0 */6 * * *';
+/** Inbound inbox triage, matching CI-Planning ingest_gmail cadence. */
+const INBOX_SCAN_CRON = '*/30 * * * *';
 /** Planned blocks entering the present. */
 const EVENT_NOW_CRON = '15 * * * *';
 /** Catch-up after blocks end. */
@@ -47,6 +50,11 @@ export class PlanningJobsCron {
     await this.fanOut(PlanningTodoProcessEvent, 'todo_process');
   }
 
+  @Cron(INBOX_SCAN_CRON, { name: 'PlanningJobsCron.inboxScan' })
+  async enqueueInboxScans() {
+    await this.fanOut(PlanningInboxScanEvent, 'inbox_scan');
+  }
+
   @Cron(EVENT_NOW_CRON, { name: 'PlanningJobsCron.eventNow' })
   async enqueueEventNow() {
     await this.fanOut(PlanningEventNowEvent, 'event_now');
@@ -61,6 +69,7 @@ export class PlanningJobsCron {
     event:
       | typeof PlanningTodoScanEvent
       | typeof PlanningTodoProcessEvent
+      | typeof PlanningInboxScanEvent
       | typeof PlanningEventNowEvent
       | typeof PlanningVerifyDoneEvent,
     label: string,

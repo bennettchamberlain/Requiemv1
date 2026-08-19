@@ -21,7 +21,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
 import { LlmCoreModule } from '@ci/domains/llm/core.module';
-import { EventEntity, MemoryModule } from '@ci/domains/memory';
+import { CommunicationEntity, EventEntity, MemoryModule } from '@ci/domains/memory';
 import { PersonalizationModule } from '@ci/domains/personalization';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { UserEntity, UserModule } from '@ci/domains/user';
@@ -37,6 +37,8 @@ import {
 } from './entities/TaskPendingChangeEntity';
 import './events';
 import { PlanningJobsListener } from './listeners/PlanningJobsListener';
+import { InboxScanService } from './services/InboxScanService';
+import { PlannedBlockService } from './services/PlannedBlockService';
 import { PlanningTimeService } from './services/PlanningTimeService';
 import { TaskService } from './services/TaskService';
 import {
@@ -59,6 +61,7 @@ import { TodoScanService } from './services/TodoScanService';
       TaskPendingChangeEntity,
       UserEntity,
       EventEntity,
+      CommunicationEntity,
     ]),
     EventsModule,
     UserModule,
@@ -70,20 +73,22 @@ import { TodoScanService } from './services/TodoScanService';
   providers: [
     TaskService,
     PlanningTimeService,
+    PlannedBlockService,
     TodoScanService,
     TodoProcessService,
+    InboxScanService,
     EventNowService,
     VerifyDoneService,
     PlanningJobsCron,
     PlanningJobsListener,
   ],
-  exports: [TaskService, PlanningTimeService],
+  exports: [TaskService, PlanningTimeService, PlannedBlockService],
 })
 export class PlanningModule {}
 
 export { TaskEntity, TaskDependencyEntity, TaskPendingChangeEntity };
 
-export { TaskService, PlanningTimeService };
+export { TaskService, PlanningTimeService, PlannedBlockService };
 
 export { TASK_STATUSES };
 

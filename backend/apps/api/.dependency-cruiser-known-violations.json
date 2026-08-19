@@ -116,5 +116,14 @@
       "severity": "error",
       "name": "no-cross-domain-internals"
     }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/planning/services/InboxScanService.ts",
+    "to": "src/domains/llm/services/OllamaService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
   }
 ]
