@@ -9,11 +9,13 @@
  *   POST /memory/compact  — manually trigger LLM compaction for current user     [JwtOrApiKey]
  *
  * It also publishes the CI Intent catalog (the curated, domain-separated tool surface, built from
- * the tools registered in the tools domain — every tool is an intent):
+ * the tools registered in the tools domain — every tool is an intent). Same routes
+ * also mount at `/api/agent/intents` (canonical for Hermes / OpenClaw):
  *   GET  /api/intents          — full manifest: domains + entities + intents           [JwtOrApiKey]
  *   GET  /api/intents/domains  — the schema-domain vocabulary                          [JwtOrApiKey]
  *   GET  /api/intents/entities — the entity registry                                   [JwtOrApiKey]
  *   GET  /api/intents/:name    — a single intent by dotted name (e.g. memory.recall)   [JwtOrApiKey]
+ *   POST /api/intents/:name/execute — run the intent via ToolRegistry (raw JSON body)  [JwtOrApiKey]
  *
  * @module AgentModule
  */

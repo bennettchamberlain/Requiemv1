@@ -136,6 +136,7 @@ export function resolveOidcOriginBounce(
   publicBaseUrl: string | undefined,
   redirectPath?: string,
   alreadyBounced = false,
+  client?: string,
 ): string | null {
   // One hop only — never risk a redirect loop on the sign-in path.
   if (alreadyBounced) {
@@ -167,6 +168,13 @@ export function resolveOidcOriginBounce(
 
   if (redirectPath) {
     target.searchParams.set('redirect', redirectPath);
+  }
+
+  // Native initiate (`?client=native`) must survive this hop. Dropping it turns
+  // the callback into a web session cookie in Safari, and the phone never sees
+  // `companion://oidc/callback`. Web sign-in does not send this flag.
+  if (client === 'native') {
+    target.searchParams.set('client', 'native');
   }
 
   target.searchParams.set(OIDC_ORIGIN_BOUNCE_PARAM, '1');

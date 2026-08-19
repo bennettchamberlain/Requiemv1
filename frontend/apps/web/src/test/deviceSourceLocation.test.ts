@@ -6,6 +6,7 @@ import {
   buildPositionRecord,
   captureLocationFix,
   createLocationSampler,
+  fixFromGeolocationPosition,
   haversineMeters,
   positionSourceId,
   type DeviceLocationFix,
@@ -566,7 +567,7 @@ describe('captureLocationFix — web: no sidecar, so say so and write through', 
 
     const finish = calls.find((call) => call.url === INGEST_FINISH_PATH);
     expect(finish?.method).toBe('POST');
-    expect(finish?.body).toEqual({ stages: ['reverse_geocode', 'estimate_locations'] });
+    expect(finish?.body).toEqual({ stages: ['reverse_position', 'estimate_locations'] });
   });
 
   it('reports a transient failure without advancing the gate', async () => {
@@ -631,7 +632,7 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
     const finish = calls.find((call) => call.url === INGEST_FINISH_PATH);
     expect(finish?.method).toBe('POST');
     // Positions are not a backfillable search entity; what they need is the geo legs.
-    expect(finish?.body).toEqual({ stages: ['reverse_geocode', 'estimate_locations'] });
+    expect(finish?.body).toEqual({ stages: ['reverse_position', 'estimate_locations'] });
 
     // Ordering matters: the rows must exist before the enrichment sweep runs.
     const positionsAt = calls.findIndex((call) => call.url === '/api/v1/positions');
@@ -663,7 +664,7 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
 
     const retried = calls.filter((call) => call.url === INGEST_FINISH_PATH);
     expect(retried).toHaveLength(1);
-    expect(retried[0].body).toEqual({ stages: ['reverse_geocode', 'estimate_locations'] });
+    expect(retried[0].body).toEqual({ stages: ['reverse_position', 'estimate_locations'] });
   });
 
   it('owes nothing for the legacy /api/position kind, which still emits its own events', async () => {
@@ -672,7 +673,7 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
     const calls = installFetch(route(handler, applianceAccepts));
 
     expect(finishStagesFor('position')).toEqual([]);
-    expect(finishStagesFor(POSITION_OUTBOX_KIND)).toEqual(['reverse_geocode', 'estimate_locations']);
+    expect(finishStagesFor(POSITION_OUTBOX_KIND)).toEqual(['reverse_position', 'estimate_locations']);
     // Unknown kinds are unroutable, so they owe nothing either.
     expect(finishStagesFor('no-such-kind')).toEqual([]);
 
@@ -693,5 +694,77 @@ describe('flushing positions — routing and the ingest-finish loop', () => {
     // The fix is still queued, not lost.
     expect(store.size).toBe(1);
     expect(calls.some((call) => call.url === INGEST_FINISH_PATH)).toBe(false);
+  });
+});
+
+/**
+ * `useLocationTracking` is the only caller, and it mocks this adapter away entirely
+ * (correctly — it isn't the hook's own logic to test). That leaves the adapter itself
+ * with no direct coverage anywhere, despite owning a real invariant: `time` must be the
+ * OS's fix instant, never the moment the app got around to reading it.
+ */
+describe('fixFromGeolocationPosition', () => {
+  function geolocationPosition(overrides: Partial<GeolocationCoordinates> = {}): GeolocationPosition {
+    return {
+      coords: {
+        latitude: SF_LAT,
+        longitude: SF_LNG,
+        accuracy: 12,
+        altitude: 15,
+        altitudeAccuracy: 5,
+        heading: 270,
+        speed: 3.5,
+        ...overrides,
+      },
+      timestamp: CAPTURED_AT,
+    } as unknown as GeolocationPosition;
+  }
+
+  it('carries every coordinate field straight across, unrenamed', () => {
+    const fix = fixFromGeolocationPosition(geolocationPosition());
+
+    expect(fix).toEqual({
+      latitude: SF_LAT,
+      longitude: SF_LNG,
+      accuracyMeters: 12,
+      altitudeMeters: 15,
+      headingDegrees: 270,
+      speedMetersPerSecond: 3.5,
+      capturedAtMs: CAPTURED_AT,
+    });
+  });
+
+  it('uses the fix instant the OS reports, not the moment the app read it', () => {
+    // Distinct from "now" on purpose — a fix pulled off `getCurrentPosition` after sitting
+    // in the queue overnight still belongs to the night it was actually taken.
+    const takenLastNight = CAPTURED_AT - 8 * 60 * 60 * 1000;
+
+    const fix = fixFromGeolocationPosition(geolocationPosition());
+    expect(fix.capturedAtMs).toBe(CAPTURED_AT);
+
+    const fixFromLastNight = fixFromGeolocationPosition({
+      ...geolocationPosition(),
+      timestamp: takenLastNight,
+    } as GeolocationPosition);
+    expect(fixFromLastNight.capturedAtMs).toBe(takenLastNight);
+  });
+
+  it('falls back to the current time only when the platform reports no timestamp at all', () => {
+    const before = Date.now();
+    const fix = fixFromGeolocationPosition({ ...geolocationPosition(), timestamp: 0 } as GeolocationPosition);
+    const after = Date.now();
+
+    expect(fix.capturedAtMs).toBeGreaterThanOrEqual(before);
+    expect(fix.capturedAtMs).toBeLessThanOrEqual(after);
+  });
+
+  it('passes through null optional fields rather than coercing them to 0', () => {
+    const fix = fixFromGeolocationPosition(
+      geolocationPosition({ altitude: null, heading: null, speed: null }),
+    );
+
+    expect(fix.altitudeMeters).toBeNull();
+    expect(fix.headingDegrees).toBeNull();
+    expect(fix.speedMetersPerSecond).toBeNull();
   });
 });

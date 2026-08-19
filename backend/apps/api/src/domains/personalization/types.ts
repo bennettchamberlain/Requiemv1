@@ -8,12 +8,18 @@ export const TrustModeSchema = z.enum(TRUST_MODES);
 export const PERSONALIZATION_ACTION_KINDS = [
   'graph_edge',
   'graph_entity',
+  /** Fold an owner-representing Person stub into the self Person (heal / ingest). */
+  'person_self_merge',
   'schedule_accept',
   'inferred_fact',
   'agent_write',
   'feed_action',
   'memory_compaction',
   'insights_generation',
+  'task_create',
+  'task_mutate',
+  'task_complete',
+  'event_revise',
 ] as const;
 
 export type PersonalizationActionKind = (typeof PERSONALIZATION_ACTION_KINDS)[number];
@@ -34,15 +40,3 @@ export interface DecideActionInput {
   readonly confidence: number;
   readonly hasUserInput?: boolean;
 }
-
-export const PROMOTION_CANDIDATE_KINDS = [
-  'relationship',
-  'entity',
-  'schedule_accept',
-  'inferred_fact',
-] as const;
-
-export type PromotionCandidateKind = (typeof PROMOTION_CANDIDATE_KINDS)[number];
-
-export const PROMOTION_CANDIDATE_STATUSES = ['pending', 'accepted', 'rejected'] as const;
-export type PromotionCandidateStatus = (typeof PROMOTION_CANDIDATE_STATUSES)[number];

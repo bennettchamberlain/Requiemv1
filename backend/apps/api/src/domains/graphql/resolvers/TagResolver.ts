@@ -1,11 +1,11 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
+import { Args, ID, Int, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
 import { ThreadService } from '@ci/domains/conversations';
-import { FileService } from '@ci/domains/files';
+import { FileService, SavedSearchService } from '@ci/domains/files';
 import { ActionService } from '@ci/domains/intelligence';
 import {
   CommunicationService,
@@ -24,11 +24,14 @@ import {
   TagService,
 } from '@ci/domains/search-next';
 
+import { TagAssignmentCountLoader } from '../loaders/TagAssignmentCountLoader';
 import { ActionType } from '../types/ActionType';
 import { BrowserActivityType } from '../types/BrowserActivityType';
 import { CommunicationType } from '../types/CommunicationType';
 import { ConceptType } from '../types/ConceptType';
 import { ContentType } from '../types/ContentType';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EventType } from '../types/EventType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
@@ -45,6 +48,8 @@ import { TaggableEntityEdge } from '../types/TaggableEntityEdge';
 import { TaggableEntityType } from '../types/TaggableEntityType';
 import { TagType } from '../types/TagType';
 import { ThreadType } from '../types/ThreadType';
+import { UpdateTagInput } from '../types/UpdateTagInput';
+import { UpdateTagPayload } from '../types/UpdateTagPayload';
 import { Paginator } from '../utils/Paginator';
 
 @UseGuards(JwtOrApiKeyAuthGuard)
@@ -62,6 +67,8 @@ export class TagResolver {
     private readonly noteService: NoteService,
     private readonly personService: PersonService,
     private readonly placeService: PlaceService,
+    private readonly savedSearchService: SavedSearchService,
+    private readonly tagAssignmentCountLoader: TagAssignmentCountLoader,
     private readonly tagService: TagService,
     private readonly threadService: ThreadService,
   ) {}
@@ -153,6 +160,97 @@ export class TagResolver {
       edges,
       pageInfo,
       totalCount,
+    };
+  }
+
+  /** How many entities carry this tag. Batched across the tags list. */
+  @ResolveField(() => Int)
+  async entityCount(@Context() context: RequestContext, @Parent() parent: TagType): Promise<number> {
+    const serviceContext = toServiceContext(context);
+
+    return this.tagAssignmentCountLoader.load(serviceContext, parent.__source.id);
+  }
+
+  /**
+   * Rename a tag and/or re-describe it.
+   *
+   * Renaming onto a label the caller already owns merges the two tags rather
+   * than failing on the `(label, user_id)` unique constraint: the edited tag's
+   * entities move onto the existing one and the edited tag is deleted. The
+   * payload reports that with `merged`, so a client can tell the difference
+   * between "renamed" and "collapsed into an existing tag".
+   *
+   * Saved searches filter by tag *label*, so they are rewritten to follow the
+   * rename — otherwise they would quietly stop matching anything.
+   */
+  @Mutation(() => UpdateTagPayload)
+  async updateTag(
+    @Context() context: RequestContext,
+    @Args('input') input: UpdateTagInput,
+  ): Promise<UpdateTagPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('tag', input.id);
+
+    const result = await this.tagService.update(serviceContext, id, {
+      label: input.label,
+      description: input.description,
+    });
+
+    if (result == null) {
+      return {
+        success: false,
+        merged: false,
+        movedEntityCount: 0,
+        updatedSavedSearchCount: 0,
+      };
+    }
+
+    const updatedSavedSearchCount = await this.savedSearchService.replaceTagLabel(
+      serviceContext,
+      result.previousLabel,
+      result.tag.label,
+    );
+
+    return {
+      success: true,
+      tag: TagType.toType(result.tag),
+      merged: result.merged,
+      movedEntityCount: result.movedAssignments,
+      updatedSavedSearchCount,
+    };
+  }
+
+  /**
+   * Delete a tag and every assignment of it.
+   *
+   * This is a hard delete — see `TagService.remove` for why a tag cannot
+   * usefully be deactivated instead. The tagged memories themselves are not
+   * touched; they simply stop carrying the tag. Saved searches that filter on
+   * the label are deliberately left alone: they now match nothing, which is
+   * true, whereas dropping the label from their filter would silently widen
+   * them (a one-tag saved search would start matching everything).
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deleteTag(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('tag', input.id);
+
+    const result = await this.tagService.remove(serviceContext, id);
+
+    if (result == null) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success: true,
+      deletedId: input.id,
     };
   }
 

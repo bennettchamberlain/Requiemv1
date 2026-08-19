@@ -164,7 +164,7 @@ function SlotTooltip({ bucket, localMin }: { bucket: ForecastBucket; localMin: n
         <p className="pt-1 border-t border-current/20 text-[10px] opacity-60">
           Top context:{' '}
           {isFeatureEnabled('insights.page') ? (
-            <Link to="/feed" className="underline underline-offset-2 hover:opacity-100 transition-opacity">
+            <Link to="/today" className="underline underline-offset-2 hover:opacity-100 transition-opacity">
               {top1.name.slice(0, 24)}
             </Link>
           ) : (
@@ -251,6 +251,8 @@ interface ForecastStripProps {
   systemStatus?: string;
   /** True when polling gave up because the engine stayed non-READY too long. */
   stalled?: boolean;
+  stillLearning?: boolean;
+  modelVersion?: string | null;
   className?: string;
 }
 
@@ -278,16 +280,27 @@ export function ForecastStrip({
   generatedAt,
   systemStatus = 'READY',
   stalled = false,
+  stillLearning = false,
+  modelVersion = null,
   className,
 }: ForecastStripProps) {
   const ordered = orderLocalDay(buckets);
 
   const isReady = systemStatus === 'READY';
-  const statusLabel = isReady
+  const baselineName =
+    modelVersion && modelVersion !== 'hmt' && !modelVersion.startsWith('hmt') ? modelVersion : null;
+  let statusLabel = isReady
     ? `Generated ${new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
     : stalled
       ? 'Prediction model not built yet — open Add ▸ Predict to start'
       : (STATUS_LABELS[systemStatus] ?? 'Processing...');
+  if (isReady && stillLearning) {
+    statusLabel = baselineName
+      ? `Still learning — ${baselineName} baseline · ${statusLabel}`
+      : `Still learning · ${statusLabel}`;
+  } else if (isReady && baselineName) {
+    statusLabel = `${baselineName} baseline · ${statusLabel}`;
+  }
 
   return (
     <div className={cn('space-y-2', className)}>

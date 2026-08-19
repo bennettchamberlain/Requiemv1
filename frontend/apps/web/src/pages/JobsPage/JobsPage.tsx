@@ -1,125 +1,167 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Portal, usePageTitle } from '@ci/common';
-import { Badge, Breadcrumb, Button, Card, Skeleton } from '@ci/shadcn';
+import { usePageTitle } from '@ci/common';
+import { Accordion, Badge, Button, Card, Skeleton, cn } from '@ci/shadcn';
 import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
-import { Link } from 'react-router-dom';
-import { Cell, Pie, PieChart } from 'recharts';
 
 import { PageContent } from '@/components/layout';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 
+import { describeCron } from './cronDescriptor';
+import { describeCronExpression } from './cronSchedule';
+import { DeadLettersCard } from './DeadLettersCard';
+import { FoldBody, FoldCard, FoldTrigger, cardPad, usePhone } from './Fold';
+import { categoryDot, categoryLabel, CATEGORY_LABELS } from './jobCategories';
+import { JobHistoryCharts } from './JobHistoryCharts';
+import { JobsImportActivity } from './JobsImportActivity';
+import { JobsTable } from './JobsTable';
+import { useDeadLetters } from './useDeadLetters';
+import { useJobHistory } from './useJobHistory';
+import { useJobsDashboard, type JobsDashboardResponse } from './useJobsDashboard';
 import {
-  expandActiveJobDistribution,
-  formatJobHandlerLabel,
-  formatSmartRotationJobTitle,
-  SMART_ROTATION_WORK_LABELS,
-} from './smartRotationLabels';
-import {
-  useJobsDashboard,
-  type ArchivedJobRecord,
-  type JobQueue,
-  type JobRecord,
-  type JobSchedule,
-  type JobsDashboardResponse,
-} from './useJobsDashboard';
+  DEFAULT_JOB_FILTERS,
+  DESKTOP_JOB_PAGE_SIZE,
+  MOBILE_JOB_PAGE_SIZE,
+  useJobsList,
+  type JobFilters,
+} from './useJobsList';
+import { useJobTypes, type JobTypesResponse } from './useJobTypes';
 
-const palette = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+/** Category keys the API's taxonomy exposes, in the order the filter lists them. */
+const CATEGORIES = [
+  'search',
+  'ingest',
+  'enrich',
+  'graph',
+  'pipeline',
+  'import',
+  'llm',
+  'personalization',
+  'planning',
+  'maintenance',
+] as const;
 
 export function JobsPage() {
   usePageTitle('Jobs - Companion Intelligence');
 
-  const { data, loading, error, refresh } = useJobsDashboard();
+  const phone = usePhone();
 
-  const jobs = data?.jobs ?? [];
-  const archive = data?.archive ?? [];
+  const [filters, setFilters] = useState<JobFilters>(DEFAULT_JOB_FILTERS);
+  const [windowHours, setWindowHours] = useState(24);
 
-  const activeJobs = useMemo(() => jobs.filter((job) => job.state !== 'completed'), [jobs]);
+  // Phone pages of 50 cards are unreadable; desktop stays at 50. The limit is
+  // a server page size, so it has to live on the filters the list hook sends.
+  useEffect(() => {
+    const limit = phone ? MOBILE_JOB_PAGE_SIZE : DESKTOP_JOB_PAGE_SIZE;
 
-  const completedJobs = useMemo<ArchivedJobRecord[]>(() => {
-    const archiveIds = new Set(archive.map((item) => item.id));
-
-    const completedFromJobs = jobs
-      .filter((job) => job.state === 'completed' && !archiveIds.has(job.id))
-      .map<ArchivedJobRecord>((job) => ({
-        ...job,
-        archivedOn: job.completedOn ?? job.createdOn,
-      }));
-
-    const combined: ArchivedJobRecord[] = [...archive, ...completedFromJobs];
-
-    return combined.sort((a, b) => {
-      const aTime = new Date(a.archivedOn).getTime();
-      const bTime = new Date(b.archivedOn).getTime();
-
-      return bTime - aTime;
-    });
-  }, [archive, jobs]);
-  const activeDistribution = useMemo(() => {
-    if (!data?.activeDistribution?.length) {
-      return [];
-    }
-
-    return expandActiveJobDistribution(data.activeDistribution, data.smartRotationDistribution ?? []).map(
-      (segment, index) => ({
-        ...segment,
-        color: palette[index % palette.length],
-        key: `active-${segment.jobName}-${index}`,
-      }),
+    setFilters((current) =>
+      current.limit === limit ? current : { ...current, limit, offset: 0 },
     );
-  }, [data?.activeDistribution, data?.smartRotationDistribution]);
+  }, [phone]);
 
-  const archiveDistribution = useMemo(() => {
-    if (!data?.archiveDistribution?.length) {
-      return [];
-    }
+  const dashboard = useJobsDashboard();
+  const list = useJobsList(filters);
+  const { types: jobTypes } = useJobTypes();
+  const history = useJobHistory(windowHours, filters.queue);
+  const deadLetters = useDeadLetters();
 
-    return data.archiveDistribution.map((segment, index) => ({
-      ...segment,
-      jobName: formatJobHandlerLabel(segment.jobName),
-      color: palette[index % palette.length],
-      key: `archive-${index}`,
-    }));
-  }, [data?.archiveDistribution]);
+  const onFilterChange = useCallback((next: Partial<JobFilters>) => {
+    setFilters((current) => ({ ...current, ...next }));
+  }, []);
+
+  const refreshAll = useCallback(() => {
+    void dashboard.refresh();
+    void list.refresh();
+    void history.refresh();
+    void deadLetters.refresh();
+  }, [dashboard, list, history, deadLetters]);
+
+  const jobsTable = (
+    <JobsTable
+      data={list.data}
+      loading={list.loading}
+      error={list.error}
+      jobTypes={jobTypes}
+      filters={filters}
+      categories={CATEGORIES}
+      onChange={onFilterChange}
+    />
+  );
+  const historyCharts = (
+    <JobHistoryCharts
+      data={history.data}
+      loading={history.loading}
+      error={history.error}
+      windowHours={windowHours}
+      onWindowChange={setWindowHours}
+      queue={filters.queue}
+    />
+  );
+  const schedules = (
+    <SchedulesCard
+      crons={dashboard.data?.crons ?? []}
+      loading={dashboard.loading}
+      jobTypes={jobTypes}
+    />
+  );
+  const deadLettersCard = (
+    <DeadLettersCard
+      groups={deadLetters.groups}
+      total={deadLetters.total}
+      loading={deadLetters.loading}
+      error={deadLetters.error}
+      onReplay={deadLetters.replay}
+    />
+  );
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Jobs</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent>
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
+          {/* Above Queue Activity, because it outranks it while it exists.
+
+              This page answers "what is the queue doing" for an operator, and
+              pg-boss answers that in pg-boss's terms: on a live 13-source
+              import it read `import-stages: 142 created, 1 active` — a number
+              that is not even the backlog (a redelivered stage job is a
+              deliberate no-op and leaves its row behind; those 142 rows covered
+              19 distinct stages). Nothing on this page said which archive was
+              importing, how far along it was, or which stage had been waiting
+              an hour.
+
+              The SAME component the import surface pins, not a second copy —
+              two implementations of a progress card drift, and the one nobody
+              is looking at is the one that rots. Renders nothing when no import
+              is in flight, so the page is unchanged the rest of the time. */}
+          <JobsImportActivity />
+
           <SummaryCard
-            loading={loading}
-            error={error}
-            activeDistribution={activeDistribution}
-            archiveDistribution={archiveDistribution}
-            queueDistribution={data?.queueDistribution ?? []}
-            smartRotationDistribution={data?.smartRotationDistribution ?? []}
-            summary={data?.summary}
-            onRefresh={refresh}
+            summary={dashboard.data?.summary}
+            loading={dashboard.loading}
+            error={dashboard.error}
+            staleSince={dashboard.staleSince}
+            updatedAt={dashboard.updatedAt}
+            onRefresh={refreshAll}
+            onSelectState={(state) => onFilterChange({ state, offset: 0 })}
           />
 
-          <ColumnsGrid
-            loading={loading}
-            activeJobs={activeJobs}
-            completed={completedJobs}
-            schedules={data?.schedules ?? []}
-            queues={data?.queues ?? []}
-          />
+          {/* Phone: live work first (jobs), reference last (history, schedules,
+              dead letters). Desktop keeps history above the table and dead
+              letters next to the tab that points at them. */}
+          {phone ? (
+            <>
+              {jobsTable}
+              {historyCharts}
+              {schedules}
+              {deadLettersCard}
+            </>
+          ) : (
+            <>
+              {historyCharts}
+              {jobsTable}
+              {deadLettersCard}
+              {schedules}
+            </>
+          )}
         </div>
       </PageContent>
     </>
@@ -127,470 +169,302 @@ export function JobsPage() {
 }
 
 type SummaryCardProps = {
+  summary?: JobsDashboardResponse['summary'];
   loading: boolean;
   error: string | null;
-  summary?: JobsDashboardResponse['summary'];
-  activeDistribution: Array<{
-    readonly key: string;
-    readonly jobName: string;
-    readonly count: number;
-    readonly color: string;
-  }>;
-  archiveDistribution: Array<{
-    readonly key: string;
-    readonly jobName: string;
-    readonly count: number;
-    readonly color: string;
-  }>;
-  queueDistribution: ReadonlyArray<{ readonly queue: string; readonly count: number }>;
-  smartRotationDistribution: ReadonlyArray<{ readonly workType: string; readonly count: number }>;
+  staleSince: Date | null;
+  updatedAt: Date | null;
   onRefresh: () => void;
+  onSelectState: (state: string) => void;
 };
 
 function SummaryCard({
+  summary,
   loading,
   error,
-  summary,
-  activeDistribution,
-  archiveDistribution,
-  queueDistribution,
-  smartRotationDistribution,
+  staleSince,
+  updatedAt,
   onRefresh,
+  onSelectState,
 }: SummaryCardProps) {
-  const summaryItems = useMemo(
+  const phone = usePhone();
+
+  // Each tile is a shortcut into the table below it — a number an operator
+  // cannot click is a number they have to go hunting for.
+  const tiles = useMemo(
     () => [
-      { label: 'Pending', value: summary?.pending ?? 0 },
-      { label: 'Running', value: summary?.active ?? 0 },
-      { label: 'Completed (lifetime)', value: summary?.completed ?? 0 },
-      { label: 'Failed', value: summary?.failed ?? 0 },
+      { label: 'Pending', value: summary?.pending ?? 0, state: 'created' },
+      { label: 'Running', value: summary?.active ?? 0, state: 'active' },
+      { label: 'Retrying', value: summary?.retry ?? 0, state: 'retry' },
+      { label: 'Completed', value: summary?.completed ?? 0, state: 'completed' },
+      { label: 'Failed', value: summary?.failed ?? 0, state: 'failed' },
+      { label: 'Dead-lettered', value: summary?.deadLettered ?? 0, state: 'dead-letter' },
     ],
-    [summary?.pending, summary?.active, summary?.completed, summary?.failed],
+    [summary],
   );
 
   return (
-    <Card>
-      <Card.Header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <FoldCard>
+      <Card.Header
+        className={cn(
+          'flex gap-2',
+          phone ? 'flex-row items-center justify-between' : 'flex-col md:flex-row md:items-center md:justify-between',
+          cardPad(phone),
+        )}
+      >
         <div>
-          <Card.Title className="text-xl">Queue Activity</Card.Title>
-          <Card.Description>Current job workload and recent completions</Card.Description>
+          <Card.Title className="text-lg">Queue Activity</Card.Title>
+          <Card.Description>
+            {updatedAt
+              ? `Updated ${new Intl.DateTimeFormat(undefined, {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                }).format(updatedAt)}`
+              : 'Current job workload'}
+          </Card.Description>
         </div>
-        <Button variant="outline" size="sm" onClick={onRefresh} className="w-full md:w-auto">
-          <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRefresh}
+          className={phone ? 'shrink-0' : 'w-full md:w-auto'}
+        >
+          <RefreshCcw className={phone ? 'h-4 w-4' : 'mr-2 h-4 w-4'} />
+          {phone ? <span className="sr-only">Refresh</span> : 'Refresh'}
         </Button>
       </Card.Header>
-      <Card.Content className="space-y-4">
-        {error ? <ErrorBanner message={error} /> : null}
+      <Card.Content className={cn('space-y-3', cardPad(phone))}>
+        {staleSince ? (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400"
+          >
+            <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0 break-words">
+              Showing data from {staleSince.toLocaleTimeString()} — refreshes have been failing since then
+              {error ? ` (${error})` : ''}.
+            </span>
+          </div>
+        ) : error ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          >
+            <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0 break-words">{error}</span>
+          </div>
+        ) : null}
+
         {loading && !summary ? (
           <Skeleton className="h-24 w-full" />
         ) : (
-          <div className="grid gap-3 md:grid-cols-4">
-            {summaryItems.map((item) => (
-              <StatTile key={item.label} label={item.label} value={item.value} />
+          <div className={phone ? 'grid grid-cols-2 gap-2' : 'grid gap-3 sm:grid-cols-3 lg:grid-cols-6'}>
+            {tiles.map((tile) => (
+              <button
+                key={tile.label}
+                type="button"
+                onClick={() => onSelectState(tile.state)}
+                className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-left transition-colors hover:border-border hover:bg-muted/60"
+              >
+                <p className="text-xs uppercase text-muted-foreground">{tile.label}</p>
+                <p className="mt-0.5 text-xl font-semibold tabular-nums">{tile.value.toLocaleString()}</p>
+              </button>
             ))}
           </div>
         )}
-
-        {loading && !activeDistribution.length && !archiveDistribution.length ? (
-          <Skeleton className="h-60 w-full" />
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <DistributionChart
-              title="Active jobs by handler"
-              description="Pending and in-flight work — smart rotation split by work type"
-              data={activeDistribution}
-              emptyMessage="No active jobs in the queue."
-            />
-            <DistributionChart
-              title="Completed jobs by handler (lifetime)"
-              description="Historical volume from the job archive"
-              data={archiveDistribution}
-              emptyMessage="No completed jobs have been archived yet."
-            />
-          </div>
-        )}
-
-        {(queueDistribution.length > 0 || smartRotationDistribution.length > 0) && (
-          <div className="grid gap-4 md:grid-cols-2">
-            {queueDistribution.length > 0 ? (
-              <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
-                <h3 className="text-sm font-medium">Active jobs by queue</h3>
-                <dl className="mt-3 space-y-2">
-                  {queueDistribution.map((item) => (
-                    <div key={item.queue} className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{item.queue}</span>
-                      <span className="font-medium">{item.count.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            ) : null}
-            {smartRotationDistribution.length > 0 ? (
-              <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
-                <h3 className="text-sm font-medium">Smart rotation (active / retrying)</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Same jobs as above, grouped by what each run is trying to do.
-                </p>
-                <dl className="mt-3 space-y-2">
-                  {smartRotationDistribution.map((item) => (
-                    <div key={item.workType} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="text-muted-foreground">
-                        {SMART_ROTATION_WORK_LABELS[item.workType] ?? item.workType}
-                      </span>
-                      <span className="font-medium tabular-nums">{item.count.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            ) : null}
-          </div>
-        )}
       </Card.Content>
-    </Card>
+    </FoldCard>
   );
 }
 
-type ColumnsGridProps = {
-  loading: boolean;
-  activeJobs: readonly JobRecord[];
-  completed: readonly ArchivedJobRecord[];
-  schedules: readonly JobSchedule[];
-  queues: readonly JobQueue[];
-};
-
-function ColumnsGrid({ loading, activeJobs, completed, schedules, queues }: ColumnsGridProps) {
-  return (
-    <div className="grid gap-4 xl:grid-cols-4">
-      <DataColumn
-        title="Active Jobs"
-        description="Jobs waiting to run or currently executing"
-        loading={loading}
-        items={activeJobs}
-        renderItem={(job) => <JobCard key={job.id} job={job} />}
-      />
-      <DataColumn
-        title="Completed Jobs"
-        description="Recently completed or failed jobs (including unarchived completions)"
-        loading={loading}
-        items={completed}
-        renderItem={(job) => <ArchivedJobCard key={job.id} job={job} />}
-      />
-      <DataColumn
-        title="Schedules"
-        description="Recurring system jobs"
-        loading={loading}
-        items={schedules}
-        renderItem={(schedule) => <ScheduleCard key={schedule.name} schedule={schedule} />}
-      />
-      <DataColumn
-        title="Queues"
-        description="Queue configuration and policies"
-        loading={loading}
-        items={queues}
-        renderItem={(queue) => <QueueCard key={queue.name} queue={queue} />}
-      />
-    </div>
-  );
-}
-
-type DataColumnProps<T> = {
-  title: string;
-  description: string;
-  loading: boolean;
-  items: readonly T[];
-  renderItem: (item: T) => React.ReactNode;
-};
-
-function DataColumn<T>({ title, description, loading, items, renderItem }: DataColumnProps<T>) {
-  return (
-    <Card className="flex h-full flex-col">
-      <Card.Header>
-        <Card.Title className="text-base">{title}</Card.Title>
-        <Card.Description>{description}</Card.Description>
-      </Card.Header>
-      <Card.Content className="flex-1">
-        {loading && !items.length ? (
-          <Skeleton className="h-[320px] w-full" />
-        ) : items.length ? (
-          <div className="flex max-h-[420px] flex-col gap-3 overflow-y-auto pr-1">
-            {items.map((item) => renderItem(item))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">No data available.</p>
-        )}
-      </Card.Content>
-    </Card>
-  );
-}
-
-type JobCardProps = {
-  job: JobRecord;
-};
-
-function JobCard({ job }: JobCardProps) {
-  const { title, subtitle } = getJobDisplay(job.data);
-
-  return (
-    <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <span className="block font-medium truncate" title={title}>
-            {title}
-          </span>
-          {subtitle ? (
-            <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
-              {subtitle}
-            </span>
-          ) : null}
-        </div>
-        <Badge variant="outline" className="shrink-0 text-xs uppercase">
-          {job.state}
-        </Badge>
-      </div>
-      <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-        <KeyValue label="Queue" value={job.queue} />
-        <KeyValue label="Created" value={formatTimestamp(job.createdOn)} />
-        <KeyValue label="Start after" value={formatTimestamp(job.startAfter)} />
-        {job.startedOn ? <KeyValue label="Started" value={formatTimestamp(job.startedOn)} /> : null}
-        {job.completedOn ? <KeyValue label="Completed" value={formatTimestamp(job.completedOn)} /> : null}
-        <KeyValue label="Retries" value={`${job.retryCount}/${job.retryLimit}`} />
-      </dl>
-    </div>
-  );
-}
-
-type ArchivedJobCardProps = {
-  job: ArchivedJobRecord;
-};
-
-function ArchivedJobCard({ job }: ArchivedJobCardProps) {
-  const { title, subtitle } = getJobDisplay(job.data);
-
-  return (
-    <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <span className="block font-medium truncate" title={title}>
-            {title}
-          </span>
-          {subtitle ? (
-            <span className="block truncate text-xs text-muted-foreground" title={subtitle}>
-              {subtitle}
-            </span>
-          ) : null}
-        </div>
-        <Badge
-          variant={job.state === 'completed' ? 'secondary' : 'destructive'}
-          className="shrink-0 text-xs uppercase"
-        >
-          {job.state}
-        </Badge>
-      </div>
-      <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-        <KeyValue label="Queue" value={job.queue} />
-        <KeyValue label="Archived" value={formatTimestamp(job.archivedOn)} />
-        {job.completedOn ? <KeyValue label="Completed" value={formatTimestamp(job.completedOn)} /> : null}
-        {job.deadLetter ? <KeyValue label="Dead letter" value={job.deadLetter} /> : null}
-        <KeyValue label="Retries" value={`${job.retryCount}/${job.retryLimit}`} />
-      </dl>
-    </div>
-  );
-}
-
-type ScheduleCardProps = {
-  schedule: JobSchedule;
-};
-
-function ScheduleCard({ schedule }: ScheduleCardProps) {
-  return (
-    <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium truncate" title={schedule.name}>
-          {schedule.name}
-        </span>
-        <Badge variant="outline" className="text-xs uppercase">
-          cron
-        </Badge>
-      </div>
-      <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-        <KeyValue label="Expression" value={schedule.cron} />
-        {schedule.timezone ? <KeyValue label="Time zone" value={schedule.timezone} /> : null}
-        <KeyValue label="Created" value={formatTimestamp(schedule.createdOn)} />
-        <KeyValue label="Updated" value={formatTimestamp(schedule.updatedOn)} />
-      </dl>
-    </div>
-  );
-}
-
-type QueueCardProps = {
-  queue: JobQueue;
-};
-
-function QueueCard({ queue }: QueueCardProps) {
-  return (
-    <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium truncate" title={queue.name}>
-          {queue.name}
-        </span>
-        <Badge variant="outline" className="text-xs uppercase">
-          {queue.policy ?? 'standard'}
-        </Badge>
-      </div>
-      <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-        <KeyValue label="Retry limit" value={String(queue.retryLimit)} />
-        <KeyValue label="Retry delay" value={`${queue.retryDelay}s`} />
-        <KeyValue label="Backoff" value={queue.retryBackoff ? 'enabled' : 'disabled'} />
-        {queue.expireInSeconds !== null && queue.expireInSeconds !== undefined ? (
-          <KeyValue label="Expires" value={`${queue.expireInSeconds}s`} />
-        ) : null}
-        {queue.retentionMinutes !== null && queue.retentionMinutes !== undefined ? (
-          <KeyValue label="Retention" value={`${queue.retentionMinutes}m`} />
-        ) : null}
-        <KeyValue label="Created" value={formatTimestamp(queue.createdOn)} />
-        <KeyValue label="Updated" value={queue.updatedOn ? formatTimestamp(queue.updatedOn) : '—'} />
-        {queue.deadLetter ? <KeyValue label="DLQ" value={queue.deadLetter} /> : null}
-      </dl>
-    </div>
-  );
-}
-
-type KeyValueProps = {
-  label: string;
-  value: string;
-};
-
-function KeyValue({ label, value }: KeyValueProps) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-muted-foreground/80">{label}</span>
-      <span className="font-medium text-foreground/80">{value}</span>
-    </div>
-  );
-}
-
-type StatTileProps = {
-  label: string;
-  value: number;
-};
-
-function StatTile({ label, value }: StatTileProps) {
-  return (
-    <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
-      <p className="text-xs uppercase text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold">{value.toLocaleString()}</p>
-    </div>
-  );
-}
-
-type ErrorBannerProps = {
-  message: string;
-};
-
-function ErrorBanner({ message }: ErrorBannerProps) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-      <AlertTriangle className="h-4 w-4" />
-      <span className="truncate">{message}</span>
-    </div>
-  );
-}
-
-function DistributionChart({
-  title,
-  description,
-  data,
-  emptyMessage,
+/**
+ * The recurring jobs, from Nest's live scheduler registry.
+ *
+ * The column this replaces rendered `pgboss.schedule`, which nothing in this
+ * codebase writes — so it was empty on every appliance ever shipped while ~34
+ * `@Cron` methods ran beside it, invisible.
+ */
+function SchedulesCard({
+  crons,
+  loading,
+  jobTypes,
 }: {
-  title: string;
-  description: string;
-  data: Array<{
-    readonly key: string;
-    readonly jobName: string;
-    readonly count: number;
-    readonly color: string;
-  }>;
-  emptyMessage: string;
+  crons: JobsDashboardResponse['crons'];
+  loading: boolean;
+  jobTypes: JobTypesResponse | null;
 }) {
-  if (!data.length) {
-    return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
-  }
+  const phone = usePhone();
+  const rows = useMemo(
+    () =>
+      crons.map((cron) => ({
+        cron,
+        descriptor: describeCron(cron.name, jobTypes),
+        schedule: describeCronExpression(cron.cron),
+      })),
+    [crons, jobTypes],
+  );
 
   return (
-    <div>
-      <h3 className="text-sm font-medium">{title}</h3>
-      <p className="text-xs text-muted-foreground">{description}</p>
-      <ChartContainer config={{}} className="mt-2 h-[240px] w-full">
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="count"
-            nameKey="jobName"
-            innerRadius={60}
-            outerRadius={100}
-            paddingAngle={2}
-            stroke="transparent"
-          >
-            {data.map((segment) => (
-              <Cell key={segment.key} fill={segment.color} />
-            ))}
-          </Pie>
-          <ChartTooltip
-            cursor={{ fill: 'hsla(var(--muted), 0.35)' }}
-            content={
-              <ChartTooltipContent
-                hideLabel
-                formatter={(value, _name, { payload }) => {
-                  return (
-                    <div className="flex w-full items-center justify-between gap-6">
-                      <span>{payload.jobName}</span>
-                      <span className="font-medium">{value as number}</span>
-                    </div>
-                  );
-                }}
-              />
-            }
-          />
-        </PieChart>
-      </ChartContainer>
+    <FoldCard fold>
+      <Card.Header className={cardPad(phone)}>
+        <FoldTrigger>
+          <Card.Title className="text-base">Schedules</Card.Title>
+          <Card.Description>Recurring jobs registered in this process ({crons.length})</Card.Description>
+        </FoldTrigger>
+      </Card.Header>
+      <FoldBody>
+        <Card.Content className={cardPad(phone)}>
+          {loading && !crons.length ? (
+            <Skeleton className="h-32 w-full" />
+          ) : !crons.length ? (
+            <p className="text-sm text-muted-foreground">No recurring jobs are registered here.</p>
+          ) : phone ? (
+            <SchedulesPhoneList rows={rows} />
+          ) : (
+            // A table, like the Jobs list — same columns-and-rows shape, so the two
+            // cards read as one system rather than two unrelated widgets. The grid
+            // of cards it replaced could not be scanned down a column (every
+            // schedule's cron sat at a different x-position).
+            <SchedulesTable rows={rows} />
+          )}
+        </Card.Content>
+      </FoldBody>
+    </FoldCard>
+  );
+}
+
+type ScheduleRow = {
+  cron: JobsDashboardResponse['crons'][number];
+  descriptor: ReturnType<typeof describeCron>;
+  schedule: ReturnType<typeof describeCronExpression>;
+};
+
+function SchedulesTable({ rows }: { rows: readonly ScheduleRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Schedule
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Category
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Every
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              When
+            </th>
+            <th scope="col" className="py-1.5 pr-3 font-medium">
+              Status
+            </th>
+            <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+              Next run
+            </th>
+            <th scope="col" className="py-1.5 text-right font-medium">
+              Last run
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ cron, descriptor, schedule }) => (
+            <tr key={cron.name} className="border-b border-border/40 last:border-0">
+              <td className="py-1.5 pr-3">
+                <span className="flex items-center gap-1.5 font-medium" title={cron.name}>
+                  <span
+                    aria-hidden
+                    className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(descriptor.category)}`}
+                  />
+                  <span className="truncate">{descriptor.label}</span>
+                </span>
+              </td>
+              <td className="py-1.5 pr-3 text-muted-foreground">{descriptor.categoryLabel}</td>
+              <td className="py-1.5 pr-3 whitespace-nowrap" title={schedule.raw}>
+                {schedule.frequency}
+              </td>
+              <td className="py-1.5 pr-3 whitespace-nowrap text-muted-foreground" title={schedule.raw}>
+                {schedule.when || '—'}
+              </td>
+              <td className="py-1.5 pr-3">
+                <Badge variant={cron.running ? 'outline' : 'secondary'} className="text-[10px] uppercase">
+                  {cron.running ? 'scheduled' : 'stopped'}
+                </Badge>
+              </td>
+              <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">
+                {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+                {cron.lastRunAt ? new Date(cron.lastRunAt).toLocaleTimeString() : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function formatTimestamp(value?: string) {
-  if (!value) {
-    return '—';
-  }
+function SchedulesPhoneList({ rows }: { rows: readonly ScheduleRow[] }) {
+  const groups = useMemo(() => {
+    const map = new Map<string, ScheduleRow[]>();
 
-  const date = new Date(value);
+    for (const row of rows) {
+      const list = map.get(row.descriptor.category) ?? [];
+      list.push(row);
+      map.set(row.descriptor.category, list);
+    }
 
-  if (Number.isNaN(date.getTime())) {
-    return '—';
-  }
+    const order = Object.keys(CATEGORY_LABELS);
 
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(date);
-}
+    return [...map.entries()].sort((left, right) => {
+      const li = order.indexOf(left[0]);
+      const ri = order.indexOf(right[0]);
 
-function getJobDisplay(data: Record<string, unknown> | null): { title: string; subtitle?: string } {
-  const rotationTitle = formatSmartRotationJobTitle(data);
+      return (li === -1 ? 99 : li) - (ri === -1 ? 99 : ri);
+    });
+  }, [rows]);
 
-  if (rotationTitle) {
-    return { title: rotationTitle, subtitle: 'smart.rotation.work' };
-  }
-
-  if (!data || typeof data !== 'object') {
-    return { title: 'Unnamed job' };
-  }
-
-  const name = data['name'];
-
-  return {
-    title: typeof name === 'string' && name.length > 0 ? name : 'Unnamed job',
-  };
+  return (
+    <Accordion type="multiple" className="w-full">
+      {groups.map(([category, items]) => (
+        <Accordion.Item key={category} value={category}>
+          <Accordion.Trigger className="py-2.5 text-sm hover:no-underline">
+            <span className="flex min-w-0 items-center gap-2">
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(category)}`} />
+              <span className="truncate">{categoryLabel(category)}</span>
+              <span className="text-xs font-normal text-muted-foreground tabular-nums">{items.length}</span>
+            </span>
+          </Accordion.Trigger>
+          <Accordion.Content>
+            <ul className="pb-1">
+              {items.map(({ cron, descriptor, schedule }) => (
+                <li key={cron.name} className="border-t border-border/40 py-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 font-medium" title={cron.name}>
+                      {descriptor.label}
+                    </span>
+                    <Badge
+                      variant={cron.running ? 'outline' : 'secondary'}
+                      className="shrink-0 text-[10px] uppercase"
+                    >
+                      {cron.running ? 'scheduled' : 'stopped'}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground" title={schedule.raw}>
+                    {schedule.frequency}
+                    {schedule.when ? ` · ${schedule.when}` : ''}
+                    {' · next '}
+                    {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </Accordion.Content>
+        </Accordion.Item>
+      ))}
+    </Accordion>
+  );
 }

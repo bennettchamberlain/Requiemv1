@@ -87,6 +87,24 @@ export class EventType implements Node, Taggable {
   @Field(() => String, { nullable: true })
   status!: string;
 
+  @Field(() => ID, {
+    nullable: true,
+    description: 'Parent event for sub-events / follow-ups. Children: filter by this id.',
+  })
+  parentEventId!: string | null;
+
+  @Field(() => ID, {
+    nullable: true,
+    description: 'Task this planned block schedules (`event_type = planned_block`).',
+  })
+  taskId!: string | null;
+
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Intended minutes for a planned block. Distinct from generated durationMinutes.',
+  })
+  plannedMinutes!: number | null;
+
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
 
@@ -121,6 +139,9 @@ export class EventType implements Node, Taggable {
       isAllDay: event.isAllDay,
       metadata: event.metadata,
       status: event.status,
+      parentEventId: event.parentEventId ? GlobalUID.encode('event', event.parentEventId) : null,
+      taskId: event.taskId ? GlobalUID.encode('task', event.taskId) : null,
+      plannedMinutes: event.plannedMinutes,
       tags: [], // Hydrated by resolver
     };
   }

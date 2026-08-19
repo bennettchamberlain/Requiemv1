@@ -1,13 +1,11 @@
 import { type MouseEvent, type MouseEventHandler, type ReactNode, useCallback } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
-import { cn, IconButton } from '@ci/shadcn';
+import { Button, cn, IconButton } from '@ci/shadcn';
 import { X } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
-import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { Tag } from '@/components/Tag';
-import type { AgentChatContext } from '@/lib/agentChat';
 
 interface Props {
   title: string;
@@ -19,7 +17,6 @@ interface Props {
   onDismiss?: MouseEventHandler<HTMLButtonElement>;
   dismissLabel?: string;
   showUnseenIndicator?: boolean;
-  chatContext?: AgentChatContext;
 }
 
 export function BentoCard({
@@ -32,7 +29,6 @@ export function BentoCard({
   onDismiss,
   dismissLabel,
   showUnseenIndicator = false,
-  chatContext,
 }: Props) {
   const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
@@ -52,40 +48,27 @@ export function BentoCard({
     [onDismiss],
   );
 
-  // The controls stack down the right edge rather than sitting side by side: two
-  // buttons in a row ate enough of the header that a long title wrapped underneath
-  // them. The whole stack hangs 1 off the card so the dismiss button sits on the
-  // corner, mirroring the unseen dot opposite, with the chat button lined up under
-  // it. No deeper than 1: the carousel viewport clips at `pt-1`, so a larger offset
-  // would shave the top off the dismiss button.
-  const cardActions =
-    onDismiss || chatContext ? (
-      <div className="absolute -right-1 -top-1 z-30 flex flex-col items-end gap-2">
-        {onDismiss && (
-          <IconButton
-            type="button"
-            variant="outline"
-            className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
-            onClick={handleDismiss}
-            label={dismissLabel ?? t('FEED_CARD_DISMISS')}
-          >
-            <X className="h-4 w-4" />
-          </IconButton>
-        )}
-        {chatContext && (
-          <ChatWithAgentMenu
-            context={chatContext}
-            className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
-          />
-        )}
-      </div>
-    ) : null;
+  // Dismiss hangs 1 off the card so it sits on the corner, mirroring the unseen
+  // dot opposite. Chat is the card click itself — a second button under the X
+  // was a duplicate. No deeper than 1: the carousel viewport clips at `pt-1`.
+  const cardActions = onDismiss ? (
+    <div className="absolute -right-1 -top-1 z-30">
+      <IconButton
+        type="button"
+        variant="outline"
+        className="h-7 w-7 rounded-full bg-background/80 backdrop-blur-sm"
+        onClick={handleDismiss}
+        label={dismissLabel ?? t('FEED_CARD_DISMISS')}
+      >
+        <X className="h-4 w-4" />
+      </IconButton>
+    </div>
+  ) : null;
 
-  // Gutter the header content has to leave clear so the stack never lands on top of
-  // the title or the tags. Both buttons are 7 wide and hang 1 past the edge, so they
-  // reach 6 back into the card whichever of them is rendered; the extra 3 keeps a
-  // right-aligned tag from butting up against the chat button.
-  const actionGutter = onDismiss || chatContext ? 'pr-9' : undefined;
+  // The dismiss button is 7 wide and hangs 1 past the edge, so it reaches 6
+  // back into the card; the extra 3 keeps a right-aligned tag from butting up
+  // against it.
+  const actionGutter = onDismiss ? 'pr-9' : undefined;
 
   const unseenIndicator = showUnseenIndicator ? (
     <>
@@ -103,56 +86,56 @@ export function BentoCard({
   ) : null;
 
   if (isMobile) {
+    // Compact preview row — tap opens the existing write-up. Hover does not
+    // exist on a phone, so dismiss is a 44px control in the layout, not a
+    // corner affordance that only appears on mouseover.
     return (
       <div
         className={cn(
-          'h-full w-full flex flex-col border border-border bg-card text-card-foreground rounded-lg cursor-pointer select-none p-4 gap-4',
+          'relative flex w-full items-center gap-3 rounded-lg border border-border bg-card p-3 text-left',
+          'cursor-pointer select-none text-card-foreground active:bg-accent/15',
           className,
-          'relative',
         )}
         onClick={handleClick}
       >
         {unseenIndicator}
-        {cardActions}
-        {imageUrl && (
+        {imageUrl ? (
+          <img src={imageUrl} alt="" className="h-14 w-14 shrink-0 rounded-md object-cover bg-muted" />
+        ) : (
+          <div
+            aria-hidden
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-muted px-1 text-center text-[10px] font-medium leading-tight text-muted-foreground"
+          >
+            {tags[0] ?? ''}
+          </div>
+        )}
+
+        <div className="min-w-0 flex-1">
+          <h3 className="line-clamp-1 text-base font-semibold leading-snug text-foreground">{title}</h3>
           <div
             className={cn(
-              'relative top-0 left-0 right-0 min-h-42 bg-cover bg-center rounded-t-lg -mx-4 -mt-4 text-2xl font-bold text-center text-white p-4',
-              // The action stack is pinned to the top-right; without a reserved gutter
-              // a two-word title ("Weather update") runs straight underneath it.
-              actionGutter,
+              'mt-0.5 line-clamp-2 text-sm leading-snug text-muted-foreground',
+              '[&_p]:m-0 [&_p]:inline [&_p+p]:hidden',
+              '[&_ul]:hidden [&_ol]:hidden [&_h1]:hidden [&_h2]:hidden [&_h3]:hidden',
+              '[&_.inline-flex]:hidden [&_img]:hidden',
             )}
-            style={{
-              backgroundImage: `
-              linear-gradient(to bottom, rgba(0,0,0,0.75), rgba(0,0,0,0.15) 60%, rgba(0,0,0,0)),
-              url(${imageUrl})
-            `,
-              // Bright imagery (the weather card's cloud cover) washed the title out
-              // even through the scrim.
-              textShadow: '0 1px 3px rgba(0,0,0,0.6)',
-            }}
           >
-            {title}
+            {description}
           </div>
-        )}
-
-        {/* Padded on both sides so the title stays optically centred while clearing
-            the action stack on the right. */}
-        {!imageUrl && (
-          <div className={cn('text-4xl font-bold text-center', actionGutter && 'px-9')}>{title}</div>
-        )}
-
-        {(tags?.length ?? 0) > 0 && (
-          <div className="flex flex-wrap gap-1 justify-center">
-            {tags.map((tag) => (
-              <Tag key={tag} text={tag} />
-            ))}
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto">
-          <div>{description}</div>
         </div>
+
+        {onDismiss ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0 text-muted-foreground"
+            aria-label={dismissLabel ?? t('FEED_CARD_DISMISS')}
+            onClick={handleDismiss}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
     );
   }

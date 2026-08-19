@@ -2,6 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import { Query, Resolver, Args, ID } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
 import { ConnectionService } from '@ci/domains/connections';
@@ -9,6 +10,7 @@ import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import {
+  CommunicationService,
   ConceptService,
   ContentService,
   EventService,
@@ -25,6 +27,7 @@ import { UserService } from '@ci/domains/user';
 import { ActionType } from '../types/ActionType';
 import { AnswerType } from '../types/AnswerType';
 import { BrowserActivityType } from '../types/BrowserActivityType';
+import { CommunicationType } from '../types/CommunicationType';
 import { ConceptType } from '../types/ConceptType';
 import { ConnectionType } from '../types/ConnectionType';
 import { ContentType } from '../types/ContentType';
@@ -51,6 +54,7 @@ export class NodeResolver {
     private readonly actionService: ActionService,
     private readonly answerService: AnswerService,
     private readonly browserActivityService: BrowserActivityService,
+    private readonly communicationService: CommunicationService,
     private readonly conceptService: ConceptService,
     private readonly connectionService: ConnectionService,
     private readonly contentService: ContentService,
@@ -67,6 +71,7 @@ export class NodeResolver {
     private readonly taskService: TaskService,
     private readonly threadService: ThreadService,
     private readonly userService: UserService,
+    private readonly featureService: FeatureService,
   ) {}
 
   @Query(() => Node, { nullable: true })
@@ -94,6 +99,12 @@ export class NodeResolver {
         const activity = await this.browserActivityService.findById(serviceContext, id);
 
         return activity ? BrowserActivityType.toType(activity) : null;
+      }
+
+      case 'communication': {
+        const communication = await this.communicationService.findById(serviceContext, id);
+
+        return communication ? CommunicationType.toType(communication) : null;
       }
 
       case 'concept': {
@@ -151,6 +162,10 @@ export class NodeResolver {
       }
 
       case 'task': {
+        if (!(await this.featureService.isFeatureEnabled('planning.enabled'))) {
+          return null;
+        }
+
         const task = await this.taskService.findById(serviceContext, id);
 
         return task ? TaskType.toType(task) : null;

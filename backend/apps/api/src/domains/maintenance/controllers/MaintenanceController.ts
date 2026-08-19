@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -54,10 +55,15 @@ import {
   EventParticipantBackfillService,
 } from '../services/EventParticipantBackfillService';
 import {
+  type ExternalIdKindIntegrityReport,
+  ExternalIdKindIntegrityService,
+} from '../services/ExternalIdKindIntegrityService';
+import {
   type GraphEnrichmentProgressCounts,
   type GraphEnrichmentResult,
   GraphEnrichmentService,
 } from '../services/GraphEnrichmentService';
+import { type HealSelfCollationResult, HealSelfCollationService } from '../services/HealSelfCollationService';
 import {
   type DeferralResult,
   type DroppedIndex,
@@ -318,6 +324,13 @@ const linkEventsSchema = z.object({
 
 type LinkEventsRequest = z.infer<typeof linkEventsSchema>;
 
+const healSelfCollationSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  dryRun: z.boolean().optional(),
+});
+
+type HealSelfCollationRequest = z.infer<typeof healSelfCollationSchema>;
+
 // Body for POST /api/maintenance/extract-graph. All optional: caps how much of
 // the user's own data the LLM extraction samples per run. Re-runnable.
 const extractGraphSchema = z.object({
@@ -343,6 +356,7 @@ const orchestrateSchema = z.object({
       extractPeople: extractPeopleFromCommunicationsSchema.optional(),
       linkCommunications: linkCommunicationsSchema.optional(),
       linkEvents: linkEventsSchema.optional(),
+      healSelfCollation: healSelfCollationSchema.optional(),
       materializeEdges: materializeEdgesSchema.optional(),
       extractGraph: extractGraphSchema.optional(),
       geocode: geocodeLocationsSchema.optional(),
@@ -408,6 +422,7 @@ export class MaintenanceController {
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
     private readonly personStubBackfillService: PersonStubBackfillService,
     private readonly eventParticipantBackfillService: EventParticipantBackfillService,
+    private readonly healSelfCollationService: HealSelfCollationService,
     private readonly deterministicEdgeBackfillService: DeterministicEdgeBackfillService,
     private readonly relationshipNormalizeService: RelationshipNormalizeService,
     private readonly derivedRelationshipService: DerivedRelationshipService,
@@ -415,6 +430,7 @@ export class MaintenanceController {
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
     private readonly embedCoverageTelemetryService: EmbedCoverageTelemetryService,
+    private readonly externalIdKindIntegrityService: ExternalIdKindIntegrityService,
     private readonly locationEstimateService: LocationEstimateService,
     private readonly ingestResetService: IngestResetService,
     private readonly maintenanceOrchestratorService: MaintenanceOrchestratorService,
@@ -800,6 +816,38 @@ export class MaintenanceController {
   }
 
   /**
+   * Fold owner-representing Person stubs into the self Person when Autonomy
+   * trust allows (`person_self_merge` / hands_off auto). Otherwise counts
+   * candidates for Memory → People review. Idempotent; safe to re-run.
+   */
+  @Post('heal-self-collation')
+  async healSelfCollation(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(healSelfCollationSchema)) body: HealSelfCollationRequest,
+  ): Promise<HealSelfCollationResult> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return {
+        selfEntityId: null,
+        trustMode: 'balanced',
+        examined: 0,
+        merged: 0,
+        reviewed: 0,
+        skipped: 0,
+        errors: [],
+        mergedSourceIds: [],
+      };
+    }
+
+    return this.healSelfCollationService.heal(userId, {
+      limit: body.limit,
+      dryRun: body.dryRun,
+    });
+  }
+
+  /**
    * Deterministic edge materialization. Projects the deterministic-edge matrix
    * (communications' from/to link columns, events' organizer/participants/
    * location) into `ci.relationships`, resolving both endpoints through their
@@ -1173,6 +1221,28 @@ export class MaintenanceController {
   }
 
   /**
+   * Integrity check for the `ci.content.external_id_kind` discriminator
+   * (defect F22): every row stamped `'file'` must resolve against `ci.files`.
+   *
+   * `external_id` holds either a `ci.files.id` or an opaque source-native
+   * reference, and no FK can enforce the difference while both live in one
+   * column — so the stamp is the only contract, and until now nothing checked
+   * it. That is how migration 20260818215331 shipped an "everything that is not
+   * Spotify is a file id" rule that labelled every Amazon Music / Audible /
+   * Kindle / Prime Video URI as a file id.
+   *
+   * `orphanFileRows` is the assertion; `malformedFileRows` is the subset that
+   * is not even UUID-shaped, which distinguishes a mislabel (a URI stamped
+   * 'file' — run migration 20260818235804) from a dangling-but-plausible id (a
+   * file row that was deleted). Pure observability: no writes, counts are
+   * GLOBAL, matching /search/coverage.
+   */
+  @Get('content/external-id-kind')
+  async contentExternalIdKindIntegrity(): Promise<ExternalIdKindIntegrityReport> {
+    return this.externalIdKindIntegrityService.check();
+  }
+
+  /**
    * Ingest observability snapshot: row counts of the bulk-ingest destination
    * tables plus the search-index side (embeddings + skip markers per type, and
    * the search-index queue depth from pgboss). One call answers "did the import
@@ -1246,19 +1316,31 @@ export class MaintenanceController {
    * hypertable (TRUNCATE skips the AFTER DELETE trigger — leaving it populated
    * is the "0 comms on re-import" incident), the whole ci_search index
    * (embeddings/vectors/index_skips), and deletes the not-yet-run search-index
-   * queue jobs. Destructive across ALL users — requires the exact confirm
-   * literal. Returns counts-before per table. The importer's own watermark
-   * (`ci_server.last_push`) must be reset separately; see
-   * db/postgres/INGEST_RESET_RUNBOOK.md.
+   * queue jobs. Requires the exact confirm literal. Returns counts-before per
+   * table. The importer's own watermark (`ci_server.last_push`) must be reset
+   * separately; see db/postgres/INGEST_RESET_RUNBOOK.md.
+   *
+   * It truncates, so it cannot take one user's rows and leave another's — and
+   * this route is behind ordinary user auth, not an admin role, because the
+   * appliance has none. The service therefore REFUSES when any of those tables
+   * still holds another account's data; the confirm literal proves the caller
+   * meant it, not that they were entitled to everyone else's memory.
    */
   @Post('ingest/reset')
   async resetIngest(
+    @Context() context: RequestContext,
     @Body(new ValidationPipe(ingestResetSchema)) body: { confirm: 'RESET_ALL_INGESTED_DATA' },
   ): Promise<IngestResetResult> {
     // The ValidationPipe enforces the confirm literal; the value isn't otherwise used.
     void body;
 
-    return this.ingestResetService.reset();
+    const { userId } = toServiceContext(context);
+
+    if (typeof userId !== 'string') {
+      throw new BadRequestException('An authenticated user is required to reset ingested data');
+    }
+
+    return this.ingestResetService.reset({ userId });
   }
 
   /**

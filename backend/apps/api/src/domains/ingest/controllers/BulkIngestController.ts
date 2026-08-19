@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { DataSource } from 'typeorm';
 
@@ -15,15 +15,18 @@ import {
   ItemService,
   type CreateCommunicationDto,
 } from '@ci/domains/memory';
+import { NoteService } from '@ci/domains/notes';
 import { PositionService } from '@ci/domains/position';
 
 import { ingestNdjsonStream, isNdjsonRequest, type NdjsonIngestResponse } from '../ndjson';
+import { IngestCoalesceService } from '../services/IngestCoalesceService';
 import {
   type BulkBrowserActivityRecord,
   type BulkCommunicationRecord,
   type BulkContentRecord,
   type BulkIngestResponse,
   type BulkInventoryRecord,
+  type BulkNoteRecord,
   type BulkPositionRecord,
   type IngestEventsRequest,
   bulkBrowserActivityRecordSchema,
@@ -36,6 +39,7 @@ import {
   ingestContentsSchema,
   ingestEventsSchema,
   ingestInventorySchema,
+  ingestNotesSchema,
   ingestPositionsSchema,
 } from '../types';
 
@@ -157,7 +161,10 @@ async function envelopeResponse(
  *     BodyParserMiddleware) — unchanged from the original contract.
  *
  * Every route — events and the five bulk kinds alike — runs the same
- * three-layer capture→materialize→link pipeline ({@link captureAndMaterialize}):
+ * three-layer capture→materialize→link pipeline ({@link captureAndMaterialize}),
+ * with ONE exception: `POST /v1/notes`, whose records carry no provenance
+ * triple and so dedupe on their client-minted primary key instead (see
+ * {@link ingestNotes}):
  * an append-only raw-log capture (`ci.capture_events`, idempotent on
  * (user_id, destination, triple)), ONE batched call into the kind's EXISTING
  * chunk-safe bulk service (CommunicationService.createMany,
@@ -189,7 +196,9 @@ export class BulkIngestController {
     private readonly browserActivityService: BrowserActivityService,
     private readonly positionService: PositionService,
     private readonly eventService: EventService,
+    private readonly noteService: NoteService,
     private readonly dataSource: DataSource,
+    private readonly ingestCoalesceService: IngestCoalesceService,
   ) {}
 
   // G1 unified capture ingest — the `/v1` route for timeline events, and the
@@ -412,6 +421,10 @@ export class BulkIngestController {
       );
     }
 
+    if (toMaterialize.length > 0) {
+      void this.ingestCoalesceService.schedule(userId).catch(() => undefined);
+    }
+
     return { ingested: toMaterialize.length, duplicate };
   }
 
@@ -510,6 +523,63 @@ export class BulkIngestController {
     };
 
     return envelopeResponse(() => this.flushBrowserActivity(serviceContext, records));
+  }
+
+  /**
+   * The durable capture outbox's replay target for notes.
+   *
+   * **The one route here that does not run {@link captureAndMaterialize}**, and
+   * deliberately: that pipeline's raw log is keyed on a provenance triple, and
+   * a note has none. Every note would take the triple-less lane and skip the
+   * log entirely, so the pipeline would contribute nothing but indirection. A
+   * note dedupes on its own primary key instead — a client-minted id, which is
+   * a stronger handle than a triple, not a weaker one. See
+   * `NoteService.captureMany` for the three guards that make the write safe.
+   *
+   * JSON envelope only, like `/v1/events` and unlike the five bulk kinds. Notes
+   * arrive from the outbox a few at a time; nothing streams them, and NDJSON's
+   * per-batch response has no way to carry the ownership conflict below.
+   *
+   * **409 on an ownership conflict.** A per-record `rejected` entry rides an
+   * HTTP 200, which the client flusher reads as success — it would report the
+   * flush as delivered and the sidecar would drop the row, losing a note the
+   * user wrote. A conflict is instead a hard status, which
+   * `isPermanentFlushFailure` classifies permanent, so the item is parked in
+   * `needs_attention` where the user can see it. Nothing is silently discarded.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('notes')
+  async ingestNotes(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(ingestNotesSchema)) body: { records: BulkNoteRecord[] },
+  ): Promise<BulkIngestResponse> {
+    const serviceContext = toServiceContext(context);
+
+    const outcome = await this.noteService.captureMany(
+      serviceContext,
+      body.records.map((record) => ({
+        id: record.id,
+        title: record.title,
+        content: record.content,
+        capturedAt: new Date(record.captured_at),
+      })),
+    );
+
+    if (outcome.conflicted.length > 0) {
+      throw new ConflictException(
+        `${outcome.conflicted.length} note id(s) belong to another user and were not written.`,
+      );
+    }
+
+    return {
+      // A capture that lands is `ingested` whether it created the row or
+      // advanced it; both mean the user's content is now on the appliance.
+      ingested: outcome.created.length + outcome.updated.length,
+      // Snapshots the appliance already had at or ahead of — the same "we have
+      // this already" the other kinds report from their dedup keys.
+      duplicate: outcome.stale.length,
+      rejected: [],
+    };
   }
 
   @UseGuards(JwtOrApiKeyAuthGuard)
@@ -623,7 +693,12 @@ export class BulkIngestController {
           serviceContext,
           recs.map((record) => ({
             ...record,
+            // The three item timestamps arrive as ISO strings and the DTO takes
+            // Dates. Units are NOT converted here — ItemService owns that, once.
             acquiredAt: record.acquiredAt !== undefined ? new Date(record.acquiredAt) : undefined,
+            manufacturedAt:
+              record.manufacturedAt != null ? new Date(record.manufacturedAt) : record.manufacturedAt,
+            expiresAt: record.expiresAt != null ? new Date(record.expiresAt) : record.expiresAt,
           })),
         ),
     });

@@ -227,10 +227,41 @@ export const STAGE_IDS = {
   PROMOTE_PLACE: 'promote.place',
 
   /**
+   * The same promotion over `ci.position`: a reverse-geocoded GPS fix that
+   * carries a venue NAME becomes a first-class place, and the fix is linked to
+   * it via `ci.position.location_entity_id`.
+   *
+   * A SECOND id rather than a second entity type, for the reason
+   * `enrich.event_person_link` is one: a `Stage` declares exactly one `source`,
+   * and this is a different table with a different primary key.
+   *
+   * It is also the writer `ci.position.location_entity_id` never had. The
+   * column has read paths — `promote.edge_position` selects on it, and the
+   * `position.visited` rule projects owner Person −VISITED→ Place from it — but
+   * measured on the legacy corpus after a full enrichment pass: 5,005
+   * `ci.geocode_cache` rows, 2,815 named fixes, and 0 fixes carrying a place.
+   * Reads the reverse-geocode cache by primary key, so it costs nothing
+   * metered.
+   */
+  PROMOTE_PLACE_POSITION: 'promote.place_position',
+
+  /**
    * Promote purchases into `ci.inventory` with real identity — the first writer
    * the rich object model has ever had.
    */
   PROMOTE_OBJECT: 'promote.object',
+
+  /**
+   * Promote Companion Scan room captures into `ci.object_observations` — the
+   * first writer the SIGHTING half of object identity has ever had.
+   *
+   * CI-Spatial has been pushing one `capture.scan` event per scan, carrying
+   * `payload.objects`, since the scan pipeline shipped; nothing read them, and
+   * the sightings table sat empty behind a downstream edge projection that was
+   * already built. Reads event metadata only, writes no `ci.inventory` row and
+   * sets no resolution column: a sighting is the weak claim.
+   */
+  PROMOTE_OBSERVATION: 'promote.observation',
 
   /**
    * Project a communication's resolved participant columns (`from_entity_id`,
@@ -306,6 +337,41 @@ export const STAGE_IDS = {
    * Place hierarchy: `ci.entities.parent_place_id` → Place −PART_OF→ Place.
    */
   PROMOTE_EDGE_PLACE: 'promote.edge_place',
+
+  /**
+   * The dense-embed conversion extended over the rest of the old search-index
+   * queue's entity types (`BACKFILLABLE_ENTITIES`). One id per source table — a
+   * `Stage` declares exactly one `source` — sharing one implementation
+   * (`DenseEmbedStageBase`) and the SAME model-derived version as
+   * `index.embed`, so one `CI_EMBED_MODEL` switch re-embeds every type.
+   *
+   * DECLARED LAST ON PURPOSE, together with the vector family below:
+   * declaration order is the tick's dispatch order (`orderStages` breaks graph
+   * ties by it) and a tick starts at most `MAX_SWEEPS_PER_TICK` sweeps.
+   * Enrichment — above all the weekly, windowed, metered legs, which miss a
+   * whole week if their tick slot is taken — must outrank hourly index stages
+   * whose post-import fast path is a direct `startSweep` anyway.
+   */
+  INDEX_EMBED_COMMUNICATION: 'index.embed_communication',
+  INDEX_EMBED_EVENT: 'index.embed_event',
+  INDEX_EMBED_ITEM: 'index.embed_item',
+  INDEX_EMBED_PERSON: 'index.embed_person',
+  INDEX_EMBED_FILE: 'index.embed_file',
+  INDEX_EMBED_BROWSER_ACTIVITY: 'index.embed_browser_activity',
+
+  /**
+   * The sibling tsvector family `index.embed`'s note promised: weighted
+   * keyword-search entries in `ci_search.vectors`, one stage per type so a
+   * re-weighting bump never re-bills GPU time and a model switch never
+   * re-writes unchanged tsvectors. Local Postgres work; rides `pipeline-index`.
+   */
+  INDEX_VECTOR: 'index.vector',
+  INDEX_VECTOR_COMMUNICATION: 'index.vector_communication',
+  INDEX_VECTOR_EVENT: 'index.vector_event',
+  INDEX_VECTOR_ITEM: 'index.vector_item',
+  INDEX_VECTOR_PERSON: 'index.vector_person',
+  INDEX_VECTOR_FILE: 'index.vector_file',
+  INDEX_VECTOR_BROWSER_ACTIVITY: 'index.vector_browser_activity',
 } as const;
 
 export type StageId = (typeof STAGE_IDS)[keyof typeof STAGE_IDS];
@@ -418,8 +484,97 @@ export const RETRY_BACKOFF_MAX_SECONDS = 6 * 60 * 60;
  * notices. It is not a tombstone — bumping the stage version re-selects
  * quarantined rows along with everything else, so a fixed enricher automatically
  * re-admits the corpus it previously choked on.
+ *
+ * This budget is spent by PERMANENT failures only. See
+ * {@link TRANSIENT_FAILURE_REASONS} for why that distinction had to exist.
  */
 export const MAX_ATTEMPTS_BEFORE_QUARANTINE = 5;
+
+/**
+ * Failure reasons that describe the WORLD, not the row.
+ *
+ * ── The defect this closes ─────────────────────────────────────────────────
+ *
+ * Quarantine is sized for a poison record: five attempts at 60 s doubling —
+ * 60 + 120 + 240 + 480 — so a row that can never succeed stops costing a worker
+ * slot about 15 MINUTES after its first failure. That budget is exactly right
+ * for a malformed coordinate and exactly wrong for a provider outage, because
+ * until this constant existed the ledger could not tell the two apart: it
+ * counted attempts, and an attempt against an unreachable provider counted the
+ * same as an attempt against a row that will never parse.
+ *
+ * The consequence was measured on a real appliance: a brief reverse-geocode
+ * provider outage left 12,237 `ci.position` rows — 19 % of that corpus —
+ * `quarantined` with `reason = 'provider_unavailable'`. Nothing reclaims a
+ * quarantined row, so those fixes could never get a name, never become Location
+ * entities, and never appear on the map. The provider came back in minutes; the
+ * damage was permanent and needed a code change to undo.
+ *
+ * ── The rule ───────────────────────────────────────────────────────────────
+ *
+ * A failure named here does NOT spend the quarantine budget. `claim()` still
+ * charges the attempt (it counts genuine starts); the ledger REFUNDS it when
+ * the outcome carries one of these reasons, and backs the row off on a separate,
+ * much longer schedule — {@link TRANSIENT_RETRY_BACKOFF_BASE_SECONDS} doubling
+ * against `transient_attempts`, a counter that has no ceiling because "the
+ * provider is still down" is not a verdict about the row.
+ *
+ * Membership is DECLARED here rather than inferred from a naming convention, so
+ * it is reviewable in a diff and greppable from both ends: the ledger reads it
+ * when writing a failure, and `PipelineStateService.releaseQuarantined()` reads
+ * it when releasing rows an older build already parked.
+ *
+ * Adding a reason here is a promise that a RETRY CAN SUCCEED WITHOUT THE ROW
+ * CHANGING. Anything else — a coordinate that will never parse, a codec nothing
+ * on the appliance can decode, an API key that is missing — is permanent, and
+ * omission is the safe default: an unlisted reason keeps today's behaviour.
+ *
+ * Deliberately NOT listed, and each for a stated reason:
+ *  - `provider_denied` / `invalid_request` / `zero_results` — already `skipped`,
+ *    never `failed`; `GeocodeService` negative-caches them, so a retry does not
+ *    even reach the provider.
+ *  - `provider_status_unrecognized` — a status the abstraction has never
+ *    produced. Calling it transient would be a guess, and a guess that retries
+ *    forever is worse than one that quarantines visibly.
+ *  - `stage_threw: …` — the slice-level catch-all, whose text is an arbitrary
+ *    error message. Pattern-matching a message for "ECONNREFUSED" is exactly the
+ *    guess this set exists to replace; the release route covers those instead.
+ */
+export const TRANSIENT_FAILURE_REASONS: ReadonlySet<string> = new Set([
+  /** `PositionReverseStage` / `GeocodeStage`: OVER_QUERY_LIMIT or a transport failure. */
+  'provider_unavailable',
+  /** `DenseEmbedStageBase`: the single host Ollama process was not answering. */
+  'ollama_unreachable',
+]);
+
+/**
+ * Is this failure reason one the world can fix on its own?
+ *
+ * A `null`/absent reason is NOT transient. `complete()` already refuses a
+ * `failed` result with no reason, so this only guards the paths that can supply
+ * one — and defaulting an unnamed failure to "retry forever" would resurrect the
+ * invisible self-renewing workload the ledger was built to delete.
+ */
+export function isTransientFailureReason(reason: string | null | undefined): boolean {
+  return reason != null && TRANSIENT_FAILURE_REASONS.has(reason);
+}
+
+/**
+ * First retry delay, in seconds, after a TRANSIENT failure. Doubles per
+ * consecutive transient failure, capped by {@link RETRY_BACKOFF_MAX_SECONDS}.
+ *
+ * 15 minutes rather than the permanent path's 60 s, for two reasons that point
+ * the same way. A provider that just refused everything will still be refusing
+ * everything a minute later, so a short gate buys nothing but load on something
+ * already unwell. And the whole corpus fails together — a transient failure is
+ * never one row's problem — so the retry is a THUNDERING HERD, not a single
+ * call.
+ *
+ * The schedule from a first failure is 15 m, 30 m, 1 h, 2 h, 4 h, then 6 h
+ * forever: roughly eight hours of outage absorbed in six attempts, and no
+ * amount of outage past that ever converts into a terminal state.
+ */
+export const TRANSIENT_RETRY_BACKOFF_BASE_SECONDS = 15 * 60;
 
 // ---------------------------------------------------------------------------
 // Dead letters

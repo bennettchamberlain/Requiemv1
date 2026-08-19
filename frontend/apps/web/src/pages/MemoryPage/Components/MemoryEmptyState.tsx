@@ -28,7 +28,7 @@ export function MemoryEmptyState({ filtered }: MemoryEmptyStateProps) {
       />
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
         <Button asChild>
-          <Link to="/connections">Connect a source</Link>
+          <Link to="/sources/connect">Connect a source</Link>
         </Button>
         <Button variant="outline" asChild>
           <Link to="/settings/data">Import data</Link>

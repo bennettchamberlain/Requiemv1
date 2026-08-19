@@ -5,7 +5,7 @@ import { Button, Card, Dialog, IconButton, Input, Label } from '@ci/shadcn';
 import { Eye, EyeOff, Save, Trash } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
-import type { Provider } from '@/pages/ConnectionsPage/ConnectionsPage.tsx';
+import type { Provider } from '@/components/connect/ConnectedAccountsSection';
 import { GET_PROVIDERS } from '@/queries';
 
 export interface ProviderKey {

@@ -233,7 +233,7 @@ export class McpController {
     return entry;
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES, { name: 'McpController.reapStaleSessions' })
   private reapStaleSessions() {
     const now = Date.now();
 

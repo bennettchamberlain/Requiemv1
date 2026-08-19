@@ -132,6 +132,14 @@ export const bulkContentRecordSchema = z.object({
   url: z.string().optional(),
   mimetype: z.string().optional(),
   external_id: z.string().optional(),
+  // What external_id references. Accepted rather than dropped: a client that
+  // knows (the importer stamps 'file' for an uploaded blob, 'external_uri' for
+  // a source-native URI — see push/inputs.ts toContentInput) must be able to
+  // say so over the wire. Zod strips unknown keys, so omitting this field here
+  // silently discarded the classification and left the row to depend on the
+  // shape fallback in ContentService.toDetailFields, which cannot recognise a
+  // bare platform id. Omitted by a client that does not know: still optional.
+  external_id_kind: z.enum(['file', 'external_uri']).optional(),
   source_url: z.string().optional(),
   source_data: z.record(z.unknown()).optional(),
   event_id: z.string().uuid().optional(),
@@ -146,6 +154,37 @@ export const ingestContentsSchema = bulkEnvelope(bulkContentRecordSchema);
 
 export type BulkContentRecord = z.infer<typeof bulkContentRecordSchema>;
 export type IngestContentsRequest = z.infer<typeof ingestContentsSchema>;
+
+// ---------------------------------------------------------------------------
+// POST /v1/notes → NoteService.captureMany
+// ---------------------------------------------------------------------------
+
+/**
+ * The one bulk kind whose `id` is REQUIRED rather than optional.
+ *
+ * Notes are the outbox's interactive-capture kind: the client mints the id
+ * before the note is queued, so the note has a stable identity from the instant
+ * it is written and nothing has to be reconciled when it drains. That id is
+ * also the idempotency key — notes carry no provenance triple, so the primary
+ * key is what makes an at-least-once replay free (NoteService.captureMany).
+ * Accepting a note without one would mean a replay inserting a second copy,
+ * which is precisely the failure this route exists to avoid.
+ *
+ * `captured_at` is required for the same reason: it is the last-write-wins
+ * discriminator against whatever is already stored, so a snapshot that sat in
+ * the queue while the note was edited elsewhere loses instead of clobbering.
+ */
+export const bulkNoteRecordSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().nullable().optional(),
+  content: z.string().nullable().optional(),
+  captured_at: z.string().datetime(),
+});
+
+export const ingestNotesSchema = bulkEnvelope(bulkNoteRecordSchema);
+
+export type BulkNoteRecord = z.infer<typeof bulkNoteRecordSchema>;
+export type IngestNotesRequest = z.infer<typeof ingestNotesSchema>;
 
 // ---------------------------------------------------------------------------
 // POST /v1/inventory → ItemService.createMany
@@ -169,7 +208,41 @@ export const bulkInventoryRecordSchema = z.object({
   acquiredAt: z.string().datetime().optional(),
   identifierCodes: z.record(z.unknown()).optional(),
   condition: z.enum(['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a']).optional(),
+  quantity: z.number().int().positive().optional(),
   metadata: z.record(z.unknown()).optional(),
+  // Physical properties. Measurements accept a canonical SI number OR a
+  // unit-bearing string ('12 in', '2.5 lb'), because a product feed rarely
+  // publishes millimetres — ItemService resolves them through the one
+  // normalizer before the write, and rejects the batch with a 400 naming the
+  // field if it cannot. Everything the schema does NOT check here (bounds,
+  // colour hygiene, composition sums) is checked there, so this stays a shape
+  // guard and does not become a second, drifting copy of those rules.
+  lengthMm: z.union([z.number(), z.string()]).nullable().optional(),
+  widthMm: z.union([z.number(), z.string()]).nullable().optional(),
+  heightMm: z.union([z.number(), z.string()]).nullable().optional(),
+  massG: z.union([z.number(), z.string()]).nullable().optional(),
+  volumeMl: z.union([z.number(), z.string()]).nullable().optional(),
+  /** '12 x 8 x 2 in' — fills only the axes not sent individually. */
+  dimensions: z.string().nullable().optional(),
+  unitSystem: z.enum(['metric', 'imperial']).nullable().optional(),
+  colors: z
+    .union([z.array(z.string()), z.string()])
+    .nullable()
+    .optional(),
+  colorHex: z.string().nullable().optional(),
+  materials: z
+    .union([z.array(z.string()), z.string()])
+    .nullable()
+    .optional(),
+  composition: z
+    .record(z.union([z.number(), z.string()]))
+    .nullable()
+    .optional(),
+  acquisitionMethod: z.string().nullable().optional(),
+  acquiredFrom: z.string().nullable().optional(),
+  manufacturedAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+  isDigital: z.boolean().optional(),
   // Provenance triple for idempotent re-ingest (inventory_source_triple_uniq).
   sourceType: z.string().optional(),
   sourceSystem: z.string().optional(),

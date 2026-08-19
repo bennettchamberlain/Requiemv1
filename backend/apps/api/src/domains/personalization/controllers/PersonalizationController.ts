@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { ImageDescriptionPreferenceService } from '@ci/domains/llm/image-description-preference.module';
 
 import { PersonalizationService } from '../services/PersonalizationService';
-import { PromotionCandidateService } from '../services/PromotionCandidateService';
 import type { TrustMode } from '../types';
 
 @UseGuards(JwtOrApiKeyAuthGuard)
@@ -12,7 +12,7 @@ import type { TrustMode } from '../types';
 export class PersonalizationController {
   constructor(
     private readonly personalizationService: PersonalizationService,
-    private readonly promotionCandidateService: PromotionCandidateService,
+    private readonly imageDescriptionPreference: ImageDescriptionPreferenceService,
   ) {}
 
   @Get('profile')
@@ -32,18 +32,24 @@ export class PersonalizationController {
     return profile;
   }
 
-  @Get('promotion-candidates')
-  async listPromotionCandidates(@Context() context: RequestContext) {
-    return this.promotionCandidateService.listPending(toServiceContext(context), 1);
+  /**
+   * Settings → Model "Describe images". Kept off GET /profile so the trust
+   * payload stays a trust payload; this flag is an inference preference.
+   */
+  @Get('image-description')
+  async getImageDescription(@Context() context: RequestContext) {
+    const enabled = await this.imageDescriptionPreference.isEnabled(context.userId!);
+
+    return { enabled };
   }
 
-  @Post('promotion-candidates/:id/accept')
-  async acceptPromotionCandidate(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.promotionCandidateService.accept(toServiceContext(context), id);
-  }
+  @Post('image-description')
+  async updateImageDescription(@Context() context: RequestContext, @Body() body: { enabled: boolean }) {
+    const enabled = await this.imageDescriptionPreference.setEnabled(
+      toServiceContext(context),
+      body.enabled === true,
+    );
 
-  @Post('promotion-candidates/:id/reject')
-  async rejectPromotionCandidate(@Context() context: RequestContext, @Param('id') id: string) {
-    return this.promotionCandidateService.reject(toServiceContext(context), id);
+    return { enabled };
   }
 }

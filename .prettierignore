@@ -2,14 +2,39 @@
 node_modules
 .pnp.*
 .claude/worktrees/
+# Sibling worktrees kept outside .claude/ (1.6GB, ~114 ts/tsx here today).
+# Only skipped locally today via a personal global gitignore, which CI does
+# not have — and Prettier never reads .gitignore anyway.
+.worktrees/
 .venv
 **/dist/**
 **/dev-dist/**
 **/build/**
 **/coverage/**
 **/__generated__/**
+
+# Capacitor-generated native output. `cap sync` copies the minified @ci/fe-web
+# bundle into the iOS/Android projects, and the native builds copy it again into
+# their own product dirs — ~95 minified chunks per platform, none of it ours.
+# the iOS/Android package gitignores already cover these, but Prettier scans the
+# working tree and does not read .gitignore, so the paths are repeated here.
+# (Keep in sync with .oxlintrc.json + eslint.config.mjs, which need them too.)
+frontend/apps/ios/ios/App/App/public/
+frontend/apps/ios/ios/App/Pods/
+frontend/apps/ios/ios/App/build/
+frontend/apps/ios/ios/App/DerivedData/
+frontend/apps/ios/ios/DerivedData/
+frontend/apps/ios/ios/capacitor-cordova-ios-plugins/
+frontend/apps/android/android/app/src/main/assets/public/
+frontend/apps/android/android/app/build/
+frontend/apps/android/android/build/
+frontend/apps/android/android/capacitor-cordova-android-plugins/
+
 frontend/apps/web/src/graphql/index.ts
 frontend/apps/web/src/graphql/gql.ts
 frontend/apps/web/src/graphql/graphql.ts
 frontend/apps/web/src/graphql/fragment-masking.ts
 frontend/apps/web/src/graphql/possibleTypes.ts
+
+# Importer test fixtures (preserve vendor raw export payloads)
+backend/apps/api/src/domains/import/datasources/__tests__/fixtures/**

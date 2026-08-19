@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
@@ -52,8 +52,9 @@ vi.mock('@/components/HorizonGrid', () => ({
       <p>{footer}</p>
     </div>
   ),
-  // SchedulePage mounts this above the week when weekOffset === 0; keep it inert.
-  TodayStoryTimeline: () => null,
+  // SchedulePage mounts this above the week chrome; keep it findable so the
+  // page test can assert document order against the week heading.
+  TodayStoryTimeline: () => <div>today-story</div>,
 }));
 
 vi.mock('@/components/TaskSlate', () => ({
@@ -298,5 +299,103 @@ describe('SchedulePage — week paging', () => {
     expect(screen.getByText('stub-drop')).toBeInTheDocument();
     expect(screen.queryByText(/Connect a calendar/)).not.toBeInTheDocument();
     expect(screen.getByText(/Nothing on the calendar this week/)).toBeInTheDocument();
+  });
+
+  it('sits the week chrome under the today story and above the week grid', () => {
+    renderWithProviders(<SchedulePage />);
+
+    const story = screen.getByText('today-story');
+    const heading = screen.getByRole('heading', { level: 2 });
+    const grid = screen.getByText('stub-drop');
+
+    expect(story.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  describe('phone layout', () => {
+    function setViewport(mobile: boolean) {
+      window.matchMedia = ((query: string) => ({
+        matches: query.includes('max-width') ? mobile : query.includes('landscape') ? !mobile : false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })) as unknown as typeof window.matchMedia;
+    }
+
+    afterEach(() => setViewport(false));
+
+    it('replaces the story strip with now and next, and keeps a tappable week', async () => {
+      setViewport(true);
+
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(startOfToday);
+      endOfToday.setHours(23, 59, 0, 0);
+
+      setSchedule({
+        events: [
+          event({
+            title: 'Afternoon review',
+            isAllDay: true,
+            startTime: startOfToday.toISOString(),
+            endTime: endOfToday.toISOString(),
+          }),
+        ],
+      });
+
+      renderWithProviders(<SchedulePage />);
+
+      await waitFor(() => expect(screen.queryByText('today-story')).not.toBeInTheDocument());
+      expect(screen.getByText('Afternoon review')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Show week' })).toBeInTheDocument();
+      expect(screen.getAllByRole('tab')).toHaveLength(7);
+      expect(screen.getByText('stub-drop')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show week' }));
+      expect(screen.getByRole('button', { name: 'Hide week' })).toBeInTheDocument();
+      expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    });
+  });
+
+  /**
+   * Embedded in Today, this page contributes content and no chrome.
+   *
+   * The positioning assertion is the one that would fail silently in the
+   * browser rather than in CI: LoadingPage is `absolute inset-0 z-10`, so an
+   * unpositioned wrapper sends it to the host's PageContent, and the schedule's
+   * spinner covers the brief stacked below it.
+   */
+  describe('embedded', () => {
+    it('leaves the document title to the host', () => {
+      document.title = 'set by the host';
+
+      renderWithProviders(<SchedulePage embedded />);
+      expect(document.title).toBe('set by the host');
+
+      cleanup();
+
+      renderWithProviders(<SchedulePage />);
+      expect(document.title).toContain('Schedule');
+    });
+
+    it('anchors its own overlays instead of the host page', () => {
+      setSchedule({ fetching: true, events: [], rhythm: [] });
+
+      const { container } = renderWithProviders(<SchedulePage embedded />);
+      const surface = container.querySelector('.min-h-60');
+
+      expect(surface).not.toBeNull();
+      expect(surface).toHaveClass('relative');
+    });
+
+    it('still renders the week itself', () => {
+      renderWithProviders(<SchedulePage embedded />);
+
+      expect(screen.getByText('stub-drop')).toBeInTheDocument();
+    });
   });
 });

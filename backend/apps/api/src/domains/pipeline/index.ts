@@ -53,8 +53,10 @@ import { PipelineShardEntity } from './entities/PipelineShardEntity';
 import { PipelineStateEntity } from './entities/PipelineStateEntity';
 import { RecordRejectionEntity } from './entities/RecordRejectionEntity';
 import { DeadLetterReaperListener } from './listeners/DeadLetterReaperListener';
+import { GraphEdgeSweepRequestListener } from './listeners/GraphEdgeSweepRequestListener';
 import { PipelineSliceListener } from './listeners/PipelineSliceListener';
 import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
+import { SearchIndexSweepRequestListener } from './listeners/SearchIndexSweepRequestListener';
 import { StageArrivalListener } from './listeners/StageArrivalListener';
 import { BackpressureService } from './services/BackpressureService';
 import { EnrichmentWindowService } from './services/EnrichmentWindowService';
@@ -73,6 +75,23 @@ import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLin
 import { PositionReverseStage } from './stages/enrich/PositionReverseStage';
 import { EmbedStage } from './stages/index/EmbedStage';
 import {
+  BrowserActivityEmbedStage,
+  CommunicationEmbedStage,
+  EventEmbedStage,
+  FileEmbedStage,
+  ItemEmbedStage,
+  PersonEmbedStage,
+} from './stages/index/entityEmbedStages';
+import {
+  BrowserActivityVectorStage,
+  CommunicationVectorStage,
+  ContentVectorStage,
+  EventVectorStage,
+  FileVectorStage,
+  ItemVectorStage,
+  PersonVectorStage,
+} from './stages/index/vectorStages';
+import {
   CommunicationEdgePromoteStage,
   ContentEdgePromoteStage,
   DeviceEdgePromoteStage,
@@ -85,7 +104,9 @@ import {
   ReceiptEdgePromoteStage,
 } from './stages/promote/EdgePromoteStage';
 import { ObjectPromoteStage } from './stages/promote/ObjectPromoteStage';
+import { ObservationPromoteStage } from './stages/promote/ObservationPromoteStage';
 import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
+import { PositionPlacePromoteStage } from './stages/promote/PositionPlacePromoteStage';
 
 /**
  * Stage implementations, bound to the tokens declared in `STAGE_REGISTRY`.
@@ -115,6 +136,22 @@ import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
 const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_MEDIA_DIMENSIONS], useClass: MediaDimensionsStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED], useClass: EmbedStage },
+  // The rest of the dense-embed family — one id per source table, one shared
+  // implementation (DenseEmbedStageBase), all at the model-derived version.
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_COMMUNICATION], useClass: CommunicationEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_EVENT], useClass: EventEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_ITEM], useClass: ItemEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_PERSON], useClass: PersonEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_FILE], useClass: FileEmbedStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED_BROWSER_ACTIVITY], useClass: BrowserActivityEmbedStage },
+  // The keyword-search (tsvector) family — same sources, local Postgres work.
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR], useClass: ContentVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_COMMUNICATION], useClass: CommunicationVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_EVENT], useClass: EventVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_ITEM], useClass: ItemVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_PERSON], useClass: PersonVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_FILE], useClass: FileVectorStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_BROWSER_ACTIVITY], useClass: BrowserActivityVectorStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_POSITION_REVERSE], useClass: PositionReverseStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_GEOCODE], useClass: GeocodeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_ESTIMATE_LOCATION], useClass: EstimateLocationStage },
@@ -127,7 +164,12 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_DUPLICATE_DETECT], useClass: DuplicateDetectStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE], useClass: PlacePromoteStage },
+  // The same promotion over `ci.position` — a second id because a Stage has
+  // exactly one `source` and this is a different table. It is the only writer
+  // `ci.position.location_entity_id` has ever had.
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE_POSITION], useClass: PositionPlacePromoteStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBJECT], useClass: ObjectPromoteStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBSERVATION], useClass: ObservationPromoteStage },
   // Two ids, one implementation family — see `EdgePromoteStage.ts`. Both
   // delegate the projection to DeterministicEdgeBackfillService, exported by
   // MaintenanceModule (imported below).
@@ -213,6 +255,12 @@ const stageProviders: Provider[] = [
     // the ledger is the source of truth — a shed row simply stays stale and the
     // next sweep re-derives it, so there is no deferral queue to leak.
     StageArrivalListener,
+    SearchIndexSweepRequestListener,
+    // Its graph-side twin. An import used to kick only the index legs, so
+    // pushed rows were searchable in seconds and unreachable in the graph
+    // until a scheduled sweep — `ci.relationships` is the only table a
+    // traversal reads, and nothing was telling it a corpus had landed.
+    GraphEdgeSweepRequestListener,
     PipelineTickCron,
     // The cron owns the schedule and the cluster-safe advisory lock; the control
     // service owns what a tick DOES. Binding by token rather than importing the
@@ -245,7 +293,11 @@ export {
 };
 export type { IdentifierClaim } from './entities/IdentifierClaimEntity';
 export { PipelineStateService } from './services/PipelineStateService';
-export type { RetryBackoff } from './services/PipelineStateService';
+export type {
+  ReleaseQuarantinedInput,
+  ReleaseQuarantinedResult,
+  RetryBackoff,
+} from './services/PipelineStateService';
 export { PipelineDispatchService } from './services/PipelineDispatchService';
 export type { StartSweepInput, SweepHopResult } from './services/PipelineDispatchService';
 export { StageRegistry, STAGE_REGISTRY, assertStageRegistryComplete } from './services/StageRegistry';
@@ -259,6 +311,8 @@ export {
   PIPELINE_QUEUE_NAMES,
   STAGE_ID_LIST,
   STAGE_IDS,
+  TRANSIENT_FAILURE_REASONS,
+  isTransientFailureReason,
 } from './constants';
 export type { PipelineQueue, StageId } from './constants';
 export { STAGE_VERSIONS, stageVersion } from './versions';

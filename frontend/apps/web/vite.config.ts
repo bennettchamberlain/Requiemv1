@@ -74,8 +74,10 @@ export default defineConfig({
           type: 'module',
         },
         workbox: {
-          // Pre-caches all matching assets.
+          // Pre-caches all matching assets. Default 2 MiB rejects the main
+          // bundle once it crossed that line (~2.11 MB at last production build).
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
 
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
@@ -186,6 +188,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['@ci/shadcn', 'react', 'react-dom', 'react-router-dom'],
+    exclude: ['@powersync/capacitor', '@capacitor-community/sqlite'],
   },
   worker: {
     // @powersync/web ships its SQLite worker as an ES module; the default

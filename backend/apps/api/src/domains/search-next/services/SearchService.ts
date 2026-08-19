@@ -184,7 +184,12 @@ export class SearchService {
 
     return {
       ...options,
-      excludeTypes: ['message'],
+      // GPS fixes are indexed for recall (`includeTypes: ['position']`, agent
+      // tools). Default entity search still omits them: SearchResultType has no
+      // PositionType, and a 1Hz trace would swamp the union even after downsample
+      // if a client ever asked for every type. Messages stay excluded for the
+      // same GraphQL-union reason.
+      excludeTypes: ['message', 'position'],
     };
   }
 

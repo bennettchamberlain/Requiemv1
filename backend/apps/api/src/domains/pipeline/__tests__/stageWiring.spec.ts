@@ -157,12 +157,30 @@ function discoverStages(): DiscoveredStage[] {
       // `Class.length` is the constructor's declared arity, so the stub count
       // follows the stage rather than being a magic number this file maintains.
       const args = Array.from({ length: StageClass.length }, () => stubDependency());
+      const instance = new StageClass(...(args as never[]));
+
+      if ((instance as { id?: unknown }).id === undefined) {
+        // The shared family bases (`DenseEmbedStageBase`, `VectorStageBase`)
+        // carry the `run` the duck-type keys on but no identity — `abstract` is
+        // erased at runtime, and unlike the edge-promote base they are exported
+        // because their subclasses span files. An id-less class that is NOT
+        // named as a base is a concrete stage that forgot its id: fail here,
+        // with the file named, instead of at the first slice.
+        if (!exportName.endsWith('StageBase')) {
+          throw new Error(
+            `${file.slice(STAGES_DIR.length + 1)}: export ${exportName} has a run() but no id — ` +
+              `a stage missing its id, or an abstract base not named *StageBase`,
+          );
+        }
+
+        continue;
+      }
 
       discovered.push({
         file: file.slice(STAGES_DIR.length + 1),
         className: exportName,
         StageClass,
-        instance: new StageClass(...(args as never[])),
+        instance,
       });
     }
   }

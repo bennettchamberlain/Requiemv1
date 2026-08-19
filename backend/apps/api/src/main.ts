@@ -7,9 +7,27 @@ import cookieParser from 'cookie-parser';
 
 import { App } from '@ci/application';
 import { LoggerService } from '@ci/common/logging';
+import { processRole } from '@ci/common/roles';
 import config from '@ci/configuration';
 
-(async function () {
+/**
+ * The headless half of the appliance: the full application context — same
+ * modules, same DI graph, same config — with no HTTP server. It exists so the
+ * queues and crons marked `role: 'worker'` (import stages, whose parsers run
+ * long synchronous stretches) execute in a process whose event loop no
+ * interactive request shares. The pg-boss loops keep the process alive;
+ * shutdown hooks drain them on SIGTERM exactly as the web process does.
+ */
+async function bootstrapWorker(): Promise<void> {
+  const app = await NestFactory.createApplicationContext(App, { bufferLogs: true });
+
+  const logger = await app.resolve(LoggerService);
+
+  app.useLogger(logger);
+  app.enableShutdownHooks();
+}
+
+async function bootstrapWeb(): Promise<void> {
   const app = await NestFactory.create(App, {
     bufferLogs: true,
     bodyParser: false,
@@ -47,4 +65,28 @@ import config from '@ci/configuration';
   app.enableShutdownHooks();
 
   await app.listen(config.port, config.host);
+
+  // Node ≥18 destroys any request whose TOTAL lifetime exceeds
+  // `server.requestTimeout` — default 300 s — with a 408. That default is sized
+  // for request/response chatter, not for `POST /api/import/uploads` carrying a
+  // 50 GB Takeout part, which cannot finish inside five minutes on any real
+  // link and died with exactly that 408 (surfaced through multer, which was
+  // mid-write when the socket was destroyed). Zero disables the lifetime cap.
+  //
+  // `headersTimeout` is deliberately left at its default: it bounds only the
+  // header phase, which is milliseconds even for an upload, and it is the half
+  // that actually defends against slow-header (slowloris) connections. The
+  // socket inactivity timeout (`server.timeout`, default 0) is untouched too —
+  // a STALLED upload still dies; only a long HEALTHY one is now allowed.
+  const server = app.getHttpServer() as import('node:http').Server;
+
+  server.requestTimeout = 0;
+}
+
+(async function () {
+  if (processRole() === 'worker') {
+    await bootstrapWorker();
+  } else {
+    await bootstrapWeb();
+  }
 })();

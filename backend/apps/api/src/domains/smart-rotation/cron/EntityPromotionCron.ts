@@ -19,7 +19,7 @@ export class EntityPromotionCron {
     this.logger.setContext(EntityPromotionCron.name);
   }
 
-  @Cron('0 20 */2 * * *')
+  @Cron('0 20 */2 * * *', { name: 'EntityPromotionCron.run' })
   async run(): Promise<void> {
     if (!(await this.featureService.isFeatureEnabled('scheduled.entity.promotion'))) {
       return;

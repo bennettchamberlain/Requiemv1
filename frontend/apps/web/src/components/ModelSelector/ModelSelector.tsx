@@ -10,6 +10,11 @@ interface Props {
   withToggles?: boolean;
   visionOnly?: boolean;
   /**
+   * `composer` is the compact Cursor-style row inside ChatInput.
+   * Default is the standalone toolbar / settings control.
+   */
+  variant?: 'toolbar' | 'composer';
+  /**
    * Width/appearance of the select trigger. Defaults to the compact toolbar
    * width; Settings passes a full-width class so it lines up with the other
    * controls in the section.
@@ -20,7 +25,8 @@ interface Props {
 export function ModelSelector({
   withToggles = false,
   visionOnly = false,
-  triggerClassName = 'w-[150px]',
+  variant = 'toolbar',
+  triggerClassName,
 }: Props) {
   const { toast } = useToast();
   const { t } = useTranslation();
@@ -81,9 +87,14 @@ export function ModelSelector({
     return null;
   }
 
+  const isComposer = variant === 'composer';
+  const resolvedTriggerClassName =
+    triggerClassName ??
+    (isComposer ? 'h-8 w-[148px] border-0 bg-transparent shadow-none px-2 text-xs' : 'w-[150px]');
+
   const selector = (
     <Select value={currentModel ?? undefined} onValueChange={handleSelectModel}>
-      <Select.Trigger className={cn(triggerClassName)}>
+      <Select.Trigger className={cn(resolvedTriggerClassName)}>
         <Select.Value placeholder="Active model" />
       </Select.Trigger>
       <Select.Content>
@@ -109,8 +120,8 @@ export function ModelSelector({
   }
 
   return (
-    <div className="flex flex-row">
-      <div className="flex flex-row items-center mr-2 gap-1">
+    <div className={cn('flex flex-row items-center', isComposer ? 'gap-1 min-w-0' : '')}>
+      <div className={cn('flex flex-row items-center gap-1', !isComposer && 'mr-2')}>
         <Tooltip delayDuration={600}>
           <Tooltip.Content>{toolsTooltip}</Tooltip.Content>
           {/* A disabled Toggle gets `pointer-events: none`, which would swallow the
@@ -125,7 +136,10 @@ export function ModelSelector({
                 variant="outline"
                 aria-label={t('MODEL_TOGGLE_TOOLS')}
                 disabled={!toolsSupported}
-                className={!toolsSupported ? 'opacity-50 cursor-not-allowed' : ''}
+                className={cn(
+                  isComposer && 'h-8 w-8 p-0',
+                  !toolsSupported ? 'opacity-50 cursor-not-allowed' : '',
+                )}
               >
                 <Wrench />
               </Toggle>
@@ -143,7 +157,10 @@ export function ModelSelector({
                 variant="outline"
                 aria-label={t('MODEL_TOGGLE_THINKING')}
                 disabled={!thinkingSupported}
-                className={!thinkingSupported ? 'opacity-50 cursor-not-allowed' : ''}
+                className={cn(
+                  isComposer && 'h-8 w-8 p-0',
+                  !thinkingSupported ? 'opacity-50 cursor-not-allowed' : '',
+                )}
               >
                 <Brain />
               </Toggle>

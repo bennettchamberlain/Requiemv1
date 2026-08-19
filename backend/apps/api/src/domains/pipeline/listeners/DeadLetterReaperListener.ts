@@ -73,7 +73,7 @@ export class DeadLetterReaperListener {
    * Scheduled reap. Off the top of the minute on purpose — three other crons
    * already fire at second 0.
    */
-  @Cron(DEAD_LETTER_REAP_CRON)
+  @Cron(DEAD_LETTER_REAP_CRON, { name: 'DeadLetterReaperListener.reapOnSchedule' })
   async reapOnSchedule(): Promise<void> {
     // Nothing awaits a @Cron method, so a rejection here is an unhandled promise
     // rejection — which this process treats as fatal. On a timer that means a

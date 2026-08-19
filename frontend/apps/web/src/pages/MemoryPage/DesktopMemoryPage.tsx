@@ -4,15 +4,17 @@ import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
 import { Button, Sheet, Tooltip } from '@ci/shadcn';
-import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
+import { ChartNetwork, Images, List, Map as MapIcon, Plus, type LucideIcon } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { AddEventModal } from '@/components/modals/AddItemModal';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
-import { AVAILABLE_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
+import { excludedEntityTypesFor } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
+import { useModalControls } from '@/hooks';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
@@ -24,6 +26,7 @@ import {
   type DatePreset,
 } from './Components/ExplorerToolbar/datePresets';
 import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
+import { applyViewFilterDefaults, readMemoryView } from './Components/ExplorerToolbar/viewFilterSupport';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -70,7 +73,9 @@ const VIEW_TABS: Array<{
 export default function DesktopMemoryPage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
+  const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
+
+  const [{ isOpen: isAddEventOpen }, { open: openAddEvent, close: closeAddEvent }] = useModalControls();
 
   // Document chunks open in their own dialog; every other entity uses the
   // details sheet (EntityDetails has no FileChunkType branch).
@@ -84,16 +89,20 @@ export default function DesktopMemoryPage() {
   // restores in the same view; list is the desktop default since it always
   // shows results (the map renders empty for data without coordinates).
   const activeTab = searchParams.get('view') ?? 'list';
+  // Switching view never changes the filter set behind the user's back — the
+  // one exception is the Map tab, which applies "Has a location" as a real,
+  // chipped, removable filter (see applyViewFilterDefaults).
   const setActiveTab = (next: string) =>
     setSearchParams((params) => {
       const nextParams = new URLSearchParams(params);
       nextParams.set('view', next);
 
-      return nextParams;
+      return applyViewFilterDefaults(nextParams, readMemoryView(next));
     });
   // Advanced filters render inside the header search panel and stay visible.
-  // MemoryPage can derive the map's hasLocation scope from `?view=`.
-  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events.
+  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events. The view it
+  // once addressed (`EventsView`, a TimelineView pinned to Event cards) was deleted: nothing had
+  // rendered it since it was written, and this redirect is why. Old links keep landing on List.
   useEffect(() => {
     const view = searchParams.get('view');
     if (!view || view === 'events') {
@@ -150,11 +159,13 @@ export default function DesktopMemoryPage() {
         const reverseMapped = entityTypes.map(
           (type) => ENTITY_TYPE_REVERSE_MAP[type as keyof typeof ENTITY_TYPE_REVERSE_MAP],
         );
-        const inverseEntityTypes = AVAILABLE_ENTITY_TYPES.filter(
-          (entity) => reverseMapped.indexOf(entity) === -1,
-        );
-        const mappedEntityTypes = inverseEntityTypes.join(',');
-        currentParams.set('excludedEntityTypes', mappedEntityTypes);
+        // Same exclude-list the What pickers write, so a restored search hides
+        // answers too rather than mixing them in with the saved types.
+        const inverseEntityTypes = excludedEntityTypesFor(reverseMapped);
+
+        if (inverseEntityTypes.length > 0) {
+          currentParams.set('excludedEntityTypes', inverseEntityTypes.join(','));
+        }
       }
 
       //Updating included entities is handled in SearchBox.tsx
@@ -297,7 +308,15 @@ export default function DesktopMemoryPage() {
       </Portal.Slot>
 
       <PageContent className="gap-2 p-0">
-        <MemoryHubShell fillHeight>
+        <MemoryHubShell
+          actions={
+            <Button size="sm" onClick={openAddEvent}>
+              <Plus className="h-4 w-4" />
+              New event
+            </Button>
+          }
+          fillHeight
+        >
           <div className="flex min-h-0 flex-1 flex-col gap-2 pb-2">
             <div className="px-2">
               <ExplorerToolbar open />
@@ -325,6 +344,11 @@ export default function DesktopMemoryPage() {
       )}
 
       <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
+
+      {/* The explorer reads a `search` connection whose contents the server
+          composes per query — there is no cache entry a new event can be
+          appended to, so refetch the browse instead. */}
+      <AddEventModal open={isAddEventOpen} onClose={closeAddEvent} onCreated={refetch} />
     </>
   );
 }

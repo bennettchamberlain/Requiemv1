@@ -230,7 +230,7 @@ export class MessageService {
         }),
         canceled: false,
       },
-      data,
+      data as never,
     );
 
     if (result.affected === 0) {

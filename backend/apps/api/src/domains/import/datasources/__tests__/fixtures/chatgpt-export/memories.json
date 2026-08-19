@@ -1,0 +1,17 @@
+{
+  "memories": [
+    {
+      "id": "mem-001",
+      "content": "User's name is Alex and they live in Portland, Oregon.",
+      "created_at": 1740787200,
+      "updated_at": 1741392000
+    },
+    {
+      "id": "mem-002",
+      "content": "Prefers Python for scripting and TypeScript for web projects.",
+      "category": "preferences",
+      "created_at": 1740873600
+    },
+    "Enjoys hiking in the Columbia River Gorge."
+  ]
+}

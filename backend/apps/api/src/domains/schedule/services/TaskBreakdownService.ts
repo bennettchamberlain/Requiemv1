@@ -6,16 +6,13 @@ import { LoggerService } from '@ci/common/logging';
 import { RecallService } from '@ci/domains/agent';
 import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
+import { estimateActivityDurationMinutes, PlacementService } from '@ci/domains/personalization';
 
 import { type CreateCandidateDto, USER_AUTHORED_GENERATOR_PREFIX } from '../types';
 
 import { CandidateService } from './CandidateService';
 
 /** How far ahead a brain-dumped task claims it could happen. */
-const DEFAULT_WINDOW_DAYS = 7;
-
-/** Fallback when the model gives no duration. Same starting guess the adapters use. */
-const DEFAULT_DURATION_MINUTES = 30;
 
 /** Bound the model's output. A dump that yields 40 cards has not been broken down, it has been transcribed. */
 const MAX_TASKS = 12;
@@ -27,8 +24,9 @@ const MAX_INPUT_CHARS = 4000;
  * Ceiling on one brain dump's worth of generation, shared by BOTH samples.
  *
  * The same order as the 10s HbpeService allows itself, with headroom for a cold
- * model: gemma3:1b splits a dump in a second or two once resident, but the first
- * call after a restart pays the load. Past that the honest reading is that the
+ * model: a small local model splits a dump in a second or two once resident, but
+ * the first call after a restart pays the load — and the default is now an
+ * e4b-class model, which is a longer load than the 1b this was measured against. Past that the honest reading is that the
  * model is not coming back, and the user is better told "nothing came back" than
  * left watching a spinner on a note they just typed.
  */
@@ -84,8 +82,8 @@ const responseSchema = z.object({
  * grammar.
  *
  * `format: 'json'` alone only guarantees the output PARSES — the model stays
- * free to invent key names, and `PROMPT_MODEL` (gemma3:1b) reliably does:
- * measured against the live model, "I want to make lunch" came back as
+ * free to invent key names, and a small `PROMPT_MODEL` reliably does. Measured
+ * against gemma3:1b, then the default, "I want to make lunch" came back as
  * `{"tasks:**[": "  "}` and `{"tasks": {"2:": "Make lunch"}}` in 3 of 8 runs.
  * Both are valid JSON and neither survives validation, so the user saw
  * "nothing came back" about half the time. Constraining generation to this
@@ -164,6 +162,7 @@ export class TaskBreakdownService {
     private readonly ollamaService: OllamaService,
     private readonly userContextService: UserContextService,
     private readonly recallService: RecallService,
+    private readonly placement: PlacementService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(TaskBreakdownService.name);
@@ -219,7 +218,8 @@ export class TaskBreakdownService {
       return [];
     }
 
-    const windowEnd = new Date(at.getTime() + DEFAULT_WINDOW_DAYS * 86_400_000);
+    const timezone = context.userId ? await this.placement.timezoneFor(context.userId) : 'UTC';
+    const { windowStart, windowEnd } = this.placement.flexWindow(timezone, at);
     // One dump is one batch: the index alone would collide across dumps, and the
     // raw text alone would collide if the user submits the same list twice on
     // purpose. Together they make re-submitting the same dump idempotent within
@@ -233,10 +233,10 @@ export class TaskBreakdownService {
       // one, and for a hand-written task the honest answer is "you said so".
       rationale: task.detail ? `You wrote: ${task.detail}` : 'You wrote this down.',
       rationale_sources: [{ kind: 'answer', id: batch, note: 'typed on the schedule' }],
-      window_start: at,
+      window_start: windowStart,
       window_end: windowEnd,
       time_flex: 'week',
-      duration_minutes: task.duration_minutes ?? DEFAULT_DURATION_MINUTES,
+      duration_minutes: task.duration_minutes ?? estimateActivityDurationMinutes(task.title, task.detail),
       l0_class: task.l0_class,
       dedupe_key: `braindump:${batch}:${index}`,
       generator: `${USER_AUTHORED_GENERATOR_PREFIX}llm`,

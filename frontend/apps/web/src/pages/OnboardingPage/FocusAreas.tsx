@@ -1,4 +1,5 @@
-import { Checkbox, Form, cn, useFormContext } from '@ci/shadcn';
+import { Form, cn, useFormContext } from '@ci/shadcn';
+import { Check } from '@ci/shadcn/icons';
 
 import { StepHeader } from './StepHeader';
 
@@ -52,32 +53,45 @@ export function FocusAreas() {
               const checked = field.value?.includes(item.id) ?? false;
               const checkboxId = `focus-area-${item.id}`;
 
+              // One type="button" owns the whole tile. A label wrapping Radix's
+              // checkbox <button> inside the onboarding <form> was activating a
+              // native submit path and navigating off the step to a blank screen.
+              const toggle = () => {
+                field.onChange(
+                  checked
+                    ? (field.value || []).filter((entry: string) => entry !== item.id)
+                    : [...(field.value || []), item.id],
+                );
+              };
+
               return (
-                <label
-                  htmlFor={checkboxId}
+                <button
+                  type="button"
+                  id={checkboxId}
+                  role="checkbox"
+                  aria-checked={checked}
+                  aria-label={item.label}
                   className={cn(
-                    'grid grid-cols-[max-content_1fr] items-start gap-x-4 rounded-xl border border-border/70 bg-muted/40 px-4 py-3.5 transition-colors cursor-pointer hover:bg-muted/55',
+                    'grid w-full grid-cols-[max-content_1fr] items-start gap-x-4 rounded-xl border border-border/70 bg-muted/40 px-4 py-3.5 text-left transition-colors cursor-pointer hover:bg-muted/55',
                     checked && 'border-primary/40 bg-muted/60',
                   )}
+                  onClick={toggle}
                 >
-                  <Checkbox
-                    id={checkboxId}
-                    className="mt-1 size-5 border-border bg-background"
-                    checked={checked}
-                    onCheckedChange={(value) => {
-                      field.onChange(
-                        value
-                          ? [...(field.value || []), item.id]
-                          : field.value?.filter((entry: string) => entry !== item.id),
-                      );
-                    }}
-                  />
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'mt-1 flex size-5 shrink-0 items-center justify-center rounded-[4px] border border-border bg-background shadow-xs',
+                      checked && 'border-primary bg-primary text-primary-foreground',
+                    )}
+                  >
+                    {checked ? <Check className="size-3.5" /> : null}
+                  </span>
 
                   <div className="space-y-1">
                     <span className="text-lg sm:text-xl font-medium leading-snug">{item.label}</span>
                     <p className="text-base text-muted-foreground leading-snug">{item.description}</p>
                   </div>
-                </label>
+                </button>
               );
             }}
           />

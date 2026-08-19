@@ -23,6 +23,12 @@
       "runtimeExecutable": "yarn",
       "runtimeArgs": ["workspace", "@ci/fe-web", "storybook"],
       "port": 6006
+    },
+    {
+      "name": "jobs-preview",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": ["workspace", "@ci/fe-web", "vite", "--config", "vite.preview.config.ts"],
+      "port": 5199
     }
   ]
 }

@@ -1,17 +1,18 @@
 name: Publish
 
+# GATED TO MANUAL. Every trigger except workflow_dispatch was removed so this
+# workflow no longer runs on push, pull_request or a schedule — CI silence here
+# means "nobody dispatched it", NOT "everything passed". Run it deliberately:
+#   gh workflow run <file> --ref <branch>
+# Restore a trigger by re-adding it to the `on:` block below.
+#
+# RELEASE IMPACT: this previously published on any pushed tag. With the tag
+# trigger removed, pushing a version tag NO LONGER publishes — dispatch this
+# workflow on the TAG ref instead (VERSION is parsed from the ref, so
+# dispatching on a branch would publish garbage image tags).
 on:
-  push:
-    tags:
-      - '*'
-  # Retained from the gating period: the release-recovery path. v2026.8.8's
-  # tag-triggered publish failed, and the fixed build was re-run by dispatching
-  # this workflow on the existing tag — without it the only retry is to delete
-  # and re-push the tag. Dispatch it on a TAG ref; VERSION is parsed from the
-  # ref, so dispatching on a branch would publish garbage image tags.
   workflow_dispatch:
 
-# Only one publish run at a time per tag.
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false

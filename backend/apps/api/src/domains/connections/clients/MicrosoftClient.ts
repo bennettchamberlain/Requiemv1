@@ -4,6 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import type { Connection } from '../entities/ConnectionEntity';
 
+import { firstAccountLabel } from './accountLabel';
 import { BaseOAuth2Client } from './BaseOAuth2Client';
 
 /** Azure secret IDs are UUIDs; the secret *value* is a long opaque string. */
@@ -108,6 +109,12 @@ export class MicrosoftClient extends BaseOAuth2Client {
         })
         .catch((err) => reject(err)),
     );
+  }
+
+  async getAccountLabel(connection: Connection): Promise<string | null> {
+    const profile = await this.fetchProfile(connection);
+
+    return firstAccountLabel(profile.mail, profile.userPrincipalName);
   }
 
   /**

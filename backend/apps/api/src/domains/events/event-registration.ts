@@ -45,7 +45,12 @@ export class EventListenerRegistry {
     if (queueOptions) {
       const current = this.queueOptions.get(queue) ?? {};
 
-      for (const [option, value] of Object.entries(queueOptions) as [keyof QueueOptions, number][]) {
+      // Values are numbers OR strings now (`role`); the conflict check is
+      // value-equality either way.
+      for (const [option, value] of Object.entries(queueOptions) as [
+        keyof QueueOptions,
+        QueueOptions[keyof QueueOptions],
+      ][]) {
         const existingValue = current[option];
 
         if (existingValue !== undefined && existingValue !== value) {
@@ -55,7 +60,7 @@ export class EventListenerRegistry {
           );
         }
 
-        current[option] = value;
+        (current as Record<string, unknown>)[option] = value;
       }
 
       this.queueOptions.set(queue, current);

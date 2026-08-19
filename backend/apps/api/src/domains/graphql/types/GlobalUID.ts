@@ -1,6 +1,10 @@
 type ResourceType =
   | 'action'
   | 'answer'
+  | 'ask'
+  | 'ask-grant'
+  | 'ask-audit'
+  | 'ask-answer'
   | 'browser-activity'
   | 'communication'
   | 'concept'
@@ -24,6 +28,7 @@ type ResourceType =
   | 'saved-search'
   | 'tag'
   | 'task'
+  | 'taskPendingChange'
   | 'thread'
   | 'user';
 

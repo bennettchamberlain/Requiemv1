@@ -6,6 +6,14 @@ Working document. Every claim about the current system below was read out of thi
 (`claude/ci-jobs-system-rebuild-0b9904`) at the time of writing and carries a `path:line` reference.
 Where a prior survey or design asserted something the code does not support, the claim was dropped.
 
+> **2026-08-18 update:** CI-Import-Tools has since been retired (renamed
+> `ZARCHIVED-CI-Import-Tools`); its import functionality was consolidated into
+> CI-Server's own native import domain (`backend/apps/api/src/domains/import/`).
+> References to CI-Import-Tools below describe the system as it existed when
+> this plan was written; §10 ("Changes needed in CI-Import-Tools") in particular
+> is now moot as a set of external-repo action items — any equivalent work
+> belongs in the native import domain instead.
+
 ---
 
 ## 1. Summary
@@ -1456,7 +1464,7 @@ see the same 0.02 % on every subsequent run, despite its docstring claiming it i
 Values outside the 17 `PREFERENCE_CONCEPT_TYPES` / 7 `FAMILY_RELATIONSHIP_TYPES` allowlists are
 dropped.
 
-**Dependencies.** Local Ollama, `config.llm.chatModel` (default `gemma3:1b`).
+**Dependencies.** Local Ollama, `config.llm.chatModel` (default `gemma4:e4b`).
 
 **Cost per record.** One chat call per 25 records. This is the most expensive stage per corpus and
 sits at priority −15.
@@ -1714,8 +1722,7 @@ Every endpoint is user-scoped (`WHERE user_id = context.userId`), fixing the cro
 `JobMonitorService` asserts `context.userId` and then queries pg-boss globally, returning every
 user's `job.data` verbatim.
 
-**Flip `"jobs.page": false` → `true` in `backend/apps/api/config/default.json:155` in Phase 5.**
-Without it a multi-hour import runs with no UI whatsoever unless someone sets `ENABLE_JOBS_PAGE`.
+**Landed.** `"jobs.page"` is `true` in `backend/apps/api/config/default.json`. Set `ENABLE_JOBS_PAGE=false` to hide it.
 
 ### 9.7 Worker process model — recommendation
 
@@ -1995,7 +2002,7 @@ trends to 0 across two runs at successive versions.
 ### Phase 5 — Operator UI + worker process split
 
 **Scope.** `PipelinePage` with SSE, pause/resume/cancel, coverage tiles, queue strip, dead-letter
-drawer. Flip `"jobs.page": true`. `ClusteredCron`. **Then** `worker.ts`, the Procfile line, the
+drawer. `"jobs.page"` is already `true`. `ClusteredCron`. **Then** `worker.ts`, the Procfile line, the
 compose service with `mem_limit`/`cpus`, and `CI_PROCESS_ROLE`.
 
 **Hard ordering.** The durable lock (Phase 2) and `ClusteredCron` must both be in place before the

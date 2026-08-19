@@ -172,6 +172,67 @@ export interface DeadLetterReplayResult {
   replayedAt: Date;
 }
 
+/** One letter that was claimed but could not be re-emitted. Its claim is released. */
+export interface DeadLetterReplayFailure {
+  id: string;
+  eventName: string;
+
+  /** Why it did not go back on the bus, verbatim from the thrown error. */
+  reason: string;
+}
+
+/** What a bulk replay did. */
+export interface DeadLetterBulkReplayResult {
+  /**
+   * How many distinct ids the caller named, or `null` when the batch was
+   * selected by filter (where "requested" is not a number the caller knows).
+   */
+  requested: number | null;
+
+  /** Letters this call took ownership of — i.e. whose `replayed_at` it stamped. */
+  claimed: number;
+
+  /** The ceiling applied to the claim, after clamping. */
+  limit: number;
+
+  replayed: DeadLetterReplayResult[];
+  failed: DeadLetterReplayFailure[];
+
+  /**
+   * Named ids that claimed nothing: already replayed, unknown, or another
+   * user's. Empty for the filter form. NOT an error — "already replayed" is the
+   * double-submit guard doing its job.
+   *
+   * Only ids the claim actually SCANNED appear here. An id the batch ceiling cut
+   * off is unsettled, not skipped, and goes in {@link notAttempted} — the two
+   * call for opposite responses from the caller ("nothing to do" vs "ask again").
+   */
+  skipped: string[];
+
+  /**
+   * Named ids beyond the batch ceiling, which this call never looked at. Empty
+   * unless the caller passed an explicit `limit` smaller than its own id list;
+   * without one the ceiling is derived from the list, so every named id is
+   * scanned.
+   */
+  notAttempted: string[];
+}
+
+/** Which letters {@link PipelineRunService.replayDeadLetters} should claim. */
+export interface BulkReplayDeadLettersInput {
+  /** Explicit letters. Deduplicated before the claim. */
+  ids?: string[];
+
+  /** Only letters recorded under this event name — the "replay this one failure class" form. */
+  eventName?: string;
+
+  /** Only letters that failed at or after this instant. */
+  failedAfter?: Date;
+
+  /** Ceiling on letters claimed by this call. Clamped to {@link MAX_DEAD_LETTER_PAGE}. */
+  limit?: number;
+}
+
 /** Options for {@link PipelineRunService.listRuns}. */
 export interface ListRunsOptions {
   limit?: number;
@@ -909,7 +970,166 @@ export class PipelineRunService {
       await this.explainUnclaimableLetter(ctx, letterId);
     }
 
-    const letter = claimed[0];
+    return this.emitClaimedLetter(ctx, claimed[0]);
+  }
+
+  /**
+   * Replay MANY dead letters in one call — the "replay-all" `replayed_at` was
+   * always meant to make safe.
+   *
+   * ── Why this exists ────────────────────────────────────────────────────────
+   *
+   * The single-id route is the only statement in the repo that has ever set
+   * `replayed_at`, and nothing automatic invokes it. On a live appliance that
+   * produced 94 letters and 0 replays: the table was effectively write-only,
+   * because clearing a backlog one uuid at a time through curl is not a thing an
+   * operator does. This is the bulk form the runbook has been promising.
+   *
+   * ── Selector, and why there is no "replay everything" ──────────────────────
+   *
+   * The caller must NAME what to replay: explicit `ids`, and/or an `eventName` /
+   * `failedAfter` filter. An empty selector is rejected by the controller rather
+   * than read as "all", because a large share of any real backlog is a CONFIG
+   * error — 36 of those 94 were one bad model id — and re-emitting those just
+   * re-fails them, spends the queue, and writes 36 fresh letters. Replay is a
+   * decision about a specific class of failure, so the API makes you express the
+   * class.
+   *
+   * ── Claim semantics, preserved exactly ─────────────────────────────────────
+   *
+   * One statement claims the whole batch, and it claims the SAME way the
+   * single-id path does: `SET replayed_at = now() ... WHERE replayed_at IS NULL`.
+   * A double-submit therefore claims nothing the second time and re-emits
+   * nothing — the guard is the database's, not the client's. `FOR UPDATE SKIP
+   * LOCKED` on the candidate scan adds the concurrent case: two operators
+   * pressing the button together partition the batch instead of blocking or
+   * double-emitting.
+   *
+   * ── Partial failure is the normal case ─────────────────────────────────────
+   *
+   * Emitting happens per letter AFTER the batch claim, so one letter that cannot
+   * be re-emitted must not strand the rest. Each failure releases its OWN claim
+   * (same release path as the single-id route, so a failed letter goes back on
+   * the replay queue) and is reported in {@link DeadLetterBulkReplayResult.failed}
+   * with the reason. The call succeeds; the result says what actually happened.
+   */
+  async replayDeadLetters(
+    ctx: UserServiceContext,
+    input: BulkReplayDeadLettersInput,
+  ): Promise<DeadLetterBulkReplayResult> {
+    // Duplicates in `ids` would otherwise inflate `requested` and produce a
+    // "skipped" entry for an id that WAS replayed, under its own other copy.
+    const ids = input.ids == null ? null : [...new Set(input.ids)];
+    // Naming ids IS the selection — the page size is a scan bound for the filter
+    // form, not a second, quieter cap on an explicit list. Defaulting to
+    // DEFAULT_DEAD_LETTER_PAGE (50) while the controller accepts up to
+    // MAX_DEAD_LETTER_PAGE (200) meant a 60-id request replayed 50 and reported
+    // the other 10 as `skipped`, which the card renders as "10 already replayed"
+    // — the one reading under which a user would never retry them.
+    const limit =
+      ids == null
+        ? pageSize(input.limit, DEFAULT_DEAD_LETTER_PAGE, MAX_DEAD_LETTER_PAGE)
+        : pageSize(input.limit ?? ids.length, ids.length, MAX_DEAD_LETTER_PAGE);
+
+    const claimed = await this.dataSource.query<DeadLetterRow[]>(
+      // CTE-wrapped for the same reason as the single-id claim: the outer command
+      // must be a SELECT or TypeORM resolves `[rows, rowCount]` instead of rows.
+      //
+      // The candidate scan is a separate CTE so `LIMIT` applies to the SELECTION
+      // rather than to the UPDATE (an `UPDATE ... LIMIT` is not Postgres), and so
+      // `FOR UPDATE SKIP LOCKED` can hold the rows across the claim. The UPDATE
+      // re-checks `replayed_at IS NULL` anyway — under READ COMMITTED the lock is
+      // taken on a re-read row, and belt-and-braces here is cheap next to
+      // re-emitting somebody's payload twice.
+      `WITH candidates AS (
+         SELECT id
+           FROM ci.pipeline_dead_letters
+          WHERE (user_id = $1::uuid OR user_id IS NULL)
+            AND replayed_at IS NULL
+            AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
+            AND ($3::text IS NULL OR event_name = $3::text)
+            AND ($4::timestamptz IS NULL OR failed_at >= $4::timestamptz)
+          ORDER BY failed_at, id
+          LIMIT $5
+            FOR UPDATE SKIP LOCKED
+       ), claimed AS (
+         UPDATE ci.pipeline_dead_letters d
+            SET replayed_at = now()
+           FROM candidates c
+          WHERE d.id = c.id
+            AND d.replayed_at IS NULL
+      RETURNING d.id, d.queue, d.event_name, d.payload, d.replayed_at)
+       SELECT id, queue, event_name, payload, replayed_at FROM claimed`,
+      [ctx.userId, ids, input.eventName ?? null, input.failedAfter ?? null, limit],
+    );
+
+    const replayed: DeadLetterReplayResult[] = [];
+    const failed: DeadLetterReplayFailure[] = [];
+
+    for (const letter of claimed) {
+      try {
+        replayed.push(await this.emitClaimedLetter(ctx, letter));
+      } catch (err: unknown) {
+        // `emitClaimedLetter` has already released this letter's claim, so it is
+        // back on the replay queue and a later call can pick it up once the
+        // cause is fixed.
+        failed.push({
+          id: letter.id,
+          eventName: letter.event_name,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Only meaningful for the by-id form: with a filter selector, "not claimed"
+    // is just "did not match", which is not a per-id fact.
+    //
+    // `skipped` means "we looked and it was not claimable" — already replayed,
+    // not yours, or gone. It must NOT absorb ids the scan never reached, because
+    // the two call for opposite responses: one is settled, the other is "ask
+    // again". With the limit now derived from ids.length this is unreachable
+    // unless a caller passes an explicit smaller limit, and in that case the
+    // overflow is reported separately rather than being quietly relabelled.
+    const claimedIds = new Set(claimed.map((letter) => letter.id));
+    const scanned = ids == null ? null : ids.slice(0, limit);
+    const skipped = scanned == null ? [] : scanned.filter((id) => !claimedIds.has(id));
+    const notAttempted = ids == null ? [] : ids.slice(limit);
+
+    this.logger.warn('Bulk-replayed pipeline dead letters', {
+      userId: ctx.userId,
+      requested: ids?.length ?? null,
+      eventName: input.eventName ?? null,
+      failedAfter: input.failedAfter ?? null,
+      claimed: claimed.length,
+      replayed: replayed.length,
+      failed: failed.length,
+      skipped: skipped.length,
+      notAttempted: notAttempted.length,
+    });
+
+    return {
+      requested: ids?.length ?? null,
+      claimed: claimed.length,
+      limit,
+      replayed,
+      failed,
+      skipped,
+      notAttempted,
+    };
+  }
+
+  /**
+   * Re-emit one ALREADY-CLAIMED letter, releasing its claim on every failure.
+   *
+   * Shared by the single-id and bulk routes so the two cannot drift: routing,
+   * the empty-`send()` trap, and the release-on-failure contract are stated once.
+   * The caller owns the claim statement; this owns everything after it.
+   */
+  private async emitClaimedLetter(
+    ctx: UserServiceContext,
+    letter: DeadLetterRow,
+  ): Promise<DeadLetterReplayResult> {
+    const letterId = letter.id;
     const eventName = letter.event_name;
 
     if (eventName.trim().length === 0 || eventName === UNATTRIBUTABLE_EVENT_NAME) {

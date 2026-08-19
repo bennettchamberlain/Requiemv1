@@ -1,17 +1,25 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NativeToolProvider } from '../../providers/NativeToolProvider';
 import { ToolRegistry } from '../../registry/ToolRegistry';
+import { AnomaliesRecentTool } from '../../tools/AnomaliesRecentTool';
+import { BriefListTool } from '../../tools/BriefListTool';
 import { CalendarFindEventsTool } from '../../tools/CalendarFindEventsTool';
 import { DatabaseSearchTool } from '../../tools/DatabaseSearchTool';
+import { ForecastCalibrationTool } from '../../tools/ForecastCalibrationTool';
+import { ForecastReadTool } from '../../tools/ForecastReadTool';
 import { ForgetKnowledgeTool } from '../../tools/ForgetKnowledgeTool';
 import { GetEntertainmentPreferencesTool } from '../../tools/GetEntertainmentPreferencesTool';
 import { GetFamilyMembersTool } from '../../tools/GetFamilyMembersTool';
 import { GetStreamingAvailabilityTool } from '../../tools/GetStreamingAvailabilityTool';
 import { GetUserPreferencesTool } from '../../tools/GetUserPreferencesTool';
+import { InsightsExplainTool } from '../../tools/InsightsExplainTool';
 import { MediaFindPhotosTool } from '../../tools/MediaFindPhotosTool';
 import { PeopleFindTool } from '../../tools/PeopleFindTool';
 import { PlacesFindTool } from '../../tools/PlacesFindTool';
+import { PlacesNextTool } from '../../tools/PlacesNextTool';
 import { ReadKnowledgeTool } from '../../tools/ReadKnowledgeTool';
+import { SuggestionsFeedbackTool } from '../../tools/SuggestionsFeedbackTool';
+import { SuggestionsListTool } from '../../tools/SuggestionsListTool';
 import { WriteKnowledgeTool } from '../../tools/WriteKnowledgeTool';
 import { IntentCatalogService } from '../IntentCatalogService';
 
@@ -34,12 +42,25 @@ const TOOL_CLASSES = [
   GetStreamingAvailabilityTool,
   PeopleFindTool,
   PlacesFindTool,
+  PlacesNextTool,
   CalendarFindEventsTool,
   MediaFindPhotosTool,
+  ForecastCalibrationTool,
+  ForecastReadTool,
+  BriefListTool,
+  InsightsExplainTool,
+  AnomaliesRecentTool,
+  SuggestionsListTool,
+  SuggestionsFeedbackTool,
 ] as unknown as Array<new (...args: any[]) => any>;
 
 const EXPECTED_INTENTS = [
+  'anomalies.recent',
+  'brief.list',
   'calendar.findEvents',
+  'forecast.calibration',
+  'forecast.read',
+  'insights.explain',
   'knowledge.preferences',
   'knowledge.search',
   'media.entertainmentPreferences',
@@ -51,6 +72,9 @@ const EXPECTED_INTENTS = [
   'people.find',
   'people.relationships',
   'places.find',
+  'places.next',
+  'suggestions.feedback',
+  'suggestions.list',
 ];
 
 /**
@@ -59,6 +83,9 @@ const EXPECTED_INTENTS = [
  * quietly widens (or narrows) the offline surface.
  */
 const EXPECTED_NOT_LOCAL_CAPABLE = [
+  // HBPE is a server-only inference / scoring pipeline.
+  'forecast.calibration',
+  'forecast.read',
   // Live TMDB availability: exists nowhere on the device.
   'media.streamingAvailability',
   // A delete is authoritative on the appliance; a partial mirror cannot show what it would remove.
@@ -82,7 +109,19 @@ describe('IntentCatalogService broadcast (real tools)', () => {
     for (const intent of manifest.intents) {
       expect(intent.tool).toBe(intent.name.replace(/\./g, '_'));
       expect(intent.parameters.type).toBe('object');
-      expect(['memory', 'knowledge', 'people', 'places', 'calendar', 'media']).toContain(intent.domain);
+      expect([
+        'memory',
+        'knowledge',
+        'people',
+        'places',
+        'calendar',
+        'media',
+        'forecast',
+        'brief',
+        'insights',
+        'anomalies',
+        'suggestions',
+      ]).toContain(intent.domain);
       expect(['read', 'write', 'delete']).toContain(intent.privacy.access);
       expect(intent.title).toBeTruthy();
       expect(intent.description).toBeTruthy();

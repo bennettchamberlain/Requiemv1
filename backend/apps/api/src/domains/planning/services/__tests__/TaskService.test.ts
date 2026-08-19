@@ -7,6 +7,7 @@ import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 
 import { TaskEntity } from '../../entities/TaskEntity';
+import { TaskPendingChangeEntity } from '../../entities/TaskPendingChangeEntity';
 import { TaskCreatedEvent, TaskRemovedEvent, TaskUpdatedEvent } from '../../events';
 import { TaskService } from '../TaskService';
 
@@ -94,10 +95,23 @@ describe('TaskService', () => {
     };
     signalling = { send: jest.fn(async () => undefined) };
 
+    const pendingRepo = {
+      create: jest.fn((data: unknown) => data),
+      save: jest.fn(async (entity: unknown) => entity),
+      findOne: jest.fn(async () => null),
+      createQueryBuilder: jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn(async () => []),
+      })),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         TaskService,
         { provide: getRepositoryToken(TaskEntity), useValue: repository },
+        { provide: getRepositoryToken(TaskPendingChangeEntity), useValue: pendingRepo },
         { provide: EventService, useValue: signalling },
         { provide: LoggerService, useValue: { setContext: jest.fn(), warn: jest.fn(), log: jest.fn() } },
       ],

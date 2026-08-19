@@ -62,14 +62,14 @@
  *    (It was nine shots and five passes until the narrative re-cut. The
  *    signed-out pass shot `/` and `/login`, both wrapped in RedirectKnownUser
  *    (App.tsx:117-121, :147-152) which sends an authenticated, onboarded user
- *    straight to /feed; it is needed again the moment either scene returns.
+ *    straight to /plan; it is needed again the moment either scene returns.
  *    feed-overview, memory-stats, insight-detail-view and connect-providers
  *    left the storyboard with it and are now un-shootable — see the ⚠️ block
  *    above AUTHED_SHOTS in video/stage.sh.)
  * 2+3. FRESH USER, once per onboarding shot. The seeded user cannot film
  *    onboarding at all: scripts/seed-database/seed-users.ts:41 calls
  *    `userService.onboard(user.id)`, and OnboardingPage.tsx:231-233 returns
- *    `<Navigate to="/feed" replace />` for an onboarded user — the wizard is
+ *    `<Navigate to="/plan" replace />` for an onboarded user — the wizard is
  *    unreachable, exactly as tests/e2e/onboarding.spec.ts:3-9 says. So this
  *    pass signs up a throwaway account per run (see VIDEO_FRESH_USER below).
  *
@@ -171,10 +171,8 @@
  *    scene needs BOTH the object-store service AND a step that uploads sample
  *    images through the files API after the app is up.
  * 8. FEATURE FLAGS decide which routes even exist, and which headings render.
- *    backend/apps/api/config/default.json ships chat.page=false,
- *    files.page=false, jobs.page=false, stats.page=false — with the stock
- *    .env.default those routes render NotFound, so nothing here films them.
- *    insights.page / new.insights.page / tags.page / hbpe are on.
+ *    backend/apps/api/config/default.json now ships chat.page, files.page,
+ *    jobs.page, and stats.page true. insights.page / tags.page / hbpe are on.
  *    `actions` now ships TRUE (config/default.json:162, flipped in 1295f2fd1).
  *    FeedPage.tsx:414-416 gates the whole actions block on
  *    `(actionsEnabled || question)` and renders its heading as

@@ -1,13 +1,65 @@
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-// Optional / not yet enabled. The seeded John Smith user is already onboarded,
-// so exercising onboarding needs a fresh, un-onboarded account. Intended flow:
-//   1. Sign up a unique throwaway user via /signup (requires signup codes off —
-//      ENABLE_REQUIRE_SIGNUP_CODES defaults to false).
-//   2. Land on /onboarding, complete the wizard.
-//   3. Assert redirect to /feed.
-// Marked fixme so it documents the coverage gap without flaking CI. Remove the
-// fixme and implement once a per-run signup helper is in place.
-test.fixme('completes onboarding for a new user', async ({ page }) => {
+// Runs in the `auth` project (logged-out: storageState is cleared) — a fresh
+// account has to actually be created to reach onboarding, which needs a
+// logged-out context the same way auth.spec.ts's login test does.
+//
+// The seeded John Smith user is already onboarded, so exercising onboarding
+// needs a fresh, un-onboarded account. This drives the real flow:
+//   1. Sign up a unique throwaway user via /signup (ENABLE_REQUIRE_SIGNUP_CODES
+//      is false by default, so no invite code is needed).
+//   2. Land on /onboarding and skip through the wizard (every step but the
+//      last has a Skip button — OnboardingPage.tsx / constants.ts).
+//   3. Finish on the last step and assert the redirect to the onboarded home
+//      (appHomePath: /plan when planning.page is on, else /today).
+//
+// A unique email per run (timestamp + random suffix) is the "per-run signup
+// helper" the old stub said did not exist yet — email/password are simple
+// enough not to warrant a separate fixture module.
+
+test('completes onboarding for a new user', async ({ page }) => {
+  const unique = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const email = `e2e-onboarding-${unique}@example.com`;
+  const password = 'E2ePassw0rd!';
+  const name = `E2E Onboarding ${unique}`;
+
   await page.goto('/signup');
+
+  // Exact match: PasswordInput's "Show password" toggle button carries an
+  // aria-label containing the substring "password", which a non-exact
+  // getByLabel('Password') also matches (Playwright's default is
+  // case-insensitive substring), making the locator ambiguous.
+  await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Sign up' }).click();
+
+  // A brand-new, un-onboarded account lands on /onboarding.
+  await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+
+  // Walk the wizard: every step but the last carries a "Skip" button. Bound
+  // the loop well above the current step count so a future step added to the
+  // wizard does not strand the test, but still terminate if something is
+  // stuck (e.g. Skip stops advancing).
+  const skipButton = page.getByRole('button', { name: 'Skip' });
+  const finishButton = page.getByRole('button', { name: 'Run my first sync and finish' });
+
+  for (let i = 0; i < 20; i++) {
+    if (await finishButton.isVisible().catch(() => false)) {
+      break;
+    }
+
+    if (!(await skipButton.isVisible().catch(() => false))) {
+      break;
+    }
+
+    await skipButton.click();
+  }
+
+  await expect(finishButton).toBeVisible({ timeout: 10_000 });
+  await finishButton.click();
+
+  // onboard() flips user.onboarded, and OnboardingPage redirects away once it
+  // does — to /plan (planning.page on) or /today (off).
+  await expect(page).toHaveURL(/\/(plan|today)/, { timeout: 20_000 });
 });

@@ -216,7 +216,8 @@ production.
 - **A public web URL for account deletion.** Google requires one *in addition* to the
   in-app path — reachable without installing the app, and it must explain what is
   deleted and what is retained. This document is the source for that page's copy.
-  Tracked in `frontend/apps/mobile/DELIVERY.md` §1a as an `[acct]` item.
+  Tracked as an `[acct]` item in §1a of both `frontend/apps/ios/DELIVERY.md` and
+  `frontend/apps/android/DELIVERY.md`.
 - **The hosted privacy policy** at `ci.computer/privacy-policy` lives in
   CI-Public-Website. It has to match the "what is true afterwards" section above
   before submission.

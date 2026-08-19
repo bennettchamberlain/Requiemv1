@@ -1,11 +1,11 @@
 import { type ReactNode, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
-import { GlobalUID, LoadingPage, Portal, usePageTitle, EmptyState } from '@ci/common';
-import { Breadcrumb } from '@ci/shadcn';
-import { useParams, Link } from 'react-router-dom';
+import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
+import { useParams } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard } from '@/components/EntityFields';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
@@ -13,12 +13,36 @@ import { ItemIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
+import { ItemProperties } from './ItemProperties';
+
 export const GET_ITEM = gql(`
   query GetItem($id: ID!) {
     item(id: $id) {
       id
       name
       description
+      category
+      brand
+      model
+      currentValue
+      purchasePrice
+      condition
+      quantity
+      acquiredAt
+      acquisitionMethod
+      acquiredFrom
+      manufacturedAt
+      expiresAt
+      lengthMm
+      widthMm
+      heightMm
+      massG
+      volumeMl
+      unitSystem
+      colors
+      colorHex
+      materials
+      composition
       tags {
         id
         label
@@ -27,13 +51,20 @@ export const GET_ITEM = gql(`
   }
 `);
 
-const UPDATE_ITEM_DESCRIPTION = gql(`
-  mutation UpdateItemDescription($input: UpdateItemInput!) {
+// Same write the memory drawer makes (UpdateItemDetail), so the page can edit
+// the name, category, brand, model and value instead of the description alone.
+const UPDATE_ITEM_FIELDS = gql(`
+  mutation UpdateItemPageFields($input: UpdateItemInput!) {
     updateItem(input: $input) {
       success
       item {
         id
+        name
         description
+        category
+        brand
+        model
+        currentValue
       }
     }
   }
@@ -48,7 +79,7 @@ export function ItemPage() {
     },
   });
 
-  const [updateItemDescription] = useMutation(UPDATE_ITEM_DESCRIPTION);
+  const [updateItemFields] = useMutation(UPDATE_ITEM_FIELDS);
 
   const item = data?.item;
 
@@ -74,7 +105,52 @@ export function ItemPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
+          <div className="flex flex-col gap-4 md:col-span-2">
+            {/* The drawer's field set, so "Open full page" does not silently drop
+                the name, category, brand, model and value editors. */}
+            <EntityFieldsCard
+              title="Item"
+              resetKey={item.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[
+                { key: 'name', label: 'Name', value: item.name ?? '' },
+                { key: 'category', label: 'Category', value: item.category ?? '' },
+                { key: 'brand', label: 'Brand', value: item.brand ?? '' },
+                { key: 'model', label: 'Model', value: item.model ?? '' },
+                {
+                  key: 'currentValue',
+                  label: 'Estimated value ($)',
+                  value: item.currentValue != null ? String(item.currentValue) : '',
+                  inputType: 'number',
+                },
+              ]}
+              onSave={async (values) => {
+                // Clearing the field should null out the value, not persist $0. Guard
+                // against unparseable input by treating it as cleared too.
+                const trimmedValue = values.currentValue?.trim() ?? '';
+                const parsedValue = trimmedValue === '' ? null : Number(trimmedValue);
+                const currentValue = parsedValue == null || Number.isNaN(parsedValue) ? null : parsedValue;
+
+                const result = await updateItemFields({
+                  variables: {
+                    input: {
+                      id: item.id,
+                      name: values.name || '',
+                      category: values.category,
+                      brand: values.brand,
+                      model: values.model,
+                      currentValue,
+                    },
+                  },
+                });
+
+                if (!result.data?.updateItem.success) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
+
             <EntityGraph entityId={id!} />
           </div>
           <EntityTagsDescriptionCard
@@ -92,7 +168,7 @@ export function ItemPage() {
               // The `?? ''` only fires when the stored name is genuinely null — the query selects
               // `name`, so it is not a projection gap — and null and '' both render as 'Unnamed'.
               // Omitting the field instead is not an option: it is non-null on the input.
-              const result = await updateItemDescription({
+              const result = await updateItemFields({
                 variables: { input: { id: item.id, name: item.name ?? '', description: value } },
               });
 
@@ -100,7 +176,9 @@ export function ItemPage() {
                 throw new Error('Update was rejected');
               }
             }}
-          />
+          >
+            <ItemProperties item={item} />
+          </EntityTagsDescriptionCard>
         </div>
 
         <EntityRelationshipCards entityId={id!} />
@@ -109,36 +187,5 @@ export function ItemPage() {
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page>Item</Breadcrumb.Page>
-            </Breadcrumb.Item>
-
-            {item && (
-              <>
-                <Breadcrumb.Separator className="hidden md:block" />
-                <Breadcrumb.Item>
-                  <Breadcrumb.Page>{item.name}</Breadcrumb.Page>
-                </Breadcrumb.Item>
-              </>
-            )}
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

@@ -341,7 +341,7 @@ export const SOURCE_TIME_SPECS: Readonly<Record<string, SourceTimeSpec>> = {
  * hash HAPPENS to embed an ISO instant
  * (`uber|2026-01-25T09:02:52.000Z|40 Berkeley St…`). Parsing a timestamp out of
  * an opaque idempotency key would work today and would silently re-date the
- * corpus the day CI-Import-Tools changes the key format — a failure with no
+ * corpus the day the importer changes the key format — a failure with no
  * error, no dead letter and no coverage number that looks wrong, i.e. exactly
  * the class of defect this subsystem exists to delete. The correct source is
  * `ci.source_records.payload`, which is Phase 6.

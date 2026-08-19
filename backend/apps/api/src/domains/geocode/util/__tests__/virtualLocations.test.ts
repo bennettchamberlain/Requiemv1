@@ -1,4 +1,4 @@
-import { isVirtualLocation } from '../virtualLocations';
+import { isUriLocation, isVirtualLocation } from '../virtualLocations';
 
 describe('isVirtualLocation', () => {
   it('returns false for null/empty/blank input', () => {
@@ -59,5 +59,39 @@ describe('isVirtualLocation', () => {
     expect(isVirtualLocation("Dave's")).toBe(true);
     expect(isVirtualLocation("Dave's, 42 Elm Street")).toBe(false);
     expect(isVirtualLocation("Dave's Cafe")).toBe(false);
+  });
+});
+
+describe('isUriLocation', () => {
+  it('catches meeting-join links regardless of which app hosts them', () => {
+    // The generic scheme grammar (RFC 3986 `scheme "://"`) is deliberate — see
+    // the doc comment — so it does not need a per-app hostname list.
+    expect(isUriLocation('https://khronosgroup.zoom.us/w/99353948195?tk=abc')).toBe(true);
+    expect(isUriLocation('https://us02web.zoom.us/j/8842952968?pwd=xyz')).toBe(true);
+    expect(isUriLocation('https://meet.google.com/abc-defg-hij')).toBe(true);
+    expect(isUriLocation('https://teams.microsoft.com/l/meetup-join/abc')).toBe(true);
+    expect(isUriLocation('http://example.com')).toBe(true);
+  });
+
+  it('catches a custom-scheme URI, e.g. an AltspaceVR event link', () => {
+    expect(isUriLocation('altspace://account.altvr.com/api/events/1629227784846967373')).toBe(true);
+  });
+
+  it('tolerates surrounding whitespace', () => {
+    expect(isUriLocation('  https://zoom.us/j/123  \n')).toBe(true);
+  });
+
+  it('returns false for a real place name, even one that contains a colon or slash', () => {
+    expect(isUriLocation('1600 Amphitheatre Pkwy, Mountain View, CA')).toBe(false);
+    expect(isUriLocation('Golden Gate Park')).toBe(false);
+    expect(isUriLocation('Room 4/B')).toBe(false);
+    expect(isUriLocation('9:00 AM Standup')).toBe(false);
+    expect(isUriLocation('')).toBe(false);
+  });
+
+  it('does not flag a place name that merely mentions a URL in passing', () => {
+    // The value must be NOTHING BUT the URI to be disqualified — mirrors
+    // isCoordinateText's "nothing else" narrowness.
+    expect(isUriLocation('Cafe, see https://cafe.example for menu')).toBe(false);
   });
 });

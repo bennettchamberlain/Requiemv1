@@ -74,7 +74,8 @@
       "enabled": true,
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
-      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet"
+      "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet",
+      "pushRelayUrl": ""
     },
     "hubForwardAuth": {
       "enabled": false,
@@ -142,6 +143,15 @@
     "fetchBatchSize": 10,
     "perQueueConcurrency": 6
   },
+  "import": {
+    "scratchDir": "/var/tmp/ci-import",
+    "roots": [],
+    "uploadsDir": "/var/lib/ci-import/uploads",
+    "inboxDir": "/var/lib/ci-import/inbox",
+    "maxArchiveEntries": 2000000,
+    "maxArchiveBytes": 107374182400,
+    "databaseDataDir": ""
+  },
   "accountDeletion": {
     "graceDays": 30,
     "purge": {
@@ -165,6 +175,9 @@
       "usersPerTurn": 1
     }
   },
+  "reflection": {
+    "minAnswerConfidence": 0.4
+  },
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
@@ -173,14 +186,14 @@
     "enable.system.prompt": true,
     "enable.inventory.page": true,
     "advanced.theme.tab": false,
-    "new.insights.page": true,
     "require.signup.codes": true,
     "files.page": true,
     "insights.page": true,
     "chat.page": true,
     "jobs.page": true,
-    "planning.enabled": false,
-    "planning.page": false,
+    "import.page": true,
+    "planning.enabled": true,
+    "planning.page": true,
     "planning.emptyState": false,
     "stats.page": true,
     "schedule.page": true,
@@ -190,7 +203,11 @@
     "shared.search": true,
     "onboarding.preference.steps": false,
     "actions": true,
-    "smart.rotation": false
+    "smart.rotation": false,
+    "ask": false,
+    "grounded.prompts": true,
+    "derivation.engines": true,
+    "ingest.selfHeal": true
   },
   "environment": {
     "database.query.logging": false
@@ -205,6 +222,6 @@
     "batchSize": 200,
     "rateLimitPerSecond": 10,
     "provider": "portal",
-    "portalBaseUrl": ""
+    "portalBaseUrl": "https://hub.ci.computer"
   }
 }

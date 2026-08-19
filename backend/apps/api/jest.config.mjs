@@ -41,5 +41,36 @@ export default {
     },
   },
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WHY THIS IS SET, AND WHY IT IS NOT OPTIONAL ON A TWO-CORE RUNNER.
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Nearly every suite here imports a barrel that pulls in a large slice of the
+  // Nest module graph. Jest gives each test FILE its own module registry and
+  // holds it for the lifetime of the process that ran it, so the cost of those
+  // imports accumulates: one process running all 404 files ends up holding 404
+  // copies of that graph.
+  //
+  // Whether that matters depends entirely on the worker count, which jest
+  // derives from the CPU count. On a developer machine (10+ cores) the files
+  // are split across ~11 workers and no single heap gets close to a limit. A
+  // GitHub-hosted runner for a private repo has TWO cores, so `maxWorkers`
+  // comes out at 1 — and jest's `shouldRunInBand` treats one worker as a reason
+  // to skip the worker pool entirely and run in the main process. The whole
+  // suite then accumulates in one heap, against node's default old-space limit
+  // of ~2 GB on a 7 GB box. Somewhere past suite ~270 that heap fills, V8 drops
+  // into a GC death spiral, and the run stops making progress WITHOUT ever
+  // erroring — it just goes quiet until the job timeout kills it. That is what
+  // had "Run backend tests" being cancelled on every commit, including main.
+  //
+  // Setting a memory limit fixes both halves of that. Jest's own rule is
+  // "when specifying a memory limit, workers should be used", so this forces
+  // the pool back on even at maxWorkers: 1, and the worker is then recycled
+  // whenever its heap passes the limit — which bounds the accumulation instead
+  // of letting it run to the ceiling. The value is a fraction of the ~2 GB
+  // limit, chosen so a restart happens well before GC pressure starts costing
+  // more than the restart does.
+  workerIdleMemoryLimit: '768MB',
+
   setupFilesAfterEnv: ['reflect-metadata'],
 };

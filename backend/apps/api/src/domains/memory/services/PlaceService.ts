@@ -676,7 +676,14 @@ export class PlaceService {
    */
   async getEntitiesForPlaces(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.placeRepository
       .createQueryBuilder('place')
@@ -692,7 +699,17 @@ export class PlaceService {
       query = query.andWhere('place.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('place.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(place.created_at < :afterTime OR (place.created_at = :afterTime AND place.entity_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query.orderBy('place.created_at', options.order ?? 'DESC').addOrderBy('place.entity_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -701,6 +718,31 @@ export class PlaceService {
     const rows = await query.getRawMany<{ id: string }>();
 
     return rows.map((row) => ({ id: row.id, type: 'place' as IndexableEntity }));
+  }
+
+  /**
+   * True total of places matching the same filters {@link getEntitiesForPlaces} applies (minus
+   * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
+   * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForPlaces(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.placeRepository
+      .createQueryBuilder('place')
+      .where('place.entity_type = :entityType', { entityType: 'Location' })
+      .andWhere('place.owner_user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('place.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('place.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
   }
 
   /**

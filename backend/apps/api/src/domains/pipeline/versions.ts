@@ -134,6 +134,36 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.INDEX_EMBED]: () => embedStageVersion(),
 
   /**
+   * DERIVED like `index.embed`, and from the SAME derivation: every dense-embed
+   * stage writes the same `vector(768)` column with the same configured model,
+   * so they rise together — one `CI_EMBED_MODEL` switch re-embeds every type's
+   * corpus, not just content's.
+   */
+  [STAGE_IDS.INDEX_EMBED_COMMUNICATION]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_EVENT]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_ITEM]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_PERSON]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_FILE]: () => embedStageVersion(),
+  [STAGE_IDS.INDEX_EMBED_BROWSER_ACTIVITY]: () => embedStageVersion(),
+
+  /**
+   * v1 — initial conversion of the listeners' tsvector half onto the ledger.
+   *
+   * Bump a type's entry when its weighted-text recipe in
+   * `search-ingress/searchTexts.ts` changes (a new field indexed, a weight
+   * moved): the bump re-vectors that type's corpus — local Postgres work, no
+   * provider, no bill — without touching its embeddings.
+   */
+  [STAGE_IDS.INDEX_VECTOR]: 1,
+  [STAGE_IDS.INDEX_VECTOR_COMMUNICATION]: 1,
+  [STAGE_IDS.INDEX_VECTOR_EVENT]: 1,
+  /** v2 — the recipe gained the last-seen place name (weight 8). */
+  [STAGE_IDS.INDEX_VECTOR_ITEM]: 2,
+  [STAGE_IDS.INDEX_VECTOR_PERSON]: 1,
+  [STAGE_IDS.INDEX_VECTOR_FILE]: 1,
+  [STAGE_IDS.INDEX_VECTOR_BROWSER_ACTIVITY]: 1,
+
+  /**
    * v1 — initial writer for `ci.position`'s seven address columns.
    *
    * A LITERAL that mirrors a derivation, which is the third shape and needs its
@@ -209,8 +239,28 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   /** v1 — place promotion. Derives from the forward-geocode generation: a better provider makes every hierarchy provisional. Cheap to bump — no provider call. */
   [STAGE_IDS.PROMOTE_PLACE]: 1,
 
+  /**
+   * v1 — the same promotion over `ci.position`. A literal mirroring the
+   * derivation in `PositionPlacePromoteStage.ts`, which throws at module load
+   * if this line disagrees: POSITION_PLACE_LINK_RULE_GENERATION (its own rule)
+   * + PLACE_PROMOTION_RULE_GENERATION (the clustering key and hierarchy fold it
+   * SHARES with `promote.place`, so the two never mint two nodes for one venue)
+   * + POSITION_REVERSE_VERSION (which writes both of its inputs — the name, and
+   * the cached address components behind the hierarchy) - 2. Bump a generation
+   * there and this line in the same commit.
+   */
+  [STAGE_IDS.PROMOTE_PLACE_POSITION]: 1,
+
   /** v1 — object promotion. A literal: this stage reads nothing another stage produces. Bump when extractPurchase changes. */
   [STAGE_IDS.PROMOTE_OBJECT]: 1,
+
+  /**
+   * v1 — scan-sighting promotion. A literal: this stage reads `capture.scan`
+   * metadata, which arrives whole from `/v1/events` and is rewritten by
+   * nothing. Bump when `extractScanObjects` changes what it pulls out of a
+   * scan — most likely when CI-Spatial widens its push past `{label, position}`.
+   */
+  [STAGE_IDS.PROMOTE_OBSERVATION]: 1,
 
   /**
    * v3 — deterministic edge projection, all legs. Literals mirroring
@@ -219,10 +269,12 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * generation + PERSON_LINK_VERSION (its edges are a COPY of the linker's
    * columns, so a linker bump re-projects); the event leg additionally tracks
    * PROMOTE_PLACE_VERSION (`location_entity_id` is that stage's output); the
-   * inventory and observation legs track PROMOTE_OBJECT_VERSION; the content,
-   * receipt, position and device legs have no versioned producer (importers,
-   * extraction, capture-time snapping and device registration fill their
-   * columns), so they are the matrix generation alone. v3 = matrix generation
+   * inventory and observation legs track PROMOTE_OBJECT_VERSION; the position
+   * leg tracks PROMOTE_PLACE_POSITION_VERSION (`ci.position.location_entity_id`
+   * is that stage's output — it had no writer at all until it landed); the
+   * content, receipt and device legs have no versioned producer (importers,
+   * extraction and device registration fill their columns), so they are the
+   * matrix generation alone. v3 = matrix generation
    * 3: the matrix now covers every entity-linkage pair in the schema —
    * receipts, object observations, positions and devices gained rules. Bump a
    * producer's generation and the matching line here in the same commit.

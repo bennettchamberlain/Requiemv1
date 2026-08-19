@@ -13,7 +13,14 @@ import {
   type EventSendOptions,
 } from '@ci/domains/events';
 
-import { resolveConnection } from '../../../__tests__/support/databaseConnection';
+import {
+  databaseAvailability as testDatabaseAvailability,
+  isPortOpen,
+  resolveConnection as resolveTestConnection,
+  type DatabaseAvailability,
+  type TestDatabaseConnection,
+  type TestDatabaseOptions,
+} from '../../../__tests__/support/databaseConnection';
 import { PIPELINE_QUEUES, type PipelineQueue } from '../../constants';
 import { PipelineSliceEvent, PipelineSweepEvent } from '../../events';
 import { PipelineSliceListener } from '../../listeners/PipelineSliceListener';
@@ -97,23 +104,54 @@ import { STAGE_VERSIONS } from '../../versions';
  * skipped. See the README beside this file.
  */
 
-// The rest of the toolchain (`yarn test`, `yarn dev`, `yarn dbmate`) runs with
-// DOTENV_CONFIG_PATH pointing at the repo-root .env, and `src/bootstrap.ts` is
-// what turns that into process.env for the running app. Test files never import
-// bootstrap, so the same load happens here, at module scope, BEFORE anything
-// reads process.env — otherwise the connection would resolve to nothing on a
-// developer machine whose credentials live only in .env.
+// ---------------------------------------------------------------------------
+// Connection resolution
+// ---------------------------------------------------------------------------
 //
-// Connection resolution moved to `src/domains/__tests__/support/databaseConnection.ts`
-// once a second domain needed it; it is re-exported here so every existing
-// import of this harness keeps working unchanged.
-export {
-  databaseAvailability,
-  isPortOpen,
-  resolveConnection,
-  type DatabaseAvailability,
-  type HarnessConnection,
-} from '../../../__tests__/support/databaseConnection';
+// Moved to `src/domains/__tests__/support/databaseConnection.ts`. None of it was
+// pipeline-specific — working out where the database is and whether anything is
+// listening there is what every database-backed spec in the repo needs, and
+// `domains/audit` proved it by carrying a hand-copied duplicate. The pipeline's
+// own override variable names are bound here so the sixteen specs that import
+// these two functions from the harness are unaffected.
+
+/** Where the harness will connect. Never carries a hardcoded credential. */
+export type HarnessConnection = TestDatabaseConnection;
+export type { DatabaseAvailability };
+
+/**
+ * `PIPELINE_TEST_DATABASE_URL` exists so these suites can be pointed at a
+ * scratch database without moving the whole app off the dev one.
+ */
+const PIPELINE_DATABASE_ENV: TestDatabaseOptions = {
+  urlEnvVar: 'PIPELINE_TEST_DATABASE_URL',
+  probeTimeoutEnvVar: 'PIPELINE_TEST_PROBE_TIMEOUT_MS',
+};
+
+/** The connection, or `null` when the environment does not describe one. */
+export function resolveConnection(): HarnessConnection | null {
+  return resolveTestConnection(PIPELINE_DATABASE_ENV);
+}
+
+/**
+ * Whether a Postgres is reachable for this test run. Cached by the shared
+ * helper — the probe spawns a process, and a suite may consult it more than
+ * once.
+ */
+export function databaseAvailability(): DatabaseAvailability {
+  return testDatabaseAvailability(PIPELINE_DATABASE_ENV);
+}
+
+/**
+ * TCP reachability, SYNCHRONOUSLY — re-exported, not reimplemented.
+ *
+ * The probe itself moved to the shared helper with the rest of the connection
+ * machinery. The NAME stays here because `scratchDatabase.ts` imports it from
+ * this module to ask the same question about a server it reaches with different
+ * (administrative) credentials, and a second copy of a `net.connect` probe is
+ * precisely what moving it was undoing.
+ */
+export { isPortOpen };
 
 // ---------------------------------------------------------------------------
 // The in-memory queue
@@ -358,7 +396,10 @@ export interface LedgerRow {
   stage_version: number;
   status: string;
   reason: string | null;
+  /** Attempts that cost the row something — the counter quarantine is measured against. */
   attempts: number;
+  /** Consecutive failures blamed on the world; never counted toward quarantine. */
+  transient_attempts: number;
   next_attempt_at: Date | null;
   user_id: string | null;
   updated_at: Date;
@@ -875,7 +916,7 @@ export class PipelineHarness {
   async ledgerRows(): Promise<LedgerRow[]> {
     return this.dataSource.query<LedgerRow[]>(
       `SELECT entity_type, entity_id, stage, stage_version, status, reason, attempts,
-              next_attempt_at, user_id, updated_at
+              transient_attempts, next_attempt_at, user_id, updated_at
          FROM ci.pipeline_state
         WHERE stage = $1
         ORDER BY entity_id`,

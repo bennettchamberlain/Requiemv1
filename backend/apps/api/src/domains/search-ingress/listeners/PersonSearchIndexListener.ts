@@ -4,7 +4,7 @@ import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
-import { NORMALIZED_PERSON_FIELDS, type Person, PersonService } from '@ci/domains/memory';
+import { type Person, PersonService } from '@ci/domains/memory';
 import {
   PersonCreatedEvent,
   PersonUpdatedEvent,
@@ -13,6 +13,7 @@ import {
   type PersonUpdatedPayload,
   type PersonDeletedPayload,
 } from '@ci/domains/memory/events';
+import { personSearchDocument, personWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
 
 import { EmbeddingService } from '../services/EmbeddingService';
 import { IndexSkipService } from '../services/IndexSkipService';
@@ -166,80 +167,10 @@ export class PersonSearchIndexListener {
   }
 
   private getSearchContent(person: Person): WeightedText[] {
-    const parts: WeightedText[] = [];
-
-    if (person.name) {
-      parts.push({ text: person.name, weight: 10 });
-    }
-
-    if (person.description) {
-      parts.push({ text: person.description, weight: 5 });
-    }
-
-    // Normalized attributes (email, structured name, address, ...) are stripped
-    // from the egress bag and exposed only as named fields, so index them from
-    // the named fields explicitly.
-    const normalized = NORMALIZED_PERSON_FIELDS.map(([, fieldName]) => person[fieldName as keyof Person])
-      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      .join(' ');
-
-    if (normalized.length > 0) {
-      parts.push({ text: normalized, weight: 1 });
-    }
-
-    if (person.properties) {
-      parts.push({ text: JSON.stringify(person.properties), weight: 1 });
-    }
-
-    return parts;
+    return personWeightedTexts(person);
   }
 
   private getSearchDocument(person: Person): string | null {
-    const parts = new Set<string>();
-
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(person.name ?? null);
-    push(person.description ?? null);
-
-    // Normalized identity attributes are stripped from the egress bag and only
-    // reachable through their named fields.
-    push(person.firstName);
-    push(person.lastName);
-    push(person.email);
-
-    const properties = person.properties ?? {};
-    // We don't have a schema on properties yet. These values are an accumulated
-    // superset of values we've indexed in various places. Normalized keys are
-    // not listed here: the egress bag no longer carries them.
-    const candidateKeys = ['occupation', 'bio', 'phone', 'organization', 'job_title'];
-
-    for (const key of candidateKeys) {
-      push(properties[key]);
-    }
-
-    const aliases = properties['aliases'];
-
-    if (Array.isArray(aliases)) {
-      for (const alias of aliases) {
-        push(alias);
-      }
-    }
-
-    const result = Array.from(parts).join(' ');
-
-    return result.length > 0 ? result : null;
+    return personSearchDocument(person);
   }
 }

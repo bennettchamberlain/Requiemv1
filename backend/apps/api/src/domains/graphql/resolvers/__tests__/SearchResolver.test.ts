@@ -14,25 +14,61 @@ function makeResolver() {
     getEntitiesForTags: jest.fn().mockResolvedValue([] as Identifier[]),
     searchByLabel: jest.fn().mockResolvedValue([]),
   };
-  const eventService = { getEntitiesForEvents: jest.fn().mockResolvedValue([] as Identifier[]) };
+  // Every timed-source service also exposes a real-COUNT(*) `countEntitiesForX`
+  // counterpart (see SearchResolver.countTimedEntities) alongside its
+  // `getEntitiesForX` fetch — stubbed to 0 here since these tests assert on the
+  // fetch calls' args/results, not on totalCount.
+  const eventService = {
+    getEntitiesForEvents: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForEvents: jest.fn().mockResolvedValue(0),
+  };
   const browserActivityService = {
     getEntitiesForBrowserActivities: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForBrowserActivities: jest.fn().mockResolvedValue(0),
   };
   const communicationService = {
     getEntitiesForCommunications: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForCommunications: jest.fn().mockResolvedValue(0),
   };
-  const conceptService = { getEntitiesForConcepts: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const contentService = { getEntitiesForContents: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const itemService = { getEntitiesForItems: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const noteService = { getEntitiesForNotes: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const personService = { getEntitiesForPeople: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const placeService = { getEntitiesForPlaces: jest.fn().mockResolvedValue([] as Identifier[]) };
-  const answerService = { getEntitiesForAnswers: jest.fn().mockResolvedValue([] as Identifier[]) };
+  const conceptService = {
+    getEntitiesForConcepts: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForConcepts: jest.fn().mockResolvedValue(0),
+  };
+  const contentService = {
+    getEntitiesForContents: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForContents: jest.fn().mockResolvedValue(0),
+  };
+  const itemService = {
+    getEntitiesForItems: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForItems: jest.fn().mockResolvedValue(0),
+  };
+  const noteService = {
+    getEntitiesForNotes: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForNotes: jest.fn().mockResolvedValue(0),
+  };
+  const personService = {
+    getEntitiesForPeople: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForPeople: jest.fn().mockResolvedValue(0),
+  };
+  const placeService = {
+    getEntitiesForPlaces: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForPlaces: jest.fn().mockResolvedValue(0),
+  };
+  const answerService = {
+    getEntitiesForAnswers: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForAnswers: jest.fn().mockResolvedValue(0),
+  };
   const entityResolutionService = { resolve: jest.fn().mockResolvedValue(new Map<string, Entry>()) };
   const savedSearchService = { findByShareToken: jest.fn().mockResolvedValue(null) };
 
-  const fileService = { getEntitiesForFiles: jest.fn().mockResolvedValue([]) };
-  const fileChunkService = { getEntitiesForFileChunks: jest.fn().mockResolvedValue([]) };
+  const fileService = {
+    getEntitiesForFiles: jest.fn().mockResolvedValue([]),
+    countEntitiesForFiles: jest.fn().mockResolvedValue(0),
+  };
+  const fileChunkService = {
+    getEntitiesForFileChunks: jest.fn().mockResolvedValue([]),
+    countEntitiesForFileChunks: jest.fn().mockResolvedValue(0),
+  };
   const resolver = new SearchResolver(
     browserActivityService as never,
     communicationService as never,
@@ -68,6 +104,11 @@ function makeResolver() {
     entityResolutionService,
     fileService,
     fileChunkService,
+    contentService,
+    personService,
+    placeService,
+    conceptService,
+    itemService,
   };
 }
 
@@ -181,25 +222,27 @@ describe('SearchResolver.search — combinable filters', () => {
     expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
     expect(browserActivityService.getEntitiesForBrowserActivities).toHaveBeenCalledTimes(1);
     expect(communicationService.getEntitiesForCommunications).toHaveBeenCalledTimes(1);
-    // Files stay out of the default browse (documents/screenshots would bury it).
-    expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
+    // Files are part of the default browse like every other indexed type — the
+    // What picker's File entry is the one control over whether they show up.
+    expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
     // No filters -> end bound to "now" so recent items are returned, not all history.
     const eventOptions = eventService.getEntitiesForEvents.mock.calls[0][1] as { endTime?: Date };
     expect(eventOptions.endTime).toBeInstanceOf(Date);
   });
 
-  // Regression: the gallery showed no images because standalone media files
-  // (e.g. Capture screenshots with no linked event) were opted out of the
-  // query-less browse and the gallery had no way to pull them in without
-  // narrowing the whole result to files (includeTypes: ['file']).
-  describe('includeFiles (gallery browse)', () => {
-    it('interleaves files with the other timed types instead of replacing them', async () => {
+  // Files used to be opted *out* of the timed browse unless a caller passed
+  // includeFiles — which only the gallery did. That made the same explorer URL
+  // mean different things view to view, and made the File type picker a no-op
+  // everywhere else. Files are now part of the default browse; the type filter
+  // is the single control over whether they appear.
+  describe('includeFiles (files in the timed browse)', () => {
+    it('interleaves files with the other timed types by default', async () => {
       const { resolver, eventService, fileService, fileChunkService, entityResolutionService } =
         makeResolver();
       eventService.getEntitiesForEvents.mockResolvedValue([{ type: 'event', id: 'e1' }]);
       fileService.getEntitiesForFiles.mockResolvedValue([{ type: 'file', id: 'f1' }]);
 
-      await resolver.search(ctx, { includeFiles: true } as SearchInput);
+      await resolver.search(ctx, {} as SearchInput);
 
       expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
       expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
@@ -212,12 +255,136 @@ describe('SearchResolver.search — combinable filters', () => {
       ]);
     });
 
+    it('honours an explicit type filter that narrows to files', async () => {
+      const { resolver, fileService, eventService } = makeResolver();
+      fileService.getEntitiesForFiles.mockResolvedValue([{ type: 'file', id: 'f1' }]);
+
+      await resolver.search(ctx, { includeTypes: ['file'] } as SearchInput);
+
+      expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
+      expect(eventService.getEntitiesForEvents).not.toHaveBeenCalled();
+    });
+
     it('still honours an explicit type filter that excludes files', async () => {
       const { resolver, fileService } = makeResolver();
 
-      await resolver.search(ctx, { includeFiles: true, excludeTypes: ['file'] } as SearchInput);
+      await resolver.search(ctx, { excludeTypes: ['file'] } as SearchInput);
 
       expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
     });
+
+    it('lets a caller opt files out without touching excludeTypes', async () => {
+      const { resolver, fileService, eventService } = makeResolver();
+
+      await resolver.search(ctx, { includeFiles: false } as SearchInput);
+
+      expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
+      expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+/**
+ * VIEW-01. The unfiltered browse is a chronology, but ten of the thirteen
+ * result types are ordered by `created_at` — the row-WRITE time — which a bulk
+ * import parks at "now". Measured on the QA appliance, 22,145 rows sat ahead of
+ * the newest genuinely-dated memory: 11,211 event-linked media content rows,
+ * 9,753 people, 1,178 places and 3 others. Reordering within the page cannot
+ * reach them, because the first server pages are entirely made of them.
+ *
+ * These pin the two server-side gates that remove them, and — just as
+ * important — pin that they are removed from the BROWSE only.
+ */
+describe('SearchResolver.search — undated types stay out of the unfiltered browse (VIEW-01)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('does not fetch person / place / concept / item for a browse with no filters', async () => {
+    const { resolver, personService, placeService, conceptService, itemService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(personService.getEntitiesForPeople).not.toHaveBeenCalled();
+    expect(placeService.getEntitiesForPlaces).not.toHaveBeenCalled();
+    expect(conceptService.getEntitiesForConcepts).not.toHaveBeenCalled();
+    expect(itemService.getEntitiesForItems).not.toHaveBeenCalled();
+  });
+
+  it('still fetches the types that carry a real domain timestamp', async () => {
+    const { resolver, eventService, communicationService, browserActivityService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(eventService.getEntitiesForEvents).toHaveBeenCalledTimes(1);
+    expect(communicationService.getEntitiesForCommunications).toHaveBeenCalledTimes(1);
+    expect(browserActivityService.getEntitiesForBrowserActivities).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches a gated type as soon as the caller names it', async () => {
+    const { resolver, personService, placeService } = makeResolver();
+
+    await resolver.search(ctx, { includeTypes: ['person', 'place'] } as SearchInput);
+
+    expect(personService.getEntitiesForPeople).toHaveBeenCalledTimes(1);
+    expect(placeService.getEntitiesForPlaces).toHaveBeenCalledTimes(1);
+  });
+
+  // The gate must not leak into search: a user looking for a person by name
+  // must still find them.
+  it('leaves the query path alone — a gated type is still searchable', async () => {
+    const { resolver, searchService, entityResolutionService } = makeResolver();
+    searchService.search.mockResolvedValue([{ type: 'person', id: 'p1' }]);
+
+    await resolver.search(ctx, { query: 'ada' } as SearchInput);
+
+    expect(idsResolvedTo(entityResolutionService.resolve)).toEqual([{ type: 'person', id: 'p1' }]);
+  });
+
+  it('leaves the tag path alone — a gated type is still reachable by tag', async () => {
+    const { resolver, tagService, entityResolutionService } = makeResolver();
+    tagService.getEntitiesForTags.mockResolvedValue([{ type: 'place', id: 'pl1' }]);
+
+    await resolver.search(ctx, { tags: ['holiday'] } as SearchInput);
+
+    expect(idsResolvedTo(entityResolutionService.resolve)).toEqual([{ type: 'place', id: 'pl1' }]);
+  });
+
+  // Every event-linked content row is a facet of an event the same merge
+  // already returns; on the QA appliance all 11,211 of them are type='media'
+  // pointing at the very binary their event renders, so the browse showed each
+  // photo twice AND showed both copies ahead of the real timeline.
+  it('drops event-linked content from the browse fetch and from its total', async () => {
+    const { resolver, contentService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(contentService.getEntitiesForContents).toHaveBeenCalledTimes(1);
+    expect(contentService.getEntitiesForContents.mock.calls[0][1]).toMatchObject({
+      excludeEventLinked: true,
+    });
+    // The denominator the footer renders (VIEW-08) must count exactly what the
+    // fetch returns, or "30 of N" lies.
+    expect(contentService.countEntitiesForContents.mock.calls[0][1]).toMatchObject({
+      excludeEventLinked: true,
+    });
+  });
+
+  it('does not apply the event-linked exclusion to a tag search', async () => {
+    const { resolver, tagService, contentService } = makeResolver();
+    tagService.getEntitiesForTags.mockResolvedValue([{ type: 'content', id: 'c1' }]);
+
+    await resolver.search(ctx, { tags: ['holiday'] } as SearchInput);
+
+    expect(contentService.getEntitiesForContents).not.toHaveBeenCalled();
+  });
+
+  // The gate must not touch `file`: #2110 deliberately made files part of the
+  // default timeline (opt-OUT via includeFiles). They remain the residual
+  // undated head this change does not address.
+  it('leaves files in the default browse, as #2110 decided', async () => {
+    const { resolver, fileService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
   });
 });

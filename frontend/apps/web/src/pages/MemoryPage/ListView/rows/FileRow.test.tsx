@@ -43,4 +43,26 @@ describe('FileRow', () => {
 
     expect(screen.getByRole('img')).toHaveAttribute('src', '/static/u/shot.png');
   });
+
+  /**
+   * A non-media file (no preview variant, and resolveFileTileUrl won't fall
+   * back to sourceUrl for a type it can't render as an <img>) has no URL to
+   * thumbnail at all — the row must fall back to the generic FileIcon glyph
+   * rather than rendering a broken <img src="">.
+   */
+  it('falls back to the generic file icon when there is no thumbnail URL', () => {
+    renderWithProviders(
+      <FileRow
+        file={makeFile({
+          filename: 'report.pdf',
+          contentType: 'application/pdf',
+          previewUrl: null,
+          sourceUrl: '/u/report.pdf',
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByText('report.pdf')).toBeInTheDocument();
+  });
 });

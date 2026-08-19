@@ -50,6 +50,8 @@ import {
 import {
   type ObjectObservation,
   ObjectObservationEntity,
+  type ObservationBoundingBox,
+  type ObservationLabelSource,
   type ObservationResolutionMethod,
   type ObservationSourceKind,
 } from './entities/ObjectObservationEntity';
@@ -73,6 +75,9 @@ import { GraphReadService } from './services/GraphReadService';
 import { GraphUtilityService } from './services/GraphUtilityService';
 import { ItemService } from './services/ItemService';
 import { KnownPlacesService } from './services/KnownPlacesService';
+import { LifeStatsService } from './services/LifeStatsService';
+import { MergeCandidateService } from './services/MergeCandidateService';
+import { ObjectObservationService } from './services/ObjectObservationService';
 import { PersonActivityService } from './services/PersonActivityService';
 import { PersonDuplicateService } from './services/PersonDuplicateService';
 import { PersonMergeService } from './services/PersonMergeService';
@@ -131,11 +136,14 @@ import { UserContextService } from './services/UserContextService';
     PersonActivityService,
     EntityMergeBlockService,
     PersonDuplicateService,
+    MergeCandidateService,
     PersonMergeService,
     ConceptService,
     FileService,
     PlaceService,
     KnownPlacesService,
+    LifeStatsService,
+    ObjectObservationService,
   ],
   controllers: [GraphController],
   exports: [
@@ -149,6 +157,7 @@ import { UserContextService } from './services/UserContextService';
     PersonActivityService,
     EntityMergeBlockService,
     PersonDuplicateService,
+    MergeCandidateService,
     PersonMergeService,
     ConceptService,
     UserContextService,
@@ -158,6 +167,7 @@ import { UserContextService } from './services/UserContextService';
     FileService,
     PlaceService,
     KnownPlacesService,
+    ObjectObservationService,
   ],
 })
 export class MemoryModule {}
@@ -199,6 +209,7 @@ export {
   PersonActivityService,
   EntityMergeBlockService,
   PersonDuplicateService,
+  MergeCandidateService,
   PersonMergeService,
   ConceptService,
   UserContextService,
@@ -208,17 +219,93 @@ export {
   FileService,
   PlaceService,
   KnownPlacesService,
+  ObjectObservationService,
 };
 
 export type { Content } from './entities/ContentEntity';
+export type { MapPin } from './services/EventService';
 export type { PlaceKind } from './entities/PlaceEntity';
 export type { PlaceVisitStats } from './services/PlaceService';
 export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
+export { previewFromContent } from './entities/CommunicationEntity';
 export type { BlockReason } from './services/EntityMergeBlockService';
-export type { PersonDuplicateGroup, DuplicateReason } from './services/PersonDuplicateService';
+export type {
+  PersonDuplicateGroup,
+  PersonDuplicatePage,
+  DuplicateReason,
+} from './services/PersonDuplicateService';
+export type {
+  MergeCandidate,
+  MergeCandidateEvidence,
+  MergeCandidatePage,
+  MergeCandidateStatus,
+} from './services/MergeCandidateService';
+export {
+  encodeMergeCandidateCursor,
+  isMergeCandidateStatus,
+  MERGE_CANDIDATE_STATUSES,
+} from './services/MergeCandidateService';
 export type { PersonInteractionStats } from './services/PersonActivityService';
 export type { MergeCounts } from './services/PersonMergeService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
+// The `content.external_id_kind` vocabulary and the value-shaped test behind
+// it. Exported because every domain that writes a content row (import, etl,
+// ingest, graphql) has to agree on what the column means — a second
+// implementation of the predicate is a second definition of "is this a file id".
+export {
+  classifyExternalId,
+  EXTERNAL_ID_URI_SHAPE,
+  EXTERNAL_ID_UUID_SHAPE,
+  SOURCE_NATIVE_EXTERNAL_ID_KIND,
+} from './externalIdKind';
+export type { ExternalIdKind } from './externalIdKind';
+// The remaining ingest DTOs, exported for the same reason as the ones above:
+// they are the shapes other domains hand to this one's services, so they belong
+// on the public surface rather than behind a reach into ./types.
+export type {
+  CreateItemDto,
+  UpdateItemDto,
+  PhysicalItemPropertiesDto,
+  CreatePersonDto,
+  UpdatePersonDto,
+} from './types';
+// The physical vocabulary of an item. Exported because the API layer needs the
+// same enums the CHECK constraints hold, and importers/listeners need the same
+// unit parsing the services use — a second implementation of either is a second
+// definition of what a millimetre is.
+export {
+  ACQUISITION_METHODS,
+  MAX_ARRAY_TERMS,
+  MAX_DIMENSION_MM,
+  MAX_MASS_G,
+  MAX_VOLUME_ML,
+  PhysicalPropertyError,
+  UNIT_SYSTEMS,
+  normalizeAcquisitionMethod,
+  normalizeColorHex,
+  normalizeColors,
+  normalizeComposition,
+  normalizeMaterials,
+  normalizePhysicalProperties,
+  normalizeUnitSystem,
+  parseDimensions,
+  parseLengthMm,
+  parseMassG,
+  parseVolumeMl,
+} from './physicalProperties';
+export type { AcquisitionMethod, NormalizedPhysicalProperties, UnitSystem } from './physicalProperties';
+// The observation ingest shapes. Both the CV listener (llm domain) and the
+// `capture.scan` promoter (pipeline domain) hand these to
+// ObjectObservationService, so they belong on the public surface for exactly
+// the reason the item/person DTOs above do.
+export type {
+  CreateObjectObservationDto,
+  FindObjectObservationsFilter,
+  ObservationCoordinates,
+  ResolveObjectObservationDto,
+} from './types';
+export type { ObjectObservationWriteResult } from './services/ObjectObservationService';
+export { detectionKeyFor } from './services/ObjectObservationService';
 export type {
   KnownPlace,
   KnownPlaceKind,
@@ -230,6 +317,8 @@ export type {
   InventoryIdentityMethod,
   InventoryLifecycleState,
   ObjectObservation,
+  ObservationBoundingBox,
+  ObservationLabelSource,
   ObservationResolutionMethod,
   ObservationSourceKind,
   ProductModel,
@@ -243,4 +332,10 @@ export {
   CreateCommunicationDto,
   NORMALIZED_PERSON_FIELDS,
   UpdateCommunicationDto,
+  ensureSinglePrimary,
+  formatPersonAddress,
+  isPersonAddressEmpty,
+  readPersonAddresses,
+  serializePersonAddress,
 } from './types';
+export type { PersonAddress } from './types';

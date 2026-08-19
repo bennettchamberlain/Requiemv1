@@ -1,0 +1,24 @@
+[
+  {
+    "media": [
+      {
+        "uri": "media/posts/202101/photo1.jpg",
+        "creation_timestamp": 1609459200,
+        "title": "Beautiful sunset at the beach 🌅"
+      }
+    ],
+    "title": "Beautiful sunset at the beach 🌅",
+    "creation_timestamp": 1609459200
+  },
+  {
+    "media": [
+      {
+        "uri": "media/posts/202101/photo2.jpg",
+        "creation_timestamp": 1609545600,
+        "title": "Morning coffee ☕"
+      }
+    ],
+    "title": "Morning coffee ☕",
+    "creation_timestamp": 1609545600
+  }
+]

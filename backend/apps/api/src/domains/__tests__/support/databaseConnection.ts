@@ -1,32 +1,40 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "IS THERE A DATABASE HERE?", ANSWERED SYNCHRONOUSLY, FOR ANY DOMAIN'S SPEC.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Several suites need a real Postgres and must SKIP legibly when there is not
+ * one, rather than failing every test on a connection error. Answering that
+ * needs two things: work out where the database would be from the environment,
+ * and find out whether anything is actually listening there.
+ *
+ * This lived in `domains/pipeline/__tests__/harness/pipelineHarness.ts`, and
+ * `domains/audit`'s trigger spec carried a hand-copied duplicate of it with a
+ * comment explaining that the copy existed only because
+ * `.dependency-cruiser.mjs` forbids reaching into another domain's internals.
+ * That was the right reading of the rule and the wrong place to end up: none of
+ * this is pipeline-specific, and a copy is exactly how two answers to "can this
+ * suite run?" drift apart. It now sits above the domains, where shared test
+ * machinery belongs and where the rule explicitly permits importing it.
+ *
+ * Each suite passes its own override variable names, which is the only thing
+ * that ever differed between the copies.
+ */
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 import dotenv from 'dotenv';
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- * WHERE A DB-BACKED SPEC CONNECTS, AND WHETHER IT CAN.
- * ═══════════════════════════════════════════════════════════════════════════
- *
- * Lifted out of `pipeline/__tests__/harness/pipelineHarness.ts` when a second
- * domain needed it (`AccountPurgeService.integration.spec.ts`). It sits under
- * `src/domains/__tests__/` because that is where shared test machinery belongs:
- * a spec in one domain reaching into another domain's `__tests__` directory is
- * a `no-cross-domain-internals` violation, and rightly so — the harness is not
- * the pipeline's to own once two domains depend on it.
- *
- * `pipelineHarness.ts` re-exports everything here, so the pipeline suites read
- * exactly as they did before.
- */
-
+// The rest of the toolchain (`yarn test`, `yarn dev`, `yarn dbmate`) runs with
+// DOTENV_CONFIG_PATH pointing at the repo-root .env, and `src/bootstrap.ts` is
+// what turns that into process.env for the running app. Test files never import
+// bootstrap, so the same load happens here, at module scope, BEFORE anything
+// reads process.env — otherwise the connection would resolve to nothing on a
+// developer machine whose credentials live only in .env.
 dotenv.config({ path: path.resolve(process.cwd(), process.env.DOTENV_CONFIG_PATH ?? '.env') });
 
-// ---------------------------------------------------------------------------
-// Connection resolution
-// ---------------------------------------------------------------------------
-
-/** Where the harness will connect. Never carries a hardcoded credential. */
-export interface HarnessConnection {
+/** Where a suite will connect. Never carries a hardcoded credential. */
+export interface TestDatabaseConnection {
   /** Present when a full URL was supplied; the discrete fields are parsed from it. */
   url?: string;
   host: string;
@@ -35,6 +43,19 @@ export interface HarnessConnection {
   database: string;
   /** Read from the environment. Never defaulted — an absent password means "no database". */
   password: string;
+}
+
+/**
+ * Per-suite environment overrides.
+ *
+ * A suite names its own variables so it can be pointed at a scratch database
+ * without moving the whole app — or the other suites — off the dev one.
+ */
+export interface TestDatabaseOptions {
+  /** Checked before `DATABASE_URL`, e.g. `PIPELINE_TEST_DATABASE_URL`. */
+  urlEnvVar?: string;
+  /** Probe timeout override, e.g. `PIPELINE_TEST_PROBE_TIMEOUT_MS`. Defaults to 2000 ms. */
+  probeTimeoutEnvVar?: string;
 }
 
 /**
@@ -50,17 +71,17 @@ const DEFAULT_HOST = 'localhost';
 const DEFAULT_PORT = 5432;
 const DEFAULT_USERNAME = 'companion';
 const DEFAULT_DATABASE = 'companion';
+const DEFAULT_PROBE_TIMEOUT_MS = 2_000;
 
 /**
  * The connection, or `null` when the environment does not describe one.
  *
- * Precedence: an explicit test URL, then the URL the dev-stack supervisor
+ * Precedence: the suite's own test URL, then the URL the dev-stack supervisor
  * exports, then the discrete `DATABASE_*` variables `config/` already maps.
- * `PIPELINE_TEST_DATABASE_URL` exists so this suite can be pointed at a scratch
- * database without moving the whole app off the dev one.
  */
-export function resolveConnection(): HarnessConnection | null {
-  const url = process.env.PIPELINE_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+export function resolveConnection(options: TestDatabaseOptions = {}): TestDatabaseConnection | null {
+  const override = options.urlEnvVar == null ? undefined : process.env[options.urlEnvVar];
+  const url = override ?? process.env.DATABASE_URL;
 
   if (url != null && url.trim().length > 0) {
     try {
@@ -109,14 +130,11 @@ export interface DatabaseAvailability {
   target: string;
 }
 
-/** How long the connectivity probe waits. Overridable for slow or loaded machines. */
-const PROBE_TIMEOUT_MS = Number(process.env.PIPELINE_TEST_PROBE_TIMEOUT_MS ?? 2_000);
-
 /**
  * TCP reachability, SYNCHRONOUSLY.
  *
  * A jest suite must choose `describe` vs `describe.skip` while the module is
- * being evaluated, and this file compiles to CommonJS (`jest.config.mjs` →
+ * being evaluated, and these files compile to CommonJS (`jest.config.mjs` →
  * `@swc/jest`), so there is no top-level `await` to reach for. A short-lived
  * child process doing one `net.connect` is the only way to get a real answer at
  * that moment. It costs one process spawn per test file and depends on nothing
@@ -126,11 +144,13 @@ const PROBE_TIMEOUT_MS = Number(process.env.PIPELINE_TEST_PROBE_TIMEOUT_MS ?? 2_
  * A TCP handshake proves something is listening, not that it is Postgres with
  * the migrations applied. That split is deliberate: "nothing is listening" is
  * an absent database and must SKIP, whereas "something is listening but the
- * schema is wrong" is a broken setup and must FAIL, with the message from
- * {@link PipelineHarness.start} naming the command that fixes it.
+ * schema is wrong" is a broken setup and must FAIL, with a message naming the
+ * command that fixes it.
  *
- * Exported for `scratchDatabase.ts`, which needs the same synchronous answer
- * about a server it reaches with different (administrative) credentials.
+ * Exported because `pipeline/__tests__/harness/scratchDatabase.ts` asks the same
+ * synchronous question about a server it reaches with different
+ * (administrative) credentials. It re-exports through the pipeline harness, so
+ * there is still exactly one implementation.
  */
 export function isPortOpen(host: string, port: number, timeoutMs: number): boolean {
   const script =
@@ -152,45 +172,54 @@ export function isPortOpen(host: string, port: number, timeoutMs: number): boole
   return probe.status === 0;
 }
 
-let cachedAvailability: DatabaseAvailability | null = null;
+// Keyed by the caller's override names, so two suites in one jest module
+// registry cannot read each other's answer. Jest gives each test FILE its own
+// registry, so in practice this caches within a file — which is the point: the
+// probe spawns a process and a suite may consult it more than once.
+const cachedAvailability = new Map<string, DatabaseAvailability>();
 
-/**
- * Whether a Postgres is reachable for this test run. Cached — the probe spawns
- * a process, and a suite may consult it more than once.
- */
-export function databaseAvailability(): DatabaseAvailability {
-  if (cachedAvailability != null) {
-    return cachedAvailability;
+/** Whether a Postgres is reachable for this test run. Cached — see above. */
+export function databaseAvailability(options: TestDatabaseOptions = {}): DatabaseAvailability {
+  const cacheKey = `${options.urlEnvVar ?? ''}|${options.probeTimeoutEnvVar ?? ''}`;
+  const cached = cachedAvailability.get(cacheKey);
+
+  if (cached != null) {
+    return cached;
   }
 
-  const connection = resolveConnection();
+  const connection = resolveConnection(options);
 
   if (connection == null) {
-    cachedAvailability = {
+    const answer: DatabaseAvailability = {
       available: false,
       reason:
-        'no database configured — set PIPELINE_TEST_DATABASE_URL or DATABASE_URL, or DATABASE_PASSWORD ' +
-        '(plus optional DATABASE_HOST / DATABASE_PORT / DATABASE_USERNAME / DATABASE_NAME). ' +
-        '`yarn test` already points DOTENV_CONFIG_PATH at the repo-root .env.',
+        'no database configured — set ' +
+        (options.urlEnvVar == null ? 'DATABASE_URL' : `${options.urlEnvVar} or DATABASE_URL`) +
+        ', or DATABASE_PASSWORD (plus optional DATABASE_HOST / DATABASE_PORT / DATABASE_USERNAME / ' +
+        'DATABASE_NAME). `yarn test` already points DOTENV_CONFIG_PATH at the repo-root .env.',
       target: '(unset)',
     };
 
-    return cachedAvailability;
+    cachedAvailability.set(cacheKey, answer);
+
+    return answer;
   }
 
+  const timeoutMs =
+    options.probeTimeoutEnvVar == null
+      ? DEFAULT_PROBE_TIMEOUT_MS
+      : Number(process.env[options.probeTimeoutEnvVar] ?? DEFAULT_PROBE_TIMEOUT_MS);
   const target = `${connection.host}:${connection.port}/${connection.database}`;
 
-  if (!isPortOpen(connection.host, connection.port, PROBE_TIMEOUT_MS)) {
-    cachedAvailability = {
-      available: false,
-      reason: `nothing accepting connections at ${target} (probe timeout ${PROBE_TIMEOUT_MS} ms)`,
-      target,
-    };
+  const answer: DatabaseAvailability = isPortOpen(connection.host, connection.port, timeoutMs)
+    ? { available: true, reason: `Postgres reachable at ${target}`, target }
+    : {
+        available: false,
+        reason: `nothing accepting connections at ${target} (probe timeout ${timeoutMs} ms)`,
+        target,
+      };
 
-    return cachedAvailability;
-  }
+  cachedAvailability.set(cacheKey, answer);
 
-  cachedAvailability = { available: true, reason: `Postgres reachable at ${target}`, target };
-
-  return cachedAvailability;
+  return answer;
 }

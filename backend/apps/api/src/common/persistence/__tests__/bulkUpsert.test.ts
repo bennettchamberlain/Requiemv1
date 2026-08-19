@@ -1,6 +1,6 @@
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 
-import { bulkInsertIdempotent, computeChunkSize } from '../bulkUpsert';
+import { bulkInsertIdempotent, chunkedConflictInsert, computeChunkSize } from '../bulkUpsert';
 
 /**
  * Minimal row used by the fake repository. Mirrors the shape the ingest services
@@ -36,8 +36,19 @@ function makeFakeRepository(initial: Row[] = []) {
     table.set(row.id, row);
   }
 
-  const statements: { kind: 'select' | 'insert'; insideTx: boolean; viaTxRepo: boolean }[] = [];
+  const statements: {
+    kind: 'select' | 'insert';
+    insideTx: boolean;
+    viaTxRepo: boolean;
+    viaExternalManager: boolean;
+  }[] = [];
   const tx = { active: false, count: 0, boundTo: undefined as unknown };
+  // A caller-supplied `EntityManager` passed in as `options.manager` — distinct
+  // from `repo.manager.transaction`'s own `txManager` below, so tests can prove
+  // the helper binds to THIS one (and never opens a new transaction) when the
+  // caller wants to join its own transaction (see the `options.manager` branch
+  // in bulkInsertIdempotent).
+  const external = { calls: 0, boundTo: undefined as unknown };
 
   const existsByTriple = (r: Row): Row | undefined => {
     if (r.sourceId == null) {
@@ -56,7 +67,7 @@ function makeFakeRepository(initial: Row[] = []) {
   // Tracks WHERE predicates a SelectQueryBuilder accumulated, then resolves them
   // against the table on getMany(). We only need triple-OR + userId scoping, so we
   // capture the raw triples/pks the helper asks for via the bound parameters.
-  function makeSelectQB(viaTxRepo: boolean) {
+  function makeSelectQB(viaTxRepo: boolean, viaExternalManager = false) {
     const params: Record<string, unknown> = {};
     let scopedUserId: string | undefined;
     const qb: Record<string, unknown> = {};
@@ -75,7 +86,7 @@ function makeFakeRepository(initial: Row[] = []) {
     qb.where = qb.andWhere;
 
     qb.getMany = async (): Promise<Row[]> => {
-      statements.push({ kind: 'select', insideTx: tx.active, viaTxRepo });
+      statements.push({ kind: 'select', insideTx: tx.active, viaTxRepo, viaExternalManager });
 
       // Reconstruct the set of requested triples from the bound params (pre_/post_).
       const triples: { sourceType: string | null; sourceSystem: string | null; sourceId: string | null }[] =
@@ -142,7 +153,7 @@ function makeFakeRepository(initial: Row[] = []) {
   // caller lists; the fake refreshing the superset is sufficient for the tests.)
   const REFRESHABLE: (keyof Row)[] = ['direction', 'participantsMetadata'];
 
-  function makeInsertQB(viaTxRepo: boolean) {
+  function makeInsertQB(viaTxRepo: boolean, viaExternalManager = false) {
     let values: Row[] = [];
     let conflictAction = '';
     const iqb: Record<string, unknown> = {};
@@ -162,7 +173,7 @@ function makeFakeRepository(initial: Row[] = []) {
 
     iqb.returning = () => iqb;
     iqb.execute = async () => {
-      statements.push({ kind: 'insert', insideTx: tx.active, viaTxRepo });
+      statements.push({ kind: 'insert', insideTx: tx.active, viaTxRepo, viaExternalManager });
 
       const doUpdate = / DO UPDATE /i.test(conflictAction);
       // Mirror Postgres RETURNING (xmax = 0) AS bulk_inserted under DO UPDATE.
@@ -198,10 +209,13 @@ function makeFakeRepository(initial: Row[] = []) {
     return iqb;
   }
 
-  // Two views over the same table: the injected repository and the one the
-  // transaction manager's withRepository() hands back, so tests can tell the
-  // helper really re-bound its statements to the transaction.
-  const makeRepoView = (viaTxRepo: boolean) => ({
+  // Three views over the same table: the injected repository, the one the
+  // transaction manager's withRepository() hands back (self-managed tx path),
+  // and the one an EXTERNALLY-supplied manager's withRepository() hands back
+  // (the `options.manager` — caller's own transaction — path). Distinguishing
+  // the last from the other two is what lets a test prove the helper actually
+  // dispatches on `options.manager` rather than always opening its own tx.
+  const makeRepoView = (viaTxRepo: boolean, viaExternalManager = false) => ({
     metadata: {
       tableName: 'fake',
       target: 'fake',
@@ -212,7 +226,8 @@ function makeFakeRepository(initial: Row[] = []) {
       columns: Array.from({ length: 6 }, (_, i) => ({ databaseName: `c${i}` })),
     },
     create: (x: Partial<Row>) => x as Row,
-    createQueryBuilder: (alias?: string) => (alias ? makeSelectQB(viaTxRepo) : makeInsertQB(viaTxRepo)),
+    createQueryBuilder: (alias?: string) =>
+      alias ? makeSelectQB(viaTxRepo, viaExternalManager) : makeInsertQB(viaTxRepo, viaExternalManager),
     manager: {
       transaction: async <T>(cb: (manager: unknown) => Promise<T>): Promise<T> => {
         tx.count += 1;
@@ -236,7 +251,21 @@ function makeFakeRepository(initial: Row[] = []) {
   };
   const repo = makeRepoView(false);
 
-  return { repo: repo as unknown as Repository<Row>, table, statements, tx };
+  // The caller-supplied `EntityManager` a test passes as `options.manager`.
+  // Bound repository statements run OUTSIDE `tx` entirely (tx.active stays
+  // false) — that is the point: the caller already owns a transaction, so
+  // `bulkInsertIdempotent` must never open a second one for this path.
+  const externalRepo = makeRepoView(false, true);
+  const externalManager = {
+    withRepository: (r: unknown) => {
+      external.calls += 1;
+      external.boundTo = r;
+
+      return externalRepo;
+    },
+  };
+
+  return { repo: repo as unknown as Repository<Row>, table, statements, tx, external, externalManager };
 }
 
 const opts = (
@@ -357,6 +386,62 @@ describe('bulkInsertIdempotent', () => {
     expect(tx.boundTo).toBe(repo); // re-bound via manager.withRepository(repository)
     expect(statements.map((s) => s.kind)).toEqual(['select', 'insert', 'select']);
     expect(statements.every((s) => s.insideTx && s.viaTxRepo)).toBe(true);
+  });
+
+  // Covers the `options.manager` branch (bulkUpsert.ts:208-213): when a caller
+  // is already inside its own transaction (e.g. ContentService/EventService
+  // wrapping a detail-row insert + CTI base-row write in one
+  // `manager.transaction(...)`), passing that manager in must make the WHOLE
+  // pre-check/insert/hydrate sequence join it via `manager.withRepository(...)`
+  // — never open a second, nested transaction. If this branch regressed to
+  // always calling `repository.manager.transaction(...)` regardless (or simply
+  // dropped `options.manager` on the floor), the detail row and its CTI base row
+  // would no longer commit/rollback atomically, and nothing here would fail
+  // loudly in production — it would just silently stop being one transaction.
+  it('when options.manager is supplied, joins the CALLER transaction instead of opening its own', async () => {
+    const existing = row({ id: 'existing', sourceId: 's1' });
+    const { repo, table, statements, tx, external, externalManager } = makeFakeRepository([existing]);
+
+    const results = await bulkInsertIdempotent({
+      ...opts(repo, [row({ id: 'new-attempt', sourceId: 's1' }), row({ id: 'b', sourceId: 's2' })]),
+      manager: externalManager as unknown as EntityManager,
+    });
+
+    // Correctness is unchanged via this path: still dedupes/inserts exactly as
+    // the self-managed-transaction path does.
+    expect(results[0].entity.id).toBe('existing');
+    expect(results[0].inserted).toBe(false);
+    expect(results[1].entity.id).toBe('b');
+    expect(results[1].inserted).toBe(true);
+    expect(table.size).toBe(2);
+
+    // No NEW transaction was opened...
+    expect(tx.count).toBe(0);
+    // ...instead the whole statement sequence bound to the CALLER's manager,
+    // exactly once, against the ORIGINAL repository (not some other view).
+    expect(external.calls).toBe(1);
+    expect(external.boundTo).toBe(repo);
+    expect(statements.length).toBeGreaterThan(0);
+    expect(statements.every((s) => s.viaExternalManager && !s.insideTx)).toBe(true);
+  });
+
+  it('options.manager also covers the chunked path — every chunk binds to the caller manager, no per-chunk transaction', async () => {
+    const { repo, table, statements, tx, external, externalManager } = makeFakeRepository();
+    const entities = Array.from({ length: 5 }, (_, i) => row({ id: `r${i}`, sourceId: `s${i}` }));
+
+    const results = await bulkInsertIdempotent({
+      ...opts(repo, entities, undefined, 2),
+      manager: externalManager as unknown as EntityManager,
+    });
+
+    expect(results.map((r) => r.inserted)).toEqual([true, true, true, true, true]);
+    expect(table.size).toBe(5);
+    expect(tx.count).toBe(0);
+    // withRepository() is called once up front (not once per chunk) — the same
+    // bound repository is reused for every chunk's statements.
+    expect(external.calls).toBe(1);
+    expect(statements.filter((s) => s.kind === 'insert')).toHaveLength(3);
+    expect(statements.every((s) => s.viaExternalManager && !s.insideTx)).toBe(true);
   });
 });
 
@@ -509,6 +594,118 @@ describe('computeChunkSize', () => {
 
   it('ignores a non-positive requested ceiling and falls back to the default', () => {
     expect(computeChunkSize(6, 0)).toBe(1000);
+  });
+});
+
+/**
+ * `chunkedConflictInsert` is the second exported helper in the module — "the
+ * one canonical copy of the chunk + insert().onConflict() loop" the CTI/STI
+ * bulk writers (CtiAggregate, ObjectObservationService, ConceptService,
+ * PersonService) all share. Unlike `bulkInsertIdempotent`, it has no dedup
+ * pre-check or hydration — just chunk-and-insert — so the fake repository only
+ * needs to record what `.values()` and `.onConflict()` were called with per
+ * chunk.
+ */
+describe('chunkedConflictInsert', () => {
+  interface FakeRow {
+    id: string;
+  }
+
+  function makeFakeRepo(columnsCount: number) {
+    const chunksInserted: FakeRow[][] = [];
+    const conflictActions: string[] = [];
+    const intoTargets: unknown[] = [];
+
+    const repo = {
+      metadata: {
+        target: 'fake_table',
+        columns: Array.from({ length: columnsCount }, (_, i) => ({ databaseName: `c${i}` })),
+      },
+      createQueryBuilder: () => {
+        let values: FakeRow[] = [];
+        const iqb: Record<string, unknown> = {};
+        iqb.insert = () => iqb;
+        iqb.into = (target: unknown) => {
+          intoTargets.push(target);
+
+          return iqb;
+        };
+
+        iqb.values = (v: FakeRow[]) => {
+          values = v;
+
+          return iqb;
+        };
+
+        iqb.onConflict = (action: string) => {
+          conflictActions.push(action);
+
+          return iqb;
+        };
+
+        iqb.execute = async () => {
+          chunksInserted.push(values);
+
+          return { raw: [] };
+        };
+
+        return iqb;
+      },
+    };
+
+    return { repo: repo as unknown as Repository<FakeRow>, chunksInserted, conflictActions, intoTargets };
+  }
+
+  it('splits rows into chunks at exactly the computeChunkSize boundary', async () => {
+    // 30000 "columns" pins the param-budget cap at floor(60000/30000) = 2 rows
+    // per chunk (well under the 1000-row default), so 5 rows must split into
+    // three INSERT statements of [2, 2, 1] — not, say, one oversized statement
+    // that would blow the 65535 bind-param limit on a real wide entity.
+    const { repo, chunksInserted } = makeFakeRepo(30000);
+    const rows = Array.from({ length: 5 }, (_, i) => ({ id: `r${i}` }));
+
+    await chunkedConflictInsert(repo, rows, '(id) DO NOTHING');
+
+    expect(chunksInserted.map((c) => c.length)).toEqual([2, 2, 1]);
+    // Every row appears exactly once, in input order, across the chunks.
+    expect(chunksInserted.flat().map((r) => r.id)).toEqual(['r0', 'r1', 'r2', 'r3', 'r4']);
+  });
+
+  it('passes the onConflict string through to .onConflict() verbatim, for every chunk', async () => {
+    const { repo, conflictActions } = makeFakeRepo(30000); // chunk size 2
+    const rows = Array.from({ length: 3 }, (_, i) => ({ id: `r${i}` }));
+    const conflictAction = '(source_type, source_system, source_id) DO UPDATE SET foo = EXCLUDED.foo';
+
+    await chunkedConflictInsert(repo, rows, conflictAction);
+
+    // 3 rows / chunk size 2 → two chunks, each must carry the SAME arbiter.
+    expect(conflictActions).toEqual([conflictAction, conflictAction]);
+  });
+
+  it('routes .into() through repository.metadata.target (so STI child repos emit their discriminator)', async () => {
+    const { repo, intoTargets } = makeFakeRepo(6);
+
+    await chunkedConflictInsert(repo, [{ id: 'x' }], '(id) DO NOTHING');
+
+    expect(intoTargets).toEqual(['fake_table']);
+  });
+
+  it('issues a single INSERT when the whole batch fits in one chunk', async () => {
+    const { repo, chunksInserted } = makeFakeRepo(6); // budget cap 10000 — batch of 3 fits easily
+    const rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+    await chunkedConflictInsert(repo, rows, '(id) DO NOTHING');
+
+    expect(chunksInserted).toHaveLength(1);
+    expect(chunksInserted[0].map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('issues no INSERT for an empty row list', async () => {
+    const { repo, chunksInserted } = makeFakeRepo(6);
+
+    await chunkedConflictInsert(repo, [], '(id) DO NOTHING');
+
+    expect(chunksInserted).toHaveLength(0);
   });
 });
 

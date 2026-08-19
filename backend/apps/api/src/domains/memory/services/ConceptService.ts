@@ -216,7 +216,14 @@ export class ConceptService extends EntityService<ConceptEntity, Concept> {
    */
   async getEntitiesForConcepts(
     context: ServiceContext,
-    options: { limit?: number; startTime?: Date; endTime?: Date; order?: 'ASC' | 'DESC' } = {},
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.repository
       .createQueryBuilder('concept')
@@ -232,7 +239,19 @@ export class ConceptService extends EntityService<ConceptEntity, Concept> {
       query = query.andWhere('concept.created_at <= :endTime', { endTime: options.endTime });
     }
 
-    query = query.orderBy('concept.created_at', options.order ?? 'DESC');
+    // Composite keyset: page strictly past (afterTime, afterId) in
+    // (created_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
+    if (options.afterTime && options.afterId) {
+      query = query.andWhere(
+        '(concept.created_at < :afterTime OR (concept.created_at = :afterTime AND concept.entity_id < :afterId))',
+        { afterTime: options.afterTime, afterId: options.afterId },
+      );
+    }
+
+    // Deterministic tiebreak so same-timestamp rows page consistently.
+    query = query
+      .orderBy('concept.created_at', options.order ?? 'DESC')
+      .addOrderBy('concept.entity_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -241,6 +260,30 @@ export class ConceptService extends EntityService<ConceptEntity, Concept> {
     const rows = await query.getRawMany<{ id: string }>();
 
     return rows.map((row) => ({ id: row.id, type: 'concept' as IndexableEntity }));
+  }
+
+  /**
+   * True total of concepts matching the same filters {@link getEntitiesForConcepts} applies
+   * (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not
+   * the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForConcepts(
+    context: ServiceContext,
+    options: { startTime?: Date; endTime?: Date },
+  ): Promise<number> {
+    let query = this.repository
+      .createQueryBuilder('concept')
+      .where('concept.owner_user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('concept.created_at >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('concept.created_at <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
   }
 
   async update(context: ServiceContext, id: string, data: UpdateConceptDto): Promise<Concept | null> {

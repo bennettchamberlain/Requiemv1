@@ -1,4 +1,5 @@
 {
+  "role": "CI_ROLE",
   "hostname": "APP_PUBLIC_HOSTNAME",
   "port": {
     "__name": "PORT",
@@ -44,7 +45,8 @@
       },
       "issuer": "PORTAL_OIDC_ISSUER",
       "jwksUri": "PORTAL_OIDC_JWKS_URI",
-      "audience": "PORTAL_OIDC_AUDIENCE"
+      "audience": "PORTAL_OIDC_AUDIENCE",
+      "pushRelayUrl": "PORTAL_PUSH_RELAY_URL"
     },
     "hubForwardAuth": {
       "enabled": {
@@ -122,6 +124,18 @@
       "__format": "json"
     }
   },
+  "import": {
+    "scratchDir": "CI_IMPORT_SCRATCH_DIR",
+    "roots": {
+      "__name": "CI_IMPORT_ROOTS",
+      "__format": "json"
+    },
+    "uploadsDir": "CI_IMPORT_UPLOADS_DIR",
+    "inboxDir": "CI_IMPORT_INBOX_DIR",
+    "maxArchiveEntries": "CI_IMPORT_MAX_ARCHIVE_ENTRIES",
+    "maxArchiveBytes": "CI_IMPORT_MAX_ARCHIVE_BYTES",
+    "databaseDataDir": "CI_IMPORT_DB_DATA_DIR"
+  },
   "accountDeletion": {
     "graceDays": {
       "__name": "CI_ACCOUNT_PURGE_GRACE_DAYS",
@@ -169,6 +183,12 @@
       }
     }
   },
+  "reflection": {
+    "minAnswerConfidence": {
+      "__name": "CI_REFLECTION_MIN_ANSWER_CONFIDENCE",
+      "__format": "json"
+    }
+  },
   "features": {
     "scheduled.answer.inferencing": "ENABLE_SCHEDULED_ANSWER_INFERENCING",
     "scheduled.connection.sync": "ENABLE_SCHEDULED_CONNECTION_SYNC",
@@ -177,12 +197,12 @@
     "enable.system.prompt": "ENABLE_SYSTEM_PROMPT",
     "enable.inventory.page": "ENABLE_INVENTORY_PAGE",
     "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB",
-    "new.insights.page": "ENABLE_NEW_INSIGHTS_PAGE",
     "require.signup.codes": "ENABLE_REQUIRE_SIGNUP_CODES",
     "files.page": "ENABLE_FILES_PAGE",
     "insights.page": "ENABLE_INSIGHTS_PAGE",
     "chat.page": "ENABLE_CHAT_PAGE",
     "jobs.page": "ENABLE_JOBS_PAGE",
+    "import.page": "ENABLE_IMPORT_PAGE",
     "planning.enabled": "ENABLE_PLANNING",
     "planning.page": "ENABLE_PLANNING_PAGE",
     "planning.emptyState": "ENABLE_PLANNING_EMPTY_STATE",
@@ -194,7 +214,11 @@
     "shared.search": "ENABLE_SHARED_SEARCH",
     "onboarding.preference.steps": "ENABLE_ONBOARDING_PREFERENCE_STEPS",
     "actions": "ENABLE_ACTIONS",
-    "smart.rotation": "ENABLE_SMART_ROTATION"
+    "smart.rotation": "ENABLE_SMART_ROTATION",
+    "ask": "ENABLE_ASK",
+    "grounded.prompts": "ENABLE_GROUNDED_PROMPTS",
+    "derivation.engines": "ENABLE_DERIVATION_ENGINES",
+    "ingest.selfHeal": "ENABLE_INGEST_SELF_HEAL"
   },
   "environment": {
     "database.query.logging": "DATABASE_QUERY_LOGGING"

@@ -4,6 +4,10 @@ import { EventEntity } from '@ci/domains/memory';
 import { GeocodeBatchRequestEvent } from '@ci/domains/memory/events';
 import { IndexSkipEntity } from '@ci/domains/search-ingress';
 
+jest.mock('./HealSelfCollationService', () => ({
+  HealSelfCollationService: class HealSelfCollationService {},
+}));
+
 import { MaintenanceOrchestratorService, ORCHESTRATE_STAGES } from './MaintenanceOrchestratorService';
 
 const USER_ID = 'user-1';
@@ -66,7 +70,7 @@ function makeService() {
   };
   const commLink = {
     // Params kept so mockImplementationOnce overrides below can type their (userId, options) impls.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     backfill: jest.fn(async (_userId: string, _options?: unknown) => {
       callOrder.push('link_communications');
 
@@ -80,9 +84,25 @@ function makeService() {
       return { examined: 0, organizersLinked: 0, participantsLinked: 0, pages: 0 };
     }),
   };
+  const healSelf = {
+    heal: jest.fn(async () => {
+      callOrder.push('heal_self_collation');
+
+      return {
+        selfEntityId: null,
+        trustMode: 'balanced',
+        examined: 0,
+        merged: 0,
+        reviewed: 0,
+        skipped: 0,
+        errors: [],
+        mergedSourceIds: [],
+      };
+    }),
+  };
   const graphEnrich = {
     // Params kept so the mockImplementationOnce override below can type its (userId, options) impl.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     enrich: jest.fn(async (_userId: string, _options?: unknown) => {
       callOrder.push('extract_graph');
 
@@ -131,34 +151,30 @@ function makeService() {
       return { notesFolded: 0 };
     }),
   };
+  const inventoryReverse = {
+    reverse: jest.fn(async () => {
+      callOrder.push('reverse_inventory');
+
+      return { examined: 0, placed: 0, skipped: 0, status: 'noop' };
+    }),
+  };
 
   const service = new MaintenanceOrchestratorService(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    dataSource as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    events as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    logger as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    personStub as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    commLink as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    eventPart as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    edgeMaterialize as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    relationshipNormalize as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    derivedRelationships as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    noteFold as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    graphEnrich as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    locationEstimate as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    searchIndex as any,
+    dataSource as never,
+    events as never,
+    logger as never,
+    personStub as never,
+    commLink as never,
+    eventPart as never,
+    healSelf as never,
+    edgeMaterialize as never,
+    relationshipNormalize as never,
+    derivedRelationships as never,
+    noteFold as never,
+    graphEnrich as never,
+    locationEstimate as never,
+    searchIndex as never,
+    inventoryReverse as never,
   );
 
   // Kill the progress throttle by default so forwarding tests see every line;

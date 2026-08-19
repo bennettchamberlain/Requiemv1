@@ -1,5 +1,5 @@
 import { UseGuards } from '@nestjs/common';
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Int, Query, Resolver } from '@nestjs/graphql';
 import { type FindOptionsOrder } from 'typeorm';
 
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
@@ -7,7 +7,7 @@ import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { BrowserActivityEntity, BrowserActivityService } from '@ci/domains/browser-activity';
 import { EntityResolutionService, type ResolvedEntity } from '@ci/domains/entity-resolution';
-import { FileService, SavedSearchService } from '@ci/domains/files';
+import { FileService, SavedSearchService, resolveSavedSearchDateRange } from '@ci/domains/files';
 import { AnswerService } from '@ci/domains/intelligence';
 import {
   CommunicationService,
@@ -41,6 +41,7 @@ import { FileChunkType } from '../types/FileChunkType';
 import { FileType } from '../types/FileType';
 import { GlobalUID } from '../types/GlobalUID';
 import { ItemType } from '../types/ItemType';
+import { MapPinsType } from '../types/MapPinType';
 import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
@@ -66,6 +67,69 @@ const FETCH_MULTIPLIER = 4;
 // a single page is never truncated — the old 25 cap fell short of the 30-row
 // client page, capping plain-text search and disabling load-more.
 const QUERY_CANDIDATE_LIMIT = 300;
+/**
+ * Pin caps for the map read (`mapPins`).
+ *
+ * The map is capped by row count rather than paged: it draws a whole located
+ * set at once, and a pin is ~150 bytes on the wire against a hydrated search
+ * node's several kilobytes. Ten thousand covers a full personal library
+ * (measured: 11,297 located events on the QA appliance) in one ~630ms read; the
+ * hard ceiling keeps a pathological library from serialising unbounded.
+ * Truncation is reported (`MapPinsType.truncated`) rather than hidden.
+ */
+const MAP_PIN_DEFAULT_LIMIT = 10_000;
+const MAP_PIN_MAX_LIMIT = 20_000;
+
+/**
+ * Types the unfiltered timed browse leaves OUT unless the caller names them in
+ * `includeTypes`.
+ *
+ * ── Why ────────────────────────────────────────────────────────────────────
+ * The browse is a CHRONOLOGY. Every type it merges is ordered by whatever
+ * timestamp it has, and for these types that timestamp is `created_at` — the
+ * row-WRITE time, not the time the thing happened. A bulk import writes the
+ * whole corpus at once, so every one of these rows is stamped "now" and lands
+ * ahead of the entire real timeline. Measured on the QA appliance, rows sitting
+ * ahead of the newest genuinely-dated memory (2026-08-18 18:41:33Z) in the
+ * unfiltered browse:
+ *
+ *   content (media, event-linked)  11,211   gated (see below)
+ *   file                           10,521   NOT gated — see the NOTE
+ *   person                          9,753   gated here
+ *   place                           1,178   gated here
+ *   concept / item                      0   gated here
+ *   content (everything else)           3   not gated (has nowhere else to go)
+ *
+ * — the undated import artifacts a user had to scroll past before reaching
+ * their first real memory, which is what made the timeline unreachable rather
+ * than merely untidy. `person`, `place`, `concept` and `item` are gated here.
+ * The event-linked content rows leave by a different door (they are facets of
+ * events the same merge already returns — see
+ * ContentService.getEntitiesForContents). Together that takes the head from
+ * 32,666 rows to 10,524, all but 3 of which are files.
+ *
+ * A person, place, concept or item is not a moment: it is a thing moments refer
+ * to, and it has no domain time at all. It belongs on the timeline only when
+ * the user asks for it, exactly like `file-chunk` (which was already opt-in for
+ * the same reason: a file's many same-timestamp chunks buried the feed).
+ *
+ * They stay fully reachable — by naming the type, by searching, by tag, and
+ * through the graph/explorer. Only the *unfiltered chronological browse* drops
+ * them.
+ *
+ * NOTE `file` is deliberately NOT in this list. It carries the same row-write
+ * problem, but #2110 just made it an explicit opt-OUT (`includeFiles`) to fix
+ * the File type picker, and that decision is left standing — see
+ * {@link SearchResolver.browseWants}. Files are therefore the residual undated
+ * head this gate does not address.
+ */
+const BROWSE_OPT_IN_TYPES: ReadonlySet<IndexableEntity> = new Set([
+  'file-chunk',
+  'person',
+  'place',
+  'concept',
+  'item',
+]);
 
 /** PageInfo for an empty connection (e.g. an unknown/revoked share token). */
 const EMPTY_PAGE_INFO = {
@@ -76,35 +140,26 @@ const EMPTY_PAGE_INFO = {
 };
 
 /**
- * The time a result is ordered by: events use startTime, timeline types use
- * time, and types with only a row timestamp (files, document chunks) fall back
- * to createdAt so they interleave into the browse timeline by upload time rather
- * than sinking to the epoch. Must stay in lockstep with getEntityTimestamp, or
- * a result's cursor position won't match its sort position.
+ * A result paired with the exact timestamp {@link SearchResolver.sortEntries}
+ * ordered it by.
+ *
+ * The cursor is minted from `sortTime` rather than re-derived from the GraphQL
+ * result, because the two are not the same thing: the sort reads the *domain
+ * entity* (getEntityTimestamp), while a GraphQL type only exposes the fields it
+ * declares. ContentType/PersonType/PlaceType/ConceptType declare no time field
+ * at all, so re-deriving produced an epoch cursor for a row the sort had placed
+ * by its 2026 createdAt. That epoch then travelled back as `afterTime` and
+ * windowed every sibling type's query to "before 1970", emptying the browse.
+ * Carrying the sort key forward makes the two identical by construction.
  */
-function timeOf(result: SearchResult): Date {
-  if ('time' in result && result.time) {
-    return new Date(result.time as string | Date);
-  }
-
-  if ('startTime' in result && result.startTime) {
-    return new Date(result.startTime as string | Date);
-  }
-
-  if ('createdAt' in result && result.createdAt) {
-    return new Date(result.createdAt as string | Date);
-  }
-
-  if ('answeredAt' in result && result.answeredAt) {
-    return new Date(result.answeredAt as string | Date);
-  }
-
-  return new Date(0);
+interface OrderedResult {
+  result: SearchResult;
+  sortTime: Date;
 }
 
 /** Opaque, time-ordered cursor: base64(`<iso-time>::<id>`). */
-function searchCursorOf(result: SearchResult): string {
-  return Buffer.from(`${timeOf(result).toISOString()}::${result.id}`).toString('base64');
+function searchCursorOf({ result, sortTime }: OrderedResult): string {
+  return Buffer.from(`${sortTime.toISOString()}::${result.id}`).toString('base64');
 }
 
 /**
@@ -196,6 +251,116 @@ export class SearchResolver {
   }
 
   /**
+   * Every located event for the current filters, as map markers.
+   *
+   * The map used to render the explorer's `search` feed, whose page size is 30
+   * for every view: plotting a library of ten thousand located events took some
+   * three hundred and fifty presses of "Load more pins", and each press
+   * hydrated thirty full nodes to draw thirty dots. A map is not a feed — it
+   * shows a whole set at once, and the client clusters it — so this query
+   * returns the whole located set in one bounded read, projected down to a
+   * point and a label ({@link MapPinType}).
+   *
+   * Filter parity with `search` is deliberate and is why this lives on the
+   * search resolver rather than growing its own filter language:
+   *   - who / where / connector / when / activity go straight down to SQL
+   *     through the same {@link EventService} filters the timed search path uses;
+   *   - a free-text query and tags are resolved by the same search/tag services
+   *     `search` uses, then intersected in SQL via the `ids` filter.
+   * `hasLocation` is forced on regardless of input — an unlocated event has no
+   * pin — and the result is events-only, exactly as `?view=map` already was.
+   *
+   * `totalCount` is a real COUNT(*) of the matching located set, so a truncated
+   * response can say how much of the map it is showing instead of quietly
+   * drawing a partial world.
+   */
+  @Query(() => MapPinsType, {
+    description:
+      'Located events as map markers for the given filters. Events-only and located-only; ' +
+      'returns the whole matching set in one read (capped at ' +
+      `${MAP_PIN_MAX_LIMIT} pins), not a page.`,
+  })
+  async mapPins(
+    @Context() context: RequestContext,
+    @Args('input') input: SearchInput,
+    @Args('limit', { type: () => Int, nullable: true }) limit?: number,
+  ): Promise<MapPinsType> {
+    // Shared saved searches stay on the `search` feed: their result set is the
+    // owner's, resolved through runSharedSearch, and this query resolves the
+    // caller's own memories. Returning nothing here keeps the two from being
+    // silently crossed — the read-only viewer never calls it.
+    if (input.shareToken != null && input.shareToken.length > 0) {
+      return { pins: [], totalCount: 0, truncated: false };
+    }
+
+    const serviceContext = toServiceContext(context);
+    const pinLimit = Math.min(Math.max(limit ?? MAP_PIN_DEFAULT_LIMIT, 1), MAP_PIN_MAX_LIMIT);
+
+    // The map plots events. An entity-type filter that excludes them (e.g. the
+    // explorer narrowed to People) empties the map — the same outcome the
+    // events-only `search` path produces, surfaced without a round trip.
+    if (!this.matchesTypeFilter('event', input.includeTypes, input.excludeTypes)) {
+      return { pins: [], totalCount: 0, truncated: false };
+    }
+
+    const query = input.query != null && input.query.length > 0 ? input.query : undefined;
+    const tags = input.tags && input.tags.length > 0 ? input.tags : undefined;
+
+    // Free text and tags are candidate sets, not SQL predicates: resolve them
+    // with the same services `search` uses, then hand the surviving event ids to
+    // the SQL filter so both halves AND together (LifeScope parity).
+    let ids: string[] | undefined;
+
+    if (query != null) {
+      const identifiers = await this.searchByQuery(serviceContext, {
+        query,
+        includeTypes: input.includeTypes,
+        excludeTypes: input.excludeTypes,
+        semantic: input.semantic === true,
+        maxResults: Math.max(pinLimit, QUERY_CANDIDATE_LIMIT),
+      });
+
+      ids = identifiers.filter((identifier) => identifier.type === 'event').map(({ id }) => id);
+    }
+
+    if (tags != null) {
+      const tagged = await this.searchByTags(serviceContext, tags);
+      const taggedEventIds = new Set(
+        tagged.filter((identifier) => identifier.type === 'event').map(({ id }) => id),
+      );
+
+      ids = ids == null ? [...taggedEventIds] : ids.filter((id) => taggedEventIds.has(id));
+    }
+
+    const filters = {
+      startTime: input.startTime ? new Date(input.startTime) : undefined,
+      endTime: input.endTime ? new Date(input.endTime) : undefined,
+      eventTypes: input.eventTypes && input.eventTypes.length > 0 ? input.eventTypes : undefined,
+      connectors: input.connectors && input.connectors.length > 0 ? input.connectors : undefined,
+      people: input.people && input.people.length > 0 ? input.people : undefined,
+      places: input.places && input.places.length > 0 ? input.places : undefined,
+      bbox:
+        input.bbox && input.bbox.length === 4 && input.bbox.every((value) => Number.isFinite(value))
+          ? input.bbox
+          : undefined,
+      // Forced: a pin is a coordinate. See MapPinsType / findMapPins.
+      hasLocation: true,
+      ids,
+    };
+
+    const [pins, totalCount] = await Promise.all([
+      this.eventService.findMapPins(serviceContext, { ...filters, limit: pinLimit }),
+      this.eventService.countEntitiesForEvents(serviceContext, filters),
+    ]);
+
+    return {
+      pins: pins.map((pin) => ({ ...pin, id: GlobalUID.encode('event', pin.id) })),
+      totalCount,
+      truncated: pins.length < totalCount,
+    };
+  }
+
+  /**
    * Run a shared saved search as its owner. The viewer cannot influence which
    * data is returned beyond paging/sort — the query, entity-type and tag filters
    * are taken verbatim from the stored saved search, so a leaked token can only
@@ -214,6 +379,7 @@ export class SearchResolver {
     // viewer's input), so the full who/where/when/how/sort/semantic set is safe
     // to apply — it can only ever surface what the owner shared.
     const filters = saved.filters ?? {};
+    const dateRange = resolveSavedSearchDateRange(filters);
 
     return this.executeSearch(
       { userId: saved.userId },
@@ -222,8 +388,8 @@ export class SearchResolver {
         includeTypes: saved.entityTypes ?? undefined,
         tags: saved.tags ?? undefined,
         eventTypes: filters.eventTypes,
-        startTime: filters.startTime,
-        endTime: filters.endTime,
+        startTime: dateRange.startTime,
+        endTime: dateRange.endTime,
         connectors: filters.connectors,
         people: filters.people,
         places: filters.places,
@@ -279,6 +445,10 @@ export class SearchResolver {
     // remaining filter dimensions on as post-filters so all filters combine (LifeScope parity).
     let candidateSource: 'query' | 'tags' | 'timed';
     let identifiers: EntityIdentifier<IndexableEntity | TaggableEntity>[];
+    // Real total for the 'timed' candidate source, computed alongside `identifiers` below —
+    // see the branch's comment and `countTimedEntities` for why this can't just be
+    // `identifiers.length` (or the Paginator's derived totalCount from it).
+    let timedTotalCount: number | undefined;
 
     const first = Math.min(Math.max(input.first ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
     const afterCursor = decodeSearchCursor(input.after);
@@ -306,25 +476,33 @@ export class SearchResolver {
       // the same top-N rows). Fall back to the legacy inclusive-endTime window when
       // the cursor lacks a decodable id (older cursors).
       const keyset = afterCursor?.time != null && afterCursor.id != null;
-      identifiers = await this.searchByTimedEntities(serviceContext, {
+      // With no filters at all, bound to "now" so we return recent items, not the entire
+      // history. This is the *filter's* upper bound — stable across pages — as opposed to
+      // the legacy `afterCursor?.time` window fallback below, which is a pagination artifact
+      // of a stale (id-less) cursor. `countTimedEntities` must use this one, not that one:
+      // the total a viewer sees must not shift depending on which page they're looking at.
+      const resolvedEndTime = endTime ?? (noInputs ? new Date() : undefined);
+      const timedOptions = {
         includeTypes: input.includeTypes,
         excludeTypes: input.excludeTypes,
-        includeFiles: input.includeFiles === true,
+        // Files ride the default browse; only an explicit `false` drops them.
+        includeFiles: input.includeFiles !== false,
         startTime,
-        // With no filters at all, bound to "now" so we return recent items, not the entire history.
-        endTime: keyset
-          ? (endTime ?? (noInputs ? new Date() : undefined))
-          : (afterCursor?.time ?? endTime ?? (noInputs ? new Date() : undefined)),
-        afterTime: keyset ? afterCursor!.time : undefined,
-        afterId: keyset ? afterCursor!.id! : undefined,
-        // "How" filter — pushed down to the event query for the timed path.
         eventTypes,
-        // who / where / connector — pushed down to the event query. When set, the
-        // timed path is restricted to events (the only type carrying these dims).
         eventFilter,
-        // Over-fetch per type so the merged page holds the globally newest `first` rows.
-        limit: first * FETCH_MULTIPLIER,
-      });
+      };
+
+      [identifiers, timedTotalCount] = await Promise.all([
+        this.searchByTimedEntities(serviceContext, {
+          ...timedOptions,
+          endTime: keyset ? resolvedEndTime : (afterCursor?.time ?? resolvedEndTime),
+          afterTime: keyset ? afterCursor!.time : undefined,
+          afterId: keyset ? afterCursor!.id! : undefined,
+          // Over-fetch per type so the merged page holds the globally newest `first` rows.
+          limit: first * FETCH_MULTIPLIER,
+        }),
+        this.countTimedEntities(serviceContext, { ...timedOptions, endTime: resolvedEndTime }),
+      ]);
     }
 
     // Entity-type filter: the query/timed paths apply it at their source; apply to the tags path.
@@ -403,17 +581,27 @@ export class SearchResolver {
     }
 
     const sorted = this.sortEntries(entries, input.sortBy, input.sortOrder, candidateSource);
-    const results = sorted.map((entry) => this.toSearchResult(entry));
+    // Carry each entry's sort key alongside its GraphQL result so the cursor is
+    // minted from the very value the sort used. `?? new Date(0)` mirrors
+    // sortEntries' own `?? 0` fallback for entries with no domain timestamp.
+    const ordered: OrderedResult[] = sorted.map((entry) => ({
+      result: this.toSearchResult(entry),
+      sortTime: SearchResolver.getEntityTimestamp(entry) ?? new Date(0),
+    }));
 
-    const { slice, pageInfo, totalCount } = Paginator.paginate(results, {
+    const {
+      slice,
+      pageInfo,
+      totalCount: candidateCount,
+    } = Paginator.paginate(ordered, {
       getId: searchCursorOf,
       first,
       after: input.after ?? undefined,
     });
 
-    const edges = slice.map((result) => ({
-      node: result,
-      cursor: searchCursorOf(result),
+    const edges = slice.map((item) => ({
+      node: item.result,
+      cursor: searchCursorOf(item),
     }));
 
     // Tag suggestions ride alongside the entity results (the header search box
@@ -425,7 +613,14 @@ export class SearchResolver {
     return {
       edges,
       pageInfo,
-      totalCount,
+      // For the 'timed' source, `timedTotalCount` is a real per-type `COUNT(*)`
+      // (see `countTimedEntities`) — not `candidateCount`, which is only the size
+      // of the `first * FETCH_MULTIPLIER`-bounded window fetched for this one page.
+      // Using the window size here previously made `totalCount` scale with page
+      // size instead of reflecting how many results actually exist (confirmed live:
+      // first=10/30/100 -> totalCount=293/853/2813 against a true total in the
+      // hundreds of thousands — see the SearchResolver.totalCount tests).
+      totalCount: timedTotalCount ?? candidateCount,
       matchingTags: matchingTags.map((tag) => TagType.toType(tag)),
     };
   }
@@ -511,23 +706,8 @@ export class SearchResolver {
       limit?: number;
     },
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
-    // who / where / connector are event-only dimensions; restrict to events when set.
-    const eventsOnly = eventFilter != null;
-    // Document chunks stay opt-in — a file's many same-timestamp chunks would bury
-    // the default browse. Files themselves are part of the default timeline.
-    const optIn = (type: IndexableEntity) => {
-      if (type === 'file-chunk') {
-        return includeTypes?.includes(type) ?? false;
-      }
-
-      return true;
-    };
-
     const wants = (type: IndexableEntity) =>
-      this.matchesTypeFilter(type, includeTypes, excludeTypes) &&
-      (!eventsOnly || type === 'event') &&
-      optIn(type) &&
-      (type !== 'file' || includeFiles !== false);
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
 
     const eventOptions: {
       limit: number;
@@ -632,11 +812,17 @@ export class SearchResolver {
       fileChunkOptions.afterId = afterId;
     }
 
+    // Types ordered by their row timestamp (created_at, or answered_at for
+    // answers). They take the same keyset cursor as the timeline types above —
+    // omitting it made every page re-run the identical top-N query, so paging
+    // dead-ended after `first * FETCH_MULTIPLIER` rows no matter how many rows
+    // existed (the Paginator could only slice within that one fetched window).
     const createdAtOptions = {
       limit,
       order: 'DESC' as const,
       ...(startTime ? { startTime } : {}),
       ...(endTime ? { endTime } : {}),
+      ...(afterTime && afterId ? { afterTime, afterId } : {}),
     };
 
     const [
@@ -663,7 +849,14 @@ export class SearchResolver {
       wants('file') ? this.fileService.getEntitiesForFiles(context, fileOptions) : [],
       wants('file-chunk') ? this.fileChunkService.getEntitiesForFileChunks(context, fileChunkOptions) : [],
       wants('note') ? this.noteService.getEntitiesForNotes(context, createdAtOptions) : [],
-      wants('content') ? this.contentService.getEntitiesForContents(context, createdAtOptions) : [],
+      // Event-linked content is a facet of an event the same merge already
+      // returns — see ContentService.getEntitiesForContents.
+      wants('content')
+        ? this.contentService.getEntitiesForContents(context, {
+            ...createdAtOptions,
+            excludeEventLinked: true,
+          })
+        : [],
       wants('person') ? this.personService.getEntitiesForPeople(context, createdAtOptions) : [],
       wants('place') ? this.placeService.getEntitiesForPlaces(context, createdAtOptions) : [],
       wants('item') ? this.itemService.getEntitiesForItems(context, createdAtOptions) : [],
@@ -687,6 +880,81 @@ export class SearchResolver {
     ];
   }
 
+  /**
+   * Real total for the 'timed' candidate source: sums a per-type `COUNT(*)` scoped by the
+   * SAME predicates {@link searchByTimedEntities} filters by (user, date range, "how"/"who"/
+   * "where"/connector), gated by the same `wants(type)` type-filter — but without that
+   * method's `limit`/keyset, which are page-windowing concerns a *total* must not depend on.
+   *
+   * This is the fix for `totalCount` reporting the size of the `first * FETCH_MULTIPLIER`
+   * over-fetched candidate window instead of how many results actually exist: that window is
+   * sized off the caller's page size, so the old `Paginator.paginate(candidates).totalCount`
+   * scaled with `first` (verified live: first=10/30/100 against one real "browse everything"
+   * saved search returned totalCount 293/853/2813 — an almost exact 28-29x multiple of `first`
+   * — against a true total in the hundreds of thousands). That search is exactly what a
+   * shared saved-search link with no query/filters runs (SearchResolver.runSharedSearch), so
+   * the fabricated count was shown directly to viewers on the public Shared-Search page.
+   */
+  private async countTimedEntities(
+    context: UserServiceContext,
+    {
+      includeTypes,
+      excludeTypes,
+      includeFiles,
+      startTime,
+      endTime,
+      eventTypes,
+      eventFilter,
+    }: {
+      includeTypes?: IndexableEntity[];
+      excludeTypes?: IndexableEntity[];
+      includeFiles?: boolean;
+      startTime?: Date;
+      endTime?: Date;
+      eventTypes?: string[];
+      eventFilter?: {
+        connectors?: string[];
+        people?: string[];
+        places?: string[];
+        hasLocation?: boolean;
+        bbox?: number[];
+      };
+    },
+  ): Promise<number> {
+    const wants = (type: IndexableEntity) =>
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
+
+    const dateOptions = { startTime, endTime };
+    const eventOptions = {
+      ...dateOptions,
+      ...(eventTypes && eventTypes.length > 0 ? { eventTypes } : {}),
+      ...(eventFilter ?? {}),
+    };
+
+    const counts = await Promise.all([
+      wants('event') ? this.eventService.countEntitiesForEvents(context, eventOptions) : 0,
+      wants('browser-activity')
+        ? this.browserActivityService.countEntitiesForBrowserActivities(context, dateOptions)
+        : 0,
+      wants('communication')
+        ? this.communicationService.countEntitiesForCommunications(context, dateOptions)
+        : 0,
+      wants('file') ? this.fileService.countEntitiesForFiles(context, dateOptions) : 0,
+      wants('file-chunk') ? this.fileChunkService.countEntitiesForFileChunks(context, dateOptions) : 0,
+      wants('note') ? this.noteService.countEntitiesForNotes(context, dateOptions) : 0,
+      wants('content')
+        ? this.contentService.countEntitiesForContents(context, { ...dateOptions, excludeEventLinked: true })
+        : 0,
+      wants('person') ? this.personService.countEntitiesForPeople(context, dateOptions) : 0,
+      wants('place') ? this.placeService.countEntitiesForPlaces(context, dateOptions) : 0,
+      wants('item') ? this.itemService.countEntitiesForItems(context, dateOptions) : 0,
+      wants('concept') ? this.conceptService.countEntitiesForConcepts(context, dateOptions) : 0,
+      wants('answer') ? this.answerService.countEntitiesForAnswers(context, dateOptions) : 0,
+    ]);
+
+    return counts.reduce((sum, count) => sum + count, 0);
+  }
+
   /** Resolves raw identifiers to full entities, preserving candidate order and dropping misses. */
   private async resolveToEntries(
     context: UserServiceContext,
@@ -697,6 +965,69 @@ export class SearchResolver {
     return identifiers
       .map((identifier) => resolved.get(`${identifier.type}:${identifier.id}`) ?? null)
       .filter((entry): entry is ResolvedEntity => entry != null);
+  }
+
+  /**
+   * Which entity types the timed browse merges, for BOTH the identifier fetch
+   * ({@link searchByTimedEntities}) and the `totalCount` ({@link countTimedEntities}).
+   *
+   * Shared rather than written twice because the two must agree exactly: a type
+   * counted but not fetched inflates the denominator the footer renders (VIEW-08),
+   * and a type fetched but not counted deflates it — and the `file` gate bug
+   * below had to be fixed identically in both copies.
+   *
+   * Three gates, in order of how specific they are:
+   *
+   *  1. the caller's explicit include/exclude type filter;
+   *  2. the event-only dimensions (who / where / connector / bbox / hasLocation),
+   *     which exist only on the event timeline, so setting any restricts the
+   *     browse to events;
+   *  3. the opt-in gate — {@link BROWSE_OPT_IN_TYPES} plus `file`.
+   *
+   * `file` is its own case because it has a dedicated lever, `includeFiles`,
+   * and #2110 deliberately made that lever an opt-OUT: files are part of the
+   * default timeline and a caller drops them by passing `false`. That decision
+   * is preserved verbatim here — see `SearchInput.includeFiles` for why it was
+   * inverted (the File type picker was a no-op on every surface that didn't set
+   * the flag). It does mean ~10,500 files, ordered by `created_at`, still sit
+   * ahead of the real timeline on a freshly-imported appliance; giving
+   * `ci.files` a domain timestamp (`external_created_at` is populated on 0 of
+   * 14,194 rows) is the fix, and it is a schema/ETL change, not a gate.
+   */
+  private browseWants(
+    type: IndexableEntity,
+    {
+      includeTypes,
+      excludeTypes,
+      includeFiles,
+      eventFilter,
+    }: {
+      includeTypes?: IndexableEntity[];
+      excludeTypes?: IndexableEntity[];
+      includeFiles?: boolean;
+      eventFilter?: unknown;
+    },
+  ): boolean {
+    if (!this.matchesTypeFilter(type, includeTypes, excludeTypes)) {
+      return false;
+    }
+
+    // who / where / connector are event-only dimensions; restrict to events when set.
+    if (eventFilter != null && type !== 'event') {
+      return false;
+    }
+
+    const namedExplicitly = includeTypes?.includes(type) ?? false;
+
+    if (type === 'file') {
+      return includeFiles !== false;
+    }
+
+    if (BROWSE_OPT_IN_TYPES.has(type)) {
+      return namedExplicitly;
+    }
+
+    return true;
   }
 
   private matchesTypeFilter(
@@ -753,14 +1084,39 @@ export class SearchResolver {
     });
   }
 
+  /**
+   * The single source of truth for "when" an entry happened: it drives both the
+   * timeline sort and — via {@link OrderedResult} — the cursor minted for it, so
+   * the two can never disagree. Whatever column a type is ordered by in SQL
+   * (start_time, time, created_at, answered_at) must be readable here, or that
+   * type's keyset window will not line up with its position in the merged page.
+   */
   private static getEntityTimestamp(entry: ResolvedEntity): Date | null {
     // File chunks carry a { chunk, file } join; read the chunk's own fields.
     const entity = (entry.type === 'file-chunk' ? entry.entity.chunk : entry.entity) as Record<
       string,
       unknown
     >;
-    // Files/chunks have no domain time/startTime — fall back to createdAt so the
-    // timeline sort matches timeOf() (the cursor) rather than sinking to epoch.
+    // Files/chunks/content have no domain time/startTime — fall back to the row
+    // timestamp so they interleave into the browse by upload time rather than
+    // sinking to the epoch.
+    //
+    // The `createdAt` fallback CANNOT simply be dropped: it is also the cursor
+    // key (see OrderedResult), and a null here becomes `new Date(0)`, which
+    // travels back as `afterTime` and windows every sibling type's SQL to
+    // "before 1970", emptying the browse. Row-write time is therefore kept as
+    // the sort key, and the types for which it is a LIE about when the thing
+    // happened are instead kept out of the unfiltered chronological browse —
+    // see BROWSE_OPT_IN_TYPES. What still rides `createdAt` inside the browse
+    // is `note`, `file` and non-event-linked `content` — 10,524 rows ahead of
+    // the timeline on the QA appliance, against 32,666 before the gate, and all
+    // but 3 of them files. Giving those a real domain timestamp is a schema/ETL
+    // change, not a resolver change: `ci.files.external_created_at` exists and
+    // is populated on 0 of 14,194 rows.
+    //
+    // Types reached by NAMING them (includeTypes) still sort by write time,
+    // which is the honest answer for a set that has no other time — a browse
+    // restricted to People is ordered by when each person was learned about.
     const value = entity.time ?? entity.startTime ?? entity.createdAt ?? entity.answeredAt ?? null;
 
     if (value instanceof Date) {

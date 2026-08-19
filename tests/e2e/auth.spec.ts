@@ -18,7 +18,7 @@ test('logs in with the seeded user and lands in the app', async ({ page }) => {
 });
 
 test('redirects to /login when visiting a protected route logged-out', async ({ page }) => {
-  await page.goto('/memory');
+  await page.goto('/memory/events');
 
   await expect(page).toHaveURL(/\/login/);
 });

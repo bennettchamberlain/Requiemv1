@@ -91,10 +91,19 @@ import { StageRegistry } from './StageRegistry';
  * restated here:
  *
  *  - **`minInterval`** (7 days), enforced by {@link stageDueness} against the
- *    per-leg `ci.pipeline_schedule.last_started_at` this tick stamps and reads;
+ *    per-leg `ci.pipeline_schedule.last_started_at` this tick stamps and reads —
+ *    EXCEPT for a leg with an overdue retry, which `hasOverdueRetry` (below)
+ *    lets jump the interval, on the reasoning that retrying rows already
+ *    counted against a past `perRunCap` is not the unbounded spend the
+ *    interval exists to prevent. A transient `provider_unavailable` mid-sweep
+ *    would otherwise strand those rows for up to `minInterval`, with their own
+ *    (minutes-to-hours) backoff never getting a chance to fire — see
+ *    `PipelineStateService.hasOverdueRetry`;
  *  - **`window: 'enrichment'`**, enforced by passing `EnrichmentWindowService`'s
  *    answer into the same call — one implementation of "is it 03:00 for this
- *    owner?", consulted here rather than re-derived;
+ *    owner?", consulted here rather than re-derived. Unlike `minInterval`, the
+ *    window still binds a retry: it is spend-timing, not spend-frequency, and
+ *    `hasOverdueRetry` does not touch it;
  *  - **`perRunCap`**, carried into `startSweep` as `maxIds` and enforced by the
  *    dispatcher at slice granularity, so the size of a bill is bounded and not
  *    merely its frequency.
@@ -330,6 +339,18 @@ const UNCLAIMABLE_SHARD_STATUSES: readonly string[] = [SHARD_STATUS.CANCELLED];
  *    `DuplicateDetectStage` records `skipped: no_identifier_claims` for a person
  *    with none, so running it first writes a corpus of skips that only a version
  *    bump can re-open.
+ *  - `promote.place_position` ← `enrich.position_reverse`. The reverse geocoder
+ *    writes BOTH of the promoter's inputs: `ci.position.name`, which is what
+ *    makes a fix a candidate at all, and the `ci.geocode_cache` row whose
+ *    address components become the place's hierarchy. Promoting first promotes
+ *    the handful of fixes an importer happened to name and silently skips the
+ *    rest until a version bump — the same failure the `promote.place` ←
+ *    `enrich.geocode` edge exists to prevent, one table over.
+ *  - `promote.edge_position` ← `promote.place_position`. Its predicate is
+ *    literally `s.location_entity_id IS NOT NULL`, and as of that stage this
+ *    column finally has a writer. Before it, this leg's candidate set was
+ *    permanently empty (0 of 65,115 fixes on the legacy corpus), which is why
+ *    the edge did not exist and why it does now.
  *
  * Stages absent from this map depend on nothing: `enrich.media_dimensions`,
  * `index.embed`, `enrich.position_reverse`, `clean.temporal_repair` and
@@ -338,22 +359,40 @@ const UNCLAIMABLE_SHARD_STATUSES: readonly string[] = [SHARD_STATUS.CANCELLED];
 export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly StageId[]>>> = {
   [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: [STAGE_IDS.ENRICH_GEOCODE],
   [STAGE_IDS.PROMOTE_PLACE]: [STAGE_IDS.ENRICH_GEOCODE, STAGE_IDS.ENRICH_ESTIMATE_LOCATION],
+  [STAGE_IDS.PROMOTE_PLACE_POSITION]: [STAGE_IDS.ENRICH_POSITION_REVERSE],
   [STAGE_IDS.ENRICH_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: [STAGE_IDS.ENRICH_PERSON_LINK, STAGE_IDS.ENRICH_EVENT_PERSON_LINK],
   // The edge projections are pure consumers of the linkage columns their
   // producers fill: person-link writes communications' from/to columns; the
   // event leg additionally reads `location_entity_id`, which `promote.place`
-  // writes. Projecting first would write a night of `done` rows over unlinked
-  // sources that only the producers' next version bump could re-open.
+  // writes. THIS graph is the whole of the ordering between them — the shared
+  // nightly cadence that used to double as ordering is gone (the projections
+  // are hourly and unwindowed now, see `STAGE_SCHEDULES`), and it was never
+  // load-bearing: an unlinked source row fails every edge leg's
+  // `StageSource.predicate`, so a projection that outruns its producer skips it
+  // rather than marking it `done`. What this graph still buys is that on a tick
+  // where a producer is due WITH candidates, its consumer waits one tick rather
+  // than projecting a slice the producer is about to widen.
   [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: [STAGE_IDS.ENRICH_PERSON_LINK],
   [STAGE_IDS.PROMOTE_EDGE_EVENT]: [STAGE_IDS.ENRICH_EVENT_PERSON_LINK, STAGE_IDS.PROMOTE_PLACE],
   [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: [STAGE_IDS.PROMOTE_OBJECT],
+  // `promote.observation` reads `ci.events.location_entity_id` when it is set,
+  // which is `promote.place`'s output. Today a `capture.scan` row never has one
+  // — `/v1/events` writes no geo columns, so `promote.place`'s predicate never
+  // selects a scan — and the stage falls back to the geo block inside the
+  // payload. The edge is declared anyway: it is free (ordering within the
+  // night), and it is what keeps the day someone starts populating those
+  // columns from being the day sightings quietly resolve to no place.
+  [STAGE_IDS.PROMOTE_OBSERVATION]: [STAGE_IDS.PROMOTE_PLACE],
   // The observation leg's `resolved_object_id` is `promote.object`'s output;
   // its other columns (content/event/place) are set at capture time. The
-  // receipt, position and device legs read only ingest/capture-time columns —
-  // no producer stage, so no entry.
+  // receipt and device legs read only ingest/capture-time columns — no producer
+  // stage, so no entry.
   [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: [STAGE_IDS.PROMOTE_OBJECT],
+  // The position leg USED to belong in that sentence. It no longer does:
+  // `ci.position.location_entity_id` has a producer now.
+  [STAGE_IDS.PROMOTE_EDGE_POSITION]: [STAGE_IDS.PROMOTE_PLACE_POSITION],
 };
 
 /**
@@ -684,7 +723,7 @@ export class PipelineControlService {
    * because one tick failed. The next tick retries in two minutes and nothing is
    * lost, because every fact the tick relies on is a row rather than a variable.
    */
-  @Cron(PIPELINE_CONTROL_TICK_CRON)
+  @Cron(PIPELINE_CONTROL_TICK_CRON, { name: 'PipelineControlService.tickOnSchedule' })
   async tickOnSchedule(): Promise<void> {
     try {
       await this.tick();
@@ -845,6 +884,24 @@ export class PipelineControlService {
     // answer a question one `WHERE user_id = $1` covers.
     const lastStartedAt = await this.legScheduleFor(userId);
 
+    // A due retry can make a leg due before its `minInterval` elapses (see
+    // `stageDueness`'s "Why `hasOverdueRetry` is a THIRD input" note), so it
+    // has to be known before dueness is computed, not read out of the result.
+    //
+    // Skipped for a leg with no candidates at all: `hasCandidates` already
+    // proved THE ONE RULE finds nothing for it — including the retry arm — so
+    // a leg absent from `candidates` can hold no due retry that matters here,
+    // and the read is one fewer per leg on the common, converged tick.
+    const retryDue = new Map<string, boolean>();
+
+    for (const leg of legs) {
+      if (candidates.get(this.legKey(leg)) !== true) {
+        continue;
+      }
+
+      retryDue.set(this.legKey(leg), await this.hasOverdueRetry(leg, userId));
+    }
+
     const dueness = new Map<string, StageDueness>(
       legs.map((leg) => [
         this.legKey(leg),
@@ -853,6 +910,7 @@ export class PipelineControlService {
           lastStartedAt: lastStartedAt.get(this.legKey(leg)) ?? null,
           windowOpen: conditions.windowOpen,
           now: conditions.now,
+          hasOverdueRetry: retryDue.get(this.legKey(leg)) ?? false,
         }),
       ]),
     );
@@ -1092,8 +1150,15 @@ export class PipelineControlService {
    * abandoning a claim. The wait is bounded by {@link SHARD_LEASE_SECONDS} and
    * cannot be unbounded, because a lease that is never renewed always expires —
    * which is what makes "eventually finalised" a guarantee rather than a hope.
+   *
+   * Public for the same reason as {@link reapExpiredShardLeases} and
+   * {@link claimStageShard}: the property that matters — a shard this run's OWN
+   * tick claimed a live lease on moments before cancellation lands is left
+   * untouched while every other idle shard of the same run IS torn down in the
+   * same pass — is a fact about this UPDATE's `WHERE` clause interacting with a
+   * lease `claimStageShard` actually stamped, not a fact a mock can attest to.
    */
-  private async tearDownCancelledRun(runId: string, report: ControlTickReport): Promise<void> {
+  async tearDownCancelledRun(runId: string, report: ControlTickReport): Promise<void> {
     await this.dataSource.query(
       `UPDATE ci.pipeline_shards
           SET status           = $2,
@@ -1309,6 +1374,20 @@ export class PipelineControlService {
     const ids = await this.stateService.selectStale(leg.stage, userId, null, 1, leg.entityType);
 
     return ids.length > 0;
+  }
+
+  /**
+   * Does this leg have a FAILED row whose own retry backoff is already due?
+   *
+   * Delegates to {@link PipelineStateService.hasOverdueRetry} — `LIMIT 1`
+   * against `pipeline_state_retry_idx`, the same shape as {@link
+   * hasCandidates} and for the same reason: the tick asks once a leg. Feeds
+   * `stageDueness`'s `hasOverdueRetry` input, which is what lets a stuck
+   * `provider_unavailable` retry outrank a metered stage's `minInterval`
+   * instead of waiting out its full weekly cadence for a transient blip.
+   */
+  private async hasOverdueRetry(leg: StageLeg, userId: string): Promise<boolean> {
+    return this.stateService.hasOverdueRetry(leg.stage, leg.entityType, userId);
   }
 
   // -------------------------------------------------------------------------

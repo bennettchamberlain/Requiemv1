@@ -10,6 +10,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EventsModule } from '@ci/domains/events';
+import { GeocodeModule } from '@ci/domains/geocode';
 import { GraphModule } from '@ci/domains/graph';
 import { LLMModule } from '@ci/domains/llm';
 import { EventEntity, MemoryModule } from '@ci/domains/memory';
@@ -24,9 +25,12 @@ import { DerivedRelationshipService } from './services/DerivedRelationshipServic
 import { DeterministicEdgeBackfillService } from './services/DeterministicEdgeBackfillService';
 import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetryService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
+import { ExternalIdKindIntegrityService } from './services/ExternalIdKindIntegrityService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
+import { HealSelfCollationService } from './services/HealSelfCollationService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { IngestResetService } from './services/IngestResetService';
+import { InventoryReverseService } from './services/InventoryReverseService';
 import { LocationEstimateService } from './services/LocationEstimateService';
 import { MaintenanceOrchestratorService } from './services/MaintenanceOrchestratorService';
 import { NoteContentFoldService } from './services/NoteContentFoldService';
@@ -43,6 +47,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     EventsModule,
     SearchIngressModule,
     GraphModule,
+    GeocodeModule,
     // GraphEnrichmentService needs the local Ollama client (LLMModule) and the
     // Person-resolution read path (GraphQueryService, exported by MemoryModule).
     LLMModule,
@@ -52,6 +57,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
   controllers: [MaintenanceController],
   providers: [
     IndexDeferralService,
+    ExternalIdKindIntegrityService,
     IngestResetService,
     CommunicationLinkBackfillService,
     PersonStubBackfillService,
@@ -61,15 +67,18 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
+    InventoryReverseService,
     EstimateLocationBatchListener,
     CommunicationParticipantLinkListener,
   ],
   exports: [
     IndexDeferralService,
+    ExternalIdKindIntegrityService,
     CommunicationLinkBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
@@ -78,10 +87,12 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
+    InventoryReverseService,
   ],
 })
 export class MaintenanceModule {}
@@ -100,6 +111,12 @@ export {
   type DeterministicEdgeBackfillOptions,
   type DeterministicEdgeBackfillResult,
 } from './services/DeterministicEdgeBackfillService';
+export {
+  ExternalIdKindIntegrityService,
+  VIOLATION_SAMPLE_LIMIT,
+  type ExternalIdKindIntegrityReport,
+  type ExternalIdKindViolation,
+} from './services/ExternalIdKindIntegrityService';
 export { RelationshipNormalizeService } from './services/RelationshipNormalizeService';
 export { DerivedRelationshipService } from './services/DerivedRelationshipService';
 export { NoteContentFoldService } from './services/NoteContentFoldService';
@@ -112,7 +129,16 @@ export {
 export {
   SearchIndexBackfillService,
   BACKFILLABLE_ENTITIES,
+  PIPELINE_COVERED_STAGES,
   expandBackfillEntityTypes,
   type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';
+export {
+  SearchIndexBackfillRequestEvent,
+  SEARCH_INDEX_BACKFILL_QUEUE,
+  type SearchIndexBackfillRequestPayload,
+  GraphEdgeBackfillRequestEvent,
+  GRAPH_EDGE_BACKFILL_QUEUE,
+  type GraphEdgeBackfillRequestPayload,
+} from './events';

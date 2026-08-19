@@ -1,14 +1,15 @@
 /**
  * Object-identifier normalization — the single source of truth for the rule
- * shared by the importer (which pre-normalizes barcodes off receipts and
+ * used both by the importer (which pre-normalizes barcodes off receipts and
  * product feeds) and the server (which normalizes scanned codes, receipt-OCR
- * output and defensively re-normalizes ingested identifiers). The two copies
- * MUST stay byte-identical or the `ci.object_identifiers` lookup silently
- * misses — the same failure mode documented on {@link normalizeIdentifier} for
- * people.
+ * output and defensively re-normalizes ingested identifiers), the same
+ * failure mode documented on {@link normalizeIdentifier} for people.
  *
- * The twin lives at CI-Import-Tools `backend/src/ci-server/objectIdentifiers.ts`
- * and is covered by the same vector table in both test suites.
+ * Until CI-Import-Tools' retirement (its import functionality is now native,
+ * in `backend/apps/api/src/domains/import/`), a twin of this rule also lived
+ * at CI-Import-Tools `backend/src/ci-server/objectIdentifiers.ts` and had to
+ * stay byte-identical with this copy or the `ci.object_identifiers` lookup
+ * would silently miss.
  *
  * This is deliberately NOT reimplementable in SQL. GTIN-14 zero-padding with
  * mod-10 validation, ISBN-10 -> ISBN-13 conversion and IMEI Luhn cannot be kept

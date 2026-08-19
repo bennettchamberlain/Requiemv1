@@ -201,7 +201,7 @@ stage_down() {
 #
 # It was FIVE passes until the narrative re-cut. That cut dropped the splash and
 # login scenes, so the signed-out pass has nothing left to shoot and is gone;
-# `/` and `/login` redirect an onboarded user to `/feed`, so were it kept it
+# `/` and `/login` redirect an onboarded user to `/plan`, so were it kept it
 # would need `VIDEO_LOGGED_OUT=1` again. It also dropped `onboarding-focus`,
 # leaving two fresh-account shots rather than three.
 #

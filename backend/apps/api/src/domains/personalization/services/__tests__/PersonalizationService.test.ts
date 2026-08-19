@@ -88,3 +88,50 @@ describe('PersonalizationService.thresholdForKind', () => {
     expect(PersonalizationService.thresholdForKind(handsOff, 'graph_edge')).toBe(0.7);
   });
 });
+
+describe('PersonalizationService.decide for planning task kinds', () => {
+  it('cautious always reviews task_create / mutate / complete / event_revise', () => {
+    const profile = PersonalizationService.profileForTrustMode('cautious');
+
+    for (const kind of [
+      'task_create',
+      'task_mutate',
+      'task_complete',
+      'event_revise',
+      'schedule_accept',
+    ] as const) {
+      expect(PersonalizationService.decide(profile, { kind, confidence: 0.99 })).toBe('review');
+    }
+  });
+
+  it('balanced reviews schedule_accept unless autoSchedule is on at high confidence', () => {
+    const profile = PersonalizationService.profileForTrustMode('balanced');
+
+    expect(PersonalizationService.decide(profile, { kind: 'schedule_accept', confidence: 0.95 })).toBe(
+      'review',
+    );
+  });
+
+  it('hands_off auto-places schedule_accept at the promote threshold', () => {
+    const profile = PersonalizationService.profileForTrustMode('hands_off');
+
+    expect(PersonalizationService.decide(profile, { kind: 'schedule_accept', confidence: 0.72 })).toBe(
+      'auto',
+    );
+  });
+
+  it('balanced auto-accepts at the promote threshold and reviews below', () => {
+    const profile = PersonalizationService.profileForTrustMode('balanced');
+
+    expect(PersonalizationService.decide(profile, { kind: 'task_create', confidence: 0.9 })).toBe('auto');
+    expect(PersonalizationService.decide(profile, { kind: 'task_mutate', confidence: 0.8 })).toBe('review');
+    expect(PersonalizationService.decide(profile, { kind: 'task_complete', confidence: 0.85 })).toBe('auto');
+  });
+
+  it('hands_off auto-accepts from 0.7 upward', () => {
+    const profile = PersonalizationService.profileForTrustMode('hands_off');
+
+    expect(PersonalizationService.decide(profile, { kind: 'event_revise', confidence: 0.72 })).toBe('auto');
+    expect(PersonalizationService.decide(profile, { kind: 'task_create', confidence: 0.65 })).toBe('review');
+  });
+});

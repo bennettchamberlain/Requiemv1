@@ -13,7 +13,8 @@ import {
 } from '@ci/common/decorators';
 import { IdFormatGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
-import { PipelineRunService } from '../../services/PipelineRunService';
+import { type DeadLetterBulkReplayResult, PipelineRunService } from '../../services/PipelineRunService';
+import { PipelineStateService, type ReleaseQuarantinedInput } from '../../services/PipelineStateService';
 import { PipelineController } from '../PipelineController';
 
 /**
@@ -93,20 +94,57 @@ function makeService() {
       jobIds: ['job-1'],
       replayedAt: new Date('2026-08-09T12:00:00Z'),
     })),
+    replayDeadLetters: jest.fn(
+      async (): Promise<DeadLetterBulkReplayResult> => ({
+        requested: 1,
+        claimed: 1,
+        limit: 50,
+        replayed: [
+          {
+            id: LETTER_ID,
+            eventName: 'infer.question.answer',
+            queue: null,
+            jobIds: ['job-1'],
+            replayedAt: new Date('2026-08-18T12:00:00Z'),
+          },
+        ],
+        failed: [],
+        skipped: [],
+        notAttempted: [],
+      }),
+    ),
+  };
+}
+
+/**
+ * The ledger, doubled. Only the one method this controller reaches for: the
+ * quarantine release is a WRITE to `ci.pipeline_state`, and
+ * `PipelineStateService` is the only thing allowed to make one.
+ */
+function makeStateService() {
+  return {
+    releaseQuarantined: jest.fn(async (_userId: string, input: ReleaseQuarantinedInput = {}) => ({
+      released: 12_237,
+      reasons: input.reasons != null ? [...input.reasons] : ['provider_unavailable', 'ollama_unreachable'],
+      stage: input.stage ?? null,
+    })),
   };
 }
 
 describe('PipelineController', () => {
   let app: INestApplication;
   let service: ReturnType<typeof makeService>;
+  let stateService: ReturnType<typeof makeStateService>;
 
   beforeEach(async () => {
     service = makeService();
+    stateService = makeStateService();
 
     const module = await Test.createTestingModule({
       controllers: [PipelineController],
       providers: [
         { provide: PipelineRunService, useValue: service },
+        { provide: PipelineStateService, useValue: stateService },
         { provide: APP_GUARD, useClass: IdFormatGuard },
       ],
     })
@@ -317,6 +355,189 @@ describe('PipelineController', () => {
     });
   });
 
+  describe('POST /api/pipeline/dead-letters/replay', () => {
+    const LETTER_2 = '00000000-0000-7000-8000-0000000000d2';
+
+    it('passes an explicit id batch through', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, LETTER_2] })
+        .expect(200);
+
+      expect(service.replayDeadLetters).toHaveBeenCalledWith(
+        { userId: USER },
+        { ids: [LETTER_ID, LETTER_2], eventName: undefined, failedAfter: undefined, limit: undefined },
+      );
+      expect(response.body.replayed).toHaveLength(1);
+    });
+
+    it('passes the failure-class selector through, with failedAfter parsed as a date', async () => {
+      await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ eventName: 'infer.question.answer', failedAfter: '2026-08-18T00:00:00.000Z', limit: 25 })
+        .expect(200);
+
+      expect(service.replayDeadLetters).toHaveBeenCalledWith(
+        { userId: USER },
+        {
+          ids: undefined,
+          eventName: 'infer.question.answer',
+          failedAfter: new Date('2026-08-18T00:00:00.000Z'),
+          limit: 25,
+        },
+      );
+    });
+
+    it('400s an empty selector rather than replaying everything', async () => {
+      // The safety property of the whole endpoint: most of a real backlog is one
+      // config error, and blind replay re-runs it against the same broken config.
+      await request(app.getHttpServer()).post('/api/pipeline/dead-letters/replay').send({}).expect(400);
+
+      expect(service.replayDeadLetters).not.toHaveBeenCalled();
+    });
+
+    it('400s a failedAfter it cannot read, instead of widening the selector to everything', async () => {
+      // `z.coerce.date()` alone yields an Invalid Date here, which would bind as
+      // NULL — i.e. no filter at all.
+      await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ failedAfter: 'not-a-date' })
+        .expect(400);
+
+      expect(service.replayDeadLetters).not.toHaveBeenCalled();
+    });
+
+    it('400s a malformed id in the batch before it reaches a ::uuid cast', async () => {
+      // The single-id route gets this from IdFormatGuard; a body array is the
+      // schema's job.
+      await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, 'not-a-uuid'] })
+        .expect(400);
+
+      expect(service.replayDeadLetters).not.toHaveBeenCalled();
+    });
+
+    it('400s a batch larger than the page ceiling', async () => {
+      const ids = Array.from(
+        { length: 201 },
+        (_, i) => `00000000-0000-7000-8000-${String(i).padStart(12, '0')}`,
+      );
+
+      await request(app.getHttpServer()).post('/api/pipeline/dead-letters/replay').send({ ids }).expect(400);
+    });
+
+    it('reports partial failure as 200 with a body, not as a 500', async () => {
+      // Some letters replayed and some did not is the NORMAL outcome of a batch.
+      // Failing the call would hide the ones that went back on the bus.
+      service.replayDeadLetters.mockResolvedValueOnce({
+        requested: 2,
+        claimed: 2,
+        limit: 50,
+        replayed: [
+          {
+            id: LETTER_ID,
+            eventName: 'infer.question.answer',
+            queue: null,
+            jobIds: ['job-1'],
+            replayedAt: new Date('2026-08-18T12:00:00Z'),
+          },
+        ],
+        failed: [{ id: LETTER_2, eventName: 'infer.question.answer', reason: 'pg-boss is down' }],
+        skipped: [],
+        notAttempted: [],
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, LETTER_2] })
+        .expect(200);
+
+      expect(response.body.replayed).toHaveLength(1);
+      expect(response.body.failed[0]).toMatchObject({ id: LETTER_2, reason: 'pg-boss is down' });
+    });
+
+    it('reports an already-replayed double submit as skipped, at 200', async () => {
+      // The claim guard lives in SQL. A second submit claims nothing, and that is
+      // a normal answer — not a 409 that would hide the rest of the batch.
+      service.replayDeadLetters.mockResolvedValueOnce({
+        requested: 2,
+        claimed: 0,
+        limit: 50,
+        replayed: [],
+        failed: [],
+        skipped: [LETTER_ID, LETTER_2],
+        notAttempted: [],
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/dead-letters/replay')
+        .send({ ids: [LETTER_ID, LETTER_2] })
+        .expect(200);
+
+      expect(response.body).toMatchObject({ claimed: 0, skipped: [LETTER_ID, LETTER_2] });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/pipeline/quarantine/release
+  // -------------------------------------------------------------------------
+
+  describe('POST /api/pipeline/quarantine/release', () => {
+    it('releases the declared transient reasons when the body names none', async () => {
+      // The default is the whole point of the route being usable at all: an
+      // operator who has just read "12,237 quarantined: provider_unavailable"
+      // should not have to know the token to undo it.
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({})
+        .expect(200);
+
+      expect(stateService.releaseQuarantined).toHaveBeenCalledWith(USER, {
+        reasons: undefined,
+        stage: undefined,
+      });
+      expect(response.body).toMatchObject({
+        released: 12_237,
+        reasons: ['provider_unavailable', 'ollama_unreachable'],
+        stage: null,
+      });
+    });
+
+    it('passes an explicit reason and stage selector through', async () => {
+      await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({ reasons: ['provider_status_unrecognized'], stage: 'enrich.position_reverse' })
+        .expect(200);
+
+      expect(stateService.releaseQuarantined).toHaveBeenCalledWith(USER, {
+        reasons: ['provider_status_unrecognized'],
+        stage: 'enrich.position_reverse',
+      });
+    });
+
+    it('400s an explicitly empty reason list rather than treating it as "all"', async () => {
+      // `{}` means the declared transient set; `{ reasons: [] }` means the
+      // caller tried to name reasons and named none, which is a different
+      // mistake and must not silently widen to every quarantined row.
+      await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({ reasons: [] })
+        .expect(400);
+
+      expect(stateService.releaseQuarantined).not.toHaveBeenCalled();
+    });
+
+    it('is scoped to the caller, never to a user id in the body', async () => {
+      await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({ userId: '00000000-0000-4000-8000-0000000000bb' })
+        .expect(200);
+
+      expect(stateService.releaseQuarantined).toHaveBeenCalledWith(USER, expect.anything());
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Auth declarations
   //
@@ -342,12 +563,16 @@ describe('PipelineController', () => {
       },
     );
 
-    it.each(['pauseRun', 'resumeRun', 'cancelRun', 'replayDeadLetter'] as const)(
-      '%s requires write capability, so a read-only key cannot steer a run',
-      (name) => {
-        expect(Reflect.getMetadata(REQUIRE_CAPABILITY_KEY, handler(name))).toBe(WRITE_CAPABILITY);
-      },
-    );
+    it.each([
+      'pauseRun',
+      'resumeRun',
+      'cancelRun',
+      'replayDeadLetter',
+      'replayDeadLetters',
+      'releaseQuarantine',
+    ] as const)('%s requires write capability, so a read-only key cannot steer a run', (name) => {
+      expect(Reflect.getMetadata(REQUIRE_CAPABILITY_KEY, handler(name))).toBe(WRITE_CAPABILITY);
+    });
 
     it('declares no scopes, so a scope-limited api key cannot reach the control plane', () => {
       // Scope enforcement is deny-by-default: a scope-limited key is confined to
@@ -365,6 +590,8 @@ describe('PipelineController', () => {
         'cancelRun',
         'listDeadLetters',
         'replayDeadLetter',
+        'replayDeadLetters',
+        'releaseQuarantine',
       ] as const) {
         expect(Reflect.getMetadata(REQUIRE_SCOPES_KEY, handler(name))).toBeUndefined();
       }

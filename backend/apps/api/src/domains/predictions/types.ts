@@ -13,6 +13,8 @@ export interface ForecastResponse {
   horizon: string;
   generated_at: string;
   system_status: string;
+  model_version?: string;
+  still_learning?: boolean;
   buckets: ForecastBucket[];
 }
 

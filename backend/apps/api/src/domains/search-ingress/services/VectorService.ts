@@ -37,7 +37,7 @@ function mapScalarToWeight(scalar: number): TsVectorWeight {
  * named) params so the expression can be spliced into a raw parameterized
  * `INSERT ... ON CONFLICT` upsert.
  */
-function buildWeightedVectorSql(
+export function buildWeightedVectorSql(
   texts: WeightedText[],
   startIndex: number,
 ): {

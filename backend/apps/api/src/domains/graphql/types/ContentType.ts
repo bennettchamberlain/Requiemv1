@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { Field, Float, ID, ObjectType } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Content } from '@ci/domains/memory';
@@ -43,6 +43,24 @@ export class ContentType implements Node, Taggable {
 
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
+
+  /**
+   * Thumbnail (PREVIEW variant) URL of the file this content row points at, for
+   * `externalIdKind = 'file'` rows. Resolved by ContentResolver, not stored —
+   * media content rows carry no `url`/`sourceUrl` of their own, the binary is
+   * only reachable via `externalId -> ci.files`. Null when the row references no
+   * file, or when no preview has been generated for it yet.
+   */
+  @Field(() => String, { nullable: true })
+  previewUrl?: string | null;
+
+  /** Full-resolution (ORIGINAL variant) URL of the linked file. */
+  @Field(() => String, { nullable: true })
+  mediaUrl?: string | null;
+
+  /** Byte size of the linked ORIGINAL — lets a client avoid using it as a thumbnail. */
+  @Field(() => Float, { nullable: true })
+  mediaSize?: number | null;
 
   static toType(entity: Content): ContentType {
     return {

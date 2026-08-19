@@ -7,6 +7,7 @@ import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/c
 import { LoggerService } from '@ci/common/logging';
 import {
   INGEST_REFRESH_COLUMNS,
+  type BulkInsertResult,
   bulkInsertIdempotent,
   keysetPaginate,
   type KeysetPageArgs,
@@ -199,6 +200,24 @@ export class CommunicationService {
    * Single-row create() still emits, so interactive creates index live.
    */
   async createMany(context: UserServiceContext, data: CreateCommunicationDto[]): Promise<Communication[]> {
+    return (await this.createManyDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   *
+   * The batch paths upsert, so a re-sent row resolves silently and is
+   * indistinguishable in the returned entities from one written for the first
+   * time. The importer needs the difference: without it a push of 7,339 content
+   * records that collapsed onto 2,354 rows reports 7,339 writes, and its
+   * "already saved" count reads zero on an import that was almost entirely
+   * repeats.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateCommunicationDto[],
+  ): Promise<Array<BulkInsertResult<Communication>>> {
     if (data.length === 0) {
       return [];
     }
@@ -298,7 +317,10 @@ export class CommunicationService {
       return detailResults;
     });
 
-    return results.map(({ entity }) => CommunicationEntity.toEgressType(entity));
+    return results.map(({ entity, inserted }) => ({
+      entity: CommunicationEntity.toEgressType(entity),
+      inserted,
+    }));
   }
 
   async findAll(context: UserServiceContext): Promise<Communication[]> {
@@ -597,6 +619,31 @@ export class CommunicationService {
       id: row.communications_id,
       type: 'communication' as IndexableEntity,
     }));
+  }
+
+  /**
+   * True total of communications matching the same filters {@link getEntitiesForCommunications}
+   * applies (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`,
+   * not the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForCommunications(
+    context: ServiceContext,
+    options: Pick<Options, 'startTime' | 'endTime'>,
+  ): Promise<number> {
+    let query = this.dataSource
+      .getRepository(CommunicationEntity)
+      .createQueryBuilder('communications')
+      .where('communications.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('communications.time >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('communications.time <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
   }
 
   /**

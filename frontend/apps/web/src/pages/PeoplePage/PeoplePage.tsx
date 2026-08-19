@@ -1,15 +1,15 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useMutation, useQuery } from '@apollo/client';
-import { EmptyState, GlobalUID, LoadingPage, Portal, usePageTitle } from '@ci/common';
-import { AlertDialog, Avatar, Badge, Breadcrumb, Button, Card, Input } from '@ci/shadcn';
-import { Merge, Users } from '@ci/shadcn/icons';
+import { useApolloClient, useMutation, useQuery } from '@apollo/client';
+import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
+import { AlertDialog, Avatar, Badge, Button, Card, Input } from '@ci/shadcn';
+import { Merge } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { gql } from '@/graphql';
-import type { GetPeopleQuery, GetPersonDuplicatesQuery } from '@/graphql/graphql';
+import type { GetMergeCandidatesQuery, GetPeopleQuery, GetPersonDuplicatesQuery } from '@/graphql/graphql';
 
 // Matches MemoryPage's PAGE_SIZE. Keeping it small also keeps the batch handed
 // to PersonInteractionStatsLoader small — that resolver aggregates over the
@@ -38,6 +38,7 @@ const GET_PEOPLE = gql(`
           identifiers {
             kind
             value
+            rawValue
             label
           }
           interactionStats {
@@ -52,16 +53,58 @@ const GET_PEOPLE = gql(`
 `);
 
 const GET_PERSON_DUPLICATES = gql(`
-  query GetPersonDuplicates {
-    personDuplicates {
-      reason
-      value
-      people {
-        id
-        name
-        description
-        avatarUrl
-        isSelf
+  query GetPersonDuplicates($limit: Int, $offset: Int, $reasons: [String!]) {
+    personDuplicates(limit: $limit, offset: $offset, reasons: $reasons) {
+      totalCount
+      hasMore
+      groups {
+        reason
+        value
+        totalPeople
+        people {
+          id
+          name
+          description
+          avatarUrl
+          isSelf
+        }
+      }
+    }
+  }
+`);
+
+// The duplicate-detection pipeline's own queue: pairs it scored, with the
+// evidence behind each one. Separate from GET_PERSON_DUPLICATES, which
+// recomputes cruder exact matches on every request.
+const GET_MERGE_CANDIDATES = gql(`
+  query GetMergeCandidates($first: Int, $after: String) {
+    mergeCandidates(first: $first, after: $after) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        cursor
+        node {
+          id
+          score
+          status
+          detectedBy
+          createdAt
+          evidence {
+            kind
+            value
+            score
+          }
+          people {
+            id
+            name
+            description
+            avatarUrl
+            isSelf
+          }
+        }
       }
     }
   }
@@ -85,8 +128,63 @@ const REJECT_PERSON_DUPLICATES = gql(`
   }
 `);
 
+/**
+ * Re-read the ONE person a merge kept. Merging moves events, messages and
+ * identifiers onto the target, so its row is stale afterwards — but re-running
+ * GET_PEOPLE to refresh it would replay that hook's original variables
+ * (`first: PAGE_SIZE`, no cursor) and throw away every page the user scrolled
+ * in. This writes the same normalized PersonType the list edge already points
+ * at, so the row updates in place and the accumulated list survives.
+ */
+const GET_MERGED_PERSON = gql(`
+  query GetMergedPerson($id: ID!) {
+    person(id: $id) {
+      id
+      name
+      description
+      firstName
+      lastName
+      avatarUrl
+      birthDate
+      isSelf
+      identifiers {
+        kind
+        value
+        rawValue
+        label
+      }
+      interactionStats {
+        eventCount
+        communicationCount
+        lastInteractionAt
+      }
+    }
+  }
+`);
+
+/** What a duplicate-group action did, so the page can patch the list precisely. */
+interface MergeOutcome {
+  /** People folded away and no longer in the list, or [] for "not the same". */
+  removedIds: string[];
+  /** The surviving person whose aggregates changed, or null when nothing merged. */
+  keptId: string | null;
+}
+
 type PersonNode = GetPeopleQuery['people']['edges'][number]['node'];
-type DuplicateGroup = GetPersonDuplicatesQuery['personDuplicates'][number];
+type DuplicateGroup = GetPersonDuplicatesQuery['personDuplicates']['groups'][number];
+type MergeCandidate = GetMergeCandidatesQuery['mergeCandidates']['edges'][number]['node'];
+type MergablePerson = DuplicateGroup['people'][number];
+
+/** Duplicate groups per page, and candidates per page. Both are "load more"-able. */
+export const DUPLICATE_PAGE_SIZE = 25;
+export const CANDIDATE_PAGE_SIZE = 20;
+
+const DUPLICATE_REASONS = [
+  { value: null, label: 'All' },
+  { value: 'email', label: 'Email' },
+  { value: 'phone', label: 'Phone' },
+  { value: 'name', label: 'Name' },
+] as const;
 
 function resolveAvatarUrl(avatarUrl: string | null | undefined): string | undefined {
   if (!avatarUrl) {
@@ -126,6 +224,10 @@ function formatLastInteraction(value: string | Date | null | undefined): string 
 function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void }) {
   const email = person.identifiers.find((identifier) => identifier.kind === 'email');
   const phone = person.identifiers.find((identifier) => identifier.kind === 'phone');
+  // Prefer the raw form: `value` is the matching key (a phone normalizes to bare
+  // digits), which reads as a mangled number in a contact list.
+  const emailText = email?.rawValue?.trim() || email?.value;
+  const phoneText = phone?.rawValue?.trim() || phone?.value;
   const lastSeen = formatLastInteraction(person.interactionStats.lastInteractionAt);
 
   return (
@@ -146,7 +248,7 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
         </div>
 
         <div className="truncate text-sm text-muted-foreground">
-          {[email?.value, phone?.value, person.description].filter(Boolean).join(' · ') || '—'}
+          {[emailText, phoneText, person.description].filter(Boolean).join(' · ') || '—'}
         </div>
       </div>
 
@@ -160,12 +262,25 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
   );
 }
 
-function DuplicateGroupCard({
-  group,
+/**
+ * One merge suggestion: a set of people, a heading explaining why they were put
+ * together, and the two decisions the user can make about them.
+ *
+ * Shared by both producers of suggestions — the recomputed exact-match groups
+ * and the pipeline's scored `ci.merge_candidates` pairs — because the decision
+ * is identical either way: merge the set into one target, or record that these
+ * are different people so it is never proposed again.
+ */
+function MergeSuggestionCard({
+  people,
+  heading,
+  note,
   onMerged,
 }: {
-  group: DuplicateGroup;
-  onMerged: () => Promise<unknown>;
+  people: readonly MergablePerson[];
+  heading: ReactNode;
+  note?: ReactNode;
+  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
 }) {
   const [mergePeople, { loading }] = useMutation(MERGE_PEOPLE);
   const [rejectDuplicates, { loading: rejecting }] = useMutation(REJECT_PERSON_DUPLICATES);
@@ -176,19 +291,20 @@ function DuplicateGroupCard({
   // backend refuses to merge it away, so when the group contains "You" the
   // other members must not be offered as targets.
   const orderedPeople = useMemo(
-    () => [...group.people].sort((a, b) => Number(b.isSelf) - Number(a.isSelf)),
-    [group.people],
+    () => [...people].sort((a, b) => Number(b.isSelf) - Number(a.isSelf)),
+    [people],
   );
   const hasSelf = orderedPeople.some((person) => person.isSelf);
+  const defaultTargetId = orderedPeople.find((person) => person.isSelf)?.id ?? orderedPeople[0]?.id ?? null;
 
   const merge = async (targetId: string) => {
-    const sourceIds = group.people.map((person) => person.id).filter((id) => id !== targetId);
+    const sourceIds = people.map((person) => person.id).filter((id) => id !== targetId);
 
     try {
       await mergePeople({ variables: { input: { targetId, sourceIds } } });
       setPendingTargetId(null);
       setMergeError(null);
-      await onMerged();
+      await onMerged({ removedIds: sourceIds, keptId: targetId });
     } catch (error) {
       // Keep the dialog open and show what went wrong instead of silently
       // closing on failure.
@@ -198,28 +314,30 @@ function DuplicateGroupCard({
 
   // Saying "not the same" has to STICK. Duplicate groups are recomputed from
   // identifiers on every load, so without recording the rejection this exact
-  // group would be proposed again immediately.
+  // group would be proposed again immediately. The same call also stamps the
+  // pipeline's candidate row, so the scored queue shrinks as it is worked.
   const reject = async () => {
     try {
-      await rejectDuplicates({ variables: { personIds: group.people.map((person) => person.id) } });
+      await rejectDuplicates({ variables: { personIds: people.map((person) => person.id) } });
       setMergeError(null);
-      await onMerged();
+      // Nothing left the list — only the duplicate suggestions changed.
+      await onMerged({ removedIds: [], keptId: null });
     } catch (error) {
       setMergeError(error instanceof Error ? error.message : 'Could not record that. Please try again.');
     }
   };
 
   const pendingTarget = orderedPeople.find((person) => person.id === pendingTargetId);
+  const openMerge = (targetId: string) => {
+    setMergeError(null);
+    setPendingTargetId(targetId);
+  };
 
   return (
     <div className="rounded-md border p-3">
-      <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-        <Merge className="h-4 w-4" />
-        <span>
-          Same {group.reason === 'name' ? 'name' : group.reason}:{' '}
-          <span className="font-medium text-foreground">{group.value}</span>
-        </span>
-      </div>
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">{heading}</div>
+
+      {note && <div className="mb-2 text-xs text-muted-foreground">{note}</div>}
 
       <div className="flex flex-col gap-2">
         {orderedPeople.map((person) => (
@@ -249,14 +367,13 @@ function DuplicateGroupCard({
             {(!hasSelf || person.isSelf) && (
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 disabled={loading}
                 onClick={() => {
-                  setMergeError(null);
-                  setPendingTargetId(person.id);
+                  openMerge(person.id);
                 }}
               >
-                Keep this one
+                Use as the kept person
               </Button>
             )}
           </div>
@@ -266,10 +383,21 @@ function DuplicateGroupCard({
       {/* The other half of the decision. Without it the only way to clear a
           wrong suggestion is to merge people who are not the same, and the
           group returns on every load. */}
-      <div className="mt-3 flex items-center justify-end gap-3 border-t pt-2">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t pt-2">
         {mergeError && !pendingTargetId && <span className="text-sm text-destructive">{mergeError}</span>}
         <Button size="sm" variant="ghost" disabled={loading || rejecting} onClick={() => void reject()}>
           {rejecting ? 'Saving…' : 'Not the same person'}
+        </Button>
+        <Button
+          size="sm"
+          disabled={loading || defaultTargetId == null}
+          onClick={() => {
+            if (defaultTargetId != null) {
+              openMerge(defaultTargetId);
+            }
+          }}
+        >
+          Merge into one person
         </Button>
       </div>
 
@@ -283,9 +411,9 @@ function DuplicateGroupCard({
       >
         <AlertDialog.Content>
           <AlertDialog.Header>
-            <AlertDialog.Title>Merge people?</AlertDialog.Title>
+            <AlertDialog.Title>Merge into one person?</AlertDialog.Title>
             <AlertDialog.Description>
-              {`The other ${group.people.length - 1 === 1 ? 'person' : `${group.people.length - 1} people`} in this group will be merged into "${pendingTarget?.name || 'Unnamed'}". Their events, messages and contact methods move over; this cannot be undone from the UI.`}
+              {`Events, messages, and contact methods from the other ${people.length - 1 === 1 ? 'person' : `${people.length - 1} people`} will move onto "${pendingTarget?.name || 'Unnamed'}"${pendingTarget?.isSelf ? ' (You)' : ''}. This folds multi-platform stubs into one Person and cannot be undone from the UI.`}
             </AlertDialog.Description>
           </AlertDialog.Header>
           {mergeError && <div className="text-sm text-destructive">{mergeError}</div>}
@@ -302,12 +430,74 @@ function DuplicateGroupCard({
                 }
               }}
             >
-              {loading ? 'Merging…' : 'Merge'}
+              {loading ? 'Merging…' : 'Merge into one person'}
             </AlertDialog.Action>
           </AlertDialog.Footer>
         </AlertDialog.Content>
       </AlertDialog>
     </div>
+  );
+}
+
+function DuplicateGroupCard({
+  group,
+  onMerged,
+}: {
+  group: DuplicateGroup;
+  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
+}) {
+  // A group can be truncated (six members of a value shared by hundreds); say
+  // so rather than implying the merge would cover all of them.
+  const truncated = group.totalPeople > group.people.length;
+
+  return (
+    <MergeSuggestionCard
+      people={group.people}
+      onMerged={onMerged}
+      heading={
+        <>
+          <Merge className="h-4 w-4" />
+          <span>
+            Same {group.reason === 'name' ? 'name' : group.reason}:{' '}
+            <span className="font-medium text-foreground">{group.value}</span>
+          </span>
+        </>
+      }
+      note={
+        truncated
+          ? `Showing ${group.people.length} of ${group.totalPeople} people sharing this ${group.reason} — merging affects only the ${group.people.length} shown.`
+          : null
+      }
+    />
+  );
+}
+
+/** A scored pair from `ci.merge_candidates`, with the evidence behind it. */
+function MergeCandidateCard({
+  candidate,
+  onMerged,
+}: {
+  candidate: MergeCandidate;
+  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
+}) {
+  return (
+    <MergeSuggestionCard
+      people={candidate.people}
+      onMerged={onMerged}
+      heading={
+        <>
+          <Merge className="h-4 w-4" />
+          <Badge variant="secondary">{Math.round(candidate.score * 100)}% match</Badge>
+          {candidate.evidence.map((item, index) => (
+            <span key={`${item.kind}:${item.value}:${index}`}>
+              Same {item.kind}: <span className="font-medium text-foreground">{item.value}</span>
+            </span>
+          ))}
+          {candidate.evidence.length === 0 && <span>Proposed as the same person</span>}
+        </>
+      }
+      note={`Detected by ${candidate.detectedBy}`}
+    />
   );
 }
 
@@ -317,35 +507,127 @@ export function PeoplePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data, previousData, loading, error, refetch, fetchMore } = useQuery(GET_PEOPLE, {
-    variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim(), first: PAGE_SIZE },
+  const client = useApolloClient();
+
+  // Same object identity the cache entry is keyed on, so the post-merge patch
+  // below targets exactly the entry fetchMore has been appending to.
+  const peopleVariables = useMemo(
+    () => ({ query: searchQuery.trim() === '' ? null : searchQuery.trim(), first: PAGE_SIZE }),
+    [searchQuery],
+  );
+
+  const { data, previousData, loading, error, fetchMore } = useQuery(GET_PEOPLE, {
+    variables: peopleVariables,
     notifyOnNetworkStatusChange: true,
   });
+  // Which kind of duplicate group to show. The page used to ask for an
+  // unfiltered top 25, ordered so email and phone groups always won — with
+  // thousands of name groups behind them, they were unreachable.
+  const [duplicateReason, setDuplicateReason] = useState<string | null>(null);
+  // Pages fetched, not groups rendered: the server drops rejected pairs from a
+  // page AFTER applying OFFSET, so counting the groups on screen would walk the
+  // offset backwards and re-request rows already seen.
+  const [duplicatePages, setDuplicatePages] = useState(1);
   const {
     data: duplicatesData,
     error: duplicatesError,
     refetch: refetchDuplicates,
-  } = useQuery(GET_PERSON_DUPLICATES);
+    fetchMore: fetchMoreDuplicates,
+  } = useQuery(GET_PERSON_DUPLICATES, {
+    variables: {
+      limit: DUPLICATE_PAGE_SIZE,
+      offset: 0,
+      reasons: duplicateReason == null ? null : [duplicateReason],
+    },
+    notifyOnNetworkStatusChange: true,
+  });
+
+  // The scored queue the duplicate-detection pipeline has been filling.
+  const {
+    data: candidatesData,
+    error: candidatesError,
+    refetch: refetchCandidates,
+    fetchMore: fetchMoreCandidates,
+  } = useQuery(GET_MERGE_CANDIDATES, {
+    variables: { first: CANDIDATE_PAGE_SIZE },
+    notifyOnNetworkStatusChange: true,
+  });
 
   // Keep the previous result on screen while a new query variable is in
   // flight — swapping to a full-page loader would unmount the search input and
   // drop focus on the first keystroke of every new query.
   const view = data ?? previousData;
-  const people = useMemo(() => {
-    const nodes = (view?.people.edges ?? []).map((edge) => edge.node);
+  // Trust PersonService.findAll's order (plausible-name first, then name, then
+  // recency — see PERSON_NAME_LOOKS_IMPLAUSIBLE_SQL) rather than re-sorting here.
+  // A client-side sort keyed on interaction recency would fight that: the exact
+  // rows the server demotes (bare digit-strings, call-log-heading leftovers) are
+  // typically call-log stubs, so they carry a *recent*
+  // interactionStats.lastInteractionAt, while a freshly-imported real contact
+  // may have none at all — a recency sort would put the garbage name right back
+  // on top of the list, reintroducing the bug the backend ordering fixed.
+  const people = useMemo(() => (view?.people.edges ?? []).map((edge) => edge.node), [view]);
+  const duplicates = duplicatesData?.personDuplicates;
+  const duplicateGroups = duplicates?.groups ?? [];
+  const mergeCandidates = useMemo(
+    () => (candidatesData?.mergeCandidates.edges ?? []).map((edge) => edge.node),
+    [candidatesData],
+  );
+  const candidatesPageInfo = candidatesData?.mergeCandidates.pageInfo;
 
-    return [...nodes].sort((a, b) => {
-      const aTime = a.interactionStats?.lastInteractionAt
-        ? new Date(a.interactionStats.lastInteractionAt).getTime()
-        : 0;
-      const bTime = b.interactionStats?.lastInteractionAt
-        ? new Date(b.interactionStats.lastInteractionAt).getTime()
-        : 0;
+  // Append the next page of duplicate groups. Offset-based: the groups are
+  // recomputed per request and have no stable cursor, and the server order is
+  // deterministic (reason, then size, then value).
+  const loadMoreDuplicates = () => {
+    setDuplicatePages((pages) => pages + 1);
 
-      return bTime - aTime;
+    void fetchMoreDuplicates({
+      variables: { offset: duplicatePages * DUPLICATE_PAGE_SIZE },
+      updateQuery: (prev, { fetchMoreResult }) => {
+        if (!fetchMoreResult?.personDuplicates) {
+          return prev;
+        }
+
+        const seen = new Set(
+          (prev.personDuplicates?.groups ?? []).map((group) => `${group.reason}:${group.value}`),
+        );
+
+        return {
+          personDuplicates: {
+            ...fetchMoreResult.personDuplicates,
+            groups: [
+              ...(prev.personDuplicates?.groups ?? []),
+              ...fetchMoreResult.personDuplicates.groups.filter(
+                (group) => !seen.has(`${group.reason}:${group.value}`),
+              ),
+            ],
+          },
+        };
+      },
     });
-  }, [view]);
-  const duplicateGroups = duplicatesData?.personDuplicates ?? [];
+  };
+
+  const loadMoreCandidates = () =>
+    void fetchMoreCandidates({
+      variables: { after: candidatesPageInfo?.endCursor },
+      updateQuery: (prev, { fetchMoreResult }) => {
+        if (!fetchMoreResult?.mergeCandidates) {
+          return prev;
+        }
+
+        const prevEdges = prev.mergeCandidates?.edges ?? [];
+        const seen = new Set(prevEdges.map((edge) => edge.cursor));
+
+        return {
+          mergeCandidates: {
+            ...fetchMoreResult.mergeCandidates,
+            edges: [
+              ...prevEdges,
+              ...fetchMoreResult.mergeCandidates.edges.filter((edge) => !seen.has(edge.cursor)),
+            ],
+          },
+        };
+      },
+    });
 
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
@@ -417,7 +699,65 @@ export function PeoplePage() {
     return () => observer.disconnect();
   }, [hasNextPage, loadMore]);
 
-  const onMerged = async () => Promise.all([refetch(), refetchDuplicates()]);
+  // Patch the accumulated list rather than refetch()ing it. refetch() replays
+  // the hook's ORIGINAL variables (first: PAGE_SIZE, no cursor) and overwrites
+  // the cache entry fetchMore has been appending to, so on a 21k-person list
+  // every merge threw the user back to row 30 — on the one page whose whole
+  // purpose is working a long duplicate queue.
+  const onMerged = useCallback(
+    async ({ removedIds, keptId }: MergeOutcome) => {
+      const removed = new Set(removedIds);
+
+      if (removed.size > 0) {
+        client.cache.updateQuery({ query: GET_PEOPLE, variables: peopleVariables }, (prev) => {
+          if (!prev?.people) {
+            return prev;
+          }
+
+          const edges = prev.people.edges.filter((edge) => !removed.has(edge.node.id));
+          const dropped = prev.people.edges.length - edges.length;
+
+          if (dropped === 0) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            people: {
+              ...prev.people,
+              edges,
+              totalCount: Math.max(0, prev.people.totalCount - dropped),
+            },
+          };
+        });
+      }
+
+      await Promise.all([
+        keptId != null
+          ? client.query({
+              query: GET_MERGED_PERSON,
+              variables: { id: keptId },
+              fetchPolicy: 'network-only',
+            })
+          : Promise.resolve(),
+        refetchDuplicates(),
+        refetchCandidates(),
+      ]);
+
+      // Only now that the duplicate groups and scored candidates have been
+      // re-read (so nothing still references them) is it safe to drop the
+      // merged-away people; evicting first would leave those queries pointing
+      // at missing objects mid-render.
+      if (removed.size > 0) {
+        for (const id of removedIds) {
+          client.cache.evict({ id: client.cache.identify({ __typename: 'PersonType', id }) });
+        }
+
+        client.cache.gc();
+      }
+    },
+    [client, peopleVariables, refetchCandidates, refetchDuplicates],
+  );
 
   let content: ReactNode | null = null;
 
@@ -444,32 +784,107 @@ export function PeoplePage() {
               <div className="text-sm text-muted-foreground">{totalCount} people</div>
             </div>
 
+            {candidatesError && (
+              <div className="text-sm text-muted-foreground">
+                Suggested merges are unavailable right now ({candidatesError.message}).
+              </div>
+            )}
+
+            {mergeCandidates.length > 0 && (
+              <Card>
+                <Card.Header>
+                  <Card.Title className="flex items-center gap-2 text-base">
+                    <Merge className="h-4 w-4" />
+                    Suggested merges
+                    <Badge variant="secondary">{candidatesData?.mergeCandidates.totalCount ?? 0}</Badge>
+                  </Card.Title>
+                  <Card.Description>
+                    Pairs the duplicate detector scored, strongest match first. Each one shows the evidence
+                    behind it.
+                  </Card.Description>
+                </Card.Header>
+                <Card.Content className="flex flex-col gap-3">
+                  {mergeCandidates.map((candidate) => (
+                    <MergeCandidateCard key={candidate.id} candidate={candidate} onMerged={onMerged} />
+                  ))}
+
+                  {candidatesPageInfo?.hasNextPage && (
+                    <div className="flex justify-center">
+                      <Button variant="outline" size="sm" onClick={loadMoreCandidates}>
+                        Load more suggestions
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="text-center text-xs text-muted-foreground">
+                    {mergeCandidates.length} of {candidatesData?.mergeCandidates.totalCount ?? 0} shown
+                  </div>
+                </Card.Content>
+              </Card>
+            )}
+
             {duplicatesError && (
               <div className="text-sm text-muted-foreground">
                 Duplicate suggestions are unavailable right now ({duplicatesError.message}).
               </div>
             )}
 
-            {duplicateGroups.length > 0 && (
+            {(duplicateGroups.length > 0 || duplicateReason != null) && (
               <Card>
                 <Card.Header>
                   <Card.Title className="flex items-center gap-2 text-base">
                     <Merge className="h-4 w-4" />
                     Possible duplicates
+                    <Badge variant="secondary">{duplicates?.totalCount ?? 0}</Badge>
                   </Card.Title>
                   <Card.Description>
                     These people share an email, phone number or name. Review and merge the ones that are the
                     same person.
                   </Card.Description>
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
+                    {DUPLICATE_REASONS.map((option) => (
+                      <Button
+                        key={option.label}
+                        size="sm"
+                        variant={duplicateReason === option.value ? 'secondary' : 'ghost'}
+                        onClick={() => {
+                          // New filter, new offset space — a stale page count
+                          // would start the next "load more" mid-list.
+                          setDuplicatePages(1);
+                          setDuplicateReason(option.value);
+                        }}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
                 </Card.Header>
                 <Card.Content className="flex flex-col gap-3">
-                  {duplicateGroups.map((group) => (
-                    <DuplicateGroupCard
-                      key={`${group.reason}:${group.value}`}
-                      group={group}
-                      onMerged={onMerged}
-                    />
-                  ))}
+                  {duplicateGroups.length === 0 ? (
+                    <div className="py-2 text-sm text-muted-foreground">
+                      No duplicate groups match this filter.
+                    </div>
+                  ) : (
+                    duplicateGroups.map((group) => (
+                      <DuplicateGroupCard
+                        key={`${group.reason}:${group.value}`}
+                        group={group}
+                        onMerged={onMerged}
+                      />
+                    ))
+                  )}
+
+                  {duplicates?.hasMore && (
+                    <div className="flex justify-center">
+                      <Button variant="outline" size="sm" onClick={loadMoreDuplicates}>
+                        Load more duplicate groups
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="text-center text-xs text-muted-foreground">
+                    {duplicateGroups.length} of {duplicates?.totalCount ?? 0} groups shown
+                  </div>
                 </Card.Content>
               </Card>
             )}
@@ -513,30 +928,5 @@ export function PeoplePage() {
     );
   }
 
-  return (
-    <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-
-            <Breadcrumb.Separator className="hidden md:block" />
-
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Page className="flex items-center gap-1">
-                <Users className="h-4 w-4" />
-                People & communications
-              </Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
-      {content}
-    </>
-  );
+  return <>{content}</>;
 }

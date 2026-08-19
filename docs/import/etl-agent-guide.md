@@ -1,0 +1,1582 @@
+# The import ETL, for the agent who has to fix it
+
+> **Private & Confidential — Property of Lifescope Inc. Do not distribute.**
+
+You have been handed a bug in the import system and no context. This document is
+the context. It is written for an AI agent as much as for a person, so it
+optimises for one thing: being able to answer, from a cold start, **what ran, how
+long it took, what it produced, what it dropped, and why** — with a query or a
+file path for every answer rather than a story.
+
+Everything here was verified against the tree at `origin/main` (`93fc6d8a9`) and
+against a live 13-source import in flight on 2026-08-19. Numbers are measured,
+not estimated, and the query that produced each one is included so you can
+re-measure rather than trust this file. Where something could not be verified it
+says so out loud — a confident wrong sentence here is worse than a missing one,
+because the next agent will act on it.
+
+> **This file has already been wrong once, in the worst direction.** The revision
+> written against `5f29d3fdb` told you that `ci-import doctor` did not exist and
+> not to cite it. It had merged as [#2105](https://github.com/companionintelligence/CI-Server/pull/2105)
+> a few hours later, so every reader who believed §6 hand-typed a fifteen-query
+> baseline instead of running the nineteen-check suite that already existed. Two
+> more sections went stale the same way when
+> [#2100](https://github.com/companionintelligence/CI-Server/pull/2100) split the
+> stage queue per kind and made the inbox per-user. Re-verify before you cite;
+> correcting what you find is part of your change.
+
+**Companion docs.** The command line: [`docs/cli/ci-import.md`](../cli/ci-import.md).
+The last full acceptance pass, with real archive numbers:
+[`docs/runbooks/import-acceptance-2026-08.md`](../runbooks/import-acceptance-2026-08.md).
+The enrichment half that runs *after* an import:
+[`docs/runbooks/pipeline-operations.md`](../runbooks/pipeline-operations.md).
+The wire contracts: [`docs/api/graphql.md`](../api/graphql.md) and
+[`docs/api/rest.md`](../api/rest.md). Wiping and starting over:
+[`INGEST_RESET_RUNBOOK.md`](../../backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md).
+
+---
+
+## 0. The six questions, and where each answer lives
+
+Start here. Every one of these is a single statement against the appliance
+database or a single command; none of them needs the UI, and none of them needs
+this document.
+
+| Question | Answer lives in | Get it with |
+|---|---|---|
+| **Is the data it wrote sound?** | 19 checks over `ci.*`, `ci_search.*`, `ci.pipeline_*` | `ci-import doctor` — see [§6](#6-what-to-measure--ci-import-doctor). Ask this first; the four below are the drill-downs |
+| What ran? | `ci_import.import_runs.data_sources`, `ci_import.import_stages.kind` | `select label, status, percent, data_sources from ci_import.import_runs order by started_at;` |
+| How long? | `import_stages.duration_ms`, `.items_per_sec`, `.started_at/.finished_at` | `select kind, processed, total, round(duration_ms/1000.0,1) secs, items_per_sec from ci_import.import_stages where run_id = '…' order by seq;` |
+| What did it produce? | `import_stages.detail` (per stage), then the `ci.*` tables | `select jsonb_pretty(detail) from ci_import.import_stages where kind='push' and run_id='…';` |
+| **What did it drop?** | `detail->'sources'->N->'drops'` (parse), `detail->'rejected'` (unpack), `staged_items.push_status='failed'` + `.push_error` (push) | `ci-import doctor`, then the drop-ledger query in [§6.2](#62-what-did-it-drop--the-single-most-useful-query-here) |
+| Why? | `import_stages.error`, `staged_items.push_error`, `staged_entities.push_error`, then `ci.pipeline_dead_letters` for the enrichment half | `select kind, status, error from ci_import.import_stages where error is not null;` |
+
+If the answer to any of those is "the table does not say", that is itself the
+bug worth fixing — this system's whole design premise is that a half-worked
+import is normal and must be *legible*, never a silent success.
+
+---
+
+## 1. The shape
+
+### 1.1 The path a byte takes
+
+```mermaid
+flowchart TD
+    U["upload — POST /import/uploads<br/>(multipart, ImportUploadsController)"] --> SS
+    I["inbox — CI_IMPORT_INBOX_DIR/&lt;user&gt;/<br/>(ImportInboxService.scan)"] --> SS
+    SS["ci_import.staged_sources<br/>(the claim; one live run per path)"] --> SR
+    SR["ImportRunService.startRun<br/>run row + N stage rows, one transaction"] --> Q
+    Q(["pg-boss, one queue PER KIND<br/>import-unpack/parse/media/push<br/>slots 1/1/2/1, policy 'short'"]) --> W
+    W["ImportStageListener.runStage<br/>THE worker — claims, heartbeats, records"] --> ST
+    ST["unpack → parse → media → push<br/>chained by re-emission, one at a time"] --> STG
+    STG["ci_import.staged_items / staged_entities<br/>/ staged_relationships / entity_mappings"] --> P
+    P["PushStage → destinationsFor → toXInput<br/>→ the in-process ci.* services"] --> CI
+    CI["ci.communications / events / content /<br/>inventory / browser_activity / position"] --> PL
+    PL["SearchIndexBackfillRequestEvent<br/>→ pipeline sweeps (embed, vector, person_link, …)"]
+```
+
+Two structural facts fall out of that picture and explain most of the system's
+behaviour:
+
+**A stage is a durable row, not a long-lived job.** `ci_import.import_stages` is
+the truth; the pg-boss job only says *which row*. `types.ts` says why: a payload
+carrying state would be a second copy of the run, written when the job was
+enqueued and stale by the time a retry picked it up. Chaining is by
+re-emission — a stage that completes enqueues the next one
+(`ImportRunService.advance`) — so a killed worker resumes at stage granularity
+instead of restarting a 40GB import.
+
+**The run row is a cache.** `import_runs.status` and `.percent` are recomputed
+from the stage rows on every transition (`refreshRunRollup`). Nothing ever reads
+them to decide whether work remains. If you are debugging "the bar says X but
+reality is Y", the stage rows are right and the run row is stale, never the other
+way round.
+
+### 1.2 The files, by name
+
+| Concern | File |
+|---|---|
+| Queue names, stage kinds, per-kind slot counts, weights | `backend/apps/api/src/domains/import/constants.ts` |
+| The one event | `.../import/events.ts` (`import.stage`) |
+| Payload + `StageRunner` / `StageOutcome` contracts | `.../import/types.ts` |
+| **The worker** (claim, heartbeat, progress throttle, failure recording) | `.../import/listeners/ImportStageListener.ts` |
+| Run/stage spine (start, advance, resume, cancel, retry, rollup) | `.../import/services/ImportRunService.ts` (1,506 lines) |
+| Stage runners | `.../import/stages/{UnpackStage,ParseStage,MediaStage,PushStage}.ts` |
+| Archive extraction, zip-slip and cap enforcement | `.../import/archive/{extract,unpack,repairEntryNames,systemExtract}.ts` |
+| Recognition + the 71 parsers | `.../import/datasources/` (`registry.ts`, `index.ts`, one file per source) |
+| Staging writer, within-run dedupe, drop ledger | `.../import/staging/{StagedWriter,identity,contentDigest}.ts` |
+| **Routing**: one staged row → which destinations | `.../import/push/canonical.ts` (`destinationsFor`) |
+| **Mapping**: canonical record → each destination's DTO | `.../import/push/inputs.ts` (`toXInput`) |
+| Graph entities + the "is this actually a name" guard | `.../import/push/entities.ts`, `.../graph/utils/participantSanity.ts` |
+| Owner/self resolution (message direction) | `.../import/push/self.ts` |
+| Inbox scan/claim | `.../import/services/ImportInboxService.ts` |
+| **Per-user inbox path, roots containment** | `.../import/sources/importRoots.ts` (`userInboxDir`), `.../import/sources/sanitizeFilename.ts` |
+| Per-service inbox drop folders | `.../import/sources/inboxFolders.ts`, fed by `.../import/sources/guides.ts` |
+| Acquisition (rename, EXDEV copy fallback, crash recovery) | `.../import/sources/localAcquire.ts` |
+| Scratch tree lifecycle | `.../import/services/ImportScratchService.ts` |
+| **Data-quality checks** (`ci-import doctor`) | `.../import/doctor/checks.ts`, `.../import/doctor/ImportDoctorService.ts` |
+| REST surface | `.../import/controllers/{ImportRunsController,ImportInboxController,ImportUploadsController,ImportDoctorController}.ts` |
+| CLI | `.../import/cli/` (see [`docs/cli/ci-import.md`](../cli/ci-import.md)) |
+| Web UI | `frontend/apps/web/src/pages/ImportPage/` (`StageBar.tsx`, `RunPipeline.tsx`, `wizard/LiveRun.tsx`, `useImportApi.ts`) and `frontend/apps/web/src/components/ImportActivity/` (the region pinned to the Import and Jobs pages) |
+
+### 1.3 The four stages, and what each one can lose
+
+| Stage | Weight | Does | Loses, if anything, at |
+|---|---|---|---|
+| `unpack` | 20 | Acquires the source **by rename**, expands through the guarded extractor (zip-slip, entry/byte caps), recursively expands nested archives, flattens the `Takeout/` wrapper, strips symlinks | `detail.rejected[]`, `detail.extractionLoss`, `detail.symlinksRemoved` |
+| `parse` | 35 | Recognises data sources under the tree, then runs one parser per match into `StagedWriter` | `detail.failures[]` (a parser that threw), `detail.sources[N].drops` (records a parser deliberately discarded), `detail.sources[N].itemsDeduped` |
+| `media` | 30 | Uploads every staged row's bytes to the object store and stamps `metadata.FileId` | `detail.failed`; a row whose bytes could not be read gets `metadata.FileMediaError` and is skipped by the resume query |
+| `push` | 15 | Fans each staged row through `destinationsFor` into the in-process `ci.*` services | `staged_items.push_status='failed'` + `.push_error`; `detail.entities.unresolved` |
+
+Weights are wall-clock proportions from real imports, not equal quarters
+(`IMPORT_STAGE_WEIGHTS` in `constants.ts`). `media` is weighted 30 because on a
+photo archive it is the longest leg — it talks to the object store while parse
+reads a tree and push writes Postgres.
+
+**A stage that half-worked is not a failure.** `StageOutcome.partial` rolls the
+run up as `partial` — terminal and success-ish — rather than `failed`. This is
+deliberate and load-bearing: reporting five-of-six-sources as a failure is what
+teaches people to re-upload 40GB because one parser met a file it disliked.
+`partial` runs stay eligible for a later `push` (see `PUSH_ELIGIBLE_WHERE` in
+`ImportRunService.ts`); `cancelled` ones do not.
+
+### 1.4 One queue per stage KIND, and what that costs
+
+> **Changed by [#2100](https://github.com/companionintelligence/CI-Server/pull/2100).**
+> Until commit `507c1e2f1` there was a single `import-stages` queue at
+> `localConcurrency: 1`, so exactly one stage of any kind ran appliance-wide.
+> An earlier revision of this document said so, and it is no longer true. If you
+> are reading a comment, a PR body or a runbook that says "one stage at a time,
+> appliance-wide", check its date.
+
+`ImportStageListener` now declares **four** handlers, one per stage kind:
+
+```ts
+@OnEvent(ImportStageEvent, {
+  queue: IMPORT_STAGE_QUEUE_BY_KIND.parse,          // 'import-parse'
+  queueOptions: { policy: 'short', role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.parse },
+})
+```
+
+`localConcurrency` is an in-process `p-limit` semaphore
+(`PGBossEventService.onModuleInit`), and `role: 'worker'` means only the headless
+worker process consumes the queue. `IMPORT_STAGE_CONCURRENCY` in `constants.ts`
+is the whole scheduling policy:
+
+| Queue | Slots | Why that number (from the source comment) |
+|---|---:|---|
+| `import-unpack` | 1 | Two archives' disk preflights could both pass and then jointly fill the volume |
+| `import-parse` | 1 | Long synchronous parser stretches plus a firehose of staged-row writes; two abreast is how the event loop starved |
+| `import-media` | 2 | I/O-bound against the object store, so two overlap fine |
+| `import-push` | 1 | Concurrent pushes into shared `ci.*` are an untested dedup path (two runs resolving the same person at once), and push is fast enough that serial costs nothing |
+
+So up to **five** stages can be in flight at once in one worker process, but never
+two of the same kind. `IMPORT_QUEUE` (`'import-stages'`) still exists as a
+**drain** for jobs an older release left queued, and as the fallback for the
+deleted-stage race in `enqueueStage`; new work never targets it.
+
+A run's own stages are still strictly ordered — chaining is by re-emission — so
+the split changes only *cross-run* scheduling.
+
+> Strictly: the semaphore is per consuming process. Two worker replicas would
+> double every slot count. Nothing in this repo deploys two, but do not read
+> these numbers as an invariant enforced anywhere; they are a consequence of the
+> `Procfile` topology (`api: CI_ROLE=web`, `worker: CI_ROLE=worker`) and of the
+> single-process `CI_ROLE=all` topology tests and standalone `yarn dev` use.
+> The global per-queue default is six (`config/default.json` →
+> `queues.perQueueConcurrency: 6`); every import queue overrides it.
+
+**Measure the overlap rather than believing either version of this paragraph.**
+This is the query that distinguishes them, run against the live 13-source import
+on 2026-08-19:
+
+```sql
+select a.kind as ka, b.kind as kb, count(*) as n
+  from ci_import.import_stages a
+  join ci_import.import_stages b
+    on a.id < b.id
+   and a.finished_at is not null and b.finished_at is not null
+   and a.started_at < b.finished_at and b.started_at < a.finished_at
+ group by 1, 2 order by 3 desc;
+--  ka    |  kb    | n
+-- parse  | push   | 7
+-- media  | push   | 7
+-- parse  | media  | 6
+-- push   | parse  | 4
+-- media  | parse  | 4
+-- media  | media  | 1
+-- push   | media  | 1
+```
+
+Read it as a check on the table above, not as a performance number: **every pair
+that overlapped is a pair of different kinds, except `media`×`media`, which has
+two slots.** There is no `parse`×`parse`, no `push`×`push`, no
+`unpack`×`unpack` row — the slot counts are doing exactly what they say. If you
+ever see a same-kind pair for a one-slot kind, either a second worker process is
+running or the `localConcurrency` on that handler changed.
+
+What has *not* changed is the shape of a big import: `parse` is still one at a
+time and still dominates. On the pre-split run of the same corpus the Google
+Takeout parse took 703,956 items in **45.6 minutes**, 65% of the whole batch's
+wall clock, with twelve runs waiting. Per-kind queues let those twelve runs'
+media and push legs proceed meanwhile; they do not make the parses overlap. So:
+
+- **Do not read "queued for an hour" as a hang.** `GET /import/runs/active`
+  answers this directly and is the endpoint to poll or curl: it separates
+  `queueState: 'waiting'` (enqueued, needs a slot) from `'blocked'` (its own run
+  has not reached that stage), reports `queuePosition` and `queue.concurrency`,
+  and names which source each run is importing. Both states are `status:
+  'queued'` in the database, and conflating them is exactly why a normal
+  51-minute wait is indistinguishable from a stall.
+- **A per-run ETA is not a system ETA.** `import_stages.eta_seconds` describes
+  the stage that is running. Everything queued behind it has an unstated wait
+  equal to the sum of the work in front of it *on its own queue*.
+- **A throughput fix on the biggest parser is still worth more than parallelism
+  anywhere else**, because the parse total is still a sum.
+- **The inbox starts units smallest-first** (`ImportInboxService`,
+  `prepared.sort((a, b) => a.sizeBytes - b.sizeBytes …)`), so the 350GB archive
+  is deliberately last and the small sources land early.
+
+### 1.5 Crash recovery, and why the timings are what they are
+
+| Constant | Value | Where | Why |
+|---|---|---|---|
+| `PROGRESS_THROTTLE_MS` | 1,000 ms | `ImportStageListener.ts` | A parse ticking per record would write a row per record for the length of a 40GB import |
+| `STAGE_HEARTBEAT_MS` | 30,000 ms | `ImportStageListener.ts` | Keeps the claim fresh through silent stretches (a giant archive mid-extract says nothing for minutes) |
+| `STALE_STAGE_MINUTES` | 10 | `ImportRunService.ts` | A live stage is never silent this long, so silence *is* death — whoever the worker was |
+| `RESUME_SWEEP_CRON` | `30 */5 * * * *` | `ImportStageListener.ts` | Recovery is periodic, not boot-only, so a crash is picked up without a restart |
+
+Every recovery gate is a **staleness test on `updated_at`**, never an assumption
+about who else is running. The comment on `resumeInterrupted` records why: the
+first version assumed "at bootstrap, any running stage is orphaned", and a dev
+restart that leaked the old process disproved it — two executors interleaved
+progress writes with different totals on the same stage.
+
+**Failure is recorded, not retried.** A throw fails the stage and is rethrown so
+pg-boss dead-letters it, but the redelivery is a deliberate no-op: `beginStage`
+only claims a `queued` stage, so a redelivered job for a `failed` stage logs and
+returns. Re-running a failed stage is a user action —
+`POST /import/runs/:runId/stages/:stageId/retry`, or
+`POST /import/runs/:runId/push/retry` for individual rows the push could not
+write.
+
+**The sweep re-enqueues waiting stages, and only `policy: 'short'` stops it.**
+`resumeInterrupted` judges staleness from `import_stages.updated_at`, which
+nothing advances while a stage merely waits its turn — so every waiting stage
+crosses `STALE_STAGE_MINUTES` and collects a fresh job on every sweep. Measured
+before the fix: **16 distinct stage ids holding 107 pending pg-boss jobs after 47
+minutes**, growing linearly. `enqueueStage` now passes `singletonKey: stage.id`,
+which only bites because the four per-kind queues are declared `policy: 'short'`
+— pg-boss 10's unique index on `(name, singleton_key)` is partial,
+`WHERE state='created' AND policy='short'`, and under the default `standard`
+policy a `singletonKey` is **stored and never enforced**. Confirm on any
+appliance:
+
+```sql
+select name, policy from pgboss.queue where name like 'import%' order by 1;
+--  import-inbox-provision | standard
+--  import-media           | short
+--  import-parse           | short
+--  import-push            | short
+--  import-stages          | standard      ← the legacy drain, deliberately
+--  import-unpack          | short
+```
+
+Live on 2026-08-19: 4 queues `short`, 29 `standard`. That ratio is the trap —
+see [§4.5](#45-a-test-that-would-pass-with-the-fix-reverted) for the fix whose
+whole mechanism was inert for exactly this reason, with a green test.
+
+---
+
+## 2. Where data goes
+
+### 2.1 Two functions decide everything
+
+Every staged row becomes a `CanonicalRecord` (`toCanonical` in
+`push/canonical.ts`), and then two functions decide its fate:
+
+1. **`destinationsFor(rec): Destination[]`** — *which tables*. One row can
+   legitimately reach several: a geotagged photo is both a timeline capture and
+   a GPS donor.
+2. **`toXInput(rec)`** in `push/inputs.ts` — *what shape* each destination gets.
+
+`PushStage` groups a 500-row batch by destination and calls the in-process
+service once per destination per batch (`DESTINATION_ORDER` fixes the order so a
+row's `content` row still lands before its `events` row).
+
+### 2.2 The routing table, as the code has it today
+
+`kind` comes from `kindFor(classification, mediaType)` — the coarse importer
+`classification` mapped onto the closed G1 capture-kind taxonomy. Read
+`destinationsFor` top to bottom; the first match wins.
+
+| Condition | Destinations |
+|---|---|
+| `isRedditPost` / `isRedditComment` | `communications`, plus `content` when `redditMediaUrl` finds media |
+| `commerce.purchase` with `metadata.Subscription === true` | **nothing** (a subscription fee is a service, not a thing) |
+| `commerce.purchase` otherwise | `content` if `isDigitalGood`, else `inventory` |
+| any other `commerce.*` | `events` |
+| `communication.*` | `communications`, plus `position` if geotagged |
+| `web.bookmark` | `content` |
+| `web.page_view`, `web.search` | `browser_activity`, plus `position` if geotagged |
+| `calendar.event` | `events`, plus `content` **only** if it carries a real file |
+| `media.play` / `.watch` / `.listen` / `.read` | `events` + `content` |
+| `media.saved` | `content` (a library artifact has no occurrence) |
+| `note`, `reading.annotation` | `content` |
+| `social.*` | `events` + `content`, plus `position` if geotagged |
+| `travel.trip` | `events` |
+| `location.fix` | `events` + `position` when `eventType === 'place'`; otherwise `position` **alone** |
+| **undated** `capture.*` or `import.archive_item` | `content` alone |
+| dated `capture.*` | `events` + `content`, plus `position` if geotagged |
+| anything else | `events` |
+
+Two of those branches are scar tissue worth internalising, because they are the
+shape of every future routing bug:
+
+- **`location.fix` without `eventType='place'` leaves `events` entirely.**
+  Before that branch the timeline drowned in millions of GPS trackpoints.
+- **Dated `capture.*` always takes a `content` row alongside its event.**
+  `EventMediaLoader` resolves an event's thumbnail by INNER JOINing `ci.content`
+  on `ci.events` through the provenance triple. A destination list of just
+  `['events']` never creates that row, so the join finds nothing. Measured on a
+  real import: 2,098 photo/video events, **0** with a linked content row — every
+  gallery tile blank.
+
+The lesson generalises: **`destinationsFor` returning too few destinations is
+invisible.** Nothing errors. You get an empty gallery, an empty map, or a
+missing search hit, weeks later.
+
+### 2.3 The provenance triple
+
+Every input carries `(source_type, source_system, source_id)`:
+
+- `source_type` is the constant `SOURCE_TYPE = 'ci-import-tools'`
+  (`push/canonical.ts`). Deliberately unchanged from the retired standalone
+  importer — a row this appliance imports must carry the same value the old one
+  wrote historically, or every previously-imported record duplicates on the first
+  re-import.
+- `source_system` is the parser's name (`staged_items.data_source`).
+- `source_id` is **`staged_items.content_hash`**, *not* `staged_items.id`. The
+  staging id is a fresh uuid per run; using it would make an identical re-import
+  a brand new record instead of the no-op the triple exists to produce.
+
+Idempotency belongs to the destination, not to the push. Nothing in `PushStage`
+checks whether a record already exists; the database decides:
+
+```sql
+select schemaname||'.'||tablename as tbl, indexname
+  from pg_indexes where indexname like '%source_triple%'
+   and schemaname not like '\_timescaledb%' order by 1;
+```
+
+(The `schemaname` filter matters: `ci.position` is a hypertable, so on a live
+appliance the unfiltered query returns one
+`_timescaledb_internal._hyper_13_N_chunk_position_source_triple_idx` per chunk —
+25 of them on 2026-08-19 — burying the nine rows you wanted.)
+
+| Table | Index | Unique? |
+|---|---|---|
+| `ci.browser_activity` | `browser_activity_source_triple_uniq` | yes |
+| `ci.communications` | `communications_source_triple_uniq` | yes |
+| `ci.content` | `content_source_triple_uniq` | yes |
+| `ci.events` | `events_source_triple_uniq` | yes |
+| `ci.inventory` | `inventory_source_triple_uniq` | yes |
+| `ci.object_observations` | `object_observations_source_triple_uniq` | yes |
+| `ci.product_models` | `product_models_source_triple_uniq` | yes |
+| `ci.receipts` | `receipts_source_triple_uniq` | yes |
+| **`ci.position`** | `position_source_triple_idx` | **NO — plain btree** |
+
+All of them are partial (`WHERE source_id IS NOT NULL`) and keyed
+`(user_id, source_type, source_system, source_id)`.
+
+**`ci.position` is the exception and it matters.** `PositionService.create`
+decides existence by **`(user_id, time)`** — `deduplicateByTime` collapses the
+input batch on the parsed instant, then `findExistingByTimes` skips anything
+already at that instant. Consequences, all verified in
+`PositionService.ts` / `PositionService.bulk.spec.ts`:
+
+- Two different fixes at the same instant from different sources collapse to
+  one, whichever arrives first.
+- A re-import with a corrected `name` does **not** update the existing row; it is
+  skipped by timestamp before the triple is ever consulted.
+- The triple *is* persisted (`toPositionInput` spreads `sourceTriple(rec)`;
+  `PositionEntity.sourceType/sourceSystem/sourceId` exist), so the two comments
+  in `PushStage.ts` (the batch path and the single-row path) saying "positions
+  carry no provenance triple" are **out of date** — still, as of `93fc6d8a9`.
+  The operative fact — no upsert-by-triple, no per-row upsert report — is
+  unchanged.
+
+### 2.4 `INGEST_REFRESH_COLUMNS`: a re-import does NOT repair your data
+
+This is the single most consequential fact in this document.
+
+`backend/apps/api/src/common/persistence/ingestRefreshColumns.ts` is the central
+list of columns that a re-ingest of an **existing** provenance triple refreshes
+(the `ON CONFLICT DO UPDATE SET` list). Verbatim, today:
+
+```ts
+export const INGEST_REFRESH_COLUMNS: Record<IngestEntityKind, readonly string[]> = {
+  communication: ['direction', 'participants_metadata', 'content', 'preview', 'subject'],
+  event: [],
+  item: [],
+  content: [],
+  browser_activity: [],
+};
+```
+
+An **empty list means `DO NOTHING`** — find-or-return. The existing row is left
+exactly as it is.
+
+The five keys map onto the destinations as: `communication` → `ci.communications`,
+`event` → `ci.events`, `item` → `ci.inventory` (the `ItemEntity` table),
+`content` → `ci.content`, `browser_activity` → `ci.browser_activity`. So:
+
+**for `ci.events`, `ci.inventory`, `ci.content` and `ci.browser_activity`, a
+re-import repairs nothing** — four of the five kinds in that list.
+`ci.communications` self-heals only those five named columns. `ci.position` is
+not in the list at all and does not self-heal (§2.3). This has bitten several
+fixes in a row, in both directions:
+
+1. **A code fix alone does not fix the corpus.** "Fixed forward" means *new*
+   imports are correct; the rows already there stay wrong forever unless a
+   migration corrects them. Migration `20260818224249` exists solely because of
+   this: the 92 Amazon Appstore rows typed `'media'` by the pre-fix code "stay
+   typed 'media' forever unless corrected directly", quoting its own commit
+   (`5dafcf14b`, PR #2079).
+2. **A backfill migration can be silently undone.** A row a migration repaired is
+   *not* protected: whatever still mints the bad value will write it again on the
+   next import, and for `communication` the five refresh columns will actively
+   overwrite the repair. See failure mode 3 below for the case where 241 rows
+   came back in full.
+3. **Sometimes deleting is the only repair.** When the bad rows lack the data
+   needed to fix them in place, `DO NOTHING` means a re-import cannot help
+   either — so the migration deletes, and the re-import then lands them
+   correctly. That is exactly what `20260819001323` does for the contentless
+   Instagram rows, and its commit says so: "they cannot be repaired in place (the
+   permalink was never persisted) and ingest is find-or-return, so deleting is
+   what lets a re-import land them correctly."
+
+**Rule to carry:** whenever you change what a mapper writes, ask *and answer in
+the PR body* — "what happens to the rows already in the database?" There are only
+three valid answers: this column is in `INGEST_REFRESH_COLUMNS` so a re-import
+heals it; here is the migration; or these rows must be deleted so a re-import can
+re-land them. "Re-import will fix it" is not one of them unless you checked the
+list.
+
+`INGEST_SCHEMA_VERSION` must be bumped alongside any change to those lists, and
+the snapshot in `common/persistence/__tests__/ingestRefreshColumns.test.ts`
+enforces it.
+
+---
+
+## 3. The failure modes that keep recurring
+
+Every one of these is from this month's fixes on `main`. They are listed as
+*classes*, because each has already recurred at least once in a different
+disguise — that is why they are in this document rather than only in a commit
+message.
+
+### 3.1 A non-place string written into a place-name column
+
+`ci.position.name` and `ci.events.location_name` say **where** something was. A
+value that is provably not a place keeps landing in them, and a fake name is
+strictly worse than no name: a NULL name is what makes a row a reverse-geocode
+candidate, so a fake one guarantees the row is never offered a real one.
+
+Three separate variants, three separate fixes, all in August 2026:
+
+| Variant | Evidence | Fix |
+|---|---|---|
+| A meeting-join URL (`https://…zoom.us/j/…`, `altspace://…`) in `events.location_name` | 79 calendar rows | `isUriLocation` (`domains/geocode/util/virtualLocations.ts`), gated in `toEventInput` **and** the Google/Outlook calendar transform services; migration `20260818215813` nulls 78 of them (the 79th pairs a Zoom link with a real room designation and is deliberately excluded). Commit `b53f8d52f`, PR #2078 |
+| A bare coordinate pair, then a **labelled** one (`Location 33.51469, -117.72169`) | three registered datasources minted the labelled form | `isCoordinateText` widened to tolerate one generic geo noun; `google_location.ts` / `kmlgx.ts` / `nmea.ts` stopped minting the pseudo-name at all; migrations `20260818212254` then `20260818235752`. Commit `3099044e6`, PR #2087 |
+| A media filename (`IMG_0139.JPG`, `A20CEAAC-…_3.mov`) | **2,085 rows** on a real appliance | `isMediaFilename` (media extension, or a bare UUID stem with Apple's `_N` burst suffix). Same PR |
+
+The three are now one rule, `isNotAPlaceName(value)` in `push/inputs.ts`:
+`isCoordinateText(value) || isUriLocation(value) || isMediaFilename(value)`.
+
+**Why it recurs:** the name slot is filled by a fallback chain, and the fallbacks
+are individually reasonable. `titleFor` gives a `capture.*` item its filename as
+a display title — correctly, it is the only label a photo has —
+and `toPositionInput` then reads that title as the position's name. Fix one
+producer and the *next* fallback slides into the vacated slot: removing the
+`Location <lat>, <lon>` pseudo-name would have made `titleFor` fall through to
+`basename(row.filename)`, so every Google Timeline fix would have written
+`ci.position.name = 'location.txt'`. That regression was caught in review of the
+fix itself and is the entire subject of commit `2f354d2af`.
+
+**What to do:** guard the *column*, structurally, not the producer. A predicate
+over the value's grammar covers importers you do not own and third-party exports;
+a per-importer denylist does not.
+
+### 3.2 A label or heading captured as a person's name
+
+Parsers read documents whose structure is presentation. When a label and its
+subject share one element, a naive read takes both.
+
+- **Google Voice call logs.** `processCallLog` derives a `CallType` from the
+  export's filename and wraps the contact in a heading it builds itself,
+  `${callType} call ${preposition} ${contact}`. In some exports the heading and
+  the name share **one** `<span class="fn">` separated by a newline, so the
+  built heading landed on top of the raw one. **3,079 `Person` rows** were named
+  with a call-log heading (`"Missed call from"`, `"Placed call to\nNancy Davis"`).
+- **Messenger/Voice exports.** **241 more** `Person` rows were named with the
+  literal export filename, `"Group Conversation - 2024-09-25T01_45_41Z.html"`.
+- **Instagram.** The same class one level up: the Meta HTML activity parser built
+  every entry from `htmlToText(chunk)`, so everything identifying an entry — the
+  permalink in an `href` — was unreachable, and 2,010 rows reached `ci.content`
+  with a blank text *and* a blank url. Commit `ae4db5d6e`, PR #2098.
+
+The durable fix is `backend/apps/api/src/domains/graph/utils/participantSanity.ts`
+— **one** exported predicate that says a string is structurally not a name, asked
+by every minter: `classifyParticipant`, `PersonLinkStage.classifyIdentifier`,
+`EntityIdentifierService.upsertForEntities`, and the import push path. Each of
+those was previously a fallthrough: anything that was not an email and not a
+phone became a name, and a name became a contact. `googlevoice.ts` now *strips*
+headings with the same exported pattern it *refuses* on, so strip and refuse can
+never drift.
+
+Note what the predicate deliberately is **not**: it is not a "does this look
+human" heuristic. Three shapes only — a call-log heading, an export filename,
+anything containing a newline. A short handle, a bare phone, an all-caps nickname
+all still pass. Widening it widens what the system silently drops.
+
+### 3.3 A backfill that repairs rows while the code that MINTS them is untouched
+
+Migration `20260818220731` deleted the 241 filename-named `Person` rows. **All
+241 came back.** Its own comment explains why it thought that was safe: it
+emptied `to_entity_ids` so "a future relinking sweep naturally revisits them".
+The relinking sweep *is the minter*. It handed 446 communications back with the
+same filename still sitting in `participants_metadata.to`, and produced the same
+241 people.
+
+> **Deleting the output of a generator that is still running is theatre.**
+
+The durable fix (commit `ac2286e14`, PR #2099) is three parts, and the commit
+states plainly that **none of them works alone**:
+
+1. **The guard** — `participantSanity.ts`, asked by every minter, logging each
+   refusal.
+2. **The source string** — migration `20260819001555` repairs
+   `participants_metadata` itself: the heading comes off `from` on 38,398 Google
+   Voice call records (28,827 keep a real contact; 9,571 named nobody and lose
+   the key), and the filename comes out of `to` on the 446 chat records.
+3. **The entities** — migration `20260819002002` repairs 3,320 `ci.entities`
+   rows, split by whether they carry a phone/email — which is the difference
+   between a mislabelled person and a stub that should never have existed. The
+   commit's own figures: 2,353 renamed, 720 merged onto whoever owns that name in
+   `ci.entity_identifiers`, 241 deleted with references repointed first — and now
+   with no source string left to re-create them.
+
+**Checklist for any data-repair migration.** Before you write the SQL, answer all
+four:
+
+- What **mints** this value? Is that path now refusing it?
+- What **already-stored string** does the minter read? Is that repaired too?
+- Is the repaired column in `INGEST_REFRESH_COLUMNS` (§2.4)? If yes, will the
+  next import overwrite your repair?
+- Is the migration **idempotent**, and **disjoint** from every earlier migration
+  touching the same column? (`20260818235752` documents exactly this: its
+  coordinate arm *requires* the label, so it cannot re-match the bare pairs
+  `20260818212254` already cleared.)
+
+### 3.4 A guard narrower than the bug
+
+`processCallLog` derives `CallType` from a **five**-way alternation:
+`Missed | Placed | Received | Voicemail | Recorded`. Migration `20260818213148`
+repaired **three** of them — and said so. For Missed/Placed/Received the built
+prefix (`"Missed call from"`) is textually identical to the raw markup heading,
+so one backreference detects and collapses the repeat. The other two are not
+self-duplicates: Google Voice writes `"Voicemail from"` and
+`"Recorded call with"` while the template builds `"Voicemail call from"` and
+`"Recorded call from"`, so the backreference never matched them.
+
+**2,891 `ci.communications` rows reading `"Voicemail call from Voicemail from"`
+and 188 reading `"Recorded call from Recorded call with"`** carried the heading
+twice until `20260819002531` finished the job — and that migration's header
+carries the verification query *and* the exact shape counts, so the next reader
+can confirm there are no other shapes rather than taking its word for it. Copy
+that habit: a repair migration that states its own denominator is auditable; one
+that does not is a promise.
+
+**Why it recurs:** the guard is written from the *observed* examples, and the
+observed examples are a sample. The producing code names the full domain — here,
+a five-branch alternation sitting in `googlevoice.ts` — and the guard was derived
+from data instead of from that list.
+
+**What to do:** derive the guard from the **producer's own enumeration**, and
+assert the two agree. `participantSanity.ts`'s `CALL_LOG_HEADING` pattern now
+lists all five verbs and is exported so `googlevoice.ts` strips with the same
+pattern; there is nowhere left for a fourth and fifth case to hide.
+
+### 3.5 A sizing budget shared with a discovery budget
+
+`ImportInboxService.scan` walks the inbox to find units; `aggregate` recurses
+through each recognised unit to report `sizeBytes` / `fileCount`. Both charged
+the **same** 20,000-entry budget (`MAX_ENTRIES`), so measuring a large export
+consumed the budget discovery needed.
+
+On the real test corpus that is not a corner case, it is the normal case: a
+**79,623-file `google-takeout` exhausts 20,000 entries by itself**, and the walk
+returns on its very next iteration. The scan reported 28 units — every top-level
+source sorting after `google-takeout` (gpx, grok, instagram, linkedin, reddit,
+spotify, twitter, uber, whatsapp, withings, …) **never became a unit at all**.
+`truncated: true` came back, but a caller reading a 28-unit list cannot tell
+*which* sources it lost, and importing that list reads as "imported everything".
+
+Fixed (commit `873a60ff3`, PR #2088) by giving sizing its own per-unit budget,
+`MAX_UNIT_SIZING_ENTRIES = 50_000`, and reporting exhaustion **on the unit** as
+`sizeApproximate` rather than by silently ending discovery. A unit whose size is
+a lower bound is still fully importable; only the preview numbers are partial.
+
+**Why it recurs:** two loops sharing one counter is invisible in a diff, and the
+symptom is *absence* — a source that never appears looks like a source you do not
+have. The lesson has since been applied twice more in the same file, so the
+budget list is six separate ceilings, not one. All in `ImportInboxService.ts`,
+verified on `93fc6d8a9` — an earlier revision of this table listed a `MAX_DEPTH`
+that no longer exists:
+
+| Constant | Value | Governs | Exhaustion means |
+|---|---|---|---|
+| `MAX_ENTRIES` | 20,000 | **discovery** — the walk | `truncated: true` on the scan |
+| `MAX_UNITS` | 500 | units a scan will report | `truncated: true` on the scan |
+| `MAX_UNIT_SIZING_ENTRIES` | 50,000 | **per-unit sizing** (`aggregate`) | `sizeApproximate` on that unit |
+| `FILE_PROBE_DEPTH` / `PROBE_ENTRY_BUDGET` | 4 / 5,000 | the has-any-file probe that hides empty drop folders | that folder is not offered; nothing is flagged |
+| `SCAN_RECOGNITION_TIMING` | 10,000 ms total, 3,000 ms per call | recognition, the scan's only unbounded cost | `truncated: true`; the cache resumes next scan |
+| `MAX_INBOX_BATCH_UNITS` | 100 | units one batch may start | the request is **rejected**, not truncated |
+
+`SCAN_RECOGNITION_TIMING` exists because many recognizers read files
+*synchronously* — fine in the CLI they were ported from, event-loop blocking
+here — so without a deadline a half-copied 350GB Takeout left every request on
+the process pending. `SCAN_RECOGNITION_CACHE` carries two TTLs for the same
+reason: a positive directory verdict only gets stronger as more of the archive
+lands (10 min), but an *empty* verdict cached mid-copy must age out fast (60 s),
+because a directory's mtime does not move when files land deep inside it.
+
+**What to do:** when a budget is exhausted, degrade the *thing being measured*,
+never the enumeration. And make the degradation visible on the item, not as a
+single top-level `truncated` boolean — a caller must be able to name what it
+lost.
+
+### 3.6 "Fixed forward" mistaken for "fixed"
+
+The straight consequence of §2.4, listed separately because it is the one that
+gets missed under time pressure. Two real shapes:
+
+- **`ci.content.external_id_kind`** — migration `20260818215331` added the column
+  and backfilled it with `source_system IS DISTINCT FROM 'spotify' -> 'file'`.
+  That is a snapshot observation, not a structural rule: `toContentInput` stamps
+  `external_id` from `metadata.URI` for **any** record carrying one, and four
+  other in-tree datasources set that field (amazon_music, audible,
+  kindle_reading, prime_video). Every such row present when the migration ran was
+  stamped `'file'` — a claim that the value is a `ci.files.id`, about a URI that
+  can never resolve there. The migration's UPDATEs were also unguarded, so a
+  re-run re-stamped rows a better writer had already corrected. Replaced by
+  `20260818235804`, which re-derives from the value's *shape*, plus
+  `domains/memory/externalIdKind.ts` as the single definition applied at the one
+  choke point every write path funnels through — so **new rows never depend on a
+  migration at all**. Commit `b486e67c5`, PR #2092.
+- **Amazon Appstore entitlements** — the code fix landed first; the 92 existing
+  rows would have stayed typed `'media'` forever. Migration `20260818224249`,
+  commit `5dafcf14b`, PR #2079.
+
+**Why it recurs:** the test suite goes green on the code fix, and green feels
+like done. It is not; the corpus is the deliverable.
+
+**What to do:** the pattern the `external_id_kind` fix converged on is the one to
+copy — put the rule in **one** function, apply it at the **one** choke point all
+writes funnel through, and add an integrity endpoint that asserts the invariant
+over the live corpus. `GET /api/maintenance/content/external-id-kind` asserts
+that every row stamped `'file'` resolves against `ci.files`, and reported
+"0 violations (33,499 `external_uri` + 11,432 `file`, all resolving)" when it
+shipped. Then the migration is a one-time correction rather than the mechanism.
+
+---
+
+## 4. How to verify a fix
+
+This repo has converged on one rule, and it is not negotiable:
+
+> **A fix is not done until you can state the count before and after against real
+> data. A test that passes with the fix reverted is not a test.**
+
+### 4.1 State the count
+
+Every fix cited in §3 carries a number that came out of a database or off a real
+corpus: 2,085 media filenames; 79 Zoom URLs; 3,079 heading-named people;
+2,891 + 188 double-read call headings; 92 mistyped Appstore rows; a 28-unit scan
+that should have listed every top-level source; 2,098 capture events with 0
+content rows. Those numbers are the argument. Write the read-only query first,
+run it, and put it in the PR body and the migration header:
+
+```bash
+docker exec -i <stack>-database-1 psql -U companion -d companion -c "<SELECT …>"
+# or, from a worktree with the stack up:
+make dbshell        # psql on this worktree's database
+make dburl          # connection URL for a second psql / DataGrip
+```
+
+Validate the *predicate*, not just the count: the non-place-name work was
+"validated read-only against a 65,115-row appliance corpus: 2,085 media hits, all
+camera-roll filenames; **0 hits on any real place name**." The zero on the
+negatives is what makes the predicate safe to ship.
+
+### 4.2 Neutralise the guard, watch the test fail, restore
+
+The mechanical procedure, in full:
+
+1. Write the test against the **real** shape you observed, not a paraphrase.
+   (`inputs.test.ts` uses every real place name found in the live corpus as a
+   negative case; the Instagram fixtures are "verbatim entry blocks cut from a
+   real June 2026 export".)
+2. Run it. It must **fail** on the unfixed code.
+3. Apply the fix. Run it. It must pass.
+4. **Now neutralise the fix and run again.** Comment out the guard, or make the
+   predicate return `false`, or revert the one line — and confirm the test goes
+   red. If it stays green, your test is asserting something else and you have not
+   covered the defect.
+5. Restore the fix. Re-run. Commit.
+
+Step 4 is the step people skip, and it is the only one that proves anything. It
+is why commit `2f354d2af` says, of its four new round-trip cases, "**all four
+fail with the guard removed**" — that sentence is the receipt, and reviewers look
+for it.
+
+Prefer a test that goes through the real path end to end. Those four cases go
+`staged item → toCanonical → toPositionInput` and assert `name` is `undefined`; a
+unit test of `isMediaFilename` alone would have passed while the wiring stayed
+broken.
+
+### 4.3 Test a migration by running the migration
+
+For a data-repair migration, the test applies **the real file**, inside a
+transaction that always rolls back. The pattern is in
+`backend/apps/api/src/domains/pipeline/stages/__tests__/backfillPositionNonPlaceNames.integration.spec.ts`:
+
+```ts
+function migrationUp(): string {
+  const file = path.resolve(__dirname, '../../../../../db/postgres/migrations/20260818235752_backfill_position_non_place_names.sql');
+  const sql = readFileSync(file, 'utf8');
+  const start = sql.indexOf('-- migrate:up');
+  const end = sql.indexOf('-- migrate:down');
+  if (start < 0 || end < 0) throw new Error(`${file} has no migrate:up / migrate:down markers.`);
+  return sql.slice(start + '-- migrate:up'.length, end);
+}
+```
+
+The fixtures deliberately include the **negatives the arms must never touch** —
+a real place name containing digits or a dot, a value an earlier migration
+already cleared (so the two must be disjoint), a `name` already NULL (so the
+migration is idempotent).
+
+The suite skips legibly when there is no database rather than failing every test
+on a connection error (`domains/__tests__/support/databaseConnection.ts`;
+`databaseAvailability()` prints the reason). Point it at a scratch database with
+the suite's own variable — `IMPORT_TEST_DATABASE_URL` for the import suites,
+`PIPELINE_TEST_DATABASE_URL`, `MEMORY_TEST_DATABASE_URL`, etc. Take the value
+from `make dburl`: the dev stack reallocates ports on every `up`, and a stale
+port reads as "no database".
+
+### 4.4 The commands
+
+```bash
+export PATH="$HOME/.nvm/versions/node/v22.15.1/bin:$PATH"   # the repo pins 22.15.1 (.nvmrc)
+
+yarn workspace @ci/be-api typecheck
+yarn workspace @ci/fe-web typecheck
+
+yarn workspace @ci/be-api test src/domains/import              # the whole import domain
+yarn workspace @ci/be-api test src/domains/import/cli          # just the CLI
+yarn workspace @ci/be-api test src/domains/import/push         # routing + mappers
+
+yarn prettier --write <every file you changed>                 # CI checks ts/tsx/js/mjs formatting separately from eslint
+```
+
+Migrations are hand-written and are the source of truth; the TypeORM entities are
+updated to match. **Never hand-write the timestamp prefix** — use
+`yarn workspace @ci/be-api migrate:make <name>`, which stamps real UTC to the
+second. Hand-picked round timestamps have collided across parallel branches, and
+dbmate keys `schema_migrations` on the prefix, so a duplicate breaks `migrate`
+for everyone. `bin/check-migration-versions.js` enforces uniqueness.
+
+### 4.5 A test that would pass with the fix reverted
+
+§4.2 states the rule. This section exists because several agent-written fixes
+merged this month passed tests that would also have passed with the fix removed,
+and one of them shipped a mechanism that did nothing at all.
+
+**The specimen: [#2101](https://github.com/companionintelligence/CI-Server/pull/2101),
+`fix(import): a stage waiting its turn must not collect a job every sweep`.** The
+defect was real and measured (16 stage ids holding 107 pending jobs after 47
+minutes). The fix added `singletonKey: stage.id` to `enqueueStage`. The test
+asserted that the key was passed, against a **mocked** `eventService.send`.
+
+The test passed. The de-duplication did nothing. pg-boss 10 makes de-duplication
+a **queue** property: its unique index on `(name, singleton_key)` is partial,
+`WHERE state='created' AND policy='short'`, and at that point every queue in this
+repo was created with the default `standard` policy, under which a `singletonKey`
+is stored and never enforced. `SyncOrchestrator.ts:299` already said so in a
+comment, and `select policy from pgboss.queue` on the live appliance returned
+`standard` for all 32 of them. The mock could not know any of that, because the
+mock *was* the part that would have refused the duplicate.
+
+Three transferable rules:
+
+1. **A test that asserts your call's arguments tests your call, not your fix.**
+   `expect(send).toHaveBeenCalledWith(…, { singletonKey })` is a restatement of
+   the diff. The claim being made was "a second enqueue for the same stage does
+   not produce a second job", and only a real queue can answer that.
+2. **Neutralise, then run.** Delete the option, revert the one line, make the
+   predicate return `false` — and watch the test go red. If it stays green you
+   have not covered the defect. Commit `2f354d2af` says of its four round-trip
+   cases "**all four fail with the guard removed**"; that sentence is the
+   receipt, and reviewers look for it.
+3. **Re-measure the original number on the live system.** The count that proved
+   the bug is the count that proves the fix — here,
+   `select count(*) from pgboss.job where state = 'created' and name like 'import%'`
+   over two sweeps twenty minutes apart. §4.1 asks for the count before and
+   after; when a fix is about a *rate*, "after" means a second reading, not one.
+
+The eventual fix was one word in a different file — `policy: 'short'` on the four
+per-kind stage queues (§1.5) — and it is verifiable in one statement:
+`select name, policy from pgboss.queue where name like 'import%'`.
+
+---
+
+## 5. How to run it locally
+
+### 5.1 The stack
+
+`make dev` brings up a per-worktree isolated stack behind a per-worktree Caddy
+route: the compose services (`database`, `object-store`, `hbpe-service`,
+`summary-service`, `powersync`) plus the three `Procfile` processes — `api`
+(`CI_ROLE=web`), `worker` (`CI_ROLE=worker`) and `web`. It requires `overmind`,
+`caddy` with its admin API reachable on `:2019`, Docker, and Node 22.15.1.
+
+Useful targets: `make dbshell`, `make dburl`, `make url`, `make urls`,
+`make testuser` (creates a local user and prints a fresh API key), `make migrate`.
+
+To point a second web dev server at an already-running API without disturbing it:
+
+```bash
+cd frontend/apps/web && API_PROXY_TARGET=http://127.0.0.1:3030 yarn dev --port 5181 --strictPort
+```
+
+The web app calls `/api/*`; Caddy (and the Vite dev proxy, `vite.config.ts`)
+**strips the `/api` prefix**. The API's own routes are `/import/*`, not
+`/api/import/*` — which is what the `ci-import` CLI and any direct `curl` must
+use.
+
+### 5.2 The environment variables
+
+Declared in `backend/apps/api/config/custom-environment-variables.json`, defaults
+in `config/default.json`:
+
+| Variable | Default | What |
+|---|---|---|
+| `CI_IMPORT_INBOX_DIR` | `/var/lib/ci-import/inbox` | The **root** of the inbox. `ImportInboxService` scans only `<root>/<user>/` — see §5.3. Importer-owned; readable without any root configured |
+| `CI_IMPORT_UPLOADS_DIR` | `/var/lib/ci-import/uploads` | Where `POST /import/uploads` lands multipart bytes |
+| `CI_IMPORT_SCRATCH_DIR` | `/var/tmp/ci-import` | Per-run working tree. **Not `/tmp`** — `/tmp` is tmpfs on a stock appliance, so a large export would consume RAM until the machine died |
+| `CI_IMPORT_ROOTS` | `[]` | Host paths an API caller may name. **Parsed as JSON** (`"__format": "json"`), so it must be a JSON array literal: `CI_IMPORT_ROOTS=["/path/one","/path/two"]`. A bare path silently yields nothing |
+| `CI_IMPORT_MAX_ARCHIVE_ENTRIES` | 2,000,000 | Entry cap the guarded extractor enforces |
+| `CI_IMPORT_MAX_ARCHIVE_BYTES` | 107,374,182,400 (100 GiB) | Byte cap, same |
+| `CI_IMPORT_DB_DATA_DIR` | `""` | Where to read the database volume's free space. Unset means "unknown", which is **not** treated as full |
+| `CI_IMPORT_MEDIA_CONCURRENCY` | 8 | Simultaneous object-store uploads in `MediaStage` (read directly from `process.env`, not through config) |
+
+> **Environment changes need a full stack restart.** overmind exports `.env` to
+> its children and dotenv will not override an already-set variable, so editing
+> `.env` and letting nodemon reload silently keeps the old value.
+> `CI_IMPORT_ROOTS` has looked broken for ten minutes for exactly this reason.
+
+### 5.3 ⚠️ The inbox is PER USER, and it CONSUMES what it imports
+
+**The layout, since [#2100](https://github.com/companionintelligence/CI-Server/pull/2100)
+(`507c1e2f1`).** `CI_IMPORT_INBOX_DIR` is a root that nothing scans directly.
+Each account owns a subtree named after its email, and units live inside it —
+optionally inside a per-service folder:
+
+```
+$CI_IMPORT_INBOX_DIR/
+└── test_example.com/          ← userInboxDir(user.email)
+    ├── amazon/                ← a service folder; the drop DECLARES that source
+    │   └── orders.zip         ← the unit
+    ├── google-takeout/
+    └── some-loose-archive.zip ← also a unit; declares nothing
+```
+
+The folder name is `sanitizeFilename(email.trim().toLowerCase())`
+(`sources/importRoots.ts` → `sources/sanitizeFilename.ts`): lowercased, then every
+character outside `[A-Za-z0-9._-]` replaced with `_`. So `Test@Example.com`,
+`test@example.com` and `TEST@EXAMPLE.COM` all become **`test_example.com`** — the
+`@` becomes `_`, the dot survives. It is derived from the email because that is
+the one identifier that is both unique and recognizable from the desktop side of
+the mount; without the scoping, any account could import — and thereby consume —
+an archive another account dropped.
+
+> **The trap, and it points at the wrong thing entirely.** Drop a unit in the old
+> flat layout (`$CI_IMPORT_INBOX_DIR/amazon`) and starting it fails with
+>
+> ```
+> <path> is outside the configured import roots (…).
+> ```
+>
+> That message comes from `resolveWithinRoots` in `sources/importRoots.ts` and
+> reads as "you forgot to set `CI_IMPORT_ROOTS`" — which is a different variable
+> for a different purpose (host paths a caller may *name*; the inbox needs none
+> of them). The actual fault is that the path is not under *this caller's*
+> `userInboxDir`. Check the email spelling of the account whose API key you are
+> using before you touch any configuration. This cost real time on the 2026-08-19
+> QA pass.
+
+The per-service folders are created for you on every scan
+(`ensureServiceFolders`, mode `1777` on creation only so the desktop user can
+drop into them). The set is the top-level segment of every export guide's
+`inboxPath` whose importer actually exists — **54 folders** on `93fc6d8a9`
+(`amazon`, `apple`, `browser`, `google-takeout`, `instagram`, … see
+`sources/inboxFolders.ts`). Dropping into one sets the run's `declared_sources`,
+so the usage roll-up credits declared ∩ detected instead of crediting only the
+dominant detected source — which is what a multi-service archive like a full
+Takeout otherwise loses. A unit at the root of the user subtree declares nothing
+and keeps the dominant-source behaviour. Folders are only ever created, never
+removed, so an appliance that has been through several releases may show a
+superset of the 54.
+
+**And it consumes.** `UnpackStage` acquires by **rename** (`sources/localAcquire.ts`;
+an EXDEV copy falls back to copy-then-delete, and both routes are crash-recoverable
+through a deterministic temp name). The unit leaves the inbox when the run starts;
+the bytes then live only in the run's scratch tree, which is reclaimed when the run
+finishes. **Never point the inbox at the only copy of a corpus.**
+
+```bash
+INBOX="$CI_IMPORT_INBOX_DIR/$(printf %s "$EMAIL" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9._-' '_')"
+mkdir -p "$INBOX"
+cp -Rc /path/to/corpus/* "$INBOX"/           # macOS: -c is an APFS clone — instant, no extra disk
+cp -r --reflink=auto /path/to/corpus/* "$INBOX"/   # Linux equivalent on btrfs/XFS
+```
+
+The upload path (`ci-import import <file>`, or the web drop zone) copies instead
+and leaves the original alone.
+
+There is one deliberate exception that saves you: `ImportStageListener` will
+**not** reclaim the scratch tree when the run staged no records, or when any
+staged media row's bytes were never uploaded. Keeping tens of gigabytes costs
+disk; the alternative costs the archive. If you see
+`Import staged no records; keeping its scratch tree rather than reclaiming it` in
+the logs, your data is still on disk under `CI_IMPORT_SCRATCH_DIR`.
+
+`ci-import inbox` also **scans by default** and imports only with `--start`, for
+the same reason — a mistake is not a re-run away.
+
+### 5.4 The CLI
+
+Full reference: [`docs/cli/ci-import.md`](../cli/ci-import.md). It is an HTTP
+client against a running appliance, never an embedded server (running
+`ImportModule` in a CLI process would start a *second* set of stage workers
+racing the server's for the same claims).
+
+```bash
+export CI_SERVER_URL=http://localhost:3030
+export CI_API_KEY=…                       # web UI → Settings → API keys, or `make testuser`
+yarn workspace @ci/be-api ci-import <command>
+```
+
+| Command | Does |
+|---|---|
+| `datasources [--catalog]` | The 71 registered importers, or the authored services list |
+| `recognize <path>` | Asks every parser what it makes of a path, importing nothing. Confined to `CI_IMPORT_ROOTS` + the caller's inbox subtree |
+| `import <path…> [--stages] [--wait]` | Uploads archives and runs `unpack → parse → media → push` |
+| `inbox [--start] [--only] [--skip] [--units]` | Scans the caller's inbox subtree; `--start` imports it, smallest unit first |
+| `runs [runId] [--wait]` | Runs and their stage bars |
+| `push [--run <id>] [--dry-run]` | Appends a `push` stage to every run whose rows are staged and uncommitted |
+| `stats` | `ci.*` row counts, search-index coverage, queue depth, run rollup |
+| **`doctor [--list] [--check <id>] [--failures-only] [--timeout <ms>] [--json]`** | **The nineteen data-quality checks over what the import actually wrote. See [§6](#6-what-to-measure--ci-import-doctor)** |
+| `backfill [stages…] [--list]` | The post-import enrichment chain via `POST /api/maintenance/orchestrate` (NDJSON-streamed, because a `search_index` backfill outlives undici's 300s headers timeout) |
+
+Exit codes: **0** success, **2** a failure you can fix (bad path, missing key,
+unreachable server, an unknown `--check` id), **1** a failure the appliance owns.
+`doctor` also exits **1** when its gate trips — see [§6](#6-what-to-measure--ci-import-doctor);
+distinguish the two by whether stdout carried a report.
+
+`--stages` warns when it omits `media`, because that stage uploads the archive's
+bytes and stamps `metadata.FileId`; a run that parses photos without it leaves
+the scratch tree as the only copy.
+
+### 5.5 ⚠️ Resetting an appliance means dropping the DATABASE, not the schemas
+
+For a scoped reset — wipe ingested rows, keep the users and the schema —
+`POST /api/maintenance/ingest/reset` is the supported path
+([`INGEST_RESET_RUNBOOK.md`](../../backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md)).
+
+For a *full* reset back to migration zero, **drop the database and recreate it.**
+Dropping a hand-typed list of schemas does not work, and fails in a way that
+reads as a migration bug:
+
+```
+ERROR: type "job_status" already exists
+```
+
+A fully-migrated database carries **seven** CI schemas — `ci`, `ci_derived`,
+`ci_etl`, `ci_import`, `ci_search`, `hbpe`, `pgboss` — plus `public`, plus six
+TimescaleDB ones, plus `ci_core`, which `20251021002020` creates and
+`20251214211043` drops again mid-run. Miss one and you get a half-empty database
+that is neither clean nor migrated: `CREATE SCHEMA IF NOT EXISTS` is idempotent, but
+`CREATE TYPE` is not, so the first migration to re-create an object in a schema
+you left behind aborts the whole run. On the 2026-08-19 QA pass the dropped set
+was `ci`, `ci_import`, `ci_search`, `pgboss`; `ci_etl` survived, and
+`20260210182932_create_sync_jobs.sql` — which creates `ci_etl.job_status`, and
+whose error message prints the type **unqualified** — failed on the next
+`make migrate`. Enumerate before you assume:
+
+```sql
+select nspname from pg_namespace
+ where nspname not like 'pg\_%' and nspname <> 'information_schema' order by 1;
+
+select n.nspname, t.typname from pg_type t
+  join pg_namespace n on n.oid = t.typnamespace
+ where t.typtype = 'e' order by 1, 2;
+```
+
+---
+
+## 6. What to measure — `ci-import doctor`
+
+**Start here. Do not hand-type a baseline.**
+[#2105](https://github.com/companionintelligence/CI-Server/pull/2105) shipped the
+audit that used to live in a scratch `psql` buffer as a nineteen-check suite. Each
+check is a regression detector for a defect that really shipped (the ones in §3,
+mostly), and each one **mirrors** the guard or migration it is watching, so the
+two are maintained together.
+
+```bash
+yarn workspace @ci/be-api ci-import doctor                 # the table
+yarn workspace @ci/be-api ci-import doctor --failures-only # hide the clean ones
+yarn workspace @ci/be-api ci-import doctor --list          # the vocabulary, running nothing
+yarn workspace @ci/be-api ci-import doctor --json          # for a loop
+yarn workspace @ci/be-api ci-import doctor --check comms-missing-thread-id --json
+```
+
+Under it are two GET routes, so an agent holding an api key and no database
+credentials can do the same:
+
+```bash
+curl -sH "x-api-key: $CI_API_KEY" http://localhost:3030/import/doctor/checks | jq
+curl -sH "x-api-key: $CI_API_KEY" 'http://localhost:3030/import/doctor?checks=person-name-garbage&timeoutMs=30000' | jq
+```
+
+### 6.0 The contract
+
+**Flags.** `--list`, `--check <id>` (repeatable), `--timeout <ms>`,
+`--failures-only`, `--json`, plus the CLI-wide `--server` / `--api-key`. That is
+all of them — `program.ts` is the authority, and this list was read off it. There
+is no `--fix`, no `--severity`, no `--since`.
+
+**The gate.** Exit **1** when any `high` check found rows, **and** when any `high`
+check could not answer. The second half is deliberate: a gate that reads "I could
+not look" as "there is nothing there" passes exactly when the corpus got big
+enough for the checks to matter. Raise `--timeout` rather than ignoring it. Exit
+**2** is the CLI's usual "you asked for something impossible" — an unknown check
+id (the 400 names it and lists the valid ones), no api key, no appliance. Exit
+**0** when every `high` check answered and answered zero; `medium` findings never
+gate.
+
+**Severity** is not annoyance, it is actionability: `high` means "provably wrong,
+with a known fix", `medium` means "look, but it may be legitimate" —
+future-dated events are the canonical `medium`, because a calendar is a list of
+things that have not happened yet.
+
+**`--json`** is `DoctorReport` (`doctor/ImportDoctorService.ts`), and stdout stays
+a single parseable document even when the gate trips — the gate message goes to
+stderr. Shape below, with the totals and the one finding filled in from the
+2026-08-19 measurement in [§6.0.1](#601-what-the-checks-cover):
+
+```jsonc
+{
+  "ok": false,                       // false if any HIGH found rows OR could not answer
+  "at": "2026-08-19T…Z",
+  "durationMs": 631,                 // whole suite; 631 ms is the figure checks.ts measured
+  "statementTimeoutMs": 15000,       // the cap in force, so a TIMEOUT is interpretable
+  "totals": { "checks": 19, "clean": 11, "found": 8, "timeout": 0, "error": 0,
+              "highFindings": 4, "highUnresolved": 0 },
+  "findings": [{
+    "id": "capture-events-without-content",
+    "severity": "high",
+    "status": "found",               // clean | found | timeout | error
+    "title": "Capture events pointing at a file but carrying no ci.content row — …",
+    "scope": "ci.events, ci.content",
+    "remedy": "…",                   // the sentence written FOR the agent: where to go next
+    "mirrors": "db/postgres/migrations/20260818174213_backfill_capture_content_rows.sql",
+    "count": 182,                    // null when the check did not answer
+    "breakdown": { "whatsapp": 169, "facebook": 10, "grok": 1, "twitter": 1, "instagram": 1 },
+    "sample": { "event_id": "01a01887-…", "file_id": "01a01886-…",
+                "start_time": "2022-09-28T01:53:00+00:00", "source_system": "instagram" },
+    "durationMs": 35,               // this statement's wall-clock; also what a TIMEOUT reports
+    "error": null                    // the database's own message, for timeout/error
+  }]
+}
+```
+
+`status` splits four ways for a reason: `clean` and `found` are both the check
+*succeeding*; `timeout` and `error` are it failing to answer, which is not the
+same as answering zero. `remedy` and `mirrors` ride on every finding rather than
+being an id to go look up, so a fresh agent can act on one finding without a
+second call.
+
+**Timeouts.** The default cap is 15,000 ms **per statement**
+(`DEFAULT_STATEMENT_TIMEOUT_MS`), clamped to `[100, 600000]`; a `--timeout 0`
+would otherwise mean "no timeout at all" to Postgres, which is the opposite of
+what anyone types it for. The service pins one `QueryRunner` for the whole suite
+(because `statement_timeout` is a session setting) and runs the checks
+**sequentially** — nineteen concurrent sequential scans over the same few large
+tables would contend for the same buffers and finish later. One slow check
+therefore costs one check, not the audit.
+
+### 6.0.1 What the checks cover
+
+Nineteen, in pipeline order — communications, then the people and places pulled
+out of them, then events and content, then the enrichment control plane, then the
+search index. Run against the live appliance mid-import on 2026-08-19 (15,456
+communications, 123,194 events, 41,440 content, 2,006 inventory, 2,952
+browser_activity, 3,284 `Person` entities), twelve of thirteen sources pushed:
+
+| check | sev | mirrors | mid-import | complete + enriched |
+|---|---|---|---:|---:|
+| `comms-missing-thread-id` | high | `20260819000746` backfill | 19 | 19 |
+| `comms-missing-participants` | high | `20260819000959` backfill | 5,396 | 406 |
+| `comms-placeholder-content` | high | `20260819000154` backfill | 0 | 0 |
+| `position-not-a-place-name` | high | `push/inputs.ts isNotAPlaceName` | 0 | 0 |
+| `person-name-garbage` | high | `20260819002002` backfill | 0 | 0 |
+| `person-bare-phone-name` | medium | `20260818220833` merge candidates | 0 | 3,250 |
+| `person-duplicate-names` | medium | — | 768 | 2,595 |
+| `events-location-without-name` | medium | `20260818215813` (its exclusion) | 0 | 0 |
+| `capture-events-without-content` | high | `20260818174213` backfill | 182 | 182 |
+| `content-media-mimetype-mismatch` | medium | `20260818224249` backfill | 14 | 14 |
+| `events-dated-before-1990` | high | — | 0 | 0 |
+| `events-dated-in-future` | medium | — | 3 | 3 |
+| `events-timestamped-at-import` | high | `time_source` vocabulary | 0 | 0 |
+| `pipeline-overdue-retries` | high | — | 801 | 806 |
+| `pipeline-quarantined` | high | — | 0 | 0 |
+| `pipeline-dead-letters` | high | — | 0 | 1 |
+| `pipeline-orphan-shards` | medium | — | 0 | 10 |
+| `events-missing-search-vector` | medium | — | 53,145 | 0 |
+| `communications-missing-search-vector` | medium | — | 0 | 1 |
+
+The second column is the same nineteen checks on the FINISHED run (1,393,402
+records: 325,145 communications, 325,849 browser_activity, 127,700 events,
+63,044 position, 507,495 entities) after the enrichment chain ran. Read the two
+together — §6.0.2 is why.
+
+Read the first column as a **snapshot mid-import, not a target**: the two search-vector
+checks and `pipeline-overdue-retries` are expected to be large while the index
+sweeps trail the push, and `events-missing-search-vector` at 53,145 against
+123,194 events is the sweeps being behind, not broken. The rows to treat as
+**0 and staying 0** are the five `high` checks that already read 0 —
+`comms-placeholder-content`, `position-not-a-place-name`, `person-name-garbage`,
+`events-dated-before-1990`, `events-timestamped-at-import`. The first three
+mirror a guard that is actively refusing bad values on the write path (§3); the
+last two assert a date range no export legitimately produces. Any of the five
+going non-zero means something stopped holding, and that is a defect, not a
+backlog.
+
+Three rules the registry enforces on itself, worth knowing before you add a check
+(`doctor/checks.ts`, `doctor/__tests__/checks.test.ts`):
+
+- **One statement per check, returning exactly one row** with `count` /
+  `breakdown` / `sample`. A single CTE containing every check was tried and one
+  slow arm took the whole audit down after several minutes with nothing to show.
+  A stray `;` is rejected by a test, because TypeORM would run the smuggled
+  second statement and return *its* result.
+- **Every SQL string is a `String.raw` template.** A plain quoted string eats the
+  backslashes — `'\.'` is `.`, `'\d'` is `d`, `'\FFFC'` is `FFFC` — turning a
+  precise predicate into a much broader one that still runs and still returns a
+  number. That is the worst possible failure for a check, so there is a test that
+  looks for surviving backslashes in two specimens.
+- **A mirrored predicate names its twin.** `mirrors` must point at
+  `db/postgres/migrations/…` or `src/domains/…`; `null` is allowed only where no
+  twin exists (the pipeline checks watch a control plane, not a data shape).
+  Change the predicate here, change it there.
+
+The sections below are the drill-downs the doctor does not do: run-level
+liveness, the drop ledger, and the push detail. Use them **after** a doctor
+finding, or when you have database access and no api key.
+
+### 6.0.2 Run it AFTER the enrichment chain, not before
+
+The single most common way to misread this tool, and it costs hours. `doctor`
+counts the DESTINATION tables, so every check whose repair lives in a backfill
+leg reads as a catastrophe mid-import and cures itself minutes later.
+
+`comms-missing-participants` above is the worked example. Measured 2026-08-19:
+
+| | before `backfill` | after (14s later) |
+|---|---:|---:|
+| `comms-missing-participants` | **5,381** | **25** |
+| ↳ twitter | 5,176 (100% of the source) | **0** |
+| ↳ instagram | 160 | **0** |
+| ↳ grok | 16 | **0** |
+
+The 5,396 in the table is that same pre-enrichment reading. Twitter at 100% of
+its source is the tell: a number that round is a leg that has not run, not a
+parser that failed. It is worth knowing what that costs — one pass at this
+concluded the absence of a `handle` identifier kind was the root cause, built a
+theory on it, and was wrong. Handle-based sources resolve through `name`
+identifiers; there is no `handle` row in `ci.entity_identifiers` and none is
+needed.
+
+So: run `ci-import backfill extract_people link_communications` (or the whole
+chain) and only then believe a participant, vector, or geocode finding. Each
+check's `remedy` names the leg that repairs it — read it before concluding a
+parser is at fault.
+
+**Some checks are permanently non-zero and should be.** The 25 that survive the
+backfill (406 on the full corpus) are LinkedIn system notices ("Message request
+accepted", "X left the conversation"), reddit `communication_type='post'` (an
+author, no recipient), and claude chats (no person on either end) — rows that
+arguably should not be `ci.communications` at all. **Chasing this check to zero
+will delete real rows.** Judge a finding by whether the row should exist, not by
+whether the count is zero.
+
+A count can also rise for an honest reason: `person-duplicate-names` and
+`person-bare-phone-name` go 768 -> 2,595 and 0 -> 3,250 between the two columns
+purely because Google Voice landed 309,689 call/SMS rows whose counterparts are
+phone numbers. More data, same rule.
+
+### 6.1 Did the run do what it said?
+
+```sql
+-- What ran, how far, how long.
+select r.label, r.status, r.percent, s.seq, s.kind, s.status, s.phase,
+       s.processed, s.total, s.items_per_sec, round(s.duration_ms/1000.0,1) as secs, s.error
+  from ci_import.import_runs r
+  join ci_import.import_stages s on s.run_id = r.id
+ order by r.started_at, s.seq;
+```
+
+Healthy shape: **at most one `running` stage per kind, except `media`, which may
+have two** — those are the per-queue slot counts from §1.4, and they bind per
+consuming worker process, of which this repo ships one. Plus: `error` null
+everywhere, and `processed = total` on every `completed` stage. That last one
+holds by construction for `parse` and `push` (both derive `total` from their own
+final counts), so a mismatch there means the stage never reached its own return
+statement. `media` is the honest exception — it computes `total` up front as
+`remaining + alreadyUploaded` and counts uploads, dedups and failures into
+`processed`, so the two agree even when `detail.failed > 0`. Read `detail`, not
+the counters, to find out whether a media stage lost anything.
+
+**Before you conclude the invariant is broken, check whether the rows are real.**
+`ci_import.import_runs` and `import_stages` are ordinary tables, and on a shared
+dev appliance the UI work seeds them directly. Two tells, both code-backed:
+
+- **A run with zero stage rows was not created by `startRun`.** That method
+  inserts the run and materializes its stages in **one** transaction, so the two
+  cannot exist apart. Observed on this appliance while writing this document:
+  21 `completed` run rows with no stages at all, seeded for progress-UI work
+  alongside the 13 real ones.
+- **A `running` stage whose `updated_at` is minutes old is not running.** A live
+  stage is touched by progress writes up to once a second and heartbeated every
+  30 (§1.5). Several simultaneously-`running` stages of the SAME kind with frozen
+  `updated_at` are seeded rows or abandoned claims, not a concurrency violation —
+  and the recovery sweep will reclaim the abandoned ones after ten minutes.
+
+```sql
+-- Real, live work only.
+select left(run_id::text, 8) as run, kind, status, phase, processed,
+       now() - updated_at as silent_for
+  from ci_import.import_stages where status = 'running' order by updated_at;
+```
+
+`GET /import/runs/active` answers the same question for the caller's own runs
+without a database, and adds what SQL cannot: `waiting` (enqueued, needs a slot)
+against `blocked` (its own run has not reached that stage), the queue position,
+the slot count, and which source each run is importing. It is the endpoint to
+poll while an import runs and the one to curl when an import looks wrong.
+
+### 6.2 What did it drop? — the single most useful query here
+
+```sql
+select src->>'dataSource' as data_source, src->'drops' as drops
+  from ci_import.import_stages st
+  cross join lateral jsonb_array_elements(st.detail->'sources') src
+ where st.kind = 'parse' and src->'drops' <> '{}'::jsonb;
+```
+
+Live output from the in-flight 13-source run:
+
+| data_source | drops |
+|---|---|
+| amazon | `{"cancelled_order": 43, "unnamed_product": 13}` |
+| vcard | `{"empty_card": 5}` |
+| twitter | `{"retweet_media_not_imported": 78}` |
+| uber | `{"cancelled_trip": 2}` |
+| lyft | `{"cancelled_trip": 2, "trip_without_start_time": 79}` |
+
+`StagedWriter.drop(reason)` is a reporting hook only — the parse continues — and
+the per-record free-text detail is deliberately discarded so the ledger stays a
+comparable set of stable slugs rather than growing with the import. If a parser
+you are touching discards a record and does **not** call `drop()`, that is a bug
+in its own right: it is the difference between a decided record and silent loss.
+
+`COLLAPSED_DISTINCT_PATH` is the one slug you should never ignore: it means two
+records hashed alike from different paths with nothing to confirm they are the
+same thing — as opposed to `itemsDeduped`, which is the honest expected collapse
+of one photo replicated across three albums.
+
+Also check the other two loss channels:
+
+```sql
+select detail->'rejected' as rejected_archives, detail->>'extractionLoss' as loss,
+       detail->>'symlinksRemoved' as symlinks
+  from ci_import.import_stages where kind = 'unpack' and (detail->'rejected' <> '[]'::jsonb
+                                                       or detail->>'extractionLoss' is not null);
+
+select push_status, count(*) from ci_import.staged_items group by 1 order by 2 desc;
+select data_source, push_error, count(*) from ci_import.staged_items
+ where push_status = 'failed' group by 1,2 order by 3 desc;
+```
+
+### 6.3 Did the push land where it should have?
+
+```sql
+select jsonb_pretty(detail) from ci_import.import_stages where kind = 'push' and status = 'completed';
+```
+
+A real one from the live run:
+
+```json
+{
+  "failed": 0, "pushed": 6013, "deduped": 0, "partial": true,
+  "storage":      { "databaseBytes": 847861439, "databaseDataDir": null, "databaseFreeBytes": null },
+  "entities":     { "failed": 0, "skipped": 1, "resolved": 4039, "unresolved": 1 },
+  "searchIndex":  { "requested": ["event", "content", "person"] },
+  "destinations": { "events": 1143, "content": 4870 }
+}
+```
+
+Read it like this: `destinations` is where the rows went (compare against the
+§2.2 table for the kinds you expect); `deduped` is a real outcome, not a loss —
+the record is in `ci.*`, it just arrived earlier; `partial: true` here is caused
+solely by `entities.unresolved: 1`. Note that `entities.skipped` deliberately
+does **not** make a run partial: it also counts bookkeeping-type exclusions
+(`isGraphExcluded` — an `email_thread` per thread on every ordinary gmail import),
+which is the stage working as designed. `entities.unresolved` is the subset that
+is a real gap: a row with no handle and no name, which will not resolve on a
+retry either.
+
+### 6.4 Did enrichment run?
+
+The push ends by sending `SearchIndexBackfillRequestEvent`, consumed by
+`domains/pipeline/listeners/SearchIndexSweepRequestListener.ts`, which starts the
+`(embed, vector)` stage pair for each requested entity type. Everything else is
+picked up by `PipelineTickCron` on `20 */5 * * * *`.
+
+```sql
+-- The ledger: one row per (entity_type, entity_id, stage).
+select stage, status, count(*) from ci.pipeline_state group by 1,2 order by 1,2;
+
+-- What died and has not been replayed. `stage` is NULL for non-stage jobs,
+-- so coalesce onto the event name or you will get one anonymous bucket.
+select coalesce(stage, event_name) as what, queue, count(*), max(failed_at) as last
+  from ci.pipeline_dead_letters where replayed_at is null group by 1,2 order by 3 desc;
+```
+
+A `status = 'skipped'` row is a *decided* row, not a shortfall — the stage looked
+and had nothing to do. `failed` with a `next_attempt_at` in the future is a
+retryable external failure (`enrich.geocode` recording `provider_unavailable`
+against a metered provider is the routine one, and is expected on a dev box).
+
+```bash
+curl -sH "x-api-key: $CI_API_KEY" http://localhost:3030/api/maintenance/ingest-status | jq
+curl -sH "x-api-key: $CI_API_KEY" http://localhost:3030/api/maintenance/search/coverage | jq
+curl -sH "x-api-key: $CI_API_KEY" http://localhost:3030/api/maintenance/content/external-id-kind | jq
+```
+
+`GET /api/maintenance/ingest-status` answers "did the import land, and how far
+along is the index?" in one call: row counts for
+`communications / events / content / inventory / browser_activity`, embeddings
+and skip markers per entity type, and the `search-index` pg-boss queue depth.
+Live, mid-import on 2026-08-19 (a different, earlier snapshot than the one in
+[§6.0.1](#601-what-the-checks-cover) — the appliance was re-wiped between them):
+
+```json
+{"tables":{"communications":69031,"events":2868,"content":5167,"inventory":2005,"browser_activity":75305},
+ "searchIndex":{"embeddingsByType":{"communication":11,"content":5069,"browser-activity":2951,
+                                    "event":1842,"item":2005,"person":1303,"file":181,"place":1},
+                "skipsByType":{},"queue":{"created":0,"active":0,"failed":0}}}
+```
+
+11 embeddings against 69,031 communications is *expected* while an import is
+still running — the index sweeps trail the push, and `queue` being all-zero here
+says the sweeps are idle, not stuck. What would be alarming is that ratio
+staying flat once every push has completed.
+
+> **A trap in reading these two numbers.** `GET /api/maintenance/search/coverage`
+> counts `ci_search.embeddings` rows only (`EmbedCoverageTelemetryService`), but
+> the hybrid search path selects its candidates `FROM ci_search.vectors` and
+> LEFT JOINs `embeddings` purely as a ranking boost
+> (`domains/search-next/services/SearchService.ts`). A type can therefore report
+> full coverage while having no `vectors` rows and returning nothing at all from
+> hybrid search. Check both tables before concluding an import is searchable —
+> the pipeline writes them as a stage *pair* (`index.embed_*` **and**
+> `index.vector_*`, see `INDEX_STAGES_BY_ENTITY_TYPE`), and only the first is
+> what coverage measures.
+
+Full pipeline operations: [`docs/runbooks/pipeline-operations.md`](../runbooks/pipeline-operations.md).
+
+### 6.5 The same invariants by hand, when you have psql and no api key
+
+**`ci-import doctor` runs these for you** — `position-not-a-place-name` and
+`person-name-garbage` are the same predicates, maintained next to the guards they
+mirror, and the doctor's version is the one that will not drift. Reach for the
+queries below only when you have a psql prompt and no api key, or when you are
+writing a *new* predicate and need to sanity-check it before it becomes a check.
+
+Hand-mirrored from the TypeScript predicates — `isCoordinateText` /
+`isMediaFilename` / `isUriLocation` in `push/inputs.ts`, and
+`nonNameParticipantReason` in `graph/utils/participantSanity.ts`. All three
+returned **0** on `93fc6d8a9` against the live corpus (3,284 `Person` rows) on
+2026-08-19, which is the number to preserve.
+
+```sql
+-- isNotAPlaceName: a coordinate pair, a whole-string URI, a media filename,
+-- or a bare UUID stem is never the name of a place.
+select count(*) as bad_position_names
+  from ci.position
+ where btrim(name) ~* '^\s*(?:(?:location|position|coordinates?|coords?|point|waypoint|fix|gps)\s*[-:]?\s*)?[-+]?\d{1,3}(?:\.\d+)?\s*,\s*[-+]?\d{1,3}(?:\.\d+)?\s*$'
+    or btrim(name) ~* '^[a-z][a-z0-9+.-]*://\S+$'
+    or btrim(name) ~* '\.(?:jpe?g|png|heic|heif|gif|mov|mp4|m4v|avi|webp|dng|tiff?)$'
+    or btrim(name) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[_-]\d+)?$';
+
+-- isUriLocation: the value must be NOTHING BUT the URI, which is why the one
+-- row pairing a Zoom link with a real room designation is deliberately exempt.
+select count(*) as bad_event_locations
+  from ci.events
+ where btrim(location_name) ~* '^[a-z][a-z0-9+.-]*://\S+$';
+
+-- nonNameParticipantReason: embedded newline, call-log heading, export filename.
+select count(*) as bad_person_names
+  from ci.entities
+ where entity_type = 'Person'
+   and (name ~ '[\r\n]'
+     or name ~* '^\s*(?:missed|placed|received|recorded|voicemail)(?:\s+call)?\s+(?:from|to|with)\y'
+     or name ~* '^group conversation\y'
+     or name ~* '\.(?:html?|json|csv|vcf|txt)$');
+```
+
+Two traps in transcribing a JavaScript regex into Postgres, both of which
+silently produce a **false zero**:
+
+- **Postgres ARE has no `\b` word boundary.** `\b` is a literal backspace. Use
+  `\y`. With `\b` the heading arm above misses `'Missed call from'` outright and
+  reports clean.
+- **`ci.entities.entity_type` is `'Person'`, capitalised**, and the column is
+  `entity_type`, not `type`. `where type = 'person'` is an error; `where
+  entity_type = 'person'` is a silent zero.
+
+Sanity-check any predicate you write here against known-bad *and* known-good
+strings before trusting a zero:
+
+```sql
+with samples(v) as (values ('33.51469, -117.72169'), ('Location 33.51469, -117.72169'),
+  ('Cafe 40.7, 74.0'), ('IMG_0139.JPG'), ('St. Louis'), ('Voicemail from'),
+  ('voicemail@from.example.com'), ('Nancy Davis'))
+select v, <your predicate> from samples;
+```
+
+`'Cafe 40.7, 74.0'`, `'St. Louis'`, `'voicemail@from.example.com'` and
+`'Nancy Davis'` must all come back false — those are the exact negatives the
+TypeScript predicates were narrowed to protect.
+
+If you widen a predicate, widen the doctor check that mirrors it in the same
+commit, and say in the PR which one you mirrored. A check that drifts from its
+guard silently stops watching it, and the only defence is that the two are
+readable side by side.
+
+---
+
+## 7. Things this document is deliberately unsure about
+
+Listed so the next agent does not mistake silence for confidence.
+
+1. **`import_runs.data_sources` is a per-MATCH list, not a distinct set.**
+   `rankDataSources` (`ParseStage.ts`) filters, sorts and maps — it does not
+   dedupe — and `recognize` can match the same source at several paths. Measured
+   on the live Takeout run: `array_length(data_sources, 1) = 47` with only **9
+   distinct names**, from 56 recognised matches. `data_sources[1]` is a sound
+   "what is this archive mostly about"; `array_length(data_sources, 1)` is **not**
+   "how many services this archive held". Whether that is a defect or intended
+   is not recorded anywhere I could find, so it is reported here as behaviour,
+   not as a bug.
+2. **`ci.position` idempotency.** §2.3 states what the code does today. Whether
+   the by-timestamp rule is intended to survive, or is a gap awaiting the unique
+   index the other eight tables in that list carry, is not written down anywhere
+   in the tree. The stale comments in `PushStage.ts` suggest the second reading;
+   treat that as a hypothesis, not a finding.
+3. **The doctor's `medium` checks have no agreed target.** `ci-import doctor`
+   exists and is the baseline (§6) — the previous revision of this list said it
+   did not exist, which was wrong from the day
+   [#2105](https://github.com/companionintelligence/CI-Server/pull/2105) merged.
+   What is genuinely open is what several `medium` counts *should* be:
+   `person-duplicate-names` (768 on 2026-08-19) and `events-missing-search-vector`
+   (53,145) are both "expected to be non-zero mid-import" with nothing written
+   down about where they should settle once the sweeps drain. Do not gate on
+   them, and do not read a large number there as a defect without checking
+   whether the sweeps have finished.
+4. **The overlap measurement in §1.4 is one run on one machine**, taken
+   mid-flight on 2026-08-19 against a dev stack, not a benchmark. The *shape* —
+   only different kinds overlap, and `media` may pair with itself — is a
+   structural consequence of `IMPORT_STAGE_CONCURRENCY` and will hold; the
+   absolute counts will not.
+5. **`Fitbit` claiming a Google Takeout `Fit/` folder is by design**, below
+   Google Fit's confidence, so the import resolves a root rather than importing
+   nothing. It contributes no rows and is correctly excluded from
+   `data_sources`, but `recognize` and the parse banner both list it — which
+   reads as a false positive. Documented as an open question in
+   [the acceptance runbook](../runbooks/import-acceptance-2026-08.md#4-fitbit-claims-a-google-fit-only-export--by-design-worth-revisiting),
+   still unresolved.
+
+---
+
+## 8. The short version
+
+If you read nothing else:
+
+- **Run `ci-import doctor` before you believe an import.** Nineteen checks, each
+  mirroring a guard or a migration; exit 1 on any `high` finding **or** any
+  `high` check that could not answer. `--json` for a loop.
+- **Stage rows are truth; the run row is a cache.** Query
+  `ci_import.import_stages`.
+- **One queue per stage kind**, slots `unpack 1 / parse 1 / media 2 / push 1`.
+  Parse is still serial and still dominates, so parse time is still a sum.
+  Queued for an hour is normal; `GET /import/runs/active` tells `waiting` from
+  `blocked`.
+- **The inbox is per user** — `<inbox>/<email with @ → _>/<unit>`. The old flat
+  layout fails with "outside the configured import roots", which names the wrong
+  variable.
+- **A full reset drops the DATABASE**, never a hand-typed schema list; a missed
+  schema surfaces as `type "…" already exists` on the next migrate.
+- **`destinationsFor` returning too few destinations is invisible** — no error,
+  just an empty gallery or map weeks later.
+- **A re-import does NOT repair `events`, `inventory`, `content` or
+  `browser_activity`.** `INGEST_REFRESH_COLUMNS` is empty for all four. Answer
+  "what happens to the rows already there?" in every PR.
+- **Fix the minter, the stored source string, AND the rows** — a backfill alone
+  is theatre; 241 deleted people came back in full.
+- **Guard the column structurally, not the producer**, and derive the guard from
+  the producer's own enumeration — a three-way repair over a five-way defect left
+  3,079 `ci.communications` rows unfixed.
+- **State the count before and after.** A test that passes with the fix reverted
+  is not a test: neutralise the guard, watch it go red, restore. Asserting your
+  own call's arguments against a mock is not coverage — see §4.5, where that
+  shipped a de-duplication mechanism that did nothing.
+
+---
+
+_Written 2026-08-19 against `origin/main` `5f29d3fdb`; **re-verified and
+corrected against `93fc6d8a9` the same day**, with every file path, table,
+column, env var, command, flag and cited PR re-checked against the tree, and
+every number re-measured against a live appliance. The corrections that pass
+were: `ci-import doctor` exists (§6, §7.3); the stage queue is per kind, not one
+appliance-wide slot (§1.1, §1.4, §6.1); the inbox is per user with per-service
+folders (§5.2, §5.3); the inbox budget table lost a constant that no longer
+exists (§3.5); `ImportRunService.ts` is 1,506 lines. If you find a sentence here
+that is no longer true, correcting it is part of your change — the next agent
+will act on whatever this file says._

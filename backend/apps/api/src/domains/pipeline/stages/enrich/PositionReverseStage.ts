@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
+import { EventService } from '@ci/domains/events';
 // The geocode domain's PUBLIC barrel, not its internals: `no-cross-domain-internals`
 // in `.dependency-cruiser.mjs` allows exactly `index.ts` and `events.ts` across a
 // domain boundary. `GeocodeService` is the cache-aware orchestration — canonicalize,
@@ -13,6 +14,7 @@ import config from '@ci/configuration';
 // STATUS (never an HTTP code), write the possibly-negative cache row. This stage
 // adds none of that and must never re-implement any of it.
 import { GeocodeService } from '@ci/domains/geocode';
+import { PositionUpdatedEvent } from '@ci/domains/position/events';
 
 import { PIPELINE_QUEUES, STAGE_IDS } from '../../constants';
 import type { Stage, StageResult, StageSource } from '../../types';
@@ -328,10 +330,14 @@ interface CandidateRow {
  *    a provider with better rural coverage should get to answer again.
  *  - `provider_denied` / `invalid_request` — permanent for this coordinate; see
  *    {@link PERMANENT_STATUS_REASONS}.
- *  - `provider_unavailable` — `OVER_QUERY_LIMIT` or a transport failure.
- *    FAILED, so the retry gate and the attempt budget apply and a rate-limited or
- *    unreachable provider reads as a failure count going UP rather than a
- *    coverage number that quietly stops climbing.
+ *  - `provider_unavailable` — `OVER_QUERY_LIMIT` or a transport failure. FAILED,
+ *    so a rate-limited or unreachable provider reads as a failure count going UP
+ *    rather than a coverage number that quietly stops climbing — and declared
+ *    TRANSIENT (`TRANSIENT_FAILURE_REASONS`), so it backs off on the long
+ *    schedule and never spends the quarantine budget. That declaration is not
+ *    decoration: before it existed, a brief provider outage left 12,237 fixes on
+ *    a real appliance — 19 % of that corpus — permanently quarantined, unable to
+ *    get an address, become a Location, or ever reach the map.
  *  - `address_write_failed` — the answer arrived, the UPDATE did not. Failed, and
  *    recorded apart from a provider failure because the two have nothing in
  *    common but their timing.
@@ -393,6 +399,7 @@ export class PositionReverseStage implements Stage {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly geocodeService: GeocodeService,
     private readonly logger: LoggerService,
+    private readonly eventService: EventService,
   ) {
     this.logger.setContext(PositionReverseStage.name);
   }
@@ -486,6 +493,7 @@ export class PositionReverseStage implements Stage {
 
     try {
       await this.writeAddresses(ctx.userId, resolved, byId);
+      await this.enqueueNamedSearch(resolved);
 
       for (const [id, patch] of resolved) {
         // No `confidence`. `ReverseGeocodeOutcome` carries no precision signal
@@ -546,9 +554,14 @@ export class PositionReverseStage implements Stage {
 
     if (outcome.retryable) {
       // OVER_QUERY_LIMIT, or a transport failure the service already caught.
-      // FAILED, not skipped: the retry gate, the attempt budget and quarantine
-      // only apply to failures, and a throttled provider must come back on its
-      // own schedule rather than being written off as "nothing there".
+      //
+      // FAILED, not skipped: only a failure gets a retry gate, and a throttled
+      // provider must come back on its own schedule rather than being written
+      // off as "nothing there". The reason token is load-bearing — it is in
+      // `TRANSIENT_FAILURE_REASONS`, which is what tells the ledger to refund
+      // the attempt instead of counting it toward quarantine. Renaming it here
+      // without renaming it there silently restores the defect where fifteen
+      // minutes of outage terminally parked a fifth of the corpus.
       this.logger.warn('Reverse-geocode provider unavailable', { lat, lng, status: outcome.status });
 
       return {
@@ -605,12 +618,14 @@ export class PositionReverseStage implements Stage {
    * letter replayed weeks later, and re-scoping is the difference between "this
    * id is not yours" and geocoding — and billing — someone else's movements.
    *
-   * PERFORMANCE: `ci.position.id` carries no index (see
-   * `20260807071631_departition_position`), so this predicate scans every chunk.
-   * The staleness sweep has the same problem, harder — it also `ORDER BY s.id`.
-   * `CREATE INDEX position_id_idx ON ci.position (id)` is a prerequisite for
-   * sweeping this stage over a real history; it is a migration and belongs with
-   * the change that owns one.
+   * PERFORMANCE: `ci.position.id` carried no index until
+   * `20260819000439_add_position_id_index` (it was omitted by
+   * `20260807071631_departition_position`, which recreated every other secondary
+   * index), so before that migration this predicate — and the staleness sweep,
+   * which has the same problem harder because it also `ORDER BY s.id` — scanned
+   * every chunk on every hop. That is why a `perRunCap` never drained: the cap
+   * bounds the rows returned, not the rows read. The migration landed with
+   * `promote.place_position`, the second stage sourced from this table.
    */
   private loadRows(userId: string, ids: string[]): Promise<CandidateRow[]> {
     return this.dataSource.query<CandidateRow[]>(
@@ -696,6 +711,52 @@ export class PositionReverseStage implements Stage {
         new Date(Math.max(...epochs)),
       ],
     );
+  }
+
+  /**
+   * Search indexes named, downsampled GPS. Coalesce runs `search_index` in the
+   * same orchestrate call that only *enqueues* this stage, so unnamed fixes are
+   * often skip-recorded first. `index_skips` is sticky: backfill will not
+   * re-select those ids after the address lands unless something clears the
+   * skip and emits an update. This is that something — one `sendMany` onto
+   * `search-index`, same pattern as SearchIndexBackfillService, not a per-row
+   * fan-out through every queue.
+   */
+  private async enqueueNamedSearch(resolved: Map<string, AddressPatch>): Promise<void> {
+    const ids = [...resolved.keys()];
+    if (ids.length === 0) {
+      return;
+    }
+
+    try {
+      await this.dataSource.query(
+        `DELETE FROM ci_search.index_skips
+          WHERE entity_type = 'position'
+            AND entity_id = ANY($1::uuid[])
+            AND reason = 'unnamed'`,
+        [ids],
+      );
+    } catch (err: unknown) {
+      this.logger.warn('Could not clear unnamed position index skips after reverse', {
+        count: ids.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    try {
+      await this.eventService.sendMany(
+        'search-index',
+        ids.map((positionId) => ({
+          name: PositionUpdatedEvent,
+          data: { positionId },
+        })),
+      );
+    } catch (err: unknown) {
+      this.logger.warn('Could not enqueue position search after reverse', {
+        count: ids.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 

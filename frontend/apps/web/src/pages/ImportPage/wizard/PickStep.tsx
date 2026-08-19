@@ -1,0 +1,235 @@
+import { useMemo, useState } from 'react';
+
+import { Badge, Button, cn, Input } from '@ci/shadcn';
+import { Check, Search } from '@ci/shadcn/icons';
+
+import type { CatalogSource } from '../useImportApi';
+
+import { ECOSYSTEM_ICONS, pickableSections } from './sources';
+import { unambiguousImporters, useSourceUsage } from './useSourceUsage';
+
+export interface PickStepProps {
+  catalog: readonly CatalogSource[];
+  picked: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+  onContinue: () => void;
+}
+
+/**
+ * Step 1: which ecosystems do you use?
+ *
+ * A grid of recognizable brands grouped into sections, because the person
+ * answering has never heard of an "importer" — they know they use Spotify. A
+ * source whose parser is not written yet is still shown, badged "coming soon":
+ * "we know this service and haven't finished it" is a materially different
+ * answer from silence, which reads as unsupported.
+ */
+export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProps) {
+  const [logoFailed, setLogoFailed] = useState<ReadonlySet<string>>(new Set());
+  const [query, setQuery] = useState('');
+  const lastImportedAt = useSourceUsage();
+  const ownedImporters = useMemo(() => unambiguousImporters(catalog), [catalog]);
+
+  const sections = useMemo(() => pickableSections(catalog), [catalog]);
+
+  // The filter matches a tile's own name AND the member names a bundle tile
+  // carries — typing "gmail" must surface the Google tile, not an empty grid.
+  // Sections with no surviving tiles disappear whole; an empty heading reads
+  // as "everything here was taken away".
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+
+    if (needle === '') {
+      return sections;
+    }
+
+    return sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) =>
+          [item.label, ...(item.memberNames ?? [])].some((name) => name.toLowerCase().includes(needle)),
+        ),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [sections, query]);
+
+  return (
+    // The search box stays pinned with the stepper above; only the service
+    // grid scrolls. The filter is what CAUSES the content swaps, so it must
+    // not live in the region whose scrollbar those swaps toggle — and losing
+    // it off the top of a 100-service list would be no better.
+    <div className="flex h-full min-h-0 flex-col gap-5">
+      <div className="relative">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search services…"
+          aria-label="Search services"
+          className="pl-8"
+        />
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
+        {visible.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No services match “{query.trim()}”. Anything can still be imported from the Upload tab —
+            unrecognized files land as documents.
+          </p>
+        )}
+        {visible.map((section) => (
+          <section key={section.key} className="space-y-2">
+            <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <span className="h-4 w-4 [&>svg]:h-4 [&>svg]:w-4">{section.icon}</span>
+              {section.label}
+            </h3>
+
+            {/* Three to a row, matching every other gallery on the page. */}
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {section.items.map((item) => {
+                const on = picked.has(item.key);
+                const showLogo = item.logo != null && !logoFailed.has(item.key);
+                // Newest across the importers this tile covers — and only the
+                // ones it owns outright, since a shared parser cannot say WHICH
+                // of its services an import came from.
+                const imported = item.importers
+                  .filter((importer) => ownedImporters.has(importer))
+                  .map((importer) => lastImportedAt.get(importer))
+                  .filter((at): at is string => at != null)
+                  .sort()
+                  .at(-1);
+                // Kinds wrap into extra columns as they accumulate — a second
+                // at five, a third at nine — so a rich bundle stays shallow
+                // without ever dropping a kind.
+                const chipColumns = item.objects.length > 8 ? 3 : item.objects.length > 4 ? 2 : 1;
+
+                return (
+                  <li key={item.key}>
+                    <button
+                      type="button"
+                      aria-pressed={on}
+                      title={item.ready ? item.label : `${item.label} — importer coming soon`}
+                      onClick={() => onToggle(item.key)}
+                      className={cn(
+                        'relative flex h-full w-full flex-col gap-3 rounded-md border p-3 text-left text-sm transition-colors',
+                        // Selection is the ONLY state that colors the card.
+                        // Previously-imported tiles also got a tinted border and
+                        // a corner check, and three of those on an unselected
+                        // grid read as "already picked" — that state now lives
+                        // solely in the dated line at the tile's foot.
+                        on ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
+                        !item.ready && 'opacity-60',
+                      )}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white p-1.5 ring-1 ring-black/5 text-muted-foreground [&>svg]:h-5 [&>svg]:w-5">
+                          {showLogo ? (
+                            <img
+                              src={item.logo!}
+                              alt=""
+                              className="h-full w-full object-contain"
+                              onError={() => setLogoFailed((previous) => new Set(previous).add(item.key))}
+                            />
+                          ) : (
+                            (ECOSYSTEM_ICONS[item.ecosystem] ?? null)
+                          )}
+                        </span>
+
+                        <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
+
+                        {on ? (
+                          <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                        ) : !item.ready ? (
+                          <Badge variant="outline" className="shrink-0 text-[10px]">
+                            Coming soon
+                          </Badge>
+                        ) : null}
+                      </span>
+
+                      {item.memberNames != null && item.memberNames.length > 0 && (
+                        // The services this one download stands for, by name —
+                        // someone scanning the grid for "Instagram" must find
+                        // it on the Meta tile, not conclude it is unsupported.
+                        <span className="text-xs text-muted-foreground">{item.memberNames.join(' · ')}</span>
+                      )}
+
+                      {item.objects.length > 0 && (
+                        // Filled column-first, so the vocabulary order reads
+                        // down each column and then across.
+                        <span
+                          className={
+                            chipColumns === 1
+                              ? 'flex flex-col gap-1'
+                              : cn(
+                                  'grid grid-flow-col gap-x-3 gap-y-1',
+                                  chipColumns === 2 ? 'grid-cols-2' : 'grid-cols-3',
+                                )
+                          }
+                          style={
+                            chipColumns === 1
+                              ? undefined
+                              : {
+                                  gridTemplateRows: `repeat(${Math.ceil(item.objects.length / chipColumns)}, auto)`,
+                                }
+                          }
+                        >
+                          {item.objects.map((object) => (
+                            <span
+                              key={object.label}
+                              className="flex items-center gap-2 text-xs text-muted-foreground"
+                            >
+                              <object.icon aria-hidden className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                              <span className="truncate">{object.label}</span>
+                            </span>
+                          ))}
+                        </span>
+                      )}
+
+                      {/* The difference between "I could import this" and "I
+                          already did, in March" — which is what stops someone
+                          re-importing an archive they have. How MUCH it brought
+                          is a fact about the run, and lives on the run. */}
+                      {imported && (
+                        <span className="mt-auto flex items-center gap-1 pt-1 text-xs text-green-700 dark:text-green-400">
+                          <Check aria-hidden className="h-3 w-3 shrink-0" />
+                          imported{' '}
+                          {new Date(imported).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+
+        {catalog.length === 0 && <p className="text-sm text-muted-foreground">Loading services…</p>}
+      </div>
+
+      {/* OUTSIDE the scroll region, deliberately.
+
+          The service list is ~100 entries — 2,300px against a 290px viewport
+          when this surface is embedded in onboarding. With the button at the
+          end of that list, you picked a service at the top and the control
+          that acts on your pick was two thousand pixels below the fold, while
+          onboarding's own "Next" sat permanently visible directly beneath the
+          surface and did the opposite thing: skip the step. Two buttons, and
+          the reachable one was wrong.
+
+          Pinned, it is always the nearest control to the choice being made. */}
+      <div className="flex shrink-0 justify-end border-t pt-4">
+        <Button disabled={picked.size === 0} onClick={onContinue}>
+          Continue → {picked.size} selected
+        </Button>
+      </div>
+    </div>
+  );
+}

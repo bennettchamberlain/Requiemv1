@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { toServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type Connection } from '@ci/domains/connections';
-import { ContentService } from '@ci/domains/memory';
+import { ContentService, SOURCE_NATIVE_EXTERNAL_ID_KIND } from '@ci/domains/memory';
 
 import { ConnectionSyncJob } from '../../../types';
 
@@ -98,6 +98,7 @@ export class SpotifyPlaylistsTransformService {
                 type: 'Music',
                 url: track.external_urls?.spotify || '',
                 external_id: track.id,
+                external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
                 source_url: track.external_urls?.spotify || '',
                 source_data: {
                   album: track.album,
@@ -135,6 +136,7 @@ export class SpotifyPlaylistsTransformService {
             text: playlist.description || '',
             url: playlist.external_urls?.spotify || '',
             external_id: playlist.id,
+            external_id_kind: SOURCE_NATIVE_EXTERNAL_ID_KIND,
             source_url: playlist.external_urls?.spotify || '',
             source_data: {
               collaborative: playlist.collaborative,

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
-import { apiKeyHeaders, buildApiUrl, Portal, usePageTitle } from '@ci/common';
-import { Breadcrumb, Button, IconButton, Table, Card, ToggleGroup, Badge, Tooltip } from '@ci/shadcn';
+import { apiKeyHeaders, buildApiUrl, usePageTitle } from '@ci/common';
+import { Button, IconButton, Table, Card, Tabs, ToggleGroup, Tooltip } from '@ci/shadcn';
 import {
   AlertCircle,
   RefreshCw,
@@ -14,19 +14,26 @@ import {
   ChevronUp,
 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 
+import { AnswerProvenance, isInferred } from '@/components/AnswerProvenance';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { useAuth } from '@/hooks';
 
 import { AnswerQuestionPrompt } from './AnswerQuestionPrompt';
 import { EditAnswerDialog } from './EditAnswerDialog';
+import { ReflectionCatalogue } from './ReflectionCatalogue';
 
 interface Answer {
   id: string;
   ragAnswer: string;
   answer: string;
+  /** 'user_input' | 'inferred' | 'observed' | 'imported' — see ci.answers.answer_source. */
+  answerSource?: string | null;
+  /** [0,1] when the appliance inferred this answer; null when a person wrote it. */
+  answerConfidence?: number | null;
+  /** The model's one line on what evidence produced an inferred answer. */
+  answerRationale?: string | null;
   user?: { id: string };
   question?: {
     id: string;
@@ -35,11 +42,12 @@ interface Answer {
 }
 
 export function PromptsPage() {
-  usePageTitle('Questions - Companion Intelligence');
+  usePageTitle('Reflections - Companion Intelligence');
 
   const { t } = useTranslation();
   const [{ authToken }] = useAuth();
 
+  const [tab, setTab] = useState('answers');
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,15 +156,15 @@ export function PromptsPage() {
     ));
   };
 
-  const isManuallyAnswered = (answer: Answer) => {
-    // If there's a user ID, it was manually answered
-    return answer.user?.id !== undefined;
-  };
+  // Provenance comes from `answerSource`, which is what the writer actually
+  // stamps. It used to be read off `answer.user?.id`, which is populated on
+  // EVERY row — answers are user-scoped, so an answer the appliance inferred on
+  // the user's behalf still belongs to that user. The effect was that all 20
+  // rows on this page, inferred ones included, rendered the same "Manual" badge
+  // and the LLM branch below was dead code.
+  const isManuallyAnswered = (answer: Answer) => !isInferred(answer.answerSource);
 
-  const isLLMAnswered = (answer: Answer) => {
-    // If there's no user ID but there's an answer, it was LLM answered
-    return !answer.user?.id && answer.answer;
-  };
+  const isLLMAnswered = (answer: Answer) => isInferred(answer.answerSource) && Boolean(answer.answer);
 
   const handleEditClick = (answer: Answer) => {
     setEditingAnswer(answer);
@@ -244,271 +252,168 @@ export function PromptsPage() {
 
   return (
     <>
-      <Portal.Slot id="breadcrumbs">
-        <Breadcrumb>
-          <Breadcrumb.List>
-            <Breadcrumb.Item className="hidden md:block">
-              <Breadcrumb.Link asChild>
-                <Link to="/feed">Companion</Link>
-              </Breadcrumb.Link>
-            </Breadcrumb.Item>
-            <Breadcrumb.Separator className="hidden md:block" />
-            <Breadcrumb.Item>
-              <Breadcrumb.Page>Questions</Breadcrumb.Page>
-            </Breadcrumb.Item>
-          </Breadcrumb.List>
-        </Breadcrumb>
-      </Portal.Slot>
-
       <PageContent className="gap-4 p-0">
         <MemoryHubShell>
           <div className="flex flex-col gap-4 px-4 pb-4">
             <AnswerQuestionPrompt onAnswerSubmitted={fetchAnswers} />
 
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              {/* Mobile: Title and refresh button in same row */}
-              <div className="flex items-center justify-between lg:justify-start">
-                <h1 className="text-2xl font-bold">Questions</h1>
-                <IconButton
-                  variant="outline"
-                  onClick={fetchAnswers}
-                  disabled={loading}
-                  label={t('PROMPTS_REFRESH_ANSWERS')}
-                  className="lg:hidden"
-                >
-                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                </IconButton>
-              </div>
+            <h1 className="text-2xl font-bold">Reflections</h1>
 
-              {/* Desktop: Toggle and refresh button */}
-              <div className="hidden lg:flex items-center gap-2">
-                <ToggleGroup
-                  type="single"
-                  value={viewMode}
-                  onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
-                >
-                  {/* `data-state` is restated here because Tooltip.Trigger's own
+            {/* Two surfaces, because they answer different questions: "what have
+                I told it?" (the answers) and "what can it ask me?" (the
+                catalogue). The page used to be only the first, which made 98% of
+                the ~1.3k-reflection catalogue unreachable. */}
+            <Tabs value={tab} onValueChange={setTab}>
+              <Tabs.List>
+                <Tabs.Trigger value="answers">Your answers</Tabs.Trigger>
+                <Tabs.Trigger value="catalogue">Catalogue</Tabs.Trigger>
+              </Tabs.List>
+
+              <Tabs.Content value="answers" className="flex flex-col gap-4">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                  {/* Mobile: refresh button */}
+                  <div className="flex items-center justify-between lg:justify-start">
+                    <IconButton
+                      variant="outline"
+                      onClick={fetchAnswers}
+                      disabled={loading}
+                      label={t('PROMPTS_REFRESH_ANSWERS')}
+                      className="lg:hidden"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    </IconButton>
+                  </div>
+
+                  {/* Desktop: Toggle and refresh button */}
+                  <div className="hidden lg:flex items-center gap-2">
+                    <ToggleGroup
+                      type="single"
+                      value={viewMode}
+                      onValueChange={(value) => value && setViewMode(value as 'card' | 'table')}
+                    >
+                      {/* `data-state` is restated here because Tooltip.Trigger's own
                       open/closed state would otherwise overwrite the item's on/off
                       state and kill the selected-item styling. A wrapper span would
                       fix that too, but it would make every item both :first-child
                       and :last-child, rounding all four corners of each segment. */}
-                  <Tooltip delayDuration={600}>
-                    <Tooltip.Content>{t('PROMPTS_VIEW_CARD')}</Tooltip.Content>
-                    <Tooltip.Trigger asChild>
-                      <ToggleGroup.Item
-                        value="card"
-                        aria-label={t('PROMPTS_VIEW_CARD')}
-                        data-state={viewMode === 'card' ? 'on' : 'off'}
-                      >
-                        <Grid3X3 className="h-4 w-4" />
-                      </ToggleGroup.Item>
-                    </Tooltip.Trigger>
-                  </Tooltip>
-                  <Tooltip delayDuration={600}>
-                    <Tooltip.Content>{t('PROMPTS_VIEW_TABLE')}</Tooltip.Content>
-                    <Tooltip.Trigger asChild>
-                      <ToggleGroup.Item
-                        value="table"
-                        aria-label={t('PROMPTS_VIEW_TABLE')}
-                        data-state={viewMode === 'table' ? 'on' : 'off'}
-                      >
-                        <List className="h-4 w-4" />
-                      </ToggleGroup.Item>
-                    </Tooltip.Trigger>
-                  </Tooltip>
-                </ToggleGroup>
-                <IconButton
-                  variant="outline"
-                  onClick={fetchAnswers}
-                  disabled={loading}
-                  label={t('PROMPTS_REFRESH_ANSWERS')}
-                >
-                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                </IconButton>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="text-center py-8">
-                <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-                <p>Loading answers...</p>
-              </div>
-            ) : error ? (
-              <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="font-medium">Error loading answers</h3>
-                  <p className="text-sm">{error}</p>
-                  <Button variant="outline" size="sm" className="mt-2" onClick={fetchAnswers}>
-                    Try Again
-                  </Button>
+                      <Tooltip delayDuration={600}>
+                        <Tooltip.Content>{t('PROMPTS_VIEW_CARD')}</Tooltip.Content>
+                        <Tooltip.Trigger asChild>
+                          <ToggleGroup.Item
+                            value="card"
+                            aria-label={t('PROMPTS_VIEW_CARD')}
+                            data-state={viewMode === 'card' ? 'on' : 'off'}
+                          >
+                            <Grid3X3 className="h-4 w-4" />
+                          </ToggleGroup.Item>
+                        </Tooltip.Trigger>
+                      </Tooltip>
+                      <Tooltip delayDuration={600}>
+                        <Tooltip.Content>{t('PROMPTS_VIEW_TABLE')}</Tooltip.Content>
+                        <Tooltip.Trigger asChild>
+                          <ToggleGroup.Item
+                            value="table"
+                            aria-label={t('PROMPTS_VIEW_TABLE')}
+                            data-state={viewMode === 'table' ? 'on' : 'off'}
+                          >
+                            <List className="h-4 w-4" />
+                          </ToggleGroup.Item>
+                        </Tooltip.Trigger>
+                      </Tooltip>
+                    </ToggleGroup>
+                    <IconButton
+                      variant="outline"
+                      onClick={fetchAnswers}
+                      disabled={loading}
+                      label={t('PROMPTS_REFRESH_ANSWERS')}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    </IconButton>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <>
-                {answers.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No answers found in the system</div>
+
+                {loading ? (
+                  <div className="text-center py-8">
+                    <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+                    <p>Loading reflections...</p>
+                  </div>
+                ) : error ? (
+                  <div className="bg-destructive/10 text-destructive rounded-md p-4 flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h3 className="font-medium">Error loading reflections</h3>
+                      <p className="text-sm">{error}</p>
+                      <Button variant="outline" size="sm" className="mt-2" onClick={fetchAnswers}>
+                        Try Again
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <>
-                    {/* Card View - Always shown on mobile, toggleable on desktop */}
-                    <div
-                      className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
-                    >
-                      {answers.map((answer) => (
-                        <Card key={answer.id} className="p-4">
-                          <Card.Header className="pb-3">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  {isManuallyAnswered(answer) ? (
-                                    <Badge variant="secondary" className="text-xs">
-                                      Manual
-                                    </Badge>
-                                  ) : isLLMAnswered(answer) ? (
-                                    <Badge variant="outline" className="text-xs">
-                                      AI Generated
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                                <h3 className="font-semibold text-sm leading-tight">
-                                  <ExpandableText
-                                    text={answer.question?.text}
-                                    textId={`question-${answer.id}`}
-                                    maxLength={100}
-                                  />
-                                </h3>
-                              </div>
-                            </div>
-                          </Card.Header>
-                          <Card.Content className="space-y-3">
-                            <div>
-                              <h4 className="text-xs font-medium text-muted-foreground mb-1">Answer</h4>
-                              <ExpandableText
-                                text={answer.answer}
-                                textId={`answer-${answer.id}`}
-                                maxLength={120}
-                              />
-                            </div>
-                            {answer.ragAnswer && (
-                              <div>
-                                <h4 className="text-xs font-medium text-muted-foreground mb-1">RAG Answer</h4>
-                                <ExpandableText
-                                  text={answer.ragAnswer}
-                                  textId={`rag-${answer.id}`}
-                                  maxLength={120}
-                                />
-                              </div>
-                            )}
-                          </Card.Content>
-                          <Card.Footer className="pt-3">
-                            <div className="flex items-center justify-between w-full">
-                              <div className="flex items-center gap-1">
-                                {isManuallyAnswered(answer) ? (
-                                  <>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 px-2"
-                                      onClick={() => handleEditClick(answer)}
-                                    >
-                                      <Edit className="h-3 w-3 mr-1" />
-                                      Edit
-                                    </Button>
-                                  </>
-                                ) : isLLMAnswered(answer) ? (
-                                  <>
-                                    <Button variant="ghost" size="sm" className="h-8 px-2">
-                                      <ThumbsUp className="h-3 w-3 mr-1" />
-                                    </Button>
-                                    <Button variant="ghost" size="sm" className="h-8 px-2">
-                                      <ThumbsDown className="h-3 w-3 mr-1" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 px-2"
-                                      onClick={() => handleEditClick(answer)}
-                                    >
-                                      <Edit className="h-3 w-3 mr-1" />
-                                      Edit
-                                    </Button>
-                                  </>
-                                ) : null}
-                              </div>
-                            </div>
-                          </Card.Footer>
-                        </Card>
-                      ))}
-                    </div>
-
-                    {/* Table View - Only shown on desktop when table mode is selected */}
-                    {viewMode === 'table' && (
-                      <div className="hidden lg:block relative overflow-auto">
-                        {/* Fixed Header */}
-                        <div className="sticky top-0 z-50 bg-background border-b shadow-sm">
-                          <div className="overflow-x-auto">
-                            <Table className="min-w-full table-fixed">
-                              <Table.Header>
-                                <Table.Row>
-                                  <Table.Head className="w-1/4 min-w-[200px] bg-background">
-                                    Question
-                                  </Table.Head>
-                                  <Table.Head className="w-1/4 min-w-[200px] bg-background">
-                                    Answer
-                                  </Table.Head>
-                                  <Table.Head className="w-1/4 min-w-[200px] bg-background">
-                                    RAG Answer
-                                  </Table.Head>
-                                  <Table.Head className="w-1/4 min-w-[150px] bg-background">
-                                    Actions
-                                  </Table.Head>
-                                </Table.Row>
-                              </Table.Header>
-                            </Table>
-                          </div>
-                        </div>
-
-                        {/* Scrollable Body */}
-                        <Table className="min-w-full table-fixed">
-                          <Table.Body>
-                            {answers.map((answer) => (
-                              <Table.Row key={answer.id}>
-                                <Table.Cell className="break-words align-top">
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      {isManuallyAnswered(answer) ? (
-                                        <Badge variant="secondary" className="text-xs">
-                                          Manual
-                                        </Badge>
-                                      ) : isLLMAnswered(answer) ? (
-                                        <Badge variant="outline" className="text-xs">
-                                          AI Generated
-                                        </Badge>
-                                      ) : null}
+                    {answers.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">No reflections yet</div>
+                    ) : (
+                      <>
+                        {/* Card View - Always shown on mobile, toggleable on desktop */}
+                        <div
+                          className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
+                        >
+                          {answers.map((answer) => (
+                            <Card key={answer.id} className="p-4">
+                              <Card.Header className="pb-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <AnswerProvenance
+                                        source={answer.answerSource}
+                                        confidence={answer.answerConfidence}
+                                        rationale={answer.answerRationale}
+                                      />
                                     </div>
-                                    <ExpandableText
-                                      text={answer.question?.text}
-                                      textId={`table-question-${answer.id}`}
-                                      maxLength={80}
-                                    />
+                                    <h3 className="font-semibold text-sm leading-tight">
+                                      <ExpandableText
+                                        text={answer.question?.text}
+                                        textId={`question-${answer.id}`}
+                                        maxLength={100}
+                                      />
+                                    </h3>
                                   </div>
-                                </Table.Cell>
-                                <Table.Cell className="break-words align-top">
+                                </div>
+                              </Card.Header>
+                              <Card.Content className="space-y-3">
+                                <div>
+                                  <h4 className="text-xs font-medium text-muted-foreground mb-1">Answer</h4>
                                   <ExpandableText
                                     text={answer.answer}
-                                    textId={`table-answer-${answer.id}`}
-                                    maxLength={100}
+                                    textId={`answer-${answer.id}`}
+                                    maxLength={120}
                                   />
-                                </Table.Cell>
-                                <Table.Cell className="break-words align-top">
-                                  <ExpandableText
-                                    text={answer.ragAnswer}
-                                    textId={`table-rag-${answer.id}`}
-                                    maxLength={100}
-                                  />
-                                </Table.Cell>
-                                <Table.Cell className="break-words align-top">
-                                  <div className="flex items-center gap-1 flex-wrap">
+                                  {/* The evidence, in the model's own words. Shown inline
+                                  rather than only in the badge tooltip: a reader
+                                  deciding whether to correct an inferred answer needs
+                                  to know what it was built from without hovering. */}
+                                  {isLLMAnswered(answer) && answer.answerRationale ? (
+                                    <p className="mt-1 text-xs text-muted-foreground italic">
+                                      Based on: {answer.answerRationale}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                {answer.ragAnswer && (
+                                  <div>
+                                    <h4 className="text-xs font-medium text-muted-foreground mb-1">
+                                      RAG Answer
+                                    </h4>
+                                    <ExpandableText
+                                      text={answer.ragAnswer}
+                                      textId={`rag-${answer.id}`}
+                                      maxLength={120}
+                                    />
+                                  </div>
+                                )}
+                              </Card.Content>
+                              <Card.Footer className="pt-3">
+                                <div className="flex items-center justify-between w-full">
+                                  <div className="flex items-center gap-1">
                                     {isManuallyAnswered(answer) ? (
                                       <>
                                         <Button
@@ -541,20 +446,128 @@ export function PromptsPage() {
                                       </>
                                     ) : null}
                                   </div>
-                                </Table.Cell>
-                              </Table.Row>
-                            ))}
-                          </Table.Body>
-                        </Table>
-                      </div>
+                                </div>
+                              </Card.Footer>
+                            </Card>
+                          ))}
+                        </div>
+
+                        {/* Table View - Only shown on desktop when table mode is selected */}
+                        {viewMode === 'table' && (
+                          <div className="hidden lg:block relative overflow-auto">
+                            {/* Fixed Header */}
+                            <div className="sticky top-0 z-50 bg-background border-b shadow-sm">
+                              <div className="overflow-x-auto">
+                                <Table className="min-w-full table-fixed">
+                                  <Table.Header>
+                                    <Table.Row>
+                                      <Table.Head className="w-1/4 min-w-[200px] bg-background">
+                                        Reflection
+                                      </Table.Head>
+                                      <Table.Head className="w-1/4 min-w-[200px] bg-background">
+                                        Answer
+                                      </Table.Head>
+                                      <Table.Head className="w-1/4 min-w-[200px] bg-background">
+                                        RAG Answer
+                                      </Table.Head>
+                                      <Table.Head className="w-1/4 min-w-[150px] bg-background">
+                                        Actions
+                                      </Table.Head>
+                                    </Table.Row>
+                                  </Table.Header>
+                                </Table>
+                              </div>
+                            </div>
+
+                            {/* Scrollable Body */}
+                            <Table className="min-w-full table-fixed">
+                              <Table.Body>
+                                {answers.map((answer) => (
+                                  <Table.Row key={answer.id}>
+                                    <Table.Cell className="break-words align-top">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <AnswerProvenance
+                                            source={answer.answerSource}
+                                            confidence={answer.answerConfidence}
+                                            rationale={answer.answerRationale}
+                                          />
+                                        </div>
+                                        <ExpandableText
+                                          text={answer.question?.text}
+                                          textId={`table-question-${answer.id}`}
+                                          maxLength={80}
+                                        />
+                                      </div>
+                                    </Table.Cell>
+                                    <Table.Cell className="break-words align-top">
+                                      <ExpandableText
+                                        text={answer.answer}
+                                        textId={`table-answer-${answer.id}`}
+                                        maxLength={100}
+                                      />
+                                    </Table.Cell>
+                                    <Table.Cell className="break-words align-top">
+                                      <ExpandableText
+                                        text={answer.ragAnswer}
+                                        textId={`table-rag-${answer.id}`}
+                                        maxLength={100}
+                                      />
+                                    </Table.Cell>
+                                    <Table.Cell className="break-words align-top">
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        {isManuallyAnswered(answer) ? (
+                                          <>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-8 px-2"
+                                              onClick={() => handleEditClick(answer)}
+                                            >
+                                              <Edit className="h-3 w-3 mr-1" />
+                                              Edit
+                                            </Button>
+                                          </>
+                                        ) : isLLMAnswered(answer) ? (
+                                          <>
+                                            <Button variant="ghost" size="sm" className="h-8 px-2">
+                                              <ThumbsUp className="h-3 w-3 mr-1" />
+                                            </Button>
+                                            <Button variant="ghost" size="sm" className="h-8 px-2">
+                                              <ThumbsDown className="h-3 w-3 mr-1" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-8 px-2"
+                                              onClick={() => handleEditClick(answer)}
+                                            >
+                                              <Edit className="h-3 w-3 mr-1" />
+                                              Edit
+                                            </Button>
+                                          </>
+                                        ) : null}
+                                      </div>
+                                    </Table.Cell>
+                                  </Table.Row>
+                                ))}
+                              </Table.Body>
+                            </Table>
+                          </div>
+                        )}
+                      </>
                     )}
+                    <div className="text-xs text-muted-foreground text-right mt-4">
+                      Total answered reflections: {answers.length}
+                    </div>
                   </>
                 )}
-                <div className="text-xs text-muted-foreground text-right mt-4">
-                  Total answers: {answers.length}
-                </div>
-              </>
-            )}
+              </Tabs.Content>
+
+              <Tabs.Content value="catalogue">
+                <ReflectionCatalogue />
+              </Tabs.Content>
+            </Tabs>
           </div>
         </MemoryHubShell>
       </PageContent>

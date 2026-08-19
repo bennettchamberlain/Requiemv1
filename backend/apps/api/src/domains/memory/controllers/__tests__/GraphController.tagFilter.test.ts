@@ -75,6 +75,7 @@ describe('GraphController — explorer filters (graph parity)', () => {
       {} as never, // userContext
       tagService as never,
       eventService as never,
+      {} as never, // lifeStats
     );
 
     return { controller, graphQuery, tagService, eventService };

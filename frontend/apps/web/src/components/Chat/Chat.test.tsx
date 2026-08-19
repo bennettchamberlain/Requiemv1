@@ -5,6 +5,17 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { Chat } from './Chat';
 
+vi.mock('@/components/ModelSelector', () => ({
+  ModelSelector: () => <div data-testid="model-selector" />,
+}));
+
+vi.mock('@/api/useUploadFile', () => ({
+  useUploadFile: () => [
+    { files: [], loading: false, error: null },
+    { upload: vi.fn(), reset: vi.fn() },
+  ],
+}));
+
 describe('Chat', () => {
   it('shows the empty state when there are no messages', () => {
     const { getByText } = renderWithProviders(<Chat emptyState={<div>Start the conversation</div>} />);
@@ -26,6 +37,17 @@ describe('Chat', () => {
     expect(getByText('hi there')).toBeInTheDocument();
     expect(getByText('hello back')).toBeInTheDocument();
     expect(queryByText('Start the conversation')).not.toBeInTheDocument();
+  });
+
+  it('shows the user bubble immediately, even if onSubmit has not resolved', async () => {
+    const onSubmit = vi.fn(() => new Promise<boolean>(() => undefined));
+    const { getByText, getByRole } = renderWithProviders(<Chat onSubmit={onSubmit} />);
+
+    const textarea = getByRole('textbox');
+    fireEvent.change(textarea, { target: { value: 'what is up' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await waitFor(() => expect(getByText('what is up')).toBeInTheDocument());
   });
 
   it('submits a typed message through ChatInput', async () => {

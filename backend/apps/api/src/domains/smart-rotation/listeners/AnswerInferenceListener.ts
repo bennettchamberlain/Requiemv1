@@ -2,11 +2,24 @@ import { Injectable } from '@nestjs/common';
 
 import { type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { Events, EventPayloads, OnEvent } from '@ci/domains/events';
+import config from '@ci/configuration';
+import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 import { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { estimateInferredAnswerConfidence, OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
+import {
+  calibrateInferredConfidence,
+  confidenceLabel,
+  estimateInferredAnswerConfidence,
+  INFERRED_ANSWER_JSON_SCHEMA,
+  INFERRED_ANSWER_PROMPT_RULES,
+  type InferredAnswer,
+  LLM_QUEUE,
+  LLM_QUEUE_OPTIONS,
+  OllamaService,
+  parseInferredAnswer,
+  PROMPT_MODEL,
+} from '@ci/domains/llm';
 import { UserContextService } from '@ci/domains/memory';
-import { PersonalizationService, PromotionCandidateService } from '@ci/domains/personalization';
+import { PersonalizationService } from '@ci/domains/personalization';
 import { SearchService } from '@ci/domains/search-next';
 
 const RELATED_ANSWER_LIMIT = 10;
@@ -20,14 +33,13 @@ export class AnswerInferenceListener {
     private readonly searchService: SearchService,
     private readonly userContextService: UserContextService,
     private readonly personalizationService: PersonalizationService,
-    private readonly promotionCandidateService: PromotionCandidateService,
     private readonly ollamaService: OllamaService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(AnswerInferenceListener.name);
   }
 
-  @OnEvent(Events.INFER_QUESTION_ANSWER)
+  @OnEvent(Events.INFER_QUESTION_ANSWER, { queue: LLM_QUEUE, queueOptions: LLM_QUEUE_OPTIONS })
   async inferQuestionAnswer(payload: EventPayloads[Events.INFER_QUESTION_ANSWER]) {
     const ownerId = payload.ownerId;
     if (!ownerId) {
@@ -51,15 +63,6 @@ export class AnswerInferenceListener {
       return;
     }
 
-    if (await this.promotionCandidateService.hasPendingInferredFactReview(ownerId)) {
-      this.logger.log('Answer inference skipped — pending inferred-answer review', {
-        userId: ownerId,
-        questionId: payload.questionId,
-      });
-
-      return;
-    }
-
     const resolvedAnswers = await this.findRelatedAnswers(serviceContext, question.text, payload.questionId);
 
     let dossierBlock = '';
@@ -75,36 +78,26 @@ export class AnswerInferenceListener {
       });
     }
 
+    const systemParts = [
+      `You impersonate the user and infer a first-person answer to a question they have not answered yet.
+
+Ground the answer in the dossier and related Q&A below, and score how well grounded it actually is.
+
+${INFERRED_ANSWER_PROMPT_RULES}`,
+      dossierBlock ? `User dossier and graph context:\n${dossierBlock}` : null,
+      resolvedAnswers.length > 0
+        ? `Related questions the user already answered:\n\n${resolvedAnswers
+            .map(
+              (answer) => `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
+            )
+            .join('\n\n')}`
+        : 'No related prior answers were found — rely on the dossier only.',
+    ].filter((part): part is string => part != null);
+
     const ragThread = [
       {
         role: 'system',
-        content: `You impersonate the user and infer a first-person answer to a question they have not answered yet.
-
-Rules:
-- 2-3 sentences max.
-- Return ONLY the answer text — no preamble, no "honestly", no complimenting the question.
-- Ground the answer in the dossier and related Q&A below. Never invent facts absent from context.
-- If context is thin, give a plausible short answer that fits what is known.`,
-      },
-      ...(dossierBlock
-        ? [
-            {
-              role: 'system',
-              content: `User dossier and graph context:\n${dossierBlock}`,
-            },
-          ]
-        : []),
-      {
-        role: 'system',
-        content:
-          resolvedAnswers.length > 0
-            ? `Related questions the user already answered:\n\n${resolvedAnswers
-                .map(
-                  (answer) =>
-                    `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
-                )
-                .join('\n\n')}`
-            : 'No related prior answers were found — rely on the dossier only.',
+        content: systemParts.join('\n\n'),
       },
       {
         role: 'user',
@@ -114,52 +107,79 @@ Rules:
 
     const llmResponse = await this.ollamaService.chat(serviceContext, ragThread, {
       model: PROMPT_MODEL,
+      // The schema — not the bare 'json' string — is what makes the confidence
+      // and rationale a contract rather than a request. See
+      // INFERRED_ANSWER_JSON_SCHEMA.
+      format: INFERRED_ANSWER_JSON_SCHEMA,
     });
 
-    const inferredText = llmResponse.message.content.trim();
-    if (!inferredText) {
-      this.logger.warn('Answer inference returned empty content', {
+    const rawContent = llmResponse.message.content ?? '';
+    const inferred: InferredAnswer | null = parseInferredAnswer(rawContent);
+
+    if (!inferred) {
+      // No usable structured result. Deliberately NOT salvaged by treating the
+      // raw text as the answer: without a score there is nothing to hold the
+      // floor against, and a confidence invented here would be exactly the
+      // fabrication this path exists to prevent. Keep the evidence — "nothing
+      // came back" was previously impossible to diagnose from the logs alone.
+      this.logger.warn('Answer inference returned no usable structured answer', {
         userId: ownerId,
         questionId: payload.questionId,
+        content: rawContent.slice(0, 500),
       });
 
       return;
     }
+
+    // The model's own score, capped by how much evidence the prompt actually
+    // carried — a model handed nothing still claims certainty, and only this
+    // side of the call knows how thin the context was.
+    const evidenceCeiling = estimateInferredAnswerConfidence(resolvedAnswers.length, dossierBlock.length > 0);
+    const confidence = calibrateInferredConfidence(inferred.confidence, evidenceCeiling);
 
     this.logger.log('Inferred answer to question', {
       userId: ownerId,
       questionId: payload.questionId,
       question: question.text,
       relatedAnswers: resolvedAnswers.length,
-      response: inferredText,
+      response: inferred.answer,
+      modelConfidence: inferred.confidence,
+      evidenceCeiling,
+      confidence,
+      confidenceLabel: confidenceLabel(confidence),
+      rationale: inferred.rationale,
     });
+
+    // The floor. Below it the appliance says nothing rather than writing a guess
+    // into the user's own memory, where it would sit beside answers they typed
+    // themselves and be indistinguishable from them at a glance. An unanswered
+    // question costs a blank card; a fabricated one costs the credibility of
+    // every other answer on the page. Configurable so an owner can demand more.
+    const minConfidence = config.reflection.minAnswerConfidence;
+
+    if (confidence < minConfidence) {
+      this.logger.log('Inferred answer discarded — below the confidence floor', {
+        userId: ownerId,
+        questionId: payload.questionId,
+        confidence,
+        minConfidence,
+        rationale: inferred.rationale,
+      });
+
+      return;
+    }
 
     const decision = await this.personalizationService.decideAction(ownerId, {
       kind: 'inferred_fact',
-      confidence: estimateInferredAnswerConfidence(resolvedAnswers.length, dossierBlock.length > 0),
+      confidence,
       hasUserInput: true,
     });
 
     if (decision === 'review') {
-      const inferredPayload = {
+      this.logger.log('Inferred answer left unwritten for context prompt', {
+        userId: ownerId,
         questionId: payload.questionId,
-        questionText: question.text,
-        inferredText,
-      };
-
-      const candidate = await this.promotionCandidateService.create(serviceContext, {
-        kind: 'inferred_fact',
-        payload: inferredPayload,
-        confidence: estimateInferredAnswerConfidence(resolvedAnswers.length, dossierBlock.length > 0),
-        sourceJob: 'infer.question.answer',
       });
-
-      if (candidate) {
-        this.logger.log('Inferred answer queued for review', {
-          userId: ownerId,
-          questionId: payload.questionId,
-        });
-      }
 
       return;
     }
@@ -172,16 +192,20 @@ Rules:
 
     if (userAnswer) {
       await this.answerService.update(serviceContext, userAnswer.id, {
-        text: inferredText,
+        text: inferred.answer,
         answerMethod: 'inferred',
         answerSource: 'inferred',
+        answerConfidence: confidence,
+        answerRationale: inferred.rationale ?? null,
       });
     } else {
       await this.answerService.create(serviceContext, {
-        text: inferredText,
+        text: inferred.answer,
         question: { id: payload.questionId },
         answerMethod: 'inferred',
         answerSource: 'inferred',
+        answerConfidence: confidence,
+        answerRationale: inferred.rationale ?? null,
       });
     }
   }

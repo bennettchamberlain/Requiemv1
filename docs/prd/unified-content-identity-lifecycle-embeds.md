@@ -1,7 +1,14 @@
 # Unified Content Identity, Lifecycle, and Embed Enrichment
 
-**Status:** proposal · **Repo:** CI-Server (+ CI-Import-Tools) · **Author:** lead architect
+**Status:** proposal · **Repo:** CI-Server (+ CI-Import-Tools, at the time of writing) · **Author:** lead architect
 **Supersedes:** three independent track designs. They are not independent, and treating them as such produced three incompatible object models.
+
+> **2026-08-18 update:** CI-Import-Tools has since been retired (renamed
+> `ZARCHIVED-CI-Import-Tools`); its import functionality was consolidated into
+> CI-Server's own native import domain (`backend/apps/api/src/domains/import/`).
+> The cross-repo mentions below describe the design as proposed against the
+> two-repo world that existed when this document was written — read
+> "CI-Import-Tools" throughout as the now-retired repo, not a live consumer.
 
 > **Provenance.** Produced by a 14-agent survey-and-critique pass (7 surveyors → 3 design tracks
 > → 3 adversarial critics → synthesis) over CI-Server, CI-Import-Tools, and the archived

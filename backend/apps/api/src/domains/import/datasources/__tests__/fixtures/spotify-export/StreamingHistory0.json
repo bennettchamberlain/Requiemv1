@@ -1,0 +1,20 @@
+[
+  {
+    "endTime": "2021-01-01 12:00",
+    "artistName": "Radiohead",
+    "trackName": "Karma Police",
+    "msPlayed": 265000
+  },
+  {
+    "endTime": "2021-01-01 12:05",
+    "artistName": "Radiohead",
+    "trackName": "Paranoid Android",
+    "msPlayed": 383000
+  },
+  {
+    "endTime": "2021-01-02 09:00",
+    "artistName": "Bon Iver",
+    "trackName": "Holocene",
+    "msPlayed": 357000
+  }
+]

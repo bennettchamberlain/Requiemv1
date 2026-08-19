@@ -5,14 +5,14 @@ import { DataSource } from 'typeorm';
 import { LoggerService } from '@ci/common/logging';
 import { UserContextService } from '@ci/domains/memory';
 
+import { ContextPromptService } from './ContextPromptService';
 import { PersonalizationService } from './PersonalizationService';
-import { PromotionCandidateService } from './PromotionCandidateService';
 
 export interface LifeOptimizationContext {
   readonly trustMode: string;
   readonly dossierBlock: string;
   readonly recentGraphDeltas: unknown[];
-  readonly pendingPromotions: number;
+  readonly pendingContextPrompts: number;
   readonly insightVolumeMultiplier: number;
 }
 
@@ -22,7 +22,7 @@ export class LifeContextService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly userContextService: UserContextService,
     private readonly personalizationService: PersonalizationService,
-    private readonly promotionCandidateService: PromotionCandidateService,
+    private readonly contextPromptService: ContextPromptService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(LifeContextService.name);
@@ -36,22 +36,35 @@ export class LifeContextService {
     type DeltaRow = { delta: unknown };
     const deltaRows = (await this.dataSource.query(
       `
-      SELECT delta
+      -- There is no \`delta\` column, and there never was: GraphDeltaWriter
+      -- writes the change decomposed across change_type / changed_fields /
+      -- change_source (see GraphDeltaWriter.ts), so this SELECT threw on every
+      -- call and buildForUser could never return. Rebuilding the object here
+      -- keeps the caller's shape while naming columns that exist.
+      SELECT jsonb_build_object(
+        'entityId', entity_id,
+        'entityType', entity_type,
+        'relationshipType', relationship_type,
+        'changeType', change_type,
+        'changedFields', changed_fields,
+        'changeSource', change_source,
+        'changedAt', changed_at
+      ) AS delta
       FROM ci.graph_deltas
-      WHERE user_id = $1
-      ORDER BY created_at DESC
+      WHERE owner_user_id = $1::uuid
+      ORDER BY changed_at DESC
       LIMIT 20;
       `,
       [userId],
     )) as DeltaRow[];
 
-    const pendingPromotions = await this.promotionCandidateService.countPending(userId);
+    const pendingContextPrompts = await this.contextPromptService.countPending(userId);
 
     return {
       trustMode: profile.trustMode,
       dossierBlock,
       recentGraphDeltas: deltaRows.map((r) => r.delta),
-      pendingPromotions,
+      pendingContextPrompts,
       insightVolumeMultiplier: profile.insightVolumeMultiplier,
     };
   }
@@ -68,11 +81,18 @@ export class LifeContextService {
           AND data->>'userId' = $1::text
       )
       SELECT EXISTS (
+        -- Three of these four column names were wrong, and because Postgres
+        -- reports only the FIRST unknown column the errors masked each other:
+        -- fixing gd.user_id merely revealed gd.created_at, and so on. The real
+        -- columns are graph_deltas(owner_user_id, changed_at) — owner, not
+        -- changed_by, because "did MY graph change" is about whose graph it is,
+        -- not who edited it — and communications.time. Only the events branch
+        -- was already correct.
         SELECT 1 FROM ci.graph_deltas gd, last_run lr
-        WHERE gd.user_id = $1::uuid AND gd.created_at > lr.ts
+        WHERE gd.owner_user_id = $1::uuid AND gd.changed_at > lr.ts
         UNION ALL
         SELECT 1 FROM ci.communications c, last_run lr
-        WHERE c.user_id = $1::uuid AND c.created_at > lr.ts
+        WHERE c.user_id = $1::uuid AND c.time > lr.ts
         UNION ALL
         SELECT 1 FROM ci.events e, last_run lr
         WHERE e.user_id = $1::uuid AND e.created_at > lr.ts

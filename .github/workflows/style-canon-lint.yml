@@ -1,6 +1,12 @@
 name: Style canon lint
 
-on: [pull_request, push]
+# GATED TO MANUAL. Every trigger except workflow_dispatch was removed so this
+# workflow no longer runs on push, pull_request or a schedule — CI silence here
+# means "nobody dispatched it", NOT "everything passed". Run it deliberately:
+#   gh workflow run <file> --ref <branch>
+# Restore a trigger by re-adding it to the `on:` block below.
+on:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

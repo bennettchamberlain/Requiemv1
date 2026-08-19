@@ -6,6 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { SYSTEM_USER, UserServiceContext, type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import {
+  type BulkInsertResult,
   bulkInsertIdempotent,
   INGEST_REFRESH_COLUMNS,
   keysetPaginate,
@@ -113,6 +114,17 @@ export class BrowserActivityService {
     context: UserServiceContext,
     data: CreateBrowserActivityDto[],
   ): Promise<BrowserActivity[]> {
+    return (await this.createManyDetailed(context, data)).map(({ entity }) => entity);
+  }
+
+  /**
+   * Same ingest as {@link createMany}, reporting which rows this call actually
+   * INSERTED rather than found already present.
+   */
+  async createManyDetailed(
+    context: UserServiceContext,
+    data: CreateBrowserActivityDto[],
+  ): Promise<Array<BulkInsertResult<BrowserActivity>>> {
     if (data.length === 0) {
       return [];
     }
@@ -157,7 +169,10 @@ export class BrowserActivityService {
       conflictUpdateColumns: INGEST_REFRESH_COLUMNS.browser_activity,
     });
 
-    const egress = results.map(({ entity }) => BrowserActivityEntity.toEgressType(entity));
+    const egress = results.map(({ entity, inserted }) => ({
+      entity: BrowserActivityEntity.toEgressType(entity),
+      inserted,
+    }));
 
     // Bulk ingest does NOT emit a per-row BrowserActivityCreatedEvent: the per-row
     // pgboss fan-out was the dominant cost at import volume. Search indexing for
@@ -346,5 +361,30 @@ export class BrowserActivityService {
       id: row['browser-activity_id'],
       type: 'browser-activity' as IndexableEntity,
     }));
+  }
+
+  /**
+   * True total of browser activities matching the same filters {@link getEntitiesForBrowserActivities}
+   * applies (minus the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`,
+   * not the length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
+   */
+  async countEntitiesForBrowserActivities(
+    context: ServiceContext,
+    options: Pick<Options, 'startTime' | 'endTime'>,
+  ): Promise<number> {
+    let query = this.dataSource
+      .getRepository(BrowserActivityEntity)
+      .createQueryBuilder('browser-activity')
+      .where('browser-activity.user_id = :userId', { userId: context.userId });
+
+    if (options.startTime) {
+      query = query.andWhere('browser-activity.time >= :startTime', { startTime: options.startTime });
+    }
+
+    if (options.endTime) {
+      query = query.andWhere('browser-activity.time <= :endTime', { endTime: options.endTime });
+    }
+
+    return query.getCount();
   }
 }

@@ -134,6 +134,7 @@ function positionRow(n: number, point = MOUNTAIN_VIEW, time = new Date('2024-05-
 interface StageHarness {
   stage: PositionReverseStage;
   reverseGeocode: jest.Mock;
+  sendMany: jest.Mock;
   /** Every statement the stage issued, in order. */
   statements: Array<{ sql: string; params: unknown[] }>;
   /** The single bulk UPDATE, if one was issued. */
@@ -169,15 +170,19 @@ function makeStage(rows: PositionRow[] = [], opts: { writeError?: Error } = {}):
     okOutcome('1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA'),
   );
 
+  const sendMany = jest.fn(async () => undefined);
+
   const stage = new PositionReverseStage(
     { query } as never,
     { reverseGeocode } as never,
     makeLogger() as never,
+    { sendMany } as never,
   );
 
   return {
     stage,
     reverseGeocode,
+    sendMany,
     statements,
     update: () => statements.find((statement) => /^update/i.test(statement.sql)),
   };
@@ -594,6 +599,27 @@ describe('PositionReverseStage.run — every id gets exactly one answer', () => 
       outcome: 'failed',
       reason: 'provider_status_unrecognized',
     });
+  });
+
+  it('enqueues PositionUpdated onto search-index after a successful address write', async () => {
+    const h = makeStage([positionRow(1)]);
+
+    await h.stage.run(ctx, [positionId(1)]);
+
+    expect(h.sendMany).toHaveBeenCalledTimes(1);
+    expect(h.sendMany.mock.calls[0][0]).toBe('search-index');
+    expect(h.sendMany.mock.calls[0][1]).toEqual([
+      { name: 'position.updated', data: { positionId: positionId(1) } },
+    ]);
+    expect(h.statements.some((statement) => /index_skips/i.test(statement.sql))).toBe(true);
+  });
+
+  it('does not enqueue search when the address write fails', async () => {
+    const h = makeStage([positionRow(1)], { writeError: new Error('cannot update rows from chunk') });
+
+    await h.stage.run(ctx, [positionId(1)]);
+
+    expect(h.sendMany).not.toHaveBeenCalled();
   });
 
   it('FAILS the resolved rows when the write throws, separately from a provider failure', async () => {

@@ -33,6 +33,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConnectionMode } from './connectionMode';
 import { createHookContext } from './createHookContext';
 import { FetchJsonError, fetchJson } from './fetchJson';
+import { addAppStateListener } from './nativeBridge';
 import {
   getOutboxItem,
   listOutbox,
@@ -47,6 +48,21 @@ import {
  */
 export const POSITION_OUTBOX_KIND = 'positions';
 
+/**
+ * The `kind` user-authored notes are queued under. Routes to `/v1/notes`.
+ *
+ * Registered **statically** in {@link DEFAULT_OUTBOX_ROUTES} rather than through
+ * {@link registerOutboxKind} at the capture site's module scope, and that is
+ * load-bearing rather than stylistic: a drain can run before anything that
+ * creates notes has been imported — the foreground-resume trigger fires from
+ * the queue provider, which mounts at app root, while `NotePage` is a lazily
+ * routed page the user may never open in a given session. A kind registered
+ * only as a side effect of importing its capture module would be unroutable in
+ * exactly that window, and an unroutable kind is a PERMANENT failure: the note
+ * would be parked in `needs_attention` on the first drain after a restart.
+ */
+export const NOTE_OUTBOX_KIND = 'note';
+
 /** Where a `kind` is replayed, and what it owes `POST /v1/ingest/finish` afterwards. */
 interface OutboxRoute {
   path: string;
@@ -58,14 +74,14 @@ interface OutboxRoute {
 }
 
 /**
- * Positions are not a searchable entity — the appliance's `BACKFILLABLE_ENTITIES` lists
- * communication/event/content/item/browser-activity/file/person, not position — so a
- * search-index sweep would do nothing for them. What they *do* need is the two geo legs:
- * `reverse_geocode` turns the point into address/city on the row itself, and
- * `estimate_locations` is how every other entity in the timeline inherits a place from the
- * fixes around it. Skipping these leaves the rows written but inert.
+ * Positions need the GPS reverse leg (`reverse_position` — pipeline
+ * PositionReverseStage writing address onto `ci.position`) and
+ * `estimate_locations` so other timeline entities inherit a place from the
+ * surrounding fixes. Event `reverse_geocode` does not name GPS rows.
+ * Search indexing of named, downsampled positions is the server coalesce
+ * `search_index` leg, not this client finish list.
  */
-const POSITION_FINISH_STAGES = ['reverse_geocode', 'estimate_locations'] as const;
+const POSITION_FINISH_STAGES = ['reverse_position', 'estimate_locations'] as const;
 
 /** Every other `/v1` kind materializes searchable rows with no per-row indexing fan-out. */
 const DEFAULT_V1_FINISH_STAGES = ['search_index'] as const;
@@ -90,6 +106,13 @@ const DEFAULT_OUTBOX_ROUTES: Record<string, OutboxRoute> = {
   [POSITION_OUTBOX_KIND]: { path: '/api/v1/positions', finishStages: POSITION_FINISH_STAGES },
   event: { path: '/api/v1/events' },
   content: { path: '/api/v1/contents' },
+  // Explicitly nothing owed, overriding the `/v1` default of `search_index`.
+  // `/v1/notes` emits a per-row NoteCreatedEvent (it replays interactive
+  // captures, not an import), so a drained note is indexed live and the finish
+  // legs have nothing left to do. Asking for `search_index` anyway would fire a
+  // whole-user maintenance sweep that cannot even reach notes — `note` is in
+  // INDEXABLE_ENTITIES but not in the appliance's BACKFILLABLE_ENTITIES.
+  [NOTE_OUTBOX_KIND]: { path: '/api/v1/notes', finishStages: [] },
   communication: { path: '/api/v1/communications' },
   inventory: { path: '/api/v1/inventory' },
   'browser-activity': { path: '/api/v1/browser-activity' },
@@ -170,6 +193,8 @@ const INGEST_FINISH_STAGE_ORDER = [
   'extract_graph',
   'geocode',
   'reverse_geocode',
+  'reverse_position',
+  'reverse_inventory',
   'estimate_locations',
   'media_dimensions',
   'search_index',
@@ -447,12 +472,17 @@ const EMPTY_QUEUE = {
 } satisfies Omit<OutboxQueueState, 'refresh'>;
 
 /**
- * Tracks queue depth and drives the flush loop off the connection mode — no timer of its
- * own. Entering `"connected"` starts a drain; leaving it aborts the drain in progress, so
- * a mode that flickers does not leave a doomed flush running against an unreachable server.
+ * Tracks queue depth and drives the flush loop off two signals — no timer of its own.
+ *
+ * 1. **Entering `"connected"`.** Leaving it aborts the drain in progress, so a mode that
+ *    flickers does not leave a doomed flush running against an unreachable server.
+ * 2. **Returning to the foreground.** A mode transition alone is not enough: the app is not
+ *    probing while backgrounded, so it can leave and return on the same mode with a queue
+ *    that grew in between (a background location fix, or a capture taken during an outage
+ *    the app slept through). Resume therefore re-probes *and* drains on its own.
  */
 function useOutboxQueueState(): OutboxQueueState {
-  const { mode } = useConnectionMode();
+  const { mode, refresh: refreshConnectionMode } = useConnectionMode();
   const [snapshot, setSnapshot] = useState<Omit<OutboxQueueState, 'refresh'>>(EMPTY_QUEUE);
 
   // Monotonic request id: overlapping refreshes (a mode change landing while a post-flush
@@ -510,6 +540,54 @@ function useOutboxQueueState(): OutboxQueueState {
 
     return () => controller.abort();
   }, [mode, refresh]);
+
+  // Read through a ref so resuming does not need to re-subscribe on every mode change —
+  // the listener is registered once and always sees the current mode.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: () => void = () => {};
+
+    void addAppStateListener((isActive) => {
+      if (!isActive || disposed) {
+        return;
+      }
+
+      // The OS does not deliver `online`/`offline` to a suspended WebView, so the mode may
+      // describe the network as it was before the app went away. Re-probe first; if that
+      // lands on a different mode the effect above drains, and this drain is a no-op
+      // because `flushOutbox` joins the one already running.
+      refreshConnectionMode();
+
+      if (modeRef.current !== 'connected') {
+        return;
+      }
+
+      // Deliberately unaborted, unlike the mode-driven drain: a resume carries no "the
+      // connection just went away" signal to honor, and tearing down here would cancel a
+      // healthy drain every time the app came forward.
+      void flushOutbox().then(() => {
+        if (!disposed) {
+          refresh();
+        }
+      });
+    }).then((off) => {
+      if (disposed) {
+        off();
+
+        return;
+      }
+
+      unsubscribe = off;
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [refresh, refreshConnectionMode]);
 
   return { ...snapshot, refresh };
 }

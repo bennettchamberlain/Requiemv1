@@ -1,0 +1,37 @@
+{
+  "Activity": {
+    "Video Browsing History": {
+      "VideoList": [
+        { "Date": "2026-04-01 12:00:00", "Link": "https://www.tiktokv.com/share/video/1111/" },
+        { "Date": "2026-04-02 13:30:00 UTC", "VideoLink": "https://www.tiktokv.com/share/video/2222/" }
+      ]
+    },
+    "Like List": {
+      "ItemFavoriteList": [
+        { "Date": "2026-04-03 09:15:00", "Link": "https://www.tiktokv.com/share/video/3333/" }
+      ]
+    },
+    "Search History": {
+      "SearchList": [
+        { "Date": "2026-04-04 18:45:00", "SearchTerm": "cat compilations" }
+      ]
+    }
+  },
+  "Comment": {
+    "Comments": {
+      "CommentsList": [
+        { "Date": "2026-04-05 20:00:00", "Comment": "This is hilarious!" }
+      ]
+    }
+  },
+  "Direct Messages": {
+    "Chat History": {
+      "ChatHistory": {
+        "Chat History with alice:": [
+          { "Date": "2026-04-06 10:00:00", "From": "alice", "Content": "hey, did you see that video?" },
+          { "Date": "2026-04-06 10:05:00", "From": "bob", "Content": "yeah it was great" }
+        ]
+      }
+    }
+  }
+}

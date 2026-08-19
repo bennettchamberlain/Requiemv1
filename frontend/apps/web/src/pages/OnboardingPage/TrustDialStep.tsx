@@ -7,17 +7,17 @@ export const TRUST_OPTIONS = [
   {
     value: 'cautious' as const,
     label: 'Cautious',
-    hint: 'Ask before saving inferred answers or graph connections',
+    hint: 'Ask before adding to-dos or placing them on your calendar',
   },
   {
     value: 'balanced' as const,
     label: 'Balanced',
-    hint: 'Strong inferences save automatically; connections and weaker guesses ask first',
+    hint: 'High-confidence to-dos join the backlog; scheduling still asks first',
   },
   {
     value: 'hands_off' as const,
     label: 'Hands-off',
-    hint: 'Auto-apply solid inferences and moderately confident connections; low-confidence items still ask',
+    hint: 'Add and place solid to-dos on the calendar automatically',
   },
 ];
 

@@ -14,7 +14,7 @@ import { LoggerService } from '@ci/common/logging';
 // people-linking lookup silently misses". `ci.identifier_claims.value_normalized`
 // and `ci.entity_identifiers.value_normalized` are the SAME key; a stage that
 // normalised by its own rule would write claims nothing can ever join.
-import { normalizeEmail, normalizeName, normalizePhone } from '@ci/domains/graph';
+import { isNonNameParticipant, normalizeEmail, normalizeName, normalizePhone } from '@ci/domains/graph';
 
 import { PIPELINE_QUEUES } from '../../constants';
 import type { Stage, StageResult, StageSource } from '../../types';
@@ -80,8 +80,10 @@ const EVENT_SUBJECT_TYPE = 'event';
  * Covers {@link classifyIdentifier}: the handle detection, the scheme stripping,
  * and the delegation to `normalizeEmail` / `normalizePhone` / `normalizeName`.
  * Bump it in the same commit that changes any of those — including the shared
- * rule in `domains/graph`, and including CI-Import-Tools' copy of it, because a
- * change on either side makes every stored `value_normalized` provisional.
+ * rule in `domains/graph` — because a change makes every stored
+ * `value_normalized` provisional. (Until CI-Import-Tools' retirement this also
+ * meant bumping its copy of the rule; that repo's import functionality is now
+ * native here.)
  */
 export const IDENTIFIER_RULE_GENERATION = 1;
 
@@ -339,6 +341,15 @@ export function classifyIdentifier(raw: string | null, platform?: string | null)
   const trimmed = raw.trim();
 
   if (trimmed.length === 0) {
+    return null;
+  }
+
+  // Same door as `classifyParticipant`'s, and for the same reason: this
+  // function's LAST branch is `name`, so anything unrecognised becomes a claim
+  // on a display name. A call-log heading, an export filename or a string
+  // carrying a newline is a parser leak, not an identity, and a claim keyed on
+  // one is a permanent wrong answer in `ci.identifier_claims`.
+  if (isNonNameParticipant(trimmed, 'PersonLinkStage.classifyIdentifier')) {
     return null;
   }
 

@@ -1,7 +1,36 @@
 import './bootstrap';
 
+import path from 'node:path';
+
 import config from 'config';
 import { z } from 'zod';
+
+/**
+ * The chat model an appliance uses when nothing overrides it.
+ *
+ * Every LLM-backed feature that is not handed an explicit model lands here:
+ * thread titling, task breakdown, the derivation narrators, the import
+ * enrichers. It is the floor those features are judged against, so a default
+ * too weak to hold a JSON schema does not degrade them — it silently disables
+ * them, because their fallback is deterministic ordering or no output at all.
+ *
+ * `gemma3:1b` was that floor and had aged into exactly this failure: 815MB and
+ * measurably unable to keep to a schema (see TaskBreakdownService), while
+ * CI-Planning had already moved its quality tier to an e4b-class model. Kept as
+ * the shipped default it made "the feature is on" and "the feature works"
+ * different claims.
+ *
+ * `gemma4:e4b` is the modern equivalent of that tier — and deliberately the
+ * EFFICIENT variant, not `gemma4:31b`: this ships to appliances that also hold
+ * an embedding model, HBPE and the summary sidecar in the same GPU, and a
+ * default is a floor everyone pays for, not a ceiling for the best-provisioned
+ * box. Override with `LLM_DEFAULT_CHAT_MODEL` (or Settings → Model); the Hub
+ * injects its own on managed deployments.
+ *
+ * Changing this means changing the model `make health` requires, since a
+ * default nobody has pulled fails at first use rather than at setup.
+ */
+export const DEFAULT_CHAT_MODEL = 'gemma4:e4b';
 
 const booleanStringSchema = z.preprocess((val) => {
   if (val === 'true') {
@@ -18,6 +47,16 @@ const booleanStringSchema = z.preprocess((val) => {
 export const ConfigSchema = z.object({
   host: z.string(),
   port: z.number(),
+  /**
+   * Which half of the appliance this process is. `all` (the default) is the
+   * single-process topology: HTTP plus every queue and cron — standalone dev
+   * and role-less deployments keep working untouched. `web` serves HTTP and
+   * everything EXCEPT the queues/crons marked for the worker; `worker` is a
+   * headless process serving exactly those. The split exists because import
+   * stage jobs run long synchronous parser stretches, and sharing an event
+   * loop with interactive requests makes buttons hang.
+   */
+  role: z.enum(['all', 'web', 'worker']).default('all'),
   hostname: z.string(),
   logging: z.object({
     level: z.string(),
@@ -59,6 +98,12 @@ export const ConfigSchema = z.object({
       issuer: z.string(),
       jwksUri: z.string(),
       audience: z.string(),
+      /**
+       * Optional Portal (or Lifescope) push relay. The appliance stores device
+       * tokens but must not hold the app's APNs/FCM key; when set, token writes
+       * are forwarded here. Empty = local notifications only.
+       */
+      pushRelayUrl: z.string().default(''),
     }),
     // Traefik forward-auth identity header signed by CI-Hub. When enabled, the
     // server verifies the HMAC-SHA256 signature on X-CI-Hub-User before trusting
@@ -173,7 +218,7 @@ export const ConfigSchema = z.object({
     .object({
       apiBase: z.string().optional(),
       apiKey: z.string().default('ollama'),
-      chatModel: z.string().default('gemma3:1b'),
+      chatModel: z.string().default(DEFAULT_CHAT_MODEL),
     })
     .default({}),
   // Local-first sync (PowerSync). The server issues short-lived client tokens via
@@ -265,6 +310,89 @@ export const ConfigSchema = z.object({
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
   }),
+  // The archive importer's working directory. A run downloads its uploaded
+  // archive here, extracts it, and parses the resulting tree; the whole
+  // directory is reclaimed when the run finishes.
+  //
+  // Configurable because the default is a trap at real sizes. An unpacked Google
+  // Takeout runs 40-50GB and `/tmp` is tmpfs on a stock appliance, so extracting
+  // there consumes RAM until the machine dies. Deployments point this at the
+  // same volume the object store uses.
+  import: z
+    .object({
+      scratchDir: z.string().default('/var/tmp/ci-import'),
+      // Directories the path-based import tools may read. EMPTY BY DEFAULT: an
+      // unconstrained absolute path over an API is a filesystem read primitive,
+      // so path imports stay off until an operator names the directory that holds
+      // exports. Uploading through the API is unaffected. Files here are the
+      // user's own and are never modified or deleted.
+      roots: z.array(z.string()).default([]),
+      // Where uploads are staged: <uploadsDir>/<dropId>/<filename>, registered
+      // in ci_import.staged_sources with a TTL. Importer-owned and root-only —
+      // unlike the inbox, nothing lands here except through the API. Should
+      // share a filesystem with scratchDir so consuming an upload is an atomic
+      // rename.
+      uploadsDir: z.string().default('/var/lib/ci-import/uploads'),
+      // The import inbox — the folder a user moves export archives into.
+      // Everything in it is a copy staged for import: a batch run consumes it
+      // (the unpack stage moves it into the run's scratch) and the bytes are
+      // deleted with the completed run. Non-empty by default, unlike `roots`,
+      // because the folder only holds what a user deliberately put there, and
+      // compose ships the mount; an absent directory just scans as unavailable.
+      inboxDir: z.string().default('/var/lib/ci-import/inbox'),
+      // Zip-bomb guards on extraction. These are a ceiling on what an archive
+      // may expand to, NOT a statement about what this appliance imports: the
+      // uploads controller accepts 50GiB precisely because "Google Takeout
+      // splits run 40-50GB", and a photo Takeout routinely carries several
+      // hundred thousand files. The previous defaults — 100k entries and 10GB —
+      // rejected exactly the archives the rest of the import path is built to
+      // handle, with no way to raise them. Path containment is asserted per
+      // entry regardless and is not affected by either number.
+      maxArchiveEntries: z.coerce.number().int().positive().default(2_000_000),
+      maxArchiveBytes: z.coerce
+        .number()
+        .int()
+        .positive()
+        .default(100 * 1024 ** 3),
+      // Where the DATABASE's volume is visible to THIS process, for the push's
+      // free-space preflight. Empty by default and usually right that way:
+      // `readDatabaseSpace` asks Postgres for its own `data_directory` first,
+      // which resolves whenever the two share a filesystem namespace. Set this
+      // when they do not — the shipped topology runs the api and the database
+      // in separate containers — to the api-side mount of the same volume.
+      // Unreadable or unset simply means the push reports "cannot say" and
+      // relies on catching the disk-full error instead of predicting it.
+      databaseDataDir: z.string().default(''),
+    })
+    .superRefine((value, context) => {
+      // The three areas have different owners and different sweeps: the inbox
+      // is world-writable and user-facing, uploads are root-only and TTL'd,
+      // scratch belongs to runs. Nesting any inside another crosses those
+      // contracts — uploads under the inbox would expose every user's staged
+      // uploads through the inbox scan.
+      const dirs: Array<[string, string]> = [
+        ['scratchDir', path.resolve(value.scratchDir)],
+        ['uploadsDir', path.resolve(value.uploadsDir)],
+        ['inboxDir', path.resolve(value.inboxDir)],
+      ];
+
+      for (const [aName, a] of dirs) {
+        for (const [bName, b] of dirs) {
+          if (aName === bName) {
+            continue;
+          }
+
+          const relative = path.relative(a, b);
+
+          if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `import.${bName} must not be inside import.${aName} (${b} is under ${a})`,
+            });
+          }
+        }
+      }
+    }),
   // In-app account deletion (App Store Guideline 5.1.1(v), Google Play Data
   // Deletion). `DELETE /account` revokes access immediately; the purge job
   // destroys the data afterwards. See docs/architecture/account-deletion.md.
@@ -378,6 +506,28 @@ export const ConfigSchema = z.object({
       usersPerTurn: z.coerce.number().int().positive().default(1),
     }),
   }),
+  // The reflection loop — the appliance answering a personal question ON THE
+  // USER'S BEHALF from their own imported data (see AnswerInferenceListener).
+  // Everything it writes lands in ci.answers next to answers the user typed
+  // themselves, so the only thing separating a well-evidenced inference from a
+  // fabrication is the confidence the model reports and this floor.
+  reflection: z
+    .object({
+      /**
+       * Confidence below which NO answer is written at all — the question is
+       * left unanswered rather than filled with a guess.
+       *
+       * 0.4 is the bottom of the "inferred from indirect or partial evidence"
+       * band the model is scored against (see INFERRED_ANSWER_PROMPT_RULES);
+       * anything under it the prompt itself calls a guess. Raise it on an
+       * appliance whose owner wants only well-evidenced inferences; set it to 0
+       * to write whatever comes back, which is the pre-confidence behaviour and
+       * is not recommended — an unanswered question costs a blank card, a
+       * fabricated one costs the user's trust in every other answer on the page.
+       */
+      minAnswerConfidence: z.coerce.number().min(0).max(1).default(0.4),
+    })
+    .default({}),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     'scheduled.connection.sync': booleanStringSchema,
@@ -386,18 +536,25 @@ export const ConfigSchema = z.object({
     'enable.system.prompt': booleanStringSchema,
     'enable.inventory.page': booleanStringSchema,
     'advanced.theme.tab': booleanStringSchema,
-    'new.insights.page': booleanStringSchema,
     'require.signup.codes': booleanStringSchema,
     'files.page': booleanStringSchema,
-    /** Wholesale gate for the Insights surface (/insights, /insights/:id, /prompts + nav entry points). */
+    /** The archive-import surface (/import): upload, run progress, the source catalogue and the guide. */
+    'import.page': booleanStringSchema,
+    /**
+     * Wholesale gate for the Reflections browse page (`/memory/reflections`,
+     * formerly `/memory/questions`) and the Forecast tooltip link into Brief.
+     * `/insights` itself always redirects to `/brief`; this flag does not hide
+     * Brief.
+     */
     'insights.page': booleanStringSchema,
     /** Wholesale gate for the Chat page (/chat + nav entry points). */
     'chat.page': booleanStringSchema,
-    /** Wholesale gate for the Jobs page (/jobs + nav entry points). */
+    /** Wholesale gate for the Jobs page (`/jobs` + rail entry). */
     'jobs.page': booleanStringSchema,
     /**
-     * Backend gate for the planning domain: ci.tasks, planned-block events and
-     * the planning GraphQL surface. See docs/architecture/planning-roadmap.md.
+     * Backend gate for the planning domain: `ci.tasks` and the planning GraphQL
+     * surface (`TaskResolver`, `node(id)` for tasks). Off returns empty reads
+     * and refuses writes. See docs/architecture/planning-roadmap.md.
      */
     'planning.enabled': booleanStringSchema,
     /** Wholesale gate for the Plan page (/plan + nav entry points). */
@@ -408,8 +565,8 @@ export const ConfigSchema = z.object({
      * breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,
     /** Wholesale gate for the Schedule surface (`/schedule` + nav entry point):
-     * committed events, the HBPE rhythm layer, and proposed candidates. Off by
-     * default while the proposer is still being tuned. */
+     * committed events, the HBPE rhythm layer, and proposed candidates. On by
+     * default. */
     'schedule.page': booleanStringSchema,
     /** The standalone all-tags browse page (`/tags`). Restored — on by default —
      * after #1512 removed it and left no way to see every tag in the system.
@@ -441,6 +598,31 @@ export const ConfigSchema = z.object({
      * instead of the legacy standalone crons.
      */
     'smart.rotation': booleanStringSchema,
+    /**
+     * Interpersonal "ask" feature (epic #1712): questions directed at another
+     * user's memory, gated by consent. Off by default while the surface and the
+     * disclosure filter are built; the whole ask GraphQL surface stays dark
+     * (mutations report failure, queries return empty) until enabled.
+     */
+    ask: booleanStringSchema,
+    /**
+     * Lets context-prompt generation ask one number-grounded selector from
+     * ci_derived.daily_metrics. Default on; the 14-day coverage floor refuses
+     * "most days" copy for a cold series. Set ENABLE_GROUNDED_PROMPTS=false to disable.
+     */
+    'grounded.prompts': booleanStringSchema,
+    /**
+     * Lets the correlation / anomaly / suggestion engines enqueue ci.actions
+     * (and therefore Brief/feed cards). Findings still persist when this is
+     * off. Default on; Brief producer cap is 3 derived actions per local day.
+     */
+    'derivation.engines': booleanStringSchema,
+    /**
+     * After bulk `/v1` materialize, enqueue a delayed singleton that runs the
+     * owed enrichment legs even if the client never calls finish. Default on —
+     * the previous default (hope the client remembers) was the #51 hole.
+     */
+    'ingest.selfHeal': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,
@@ -496,7 +678,7 @@ if (!parsed.llm.apiKey) {
 }
 
 if (!parsed.llm.chatModel) {
-  parsed.llm.chatModel = 'gemma3:1b';
+  parsed.llm.chatModel = DEFAULT_CHAT_MODEL;
 }
 
 // GEOCODING_API_KEY takes precedence; fall back to the legacy GOOGLE_MAPS_KEY so
@@ -507,14 +689,22 @@ if (!parsed.geocoding.apiKey && process.env.GOOGLE_MAPS_KEY) {
   parsed.geocoding.apiKey = process.env.GOOGLE_MAPS_KEY;
 }
 
-// The geocoding proxy follows the Portal URL the box already uses unless an
-// explicit base URL is configured (GEOCODING_PORTAL_BASE_URL), so routing
-// geocoding via the hub host instead of Portal directly is a one-variable
-// change. Same shape as the embedding-host fallback above: the OR lives here so
-// the provider reads exactly one config value.
-if (!parsed.geocoding.portalBaseUrl) {
-  parsed.geocoding.portalBaseUrl = parsed.ciPortal.url ?? '';
+/**
+ * The geocoding proxy follows the Portal URL the box already uses unless an
+ * explicit base URL is configured (GEOCODING_PORTAL_BASE_URL), so routing
+ * geocoding via the hub host instead of Portal directly is a one-variable
+ * change. Exported as a pure function (rather than inlined as an `if`) so the
+ * fallback is unit-testable without re-parsing the whole config module under
+ * different env vars.
+ */
+export function resolveGeocodingPortalBaseUrl(configured: string, ciPortalUrl: string | undefined): string {
+  return configured || ciPortalUrl || '';
 }
+
+parsed.geocoding.portalBaseUrl = resolveGeocodingPortalBaseUrl(
+  parsed.geocoding.portalBaseUrl,
+  parsed.ciPortal.url,
+);
 
 // Warn (don't throw) on a geocoding misconfiguration: the server must still
 // boot, and the backfill simply reports a transient/denied status until it is

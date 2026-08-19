@@ -4,7 +4,7 @@ import { ServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
-import { type Item, ItemService } from '@ci/domains/memory';
+import { type Item, ItemService, PlaceService } from '@ci/domains/memory';
 import {
   ItemCreatedEvent,
   ItemRemovedEvent,
@@ -13,6 +13,7 @@ import {
   type ItemDeletedPayload,
   type ItemUpdatedPayload,
 } from '@ci/domains/memory/events';
+import { itemSearchDocument, itemWeightedTexts } from '@ci/domains/search-ingress/searchTexts';
 import { EmbeddingService } from '@ci/domains/search-ingress/services/EmbeddingService';
 import { VectorService } from '@ci/domains/search-ingress/services/VectorService';
 import { type WeightedText } from '@ci/domains/search-ingress/types';
@@ -21,6 +22,7 @@ import { type WeightedText } from '@ci/domains/search-ingress/types';
 export class ItemSearchIndexListener {
   constructor(
     private readonly itemService: ItemService,
+    private readonly placeService: PlaceService,
     private readonly embeddingGenerationService: EmbeddingGenerationService,
     private readonly embeddingService: EmbeddingService,
     private readonly vectorService: VectorService,
@@ -91,7 +93,8 @@ export class ItemSearchIndexListener {
       return;
     }
 
-    const searchDocument = this.getSearchDocument(item);
+    const placeName = await this.lastSeenPlaceName(item.lastSeenPlaceEntityId);
+    const searchDocument = this.getSearchDocument(item, placeName);
 
     if (searchDocument == null) {
       this.logger.log('Item has no search document, skipping embedding');
@@ -112,7 +115,7 @@ export class ItemSearchIndexListener {
       this.logger.log('Generated embedding for item');
     }
 
-    const searchItem = this.getSearchItem(item);
+    const searchItem = this.getSearchItem(item, placeName);
 
     if (searchItem.length === 0) {
       this.logger.log('Item has no search item, skipping vectorization');
@@ -132,92 +135,22 @@ export class ItemSearchIndexListener {
     }
   }
 
-  private getSearchItem(item: Item): WeightedText[] {
-    const parts: WeightedText[] = [];
-
-    if (item.name) {
-      parts.push({ text: item.name, weight: 10 });
+  private async lastSeenPlaceName(placeId: string | null): Promise<string | null> {
+    if (!placeId) {
+      return null;
     }
 
-    if (item.description) {
-      parts.push({ text: item.description, weight: 5 });
-    }
+    const place = await this.placeService.findById({ userId: SYSTEM_USER }, placeId);
+    const name = place?.name?.trim();
 
-    if (item.brand) {
-      parts.push({ text: item.brand, weight: 5 });
-    }
-
-    if (item.model) {
-      parts.push({ text: item.model, weight: 5 });
-    }
-
-    if (item.category) {
-      parts.push({ text: item.category, weight: 3 });
-    }
-
-    if (item.subcategory) {
-      parts.push({ text: item.subcategory, weight: 3 });
-    }
-
-    if (item.maintenanceNotes) {
-      const maintenanceNotes =
-        typeof item.maintenanceNotes === 'string'
-          ? item.maintenanceNotes
-          : JSON.stringify(item.maintenanceNotes);
-      if (maintenanceNotes.length > 0) {
-        parts.push({ text: maintenanceNotes, weight: 1 });
-      }
-    }
-
-    return parts;
+    return name && name.length > 0 ? name : null;
   }
 
-  private getSearchDocument(item: Item): string | null {
-    const parts = new Set<string>();
+  private getSearchItem(item: Item, placeName: string | null): WeightedText[] {
+    return itemWeightedTexts({ ...item, lastSeenPlaceName: placeName });
+  }
 
-    const push = (value: unknown) => {
-      if (typeof value !== 'string') {
-        return;
-      }
-
-      const normalized = value.trim();
-
-      if (normalized.length === 0) {
-        return;
-      }
-
-      parts.add(normalized);
-    };
-
-    push(item.name ?? null);
-    push(item.description ?? null);
-    push(item.category ?? null);
-    push(item.subcategory ?? null);
-    push(item.brand ?? null);
-    push(item.model ?? null);
-    push(item.maintenanceNotes ?? null);
-
-    //We don't have any good examples of metadata fields to search on, but
-    //putting this here as an example in case we ever do
-    // const metadata = (item.metadata ?? {}) as Record<string, unknown>;
-    // // We don't have a schema on properties yet. These values are an accumulated
-    // // superset of values we've indexed in various places.
-    // const candidateKeys = [];
-    //
-    // for (const key of candidateKeys) {
-    //   push(metadata[key]);
-    // }
-    //
-    // const aliases = metadata['aliases'];
-    //
-    // if (Array.isArray(aliases)) {
-    //   for (const alias of aliases) {
-    //     push(alias);
-    //   }
-    // }
-
-    const result = Array.from(parts).join(' ');
-
-    return result.length > 0 ? result : null;
+  private getSearchDocument(item: Item, placeName: string | null): string | null {
+    return itemSearchDocument({ ...item, lastSeenPlaceName: placeName });
   }
 }

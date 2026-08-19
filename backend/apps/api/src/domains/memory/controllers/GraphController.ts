@@ -8,11 +8,13 @@ import { TagService } from '@ci/domains/search-next';
 
 import { GraphNodeEntity } from '../entities/GraphNodeEntity';
 import { RelationshipEntity } from '../entities/RelationshipEntity';
-import { graphTypesToExclude } from '../graph.types';
+import { graphNodeSourceRef, graphTypesToExclude } from '../graph.types';
 import { EventService } from '../services/EventService';
 import { GraphEventService } from '../services/GraphEventService';
 import { GraphQueryService } from '../services/GraphQueryService';
 import { GraphUtilityService } from '../services/GraphUtilityService';
+import { parseStatsBound } from '../services/lifeStats';
+import { LifeStatsService } from '../services/LifeStatsService';
 import { UserContextService } from '../services/UserContextService';
 
 /** Matches a canonical uuid; tag source ids that aren't uuids can never line up
@@ -81,12 +83,32 @@ const graphDataSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
 });
+/**
+ * Cap (and default) on the nodes one graph search returns.
+ *
+ * Sized to the canvas, not to the corpus: the layout is an O(n²) force simulation, and this is
+ * the same ceiling the classic overview draws under (MAX_OVERVIEW_NODES on the client). It is
+ * deliberately NOT the explorer's search page size — List/Gallery/Map page through the whole
+ * result set via SearchResolver, and a graph cannot: a node has to be laid out and labelled to
+ * mean anything. What the graph owes the user instead is honesty about the cap, so the response
+ * reports `truncated` and the canvas says so.
+ *
+ * The corpora differ too, and must: graph search runs over `ci.entities` — the things that can
+ * carry an edge — while the explorer's search runs over the `ci_search.vectors` index, which
+ * also holds file chunks, answers and semantic vectors for records that were never promoted to
+ * graph entities. A node the graph cannot draw is not a result it can show.
+ */
+const GRAPH_SEARCH_LIMIT = 150;
+
+/** Ceiling on lexical candidates fetched before filter intersection + the cap are applied. */
+const GRAPH_SEARCH_CANDIDATE_CEILING = 500;
+
 // Graph search mirrors /data's restrictive filters so a search run with the
 // explorer's tag/event-scoped dimensions active returns the same scoped subset
 // the rest of the explorer honors. Shapes match graphDataSchema field-for-field.
 const graphSearchSchema = z.object({
   query: z.string().min(1),
-  limit: z.coerce.number().int().positive().max(50).optional(),
+  limit: z.coerce.number().int().positive().max(GRAPH_SEARCH_LIMIT).optional(),
   includeTypes: explorerTypesParam,
   tags: z.string().optional(),
   connectors: csvListParam,
@@ -126,7 +148,15 @@ const graphEdgesSchema = z.object({
   ids: z.array(z.string().regex(UUID_PATTERN)).min(1).max(SECTION_EDGE_ID_LIMIT),
 });
 
+// Resolve one graph node to the explorer record it stands for, so the canvas can hand a click
+// to the same detail drawer List/Gallery/Map use. Takes a graph `entity_id` (or a source id —
+// `resolveNode` accepts either).
+const graphSourceSchema = z.object({
+  entityId: z.string(),
+});
+
 type GetNodeDetailsDto = z.infer<typeof getNodeDetailsSchema>;
+type GraphSourceDto = z.infer<typeof graphSourceSchema>;
 type GraphDataDto = z.infer<typeof graphDataSchema>;
 type GraphDotsDto = z.infer<typeof graphDotsSchema>;
 type GraphEdgesDto = z.infer<typeof graphEdgesSchema>;
@@ -145,6 +175,14 @@ interface FilterMatch {
 
 /** How many top tags the stats endpoint reports in its "by tag" breakdown. */
 const STATS_TAG_LIMIT = 15;
+
+/** Optional window for the life series (spend / time / conversations / social).
+ * Inventory totals stay all-time. Absent or unparseable bounds mean unbounded. */
+const memoryStatsSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+type MemoryStatsDto = z.infer<typeof memoryStatsSchema>;
 
 /** Upper bound on events scanned when resolving the event-scoped filters, so a
  * broad filter can't produce an unbounded match set / response. Matches the
@@ -225,6 +263,7 @@ export class GraphController {
     private readonly userContext: UserContextService,
     private readonly tagService: TagService,
     private readonly eventService: EventService,
+    private readonly lifeStats: LifeStatsService,
   ) {}
 
   private ensureUserId(ctx: RequestContext): string {
@@ -400,21 +439,24 @@ export class GraphController {
   }
 
   /**
-   * Memory-wide totals for the stats page: timeline event count + date span,
-   * entity/relationship totals, entities per data source (each bucket tagged
-   * with the class of provenance that produced it — see
-   * {@link GraphUtilityService.getEntityCountsBySource}), and the user's
-   * {@link STATS_TAG_LIMIT} most-used tags.
+   * Memory-wide totals for the stats page plus the life series (spend, time,
+   * conversations, social). Inventory totals / tag / source breakdowns stay
+   * all-time; `from`/`to` filter only the life series.
    */
   @Get('stats')
-  async getMemoryStats(@Context() ctx: RequestContext) {
+  async getMemoryStats(
+    @Context() ctx: RequestContext,
+    @Query(new ValidationPipe(memoryStatsSchema)) query: MemoryStatsDto = {},
+  ) {
     const ownerId = this.ensureUserId(ctx);
+    const range = { from: parseStatsBound(query.from), to: parseStatsBound(query.to) };
 
-    const [relationshipStats, bySource, byTag, timeline] = await Promise.all([
+    const [relationshipStats, bySource, byTag, timeline, life] = await Promise.all([
       this.graphUtility.getRelationshipStats(ownerId),
       this.graphUtility.getEntityCountsBySource(ownerId),
       this.tagService.getTagUsageCounts(toServiceContext(ctx), STATS_TAG_LIMIT),
       this.eventService.getTimelineStats(toServiceContext(ctx)),
+      this.lifeStats.getLifeSeries(ownerId, range),
     ]);
 
     const totalEntities = relationshipStats.entitiesByType.reduce((sum, entry) => sum + entry.count, 0);
@@ -433,6 +475,14 @@ export class GraphController {
         },
         bySource,
         byTag,
+        byEntityType: relationshipStats.entitiesByType,
+        byRelationshipType: relationshipStats.relationshipsByType,
+        spend: life.spend,
+        time: life.time,
+        conversations: life.conversations,
+        social: life.social,
+        channels: life.channels,
+        insights: life.insights,
       },
     };
   }
@@ -848,11 +898,15 @@ export class GraphController {
     @Query(new ValidationPipe(graphSearchSchema)) query: GraphSearchDto,
   ) {
     const ownerId = this.ensureUserId(ctx);
-    const limit = query.limit ?? 10;
+    const limit = query.limit ?? GRAPH_SEARCH_LIMIT;
+    // One past the cap: if a candidate survives every filter beyond `limit`, the result set is
+    // larger than the canvas will draw and the client must be told rather than silently handed
+    // a slice.
+    const probeLimit = limit + 1;
 
     const trimmedQuery = query.query.trim();
     if (!trimmedQuery) {
-      return { success: true, nodes: [] };
+      return { success: true, nodes: [], links: [], limit, truncated: false };
     }
 
     // Same entity-type filter as /data: skip nodes whose graph type maps to a deselected
@@ -895,7 +949,9 @@ export class GraphController {
 
     // With a filter active the lexical candidates must survive the intersection,
     // so over-fetch (bounded) to preserve recall before slicing back to `limit`.
-    const candidateLimit = filterAllowedIds ? Math.min(50, limit * 5) : limit;
+    const candidateLimit = filterAllowedIds
+      ? Math.min(GRAPH_SEARCH_CANDIDATE_CEILING, probeLimit * 5)
+      : probeLimit;
 
     const textMatches = await this.graphQuery.searchNodesByText(ownerId, trimmedQuery, {
       limit: candidateLimit,
@@ -918,7 +974,7 @@ export class GraphController {
 
       seen.add(candidate.entity_id);
       merged.push({ node: candidate, score: null });
-      if (merged.length >= limit) {
+      if (merged.length >= probeLimit) {
         break;
       }
     }
@@ -934,17 +990,25 @@ export class GraphController {
 
       seen.add(candidate.node.entity_id);
       merged.push({ node: candidate.node, score: candidate.score });
-      if (merged.length >= limit) {
+      if (merged.length >= probeLimit) {
         break;
       }
     }
 
-    const nodeIds = merged.map((match) => match.node.entity_id);
+    // The probe told us there is more than the canvas can draw; report that instead of shipping
+    // a silent slice, then trim to the cap.
+    const truncated = merged.length > limit;
+    const capped = truncated ? merged.slice(0, limit) : merged;
+
+    const nodeIds = capped.map((match) => match.node.entity_id);
 
     if (nodeIds.length === 0) {
       return {
         success: true,
         nodes: [],
+        links: [],
+        limit,
+        truncated: false,
       };
     }
 
@@ -953,11 +1017,14 @@ export class GraphController {
       direction: 'both',
       includeInactive: false,
     });
+    // Only edges with both endpoints on screen can be drawn — a link to a node the cap dropped
+    // has nowhere to land. `truncated` above is what tells the user those exist.
+    const visibleIds = new Set(nodeIds);
     const filteredRelationships = relationships.filter(
-      (rel) => nodeIds.includes(rel.from_entity_id) && nodeIds.includes(rel.to_entity_id),
+      (rel) => visibleIds.has(rel.from_entity_id) && visibleIds.has(rel.to_entity_id),
     );
 
-    const responseNodes = merged.map((match) => ({
+    const responseNodes = capped.map((match) => ({
       id: match.node.entity_id,
       entity_id: match.node.entity_id,
       entity_type: match.node.entity_type,
@@ -979,6 +1046,8 @@ export class GraphController {
         strength: rel.strength ?? 0.5,
         properties: rel.properties ?? {},
       })),
+      limit,
+      truncated,
     };
   }
 
@@ -1003,6 +1072,34 @@ export class GraphController {
     const [linkedEntityId] = await this.graphQuery.getEntityIdsByTagSources(ownerId, [id]);
 
     return linkedEntityId ? this.graphQuery.getNode(ownerId, linkedEntityId) : null;
+  }
+
+  /**
+   * The record behind a graph node: `{ type, id }` in the `GlobalUID` vocabulary, or `null` for
+   * a node with nothing addressable behind it (Pet/Group/… , or a mirror node whose `linked_id`
+   * was never written).
+   *
+   * The canvas needs this to open a node in the shared entity drawer instead of the name-and-type
+   * stub it used to show. It is deliberately a separate, tiny call rather than two more fields on
+   * every node: the dots overview ships thousands of nodes per page and only the clicked one ever
+   * needs resolving.
+   */
+  @Get('source')
+  async getNodeSource(
+    @Context() ctx: RequestContext,
+    @Query(new ValidationPipe(graphSourceSchema)) query: GraphSourceDto,
+  ) {
+    const ownerId = this.ensureUserId(ctx);
+
+    const node = await this.resolveNode(ownerId, query.entityId);
+    if (!node) {
+      throw new NotFoundException(`Node ${query.entityId} not found`);
+    }
+
+    return {
+      success: true,
+      source: graphNodeSourceRef(node),
+    };
   }
 
   @Get('node')

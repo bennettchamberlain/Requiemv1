@@ -92,14 +92,20 @@ const DAYS = 24 * HOURS;
  * Three tiers, and each stage is in one of them because of what it does rather
  * than because of what tier it was convenient to put it in:
  *
- *  - **HOURLY, unwindowed** (`index.embed` alone). Search freshness is the only
- *    thing on this appliance a user notices within the hour — an entity that is
- *    not embedded is an entity that cannot be found — so it also gets
- *    `trigger: 'onArrival'` and is not confined to the night.
- *  - **NIGHTLY, windowed** (everything local: the media probe, both person-link
- *    legs, all three `clean.*`, both `promote.*`, and `enrich.estimate_location`).
- *    None of it is user-visible within a day and none of it costs money, so it
- *    goes where it disturbs nobody.
+ *  - **HOURLY, unwindowed** (every `index.*` leg, and every `promote.edge_*`
+ *    leg). Two different reasons for one tier. Search freshness is the thing on
+ *    this appliance a user notices within the hour — an entity that is not
+ *    embedded is an entity that cannot be found — so `index.embed` also gets
+ *    `trigger: 'onArrival'` and is not confined to the night. The edge
+ *    projections are here because their input arrives at IMPORT rate rather
+ *    than at their producers' rate, and a day-long gate over a bulk-written
+ *    column is not a slow graph, it is an empty one; see the block above
+ *    `PROMOTE_EDGE_COMMUNICATION`.
+ *  - **NIGHTLY, windowed** (the rest of the local work: the media probe, both
+ *    person-link legs, all three `clean.*`, `promote.place` / `promote.object` /
+ *    `promote.observation`, and `enrich.estimate_location`). None of it is
+ *    user-visible within a day and none of it costs money, so it goes where it
+ *    disturbs nobody.
  *  - **WEEKLY, windowed, CAPPED** (`enrich.geocode`, `enrich.position_reverse`).
  *    The two that egress to a paid provider.
  *
@@ -155,6 +161,113 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
   [STAGE_IDS.INDEX_EMBED]: {
     trigger: 'onArrival',
     cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+
+  /**
+   * The other dense-embed types, at content's cadence (search freshness is
+   * user-visible for all of them) but `scheduled` rather than `onArrival`:
+   * their live creates are still indexed immediately by the search-index
+   * listeners, and `StageArrivalListener` subscribes to no event for them yet —
+   * declaring `onArrival` here would promise a fast path that does not exist.
+   * The post-import kick reaches them directly through `startSweep`, so bulk
+   * loads do not wait for the hourly backstop either.
+   */
+  [STAGE_IDS.INDEX_EMBED_COMMUNICATION]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_EVENT]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_ITEM]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_PERSON]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_FILE]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_EMBED_BROWSER_ACTIVITY]: {
+    trigger: 'scheduled',
+    cost: 'contended',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+
+  /**
+   * The tsvector family: pure local Postgres work (the `setweight` expression
+   * is computed by the database), so `local`, unwindowed, at the same hourly
+   * cadence — keyword search should not lag semantic search.
+   */
+  [STAGE_IDS.INDEX_VECTOR]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_COMMUNICATION]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_EVENT]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_ITEM]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_PERSON]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_FILE]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
+  },
+  [STAGE_IDS.INDEX_VECTOR_BROWSER_ACTIVITY]: {
+    trigger: 'scheduled',
+    cost: 'local',
     window: 'any',
     minInterval: 1 * HOURS,
     maxStaleness: 6 * HOURS,
@@ -292,6 +405,33 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
     maxStaleness: 3 * DAYS,
   },
 
+  /**
+   * NIGHTLY. The same promotion over `ci.position` — named GPS fixes into
+   * places, and `ci.position.location_entity_id`.
+   *
+   * Same tier and same cadence as `promote.place`, for the same reasons: it
+   * reads `ci.geocode_cache` BY PRIMARY KEY, so no provider call and no bill,
+   * and `STAGE_DEPENDENCIES` (not the cadence) is what keeps it behind
+   * `enrich.position_reverse`, which writes both of its inputs.
+   *
+   * NO `perRunCap`, deliberately, and it is worth being explicit because the
+   * producer over this same table has one. `enrich.position_reverse` is capped
+   * because every row it touches is a BILLED provider call; this stage's cost
+   * is a Postgres round trip per DISTINCT venue in a slice, and the candidate
+   * set is only the NAMED fixes (2,815 of 65,115 on the legacy corpus). What
+   * bounds a sweep here is `MAX_SLICES_PER_SWEEP`, the same thing that bounds
+   * `promote.place`. A cap would be a second, weaker copy of that number, and
+   * on a first import it would be the reason the map fills over weeks instead
+   * of overnight.
+   */
+  [STAGE_IDS.PROMOTE_PLACE_POSITION]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'enrichment',
+    minInterval: 1 * DAYS,
+    maxStaleness: 3 * DAYS,
+  },
+
   /** NIGHTLY. Purchases into `ci.inventory`. Reads nothing another stage produces. */
   [STAGE_IDS.PROMOTE_OBJECT]: {
     trigger: 'scheduled',
@@ -302,94 +442,155 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
   },
 
   /**
-   * NIGHTLY, all legs. One INSERT…SELECT per matrix rule per slice; Postgres
-   * only, no provider, no bill.
+   * NIGHTLY. `capture.scan` detections into `ci.object_observations`.
    *
-   * Same tier as their producers (the person-link legs and `promote.place`),
-   * deliberately: edges are a pure projection of the columns those stages
-   * fill, so a consumer on a slower clock would leave freshly-linked
-   * communications invisible to the graph for days, and a faster clock buys
-   * nothing before the producers run. Ordering within the night is
-   * `STAGE_DEPENDENCIES`' business, not a second cadence.
+   * Same tier as `promote.object` and for the same reasons: Postgres only, no
+   * provider, no bill. Ordered behind `promote.place` by `STAGE_DEPENDENCIES`
+   * because it reads `location_entity_id` when something has filled it — not
+   * because a scan needs it, since a scan resolves its own place from the geo
+   * block in its payload.
+   *
+   * Nightly rather than `onArrival` deliberately: a room scan is not something
+   * a user watches a list for the way they watch search, and the sightings it
+   * produces are input to a review queue, not to anything time-critical.
    */
-  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: {
+  [STAGE_IDS.PROMOTE_OBSERVATION]: {
     trigger: 'scheduled',
     cost: 'local',
     window: 'enrichment',
     minInterval: 1 * DAYS,
     maxStaleness: 3 * DAYS,
+  },
+
+  /**
+   * HOURLY, AT ANY HOUR, all legs. One INSERT…SELECT per matrix rule per
+   * slice; Postgres only, no provider, no Ollama, no bill.
+   *
+   * ── Why these are NOT on the nightly, windowed tier ────────────────────────
+   *
+   * They were, and it was the single reason the graph view was a dust cloud.
+   * The argument for putting them there was BATCH AFFINITY WITH THEIR
+   * PRODUCERS — edges are a pure projection of the columns `enrich.person_link`
+   * and `promote.place` fill, so "a faster clock buys nothing before the
+   * producers run". That argument has one false premise: the linkage columns
+   * have a SECOND writer, and it is the one that matters at scale. A bulk
+   * import writes `communications.from_entity_id` / `to_entity_ids` at ingest
+   * (`/v1` push, `GraphIngestService`), for the whole corpus, in minutes — with
+   * no linker involved at all. Measured on the QA corpus: 598,146 of 767,020
+   * communications carried a resolved sender the moment the import finished,
+   * and 525,706 carried recipients. Every one of those was a candidate for this
+   * projection, immediately.
+   *
+   * What the nightly tier did with that: `minInterval: 1 * DAYS` is measured
+   * from the sweep's START, and the last sweep started two minutes BEFORE the
+   * push began. So the leg was "already run today" over 2,279 rows, went not-due
+   * for twenty-four hours, and 1.5M derivable edges — 78% of the corpus's
+   * entities — stayed invisible to a graph traversal that reads no other table.
+   * That is not a slow convergence, it is a coin flip on when the sweep clock
+   * happened to land relative to the import, and it comes up wrong every time an
+   * import lasts longer than the gap between two sweeps.
+   *
+   * ── Why hourly and unwindowed is SAFE, not merely faster ───────────────────
+   *
+   * The window bounds SPEND and Ollama contention (see this file's header).
+   * These legs have neither: `cost: 'local'`, ten INSERT…SELECTs against
+   * indexed columns, `ON CONFLICT DO NOTHING`, in the same resource class as
+   * `promote.place`. The `index.*` legs — which DO contend for Ollama — already
+   * sit on exactly this tier, and they drained 777,340 communications in a day
+   * on the corpus that defeated this one.
+   *
+   * The premature-`done` hazard the nightly tier was also guarding against does
+   * not exist here, and not by luck: every leg's `StageSource.predicate`
+   * requires its linkage column to be POPULATED, so an unlinked row is not a
+   * candidate and cannot be marked `done` by a sweep that outruns its producer.
+   * It becomes a candidate — never-run, immediately due — the moment the linker
+   * fills the column. Ordering against the producers stays where it belongs, in
+   * `STAGE_DEPENDENCIES`, which holds a leg back on any tick where its producer
+   * is due WITH candidates; outside the enrichment window the nightly producers
+   * are not due, so the projection runs on its own clock and the two never
+   * fight.
+   *
+   * `maxStaleness` of 6 h for the same reason `index.embed` has it: a stage this
+   * cheap to start has no business being a day behind the rows it projects.
+   */
+  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_EVENT]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_CONTENT]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_RECEIPT]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_POSITION]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_DEVICE]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_FILE]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   [STAGE_IDS.PROMOTE_EDGE_PLACE]: {
     trigger: 'scheduled',
     cost: 'local',
-    window: 'enrichment',
-    minInterval: 1 * DAYS,
-    maxStaleness: 3 * DAYS,
+    window: 'any',
+    minInterval: 1 * HOURS,
+    maxStaleness: 6 * HOURS,
   },
 
   /**
@@ -542,7 +743,14 @@ export type DuenessReason =
   | 'max_staleness_exceeded'
   /** Past `minInterval`, inside the window. The ordinary due. */
   | 'interval_elapsed'
-  /** Swept more recently than `minInterval`. */
+  /**
+   * At least one row of this leg is a FAILED retry whose own backoff has
+   * already elapsed, so it is due even though the LEG's `minInterval` has not.
+   * The window still applies — see {@link StageDueness.overdue} for why this is
+   * not folded into it.
+   */
+  | 'retry_due'
+  /** Swept more recently than `minInterval`, and nothing of it is a due retry. */
   | 'too_soon'
   /** Due by interval, but the window is shut and it is not yet overdue. */
   | 'outside_window'
@@ -563,6 +771,15 @@ export interface StageDueness {
    * definition). Two consequences for the tick: the leg ignores its window, and
    * it should be preferred when `MAX_SWEEPS_PER_TICK` binds — an overdue leg has
    * already waited longer than it was ever meant to.
+   *
+   * `retry_due` is deliberately NOT this. It bypasses `minInterval` the way
+   * `overdue` bypasses the window, but it must not bypass the window too: a
+   * failed retry on a metered stage still spends against the same paid
+   * provider as a fresh sweep, and the window is what bounds WHEN this
+   * appliance is willing to spend anything, not just how often. Folding
+   * `retry_due` into `overdue` would let a provider outage outside the window
+   * turn into a metered call the moment it recovers, which is exactly the
+   * unbounded spend `window: 'enrichment'` exists to prevent.
    */
   overdue: boolean;
 
@@ -624,13 +841,32 @@ export interface StageDueness {
  *
  * ── The order of the checks is the policy ──────────────────────────────────
  *
- * `manual` → `maxStaleness` → `minInterval` → `window`. Staleness is tested
- * BEFORE the window because it is the window's override; testing it after would
- * make an appliance that is asleep every night permanently un-enriched, which is
- * the failure this whole rebuild exists to delete. `minInterval` is tested
- * before the window because a leg swept an hour ago is not due at any hour, and
- * reporting `outside_window` for it would send a reader looking at the clock
- * instead of at the interval.
+ * `manual` → `maxStaleness` → `minInterval` → `retryDue` → `window`. Staleness
+ * is tested BEFORE the window because it is the window's override; testing it
+ * after would make an appliance that is asleep every night permanently
+ * un-enriched, which is the failure this whole rebuild exists to delete.
+ * `minInterval` is tested before the window because a leg swept an hour ago is
+ * not due at any hour, and reporting `outside_window` for it would send a
+ * reader looking at the clock instead of at the interval.
+ *
+ * ── Why `hasOverdueRetry` is a THIRD input, next to the clock and the window ─
+ *
+ * `ci.pipeline_state.next_attempt_at` already answers "is this ONE failed row
+ * due for retry?" (`RETRY_BACKOFF_BASE_SECONDS`, doubling, capped at
+ * `RETRY_BACKOFF_MAX_SECONDS` — minutes to a few hours). Before this input
+ * existed, that answer was advisory only: a row past its own backoff still sat
+ * untouched until the LEG's `minInterval` elapsed, because a sweep can only be
+ * dispatched by a fresh keyset cursor and the keyset only resets when a new
+ * sweep starts. For a 1-hour or 1-day stage that is a rounding error. For the
+ * two metered stages — `minInterval: 7 * DAYS` — it meant a transient
+ * `provider_unavailable` blip stranded every row it touched for up to a week,
+ * with `attempts` frozen at 1 the entire time: the backoff a stage's own
+ * failure declared had no way to be honoured. `hasOverdueRetry` closes that —
+ * a leg with a due retry is due NOW regardless of `minInterval`, on the
+ * reasoning that retrying a handful of already-budgeted-for rows is not the
+ * unbounded spend `minInterval` exists to prevent (see {@link
+ * StageDueness.overdue} for why it still respects the window, unlike
+ * `maxStaleness`).
  */
 export function stageDueness(input: {
   stageId: string;
@@ -638,10 +874,18 @@ export function stageDueness(input: {
   lastStartedAt: Date | null;
   /** `WindowStatus.open` from `EnrichmentWindowService`. */
   windowOpen: boolean;
+  /**
+   * At least one `ci.pipeline_state` row for this leg is `status = 'failed'`
+   * with `next_attempt_at <= now()` — `PipelineStateService.hasOverdueRetry`'s
+   * answer, read off `pipeline_state_retry_idx`. Defaults to `false` so a
+   * caller that has not wired the extra read gets the pre-existing behaviour
+   * rather than a silent, permanent bypass of `minInterval`.
+   */
+  hasOverdueRetry?: boolean;
   /** Defaults to now. Injected by tests, and by anything asking "what happens at 03:00?". */
   now?: Date;
 }): StageDueness {
-  const { stageId, lastStartedAt, windowOpen } = input;
+  const { stageId, lastStartedAt, windowOpen, hasOverdueRetry = false } = input;
   const now = input.now ?? new Date();
 
   const schedule = stageSchedule(stageId);
@@ -678,7 +922,18 @@ export function stageDueness(input: {
   const eligibleAt = new Date(lastStartedAt.getTime() + schedule.minInterval * 1000);
 
   if (staleness < schedule.minInterval) {
-    return decide(false, 'too_soon', false, eligibleAt);
+    if (!hasOverdueRetry) {
+      return decide(false, 'too_soon', false, eligibleAt);
+    }
+
+    // A due retry outranks `minInterval` but not the window — a metered stage
+    // still may not spend outside it, so a retry recovering while the window
+    // is shut waits for the window exactly as a fresh sweep would.
+    if (schedule.window === 'enrichment' && !windowOpen) {
+      return decide(false, 'outside_window', false, eligibleAt);
+    }
+
+    return decide(true, 'retry_due', false, null);
   }
 
   if (schedule.window === 'enrichment' && !windowOpen) {

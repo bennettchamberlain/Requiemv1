@@ -5,7 +5,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
-import { RelationshipService, RelationshipType } from '@ci/domains/graph';
+import { RelationshipService, RelationshipType, EntityIdentifierService } from '@ci/domains/graph';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { ConceptService, PersonService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
@@ -56,7 +56,7 @@ const FOCUS_AREAS: Record<string, FocusAreaMetadata> = {
     // (captureFocusAreas below) — a stated interest, nothing measured. Copy
     // implying the app tracks workouts or monitors progress would overstate the
     // product and jeopardise the Play "no health features" certification; see
-    // frontend/apps/mobile/GOOGLE_HEALTH_DECLARATION.md.
+    // frontend/apps/ios/GOOGLE_HEALTH_DECLARATION.md (Android copy in apps/android).
     description: 'Organize workout notes, routines, and goals so your training context stays in one place',
   },
   nutrition: {
@@ -115,6 +115,7 @@ export class OnboardingService {
     private readonly conceptService: ConceptService,
     private readonly personService: PersonService,
     private readonly relationshipService: RelationshipService,
+    private readonly entityIdentifierService: EntityIdentifierService,
     private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
   ) {
@@ -226,13 +227,14 @@ export class OnboardingService {
       throw new Error('User could not be retrieved');
     }
 
-    const id = uuidv7();
     const displayName = input?.name?.trim() || user.name || user.email;
     const [firstName, ...restName] = displayName.trim().split(/\s+/).filter(Boolean);
     const lastName = restName.join(' ');
 
     const properties: Record<string, unknown> = {
       email: user.email,
+      emails: user.email ? [user.email] : [],
+      names: [displayName].filter(Boolean),
       is_self: true,
     };
 
@@ -260,6 +262,32 @@ export class OnboardingService {
       };
     }
 
+    // Prefer the existing users.entity_id pointer (e.g. from ensureSelfEntity)
+    // over inserting a second is_self Person.
+    if (user.entityId) {
+      const existing = await this.personService.findById(context, user.entityId);
+      if (existing) {
+        await this.personService.patch(context, existing.id, {
+          name: displayName,
+          propertiesPatch: {
+            ...(existing.properties ?? {}),
+            ...properties,
+          },
+        });
+        await this.claimSelfIdentifiers(context.userId!, existing.id, displayName, user.email);
+        await this.entityIdentifierService.repointToEntity(
+          context.userId!,
+          existing.id,
+          'email',
+          user.email ?? '',
+          'self',
+        );
+
+        return existing;
+      }
+    }
+
+    const id = uuidv7();
     const person = await this.personService.create(context, {
       id,
       name: displayName,
@@ -271,7 +299,30 @@ export class OnboardingService {
       entityId: person.id,
     });
 
+    await this.claimSelfIdentifiers(context.userId!, person.id, displayName, user.email);
+    if (user.email) {
+      await this.entityIdentifierService.repointToEntity(
+        context.userId!,
+        person.id,
+        'email',
+        user.email,
+        'self',
+      );
+    }
+
     return person;
+  }
+
+  private async claimSelfIdentifiers(
+    ownerUserId: string,
+    selfEntityId: string,
+    displayName: string,
+    email: string | null | undefined,
+  ): Promise<void> {
+    await this.entityIdentifierService.claimForSelf(ownerUserId, selfEntityId, {
+      emails: email ? [email] : [],
+      names: displayName ? [displayName] : [],
+    });
   }
 
   private async applySelfEntityPreferences(

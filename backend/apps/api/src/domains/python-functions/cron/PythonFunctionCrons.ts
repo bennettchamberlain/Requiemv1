@@ -5,9 +5,13 @@ import { DataSource } from 'typeorm';
 
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import { serves } from '@ci/common/roles';
 
 import { PythonFunctionService } from '../services/PythonFunctionService';
 import type { PythonFunctionTarget } from '../types';
+
+/** Window the dossier prompt reads back over. Mirrors the Python default. */
+const DOSSIER_LOOKBACK_DAYS = 30;
 
 /**
  * The scheduler half of the Temporal replacement. These crons replicate the
@@ -71,6 +75,12 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
 
   /** Sweep cold users into bootstrap shortly after the API comes up. */
   onApplicationBootstrap(): void {
+    // Web-role work: the delayed HBPE bootstrap sweep fanned out twice is
+    // duplicate jobs, not resilience.
+    if (!serves('web')) {
+      return;
+    }
+
     // Fire-and-forget: pg-boss may still be initialising its queues during
     // bootstrap, and a failed sweep is retried by the daily cron anyway.
     setTimeout(() => {
@@ -80,7 +90,7 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     }, 30_000);
   }
 
-  @Cron('0 5 * * * *')
+  @Cron('0 5 * * * *', { name: 'PythonFunctionCrons.hourlySummaries' })
   async hourlySummaries(): Promise<void> {
     if (await this.cededToSmartRotation('hourly_summary')) {
       return;
@@ -89,31 +99,40 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     await this.fanOut('summary', 'hourly_summary', hourKey());
   }
 
-  @Cron('0 10 0 * * *')
+  @Cron('0 10 0 * * *', { name: 'PythonFunctionCrons.dailySummaries' })
   async dailySummaries(): Promise<void> {
     await this.fanOut('summary', 'daily_summary', dayKey(), { reference_time: new Date().toISOString() });
   }
 
-  @Cron('0 15 0 * * 1')
+  @Cron('0 15 0 * * 1', { name: 'PythonFunctionCrons.weeklySummaries' })
   async weeklySummaries(): Promise<void> {
     await this.fanOut('summary', 'weekly_summary', dayKey(), { reference_time: new Date().toISOString() });
   }
 
-  @Cron('0 20 0 1 * *')
+  @Cron('0 20 0 1 * *', { name: 'PythonFunctionCrons.monthlySummaries' })
   async monthlySummaries(): Promise<void> {
     await this.fanOut('summary', 'monthly_summary', dayKey(), { reference_time: new Date().toISOString() });
   }
 
-  @Cron('0 12 * * * *')
+  @Cron('0 12 * * * *', { name: 'PythonFunctionCrons.dossierRefresh' })
   async dossierRefresh(): Promise<void> {
     if (await this.cededToSmartRotation('dossier_refresh')) {
       return;
     }
 
-    await this.fanOut('summary', 'dossier_refresh', hourKey(), { lookback_days: 30 });
+    // Narrower audience than every onboarded user: dossier_refresh reads the
+    // last `DOSSIER_LOOKBACK_DAYS` of hourly/daily summaries and has nothing
+    // to build without them. Hourly summaries run at :05 and this at :12, so
+    // an appliance in a quiet hour used to enqueue a job per user per hour
+    // that could only end in "No summaries found for dossier generation".
+    // The Python side now reports that as a skip rather than raising, so this
+    // gate is an optimisation, not the fix — it stops the pointless dispatch.
+    await this.fanOut('summary', 'dossier_refresh', hourKey(), { lookback_days: DOSSIER_LOOKBACK_DAYS }, () =>
+      this.listUsersWithDossierInput(DOSSIER_LOOKBACK_DAYS),
+    );
   }
 
-  @Cron('0 30 */3 * * *')
+  @Cron('0 30 */3 * * *', { name: 'PythonFunctionCrons.insights' })
   async insights(): Promise<void> {
     if (await this.cededToSmartRotation('insights_generation')) {
       return;
@@ -122,17 +141,17 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     await this.fanOut('summary', 'insights_generation', hourKey(), { lookback_hours: 72 });
   }
 
-  @Cron('0 45 * * * *')
+  @Cron('0 45 * * * *', { name: 'PythonFunctionCrons.actions' })
   async actions(): Promise<void> {
     await this.fanOut('summary', 'actions_generation', hourKey(), { lookback_days: 7 });
   }
 
-  @Cron('0 30 2 * * *')
+  @Cron('0 30 2 * * *', { name: 'PythonFunctionCrons.hbpeNightly' })
   async hbpeNightly(): Promise<void> {
     await this.fanOut('hbpe', 'nightly', dayKey());
   }
 
-  @Cron('0 0 3 * * *')
+  @Cron('0 0 3 * * *', { name: 'PythonFunctionCrons.hbpeBootstrapSweep' })
   async hbpeBootstrapSweep(): Promise<void> {
     await this.ensureHbpeBootstrap();
   }
@@ -146,8 +165,12 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     functionName: string,
     windowKey: string,
     args: Record<string, unknown> = {},
+    // Defaults to every onboarded user. A function with a hard input
+    // precondition passes a narrower audience so the cron does not enqueue
+    // work that can only no-op (see dossierRefresh).
+    audience: () => Promise<string[]> = () => this.listOnboardedUserIds(),
   ): Promise<void> {
-    const userIds = await this.listOnboardedUserIds();
+    const userIds = await audience();
 
     if (userIds.length === 0) {
       return;
@@ -185,6 +208,35 @@ export class PythonFunctionCrons implements OnApplicationBootstrap {
     type Row = { id: string };
 
     const rows = (await this.dataSource.query('SELECT id FROM ci.users WHERE onboarded = true')) as Row[];
+
+    return rows.map((row) => String(row.id));
+  }
+
+  /**
+   * Onboarded users with at least one summary `dossier_refresh` could read.
+   *
+   * Deliberately a superset of what the function actually consumes (it takes
+   * daily summaries over the whole lookback but hourly ones only from the
+   * last 24h): the gate must never withhold a user the function would have
+   * had input for. Over-selecting costs one dispatch that returns skipped;
+   * under-selecting would silently stop dossiers from ever refreshing.
+   */
+  private async listUsersWithDossierInput(lookbackDays: number): Promise<string[]> {
+    type Row = { id: string };
+
+    const rows = (await this.dataSource.query(
+      `SELECT u.id
+         FROM ci.users u
+        WHERE u.onboarded = true
+          AND EXISTS (
+                SELECT 1
+                  FROM ci.summaries s
+                 WHERE s.user_id = u.id
+                   AND s.period_type IN ('hourly', 'daily')
+                   AND s.period_start >= now() - make_interval(days => $1)
+              )`,
+      [lookbackDays],
+    )) as Row[];
 
     return rows.map((row) => String(row.id));
   }

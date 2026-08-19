@@ -116,7 +116,7 @@ type RotateDto = z.infer<typeof rotateSchema>;
 
 /**
  * App-connect endpoints. CI-Hub brokers connecting an agent app (OpenClaw /
- * Hermes / Import-Tools) to the user's Companion Memory:
+ * Hermes) to the user's Companion Memory:
  *
  *   GET  /api/connect          → consent (signing the user in first if needed)
  *   POST /api/connect/approve  → mint a scoped key, hand back a one-time code

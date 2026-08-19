@@ -45,13 +45,16 @@ export default defineConfig({
   },
   projects: [
     {
+      // onboarding.spec.ts joins auth.spec.ts here: it signs up a brand-new
+      // account, which needs the same logged-out starting state (an
+      // already-authenticated session would just bounce /signup).
       name: 'auth',
-      testMatch: /auth\.spec\.ts/,
+      testMatch: /(auth|onboarding)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], storageState: undefined },
     },
     {
       name: 'chromium',
-      testIgnore: /(auth|mobile)\.spec\.ts/,
+      testIgnore: /(auth|mobile|onboarding)\.spec\.ts/,
       dependencies: ['auth'],
       use: { ...devices['Desktop Chrome'] },
     },

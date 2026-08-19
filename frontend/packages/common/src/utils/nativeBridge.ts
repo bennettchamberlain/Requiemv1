@@ -3,8 +3,8 @@
  * runs inside the native shell. Plugins are reached through the runtime
  * `window.Capacitor.Plugins` bridge that Capacitor injects — deliberately NOT via
  * `@capacitor/*` imports — so the web bundle never pulls in native dependencies.
- * The native shell (frontend/apps/mobile) declares the actual plugin packages so
- * they are present at runtime.
+ * The native shells (`frontend/apps/ios` and `frontend/apps/android`) declare the
+ * actual plugin packages so they are present at runtime.
  *
  * Every function degrades gracefully on web (no `window.Capacitor`): secure storage
  * falls back to `localStorage`, and external links fall back to a normal navigation.
@@ -45,10 +45,12 @@ interface LocalHubPlugin {
   secureGet(options: { key: string }): Promise<{ value: string | null }>;
   secureSet(options: { key: string; value: string }): Promise<void>;
   secureRemove(options: { key: string }): Promise<void>;
+  openUrl(options: { url: string }): Promise<void>;
 }
 
 interface BrowserPlugin {
   open(options: { url: string }): Promise<void>;
+  close(): Promise<void>;
 }
 
 interface PluginListenerHandle {
@@ -68,6 +70,7 @@ interface AppPlugin {
     eventName: 'appUrlOpen',
     listener: (event: { url?: string }) => void,
   ): Promise<PluginListenerHandle>;
+  getLaunchUrl(): Promise<{ url?: string } | undefined>;
   exitApp(): Promise<void>;
 }
 
@@ -308,10 +311,21 @@ export async function secureStorageRemove(key: string): Promise<void> {
 
 /**
  * Open a URL outside the app's webview: the system browser on native (so OAuth/OIDC
- * runs in a real browser, not the in-app webview), or a normal navigation on web.
+ * runs in Safari / Chrome, not the in-app webview), or a normal navigation on web.
+ *
+ * iOS prefers LocalHub.openUrl (`UIApplication.shared.open`) over Capacitor Browser.
+ * Browser presents SFSafariViewController from the Capacitor bridge VC, which never
+ * appears under our UIScene SceneDelegate — Sign in then spins with no Safari window.
  */
 export async function openExternalUrl(url: string): Promise<void> {
+  const hub = plugins()?.LocalHub;
   const browser = plugins()?.Browser;
+
+  if (isNativePlatform() && hub?.openUrl) {
+    await hub.openUrl({ url });
+
+    return;
+  }
 
   if (isNativePlatform() && browser) {
     await browser.open({ url });
@@ -321,6 +335,39 @@ export async function openExternalUrl(url: string): Promise<void> {
 
   if (typeof window !== 'undefined') {
     window.location.assign(url);
+  }
+}
+
+/** Dismiss the in-app browser after an OIDC redirect. No-op on web or if already closed. */
+export async function closeBrowser(): Promise<void> {
+  const browser = plugins()?.Browser;
+
+  if (isNativePlatform() && browser?.close) {
+    try {
+      await browser.close();
+    } catch {
+      // Already dismissed — ignore.
+    }
+  }
+}
+
+/**
+ * URL that launched the app (custom-scheme cold start). Used to finish Portal PKCE
+ * after iOS killed the webview while Safari was on the Portal. Null on web.
+ */
+export async function getLaunchUrl(): Promise<string | null> {
+  const app = plugins()?.App;
+
+  if (!isNativePlatform() || !app?.getLaunchUrl) {
+    return null;
+  }
+
+  try {
+    const result = await app.getLaunchUrl();
+
+    return result?.url ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -409,10 +456,9 @@ export async function hideSplashScreen(): Promise<void> {
 }
 
 /**
- * Apply the native status-bar appearance: glyph `style` ('DARK' = dark glyphs for a
- * light background, 'LIGHT' = light glyphs for a dark background) and, on Android, the
- * bar `backgroundColor`. The capacitor.config.ts StatusBar block sets the launch
- * default; call this to react to theme changes at runtime. No-op on web.
+ * Apply the native status-bar appearance. Capacitor's names are backwards from English:
+ * `'DARK'` is *light* glyphs for a dark background, `'LIGHT'` is *dark* glyphs for a
+ * light background. `backgroundColor` is Android-only.
  */
 export async function setStatusBarStyle(style: 'DARK' | 'LIGHT', backgroundColor?: string): Promise<void> {
   const statusBar = plugins()?.StatusBar;

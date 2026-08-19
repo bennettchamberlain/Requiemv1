@@ -36,7 +36,6 @@ import {
   usePreventOverscroll,
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
-import FeedPage from '@/pages/FeedPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
@@ -44,12 +43,12 @@ import SplashPage from '@/pages/SplashPage';
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
 const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
-const ConnectPage = lazy(() => import('@/pages/ConnectPage'));
 const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
-const ConnectionsPage = lazy(() => import('@/pages/ConnectionsPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
+const ForecastPage = lazy(() => import('@/pages/ForecastPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
+const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
 const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
@@ -64,15 +63,17 @@ const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
-const SchedulePage = lazy(() => import('@/pages/SchedulePage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const FilesPage = lazy(() => import('@/pages/FilesPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
+const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
+// Pulls SchedulePage and FeedPage in with it — neither is routed on its own.
+const TodayPage = lazy(() => import('@/pages/TodayPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
@@ -80,7 +81,34 @@ const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 function RedirectInsightsSummary() {
   const { id } = useParams<{ id: string }>();
 
-  return <Navigate to={`/feed/summaries/${id ?? ''}`} replace />;
+  return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+/**
+ * The brief now lives inside Today, so both of its old addresses land there.
+ *
+ * Aimed at /today rather than chained through /brief, which would cost a second
+ * redirect on every old link. The action id is carried across because the
+ * brief's cards deep-link by it — dropping it would open the page but not the
+ * card someone was sent.
+ */
+function RedirectToToday() {
+  const { id } = useParams<{ id?: string }>();
+
+  return <Navigate to={id ? `/today/${id}` : '/today'} replace />;
+}
+
+function RedirectFeedSummaryToBrief() {
+  const { id } = useParams<{ id: string }>();
+
+  return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+/** Events explorer moved to /memory/events; keep query (view=, filters) intact. */
+function RedirectMemoryToEvents() {
+  const { search } = useLocation();
+
+  return <Navigate to={{ pathname: '/memory/events', search }} replace />;
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -127,11 +155,13 @@ function AppRoutes() {
   useLocationTracking();
 
   // On the native app the API origin must be configured before anything else can
-  // load. If we're running natively with no server set, route to the setup screen.
-  // Inert on web (isNativePlatform() is false there).
+  // load. Route to `/device-connect` (Portal picker). `/server` is Advanced URL
+  // entry. `/connect` is Sources and must not be used here.
   useEffect(() => {
-    if (isNativePlatform() && !getApiBaseUrl() && location.pathname !== '/server') {
-      navigate('/server', { replace: true });
+    const pairing = location.pathname === '/device-connect' || location.pathname === '/server';
+
+    if (isNativePlatform() && !getApiBaseUrl() && !pairing) {
+      navigate('/device-connect', { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -166,6 +196,7 @@ function AppRoutes() {
         />
 
         <Route element={<CenteredLayout />}>
+          <Route path="/device-connect" element={<DeviceConnectPage />} />
           <Route path="/server" element={<ServerSettingsPage />} />
 
           <Route
@@ -198,13 +229,40 @@ function AppRoutes() {
         >
           {/* Intelligence */}
           <Route
-            path="/feed/:id?"
+            path="/brief/summaries/:id"
             element={
               <ProtectedRoute>
-                <FeedPage />
+                <SummaryDetailPage />
               </ProtectedRoute>
             }
           />
+
+          <Route
+            path="/today/:id?"
+            element={
+              <ProtectedRoute>
+                <TodayPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/forecast"
+            element={
+              <ProtectedRoute>
+                <ForecastPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Both former destinations now resolve to the page that absorbed
+              them. /brief/summaries/:id is declared above and is more specific,
+              so it still reaches the summary detail page. */}
+          <Route path="/brief/:id?" element={<RedirectToToday />} />
+          <Route path="/schedule" element={<RedirectToToday />} />
+
+          <Route path="/feed/summaries/:id" element={<RedirectFeedSummaryToBrief />} />
+          <Route path="/feed/:id?" element={<RedirectToToday />} />
 
           <Route
             path="/search"
@@ -217,6 +275,14 @@ function AppRoutes() {
 
           <Route
             path="/memory"
+            element={
+              <ProtectedRoute>
+                <RedirectMemoryToEvents />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/memory/events"
             element={
               <ProtectedRoute>
                 <MemoryPage />
@@ -241,8 +307,14 @@ function AppRoutes() {
           {isFeatureEnabled('files.page') && (
             <>
               <Route path="/files" element={<Navigate to="/memory/content" replace />} />
+              {/*
+                The optional :fileId gives an individual file a shareable URL and
+                makes Back close the viewer. It is one route rather than two so
+                FilesPage stays mounted when the param changes — a second route
+                would remount it and throw away every page the user scrolled in.
+              */}
               <Route
-                path="/memory/content"
+                path="/memory/content/:fileId?"
                 element={
                   <ProtectedRoute>
                     <FilesPage />
@@ -252,16 +324,7 @@ function AppRoutes() {
             </>
           )}
 
-          <Route
-            path="/feed/summaries/:id"
-            element={
-              <ProtectedRoute>
-                <SummaryDetailPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route path="/insights" element={<Navigate to="/feed" replace />} />
+          <Route path="/insights" element={<Navigate to="/today" replace />} />
           <Route
             path="/insights/:id"
             element={
@@ -273,9 +336,15 @@ function AppRoutes() {
 
           {isFeatureEnabled('insights.page') && (
             <>
-              <Route path="/prompts" element={<Navigate to="/memory/questions" replace />} />
+              {/*
+                "Questions" is what this page used to be called; it is
+                "Reflections" in the UI now. Both old paths stay as redirects so
+                bookmarks, docs and any link still in the wild keep working.
+              */}
+              <Route path="/prompts" element={<Navigate to="/memory/reflections" replace />} />
+              <Route path="/memory/questions" element={<Navigate to="/memory/reflections" replace />} />
               <Route
-                path="/memory/questions"
+                path="/memory/reflections"
                 element={
                   <ProtectedRoute>
                     <PromptsPage />
@@ -310,18 +379,7 @@ function AppRoutes() {
             />
           )}
 
-          {isFeatureEnabled('schedule.page') && (
-            <Route
-              path="/schedule"
-              element={
-                <ProtectedRoute>
-                  <SchedulePage />
-                </ProtectedRoute>
-              }
-            />
-          )}
-
-          <Route path="/memory/knowledge" element={<Navigate to="/memory?view=graph" replace />} />
+          <Route path="/memory/knowledge" element={<Navigate to="/memory/events?view=graph" replace />} />
 
           {isFeatureEnabled('chat.page') && (
             <Route
@@ -346,23 +404,26 @@ function AppRoutes() {
             />
           )}
 
+          {/* Getting data in — one page, two halves. `/sources` and any
+              unrecognised half normalise to /sources/connect inside the page,
+              which is also where /sources/import lands when `import.page` is
+              off. Deliberately NOT flag-gated as a route: a flag-gated route in
+              this app is never registered rather than blocked, and the connect
+              half has to exist whatever the import flag says. */}
           <Route
-            path="/connect"
+            path="/sources/:half?"
             element={
               <ProtectedRoute>
-                <ConnectPage />
+                <SourcesPage />
               </ProtectedRoute>
             }
           />
 
-          <Route
-            path="/connections"
-            element={
-              <ProtectedRoute>
-                <ConnectionsPage />
-              </ProtectedRoute>
-            }
-          />
+          {/* The three routes Sources replaced. Kept as redirects so bookmarks,
+              docs and any link still in the wild keep working. */}
+          <Route path="/connect" element={<Navigate to="/sources/connect" replace />} />
+          <Route path="/connections" element={<Navigate to="/sources/connect" replace />} />
+          <Route path="/import" element={<Navigate to="/sources/import" replace />} />
 
           <Route
             path="/connections/:id"

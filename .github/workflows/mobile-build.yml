@@ -1,24 +1,26 @@
 name: Mobile Build
 
 # Builds the native iOS + Android apps — the Capacitor thin client that wraps the
-# @ci/fe-web build (frontend/apps/mobile). Modelled on CI-Hub's desktop-build.yml.
+# @ci/fe-web build (frontend/apps/ios + frontend/apps/android). Modelled on CI-Hub's desktop-build.yml.
 #
 # Runs on manual dispatch and on `mobile-v*` tags. By default it produces UNSIGNED
 # artifacts that need no secrets:
 #   • Android — a debug APK (sideload-installable; not for store distribution)
 #   • iOS     — a Simulator .app (runs in the iOS Simulator; not device-installable)
 # Signed, device-/store-ready artifacts (release APK/AAB, signed .ipa) require the
-# signing secrets documented in frontend/apps/mobile/README.md → "CI builds".
+# signing secrets documented in frontend/apps/ios/README.md → "CI builds".
 
+# GATED TO MANUAL. Every trigger except workflow_dispatch was removed so this
+# workflow no longer runs on push, pull_request or a schedule — CI silence here
+# means "nobody dispatched it", NOT "everything passed". Run it deliberately:
+#   gh workflow run <file> --ref <branch>
+# Restore a trigger by re-adding it to the `on:` block below.
+#
+# RELEASE IMPACT: this previously built on a pushed `mobile-v*` tag. That
+# trigger is gone; dispatch it on the tag ref instead.
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'mobile-v*'
 
-# The root install pulls the private @companionintelligence/tokens package from GitHub
-# Packages; .yarnrc.yml authenticates with ${NODE_AUTH_TOKEN}. Without `packages: read`
-# the job's GITHUB_TOKEN cannot read it and every install fails as an anonymous user.
 permissions:
   contents: read
   packages: read
@@ -69,24 +71,24 @@ jobs:
       # The mobile project is a STANDALONE (non-workspace) Yarn project with a
       # node-modules linker — installed on its own so the root PnP install stays intact.
       - name: Install mobile dependencies
-        working-directory: frontend/apps/mobile
+        working-directory: frontend/apps/android
         run: yarn install --immutable
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Capacitor sync (Android)
-        working-directory: frontend/apps/mobile
+        working-directory: frontend/apps/android
         run: yarn cap sync android
 
       - name: Gradle assembleDebug
-        working-directory: frontend/apps/mobile/android
+        working-directory: frontend/apps/android/android
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: companion-android-apk
-          path: frontend/apps/mobile/android/app/build/outputs/apk/**/*.apk
+          path: frontend/apps/android/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
 
   ios:
@@ -111,22 +113,29 @@ jobs:
         run: yarn workspace @ci/fe-web build
 
       - name: Install mobile dependencies
-        working-directory: frontend/apps/mobile
+        working-directory: frontend/apps/ios
         run: yarn install --immutable
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # cap sync runs `pod install` — CocoaPods ships on GitHub's macOS runners.
       - name: Capacitor sync (iOS)
-        working-directory: frontend/apps/mobile
+        working-directory: frontend/apps/ios
         run: yarn cap sync ios
+
+      # The on-device LLM links CLiteRTLM.xcframework (~81 MB), deliberately not
+      # committed. Same category as Pods/ and App/public: a cold clone has to fetch
+      # it or the link step fails on a missing framework.
+      - name: Fetch CLiteRTLM.xcframework (on-device LLM)
+        working-directory: frontend/apps/ios/ios/App
+        run: ./Frameworks/fetch-clitertlm-xcframework.sh
 
       # Unsigned Simulator build — validates the project and produces a runnable .app
       # without any Apple Developer credentials. For a device-installable, signed .ipa,
       # swap this for `xcodebuild archive … -exportArchive` gated on the signing secrets
-      # (see frontend/apps/mobile/README.md → "CI builds").
+      # (see frontend/apps/ios/README.md → "CI builds").
       - name: Build (iOS Simulator, unsigned)
-        working-directory: frontend/apps/mobile/ios/App
+        working-directory: frontend/apps/ios/ios/App
         run: |
           xcodebuild \
             -workspace App.xcworkspace \
@@ -139,7 +148,7 @@ jobs:
             build
 
       - name: Package .app
-        working-directory: frontend/apps/mobile/ios/App
+        working-directory: frontend/apps/ios/ios/App
         run: |
           APP=$(find build/Build/Products -name 'App.app' -type d | head -1)
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$GITHUB_WORKSPACE/companion-ios-simulator.app.zip"

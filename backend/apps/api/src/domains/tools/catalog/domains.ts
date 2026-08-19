@@ -41,6 +41,37 @@ export const INTENT_DOMAINS: readonly IntentDomain[] = [
     title: 'Media',
     description: 'Find photos and videos, and resolve entertainment availability.',
   },
+  {
+    key: 'import',
+    title: 'Import',
+    description:
+      'Discover what an export archive holds, bring it into the personal corpus, and follow the import.',
+  },
+  {
+    key: 'forecast',
+    title: 'Forecast',
+    description: 'Read the day-ahead behavior forecast and its calibration.',
+  },
+  {
+    key: 'brief',
+    title: 'Brief',
+    description: 'List insights, anomalies, and open actions waiting in Brief.',
+  },
+  {
+    key: 'insights',
+    title: 'Insights',
+    description: 'Explain computed associations over daily metrics, with evidence.',
+  },
+  {
+    key: 'anomalies',
+    title: 'Anomalies',
+    description: 'List computed metric and behavioral anomalies.',
+  },
+  {
+    key: 'suggestions',
+    title: 'Suggestions',
+    description: 'List evidence-linked suggestions and record accept/dismiss feedback.',
+  },
 ] as const;
 
 const DOMAIN_KEYS = new Set<string>(INTENT_DOMAINS.map((d) => d.key));
