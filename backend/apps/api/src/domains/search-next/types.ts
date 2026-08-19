@@ -52,7 +52,8 @@ export interface CreateTagDto {
 
 export interface UpdateTagDto {
   label?: string;
-  description?: string;
+  /** `null` clears the description; omit the key to leave it as it is. */
+  description?: string | null;
 }
 
 export interface TagEntitiesDto {

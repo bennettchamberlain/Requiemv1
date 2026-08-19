@@ -16,6 +16,8 @@ import { ContentConnection } from '../types/ContentConnection';
 import { ContentEdge } from '../types/ContentEdge';
 import { ContentType } from '../types/ContentType';
 import { CreateEventInput } from '../types/CreateEventInput';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { EventConnection } from '../types/EventConnection';
 import { EventEdge } from '../types/EventEdge';
@@ -26,6 +28,7 @@ import { PersonConnection } from '../types/PersonConnection';
 import { PersonEdge } from '../types/PersonEdge';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
+import { RestoreByIdInput } from '../types/RestoreByIdInput';
 import { UpdateEventInput } from '../types/UpdateEventInput';
 import { entityOwnerScope } from '../utils/entityOwnerScope';
 import { Paginator } from '../utils/Paginator';
@@ -141,6 +144,11 @@ export class EventResolver {
     return entity ? EventType.toType(entity) : entity;
   }
 
+  /**
+   * @deprecated Returns a bare boolean and takes a positional `id` argument. Use
+   * {@link deleteEvent}, which follows the `DeleteByIdInput`/`DeleteByIdPayload`
+   * convention the rest of this family uses and echoes the id it removed.
+   */
   @Mutation(() => Boolean)
   async removeEvent(
     @Context() context: RequestContext,
@@ -151,6 +159,49 @@ export class EventResolver {
     const id = GlobalUID.parse('event', gid);
 
     return this.eventService.remove(serviceContext, id);
+  }
+
+  /**
+   * Deletes an event addressed by its global id. This is a SOFT delete: the row
+   * is tombstoned and drops out of every read path, and {@link restoreEvent}
+   * puts it back.
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deleteEvent(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('event', input.id);
+
+    const success = await this.eventService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
+  }
+
+  /** Undoes {@link deleteEvent}; `null` if there is no deleted event to restore. */
+  @Mutation(() => EventType, { nullable: true })
+  async restoreEvent(
+    @Context() context: RequestContext,
+    @Args('input') input: RestoreByIdInput,
+  ): Promise<EventType | null> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('event', input.id);
+
+    const entity = await this.eventService.restore(serviceContext, id);
+
+    return entity ? EventType.toType(entity) : null;
   }
 
   @Query(() => EventConnection)

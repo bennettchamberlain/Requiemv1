@@ -416,7 +416,10 @@ type ContentType implements Node & Taggable {
   event: EventType
   externalId: String
   id: ID!
+  mediaSize: Float
+  mediaUrl: String
   mimetype: String
+  previewUrl: String
   sourceData: JSON
   sourceUrl: String
   tags: [EntityTagType!]!
@@ -1553,15 +1556,21 @@ type Mutation {
   Push a task to a later user-local date (`YYYY-MM-DD`) and count the push.
   """
   deferTask(id: ID!, until: String!): TaskType
+  deleteBrowserActivity(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteCommunication(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConcept(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnection(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteConnectionSyncJob(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteContent(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteEvent(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteItem(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteNote(input: DeleteByIdInput!): DeleteByIdPayload!
   deletePerson(input: DeleteByIdInput!): DeleteByIdPayload!
+  deletePlace(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteProviderKey(id: ID!): Boolean!
   deleteRelationship(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
+  deleteTag(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
   ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
 
@@ -1606,6 +1615,7 @@ type Mutation {
   Move an event to a new time, keeping its duration. Externally-sourced events are moved locally only and marked pending — the change is not pushed to the source calendar.
   """
   rescheduleEvent(endTime: DateTime, id: ID!, startTime: DateTime!): EventType
+  restoreEvent(input: RestoreByIdInput!): EventType
 
   """Return a placed event to the slate, deleting the event it minted"""
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
@@ -1658,6 +1668,7 @@ type Mutation {
   updateQuestion(input: UpdateQuestionInput!): QuestionType
   updateRelationship(input: UpdateRelationshipInput!): UpdateRelationshipPayload!
   updateSavedSearch(input: UpdateSavedSearchInput!): UpdateSavedSearchPayload!
+  updateTag(input: UpdateTagInput!): UpdateTagPayload!
   updateTask(input: UpdateTaskInput!): UpdateTaskPayload!
 }
 
@@ -2186,6 +2197,10 @@ type ResolveTaskPendingChangePayload {
   task: TaskType
 }
 
+input RestoreByIdInput {
+  id: String!
+}
+
 type RunAskPayload {
   answer: AskAnswerType
   ask: AskType
@@ -2392,6 +2407,7 @@ input TagEntitiesInput {
 type TagType implements Node {
   description: String
   entities(after: String, before: String, first: Int, last: Int): TaggableEntityConnection!
+  entityCount: Int!
   id: ID!
   label: String!
 }
@@ -2820,6 +2836,20 @@ input UpdateSavedSearchInput {
 type UpdateSavedSearchPayload {
   savedSearch: SavedSearchType
   success: Boolean!
+}
+
+input UpdateTagInput {
+  description: String
+  id: ID!
+  label: String
+}
+
+type UpdateTagPayload {
+  merged: Boolean!
+  movedEntityCount: Int!
+  success: Boolean!
+  tag: TagType
+  updatedSavedSearchCount: Int!
 }
 
 input UpdateTaskInput {

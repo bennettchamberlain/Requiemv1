@@ -10,6 +10,8 @@ import { PlaceLoader } from '../loaders/PlaceLoader';
 import { PlaceVisitStatsLoader } from '../loaders/PlaceVisitStatsLoader';
 import { TagLoader } from '../loaders/TagLoader';
 import { CreatePlaceInput } from '../types/CreatePlaceInput';
+import { DeleteByIdInput } from '../types/DeleteByIdInput';
+import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
 import { PaginationArgs } from '../types/PaginationArgs';
@@ -257,6 +259,11 @@ export class PlaceResolver {
     return entity ? PlaceType.toType(entity) : entity;
   }
 
+  /**
+   * @deprecated Returns a bare boolean and takes a positional `id` argument. Use
+   * {@link deletePlace}, which follows the `DeleteByIdInput`/`DeleteByIdPayload`
+   * convention the rest of this family uses.
+   */
   @Mutation(() => Boolean)
   async removePlace(
     @Context() context: RequestContext,
@@ -267,6 +274,34 @@ export class PlaceResolver {
     const id = GlobalUID.parse('place', gid);
 
     return this.placeService.remove(serviceContext, id);
+  }
+
+  /**
+   * Deletes a place addressed by its global id. A HARD delete — the place and
+   * its `ci.entities` base row are destroyed and cannot be restored. Events that
+   * happened there keep their denormalised `location_name`.
+   */
+  @Mutation(() => DeleteByIdPayload)
+  async deletePlace(
+    @Context() context: RequestContext,
+    @Args('input') input: DeleteByIdInput,
+  ): Promise<DeleteByIdPayload> {
+    const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('place', input.id);
+
+    const success = await this.placeService.remove(serviceContext, id);
+
+    if (!success) {
+      return {
+        success: false,
+      };
+    }
+
+    return {
+      success,
+      deletedId: input.id,
+    };
   }
 
   @Query(() => PlaceConnection)

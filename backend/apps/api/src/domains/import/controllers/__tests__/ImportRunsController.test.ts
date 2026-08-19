@@ -45,10 +45,13 @@ const STAGES = [
     processed: '1',
     total: '1',
     weight: 30,
+    itemsPerSec: null,
     etaSeconds: null,
     durationMs: '1200',
     error: null,
     detail: {},
+    startedAt: new Date('2026-08-12T00:01:00Z'),
+    finishedAt: new Date('2026-08-12T00:01:01Z'),
   },
   {
     id: 'stage-parse',
@@ -60,10 +63,15 @@ const STAGES = [
     // A parse discovers its total, so until it does there is nothing to divide by.
     total: null,
     weight: 50,
+    // Measured throughput, recorded since the table was created and dropped by
+    // the mapper until now.
+    itemsPerSec: 554.94,
     etaSeconds: null,
     durationMs: null,
     error: null,
     detail: { recognized: ['gmail', 'google_photos'] },
+    startedAt: new Date('2026-08-12T00:01:01Z'),
+    finishedAt: null,
   },
 ];
 
@@ -72,6 +80,7 @@ function makeController(
     detail?: { run: typeof RUN; stages: typeof STAGES } | null;
     cancel?: boolean;
     retry?: boolean;
+    batch?: null;
   } = {},
 ) {
   const runs = {
@@ -91,6 +100,17 @@ function makeController(
     >(async () => [{ run: RUN, stage: STAGES[0] }]),
     cancel: jest.fn(async () => overrides.cancel ?? true),
     retryStage: jest.fn(async () => overrides.retry ?? true),
+    activeBatch: jest.fn(async () =>
+      overrides.batch === undefined
+        ? {
+            runs: [{ ...RUN, userId: 'user-1', updatedAt: RUN.createdAt }],
+            stages: STAGES.map((stage) => ({ ...stage, runId: RUN.id })),
+            units: new Map([[RUN.id, '/srv/import/inbox/google-takeout']]),
+            records: new Map([[RUN.id, 2_777]]),
+            truncated: false,
+          }
+        : overrides.batch,
+    ),
   };
 
   const catalog = {
@@ -346,5 +366,84 @@ describe('ImportRunsController authentication', () => {
 
     await expect(controller.list({} as RequestContext)).rejects.toBeInstanceOf(BadRequestException);
     expect(runs.listRuns).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The one URL to poll while an import runs — and the one to curl when an import
+ * looks wrong.
+ *
+ * It exists because per-run detail polling does not survive contact with a batch
+ * import: an inbox scan starts one run per top-level folder, so the 13-source
+ * corpus this was written against meant 13 requests every two seconds and still
+ * no answer to "why has that one not moved in an hour?".
+ */
+describe('ImportRunsController.active', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('answers with a rendered-as-nothing snapshot rather than a 404 when nothing is importing', async () => {
+    // "Nothing is importing" is a state every caller renders by rendering
+    // nothing. An error here would put a banner on a page whose only sin is
+    // that the import already finished.
+    const { controller } = makeController({ batch: null });
+
+    const snapshot = await controller.active(ctx);
+
+    expect(snapshot.active).toBe(false);
+    expect(snapshot.runs).toEqual([]);
+  });
+
+  it('names each run by its unit and states the queue it is contending for', async () => {
+    const { controller } = makeController();
+
+    const snapshot = await controller.active(ctx);
+
+    expect(snapshot.active).toBe(true);
+    expect(snapshot.runs[0].unit).toBe('google-takeout');
+    expect(snapshot.runs[0].records).toBe(2_777);
+    // The numbers that make a long queue legible instead of alarming — per
+    // kind, because that is how the appliance queues stages.
+    expect(snapshot.queue.concurrency.parse).toBe(1);
+    expect(snapshot.queue.slots).toBeGreaterThan(0);
+  });
+
+  it('scopes itself to the caller, like every other run route here', async () => {
+    const { controller, runs } = makeController();
+
+    await controller.active(ctx);
+
+    expect(runs.activeBatch).toHaveBeenCalledWith({ userId: 'user-1' });
+  });
+
+  it('requires an authenticated user', async () => {
+    const { controller } = makeController();
+
+    await expect(controller.active({} as RequestContext)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+/**
+ * Three columns the stage mapper used to drop on the floor.
+ *
+ * `items_per_sec`, `started_at` and `finished_at` have been written since the
+ * table was created, and no surface could show any of them — so "is that parse
+ * slow or is it big?" and "how long has this been going?" had no answer short of
+ * a psql session, on a stage that had been running for 46 minutes.
+ */
+describe('ImportRunsController stage mapping', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('carries throughput and timestamps through to the client', async () => {
+    const { controller } = makeController();
+
+    const detail = await controller.get(ctx, 'run-1');
+    const parse = detail.stages[1];
+
+    expect(parse.itemsPerSec).toBe(554.94);
+    expect(parse.startedAt).toEqual(new Date('2026-08-12T00:01:01Z'));
+    // A stage still running has no duration yet — which is exactly why the
+    // start time has to travel.
+    expect(parse.durationMs).toBeNull();
+    expect(parse.finishedAt).toBeNull();
   });
 });

@@ -22,6 +22,7 @@ import {
   ChevronDown,
   Clock,
   Database,
+  EyeOff,
   Filter,
   Map as MapIcon,
   MapPin,
@@ -70,6 +71,7 @@ import {
   removeEntityFilter,
   writeCsvFilterParam,
 } from './filterParams';
+import { droppedFilters, readMemoryView, unsupportedReason, type FilterDimension } from './viewFilterSupport';
 
 // Single-select sort presets that map to the backend's sortBy + sortOrder pair.
 const SORT_OPTIONS = [
@@ -190,22 +192,59 @@ function formatDateLabel(dateFrom: string, dateTo: string): string {
   return 'Any time';
 }
 
-/** One removable filter chip inside the drop area. */
+/**
+ * One removable filter chip inside the drop area.
+ *
+ * `inactiveReason` marks a filter the current view cannot apply: the chip stays
+ * (it is still set, and still applies in the other views) but reads as struck
+ * through and dimmed, with the reason in a tooltip. Silently dropping it would
+ * make the same URL mean different things view to view with nothing on screen
+ * to say so — see viewFilterSupport.
+ */
 function FilterChip({
   icon: Icon,
   label,
   removeLabel,
   onRemove,
+  inactiveReason,
 }: {
   icon: typeof Users;
   label: string;
   removeLabel: string;
   onRemove: () => void;
+  inactiveReason?: string | null;
 }) {
-  return (
-    <Badge variant="secondary" className="h-7 max-w-full shrink-0 gap-1 pl-2 pr-1">
+  const body = (
+    <span className="flex min-w-0 items-center gap-1">
       <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-      <span className="max-w-[220px] truncate">{label}</span>
+      <span className={cn('max-w-[220px] truncate', inactiveReason && 'line-through')}>{label}</span>
+      {inactiveReason && <EyeOff className="h-3 w-3 shrink-0 text-muted-foreground" />}
+    </span>
+  );
+
+  return (
+    <Badge
+      variant="secondary"
+      className={cn('h-7 max-w-full shrink-0 gap-1 pl-2 pr-1', inactiveReason && 'opacity-60')}
+    >
+      {inactiveReason ? (
+        <Tooltip delayDuration={200}>
+          <Tooltip.Content className="max-w-[260px]">
+            Not applied in this view. {inactiveReason}
+          </Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <span
+              tabIndex={0}
+              className="flex min-w-0 items-center rounded"
+              aria-label={`${label} — not applied in this view. ${inactiveReason}`}
+            >
+              {body}
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
+      ) : (
+        body
+      )}
       <Tooltip delayDuration={600}>
         <Tooltip.Content>{removeLabel}</Tooltip.Content>
         <Tooltip.Trigger asChild>
@@ -306,6 +345,10 @@ function FilterDropArea() {
   const hasLocation = searchParams.get('hasLocation') === '1';
   const semantic = searchParams.get('semantic') === '1';
   const hasMapArea = Boolean(searchParams.get('bbox'));
+  // Which view the chips are being read against: a filter this view cannot
+  // apply is shown struck through rather than quietly ignored.
+  const view = readMemoryView(searchParams.get('view'));
+  const reasonFor = (dimension: FilterDimension) => unsupportedReason(view, dimension);
   const hasSelections =
     selectedTypes !== null ||
     sources.length > 0 ||
@@ -484,6 +527,7 @@ function FilterDropArea() {
                         : `${selectedTypes.length} of ${AVAILABLE_ENTITY_TYPES.length} types`
                     }
                     removeLabel="Remove entity types"
+                    inactiveReason={reasonFor('entityTypes')}
                     onRemove={() =>
                       setSearchParams((params) => {
                         params.delete('includedEntityTypes');
@@ -501,6 +545,9 @@ function FilterDropArea() {
                       icon={DROP_FILTER_ICONS[kind]}
                       label={kind === 'tag' ? `#${name}` : name}
                       removeLabel={`Remove ${name}`}
+                      inactiveReason={reasonFor(
+                        kind === 'person' ? 'people' : kind === 'place' ? 'places' : 'tags',
+                      )}
                       onRemove={() => remove(kind, name)}
                     />
                   )),
@@ -511,6 +558,7 @@ function FilterDropArea() {
                     icon={Database}
                     label={name}
                     removeLabel={`Remove source ${name}`}
+                    inactiveReason={reasonFor('connectors')}
                     onRemove={() => removeCsvValue('connectors', name)}
                   />
                 ))}
@@ -520,6 +568,7 @@ function FilterDropArea() {
                     icon={Activity}
                     label={name}
                     removeLabel={`Remove activity ${name}`}
+                    inactiveReason={reasonFor('eventTypes')}
                     onRemove={() => removeCsvValue('eventTypes', name)}
                   />
                 ))}
@@ -532,6 +581,7 @@ function FilterDropArea() {
                         : formatDateLabel(dateFrom, dateTo)
                     }
                     removeLabel="Remove date range"
+                    inactiveReason={reasonFor('date')}
                     onRemove={() =>
                       setSearchParams((params) => {
                         params.delete('from');
@@ -548,6 +598,7 @@ function FilterDropArea() {
                     icon={MapPin}
                     label="Has a location"
                     removeLabel="Remove has a location"
+                    inactiveReason={reasonFor('hasLocation')}
                     onRemove={() =>
                       setSearchParams((params) => {
                         params.delete('hasLocation');
@@ -562,6 +613,7 @@ function FilterDropArea() {
                     icon={Sparkles}
                     label="Semantic"
                     removeLabel="Remove semantic"
+                    inactiveReason={reasonFor('semantic')}
                     onRemove={() =>
                       setSearchParams((params) => {
                         params.delete('semantic');
@@ -576,6 +628,7 @@ function FilterDropArea() {
                     icon={MapIcon}
                     label="Map area"
                     removeLabel="Remove map area"
+                    inactiveReason={reasonFor('bbox')}
                     onRemove={() =>
                       setSearchParams((params) => {
                         params.delete('bbox');
@@ -622,15 +675,34 @@ function FilterDropArea() {
   );
 }
 
-/** A boolean URL flag rendered as a toggle button (used for located-only / semantic). */
-function ToggleChip({ param, label, icon }: { param: string; label: string; icon: React.ReactNode }) {
+/**
+ * A boolean URL flag rendered as a toggle button (used for located-only /
+ * semantic). `dimension` lets the control say when the current view cannot
+ * apply the flag: it stays clickable — the flag is a property of the query, not
+ * of the view, and it still applies everywhere else — but reads as struck
+ * through with the reason in a tooltip.
+ */
+function ToggleChip({
+  param,
+  label,
+  icon,
+  dimension,
+}: {
+  param: string;
+  label: string;
+  icon: React.ReactNode;
+  dimension: FilterDimension;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const active = searchParams.get(param) === '1';
+  const reason = unsupportedReason(readMemoryView(searchParams.get('view')), dimension);
 
-  return (
+  const button = (
     <Button
       type="button"
       variant={active ? 'secondary' : 'outline'}
+      className={cn(reason && 'opacity-70')}
+      aria-label={reason ? `${label} — not applied in this view. ${reason}` : undefined}
       onClick={() =>
         setSearchParams((params) => {
           if (active) {
@@ -644,8 +716,20 @@ function ToggleChip({ param, label, icon }: { param: string; label: string; icon
       }
     >
       {icon}
-      <span className="ml-1">{label}</span>
+      <span className={cn('ml-1', reason && 'line-through')}>{label}</span>
+      {reason && <EyeOff className="ml-1 h-3.5 w-3.5 text-muted-foreground" />}
     </Button>
+  );
+
+  if (!reason) {
+    return button;
+  }
+
+  return (
+    <Tooltip delayDuration={200}>
+      <Tooltip.Content className="max-w-[260px]">Not applied in this view. {reason}</Tooltip.Content>
+      <Tooltip.Trigger asChild>{button}</Tooltip.Trigger>
+    </Tooltip>
   );
 }
 
@@ -907,15 +991,21 @@ function DateControl() {
   );
 }
 
-/** Sort preset selector bound to the `sortBy`/`sortOrder` URL params. */
+/**
+ * Sort preset selector bound to the `sortBy`/`sortOrder` URL params. The graph
+ * has no result order to sort, so there the control says so instead of
+ * accepting a choice that quietly does nothing.
+ */
 function SortControl() {
   const [{ sortBy, sortOrder }, { setSort }] = useDropdown();
+  const [searchParams] = useSearchParams();
+  const reason = unsupportedReason(readMemoryView(searchParams.get('view')), 'sort');
 
   const currentSort =
     SORT_OPTIONS.find((option) => option.sortBy === sortBy && option.sortOrder === sortOrder)?.value ??
     'default';
 
-  return (
+  const select = (
     <Select
       value={currentSort}
       onValueChange={(value) => {
@@ -924,7 +1014,7 @@ function SortControl() {
         setSort(option?.sortBy || undefined, option?.sortOrder || undefined);
       }}
     >
-      <Select.Trigger className="w-[150px]">
+      <Select.Trigger className={cn('w-[150px]', reason && 'opacity-70')}>
         <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
         <Select.Value placeholder="Sort" />
       </Select.Trigger>
@@ -936,6 +1026,33 @@ function SortControl() {
         ))}
       </Select.Content>
     </Select>
+  );
+
+  if (!reason) {
+    return select;
+  }
+
+  // The marker sits beside the control rather than inside its trigger: the sort
+  // choice is still a property of the query — it applies the moment you switch
+  // back to a list-shaped view — so the control stays live and the marker
+  // carries the explanation.
+  return (
+    <span className="inline-flex items-center gap-1">
+      {select}
+      <Tooltip delayDuration={200}>
+        <Tooltip.Content className="max-w-[260px]">Not applied in this view. {reason}</Tooltip.Content>
+        <Tooltip.Trigger asChild>
+          <span
+            role="note"
+            tabIndex={0}
+            aria-label={`Sort — not applied in this view. ${reason}`}
+            className="rounded text-muted-foreground"
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+          </span>
+        </Tooltip.Trigger>
+      </Tooltip>
+    </span>
   );
 }
 
@@ -958,8 +1075,18 @@ function FilterControlsRow({
 
       <ConnectorFilter modal={modal} label="How" />
 
-      <ToggleChip param="hasLocation" label="Has a location" icon={<MapPin className="h-4 w-4" />} />
-      <ToggleChip param="semantic" label="Semantic" icon={<Sparkles className="h-4 w-4" />} />
+      <ToggleChip
+        param="hasLocation"
+        label="Has a location"
+        icon={<MapPin className="h-4 w-4" />}
+        dimension="hasLocation"
+      />
+      <ToggleChip
+        param="semantic"
+        label="Semantic"
+        icon={<Sparkles className="h-4 w-4" />}
+        dimension="semantic"
+      />
 
       <SortControl />
 
@@ -1008,14 +1135,40 @@ export function AdvancedFilters() {
 function FilterCountLabel() {
   const [searchParams] = useSearchParams();
   const activeFilterCount = countActiveFilters(searchParams);
+  const view = readMemoryView(searchParams.get('view'));
+  // Filters that are set but which the current view can't apply. They still
+  // count as active — they're in the URL and they bite in the other views — so
+  // the label reports them alongside the total rather than deducting them.
+  // Sort isn't part of `countActiveFilters` (it reorders rather than narrows),
+  // so a graph with only a sort set still has something to report here.
+  const dropped = droppedFilters(view, searchParams);
 
-  if (activeFilterCount === 0) {
+  if (activeFilterCount === 0 && dropped.length === 0) {
     return null;
   }
 
   return (
     <span className="whitespace-nowrap text-xs text-muted-foreground">
-      {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
+      {activeFilterCount > 0 && `${activeFilterCount} ${activeFilterCount === 1 ? 'filter' : 'filters'}`}
+      {dropped.length > 0 && (
+        <Tooltip delayDuration={200}>
+          <Tooltip.Content className="max-w-[260px]">
+            {dropped.map((dimension) => unsupportedReason(view, dimension)).join(' ')}
+          </Tooltip.Content>
+          <Tooltip.Trigger asChild>
+            <span
+              tabIndex={0}
+              className={cn(
+                'rounded underline decoration-dotted underline-offset-2',
+                activeFilterCount > 0 && 'ml-1',
+              )}
+            >
+              {activeFilterCount > 0 ? '· ' : ''}
+              {dropped.length} not applied here
+            </span>
+          </Tooltip.Trigger>
+        </Tooltip>
+      )}
     </span>
   );
 }

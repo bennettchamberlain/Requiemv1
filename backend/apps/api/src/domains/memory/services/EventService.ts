@@ -139,6 +139,11 @@ export class EventService {
           user: { id: context.userId },
         }),
       }),
+      // Events are tombstoned, not destroyed: deleting one is a user-facing
+      // action on irreplaceable imported history, and `ci.events.is_deleted`
+      // already exists for exactly this. `remove` flips the flag, `restore`
+      // clears it, and the read paths below skip flagged rows.
+      softDeleteFlag: 'isDeleted',
     });
   }
 
@@ -262,6 +267,12 @@ export class EventService {
     // provenance triple capture sources carry. Re-ingesting the same event
     // — flaky-client retries, a full importer re-sync — must NOT create a
     // duplicate. When the triple is present, return the existing row.
+    //
+    // Deliberately NOT filtered by `isDeleted`: `events_source_triple_uniq`
+    // covers tombstoned rows too, so skipping one here would send the insert
+    // below into a guaranteed 23505. Matching it instead means a re-import of
+    // an event the user deleted stays deleted rather than silently coming
+    // back — the deletion outlives the next sync.
     const sourceWhere: FindOptionsWhere<EventEntity> | null =
       item.source_type && item.source_id
         ? {
@@ -568,6 +579,10 @@ export class EventService {
     const event = await this.eventRepository.findOne({
       where: {
         id,
+        // A tombstoned event is not reschedulable — it is gone as far as every
+        // reader is concerned, and moving one would resurrect it in the
+        // calendar's write path without clearing the flag.
+        isDeleted: false,
         ...(context.userId !== SYSTEM_USER && { user: { id: context.userId } }),
       },
     });
@@ -598,7 +613,9 @@ export class EventService {
   async findAll(context: ServiceContext): Promise<Event[]> {
     const query = this.eventRepository
       .createQueryBuilder('event')
-      .where("(event.event_type IS NULL OR event.event_type <> 'planned_block')");
+      .where("(event.event_type IS NULL OR event.event_type <> 'planned_block')")
+      // Tombstoned events are gone as far as every reader is concerned.
+      .andWhere('event.is_deleted = false');
 
     if (context.userId !== SYSTEM_USER) {
       query.andWhere('event.user_id = :userId', { userId: context.userId });
@@ -609,10 +626,17 @@ export class EventService {
     return this.composeMany(result);
   }
 
+  /**
+   * Batch id lookup. Tombstoned events resolve to `null` — which is also what
+   * keeps a just-deleted event out of the search results: SearchResolver
+   * hydrates its candidate ids through here and drops the misses, so the row
+   * disappears immediately rather than waiting on the async un-index.
+   */
   async findByIds(context: ServiceContext, ids: string[]): Promise<(Event | null)[]> {
     const result = await this.eventRepository.find({
       where: {
         id: In(ids),
+        isDeleted: false,
         ...(context.userId !== SYSTEM_USER && {
           user: {
             id: context.userId,
@@ -631,6 +655,7 @@ export class EventService {
     const result = await this.eventRepository.findOne({
       where: {
         id,
+        isDeleted: false,
         ...(context.userId !== SYSTEM_USER && {
           user: { id: context.userId },
         }),
@@ -825,11 +850,15 @@ export class EventService {
     return event;
   }
 
+  /**
+   * Tombstones an event: `ci.events.is_deleted` is set, both rows stay on disk,
+   * and the read paths above stop returning it. The emitted
+   * {@link EventRemovedEvent} still drops the row from the search index, so it
+   * disappears from the explorer exactly as a physical delete would — but
+   * nothing that referenced it is cascaded away and {@link restore} can bring it
+   * back verbatim.
+   */
   async remove(context: ServiceContext, id: string): Promise<boolean> {
-    // Authorized load + base-row delete — the events_event_id_entities_fk
-    // ON DELETE CASCADE removes the detail in the same statement. Downstream
-    // FK semantics are unchanged (capture_events/observations/receipts SET
-    // NULL; hbpe.l1_event_cluster still RESTRICTs a clustered event).
     const removed = await this.aggregate.remove(context, id, {
       withinTx: async ({ manager }) => {
         const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
@@ -856,6 +885,42 @@ export class EventService {
     return true;
   }
 
+  /**
+   * Undoes {@link remove}: clears the tombstone and re-indexes the event, so an
+   * accidental deletion is recoverable (this is what the "Undo" affordance on
+   * the delete toast calls). A no-op for an event that was never deleted.
+   *
+   * @returns the restored event, or `null` when the caller has no tombstoned
+   *   event with that id.
+   */
+  async restore(context: ServiceContext, id: string): Promise<Event | null> {
+    const restored = await this.aggregate.restore(context, id, {
+      withinTx: async ({ manager, after }) => {
+        const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
+        await this.graphDeltaWriter.entityCreated({
+          entityId: id,
+          entityType: 'Event',
+          name: base?.name ?? null,
+          ownerUserId: typeof context.userId === 'string' ? context.userId : (after?.userId ?? null),
+          changeSource: 'EventService.restore',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+      },
+    });
+
+    if (!restored) {
+      return null;
+    }
+
+    // The update listener re-upserts the search-index rows the delete removed.
+    await this.signallingEventService.send(EventUpdatedEvent, {
+      eventId: id,
+    });
+
+    return this.composeOne(restored);
+  }
+
   async search(context: ServiceContext, query: SearchEventDto): Promise<Event[]> {
     const { title, description, ...detailQuery } = query;
 
@@ -866,7 +931,8 @@ export class EventService {
       .createQueryBuilder('event')
       .innerJoin('ci.entities', 'base', 'base.entity_id = event.event_id')
       .addSelect('base.name', 'base_name')
-      .addSelect('base.description', 'base_description');
+      .addSelect('base.description', 'base_description')
+      .where('event.is_deleted = false');
 
     if (context.userId !== SYSTEM_USER) {
       qb = qb.andWhere('event.user_id = :userId', { userId: context.userId });
@@ -909,7 +975,10 @@ export class EventService {
       .getRepository(EventEntity)
       .createQueryBuilder('event')
       .select(['event.event_id'])
-      .where('event.user_id = :userId', { userId: context.userId });
+      .where('event.user_id = :userId', { userId: context.userId })
+      // Tombstoned events are gone as far as every reader is concerned; keeping
+      // them out here also stops the search-index backfill re-indexing them.
+      .andWhere('event.is_deleted = false');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -1036,7 +1105,8 @@ export class EventService {
     let query = this.dataSource
       .getRepository(EventEntity)
       .createQueryBuilder('event')
-      .where('event.user_id = :userId', { userId: context.userId });
+      .where('event.user_id = :userId', { userId: context.userId })
+      .andWhere('event.is_deleted = false');
 
     if (options.startTime) {
       query = query.andWhere('event.start_time >= :startTime', { startTime: options.startTime });
@@ -1114,6 +1184,7 @@ export class EventService {
       .createQueryBuilder('event')
       .select('DISTINCT event.source_system', 'source_system')
       .where('event.user_id = :userId', { userId: context.userId })
+      .andWhere('event.is_deleted = false')
       .andWhere('event.source_system IS NOT NULL')
       .orderBy('event.source_system', 'ASC')
       .getRawMany();
@@ -1132,6 +1203,7 @@ export class EventService {
       .createQueryBuilder('event')
       .select('DISTINCT event.event_type', 'event_type')
       .where('event.user_id = :userId', { userId: context.userId })
+      .andWhere('event.is_deleted = false')
       .andWhere('event.event_type IS NOT NULL')
       .andWhere("event.event_type <> 'planned_block'")
       .orderBy('event.event_type', 'ASC')
@@ -1158,6 +1230,7 @@ export class EventService {
         .addSelect('MIN(event.start_time)', 'earliest')
         .addSelect('MAX(event.start_time)', 'latest')
         .where('event.user_id = :userId', { userId: context.userId })
+        .andWhere('event.is_deleted = false')
         .getRawOne();
 
     return {
@@ -1177,6 +1250,7 @@ export class EventService {
       .select('event.userId', 'user_id')
       .addSelect(`date_trunc('hour', event.startTime, 'UTC')`, 'bucket_start')
       .addSelect('COUNT(*)::int', 'count')
+      .where('event.is_deleted = false')
       .groupBy('user_id')
       .addGroupBy('bucket_start')
       .getRawMany();
