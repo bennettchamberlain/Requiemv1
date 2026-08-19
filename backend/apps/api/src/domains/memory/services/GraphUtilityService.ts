@@ -76,6 +76,13 @@ const DERIVED_IMPORT_KEYS = ['import:communications:participant', 'import:graph_
  */
 const GENERIC_SOURCE_KEYS = ['import:importer', 'importer', 'import:'];
 
+/**
+ * Safety ceiling on one lexical node-search page. Callers pick the real limit (the graph view
+ * asks for a canvas-sized page and over-fetches to detect truncation); this only stops a caller
+ * from asking for an unbounded scan.
+ */
+const NODE_SEARCH_MAX_LIMIT = 500;
+
 @Injectable()
 export class GraphUtilityService {
   constructor(
@@ -530,7 +537,7 @@ export class GraphUtilityService {
     queryText: string,
     options: { limit?: number } = {},
   ): Promise<Array<{ node: GraphNodeEntity; rank: number }>> {
-    const limit = Math.min(options.limit ?? 10, 50);
+    const limit = Math.min(options.limit ?? 10, NODE_SEARCH_MAX_LIMIT);
     if (!queryText.trim()) {
       return [];
     }
@@ -560,7 +567,7 @@ export class GraphUtilityService {
     queryText: string,
     options: { limit?: number } = {},
   ): Promise<GraphNodeEntity[]> {
-    const limit = Math.min(options.limit ?? 10, 50);
+    const limit = Math.min(options.limit ?? 10, NODE_SEARCH_MAX_LIMIT);
     if (!queryText.trim()) {
       return [];
     }

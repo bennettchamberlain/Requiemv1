@@ -48,10 +48,72 @@ export const EXPLORER_TO_GRAPH_ENTITY_TYPES: Record<string, string[]> = {
 };
 
 /**
+ * Where the source record behind a graph node lives.
+ *
+ * `entity` — the node IS the record: Person/Place/Concept are stored in `ci.entities` itself
+ *   (single-table inheritance), so `entity_id` is already the GraphQL id.
+ * `linked` — the node MIRRORS a record in its own table (`ci.events`, `ci.communications`,
+ *   `ci.content`, `ci.files`, `ci.inventory`); `linked_id` is the GraphQL id. Ingest happens to
+ *   reuse the source uuid as `entity_id` for most of these, but `File` is proof that is a
+ *   coincidence and not a contract — resolve through `linked_id`.
+ */
+type GraphSourceOrigin = 'entity' | 'linked';
+
+/**
+ * Graph `entity_type` → the explorer resource its node stands for, so a node clicked on the
+ * canvas can be opened in the same detail drawer List/Gallery/Map use. The resource names are
+ * the `GlobalUID` vocabulary the GraphQL `node(id:)` query decodes.
+ *
+ * Graph types with no addressable record (Pet, Group, Goal, Tag, …) are absent: those nodes fall
+ * back to the graph's own name/type card rather than resolving to something that doesn't exist.
+ */
+export const GRAPH_TYPE_TO_SOURCE: Record<string, { resourceType: string; origin: GraphSourceOrigin }> = {
+  Person: { resourceType: 'person', origin: 'entity' },
+  Contact: { resourceType: 'person', origin: 'entity' },
+  Place: { resourceType: 'place', origin: 'entity' },
+  Location: { resourceType: 'place', origin: 'entity' },
+  Concept: { resourceType: 'concept', origin: 'entity' },
+  Item: { resourceType: 'item', origin: 'linked' },
+  Object: { resourceType: 'item', origin: 'linked' },
+  Thing: { resourceType: 'item', origin: 'linked' },
+  Event: { resourceType: 'event', origin: 'linked' },
+  Content: { resourceType: 'content', origin: 'linked' },
+  Communication: { resourceType: 'communication', origin: 'linked' },
+  File: { resourceType: 'file', origin: 'linked' },
+};
+
+/**
+ * Resolve a graph node to the explorer record it stands for, or `null` when the node has no
+ * addressable record (unmapped graph type, or a mirror node whose `linked_id` was never written).
+ */
+export function graphNodeSourceRef(node: {
+  entity_type: string;
+  entity_id: string;
+  linked_id?: string | null;
+}): { type: string; id: string } | null {
+  const mapping = GRAPH_TYPE_TO_SOURCE[node.entity_type];
+  if (!mapping) {
+    return null;
+  }
+
+  const id = mapping.origin === 'entity' ? node.entity_id : node.linked_id;
+
+  return id ? { type: mapping.resourceType, id } : null;
+}
+
+/**
  * Given the explorer entity types the user currently has *selected*, returns the set of graph
  * `entity_type` values to exclude — i.e. the graph types mapped from the *deselected* explorer
- * types. Connective graph types (those not mapped from any explorer type) are never returned,
- * so they always survive the filter.
+ * types, MINUS every graph type a *selected* explorer type maps to. Connective graph types
+ * (those not mapped from any explorer type) are never returned, so they always survive the
+ * filter.
+ *
+ * The subtraction is what makes the mapping's many-to-many shape safe. It is not one-to-one in
+ * either direction: `note` and `content` both map to `Content`, and `browser-activity` maps to
+ * `Event` *and* `Content`. Building the exclusion set purely from the deselected types therefore
+ * excluded the very type the user had selected — picking "Events" alone excluded `Event` (via
+ * the deselected `browser-activity`) and left the canvas painting Concepts. A selection always
+ * wins over a deselection that happens to share a graph type.
  *
  * Callers decide whether a filter is active: only invoke this when the user has actually
  * narrowed the selection. An empty `selectedExplorerTypes` therefore means "nothing selected"
@@ -67,6 +129,15 @@ export function graphTypesToExclude(selectedExplorerTypes: string[]): string[] {
     return [];
   }
 
+  // Graph types the selection asks for. These can never be excluded, however many deselected
+  // explorer types also map onto them.
+  const kept = new Set<string>();
+  for (const explorerType of selected) {
+    for (const graphType of EXPLORER_TO_GRAPH_ENTITY_TYPES[explorerType] ?? []) {
+      kept.add(graphType);
+    }
+  }
+
   const excluded = new Set<string>();
   for (const explorerType of allExplorerTypes) {
     if (selected.has(explorerType)) {
@@ -74,6 +145,10 @@ export function graphTypesToExclude(selectedExplorerTypes: string[]): string[] {
     }
 
     for (const graphType of EXPLORER_TO_GRAPH_ENTITY_TYPES[explorerType]) {
+      if (kept.has(graphType)) {
+        continue;
+      }
+
       excluded.add(graphType);
     }
   }

@@ -10,6 +10,7 @@ import { MessageService, ThreadService } from '@ci/domains/conversations';
 import { FileService } from '@ci/domains/files';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import {
+  CommunicationService,
   ConceptService,
   ContentService,
   EventService,
@@ -26,6 +27,7 @@ import { UserService } from '@ci/domains/user';
 import { ActionType } from '../types/ActionType';
 import { AnswerType } from '../types/AnswerType';
 import { BrowserActivityType } from '../types/BrowserActivityType';
+import { CommunicationType } from '../types/CommunicationType';
 import { ConceptType } from '../types/ConceptType';
 import { ConnectionType } from '../types/ConnectionType';
 import { ContentType } from '../types/ContentType';
@@ -52,6 +54,7 @@ export class NodeResolver {
     private readonly actionService: ActionService,
     private readonly answerService: AnswerService,
     private readonly browserActivityService: BrowserActivityService,
+    private readonly communicationService: CommunicationService,
     private readonly conceptService: ConceptService,
     private readonly connectionService: ConnectionService,
     private readonly contentService: ContentService,
@@ -96,6 +99,12 @@ export class NodeResolver {
         const activity = await this.browserActivityService.findById(serviceContext, id);
 
         return activity ? BrowserActivityType.toType(activity) : null;
+      }
+
+      case 'communication': {
+        const communication = await this.communicationService.findById(serviceContext, id);
+
+        return communication ? CommunicationType.toType(communication) : null;
       }
 
       case 'concept': {
