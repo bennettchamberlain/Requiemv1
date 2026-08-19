@@ -87,8 +87,7 @@ export function FeedModal({ onClose }: Props) {
           ]
         : [];
 
-    const generating =
-      thread?.generationStatus === 'queued' || thread?.generationStatus === 'running';
+    const generating = thread?.generationStatus === 'queued' || thread?.generationStatus === 'running';
     const withoutInFlight =
       generating && baseMessages[baseMessages.length - 1]?.role === 'assistant'
         ? baseMessages.slice(0, -1)

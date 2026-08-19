@@ -140,9 +140,9 @@ describe('useChatRequester', () => {
 
     expect(result.current[0].streaming).toBe(false);
     expect(result.current[0].stream).toBeNull();
-    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/llm/threads/thread-9/cancel'))).toBe(
-      true,
-    );
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes('/llm/threads/thread-9/cancel')),
+    ).toBe(true);
   });
 
   it('detach() closes the viewer without posting cancel', async () => {

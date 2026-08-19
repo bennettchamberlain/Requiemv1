@@ -2,7 +2,13 @@ import type { UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
 import type { RelationshipService } from '@ci/domains/graph';
 import type { OllamaService } from '@ci/domains/llm';
-import type { ConceptService, ItemService, PersonService, PlaceService, UserContextService } from '@ci/domains/memory';
+import type {
+  ConceptService,
+  ItemService,
+  PersonService,
+  PlaceService,
+  UserContextService,
+} from '@ci/domains/memory';
 
 import type { AgentMemory } from '../entities/AgentMemoryEntity';
 
@@ -49,7 +55,9 @@ function makeService(options: {
   searchResult?: Array<{ id: string; name: string | null }>;
   findAllResult?: Array<{ id: string; name: string | null }>;
 }) {
-  const ollamaService = { chat: jest.fn().mockResolvedValue(options.chatResponse) } as unknown as OllamaService;
+  const ollamaService = {
+    chat: jest.fn().mockResolvedValue(options.chatResponse),
+  } as unknown as OllamaService;
 
   const personCreate = jest.fn(async (_ctx: unknown, data: { name: string }) => ({
     id: `created-${data.name.toLowerCase().replace(/\s+/g, '-')}`,
@@ -155,7 +163,9 @@ describe('MemoryCompactionService — person merge/dedupe', () => {
     // "John" fits both "John Smith" and "John Doe" — merging into either
     // would silently attach this fragment's facts to the WRONG person.
     const { service, personCreate, personUpdate } = makeService({
-      chatResponse: extractionResponse([{ type: 'person', name: 'John', description: 'mentioned in passing' }]),
+      chatResponse: extractionResponse([
+        { type: 'person', name: 'John', description: 'mentioned in passing' },
+      ]),
       searchResult: [],
       findAllResult: [
         { id: 'john-smith', name: 'John Smith' },
@@ -186,9 +196,7 @@ describe('MemoryCompactionService — person merge/dedupe', () => {
 
   it('a relational descriptor ("Priya\'s brother") never merges with the head name and never blocks it', async () => {
     const { service, personCreate } = makeService({
-      chatResponse: extractionResponse([
-        { type: 'person', name: "Priya's brother", description: 'sibling' },
-      ]),
+      chatResponse: extractionResponse([{ type: 'person', name: "Priya's brother", description: 'sibling' }]),
       searchResult: [],
       findAllResult: [{ id: 'existing-priya', name: 'Priya' }],
     });

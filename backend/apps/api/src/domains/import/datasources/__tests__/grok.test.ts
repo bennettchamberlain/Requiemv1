@@ -71,7 +71,10 @@ describe('Grok datasource', () => {
     }
 
     const grok = await new GrokFileImporter().recognize({}, { filename: 'twitter-export', fullPath: root });
-    const twitter = await new TwitterFileImporter().recognize({}, { filename: 'twitter-export', fullPath: root });
+    const twitter = await new TwitterFileImporter().recognize(
+      {},
+      { filename: 'twitter-export', fullPath: root },
+    );
 
     expect(twitter.confidence).toBeGreaterThan(grok.confidence);
   });

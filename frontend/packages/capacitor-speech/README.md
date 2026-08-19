@@ -80,7 +80,7 @@ degrading.
   additional to the `AVAudioSession` record permission; `requestPermissions()` asks for both.
 - **`NSSpeechRecognitionUsageDescription` is required.** Apple states the app *crashes* when
   requesting speech authorization without it. Added to
-  `frontend/apps/mobile/ios/App/App/Info.plist` (`NSMicrophoneUsageDescription` was already
+  `frontend/apps/ios/ios/App/App/Info.plist` (`NSMicrophoneUsageDescription` was already
   there).
 - **~1 minute cap per task.** The session is stopped deliberately at 55s with
   `speechEnd { reason: 'max-duration' }` and a `max-duration` error event, and
@@ -161,7 +161,7 @@ ios/
     SpeechSynthesisController.swift
 ```
 
-Consumed by `frontend/apps/mobile` via
+Consumed by `frontend/apps/ios` and `frontend/apps/android` via
 `"@ci/capacitor-speech": "file:../../packages/capacitor-speech"`, picked up by `npx cap sync`
 on the Android side.
 
@@ -182,13 +182,13 @@ on the Android side.
 
 ### Yarn `file:` dependencies are copies, not symlinks
 
-On the Windows dev setup used here, `frontend/apps/mobile/node_modules/@ci/capacitor-*` are
+On the Windows dev setup used here, `frontend/apps/android/node_modules/@ci/capacitor-*` are
 real **copies**, not symlinks. Editing a source file in this package does **not** reach the
-Gradle build until `yarn install` is re-run inside `frontend/apps/mobile` — and Gradle will
+Gradle build until `yarn install` is re-run inside `frontend/apps/android` — and Gradle will
 still happily report `BUILD SUCCESSFUL` against the stale copy. After every edit here:
 
 ```bash
-cd frontend/apps/mobile && yarn install && npx cap sync android
+cd frontend/apps/android && yarn install && npx cap sync android
 ```
 
 ## Test coverage — what is and is not proven

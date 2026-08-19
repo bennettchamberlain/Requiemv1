@@ -40,10 +40,12 @@ function makeInsertBuilder() {
   return { builder, calls };
 }
 
-function makeService(overrides: {
-  insertBuilder?: ReturnType<typeof makeInsertBuilder>;
-  columnsPerRow?: number;
-} = {}) {
+function makeService(
+  overrides: {
+    insertBuilder?: ReturnType<typeof makeInsertBuilder>;
+    columnsPerRow?: number;
+  } = {},
+) {
   const insert = overrides.insertBuilder ?? makeInsertBuilder();
 
   const repository = {
@@ -51,7 +53,13 @@ function makeService(overrides: {
     metadata: { columns: { length: overrides.columnsPerRow ?? 14 } },
   };
 
-  const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const logger = {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  };
 
   const service = new ObjectIdentifierService(repository as never, logger as never);
 
@@ -117,7 +125,11 @@ describe('ObjectIdentifierService.upsertForSubjects', () => {
     const { service } = makeService({ insertBuilder });
 
     const inserted = await service.upsertForSubjects(OWNER, [
-      { subjectType: 'object_instance', subjectId: SUBJECT_A, identifiers: [{ namespace: 'gtin', value: '12345' }] },
+      {
+        subjectType: 'object_instance',
+        subjectId: SUBJECT_A,
+        identifiers: [{ namespace: 'gtin', value: '12345' }],
+      },
     ]);
 
     expect(inserted).toBe(0);
@@ -130,8 +142,16 @@ describe('ObjectIdentifierService.upsertForSubjects', () => {
     await service.upsertForSubjects(OWNER, [
       // UPC-A form and its GTIN-14 zero-padded form of the SAME barcode —
       // both normalize to '00012345678905' (see normalizeObjectIdentifier.spec.ts).
-      { subjectType: 'object_instance', subjectId: SUBJECT_A, identifiers: [{ namespace: 'gtin', value: '012345678905' }] },
-      { subjectType: 'object_instance', subjectId: SUBJECT_B, identifiers: [{ namespace: 'gtin', value: '00012345678905' }] },
+      {
+        subjectType: 'object_instance',
+        subjectId: SUBJECT_A,
+        identifiers: [{ namespace: 'gtin', value: '012345678905' }],
+      },
+      {
+        subjectType: 'object_instance',
+        subjectId: SUBJECT_B,
+        identifiers: [{ namespace: 'gtin', value: '00012345678905' }],
+      },
     ]);
 
     // Only ONE row reaches the INSERT — subject B's claim on an
@@ -174,9 +194,7 @@ describe('ObjectIdentifierService.upsertForSubjects', () => {
       },
     ]);
 
-    expect(insert.calls.values).toEqual([
-      expect.objectContaining({ confidence: 0.4, isPrimary: true }),
-    ]);
+    expect(insert.calls.values).toEqual([expect.objectContaining({ confidence: 0.4, isPrimary: true })]);
   });
 
   it('chunks a batch larger than the derived param budget into bounded INSERTs', async () => {

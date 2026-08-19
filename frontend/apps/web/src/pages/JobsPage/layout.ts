@@ -9,3 +9,7 @@
  * can share it without importing their own parent.
  */
 export const COMPACT_CARD = 'gap-3 py-4';
+
+/** Phone cards: less chrome so a 375px column is content, not padding. */
+export const PHONE_CARD = 'gap-2 py-3';
+export const PHONE_PAD = 'px-3';

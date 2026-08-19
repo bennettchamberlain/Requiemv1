@@ -83,9 +83,7 @@ describe('makeIsSelf', () => {
 
 describe('readSelfIdentity', () => {
   /** A SelfIdentityReader over fixed rows, recording what it was asked. */
-  function readerFor(
-    rows: Array<{ name: string | null; email: string | null; phones_json?: unknown }>,
-  ) {
+  function readerFor(rows: Array<{ name: string | null; email: string | null; phones_json?: unknown }>) {
     const calls: Array<{ sql: string; params?: unknown[] }> = [];
     const db: SelfIdentityReader = {
       query: (async (sql: string, params?: unknown[]) => {

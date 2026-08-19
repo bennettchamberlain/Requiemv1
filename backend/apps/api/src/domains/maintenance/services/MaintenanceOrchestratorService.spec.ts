@@ -70,7 +70,7 @@ function makeService() {
   };
   const commLink = {
     // Params kept so mockImplementationOnce overrides below can type their (userId, options) impls.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     backfill: jest.fn(async (_userId: string, _options?: unknown) => {
       callOrder.push('link_communications');
 
@@ -102,7 +102,7 @@ function makeService() {
   };
   const graphEnrich = {
     // Params kept so the mockImplementationOnce override below can type its (userId, options) impl.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
     enrich: jest.fn(async (_userId: string, _options?: unknown) => {
       callOrder.push('extract_graph');
 

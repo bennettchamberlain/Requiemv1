@@ -47,6 +47,15 @@ export class QuestionEntity {
   @Column({ type: 'uuid', nullable: true, name: 'is_private_to' })
   isPrivateTo?: string | null;
 
+  /**
+   * Set when this row is one user's private copy of a shared catalogue row,
+   * minted because a shared row is read-only to an ordinary caller. The origin
+   * is filtered out of that user's selections so the copy replaces it rather
+   * than sitting beside it — see `excludeForkedOriginsSql`.
+   */
+  @Column({ type: 'uuid', nullable: true, name: 'forked_from_question_id' })
+  forkedFromQuestionId?: string | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -68,6 +77,7 @@ export class QuestionEntity {
       timesAsked: entity.timesAsked,
       timesAnswered: entity.timesAnswered,
       isPrivateTo: entity.isPrivateTo,
+      forkedFromQuestionId: entity.forkedFromQuestionId ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

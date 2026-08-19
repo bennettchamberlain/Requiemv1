@@ -5,6 +5,8 @@ import path from 'node:path';
 
 import { stripCallLogHeading } from '@ci/domains/graph';
 
+import { isShortCode } from '../staging/identity';
+
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
 import type { ImportParams, EntityAttribute, Relationship } from './timeline';
@@ -14,6 +16,42 @@ type GoogleVoiceOptions = Record<string, never>;
 interface GVEntity {
   name?: string;
   phone?: string;
+}
+
+/**
+ * The staged `type` for one end of a Google Voice conversation.
+ *
+ * Declared here rather than left to `resolveEntityType`, whose
+ * `hasContactIdentity` fallback infers 'contact' only from an attribute long
+ * enough to be a HANDLE. Every participant this file stages carries at most a
+ * phone, so the ones whose number is too short resolved to a null type and
+ * `push/entities.ts entityTypeFor` filed them under `DEFAULT_ENTITY_TYPE` —
+ * `Concept` — by accident. On the QA corpus that was 142 rows.
+ *
+ * The accident landed on the right answer, and that is the point of saying it
+ * out loud: those 142 rows are SMS SHORT CODES ("411", "99217", "227898"), the
+ * numbers services text from. Google Voice's other end is not a person by
+ * construction the way a vCard's is — this is a message log, not an address
+ * book — so the type cannot simply be 'contact' the way `vcard.ts`,
+ * `contactlist.ts` and `applecontacts.ts` may declare it. A row named "411" in
+ * somebody's list of people is wrong, it would enter duplicate detection and
+ * the person search index, and nothing downstream would catch it:
+ * `isNonNameParticipant` deliberately lets a bare number through ("a short
+ * handle, a bare phone number, a single token — all still pass").
+ *
+ * So: a real handle, or a name with no number at all, is a `contact` and
+ * becomes a `Person`; a short code is a `short_code` and keeps falling to
+ * `Concept`, which is exactly what that default is documented to mean — "a
+ * thing worth having a node for that is neither a person nor a place". The
+ * difference from today is that it is now a decision the parser records, not a
+ * side effect of a digit threshold in another module.
+ *
+ * Short codes are staged rather than dropped because they are real
+ * correspondents: 5,307 communications on the QA corpus have one as their
+ * `from_entity_id`.
+ */
+function participantType(participant: GVEntity): 'contact' | 'short_code' {
+  return isShortCode(participant.phone) ? 'short_code' : 'contact';
 }
 
 /** Prefix marking a Google Voice thread id that names a FILE, not a contact. */
@@ -212,7 +250,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     // <div class="haudio"> block (hAudio microformat) with <abbr class="published">
     // / <abbr class="duration"> and, for voicemails, a <span class="note">
     // transcript — never a <div class="message"> or a <q> text body. The
-    // msgRegex below doesn't match haudio divs at all, so without this branch
+    // messageBlocks() below doesn't match haudio divs at all, so without this branch
     // every call/voicemail file silently produced zero items. Route them to a
     // dedicated handler instead of falling into the SMS/MMS message loop.
     if (/<div class="haudio"/i.test(raw)) {
@@ -221,12 +259,10 @@ export class GoogleVoiceFileImporter implements FileImporter {
       return;
     }
 
-    // Each message is a flat <div class="message"> … </div> block. The real Google
+    // Each message is a <div class="message"> … </div> block. The real Google
     // Voice HTML uses <abbr class="dt" title="ISO">, a <cite class="sender vcard">
     // with <a class="tel" href="tel:…"><span class="fn">name</span></a>, then the
     // body in <q>…</q>. Pull each field independently (order-tolerant).
-    const msgRegex = /<div class="message[^"]*">([\s\S]*?)<\/div>/gi;
-    let match: RegExpExecArray | null;
     const participants: Record<string, GVEntity> = {};
     // The non-'Me' party in the file is the conversation contact; sender 'Me'
     // marks an outbound message. Track the contact so an outbound message (whose
@@ -246,8 +282,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     // block DOES carry a <cite class="sender vcard">, so remember it here while
     // we still know which block we are in.
     const attachmentSenders = new Map<string, { isOutbound: boolean; sender: GVEntity }>();
-    while ((match = msgRegex.exec(raw)) !== null) {
-      const block = match[1];
+    for (const block of messageBlocks(raw)) {
       // Read the sender BEFORE the no-body bail-out: an image-only MMS is still
       // a message from somebody, and both `participants` and the contact
       // tracking below are strictly better for knowing about it.
@@ -327,6 +362,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
 
       params.pipeline.push({
         entity: {
+          type: participantType(p),
           name: p.name || p.phone,
           attributes: p.phone ? [{ name: 'phone', value: p.phone, identity: true } as EntityAttribute] : [],
         },
@@ -484,6 +520,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     if (sender.phone || sender.name) {
       params.pipeline.push({
         entity: {
+          type: participantType(sender),
           name: sender.name || sender.phone,
           attributes: sender.phone
             ? [{ name: 'phone', value: sender.phone, identity: true } as EntityAttribute]
@@ -535,7 +572,12 @@ function counterpartEdges(
       relation: 'participant',
       to: {
         entity: {
-          type: 'contact',
+          // Same rule as the two entity pushes above, and it matters most here:
+          // this edge is the only one of the three that has never run against
+          // the QA corpus, so its hard-coded 'contact' was a latent `Person`
+          // named "411" waiting for the next import rather than a row anyone
+          // could see. See participantType.
+          type: participantType({ name, phone }),
           name,
           attributes: phone ? [{ name: 'phone', value: phone, identity: true } as EntityAttribute] : [],
         },
@@ -543,6 +585,73 @@ function counterpartEdges(
       metadata: { direction: isOutbound ? 'outgoing' : 'incoming' },
     },
   ];
+}
+
+/**
+ * The inner HTML of every `<div class="message">` block, each with its FULL
+ * extent.
+ *
+ * Not a regex, because the extent is not regular. A real Google Voice MMS
+ * wraps every attachment in its own sibling div inside the message:
+ *
+ *   <div class="message">…<q></q>
+ *     <div><img src="…-7-1"/></div> <div><img src="…-7-2"/></div> …
+ *   </div>
+ *
+ * The lazy `([\s\S]*?)<\/div>` this replaced stopped at the FIRST `</div>`,
+ * which closes the first attachment wrapper — so the captured block ended
+ * after image 1 and images 2..N sat outside every block the parser could see.
+ * `attachmentSenders` therefore had no entry for them, and they reached
+ * ci.communications with no sender, no recipient and no direction. On the live
+ * corpus that is 274 rows, and the signature is exact: every one is an
+ * attachment whose per-message index is >= 2 (168 x "-2", 48 x "-3", … 1 x
+ * "-15") and NOT ONE has index 1.
+ *
+ * Counting `<div` / `</div>` finds the real close. Scanning resumes AFTER the
+ * block rather than inside it: a message div never nests another message div,
+ * and re-entering one would attribute the same attachments twice.
+ */
+function messageBlocks(raw: string): string[] {
+  const blocks: string[] = [];
+  const openRegex = /<div class="message[^"]*">/gi;
+  let open: RegExpExecArray | null;
+  while ((open = openRegex.exec(raw)) !== null) {
+    const start = open.index + open[0].length;
+    const end = matchingDivCloseIndex(raw, start);
+    blocks.push(raw.slice(start, end));
+    openRegex.lastIndex = end;
+  }
+
+  return blocks;
+}
+
+/**
+ * Index of the `</div>` closing the div whose body starts at `from`.
+ *
+ * Returns the end of the string when the markup is unbalanced, so a truncated
+ * export still yields its final block instead of silently dropping it — the
+ * lazy regex used to "recover" from bad markup by ending the block early, and
+ * ending it late loses nothing that was ever parsed out of it.
+ */
+function matchingDivCloseIndex(raw: string, from: number): number {
+  const tagRegex = /<(\/?)div\b[^>]*>/gi;
+  tagRegex.lastIndex = from;
+  let depth = 0;
+  let tag: RegExpExecArray | null;
+  while ((tag = tagRegex.exec(raw)) !== null) {
+    if (!tag[1]) {
+      depth++;
+      continue;
+    }
+
+    if (depth === 0) {
+      return tag.index;
+    }
+
+    depth--;
+  }
+
+  return raw.length;
 }
 
 function stripTags(h: string): string {

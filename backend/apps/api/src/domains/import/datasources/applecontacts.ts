@@ -224,7 +224,14 @@ export class AppleContactsFileImporter implements FileImporter {
     }
 
     params.pipeline.push({
-      entity: { name, attributes, metadata: { Source: 'AppleContacts', DB: path.basename(ADDRESS_BOOK_DB) } },
+      // See vcard.ts: an Address Book card is a contact regardless of which
+      // optional fields it happens to fill.
+      entity: {
+        name,
+        type: 'contact',
+        attributes,
+        metadata: { Source: 'AppleContacts', DB: path.basename(ADDRESS_BOOK_DB) },
+      },
     });
   }
 }

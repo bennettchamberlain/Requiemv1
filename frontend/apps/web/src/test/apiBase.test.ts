@@ -2,6 +2,7 @@ import {
   buildApiUrl,
   getApiBaseUrl,
   initApiBaseUrl,
+  isIosPlatform,
   isNativePlatform,
   persistApiBaseUrl,
   setApiBaseUrl,
@@ -11,19 +12,27 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 // Minimal stand-ins for the native Capacitor runtime + Web Storage, used to
 // exercise the native code paths from the node test environment.
 interface FakeWindow {
-  Capacitor?: { isNativePlatform: () => boolean };
+  Capacitor?: { isNativePlatform: () => boolean; getPlatform?: () => string };
   localStorage: Pick<Storage, 'getItem' | 'setItem'>;
 }
 
-function installFakeWindow(opts: { native: boolean; stored?: string | null }): Map<string, string> {
+function installFakeWindow(opts: {
+  native: boolean;
+  platform?: string;
+  stored?: string | null;
+}): Map<string, string> {
   const store = new Map<string, string>();
 
   if (opts.stored != null) {
     store.set('ci.apiBaseUrl', opts.stored);
   }
 
+  const platform = opts.platform;
   const fakeWindow: FakeWindow = {
-    Capacitor: { isNativePlatform: () => opts.native },
+    Capacitor: {
+      isNativePlatform: () => opts.native,
+      ...(platform ? { getPlatform: () => platform } : {}),
+    },
     localStorage: {
       getItem: (key) => store.get(key) ?? null,
       setItem: (key, value) => {
@@ -93,6 +102,17 @@ describe('apiBase — native detection + persistence', () => {
 
     installFakeWindow({ native: false });
     expect(isNativePlatform()).toBe(false);
+  });
+
+  it('isIosPlatform() is true only on native iOS', () => {
+    delete (globalThis as unknown as { window?: unknown }).window;
+    expect(isIosPlatform()).toBe(false);
+
+    installFakeWindow({ native: true, platform: 'android' });
+    expect(isIosPlatform()).toBe(false);
+
+    installFakeWindow({ native: true, platform: 'ios' });
+    expect(isIosPlatform()).toBe(true);
   });
 
   it('initApiBaseUrl() is a no-op when not native (web keeps same-origin)', () => {

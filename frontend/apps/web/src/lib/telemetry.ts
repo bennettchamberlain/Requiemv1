@@ -366,7 +366,9 @@ export async function initTelemetry(): Promise<void> {
     enableLogs: import.meta.env.VITE_SENTRY_ENABLE_LOGS !== 'false',
     sendDefaultPii: false,
     // Read the origin per event rather than capturing it once here. Today
-    // `/server` is only routed to when no origin is set yet (App.tsx), so in
+    // Today `/device-connect` (or Advanced `/server`) is routed when no origin is
+    // set yet (App.tsx), so in
+
     // practice it cannot change after init — but `persistApiBaseUrl()` applies
     // a new origin immediately to the running session, so the moment that
     // screen is linked from Settings a value captured here would go stale and

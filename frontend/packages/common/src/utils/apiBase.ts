@@ -76,6 +76,20 @@ export function isNativePlatform(): boolean {
 }
 
 /**
+ * True only inside the iOS Capacitor shell. Web, Android, and tests without a
+ * `getPlatform` stub stay false so browser auth is unchanged.
+ */
+export function isIosPlatform(): boolean {
+  if (!isNativePlatform()) {
+    return false;
+  }
+
+  const cap = (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+
+  return cap?.getPlatform?.() === 'ios';
+}
+
+/**
  * Initialize the API origin at startup. Call once from the app entrypoint before
  * rendering. On web this is a no-op (origin stays `''` → same-origin). On native it
  * loads the user-configured server origin from localStorage (which the Capacitor

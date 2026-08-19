@@ -396,7 +396,10 @@ export interface LedgerRow {
   stage_version: number;
   status: string;
   reason: string | null;
+  /** Attempts that cost the row something — the counter quarantine is measured against. */
   attempts: number;
+  /** Consecutive failures blamed on the world; never counted toward quarantine. */
+  transient_attempts: number;
   next_attempt_at: Date | null;
   user_id: string | null;
   updated_at: Date;
@@ -913,7 +916,7 @@ export class PipelineHarness {
   async ledgerRows(): Promise<LedgerRow[]> {
     return this.dataSource.query<LedgerRow[]>(
       `SELECT entity_type, entity_id, stage, stage_version, status, reason, attempts,
-              next_attempt_at, user_id, updated_at
+              transient_attempts, next_attempt_at, user_id, updated_at
          FROM ci.pipeline_state
         WHERE stage = $1
         ORDER BY entity_id`,

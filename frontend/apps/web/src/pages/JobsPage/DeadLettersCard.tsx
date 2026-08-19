@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { Badge, Button, Card, Checkbox, Skeleton } from '@ci/shadcn';
+import { Badge, Button, Card, Checkbox, Skeleton, cn } from '@ci/shadcn';
 import { AlertTriangle, RotateCcw } from '@ci/shadcn/icons';
 
-import { COMPACT_CARD } from './layout';
+import { FoldBody, FoldCard, FoldTrigger, cardPad, usePhone } from './Fold';
 import type { DeadLetterGroup, DeadLetterReplayResponse } from './useDeadLetters';
 
 type Props = {
@@ -88,6 +88,7 @@ export function describeReplay(result: DeadLetterReplayResponse): string {
  * there is deliberately no "select all" affordance.
  */
 export function DeadLettersCard({ groups, total, loading, error, onReplay }: Props) {
+  const phone = usePhone();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -131,10 +132,29 @@ export function DeadLettersCard({ groups, total, loading, error, onReplay }: Pro
     }
   }, [busy, onReplay, selectedIds]);
 
+  const replayButton = (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={selectedIds.length === 0 || busy}
+      onClick={() => void replaySelected()}
+      className={phone ? 'w-full' : 'w-full md:w-auto'}
+    >
+      <RotateCcw className="mr-2 h-4 w-4" />
+      {busy ? 'Replaying…' : `Replay selected (${selectedIds.length})`}
+    </Button>
+  );
+
   return (
-    <Card className={COMPACT_CARD}>
-      <Card.Header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
+    <FoldCard fold>
+      <Card.Header
+        className={cn(
+          'flex gap-2',
+          phone ? 'flex-col' : 'flex-col md:flex-row md:items-center md:justify-between',
+          cardPad(phone),
+        )}
+      >
+        <FoldTrigger>
           <Card.Title className="text-base">Dead letters</Card.Title>
           <Card.Description>
             {loading && groups.length === 0
@@ -145,68 +165,41 @@ export function DeadLettersCard({ groups, total, loading, error, onReplay }: Pro
                     groups.length === 1 ? 'cause' : 'causes'
                   }`}
           </Card.Description>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={selectedIds.length === 0 || busy}
-          onClick={() => void replaySelected()}
-          className="w-full md:w-auto"
-        >
-          <RotateCcw className="mr-2 h-4 w-4" />
-          {busy ? 'Replaying…' : `Replay selected (${selectedIds.length})`}
-        </Button>
+        </FoldTrigger>
+        {phone ? null : replayButton}
       </Card.Header>
 
-      <Card.Content className="space-y-2">
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
+      <FoldBody>
+        <Card.Content className={cn('space-y-2', cardPad(phone))}>
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
 
-        {replayError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {replayError}
-          </p>
-        ) : null}
+          {replayError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {replayError}
+            </p>
+          ) : null}
 
-        {status ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            {status}
-          </p>
-        ) : null}
+          {status ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {status}
+            </p>
+          ) : null}
 
-        {loading && groups.length === 0 ? (
-          <Skeleton className="h-32 w-full" />
-        ) : groups.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No job has given up and parked its payload here.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
-                  <th scope="col" className="w-8 py-1.5" />
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
-                    Error
-                  </th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
-                    Event
-                  </th>
-                  <th scope="col" className="py-1.5 pr-3 text-right font-medium">
-                    Count
-                  </th>
-                  <th scope="col" className="py-1.5 text-right font-medium">
-                    Last failure
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((group) => (
-                  <GroupRow
-                    key={group.key}
+          {loading && groups.length === 0 ? (
+            <Skeleton className="h-32 w-full" />
+          ) : groups.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No job has given up and parked its payload here.
+            </p>
+          ) : phone ? (
+            <ul>
+              {groups.map((group) => (
+                <li key={group.key}>
+                  <GroupCard
                     group={group}
                     selected={selected.has(group.key)}
                     expanded={expanded === group.key}
@@ -215,13 +208,51 @@ export function DeadLettersCard({ groups, total, loading, error, onReplay }: Pro
                       setExpanded((current) => (current === group.key ? null : group.key))
                     }
                   />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card.Content>
-    </Card>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
+                    <th scope="col" className="w-8 py-1.5" />
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      Error
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      Event
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+                      Count
+                    </th>
+                    <th scope="col" className="py-1.5 text-right font-medium">
+                      Last failure
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.map((group) => (
+                    <GroupRow
+                      key={group.key}
+                      group={group}
+                      selected={selected.has(group.key)}
+                      expanded={expanded === group.key}
+                      onToggleSelected={() => toggle(group.key)}
+                      onToggleExpanded={() =>
+                        setExpanded((current) => (current === group.key ? null : group.key))
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {phone ? <div className="pt-1">{replayButton}</div> : null}
+        </Card.Content>
+      </FoldBody>
+    </FoldCard>
   );
 }
 
@@ -273,17 +304,75 @@ function GroupRow({
         <tr className="border-b border-border/40">
           <td />
           <td colSpan={4} className="py-2 pr-3">
-            {/* The full error WITH stack. It is the reason the row is worth
-                keeping, and it is what tells an operator whether a replay has any
-                chance — a stack in `validateModel` is a config error, and
-                replaying it will fail identically. */}
-            <pre className="max-h-48 overflow-auto rounded bg-muted/40 p-2 text-xs whitespace-pre-wrap">
-              {group.detail}
-            </pre>
-            <p className="pt-1 text-xs text-muted-foreground">First seen {formatAge(group.firstFailedAt)}.</p>
+            <GroupDetail group={group} />
           </td>
         </tr>
       ) : null}
+    </>
+  );
+}
+
+function GroupCard({
+  group,
+  selected,
+  expanded,
+  onToggleSelected,
+  onToggleExpanded,
+}: {
+  group: DeadLetterGroup;
+  selected: boolean;
+  expanded: boolean;
+  onToggleSelected: () => void;
+  onToggleExpanded: () => void;
+}) {
+  return (
+    <div className="flex gap-2 border-b border-border/40 py-2.5 last:border-0">
+      <Checkbox
+        checked={selected}
+        onCheckedChange={onToggleSelected}
+        aria-label={`Select ${group.count} ${group.eventName} failures: ${group.error}`}
+        className="mt-0.5"
+      />
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={onToggleExpanded}
+          className="w-full text-left"
+          aria-expanded={expanded}
+        >
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+            <span className="min-w-0 break-words text-sm">{group.error}</span>
+          </span>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <Badge variant="secondary" className="text-[10px]">
+              {group.eventName}
+            </Badge>
+            <span className="tabular-nums">{group.count.toLocaleString()}</span>
+            <span>{formatAge(group.lastFailedAt)}</span>
+          </p>
+        </button>
+        {expanded ? (
+          <div className="pt-2">
+            <GroupDetail group={group} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function GroupDetail({ group }: { group: DeadLetterGroup }) {
+  return (
+    <>
+      {/* The full error WITH stack. It is the reason the row is worth
+          keeping, and it is what tells an operator whether a replay has any
+          chance — a stack in `validateModel` is a config error, and
+          replaying it will fail identically. */}
+      <pre className="max-h-48 overflow-auto rounded bg-muted/40 p-2 text-xs whitespace-pre-wrap">
+        {group.detail}
+      </pre>
+      <p className="pt-1 text-xs text-muted-foreground">First seen {formatAge(group.firstFailedAt)}.</p>
     </>
   );
 }

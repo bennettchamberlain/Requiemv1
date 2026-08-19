@@ -327,6 +327,75 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     `,
   },
   {
+    id: 'contact-cards-typed-as-concept',
+    severity: 'high',
+    title: 'Contact cards filed as Concept instead of Person — a human sitting in the graph as a thing',
+    scope: 'ci.entities',
+    remedy:
+      'A contact card whose subject is not a Person. The cause is always the same: the parser typed the ' +
+      'ITEM it emitted but not the ENTITY beside it, so `resolveEntityType` had only ' +
+      '`hasContactIdentity` left to classify it — and a card carrying just a NAME has no phone or email ' +
+      'for that to find, so it fell through to `type = null` and `entityTypeFor` mapped null to ' +
+      "DEFAULT_ENTITY_TYPE = 'Concept'. Whether a card lists a phone number is not what decides whether " +
+      'its subject is a human. Every known source is fixed forward — linkedin.ts, then vcard.ts, ' +
+      'contactlist.ts and applecontacts.ts in f24110960 — and 20260819092314 re-types and re-keys the ' +
+      'rows already written. A NON-ZERO count on a source not ' +
+      'named there means a FURTHER contact-shaped datasource is omitting `type` on its entity: set it to ' +
+      "'contact' at the parser, then write the same re-type-and-re-key migration for it — re-typing " +
+      'alone is not enough, because the staged type is folded into `naturalKeyFor`, so the fix moves the ' +
+      'upsert key and a re-import would mint a fresh Person beside the stale Concept rather than ' +
+      'updating it. The `breakdown` names the importer to go and look at.',
+    mirrors: 'db/postgres/migrations/20260819092314_retype_contact_sourced_concepts_as_people.sql',
+    // Deliberately NOT scoped to the two sources the migration repairs: that
+    // migration cleans a known corpus, this check watches for the NEXT source to
+    // make the same mistake. The two predicates agree on the SHAPE — a
+    // handle-less contact card filed as a Concept by an importer — and differ in
+    // how they recognise one, which is the one divergence from this file's
+    // mirroring rule worth having: a vcard-scoped check could not have caught
+    // vcard, and could not have caught contactlist.ts or applecontacts.ts either.
+    //
+    // Recognising a contact card from its properties alone is the whole
+    // difficulty, and it must be done WITHOUT a source list. What does NOT work
+    // is `properties ? 'Source'`: every parser stamps it, so that predicate also
+    // flags 20 Uber Eats dishes ("Seared Ahi Tuna Salad", "Horchata") which are
+    // entirely legitimate Concepts. A HIGH check that can never reach zero is
+    // worse than no check, so the discriminator is the contact-card metadata
+    // vocabulary instead — keys only a parser reading a person's card emits.
+    // Verified on the live corpus: this predicate returns 2,247 (every mis-typed
+    // vCard row, nothing else) before the migration and 0 after.
+    //
+    // Handle-absence is the other half, and on the reference corpus it is exact:
+    // 0 of the 2,249 mis-typed rows carried properties->'email' or ->'phone', and
+    // 0 of the 1,335 correctly-typed cards lacked one. A Concept WITH a handle is
+    // a different (and so far hypothetical) bug, left out rather than folded in.
+    //
+    // KNOWN BLIND SPOT, stated because a silent one is the failure mode this file
+    // exists to prevent: the 2 mis-typed `contact_list` rows are invisible here.
+    // Their parser stamps only {Source, File}, so nothing in the row's own data
+    // says "contact" — the migration catches them by source, and this check
+    // cannot. A datasource whose contact entities carry no contact metadata at all
+    // is only reachable by a source list, which is exactly what this check is
+    // built to avoid needing.
+    sql: String.raw`
+      WITH bad AS (
+        SELECT entity_id, name, linked_table, owner_user_id
+          FROM ci.entities
+         WHERE entity_type = 'Concept'
+           AND linked_table LIKE 'import:%'
+           AND merged_into_entity_id IS NULL
+           AND properties ?| array['Names', 'Emails', 'Phones', 'Organizations',
+                                   'JobTitles', 'Nicknames', 'SocialProfiles', 'Birthday']
+           AND NOT (properties ? 'email' OR properties ? 'phone')
+           AND name IS NOT NULL
+           AND btrim(name) <> ''
+      )
+      SELECT count(*)::bigint AS count,
+             ${breakdownBy('linked_table')} AS breakdown,
+             ${SAMPLE} AS sample
+        FROM bad
+    `,
+  },
+  {
     id: 'person-duplicate-names',
     severity: 'medium',
     title: 'Person entities sitting in exact-duplicate name groups — the same human, several times',
@@ -426,6 +495,51 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
          WHERE e.category = 'capture'
            AND e.metadata ->> 'FileId' IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM ci.content c WHERE c.event_id = e.event_id)
+      )
+      SELECT count(*)::bigint AS count,
+             ${breakdownBy('source_system')} AS breakdown,
+             ${SAMPLE} AS sample
+        FROM bad
+    `,
+  },
+  {
+    id: 'blank-social-affiliation-content',
+    severity: 'high',
+    title: 'ci.content rows for a connection or a subreddit membership — an entry with no body at all',
+    scope: 'ci.content',
+    remedy:
+      'A LinkedIn connection and a moderated subreddit carry no Text, no Body and no URL, so the ' +
+      'content row toContentInput built for them has a NULL text AND a NULL url — and ci.content has ' +
+      'no title column, so nothing about the row renders in any Content view. `destinationsFor` was ' +
+      "sending every social.* record to 'content' as well as 'events' (fixed by isSocialAffiliation in " +
+      'push/canonical.ts); 20260819051916 deletes the rows already written. The facts are not lost ' +
+      'either way: the connection is a ci.entities Person carrying the profile URL plus a dated ' +
+      'social event, and the subreddit is an event titled r/<sub>.',
+    mirrors: 'db/postgres/migrations/20260819051916_cleanup_blank_social_affiliation_content_rows.sql',
+    // Provenance-scoped, exactly as the migration is: this watches the ONE
+    // shape the router now withholds, not blank content rows in general. Other
+    // sources produce blank rows for their own reasons (vcard contact cards
+    // with no note, Amazon app purchases) and folding them in here would make
+    // this check permanently non-zero for causes it says nothing about.
+    //
+    // Emptiness is `!~ '[^[:space:]]'` and not `btrim(x) = ''` for the reason
+    // the events-location-without-name check documents: btrim strips SPACES
+    // ONLY, so the btrim form reads a body of two newlines as present.
+    sql: String.raw`
+      WITH bad AS (
+        SELECT id, source_system, source_id, source_data ->> 'Kind' AS kind
+          FROM ci.content
+         WHERE source_type = 'ci-import-tools'
+           AND (
+                (source_system = 'linkedin' AND source_data ->> 'Kind' = 'connection')
+             OR (
+                  source_system = 'reddit'
+                  AND source_data ->> 'Kind' IN ('moderated_subreddit', 'subscribed_subreddit')
+                )
+               )
+           AND external_id IS NULL
+           AND coalesce(text, '') !~ '[^[:space:]]'
+           AND coalesce(url, '') !~ '[^[:space:]]'
       )
       SELECT count(*)::bigint AS count,
              ${breakdownBy('source_system')} AS breakdown,
@@ -594,8 +708,13 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     remedy:
       'Quarantine is the state that makes a stage LOOK healthy while doing nothing: claim() skips these ' +
       'rows, so the job runs, reports green, and writes nothing. Replaying the dead letters does not ' +
-      'clear it — the quarantine outlives them. Read `reason`, fix the cause, then clear the rows for ' +
-      'that stage explicitly before re-running the leg.',
+      'clear it — the quarantine outlives them. Read `reason` first: it is the selector for the fix. ' +
+      'Once the cause is dealt with, POST /api/pipeline/quarantine/release with {"reasons":[...]} sends ' +
+      'exactly those rows back to the sweep with a full attempt budget — the alternative, bumping the ' +
+      'stage version, re-opens the ENTIRE corpus, which on a metered stage is a bill. ' +
+      'A pre-2026-08 appliance may show a large `provider_unavailable` or `ollama_unreachable` count ' +
+      'here: those were a defect (a transient outage spent the quarantine budget in ~15 minutes) and ' +
+      'migration 20260819054505 releases them on upgrade.',
     mirrors: null,
     sql: String.raw`
       WITH bad AS (

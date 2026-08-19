@@ -47,6 +47,13 @@ export interface CatalogueEntry {
   isSeedQuestion: boolean;
   createdByLlm: boolean;
   isPrivateTo: string | null;
+  /**
+   * Set when this row is the reader's own copy of a shared catalogue reflection.
+   * Shared reflections are read-only — every user on the appliance is asked from
+   * them — so editing one copies it first. The shared original is hidden from
+   * whoever made the copy, and untouched for everybody else.
+   */
+  forkedFromQuestionId: string | null;
   timesAsked: number;
   timesAnswered: number;
   createdAt: string;

@@ -45,7 +45,8 @@
       },
       "issuer": "PORTAL_OIDC_ISSUER",
       "jwksUri": "PORTAL_OIDC_JWKS_URI",
-      "audience": "PORTAL_OIDC_AUDIENCE"
+      "audience": "PORTAL_OIDC_AUDIENCE",
+      "pushRelayUrl": "PORTAL_PUSH_RELAY_URL"
     },
     "hubForwardAuth": {
       "enabled": {
@@ -134,6 +135,28 @@
     "maxArchiveEntries": "CI_IMPORT_MAX_ARCHIVE_ENTRIES",
     "maxArchiveBytes": "CI_IMPORT_MAX_ARCHIVE_BYTES",
     "databaseDataDir": "CI_IMPORT_DB_DATA_DIR"
+  },
+  "accountDeletion": {
+    "graceDays": {
+      "__name": "CI_ACCOUNT_PURGE_GRACE_DAYS",
+      "__format": "json"
+    },
+    "purge": {
+      "enabled": "CI_ACCOUNT_PURGE_ENABLED",
+      "batchSize": {
+        "__name": "CI_ACCOUNT_PURGE_BATCH_SIZE",
+        "__format": "json"
+      },
+      "maxAccountsPerRun": {
+        "__name": "CI_ACCOUNT_PURGE_MAX_ACCOUNTS",
+        "__format": "json"
+      },
+      "retryBackoffMinutes": {
+        "__name": "CI_ACCOUNT_PURGE_RETRY_MINUTES",
+        "__format": "json"
+      },
+      "excludedColumns": "CI_ACCOUNT_PURGE_EXCLUDED_COLUMNS"
+    }
   },
   "enrichment": {
     "window": {

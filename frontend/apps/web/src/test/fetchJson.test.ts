@@ -102,3 +102,57 @@ describe('fetchJson — native API key injection', () => {
     });
   });
 });
+
+describe('fetchJson — native CapacitorHttp', () => {
+  beforeEach(() => {
+    setApiBaseUrl('');
+    setApiKey(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setApiBaseUrl('');
+    setApiKey(null);
+    delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+  });
+
+  it('uses CapacitorHttp instead of fetch inside the native shell', async () => {
+    const fetchMock = stubFetch();
+    const request = vi.fn(async () => ({ status: 200, data: { ok: true } }));
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { CapacitorHttp: { request } },
+    };
+
+    setApiBaseUrl('https://memory.example.com');
+    const data = await fetchJson<{ ok: boolean }>('/api/authenticate/oidc/native/exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'otc-1' }),
+    });
+
+    expect(data).toEqual({ ok: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://memory.example.com/api/authenticate/oidc/native/exchange',
+        method: 'POST',
+        data: { code: 'otc-1' },
+      }),
+    );
+  });
+
+  it('falls back to fetch when CapacitorHttp is missing', async () => {
+    const fetchMock = stubFetch();
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {},
+    };
+
+    await fetchJson('/api/x');
+
+    expect(fetchMock).toHaveBeenCalled();
+  });
+});

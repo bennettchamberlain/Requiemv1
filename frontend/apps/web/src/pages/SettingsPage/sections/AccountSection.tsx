@@ -12,7 +12,14 @@ import { useAuth, useCurrentUser } from '@/hooks';
  * (Apple Guideline 5.1.1(v), Google Play Data Deletion). Self-hosting is not an
  * exemption; the initiation path has to live in the app even though the data sits on
  * the user's own appliance.
+ *
+ * The copy below states 30 days because that is `accountDeletion.graceDays` on the
+ * server, which stamps `purge_after` at request time. If that default changes, this
+ * text has to change with it — it is a promise made to the person clicking the
+ * button, and the store disclosures repeat it. See
+ * `docs/architecture/account-deletion.md`.
  */
+const PURGE_GRACE_DESCRIPTION = '30 days';
 export function AccountSection() {
   const [{ authToken }, { logout }] = useAuth();
   const { user } = useCurrentUser();
@@ -69,8 +76,9 @@ export function AccountSection() {
             <div className="space-y-1">
               <h3 className="text-sm font-medium">Delete account</h3>
               <p className="text-sm text-muted-foreground">
-                Signs you out everywhere immediately and schedules this account and its memories for permanent
-                deletion from this server. This cannot be undone.
+                Signs you out everywhere immediately. This account, its memories and any files you uploaded
+                are then permanently deleted from this server after {PURGE_GRACE_DESCRIPTION}. This cannot be
+                undone.
               </p>
             </div>
           </div>
@@ -96,8 +104,8 @@ export function AccountSection() {
           <Dialog.Header>
             <Dialog.Title>Delete your account?</Dialog.Title>
             <Dialog.Description>
-              Your access is revoked right away, and this account and its memories are permanently deleted
-              from this server afterwards. This cannot be undone.
+              Your access is revoked right away. After {PURGE_GRACE_DESCRIPTION} this account, its memories
+              and any files you uploaded are permanently deleted from this server. This cannot be undone.
             </Dialog.Description>
           </Dialog.Header>
 

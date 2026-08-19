@@ -2,8 +2,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import type { StagedEntity } from '../../entities/StagedEntityEntity';
+import { entityTypeFor } from '../../push/entities';
+import { resolveEntityType } from '../../staging/identity';
 import { GoogleVoiceFileImporter } from '../googlevoice';
-import type { ImportParams, Relationship } from '../timeline';
+import type { Entity, ImportParams, Relationship } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
 
@@ -580,6 +583,75 @@ describe('Google Voice participants', () => {
     expect(edges[0].metadata?.direction).toBe('outgoing');
   });
 
+  it('attributes EVERY image of a multi-image MMS, not just the first', async () => {
+    // The real export wraps each attachment in its OWN div inside the message
+    // block — the shape below is copied from a live conversation file. The lazy
+    // `([\\s\\S]*?)<\\/div>` this replaced ended the block at the first of those
+    // wrappers, so images 2..N were attributed to nobody: 274 rows on the live
+    // corpus, every one an attachment with per-message index >= 2 and NOT ONE
+    // with index 1.
+    const stubs = [1, 2, 3, 4].map((n) => `Dana Wu - Text - 2025-03-01T12_01_00Z-1-${n}`);
+    const pipeline = await importInline(
+      `<html><body>
+         <div class="hChatLog hfeed"><div class="message">
+           <abbr class="dt" title="2025-03-01T12:01:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15558887777"><span class="fn">Dana Wu</span></a></cite>:
+           <q></q>
+           ${stubs.map((s) => `<div><img src="${s}" alt="Image MMS Attachment" /></div>`).join(' ')}
+         </div></div>
+       </body></html>`,
+      stubs.map((s) => `${s}.jpg`),
+    );
+
+    const attachments = pipeline.filter((p) => p.item?.metadata?.Attachment === 'image');
+    // Guard against the vacuous pass: four <img> in, four items out.
+    expect(attachments).toHaveLength(4);
+
+    for (const attachment of attachments) {
+      expect(attachment.item.metadata.Sender).toBe('Dana Wu');
+      expect(attachment.item.metadata.Direction).toBe('incoming');
+      expect(attachment.item.metadata.To).toBe('My Phone');
+      expect(participantEdges(attachment).map((e) => e.to.entity?.name)).toEqual(['Dana Wu']);
+    }
+  });
+
+  it('does not attribute one message\u2019s attachments to the next message\u2019s sender', async () => {
+    // Finding the block's real close means finding the RIGHT one. Resuming the
+    // scan mid-block, or over-running into the following sibling, would file
+    // Dana's pictures under Evan and hand the reader a confident wrong answer
+    // in place of the old blank one.
+    const pipeline = await importInline(
+      `<html><body>
+         <div class="hChatLog hfeed"><div class="message">
+           <abbr class="dt" title="2025-03-01T12:01:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15558887777"><span class="fn">Dana Wu</span></a></cite>:
+           <q></q>
+           <div><img src="Dana Wu - Text - 2025-03-01T12_01_00Z-1-1" /></div>
+           <div><img src="Dana Wu - Text - 2025-03-01T12_01_00Z-1-2" /></div>
+         </div> <div class="message">
+           <abbr class="dt" title="2025-03-01T12:05:00.000Z">Mar 1</abbr>:
+           <cite class="sender vcard"><a class="tel" href="tel:+15550001111"><span class="fn">Evan Reed</span></a></cite>:
+           <q></q>
+           <div><img src="Dana Wu - Text - 2025-03-01T12_01_00Z-2-1" /></div>
+         </div></div>
+       </body></html>`,
+      [
+        'Dana Wu - Text - 2025-03-01T12_01_00Z-1-1.jpg',
+        'Dana Wu - Text - 2025-03-01T12_01_00Z-1-2.jpg',
+        'Dana Wu - Text - 2025-03-01T12_01_00Z-2-1.jpg',
+      ],
+    );
+
+    const senderOf = (stub: string): unknown =>
+      pipeline.find(
+        (p) => p.item?.metadata?.Attachment === 'image' && p.item.content?.filename === `${stub}.jpg`,
+      )?.item.metadata.Sender;
+
+    expect(senderOf('Dana Wu - Text - 2025-03-01T12_01_00Z-1-1')).toBe('Dana Wu');
+    expect(senderOf('Dana Wu - Text - 2025-03-01T12_01_00Z-1-2')).toBe('Dana Wu');
+    expect(senderOf('Dana Wu - Text - 2025-03-01T12_01_00Z-2-1')).toBe('Evan Reed');
+  });
+
   it('claims no sender for an image that sits outside every message block', async () => {
     // The filename label names the THREAD, never the author. Filing it as a
     // sender is how this importer previously minted 241 Person entities named
@@ -598,5 +670,131 @@ describe('Google Voice participants', () => {
     expect(attachment.item.metadata.Direction).toBeUndefined();
     expect(attachment.item.metadata.To).toBeUndefined();
     expect(participantEdges(attachment)).toHaveLength(0);
+  });
+});
+
+/*
+ * A Google Voice conversation's other end is not a person by construction: SMS
+ * SHORT CODES ("411", "99217", "227898") are the numbers services text from.
+ *
+ * Before this, nothing in the parser said so — the three entity pushes left
+ * `type` to `resolveEntityType`, which infers 'contact' only from an attribute
+ * long enough to be a handle, so a short code fell through to
+ * `DEFAULT_ENTITY_TYPE`. 142 rows on the QA corpus landed as `Concept` that
+ * way: the right answer, reached by accident, and the accident cut the other
+ * way on the `participant` edge, which hard-coded 'contact' and would have
+ * minted a `Person` named "411" on the next import.
+ */
+describe('a short code is a correspondent, not a person', () => {
+  /**
+   * Models the real chain: `StagedWriter` stores `resolveEntityType(entity)` as
+   * the staged type and push's `entityTypeFor` maps that to
+   * `ci.entities.entity_type`. Mirrors vcard.test.ts's `stagedEntityType`.
+   */
+  const graphType = (entity: Entity | undefined): string =>
+    entityTypeFor({ type: resolveEntityType(entity ?? {}) } as StagedEntity);
+
+  const stagedEntities = (pipeline: EmittedGraph[]): Entity[] =>
+    pipeline.flatMap((g) => (g.entity ? [g.entity] : []));
+
+  const edgeEntities = (pipeline: EmittedGraph[]): Entity[] =>
+    pipeline.flatMap((g) =>
+      (g.edges ?? [])
+        .filter((e) => e.relation === 'participant')
+        .flatMap((e) => (e.to.entity ? [e.to.entity] : [])),
+    );
+
+  const message = (tel: string, fn: string): string =>
+    `<html><body><div class="hChatLog hfeed"><div class="message">
+       <abbr class="dt" title="2025-03-01T12:00:00.000Z">Mar 1</abbr>:
+       <cite class="sender vcard"><a class="tel" href="tel:${tel}"><span class="fn">${fn}</span></a></cite>:
+       <q>your code is 402931</q>
+     </div></div></body></html>`;
+
+  const callLog = (tel: string, fn: string): string =>
+    `<html><body><div class="haudio">
+       <span class="fn">Received call from <a class="tel" href="tel:${tel}"><span class="fn">${fn}</span></a></span>
+       <abbr class="published" title="2025-01-15T09:30:00.000Z">Jan 15</abbr>
+     </div></body></html>`;
+
+  const importHtml = async (html: string, filename: string): Promise<EmittedGraph[]> => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-code-'));
+    fs.mkdirSync(path.join(dir, 'Calls'));
+    fs.writeFileSync(
+      path.join(dir, 'Phones.vcf'),
+      'BEGIN:VCARD\nVERSION:3.0\nFN:My Phone\nTEL:+15551234567\nEND:VCARD\n',
+    );
+    fs.writeFileSync(path.join(dir, 'Calls', filename), html);
+
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline;
+  };
+
+  it('does not file the sender of a short-code text as a Person', async () => {
+    const pipeline = await importHtml(message('411', '411'), '411 - Text - 2025-03-01T12_00_00Z.html');
+    const staged = stagedEntities(pipeline);
+
+    // Guard against the vacuous pass: no entity means every assertion below
+    // would be checking `undefined` against `undefined`.
+    expect(staged.map((e) => e.name)).toEqual(['411']);
+    expect(staged.map(graphType)).toEqual(['Concept']);
+  });
+
+  it('does not file the counterpart of a short-code text as a Person either', async () => {
+    // The `participant` edge is the push that already declared a type, and the
+    // one that had never run against the corpus — so this is where a `Person`
+    // named "411" would first have appeared.
+    const pipeline = await importHtml(message('411', '411'), '411 - Text - 2025-03-01T12_00_00Z.html');
+    const edges = edgeEntities(pipeline);
+
+    expect(edges.map((e) => e.name)).toEqual(['411']);
+    expect(edges.map(graphType)).toEqual(['Concept']);
+  });
+
+  it('does not file a short-code caller as a Person', async () => {
+    const pipeline = await importHtml(callLog('+411', '+411'), '411 - Received - 2025-01-15T09_30_00Z.html');
+    const staged = stagedEntities(pipeline);
+
+    // '+411' is the shape the second QA database holds: the punctuation must
+    // not make it read as a name.
+    expect(staged.map((e) => e.name)).toEqual(['+411']);
+    expect(staged.map(graphType)).toEqual(['Concept']);
+  });
+
+  /*
+   * The cases that already worked, kept so the short-code rule cannot be
+   * satisfied by simply refusing to type anybody.
+   */
+  it('still files a real phone number as a Person, from every push', async () => {
+    const pipeline = await importHtml(
+      message('+15558887777', 'Dana Wu'),
+      'Dana Wu - Text - 2025-03-01T12_00_00Z.html',
+    );
+
+    expect(stagedEntities(pipeline).map(graphType)).toEqual(['Person']);
+    expect(edgeEntities(pipeline).map(graphType)).toEqual(['Person']);
+  });
+
+  it('still files a caller the export named but gave no number as a Person', async () => {
+    // No `tel:` at all, so `hasContactIdentity` finds nothing and only the
+    // declared type can carry this row to `Person`.
+    const pipeline = await importHtml(
+      `<html><body><div class="haudio">
+         <span class="fn">Received call from Ada Lovelace</span>
+         <abbr class="published" title="2025-01-15T09:30:00.000Z">Jan 15</abbr>
+       </div></body></html>`,
+      'Ada Lovelace - Received - 2025-01-15T09_30_00Z.html',
+    );
+    const staged = stagedEntities(pipeline);
+
+    expect(staged.map((e) => e.name)).toEqual(['Ada Lovelace']);
+    expect(staged.some((e) => e.attributes?.length)).toBe(false);
+    expect(staged.map(graphType)).toEqual(['Person']);
   });
 });

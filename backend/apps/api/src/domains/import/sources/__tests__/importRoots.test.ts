@@ -252,9 +252,7 @@ describe('realUserInboxDir', () => {
       const unit = path.join(userInboxDir(email), 'reddit', 'export.zip');
       const resolved = await resolveWithinUserInbox(unit, email);
 
-      expect(path.relative(await realUserInboxDir(email), resolved)).toBe(
-        path.join('reddit', 'export.zip'),
-      );
+      expect(path.relative(await realUserInboxDir(email), resolved)).toBe(path.join('reddit', 'export.zip'));
       // And the configured spelling is exactly what does NOT hold.
       expect(path.relative(userInboxDir(email), resolved)).toContain('..');
     });

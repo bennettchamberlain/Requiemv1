@@ -106,9 +106,10 @@ const SELF_IDENTITY_SQL = `
 
 /** Read the owner's names. Callers decide what a failure means — see PushStage. */
 export async function readSelfIdentity(db: SelfIdentityReader, userId: string): Promise<SelfIdentity> {
-  const rows = await db.query<
-    Array<{ name: string | null; email: string | null; phones_json: unknown }>
-  >(SELF_IDENTITY_SQL, [userId]);
+  const rows = await db.query<Array<{ name: string | null; email: string | null; phones_json: unknown }>>(
+    SELF_IDENTITY_SQL,
+    [userId],
+  );
 
   const names: string[] = [];
   const phones: string[] = [];

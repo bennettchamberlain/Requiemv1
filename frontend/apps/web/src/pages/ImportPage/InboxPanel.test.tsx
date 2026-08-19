@@ -157,7 +157,14 @@ describe('InboxPanel', () => {
     // The pending call must read as work, not as a frozen page.
     expect(await screen.findByText(/scanning the inbox folder/i)).toBeInTheDocument();
 
-    release({ available: true, inboxDir: '/inbox/u', units: [], skippedSymlinks: 0, truncated: false, recognitionPartial: false });
+    release({
+      available: true,
+      inboxDir: '/inbox/u',
+      units: [],
+      skippedSymlinks: 0,
+      truncated: false,
+      recognitionPartial: false,
+    });
 
     expect(await screen.findByRole('button', { name: /rescan/i })).toBeInTheDocument();
   });
@@ -170,7 +177,7 @@ describe('InboxPanel', () => {
       units: [],
       skippedSymlinks: 0,
       truncated: false,
-    recognitionPartial: false,
+      recognitionPartial: false,
     });
 
     render(<InboxPanel />);

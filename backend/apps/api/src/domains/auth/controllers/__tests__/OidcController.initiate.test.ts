@@ -40,8 +40,8 @@ function makeRes() {
   };
 }
 
-function makeReq(query: Record<string, unknown> = {}) {
-  return { headers: {}, secure: false, query } as never;
+function makeReq(query: Record<string, unknown> = {}, headers: Record<string, string> = {}) {
+  return { headers, secure: false, query } as never;
 }
 
 function cookieCall(res: ReturnType<typeof makeRes>, name: string) {
@@ -151,5 +151,46 @@ describe('OidcController.initiate (GET /authenticate/oidc)', () => {
     controller.initiate(undefined, undefined, makeReq(), res as never);
 
     expect(res.clearCookie).toHaveBeenCalledWith('oidc_redirect', { path: '/' });
+  });
+
+  it('preserves client=native when bouncing onto the public origin', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+    const savedPublicBaseUrl = config.auth.oidc.publicBaseUrl;
+    config.auth.oidc.publicBaseUrl = 'https://ci-memory.example.com';
+
+    try {
+      controller.initiate('native', undefined, makeReq({}, { host: '192.168.1.50:8642' }), res as never);
+    } finally {
+      config.auth.oidc.publicBaseUrl = savedPublicBaseUrl;
+    }
+
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledTimes(1);
+    const [bounceUrl] = res.redirect.mock.calls[0] as [string];
+    const url = new URL(bounceUrl);
+
+    expect(url.origin).toBe('https://ci-memory.example.com');
+    expect(url.searchParams.get('client')).toBe('native');
+    expect(url.searchParams.get('origin_bounced')).toBe('1');
+  });
+
+  it('does not add client=native when a web sign-in bounces', () => {
+    const { controller } = makeController();
+    const res = makeRes();
+    const savedPublicBaseUrl = config.auth.oidc.publicBaseUrl;
+    config.auth.oidc.publicBaseUrl = 'https://ci-memory.example.com';
+
+    try {
+      controller.initiate(undefined, undefined, makeReq({}, { host: '192.168.1.50:8642' }), res as never);
+    } finally {
+      config.auth.oidc.publicBaseUrl = savedPublicBaseUrl;
+    }
+
+    const [bounceUrl] = res.redirect.mock.calls[0] as [string];
+    const url = new URL(bounceUrl);
+
+    expect(url.searchParams.get('client')).toBeNull();
+    expect(url.searchParams.get('origin_bounced')).toBe('1');
   });
 });

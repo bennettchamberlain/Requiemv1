@@ -464,6 +464,7 @@ describeWithDatabase(`the import spine (${importDatabase.target})`, () => {
       for (const stage of stages.slice(1)) {
         await age(stage.id);
       }
+
       events.send.mockClear();
 
       await service.resumeInterrupted();

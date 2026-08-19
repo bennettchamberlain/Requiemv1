@@ -13,12 +13,7 @@ import {
   type IdentifierKey,
   splitPersonName,
 } from '@ci/domains/graph';
-import {
-  matchOwner,
-  readSelfIdentity,
-  shouldMapContactToSelf,
-  type SelfIdentity,
-} from '@ci/domains/import';
+import { matchOwner, readSelfIdentity, shouldMapContactToSelf, type SelfIdentity } from '@ci/domains/import';
 import { CommunicationService } from '@ci/domains/memory';
 import { CommunicationCreatedEvent, type CommunicationCreatedPayload } from '@ci/domains/memory/events';
 import { PersonalizationService } from '@ci/domains/personalization';

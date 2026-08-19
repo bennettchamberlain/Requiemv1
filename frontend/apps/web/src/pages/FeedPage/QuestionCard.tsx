@@ -26,7 +26,7 @@ export function QuestionCard({ question, submitting, onSubmit, className }: Prop
   const containerClassName = useMemo(
     () =>
       isMobile
-        ? 'h-full w-full flex flex-col border border-border bg-card text-card-foreground rounded-lg p-4 gap-4'
+        ? 'w-full flex flex-col border border-border bg-card text-card-foreground rounded-lg p-3 gap-3'
         : 'w-[550px] h-[400px] relative flex flex-col border border-border bg-card text-card-foreground shadow-md rounded-lg p-4 gap-4',
     [isMobile],
   );
@@ -60,20 +60,22 @@ export function QuestionCard({ question, submitting, onSubmit, className }: Prop
   return (
     <form className={cn(containerClassName, className)} onSubmit={handleSubmit}>
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-2xl font-semibold">Reflection</h3>
+        <h3 className={isMobile ? 'text-lg font-semibold' : 'text-2xl font-semibold'}>Reflection</h3>
         {question.category && (
           <span className="text-xs text-muted-foreground uppercase">{question.category}</span>
         )}
       </div>
 
-      <p className="text-base leading-relaxed text-foreground">{question.text}</p>
+      <p className={cn('leading-relaxed text-foreground', isMobile ? 'text-sm' : 'text-base')}>
+        {question.text}
+      </p>
 
-      <div className="flex-1 min-h-0">
+      <div className={isMobile ? undefined : 'flex-1 min-h-0'}>
         <Textarea
           value={answer}
           onChange={(event) => setAnswer(event.target.value)}
           placeholder="Share your answer..."
-          className="h-full min-h-30 resize-none"
+          className={isMobile ? 'min-h-20 resize-none' : 'h-full min-h-30 resize-none'}
           disabled={submitting}
         />
       </div>

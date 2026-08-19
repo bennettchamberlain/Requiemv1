@@ -66,10 +66,7 @@ export function minorLabelsToHide(
     const left = minors[i].x - minors[i].halfWidth;
     const right = minors[i].x + minors[i].halfWidth;
 
-    while (
-      majorIndex < majors.length &&
-      majors[majorIndex].x + majors[majorIndex].halfWidth + gap < left
-    ) {
+    while (majorIndex < majors.length && majors[majorIndex].x + majors[majorIndex].halfWidth + gap < left) {
       majorIndex += 1;
     }
 
@@ -104,10 +101,14 @@ function tickBox(el: HTMLElement, minWidth: number): AxisTickBox {
 /** Apply {@link minorLabelsToHide} to a TimelineJS TimeAxis already in the DOM. */
 export function syncTimeaxisLabelCollision(root: ParentNode): void {
   const majors = [
-    ...root.querySelectorAll<HTMLElement>('.tl-timeaxis-major .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)'),
+    ...root.querySelectorAll<HTMLElement>(
+      '.tl-timeaxis-major .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)',
+    ),
   ];
   const minors = [
-    ...root.querySelectorAll<HTMLElement>('.tl-timeaxis-minor .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)'),
+    ...root.querySelectorAll<HTMLElement>(
+      '.tl-timeaxis-minor .tl-timeaxis-tick:not(.tl-timeaxis-tick-hidden)',
+    ),
   ];
   const hide = minorLabelsToHide(
     majors.map((el) => tickBox(el, 48)),

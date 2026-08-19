@@ -16,6 +16,8 @@ import {
   DatabaseVolumeFullError,
   readDatabaseSpace,
 } from '../storage/databaseSpace';
+import { withStageContext } from '../telemetry/stageError';
+import { buildStageSummary, SUMMARY_KEY, type StageUnitInput } from '../telemetry/stageSummary';
 import type { ImportStageRunner, StageOutcome, StageRunContext } from '../types';
 
 /**
@@ -78,19 +80,23 @@ export class UnpackStage implements ImportStageRunner {
     if (isExtractableArchive(localPath)) {
       await context.progress({ processed: 0, total: 1, phase: 'extracting' });
 
-      const result = extractUploadedArchive(localPath, {
-        // The extracted tree is what the parse stage reads, so keeping the zip
-        // only doubles the run's disk footprint until cleanup — and a 350GB
-        // Takeout has ENOSPC'd a 500GB-free disk exactly that way.
-        deleteArchiveAfterExtract: true,
-        // Passed explicitly rather than left to the extractor's own defaults,
-        // which are a zip-bomb guard sized for an untrusted upload (100k
-        // entries / 10GB) and reject the archives this stage exists to unpack.
-        // Operators raise or lower them from one place; containment is asserted
-        // per entry either way.
-        maxEntries: config.import.maxArchiveEntries,
-        maxTotalBytes: config.import.maxArchiveBytes,
-      });
+      const result = await withStageContext(
+        { stage: 'unpack', phase: 'extracting', file: filename ?? path.basename(localPath) },
+        async () =>
+          extractUploadedArchive(localPath, {
+            // The extracted tree is what the parse stage reads, so keeping the zip
+            // only doubles the run's disk footprint until cleanup — and a 350GB
+            // Takeout has ENOSPC'd a 500GB-free disk exactly that way.
+            deleteArchiveAfterExtract: true,
+            // Passed explicitly rather than left to the extractor's own defaults,
+            // which are a zip-bomb guard sized for an untrusted upload (100k
+            // entries / 10GB) and reject the archives this stage exists to unpack.
+            // Operators raise or lower them from one place; containment is asserted
+            // per entry either way.
+            maxEntries: config.import.maxArchiveEntries,
+            maxTotalBytes: config.import.maxArchiveBytes,
+          }),
+      );
 
       extractedFiles = result.files;
       method = result.method;
@@ -128,27 +134,31 @@ export class UnpackStage implements ImportStageRunner {
     // the phase.
     let lastTickAt = 0;
 
-    const nested = await unpackArchives(
-      context.scratchDir,
-      (message) => this.logger.debug(message, { runId: context.runId }),
-      {
-        deleteArchives: true,
-        onRejected: (archive) => rejected.push(archive),
-        onProgress: async ({ done, total, current }) => {
-          const boundary = done === 0 || done === total;
+    const nested = await withStageContext(
+      { stage: 'unpack', phase: 'expanding', file: filename ?? undefined },
+      async () =>
+        unpackArchives(
+          context.scratchDir,
+          (message) => this.logger.debug(message, { runId: context.runId }),
+          {
+            deleteArchives: true,
+            onRejected: (archive) => rejected.push(archive),
+            onProgress: async ({ done, total, current }) => {
+              const boundary = done === 0 || done === total;
 
-          if (!boundary && Date.now() - lastTickAt < 1_000) {
-            return;
-          }
+              if (!boundary && Date.now() - lastTickAt < 1_000) {
+                return;
+              }
 
-          lastTickAt = Date.now();
-          await context.progress({
-            processed: done,
-            total,
-            phase: current != null ? `extracting ${current}` : 'expanding',
-          });
-        },
-      },
+              lastTickAt = Date.now();
+              await context.progress({
+                processed: done,
+                total,
+                phase: current != null ? `extracting ${current}` : 'expanding',
+              });
+            },
+          },
+        ),
     );
 
     const nestedFiles = nested.reduce((sum, entry) => sum + entry.files, 0);
@@ -194,6 +204,28 @@ export class UnpackStage implements ImportStageRunner {
           archive: path.basename(entry.archive),
           reason: entry.reason,
         })),
+        // Additive. The keys above keep their exact shape; this is the same
+        // facts as the reconciled per-archive account every other stage
+        // reports, so a reader walking a run's four stages sees one shape
+        // rather than four bespoke ones.
+        //
+        // The unit of this stage is an ARCHIVE, not a record: it consumes the
+        // source plus every nested archive it finds, and produces the ones it
+        // expanded. `extractionLoss` is a partial expansion of an archive that
+        // DID open, so it is reported as a note on the top-level unit rather
+        // than as a rejection — nobody knows how many entries were lost, only
+        // that some were, and inventing a count would be worse than saying so.
+        [SUMMARY_KEY]: buildStageSummary({
+          stage: 'unpack',
+          unitKind: 'archive',
+          units: unpackUnits(filename, nested.length, rejected),
+          zeroInputReason: 'no_input',
+          samples: rejected.slice(0, 5).map((entry) => ({
+            reason: 'archive_rejected' as const,
+            slug: 'archive_rejected',
+            detail: `${path.basename(entry.archive)}: ${entry.reason}`,
+          })),
+        }),
       },
     };
   }
@@ -244,4 +276,51 @@ export class UnpackStage implements ImportStageRunner {
       filename: source.originalFilename ?? path.basename(source.sourcePath),
     };
   }
+}
+
+/**
+ * The unpack stage as archives consumed, expanded and rejected.
+ *
+ * One unit for the source the run was handed, one for the nested archives it
+ * found inside it. Split, because they fail for different reasons and a person
+ * debugging "why is this import empty?" needs to know whether the OUTER zip
+ * opened at all — an appliance that rejected the upload itself and an appliance
+ * that opened it and choked on one of 400 inner zips are very different
+ * situations, and `rejected: [...]` alone did not distinguish them.
+ *
+ * A rejected archive counts as one drop, not as the records inside it: nobody
+ * knows how many there were, and guessing would put a fabricated number into a
+ * ledger whose whole value is that its numbers reconcile.
+ */
+function unpackUnits(
+  filename: string | null,
+  nestedExpanded: number,
+  rejected: readonly RejectedArchive[],
+): StageUnitInput[] {
+  // Every rejection recorded by `unpackArchives` is nested by construction —
+  // the top-level archive is expanded by `extractUploadedArchive`, which
+  // throws rather than reporting a rejection.
+  const nestedRejected = rejected.length;
+
+  return [
+    {
+      unit: filename ?? '(source)',
+      // The source either became a tree or the stage threw, so it is always one
+      // consumed and one produced. `extractionLoss` — entries inside an archive
+      // that DID open and could not be taken — is deliberately not a drop here:
+      // the extractor reports that some were lost, never how many, and putting
+      // a made-up number into a ledger whose value is that its numbers add up
+      // would be worse than the prose already on `detail.extractionLoss`.
+      produced: 1,
+    },
+    ...(nestedExpanded + nestedRejected > 0
+      ? [
+          {
+            unit: '(nested archives)',
+            produced: nestedExpanded,
+            ...(nestedRejected > 0 ? { drops: { archive_rejected: nestedRejected } } : {}),
+          },
+        ]
+      : []),
+  ];
 }

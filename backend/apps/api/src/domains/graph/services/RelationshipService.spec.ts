@@ -36,7 +36,13 @@ function makeService(repo: ReturnType<typeof makeRepo>) {
   const personService = { findById: jest.fn().mockResolvedValue({ id: 'person-stub' }) };
   const placeService = { findById: jest.fn().mockResolvedValue({ id: 'place-stub' }) };
   const stubFinder = { findById: jest.fn().mockResolvedValue({ id: 'stub' }) };
-  const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const logger = {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  };
 
   const service = new RelationshipService(
     repo as never,

@@ -26,9 +26,7 @@ export interface PlacementInput {
   now: Date;
 }
 
-export type PlacementPlan =
-  | { kind: 'placed'; start: Date; end: Date }
-  | { kind: 'no_gap' };
+export type PlacementPlan = { kind: 'placed'; start: Date; end: Date } | { kind: 'no_gap' };
 
 /** Owner-local `YYYY-MM-DD` arithmetic. Noon UTC avoids DST/date-line drift. */
 export function shiftLocalDate(date: string, days: number): string {

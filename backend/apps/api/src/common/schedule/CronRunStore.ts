@@ -10,6 +10,7 @@ import type { DataSource } from 'typeorm';
  */
 class CronRunStoreImpl {
   private dataSource: DataSource | null = null;
+
   private readonly logger = new Logger('CronRunStore');
 
   configure(dataSource: DataSource): void {

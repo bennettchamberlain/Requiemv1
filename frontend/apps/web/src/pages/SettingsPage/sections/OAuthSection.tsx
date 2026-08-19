@@ -44,7 +44,7 @@ const DELETE_PROVIDER_KEY = gql(`
   }
 `);
 
-type OAuthProvider = 'google' | 'microsoft' | 'facebook' | 'spotify' | 'github';
+type OAuthProvider = 'google' | 'microsoft' | 'facebook' | 'spotify' | 'github' | 'reddit';
 
 interface OAuthState {
   oauth: Record<
@@ -67,6 +67,7 @@ export function OAuthSection() {
       facebook: { clientId: '', clientSecret: '' },
       spotify: { clientId: '', clientSecret: '' },
       github: { clientId: '', clientSecret: '' },
+      reddit: { clientId: '', clientSecret: '' },
     },
   });
 
@@ -81,6 +82,8 @@ export function OAuthSection() {
     spotifyClientSecret: false,
     githubClientId: false,
     githubClientSecret: false,
+    redditClientId: false,
+    redditClientSecret: false,
   });
 
   const [originalValues, setOriginalValues] = useState<
@@ -91,6 +94,7 @@ export function OAuthSection() {
     facebook: { clientId: '', clientSecret: '' },
     spotify: { clientId: '', clientSecret: '' },
     github: { clientId: '', clientSecret: '' },
+    reddit: { clientId: '', clientSecret: '' },
   });
 
   const [validationErrors, setValidationErrors] = useState<
@@ -101,6 +105,7 @@ export function OAuthSection() {
     facebook: {},
     spotify: {},
     github: {},
+    reddit: {},
   });
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -124,6 +129,7 @@ export function OAuthSection() {
       facebook: { clientId: '', clientSecret: '' },
       spotify: { clientId: '', clientSecret: '' },
       github: { clientId: '', clientSecret: '' },
+      reddit: { clientId: '', clientSecret: '' },
     };
 
     setSettings((prev) => {
@@ -436,6 +442,7 @@ export function OAuthSection() {
       <div className="space-y-4">
         {renderProvider('facebook', 'Facebook')}
         {renderProvider('github', 'GitHub')}
+        {renderProvider('reddit', 'Reddit')}
         {renderProvider('google', 'Google')}
         {renderProvider('microsoft', 'Microsoft')}
         {renderProvider('spotify', 'Spotify')}

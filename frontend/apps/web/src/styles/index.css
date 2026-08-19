@@ -27,6 +27,8 @@
   color-scheme: light;
   /* --input is the input border token; --input-fill is the opaque fill counterpart. */
   --input-fill: var(--input);
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 
   /* Activity palette — categorical identity for the schedule surface. Seven
      hues in a fixed, validated order (see HorizonGrid/activityPalette.ts);
@@ -122,6 +124,29 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* Keep content clear of the notch / status bar / home indicator on native. */
+  .safe-area-inset {
+    padding-top: max(2rem, var(--safe-area-top));
+    padding-bottom: max(2rem, var(--safe-area-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+
+  /* Fixed phone chrome (rail toggle, connection chip). `top-2` sits under the
+     status bar because those nodes are viewport-fixed, not in the padded column. */
+  .ci-mobile-chrome-top {
+    top: max(0.5rem, var(--safe-area-top));
+  }
+}
+
+/*
+ * Capacitor WKWebView is edge-to-edge (`overlaysWebView: true`) but can report
+ * safe-area-inset-top as 0. Dynamic Island / notch is ~59px; home indicator ~34px.
+ */
+html.ci-native {
+  --safe-area-top: max(env(safe-area-inset-top, 0px), 59px);
+  --safe-area-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
 }
 
 .ci-primary-surface {

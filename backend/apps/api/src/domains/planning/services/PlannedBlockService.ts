@@ -120,11 +120,7 @@ export class PlannedBlockService {
   /**
    * Automation path. Trust dial decides auto-place vs a Plan-page confirmation.
    */
-  async tryPlaceAfterOpen(
-    context: UserServiceContext,
-    task: Task,
-    confidence = 0.8,
-  ): Promise<PlaceOutcome> {
+  async tryPlaceAfterOpen(context: UserServiceContext, task: Task, confidence = 0.8): Promise<PlaceOutcome> {
     if (task.status !== 'open' && task.status !== 'in_progress') {
       return { status: 'skipped', task };
     }

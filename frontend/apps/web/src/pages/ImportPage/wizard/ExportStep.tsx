@@ -319,17 +319,19 @@ export function ExportStep({
         {pendingFiles != null && (
           <div className="space-y-2 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
             <p className="font-medium">
-              That drop is {pendingFiles.length} separate files — the import inbox handles big folders
-              better.
+              That drop is {pendingFiles.length} separate files — the import inbox handles big folders better.
             </p>
             <p className="text-muted-foreground">
-              Each dropped file uploads on its own and becomes its own import run; at this count that is
-              slow and noisy. Instead, copy the whole folder into the import inbox directory
+              Each dropped file uploads on its own and becomes its own import run; at this count that is slow
+              and noisy. Instead, copy the whole folder into the import inbox directory
               {/* The scan is fetched when the drop parks — render the path only
                   once it has arrived AND the folder is real; a null deref here
                   took the whole card down. */}
               {inboxScan?.available === true && (
-                <> (<code className="rounded bg-muted px-1 py-0.5">{inboxScan.inboxDir}</code>)</>
+                <>
+                  {' '}
+                  (<code className="rounded bg-muted px-1 py-0.5">{inboxScan.inboxDir}</code>)
+                </>
               )}{' '}
               and import it from the Inbox panel as a single unit — no upload needed.
             </p>
@@ -374,7 +376,8 @@ export function ExportStep({
               );
             }}
           >
-            Retry {uploads.filter((item) => item.status === 'failed' && item.file != null).length} failed upload
+            Retry {uploads.filter((item) => item.status === 'failed' && item.file != null).length} failed
+            upload
             {uploads.filter((item) => item.status === 'failed' && item.file != null).length === 1 ? '' : 's'}
           </Button>
         )}
@@ -457,7 +460,9 @@ function UploadList({ items }: { items: readonly UploadItem[] }) {
             <span className="min-w-0 flex-1 truncate" title={item.name}>
               {item.name}
             </span>
-            {item.status === 'waiting' && <span className="whitespace-nowrap text-muted-foreground">waiting</span>}
+            {item.status === 'waiting' && (
+              <span className="whitespace-nowrap text-muted-foreground">waiting</span>
+            )}
             {item.status === 'packing' && (
               <span className="whitespace-nowrap text-primary">{item.phase ?? 'packing…'}</span>
             )}

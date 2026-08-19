@@ -626,9 +626,7 @@ export const WIZARD_SOURCES: WizardSource[] = [
       'Direct-message threads',
       'Followers, following, and likes',
     ],
-    caveats: [
-      'Choose JSON format when you request the export.',
-    ],
+    caveats: ['Choose JSON format when you request the export.'],
     inboxPath: 'instagram',
     importer: 'instagram',
     importerReady: true,

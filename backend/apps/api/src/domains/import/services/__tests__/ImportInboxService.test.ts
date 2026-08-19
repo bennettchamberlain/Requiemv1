@@ -392,6 +392,7 @@ describe('ImportInboxService.scan', () => {
     for (let index = 0; index < 25_000; index += 1) {
       await writeFile(path.join(big, `f${String(index).padStart(6, '0')}.txt`), 'x');
     }
+
     await mkdir(path.join(inbox, 'zzz'));
     await writeFile(path.join(inbox, 'zzz', 'export.csv'), 'x');
 
@@ -871,10 +872,17 @@ describe('folder-scoped recognition', () => {
       await service.scan(ctx);
     });
 
-    const optsFor = (suffix: string) =>
-      dataSourcesRecognize.mock.calls.find((call) =>
-        (call[1] as { fullPath: string }).fullPath.endsWith(suffix),
-      )?.[3] as { only?: ReadonlySet<string> };
+    const optsFor = (suffix: string) => {
+      const call = dataSourcesRecognize.mock.calls.find((c) =>
+        (c[1] as { fullPath: string }).fullPath.endsWith(suffix),
+      );
+      // A miss means the scan never recognized this path at all — a different
+      // failure from "recognized, but unscoped". Assert it, so it reports as
+      // one instead of throwing a bare TypeError off the `.only` read.
+      expect(call).toBeDefined();
+
+      return call![3] as { only?: ReadonlySet<string> };
+    };
 
     // The reddit FOLDER is the unit, recognized with only its importer —
     // the all-importers fan-out is the scan's dominant cost.
@@ -898,7 +906,8 @@ describe('folder-scoped recognition', () => {
     const call = dataSourcesRecognize.mock.calls.find((c) =>
       (c[1] as { fullPath: string }).fullPath.endsWith('/amazon'),
     );
-    const only = (call?.[3] as { only?: ReadonlySet<string> }).only;
+    expect(call).toBeDefined();
+    const only = (call![3] as { only?: ReadonlySet<string> }).only;
 
     expect(only).toEqual(new Set(['amazon', 'prime_video', 'audible', 'kindle_reading', 'amazon_music']));
   });

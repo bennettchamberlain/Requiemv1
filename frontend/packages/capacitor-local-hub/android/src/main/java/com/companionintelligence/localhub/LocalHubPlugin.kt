@@ -1,5 +1,7 @@
 package com.companionintelligence.localhub
 
+import android.content.Intent
+import android.net.Uri
 import android.util.Base64
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -175,6 +177,24 @@ class LocalHubPlugin : Plugin() {
             } catch (e: Exception) {
                 call.reject(e.message ?: "Secure storage remove failed", e)
             }
+        }
+    }
+
+    /** Opens a URL in the system browser (Chrome Custom Tabs / default handler). */
+    @PluginMethod
+    fun openUrl(call: PluginCall) {
+        val url = call.getString("url")
+        if (url.isNullOrEmpty()) {
+            call.reject("A valid 'url' is required")
+            return
+        }
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            call.resolve()
+        } catch (e: Exception) {
+            call.reject(e.message ?: "Could not open URL", e)
         }
     }
 

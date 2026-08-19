@@ -22,6 +22,32 @@ api + web dev servers). To run just this service against an already-running stac
 yarn dev          # nodemon + ts-node; watches src/, config/, and the repo-root .env
 ```
 
+> In normal local development you don't run this directly — `make dev` from the
+> repo root starts `api`, `worker`, and `web` via overmind behind Caddy (see the
+> [Procfile](../../../Procfile)). Run `yarn dev` on its own only when you want
+> the API server in isolation.
+
+## How a request flows
+
+The API is a NestJS app exposing REST (`/api`) and Apollo GraphQL (`/graphql`),
+backed by Postgres 18 (pgvector + TimescaleDB + PostGIS). Async work is handed to
+PGBoss, the in-Postgres job queue, which also dispatches the Python sidecars.
+Embeddings and LLM calls go to Ollama.
+
+```mermaid
+flowchart LR
+    Client["Web SPA / app / agent"] -->|"REST + GraphQL"| API["NestJS API"]
+    API <-->|"entities · graph · vectors"| PG[("Postgres")]
+    API <-->|"files / signed URLs"| OBJ[("MinIO")]
+    API -->|"background jobs + crons"| PGB["PGBoss<br/>(in Postgres)"]
+    API <-->|"embeddings / LLM"| OLLAMA["Ollama"]
+    PGB -->|"POST /functions/run"| Agents["hbpe · summary sidecars"]
+    Agents --> PG
+```
+
+For the full domain breakdown and data model, see
+[docs/architecture/architecture.md](../../../docs/architecture/architecture.md).
+
 Everyday commands (run from `backend/apps/api`):
 
 ```bash

@@ -46,6 +46,10 @@ export interface JobFilters {
   limit: number;
 }
 
+export const DESKTOP_JOB_PAGE_SIZE = 50;
+/** A phone page of 50 cards is a novel. Twenty fits a scan. */
+export const MOBILE_JOB_PAGE_SIZE = 20;
+
 export const DEFAULT_JOB_FILTERS: JobFilters = {
   state: '',
   queue: '',
@@ -53,7 +57,7 @@ export const DEFAULT_JOB_FILTERS: JobFilters = {
   type: '',
   search: '',
   offset: 0,
-  limit: 50,
+  limit: DESKTOP_JOB_PAGE_SIZE,
 };
 
 function toQueryString(filters: JobFilters): string {

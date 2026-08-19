@@ -330,78 +330,88 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
   }
 
   if (isMobile) {
-    const carouselProps = {
-      className: 'h-full -mx-2',
-      containerClassName: 'h-full',
-      slideClassName: 'h-full px-2',
-      initialIndex: selectedActionCardIndex,
-    } satisfies CarouselProps;
+    const actionList = actionCards.map((card) =>
+      card.kind === 'question' ? (
+        <QuestionCard
+          key={card.id}
+          question={card.question as FeedQuestion}
+          submitting={questionSubmitting}
+          onSubmit={handleQuestionSubmit}
+        />
+      ) : (
+        <BentoCard
+          key={card.id}
+          title={card.action.title}
+          description={
+            <div className="prose dark:prose-invert">
+              <Markdown>{card.action.text}</Markdown>
+            </div>
+          }
+          tags={card.action.tags}
+          imageUrl={card.action.imageUrl}
+          onClick={() => void handleCardClick(card.action.id)}
+          onDismiss={() => void handleActionDismiss(card.action.id)}
+          dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
+          showUnseenIndicator={!card.action.seen}
+        />
+      ),
+    );
+
+    const insightList = mixedInsightSummaryCards.map((card) =>
+      card.kind === 'insight' ? (
+        <InsightCard
+          key={card.id}
+          insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
+          isSeen={card.isSeen}
+          onClick={() => void handleSummaryClick(card.summaryId)}
+          onDismiss={() => void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)}
+        />
+      ) : (
+        <SummaryCard
+          key={card.id}
+          summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
+          onClick={() => void handleSummaryClick(card.summary.id)}
+          onDismiss={() => void handleSummaryDismiss(card.summary.id)}
+        />
+      ),
+    );
 
     return (
       <>
         <Frame className={frameClassName}>
           {showMobileEmptyState ? (
-            <div className="flex min-h-[40vh] items-center justify-center py-10">
-              <p className="text-center text-xl font-medium text-muted-foreground opacity-70">
-                All Caught Up!
-              </p>
-            </div>
+            <p className="py-6 text-center text-base font-medium text-muted-foreground">All Caught Up!</p>
           ) : (
-            <Carousel {...carouselProps}>
-              {actionCards.map((card) =>
-                card.kind === 'question' ? (
-                  <QuestionCard
-                    key={card.id}
-                    question={card.question as FeedQuestion}
-                    submitting={questionSubmitting}
-                    onSubmit={handleQuestionSubmit}
-                  />
-                ) : (
-                  <BentoCard
-                    key={card.id}
-                    title={card.action.title}
-                    description={
-                      <div className="prose dark:prose-invert">
-                        <Markdown>{card.action.text}</Markdown>
-                      </div>
-                    }
-                    tags={card.action.tags}
-                    imageUrl={card.action.imageUrl}
-                    onClick={() => void handleCardClick(card.action.id)}
-                    onDismiss={() => void handleActionDismiss(card.action.id)}
-                    dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
-                    showUnseenIndicator={!card.action.seen}
-                  />
-                ),
+            <>
+              {(actionsEnabled || Boolean(question)) && (
+                <section className="flex flex-col gap-2">
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                    {actionsEnabled ? 'Actions' : 'Reflections'}
+                  </h2>
+                  {isActionsRowEmpty ? (
+                    <p className="py-4 text-center text-sm text-muted-foreground">All Caught Up!</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">{actionList}</div>
+                  )}
+                </section>
               )}
 
-              {mixedInsightSummaryCards.map((card) =>
-                card.kind === 'insight' ? (
-                  <InsightCard
-                    key={card.id}
-                    insight={card.insight as FragmentType<typeof INSIGHT_CARD_FRAGMENT>}
-                    isSeen={card.isSeen}
-                    onClick={() => void handleSummaryClick(card.summaryId)}
-                    onDismiss={() =>
-                      void handleInsightDismiss(card.insightId, card.summaryId, card.dismissMode)
-                    }
-                  />
+              <section className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Insights & Summaries</h2>
+                {summariesError && (
+                  <p className="text-sm text-muted-foreground">
+                    We could not load live insights. Preview cards are shown until the service recovers.
+                  </p>
+                )}
+                {showInsightsRowEmptyState ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    You've seen everything for now, let Companion learn and come back later
+                  </p>
                 ) : (
-                  <SummaryCard
-                    key={card.id}
-                    summary={card.summary as FragmentType<typeof SUMMARY_CARD_FRAGMENT>}
-                    onClick={() => void handleSummaryClick(card.summary.id)}
-                    onDismiss={() => void handleSummaryDismiss(card.summary.id)}
-                  />
-                ),
-              )}
-            </Carousel>
-          )}
-
-          {summariesError && (
-            <div className="py-4 text-center text-sm text-muted-foreground">
-              We could not load live insights. Preview cards are shown until the service recovers.
-            </div>
+                  <div className="flex flex-col gap-2">{insightList}</div>
+                )}
+              </section>
+            </>
           )}
         </Frame>
 

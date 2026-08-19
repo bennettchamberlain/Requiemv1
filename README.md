@@ -35,15 +35,95 @@ This is a Yarn workspace monorepo with the following structure:
 
 ```
 ├── backend/apps/
-│   └── api/                    # Main backend API service (NestJS)
+│   ├── api/                    # Main backend API service (NestJS)
+│   ├── hbpe/                   # HBPE behavioral-prediction sidecar (Python/FastAPI, ONNX)
+│   └── summary/                # Hourly/daily/weekly summarization agent (Python)
 ├── frontend/apps/
 │   ├── web/                    # Main web application (React + Vite)
-│   └── native/                 # Future native app
+│   ├── ios/                    # Capacitor iOS shell around the web app (not a Yarn workspace)
+│   ├── android/                # Capacitor Android shell around the web app (not a Yarn workspace)
+│   └── mobile/                 # Pointer README left by the iOS/Android split
 └── frontend/packages/
+    ├── capacitor-local-hub/    # Capacitor plugin: on-device hub bridge
+    ├── capacitor-local-llm/    # Capacitor plugin: on-device LLM
+    ├── capacitor-speech/       # Capacitor plugin: speech
     ├── capture/                # Camera capture components
     ├── common/                 # Shared utilities and components
+    ├── editor/                 # Rich-text editor package
     ├── shadcn/                 # ShadCN components (these typically shouldn't be modified directly, they're just local copies of our component library)
     └── template/               # A starter package to copy and paste when you need to create a new package in frontend/packages/
+```
+
+## Architecture at a glance
+
+CI-Server is a multi-service stack: a NestJS API and a React/Vite SPA in front of
+a Postgres 18 data tier (pgvector + TimescaleDB + PostGIS), with Python sidecars
+(HBPE prediction, Summary) dispatched over the in-Postgres PGBoss job queue,
+MinIO for object storage, and Ollama for local LLM/embeddings. The diagrams below are rendered by GitHub; for
+the full design (domains, data model, data flows) see
+[docs/architecture/architecture.md](docs/architecture/architecture.md).
+
+### Local dev stack (`make dev`)
+
+`make dev` brings up the whole stack per worktree and fronts it with a single
+Caddy origin at `https://<project>.localhost`:
+
+```mermaid
+flowchart TB
+    Browser["Browser<br/>https://&lt;project&gt;.localhost"]
+
+    subgraph Caddy["Caddy (TLS, :443) — same-origin reverse proxy"]
+      direction LR
+      R["routes by path"]
+    end
+
+    subgraph Overmind["overmind (Procfile, host processes)"]
+      API["api — NestJS<br/>(REST + GraphQL)"]
+      WORKER["worker — NestJS<br/>(CI_ROLE=worker, job consumer)"]
+      WEB["web — Vite dev server"]
+    end
+
+    subgraph Compose["Docker Compose stack (per-worktree)"]
+      PG[("Postgres 18<br/>pgvector · TimescaleDB · PostGIS<br/>+ PGBoss job queue")]
+      MINIO[("MinIO<br/>object storage")]
+      SUM["summary service"]
+      HBPE["hbpe service"]
+    end
+
+    OLLAMA["Ollama<br/>(local LLM + embeddings, host :11434)"]
+
+    Browser --> Caddy
+    R -->|"/api, /graphql"| API
+    R -->|"/static"| MINIO
+    R -->|"/"| WEB
+    API <--> PG
+    API <--> MINIO
+    API <--> OLLAMA
+    WORKER <--> PG
+    PG -- "PGBoss → /functions/run" --> SUM
+    PG -- "PGBoss → /functions/run" --> HBPE
+    SUM --> PG
+    HBPE --> PG
+    SUM --> OLLAMA
+```
+
+A startup supervisor (`scripts/dev-stack`) allocates ports, brings up the Compose
+services, runs migrations (dbmate), registers the Caddy route, and runs `api` +
+`web` via overmind. Conventional host ports are used when free, with ephemeral
+fallbacks so multiple worktrees never collide.
+
+### Caddy request routing
+
+Because everything is served from one origin, the app is same-origin with no
+CORS:
+
+```mermaid
+flowchart LR
+    C["https://&lt;project&gt;.localhost"]
+    C -->|"/api/*"| API["api (NestJS REST)"]
+    C -->|"/graphql"| GQL["api (Apollo GraphQL)"]
+    C -->|"/static/*"| OBJ["MinIO object store"]
+    C -->|"everything else"| WEB["web (Vite SPA)"]
 ```
 
 ## TL;DR - Hermes
@@ -289,6 +369,10 @@ Username: jsmith@example.com
 Password: replace-me-pw-000000
 ```
 
+With the stack up and seeded, this is also the state from which to capture UI
+screenshots for the docs — see the [screenshot capture guide](docs/screenshots.md)
+for the screen list, naming, and conventions.
+
 If something is wedged, reset the environment (stops the stack and removes this project's volumes/networks):
 
 ```bash
@@ -433,8 +517,10 @@ yarn lint:fix  # Auto-fix linting issues
 ```bash
 yarn dev                    # Start development server with nodemon
 yarn migrate:make <name>    # Create a new migration file
-yarn migrate:rollback       # Rollback the last migration
-yarn lint:circular-imports  # Check for circular import dependencies
+yarn migrate:down           # Roll back the last migration
+yarn depcheck               # Check import boundaries / cycles (dependency-cruiser)
+yarn test                   # Run the backend Jest suite
+yarn typecheck              # Type-check without emitting
 yarn lint                   # Lint backend code
 yarn lint:fix               # Auto-fix backend linting issues
 ```

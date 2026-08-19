@@ -1,5 +1,5 @@
-import { fireEvent, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
 
@@ -520,5 +520,98 @@ describe('JobsPage live imports', () => {
     renderWithProviders(<JobsPage />);
 
     expect(screen.getByText('import activity').className).toBe('');
+  });
+});
+
+function setViewport(mobile: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: query.includes('max-width') ? mobile : query.includes('landscape') ? !mobile : false,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia;
+}
+
+describe('JobsPage phone layout', () => {
+  afterEach(() => setViewport(false));
+
+  function title(name: string): HTMLElement {
+    const node = screen.getByText(name, { selector: '[data-slot="card-title"]' });
+
+    return node;
+  }
+
+  it('renders jobs as cards and keeps the wide table off the phone', async () => {
+    setViewport(true);
+    render({
+      list: list({
+        items: [job({ label: 'Embed for semantic search', event: 'search.embed.entity' })],
+        total: 1,
+      }),
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('columnheader', { name: 'Duration' })).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Embed for semantic search')).toBeInTheDocument();
+    expect(screen.getByText(/search\.embed\.entity/)).toBeInTheDocument();
+  });
+
+  it('asks the server for a shorter page so a phone is a scan, not a novel', async () => {
+    setViewport(true);
+    render({ list: list({ items: [job()], total: 500 }) });
+
+    await waitFor(() => expect(lastFilters).toMatchObject({ limit: 20 }));
+  });
+
+  it('puts live work first and dead letters last', async () => {
+    setViewport(true);
+    render();
+
+    await waitFor(() => {
+      expect(screen.queryByRole('columnheader', { name: 'Duration' })).not.toBeInTheDocument();
+    });
+
+    const jobs = title('Jobs');
+    const history = title('History');
+    const schedules = title('Schedules');
+    const dead = title('Dead letters');
+
+    expect(jobs.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(history.compareDocumentPosition(schedules) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(schedules.compareDocumentPosition(dead) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('folds history, schedules and dead letters so the page is scrollable', async () => {
+    setViewport(true);
+    render({ history: { points: [], queues: [], bucketMinutes: 5, windowHours: 24 } });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('columnheader', { name: 'Duration' })).not.toBeInTheDocument();
+    });
+
+    // Closed until opened — three stacked charts and ~34 schedules would
+    // push Jobs off a phone that already has a bottom nav.
+    expect(screen.queryByRole('button', { name: '7d' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/No history recorded yet/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /History/ }));
+
+    expect(screen.getByRole('button', { name: '7d' })).toBeInTheDocument();
+    expect(screen.getByText(/No history recorded yet/)).toBeInTheDocument();
+  });
+
+  it('caps import activity on this page only, so Jobs stays reachable', async () => {
+    setViewport(true);
+    renderWithProviders(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('import activity').className).toContain('max-h-[36vh]');
+    });
   });
 });

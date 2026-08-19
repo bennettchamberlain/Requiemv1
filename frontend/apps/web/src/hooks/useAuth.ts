@@ -6,6 +6,8 @@ import {
   createHookContext,
   fetchJson,
   FetchJsonError,
+  getLaunchUrl,
+  isIosPlatform,
   isNativePlatform,
   parseOidcCallbackUrl,
   secureStorageGet,
@@ -15,6 +17,9 @@ import {
 } from '@ci/common';
 import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useLocation } from 'react-router-dom';
+
+import { disconnectAndClearPowerSync } from '@/api/powersync/session';
+import { registerNativePushToken } from '@/lib/registerNativePushToken';
 
 const authChannel = new BroadcastChannel('auth');
 
@@ -348,6 +353,8 @@ function useAuth(): ReturnValue {
   );
 
   const logout = useCallback(async () => {
+    await disconnectAndClearPowerSync();
+
     if (isNativePlatform()) {
       // No cookie session to revoke. Clear the local credential; the API key stays
       // valid server-side (the /api/keys revoke endpoint is JWT-only, and we hold no
@@ -468,7 +475,9 @@ function useAuth(): ReturnValue {
 
   // Native only: complete "Sign in with CI Portal" when the system browser redirects
   // back into the app via the `companion://oidc/callback?...` deep link. Unrelated
-  // deep links (other schemes/paths) parse to null and are ignored.
+  // deep links (other schemes/paths) parse to null and are ignored. iOS often
+  // cold-starts from Safari's "Open with Companion", so we also consume
+  // `getLaunchUrl` there — web and Android keep the live listener only.
   useEffect(() => {
     if (!isNativePlatform()) {
       return;
@@ -477,8 +486,9 @@ function useAuth(): ReturnValue {
     let unsubscribe = () => {};
 
     let cancelled = false;
+    const seenCodes = new Set<string>();
 
-    void addAppUrlOpenListener((url) => {
+    const handleUrl = (url: string) => {
       const params = parseOidcCallbackUrl(url);
 
       if (!params) {
@@ -491,6 +501,11 @@ function useAuth(): ReturnValue {
         return;
       }
 
+      if (seenCodes.has(params.code)) {
+        return;
+      }
+
+      seenCodes.add(params.code);
       const { code } = params;
 
       void (async () => {
@@ -509,19 +524,44 @@ function useAuth(): ReturnValue {
           setLoginError(err);
         }
       })();
-    }).then((cleanup) => {
+    };
+
+    void (async () => {
+      // Subscribe first. iOS can deliver the Safari return as `appUrlOpen`
+      // while `getLaunchUrl` is still awaiting; that event is dropped if the
+      // listener is not up yet. Duplicate URLs are de-duped via `seenCodes`.
+      const cleanup = await addAppUrlOpenListener(handleUrl);
+
       if (cancelled) {
         cleanup();
-      } else {
-        unsubscribe = cleanup;
+
+        return;
       }
-    });
+
+      unsubscribe = cleanup;
+
+      if (isIosPlatform()) {
+        const launched = await getLaunchUrl();
+
+        if (!cancelled && launched) {
+          handleUrl(launched);
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
       unsubscribe();
     };
   }, [navigate]);
+
+  useEffect(() => {
+    if (!isNativePlatform() || (!nativeApiKey && !accessToken)) {
+      return;
+    }
+
+    void registerNativePushToken();
+  }, [nativeApiKey, accessToken]);
 
   useEffect(() => {
     const handleAuthMessage = (event: MessageEvent) => {
