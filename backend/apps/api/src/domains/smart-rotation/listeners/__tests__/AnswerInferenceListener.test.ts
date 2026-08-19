@@ -10,6 +10,30 @@ import { AnswerInferenceListener } from '../AnswerInferenceListener';
 
 type Payload = EventPayloads[Events.INFER_QUESTION_ANSWER];
 
+/**
+ * What the model is contracted to return: answer + confidence + rationale, as
+ * strict JSON. The default is deliberately well above the floor and above the
+ * evidence ceiling for a bare prompt, so the confidence a test asserts on is the
+ * calibrated one rather than whatever the model claimed.
+ */
+function structuredResponse(
+  overrides: { answer?: string; confidence?: number; rationale?: string } = {},
+): string {
+  return JSON.stringify({
+    answer: 'Blue, definitely blue.',
+    confidence: 0.9,
+    rationale: 'You named blue in two prior answers.',
+    ...overrides,
+  });
+}
+
+/**
+ * The evidence ceiling for a listener built with no dossier and no related
+ * answers — {@link estimateInferredAnswerConfidence}(0, false). Every default
+ * build in this file hits it, so it is the confidence the writes carry.
+ */
+const BARE_CONTEXT_CONFIDENCE = 0.45;
+
 function makeQuestion(id: string, text: string) {
   return { id, text } as Awaited<ReturnType<QuestionService['findById']>>;
 }
@@ -70,7 +94,7 @@ function buildListener(overrides: {
   } as unknown as PersonalizationService;
 
   const ollamaService = {
-    chat: jest.fn().mockResolvedValue({ message: { content: 'Blue, definitely blue.' } }),
+    chat: jest.fn().mockResolvedValue({ message: { content: structuredResponse() } }),
     ...overrides.ollamaService,
   } as unknown as OllamaService;
 
@@ -143,6 +167,103 @@ describe('AnswerInferenceListener.inferQuestionAnswer — early exits', () => {
   });
 });
 
+describe('AnswerInferenceListener.inferQuestionAnswer — confidence floor', () => {
+  it('writes NOTHING when the model reports a confidence below the floor', async () => {
+    // The whole point of the feature: a question the appliance cannot answer
+    // well is left unanswered rather than filled with a fabrication that will
+    // sit in the user's memory looking exactly like something they said.
+    const { listener, answerService, personalizationService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ confidence: 0.2, rationale: 'Nothing to go on.' }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+    // Refused before the trust gate — a low-confidence answer is not something
+    // to queue for review either, it is something not to have written.
+    expect(personalizationService.decideAction).not.toHaveBeenCalled();
+  });
+
+  it('writes an answer whose confidence sits exactly on the floor', async () => {
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({ message: { content: structuredResponse({ confidence: 0.4 }) } }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ answerConfidence: 0.4 }),
+    );
+  });
+
+  it('persists the model score capped by the evidence actually in the prompt', async () => {
+    // A model handed a dossier and six prior answers may legitimately be sure;
+    // one handed nothing may not, however sure it sounds. Both defaults here are
+    // the bare case, so the confident 0.9 is capped to the bare-context ceiling.
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({ message: { content: structuredResponse({ confidence: 0.95 }) } }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ answerConfidence: BARE_CONTEXT_CONFIDENCE }),
+    );
+  });
+
+  it('writes nothing when the model answers in prose instead of the schema', async () => {
+    // No score means no way to hold the floor against it, and a substituted
+    // default would be a number no model ever produced.
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({ message: { content: 'Blue, I reckon. Pretty sure.' } }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('asks the model for the structured shape rather than prose', async () => {
+    const { listener, ollamaService } = buildListener({});
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, , options] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      unknown,
+      { format?: Record<string, unknown> },
+    ];
+    expect(options.format).toMatchObject({ required: ['answer', 'confidence', 'rationale'] });
+  });
+
+  it('states the confidence scale to the model in the system prompt', async () => {
+    const { listener, ollamaService } = buildListener({});
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    expect(ragThread[0].content).toContain('confidence');
+    expect(ragThread[0].content).toContain('rationale');
+  });
+});
+
 describe('AnswerInferenceListener.inferQuestionAnswer — personalization decision gate', () => {
   it('writes nothing when the decision is "review" (left for the context prompt instead)', async () => {
     const { listener, answerService } = buildListener({
@@ -182,6 +303,8 @@ describe('AnswerInferenceListener.inferQuestionAnswer — update vs create', () 
         question: { id: 'q-1' },
         answerMethod: 'inferred',
         answerSource: 'inferred',
+        answerConfidence: BARE_CONTEXT_CONFIDENCE,
+        answerRationale: 'You named blue in two prior answers.',
       },
     );
     expect(answerService.update).not.toHaveBeenCalled();
@@ -199,6 +322,8 @@ describe('AnswerInferenceListener.inferQuestionAnswer — update vs create', () 
       text: 'Blue, definitely blue.',
       answerMethod: 'inferred',
       answerSource: 'inferred',
+      answerConfidence: BARE_CONTEXT_CONFIDENCE,
+      answerRationale: 'You named blue in two prior answers.',
     });
     expect(answerService.create).not.toHaveBeenCalled();
   });

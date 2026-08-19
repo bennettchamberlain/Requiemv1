@@ -150,16 +150,22 @@ describe('AnswerService single create still emits', () => {
  */
 function makeStoreRepository(rows: AnswerEntity[]) {
   const matches = (row: AnswerEntity, where: Record<string, unknown>): boolean => {
-    if (where.id !== undefined && row.id !== where.id) {return false;}
+    if (where.id !== undefined && row.id !== where.id) {
+      return false;
+    }
 
     if (where.user !== undefined) {
       const userWhere = where.user as { id?: string };
-      if (userWhere.id !== undefined && row.user?.id !== userWhere.id) {return false;}
+      if (userWhere.id !== undefined && row.user?.id !== userWhere.id) {
+        return false;
+      }
     }
 
     if (where.question !== undefined) {
       const questionWhere = where.question as { id?: string };
-      if (questionWhere.id !== undefined && row.question?.id !== questionWhere.id) {return false;}
+      if (questionWhere.id !== undefined && row.question?.id !== questionWhere.id) {
+        return false;
+      }
     }
 
     return true;
@@ -179,7 +185,9 @@ function makeStoreRepository(rows: AnswerEntity[]) {
       : (idFilter as unknown as { _value?: string[] })?._value;
 
     return rows.filter((row) => {
-      if (idList && !idList.includes(row.id)) {return false;}
+      if (idList && !idList.includes(row.id)) {
+        return false;
+      }
 
       const { id: _id, ...rest } = where;
       void _id;
@@ -221,6 +229,85 @@ function makeAnswer(id: string, userId: string, questionId = 'q1'): AnswerEntity
     question: { id: questionId },
   });
 }
+
+/** An answer the appliance inferred on the user's behalf, scored and explained. */
+function makeInferredAnswer(id: string, userId: string): AnswerEntity {
+  return Object.assign(makeAnswer(id, userId), {
+    answerSource: 'inferred',
+    answerMethod: 'inferred',
+    answerConfidence: 0.72,
+    answerRationale: 'You mentioned tea twice.',
+  });
+}
+
+describe('AnswerService.update — user correction of an inferred answer', () => {
+  it('flips an inferred answer to user_input and clears the machine confidence and rationale', async () => {
+    // The user read what the appliance guessed and rewrote it. Those are their
+    // words now, so the row must stop presenting itself as an inference — and
+    // must not keep a score the model gave to text it no longer wrote.
+    const row = makeInferredAnswer('a1', USER);
+    const { service } = makeServiceWithStore([row]);
+
+    const result = await service.update(CONTEXT, 'a1', { text: 'Actually, coffee.' });
+
+    expect(result?.answer).toBe('Actually, coffee.');
+    expect(result?.answerSource).toBe('user_input');
+    expect(result?.answerMethod).toBe('user');
+    expect(result?.answerConfidence).toBeNull();
+    expect(result?.answerRationale).toBeNull();
+  });
+
+  it('leaves the inference writer alone when it names the source explicitly', async () => {
+    // AnswerInferenceListener re-infers in place; that is not a user correction
+    // and must keep its own provenance and score.
+    const row = makeInferredAnswer('a1', USER);
+    const { service } = makeServiceWithStore([row]);
+
+    const result = await service.update(CONTEXT, 'a1', {
+      text: 'Tea, most days.',
+      answerSource: 'inferred',
+      answerMethod: 'inferred',
+      answerConfidence: 0.81,
+      answerRationale: 'Three prior answers mention tea.',
+    });
+
+    expect(result?.answerSource).toBe('inferred');
+    expect(result?.answerConfidence).toBe(0.81);
+    expect(result?.answerRationale).toBe('Three prior answers mention tea.');
+  });
+
+  it('does not touch provenance when the update carries no new text', async () => {
+    const row = makeInferredAnswer('a1', USER);
+    const { service } = makeServiceWithStore([row]);
+
+    const result = await service.update(CONTEXT, 'a1', { isSensitive: true });
+
+    expect(result?.answerSource).toBe('inferred');
+    expect(result?.answerConfidence).toBe(0.72);
+  });
+});
+
+describe('AnswerService.create — inferred provenance', () => {
+  it('persists the confidence and rationale the inference writer supplies', async () => {
+    const { service, save } = makeService();
+
+    await service.create(CONTEXT, {
+      id: 'a1',
+      text: 'Tea.',
+      question: { id: 'q1' },
+      answerSource: 'inferred',
+      answerMethod: 'inferred',
+      answerConfidence: 0.72,
+      answerRationale: 'You mentioned tea twice.',
+    });
+
+    // `answer_confidence` had been NULL on every row in production because
+    // create() dropped the field the DTO already carried.
+    const [saved] = save.mock.calls[0] as [AnswerEntity];
+    expect(saved.answerConfidence).toBe(0.72);
+    expect(saved.answerRationale).toBe('You mentioned tea twice.');
+  });
+});
 
 describe('AnswerService tenancy scoping (SYSTEM_USER-conditional idiom)', () => {
   describe('findById', () => {
