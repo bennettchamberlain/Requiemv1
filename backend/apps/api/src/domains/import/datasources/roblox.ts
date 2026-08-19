@@ -12,6 +12,7 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -78,7 +79,7 @@ export class RobloxFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -99,7 +100,7 @@ export class RobloxFileImporter implements FileImporter {
       }
 
       try {
-        if (fs.readdirSync(root).some((n) => looksRoblox(n))) {
+        if ((await readdir(root)).some((n) => looksRoblox(n))) {
           return { confidence: 0.6 };
         }
       } catch {

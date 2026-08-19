@@ -104,7 +104,7 @@ const MAX_RANGE_EVENTS = 2000;
  * This replaces the `source_type <> 'browser_activity'` stopgap from 6078c06f6,
  * which only covered the browser fold (itself reverted in 20260812144811).
  */
-const SCHEDULE_EVENT_TYPES = ['calendar_event', 'meeting', 'appointment'] as const;
+const SCHEDULE_EVENT_TYPES = ['calendar_event', 'meeting', 'appointment', 'planned_block'] as const;
 
 /**
  * Spanning-aggregate service for the events CTI split: an event is ONE logical
@@ -242,6 +242,14 @@ export class EventService {
 
     if (item.energy_level !== undefined) {
       toCreate.energyLevel = item.energy_level;
+    }
+
+    if (item.task_id) {
+      toCreate.taskId = item.task_id;
+    }
+
+    if (item.planned_minutes != null) {
+      toCreate.plannedMinutes = item.planned_minutes;
     }
 
     return toCreate;
@@ -603,14 +611,17 @@ export class EventService {
   }
 
   async findAll(context: ServiceContext): Promise<Event[]> {
-    const result = await this.eventRepository.find({
-      where: {
-        isDeleted: false,
-        ...(context.userId !== SYSTEM_USER && {
-          user: { id: context.userId },
-        }),
-      },
-    });
+    const query = this.eventRepository
+      .createQueryBuilder('event')
+      .where("(event.event_type IS NULL OR event.event_type <> 'planned_block')")
+      // Tombstoned events are gone as far as every reader is concerned.
+      .andWhere('event.is_deleted = false');
+
+    if (context.userId !== SYSTEM_USER) {
+      query.andWhere('event.user_id = :userId', { userId: context.userId });
+    }
+
+    const result = await query.getMany();
 
     return this.composeMany(result);
   }
@@ -1194,6 +1205,7 @@ export class EventService {
       .where('event.user_id = :userId', { userId: context.userId })
       .andWhere('event.is_deleted = false')
       .andWhere('event.event_type IS NOT NULL')
+      .andWhere("event.event_type <> 'planned_block'")
       .orderBy('event.event_type', 'ASC')
       .getRawMany();
 

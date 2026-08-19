@@ -459,14 +459,14 @@ export const BUNDLES: readonly Bundle[] = [
     ecosystem: 'meta',
     title: 'Meta (Facebook, Instagram)',
     blurb:
-      'One Accounts Center download covers your Facebook and Instagram data. WhatsApp exports separately.',
+      'Meta Accounts Center exports your Facebook and Instagram data — each profile arrives as its own archive. WhatsApp exports separately.',
     url: 'https://accountscenter.facebook.com/info_and_permissions/dyi/?entry_point=download_your_information&target_id',
     steps: [
-      'Open Meta Accounts Center → “Download your information”.',
-      'Choose the profiles to include — Facebook and Instagram, if they’re linked to your Accounts Center.',
+      'Open Meta Accounts Center → “Download your information”. Instagram must be linked to the Facebook account you’re signed in with (Accounts Center → Manage Accounts → “Add accounts”).',
+      'Request each profile you want — Facebook and Instagram export as separate archives, one request each.',
       'Set Date range to “All time”, Format to “JSON”, and Media quality to “High”.',
-      'Click “Create files”. You’ll get an email when the download is ready (minutes to a few hours).',
-      'Upload the export here — we’ll import every profile inside it. (WhatsApp is a separate export.)',
+      'Click “Create files”. You’ll get an email when each download is ready (minutes to a few hours).',
+      'Upload every archive here — each one imports on its own. (WhatsApp is a separate export.)',
     ],
     // WhatsApp is deliberately NOT a member — its export is separate, so it
     // keeps its own picker button and export card.
@@ -611,6 +611,13 @@ export interface PickItem {
    * say whether it has been imported before and how much it brought.
    */
   importers: string[];
+  /**
+   * The services a bundle tile stands for, display-named ("Facebook",
+   * "Instagram"). Rendered on the tile so someone scanning the grid for a
+   * service finds it under the bundle's brand instead of concluding it is
+   * unsupported. Absent on single-service tiles.
+   */
+  memberNames?: string[];
 }
 
 export interface PickSection {
@@ -621,12 +628,27 @@ export interface PickSection {
 }
 
 /**
+ * Bundle members that ALSO get their own tile and export card.
+ *
+ * Normally a member is reachable only through its bundle — that is what keeps
+ * Social from being eleven near-duplicate buttons. But the catalog already
+ * carries standalone cards for sources a bundle covers when the service is a
+ * household name someone will scan for by its own name (Gemini rides Google
+ * Takeout, Grok rides the X archive). Instagram is that case inside Meta: its
+ * card leads with the Accounts Center flow the bundle teaches and keeps the
+ * instagram.com/download request as the secondary path. The member stays in
+ * the bundle too, so the bundle keeps declaring (and crediting) it.
+ */
+const STANDALONE_MEMBERS = new Set(['instagram']);
+
+/**
  * What the picker shows per section: the ecosystem's bundle button (when one
  * exists) plus a button for every catalog source NOT covered by that bundle —
  * so Social reads as Meta · WhatsApp · Twitter/X · Reddit, not eleven near-
- * duplicate buttons. Sources whose importer is not ready sort last in their
- * section. Within the ready/not-ready halves the catalog's curated order is
- * kept (the sort is stable).
+ * duplicate buttons. Within a section, ready importers come first and each
+ * half sorts alphabetically — A→Z is predictable to scan, but a tile that can
+ * actually import today still outranks a "coming soon" one. Members named in
+ * {@link STANDALONE_MEMBERS} get their own button as well.
  */
 export function pickableSections(catalog: readonly CatalogSource[]): PickSection[] {
   const byEcosystem = new Map<string, CatalogSource[]>();
@@ -663,11 +685,14 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
                 .map((source) => source.importer),
             ),
           ],
+          memberNames: (byEcosystem.get(eco) ?? [])
+            .filter((source) => bundle.members.includes(source.id))
+            .map((source) => shortTitle(source.title)),
         });
       }
 
       for (const source of byEcosystem.get(eco) ?? []) {
-        if (bundle?.members.includes(source.id)) {
+        if (bundle?.members.includes(source.id) && !STANDALONE_MEMBERS.has(source.id)) {
           continue; // reachable through the bundle button
         }
 
@@ -683,7 +708,9 @@ export function pickableSections(catalog: readonly CatalogSource[]): PickSection
       }
     }
 
-    return items.sort((a, b) => Number(b.ready) - Number(a.ready));
+    return items.sort(
+      (a, b) => Number(b.ready) - Number(a.ready) || a.label.localeCompare(b.label),
+    );
   };
 
   const covered = new Set<string>();
@@ -776,7 +803,11 @@ export function exportEntries(catalog: readonly CatalogSource[], picked: Readonl
     }
 
     for (const source of byEcosystem.get(eco) ?? []) {
-      if (!bundle?.members.includes(source.id) && picked.has(source.id)) {
+      // A standalone member is pickable on its own, so it exports on its own
+      // too; a plain member is only ever reachable through its bundle's card.
+      const coveredByBundle = bundle?.members.includes(source.id) && !STANDALONE_MEMBERS.has(source.id);
+
+      if (!coveredByBundle && picked.has(source.id)) {
         entries.push({ kind: 'service', key: source.id, source, importers: [source.importer] });
       }
     }

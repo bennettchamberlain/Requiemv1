@@ -137,6 +137,7 @@ def get_unlabeled_events(user_id: str, limit: int = 1000) -> list[dict]:
         LEFT JOIN hbpe.l1_event_cluster ec ON ec.event_id = e.event_id
         WHERE e.user_id    = %s::uuid
           AND e.is_deleted = FALSE
+          AND e.event_type IS DISTINCT FROM 'planned_block'
           AND ec.event_id  IS NULL
           AND e.start_time >= '2010-01-01'::timestamptz
         ORDER BY e.start_time
@@ -176,6 +177,7 @@ def get_token_events_for_day(user_id: str, date_str: str) -> list[dict]:
             JOIN hbpe.l1_clusters      cl1 ON cl1.cluster_id = ec.cluster_id
             WHERE e.user_id    = %s
               AND e.is_deleted = FALSE
+              AND e.event_type IS DISTINCT FROM 'planned_block'
               AND e.start_time >= %s::date
               AND e.start_time <  (%s::date + INTERVAL '1 day')
               AND e.start_time >= '2010-01-01'::timestamptz

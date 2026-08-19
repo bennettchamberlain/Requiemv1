@@ -25,6 +25,7 @@ describe('ci-import program', () => {
       'runs',
       'push',
       'stats',
+      'doctor',
       'backfill',
     ]) {
       expect(help).toContain(command);

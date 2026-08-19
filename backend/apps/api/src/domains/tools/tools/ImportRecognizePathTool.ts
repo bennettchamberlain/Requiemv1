@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
 import { recognizePathWithinRoots } from '@ci/domains/import';
+import { UserService } from '@ci/domains/user';
 
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';
@@ -20,9 +21,10 @@ interface RecognizePathInput {
  * directly — which is what makes an agent able to say "that folder looks like a
  * Google Takeout" before anything is imported.
  *
- * Scoped to the configured import roots. An unconstrained absolute path over an
- * API is a filesystem read primitive, and "which of these paths exists?" is
- * information on its own.
+ * Scoped to the configured import roots plus the caller's OWN inbox subtree.
+ * An unconstrained absolute path over an API is a filesystem read primitive,
+ * and "which of these paths exists?" is information on its own — and on a
+ * multi-account appliance, so is another user's dropped archive.
  *
  * The work itself is {@link recognizePathWithinRoots}, shared verbatim with
  * `POST /import/recognize` — the tool and the endpoint must never come to
@@ -41,7 +43,8 @@ export class ImportRecognizePathTool extends BaseTool<RecognizePathInput, unknow
     description:
       'Ask every registered importer to inspect a path the appliance can see and report how ' +
       'confident it is that this is its kind of data, highest first. Reads the files but imports ' +
-      'nothing. Only paths under the configured import roots may be inspected.',
+      'nothing. Only paths under the configured import roots or your own import-inbox folder ' +
+      'may be inspected.',
     category: 'database',
     parameters: {
       type: 'object',
@@ -55,19 +58,28 @@ export class ImportRecognizePathTool extends BaseTool<RecognizePathInput, unknow
     },
   };
 
-  constructor(protected readonly logger: LoggerService) {
+  constructor(
+    private readonly users: UserService,
+    protected readonly logger: LoggerService,
+  ) {
     super();
     this.logger.setContext(ImportRecognizePathTool.name);
   }
 
-  protected async executeInternal(_context: ToolExecutionContext, input: RecognizePathInput) {
+  protected async executeInternal(context: ToolExecutionContext, input: RecognizePathInput) {
     if (!input?.path) {
       throw new Error('path is required');
     }
 
+    // The caller's email scopes which inbox subtree they may read — their own.
+    // No resolvable user means configured roots only, never anyone's inbox.
+    const user = context.userId
+      ? await this.users.findById({ userId: context.userId }, context.userId)
+      : null;
+
     // An out-of-bounds path comes back as `allowed: false` rather than thrown:
     // an agent can act on "not allowed, upload instead", where a tool error
     // reads as a malfunction.
-    return recognizePathWithinRoots(input.path);
+    return recognizePathWithinRoots(input.path, user?.email ?? null);
   }
 }

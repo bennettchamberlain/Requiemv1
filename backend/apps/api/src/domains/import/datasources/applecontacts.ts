@@ -1,5 +1,6 @@
 /* Apple Contacts datasource (simplified TypeScript port) */
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import Database from 'better-sqlite3';
@@ -57,16 +58,25 @@ export class AppleContactsFileImporter implements FileImporter {
     }
 
     const base = path.basename(full);
-    if (fs.existsSync(full)) {
-      if (fs.statSync(full).isFile() && base === ADDRESS_BOOK_DB) {
-        return { confidence: 1.0 };
-      }
+    let st: fs.Stats;
+    try {
+      st = await stat(full);
+    } catch {
+      return { confidence: 0 };
+    }
 
-      if (fs.statSync(full).isDirectory()) {
-        const dbPath = path.join(full, ADDRESS_BOOK_DB);
-        if (fs.existsSync(dbPath)) {
-          return { confidence: 0.9, dir_threshold: 0.5 };
-        }
+    if (st.isFile() && base === ADDRESS_BOOK_DB) {
+      return { confidence: 1.0 };
+    }
+
+    if (st.isDirectory()) {
+      const dbPath = path.join(full, ADDRESS_BOOK_DB);
+      try {
+        await stat(dbPath);
+
+        return { confidence: 0.9, dir_threshold: 0.5 };
+      } catch {
+        /* no AddressBook db */
       }
     }
 

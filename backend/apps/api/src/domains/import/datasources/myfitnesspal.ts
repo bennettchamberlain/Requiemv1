@@ -5,6 +5,7 @@
    column rather than matching an exact filename.
 */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -25,24 +26,18 @@ function headerHasNutritionCols(text: string): boolean {
 }
 
 // Read only the first ~4KB to inspect the CSV header row.
-function headerMatches(fpath: string): boolean {
-  let fd: number | undefined;
+async function headerMatches(fpath: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    handle = await open(fpath, 'r');
     const buf = Buffer.alloc(4096);
-    const n = fs.readSync(fd, buf, 0, 4096, 0);
+    const { bytesRead } = await handle.read(buf, 0, 4096, 0);
 
-    return headerHasNutritionCols(buf.toString('utf8', 0, n));
+    return headerHasNutritionCols(buf.toString('utf8', 0, bytesRead));
   } catch {
     return false;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -69,36 +64,36 @@ export class MyfitnesspalFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
       if (path.extname(base).toLowerCase() !== '.csv') {
         return { confidence: 0 };
       }
 
-      if (!headerMatches(root)) {
+      if (!(await headerMatches(root))) {
         return { confidence: 0 };
       }
 
       return { confidence: looksLikeNutritionName(base) ? 0.95 : 0.85 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         // Prefer an obviously named Nutrition-Summary csv whose header also matches.
         for (const name of names) {
           if (!looksLikeNutritionName(name)) {
             continue;
           }
 
-          if (headerMatches(path.join(root, name))) {
+          if (await headerMatches(path.join(root, name))) {
             return { confidence: 0.95 };
           }
         }
@@ -109,7 +104,7 @@ export class MyfitnesspalFileImporter implements FileImporter {
             continue;
           }
 
-          if (headerMatches(path.join(root, name))) {
+          if (await headerMatches(path.join(root, name))) {
             return { confidence: 0.85 };
           }
         }
@@ -146,7 +141,14 @@ export class MyfitnesspalFileImporter implements FileImporter {
         return;
       }
 
-      const named = names.find((n) => looksLikeNutritionName(n) && headerMatches(path.join(root, n)));
+      let named: string | undefined;
+      for (const n of names) {
+        if (looksLikeNutritionName(n) && (await headerMatches(path.join(root, n)))) {
+          named = n;
+          break;
+        }
+      }
+
       if (named) {
         await this.processFile(path.join(root, named), params);
       } else {
@@ -156,7 +158,7 @@ export class MyfitnesspalFileImporter implements FileImporter {
           }
 
           const fpath = path.join(root, name);
-          if (headerMatches(fpath)) {
+          if (await headerMatches(fpath)) {
             await this.processFile(fpath, params);
           }
         }

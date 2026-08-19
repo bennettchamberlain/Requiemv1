@@ -1359,6 +1359,35 @@ type KnownPlaceType {
   source: String!
 }
 
+type MergeCandidateConnection {
+  edges: [MergeCandidateEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type MergeCandidateEdge {
+  cursor: String!
+  node: MergeCandidateType!
+}
+
+type MergeCandidateEvidenceType {
+  kind: String!
+  score: Float
+  value: String!
+}
+
+type MergeCandidateType {
+  createdAt: DateTime!
+  detectedBy: String!
+  detectorVersion: Int!
+  entityType: String!
+  evidence: [MergeCandidateEvidenceType!]!
+  id: ID!
+  people: [PersonType!]!
+  score: Float!
+  status: String!
+}
+
 input MergePeopleInput {
   sourceIds: [ID!]!
   targetId: ID!
@@ -1568,12 +1597,12 @@ type Mutation {
   Mark a suggested duplicate group as distinct people, so it is never re-proposed
   """
   rejectPersonDuplicates(personIds: [ID!]!): Boolean!
-  removeAnswer(id: String!): Boolean!
-  removeContent(id: String!): Boolean!
-  removeEvent(id: String!): Boolean!
+  removeAnswer(id: ID!): Boolean!
+  removeContent(id: ID!): Boolean!
+  removeEvent(id: ID!): Boolean!
   removePersonIdentifier(input: RemovePersonIdentifierInput!): [PersonIdentifierType!]!
-  removePlace(id: String!): Boolean!
-  removeQuestion(id: String!): Boolean!
+  removePlace(id: ID!): Boolean!
+  removeQuestion(id: ID!): Boolean!
 
   """Move a completed task back to open."""
   reopenTask(id: ID!): TaskType
@@ -1588,6 +1617,16 @@ type Mutation {
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   revokeAskGrant(id: ID!): AskGrantPayload!
   runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
+
+  """
+  Place an open task into the next free workday gap as a planned calendar block. The click is consent — trust dial does not re-ask.
+  """
+  scheduleTask(
+    """Owner-local YYYY-MM-DD to prefer."""
+    date: String
+    estimatedMinutes: Int
+    id: ID!
+  ): ScheduleTaskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!
 
   """Defer a candidate until a future instant"""
@@ -1602,6 +1641,9 @@ type Mutation {
 
   """Manually trigger the HBPE pipeline for the current user"""
   triggerHbpe: String!
+
+  """Remove the planned block for this task and clear scheduledFor."""
+  unscheduleTask(id: ID!): TaskType
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
   updateBrowserActivity(input: UpdateBrowserActivityInput!): BrowserActivityType
@@ -1706,7 +1748,14 @@ input PersonContactInput {
 type PersonDuplicateGroupType {
   people: [PersonType!]!
   reason: String!
+  totalPeople: Int!
   value: String!
+}
+
+type PersonDuplicatesPayload {
+  groups: [PersonDuplicateGroupType!]!
+  hasMore: Boolean!
+  totalCount: Int!
 }
 
 type PersonEdge implements Edge {
@@ -1963,7 +2012,7 @@ type Query {
   events(after: String, before: String, first: Int, last: Int): EventConnection!
 
   """
-  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Limited to calendar event types (see SCHEDULE_EVENT_TYPES) plus events with no event_type, which is how user-created and accepted-suggestion events arrive.
+  Events overlapping [from, to) — calendar read path. Excludes cancelled/no-show; keeps tentative. Allowlisted types: calendar_event, meeting, appointment, planned_block, plus events with no event_type (user-created and accepted suggestions).
   """
   eventsInRange(from: DateTime!, to: DateTime!): [EventType!]!
 
@@ -1987,6 +2036,7 @@ type Query {
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
+  mergeCandidates(after: String, first: Int, status: String): MergeCandidateConnection!
 
   """
   Computed metric and behavioral anomalies. Not the free-text list inside summaries.
@@ -2013,7 +2063,7 @@ type Query {
   pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
   people(after: String, before: String, first: Int, last: Int, query: String): PersonConnection!
   person(id: ID!): PersonType
-  personDuplicates(limit: Int): [PersonDuplicateGroupType!]!
+  personDuplicates(limit: Int, offset: Int, reasons: [String!]): PersonDuplicatesPayload!
   place(id: ID!): PlaceType
 
   """
@@ -2022,6 +2072,11 @@ type Query {
   placeForecast(horizonHours: Int = 4, k: Int = 5): [PlaceForecastItemType!]!
   places(after: String, before: String, first: Int, last: Int, query: String): PlaceConnection!
   placesNear(latitude: Float!, limit: Int, longitude: Float!, radiusMeters: Float): [PlaceNearType!]!
+
+  """
+  Planned blocks (`event_type = planned_block`) overlapping [from, to). SQL-pushdown, not the explorer events() feed.
+  """
+  plannedBlocks(from: DateTime!, to: DateTime!): [EventType!]!
 
   """Forecast self-consistency scores (not ground-truth accuracy)"""
   predictionCalibration(limit: Int = 14): PredictionCalibrationType
@@ -2044,7 +2099,7 @@ type Query {
   tags(after: String, before: String, first: Int, last: Int): TagConnection!
   task(id: ID!): TaskType
 
-  """Pending trust-dial confirmations for mutate/complete/revise."""
+  """Pending trust-dial confirmations for mutate/complete/revise/schedule."""
   taskPendingChanges(taskId: ID): [TaskPendingChangeType!]!
   tasks(
     after: String
@@ -2232,6 +2287,15 @@ type ScheduleCandidateType {
   windowStart: DateTime!
 }
 
+type ScheduleTaskPayload {
+  event: EventType
+
+  """placed | proposed | already_placed | no_gap | skipped"""
+  status: String
+  success: Boolean!
+  task: TaskType
+}
+
 input SearchInput {
   after: String
   bbox: [Float!]
@@ -2375,6 +2439,7 @@ enum TaskPendingChangeKind {
   complete
   event_revise
   mutate
+  schedule
 }
 
 enum TaskPendingChangeStatus {
@@ -2473,7 +2538,7 @@ type ThreadType implements Node & Taggable {
 
 input UpdateAnswerInput {
   answer: String!
-  id: String!
+  id: ID!
 }
 
 input UpdateBrowserActivityInput {
@@ -2734,7 +2799,7 @@ input UpdateProviderKeyInput {
 
 input UpdateQuestionInput {
   category: String!
-  id: String!
+  id: ID!
   text: String!
 }
 

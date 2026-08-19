@@ -4,6 +4,7 @@
    other sections (identity, devices, subscriptions, linked wallets, …) are
    account metadata with no timeline placement and are deliberately skipped. */
 import fs from 'node:fs';
+import { open, readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -154,7 +155,7 @@ export class CoinbaseFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -163,7 +164,7 @@ export class CoinbaseFileImporter implements FileImporter {
       const base = path.basename(root).toLowerCase();
       const ext = path.extname(base);
       if (ext === '.json') {
-        if (this.jsonMatches(root)) {
+        if (await this.jsonMatches(root)) {
           return { confidence: 0.95 };
         }
 
@@ -186,7 +187,7 @@ export class CoinbaseFileImporter implements FileImporter {
       // produce, unrelated data included. Require the same header check that
       // already gates the tier above; a same-named file that fails it now
       // correctly returns 0.
-      if (this.headerMatches(root)) {
+      if (await this.headerMatches(root)) {
         return { confidence: 0.95 };
       }
 
@@ -195,15 +196,15 @@ export class CoinbaseFileImporter implements FileImporter {
 
     if (stat.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         for (const name of names) {
           const ext = path.extname(name).toLowerCase();
           const fpath = path.join(root, name);
-          if (ext === '.csv' && this.headerMatches(fpath)) {
+          if (ext === '.csv' && (await this.headerMatches(fpath))) {
             return { confidence: 0.95 };
           }
 
-          if (ext === '.json' && this.jsonMatches(fpath)) {
+          if (ext === '.json' && (await this.jsonMatches(fpath))) {
             return { confidence: 0.95 };
           }
         }
@@ -217,36 +218,31 @@ export class CoinbaseFileImporter implements FileImporter {
     return { confidence: 0 };
   }
 
-  private headerMatches(fpath: string): boolean {
-    const head = this.readHead(fpath, 4096);
+  private async headerMatches(fpath: string): Promise<boolean> {
+    const head = await this.readHead(fpath, 4096);
 
     return head !== undefined && headerHasCoinbaseCols(head);
   }
 
-  private jsonMatches(fpath: string): boolean {
-    const head = this.readHead(fpath, JSON_SNIFF_BYTES);
+  private async jsonMatches(fpath: string): Promise<boolean> {
+    const head = await this.readHead(fpath, JSON_SNIFF_BYTES);
 
     return head !== undefined && looksLikeCoinbaseJSON(head);
   }
 
-  private readHead(fpath: string, bytes: number): string | undefined {
-    let fd: number | undefined;
+  private async readHead(fpath: string, bytes: number): Promise<string | undefined> {
     try {
-      fd = fs.openSync(fpath, 'r');
-      const buf = Buffer.alloc(bytes);
-      const n = fs.readSync(fd, buf, 0, bytes, 0);
+      const fh = await open(fpath, 'r');
+      try {
+        const buf = Buffer.alloc(bytes);
+        const { bytesRead } = await fh.read(buf, 0, bytes, 0);
 
-      return buf.toString('utf8', 0, n);
+        return buf.toString('utf8', 0, bytesRead);
+      } finally {
+        await fh.close().catch(() => {});
+      }
     } catch {
       return undefined;
-    } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 
@@ -284,9 +280,9 @@ export class CoinbaseFileImporter implements FileImporter {
       for (const name of names) {
         const ext = path.extname(name).toLowerCase();
         const fpath = path.join(root, name);
-        if (ext === '.csv' && this.headerMatches(fpath)) {
+        if (ext === '.csv' && (await this.headerMatches(fpath))) {
           await this.processFile(fpath, params);
-        } else if (ext === '.json' && this.jsonMatches(fpath)) {
+        } else if (ext === '.json' && (await this.jsonMatches(fpath))) {
           await this.processJSONFile(fpath, params);
         }
       }

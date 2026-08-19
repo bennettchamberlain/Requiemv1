@@ -12,6 +12,7 @@
 */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { open, readdir, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -51,37 +52,33 @@ function stripBom(s: string): string {
 // Read up to ~64KB of a file to sniff for a signature without slurping a
 // potentially huge export (History.json runs to hundreds of thousands of rows)
 // into memory just to recognize it.
-function sniff(fpath: string): string {
-  let fd: number | undefined;
+async function sniff(fpath: string): Promise<string> {
+  let fh: FileHandle | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    fh = await open(fpath, 'r');
     const buf = Buffer.alloc(65536);
-    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
 
-    return stripBom(buf.toString('utf8', 0, n));
+    return stripBom(buf.toString('utf8', 0, bytesRead));
   } catch {
     return '';
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
+    if (fh !== undefined) {
+      await fh.close().catch(() => {});
     }
   }
 }
 
-function looksLikeChromeHistory(fpath: string): boolean {
-  return /"Browser History"\s*:/.test(sniff(fpath));
+async function looksLikeChromeHistory(fpath: string): Promise<boolean> {
+  return /"Browser History"\s*:/.test(await sniff(fpath));
 }
 
 // A Chrome Takeout Bookmarks.html is the Netscape bookmark format. We require
 // the NETSCAPE-Bookmark doctype and ADD_DATE attributes, and the ABSENCE of a
 // `time_added` attribute: read-later services export the same container with
 // that field instead, and such a file is not a Chrome bookmarks export.
-function looksLikeChromeBookmarks(fpath: string): boolean {
-  const head = sniff(fpath);
+async function looksLikeChromeBookmarks(fpath: string): Promise<boolean> {
+  const head = await sniff(fpath);
 
   return /NETSCAPE-Bookmark-file-1/i.test(head) && /ADD_DATE=/i.test(head) && !/time_added=/i.test(head);
 }
@@ -91,7 +88,7 @@ function looksLikeChromeBookmarks(fpath: string): boolean {
 // a dropped Google Takeout, is the archive ROOT, where Chrome/ is one of dozens
 // of subfolders. So we walk (bounded depth) and match Takeout's fixed filenames,
 // content-sniffing only those two names rather than every JSON/HTML in the tree.
-function findChromeFiles(root: string, depth = 0): { history: string[]; bookmarks: string[] } {
+async function findChromeFiles(root: string, depth = 0): Promise<{ history: string[]; bookmarks: string[] }> {
   const out = { history: [] as string[], bookmarks: [] as string[] };
   if (depth > 6) {
     return out;
@@ -99,7 +96,7 @@ function findChromeFiles(root: string, depth = 0): { history: string[]; bookmark
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await readdir(root, { withFileTypes: true });
   } catch {
     return out;
   }
@@ -107,14 +104,14 @@ function findChromeFiles(root: string, depth = 0): { history: string[]; bookmark
   for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     const p = path.join(root, e.name);
     if (e.isDirectory()) {
-      const sub = findChromeFiles(p, depth + 1);
+      const sub = await findChromeFiles(p, depth + 1);
       out.history.push(...sub.history);
       out.bookmarks.push(...sub.bookmarks);
     } else if (e.isFile()) {
       const base = e.name.toLowerCase();
-      if (base === HISTORY_FILE && looksLikeChromeHistory(p)) {
+      if (base === HISTORY_FILE && (await looksLikeChromeHistory(p))) {
         out.history.push(p);
-      } else if (base === BOOKMARKS_FILE && looksLikeChromeBookmarks(p)) {
+      } else if (base === BOOKMARKS_FILE && (await looksLikeChromeBookmarks(p))) {
         out.bookmarks.push(p);
       }
     }
@@ -220,29 +217,29 @@ export class GoogleChromeFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
-      if (base.endsWith('.json') && looksLikeChromeHistory(root)) {
+      if (base.endsWith('.json') && (await looksLikeChromeHistory(root))) {
         return { confidence: base === HISTORY_FILE ? 0.95 : 0.85 };
       }
 
-      if (base.endsWith('.html') && looksLikeChromeBookmarks(root)) {
+      if (base.endsWith('.html') && (await looksLikeChromeBookmarks(root))) {
         return { confidence: base === BOOKMARKS_FILE ? 0.9 : 0.8 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       const inChromeDir = path.basename(root).toLowerCase() === 'chrome';
-      const found = findChromeFiles(root);
+      const found = await findChromeFiles(root);
       if (found.history.length || found.bookmarks.length) {
         return { confidence: inChromeDir ? 0.95 : 0.85 };
       }
@@ -259,9 +256,9 @@ export class GoogleChromeFileImporter implements FileImporter {
       return;
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = fs.statSync(root);
     } catch {
       return;
     }
@@ -269,15 +266,15 @@ export class GoogleChromeFileImporter implements FileImporter {
     const historyFiles: string[] = [];
     const bookmarkFiles: string[] = [];
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
-      if (base.endsWith('.json') && looksLikeChromeHistory(root)) {
+      if (base.endsWith('.json') && (await looksLikeChromeHistory(root))) {
         historyFiles.push(root);
-      } else if (base.endsWith('.html') && looksLikeChromeBookmarks(root)) {
+      } else if (base.endsWith('.html') && (await looksLikeChromeBookmarks(root))) {
         bookmarkFiles.push(root);
       }
-    } else if (stat.isDirectory()) {
-      const found = findChromeFiles(root);
+    } else if (st.isDirectory()) {
+      const found = await findChromeFiles(root);
       historyFiles.push(...found.history);
       bookmarkFiles.push(...found.bookmarks);
     }

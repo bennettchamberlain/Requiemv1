@@ -79,19 +79,54 @@ describe('PickStep', () => {
     expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
   });
 
-  // The search box and the category chips were answers to a grid of ~100
-  // one-line names with nothing to tell them apart. The tiles carry a logo, a
-  // name and what each source imports now, and the list is already grouped
-  // under the same headings the chips repeated — so both are gone and every
-  // section is simply present.
-  it('shows the whole catalogue with no filter chrome in front of it', () => {
+  it('filters tiles as you type, dropping emptied sections whole', () => {
     renderStep();
 
-    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: /filter by category/i })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: /search services/i }), {
+      target: { value: 'spot' },
+    });
 
     expect(screen.getByRole('button', { name: /Spotify/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Strava/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Strava/ })).not.toBeInTheDocument();
+    // Fitness lost its only tile; an empty heading would read as "everything
+    // here was taken away".
+    expect(screen.queryByRole('heading', { name: /fitness/i })).not.toBeInTheDocument();
+  });
+
+  it('finds a bundle by its member names', () => {
+    render(
+      <PickStep
+        catalog={[
+          catalogSource({
+            id: 'gmail',
+            title: 'Gmail (Google Takeout)',
+            ecosystem: 'google',
+            category: 'email',
+          }),
+        ]}
+        picked={new Set()}
+        onToggle={vi.fn()}
+        onContinue={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('textbox', { name: /search services/i }), {
+      target: { value: 'gmail' },
+    });
+
+    // The tile is labeled "Google"; typing a member's name must surface it,
+    // not an empty grid.
+    expect(screen.getByRole('button', { name: /Google/ })).toBeInTheDocument();
+  });
+
+  it('says when nothing matches instead of showing an empty void', () => {
+    renderStep();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /search services/i }), {
+      target: { value: 'zzzz' },
+    });
+
+    expect(screen.getByText(/no services match/i)).toBeInTheDocument();
   });
 
   it('says what each source imports, not just its name', () => {

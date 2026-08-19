@@ -200,4 +200,52 @@ describe('ExplorerToolbar', () => {
       expect(screen.getByText('#space')).toBeInTheDocument();
     });
   });
+
+  // VIEW-06: every view runs the same URL filter set. Where one genuinely
+  // can't — the graph reads /api/graph/*, which has no semantic ranking, no
+  // map viewport and no result order — the filter is shown as not applied
+  // rather than dropped in silence.
+  describe('filters a view cannot apply', () => {
+    it('marks the graph-incompatible chips and counts them, leaving the rest alone', () => {
+      renderToolbar(<ExplorerToolbar open />, {
+        route: '/?view=graph&semantic=1&bbox=1,2,3,4&tags=space',
+      });
+
+      expect(screen.getByLabelText(/^Semantic — not applied in this view\./)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^Map area — not applied in this view\./)).toBeInTheDocument();
+      // The graph does forward tags, so that chip reads normally.
+      expect(screen.queryByLabelText(/^#space — not applied/)).not.toBeInTheDocument();
+      expect(screen.getByText('2 not applied here', { exact: false })).toBeInTheDocument();
+    });
+
+    it('leaves every chip active in the search-backed views', () => {
+      renderToolbar(<ExplorerToolbar open />, {
+        route: '/?view=list&semantic=1&bbox=1,2,3,4&tags=space',
+      });
+
+      expect(screen.queryByLabelText(/not applied in this view/)).not.toBeInTheDocument();
+      expect(screen.queryByText('not applied here', { exact: false })).not.toBeInTheDocument();
+    });
+
+    it('counts a dropped sort even though sort is not one of the narrowing filters', () => {
+      renderToolbar(<ExplorerToolbar open />, { route: '/?view=graph&semantic=1&sortBy=name' });
+
+      // One narrowing filter is set (semantic), but two dimensions are dropped:
+      // countActiveFilters ignores sort, so the dropped tally can exceed it.
+      expect(screen.getByText('1 filter', { exact: false })).toBeInTheDocument();
+      expect(screen.getByText('2 not applied here', { exact: false })).toBeInTheDocument();
+    });
+
+    it('marks the Semantic toggle and Sort control on the graph without disabling them', () => {
+      renderToolbar(<MemoryExplorerFilterControls />, { route: '/?view=graph' });
+
+      expect(screen.getByRole('button', { name: /^Semantic — not applied in this view\./ })).toBeEnabled();
+      // The Select itself stays live — the sort still applies the moment you
+      // switch back to a list-shaped view; the marker beside it carries the why.
+      expect(screen.getByRole('combobox', { name: 'Sort' })).toBeEnabled();
+      expect(screen.getByRole('note', { name: /^Sort — not applied in this view\./ })).toBeInTheDocument();
+      // "Has a location" is forwarded to the graph, so it stays a plain control.
+      expect(screen.getByRole('button', { name: 'Has a location' })).toBeInTheDocument();
+    });
+  });
 });

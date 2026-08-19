@@ -25,6 +25,28 @@ function buildService(served: string[]) {
   return { service, driver };
 }
 
+function buildNativeService(served: string[], visionIds: readonly string[]) {
+  const vision = new Set(visionIds);
+  const service = new OllamaService(
+    { getOpenAiDriver: () => null, usesOpenAiDriver: () => false } as never,
+    { getAgentFacingTools: () => [] } as never,
+    makeLogger() as never,
+    { isFeatureEnabled: jest.fn(async () => false) } as never,
+  );
+
+  const spies = service as unknown as {
+    listServedChatModelIds: () => Promise<string[]>;
+    fetchModelCapabilities: (id: string, opts?: { throwOnError?: boolean }) => Promise<string[]>;
+  };
+
+  jest.spyOn(spies, 'listServedChatModelIds').mockResolvedValue(served);
+  jest
+    .spyOn(spies, 'fetchModelCapabilities')
+    .mockImplementation(async (id: string) => (vision.has(id) ? ['vision'] : ['completion', 'tools']));
+
+  return service;
+}
+
 const ctx = { userId: 'user-1' };
 
 describe('OllamaService.resolveModel uses the loaded backend model', () => {
@@ -56,5 +78,38 @@ describe('OllamaService.resolveModel uses the loaded backend model', () => {
     const { service } = buildService([]);
 
     await expect(service.resolveModel(ctx)).rejects.toThrow(/No chat model is currently loaded/);
+  });
+
+  it('falls back past an unloaded vision default like llava:7b on vLLM', async () => {
+    const { service } = buildService(['Qwen3-8B']);
+
+    const resolved = await service.resolveModel(ctx, {
+      requestedModel: 'llava:7b',
+      messages: [{ role: 'user', content: 'describe', images: ['abc'] as never }],
+    });
+
+    expect(resolved.model).toBe('Qwen3-8B');
+  });
+
+  it('prefers a loaded Ollama vision model when the turn carries images', async () => {
+    const service = buildNativeService(['Qwen3-8B', 'llava:13b'], ['llava:13b']);
+
+    const resolved = await service.resolveModel(ctx, {
+      requestedModel: 'llava:7b',
+      messages: [{ role: 'user', content: 'describe', images: ['abc'] as never }],
+    });
+
+    expect(resolved.model).toBe('llava:13b');
+  });
+
+  it('does not send images to a loaded text chat model when a vision model is served', async () => {
+    const service = buildNativeService(['Qwen3-8B', 'llava:13b'], ['llava:13b']);
+
+    const resolved = await service.resolveModel(ctx, {
+      requestedModel: 'Qwen3-8B',
+      messages: [{ role: 'user', content: 'describe', images: ['abc'] as never }],
+    });
+
+    expect(resolved.model).toBe('llava:13b');
   });
 });

@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { open } from 'node:fs/promises';
 
 /**
  * Cheap content peeks for recognizers.
@@ -15,28 +15,26 @@ import fs from 'node:fs';
  * All helpers fail CLOSED (unreadable → no match): recognition runs over
  * user-supplied trees where anything can be a broken symlink or a directory
  * wearing a `.csv` name.
+ *
+ * All helpers are ASYNC: recognition runs on the API request path, and a
+ * synchronous read of a file on a saturated disk blocks the event loop for
+ * every request on the process, not just the scan that asked.
  */
 
 /** First `bytes` of the file as utf8, or null when unreadable. */
-export function readHead(fpath: string, bytes = 4096): string | null {
-  let fd: number | undefined;
+export async function readHead(fpath: string, bytes = 4096): Promise<string | null> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
 
   try {
-    fd = fs.openSync(fpath, 'r');
+    handle = await open(fpath, 'r');
     const buf = Buffer.alloc(bytes);
-    const n = fs.readSync(fd, buf, 0, bytes, 0);
+    const { bytesRead } = await handle.read(buf, 0, bytes, 0);
 
-    return buf.toString('utf8', 0, n);
+    return buf.toString('utf8', 0, bytesRead);
   } catch {
     return null;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -48,8 +46,8 @@ export function readHead(fpath: string, bytes = 4096): string | null {
  * `Comment ID`. Callers pass the columns their PARSER reads — the check then
  * has no vocabulary of its own to drift.
  */
-export function csvHeaderHas(fpath: string, required: readonly string[]): boolean {
-  const head = readHead(fpath);
+export async function csvHeaderHas(fpath: string, required: readonly string[]): Promise<boolean> {
+  const head = await readHead(fpath);
 
   if (head == null) {
     return false;
@@ -64,8 +62,8 @@ export function csvHeaderHas(fpath: string, required: readonly string[]): boolea
 }
 
 /** Does the file's head match the pattern? For XML/JSON roots and the like. */
-export function headMatches(fpath: string, pattern: RegExp): boolean {
-  const head = readHead(fpath);
+export async function headMatches(fpath: string, pattern: RegExp): Promise<boolean> {
+  const head = await readHead(fpath);
 
   return head != null && pattern.test(head);
 }

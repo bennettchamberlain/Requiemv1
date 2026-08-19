@@ -56,10 +56,13 @@ import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { MemoryModule } from '@ci/domains/memory';
 import { PositionModule } from '@ci/domains/position';
+import { UserModule } from '@ci/domains/user';
 
+import { ImportDoctorController } from './controllers/ImportDoctorController';
 import { ImportInboxController } from './controllers/ImportInboxController';
 import { ImportRunsController } from './controllers/ImportRunsController';
 import { ImportUploadsController } from './controllers/ImportUploadsController';
+import { ImportDoctorService } from './doctor/ImportDoctorService';
 import { EntityMappingEntity } from './entities/EntityMappingEntity';
 import { ImportRunEntity } from './entities/ImportRunEntity';
 import { ImportStageEntity } from './entities/ImportStageEntity';
@@ -68,6 +71,7 @@ import { StagedItemEntity } from './entities/StagedItemEntity';
 import { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
 import { StagedSourceEntity } from './entities/StagedSourceEntity';
 import { ImportStageListener } from './listeners/ImportStageListener';
+import { InboxProvisionListener } from './listeners/InboxProvisionListener';
 import { StagedUploadPurgeCron } from './listeners/StagedUploadPurgeCron';
 import { DataSourceCatalogService } from './services/DataSourceCatalogService';
 import { ImportInboxService } from './services/ImportInboxService';
@@ -103,9 +107,11 @@ import { UnpackStage } from './stages/UnpackStage';
     GraphModule,
     MemoryModule,
     PositionModule,
+    UserModule,
   ],
   providers: [
     DataSourceCatalogService,
+    ImportDoctorService,
     ImportInboxService,
     ImportRunService,
     ImportScratchService,
@@ -115,11 +121,13 @@ import { UnpackStage } from './stages/UnpackStage';
     MediaStage,
     PushStage,
     ImportStageListener,
+    InboxProvisionListener,
     StagedUploadPurgeCron,
   ],
-  controllers: [ImportUploadsController, ImportRunsController, ImportInboxController],
+  controllers: [ImportUploadsController, ImportRunsController, ImportInboxController, ImportDoctorController],
   exports: [
     DataSourceCatalogService,
+    ImportDoctorService,
     ImportInboxService,
     ImportRunService,
     ImportScratchService,
@@ -185,6 +193,13 @@ export {
   normalizeHandle,
   resolveEntityType,
 } from './staging/identity';
+
+export { ImportDoctorController } from './controllers/ImportDoctorController';
+export type { DoctorCheckSummary } from './controllers/ImportDoctorController';
+export { ImportDoctorService, DEFAULT_STATEMENT_TIMEOUT_MS } from './doctor/ImportDoctorService';
+export type { DoctorFinding, DoctorReport, DoctorStatus } from './doctor/ImportDoctorService';
+export { DOCTOR_CHECKS, DOCTOR_CHECK_IDS, findCheck } from './doctor/checks';
+export type { DoctorCheck, DoctorSeverity } from './doctor/checks';
 
 export { ImportRunsController } from './controllers/ImportRunsController';
 export type {

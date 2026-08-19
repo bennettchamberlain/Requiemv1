@@ -1,4 +1,4 @@
-import { Field, ObjectType } from '@nestjs/graphql';
+import { Field, Int, ObjectType } from '@nestjs/graphql';
 
 import { PersonType } from './PersonType';
 
@@ -19,4 +19,14 @@ export class PersonDuplicateGroupType {
 
   @Field(() => [PersonType])
   people!: PersonType[];
+
+  /**
+   * How many people share this value in total.
+   *
+   * `people` is capped, so a call-log heading shared by 899 rows arrives as six
+   * members and `totalPeople: 899` — the UI has to say so rather than imply the
+   * group is small.
+   */
+  @Field(() => Int)
+  totalPeople!: number;
 }

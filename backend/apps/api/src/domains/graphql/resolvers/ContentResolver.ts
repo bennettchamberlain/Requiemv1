@@ -162,12 +162,18 @@ export class ContentResolver {
   }
 
   /**
-   * @deprecated Takes a RAW content id. Use {@link deleteContent}, which speaks
-   * the same global ids the clients already hold.
+   * @deprecated Returns a bare boolean and takes a positional `id` argument. Use
+   * {@link deleteContent}, which follows the `DeleteByIdInput`/`DeleteByIdPayload`
+   * convention the rest of this family uses.
    */
   @Mutation(() => Boolean)
-  async removeContent(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async removeContent(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('content', gid);
 
     return this.contentService.remove(serviceContext, id);
   }

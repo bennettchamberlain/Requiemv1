@@ -1,5 +1,6 @@
 /* Contact List datasource (TypeScript port) */
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSVRows } from './csv';
@@ -87,7 +88,15 @@ function bestColumnMapping(header: string[]): Record<string, number[]> {
 export class ContactListFileImporter implements FileImporter {
   async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
     const full = entry.fullPath || entry.fsRoot || entry.filename;
-    if (!full || !fs.existsSync(full) || fs.statSync(full).isDirectory()) {
+    if (!full) {
+      return { confidence: 0 };
+    }
+
+    try {
+      if ((await stat(full)).isDirectory()) {
+        return { confidence: 0 };
+      }
+    } catch {
       return { confidence: 0 };
     }
 

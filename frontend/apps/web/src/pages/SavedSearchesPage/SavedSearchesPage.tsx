@@ -114,14 +114,17 @@ export function SavedSearchesPage() {
     );
   } else {
     content = (
-      <PageContent>
-        <div className="flex w-full justify-end">
+      <PageContent className="gap-3">
+        <div className="flex w-full items-center justify-between gap-3">
+          <div className="text-sm text-muted-foreground">
+            {savedSearches.length} saved {savedSearches.length === 1 ? 'search' : 'searches'}
+          </div>
           <Button onClick={() => setCreating(true)}>
             <Plus className="mr-2 h-4 w-4" />
             New saved search
           </Button>
         </div>
-        <div className="grid w-full gap-4 justify-center grid-cols-[repeat(auto-fill,400px)] auto-rows-[300px]">
+        <div className="w-full border-t border-border/50">
           {savedSearches.map((savedSearch) => (
             <SavedSearch
               key={savedSearch.id}

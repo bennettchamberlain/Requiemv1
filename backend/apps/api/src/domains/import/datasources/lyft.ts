@@ -14,6 +14,7 @@
  * sources describe the same kind of event, and a timeline that renders a Lyft
  * ride differently from an Uber one is only telling you which app was open. */
 import fs from 'node:fs';
+import { open, readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -124,7 +125,7 @@ export class LyftFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -135,7 +136,7 @@ export class LyftFileImporter implements FileImporter {
         return { confidence: 0 };
       }
 
-      if (!this.headerMatches(root)) {
+      if (!(await this.headerMatches(root))) {
         return { confidence: 0 };
       }
 
@@ -143,7 +144,7 @@ export class LyftFileImporter implements FileImporter {
     }
 
     if (stat.isDirectory()) {
-      const csv = this.findCsv(root);
+      const csv = await this.findCsv(root);
       if (csv) {
         return { confidence: RIDES_FILENAMES.includes(path.basename(csv).toLowerCase()) ? 0.95 : 0.85 };
       }
@@ -155,10 +156,10 @@ export class LyftFileImporter implements FileImporter {
   }
 
   // Locate a matching ride CSV in a directory, recursing up to two levels deep.
-  private findCsv(dir: string, depth = 0): string | undefined {
+  private async findCsv(dir: string, depth = 0): Promise<string | undefined> {
     let names: string[];
     try {
-      names = fs.readdirSync(dir);
+      names = await readdir(dir);
     } catch {
       return undefined;
     }
@@ -167,7 +168,7 @@ export class LyftFileImporter implements FileImporter {
     // header happens to mention a pickup.
     for (const wanted of RIDES_FILENAMES) {
       const exact = names.find((n) => n.toLowerCase() === wanted);
-      if (exact && this.headerMatches(path.join(dir, exact))) {
+      if (exact && (await this.headerMatches(path.join(dir, exact)))) {
         return path.join(dir, exact);
       }
     }
@@ -178,7 +179,7 @@ export class LyftFileImporter implements FileImporter {
       }
 
       const fpath = path.join(dir, name);
-      if (this.headerMatches(fpath)) {
+      if (await this.headerMatches(fpath)) {
         return fpath;
       }
     }
@@ -188,13 +189,13 @@ export class LyftFileImporter implements FileImporter {
         const sub = path.join(dir, name);
         let s: fs.Stats;
         try {
-          s = fs.statSync(sub);
+          s = await fsStat(sub);
         } catch {
           continue;
         }
 
         if (s.isDirectory()) {
-          const found = this.findCsv(sub, depth + 1);
+          const found = await this.findCsv(sub, depth + 1);
           if (found) {
             return found;
           }
@@ -206,28 +207,23 @@ export class LyftFileImporter implements FileImporter {
   }
 
   // Read only the first ~8KB to inspect the CSV header row.
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
     try {
-      fd = fs.openSync(fpath, 'r');
-      const buf = Buffer.alloc(8192);
-      const n = fs.readSync(fd, buf, 0, 8192, 0);
-      let text = buf.toString('utf8', 0, n);
-      if (text.charCodeAt(0) === 0xfeff) {
-        text = text.slice(1);
-      }
+      const fh = await open(fpath, 'r');
+      try {
+        const buf = Buffer.alloc(8192);
+        const { bytesRead } = await fh.read(buf, 0, 8192, 0);
+        let text = buf.toString('utf8', 0, bytesRead);
+        if (text.charCodeAt(0) === 0xfeff) {
+          text = text.slice(1);
+        }
 
-      return headerHasRideCols(text);
+        return headerHasRideCols(text);
+      } finally {
+        await fh.close().catch(() => {});
+      }
     } catch {
       return false;
-    } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 
@@ -248,7 +244,7 @@ export class LyftFileImporter implements FileImporter {
     if (stat.isFile()) {
       fpath = root;
     } else if (stat.isDirectory()) {
-      fpath = this.findCsv(root);
+      fpath = await this.findCsv(root);
     }
 
     if (!fpath) {

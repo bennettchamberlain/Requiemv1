@@ -260,12 +260,18 @@ export class PlaceResolver {
   }
 
   /**
-   * @deprecated Takes a RAW place id. Use {@link deletePlace}, which speaks the
-   * same global ids the clients already hold.
+   * @deprecated Returns a bare boolean and takes a positional `id` argument. Use
+   * {@link deletePlace}, which follows the `DeleteByIdInput`/`DeleteByIdPayload`
+   * convention the rest of this family uses.
    */
   @Mutation(() => Boolean)
-  async removePlace(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async removePlace(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('place', gid);
 
     return this.placeService.remove(serviceContext, id);
   }
