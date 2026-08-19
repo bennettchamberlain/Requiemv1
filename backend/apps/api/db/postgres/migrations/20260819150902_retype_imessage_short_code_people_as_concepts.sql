@@ -202,7 +202,8 @@ BEGIN
 
   -- SET LOCAL from a DO block lasts to the end of the migration's transaction
   -- (a DO block has no per-function SET clause to revert it), so the statements
-  -- below can call `uuid_generate_v5` unqualified.
+  -- below can call `uuid_generate_v5` unqualified. It MUST be RESET before this
+  -- file ends — see the RESET at the bottom of the up migration.
   EXECUTE format('SET LOCAL search_path = %I, ci, public', v5_schema);
 END
 $$;
@@ -318,6 +319,14 @@ DELETE FROM ci.pipeline_dead_letters dl USING _im_short_code_repair r WHERE dl.e
 --   SELECT count(*) FROM ci.communications c
 --    WHERE c.from_entity_id IS NOT NULL
 --      AND NOT EXISTS (SELECT 1 FROM ci.entities e WHERE e.entity_id = c.from_entity_id);
+
+-- The SET LOCAL above outlives this file's statements: dbmate records the
+-- applied version in the SAME transaction, and it resolves its unqualified
+-- `schema_migrations` table against the current search_path at insert time.
+-- With `ci` first in the path (uuid-ossp installed into `ci`), that insert
+-- targets `ci.schema_migrations`, which does not exist, and the whole
+-- migration rolls back. Restore the session default before dbmate's insert.
+RESET search_path;
 
 -- migrate:down
 
