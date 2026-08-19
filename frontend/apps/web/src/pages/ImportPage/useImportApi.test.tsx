@@ -338,7 +338,15 @@ describe('useActiveImports', () => {
       startedAt: '2026-08-19T00:17:24.000Z',
       elapsedMs: 3_960_000,
     },
-    queue: { concurrency: 1, running: 1, waiting: 12, blocked: 12, longestWaitMs: 3_060_000 },
+    queue: {
+      // Per KIND since the queues were split; `slots` is the total in flight.
+      concurrency: { unpack: 1, parse: 1, media: 2, push: 1 },
+      slots: 5,
+      running: 1,
+      waiting: 12,
+      blocked: 12,
+      longestWaitMs: 3_060_000,
+    },
     runs: [],
     truncated: false,
   };
@@ -472,7 +480,14 @@ describe('useActiveImports on a hidden tab', () => {
       startedAt: null,
       elapsedMs: null,
     },
-    queue: { concurrency: 1, running: 1, waiting: 0, blocked: 0, longestWaitMs: null },
+    queue: {
+      concurrency: { unpack: 1, parse: 1, media: 2, push: 1 },
+      slots: 5,
+      running: 1,
+      waiting: 0,
+      blocked: 0,
+      longestWaitMs: null,
+    },
     runs: [],
     truncated: false,
   };

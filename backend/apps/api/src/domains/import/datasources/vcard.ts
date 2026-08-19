@@ -921,6 +921,15 @@ export function buildContact(lines: ContentLine[], file: string): BuiltContact |
 
   const entity: Entity = {
     name,
+    // A vCard IS a contact card, so say so here rather than leaving it to
+    // `resolveEntityType`, whose `hasContactIdentity` fallback only infers
+    // 'contact' from a phone/email ATTRIBUTE. Most cards in a real export
+    // carry neither -- 4,926 of them in one Google Takeout `.vcf` listed a
+    // name and a LinkedIn URL and nothing else -- so they resolved to a null
+    // type and `entityTypeFor` filed them as `Concept`: 1,777 pseudo-concepts
+    // duplicating a Person of the same name. The type is a fact about the
+    // FORMAT, not about which optional properties a given card happens to fill.
+    type: 'contact',
     attributes,
     metadata: {
       Source: 'vCard',

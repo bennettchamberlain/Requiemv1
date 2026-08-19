@@ -12,6 +12,9 @@ import {
   type ContentLine,
 } from '../vcard';
 
+import { entityTypeFor } from '../../push/entities';
+import { resolveEntityType } from '../../staging/identity';
+
 import type { EmittedGraph } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
@@ -530,5 +533,50 @@ describe('full pipeline: grouped labels + folded NOTE + QUOTED-PRINTABLE ORG tog
     expect(note?.value).toBe(
       'Line one of a very long note that must be folded across the wire to stay under a line-length limit.',
     );
+  });
+});
+
+describe('a card with no phone or email is still a contact', () => {
+  /**
+   * Models the real chain: `StagedWriter` stores `resolveEntityType(entity)` as
+   * the staged type, and push's `entityTypeFor` maps that to
+   * `ci.entities.entity_type`.
+   */
+  const stagedEntityType = (entity: Parameters<typeof resolveEntityType>[0]): string =>
+    entityTypeFor({ type: resolveEntityType(entity) } as never);
+
+  /**
+   * The regression this pins: `resolveEntityType` only infers 'contact' from a
+   * phone/email ATTRIBUTE, so a card carrying just a name (and maybe a URL)
+   * resolved to a null type and `entityTypeFor` filed it under the
+   * `DEFAULT_ENTITY_TYPE`, `Concept`. A real Google Takeout `.vcf` of 4,926
+   * cards produced 1,777 such pseudo-concepts, each duplicating a Person of the
+   * same name. Declaring the type at the parser is what fixes it.
+   */
+  it('types a name-only card as a Person, not a Concept', () => {
+    const built = buildContact(
+      contentLines('BEGIN:VCARD\nFN:Nadia Whitlock\nURL:https://example.invalid/in/nadia\nEND:VCARD\n'),
+      'contacts.vcf',
+    )!;
+
+    // The card genuinely has nothing for `hasContactIdentity` to find -- that is
+    // the whole point, and without it this test would pass for the wrong reason.
+    expect(built.entity.attributes?.some((a: EntityAttribute) => /phone|email|tel/i.test(a.name))).toBe(
+      false,
+    );
+    expect(stagedEntityType(built.entity)).toBe('Person');
+  });
+
+  /**
+   * The case that already worked, kept so a future change to the parser's
+   * `type` cannot fix the name-only card by breaking this one.
+   */
+  it('still types a card carrying a phone as a Person', () => {
+    const built = buildContact(
+      contentLines('BEGIN:VCARD\nFN:Bob Reachable\nTEL:+15551110000\nEND:VCARD\n'),
+      'contacts.vcf',
+    )!;
+
+    expect(stagedEntityType(built.entity)).toBe('Person');
   });
 });

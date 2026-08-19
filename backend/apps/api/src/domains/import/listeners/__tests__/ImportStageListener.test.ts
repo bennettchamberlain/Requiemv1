@@ -235,7 +235,20 @@ describe('ImportStageListener failure', () => {
 
     await expect(listener.runStage(payload)).rejects.toThrow('central directory');
 
-    expect(runs.failStage).toHaveBeenCalledWith(payload.stageId, 'unzip: cannot find central directory');
+    // Two records now, not one: the greppable line a person reads (prefixed
+    // with the stage kind, and with whatever the runner knew it was working
+    // on) and the same facts as fields, for anything that would otherwise have
+    // to regex the prose. The exception's own message is unchanged inside
+    // both — see telemetry/stageError.
+    expect(runs.failStage).toHaveBeenCalledWith(
+      payload.stageId,
+      'unpack unzip: cannot find central directory',
+      expect.objectContaining({
+        stage: 'unpack',
+        name: 'Error',
+        message: 'unzip: cannot find central directory',
+      }),
+    );
     expect(runs.completeStage).not.toHaveBeenCalled();
   });
 

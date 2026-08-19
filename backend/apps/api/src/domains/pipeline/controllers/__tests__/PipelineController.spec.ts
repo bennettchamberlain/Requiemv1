@@ -14,6 +14,7 @@ import {
 import { IdFormatGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
 import { type DeadLetterBulkReplayResult, PipelineRunService } from '../../services/PipelineRunService';
+import { PipelineStateService, type ReleaseQuarantinedInput } from '../../services/PipelineStateService';
 import { PipelineController } from '../PipelineController';
 
 /**
@@ -115,17 +116,35 @@ function makeService() {
   };
 }
 
+/**
+ * The ledger, doubled. Only the one method this controller reaches for: the
+ * quarantine release is a WRITE to `ci.pipeline_state`, and
+ * `PipelineStateService` is the only thing allowed to make one.
+ */
+function makeStateService() {
+  return {
+    releaseQuarantined: jest.fn(async (_userId: string, input: ReleaseQuarantinedInput = {}) => ({
+      released: 12_237,
+      reasons: input.reasons != null ? [...input.reasons] : ['provider_unavailable', 'ollama_unreachable'],
+      stage: input.stage ?? null,
+    })),
+  };
+}
+
 describe('PipelineController', () => {
   let app: INestApplication;
   let service: ReturnType<typeof makeService>;
+  let stateService: ReturnType<typeof makeStateService>;
 
   beforeEach(async () => {
     service = makeService();
+    stateService = makeStateService();
 
     const module = await Test.createTestingModule({
       controllers: [PipelineController],
       providers: [
         { provide: PipelineRunService, useValue: service },
+        { provide: PipelineStateService, useValue: stateService },
         { provide: APP_GUARD, useClass: IdFormatGuard },
       ],
     })
@@ -461,6 +480,65 @@ describe('PipelineController', () => {
   });
 
   // -------------------------------------------------------------------------
+  // POST /api/pipeline/quarantine/release
+  // -------------------------------------------------------------------------
+
+  describe('POST /api/pipeline/quarantine/release', () => {
+    it('releases the declared transient reasons when the body names none', async () => {
+      // The default is the whole point of the route being usable at all: an
+      // operator who has just read "12,237 quarantined: provider_unavailable"
+      // should not have to know the token to undo it.
+      const response = await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({})
+        .expect(200);
+
+      expect(stateService.releaseQuarantined).toHaveBeenCalledWith(USER, {
+        reasons: undefined,
+        stage: undefined,
+      });
+      expect(response.body).toMatchObject({
+        released: 12_237,
+        reasons: ['provider_unavailable', 'ollama_unreachable'],
+        stage: null,
+      });
+    });
+
+    it('passes an explicit reason and stage selector through', async () => {
+      await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({ reasons: ['provider_status_unrecognized'], stage: 'enrich.position_reverse' })
+        .expect(200);
+
+      expect(stateService.releaseQuarantined).toHaveBeenCalledWith(USER, {
+        reasons: ['provider_status_unrecognized'],
+        stage: 'enrich.position_reverse',
+      });
+    });
+
+    it('400s an explicitly empty reason list rather than treating it as "all"', async () => {
+      // `{}` means the declared transient set; `{ reasons: [] }` means the
+      // caller tried to name reasons and named none, which is a different
+      // mistake and must not silently widen to every quarantined row.
+      await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({ reasons: [] })
+        .expect(400);
+
+      expect(stateService.releaseQuarantined).not.toHaveBeenCalled();
+    });
+
+    it('is scoped to the caller, never to a user id in the body', async () => {
+      await request(app.getHttpServer())
+        .post('/api/pipeline/quarantine/release')
+        .send({ userId: '00000000-0000-4000-8000-0000000000bb' })
+        .expect(200);
+
+      expect(stateService.releaseQuarantined).toHaveBeenCalledWith(USER, expect.anything());
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Auth declarations
   //
   // These are metadata assertions rather than request assertions because the
@@ -485,12 +563,16 @@ describe('PipelineController', () => {
       },
     );
 
-    it.each(['pauseRun', 'resumeRun', 'cancelRun', 'replayDeadLetter', 'replayDeadLetters'] as const)(
-      '%s requires write capability, so a read-only key cannot steer a run',
-      (name) => {
-        expect(Reflect.getMetadata(REQUIRE_CAPABILITY_KEY, handler(name))).toBe(WRITE_CAPABILITY);
-      },
-    );
+    it.each([
+      'pauseRun',
+      'resumeRun',
+      'cancelRun',
+      'replayDeadLetter',
+      'replayDeadLetters',
+      'releaseQuarantine',
+    ] as const)('%s requires write capability, so a read-only key cannot steer a run', (name) => {
+      expect(Reflect.getMetadata(REQUIRE_CAPABILITY_KEY, handler(name))).toBe(WRITE_CAPABILITY);
+    });
 
     it('declares no scopes, so a scope-limited api key cannot reach the control plane', () => {
       // Scope enforcement is deny-by-default: a scope-limited key is confined to
@@ -509,6 +591,7 @@ describe('PipelineController', () => {
         'listDeadLetters',
         'replayDeadLetter',
         'replayDeadLetters',
+        'releaseQuarantine',
       ] as const) {
         expect(Reflect.getMetadata(REQUIRE_SCOPES_KEY, handler(name))).toBeUndefined();
       }

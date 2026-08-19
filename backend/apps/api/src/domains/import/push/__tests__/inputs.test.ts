@@ -8,6 +8,7 @@ import {
   isCoordinateText,
   isMediaFilename,
   isNotAPlaceName,
+  isTitleText,
   toBrowserActivityInput,
   toCommunicationInput,
   toContentInput,
@@ -696,15 +697,106 @@ describe('toPositionInput', () => {
 
     expect(waypoint?.name).toBe('Summit');
   });
+
+  it('refuses a ride narration as a place name', () => {
+    // The shape uber.ts used to mint for a leg with no recorded address. 37
+    // positions on the corpus carried it, and promote.place_position turned 7
+    // into Location entities the Places list rendered as venues.
+    const leg = toPositionInput(
+      recordFor({
+        dataSource: 'uber',
+        classification: 'location',
+        latitude: 37.7901,
+        longitude: -122.3901,
+        metadata: {
+          Title:
+            'Uber ride from 110 E 30th St, Austin, TX 78705, US to 101 Red River St, Austin, TX 78701, US (request)',
+        },
+      }),
+    );
+
+    expect(leg?.name).toBeUndefined();
+    expect(leg?.location).toEqual({ x: -122.3901, y: 37.7901 });
+  });
+
+  it('refuses a geotagged social post its own body as a place name', () => {
+    // A tweet posted with coordinates is a GPS donor, not a venue. Two ways this
+    // is caught, and the test asserts the outcome both share: `social.post` is
+    // not a place-naming kind, and the body is clipped prose besides.
+    const tweet = toPositionInput(
+      recordFor({
+        dataSource: 'twitter',
+        classification: 'post',
+        latitude: 34.05,
+        longitude: -118.24,
+        metadata: {
+          Text: `Showtime! BitScoop Labs will be going Live on FB Thursday 1/26 @ 1PM PST. ${'x'.repeat(80)}`,
+        },
+      }),
+    );
+
+    expect(tweet?.name).toBeUndefined();
+    expect(tweet?.location).toEqual({ x: -118.24, y: 34.05 });
+  });
+
+  it('reads a place name only off a record that is ABOUT a place', () => {
+    // The provenance half of the fix, and the arm that does not depend on
+    // guessing prose from a string. `titleFor` gives every record a display
+    // label; a geotagged message's label is its SUBJECT, which is a fine title
+    // and a terrible place name — and short, unpunctuated and untruncated, so no
+    // shape rule would ever catch it.
+    const message = toPositionInput(
+      recordFor({
+        dataSource: 'gmail',
+        classification: 'email',
+        latitude: 1,
+        longitude: 2,
+        metadata: { Subject: 'Lunch tomorrow' },
+      }),
+    );
+
+    expect(message?.name).toBeUndefined();
+
+    // Same string on a location.fix keeps working, so the rule is about the
+    // record's kind and not about the string.
+    const fix = toPositionInput(
+      recordFor({
+        classification: 'location',
+        latitude: 1,
+        longitude: 2,
+        metadata: { Title: 'Lunch tomorrow' },
+      }),
+    );
+
+    expect(fix?.name).toBe('Lunch tomorrow');
+  });
+
+  it('still reads an explicit Name off a geotagged capture', () => {
+    // `Name` is the one key that MEANS a name: an importer setting it on a photo
+    // is stating "this fix is at a place called X", which is the claim `name`
+    // records. Narrowing the TITLE slots must not close that door.
+    const photo = toPositionInput(
+      recordFor({
+        dataSource: 'apple_photos',
+        classification: 'photo',
+        latitude: 1,
+        longitude: 2,
+        filename: 'IMG_0139.JPG',
+        metadata: { Name: 'Las Vegas Convention Center' },
+      }),
+    );
+
+    expect(photo?.name).toBe('Las Vegas Convention Center');
+  });
 });
 
 /**
- * The three structural rejects for a place NAME, tested together because they
+ * The four structural rejects for a place NAME, tested together because they
  * are one rule (isNotAPlaceName) applied in one place. Each is deliberately a
  * grammar rather than a per-importer denylist, so what matters most is the
- * NEGATIVE side: a real place name must survive all three.
+ * NEGATIVE side: a real place name must survive all four.
  */
-describe('isNotAPlaceName and its three arms', () => {
+describe('isNotAPlaceName and its four arms', () => {
   describe('isCoordinateText', () => {
     it('matches a bare coordinate pair', () => {
       expect(isCoordinateText('33.51469, -117.72169')).toBe(true);
@@ -794,13 +886,87 @@ describe('isNotAPlaceName and its three arms', () => {
     });
   });
 
+  describe('isTitleText', () => {
+    it('matches a clipped body — the ellipsis is `clip`’s own truncation mark', () => {
+      // Every one of these is a live ci.position.name from a geotagged tweet.
+      expect(
+        isTitleText("Check out a replay of BitScoop Labs' first live stream! #BitScoop #APIs #Micros…"),
+      ).toBe(true);
+      expect(
+        isTitleText('Learn about more advanced data modeling when consuming and publishing APIs. htt…'),
+      ).toBe(true);
+      // Short enough to pass the word bound, unpunctuated — the ellipsis alone
+      // has to carry it.
+      expect(isTitleText('Data Science Wizardry…')).toBe(true);
+    });
+
+    it('matches a sentence by its punctuation', () => {
+      expect(isTitleText('Showtime! BitScoop Labs will be going Live on FB')).toBe(true);
+      expect(isTitleText('Anyone else seeing this?')).toBe(true);
+    });
+
+    it('matches a narration by its length in words', () => {
+      // The 16-word floor of the narrations that survive both arms above. Neither
+      // carries an ellipsis or a bang.
+      expect(
+        isTitleText(
+          'Uber ride from Red Rocks Amphitheatre to 717 E Colfax Ave, Denver, CO 80203, US (request)',
+        ),
+      ).toBe(true);
+      expect(
+        isTitleText(
+          'Uber ride from 110 E 30th St, Austin, TX 78705, US to 101 Red River St, Austin, TX 78701, US (request)',
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps the longest real place names on the corpus, at 14 words and 90 characters', () => {
+      // The boundary cases, and the reason the bound is in WORDS: this hotel is
+      // 90 characters — LONGER than the 89-character narration above — so a
+      // character bound cannot separate the two classes at any threshold.
+      expect(
+        isTitleText(
+          'Red Roof PLUS+ Boston - Framingham, 650 Cochituate Rd, Framingham, MA 01701, United States',
+        ),
+      ).toBe(false);
+      expect(
+        isTitleText(
+          'Battery Wharf Hotel Boston Waterfront, 3 Battery Wharf, Boston, MA 02109, United States',
+        ),
+      ).toBe(false);
+      expect(
+        isTitleText('Terminal 5 Departures Level: Ride Service Sign E Los Angeles International Airport'),
+      ).toBe(false);
+      expect(
+        isTitleText('Concourse C, Palm Beach International Airport (PBI), West Palm Beach, FL 33406, US'),
+      ).toBe(false);
+    });
+
+    it('keeps the punctuation real place names actually use', () => {
+      // `.` and `@` are deliberately absent from the punctuation arm; all three
+      // of these are live values in ci.position.name.
+      expect(isTitleText('A.G. Bartlett Building')).toBe(false);
+      expect(isTitleText('Bongeunsa Temple. Lotte Duty Free Shop')).toBe(false);
+      expect(isTitleText('On Jane Stanford Way @ Gilbert Biological Sciences')).toBe(false);
+      expect(isTitleText('')).toBe(false);
+    });
+  });
+
   describe('isNotAPlaceName', () => {
-    it('is the union of the three arms', () => {
+    it('is the union of the four arms', () => {
       expect(isNotAPlaceName('Location 33.51469, -117.72169')).toBe(true);
       expect(isNotAPlaceName('33.51469, -117.72169')).toBe(true);
       expect(isNotAPlaceName('IMG_0139.JPG')).toBe(true);
       expect(isNotAPlaceName('https://us02web.zoom.us/j/8842952968')).toBe(true);
       expect(isNotAPlaceName('altspace://account.altvr.com/api/events/1629227784846967373')).toBe(true);
+      expect(
+        isNotAPlaceName(
+          'Uber ride from Red Rocks Amphitheatre to 717 E Colfax Ave, Denver, CO 80203, US (request)',
+        ),
+      ).toBe(true);
+      expect(
+        isNotAPlaceName("Check out a replay of BitScoop Labs' first live stream! #BitScoop #APIs #Micros…"),
+      ).toBe(true);
     });
 
     it('lets every real place name observed on a live appliance through', () => {
@@ -814,6 +980,11 @@ describe('isNotAPlaceName and its three arms', () => {
         'Cafe 40.7, 74.0',
         '1011-7',
         'Gym',
+        'Red Roof PLUS+ Boston - Framingham, 650 Cochituate Rd, Framingham, MA 01701, United States',
+        'Boston Logan International Airport, 1 Harborside Dr, Boston, MA 02128, United States',
+        'Terminal A, Newark Liberty International Airport (EWR), Elizabeth, NJ 07114, US',
+        'Fifth & Mission / Yerba Buena Parking Garage',
+        'LAX Terminal 5 Upper Level FlyAway Stop',
       ]) {
         expect(isNotAPlaceName(name)).toBe(false);
       }

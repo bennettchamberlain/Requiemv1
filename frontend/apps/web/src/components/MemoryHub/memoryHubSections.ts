@@ -53,7 +53,9 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
   {
     to: '/memory/content',
     label: 'Content',
-    match: (p) => p === '/memory/content',
+    // `/memory/content/:fileId` opens a file viewer on this same page, so it
+    // has to keep the Content tab lit rather than dropping the whole hub nav.
+    match: (p) => p === '/memory/content' || p.startsWith('/memory/content/'),
     flag: 'files.page',
     icon: ContentIcon,
   },

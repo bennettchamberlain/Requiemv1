@@ -56,8 +56,29 @@ export class PipelineStateEntity {
   @Column({ type: 'text', nullable: true })
   reason!: string | null;
 
+  /**
+   * Attempts that COST the row something.
+   *
+   * Charged by `claim()` and refunded by the ledger when the outcome names a
+   * transient reason, so this counts only failures the row itself is responsible
+   * for — which is what `MAX_ATTEMPTS_BEFORE_QUARANTINE` is sized for and what
+   * quarantine is measured against.
+   */
   @Column({ type: 'integer', default: 0 })
   attempts!: number;
+
+  /**
+   * Consecutive failures blamed on the WORLD rather than the row — the reasons
+   * in `TRANSIENT_FAILURE_REASONS`.
+   *
+   * Drives its own, much longer backoff and is never counted toward quarantine:
+   * a provider outage lasting hours must not produce the terminal state a poison
+   * record earns in fifteen minutes. Reset to 0 by any outcome that is not
+   * another transient failure, so the next episode starts at the base delay
+   * rather than at the cap.
+   */
+  @Column({ type: 'integer', name: 'transient_attempts', default: 0 })
+  transientAttempts!: number;
 
   /**
    * Retry gate. A `failed` row is only reclaimed by the sweep once this is due,

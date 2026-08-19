@@ -58,7 +58,13 @@ describe('ImportSurface', () => {
 
     const activity = screen.getByText('import activity');
 
-    expect(activity.className).toContain('sm:max-h-[50%]');
+    // A MEASURED ceiling, and the number is the assertion. At 1280x800 this
+    // column is 440px: at the old 50% the region took 220px and the picker's
+    // service grid — the default step's entire content — measured ZERO. The cap
+    // is fixed rather than proportional because the thing that must survive is
+    // a grid of fixed-height rows. Raising it re-breaks the picker, so the test
+    // names the value.
+    expect(activity.className).toContain('sm:max-h-[8.5rem]');
     // And no cap on a phone, where this column is ~200px and half of it is
     // less than the region's own summary — that clipped it mid-sentence.
     expect(activity.className).toContain('max-h-none');

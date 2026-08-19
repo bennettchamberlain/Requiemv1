@@ -410,9 +410,12 @@ interface CoordinatePatch {
  *    {@link PERMANENT_STATUS_REASONS}.
  *  - `provider_unavailable` — `OVER_QUERY_LIMIT`, or a transport failure
  *    `GeocodeService` already caught and reported as retryable `UNKNOWN_ERROR`.
- *    FAILED, so the retry gate and the attempt budget apply and a rate-limited or
- *    unreachable provider reads as a failure count going UP rather than a
- *    coverage number that quietly stops climbing.
+ *    FAILED, so a rate-limited or unreachable provider reads as a failure count
+ *    going UP rather than a coverage number that quietly stops climbing — and
+ *    declared TRANSIENT (`TRANSIENT_FAILURE_REASONS`), so it backs off on the
+ *    long schedule and never spends the quarantine budget. Its sibling stage
+ *    `enrich.position_reverse` is where the missing distinction was measured:
+ *    12,237 quarantined fixes, 19 % of that corpus, from one brief outage.
  *  - `coordinate_write_failed` — the answer arrived, the UPDATE did not. Failed,
  *    and recorded apart from a provider failure because the two have nothing in
  *    common but their timing.
@@ -695,9 +698,12 @@ export class GeocodeStage implements Stage {
 
     if (outcome.retryable) {
       // OVER_QUERY_LIMIT, or a transport failure the service already caught.
-      // FAILED, not skipped: the retry gate, the attempt budget and quarantine
-      // only apply to failures, and a throttled provider must come back on its
-      // own schedule rather than being written off as "nothing there".
+      //
+      // FAILED, not skipped: only a failure gets a retry gate, and a throttled
+      // provider must come back on its own schedule rather than being written
+      // off as "nothing there". The reason token is load-bearing — it is in
+      // `TRANSIENT_FAILURE_REASONS`, which is what tells the ledger to refund
+      // the attempt instead of counting it toward quarantine.
       this.logger.warn('Geocode provider unavailable', { status: outcome.status });
 
       return {

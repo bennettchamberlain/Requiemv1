@@ -13,6 +13,7 @@ import { MediaStage } from '../stages/MediaStage';
 import { ParseStage } from '../stages/ParseStage';
 import { PushStage } from '../stages/PushStage';
 import { UnpackStage } from '../stages/UnpackStage';
+import { describeStageFailure, stageFailureContext } from '../telemetry/stageError';
 import { importStagePayloadSchema, type ImportStageRunner, type StageRunContext } from '../types';
 
 /** Minimum gap between progress writes, whatever a runner asks for. */
@@ -308,15 +309,24 @@ export class ImportStageListener implements OnApplicationBootstrap {
         next: next?.kind ?? null,
       });
     } catch (err) {
-      const error = (err as Error).message;
+      // What the stage was WORKING ON, not just what went wrong. A bare
+      // `(err as Error).message` was the whole of a failed import's record: on
+      // this corpus a parse failure would have been reported as "ENOENT: no
+      // such file or directory" over a 703,956-item, 13-source Takeout, with
+      // nothing saying which parser or which file — and the scratch tree that
+      // held the answer is reclaimed with the run. See telemetry/stageError.
+      const phase = (await this.runs.getStage(stage.id))?.phase ?? undefined;
+      const error = describeStageFailure(err, { stage: stage.kind, phase });
+      const failure = stageFailureContext(err, { stage: stage.kind, phase });
 
-      await this.runs.failStage(stage.id, error);
+      await this.runs.failStage(stage.id, error, failure);
 
       this.logger.error(err as Error, {
         message: 'Import stage failed',
         runId: payload.runId,
         stageId: stage.id,
         kind: stage.kind,
+        failure,
       });
 
       // Rethrown so pg-boss records it. The retry will find the stage `failed`
