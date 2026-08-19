@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { type RequestContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
+import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaService';
 
 /**
  * Relationship types this extractor may propose.
