@@ -9,9 +9,14 @@ import { CreatePersonPayload } from '@ci/domains/graphql/types/CreatePersonPaylo
 import { DeleteByIdInput } from '@ci/domains/graphql/types/DeleteByIdInput';
 import { DeleteByIdPayload } from '@ci/domains/graphql/types/DeleteByIdPayload';
 import {
+  type DuplicateReason,
+  type MergeCandidateStatus,
   type PersonAddress,
+  encodeMergeCandidateCursor,
   EntityMergeBlockService,
   GraphQueryService,
+  isMergeCandidateStatus,
+  MergeCandidateService,
   PersonDuplicateService,
   PersonMergeService,
   PersonService,
@@ -27,13 +32,15 @@ import { TagLoader } from '../loaders/TagLoader';
 import { CreatePersonInput } from '../types/CreatePersonInput';
 import { EntityTagType } from '../types/EntityTagType';
 import { GlobalUID } from '../types/GlobalUID';
+import { MergeCandidateConnection } from '../types/MergeCandidateConnection';
+import { MergeCandidateType } from '../types/MergeCandidateType';
 import { MergePeopleInput } from '../types/MergePeopleInput';
 import { MergePeoplePayload } from '../types/MergePeoplePayload';
 import { PaginationArgs } from '../types/PaginationArgs';
 import { PersonAddressInput } from '../types/PersonAddressType';
 import { PersonConnection } from '../types/PersonConnection';
 import { PersonContactInput } from '../types/PersonContactInput';
-import { PersonDuplicateGroupType } from '../types/PersonDuplicateGroupType';
+import { PersonDuplicatesPayload } from '../types/PersonDuplicatesPayload';
 import { PersonEdge } from '../types/PersonEdge';
 import { AddPersonIdentifierInput, RemovePersonIdentifierInput } from '../types/PersonIdentifierInput';
 import { PersonIdentifierType } from '../types/PersonIdentifierType';
@@ -179,6 +186,24 @@ function parseIdentifierKind(raw: string): IdentifierKind | null {
   return (IDENTIFIER_KINDS as string[]).includes(raw) ? (raw as IdentifierKind) : null;
 }
 
+const DUPLICATE_REASONS: DuplicateReason[] = ['email', 'phone', 'name'];
+
+/** Reject an unknown reason loudly rather than silently returning everything. */
+function parseDuplicateReasons(raw: string[] | undefined): DuplicateReason[] | undefined {
+  if (raw == null || raw.length === 0) {
+    return undefined;
+  }
+
+  const unknown = raw.filter((reason) => !(DUPLICATE_REASONS as string[]).includes(reason));
+  if (unknown.length > 0) {
+    throw new BadRequestException(
+      `Unknown duplicate reason ${unknown.join(', ')} — expected email, phone, or name`,
+    );
+  }
+
+  return raw as DuplicateReason[];
+}
+
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => PersonType)
 export class PersonResolver {
@@ -186,6 +211,7 @@ export class PersonResolver {
     private readonly personService: PersonService,
     private readonly personMergeService: PersonMergeService,
     private readonly personDuplicateService: PersonDuplicateService,
+    private readonly mergeCandidateService: MergeCandidateService,
     private readonly entityMergeBlockService: EntityMergeBlockService,
     private readonly entityIdentifierService: EntityIdentifierService,
     private readonly personIdentifiersLoader: PersonIdentifiersLoader,
@@ -389,6 +415,11 @@ export class PersonResolver {
 
     const person = await this.personMergeService.mergePeople(serviceContext, sourceIds, targetId);
 
+    // Close the loop on the detector's proposals: any pending pair contained in
+    // what was just merged has been answered, and leaving it pending would ask
+    // the same question about people who are now one row.
+    await this.mergeCandidateService.resolvePairs(serviceContext, [targetId, ...sourceIds], 'accepted');
+
     return {
       success: true,
       person: PersonType.toType(person),
@@ -412,7 +443,12 @@ export class PersonResolver {
   ): Promise<boolean> {
     const ids = personIds.map((gid) => GlobalUID.parse('person', gid));
 
-    await this.entityMergeBlockService.blockAllPairs(toServiceContext(context), ids, 'user_rejected');
+    const serviceContext = toServiceContext(context);
+
+    await this.entityMergeBlockService.blockAllPairs(serviceContext, ids, 'user_rejected');
+    // Same decision, recorded in the detector's queue as well — a rejected pair
+    // must leave the review queue, not just stop being recomputed.
+    await this.mergeCandidateService.resolvePairs(serviceContext, ids, 'rejected');
 
     return true;
   }
@@ -533,22 +569,84 @@ export class PersonResolver {
    * Duplicate-person suggestions for the merge review UI: groups of live
    * people sharing a normalized email, phone, or display name.
    */
-  @Query(() => [PersonDuplicateGroupType])
+  @Query(() => PersonDuplicatesPayload)
   async personDuplicates(
     @Context() context: RequestContext,
     @Args('limit', { type: () => Int, nullable: true }) limit?: number,
-  ): Promise<PersonDuplicateGroupType[]> {
+    @Args('offset', { type: () => Int, nullable: true }) offset?: number,
+    @Args('reasons', { type: () => [String], nullable: true }) reasons?: string[],
+  ): Promise<PersonDuplicatesPayload> {
     const serviceContext = toServiceContext(context);
 
-    const groups = await this.personDuplicateService.findDuplicateGroups(serviceContext, {
+    const page = await this.personDuplicateService.findDuplicateGroups(serviceContext, {
       limit: limit ?? undefined,
+      offset: offset ?? undefined,
+      reasons: parseDuplicateReasons(reasons),
     });
 
-    return groups.map((group) => ({
-      reason: group.reason,
-      value: group.value,
-      people: group.people.map((person) => PersonType.toType(person)),
+    return {
+      totalCount: page.totalCount,
+      hasMore: page.hasMore,
+      groups: page.groups.map((group) => ({
+        reason: group.reason,
+        value: group.value,
+        totalPeople: group.totalPeople,
+        people: group.people.map((person) => PersonType.toType(person)),
+      })),
+    };
+  }
+
+  /**
+   * The duplicate-detection pipeline's own review queue — scored pairs from
+   * `ci.merge_candidates`, strongest first, each carrying the evidence that
+   * justified it.
+   *
+   * Until this query the table was write-only: `clean.duplicate_detect` filed
+   * proposals nobody could read. Accepting one is `mergePeople`; declining it is
+   * `rejectPersonDuplicates` — both stamp the candidate row so the queue
+   * shrinks as it is worked.
+   */
+  @Query(() => MergeCandidateConnection)
+  async mergeCandidates(
+    @Context() context: RequestContext,
+    @Args('status', { type: () => String, nullable: true }) status?: string,
+    @Args('first', { type: () => Int, nullable: true }) first?: number,
+    @Args('after', { type: () => String, nullable: true }) after?: string,
+  ): Promise<MergeCandidateConnection> {
+    const serviceContext = toServiceContext(context);
+
+    let parsedStatus: MergeCandidateStatus = 'pending';
+    if (status != null) {
+      if (!isMergeCandidateStatus(status)) {
+        throw new BadRequestException(
+          `Unknown merge-candidate status "${status}" — expected pending, accepted, or rejected`,
+        );
+      }
+
+      parsedStatus = status;
+    }
+
+    const page = await this.mergeCandidateService.findCandidates(serviceContext, {
+      status: parsedStatus,
+      limit: first ?? undefined,
+      after: after ?? null,
+    });
+
+    const edges = page.candidates.map((candidate) => ({
+      cursor: encodeMergeCandidateCursor(candidate),
+      node: MergeCandidateType.toType(candidate),
     }));
+
+    return {
+      edges,
+      totalCount: page.totalCount,
+      pageInfo: {
+        hasNextPage: page.hasNextPage,
+        hasPreviousPage: after != null,
+        startCursor: edges[0]?.cursor ?? null,
+        endCursor: page.endCursor,
+      },
+    };
   }
 
   @ResolveField(() => [EntityTagType])

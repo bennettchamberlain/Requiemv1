@@ -1359,6 +1359,35 @@ type KnownPlaceType {
   source: String!
 }
 
+type MergeCandidateConnection {
+  edges: [MergeCandidateEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type MergeCandidateEdge {
+  cursor: String!
+  node: MergeCandidateType!
+}
+
+type MergeCandidateEvidenceType {
+  kind: String!
+  score: Float
+  value: String!
+}
+
+type MergeCandidateType {
+  createdAt: DateTime!
+  detectedBy: String!
+  detectorVersion: Int!
+  entityType: String!
+  evidence: [MergeCandidateEvidenceType!]!
+  id: ID!
+  people: [PersonType!]!
+  score: Float!
+  status: String!
+}
+
 input MergePeopleInput {
   sourceIds: [ID!]!
   targetId: ID!
@@ -1700,7 +1729,14 @@ input PersonContactInput {
 type PersonDuplicateGroupType {
   people: [PersonType!]!
   reason: String!
+  totalPeople: Int!
   value: String!
+}
+
+type PersonDuplicatesPayload {
+  groups: [PersonDuplicateGroupType!]!
+  hasMore: Boolean!
+  totalCount: Int!
 }
 
 type PersonEdge implements Edge {
@@ -1981,6 +2017,7 @@ type Query {
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
   me: UserType
+  mergeCandidates(after: String, first: Int, status: String): MergeCandidateConnection!
 
   """
   Computed metric and behavioral anomalies. Not the free-text list inside summaries.
@@ -2007,7 +2044,7 @@ type Query {
   pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
   people(after: String, before: String, first: Int, last: Int, query: String): PersonConnection!
   person(id: ID!): PersonType
-  personDuplicates(limit: Int): [PersonDuplicateGroupType!]!
+  personDuplicates(limit: Int, offset: Int, reasons: [String!]): PersonDuplicatesPayload!
   place(id: ID!): PlaceType
 
   """
