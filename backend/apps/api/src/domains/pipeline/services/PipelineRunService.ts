@@ -202,8 +202,20 @@ export interface DeadLetterBulkReplayResult {
    * Named ids that claimed nothing: already replayed, unknown, or another
    * user's. Empty for the filter form. NOT an error — "already replayed" is the
    * double-submit guard doing its job.
+   *
+   * Only ids the claim actually SCANNED appear here. An id the batch ceiling cut
+   * off is unsettled, not skipped, and goes in {@link notAttempted} — the two
+   * call for opposite responses from the caller ("nothing to do" vs "ask again").
    */
   skipped: string[];
+
+  /**
+   * Named ids beyond the batch ceiling, which this call never looked at. Empty
+   * unless the caller passed an explicit `limit` smaller than its own id list;
+   * without one the ceiling is derived from the list, so every named id is
+   * scanned.
+   */
+  notAttempted: string[];
 }
 
 /** Which letters {@link PipelineRunService.replayDeadLetters} should claim. */
@@ -1008,7 +1020,16 @@ export class PipelineRunService {
     // Duplicates in `ids` would otherwise inflate `requested` and produce a
     // "skipped" entry for an id that WAS replayed, under its own other copy.
     const ids = input.ids == null ? null : [...new Set(input.ids)];
-    const limit = pageSize(input.limit, DEFAULT_DEAD_LETTER_PAGE, MAX_DEAD_LETTER_PAGE);
+    // Naming ids IS the selection — the page size is a scan bound for the filter
+    // form, not a second, quieter cap on an explicit list. Defaulting to
+    // DEFAULT_DEAD_LETTER_PAGE (50) while the controller accepts up to
+    // MAX_DEAD_LETTER_PAGE (200) meant a 60-id request replayed 50 and reported
+    // the other 10 as `skipped`, which the card renders as "10 already replayed"
+    // — the one reading under which a user would never retry them.
+    const limit =
+      ids == null
+        ? pageSize(input.limit, DEFAULT_DEAD_LETTER_PAGE, MAX_DEAD_LETTER_PAGE)
+        : pageSize(input.limit ?? ids.length, ids.length, MAX_DEAD_LETTER_PAGE);
 
     const claimed = await this.dataSource.query<DeadLetterRow[]>(
       // CTE-wrapped for the same reason as the single-id claim: the outer command
@@ -1062,8 +1083,17 @@ export class PipelineRunService {
 
     // Only meaningful for the by-id form: with a filter selector, "not claimed"
     // is just "did not match", which is not a per-id fact.
+    //
+    // `skipped` means "we looked and it was not claimable" — already replayed,
+    // not yours, or gone. It must NOT absorb ids the scan never reached, because
+    // the two call for opposite responses: one is settled, the other is "ask
+    // again". With the limit now derived from ids.length this is unreachable
+    // unless a caller passes an explicit smaller limit, and in that case the
+    // overflow is reported separately rather than being quietly relabelled.
     const claimedIds = new Set(claimed.map((letter) => letter.id));
-    const skipped = ids == null ? [] : ids.filter((id) => !claimedIds.has(id));
+    const scanned = ids == null ? null : ids.slice(0, limit);
+    const skipped = scanned == null ? [] : scanned.filter((id) => !claimedIds.has(id));
+    const notAttempted = ids == null ? [] : ids.slice(limit);
 
     this.logger.warn('Bulk-replayed pipeline dead letters', {
       userId: ctx.userId,
@@ -1074,6 +1104,7 @@ export class PipelineRunService {
       replayed: replayed.length,
       failed: failed.length,
       skipped: skipped.length,
+      notAttempted: notAttempted.length,
     });
 
     return {
@@ -1083,6 +1114,7 @@ export class PipelineRunService {
       replayed,
       failed,
       skipped,
+      notAttempted,
     };
   }
 

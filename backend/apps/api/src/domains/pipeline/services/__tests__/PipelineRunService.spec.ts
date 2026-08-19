@@ -910,6 +910,45 @@ describe('PipelineRunService.replayDeadLetters (bulk)', () => {
     expect(result.failed).toHaveLength(0);
   });
 
+  it('scans every named id — the page size is not a second, quieter cap', async () => {
+    // The controller accepts up to MAX_DEAD_LETTER_PAGE ids, but the claim used
+    // to default its LIMIT to DEFAULT_DEAD_LETTER_PAGE (50). A 60-id request
+    // therefore replayed 50 and reported the other 10 as `skipped`, which the
+    // Jobs card renders as "10 already replayed" — the one reading under which
+    // an operator would never retry them.
+    const ids = Array.from(
+      { length: DEFAULT_DEAD_LETTER_PAGE + 10 },
+      (_unused, index) => `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+    );
+    const harness = makeHarness(() => []);
+
+    const result = await harness.service.replayDeadLetters(CTX, { ids });
+
+    // The LIMIT bind is the last parameter of the claim statement.
+    const claim = harness.matching(/UPDATE ci\.pipeline_dead_letters/)[0];
+
+    expect(claim.params[claim.params.length - 1]).toBe(ids.length);
+    expect(result.limit).toBe(ids.length);
+    expect(result.notAttempted).toEqual([]);
+    expect(result.skipped).toHaveLength(ids.length);
+  });
+
+  it('reports ids beyond an explicit smaller limit as not attempted, never as skipped', async () => {
+    // `skipped` means "looked at, nothing to claim" — settled. An id the ceiling
+    // cut off is unsettled and the caller must ask again. Collapsing the two
+    // loses exactly the distinction the operator acts on.
+    const harness = makeHarness(() => [claimRow(LETTER_ID)]);
+
+    const result = await harness.service.replayDeadLetters(CTX, {
+      ids: [LETTER_ID, LETTER_2, LETTER_3],
+      limit: 1,
+    });
+
+    expect(result.limit).toBe(1);
+    expect(result.skipped).toEqual([]);
+    expect(result.notAttempted).toEqual([LETTER_2, LETTER_3]);
+  });
+
   it('deduplicates ids so one letter cannot be requested twice in a batch', async () => {
     const harness = makeHarness(() => [claimRow(LETTER_ID)]);
 

@@ -57,6 +57,12 @@ export function describeReplay(result: DeadLetterReplayResponse): string {
     parts.push(`${result.skipped.length} already replayed`);
   }
 
+  // Distinct from `skipped` on purpose: these were never looked at, so the
+  // honest instruction is "press it again", not "nothing to do".
+  if (result.notAttempted != null && result.notAttempted.length > 0) {
+    parts.push(`${result.notAttempted.length} not attempted (batch limit) — replay again`);
+  }
+
   return `${parts.join(' · ')}.`;
 }
 

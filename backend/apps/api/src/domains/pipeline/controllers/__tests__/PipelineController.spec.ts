@@ -109,6 +109,7 @@ function makeService() {
         ],
         failed: [],
         skipped: [],
+        notAttempted: [],
       }),
     ),
   };
@@ -425,6 +426,7 @@ describe('PipelineController', () => {
         ],
         failed: [{ id: LETTER_2, eventName: 'infer.question.answer', reason: 'pg-boss is down' }],
         skipped: [],
+        notAttempted: [],
       });
 
       const response = await request(app.getHttpServer())
@@ -446,6 +448,7 @@ describe('PipelineController', () => {
         replayed: [],
         failed: [],
         skipped: [LETTER_ID, LETTER_2],
+        notAttempted: [],
       });
 
       const response = await request(app.getHttpServer())
