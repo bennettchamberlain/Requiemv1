@@ -105,6 +105,7 @@ import {
 import { ObjectPromoteStage } from './stages/promote/ObjectPromoteStage';
 import { ObservationPromoteStage } from './stages/promote/ObservationPromoteStage';
 import { PlacePromoteStage } from './stages/promote/PlacePromoteStage';
+import { PositionPlacePromoteStage } from './stages/promote/PositionPlacePromoteStage';
 
 /**
  * Stage implementations, bound to the tokens declared in `STAGE_REGISTRY`.
@@ -162,6 +163,10 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_DUPLICATE_DETECT], useClass: DuplicateDetectStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE], useClass: PlacePromoteStage },
+  // The same promotion over `ci.position` — a second id because a Stage has
+  // exactly one `source` and this is a different table. It is the only writer
+  // `ci.position.location_entity_id` has ever had.
+  { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE_POSITION], useClass: PositionPlacePromoteStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBJECT], useClass: ObjectPromoteStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_OBSERVATION], useClass: ObservationPromoteStage },
   // Two ids, one implementation family — see `EdgePromoteStage.ts`. Both
