@@ -45,6 +45,8 @@ import { MapPinsType } from '../types/MapPinType';
 import { NoteType } from '../types/NoteType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
+import { ProductModelType } from '../types/ProductModelType';
+import { ReceiptType } from '../types/ReceiptType';
 import { SearchInput } from '../types/SearchInput';
 import { SearchResultConnection } from '../types/SearchResultConnection';
 import { type SearchResult } from '../types/SearchResultType';
@@ -1168,6 +1170,10 @@ export class SearchResolver {
         return PersonType.toType(resolved.entity);
       case 'place':
         return PlaceType.toType(resolved.entity);
+      case 'product':
+        return ProductModelType.toType(resolved.entity);
+      case 'receipt':
+        return ReceiptType.toType(resolved.entity);
       case 'thread':
         return ThreadType.toType(resolved.entity);
     }

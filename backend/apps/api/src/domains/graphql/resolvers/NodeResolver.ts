@@ -15,8 +15,11 @@ import {
   ContentService,
   EventService,
   ItemService,
+  ObjectObservationService,
   PersonService,
   PlaceService,
+  ProductModelService,
+  ReceiptService,
 } from '@ci/domains/memory';
 import { NoteService } from '@ci/domains/notes';
 import { FileChunkService } from '@ci/domains/parsing';
@@ -39,9 +42,12 @@ import { ItemType } from '../types/ItemType';
 import { MessageType } from '../types/MessageType';
 import { Node } from '../types/Node';
 import { NoteType } from '../types/NoteType';
+import { ObjectObservationType } from '../types/ObjectObservationType';
 import { PersonType } from '../types/PersonType';
 import { PlaceType } from '../types/PlaceType';
+import { ProductModelType } from '../types/ProductModelType';
 import { QuestionType } from '../types/QuestionType';
+import { ReceiptType } from '../types/ReceiptType';
 import { TagType } from '../types/TagType';
 import { TaskType } from '../types/TaskType';
 import { ThreadType } from '../types/ThreadType';
@@ -64,9 +70,12 @@ export class NodeResolver {
     private readonly itemService: ItemService,
     private readonly messageService: MessageService,
     private readonly noteService: NoteService,
+    private readonly objectObservationService: ObjectObservationService,
     private readonly personService: PersonService,
     private readonly placeService: PlaceService,
+    private readonly productModelService: ProductModelService,
     private readonly questionService: QuestionService,
+    private readonly receiptService: ReceiptService,
     private readonly tagService: TagService,
     private readonly taskService: TaskService,
     private readonly threadService: ThreadService,
@@ -187,6 +196,24 @@ export class NodeResolver {
         const place = await this.placeService.findById(serviceContext, id);
 
         return place ? PlaceType.toType(place) : null;
+      }
+
+      case 'product': {
+        const product = await this.productModelService.findById(serviceContext, id);
+
+        return product ? ProductModelType.toType(product) : null;
+      }
+
+      case 'receipt': {
+        const receipt = await this.receiptService.findById(serviceContext, id);
+
+        return receipt ? ReceiptType.toType(receipt) : null;
+      }
+
+      case 'observation': {
+        const observation = await this.objectObservationService.findById(serviceContext, id);
+
+        return observation ? ObjectObservationType.toType(observation) : null;
       }
 
       case 'question': {

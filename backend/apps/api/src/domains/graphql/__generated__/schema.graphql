@@ -103,6 +103,13 @@ input ActivityTimelineFiltersInput {
   tags: [String!]
 }
 
+input AddItemIdentifierInput {
+  itemId: ID!
+  namespace: ObjectIdentifierNamespace!
+  scope: ObjectIdentifierScopeInput
+  value: String!
+}
+
 input AddPersonIdentifierInput {
   kind: String!
   label: String
@@ -236,6 +243,13 @@ type AskType {
   responderId: ID!
   status: AskStatus!
   updatedAt: DateTime!
+}
+
+type BoundingBoxType {
+  h: Float!
+  w: Float!
+  x: Float!
+  y: Float!
 }
 
 type BrowserActivityConnection implements Connection {
@@ -1237,9 +1251,45 @@ type ItemConnection implements Connection {
   totalCount: Int!
 }
 
+type ItemDuplicateGroupType {
+  items: [ItemType!]!
+  reason: ItemDuplicateReason!
+  totalItems: Int!
+  value: String!
+}
+
+"""
+What a duplicate group collapsed on: a shared identifier, the same product, or the same brand+model bought on the same day.
+"""
+enum ItemDuplicateReason {
+  BRAND_MODEL
+  IDENTIFIER
+  PRODUCT_NAME
+}
+
+type ItemDuplicatesPayload {
+  groups: [ItemDuplicateGroupType!]!
+  hasMore: Boolean!
+  totalCount: Int!
+}
+
 type ItemEdge implements Edge {
   cursor: String!
   node: ItemType!
+}
+
+"""
+Ownership state. A disposed thing is still a thing that happened, so it is never deleted.
+"""
+enum ItemLifecycleState {
+  ACTIVE
+  ARCHIVED
+  CONSUMED
+  DISPOSED
+  LENT_OUT
+  LOST
+  RETURNED
+  STORED
 }
 
 input ItemRelationshipInput {
@@ -1253,12 +1303,27 @@ input ItemRelationshipInput {
   toSourceType: String!
 }
 
+"""
+How to order the things list. NEWEST is served by the keyset index; the others order a bounded window of it.
+"""
+enum ItemSortOrder {
+  NAME_ASC
+  NAME_DESC
+  NEWEST
+  OLDEST
+  RECENTLY_ACQUIRED
+  RECENTLY_SEEN
+  VALUE_ASC
+  VALUE_DESC
+}
+
 type ItemType implements Node & Taggable {
   """When it was bought or received."""
   acquiredAt: DateTime
 
   """Seller, giver or source."""
   acquiredFrom: String
+  acquisition: ReceiptLineItemType
   acquisitionMethod: ItemAcquisitionMethod
   brand: String
   category: String
@@ -1284,10 +1349,24 @@ type ItemType implements Node & Taggable {
   """Height, in millimetres."""
   heightMm: Float
   id: ID!
+  identifiers: [ObjectIdentifierType!]!
+
+  """
+  How sure we are this row is one real, distinct thing. 1.0 = a human said so or a barcode was scanned; lower = minted from a receipt line or guessed from a photo.
+  """
+  identityConfidence: Float!
   isDigital: Boolean!
+
+  """
+  When this thing was last SEEN — by a confirmed sighting, not by being edited.
+  """
+  lastSeenAt: DateTime
 
   """Longest dimension, in millimetres."""
   lengthMm: Float
+
+  """Ownership state. A disposed thing keeps its row — it still happened."""
+  lifecycleState: ItemLifecycleState!
 
   """When the object was made."""
   manufacturedAt: DateTime
@@ -1300,8 +1379,13 @@ type ItemType implements Node & Taggable {
   metadata: JSON
   model: String
   name: String
+  observations: [ObjectObservationType!]!
+  product: ProductModelType
   purchasePrice: Float
   quantity: Int!
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
   subcategory: String
   tags: [EntityTagType!]!
 
@@ -1362,6 +1446,11 @@ type KnownPlaceType {
   source: String!
 }
 
+input LinkItemToProductInput {
+  itemId: ID!
+  productId: ID
+}
+
 type MapPinType {
   endTime: DateTime
   eventType: String
@@ -1408,6 +1497,17 @@ type MergeCandidateType {
   status: String!
 }
 
+input MergeItemsInput {
+  sourceIds: [ID!]!
+  targetId: ID!
+}
+
+type MergeItemsPayload {
+  counts: ObjectMergeCountsType
+  item: ItemType
+  success: Boolean!
+}
+
 input MergePeopleInput {
   sourceIds: [ID!]!
   targetId: ID!
@@ -1415,6 +1515,17 @@ input MergePeopleInput {
 
 type MergePeoplePayload {
   person: PersonType
+  success: Boolean!
+}
+
+input MergeProductModelsInput {
+  sourceIds: [ID!]!
+  targetId: ID!
+}
+
+type MergeProductModelsPayload {
+  counts: ProductMergeCountsType
+  product: ProductModelType
   success: Boolean!
 }
 
@@ -1514,6 +1625,7 @@ type Mutation {
 
   """Apply a pending automation change (mutate / complete / event revise)."""
   acceptTaskPendingChange(id: ID!): ResolveTaskPendingChangePayload!
+  addItemIdentifier(input: AddItemIdentifierInput!): [ObjectIdentifierType!]!
   addPersonIdentifier(input: AddPersonIdentifierInput!): [PersonIdentifierType!]!
   approveAsk(id: ID!): AskPayload!
 
@@ -1528,6 +1640,15 @@ type Mutation {
   Mark a task done. Idempotent — the original completion instant is preserved.
   """
   completeTask(actualMinutes: Int, id: ID!): TaskType
+  confirmObservation(
+    id: ID!
+
+    """
+    The owned unit this sighting is of. Omit to confirm the resolution already on the row.
+    """
+    itemId: ID
+    productId: ID
+  ): ObjectObservationType
   createAnswer(input: CreateAnswerInput!): AnswerType!
   createAnswers(input: [CreateAnswerInput!]!): [AnswerType!]!
   createAsk(input: CreateAskInput!): CreateAskPayload!
@@ -1590,6 +1711,7 @@ type Mutation {
   deleteTag(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
   ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
+  linkItemToProduct(input: LinkItemToProductInput!): UpdateItemPayload!
 
   """Mark an action as dismissed"""
   markActionAsDismissed(id: ID!): ActionType
@@ -1602,7 +1724,9 @@ type Mutation {
 
   """Mark a summary as seen"""
   markSummaryAsSeen(id: ID!): SummaryType
+  mergeItems(input: MergeItemsInput!): MergeItemsPayload!
   mergePeople(input: MergePeopleInput!): MergePeoplePayload!
+  mergeProductModels(input: MergeProductModelsInput!): MergeProductModelsPayload!
 
   """
   Rebuild stay-point clusters and recency-decayed transitions for the current user
@@ -1613,6 +1737,7 @@ type Mutation {
   Recompute and upsert a trailing window of daily metrics for the signed-in user.
   """
   refreshDailyMetrics(days: Int, timezone: String): [DailyMetricsType!]!
+  rejectObservation(id: ID!): ObjectObservationType
 
   """
   Mark a suggested duplicate group as distinct people, so it is never re-proposed
@@ -1621,6 +1746,7 @@ type Mutation {
   removeAnswer(id: ID!): Boolean!
   removeContent(id: ID!): Boolean!
   removeEvent(id: ID!): Boolean!
+  removeItemIdentifier(input: RemoveItemIdentifierInput!): [ObjectIdentifierType!]!
   removePersonIdentifier(input: RemovePersonIdentifierInput!): [PersonIdentifierType!]!
   removePlace(id: ID!): Boolean!
   removeQuestion(id: ID!): Boolean!
@@ -1711,6 +1837,135 @@ type NoteType implements Node & Taggable {
   tags: [EntityTagType!]!
   title: String
   updatedAt: DateTime!
+}
+
+type ObjectByIdentifierPayload {
+  """Confidence in the CLAIM that was matched."""
+  confidence: Float
+  item: ItemType
+  matched: Boolean!
+
+  """
+  The namespace the value normalized into — not always the one asked for.
+  """
+  namespace: ObjectIdentifierNamespace
+  product: ProductModelType
+  subjectType: ObjectIdentifierSubjectType
+  value: String
+}
+
+"""
+What kind of code an identifier is. gtin/isbn/asin/imei/vin are globally unique; the rest are unique only within a scope.
+"""
+enum ObjectIdentifierNamespace {
+  ASIN
+  CUSTOM
+  GTIN
+  IMEI
+  ISBN
+  MPN
+  ORDER_ID
+  QR
+  RFID
+  SERIAL
+  SKU
+  VIN
+}
+
+input ObjectIdentifierScopeInput {
+  brand: String
+  sourceSystem: String
+}
+
+"""
+Whether a claim identifies a catalog MODEL (every unit shares a GTIN) or one owned INSTANCE (a serial).
+"""
+enum ObjectIdentifierSubjectType {
+  OBJECT_INSTANCE
+  PRODUCT_MODEL
+}
+
+type ObjectIdentifierType {
+  confidence: Float!
+  createdAt: DateTime!
+  isPrimary: Boolean!
+  namespace: ObjectIdentifierNamespace!
+  qualifier: String!
+  rawValue: String
+  source: String
+  value: String!
+}
+
+type ObjectMergeCountsType {
+  identifiers: Int!
+  inventoryParent: Int!
+  inventoryRelated: Int!
+  observations: Int!
+  receiptLineItems: Int!
+  searchRowsDeleted: Int!
+  tagLinksMoved: Int!
+}
+
+type ObjectObservationType implements Node {
+  attributes: JSON!
+  bbox: BoundingBoxType
+
+  """A human confirmed this link. Written only by confirmObservation."""
+  confirmedByUser: Boolean!
+  contentId: ID
+  createdAt: DateTime!
+  cropContentId: ID
+
+  """How sure the detector was it saw something."""
+  detectionConfidence: Float
+  detector: String
+  detectorVersion: String
+  eventId: ID
+  fileId: ID
+  id: ID!
+  label: String!
+  labelSource: ObservationLabelSource
+  metadata: JSON!
+  observedAt: DateTime!
+  placeEntityId: ID
+
+  """How sure the ladder was about the link."""
+  resolutionConfidence: Float
+  resolutionMethod: ObservationResolutionMethod!
+  resolvedObjectId: ID
+  resolvedProductId: ID
+  sourceKind: ObservationSourceKind!
+  updatedAt: DateTime!
+}
+
+"""What produced the label."""
+enum ObservationLabelSource {
+  CLIP
+  IMPORT
+  OLLAMA_VISION
+  USER
+  YOLO
+}
+
+"""
+Which rung of the resolution ladder linked the sighting to an owned unit.
+"""
+enum ObservationResolutionMethod {
+  EMBEDDING
+  IDENTIFIER
+  LABEL
+  NONE
+  PLACE_PRIOR
+  USER
+}
+
+"""What kind of frame the sighting came from."""
+enum ObservationSourceKind {
+  LIVE_CAMERA
+  MANUAL
+  PHOTO
+  SCREENSHOT
+  VIDEO_FRAME
 }
 
 type PageInfo {
@@ -1909,6 +2164,69 @@ type ProbabilityEntryType {
   probability: Float!
 }
 
+type ProductMergeCountsType {
+  identifiers: Int!
+  inventoryProduct: Int!
+  observations: Int!
+  receiptLineItems: Int!
+}
+
+type ProductModelConnection implements Connection {
+  edges: [ProductModelEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ProductModelEdge implements Edge {
+  cursor: String!
+  node: ProductModelType!
+}
+
+type ProductModelType implements Node & Taggable {
+  brand: String
+  category: String
+  createdAt: DateTime!
+  currency: String
+  description: String
+  id: ID!
+  identifiers: [ObjectIdentifierType!]!
+
+  """
+  How sure we are this model is a real, distinct product. 1.0 = asserted by a human or a catalog; lower = derived from a receipt line or a vision guess.
+  """
+  identityConfidence: Float!
+
+  """ci.content row holding the catalog image."""
+  imageContentId: ID
+  isDigital: Boolean!
+
+  """ci.content rows holding manuals."""
+  manualContentIds: [ID!]
+  manufacturer: String
+  metadata: JSON!
+  modelNumber: String
+
+  """Manufacturer list price in integer MINOR units of `currency`."""
+  msrpMinor: Int
+
+  """The ci.entities node mirroring this model."""
+  productEntityId: ID
+  productType: String
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
+
+  """Descriptive specifications."""
+  spec: JSON!
+  subcategory: String
+  tags: [EntityTagType!]!
+  title: String!
+  updatedAt: DateTime!
+
+  """Variant AXES only ({color, capacity, size}) — never descriptive specs."""
+  variantAttributes: JSON!
+}
+
 type ProviderConnection implements Connection {
   edges: [ProviderEdge!]!
   pageInfo: PageInfo!
@@ -2054,7 +2372,24 @@ type Query {
   """
   graph(entityType: String, limit: Int = 200): GraphType!
   item(id: ID!): ItemType
-  items(after: String, before: String, first: Int, last: Int): ItemConnection!
+  itemDuplicates(limit: Int, offset: Int): ItemDuplicatesPayload!
+  items(
+    after: String
+    before: String
+    brand: String
+    category: String
+    condition: ItemCondition
+    first: Int
+
+    """Only things that do (or do not) carry a barcode, serial or other code."""
+    hasIdentifier: Boolean
+    last: Int
+    lifecycleState: ItemLifecycleState
+
+    """Substring of name, description, brand, model or category."""
+    query: String
+    sort: ItemSortOrder
+  ): ItemConnection!
   knownPlaceCandidates: [KnownPlaceCandidateType!]!
   knownPlaces(kind: String): [KnownPlaceType!]!
 
@@ -2087,6 +2422,7 @@ type Query {
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
   oAuthCallbackUrl: String!
+  objectByIdentifier(brand: String, namespace: ObjectIdentifierNamespace!, sourceSystem: String, value: String!): ObjectByIdentifierPayload!
   pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
   people(after: String, before: String, first: Int, last: Int, query: String): PersonConnection!
   person(id: ID!): PersonType
@@ -2107,10 +2443,25 @@ type Query {
 
   """Forecast self-consistency scores (not ground-truth accuracy)"""
   predictionCalibration(limit: Int = 14): PredictionCalibrationType
+  productModel(id: ID!): ProductModelType
+  productModels(
+    after: String
+    brand: String
+    category: String
+    first: Int
+    isDigital: Boolean
+    productType: String
+
+    """Case-insensitive substring of the title."""
+    query: String
+    subcategory: String
+  ): ProductModelConnection!
   provider(id: ID!): ProviderType
   providers(after: String, before: String, first: Int, last: Int): ProviderConnection!
   question(id: ID!): QuestionType
   questions(after: String, before: String, first: Int, last: Int): QuestionConnection!
+  receipt(id: ID!): ReceiptType
+  receipts(after: String, extractionState: ReceiptExtractionState, first: Int, merchantName: String, purchasedFrom: DateTime, purchasedTo: DateTime): ReceiptConnection!
   relationship(id: ID!): RelationshipType
   relationships(after: String, before: String, first: Int, last: Int): RelationshipConnection!
   savedSearch(id: ID!): SavedSearchType
@@ -2145,6 +2496,7 @@ type Query {
   ): TaskConnection!
   thread(id: ID!): ThreadType
   threads(after: String, before: String, first: Int, last: Int): ThreadConnection!
+  unresolvedObservations(limit: Int, offset: Int): [ObjectObservationType!]!
 
   """
   Fetch the HBPE week-horizon occurrence forecast (per-day cluster probabilities)
@@ -2182,6 +2534,112 @@ type RationaleSourceType {
   note: String
 }
 
+"""Where the purchase happened."""
+enum ReceiptChannel {
+  APP
+  IN_STORE
+  ONLINE
+  PHONE
+  UNKNOWN
+}
+
+type ReceiptConnection implements Connection {
+  edges: [ReceiptEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type ReceiptEdge implements Edge {
+  cursor: String!
+  node: ReceiptType!
+}
+
+"""How far structured extraction got on the receipt document."""
+enum ReceiptExtractionState {
+  EXTRACTED
+  FAILED
+  MANUAL
+  NOT_APPLICABLE
+  PENDING
+}
+
+type ReceiptLineItemType {
+  brand: String
+  category: String
+  createdAt: DateTime!
+  currency: String
+  description: String!
+  id: ID!
+
+  """
+  False for ebooks, subscriptions and gift cards. Only physical lines mint owned units.
+  """
+  isPhysical: Boolean!
+  lineNumber: Int!
+  metadata: JSON!
+  mintedObjectId: ID
+  modelNumber: String
+  productId: ID
+  quantity: Float!
+  receiptId: ID!
+
+  """Integer MINOR units of `currency`."""
+  totalPriceMinor: Int
+
+  """Integer MINOR units of `currency`."""
+  unitPriceMinor: Int
+  updatedAt: DateTime!
+}
+
+type ReceiptType implements Node & Taggable {
+  channel: ReceiptChannel
+  createdAt: DateTime!
+  currency: String
+
+  """Integer MINOR units of `currency`."""
+  discountMinor: Int
+  documentContentId: ID
+  eventId: ID
+  extractionConfidence: Float
+  extractionError: String
+  extractionModel: String
+  extractionState: ReceiptExtractionState!
+  id: ID!
+  lineItems: [ReceiptLineItemType!]!
+  merchantEntityId: ID
+  merchantName: String
+  metadata: JSON!
+  orderNumber: String
+
+  """Last four digits only. A full card number is never stored."""
+  paymentLast4: String
+  paymentMethod: String
+  placeEntityId: ID
+  purchasedAt: DateTime
+
+  """Integer MINOR units of `currency`."""
+  shippingMinor: Int
+  sourceFileId: ID
+  sourceId: String
+  sourceMessageId: String
+  sourceSystem: String
+  sourceType: String
+
+  """Integer MINOR units of `currency`."""
+  subtotalMinor: Int
+  tags: [EntityTagType!]!
+
+  """Integer MINOR units of `currency`."""
+  taxMinor: Int
+
+  """Integer MINOR units of `currency`."""
+  tipMinor: Int
+
+  """Integer MINOR units of `currency`."""
+  totalMinor: Int
+  updatedAt: DateTime!
+}
+
 type RelationshipConnection implements Connection {
   edges: [RelationshipEdge!]!
   pageInfo: PageInfo!
@@ -2205,6 +2663,13 @@ type RelationshipType implements Node {
   toNodeId: ID!
   toNodeType: String!
   type: String!
+}
+
+input RemoveItemIdentifierInput {
+  itemId: ID!
+  namespace: ObjectIdentifierNamespace!
+  scope: ObjectIdentifierScopeInput
+  value: String!
 }
 
 input RemovePersonIdentifierInput {
@@ -2357,7 +2822,7 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ProductModelType | ReceiptType | ThreadType
 
 input SetSavedSearchSharingInput {
   id: ID!
@@ -2449,7 +2914,7 @@ type TaggableEntityEdge {
   node: TaggableEntityType!
 }
 
-union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ThreadType
+union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ProductModelType | ReceiptType | ThreadType
 
 type TaskConnection implements Connection {
   edges: [TaskEdge!]!
