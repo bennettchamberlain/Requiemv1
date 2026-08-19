@@ -1223,12 +1223,32 @@ export class ImportRunService {
   // -------------------------------------------------------------------------
 
   /**
-   * Enqueue one stage job on ITS KIND's queue, so stage kinds overlap across
-   * runs (see IMPORT_STAGE_QUEUE_BY_KIND). Several callers hold only the
-   * stage id — the kind is looked up rather than demanded, because routing a
-   * job to the wrong kind's queue would let one kind's long job block
-   * another's slot, which is the exact head-of-line problem the split exists
-   * to remove.
+   * Put one stage job on ITS KIND's queue, at most once while a job for it is
+   * still pending.
+   *
+   * TWO independent properties, both required:
+   *
+   * ROUTING (IMPORT_STAGE_QUEUE_BY_KIND). Stage kinds get their own queues so
+   * they overlap across runs. Several callers hold only the stage id, so the
+   * kind is looked up rather than demanded — routing a job to the wrong kind's
+   * queue would let one kind's long job block another's slot, the exact
+   * head-of-line problem the split exists to remove.
+   *
+   * DEDUPE (singletonKey). Within a kind's queue a stage still waits its turn,
+   * and `resumeInterrupted` re-enqueues a queued stage it judges stale — judging
+   * staleness from `import_stages.updated_at`, which nothing advances while a
+   * stage waits. So every waiting stage crossed STALE_STAGE_MINUTES and
+   * collected a fresh job on EVERY sweep, every 5 minutes, for as long as the
+   * import ran: 16 distinct stages holding 107 pending jobs after 47 minutes on
+   * a real 13-source import, growing linearly. The duplicates were harmless per
+   * job (`beginStage` is a claim, so a redelivered job no-ops) but the growth is
+   * unbounded, and it is the NORMAL case for the longest imports.
+   *
+   * Splitting the queues narrows the window; it does not close it, because a
+   * kind's queue is still ordered and a big parse still makes its siblings wait.
+   * Keying on the stage id lets pg-boss refuse the duplicate at insert time.
+   * Crash recovery is unaffected: the key only suppresses a job while one is
+   * pending, so once a lost job has left the queue the sweep enqueues again.
    */
   private async enqueueStage(
     userId: string,
@@ -1251,7 +1271,10 @@ export class ImportRunService {
       { runId, stageId: stage.id, userId },
       // An unknown kind (a deleted stage racing the enqueue) falls back to the
       // legacy shared queue, which still drains — never dropped on the floor.
-      { queue: kind != null ? IMPORT_STAGE_QUEUE_BY_KIND[kind] : IMPORT_QUEUE },
+      {
+        queue: kind != null ? IMPORT_STAGE_QUEUE_BY_KIND[kind] : IMPORT_QUEUE,
+        singletonKey: stage.id,
+      },
     );
   }
 
