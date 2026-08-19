@@ -6,6 +6,7 @@ import { EventsModule } from '@ci/domains/events';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LlmCoreModule } from '@ci/domains/llm/core.module';
+import { ImageDescriptionPreferenceModule } from '@ci/domains/llm/image-description-preference.module';
 import { MemoryModule } from '@ci/domains/memory';
 
 import './events';
@@ -32,6 +33,7 @@ import { PersonalizationService } from './services/PersonalizationService';
     GraphModule,
     IntelligenceModule,
     LlmCoreModule,
+    ImageDescriptionPreferenceModule,
   ],
   controllers: [PersonalizationController, ContextPromptController],
   providers: [

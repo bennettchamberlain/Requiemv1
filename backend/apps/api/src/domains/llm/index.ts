@@ -19,8 +19,10 @@ import { ToolsModule } from '@ci/domains/tools';
 import { LlmEndpointController } from './controllers/LlmEndpointController';
 import { OllamaController } from './controllers/OllamaController';
 import { LlmCoreModule } from './core.module';
+import { ImageDescriptionPreferenceModule } from './image-description-preference.module';
 import { ChatGenerateListener } from './listeners/ChatGenerateListener';
 import { CvDetectionsListener } from './listeners/CvDetectionsListener';
+import { ImageDescriptionBackfillListener } from './listeners/ImageDescriptionBackfillListener';
 import { ImageDescriptionListener } from './listeners/ImageDescriptionListener';
 import { InventoryListener } from './listeners/InventoryListener';
 import { ChatGenerationBroker } from './services/ChatGenerationBroker';
@@ -37,6 +39,7 @@ import { ChatTurnService } from './services/ChatTurnService';
     EventsModule,
     FilesModule,
     IntelligenceModule,
+    ImageDescriptionPreferenceModule,
     MemoryModule,
     PlanningModule,
     PredictionsModule,
@@ -50,6 +53,7 @@ import { ChatTurnService } from './services/ChatTurnService';
     ChatGenerateListener,
     CvDetectionsListener,
     ImageDescriptionListener,
+    ImageDescriptionBackfillListener,
     InventoryListener,
   ],
   controllers: [OllamaController, LlmEndpointController],

@@ -1,5 +1,6 @@
 /* GitHub — starred repositories export (ghstars or GitHub account export). */
 import fs from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -33,26 +34,26 @@ export class GitHubFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
       if (!isStarsFile(base)) {
         return { confidence: 0 };
       }
 
-      return this.parsesToNonEmptyArray(root) ? { confidence: 0.9 } : { confidence: 0 };
+      return (await this.parsesToNonEmptyArray(root)) ? { confidence: 0.9 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const match = fs.readdirSync(root).find((n) => isStarsFile(n));
-        if (match && this.parsesToNonEmptyArray(path.join(root, match))) {
+        const match = (await readdir(root)).find((n) => isStarsFile(n));
+        if (match && (await this.parsesToNonEmptyArray(path.join(root, match)))) {
           return { confidence: 0.9 };
         }
       } catch {
@@ -65,9 +66,9 @@ export class GitHubFileImporter implements FileImporter {
     return { confidence: 0 };
   }
 
-  private parsesToNonEmptyArray(fpath: string): boolean {
+  private async parsesToNonEmptyArray(fpath: string): Promise<boolean> {
     try {
-      const parsed = JSON.parse(fs.readFileSync(fpath, 'utf8'));
+      const parsed = JSON.parse(await readFile(fpath, 'utf8'));
 
       return Array.isArray(parsed) && parsed.length > 0;
     } catch {

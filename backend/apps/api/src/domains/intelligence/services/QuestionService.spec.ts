@@ -356,13 +356,38 @@ describe('QuestionService privacy scoping (is_private_to)', () => {
       expect(save).not.toHaveBeenCalled();
     });
 
-    it('a non-system caller cannot update a public (non-private) question either', async () => {
+    // The catalogue is public (is_private_to IS NULL on all ~1.3k seeded rows),
+    // so an own-private-only write rule made every one of them uneditable — you
+    // could see a badly worded reflection and not correct it, and could not
+    // retire one either, since retiring is `isActive: false` through this same
+    // path. Write scope now matches read scope (findById).
+    it('lets a non-system caller edit a public (shared catalogue) question', async () => {
       const { service, save } = makeScopedService([makeQuestion('public-1')]);
 
       const result = await service.update(CONTEXT, 'public-1', { text: 'edited' });
 
-      expect(result).toBeNull();
-      expect(save).not.toHaveBeenCalled();
+      expect(result?.id).toBe('public-1');
+      expect(save).toHaveBeenCalled();
+    });
+
+    it('deactivates rather than deletes when isActive: false comes in', async () => {
+      const question = makeQuestion('public-1');
+      const { service, save } = makeScopedService([question]);
+
+      await service.update(CONTEXT, 'public-1', { isActive: false });
+
+      expect(save).toHaveBeenCalled();
+      expect(question.isActive).toBe(false);
+    });
+
+    it('applies category and answerTier edits', async () => {
+      const question = makeQuestion('public-1');
+      const { service } = makeScopedService([question]);
+
+      await service.update(CONTEXT, 'public-1', { category: 'Work & Money', answerTier: 'preference' });
+
+      expect(question.category).toBe('Work & Money');
+      expect(question.answerTier).toBe('preference');
     });
   });
 
@@ -558,5 +583,179 @@ describe('QuestionService asks the functional questions first', () => {
     expect(tierAt).toBeGreaterThan(-1);
     expect(createdAt).toBeGreaterThan(-1);
     expect(tierAt).toBeLessThan(createdAt);
+  });
+});
+
+describe('QuestionService.findCatalogue', () => {
+  const CATALOGUE_QUERY = {
+    status: 'active',
+    answered: 'all',
+    limit: 25,
+    offset: 0,
+  } as const;
+
+  type Call = { sql: string; params: unknown[] };
+
+  function makeCatalogueService(responses: unknown[][]) {
+    const calls: Call[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[] = []) => {
+      calls.push({ sql, params });
+
+      return responses[calls.length - 1] ?? [];
+    });
+
+    const service = new QuestionService(
+      { query } as never,
+      { find: jest.fn(), findOne: jest.fn() } as never,
+      { send: jest.fn() } as never,
+    );
+
+    return { service, calls };
+  }
+
+  function catalogueRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'q1',
+      text: 'What foods are you allergic to?',
+      category: 'Health & Body',
+      answer_tier: 'factual',
+      question_type: 'open_ended',
+      frequency_recommendation: null,
+      is_active: true,
+      is_seed_question: true,
+      created_by_llm: false,
+      is_private_to: null,
+      times_asked: 3,
+      times_answered: 1,
+      created_at: new Date('2026-01-01T00:00:00Z'),
+      updated_at: new Date('2026-01-02T00:00:00Z'),
+      answer_id: null,
+      answer_text: null,
+      answer_source: null,
+      answer_confidence: null,
+      answer_rationale: null,
+      answered_at: null,
+      total_count: 1284,
+      ...overrides,
+    };
+  }
+
+  it('pages, and reports the window total rather than the page length', async () => {
+    const { service, calls } = makeCatalogueService([[catalogueRow()], []]);
+
+    const page = await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, offset: 50 });
+
+    expect(page.data).toHaveLength(1);
+    expect(page.totalCount).toBe(1284);
+    expect(page.offset).toBe(50);
+    expect(calls[0].sql).toContain('LIMIT $7 OFFSET $8');
+    expect(calls[0].params[6]).toBe(25);
+    expect(calls[0].params[7]).toBe(50);
+  });
+
+  it('scopes to the caller: public rows plus their own, and only their own answers', async () => {
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
+
+    expect(calls[0].sql).toContain('q.is_private_to IS NULL OR q.is_private_to = $1::uuid');
+    expect(calls[0].sql).toContain('a.user_id = $1::uuid');
+    expect(calls[0].params[0]).toBe(USER);
+  });
+
+  it('passes NULL for a system caller so no private row and no answer can leak', async () => {
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    await service.findCatalogue(SYSTEM_CONTEXT, CATALOGUE_QUERY);
+
+    expect(calls[0].params[0]).toBeNull();
+  });
+
+  it('escapes LIKE wildcards in the search term', async () => {
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, search: '100%_off' });
+
+    expect(calls[0].params[2]).toBe('100\\%\\_off');
+  });
+
+  it('sends no search term at all when the search is empty', async () => {
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, search: '' });
+
+    expect(calls[0].params[2]).toBeNull();
+  });
+
+  it('computes facets from the pre-category predicate so the picker does not collapse', async () => {
+    const { service, calls } = makeCatalogueService([
+      [],
+      [
+        { category: 'Health & Body', answer_tier: 'factual', count: 101, answered_count: 4 },
+        { category: 'Work & Money', answer_tier: 'narrative', count: 18, answered_count: 0 },
+      ],
+    ]);
+
+    const page = await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, category: 'Health & Body' });
+
+    // The page query is narrowed by $4; the facet query is handed only $1..$3.
+    expect(calls[0].params[3]).toBe('Health & Body');
+    expect(calls[1].params).toHaveLength(3);
+    expect(page.facets.categories.map((bucket) => bucket.value)).toEqual(['Health & Body', 'Work & Money']);
+    expect(page.facets.answeredCount).toBe(4);
+    expect(page.facets.unansweredCount).toBe(115);
+  });
+
+  it('shapes the answer (and its provenance) onto the row when one exists', async () => {
+    const { service } = makeCatalogueService([
+      [
+        catalogueRow({
+          answer_id: 'a1',
+          answer_text: 'Shellfish.',
+          answer_source: 'inferred',
+          answer_confidence: 0.82,
+          answer_rationale: 'Two prior answers mention an allergy.',
+          answered_at: new Date('2026-02-01T00:00:00Z'),
+        }),
+      ],
+      [],
+    ]);
+
+    const page = await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
+
+    expect(page.data[0].answer).toEqual({
+      id: 'a1',
+      text: 'Shellfish.',
+      source: 'inferred',
+      confidence: 0.82,
+      rationale: 'Two prior answers mention an allergy.',
+      answeredAt: new Date('2026-02-01T00:00:00Z'),
+    });
+  });
+
+  it('leaves the answer null on an unanswered row', async () => {
+    const { service } = makeCatalogueService([[catalogueRow()], []]);
+
+    const page = await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
+
+    expect(page.data[0].answer).toBeNull();
+  });
+
+  it('re-counts rather than reporting zero when a page lands past the end', async () => {
+    const { service, calls } = makeCatalogueService([[], [], [{ total_count: 1284 }]]);
+
+    const page = await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, offset: 5000 });
+
+    expect(page.totalCount).toBe(1284);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('does not spend a count query on an empty first page', async () => {
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    const page = await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
+
+    expect(page.totalCount).toBe(0);
+    expect(calls).toHaveLength(2);
   });
 });

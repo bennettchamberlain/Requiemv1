@@ -21,7 +21,7 @@ export function ForecastPage() {
 
   return (
     <>
-      <PageContent>
+      <PageContent className="md:pt-[max(0.75rem,env(safe-area-inset-top))]">
         {!hbpeEnabled ? (
           <div className="relative min-h-60 flex-1">
             <EmptyState icon={<CloudSun size={48} />} message="Forecast is off for this workspace." />

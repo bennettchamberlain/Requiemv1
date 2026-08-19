@@ -3,9 +3,11 @@ import { basename } from 'node:path';
 
 import type { OrchestrateStage, OrchestrateSummary } from '@ci/domains/maintenance';
 
+import type { DoctorCheckSummary } from '../controllers/ImportDoctorController';
 import type { RunDetail, RunSummary, UnpushedRunSummary } from '../controllers/ImportRunsController';
 import type { DropSummary } from '../controllers/ImportUploadsController';
 import type { PathRecognition } from '../datasources/recognizePath';
+import type { DoctorReport } from '../doctor/ImportDoctorService';
 import type { DataSourceSummary, SourceCatalogEntry } from '../services/DataSourceCatalogService';
 import type { InboxBatchResult, InboxScan } from '../services/ImportInboxService';
 
@@ -166,6 +168,32 @@ export class ImportApiClient {
     return this.request('/import/inbox/runs', {
       method: 'POST',
       body: { units, label: label ?? null },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Doctor
+  // ---------------------------------------------------------------------------
+
+  /** The check registry, without running anything. */
+  listDoctorChecks(): Promise<DoctorCheckSummary[]> {
+    return this.request('/import/doctor/checks');
+  }
+
+  /**
+   * Run the data-quality suite.
+   *
+   * No client-side timeout is imposed and none is needed: the per-statement cap
+   * is enforced by Postgres on the server, so the response always arrives —
+   * with a `timeout` finding rather than a hung socket. That is the whole point
+   * of putting the cap in the database rather than in the caller.
+   */
+  runDoctor(options: { checks?: readonly string[]; timeoutMs?: number } = {}): Promise<DoctorReport> {
+    return this.request('/import/doctor', {
+      query: {
+        checks: options.checks && options.checks.length > 0 ? options.checks.join(',') : undefined,
+        timeoutMs: options.timeoutMs,
+      },
     });
   }
 

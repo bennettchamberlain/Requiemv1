@@ -13,7 +13,9 @@ import {
   normalizePhysicalProperties,
 } from '@ci/domains/memory';
 
+import { ImageDescriptionPreferenceService } from '../services/ImageDescriptionPreferenceService';
 import { OllamaService } from '../services/OllamaService';
+import { isNonMultimodalModelError } from '../visionErrors';
 
 const ItemAnalysisSchema = z.object({
   name: z.string().nullable(),
@@ -69,8 +71,6 @@ const PROMPT = `
   Sizes and weights MUST carry their unit ("30 cm", not "30"). Omit any field you
   cannot see rather than guessing — a wrong measurement is worse than none.
 `;
-
-const DEFAULT_MODEL = 'llama3.2-vision:11b';
 
 /** Matches the 'vision-guessed' tier documented on ci.inventory.identity_confidence. */
 const VISION_IDENTITY_CONFIDENCE = 0.4;
@@ -142,6 +142,7 @@ export class InventoryListener {
     private readonly ollamaService: OllamaService,
     private readonly itemService: ItemService,
     private readonly observationService: ObjectObservationService,
+    private readonly imageDescriptionPreference: ImageDescriptionPreferenceService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(InventoryListener.name);
@@ -152,6 +153,15 @@ export class InventoryListener {
     if (!payload.inventoryCapture) {
       this.logger.log('File uploaded without inventory capture enabled, skipping processing', {
         fileId: payload.fileId,
+      });
+
+      return;
+    }
+
+    if (!(await this.imageDescriptionPreference.isEnabled(payload.userId))) {
+      this.logger.log('Image description disabled — skipping inventory vision', {
+        fileId: payload.fileId,
+        userId: payload.userId,
       });
 
       return;
@@ -190,27 +200,45 @@ export class InventoryListener {
 
     const fileContent = await this.fileService.getFileContent(serviceContext, file.key);
     const base64Image = Buffer.from(fileContent).toString('base64');
-    const model = payload.model ?? DEFAULT_MODEL;
+    const messages = [
+      {
+        role: 'user' as const,
+        content: PROMPT,
+        images: [base64Image],
+      },
+    ];
+
+    // Same rule as ImageDescriptionListener: use a model the appliance is
+    // actually serving, not a hard-coded vision tag that may not be pulled.
+    const { model } = await this.ollamaService.resolveModel(serviceContext, {
+      messages,
+      requestedModel: payload.model,
+    });
 
     this.logger.log('Starting LLM chat', {
       model,
     });
 
-    const response = await this.ollamaService.chat(
-      serviceContext,
-      [
-        {
-          role: 'user',
-          content: PROMPT,
-          images: [base64Image],
-        },
-      ],
-      {
+    let response;
+    try {
+      response = await this.ollamaService.chat(serviceContext, messages, {
         model,
         enableTools: false,
         format: 'json',
-      },
-    );
+      });
+    } catch (error) {
+      if (isNonMultimodalModelError(error)) {
+        this.logger.warn('Model cannot accept images — skipping inventory vision gracefully', {
+          model,
+          fileId: payload.fileId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        return;
+      }
+
+      throw error;
+    }
 
     const content = response.message.content;
 

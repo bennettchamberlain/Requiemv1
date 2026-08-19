@@ -3,15 +3,18 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
 import { Badge, Button, Card, Input } from '@ci/shadcn';
-import { MapPin } from '@ci/shadcn/icons';
+import { MapPin, Plus } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
 import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { AddPlaceModal } from '@/components/modals/AddItemModal';
+import { PLACE_KIND_LABELS } from '@/components/PlaceForm';
 import { gql } from '@/graphql';
 import type { GetPlacesQuery } from '@/graphql/graphql';
+import { useModalControls } from '@/hooks';
 import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
 
 /**
@@ -98,20 +101,6 @@ const CONFIRM_KNOWN_PLACE = gql(`
 
 type PlaceNode = GetPlacesQuery['places']['edges'][number]['node'];
 
-const KIND_LABELS: Record<string, string> = {
-  room: 'Room',
-  building: 'Building',
-  venue: 'Venue',
-  address: 'Address',
-  neighborhood: 'Neighborhood',
-  city: 'City',
-  region: 'Region',
-  country: 'Country',
-  continent: 'Continent',
-  planet: 'Planet',
-  other: 'Place',
-};
-
 function formatDate(value: string | Date | null | undefined): string | null {
   if (value == null) {
     return null;
@@ -137,7 +126,7 @@ function PlaceRow({ place, onOpen }: { place: PlaceNode; onOpen: () => void }) {
         <div className="flex items-center gap-2">
           <span className="truncate font-medium">{place.name || 'Unnamed place'}</span>
           {place.placeKind && (
-            <Badge variant="secondary">{KIND_LABELS[place.placeKind] ?? place.placeKind}</Badge>
+            <Badge variant="secondary">{PLACE_KIND_LABELS[place.placeKind] ?? place.placeKind}</Badge>
           )}
         </div>
 
@@ -283,7 +272,9 @@ export function PlacesPage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data, previousData, loading, error, fetchMore } = useQuery(GET_PLACES, {
+  const [{ isOpen: isAddPlaceOpen }, { open: openAddPlace, close: closeAddPlace }] = useModalControls();
+
+  const { data, previousData, loading, error, refetch, fetchMore } = useQuery(GET_PLACES, {
     variables: { query: searchQuery.trim() === '' ? null : searchQuery.trim(), first: PAGE_SIZE },
     notifyOnNetworkStatusChange: true,
   });
@@ -353,7 +344,14 @@ export function PlacesPage() {
   } else {
     content = (
       <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
-        <MemoryHubShell>
+        <MemoryHubShell
+          actions={
+            <Button size="sm" onClick={openAddPlace}>
+              <Plus className="h-4 w-4" />
+              New place
+            </Button>
+          }
+        >
           <div className="flex flex-col gap-4 px-4 pb-4">
             <div className="flex items-center gap-2">
               <Input
@@ -419,5 +417,24 @@ export function PlacesPage() {
     );
   }
 
-  return <>{content}</>;
+  return (
+    <>
+      {content}
+
+      {/* A created place has no connection for Apollo to write into — the list
+          is a fresh `places(query:)` result — so refetch rather than trying to
+          patch the cache. refetch replays the hook's original variables
+          (`first: PAGE_SIZE`, no cursor), so the accumulated list goes back to
+          its first page; reset() clears any latched load-more failure with it,
+          otherwise the sentinel would stay gated over a brand-new cursor space. */}
+      <AddPlaceModal
+        open={isAddPlaceOpen}
+        onClose={closeAddPlace}
+        onCreated={() => {
+          pagination.reset();
+          void refetch();
+        }}
+      />
+    </>
+  );
 }

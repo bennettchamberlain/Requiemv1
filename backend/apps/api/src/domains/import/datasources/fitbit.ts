@@ -18,6 +18,7 @@
    an export here used to import nothing and still report success.
 */
 import fs from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { GoogleFitFileImporter } from './google_fit';
@@ -45,10 +46,10 @@ interface SleepRecord {
   duration?: number;
 }
 
-function readJson(fpath: string): unknown {
+async function readJson(fpath: string): Promise<unknown> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -82,14 +83,14 @@ function isSleepExport(parsed: unknown): boolean {
 }
 
 // Find sleep-*.json files by name within a directory tree (bounded depth).
-function findSleepFiles(dir: string, depth: number, out: string[]): void {
+async function findSleepFiles(dir: string, depth: number, out: string[]): Promise<void> {
   if (depth > MAX_DEPTH) {
     return;
   }
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -97,7 +98,7 @@ function findSleepFiles(dir: string, depth: number, out: string[]): void {
   for (const e of entries) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      findSleepFiles(full, depth + 1, out);
+      await findSleepFiles(full, depth + 1, out);
     } else if (e.isFile() && SLEEP_FILE_RE.test(e.name)) {
       out.push(full);
     }
@@ -145,26 +146,26 @@ export class FitbitFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (!SLEEP_FILE_RE.test(path.basename(root))) {
         return { confidence: 0 };
       }
 
-      return isSleepExport(readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
+      return isSleepExport(await readJson(root)) ? { confidence: 0.95 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       const found: string[] = [];
-      findSleepFiles(root, 0, found);
+      await findSleepFiles(root, 0, found);
       for (const f of found) {
-        if (isSleepExport(readJson(f))) {
+        if (isSleepExport(await readJson(f))) {
           return { confidence: 0.9 };
         }
       }
@@ -202,7 +203,7 @@ export class FitbitFileImporter implements FileImporter {
         files.push(root);
       }
     } else if (stat.isDirectory()) {
-      findSleepFiles(root, 0, files);
+      await findSleepFiles(root, 0, files);
     }
 
     for (const fpath of files) {

@@ -145,6 +145,8 @@ export interface InboxUnit {
   readonly sizeBytes: number;
   readonly fileCount: number;
   readonly recognized: readonly { dataSource: string; title: string; confidence: number }[];
+  /** Titles the unit's folder declares — the chips' fallback when recognition sees nothing (a zip). */
+  readonly declared: readonly string[];
   /** An unfinished run of THIS user's already consuming the unit, if any. */
   readonly activeRunId: string | null;
   /**
@@ -162,6 +164,7 @@ export interface InboxScan {
   readonly units: readonly InboxUnit[];
   readonly skippedSymlinks: number;
   readonly truncated: boolean;
+  readonly recognitionPartial: boolean;
 }
 
 export interface InboxUnitResult {

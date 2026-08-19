@@ -5,12 +5,17 @@ import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
 import { useParams } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard } from '@/components/EntityFields';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { ContentIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
+import {
+  EntityMedia,
+  resolveStaticUrl,
+} from '@/pages/MemoryPage/Components/EntityDetails/EntityDetailScaffold';
 
 const GET_CONTENT = gql(`
   query GetContent($id: ID!) {
@@ -18,6 +23,10 @@ const GET_CONTENT = gql(`
       id
       title
       text
+      # The drawer renders the image; the page used to select nothing to render it with.
+      mimetype
+      contentUrl: url
+      sourceUrl
       tags {
         id
         label
@@ -26,10 +35,13 @@ const GET_CONTENT = gql(`
   }
 `);
 
-const UPDATE_CONTENT_TEXT = gql(`
-  mutation UpdateContentText($input: UpdateContentInput!) {
+// Same write the memory drawer makes (UpdateContentDetail), so the page can edit
+// the title as well as the text instead of the text alone.
+const UPDATE_CONTENT_FIELDS = gql(`
+  mutation UpdateContentPageFields($input: UpdateContentInput!) {
     updateContent(input: $input) {
       id
+      title
       text
     }
   }
@@ -44,7 +56,7 @@ export function ContentPage() {
     },
   });
 
-  const [updateContentText] = useMutation(UPDATE_CONTENT_TEXT);
+  const [updateContentFields] = useMutation(UPDATE_CONTENT_FIELDS);
 
   const contentItem = data?.content;
 
@@ -74,7 +86,35 @@ export function ContentPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
+          <div className="flex flex-col gap-4 md:col-span-2">
+            {/* The drawer's field set and its media, so "Open full page" does not
+                silently drop the title editor and the image. */}
+            <EntityFieldsCard
+              title="Content"
+              resetKey={contentItem.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[{ key: 'title', label: 'Title', value: contentItem.title ?? '' }]}
+              metaItems={[{ label: 'Type', value: contentItem.mimetype ?? 'Content' }]}
+              onSave={async (values) => {
+                const result = await updateContentFields({
+                  variables: { input: { id: contentItem.id, title: values.title } },
+                });
+
+                if (!result.data?.updateContent) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            >
+              {contentItem.mimetype?.startsWith('image/') && (
+                <EntityMedia
+                  src={resolveStaticUrl(contentItem.contentUrl ?? contentItem.sourceUrl)}
+                  contentType={contentItem.mimetype}
+                  alt={contentItem.title ?? ''}
+                />
+              )}
+            </EntityFieldsCard>
+
             <EntityGraph entityId={id!} />
           </div>
           <EntityTagsDescriptionCard
@@ -86,7 +126,7 @@ export function ContentPage() {
             descriptionLabel="Text"
             editMode={editMode}
             onDescriptionSave={async (value) => {
-              const result = await updateContentText({
+              const result = await updateContentFields({
                 variables: { input: { id: contentItem.id, text: value } },
               });
 

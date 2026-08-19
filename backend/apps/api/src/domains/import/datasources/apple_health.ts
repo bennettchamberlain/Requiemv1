@@ -10,6 +10,7 @@
  * tokenises the stream into whole `<Record .../>`, `<Workout>…</Workout>`, and
  * `<ActivitySummary .../>` elements regardless of line boundaries. */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -63,9 +64,9 @@ export class AppleHealthFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -74,16 +75,16 @@ export class AppleHealthFileImporter implements FileImporter {
     // HealthKit root element is not. One 4 KB read tells them apart.
     const isHealthExport = (fpath: string) => headMatches(fpath, /<HealthData\b/);
 
-    if (stat.isFile()) {
-      return path.basename(root).toLowerCase() === 'export.xml' && isHealthExport(root)
+    if (st.isFile()) {
+      return path.basename(root).toLowerCase() === 'export.xml' && (await isHealthExport(root))
         ? { confidence: 0.95 }
         : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
-        if (names.includes('export.xml') && isHealthExport(path.join(root, 'export.xml'))) {
+        const names = await readdir(root);
+        if (names.includes('export.xml') && (await isHealthExport(path.join(root, 'export.xml')))) {
           return { confidence: 0.95 };
         }
 

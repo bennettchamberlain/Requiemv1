@@ -258,8 +258,13 @@ export class PlaceResolver {
   }
 
   @Mutation(() => Boolean)
-  async removePlace(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async removePlace(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('place', gid);
 
     return this.placeService.remove(serviceContext, id);
   }

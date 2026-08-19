@@ -86,6 +86,14 @@ export class EventSearchIndexListener {
       return;
     }
 
+    if (event.eventType === 'planned_block') {
+      this.logger.log('Skipping planned_block — index the task, not the block', {
+        eventId: event.id,
+      });
+
+      return;
+    }
+
     if (event.userId == null) {
       this.logger.warn('Event has no associated user, cannot index');
 

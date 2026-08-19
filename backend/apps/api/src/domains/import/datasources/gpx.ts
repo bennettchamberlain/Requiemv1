@@ -1,5 +1,6 @@
 /* GPX (GPS Exchange Format) datasource (TypeScript port) */
 import fs from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseStringPromise } from 'xml2js';
@@ -51,17 +52,17 @@ interface GPXWaypoint {
  * data source across the whole tree, and a bare .gpx scores 1.0 against
  * Strava's 0.95. GPX would then win and activities.csv would be dropped.
  */
-function inStravaExport(filePath: string): boolean {
+async function inStravaExport(filePath: string): Promise<boolean> {
   let dir = path.dirname(filePath);
   // activities/<file>.gpx -> activities/ -> export root. Two hops is enough;
   // bounded so a .gpx near the filesystem root can't walk up indefinitely.
   for (let i = 0; i < 3; i++) {
     try {
-      if (fs.existsSync(path.join(dir, 'activities.csv'))) {
-        return true;
-      }
+      await stat(path.join(dir, 'activities.csv'));
+
+      return true;
     } catch {
-      /* unreadable dir — treat as not-Strava */
+      /* absent or unreadable — treat as not-Strava */
     }
 
     const parent = path.dirname(dir);
@@ -85,12 +86,16 @@ export class GPXFileImporter implements FileImporter {
     // Check if it's a .gpx file
     if (baseDir.toLowerCase().endsWith('.gpx')) {
       // Defer to strava.ts for activity tracks inside a Strava archive.
-      return inStravaExport(baseDir) ? { confidence: 0 } : { confidence: 1.0 };
+      return (await inStravaExport(baseDir)) ? { confidence: 0 } : { confidence: 1.0 };
     }
 
     // Check if it's a directory (will walk it looking for .gpx files)
-    if (fs.existsSync(baseDir) && fs.statSync(baseDir).isDirectory()) {
-      return { confidence: 0, dir_threshold: 0.9 };
+    try {
+      if ((await stat(baseDir)).isDirectory()) {
+        return { confidence: 0, dir_threshold: 0.9 };
+      }
+    } catch {
+      /* absent or unreadable — no match */
     }
 
     return { confidence: 0 };

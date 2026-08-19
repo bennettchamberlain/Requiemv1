@@ -11,6 +11,7 @@
    These files can be hundreds of MB, so we scan the body cells with a regex
    rather than building a DOM. */
 import fs from 'node:fs';
+import { open, readdir, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -57,14 +58,14 @@ function productFor(fpath: string): string {
   return path.basename(path.dirname(fpath)) || 'Activity';
 }
 
-function* walkActivityFiles(root: string, depth = 0): Generator<string> {
+async function* walkActivityFiles(root: string, depth = 0): AsyncGenerator<string> {
   if (depth > 4) {
     return;
   }
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await readdir(root, { withFileTypes: true });
   } catch {
     return;
   }
@@ -86,35 +87,39 @@ export class GoogleMyActivityFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (path.basename(root).toLowerCase() !== 'myactivity.html') {
         return { confidence: 0 };
       }
 
       // Confirm the body-cell signature so we don't claim arbitrary HTML.
+      let fh: FileHandle | undefined;
       try {
-        const fd = fs.openSync(root, 'r');
+        fh = await open(root, 'r');
         const buf = Buffer.alloc(65536);
-        const n = fs.readSync(fd, buf, 0, buf.length, 0);
-        fs.closeSync(fd);
+        const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
 
-        return buf.subarray(0, n).includes('mdl-typography--body-1')
+        return buf.subarray(0, bytesRead).includes('mdl-typography--body-1')
           ? { confidence: 0.95 }
           : { confidence: 0 };
       } catch {
         return { confidence: 0 };
+      } finally {
+        if (fh !== undefined) {
+          await fh.close().catch(() => {});
+        }
       }
     }
 
-    if (stat.isDirectory()) {
-      for (const _ of walkActivityFiles(root)) {
+    if (st.isDirectory()) {
+      for await (const _ of walkActivityFiles(root)) {
         return { confidence: 0.9 };
       }
 
@@ -140,7 +145,7 @@ export class GoogleMyActivityFileImporter implements FileImporter {
     if (stat.isFile()) {
       await this.processFile(root, params);
     } else if (stat.isDirectory()) {
-      for (const f of walkActivityFiles(root)) {
+      for await (const f of walkActivityFiles(root)) {
         await this.processFile(f, params);
       }
     }

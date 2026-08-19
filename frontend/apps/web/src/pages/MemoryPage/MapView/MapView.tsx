@@ -74,16 +74,23 @@ function entityTime(entity: EntityItem): number {
 
 type LocatedEntity = { entity: EntityItem; coords: { lat: number; lng: number } };
 
-// The map needs hasLocation:true so every fetched page yields pins (the shared
-// result set is otherwise dominated by un-located rows). This is now derived
-// from `?view=map` in MemoryPage rather than written here as a separate
-// `?hasLocation` param: a URL write with an unmount cleanup reverted navigation
-// away from /memory (the cleanup's setSearchParams fired mid-route-change and
-// snapped the route back). The server still routes hasLocation through its event
-// filter, so the map is an events-only surface — hence "Search events in this area".
+// The map runs the explorer's filter set unchanged — it does not add
+// hasLocation of its own. It used to: MemoryPage derived `hasLocation: true`
+// from `?view=map`, which silently dropped every un-located result AND (because
+// the server routes hasLocation through its event filter) silently narrowed the
+// whole browse to events. The same URL therefore meant something different in
+// the map than in the list, with nothing on screen to say so.
+//
+// Instead: clicking the Map tab applies "Has a location" as a real, chipped,
+// removable filter (applyViewFilterDefaults), and when it is *not* set,
+// LocatedScopeNotice below says how many of the loaded results carry
+// coordinates and offers to narrow to them. Note the earlier hazard this
+// replaces — a URL write with an unmount cleanup reverted navigation away from
+// /memory; nothing here writes on unmount.
 
 function useLocatedEntities() {
   const [{ data, hasNextPage, loadingMore, loadMore }, { setActiveEntity }] = useEntityService();
+  const loadedCount = data.length;
 
   const located = useMemo<LocatedEntity[]>(() => {
     return data
@@ -101,7 +108,7 @@ function useLocatedEntities() {
     [located],
   );
 
-  return { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore };
+  return { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore, loadedCount };
 }
 
 // ── Marker clustering ───────────────────────────────────────────────────────
@@ -457,6 +464,56 @@ function SearchAreaControl() {
   );
 }
 
+// ── Located-scope notice ────────────────────────────────────────────────────
+// The map only draws entities that carry coordinates, but it no longer forces
+// a `hasLocation` filter on the shared query — so a URL that reaches the map
+// without one (a deep link, a shared search, a removed chip) can load a page of
+// results with barely any pins. Rather than let that read as "you have no
+// located memories", say what the filter set actually returned and offer the
+// filter as an explicit, chipped choice.
+function LocatedScopeNotice({ located, loadedCount }: { located: number; loadedCount: number }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const stopPropagation = useCallback((el: HTMLDivElement | null) => {
+    if (el) {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    }
+  }, []);
+
+  // Nothing to explain while the filter is already on, before results land, or
+  // when everything loaded is on the map anyway.
+  if (searchParams.get('hasLocation') === '1' || loadedCount === 0 || located === loadedCount) {
+    return null;
+  }
+
+  return (
+    <div
+      ref={stopPropagation}
+      role="status"
+      className="absolute left-1/2 top-14 z-400 flex max-w-[92%] -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-md"
+    >
+      <MapPin className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">
+        {located} of {loadedCount} loaded {loadedCount === 1 ? 'result has' : 'results have'} a location
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 shrink-0 px-2 text-xs"
+        onClick={() =>
+          setSearchParams((params) => {
+            params.set('hasLocation', '1');
+
+            return params;
+          })
+        }
+      >
+        Only show located
+      </Button>
+    </div>
+  );
+}
+
 // ── "Load more pins" control ────────────────────────────────────────────────
 // Desktop's timeline panel pages in more results via an IntersectionObserver,
 // but only when its own cards scroll into view. Located-but-untimed entities
@@ -612,7 +669,7 @@ function MapTimelineConnector({
 }
 
 export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}) {
-  const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore } =
+  const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore, loadedCount } =
     useLocatedEntities();
   const rowElementsRef = useRef(new globalThis.Map<string, HTMLDivElement>());
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
@@ -662,6 +719,9 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
       {/* "Search this area" writes ?bbox, which the shared viewer can't honour
           (the server ignores viewer filters), so hide it in read-only mode. */}
       {!readOnly && <SearchAreaControl />}
+      {/* Read-only viewers can't change the filter set, so the offer to narrow
+          to located results would go nowhere. */}
+      {!readOnly && <LocatedScopeNotice located={located.length} loadedCount={loadedCount} />}
       <LoadMorePinsControl
         shown={located.length}
         hasNextPage={hasNextPage}
@@ -677,13 +737,14 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
 }
 
 export function MobileMapView({ readOnly = false }: { readOnly?: boolean } = {}) {
-  const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore } =
+  const { located, routeLocations, setActiveEntity, hasNextPage, loadingMore, loadMore, loadedCount } =
     useLocatedEntities();
 
   return (
     <Map center={[37.7749, -122.4194]}>
       <Map.Controls position="top-right" />
       {!readOnly && <SearchAreaControl />}
+      {!readOnly && <LocatedScopeNotice located={located.length} loadedCount={loadedCount} />}
       <LoadMorePinsControl
         shown={located.length}
         hasNextPage={hasNextPage}

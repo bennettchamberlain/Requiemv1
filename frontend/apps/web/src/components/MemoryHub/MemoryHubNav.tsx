@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 import { cn } from '@ci/shadcn';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -5,7 +7,7 @@ import { useFeatures } from '@/common/feature';
 
 import { MEMORY_HUB_SECTIONS } from './memoryHubSections';
 
-export function MemoryHubNav() {
+export function MemoryHubNav({ actions }: { actions?: ReactNode }) {
   const { pathname } = useLocation();
   const { isFeatureEnabled } = useFeatures();
 
@@ -34,6 +36,8 @@ export function MemoryHubNav() {
           </Link>
         );
       })}
+
+      {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
     </nav>
   );
 }

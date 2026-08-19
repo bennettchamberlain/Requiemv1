@@ -23,11 +23,13 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { JobsController } from './controllers/JobsController';
+import { CronRunEntity } from './entities/CronRunEntity';
 import { JobMetricEntity } from './entities/JobMetricEntity';
 import { PgBossArchiveEntity } from './entities/PgBossArchiveEntity';
 import { PgBossJobEntity } from './entities/PgBossJobEntity';
 import { PgBossQueueEntity } from './entities/PgBossQueueEntity';
 import { PgBossScheduleEntity } from './entities/PgBossScheduleEntity';
+import { CronRunTracker } from './services/CronRunTracker';
 import { EventService } from './services/EventService';
 import { JobMetricsCollector } from './services/JobMetricsCollector';
 import { JobMonitorService } from './services/JobMonitorService';
@@ -46,6 +48,7 @@ import { PGBossEventService } from './services/PGBossEventService';
       PgBossScheduleEntity,
       PgBossQueueEntity,
       JobMetricEntity,
+      CronRunEntity,
     ]),
   ],
   providers: [
@@ -56,6 +59,7 @@ import { PGBossEventService } from './services/PGBossEventService';
     JobMonitorService,
     JobQueryService,
     JobMetricsCollector,
+    CronRunTracker,
   ],
   controllers: [JobsController],
   exports: [EventService],

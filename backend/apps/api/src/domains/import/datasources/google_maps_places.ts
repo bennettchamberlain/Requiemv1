@@ -3,6 +3,7 @@
  * Both are GeoJSON FeatureCollections of Point features. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { asRecord, asString, type JsonRecord } from './json';
@@ -26,14 +27,14 @@ const REVIEWS_FILE = 'reviews.json';
 const LABELED_FILE = 'labeled places.json';
 const SUPPORTED_FILES = new Set([SAVED_FILE, REVIEWS_FILE, LABELED_FILE]);
 
-function findSupportedFiles(root: string, depth = 0): string[] {
+async function findSupportedFiles(root: string, depth = 0): Promise<string[]> {
   if (depth > 6) {
     return [];
   }
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await readdir(root, { withFileTypes: true });
   } catch {
     return [];
   }
@@ -42,7 +43,7 @@ function findSupportedFiles(root: string, depth = 0): string[] {
   for (const entry of entries) {
     const full = path.join(root, entry.name);
     if (entry.isDirectory()) {
-      found.push(...findSupportedFiles(full, depth + 1));
+      found.push(...(await findSupportedFiles(full, depth + 1)));
     } else if (entry.isFile() && SUPPORTED_FILES.has(entry.name.toLowerCase())) {
       found.push(full);
     }
@@ -125,24 +126,24 @@ export class GoogleMapsPlacesFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
 
       return SUPPORTED_FILES.has(base) ? { confidence: 0.9 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       // Current Takeout nests Labeled places.json under "My labeled places";
       // older exports put Saved Places.json / Reviews.json at the root.
       const dirName = path.basename(root).toLowerCase();
-      const found = findSupportedFiles(root);
+      const found = await findSupportedFiles(root);
       if (found.length && dirName.includes('maps')) {
         return { confidence: 0.95 };
       }
@@ -163,17 +164,17 @@ export class GoogleMapsPlacesFileImporter implements FileImporter {
       return;
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = fs.statSync(root);
     } catch {
       return;
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       await this.processFile(root, params);
-    } else if (stat.isDirectory()) {
-      for (const file of findSupportedFiles(root)) {
+    } else if (st.isDirectory()) {
+      for (const file of await findSupportedFiles(root)) {
         await this.processFile(file, params);
       }
     }

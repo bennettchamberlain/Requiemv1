@@ -342,6 +342,69 @@ export function backfillEntityTypesFor(destinations: Iterable<Destination>): Bac
 }
 
 /**
+ * The `DeterministicEdgeSource` values the graph-edge projection sweeps by —
+ * the source-table vocabulary `promote.edge_*` legs are keyed on
+ * (`EDGE_STAGES_BY_SOURCE` in the pipeline domain's
+ * `GraphEdgeSweepRequestListener`, itself the matrix's own `source` field).
+ *
+ * Declared as a local union rather than imported for the same reason
+ * {@link BackfillEntityType} is: this file is the import domain's canonical
+ * routing table and must not depend on the pipeline or maintenance domains.
+ * The wire strings are the contract; the listener validates and drops anything
+ * it does not recognise.
+ */
+export type EdgeProjectionSource = 'communications' | 'events' | 'content' | 'inventory' | 'positions';
+
+/**
+ * Map an import {@link Destination} to the edge-projection source its rows land
+ * under, so a push can ask for exactly the `promote.edge_*` legs whose input it
+ * just wrote.
+ *
+ * `browser_activity` maps to nothing on purpose: `ci.browser_activity` has no
+ * rule in the deterministic-edge matrix, so requesting a leg for it would be a
+ * sweep that can only ever find zero candidates.
+ *
+ * Note `positions` — plural, the matrix's spelling — against the `position`
+ * destination. The two vocabularies were named independently and this function
+ * is the seam; getting it wrong is a silently-dropped source at the listener,
+ * which is why `canonical.edgeSources.test.ts` pins every pair.
+ */
+const DESTINATION_TO_EDGE_SOURCE: Record<Destination, EdgeProjectionSource | null> = {
+  events: 'events',
+  content: 'content',
+  communications: 'communications',
+  inventory: 'inventory',
+  browser_activity: null,
+  position: 'positions',
+};
+
+/**
+ * Reduce the destinations a push actually wrote to into the distinct, ordered
+ * list of edge-projection sources to sweep. Deduplicated and stably ordered so
+ * requests are deterministic, exactly as {@link backfillEntityTypesFor} is.
+ *
+ * An empty result is a real answer and the caller must treat it as one: a push
+ * that wrote only browser activity has no edges to project, and requesting
+ * "every source" in that case would turn a narrow import into a full-corpus
+ * pass.
+ */
+export function edgeProjectionSourcesFor(destinations: Iterable<Destination>): EdgeProjectionSource[] {
+  const seen = new Set<EdgeProjectionSource>();
+  for (const dest of destinations) {
+    const source = DESTINATION_TO_EDGE_SOURCE[dest];
+    if (source) {
+      seen.add(source);
+    }
+  }
+
+  // Stable order mirroring the matrix's own rule order for deterministic
+  // requests and tests.
+  const ORDER: EdgeProjectionSource[] = ['communications', 'events', 'content', 'inventory', 'positions'];
+
+  return ORDER.filter((s) => seen.has(s));
+}
+
+/**
  * Heuristic: is a purchased good DIGITAL (→ content) vs PHYSICAL (→ inventory)?
  * Amazon's "Your Orders" CSV carries no product-type field, so we sniff the
  * product name. Best-effort; defaults to physical.

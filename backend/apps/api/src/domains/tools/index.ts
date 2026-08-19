@@ -27,6 +27,7 @@ import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { EventsModule } from '@ci/domains/events';
 import { FilesModule } from '@ci/domains/files';
 import { ImportModule } from '@ci/domains/import';
+import { UserModule } from '@ci/domains/user';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule } from '@ci/domains/memory';
 import { ParsingModule } from '@ci/domains/parsing';
@@ -116,6 +117,7 @@ const nativeToolInstances = [
     PredictionsModule,
     SummariesModule,
     DailyMetricsModule,
+    UserModule,
   ],
   providers: [
     ToolRegistry,

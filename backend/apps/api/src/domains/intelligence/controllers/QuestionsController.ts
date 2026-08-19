@@ -11,8 +11,10 @@ import {
   Patch,
   Delete,
   Body,
+  Query,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import type { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
@@ -21,13 +23,18 @@ import { ValidationPipe } from '@ci/common/pipes';
 import { EventService } from '@ci/domains/events';
 
 import { Question } from '../entities/QuestionEntity';
-import { QuestionService } from '../services/QuestionService';
+import { QuestionService, type QuestionCataloguePage } from '../services/QuestionService';
 import {
   type CreateQuestionDto,
+  type QuestionCatalogueQueryDto,
   type UpdateQuestionDto,
   createQuestionSchema,
+  questionCatalogueQuerySchema,
   updateQuestionSchema,
 } from '../types';
+
+type CreateQuestionInput = z.infer<typeof createQuestionSchema>;
+type UpdateQuestionInput = z.infer<typeof updateQuestionSchema>;
 
 @Controller('questions')
 export class QuestionsController {
@@ -43,11 +50,18 @@ export class QuestionsController {
   @Post()
   async create(
     @Context() context: RequestContext,
-    @Body(new ValidationPipe(createQuestionSchema)) input: CreateQuestionDto,
+    @Body(new ValidationPipe(createQuestionSchema)) input: CreateQuestionInput,
   ): Promise<Question> {
     const serviceContext = toServiceContext(context);
 
-    return await this.questionService.create(serviceContext, input);
+    const dto: CreateQuestionDto = {
+      text: input.text,
+      // `subcategory` is the legacy spelling of the same field.
+      category: input.category ?? input.subcategory,
+      answerTier: input.answerTier ?? null,
+    };
+
+    return await this.questionService.create(serviceContext, dto);
   }
 
   @UseGuards(JwtOrApiKeyAuthGuard)
@@ -56,6 +70,25 @@ export class QuestionsController {
     const serviceContext = toServiceContext(context);
 
     return this.questionService.findAll(serviceContext);
+  }
+
+  /**
+   * The browsable catalogue: paged, filtered, searched, each row carrying the
+   * caller's answer when it has one. `GET /questions` returns every active row
+   * at once with no filters, which is unusable at catalogue size.
+   *
+   * Declared ahead of `:id` — Nest matches routes in declaration order, so a
+   * later static path would be swallowed by the parameterised one.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('catalogue')
+  findCatalogue(
+    @Context() context: RequestContext,
+    @Query(new ValidationPipe(questionCatalogueQuerySchema)) query: QuestionCatalogueQueryDto,
+  ): Promise<QuestionCataloguePage> {
+    const serviceContext = toServiceContext(context);
+
+    return this.questionService.findCatalogue(serviceContext, query);
   }
 
   @UseGuards(JwtOrApiKeyAuthGuard)
@@ -84,11 +117,20 @@ export class QuestionsController {
   async update(
     @Context() context: RequestContext,
     @Param('id') questionId: string,
-    @Body(new ValidationPipe(updateQuestionSchema)) data: UpdateQuestionDto,
+    @Body(new ValidationPipe(updateQuestionSchema)) data: UpdateQuestionInput,
   ): Promise<Question | null> {
     const serviceContext = toServiceContext(context);
 
-    const question = await this.questionService.update(serviceContext, questionId, data);
+    const dto: UpdateQuestionDto = {
+      ...(data.text !== undefined && { text: data.text }),
+      ...((data.category ?? data.subcategory) !== undefined && {
+        category: data.category ?? data.subcategory,
+      }),
+      ...(data.answerTier !== undefined && { answerTier: data.answerTier }),
+      ...(data.isActive !== undefined && { isActive: data.isActive }),
+    };
+
+    const question = await this.questionService.update(serviceContext, questionId, dto);
 
     if (!question) {
       throw new NotFoundException('Question not found');
