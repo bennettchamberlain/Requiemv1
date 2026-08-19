@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 
-import { Tabs, Sheet } from '@ci/shadcn';
-import { ChartNetwork, Images, List, Map as MapIcon } from '@ci/shadcn/icons';
+import { Button, Tabs, Sheet } from '@ci/shadcn';
+import { ChartNetwork, Images, List, Map as MapIcon, Plus } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { AddEventModal } from '@/components/modals/AddItemModal';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
+import { useModalControls } from '@/hooks';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
@@ -20,7 +22,9 @@ import { ListView } from './ListView';
 import { MobileMapView } from './MapView';
 
 export default function MobileMemoryPage() {
-  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
+  const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
+
+  const [{ isOpen: isAddEventOpen }, { open: openAddEvent, close: closeAddEvent }] = useModalControls();
 
   // Document chunks open in their own dialog; every other entity uses the
   // details sheet (EntityDetails has no FileChunkType branch).
@@ -46,7 +50,8 @@ export default function MobileMemoryPage() {
   const activeFilterCount = countActiveFilters(searchParams);
 
   // Reflect the default view in the URL so the query is shareable/restorable.
-  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events.
+  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events. The view it
+  // once addressed (`EventsView`) was deleted as dead code; old links keep landing on List.
   useEffect(() => {
     const view = searchParams.get('view');
     if (!view || view === 'events') {
@@ -89,7 +94,15 @@ export default function MobileMemoryPage() {
             )}
           </div>
 
-          <MemoryHubShell fillHeight>
+          <MemoryHubShell
+            actions={
+              <Button size="sm" onClick={openAddEvent}>
+                <Plus className="h-4 w-4" />
+                <span className="sr-only sm:not-sr-only">New event</span>
+              </Button>
+            }
+            fillHeight
+          >
             <div className="space-y-2">
               <ExplorerToolbar open />
 
@@ -136,6 +149,10 @@ export default function MobileMemoryPage() {
       )}
 
       <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
+
+      {/* Same as desktop: the browse is a server-composed `search` connection,
+          so a new event arrives via refetch rather than a cache write. */}
+      <AddEventModal open={isAddEventOpen} onClose={closeAddEvent} onCreated={refetch} />
     </>
   );
 }

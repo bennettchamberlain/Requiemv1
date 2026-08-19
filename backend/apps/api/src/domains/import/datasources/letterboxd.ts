@@ -1,5 +1,6 @@
 /* Letterboxd — diary/ratings CSV export (diary.csv, ratings.csv). */
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -35,14 +36,14 @@ export class LetterboxdFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
 
       // A filename match alone used to be worth 0.8 — higher than most other
@@ -53,17 +54,21 @@ export class LetterboxdFileImporter implements FileImporter {
       // same header check the top tier already does; a same-named file that
       // fails it now correctly returns 0.
       if (LETTERBOXD_FILES.includes(base)) {
-        return this.headerMatches(root) ? { confidence: 0.95 } : { confidence: 0 };
+        return (await this.headerMatches(root)) ? { confidence: 0.95 } : { confidence: 0 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         for (const name of names) {
-          if (LETTERBOXD_FILES.includes(name.toLowerCase()) && this.headerMatches(path.join(root, name))) {
+          if (!LETTERBOXD_FILES.includes(name.toLowerCase())) {
+            continue;
+          }
+
+          if (await this.headerMatches(path.join(root, name))) {
             return { confidence: 0.95 };
           }
         }
@@ -78,24 +83,18 @@ export class LetterboxdFileImporter implements FileImporter {
   }
 
   // Read only the first ~4KB to inspect the CSV header row.
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
     try {
-      fd = fs.openSync(fpath, 'r');
+      handle = await open(fpath, 'r');
       const buf = Buffer.alloc(4096);
-      const n = fs.readSync(fd, buf, 0, 4096, 0);
+      const { bytesRead: n } = await handle.read(buf, 0, 4096, 0);
 
       return headerHasLetterboxdCols(buf.toString('utf8', 0, n));
     } catch {
       return false;
     } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
+      await handle?.close().catch(() => undefined);
     }
   }
 

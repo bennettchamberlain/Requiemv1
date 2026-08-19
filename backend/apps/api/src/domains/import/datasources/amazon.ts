@@ -14,6 +14,7 @@
    marks the purchase. */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -402,24 +403,18 @@ function ledgerFields(rows: Record<string, string>[]): Record<string, string | n
   };
 }
 
-function sniffHeader(fpath: string): boolean {
-  let fd: number | undefined;
+async function sniffHeader(fpath: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    handle = await open(fpath, 'r');
     const buf = Buffer.alloc(4096);
-    const n = fs.readSync(fd, buf, 0, 4096, 0);
+    const { bytesRead: n } = await handle.read(buf, 0, 4096, 0);
 
     return headerMatches(buf.toString('utf8', 0, n));
   } catch {
     return false;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -500,14 +495,14 @@ export class AmazonFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root);
 
       // Filename alone used to be enough for the top confidence tier — but
@@ -517,18 +512,18 @@ export class AmazonFileImporter implements FileImporter {
       // same header verification the unnamed fallback below already does, so
       // a same-named CSV from elsewhere is never claimed on filename alone.
       if (filenameMatches(base)) {
-        return sniffHeader(root) ? { confidence: 0.95 } : { confidence: 0 };
+        return (await sniffHeader(root)) ? { confidence: 0.95 } : { confidence: 0 };
       }
 
-      if (path.extname(base).toLowerCase() === '.csv' && sniffHeader(root)) {
+      if (path.extname(base).toLowerCase() === '.csv' && (await sniffHeader(root))) {
         return { confidence: 0.85 };
       }
 
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
-      const found = this.findFiles(root);
+    if (st.isDirectory()) {
+      const found = await this.findFiles(root);
       if (found.length) {
         return { confidence: 0.95 };
       }
@@ -543,11 +538,11 @@ export class AmazonFileImporter implements FileImporter {
   // folders Amazon's archives use — "Your Orders" keeps CSVs one level down,
   // but a full "All Data Categories" export (plus a drag-and-drop staging
   // wrapper) buries Digital-Ordering.1 three or four levels deep.
-  private findFiles(dir: string, depth = 0): string[] {
+  private async findFiles(dir: string, depth = 0): Promise<string[]> {
     const out: string[] = [];
     let names: fs.Dirent[];
     try {
-      names = fs.readdirSync(dir, { withFileTypes: true });
+      names = await readdir(dir, { withFileTypes: true });
     } catch {
       return out;
     }
@@ -556,12 +551,12 @@ export class AmazonFileImporter implements FileImporter {
       const full = path.join(dir, dirent.name);
       if (dirent.isDirectory()) {
         if (depth < 4) {
-          out.push(...this.findFiles(full, depth + 1));
+          out.push(...(await this.findFiles(full, depth + 1)));
         }
       } else if (dirent.isFile()) {
         if (filenameMatches(dirent.name)) {
           out.push(full);
-        } else if (path.extname(dirent.name).toLowerCase() === '.csv' && sniffHeader(full)) {
+        } else if (path.extname(dirent.name).toLowerCase() === '.csv' && (await sniffHeader(full))) {
           out.push(full);
         }
       }
@@ -587,7 +582,7 @@ export class AmazonFileImporter implements FileImporter {
     if (stat.isFile()) {
       files = [root];
     } else if (stat.isDirectory()) {
-      files = this.findFiles(root);
+      files = await this.findFiles(root);
     }
 
     // The digital sidecars (ownership records, entitlements, viewing history)

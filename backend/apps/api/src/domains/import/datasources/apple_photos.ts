@@ -18,6 +18,7 @@
    here and stamped on both items so they don't show up as two separate events.
 */
 import fs from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { extractMediaMetadata } from './_exif';
@@ -86,10 +87,10 @@ function isMediaFile(name: string): boolean {
 
 // True for a *.photoslibrary package or any dir that directly contains an
 // originals/ subdirectory (the shape we can actually walk).
-function originalsDir(baseDir: string): string | undefined {
+async function originalsDir(baseDir: string): Promise<string | undefined> {
   const candidate = path.join(baseDir, 'originals');
   try {
-    if (fs.statSync(candidate).isDirectory()) {
+    if ((await stat(candidate)).isDirectory()) {
       return candidate;
     }
   } catch {
@@ -106,22 +107,29 @@ function originalsDir(baseDir: string): string | undefined {
  * nested package made that standard inbox route recognize successfully but
  * import zero items.
  */
-function libraryDir(baseDir: string): string | undefined {
-  if (originalsDir(baseDir)) {
+async function libraryDir(baseDir: string): Promise<string | undefined> {
+  if (await originalsDir(baseDir)) {
     return baseDir;
   }
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(baseDir, { withFileTypes: true });
+    entries = await readdir(baseDir, { withFileTypes: true });
   } catch {
     return undefined;
   }
 
-  const packages = entries
-    .filter((entry) => entry.isDirectory() && entry.name.toLowerCase().endsWith('.photoslibrary'))
-    .map((entry) => path.join(baseDir, entry.name))
-    .filter((candidate) => !!originalsDir(candidate));
+  const packages: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.toLowerCase().endsWith('.photoslibrary')) {
+      continue;
+    }
+
+    const candidate = path.join(baseDir, entry.name);
+    if (await originalsDir(candidate)) {
+      packages.push(candidate);
+    }
+  }
 
   return packages.length === 1 ? packages[0] : undefined;
 }
@@ -163,7 +171,7 @@ class ApplePhotosFileImporter implements FileImporter {
 
     let isDir = false;
     try {
-      isDir = fs.statSync(baseDir).isDirectory();
+      isDir = (await stat(baseDir)).isDirectory();
     } catch {
       return { confidence: 0 };
     }
@@ -172,7 +180,7 @@ class ApplePhotosFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    const resolved = libraryDir(baseDir);
+    const resolved = await libraryDir(baseDir);
     const isPackage = baseDir.toLowerCase().endsWith('.photoslibrary');
     const hasOriginals = !!resolved;
     if (!isPackage && !hasOriginals) {
@@ -193,8 +201,8 @@ class ApplePhotosFileImporter implements FileImporter {
       return;
     }
 
-    const resolved = libraryDir(baseDir);
-    const originals = resolved ? originalsDir(resolved) : undefined;
+    const resolved = await libraryDir(baseDir);
+    const originals = resolved ? await originalsDir(resolved) : undefined;
     if (!originals) {
       params.log?.('warn', 'no readable originals/ — nothing to import', { baseDir });
 

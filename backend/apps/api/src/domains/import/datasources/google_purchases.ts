@@ -4,6 +4,7 @@
    tolerantly since Google's shapes vary across accounts. Every field is guarded.
 */
 import fs from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -19,14 +20,14 @@ function isPurchasesDir(name: string): boolean {
   return /purchases?\s*&?\s*reservations?/i.test(name) || /reservations?/i.test(name);
 }
 
-function* walkActionFiles(root: string, depth = 0): Generator<string> {
+async function* walkActionFiles(root: string, depth = 0): AsyncGenerator<string> {
   if (depth > 5) {
     return;
   }
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await readdir(root, { withFileTypes: true });
   } catch {
     return;
   }
@@ -91,14 +92,14 @@ export class GooglePurchasesFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (!ACTION_FILE.test(path.basename(root))) {
         return { confidence: 0 };
       }
@@ -106,7 +107,7 @@ export class GooglePurchasesFileImporter implements FileImporter {
       // Confirm it's a Google action record (booking/waitlist/order/purchase),
       // not some other tool's action_*.json.
       try {
-        const d = JSON.parse(fs.readFileSync(root, 'utf8'));
+        const d = JSON.parse(await readFile(root, 'utf8'));
         if (
           d &&
           typeof d === 'object' &&
@@ -121,9 +122,9 @@ export class GooglePurchasesFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       const base = path.basename(root);
-      for (const _ of walkActionFiles(root)) {
+      for await (const _ of walkActionFiles(root)) {
         return { confidence: isPurchasesDir(base) ? 0.95 : 0.85 };
       }
 
@@ -149,7 +150,7 @@ export class GooglePurchasesFileImporter implements FileImporter {
     if (stat.isFile()) {
       this.processFile(root, params);
     } else if (stat.isDirectory()) {
-      for (const f of walkActionFiles(root)) {
+      for await (const f of walkActionFiles(root)) {
         this.processFile(f, params);
       }
     }

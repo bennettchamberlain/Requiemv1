@@ -6,6 +6,7 @@ export const TaskRemovedEvent = 'task.deleted';
 
 export const PlanningTodoScanEvent = 'planning.todo_scan';
 export const PlanningTodoProcessEvent = 'planning.todo_process';
+export const PlanningInboxScanEvent = 'planning.inbox_scan';
 export const PlanningEventNowEvent = 'planning.event_now';
 export const PlanningVerifyDoneEvent = 'planning.verify_done';
 
@@ -31,6 +32,7 @@ defineEvent<TaskUpdatedPayload>(TaskUpdatedEvent);
 defineEvent<TaskRemovedPayload>(TaskRemovedEvent);
 defineEvent<PlanningUserJobPayload>(PlanningTodoScanEvent);
 defineEvent<PlanningUserJobPayload>(PlanningTodoProcessEvent);
+defineEvent<PlanningUserJobPayload>(PlanningInboxScanEvent);
 defineEvent<PlanningUserJobPayload>(PlanningEventNowEvent);
 defineEvent<PlanningUserJobPayload>(PlanningVerifyDoneEvent);
 
@@ -41,6 +43,7 @@ declare module '@ci/domains/events/registry' {
     [TaskRemovedEvent]: TaskRemovedPayload;
     [PlanningTodoScanEvent]: PlanningUserJobPayload;
     [PlanningTodoProcessEvent]: PlanningUserJobPayload;
+    [PlanningInboxScanEvent]: PlanningUserJobPayload;
     [PlanningEventNowEvent]: PlanningUserJobPayload;
     [PlanningVerifyDoneEvent]: PlanningUserJobPayload;
   }

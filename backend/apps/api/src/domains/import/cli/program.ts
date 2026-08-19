@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { ImportApiClient } from './client';
 import { backfillCommand } from './commands/backfill';
 import { dataSourcesCommand } from './commands/datasources';
+import { doctorCommand } from './commands/doctor';
 import { importCommand } from './commands/import';
 import { inboxCommand } from './commands/inbox';
 import { pushCommand } from './commands/push';
@@ -149,6 +150,16 @@ export function buildProgram(deps: ProgramDeps): Command {
     .action((options) => statsCommand(context(), options));
 
   program
+    .command('doctor')
+    .description('Run the data-quality checks over ci.* and report what is wrong')
+    .option('--list', 'show the checks and what each one detects, without running them')
+    .option('--check <id>', 'run only this check; repeatable', collect, [])
+    .option('--timeout <ms>', 'per-statement cap; a check that exceeds it reports TIMEOUT')
+    .option('--failures-only', 'hide the checks that came back clean')
+    .option('--json', 'machine-readable output')
+    .action((options) => doctorCommand(context(), options));
+
+  program
     .command('backfill')
     .argument('[stages...]', 'legs to run; none means all of them')
     .description('Run the post-import enrichment chain')
@@ -178,6 +189,8 @@ export function buildProgram(deps: ProgramDeps): Command {
       '  ci-import inbox',
       '  ci-import inbox --start --only google_photos --wait',
       '  ci-import runs',
+      '  ci-import doctor',
+      '  ci-import doctor --json --check comms-missing-thread-id',
       '  ci-import backfill --list',
     ].join('\n'),
   );

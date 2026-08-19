@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
 import { type UserServiceContext } from '@ci/common/context';
@@ -7,6 +9,7 @@ import { OllamaService, PROMPT_MODEL } from '@ci/domains/llm/services/OllamaServ
 import { PersonalizationService } from '@ci/domains/personalization';
 import { SearchService } from '@ci/domains/search-next';
 
+import { PlannedBlockService } from './PlannedBlockService';
 import { TaskService } from './TaskService';
 
 const MAX_SURFACED = 12;
@@ -57,6 +60,9 @@ export class TodoScanService {
     private readonly searchService: SearchService,
     private readonly ollamaService: OllamaService,
     private readonly personalizationService: PersonalizationService,
+    private readonly plannedBlockService: PlannedBlockService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(TodoScanService.name);
@@ -122,6 +128,7 @@ export class TodoScanService {
           tallies.proposed += 1;
         } else {
           tallies.created += 1;
+          await this.plannedBlockService.tryPlaceAfterOpen(context, created, confidence);
         }
       }
     }
@@ -139,9 +146,40 @@ export class TodoScanService {
         maxResults: 20,
       });
 
-      return (results ?? [])
-        .map((hit) => `${hit.type}:${hit.id}`)
-        .join('\n');
+      const hits = results ?? [];
+
+      if (hits.length === 0) {
+        return '';
+      }
+
+      const ids = hits.map((hit) => hit.id);
+      const rows = (await this.dataSource.query(
+        `SELECT entity_id::text AS id, entity_type, name,
+                left(coalesce(description, ''), 400) AS snippet
+           FROM ci.entities
+          WHERE entity_id = ANY($1::uuid[])
+            AND owner_user_id = $2::uuid`,
+        [ids, context.userId],
+      )) as Array<{ id: string; entity_type: string; name: string | null; snippet: string | null }>;
+
+      const byId = new Map(rows.map((row) => [row.id, row]));
+
+      return hits
+        .map((hit) => {
+          const row = byId.get(hit.id);
+          const title = row?.name?.trim();
+          const snippet = row?.snippet?.trim();
+
+          if (!title && !snippet) {
+            return '';
+          }
+
+          return [`${row?.entity_type ?? hit.type}: ${title || '(untitled)'}`, snippet]
+            .filter(Boolean)
+            .join('\n');
+        })
+        .filter(Boolean)
+        .join('\n---\n');
     } catch (err) {
       this.logger.warn('Todo scan search failed', {
         error: err instanceof Error ? err.message : String(err),

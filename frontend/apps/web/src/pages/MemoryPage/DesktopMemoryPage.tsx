@@ -4,15 +4,17 @@ import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
 import { Button, Sheet, Tooltip } from '@ci/shadcn';
-import { ChartNetwork, Images, List, Map as MapIcon, type LucideIcon } from '@ci/shadcn/icons';
+import { ChartNetwork, Images, List, Map as MapIcon, Plus, type LucideIcon } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { AddEventModal } from '@/components/modals/AddItemModal';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
 import { excludedEntityTypesFor } from '@/components/SearchBox/useDropdown';
 import { gql } from '@/graphql';
+import { useModalControls } from '@/hooks';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
@@ -71,7 +73,9 @@ const VIEW_TABS: Array<{
 export default function DesktopMemoryPage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
+  const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
+
+  const [{ isOpen: isAddEventOpen }, { open: openAddEvent, close: closeAddEvent }] = useModalControls();
 
   // Document chunks open in their own dialog; every other entity uses the
   // details sheet (EntityDetails has no FileChunkType branch).
@@ -96,7 +100,9 @@ export default function DesktopMemoryPage() {
       return applyViewFilterDefaults(nextParams, readMemoryView(next));
     });
   // Advanced filters render inside the header search panel and stay visible.
-  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events.
+  // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events. The view it
+  // once addressed (`EventsView`, a TimelineView pinned to Event cards) was deleted: nothing had
+  // rendered it since it was written, and this redirect is why. Old links keep landing on List.
   useEffect(() => {
     const view = searchParams.get('view');
     if (!view || view === 'events') {
@@ -302,7 +308,15 @@ export default function DesktopMemoryPage() {
       </Portal.Slot>
 
       <PageContent className="gap-2 p-0">
-        <MemoryHubShell fillHeight>
+        <MemoryHubShell
+          actions={
+            <Button size="sm" onClick={openAddEvent}>
+              <Plus className="h-4 w-4" />
+              New event
+            </Button>
+          }
+          fillHeight
+        >
           <div className="flex min-h-0 flex-1 flex-col gap-2 pb-2">
             <div className="px-2">
               <ExplorerToolbar open />
@@ -330,6 +344,11 @@ export default function DesktopMemoryPage() {
       )}
 
       <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
+
+      {/* The explorer reads a `search` connection whose contents the server
+          composes per query — there is no cache entry a new event can be
+          appended to, so refetch the browse instead. */}
+      <AddEventModal open={isAddEventOpen} onClose={closeAddEvent} onCreated={refetch} />
     </>
   );
 }

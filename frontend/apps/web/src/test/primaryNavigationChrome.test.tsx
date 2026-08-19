@@ -61,7 +61,11 @@ vi.mock('@/common/feature', async () => {
 // rather than provided for.
 vi.mock('@/components/modals/CaptureModal', () => ({ CaptureModal: () => null }));
 vi.mock('@/components/modals/UploadModal', () => ({ UploadModal: () => null }));
-vi.mock('@/components/modals/AddItemModal', () => ({ AddPersonModal: () => null }));
+vi.mock('@/components/modals/AddItemModal', () => ({
+  AddEventModal: () => null,
+  AddPersonModal: () => null,
+  AddPlaceModal: () => null,
+}));
 vi.mock('@/components/modals/AddItemModal/AddConceptModal.tsx', () => ({ AddConceptModal: () => null }));
 vi.mock('@/components/modals/InventoryItemModal', () => ({ InventoryItemModal: () => null }));
 

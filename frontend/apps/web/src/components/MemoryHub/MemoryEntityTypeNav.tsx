@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react';
+import { useState, type ComponentType, type ReactNode } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { Button, DropdownMenu, cn } from '@ci/shadcn';
@@ -432,7 +432,7 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
 }
 
 /** Entity-type toggles for the Memory explorer — grouped What categories. */
-export function MemoryEntityTypeNav() {
+export function MemoryEntityTypeNav({ actions }: { actions?: ReactNode }) {
   const {
     isEntityTypeSelected,
     isGroupSelected,
@@ -503,6 +503,10 @@ export function MemoryEntityTypeNav() {
           <MemoryExplorerFilterControls />
         </div>
       </div>
+
+      {/* Outside the scrolling strip so the create action stays reachable when
+          the What categories overflow. */}
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </nav>
   );
 }

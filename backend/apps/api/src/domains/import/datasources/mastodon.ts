@@ -6,6 +6,7 @@
    disambiguates a Mastodon export from other JSON exports.
 */
 import fs from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -38,10 +39,10 @@ interface Actor {
   outbox?: unknown;
 }
 
-function readJson(fpath: string): unknown {
+async function readJson(fpath: string): Promise<unknown> {
   let raw: string;
   try {
-    raw = fs.readFileSync(fpath, 'utf8');
+    raw = await readFile(fpath, 'utf8');
   } catch {
     return undefined;
   }
@@ -148,19 +149,19 @@ export class MastodonFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (path.basename(root).toLowerCase() !== 'outbox.json') {
         return { confidence: 0 };
       }
 
-      const parsed = readJson(root);
+      const parsed = await readJson(root);
       if (!isOutbox(parsed)) {
         return { confidence: 0 };
       }
@@ -174,20 +175,20 @@ export class MastodonFileImporter implements FileImporter {
       return hasMastodonNamespace(parsed) ? { confidence: 0.95 } : { confidence: 0.5 };
     }
 
-    if (stat.isDirectory()) {
-      const names = (() => {
-        try {
-          return fs.readdirSync(root);
-        } catch {
-          return [];
-        }
-      })();
+    if (st.isDirectory()) {
+      let names: string[];
+      try {
+        names = await readdir(root);
+      } catch {
+        names = [];
+      }
+
       const outboxName = names.find((n) => n.toLowerCase() === 'outbox.json');
       if (!outboxName) {
         return { confidence: 0, dir_threshold: 0.7 };
       }
 
-      const outbox = readJson(path.join(root, outboxName));
+      const outbox = await readJson(path.join(root, outboxName));
       if (!isOutbox(outbox)) {
         return { confidence: 0, dir_threshold: 0.7 };
       }
@@ -196,7 +197,7 @@ export class MastodonFileImporter implements FileImporter {
       // own content is verified as a Mastodon actor pointing back at this
       // outbox — not merely a file with that name.
       const actorName = names.find((n) => n.toLowerCase() === 'actor.json');
-      if (actorName && isMastodonActor(readJson(path.join(root, actorName)), (outbox as Outbox).id)) {
+      if (actorName && isMastodonActor(await readJson(path.join(root, actorName)), (outbox as Outbox).id)) {
         return { confidence: 0.97 };
       }
 

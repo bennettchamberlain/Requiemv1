@@ -1,5 +1,6 @@
 /* Last.fm — scrobble CSV export (scrobbles.csv). */
 import fs from 'node:fs';
+import { open, readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -24,7 +25,7 @@ export class LastFmFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -35,7 +36,7 @@ export class LastFmFileImporter implements FileImporter {
         return { confidence: 0.9 };
       }
 
-      if (path.extname(base) === '.csv' && this.headerMatches(root)) {
+      if (path.extname(base) === '.csv' && (await this.headerMatches(root))) {
         return { confidence: 0.85 };
       }
 
@@ -44,7 +45,7 @@ export class LastFmFileImporter implements FileImporter {
 
     if (stat.isDirectory()) {
       try {
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         if (names.some((n) => /^scrobbles.*\.csv$/i.test(n))) {
           return { confidence: 0.9 };
         }
@@ -54,7 +55,7 @@ export class LastFmFileImporter implements FileImporter {
             continue;
           }
 
-          if (this.headerMatches(path.join(root, name))) {
+          if (await this.headerMatches(path.join(root, name))) {
             return { confidence: 0.85 };
           }
         }
@@ -69,24 +70,19 @@ export class LastFmFileImporter implements FileImporter {
   }
 
   // Read only the first ~4KB to inspect the CSV header row.
-  private headerMatches(fpath: string): boolean {
-    let fd: number | undefined;
+  private async headerMatches(fpath: string): Promise<boolean> {
     try {
-      fd = fs.openSync(fpath, 'r');
-      const buf = Buffer.alloc(4096);
-      const n = fs.readSync(fd, buf, 0, 4096, 0);
+      const fh = await open(fpath, 'r');
+      try {
+        const buf = Buffer.alloc(4096);
+        const { bytesRead } = await fh.read(buf, 0, 4096, 0);
 
-      return headerHasScrobbleCols(buf.toString('utf8', 0, n));
+        return headerHasScrobbleCols(buf.toString('utf8', 0, bytesRead));
+      } finally {
+        await fh.close().catch(() => {});
+      }
     } catch {
       return false;
-    } finally {
-      if (fd !== undefined) {
-        try {
-          fs.closeSync(fd);
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }
 
@@ -123,7 +119,7 @@ export class LastFmFileImporter implements FileImporter {
           }
 
           const fpath = path.join(root, name);
-          if (this.headerMatches(fpath)) {
+          if (await this.headerMatches(fpath)) {
             await this.processFile(fpath, params);
           }
         }

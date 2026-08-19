@@ -1,12 +1,13 @@
 import { type ReactNode, useState } from 'react';
 
-import { useQuery } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
-import { Card, Label } from '@ci/shadcn';
+import { Label } from '@ci/shadcn';
 import { User } from '@ci/shadcn/icons';
 import { useParams, Link } from 'react-router-dom';
 
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
+import { EntityFieldsCard, formatEntityLabel, formatEntityTimestamp } from '@/components/EntityFields';
 import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
 import { CommunicationIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
@@ -21,6 +22,11 @@ const GET_COMMUNICATION = gql(`
       subject
       preview
       content
+
+      # When it was sent, and which way it went. The page used to select
+      # neither, so /communications/:id could not answer "when was this?".
+      time
+      direction
 
       from {
         id
@@ -44,6 +50,18 @@ const GET_COMMUNICATION = gql(`
   }
 `);
 
+// Same write the memory drawer makes (UpdateCommunicationDetail). The page used
+// to mount the edit pencil without one, so it could only ever edit tags.
+const UPDATE_COMMUNICATION_FIELDS = gql(`
+  mutation UpdateCommunicationPageFields($input: UpdateCommunicationInput!) {
+    updateCommunication(input: $input) {
+      id
+      subject
+      content
+    }
+  }
+`);
+
 export function CommunicationPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -52,6 +70,8 @@ export function CommunicationPage() {
       id: GlobalUID.encode('communication', id!),
     },
   });
+
+  const [updateCommunicationFields] = useMutation(UPDATE_COMMUNICATION_FIELDS);
 
   const communication = data?.communication;
 
@@ -91,9 +111,36 @@ export function CommunicationPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="md:col-span-2">
-            <Card className="h-full">
-              <Card.Content className="whitespace-pre-wrap">{communication.content}</Card.Content>
-            </Card>
+            {/* The drawer's field set + metadata rows, so "Open full page" keeps
+                the subject/content editor and finally shows the timestamp. */}
+            <EntityFieldsCard
+              className="h-full"
+              title="Message"
+              resetKey={communication.id}
+              editMode={editMode}
+              onEditModeChange={setEditMode}
+              fields={[
+                { key: 'subject', label: 'Subject', value: communication.subject ?? '' },
+                { key: 'content', label: 'Content', value: communication.content ?? '', multiline: true },
+              ]}
+              metaItems={[
+                { label: 'Type', value: formatEntityLabel(communication.type) },
+                { label: 'Direction', value: formatEntityLabel(communication.direction) },
+                { label: 'When', value: formatEntityTimestamp(communication.time) },
+              ]}
+              onSave={async (values) => {
+                const result = await updateCommunicationFields({
+                  variables: {
+                    input: { id: communication.id, subject: values.subject, content: values.content },
+                  },
+                });
+
+                // updateCommunication resolves to the row itself, or null when the write was rejected.
+                if (!result.data?.updateCommunication) {
+                  throw new Error('Update was rejected');
+                }
+              }}
+            />
           </div>
 
           <EntityTagsDescriptionCard

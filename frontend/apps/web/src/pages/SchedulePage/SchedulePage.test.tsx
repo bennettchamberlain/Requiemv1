@@ -52,8 +52,9 @@ vi.mock('@/components/HorizonGrid', () => ({
       <p>{footer}</p>
     </div>
   ),
-  // SchedulePage mounts this above the week; keep it inert.
-  TodayStoryTimeline: () => null,
+  // SchedulePage mounts this above the week chrome; keep it findable so the
+  // page test can assert document order against the week heading.
+  TodayStoryTimeline: () => <div>today-story</div>,
 }));
 
 vi.mock('@/components/TaskSlate', () => ({
@@ -298,6 +299,17 @@ describe('SchedulePage — week paging', () => {
     expect(screen.getByText('stub-drop')).toBeInTheDocument();
     expect(screen.queryByText(/Connect a calendar/)).not.toBeInTheDocument();
     expect(screen.getByText(/Nothing on the calendar this week/)).toBeInTheDocument();
+  });
+
+  it('sits the week chrome under the today story and above the week grid', () => {
+    renderWithProviders(<SchedulePage />);
+
+    const story = screen.getByText('today-story');
+    const heading = screen.getByRole('heading', { level: 2 });
+    const grid = screen.getByText('stub-drop');
+
+    expect(story.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(heading.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   /**

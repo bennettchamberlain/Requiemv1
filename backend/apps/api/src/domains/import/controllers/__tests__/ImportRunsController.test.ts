@@ -101,7 +101,16 @@ function makeController(
     find: jest.fn((name: string) => (name === 'gmail' ? { name, title: 'Gmail' } : null)),
   };
 
-  return { controller: new ImportRunsController(runs as never, catalog as never), runs, catalog };
+  const users = {
+    findById: jest.fn(async () => ({ id: 'user-1', email: 'tester@example.com' })),
+  };
+
+  return {
+    controller: new ImportRunsController(runs as never, catalog as never, users as never),
+    runs,
+    catalog,
+    users,
+  };
 }
 
 describe('ImportRunsController.start', () => {

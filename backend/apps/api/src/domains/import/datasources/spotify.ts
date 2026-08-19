@@ -2,6 +2,7 @@
    Handles both compact StreamingHistory*.json and extended endsong_*.json formats.
 */
 import fs from 'node:fs';
+import { readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -61,14 +62,14 @@ function spotifyUrl(uri: string | undefined): string | undefined {
   return m ? `https://open.spotify.com/${m[1]}/${m[2]}` : undefined;
 }
 
-function* walkStreamFiles(root: string, depth = 0): Generator<string> {
+async function* walkStreamFiles(root: string, depth = 0): AsyncGenerator<string> {
   if (depth > 4) {
     return;
   }
 
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await readdir(root, { withFileTypes: true });
   } catch {
     return;
   }
@@ -92,7 +93,7 @@ export class SpotifyFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -103,12 +104,12 @@ export class SpotifyFileImporter implements FileImporter {
 
     if (stat.isDirectory()) {
       // Any streaming-history file at any depth → strong match.
-      for (const _ of walkStreamFiles(root)) {
+      for await (const _ of walkStreamFiles(root)) {
         return { confidence: 0.95 };
       }
 
       try {
-        const names = fs.readdirSync(root).map((e) => e.toLowerCase());
+        const names = (await readdir(root)).map((e) => e.toLowerCase());
         if (names.some((n) => n === 'yourlibrary.json' || /^playlist\d+\.json$/.test(n))) {
           return { confidence: 0.75 };
         }
@@ -138,7 +139,7 @@ export class SpotifyFileImporter implements FileImporter {
     if (stat.isFile()) {
       await this.processFile(root, params);
     } else if (stat.isDirectory()) {
-      for (const f of walkStreamFiles(root)) {
+      for await (const f of walkStreamFiles(root)) {
         await this.processFile(f, params);
       }
     }

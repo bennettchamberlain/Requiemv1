@@ -160,8 +160,13 @@ export class ContentResolver {
   }
 
   @Mutation(() => Boolean)
-  async removeContent(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async removeContent(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('content', gid);
 
     return this.contentService.remove(serviceContext, id);
   }

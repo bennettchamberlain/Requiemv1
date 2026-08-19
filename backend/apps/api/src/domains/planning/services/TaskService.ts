@@ -455,6 +455,8 @@ export class TaskService {
       task = hasTaskFields
         ? await this.update(context, change.taskId, taskPatch as UpdateTaskDto)
         : await this.findById(context, change.taskId);
+    } else {
+      task = await this.findById(context, change.taskId);
     }
 
     change.status = 'accepted';

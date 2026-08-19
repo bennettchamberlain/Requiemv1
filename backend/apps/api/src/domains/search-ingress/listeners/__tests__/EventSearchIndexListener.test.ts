@@ -302,6 +302,20 @@ describe('EventSearchIndexListener.indexEvent / updateEvent', () => {
     expect(embeddingService.upsert).not.toHaveBeenCalled();
   });
 
+  it('skips planned_block so auto-plan does not feed the search/embed pipeline', async () => {
+    const { listener, embeddingService, vectorService } = makeFullListener({
+      id: 'event-1',
+      userId: 'user-1',
+      title: 'Write the brief',
+      eventType: 'planned_block',
+    });
+
+    await listener.indexEvent({ eventId: 'event-1' } as never);
+
+    expect(embeddingService.upsert).not.toHaveBeenCalled();
+    expect(vectorService.upsert).not.toHaveBeenCalled();
+  });
+
   it('embeds and vectorizes a substantive event, scoped to its owner', async () => {
     const { listener, embeddingService, vectorService } = makeFullListener({
       id: 'event-1',
