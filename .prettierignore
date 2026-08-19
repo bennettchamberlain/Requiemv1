@@ -2,6 +2,10 @@
 node_modules
 .pnp.*
 .claude/worktrees/
+# Sibling worktrees kept outside .claude/ (1.6GB, ~114 ts/tsx here today).
+# Only skipped locally today via a personal global gitignore, which CI does
+# not have — and Prettier never reads .gitignore anyway.
+.worktrees/
 .venv
 **/dist/**
 **/dev-dist/**

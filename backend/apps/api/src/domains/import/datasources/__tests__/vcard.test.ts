@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'path';
 
+import { entityTypeFor } from '../../push/entities';
+import { resolveEntityType } from '../../staging/identity';
 import type { EntityAttribute, ImportParams } from '../timeline';
 import {
   VCardFileImporter,
@@ -11,9 +13,6 @@ import {
   unfoldContentLines,
   type ContentLine,
 } from '../vcard';
-
-import { entityTypeFor } from '../../push/entities';
-import { resolveEntityType } from '../../staging/identity';
 
 import type { EmittedGraph } from './support/emitted';
 
