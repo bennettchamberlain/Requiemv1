@@ -345,9 +345,7 @@ describe('ImportActivityCard', () => {
 
     // Built from the server's numbers, not a hardcoded "one at a time" — which
     // stopped being true the day media went to two slots.
-    expect(
-      screen.getByText(/runs 1 unpack, 1 read, 2 store files and 1 save at a time/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/runs 1 unpack, 1 read, 2 store files and 1 save at a time/)).toBeInTheDocument();
     expect(screen.getByText(/longest wait 51m 0s/)).toBeInTheDocument();
   });
 

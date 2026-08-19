@@ -184,7 +184,7 @@ describe('buildActiveSnapshot', () => {
     expect(snapshot.runs[0].stages[3].elapsedMs).toBeNull();
   });
 
-  it('ranks each KIND\'s ready queue by when its stages became runnable', () => {
+  it("ranks each KIND's ready queue by when its stages became runnable", () => {
     // Three runs whose parse finished at 01:04, 01:05 and 01:13 — the order
     // their slots will take them in. One queue per kind, so the media stage is
     // first among media and the two pushes are first and second among pushes:
@@ -435,6 +435,28 @@ describe('classifyStages', () => {
     ).map((entry) => entry.state);
 
     expect(states).toEqual(['done', 'done', 'waiting']);
+  });
+
+  it('never calls a stage of a FINISHED run "waiting" — nothing will ever run it', () => {
+    // Seen on screen: a failed run whose remaining `queued` row rendered as
+    // "Next in the save queue". When a stage fails the run is finished without
+    // its successor being enqueued, so that row is abandoned, not queued — and
+    // counting it inflates the backlog with a job that does not exist.
+    const states = classifyStages(
+      {
+        startedAt: new Date('2026-08-19T00:18:17Z'),
+        createdAt: new Date('2026-08-19T00:17:59Z'),
+        status: 'failed',
+        finishedAt: new Date('2026-08-19T00:22:00Z'),
+      },
+      [
+        stage({ seq: 0, status: 'completed' }),
+        stage({ seq: 1, status: 'failed', error: 'ENOSPC' }),
+        stage({ seq: 2, status: 'queued', startedAt: null, finishedAt: null }),
+      ],
+    ).map((entry) => entry.state);
+
+    expect(states).toEqual(['done', 'done', 'blocked']);
   });
 
   it("dates a first stage's wait from the run itself, since nothing precedes it", () => {

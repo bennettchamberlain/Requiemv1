@@ -193,10 +193,10 @@ export function ImportActivityCard({
       {/* The aggregate the owner asked for, in the vocabulary that is true:
           RUNS are what finish, STAGES are what queue. Saying "12 running"
           because twelve runs have status `running` would be the most misleading
-          number on the page — with one execution slot, exactly one of them is
-          doing anything. */}
+          number on the page — the appliance has five stage slots in total, so
+          at most five of those twelve are doing anything. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <Count value={queue.running} label="stage running" />
+        <Count value={queue.running} label={`${queue.running === 1 ? 'stage' : 'stages'} running`} />
         <Count value={queue.waiting} label="waiting for the importer" />
         {finishedRuns > 0 ? <Count value={finishedRuns} label="done" /> : null}
         {batch.failed > 0 ? (

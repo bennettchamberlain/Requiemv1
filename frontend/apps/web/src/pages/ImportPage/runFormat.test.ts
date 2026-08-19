@@ -148,7 +148,7 @@ describe('queueStateLabel', () => {
 });
 
 describe('describeConcurrency', () => {
-  it('says the slots out loud, from the server\'s own numbers', () => {
+  it("says the slots out loud, from the server's own numbers", () => {
     // The sentence that turns a twelve-deep queue from a malfunction into
     // arithmetic. Hardcoding "one stage at a time" stopped being true the day
     // media went to two slots — which is exactly why this reads the map.

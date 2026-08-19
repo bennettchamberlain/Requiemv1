@@ -251,10 +251,7 @@ export function idleSnapshot(now: Date = new Date()): ActiveImportSnapshot {
 }
 
 /** Every kind's slots added up — what the appliance can have in flight at once. */
-const TOTAL_STAGE_SLOTS = Object.values(IMPORT_STAGE_CONCURRENCY).reduce(
-  (sum, slots) => sum + slots,
-  0,
-);
+const TOTAL_STAGE_SLOTS = Object.values(IMPORT_STAGE_CONCURRENCY).reduce((sum, slots) => sum + slots, 0);
 
 /**
  * Assemble the snapshot from raw rows. Pure — every clock reading comes from
@@ -434,17 +431,30 @@ export function buildActiveSnapshot(input: ActiveSnapshotInput): ActiveImportSna
  * finished; for a run's very first stage it is the run's own start. That is the
  * instant `enqueueStage` was called, so it is the correct key to sort the queue
  * by — and it is what turns "queued" into "queued for 51 minutes, third in line".
+ *
+ * One exception, and it is not cosmetic: a stage of a FINISHED run is never
+ * waiting, however terminal its predecessors are. A failed stage ends the run
+ * without enqueueing its successor, so the successor's `queued` row survives
+ * forever — and reporting it as "next in the save queue" both promises work
+ * that will never happen and pads the backlog with jobs that do not exist.
  */
 export function classifyStages(
-  run: Pick<ImportRun, 'startedAt' | 'createdAt'>,
+  run: Pick<ImportRun, 'startedAt' | 'createdAt'> & Partial<Pick<ImportRun, 'status' | 'finishedAt'>>,
   stagesInSeqOrder: readonly ImportStage[],
 ): ClassifiedStage[] {
   let allEarlierTerminal = true;
   /** Latest finish among the earlier stages — when this one became runnable. */
   let readyAt: Date | null = run.startedAt ?? run.createdAt ?? null;
+  // A run that is over will never enqueue anything again: when a stage fails,
+  // `advanceRun` finishes the run instead of enqueueing its successor, and the
+  // successor's `queued` row is left behind for good. Calling that row "next in
+  // the save queue" — which it did, on a failed run, on screen — promises work
+  // that will never happen and inflates the backlog counts with stages nothing
+  // will ever pick up.
+  const abandoned = run.finishedAt != null || (run.status != null && TERMINAL_RUN_STATUSES.has(run.status));
 
   return stagesInSeqOrder.map((stage) => {
-    const state = classifyStage(stage.status, allEarlierTerminal);
+    const state = classifyStage(stage.status, allEarlierTerminal && !abandoned);
     const entry = { stage, state, readyAt: state === 'waiting' ? readyAt : null };
 
     if (!TERMINAL_STAGE_STATUSES.has(stage.status)) {
@@ -457,7 +467,7 @@ export function classifyStages(
   });
 }
 
-function classifyStage(status: string, allEarlierTerminal: boolean): StageQueueState {
+function classifyStage(status: string, runnable: boolean): StageQueueState {
   if (status === 'running') {
     return 'running';
   }
@@ -466,7 +476,7 @@ function classifyStage(status: string, allEarlierTerminal: boolean): StageQueueS
     return 'done';
   }
 
-  return allEarlierTerminal ? 'waiting' : 'blocked';
+  return runnable ? 'waiting' : 'blocked';
 }
 
 function stageElapsed(
