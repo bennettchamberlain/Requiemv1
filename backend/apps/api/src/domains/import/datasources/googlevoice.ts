@@ -51,7 +51,22 @@ interface GVEntity {
  * `from_entity_id`.
  */
 function participantType(participant: GVEntity): 'contact' | 'short_code' {
-  return isShortCode(participant.phone) ? 'short_code' : 'contact';
+  // The NAME is checked as well as the phone, because a Google Voice export
+  // frequently carries the short code ONLY as the counterpart name: the
+  // filename prefix ("262966 - Text - 2019-...html") is what becomes the
+  // contact name, and such a file has no phone to test. Reading the phone alone
+  // typed those as `contact`, and a contact becomes a Person — a fake human
+  // named with a marketing short code.
+  //
+  // Measured on a fresh full-corpus import: 141 short-code participants were
+  // typed correctly and 4 leaked through as `contact` (1311, 14242, ...) —
+  // small per import, but they accumulate and each one is a person who does not
+  // exist.
+  //
+  // Safe to pass a name to: `isShortCode` requires PHONE_SHAPED, so a value
+  // carrying no digits is a name and returns false. 'Adrian Kelly' cannot match;
+  // '1311' can.
+  return isShortCode(participant.phone) || isShortCode(participant.name) ? 'short_code' : 'contact';
 }
 
 /** Prefix marking a Google Voice thread id that names a FILE, not a contact. */
