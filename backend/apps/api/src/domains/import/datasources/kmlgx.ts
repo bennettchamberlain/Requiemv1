@@ -1,5 +1,6 @@
 /* KML (Keyhole) with Google gx:Track extension datasource (TypeScript port) */
 import fs from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseStringPromise, processors } from 'xml2js';
@@ -53,9 +54,16 @@ export class KMLGXFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    if (fs.existsSync(full) && fs.statSync(full).isFile() && path.extname(full).toLowerCase() === '.kml') {
+    let isFile = false;
+    try {
+      isFile = (await stat(full)).isFile();
+    } catch {
+      /* missing or unreadable: no match */
+    }
+
+    if (isFile && path.extname(full).toLowerCase() === '.kml') {
       try {
-        const xml = await fs.promises.readFile(full, 'utf8');
+        const xml = await readFile(full, 'utf8');
         const doc: KMLDocument = await parseStringPromise(xml, XML2JS_OPTS);
         if (hasGxNS(doc)) {
           return { confidence: 1.0 };

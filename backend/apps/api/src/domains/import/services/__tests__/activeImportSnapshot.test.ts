@@ -184,9 +184,13 @@ describe('buildActiveSnapshot', () => {
     expect(snapshot.runs[0].stages[3].elapsedMs).toBeNull();
   });
 
-  it('ranks the ready queue by when each stage became runnable', () => {
-    // Three runs whose parse finished at 01:04, 01:05 and 01:13 — the order the
-    // single slot will take them in.
+  it('ranks each KIND\'s ready queue by when its stages became runnable', () => {
+    // Three runs whose parse finished at 01:04, 01:05 and 01:13 — the order
+    // their slots will take them in. One queue per kind, so the media stage is
+    // first among media and the two pushes are first and second among pushes:
+    // ranking them in one line would tell the media stage it is third when it
+    // is next, which is the sort of confident wrong number this endpoint is
+    // meant to end.
     const runs = [
       run({ id: 'run-takeout', createdAt: new Date('2026-08-19T00:17:59Z') }),
       run({ id: 'run-instagram', createdAt: new Date('2026-08-19T00:18:00Z') }),
@@ -237,14 +241,17 @@ describe('buildActiveSnapshot', () => {
 
     expect(positions).toEqual([
       ['stage-media', 1],
-      ['insta-push', 2],
-      ['spotify-push', 3],
+      ['insta-push', 1],
+      ['spotify-push', 2],
     ]);
 
-    // The backlog, and the number that says whether it is normal or wrong.
+    // The backlog, and the numbers that say whether it is normal or wrong.
     expect(snapshot.queue.waiting).toBe(3);
     expect(snapshot.queue.blocked).toBe(1);
-    expect(snapshot.queue.concurrency).toBe(1);
+    // Per kind, from the appliance's own constants — `media` has two slots and
+    // the rest one, and a surface claiming "one at a time" would be wrong.
+    expect(snapshot.queue.concurrency).toEqual({ unpack: 1, parse: 1, media: 2, push: 1 });
+    expect(snapshot.queue.slots).toBe(5);
     expect(snapshot.queue.longestWaitMs).toBe(19 * 60_000 + 54_000);
   });
 
@@ -393,7 +400,7 @@ describe('buildActiveSnapshot', () => {
     expect(snapshot.active).toBe(false);
     expect(snapshot.runs).toEqual([]);
     expect(snapshot.batch.total).toBe(0);
-    expect(snapshot.queue.concurrency).toBe(1);
+    expect(snapshot.queue.concurrency).toEqual({ unpack: 1, parse: 1, media: 2, push: 1 });
   });
 });
 

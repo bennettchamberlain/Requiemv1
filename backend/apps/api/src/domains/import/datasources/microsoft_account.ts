@@ -14,6 +14,7 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { readdir, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -140,7 +141,7 @@ export class MicrosoftAccountFileImporter implements FileImporter {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      stat = await fsStat(root);
     } catch {
       return { confidence: 0 };
     }
@@ -151,7 +152,7 @@ export class MicrosoftAccountFileImporter implements FileImporter {
 
     if (stat.isDirectory()) {
       try {
-        const names = fs.readdirSync(root).map((n) => n.toLowerCase());
+        const names = (await readdir(root)).map((n) => n.toLowerCase());
         if (ANCHORS.some((a) => names.includes(a))) {
           return { confidence: 0.85 };
         }

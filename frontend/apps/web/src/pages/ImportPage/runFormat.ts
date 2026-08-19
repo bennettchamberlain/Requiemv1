@@ -240,16 +240,21 @@ export function formatElapsed(ms: number | null | undefined): string | null {
  */
 export function queueStateLabel(
   queueState: string,
-  options: { position?: number | null; concurrency?: number } = {},
+  options: { position?: number | null; kind?: string } = {},
 ): string | null {
   if (queueState === 'waiting') {
-    const { position } = options;
+    const { position, kind } = options;
+    // Named by KIND, because the appliance queues per kind: a stage can be
+    // eighth among everything waiting and still be next to run. "the read
+    // queue" is also the answer to "waiting for what?", which "the import
+    // queue" never was.
+    const queue = kind == null ? 'import queue' : `${stageLabel(kind).toLowerCase()} queue`;
 
     if (position == null) {
       return 'Waiting for the importer';
     }
 
-    return position === 1 ? 'Next in the import queue' : `Waiting — ${ordinal(position)} in the import queue`;
+    return position === 1 ? `Next in the ${queue}` : `Waiting — ${ordinal(position)} in the ${queue}`;
   }
 
   if (queueState === 'blocked') {
@@ -257,6 +262,30 @@ export function queueStateLabel(
   }
 
   return null;
+}
+
+/**
+ * "1 unpack, 1 read, 2 store files and 1 save" — the slots, said out loud.
+ *
+ * The sentence this feeds is what turns a queue twelve deep from a malfunction
+ * into arithmetic. It is built from the server's own numbers rather than a
+ * hardcoded "one at a time", which stopped being true the day media went to
+ * two slots — a UI carrying its own copy of that would still be saying it.
+ */
+export function describeConcurrency(concurrency: Readonly<Record<string, number>>): string {
+  const parts = Object.entries(concurrency)
+    .filter(([, slots]) => slots > 0)
+    .map(([kind, slots]) => `${slots} ${stageLabel(kind).toLowerCase()}`);
+
+  if (parts.length === 0) {
+    return 'one import stage';
+  }
+
+  if (parts.length === 1) {
+    return parts[0];
+  }
+
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
 /** 1 → "1st", 2 → "2nd", 13 → "13th". */

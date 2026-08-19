@@ -5,7 +5,11 @@ import { serves } from '@ci/common/roles';
 import { Cron } from '@ci/common/schedule';
 import { OnEvent } from '@ci/domains/events';
 
-import { IMPORT_QUEUE, IMPORT_STAGE_CONCURRENCY } from '../constants';
+import {
+  IMPORT_QUEUE,
+  IMPORT_STAGE_CONCURRENCY,
+  IMPORT_STAGE_QUEUE_BY_KIND,
+} from '../constants';
 import { ImportStageEvent } from '../events';
 import { ImportRunService } from '../services/ImportRunService';
 import { ImportScratchService } from '../services/ImportScratchService';
@@ -113,25 +117,59 @@ export class ImportStageListener implements OnApplicationBootstrap {
     }
   }
 
-  // ONE stage job at a time, appliance-wide. Stage jobs run in the API's own
-  // process, and a parse is long stretches of parser work plus a firehose of
-  // staged-row writes — six abreast (the global per-queue default) starves
-  // the event loop and the connection pool until Skip on an onboarding page
-  // hangs. Serial costs nothing real: the work is disk-bound on one volume,
-  // and a run's stages already chain one at a time.
+  // One queue PER STAGE KIND, each with its own slot count (see
+  // IMPORT_STAGE_CONCURRENCY for why each kind has the number it has), so the
+  // pipeline overlaps across runs: a 350GB unpack holding its slot for an
+  // hour no longer head-of-line-blocks twenty-one small runs' parses and
+  // pushes. A run's own stages still execute strictly in order — each stage
+  // enqueues its successor on completion.
+  //
+  // Within a kind the discipline is unchanged: parse remains ONE at a time,
+  // appliance-wide, because a parse is long stretches of synchronous parser
+  // work plus a firehose of staged-row writes — six abreast (the global
+  // per-queue default) starved the event loop and the connection pool until
+  // Skip on an onboarding page hung.
   // `role: 'worker'`: stage jobs run in the headless worker process (when a
   // deployment splits roles), so a parser's synchronous stretches cannot
   // stutter the web process serving buttons.
-  //
-  // The literal `1` moved to IMPORT_STAGE_CONCURRENCY because the progress UI
-  // now has to state it: with thirteen runs against one slot, "queued for 51
-  // minutes" is the NORMAL state of a batch import rather than a stall, and
-  // only the concurrency explains why. Both read the same constant so the
-  // claim on screen cannot go stale behind a change made here.
   @OnEvent(ImportStageEvent, {
-    queue: IMPORT_QUEUE,
-    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY },
+    queue: IMPORT_STAGE_QUEUE_BY_KIND.unpack,
+    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.unpack },
   })
+  async handleUnpackStage(payload: unknown): Promise<void> {
+    await this.runStage(payload);
+  }
+
+  @OnEvent(ImportStageEvent, {
+    queue: IMPORT_STAGE_QUEUE_BY_KIND.parse,
+    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.parse },
+  })
+  async handleParseStage(payload: unknown): Promise<void> {
+    await this.runStage(payload);
+  }
+
+  @OnEvent(ImportStageEvent, {
+    queue: IMPORT_STAGE_QUEUE_BY_KIND.media,
+    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.media },
+  })
+  async handleMediaStage(payload: unknown): Promise<void> {
+    await this.runStage(payload);
+  }
+
+  @OnEvent(ImportStageEvent, {
+    queue: IMPORT_STAGE_QUEUE_BY_KIND.push,
+    queueOptions: { role: 'worker', localConcurrency: IMPORT_STAGE_CONCURRENCY.push },
+  })
+  async handlePushStage(payload: unknown): Promise<void> {
+    await this.runStage(payload);
+  }
+
+  // The pre-split shared queue, kept as a DRAIN: jobs are durable, and a
+  // restart across this change must still consume whatever the previous
+  // process left queued under the old name. New enqueues never target it
+  // (except the deleted-stage fallback in enqueueStage); once a deployment
+  // has drained it this handler is removable.
+  @OnEvent(ImportStageEvent, { queue: IMPORT_QUEUE, queueOptions: { role: 'worker', localConcurrency: 1 } })
   async handleStage(payload: unknown): Promise<void> {
     await this.runStage(payload);
   }

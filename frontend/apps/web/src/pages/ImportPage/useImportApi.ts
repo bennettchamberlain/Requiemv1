@@ -153,8 +153,14 @@ export interface ActiveImportSnapshot {
     readonly elapsedMs: number | null;
   };
   readonly queue: {
-    /** Stage jobs this appliance runs at once. One, today — which is why queues get long. */
-    readonly concurrency: number;
+    /**
+     * Slots per stage KIND — the appliance runs one queue per kind, so a parse
+     * waits behind other parses only. One each today except `media`, which
+     * takes two; that asymmetry is why this is a map rather than a number.
+     */
+    readonly concurrency: Readonly<Record<string, number>>;
+    /** Every kind's slots added up. What can be in flight across the batch. */
+    readonly slots: number;
     readonly running: number;
     readonly waiting: number;
     readonly blocked: number;
@@ -219,6 +225,8 @@ export interface InboxUnit {
   readonly sizeBytes: number;
   readonly fileCount: number;
   readonly recognized: readonly { dataSource: string; title: string; confidence: number }[];
+  /** Titles the unit's folder declares — the chips' fallback when recognition sees nothing (a zip). */
+  readonly declared: readonly string[];
   /** An unfinished run of THIS user's already consuming the unit, if any. */
   readonly activeRunId: string | null;
   /**
@@ -236,6 +244,7 @@ export interface InboxScan {
   readonly units: readonly InboxUnit[];
   readonly skippedSymlinks: number;
   readonly truncated: boolean;
+  readonly recognitionPartial: boolean;
 }
 
 export interface InboxUnitResult {

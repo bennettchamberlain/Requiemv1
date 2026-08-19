@@ -158,7 +158,9 @@ function snapshot(overrides: Partial<ActiveImportSnapshot> = {}): ActiveImportSn
       elapsedMs: 66 * 60_000,
     },
     queue: {
-      concurrency: 1,
+      // Per kind, as the appliance runs them: media has two slots, the rest one.
+      concurrency: { unpack: 1, parse: 1, media: 2, push: 1 },
+      slots: 5,
       running: 1,
       waiting: 12,
       blocked: 12,
@@ -323,7 +325,9 @@ describe('ImportActivityCard', () => {
 
     // The stage in the queue is what the compact view keeps: it is the one with
     // a clock running, and the one that looks like a stall until it says so.
-    expect(screen.getByText('Next in the import queue')).toBeInTheDocument();
+    // Named by kind, because that is the queue it is actually in: this is the
+    // media stage, so it waits behind other media stages and nothing else.
+    expect(screen.getByText('Next in the store files queue')).toBeInTheDocument();
     // And the wait is dated, which is what makes it legible as normal.
     expect(screen.getByText('51m 0s')).toBeInTheDocument();
 
@@ -332,14 +336,18 @@ describe('ImportActivityCard', () => {
     // Both are `status: 'queued'` in the database. One has been enqueued for 51
     // minutes behind a single execution slot; the other is not queued at all —
     // and conflating them is what made a normal batch import look broken.
-    expect(screen.getByText('Next in the import queue')).toBeInTheDocument();
+    expect(screen.getByText('Next in the store files queue')).toBeInTheDocument();
     expect(screen.getByText('Not started yet')).toBeInTheDocument();
   });
 
   it('states the concurrency, which is what makes a long queue read as normal', () => {
     render(<ImportActivityCard snapshot={snapshot()} />);
 
-    expect(screen.getByText(/runs 1 import stage at a time/)).toBeInTheDocument();
+    // Built from the server's numbers, not a hardcoded "one at a time" — which
+    // stopped being true the day media went to two slots.
+    expect(
+      screen.getByText(/runs 1 unpack, 1 read, 2 store files and 1 save at a time/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/longest wait 51m 0s/)).toBeInTheDocument();
   });
 

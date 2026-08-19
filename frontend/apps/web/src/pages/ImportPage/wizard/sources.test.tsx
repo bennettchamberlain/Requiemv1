@@ -25,7 +25,7 @@ import {
  *  - the groupings are internally coherent, so a section can always label and
  *    glyph itself;
  *  - the pure derivations behind the picker and the export sequence do what
- *    their comments say (bundle collapses members, not-ready sorts last,
+ *    their comments say (bundle collapses members, ready-then-A→Z ordering,
  *    unknown ecosystems still surface).
  */
 
@@ -117,12 +117,42 @@ describe('pickableSections', () => {
     expect(social?.items.map((item) => item.key)).toEqual(['b:meta', 'whatsapp']);
   });
 
-  it('sorts not-ready services last and marks them', () => {
-    const sections = pickableSections(catalog);
+  it('sorts ready importers A→Z, then coming-soon ones A→Z after them', () => {
+    const withPandora = [
+      ...catalog,
+      source({ id: 'pandora', title: 'Pandora', ecosystem: 'music', importerReady: false }),
+      source({ id: 'last_fm', title: 'Last.fm', ecosystem: 'music' }),
+    ];
+    const sections = pickableSections(withPandora);
     const music = sections.find((section) => section.key === 'music');
 
-    expect(music?.items.map((item) => item.key)).toEqual(['spotify', 'deezer']);
-    expect(music?.items[1].ready).toBe(false);
+    // Alphabetical is predictable to scan, but a tile that can import today
+    // still outranks a "coming soon" one: Last.fm → Spotify, then Deezer →
+    // Pandora.
+    expect(music?.items.map((item) => item.key)).toEqual(['last_fm', 'spotify', 'deezer', 'pandora']);
+    expect(music?.items.map((item) => item.ready)).toEqual([true, true, false, false]);
+  });
+
+  it('names the bundle\'s members on its tile', () => {
+    const sections = pickableSections(catalog);
+    const google = sections.find((section) => section.key === 'google');
+
+    // The tile must say what the one download stands for, by display name —
+    // someone scanning for "Gmail" finds it under the Google brand.
+    expect(google?.items[0].memberNames).toEqual(['Gmail', 'Google Photos']);
+  });
+
+  it('shows a STANDALONE member as its own button, still covered by the bundle', () => {
+    const withInstagram = [...catalog, source({ id: 'instagram', title: 'Instagram', ecosystem: 'meta' })];
+    const sections = pickableSections(withInstagram);
+    const social = sections.find((section) => section.key === 'social');
+    const meta = social?.items.find((item) => item.key === 'b:meta');
+
+    // Instagram is scannable by its own name AND stays a Meta member, so the
+    // bundle keeps declaring (and crediting) it. Alphabetical, like the rest.
+    expect(social?.items.map((item) => item.key)).toEqual(['instagram', 'b:meta', 'whatsapp']);
+    expect(meta?.importers).toContain('instagram');
+    expect(meta?.memberNames).toContain('Instagram');
   });
 
   it('gives an ecosystem no section claims its own group', () => {
@@ -262,5 +292,21 @@ describe('exportEntries', () => {
 
     expect(entries).toHaveLength(1);
     expect(entries[0].kind).toBe('bundle');
+  });
+
+  it('a STANDALONE member picked on its own gets its own card, declaring itself', () => {
+    const withInstagram = [...catalog, source({ id: 'instagram', ecosystem: 'meta' })];
+    const entries = exportEntries(withInstagram, new Set(['instagram']));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: 'service', key: 'instagram', importers: ['instagram'] });
+  });
+
+  it('the bundle still declares a standalone member picked through the bundle', () => {
+    const withInstagram = [...catalog, source({ id: 'instagram', ecosystem: 'meta' })];
+    const entries = exportEntries(withInstagram, new Set(['b:meta']));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].importers).toEqual(expect.arrayContaining(['facebook', 'instagram']));
   });
 });

@@ -12,6 +12,7 @@ import {
 
 import { Context, type RequestContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { UserService } from '@ci/domains/user';
 
 import { IMPORT_STAGE_KINDS, type ImportStageKindName } from '../constants';
 import { recognizePathWithinRoots, type PathRecognition } from '../datasources/recognizePath';
@@ -153,6 +154,7 @@ export class ImportRunsController {
   constructor(
     private readonly runs: ImportRunService,
     private readonly catalog: DataSourceCatalogService,
+    private readonly users: UserService,
   ) {}
 
   /**
@@ -202,12 +204,19 @@ export class ImportRunsController {
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('recognize')
-  async recognize(@Body() body: RecognizeBody): Promise<PathRecognition> {
+  async recognize(
+    @Context() context: RequestContext,
+    @Body() body: RecognizeBody,
+  ): Promise<PathRecognition> {
     if (!body?.path) {
       throw new BadRequestException('path is required');
     }
 
-    return recognizePathWithinRoots(body.path);
+    // The caller's email scopes which inbox subtree they may read — their own.
+    const userId = requireUserId(context);
+    const user = await this.users.findById({ userId }, userId);
+
+    return recognizePathWithinRoots(body.path, user?.email ?? null);
   }
 
   /** Start importing a staged upload. */

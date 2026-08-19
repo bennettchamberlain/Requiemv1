@@ -28,11 +28,19 @@ function entity(id: string, name: string): PersonEntity {
 }
 
 function makeService(
-  groupRows: Array<{ kind: string; val: string; entity_ids: string[] }>,
+  groupRows: Array<{ kind: string; val: string; entity_ids: string[]; n?: number }>,
   entities: PersonEntity[],
   blocked: Set<string> = new Set(),
 ) {
-  const query = jest.fn(async () => groupRows);
+  // The service reads `n` (group size before truncation) and `total` (groups
+  // matching the filter, from a window function) off every row.
+  const rows = groupRows.map((row) => ({
+    ...row,
+    n: row.n ?? row.entity_ids.length,
+    total: groupRows.length,
+  }));
+  // Typed params so a test can assert on the bind values the service sent.
+  const query = jest.fn<Promise<typeof rows>, [string, unknown[]]>(async () => rows);
 
   const qb: Record<string, unknown> = {};
   qb.where = jest.fn(() => qb);
@@ -65,7 +73,7 @@ describe('PersonDuplicateService', () => {
       [entity(PERSON_A, 'Dana'), entity(PERSON_B, 'Dana Q')],
     );
 
-    const groups = await service.findDuplicateGroups(CONTEXT);
+    const { groups } = await service.findDuplicateGroups(CONTEXT);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].reason).toBe('email');
@@ -83,7 +91,7 @@ describe('PersonDuplicateService', () => {
       [entity(PERSON_A, 'Dana'), entity(PERSON_B, 'Dana Q'), entity(PERSON_C, 'Sam')],
     );
 
-    const groups = await service.findDuplicateGroups(CONTEXT);
+    const { groups } = await service.findDuplicateGroups(CONTEXT);
 
     expect(groups.map((group) => `${group.reason}:${group.value}`)).toEqual(['email:dana@x.com', 'name:sam']);
   });
@@ -94,7 +102,7 @@ describe('PersonDuplicateService', () => {
       [entity(PERSON_A, 'Dana')],
     );
 
-    const groups = await service.findDuplicateGroups(CONTEXT);
+    const { groups } = await service.findDuplicateGroups(CONTEXT);
 
     expect(groups).toHaveLength(0);
   });
@@ -108,7 +116,7 @@ describe('PersonDuplicateService', () => {
       new Set([pairKey(PERSON_A, PERSON_B)]),
     );
 
-    expect(await service.findDuplicateGroups(CONTEXT)).toHaveLength(0);
+    expect((await service.findDuplicateGroups(CONTEXT)).groups).toHaveLength(0);
   });
 
   it('keeps the part of a larger group that was never rejected', async () => {
@@ -121,7 +129,7 @@ describe('PersonDuplicateService', () => {
       new Set([pairKey(PERSON_A, PERSON_B)]),
     );
 
-    const groups = await service.findDuplicateGroups(CONTEXT);
+    const { groups } = await service.findDuplicateGroups(CONTEXT);
 
     expect(groups).toHaveLength(1);
     expect(groups[0].people.map((person) => person.id)).toEqual([PERSON_A, PERSON_C]);
@@ -130,9 +138,48 @@ describe('PersonDuplicateService', () => {
   it('returns no groups without querying entities when SQL finds none', async () => {
     const { service } = makeService([], []);
 
-    const groups = await service.findDuplicateGroups(CONTEXT);
+    const { groups } = await service.findDuplicateGroups(CONTEXT);
 
     expect(groups).toEqual([]);
+  });
+
+  it('reports the untruncated group size so the UI can disclose the cap', async () => {
+    // The 899-strong "Missed call from" group used to be dropped entirely; it is
+    // now returned truncated, and `totalPeople` is what makes that honest.
+    const { service } = makeService(
+      [{ kind: 'name', val: 'missed call from', entity_ids: [PERSON_A, PERSON_B], n: 899 }],
+      [entity(PERSON_A, 'Missed call from'), entity(PERSON_B, 'Missed call from')],
+    );
+
+    const { groups, totalCount } = await service.findDuplicateGroups(CONTEXT);
+
+    expect(groups[0].totalPeople).toBe(899);
+    expect(groups[0].people).toHaveLength(2);
+    expect(totalCount).toBe(1);
+  });
+
+  it('pages: asks for one row past the limit and reports hasMore without returning it', async () => {
+    const { service, query } = makeService(
+      [
+        { kind: 'email', val: 'a@x.com', entity_ids: [PERSON_A, PERSON_B] },
+        { kind: 'email', val: 'b@x.com', entity_ids: [PERSON_B, PERSON_C] },
+      ],
+      [entity(PERSON_A, 'A'), entity(PERSON_B, 'B'), entity(PERSON_C, 'C')],
+    );
+
+    const { groups, hasMore } = await service.findDuplicateGroups(CONTEXT, { limit: 1, offset: 10 });
+
+    expect(query.mock.calls[0]?.[1]).toEqual([USER, 2, 6, null, 10]);
+    expect(groups).toHaveLength(1);
+    expect(hasMore).toBe(true);
+  });
+
+  it('passes a reason filter through to SQL and rejects nothing when absent', async () => {
+    const { service, query } = makeService([], []);
+
+    await service.findDuplicateGroups(CONTEXT, { reasons: ['name', 'name'] });
+
+    expect(query.mock.calls[0]?.[1]?.[3]).toEqual(['name']);
   });
 
   it('surfaces self-containing groups before other duplicate groups', async () => {
@@ -150,7 +197,7 @@ describe('PersonDuplicateService', () => {
       [self, other, unrelatedA, unrelatedB],
     );
 
-    const groups = await service.findDuplicateGroups(CONTEXT);
+    const { groups } = await service.findDuplicateGroups(CONTEXT);
 
     expect(groups[0].people.some((person) => person.isSelf)).toBe(true);
     expect(groups[0].reason).toBe('email');

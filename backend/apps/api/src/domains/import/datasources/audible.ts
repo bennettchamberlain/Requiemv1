@@ -28,6 +28,7 @@
    SearchData files (browse noise, not listening). */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -57,24 +58,18 @@ function headerMatches(text: string): boolean {
   return /event\s*duration\s*milliseconds/i.test(header) && /product\s*name/i.test(header);
 }
 
-function sniffHeader(fpath: string): boolean {
-  let fd: number | undefined;
+async function sniffHeader(fpath: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    fd = fs.openSync(fpath, 'r');
+    handle = await open(fpath, 'r');
     const buf = Buffer.alloc(4096);
-    const n = fs.readSync(fd, buf, 0, 4096, 0);
+    const { bytesRead: n } = await handle.read(buf, 0, 4096, 0);
 
     return headerMatches(buf.toString('utf8', 0, n));
   } catch {
     return false;
   } finally {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        /* ignore */
-      }
-    }
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -121,23 +116,23 @@ export class AudibleFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
-      if (path.extname(root).toLowerCase() !== '.csv' || !sniffHeader(root)) {
+    if (st.isFile()) {
+      if (path.extname(root).toLowerCase() !== '.csv' || !(await sniffHeader(root))) {
         return { confidence: 0 };
       }
 
       return { confidence: FILENAME_RE.test(path.basename(root)) ? 0.95 : 0.85 };
     }
 
-    if (stat.isDirectory()) {
-      if (this.findFiles(root).length) {
+    if (st.isDirectory()) {
+      if ((await this.findFiles(root)).length) {
         return { confidence: 0.95 };
       }
 
@@ -151,11 +146,11 @@ export class AudibleFileImporter implements FileImporter {
   // drag-and-drop staging adds an "All Data Categories" wrapper above that —
   // so recurse deep enough to survive a couple of wrapper directories. Every
   // CSV is header-sniffed (a 4KB read) because the filename proves nothing.
-  private findFiles(dir: string, depth = 0): string[] {
+  private async findFiles(dir: string, depth = 0): Promise<string[]> {
     const out: string[] = [];
     let names: fs.Dirent[];
     try {
-      names = fs.readdirSync(dir, { withFileTypes: true });
+      names = await readdir(dir, { withFileTypes: true });
     } catch {
       return out;
     }
@@ -164,10 +159,10 @@ export class AudibleFileImporter implements FileImporter {
       const full = path.join(dir, dirent.name);
       if (dirent.isDirectory()) {
         if (depth < 4) {
-          out.push(...this.findFiles(full, depth + 1));
+          out.push(...(await this.findFiles(full, depth + 1)));
         }
       } else if (dirent.isFile()) {
-        if (path.extname(dirent.name).toLowerCase() === '.csv' && sniffHeader(full)) {
+        if (path.extname(dirent.name).toLowerCase() === '.csv' && (await sniffHeader(full))) {
           out.push(full);
         }
       }
@@ -189,7 +184,7 @@ export class AudibleFileImporter implements FileImporter {
       return;
     }
 
-    const files = stat.isFile() ? [root] : stat.isDirectory() ? this.findFiles(root) : [];
+    const files = stat.isFile() ? [root] : stat.isDirectory() ? await this.findFiles(root) : [];
     for (const fpath of files) {
       await this.processFile(fpath, params);
     }

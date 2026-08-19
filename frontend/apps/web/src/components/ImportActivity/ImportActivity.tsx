@@ -5,6 +5,7 @@ import { AlertTriangle, Check, ChevronDown, ChevronRight, Hourglass, Minus } fro
 
 import {
   compactNumber,
+  describeConcurrency,
   formatElapsed,
   formatEta,
   formatRate,
@@ -56,8 +57,10 @@ export interface ImportActivityProps {
  *    has not reached this stage) and differently again from `running`. All
  *    three are what the database calls `queued` or `running`; only the first
  *    distinction removes the "is it stuck?" question.
- *  - **The concurrency, stated.** One sentence — "runs 1 import stage at a
- *    time" — is what turns a 51-minute wait from alarming into expected.
+ *  - **The concurrency, stated.** One sentence — "runs 1 unpack, 1 read, 2
+ *    store files and 1 save at a time" — is what turns a 51-minute wait from
+ *    alarming into expected. Read from the server's own constants, per kind,
+ *    because the numbers differ and have already changed once.
  *  - **Throughput and elapsed per stage.** 6/s against 555/s is the difference
  *    between a slow parser and a big archive, and it was recorded all along.
  *  - **Errors inline, on the stage that failed**, with the stage's own text.
@@ -212,8 +215,8 @@ export function ImportActivityCard({
             above reads like a rendering bug. */}
         {queue.waiting > 0 ? (
           <span>
-            this appliance runs {queue.concurrency} import {queue.concurrency === 1 ? 'stage' : 'stages'} at a
-            time, so the rest wait their turn
+            this appliance runs {describeConcurrency(queue.concurrency)} at a time, so the rest wait their
+            turn
             {queue.longestWaitMs != null && queue.longestWaitMs > 60_000
               ? ` (longest wait ${formatElapsed(queue.longestWaitMs)})`
               : ''}
@@ -494,7 +497,10 @@ function StageLine({ stage }: { stage: ActiveImportStage }) {
  * "queued" stops being one word for two situations.
  */
 export function describeStage(stage: ActiveImportStage): string {
-  const queued = queueStateLabel(stage.queueState, { position: stage.queuePosition });
+  const queued = queueStateLabel(stage.queueState, {
+    position: stage.queuePosition,
+    kind: stage.kind,
+  });
 
   if (queued != null) {
     return queued;

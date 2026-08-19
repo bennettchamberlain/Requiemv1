@@ -7,6 +7,7 @@ import {
   formatElapsed,
   formatRate,
   humanizeUnit,
+  describeConcurrency,
   queueStateLabel,
   runStatusLabel,
   STAGE_BLURBS,
@@ -121,18 +122,44 @@ describe('formatRate', () => {
 
 describe('queueStateLabel', () => {
   it('separates the two things the database both calls "queued"', () => {
-    // Enqueued, needs the appliance's single slot — normal, and it can last an
-    // hour on a batch import.
+    // Enqueued, needs a slot of its kind — normal, and it can last an hour on a
+    // batch import.
     expect(queueStateLabel('waiting', { position: 1 })).toBe('Next in the import queue');
     expect(queueStateLabel('waiting', { position: 3 })).toBe('Waiting — 3rd in the import queue');
     // Not enqueued at all: its own run has not reached this stage.
     expect(queueStateLabel('blocked')).toBe('Not started yet');
   });
 
+  it('names the queue by KIND, because that is the one it is actually in', () => {
+    // The appliance runs a queue per kind. A parse eighth among everything
+    // waiting can be first among the parses, so an unqualified "3rd in the
+    // import queue" is a number nothing will honour.
+    expect(queueStateLabel('waiting', { position: 1, kind: 'parse' })).toBe('Next in the read queue');
+    expect(queueStateLabel('waiting', { position: 2, kind: 'media' })).toBe(
+      'Waiting — 2nd in the store files queue',
+    );
+  });
+
   it('says nothing for a stage that is doing or has done something', () => {
     // Those lines carry live counts instead; a queue label would displace them.
     expect(queueStateLabel('running')).toBeNull();
     expect(queueStateLabel('done')).toBeNull();
+  });
+});
+
+describe('describeConcurrency', () => {
+  it('says the slots out loud, from the server\'s own numbers', () => {
+    // The sentence that turns a twelve-deep queue from a malfunction into
+    // arithmetic. Hardcoding "one stage at a time" stopped being true the day
+    // media went to two slots — which is exactly why this reads the map.
+    expect(describeConcurrency({ unpack: 1, parse: 1, media: 2, push: 1 })).toBe(
+      '1 unpack, 1 read, 2 store files and 1 save',
+    );
+  });
+
+  it('degrades to something true rather than something empty', () => {
+    expect(describeConcurrency({ parse: 1 })).toBe('1 read');
+    expect(describeConcurrency({})).toBe('one import stage');
   });
 });
 

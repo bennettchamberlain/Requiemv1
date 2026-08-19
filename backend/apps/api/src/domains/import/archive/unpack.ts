@@ -54,6 +54,25 @@ export interface UnpackOptions {
    * ledger. Purely a reporting hook — the unpack continues either way.
    */
   onRejected?: (rejected: RejectedArchive) => void;
+  /**
+   * Progress, once before the first extraction (`done` 0, so "0 of 72" shows
+   * the moment the preflight finishes) and once after each archive settles —
+   * extracted OR skipped, so `done` always reaches `total`. Awaited between
+   * archives, which is also the extraction loop's only yield to the event
+   * loop: without it a synchronous 72-archive run would starve every pending
+   * I/O until the end, progress writes included.
+   */
+  onProgress?: (progress: UnpackProgress) => void | Promise<void>;
+}
+
+/** One tick of {@link UnpackOptions.onProgress}. */
+export interface UnpackProgress {
+  /** Archives settled so far (extracted or skipped). */
+  done: number;
+  /** Archives the preflight admitted. */
+  total: number;
+  /** Basename of the archive about to extract; absent on the final tick. */
+  current?: string;
 }
 
 /** An archive the readability preflight set aside, and why. */
@@ -502,11 +521,11 @@ function flattenTakeoutWrapper(parent: string, log?: (msg: string) => void): voi
  * archive is deleted the moment its own extraction succeeds, so peak disk is
  * ~one archive + the growing tree instead of all archives + the whole tree.
  */
-export function unpackArchives(
+export async function unpackArchives(
   dir: string,
   log?: (msg: string) => void,
   opts: UnpackOptions = {},
-): UnpackResult[] {
+): Promise<UnpackResult[]> {
   // Pass 1: collect pending archives per directory (markers respected), so the
   // preflight sees the WHOLE job before the first byte extracts.
   const byDir = new Map<string, Array<{ full: string; size: number }>>();
@@ -619,10 +638,15 @@ export function unpackArchives(
   }
 
   // Pass 2: extract.
+  const total = [...byDir.values()].reduce((sum, list) => sum + list.length, 0);
+  let done = 0;
+
   const out: UnpackResult[] = [];
   for (const [d, archives] of byDir) {
     let extractedHere = false;
     for (const { full, size } of archives) {
+      await opts.onProgress?.({ done, total, current: path.basename(full) });
+
       try {
         const res = extractArchive(full, d, size);
         if (opts.deleteArchives) {
@@ -644,6 +668,8 @@ export function unpackArchives(
       } catch (err) {
         log?.(`skipped ${path.basename(full)}: ${(err as Error).message}`);
       }
+
+      done += 1;
     }
 
     // Flatten a Takeout/ wrapper produced by this directory's archives.
@@ -651,6 +677,8 @@ export function unpackArchives(
       flattenTakeoutWrapper(d, log);
     }
   }
+
+  await opts.onProgress?.({ done, total });
 
   return out;
 }

@@ -38,9 +38,9 @@ import type { ImportStage } from '../entities/ImportStageEntity';
  * could not be more different to somebody watching:
  *
  *  - **waiting**: every earlier stage of this run is finished, so the stage has
- *    a real job on the `import-stages` queue and will start the moment the
- *    appliance's single slot frees. On a 13-run batch this is normal and can
- *    last an hour.
+ *    a real job on its kind's queue (`import-parse`, `import-media`, …) and
+ *    will start the moment a slot of that kind frees. With one parse slot and
+ *    thirteen runs, this is normal and can last an hour.
  *  - **blocked**: an earlier stage of the SAME run is still going, so this
  *    stage has not been enqueued at all — nothing is waiting on it yet, because
  *    nothing has asked for it. (`ImportRunService.enqueueStage` is called once
@@ -62,13 +62,21 @@ const TERMINAL_STAGE_STATUSES: ReadonlySet<string> = new Set(['completed', 'fail
 const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set(['completed', 'partial', 'failed', 'cancelled']);
 
 /**
- * Where a stage sits relative to the appliance's single execution slot.
+ * Where a stage sits relative to the slots its KIND has.
  *
  * Deliberately NOT a rename of `status`: both are reported, because they answer
  * different questions. `status` is what the database row says; this is what it
  * MEANS given the rest of the run and the queue.
  */
 export type StageQueueState = 'running' | 'waiting' | 'blocked' | 'done';
+
+/** A stage row plus what it MEANS: its queue state and when it became runnable. */
+export interface ClassifiedStage {
+  stage: ImportStage;
+  state: StageQueueState;
+  /** When it became runnable — the key the kind's ready queue is ordered by. */
+  readyAt: Date | null;
+}
 
 export interface ActiveStage {
   id: string;
@@ -92,8 +100,13 @@ export interface ActiveStage {
   /** See {@link StageQueueState} — the difference between "waiting" and "stuck". */
   queueState: StageQueueState;
   /**
-   * 1-based place in this user's ready queue, or null when the stage is not
-   * `waiting`. Position 1 is next to run.
+   * 1-based place in the ready queue FOR THIS STAGE'S KIND, or null when the
+   * stage is not `waiting`. Position 1 is next to run.
+   *
+   * Per kind because that is how the appliance queues them: a parse eighth in
+   * a list of every waiting stage may be first among the parses, and telling
+   * someone "8th in line" when it starts next is exactly the confident wrong
+   * number this endpoint exists to stop reporting.
    */
   queuePosition: number | null;
   /**
@@ -165,8 +178,17 @@ export interface ActiveImportSnapshot {
     elapsedMs: number | null;
   };
   queue: {
-    /** Stage jobs the appliance runs at once, across every run and user. */
-    concurrency: number;
+    /**
+     * Slots per stage KIND, across every run and user — the appliance runs one
+     * queue per kind (`import-parse`, `import-media`, …), so a parse waits
+     * behind other parses and nothing else. Reported per kind rather than as a
+     * single number because the numbers differ (media has two slots, the rest
+     * one) and because a surface that says "one at a time" while the appliance
+     * runs two would be a new way to look broken.
+     */
+    concurrency: Record<string, number>;
+    /** Every kind's slots added up. What the batch can have in flight at once. */
+    slots: number;
     /** Stages holding a slot right now. */
     running: number;
     /** Stages enqueued and waiting for a slot. `queue.running + waiting` is the real backlog. */
@@ -216,7 +238,8 @@ export function idleSnapshot(now: Date = new Date()): ActiveImportSnapshot {
       elapsedMs: null,
     },
     queue: {
-      concurrency: IMPORT_STAGE_CONCURRENCY,
+      concurrency: { ...IMPORT_STAGE_CONCURRENCY },
+      slots: TOTAL_STAGE_SLOTS,
       running: 0,
       waiting: 0,
       blocked: 0,
@@ -226,6 +249,12 @@ export function idleSnapshot(now: Date = new Date()): ActiveImportSnapshot {
     truncated: false,
   };
 }
+
+/** Every kind's slots added up — what the appliance can have in flight at once. */
+const TOTAL_STAGE_SLOTS = Object.values(IMPORT_STAGE_CONCURRENCY).reduce(
+  (sum, slots) => sum + slots,
+  0,
+);
 
 /**
  * Assemble the snapshot from raw rows. Pure — every clock reading comes from
@@ -258,7 +287,7 @@ export function buildActiveSnapshot(input: ActiveSnapshotInput): ActiveImportSna
   // Pass one: classify every stage, so the queue ranking below can see all of
   // them at once. Position is a property of the QUEUE, not of a run, and can
   // only be assigned after every run has been read.
-  const classified = new Map<string, { stage: ImportStage; state: StageQueueState; readyAt: Date | null }>();
+  const classified = new Map<string, ClassifiedStage>();
 
   for (const run of orderedRuns) {
     const stages = (stagesByRun.get(run.id) ?? []).slice().sort((left, right) => left.seq - right.seq);
@@ -268,11 +297,19 @@ export function buildActiveSnapshot(input: ActiveSnapshotInput): ActiveImportSna
     }
   }
 
-  // The ready queue, in the order the worker will drain it: by the instant each
-  // stage became runnable. `id` breaks ties so two stages enqueued in the same
-  // millisecond get a stable, if arbitrary, order rather than flickering
+  // The ready queues, in the order their workers will drain them: by the instant
+  // each stage became runnable. `id` breaks ties so two stages enqueued in the
+  // same millisecond get a stable, if arbitrary, order rather than flickering
   // between polls.
+  //
+  // ONE QUEUE PER KIND, because that is what the appliance runs
+  // (`IMPORT_STAGE_QUEUE_BY_KIND`): a parse waits behind other parses and is
+  // not delayed by a media stage at all. Ranking every waiting stage in one
+  // line would report a position the worker will never honour — "9th in line"
+  // for a stage that is actually next — which is precisely the kind of
+  // confident wrong number this surface exists to stop telling people.
   const queuePositions = new Map<string, number>();
+  const waitingByKind = new Map<string, ClassifiedStage[]>();
   const waiting = [...classified.values()]
     .filter((entry) => entry.state === 'waiting')
     .sort((left, right) => {
@@ -281,7 +318,13 @@ export function buildActiveSnapshot(input: ActiveSnapshotInput): ActiveImportSna
       return delta !== 0 ? delta : left.stage.id.localeCompare(right.stage.id);
     });
 
-  waiting.forEach((entry, index) => queuePositions.set(entry.stage.id, index + 1));
+  for (const entry of waiting) {
+    const queue = waitingByKind.get(entry.stage.kind) ?? [];
+
+    queue.push(entry);
+    waitingByKind.set(entry.stage.kind, queue);
+    queuePositions.set(entry.stage.id, queue.length);
+  }
 
   const runs: ActiveRun[] = orderedRuns.map((run) => {
     const stages = (stagesByRun.get(run.id) ?? []).slice().sort((left, right) => left.seq - right.seq);
@@ -365,7 +408,8 @@ export function buildActiveSnapshot(input: ActiveSnapshotInput): ActiveImportSna
       elapsedMs: earliestStart == null ? null : nowMs - new Date(earliestStart).getTime(),
     },
     queue: {
-      concurrency: IMPORT_STAGE_CONCURRENCY,
+      concurrency: { ...IMPORT_STAGE_CONCURRENCY },
+      slots: TOTAL_STAGE_SLOTS,
       running: queueStates.filter((entry) => entry.state === 'running').length,
       waiting: waiting.length,
       blocked: queueStates.filter((entry) => entry.state === 'blocked').length,
@@ -383,7 +427,7 @@ export function buildActiveSnapshot(input: ActiveSnapshotInput): ActiveImportSna
  * its run is terminal, and BLOCKED otherwise. That mirrors what the runner
  * actually does — `advanceRun` enqueues the next stage as the previous one
  * finishes, one at a time — so at most one stage per run can be waiting, which
- * is why the appliance-wide ready queue is bounded by the number of live runs
+ * is why the ready queues together are bounded by the number of live runs
  * rather than by four times that.
  *
  * `readyAt` for a waiting stage is the moment the last of those earlier stages
@@ -394,7 +438,7 @@ export function buildActiveSnapshot(input: ActiveSnapshotInput): ActiveImportSna
 export function classifyStages(
   run: Pick<ImportRun, 'startedAt' | 'createdAt'>,
   stagesInSeqOrder: readonly ImportStage[],
-): Array<{ stage: ImportStage; state: StageQueueState; readyAt: Date | null }> {
+): ClassifiedStage[] {
   let allEarlierTerminal = true;
   /** Latest finish among the earlier stages — when this one became runnable. */
   let readyAt: Date | null = run.startedAt ?? run.createdAt ?? null;

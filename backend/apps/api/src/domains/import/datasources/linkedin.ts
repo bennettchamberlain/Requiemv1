@@ -1,5 +1,6 @@
 /* LinkedIn — "Get a copy of your data" export (Connections.csv + messages.csv). */
 import fs from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parseCSV } from './csv';
@@ -194,31 +195,31 @@ export class LinkedInFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
         // Verify the HEAD of whichever signature file is present — both names
         // are generic enough to appear in other services' exports, and the
         // directory branch used to claim on the name alone. Connections.csv
         // carries a "Notes:" preamble before its header, so the check scans
         // lines rather than trusting line one.
-        const names = fs.readdirSync(root);
+        const names = await readdir(root);
         const connections = findFile(names, 'Connections.csv');
         const messages = findFile(names, 'messages.csv');
         const connectionsOk =
           connections != null &&
-          (readHead(path.join(root, connections)) ?? '')
+          ((await readHead(path.join(root, connections))) ?? '')
             .split(/\r?\n/)
             .some((line) => line.trim().toLowerCase().startsWith('first name,last name,url'));
         const messagesOk =
           messages != null &&
-          ((readHead(path.join(root, messages)) ?? '').split(/\r?\n/)[0] ?? '')
+          (((await readHead(path.join(root, messages))) ?? '').split(/\r?\n/)[0] ?? '')
             .trim()
             .toUpperCase()
             .startsWith('CONVERSATION ID');
@@ -233,11 +234,11 @@ export class LinkedInFileImporter implements FileImporter {
       return { confidence: 0, dir_threshold: 0.7 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       const base = path.basename(root).toLowerCase();
       let raw: string;
       try {
-        raw = fs.readFileSync(root, 'utf8');
+        raw = await readFile(root, 'utf8');
       } catch {
         return { confidence: 0 };
       }

@@ -5,11 +5,13 @@ import { OnEvent } from '@ci/domains/events';
 
 import {
   PlanningEventNowEvent,
+  PlanningInboxScanEvent,
   PlanningTodoProcessEvent,
   PlanningTodoScanEvent,
   PlanningVerifyDoneEvent,
   type PlanningUserJobPayload,
 } from '../events';
+import { InboxScanService } from '../services/InboxScanService';
 import { EventNowService, TodoProcessService, VerifyDoneService } from '../services/TodoProcessService';
 import { TodoScanService } from '../services/TodoScanService';
 
@@ -18,6 +20,7 @@ export class PlanningJobsListener {
   constructor(
     private readonly todoScanService: TodoScanService,
     private readonly todoProcessService: TodoProcessService,
+    private readonly inboxScanService: InboxScanService,
     private readonly eventNowService: EventNowService,
     private readonly verifyDoneService: VerifyDoneService,
     private readonly logger: LoggerService,
@@ -33,6 +36,11 @@ export class PlanningJobsListener {
   @OnEvent(PlanningTodoProcessEvent, { queue: 'planning' })
   async onTodoProcess(payload: PlanningUserJobPayload) {
     await this.todoProcessService.runForUser(payload.userId);
+  }
+
+  @OnEvent(PlanningInboxScanEvent, { queue: 'planning' })
+  async onInboxScan(payload: PlanningUserJobPayload) {
+    await this.inboxScanService.runForUser(payload.userId);
   }
 
   @OnEvent(PlanningEventNowEvent, { queue: 'planning' })

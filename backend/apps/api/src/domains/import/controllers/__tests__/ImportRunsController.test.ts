@@ -121,7 +121,16 @@ function makeController(
     find: jest.fn((name: string) => (name === 'gmail' ? { name, title: 'Gmail' } : null)),
   };
 
-  return { controller: new ImportRunsController(runs as never, catalog as never), runs, catalog };
+  const users = {
+    findById: jest.fn(async () => ({ id: 'user-1', email: 'tester@example.com' })),
+  };
+
+  return {
+    controller: new ImportRunsController(runs as never, catalog as never, users as never),
+    runs,
+    catalog,
+    users,
+  };
 }
 
 describe('ImportRunsController.start', () => {
@@ -392,8 +401,10 @@ describe('ImportRunsController.active', () => {
     expect(snapshot.active).toBe(true);
     expect(snapshot.runs[0].unit).toBe('google-takeout');
     expect(snapshot.runs[0].records).toBe(2_777);
-    // The number that makes a long queue legible instead of alarming.
-    expect(snapshot.queue.concurrency).toBe(1);
+    // The numbers that make a long queue legible instead of alarming — per
+    // kind, because that is how the appliance queues stages.
+    expect(snapshot.queue.concurrency.parse).toBe(1);
+    expect(snapshot.queue.slots).toBeGreaterThan(0);
   });
 
   it('scopes itself to the caller, like every other run route here', async () => {

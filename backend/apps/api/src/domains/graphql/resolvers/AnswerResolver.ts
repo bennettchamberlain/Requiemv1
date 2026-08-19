@@ -74,7 +74,9 @@ export class AnswerResolver {
   ): Promise<AnswerType | null> {
     const serviceContext = toServiceContext(context);
 
-    const entity = await this.answerService.update(serviceContext, input.id, {
+    const id = GlobalUID.parse('answer', input.id);
+
+    const entity = await this.answerService.update(serviceContext, id, {
       text: input.answer,
     });
 
@@ -82,8 +84,13 @@ export class AnswerResolver {
   }
 
   @Mutation(() => Boolean)
-  async removeAnswer(@Context() context: RequestContext, @Args('id') id: string): Promise<boolean> {
+  async removeAnswer(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<boolean> {
     const serviceContext = toServiceContext(context);
+
+    const id = GlobalUID.parse('answer', gid);
 
     return this.answerService.remove(serviceContext, id);
   }

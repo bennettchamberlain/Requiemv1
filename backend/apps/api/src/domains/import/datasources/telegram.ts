@@ -1,5 +1,6 @@
 /* Telegram — Telegram Desktop "Export Telegram data" in JSON mode (result.json). */
 import fs from 'node:fs';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { FileImporter, Recognition, DirEntry } from './registry';
@@ -71,28 +72,28 @@ export class TelegramFileImporter implements FileImporter {
       return { confidence: 0 };
     }
 
-    let stat: fs.Stats;
+    let st: fs.Stats;
     try {
-      stat = fs.statSync(root);
+      st = await stat(root);
     } catch {
       return { confidence: 0 };
     }
 
-    if (stat.isFile()) {
+    if (st.isFile()) {
       if (path.basename(root).toLowerCase() !== 'result.json') {
         return { confidence: 0 };
       }
 
-      const obj = this.tryParse(root);
+      const obj = await this.tryParse(root);
 
       return isTelegramExport(obj) ? { confidence: 0.95 } : { confidence: 0 };
     }
 
-    if (stat.isDirectory()) {
+    if (st.isDirectory()) {
       try {
-        const match = fs.readdirSync(root).find((n) => n.toLowerCase() === 'result.json');
+        const match = (await readdir(root)).find((n) => n.toLowerCase() === 'result.json');
         if (match) {
-          const obj = this.tryParse(path.join(root, match));
+          const obj = await this.tryParse(path.join(root, match));
           if (isTelegramExport(obj)) {
             return { confidence: 0.9 };
           }
@@ -107,9 +108,9 @@ export class TelegramFileImporter implements FileImporter {
     return { confidence: 0 };
   }
 
-  private tryParse(fpath: string): unknown {
+  private async tryParse(fpath: string): Promise<unknown> {
     try {
-      return JSON.parse(fs.readFileSync(fpath, 'utf8'));
+      return JSON.parse(await readFile(fpath, 'utf8'));
     } catch {
       return undefined;
     }
