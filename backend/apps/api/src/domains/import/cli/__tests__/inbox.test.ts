@@ -12,7 +12,6 @@ const unit = (overrides: Partial<InboxUnit> = {}): InboxUnit => ({
   recognized: [{ dataSource: 'google_photos', title: 'Google Photos', confidence: 0.9 }],
   activeRunId: null,
   claimed: false,
-  sizeApproximate: false,
   ...overrides,
 });
 
