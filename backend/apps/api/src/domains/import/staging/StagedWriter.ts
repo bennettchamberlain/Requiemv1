@@ -13,6 +13,7 @@ import {
   needsContentDigest,
   resolveEntityType,
 } from './identity';
+import { stripNulCharacters } from './stripNulCharacters';
 
 /**
  * The `drops` slug for an item swallowed by the within-run unique index whose
@@ -135,7 +136,9 @@ export class StagedWriter implements ImportPipeline {
    * other, which is the trade this shape is making.
    */
   push(graph: Graph): void {
-    this.buffer.push(graph);
+    // U+0000 is legal in the exports but not in Postgres text/jsonb; one
+    // NUL-bearing record used to fail its batch and every batch after it.
+    this.buffer.push(stripNulCharacters(graph));
 
     if (this.buffer.length >= this.flushThreshold) {
       this.scheduleFlush();

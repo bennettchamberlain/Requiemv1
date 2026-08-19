@@ -214,7 +214,10 @@ export function toContentInput(rec: CanonicalRecord): CreateContentDto {
     input.text = text;
   }
 
-  const url = str(m.URL) || str(m.Url) || str(m.url);
+  // Permalink last: reddit saved posts/comments carry ONLY a permalink (no
+  // URL field), and since undated ones now land content-alone, the permalink
+  // is the row's single way back to the thing it describes.
+  const url = str(m.URL) || str(m.Url) || str(m.url) || str(m.Permalink);
   if (url) {
     input.url = url;
   }

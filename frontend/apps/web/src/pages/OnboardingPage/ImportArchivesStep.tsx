@@ -71,7 +71,7 @@ export function ImportArchivesStep() {
           viewport without the step itself scrolling: an outer scrollbar here
           hides the surface's own controls (the drop zone, Back, the bundle
           pager) below the fold, and nothing tells you they are there. */}
-      <div className="flex h-[58vh] min-h-[22rem] flex-col overflow-hidden rounded-lg border text-left">
+      <div className="flex h-[58vh] min-h-[22rem] flex-col overflow-hidden text-left">
         <ImportSurface variant="onboarding" onStageChange={handleStage} />
       </div>
 

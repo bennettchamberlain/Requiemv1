@@ -464,11 +464,16 @@ function isDigitalGood(rec: CanonicalRecord): boolean {
  *   note|annotation     -> content
  *   social.*            -> events + content      timeline + searchable post/comment body
  *                          (+ position when geotagged)
+ *   social.* undated    -> content               a record whose source gave it no time (a reddit
+ *                                                saved post: id + permalink only) stays
+ *                                                searchable but never wears import time on the
+ *                                                timeline; affiliations are exempt (see below)
  *   social affiliation  -> events                 a LinkedIn connection / a moderated or
  *                                                 subscribed subreddit is an edge or a
  *                                                 membership, not a body: content would be an
  *                                                 empty row (see isSocialAffiliation)
- *   reddit post/comment -> communications (+ content only for attached media)
+ *   reddit post/comment -> communications (+ content only for attached media);
+ *                          content ALONE when undated (saved posts/comments)
  *                                                posts and comments are authored communications,
  *                                                not events; the content row (if any) is the
  *                                                linked image/video (posts) or the first
@@ -655,7 +660,9 @@ export function isRedditComment(rec: CanonicalRecord): boolean {
  * The content row was a third, empty copy of both.
  */
 export function isSocialAffiliation(rec: CanonicalRecord): boolean {
-  const kind = str(rec.metadata.Kind);
+  // Optional-chained: toCanonical always supplies metadata, but this is also
+  // called on hand-built records (destinationOrder.test) where it may be absent.
+  const kind = str(rec.metadata?.Kind);
 
   if (rec.sourceSystem === 'linkedin') {
     return kind === 'connection';
@@ -738,7 +745,19 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
   // Reddit posts and comments are authored communications, not timeline
   // events: they go to /communications only. A content row rides along ONLY
   // when the record carries media (see toContentInput for the row's shape).
+  //
+  // UNLESS the record has no date. Reddit's saved_posts/saved_comments CSVs
+  // carry only `id, permalink` — no post date, no saved-at date — and
+  // `communications.time` is NOT NULL, so an undated one would land wearing
+  // the import moment as if it were real (verified live: eight saved
+  // posts/comments all timestamped the second they were parsed). Content
+  // alone: the title, permalink and any body stay searchable, and nothing
+  // pretends to know when it happened. Same rule as undated files below.
   if (isRedditPost(rec) || isRedditComment(rec)) {
+    if (!rec.dated) {
+      return ['content'];
+    }
+
     return redditMediaUrl(rec) ? ['communications', 'content'] : ['communications'];
   }
 
@@ -844,6 +863,17 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
     // the facts. Everything else authored keeps both homes.
     const homes: Destination[] = isSocialAffiliation(rec) ? ['events'] : ['events', 'content'];
 
+    // An UNDATED authored record loses its event home: its startTime is the
+    // import-moment fallback, which would sit on the timeline as a real date
+    // (the undated-file rule below, applied to social kinds). The content row
+    // alone keeps it searchable. Affiliations are exempt — they model current
+    // state, their event title carries the whole fact, and their content row
+    // is the empty one isSocialAffiliation exists to prevent. No position
+    // donation either: a position row is a fix at a TIME, and there isn't one.
+    if (!rec.dated && !isSocialAffiliation(rec)) {
+      return ['content'];
+    }
+
     // Same rule as geotagged captures and messages: a post made from a place
     // (a geotagged retweet) keeps its timeline + searchable homes AND donates
     // its fix to the position table.
@@ -875,7 +905,8 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
   // content ALONE: the bytes upload, the row is searchable, nothing pretends to
   // know when it happened. (Same reasoning that keeps the reddit importer from
   // emitting undated subscriptions and votes at all.) Scoped to file-bearing
-  // kinds — other undated rows keep whatever home their kind gives them.
+  // kinds — social kinds apply the same rule in their own branches above, and
+  // other undated rows keep whatever home their kind gives them.
   if (!rec.dated && (kind.startsWith('capture.') || kind === 'import.archive_item')) {
     return ['content'];
   }
