@@ -633,6 +633,12 @@ export const ConfigSchema = z.object({
      * the previous default (hope the client remembers) was the #51 hole.
      */
     'ingest.selfHeal': booleanStringSchema,
+    /**
+     * Master gate for the Solid Protocol facade (`/solid/*`): WebID profile
+     * documents and, as later slices land, LDP resources and WAC. Off by
+     * default — the surface stays dark (routes 404) until explicitly enabled.
+     */
+    'solid.protocol': booleanStringSchema,
   }),
   environment: z.object({
     'database.query.logging': booleanStringSchema,

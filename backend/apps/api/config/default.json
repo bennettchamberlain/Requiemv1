@@ -210,7 +210,8 @@
     "ask": true,
     "grounded.prompts": true,
     "derivation.engines": true,
-    "ingest.selfHeal": true
+    "ingest.selfHeal": true,
+    "solid.protocol": false
   },
   "environment": {
     "database.query.logging": false

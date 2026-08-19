@@ -66,6 +66,7 @@ import { ScheduleModule } from '@ci/domains/schedule';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { SmartRotationModule } from '@ci/domains/smart-rotation';
+import { SolidModule } from '@ci/domains/solid';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
@@ -144,6 +145,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     SmartRotationModule,
     SearchIngressModule,
     SearchNextModule,
+    SolidModule,
     SummariesModule,
     UserModule,
     UserSnapshotsModule,
