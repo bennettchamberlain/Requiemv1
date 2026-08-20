@@ -162,6 +162,9 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   excluded_retweet: 'filtered',
   outside_timeframe: 'filtered',
   non_message: 'filtered',
+  // WhatsApp protocol chatter ("Messages and calls are end-to-end encrypted",
+  // "X added Y") — not something a person said, excluded by design.
+  whatsapp_system_line: 'filtered',
 
   // The source says it did not happen.
   cancelled_order: 'cancelled',
