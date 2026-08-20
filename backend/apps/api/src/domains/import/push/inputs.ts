@@ -1221,6 +1221,13 @@ export function toCommunicationInput(rec: CanonicalRecord): CreateCommunicationD
     // as sent would misattribute authorship. The branches below overwrite this
     // wherever the source actually says.
     direction: 'inbound',
+    // The full metadata bag, same as toEventInput: fields with no dedicated
+    // column (a tweet's URL/Retweets/Likes/Lang/ReplyTo, for example) have
+    // nowhere else to land and were silently dropped without this. Fields
+    // ALSO promoted to a dedicated column below (Duration, Subject, ...)
+    // stay here too, for the same round-trip-completeness reason
+    // toEventInput keeps them.
+    metadata: { ...m },
     ...sourceTriple(rec),
   };
   // Pass call duration through so the server stores it on the Communication entity.
