@@ -391,6 +391,14 @@ function useEntityService({
   ];
 }
 
-const { Provider: EntityServiceProvider, useHookContext } = createHookContext(useEntityService);
+const {
+  Provider: EntityServiceProvider,
+  useHookContext,
+  useOptionalHookContext,
+} = createHookContext(useEntityService, 'useEntityService');
 
-export { EntityServiceProvider, useHookContext as useEntityService };
+export {
+  EntityServiceProvider,
+  useHookContext as useEntityService,
+  useOptionalHookContext as useOptionalEntityService,
+};

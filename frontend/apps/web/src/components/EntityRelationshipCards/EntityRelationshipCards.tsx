@@ -264,9 +264,10 @@ export function getEntityDetailPath(entityType: string, entityId: string): strin
     case 'note':
       return `/notes/${entityId}`;
     case 'file':
-      // Files have no standalone page; their viewer is a route on the Content
-      // grid, which is still a real address the drawer can hand out.
-      return `/memory/content/${entityId}`;
+      // Files have no standalone page. `/memory/content/:id` used to open a
+      // file viewer but now addresses a ci.content row, so a file id there
+      // would open nothing — better no link than a dead one.
+      return null;
     default:
       return null;
   }

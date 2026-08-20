@@ -67,7 +67,7 @@ const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
-const FilesPage = lazy(() => import('@/pages/FilesPage'));
+const ContentLibraryPage = lazy(() => import('@/pages/ContentLibraryPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
 const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
@@ -344,16 +344,16 @@ function AppRoutes() {
             <>
               <Route path="/files" element={<Navigate to="/memory/content" replace />} />
               {/*
-                The optional :fileId gives an individual file a shareable URL and
-                makes Back close the viewer. It is one route rather than two so
-                FilesPage stays mounted when the param changes — a second route
-                would remount it and throw away every page the user scrolled in.
+                The optional :contentId gives an individual content row a shareable
+                URL and makes Back close the drawer. It is one route rather than two
+                so ContentLibraryPage stays mounted when the param changes — a second
+                route would remount it and throw away every page the user scrolled in.
               */}
               <Route
-                path="/memory/content/:fileId?"
+                path="/memory/content/:contentId?"
                 element={
                   <ProtectedRoute>
-                    <FilesPage />
+                    <ContentLibraryPage />
                   </ProtectedRoute>
                 }
               />

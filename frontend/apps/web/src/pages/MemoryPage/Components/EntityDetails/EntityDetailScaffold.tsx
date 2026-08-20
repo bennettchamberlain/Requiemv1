@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 
 import { GlobalUID } from '@ci/common';
 import { Button, Card, IconButton, Label, Sheet, cn, useToast } from '@ci/shadcn';
-import { Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
+import { ImageOff, Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
@@ -23,10 +23,10 @@ import {
 import { TagInput } from '@/components/TagInput';
 
 import type { MemoryEntity } from '../../../MemoryPage/useEntityService';
-import { useEntityService } from '../../../MemoryPage/useEntityService';
 
 import { DeleteEntityDialog } from './DeleteEntityDialog';
 import { DELETE_TARGETS } from './deleteTargets';
+import { useEntityDrawerHost } from './drawerHost';
 import { useReadOnly } from './readOnly';
 
 // The field/meta contract now lives with the shared editor so the full-page
@@ -198,15 +198,26 @@ export function EntityMedia({
   previewSrc,
   contentType,
   alt,
+  fallbackHref,
 }: {
   src?: string | null;
   previewSrc?: string | null;
   contentType?: string | null;
   alt?: string;
+  /**
+   * Where to send the user when the media can't be shown inline — typically
+   * the row's own `url`. Rendered as an external link in the unavailable state.
+   */
+  fallbackHref?: string | null;
 }) {
   const isVideo = contentType?.startsWith('video/') ?? false;
   const isImage = contentType ? contentType.startsWith('image/') : true;
   const imageSrc = useProgressiveSrc(src, isVideo ? null : previewSrc);
+  // A `url` that is really a web page (photos.google.com/photo/…) fails to
+  // load as an image — the browser blocks the non-image response — and would
+  // otherwise leave a broken-image glyph. Remember which source failed so the
+  // block degrades to a link instead; keyed by src so a new entity retries.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const shownSrc = isVideo ? src : imageSrc;
 
   if (!shownSrc) {
@@ -215,6 +226,28 @@ export function EntityMedia({
 
   if (!isVideo && !isImage) {
     return null;
+  }
+
+  if (failedSrc === shownSrc) {
+    return (
+      <div
+        role="status"
+        className="flex shrink-0 flex-col items-center justify-center gap-2 rounded-md border bg-muted/40 p-6 text-sm text-muted-foreground"
+      >
+        <ImageOff className="size-8" aria-hidden />
+        <span>Media couldn&apos;t be loaded</span>
+        {fallbackHref && (
+          <a
+            href={fallbackHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all text-primary hover:underline"
+          >
+            Open original <span aria-hidden>↗</span>
+          </a>
+        )}
+      </div>
+    );
   }
 
   // Two guards keep a short viewport from erasing the media:
@@ -234,9 +267,19 @@ export function EntityMedia({
   return (
     <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
       {isVideo ? (
-        <video src={shownSrc} controls className="max-h-[max(45vh,16rem)] w-full object-contain" />
+        <video
+          src={shownSrc}
+          controls
+          className="max-h-[max(45vh,16rem)] w-full object-contain"
+          onError={() => setFailedSrc(shownSrc)}
+        />
       ) : (
-        <img src={shownSrc} alt={alt ?? ''} className="max-h-[max(45vh,16rem)] w-full object-contain" />
+        <img
+          src={shownSrc}
+          alt={alt ?? ''}
+          className="max-h-[max(45vh,16rem)] w-full object-contain"
+          onError={() => setFailedSrc(shownSrc)}
+        />
       )}
     </div>
   );
@@ -287,7 +330,7 @@ export function EntityDetailScaffold({
   const ref = useMemo(() => resolveEntityRef(entity), [entity]);
   const currentTags = useMemo(() => readTags(entity), [entity]);
   const { tagEntities, untagEntities } = useTagEntityService();
-  const [{ refetch }, { setActiveEntity }] = useEntityService();
+  const { refetch, setActiveEntity } = useEntityDrawerHost();
   const { toast } = useToast();
   // Shared-search viewer: the drawer is display-only. Suppress every mutation /
   // navigation affordance (the writes are owner-scoped and would silently fail).
@@ -475,6 +518,8 @@ export function EntityDetailScaffold({
         {!readOnly && detailPath && (
           <Link
             to={detailPath}
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
           >
             Open full page <span aria-hidden>↗</span>

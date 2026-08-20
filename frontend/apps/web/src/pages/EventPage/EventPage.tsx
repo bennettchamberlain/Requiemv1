@@ -14,6 +14,12 @@ import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
 import { Tag } from '@/components/Tag';
 import { gql } from '@/graphql';
+import {
+  EntityMedia,
+  resolveStaticUrl,
+} from '@/pages/MemoryPage/Components/EntityDetails/EntityDetailScaffold';
+
+import { EventContentGrid } from './EventContentGrid';
 
 const GET_EVENT = gql(`
   query GetEvent($id: ID!) {
@@ -28,6 +34,20 @@ const GET_EVENT = gql(`
       endTime
       eventType
       sourceSystem
+
+      # A photo/video event's own binary, resolved server-side from its linked
+      # file (null for non-media events), plus the content rows attached to it.
+      mediaContentType
+      mediaUrl
+      previewUrl
+      contents(first: 60) {
+        edges {
+          node {
+            id
+            ...EventContentTile
+          }
+        }
+      }
 
       tags {
         id
@@ -133,7 +153,16 @@ export function EventPage() {
                   throw new Error('Update was rejected');
                 }
               }}
-            />
+            >
+              <EntityMedia
+                src={resolveStaticUrl(event.mediaUrl ?? event.previewUrl)}
+                previewSrc={resolveStaticUrl(event.previewUrl)}
+                contentType={event.mediaContentType}
+                alt={event.title ?? ''}
+              />
+            </EntityFieldsCard>
+
+            <EventContentGrid contents={event.contents.edges.map((edge) => edge.node)} />
 
             <EntityTagsDescriptionCard
               entityType="event"
