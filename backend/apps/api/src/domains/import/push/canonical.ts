@@ -22,7 +22,7 @@
  * and `dated` remembers which of the two it is — the fallback is import time,
  * and a record dated that way must not be presented as a timeline occurrence.
  */
-import type { MediaAttachment } from '../datasources/timeline';
+import { mimeForFile, type MediaAttachment } from '../datasources/timeline';
 import type { StagedItem } from '../entities/StagedItemEntity';
 
 /**
@@ -1326,7 +1326,22 @@ export function toCanonical(row: StagedItem): CanonicalRecord {
  * paths, or [] when the record has none.
  */
 export function mmsMediaFilePaths(rec: CanonicalRecord): string[] {
-  const v = (rec.metadata as Record<string, unknown> | undefined)?.MediaFilePaths;
+  return mmsMediaFilePathsFrom(rec.metadata as Record<string, unknown> | undefined);
+}
+
+/**
+ * {@link mmsMediaFilePaths} against a raw metadata object.
+ *
+ * The media leg runs BEFORE the push, over `ci_import.staged_items` rows rather
+ * than canonical records, so it has a metadata jsonb and no `CanonicalRecord`
+ * to read it out of. Splitting the accessor in two — rather than building a
+ * throwaway record around the metadata — keeps ONE definition of what the key
+ * holds, which is the whole point: these keys are a contract between a parser
+ * and a consumer two stages apart, and a second reader that drifted is exactly
+ * how this lane came to have a reader with no producer.
+ */
+export function mmsMediaFilePathsFrom(metadata: Record<string, unknown> | undefined): string[] {
+  const v = metadata?.MediaFilePaths;
 
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length > 0) : [];
 }
@@ -1369,7 +1384,12 @@ export function contentFileRef(rec: CanonicalRecord): { id?: string; url?: strin
  * does not. Drives the lane split in graphql.ts withCommunicationMedia.
  */
 export function wantsAttachmentContent(rec: CanonicalRecord): boolean {
-  return (rec.metadata as Record<string, unknown> | undefined)?.AttachmentContent === true;
+  return wantsAttachmentContentFrom(rec.metadata as Record<string, unknown> | undefined);
+}
+
+/** {@link wantsAttachmentContent} against a raw metadata object. */
+export function wantsAttachmentContentFrom(metadata: Record<string, unknown> | undefined): boolean {
+  return metadata?.AttachmentContent === true;
 }
 
 /**
@@ -1384,7 +1404,14 @@ export function wantsAttachmentContent(rec: CanonicalRecord): boolean {
  * uploads bytes, and there are none to upload.
  */
 export function communicationMediaAttachments(rec: CanonicalRecord): MediaAttachment[] {
-  const v = (rec.metadata as Record<string, unknown> | undefined)?.MediaAttachments;
+  return communicationMediaAttachmentsFrom(rec.metadata as Record<string, unknown> | undefined);
+}
+
+/** {@link communicationMediaAttachments} against a raw metadata object. */
+export function communicationMediaAttachmentsFrom(
+  metadata: Record<string, unknown> | undefined,
+): MediaAttachment[] {
+  const v = metadata?.MediaAttachments;
   if (!Array.isArray(v)) {
     return [];
   }
@@ -1410,6 +1437,55 @@ export function communicationMediaAttachments(rec: CanonicalRecord): MediaAttach
       type: type === 'image' || type === 'video' || type === 'audio' || type === 'file' ? type : 'media',
       mimetype: str(a.mimetype) ?? undefined,
       url: str(a.url) ?? undefined,
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Every attachment a communication carries, in ONE list, whichever key its
+ * parser chose to write.
+ *
+ * Two shapes reached staging independently and neither was ever read:
+ * `MediaAttachments` (twitter, gmail, imessage, the LLM chat exports — a
+ * descriptor that knows its filename and MIME) and `MediaFilePaths` (facebook,
+ * sms_backup_restore — a bare absolute path). They describe the same thing at
+ * different resolutions, so the media leg takes them as one list and lets the
+ * poorer shape fill its gaps from the path: `filename` is the basename, and the
+ * MIME is whatever the extension says.
+ *
+ * De-duplicated on the path, because a parser is allowed to write both keys for
+ * the same bytes (facebook writes `MediaFilePaths` today and would gain nothing
+ * by dropping it if it ever also wrote descriptors), and uploading one file
+ * twice would put two entries in `attachments` for one photo.
+ *
+ * Order is the parser's, descriptors first — it is what the index alignment in
+ * {@link attachmentsFor}'s `AttachmentFileIds`/`AttachmentContentIds` pairing is
+ * relative to, so it has to be deterministic.
+ */
+export function communicationAttachmentsFrom(
+  metadata: Record<string, unknown> | undefined,
+): MediaAttachment[] {
+  const out = communicationMediaAttachmentsFrom(metadata);
+  const seen = new Set(out.map((a) => a.path));
+
+  for (const filePath of mmsMediaFilePathsFrom(metadata)) {
+    if (seen.has(filePath)) {
+      continue;
+    }
+
+    seen.add(filePath);
+    const filename = basename(filePath);
+    const mimetype = mimeForFile(filePath) ?? undefined;
+    out.push({
+      path: filePath,
+      filename,
+      // Same rule the descriptor lane uses: a media MIME is media, and anything
+      // an extension cannot type stays the honest 'file' rather than being
+      // guessed into a gallery.
+      type: isMediaType(mimetype ?? null) ? 'media' : 'file',
+      ...(mimetype ? { mimetype } : {}),
     });
   }
 

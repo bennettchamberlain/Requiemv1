@@ -49,7 +49,7 @@ Just the integration suite:
 yarn test src/domains/pipeline/__tests__/pipeline.integration.spec.ts
 ```
 
-The whole suite is ~30 assertions and finishes in about two seconds.
+The whole suite is 38 tests and finishes in a few seconds.
 
 ### Prerequisites
 
@@ -131,7 +131,7 @@ console.warn
   [pipeline.integration] SKIPPED — no database configured — set PIPELINE_TEST_DATABASE_URL or …
 
 Test Suites: 1 skipped, 0 of 1 total
-Tests:       31 skipped, 31 total
+Tests:       38 skipped, 38 total
 ```
 
 ### Three outcomes, deliberately different
@@ -416,7 +416,7 @@ can predict which ids land in which slice.
 
 ## What the suite currently pins
 
-`pipeline.integration.spec.ts`, 31 tests in seven blocks:
+`pipeline.integration.spec.ts`, 38 tests in eight blocks:
 
 1. **A stage end to end** — one terminal ledger row per applicable entity at the
    current version, with `attempts = 1` and the user denormalized; the
@@ -443,6 +443,13 @@ can predict which ids land in which slice.
    the right coverage buckets; an id the stage said *nothing* about is recorded
    `failed: stage_returned_no_result` and never as success; a skip with no reason
    is refused before anything is written.
+8. **A transient failure** — a `provider_unavailable` outage never quarantines
+   however long it lasts, refunds every `attempts` charge while counting
+   `transient_attempts` separately, holds the gate at the cap instead of
+   hammering the provider, resets to the base delay once a row succeeds, still
+   quarantines a row whose failure is its own fault, and
+   `releaseQuarantined()` restores a full budget by reason without touching
+   another user's rows.
 
 ## Not covered yet
 
@@ -454,7 +461,8 @@ Named so nobody mistakes the harness for more than it is:
 - `DeadLetterReaperListener` (it reads `pgboss.job`, which needs a real pg-boss).
 - `ci.pipeline_runs` / `ci.pipeline_shards` — not by *this* harness.
   `enrichmentLoop.integration.spec.ts` drives both, over a scratch database.
-- `JobMonitorService`, `IngestResetService`, `SyncOrchestrator`,
-  `MaintenanceOrchestratorService` — still without specs.
+- End-to-end coverage of `JobMonitorService`, `IngestResetService`,
+  `SyncOrchestrator` and `MaintenanceOrchestratorService`. Each now has a unit
+  spec of its own, but none is driven against a real database by this harness.
 - Concurrency. The claim's `ON CONFLICT … WHERE` guard is exercised, but not two
   workers racing the same slice; that wants two connections and a barrier.

@@ -353,6 +353,67 @@ function composeStop(key: string): void {
   console.log('');
 }
 
+/**
+ * Record which stack owns this database, as a per-database Postgres setting.
+ *
+ * Every worktree gets its own compose project and its own `db-data` volume, but
+ * the Postgres HOST port is dynamic while `.env` hard-codes DATABASE_PORT=5432.
+ * Anything that resolves the port from `.env` rather than from the running
+ * stack — a bare `yarn workspace @ci/be-api migrate`, a seed script, jest —
+ * therefore lands on whichever worktree currently holds host 5432 and writes to
+ * ITS database. That is how a branch's migrations ended up applied to a
+ * different branch's stack, leaving dbmate with nothing to do and the app
+ * querying tables its own migrations never created.
+ *
+ * The stamp makes the mismatch detectable: `bin/dbmate.js` refuses to migrate a
+ * database another stack owns, and the api refuses to boot on one (see
+ * src/common/persistence/schemaIntegrity.ts). Kept here rather than in the
+ * `ci/setup-database` image because per-worktree isolation is a dev-stack
+ * concept — staging and production run one stack — and because a stamp added to
+ * that image would not reach the warm images an existing checkout reuses.
+ *
+ * ALTER DATABASE ... SET, not a table: it survives restarts, needs no
+ * migration, and stays out of the `pg_dump --schema-only` that dbmate writes to
+ * schema.sql, so it cannot show up as churn in a diff.
+ */
+function stampStackIdentity(key: string, env: NodeJS.ProcessEnv): void {
+  const admin = process.env.DATABASE_ADMIN_USERNAME ?? 'postgres';
+  const database = process.env.DATABASE_NAME ?? 'companion';
+
+  const res = spawnSync(
+    'docker',
+    [
+      'compose',
+      ...COMPOSE_FILES,
+      '--profile',
+      'local',
+      'exec',
+      '-T',
+      'database',
+      'psql',
+      '-U',
+      admin,
+      '-d',
+      'postgres',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-c',
+      // Both halves are quoted AND escaped: the key comes from a directory name
+      // and the database name from .env, neither of which is guaranteed to be
+      // free of a quote character.
+      `ALTER DATABASE "${database.replace(/"/g, '""')}" SET "ci.stack_key" = '${key.replace(/'/g, "''")}'`,
+    ],
+    { cwd: ROOT, env: { ...env, ...AMD_GROUP_ENV }, encoding: 'utf8' },
+  );
+
+  // Non-fatal: an un-stamped database only loses the ownership half of the
+  // guard (the migrations-vs-files comparison still runs), and refusing to
+  // start a stack over a failed bookkeeping write would be the worse trade.
+  if (res.status !== 0) {
+    note(`Could not stamp stack ownership on "${database}" — cross-worktree writes will not be caught`);
+  }
+}
+
 function migrate(dbPort: number, env: NodeJS.ProcessEnv): void {
   step('Running database migrations...\n');
 
@@ -441,6 +502,8 @@ async function up(key: string): Promise<void> {
     composeUp(composeEnv);
 
     composeStarted = true;
+
+    stampStackIdentity(key, composeEnv);
 
     migrate(dbPort, composeEnv);
 

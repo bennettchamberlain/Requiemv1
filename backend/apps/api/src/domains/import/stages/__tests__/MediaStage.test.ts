@@ -11,27 +11,63 @@ import { MediaStage } from '../MediaStage';
  * describe them claimed success, so the assertions are about a row ending up
  * pointing at a stored file — or, when it cannot, saying so once and not
  * spinning on it.
+ *
+ * The attachment pass is held to the SAME bar, and to one more: a descriptor it
+ * declines has to be counted. A green `dropped: 0` over 566 files nobody
+ * uploaded is exactly what this half of the stage was written to stop.
  */
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 
+interface AttachmentStub {
+  id: string;
+  dataSource: string;
+  contentHash: string;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * A DataSource stand-in that answers each of the stage's queries by the one
+ * fragment unique to it.
+ *
+ * Deliberately literal about which query is which: the two passes read the same
+ * table with different predicates, and a mock that matched loosely on
+ * `count(*)` would happily serve the media pass's answer to the attachment
+ * pass's question and make a broken stage look correct.
+ */
 function makeStage(
   rows: Array<Record<string, unknown>>,
-  upload?: jest.Mock,
-  options: { sharedPathStillPending?: boolean } = {},
+  options: {
+    upload?: jest.Mock;
+    attachments?: AttachmentStub[];
+    createContents?: jest.Mock;
+    /** Answer the reclaim's "does another unsettled row need this file?" probe with yes. */
+    sharedPathStillPending?: boolean;
+    /** Paths the attachment pass still has to be able to read, so the reclaim defers. */
+    attachmentPathsInUse?: string[];
+  } = {},
 ) {
   const updates: Array<{ sql: string; params: unknown[] }> = [];
-  let served = false;
+  const settled = new Map<string, Record<string, unknown>>();
+  let mediaServed = false;
+  let attachmentsServed = false;
+
+  const attachmentRows = options.attachments ?? [];
 
   const dataSource = {
     query: jest.fn(async (sql: string, params: unknown[]) => {
       if (sql.includes('UPDATE')) {
         updates.push({ sql, params });
 
+        if (sql.includes("metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb")) {
+          settled.set(params[0] as string, JSON.parse(params[1] as string));
+        }
+
         return [];
       }
 
+      // ---- the reclaim and its preflight ----------------------------------
       // The preflight's pending-bytes sum, from the rows' declared sizes.
       if (sql.includes('sum(size_bytes)')) {
         return [{ bytes: rows.reduce((sum, row) => sum + Number(row.sizeBytes ?? 0), 0) }];
@@ -42,6 +78,62 @@ function makeStage(
         return options.sharedPathStillPending ? [{ present: 1 }] : [];
       }
 
+      // The reclaim's other question: is the attachment pass going to need it?
+      if (sql.includes('CROSS JOIN LATERAL')) {
+        return (options.attachmentPathsInUse ?? []).map((p) => ({ path: p }));
+      }
+
+      // ---- the attachment pass -------------------------------------------
+      if (sql.includes('data_source AS "dataSource"')) {
+        if (attachmentsServed) {
+          return [];
+        }
+
+        attachmentsServed = true;
+
+        return attachmentRows;
+      }
+
+      if (sql.includes("metadata->'MediaAttachments' IS NOT NULL") && sql.includes('count(*)')) {
+        return [{ count: attachmentsServed ? 0 : attachmentRows.length }];
+      }
+
+      if (sql.includes("AND metadata->'AttachmentFileIds' IS NOT NULL")) {
+        return [{ count: 0 }];
+      }
+
+      if (sql.includes("jsonb_array_length(metadata->'AttachmentFileIds')")) {
+        const stored = [...settled.values()];
+
+        return [
+          {
+            count: stored.reduce((sum, patch) => sum + (patch.AttachmentFileIds as string[]).length, 0),
+            rows: stored.length,
+          },
+        ];
+      }
+
+      if (sql.includes('jsonb_each_text')) {
+        const drops: Record<string, number> = {};
+
+        for (const patch of settled.values()) {
+          for (const [reason, count] of Object.entries(
+            (patch.AttachmentDrops as Record<string, number>) ?? {},
+          )) {
+            drops[reason] = (drops[reason] ?? 0) + count;
+          }
+        }
+
+        return Object.entries(drops).map(([reason, count]) => ({ reason, count }));
+      }
+
+      if (sql.includes("metadata->>'AttachmentError' IS NOT NULL")) {
+        return [...settled.values()]
+          .filter((patch) => patch.AttachmentError != null)
+          .map((patch) => ({ unit: 'twitter', error: patch.AttachmentError as string }));
+      }
+
+      // ---- the media pass -------------------------------------------------
       if (sql.includes('count(*)')) {
         // The uploaded/carried-over probe asks without the media predicate.
         if (sql.includes("FileMediaError' IS NOT NULL")) {
@@ -52,18 +144,26 @@ function makeStage(
       }
 
       // The batch read: serve the rows once, then drain.
-      if (served) {
+      if (mediaServed) {
         return [];
       }
 
-      served = true;
+      mediaServed = true;
 
       return rows;
     }),
   };
 
   const files = {
-    uploadWithDedupInfo: upload ?? jest.fn(async () => ({ file: { id: 'file-1' }, deduped: false })),
+    uploadWithDedupInfo: options.upload ?? jest.fn(async () => ({ file: { id: 'file-1' }, deduped: false })),
+  };
+
+  const contents = {
+    createManyDetailed:
+      options.createContents ??
+      jest.fn(async (_ctx: unknown, inputs: unknown[]) =>
+        inputs.map((_input, i) => ({ entity: { id: `content-${i + 1}` } })),
+      ),
   };
 
   const logger = {
@@ -75,9 +175,11 @@ function makeStage(
   };
 
   return {
-    stage: new MediaStage(dataSource as never, files as never, logger as never),
+    stage: new MediaStage(dataSource as never, files as never, contents as never, logger as never),
     updates,
+    settled,
     files,
+    contents,
   };
 }
 
@@ -130,7 +232,7 @@ describe('MediaStage', () => {
 
     const { stage } = makeStage(
       [{ id: 'row-2', filename: 'again.jpg', mediaType: 'image/jpeg', sizeBytes: 4, localPath: photo }],
-      jest.fn(async () => ({ file: { id: 'file-existing' }, deduped: true })),
+      { upload: jest.fn(async () => ({ file: { id: 'file-existing' }, deduped: true })) },
     );
 
     const outcome = await stage.run(contextFor(scratchDir));
@@ -210,9 +312,11 @@ describe('MediaStage', () => {
 
     const { stage } = makeStage(
       [{ id: 'row-6', filename: 'kept.jpg', mediaType: 'image/jpeg', sizeBytes: 9, localPath: photo }],
-      jest.fn(async () => {
-        throw new Error('Storage backend has reached its minimum free drive threshold.');
-      }),
+      {
+        upload: jest.fn(async () => {
+          throw new Error('Storage backend has reached its minimum free drive threshold.');
+        }),
+      },
     );
 
     const outcome = await stage.run(contextFor(scratchDir));
@@ -227,7 +331,6 @@ describe('MediaStage', () => {
 
     const { stage } = makeStage(
       [{ id: 'row-7', filename: 'shared.jpg', mediaType: 'image/jpeg', sizeBytes: 9, localPath: shared }],
-      undefined,
       { sharedPathStillPending: true },
     );
 
@@ -235,6 +338,35 @@ describe('MediaStage', () => {
 
     // Uploaded fine — but the bytes stay for the sibling row that has not
     // settled yet. The last row standing (or end-of-run cleanup) reclaims.
+    expect(outcome.detail).toMatchObject({ uploaded: 1 });
+    expect(fs.existsSync(shared)).toBe(true);
+  });
+
+  it('defers the reclaim while an unsettled message still needs the same bytes', async () => {
+    // WhatsApp stages an attached photo TWICE on purpose: once as a standalone
+    // media item, once as a `MediaAttachments` descriptor on the message it
+    // arrived in, so the message gains the reference while the store's content
+    // hash resolves both onto one file. The media pass runs first, so a reclaim
+    // that ignored the attachment pass would delete the bytes it has not opened
+    // yet — turning the cross-reference into a declined attachment.
+    const shared = path.join(scratchDir, 'wa-shared.jpg');
+    fs.writeFileSync(shared, 'jpegbytes');
+
+    const { stage } = makeStage(
+      [
+        {
+          id: 'row-10',
+          filename: 'wa-shared.jpg',
+          mediaType: 'image/jpeg',
+          sizeBytes: 9,
+          localPath: shared,
+        },
+      ],
+      { attachmentPathsInUse: [shared] },
+    );
+
+    const outcome = await stage.run(contextFor(scratchDir));
+
     expect(outcome.detail).toMatchObject({ uploaded: 1 });
     expect(fs.existsSync(shared)).toBe(true);
   });
@@ -285,5 +417,265 @@ describe('MediaStage', () => {
     } finally {
       statfs.mockRestore();
     }
+  });
+
+  describe('communication attachments', () => {
+    /** A message row carrying `n` retained files, the shape twitter stages. */
+    function messageWith(
+      scratch: string,
+      files: Array<{ name: string; type?: string; mimetype?: string }>,
+      extra: Record<string, unknown> = {},
+    ): AttachmentStub {
+      return {
+        id: 'msg-1',
+        dataSource: 'twitter',
+        contentHash: 'twitter:dm:9',
+        metadata: {
+          Text: 'look at this',
+          MediaAttachments: files.map((file) => {
+            const abs = path.join(scratch, file.name);
+            fs.writeFileSync(abs, `bytes-of-${file.name}`);
+
+            return {
+              path: abs,
+              filename: file.name,
+              type: file.type ?? 'image',
+              mimetype: file.mimetype ?? 'image/jpeg',
+            };
+          }),
+          ...extra,
+        },
+      };
+    }
+
+    it('uploads a message attachment and stamps the id the push reads', async () => {
+      const attachment = messageWith(scratchDir, [{ name: 'dm.jpg' }]);
+      const { stage, settled, files } = makeStage([], { attachments: [attachment] });
+
+      const outcome = await stage.run(contextFor(scratchDir));
+
+      expect(files.uploadWithDedupInfo).toHaveBeenCalledWith(
+        { userId: USER_ID },
+        // The user's own filename, not the retained `twitter-<id>-<hash>.jpg`.
+        expect.objectContaining({ filename: 'dm.jpg', contentType: 'image/jpeg' }),
+      );
+      // `attachmentsFor` in the push builds the column from exactly this key;
+      // before this pass existed nothing anywhere wrote it.
+      expect(settled.get('msg-1')).toEqual({ AttachmentFileIds: ['file-1'] });
+      expect(outcome.detail).toMatchObject({ attachments: { rows: 1, files: 1, declined: 0 } });
+      expect(outcome.partial).toBe(false);
+    });
+
+    it('reads the bare-path shape as well as the descriptor shape', async () => {
+      // facebook and sms_backup_restore write `MediaFilePaths`; twitter and the
+      // chat exports write `MediaAttachments`. Both were dead, so the leg has to
+      // read both or Messenger stays broken.
+      const bare = path.join(scratchDir, 'mms.png');
+      fs.writeFileSync(bare, 'pngbytes');
+
+      const { stage, settled, files } = makeStage([], {
+        attachments: [
+          {
+            id: 'msg-2',
+            dataSource: 'facebook',
+            contentHash: 'fb:msg:3',
+            metadata: { MediaFilePaths: [bare] },
+          },
+        ],
+      });
+
+      await stage.run(contextFor(scratchDir));
+
+      expect(files.uploadWithDedupInfo).toHaveBeenCalledWith(
+        { userId: USER_ID },
+        expect.objectContaining({ filename: 'mms.png' }),
+      );
+      expect(settled.get('msg-2')).toEqual({ AttachmentFileIds: ['file-1'] });
+    });
+
+    it('catalogues each attachment as content when the source opts in', async () => {
+      // Messenger's lane: a shared photo is a thing you want to find by itself,
+      // not only by reading the thread it arrived in.
+      const attachment = messageWith(scratchDir, [{ name: 'a.jpg' }, { name: 'b.mp4', type: 'video' }], {
+        AttachmentContent: true,
+      });
+      const { stage, settled, contents } = makeStage([], { attachments: [attachment] });
+
+      const outcome = await stage.run(contextFor(scratchDir));
+
+      const [, inputs] = contents.createManyDetailed.mock.calls[0];
+      expect(inputs).toHaveLength(2);
+      // Identity per attachment, so a re-import dedups instead of duplicating.
+      expect(inputs[0]).toMatchObject({
+        type: 'media',
+        external_id: 'file-1',
+        external_id_kind: 'file',
+        source_system: 'twitter',
+        source_id: 'twitter:dm:9:attachment:0',
+        title: 'a.jpg',
+      });
+      expect(inputs[1]).toMatchObject({ source_id: 'twitter:dm:9:attachment:1', title: 'b.mp4' });
+
+      // Index-aligned: attachment i is { file: fileIds[i], content: contentIds[i] }.
+      expect(settled.get('msg-1')).toEqual({
+        AttachmentFileIds: ['file-1', 'file-1'],
+        AttachmentContentIds: ['content-1', 'content-2'],
+      });
+      expect(outcome.detail).toMatchObject({ attachments: { files: 2, contents: 2 } });
+    });
+
+    it('writes no content rows for a source that did not opt in', async () => {
+      // WhatsApp's case: the same bytes already reach staging as a standalone
+      // media item, which catalogues itself. A content row here would be a
+      // second one over the same file.
+      const attachment = messageWith(scratchDir, [{ name: 'wa.jpg' }]);
+      const { stage, settled, contents } = makeStage([], { attachments: [attachment] });
+
+      await stage.run(contextFor(scratchDir));
+
+      expect(contents.createManyDetailed).not.toHaveBeenCalled();
+      expect(settled.get('msg-1')).not.toHaveProperty('AttachmentContentIds');
+    });
+
+    it('counts an attachment it cannot store instead of reporting a clean run', async () => {
+      // THE regression. The twitter run reported `status=completed, dropped: 0,
+      // dropsByReason: {}` while 566 retained files sat unread in the same
+      // scratch tree and were deleted with it.
+      const { stage, settled } = makeStage([], {
+        attachments: [
+          {
+            id: 'msg-3',
+            dataSource: 'twitter',
+            contentHash: 'twitter:dm:4',
+            metadata: {
+              MediaAttachments: [
+                { path: path.join(scratchDir, 'never-written.jpg'), filename: 'never-written.jpg' },
+              ],
+            },
+          },
+        ],
+      });
+
+      const outcome = await stage.run(contextFor(scratchDir));
+
+      expect(settled.get('msg-3')).toMatchObject({
+        AttachmentFileIds: [],
+        AttachmentDrops: { media_path_missing: 1 },
+      });
+      expect(outcome.detail).toMatchObject({ attachments: { files: 0, declined: 1 } });
+      // A gap in the import, and the run has to say so.
+      expect(outcome.partial).toBe(true);
+
+      const summary = (outcome.detail as Record<string, unknown>).summary as {
+        units: Array<{ unit: string; produced: number; drops: Record<string, number> }>;
+        dropsByReason: Record<string, number>;
+      };
+      const unit = summary.units.find((u) => u.unit === 'communication_attachments');
+      expect(unit).toMatchObject({ produced: 0, drops: { media_path_missing: 1 } });
+      expect(summary.dropsByReason).toMatchObject({ media_missing: 1 });
+    });
+
+    it('counts an attachment declared with no path at all', async () => {
+      // An iMessage attachment whose row survived the export as a guid with no
+      // bytes. Nothing to upload, still a gap.
+      const { stage, settled } = makeStage([], {
+        attachments: [
+          {
+            id: 'msg-4',
+            dataSource: 'imessage',
+            contentHash: 'imsg:7',
+            metadata: { MediaAttachments: [{ guid: 'abc', type: 'image' }] },
+          },
+        ],
+      });
+
+      const outcome = await stage.run(contextFor(scratchDir));
+
+      expect(settled.get('msg-4')).toMatchObject({ AttachmentDrops: { attachment_no_path: 1 } });
+      expect(outcome.partial).toBe(true);
+    });
+
+    it('settles a row that stored nothing, so the pass cannot spin on it', async () => {
+      const { stage, settled } = makeStage([], {
+        attachments: [
+          {
+            id: 'msg-5',
+            dataSource: 'twitter',
+            contentHash: 'twitter:dm:5',
+            metadata: { MediaAttachments: [{ path: path.join(scratchDir, 'missing.jpg') }] },
+          },
+        ],
+      });
+
+      await stage.run(contextFor(scratchDir));
+
+      // An EMPTY array is still a settled row: the selection query tests for the
+      // key's presence, so this row leaves the predicate and is not retried.
+      expect(settled.get('msg-5')).toHaveProperty('AttachmentFileIds', []);
+    });
+
+    it('refuses an attachment path outside the run scratch directory', async () => {
+      const outside = path.join(os.tmpdir(), 'ci-mediastage-attach-outsider.jpg');
+      fs.writeFileSync(outside, 'nope');
+
+      const { stage, settled, files } = makeStage([], {
+        attachments: [
+          {
+            id: 'msg-6',
+            dataSource: 'twitter',
+            contentHash: 'twitter:dm:6',
+            metadata: { MediaAttachments: [{ path: outside, filename: 'outsider.jpg' }] },
+          },
+        ],
+      });
+
+      await stage.run(contextFor(scratchDir));
+
+      expect(files.uploadWithDedupInfo).not.toHaveBeenCalled();
+      expect(settled.get('msg-6')).toMatchObject({
+        AttachmentDrops: { media_path_escaped_scratch: 1 },
+      });
+
+      fs.rmSync(outside, { force: true });
+    });
+
+    it('keeps the file ids when the content rows fail', async () => {
+      const attachment = messageWith(scratchDir, [{ name: 'c.jpg' }], { AttachmentContent: true });
+      const { stage, settled } = makeStage([], {
+        attachments: [attachment],
+        createContents: jest.fn(async () => {
+          throw new Error('content insert exploded');
+        }),
+      });
+
+      const outcome = await stage.run(contextFor(scratchDir));
+
+      // The bytes landed; only the catalogue row did not. Keeping the file id
+      // means the message still shows its photo, and the miss is counted.
+      expect(settled.get('msg-1')).toMatchObject({
+        AttachmentFileIds: ['file-1'],
+        AttachmentDrops: { attachment_content_failed: 1 },
+      });
+      expect(settled.get('msg-1')).not.toHaveProperty('AttachmentContentIds');
+      expect(outcome.partial).toBe(true);
+    });
+
+    it('leaves no attachment unit on a run that had none', async () => {
+      const photo = path.join(scratchDir, 'solo.jpg');
+      fs.writeFileSync(photo, 'jpegbytes');
+
+      const { stage } = makeStage([
+        { id: 'row-9', filename: 'solo.jpg', mediaType: 'image/jpeg', sizeBytes: 9, localPath: photo },
+      ]);
+
+      const outcome = await stage.run(contextFor(scratchDir));
+
+      const summary = (outcome.detail as Record<string, unknown>).summary as {
+        units: Array<{ unit: string }>;
+      };
+      // A Takeout of nothing but photos must not grow a permanently-empty unit
+      // whose `emptyReason` an agent then has to explain away.
+      expect(summary.units.map((u) => u.unit)).toEqual(['object_store']);
+    });
   });
 });

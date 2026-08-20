@@ -47,7 +47,7 @@ export const RAIL_DESTINATIONS: readonly RailDestination[] = [
 export const HELP_LINKS = [
   { href: 'https://ci.computer/support', label: 'Support', icon: LifeBuoy },
   {
-    href: 'https://docs.ci.computer/docs/first-party-apps/digital-memory-server',
+    href: 'https://docs.ci.computer/docs/apps-available/first-party-apps/companion-memory-server',
     label: 'Docs',
     icon: BookOpen,
   },
