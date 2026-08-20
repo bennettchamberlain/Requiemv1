@@ -1004,6 +1004,47 @@ describe('toBrowserActivityInput', () => {
 
     expect(toBrowserActivityInput(search).url).toBeTruthy();
   });
+
+  // `duration_seconds` had a column, this DTO field, and a `screen_minutes`
+  // metric summing it, and no producer anywhere on the import path — the only
+  // other assignment of the column is a COMMUNICATION's call duration. Browser
+  // rows sat at 0 of 327,745.
+  it('carries dwell time through to duration_seconds', () => {
+    const view = recordFor({
+      classification: 'page_view',
+      metadata: { URL: 'https://example.com', DurationSeconds: 45 },
+    });
+
+    expect(toBrowserActivityInput(view).duration_seconds).toBe(45);
+  });
+
+  it('leaves duration_seconds unset when the parser recorded no dwell time', () => {
+    const view = recordFor({ classification: 'page_view', metadata: { URL: 'https://example.com' } });
+
+    expect(toBrowserActivityInput(view).duration_seconds).toBeUndefined();
+  });
+
+  it('does not pass through a zero or negative dwell time', () => {
+    // The parser already omits these; this is the mapper refusing to record a
+    // visit as having lasted no time at all rather than not knowing.
+    for (const DurationSeconds of [0, -1]) {
+      const view = recordFor({
+        classification: 'page_view',
+        metadata: { URL: 'https://example.com', DurationSeconds },
+      });
+
+      expect(toBrowserActivityInput(view).duration_seconds).toBeUndefined();
+    }
+  });
+
+  it('does not pass through a non-numeric dwell time', () => {
+    const view = recordFor({
+      classification: 'page_view',
+      metadata: { URL: 'https://example.com', DurationSeconds: 'a while' },
+    });
+
+    expect(toBrowserActivityInput(view).duration_seconds).toBeUndefined();
+  });
 });
 
 describe('toEventInput', () => {

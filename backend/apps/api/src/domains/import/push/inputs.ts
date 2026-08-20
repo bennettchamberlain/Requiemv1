@@ -1567,6 +1567,18 @@ export function toBrowserActivityInput(rec: CanonicalRecord): CreateBrowserActiv
     input.page_summary = summary;
   }
 
+  // Dwell time. `ci.browser_activity.duration_seconds`, this DTO field and the
+  // `screen_minutes` daily metric that sums it were all in place with no
+  // producer on any import path — the only other assignment of this column
+  // (above) is a COMMUNICATION's call duration, so browser rows never carried
+  // one. The parser decides what counts as a usable duration and omits the
+  // field otherwise (see chromium.ts dwellSeconds); this only passes through a
+  // positive finite number.
+  const dwell = Number(m.DurationSeconds);
+  if (Number.isFinite(dwell) && dwell > 0) {
+    input.duration_seconds = dwell;
+  }
+
   return input;
 }
 

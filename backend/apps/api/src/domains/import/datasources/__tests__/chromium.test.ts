@@ -378,3 +378,81 @@ describe('recognizing a directory with two sibling Chromium files', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+// `visits.visit_duration` records how long each visit lasted. It was never
+// selected, so `ci.browser_activity.duration_seconds` — which has a column, a
+// DTO field, and a `screen_minutes` metric summing it — had no producer on any
+// import path and sat at 0 of 327,745 rows.
+//
+// Note the fixture ABOVE has no visit_duration column at all, which is the
+// older-schema case: those tests passing is what proves the column probe
+// degrades instead of importing nothing.
+describe('visit dwell time', () => {
+  function makeHistoryDbWithDuration(dir: string, durationsMicros: Array<number | null>): string {
+    const p = path.join(dir, 'History');
+    const db = new Database(p);
+    db.exec(`
+      CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT, last_visit_time INTEGER);
+      CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER, visit_time INTEGER, visit_duration INTEGER);
+    `);
+    db.prepare('INSERT INTO urls (id, url, title) VALUES (?, ?, ?)').run(1, 'https://example.com', 'Example');
+    const v = db.prepare('INSERT INTO visits (id, url, visit_time, visit_duration) VALUES (?, ?, ?, ?)');
+    durationsMicros.forEach((d, i) => v.run(i + 1, 1, toChromeTime(`2025-02-1${i}T00:00:00Z`), d));
+    db.close();
+
+    return p;
+  }
+
+  // runImport already returns ITEMS, not graphs. Note the assertions below use
+  // toStrictEqual, not toEqual: toEqual ignores undefined array entries, so an
+  // EMPTY result compares equal to [undefined], and a test asserting "no
+  // duration" would pass against an import that produced nothing at all.
+  const durations = async (micros: Array<number | null>) => {
+    const dir = tmpdir();
+    const items = await runImport(makeHistoryDbWithDuration(dir, micros));
+    const views = items.filter((i) => i.classification === 'page_view');
+    expect(views).toHaveLength(micros.length);
+
+    return views.map((i) => i.metadata.DurationSeconds);
+  };
+
+  it('converts microseconds to seconds', async () => {
+    // 45 s and 90 s expressed in microseconds.
+    expect(await durations([45_000_000, 90_000_000])).toStrictEqual([45, 90]);
+  });
+
+  it('rounds to the nearest second rather than truncating', async () => {
+    expect(await durations([6_900_000])).toStrictEqual([7]);
+  });
+
+  it('omits a duration of zero, which means "not recorded"', async () => {
+    expect(await durations([0])).toStrictEqual([undefined]);
+  });
+
+  it('omits a null duration', async () => {
+    expect(await durations([null])).toStrictEqual([undefined]);
+  });
+
+  it('omits an implausibly long visit instead of clamping it', async () => {
+    // Chrome accrues this while a tab merely stays open: in the reference
+    // profile p99 is 33 h and the longest visit is 114 h, which summed raw
+    // reports 5.8 YEARS of screen time. Clamping would fabricate a specific
+    // large number for each; omitting reports the visit with no duration.
+    const fiveHours = 5 * 60 * 60 * 1_000_000;
+    const oneHundredHours = 100 * 60 * 60 * 1_000_000;
+    expect(await durations([fiveHours, oneHundredHours])).toStrictEqual([undefined, undefined]);
+  });
+
+  it('keeps a long but plausible sitting just under the bound', async () => {
+    const justUnderFourHours = (4 * 60 * 60 - 1) * 1_000_000;
+    expect(await durations([justUnderFourHours])).toStrictEqual([4 * 60 * 60 - 1]);
+  });
+
+  it('still imports the visit itself when the duration is unusable', async () => {
+    const dir = tmpdir();
+    const items = await runImport(makeHistoryDbWithDuration(dir, [0, 100 * 60 * 60 * 1_000_000]));
+    const views = items.filter((i) => i.classification === 'page_view');
+    expect(views).toHaveLength(2);
+    expect(views.every((i) => i.metadata.URL === 'https://example.com')).toBe(true);
+  });
+});

@@ -135,6 +135,51 @@ async function readBookmarksFile(fpath: string): Promise<FlatBookmark[] | undefi
   return out;
 }
 
+/**
+ * Chromium's per-visit dwell time, in seconds, or undefined when it is not
+ * usable as a measure of attention.
+ *
+ * `visits.visit_duration` is microseconds and is populated on the large
+ * majority of visits — 43,010 of 46,791 (91.9%) in the reference profile — so
+ * dropping it discarded the only record of how long anything was actually
+ * looked at. `ci.browser_activity.duration_seconds`, its DTO field, and the
+ * `screen_minutes` daily metric that sums it were all already built and had
+ * simply never had a producer.
+ *
+ * ## Why an upper bound is required rather than nice to have
+ *
+ * Chrome accrues this while a tab merely STAYS OPEN, not while anyone is
+ * looking at it. The distribution says so plainly: the median visit is 6.9
+ * seconds, but p99 is 33 hours, 572 visits exceed a day, and the longest is
+ * 114 hours. Summed raw, the reference profile reports 51,119 hours of screen
+ * time — 5.8 years, out of a few years of history. Feeding that to
+ * `screen_minutes` would not produce a slightly-high number, it would produce
+ * a meaningless one.
+ *
+ * So a visit longer than MAX_PLAUSIBLE_DWELL_S is treated as UNKNOWN and the
+ * field is omitted, rather than clamped to the bound. Clamping would fabricate
+ * a specific large number for every one of them — the 2,361 visits over four
+ * hours would contribute 9,444 hours of screen time nobody spent. Omitting
+ * says the only honest thing: a tab was open, and how long it held attention
+ * is not something this source knows. That keeps 40,649 visits (94.5% of those
+ * carrying a duration) totalling 6,240 hours.
+ *
+ * Four hours is the bound because it is where "a long sitting" stops being the
+ * likelier reading than "a tab left open" — p90 is already 84 minutes, so the
+ * bound sits well above ordinary use while excluding 5.5% of durations.
+ */
+const MAX_PLAUSIBLE_DWELL_S = 4 * 60 * 60;
+
+function dwellSeconds(microseconds: number | null | undefined): number | undefined {
+  if (typeof microseconds !== 'number' || !Number.isFinite(microseconds) || microseconds <= 0) {
+    return undefined;
+  }
+
+  const seconds = Math.round(microseconds / 1_000_000);
+
+  return seconds > 0 && seconds <= MAX_PLAUSIBLE_DWELL_S ? seconds : undefined;
+}
+
 class ChromiumFileImporter implements FileImporter {
   async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
     const full = entry.fullPath || entry.fsRoot || entry.filename;
@@ -272,8 +317,18 @@ class ChromiumFileImporter implements FileImporter {
     }
 
     try {
+      // `visits.visit_duration` has been present for many Chromium releases but
+      // is not guaranteed across every profile this importer may be handed, and
+      // the catch below turns a bad SELECT into ZERO imported visits rather than
+      // a loud failure. Probe for the column and leave it out when absent, the
+      // same way imessage.ts guards chat.db's varying schema.
+      const hasDuration = (db.prepare('PRAGMA table_info(visits)').all() as Array<{ name: string }>).some(
+        (c) => c.name === 'visit_duration',
+      );
+
       // Chromium's visits.url column is a foreign key onto urls.id.
       const stmt = db.prepare(`SELECT u.url AS url, u.title AS title, v.visit_time AS visit_time
+               ${hasDuration ? ', v.visit_duration AS visit_duration' : ''}
         FROM visits v
         INNER JOIN urls u ON u.id = v.url
         ORDER BY v.visit_time ASC`);
@@ -282,6 +337,7 @@ class ChromiumFileImporter implements FileImporter {
         url: string;
         title: string | null;
         visit_time: number;
+        visit_duration: number | null;
       }>) {
         const ts = chromeTimeToDate(row.visit_time);
         if (!timeframeContains(params.timeframe, ts)) {
@@ -304,6 +360,7 @@ class ChromiumFileImporter implements FileImporter {
             URL: url,
             Title: row.title || undefined,
             'Visit Date': ts?.toISOString(),
+            DurationSeconds: dwellSeconds(row.visit_duration),
           },
         };
         params.pipeline.push({ item } as Graph);
