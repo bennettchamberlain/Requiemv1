@@ -1,5 +1,6 @@
 import type { StagedItem } from '../../entities/StagedItemEntity';
 import {
+  communicationAttachmentsFrom,
   destinationsFor,
   discordAttachmentFilename,
   edgeProjectionSourcesFor,
@@ -677,5 +678,62 @@ describe('a contact card is a person, not a document', () => {
   it('still routes a plain file to content, so the file rule is untouched', () => {
     expect(kindFor('file', null)).toBe('import.archive_item');
     expect(destinationsFor(contactRecord({ kind: kindFor('file', null) })).length).toBeGreaterThan(0);
+  });
+});
+
+describe('communicationAttachmentsFrom', () => {
+  /**
+   * The union the media leg reads. Two parser generations wrote two different
+   * keys for the same idea and NEITHER was ever read — `MediaAttachments` by
+   * twitter, gmail, iMessage and the chat exports, `MediaFilePaths` by facebook
+   * and sms_backup_restore. Reading only one of them leaves half the sources
+   * dropping their attachments exactly as before.
+   */
+  it('reads the rich descriptor shape', () => {
+    const attachments = communicationAttachmentsFrom({
+      MediaAttachments: [
+        { path: '/scratch/a.jpg', filename: 'holiday.jpg', type: 'image', mimetype: 'image/jpeg' },
+      ],
+    });
+
+    expect(attachments).toEqual([
+      { path: '/scratch/a.jpg', filename: 'holiday.jpg', type: 'image', mimetype: 'image/jpeg' },
+    ]);
+  });
+
+  it('fills a bare path in from its own extension', () => {
+    // An MMS part is bytes and nothing else, so the filename and MIME have to
+    // come from the path or the file arrives called `d41d8cd98f…` and untyped.
+    expect(communicationAttachmentsFrom({ MediaFilePaths: ['/scratch/part-1.png'] })).toEqual([
+      { path: '/scratch/part-1.png', filename: 'part-1.png', type: 'media', mimetype: 'image/png' },
+    ]);
+  });
+
+  it('keeps a non-media attachment honest rather than calling it media', () => {
+    // An email's PDF is a file. Typing it 'media' would put it in a gallery.
+    expect(communicationAttachmentsFrom({ MediaFilePaths: ['/scratch/invoice.pdf'] })).toMatchObject([
+      { type: 'file', mimetype: 'application/pdf' },
+    ]);
+  });
+
+  it('drops a descriptor with no path, because there are no bytes to store', () => {
+    // Still counted as a gap by the caller — see MediaStage's attachment_no_path.
+    expect(communicationAttachmentsFrom({ MediaAttachments: [{ guid: 'abc', type: 'image' }] })).toEqual([]);
+  });
+
+  it('does not upload the same file twice when both keys name it', () => {
+    // A parser is allowed to write both; two entries for one photo would put
+    // the same file in `attachments` twice.
+    const attachments = communicationAttachmentsFrom({
+      MediaAttachments: [{ path: '/scratch/same.jpg', filename: 'same.jpg', type: 'image' }],
+      MediaFilePaths: ['/scratch/same.jpg', '/scratch/other.jpg'],
+    });
+
+    expect(attachments.map((a) => a.path)).toEqual(['/scratch/same.jpg', '/scratch/other.jpg']);
+  });
+
+  it('is empty for a message that carries nothing', () => {
+    expect(communicationAttachmentsFrom({ Text: 'hi' })).toEqual([]);
+    expect(communicationAttachmentsFrom(undefined)).toEqual([]);
   });
 });

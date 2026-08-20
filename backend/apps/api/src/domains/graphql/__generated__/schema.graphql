@@ -315,6 +315,18 @@ type CalibrationScoreType {
   scoredAt: String!
 }
 
+type CommunicationAttachmentType {
+  contentId: ID
+  contentType: String
+  fileId: ID
+  filename: String
+  height: Int
+  previewUrl: String
+  size: Float
+  url: String
+  width: Int
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -327,6 +339,7 @@ type CommunicationEdge implements Edge {
 }
 
 type CommunicationType implements Node & Taggable {
+  attachments: [CommunicationAttachmentType!]!
   content: String!
   direction: String!
   from: PersonType

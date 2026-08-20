@@ -339,6 +339,19 @@ export type CalibrationScoreType = {
   scoredAt: Scalars['String']['output'];
 };
 
+export type CommunicationAttachmentType = {
+  __typename?: 'CommunicationAttachmentType';
+  contentId?: Maybe<Scalars['ID']['output']>;
+  contentType?: Maybe<Scalars['String']['output']>;
+  fileId?: Maybe<Scalars['ID']['output']>;
+  filename?: Maybe<Scalars['String']['output']>;
+  height?: Maybe<Scalars['Int']['output']>;
+  previewUrl?: Maybe<Scalars['String']['output']>;
+  size?: Maybe<Scalars['Float']['output']>;
+  url?: Maybe<Scalars['String']['output']>;
+  width?: Maybe<Scalars['Int']['output']>;
+};
+
 export type CommunicationConnection = Connection & {
   __typename?: 'CommunicationConnection';
   edges: Array<CommunicationEdge>;
@@ -354,6 +367,7 @@ export type CommunicationEdge = Edge & {
 
 export type CommunicationType = Node & Taggable & {
   __typename?: 'CommunicationType';
+  attachments: Array<CommunicationAttachmentType>;
   content: Scalars['String']['output'];
   direction: Scalars['String']['output'];
   from?: Maybe<PersonType>;
