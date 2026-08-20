@@ -17,11 +17,13 @@ vi.mock('./useAuth', () => ({
   useAuth: () => [{ authToken: h.authToken, authenticated: h.authenticated }, {}],
 }));
 
-// Everything useLocationTracking pulls from @ci/common. `fixFromGeolocationPosition` is
-// given a small real-ish implementation (rather than a bare mock) so the fix objects
-// reaching `captureLocationFix` reflect the position passed to the geolocation callback —
-// that's the seam this hook actually owns.
-vi.mock('@ci/common', () => ({
+// The @ci/common seams useLocationTracking pulls on, overridden over the real module so
+// nothing rendered here loses an unrelated export. `fixFromGeolocationPosition` is given a
+// small real-ish implementation (rather than a bare mock) so the fix objects reaching
+// `captureLocationFix` reflect the position passed to the geolocation callback — that's the
+// seam this hook actually owns.
+vi.mock('@ci/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@ci/common')>()),
   captureLocationFix: h.captureLocationFix,
   createLocationSampler: h.createLocationSampler,
   fixFromGeolocationPosition: (position: GeolocationPosition) => ({

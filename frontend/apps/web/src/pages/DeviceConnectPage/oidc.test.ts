@@ -16,7 +16,8 @@ const getLaunchUrl = vi.fn(async (): Promise<string | null> => null);
 let urlHandler: ((url: string) => void) | undefined;
 const unlisten = vi.fn();
 
-vi.mock('@ci/common', () => ({
+vi.mock('@ci/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@ci/common')>()),
   openExternalUrl: (url: string) => openExternalUrl(url),
   closeBrowser: () => closeBrowser(),
   getLaunchUrl: () => getLaunchUrl(),
