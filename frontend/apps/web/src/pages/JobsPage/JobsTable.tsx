@@ -70,7 +70,11 @@ export function JobsTable({ data, loading, error, filters, categories, jobTypes,
 
   const stateTabs = (
     <div
-      className={phone ? 'flex gap-1 overflow-x-auto overscroll-x-contain pb-0.5' : 'flex flex-wrap gap-1'}
+      className={
+        phone
+          ? 'scrollbar-none flex gap-1 overflow-x-auto overscroll-x-contain pb-0.5'
+          : 'flex flex-wrap gap-1'
+      }
       role="tablist"
       aria-label="Job state"
     >

@@ -415,14 +415,11 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
           )}
         </Frame>
 
-        {/* Outside the frame, as the desktop exit already does it.
-          On mobile FeedModal is an InlineModal — `absolute inset-0` — so it
-          fills its nearest positioned ancestor. Inside the frame that ancestor
-          is the frame, which is only as tall as the brief's own content, so an
-          action card would open into a box partway down the page instead of
-          over it. Outside, it resolves to the host: Today's PageContent when
-          embedded, or the layout's `relative` <main> when this page stands on
-          its own. */}
+        {/* Outside the frame, as the desktop exit already does it. On mobile
+          FeedModal portals into the layout `content-modal` on `<main>` so it
+          fills the visible content area instead of the scrolled PageContent
+          origin — opening a card mid-page used to paint the chat at the top of
+          the document, out of view. */}
         {isModalOpen && <FeedModal onClose={handleModalClose} />}
       </>
     );
