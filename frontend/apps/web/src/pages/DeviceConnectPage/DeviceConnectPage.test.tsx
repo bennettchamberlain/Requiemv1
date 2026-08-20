@@ -134,7 +134,6 @@ describe('DeviceConnectPage', () => {
     ]);
     h.completePortalMemoryConnect.mockImplementation(async () => {
       h.authenticated = true;
-
       return true;
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
