@@ -119,6 +119,8 @@ ${ENV_FILE_YAML}
 ${ENV_FILE_YAML}
   migrate-database:
     image: ${API_IMAGE}
+  database:
+    shm_size: 1gb
 EOF
 
 echo "==> Wrote override: $OVERRIDE_FILE"

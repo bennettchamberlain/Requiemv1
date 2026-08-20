@@ -118,7 +118,8 @@ inferences to anyone else is not.
 
 **iOS.** `com.apple.developer.healthkit` entitlement, `NSHealthShareUsageDescription`,
 plus `NSHealthUpdateUsageDescription` if you ever write back. HealthKit is available on
-iPad, but confirm before shipping universal (see `DELIVERY.md` §1a iPad decision).
+iPad, but the app ships **iPhone-only** (`TARGETED_DEVICE_FAMILY = 1`, decided 2026-08-19
+— see `DELIVERY.md` §1a), so iPad is out of scope unless that is reversed.
 
 > 🔴 **The non-obvious rule everyone gets wrong.** Guideline **5.1.3(ii)**:
 > *"Apps must not write false or inaccurate data into HealthKit … and **may not store
@@ -564,9 +565,11 @@ onboarding wall is a rejection.
   on whether a Lifescope-hosted demo or managed instance makes Lifescope a processor for
   third-party personal data.
 
-- 🟢 **[code] iPad + HealthKit.** `DELIVERY.md` decided universal. Confirm HealthKit
-  availability and behaviour on iPad before declaring the entitlement, and do not add
-  HealthKit to `UIRequiredDeviceCapabilities` (it would silently drop iPad).
+- 🟢 **[code] iPad + HealthKit.** Moot for now: `DELIVERY.md` §1a settled on
+  **iPhone-only** (`TARGETED_DEVICE_FAMILY = 1`) on 2026-08-19, reversing the earlier
+  "ship universal" call. If universal is ever restored, confirm HealthKit availability
+  and behaviour on iPad before declaring the entitlement, and do not add HealthKit to
+  `UIRequiredDeviceCapabilities` (it would silently drop iPad).
 
 ---
 

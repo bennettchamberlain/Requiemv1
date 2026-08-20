@@ -28,25 +28,30 @@ Full index: [`docs/README.md`](docs/README.md)
 - **Architecture:** [`docs/architecture/architecture.md`](docs/architecture/architecture.md) (platform, services, data flows) and [`docs/architecture/Database.md`](docs/architecture/Database.md) (schemas, idempotency design, indexing, hypertables, migration workflow).
 - **Backend developer guide:** [`backend/apps/api/README.md`](backend/apps/api/README.md) — domain/module layout, common infrastructure, the event bus, config system, DB workflow.
 - **Runbooks:** [bulk load](backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md) · [ingest reset](backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md).
+- **Import & ETL:** [`docs/import/etl-agent-guide.md`](docs/import/etl-agent-guide.md) (how a personal archive becomes rows in `ci.*`, and how to fix an import bug) and [`docs/cli/ci-import.md`](docs/cli/ci-import.md) (the `ci-import` command line). Import is a domain inside this repo — `backend/apps/api/src/domains/import/` — not a separate service.
 - **Features:** [`docs/saved-search-sharing.md`](docs/saved-search-sharing.md) (sharing + filter capture + read-only viewer) · [`docs/peer-federation.md`](docs/peer-federation.md) (asking questions across two Companion memories — Portal discovery, the three ask archetypes, free/busy without leaking a calendar).
-- **User-facing:** the [Companion Memory page on docs.ci.computer](https://docs.ci.computer/docs/first-party-apps/digital-memory-server) (in [CI-Docs](https://github.com/companionintelligence/CI-Docs)) covers the Explorer, search & filters, saved searches, and sharing — with screenshots.
+- **User-facing:** the [Companion Memory page on docs.ci.computer](https://docs.ci.computer/docs/apps-available/first-party-apps/companion-memory-server) (in [CI-Docs](https://github.com/companionintelligence/CI-Docs)) covers the Explorer, search & filters, saved searches, and sharing — with screenshots.
 
-This is a Yarn workspace monorepo with the following structure:
+This is a Yarn workspace monorepo, with a uv-managed Python workspace alongside it
+(one `uv.lock` at the root covering `backend/apps/{hbpe,summary}` and
+`backend/packages/*`). The structure:
 
 ```
 ├── backend/apps/
 │   ├── api/                    # Main backend API service (NestJS)
 │   ├── hbpe/                   # HBPE behavioral-prediction sidecar (Python/FastAPI, ONNX)
-│   └── summary/                # Hourly/daily/weekly summarization agent (Python)
+│   └── summary/                # Summarization + document-parser sidecar (Python/FastAPI)
+├── backend/packages/
+│   └── telemetry/              # Shared Python library: Sentry error reporting for the sidecars
 ├── frontend/apps/
 │   ├── web/                    # Main web application (React + Vite)
 │   ├── ios/                    # Capacitor iOS shell around the web app (not a Yarn workspace)
 │   ├── android/                # Capacitor Android shell around the web app (not a Yarn workspace)
 │   └── mobile/                 # Pointer README left by the iOS/Android split
 └── frontend/packages/
-    ├── capacitor-local-hub/    # Capacitor plugin: on-device hub bridge
-    ├── capacitor-local-llm/    # Capacitor plugin: on-device LLM
-    ├── capacitor-speech/       # Capacitor plugin: speech
+    ├── capacitor-local-hub/    # Capacitor plugin: on-device hub bridge (iOS + Android)
+    ├── capacitor-local-llm/    # Capacitor plugin: on-device LLM (Android only — iOS vendors its own Swift implementation)
+    ├── capacitor-speech/       # Capacitor plugin: speech (iOS + Android)
     ├── capture/                # Camera capture components
     ├── common/                 # Shared utilities and components
     ├── editor/                 # Rich-text editor package
@@ -79,7 +84,7 @@ flowchart TB
 
     subgraph Overmind["overmind (Procfile, host processes)"]
       API["api — NestJS<br/>(REST + GraphQL)"]
-      WORKER["worker — NestJS<br/>(CI_ROLE=worker, job consumer)"]
+      WORKER["worker — NestJS<br/>(CI_ROLE=worker, import stages)"]
       WEB["web — Vite dev server"]
     end
 
@@ -100,17 +105,31 @@ flowchart TB
     API <--> MINIO
     API <--> OLLAMA
     WORKER <--> PG
-    PG -- "PGBoss → /functions/run" --> SUM
-    PG -- "PGBoss → /functions/run" --> HBPE
+    API -- "POST /functions/run" --> SUM
+    API -- "POST /functions/run" --> HBPE
+    SUM -. "completion webhook" .-> API
+    HBPE -. "completion webhook" .-> API
     SUM --> PG
     HBPE --> PG
     SUM --> OLLAMA
 ```
 
-A startup supervisor (`scripts/dev-stack`) allocates ports, brings up the Compose
-services, runs migrations (dbmate), registers the Caddy route, and runs `api` +
-`web` via overmind. Conventional host ports are used when free, with ephemeral
-fallbacks so multiple worktrees never collide.
+A startup supervisor (`scripts/dev-stack/`) allocates ports, brings up the Compose
+services, runs migrations (dbmate), registers the Caddy route, and runs the whole
+`Procfile` (`api`, `worker`, `web`) via overmind. Conventional host ports are used
+when free, with ephemeral fallbacks so multiple worktrees never collide.
+
+The `worker` process is not the only job consumer. Queues and crons declare a
+`role`, and both default to `web`, so the `api` process consumes everything that
+does not opt out — including the Python-function dispatch queues that call the
+summary and hbpe sidecars. Only the import-stage queues and their crons in
+`backend/apps/api/src/domains/import/` currently declare `role: 'worker'`, which
+is what moves them off the request-serving event loop.
+
+PowerSync is **not** part of the local stack: the `powersync` Compose service
+declares `profiles: ["staging","production"]`, so `make dev` never starts it, and
+`GET /api/powersync/token` returns 503 until both `POWERSYNC_URL` and
+`POWERSYNC_JWT_SECRET` are configured.
 
 ### Caddy request routing
 
@@ -203,6 +222,19 @@ node --version
 ```
 
 Note that `nvm` uses the `.nvmrc` file to define the version of NodeJS to use.
+
+#### uv (Python)
+
+The HBPE and Summary sidecars are Python, managed as a [uv](https://docs.astral.sh/uv/)
+workspace: one `uv.lock` at the repo root covers every member. `make health` fails
+without `uv` on your `PATH`, and `make install`, `make lint` and `make test` all run
+their Python half through it. The version is pinned exactly by `required-version` in
+the root `pyproject.toml`; the interpreter is pinned by `.python-version` and uv
+downloads it on demand, so Python itself is not in `.tool-versions`.
+
+```bash
+brew install uv
+```
 
 #### tmux
 
@@ -322,11 +354,11 @@ make dev
 
 `make dev` brings up a complete, **per-worktree isolated** dev stack and is the entry point for local development. It:
 
-1. checks prerequisites (Node version, overmind, Caddy + its admin API on `:2019`, Ollama + required models);
-2. installs dependencies and builds the local service images;
+1. checks prerequisites (Node version, Yarn version, `uv`, overmind, Caddy + its admin API on `:2019`, Ollama + required models — pulling any that are missing);
+2. runs `make init`, then builds the local service images — but only when one is missing or `REBUILD=1` is set; a warm spin-up reuses them;
 3. brings up this worktree's Docker stack — **PostgreSQL** (primary DB + PGBoss job queue), **Minio** (S3 object storage), and the **summary** / **hbpe** services — preferring the conventional host ports when free and falling back to ephemeral ports otherwise, so multiple worktrees never collide;
 4. runs database migrations;
-5. registers a **Caddy** route at `https://<project>.localhost` and runs the `api` + `web` dev servers via overmind, in the foreground.
+5. registers a **Caddy** route at `https://<project>.localhost` and runs the `Procfile` — `api`, `worker` (`CI_ROLE=worker`, which consumes only the queues and crons marked `role: 'worker'` — today the import stages) and `web` — via overmind, in the foreground. Every other queue and cron defaults to `role: 'web'`, so the `api` process consumes it.
 
 `<project>` is the git-derived name — `ci-server` in the main checkout, `ci-server-<worktree>` in a linked worktree — the same identity used for the Docker Compose project and the overmind session. Caddy terminates TLS and routes by path (`/api` → api, `/graphql` → api, `/static` → object store, everything else → vite), so the app is same-origin with no CORS.
 
@@ -337,6 +369,39 @@ make dev-down
 ```
 
 To run the api/web individually instead, see their READMEs ([api](backend/apps/api/README.md), [web](frontend/apps/web/README.md)).
+
+### Reaching the right database
+
+Each worktree's stack publishes PostgreSQL on **its own host port**, but `.env`
+pins `DATABASE_PORT=5432`. Anything that resolves the port from `.env` therefore
+lands on whichever stack currently holds 5432 — often a different worktree.
+Applying one branch's migrations to another branch's stack leaves that database
+on a schema no branch describes, and dbmate cannot undo it: the versions are
+recorded, so the next `migrate` is a silent no-op and the app queries tables
+that were never created.
+
+**Run DB commands through `make`** (`make migrate`, `make seed`, `make dbshell`,
+`make dburl`, `make dbclear`). Those targets read the real port off this
+project's running `database` container, and error out if the stack is not up
+rather than falling back to 5432. A bare `yarn workspace @ci/be-api migrate`
+does not.
+
+Two guards back this up:
+
+- `make dev` stamps the owning compose project onto the database (the
+  `ci.stack_key` setting). `yarn migrate` refuses to write to a database another
+  stack owns.
+- The api refuses to boot when `schema_migrations` does not match the migration
+  files on disk, naming the drift in both directions instead of failing later
+  with an unrelated-looking missing relation. Set `CI_SKIP_SCHEMA_CHECK=1` to
+  boot anyway.
+
+A database that is *ahead* of the branch cannot be migrated back — recreate the
+volume:
+
+```bash
+make dbdestroy && make migrate
+```
 
 ### OAuth in a worktree
 
@@ -387,9 +452,9 @@ Run `make` from the project root to see all available commands with descriptions
 
 | Command | Description |
 |---------|-------------|
-| `make init` | Initialize repository after checkout (installs dependencies, sets up VS Code, prepares git hooks) |
-| `make install` | Install project dependencies only |
-| `make health` | Check prerequisites (Node.js version, Yarn version) and report per-stack data volumes |
+| `make init` | Initialize repository after checkout (corepack/yarn activation, installs both dependency stacks, sets up VS Code SDKs, prepares git hooks, and copies `.env.default` → `.env` if absent) |
+| `make install` | Install project dependencies only — `yarn install` (with the GitHub Packages token) **and** `uv sync --all-packages` |
+| `make health` | Check prerequisites (Node.js version, Yarn version, `uv`) and report per-stack data volumes |
 
 `frontend/` consumes `@companionintelligence/*` packages from GitHub Packages, which requires a
 `NODE_AUTH_TOKEN` with `read:packages` (see `.yarnrc.yml`). `make init`/`make install` get this
@@ -405,10 +470,13 @@ source scripts/gh-packages-auth.sh
 
 | Command | Description |
 |---------|-------------|
-| `make dev` | Bring up the full per-worktree dev stack (Docker services + migrations + Caddy route at `<project>.localhost` + api/web via overmind). Foreground; Ctrl-C tears down. |
+| `make dev` | Bring up the full per-worktree dev stack (Docker services + migrations + Caddy route at `<project>.localhost` + `api`/`worker`/`web` via overmind). Foreground; Ctrl-C tears down. |
 | `make dev-down` | Deregister this worktree's Caddy route (clears a stale route from a crashed run) |
 | `make oauth` | Point the canonical OAuth host at this worktree's running stack (replaces any prior claim) |
 | `make oauth-down` | Release the canonical OAuth host claim |
+| `make url` | Print this worktree's stack URL (`https://<project>.localhost`) |
+| `make urls` | Show the URLs this worktree's running stack serves (read live from Caddy) |
+| `make tunnel` | Expose this running stack at `https://dev.companionintelligence.com` via Cloudflare Tunnel (see [`infrastructure/cloudflare/README.md`](infrastructure/cloudflare/README.md)) |
 | `make graphql` | Generate GraphQL schema and frontend types |
 | `make tooling` | Run development tooling services |
 | `make stop` | Stop all running services (containers stay, data preserved) |
@@ -421,6 +489,7 @@ source scripts/gh-packages-auth.sh
 | `make dbclear` | Clear the data stored in the PostgreSQL database |
 | `make dbdestroy` | Drop all PostgreSQL data including tables |
 | `make dbshell` | Open a psql shell to the PostgreSQL database |
+| `make dburl` | Print this worktree's PostgreSQL connection URL (for DataGrip, psql, etc.) |
 | `make migrate` | Run database migrations |
 | `make seed` | Seed database with John Smith user and demo data |
 
@@ -429,9 +498,11 @@ source scripts/gh-packages-auth.sh
 | Command | Description |
 |---------|-------------|
 | `make build` | Build images (`ENV=local\|staging\|production`, default `local`; `GPU=cpu\|cuda\|rocm`, auto-detected from this host's GPU if not passed — see `scripts/detect-gpu.sh`) |
+| `make smoke-api` | Verify the built API image can run `migrate` with production-only dependencies (a devDependency in either half fails the container at startup). Runs as part of `make publish` |
 | `make staging` | Run the staging deployment |
 | `make production` | Run the production deployment |
-| `make publish` | Publish CI-Server images and metadata to the CI-Portal store |
+| `make publish` | Publish CI-Server images and metadata to the CI-Portal store (builds `ENV=production`, then `smoke-api`) |
+| `make publish-quiet` | Publish to the CI-Portal store in quiet mode (skips the build/smoke steps) |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
 
 #### GPU acceleration (HBPE)
@@ -472,9 +543,21 @@ docker compose exec hbpe-service python -c \
 
 ### Releasing & image tags
 
-Pushing a git tag triggers `.github/workflows/publish.yml`, which builds every `companion/*` image
-natively per architecture, merges the legs into a multi-arch manifest list, and registers the result
-with CI-Portal.
+`.github/workflows/publish.yml` builds every `companion/*` image natively per architecture, merges
+the legs into a multi-arch manifest list, and registers the result with CI-Portal.
+
+**It is not triggered by pushing a tag.** As of 2026-08-17 every workflow in
+`.github/workflows/` is `workflow_dispatch`-only — nothing runs on push, pull request, tag or
+schedule, so an absent or green check means nobody dispatched it, not that anything passed. Cut a
+release by tagging and then dispatching the workflow **on that tag**, since `VERSION` is parsed
+from the ref:
+
+```bash
+git tag v2026.7.27 && git push origin v2026.7.27
+gh workflow run publish.yml --ref v2026.7.27
+```
+
+See [`docs/CI.md`](docs/CI.md) for the full gated-CI story and how to run each check locally.
 
 | Tag | Meaning |
 |---------|-------------|
@@ -503,12 +586,23 @@ pointing at no release at all.
 | `make filereset` | Clear all files from the system |
 | `make gentoken` | Generates a stable access token for use during development |
 | `make signup` | Generates a set of signup codes for user registration |
+| `make testuser` | Create a local user and print a fresh API key for it |
 | `make userpw` | Change a user's password |
 
-### Linting
+### Lint, format & test
+
+The `make` targets cover **both stacks** — the TypeScript one and the Python one:
+
+| Command | Description |
+|---------|-------------|
+| `make lint` | `yarn lint` + `yarn format:check`, then `ruff check`, `ruff format --check`, `mypy`, `uv lock --check` (catches a stale lockfile) and the `ci.*` namespace guard |
+| `make format` | `prettier --write` across the JS/TS sources, then `ruff format` and `ruff check --fix` |
+| `make test` | `yarn workspaces foreach --all run test`, then `uv run pytest` |
+
+The underlying Yarn scripts are still there if you only want the JS half:
 
 ```bash
-yarn lint      # Run ESLint across the entire monorepo
+yarn lint      # oxlint + ESLint across the entire monorepo
 yarn lint:fix  # Auto-fix linting issues
 ```
 
@@ -519,6 +613,9 @@ yarn dev                    # Start development server with nodemon
 yarn migrate:make <name>    # Create a new migration file
 yarn migrate:down           # Roll back the last migration
 yarn depcheck               # Check import boundaries / cycles (dependency-cruiser)
+yarn ci-import <cmd>        # The import CLI, run from source (datasources, recognize,
+                            #   import, inbox, runs, push, stats, doctor, backfill).
+                            #   Shipped as the `ci-import` bin from the built package.
 yarn test                   # Run the backend Jest suite
 yarn typecheck              # Type-check without emitting
 yarn lint                   # Lint backend code
@@ -530,6 +627,8 @@ yarn lint:fix               # Auto-fix backend linting issues
 ```bash
 yarn dev                    # Start Vite development server
 yarn storybook              # Start Storybook for component development
+yarn test                   # Run the Vitest suites (node + jsdom projects)
+yarn typecheck              # Type-check without emitting
 yarn lint                   # Lint frontend code
 yarn lint:fix               # Auto-fix frontend linting issues
 ```

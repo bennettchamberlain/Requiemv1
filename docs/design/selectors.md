@@ -3,8 +3,10 @@
 > **Status:** ideation · **Updated:** 2026-08-11  
 > Interactive catalog: **[selectors-catalog.html](selectors-catalog.html)**
 
-Live sketches (click, drag, type) for prompting a person one decision at a time — Feed /
-Prompts / Onboarding / Memory confirmations — instead of open chat walls.
+Live sketches (click, drag, type) for prompting a person one decision at a time — Today /
+Reflections / Onboarding / Memory confirmations — instead of open chat walls. (The two
+surfaces were called Feed and Prompts when this was written; Feed is now embedded in
+**Today** at `/today`, and Prompts is **Reflections** at `/memory/reflections`.)
 
 ## Categories in the catalog
 

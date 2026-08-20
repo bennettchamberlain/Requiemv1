@@ -1,6 +1,6 @@
 # Planning — roadmap and object model
 
-> Status: **M0 landed** (flags + this document). M1 in progress; planning automation jobs + `proposed` status landed as an M5 slice.
+> Status (re-verified against `main` 2026-08-19): **M0 and M1 landed.** M3 and M5 have landed in slices — see [Milestones](#milestones). M2 and M4 are not started.
 > Feature flags: `planning.enabled` (backend GraphQL gate, `ENABLE_PLANNING`, default **on**), `planning.page` (Plan route + rail, `ENABLE_PLANNING_PAGE`, default **on**), `planning.emptyState` (Plan page empty state, `ENABLE_PLANNING_EMPTY_STATE`, default **off**).
 
 ## Why planning lives here
@@ -84,21 +84,21 @@ Carried over from CI-Planning's glossary; these nine nouns are the whole budget.
 ### Shipped
 
 - **M0** — feature flags, this document.
-
-### In progress
-
-- **M1 — Tasks, end to end.** `ci.tasks` + `ci.task_dependencies`; `TaskEntity`/`TaskService`; the GraphQL Task slice (type, connection, edge, inputs, payloads, resolver, `GlobalUID`, `NodeResolver` case); `PlanningTimeService` (a verbatim port of CI-Planning's `lib/tz.ts` minus `sqliteUtcToISO`) with DST tests at both boundaries; `/plan` page on the `NotesPage` template.
+- **M1 — Tasks, end to end.** `ci.tasks` + `ci.task_dependencies` (`20260808150000_schedule_planning_and_hbpe.sql`); `TaskEntity`/`TaskService`; the GraphQL Task slice (`TaskType implements Node`, `tasks`, `createTask`, `updateTask`); `PlanningTimeService` (a verbatim port of CI-Planning's `lib/tz.ts` minus `sqliteUtcToISO`) with DST tests at both boundaries; `/plan` page (`frontend/apps/web/src/pages/PlanPage/`). Note the timezone helpers themselves — `isValidTimezone`, `localDateInTZ`, `todayInTZ`, `zonedWallTimeToUTC` — have since moved to `@ci/common/time/zoned`; `domains/planning/index.ts` re-exports them, so callers are unaffected.
 
 ### Next
 
-- **M2 — Taxonomy.** Extend `ci_search.tags`/`entity_tag`; new join/pref tables; `'task'` in `TAGGABLE_ENTITIES`; `TaskType.tags` through the existing `TagLoader`. Watch: `TagService.validateLabel` lowercases every label, and adding `kind` changes what the explorer's tag picker returns.
-- **M3 — Scheduling.** The `ci.events` extension plus all six guards; a SQL-pushdown `plannedBlocks(from, to)`; `ci.planning_prefs`; a **simple deterministic placer** — a pure `computePlacement(input): PlacementPlan` answering one question: given the workday window, existing events and an estimate, where does this task go? No two-pass autoplan, no reflow, no LLM. Scheduling is by form and button; drag comes later.
-- **M4 — Search, recall, MCP.** `'task'` in `INDEXABLE_ENTITIES` + `ENTITY_SOURCE_MAP`; `TaskSearchIndexListener` cloned from `NoteSearchIndexListener`; task cases in `SerializerService` and `domains/entity-resolution`; a `planning` intent domain with `planning.findTasks` / `planning.createTask`.
-- **M5 — Jobs (partial).** Queue `planning` on pg-boss; Jobs page category `planning`. Landed handlers:
-  - `planning.todo_scan` — daily fan-out; search memory → LLM surface → dedupe → `decide(task_create)` → `open` or `proposed`
-  - `planning.todo_process` — every 6h; append / revise / reparent / complete under `task_mutate` / `task_complete`
-  - `planning.event_now` — hourly; revise planned blocks entering the present (`event_revise`)
-  - `planning.verify_done` — hourly; after block end, auto-complete or ask on Plan
+- **M2 — Taxonomy.** *Not started* — `'task'` is not in `TAGGABLE_ENTITIES`, and no `ci_search.entity_categories` exists. Extend `ci_search.tags`/`entity_tag`; new join/pref tables; `'task'` in `TAGGABLE_ENTITIES`; `TaskType.tags` through the existing `TagLoader`. Watch: `TagService.validateLabel` lowercases every label, and adding `kind` changes what the explorer's tag picker returns.
+- **M3 — Scheduling (partial).** The `ci.events` extension plus all six guards; a SQL-pushdown `plannedBlocks(from, to)`; `ci.planning_prefs`; a **simple deterministic placer** — a pure `computePlacement(input): PlacementPlan` answering one question: given the workday window, existing events and an estimate, where does this task go? No two-pass autoplan, no reflow, no LLM. Scheduling is by form and button; drag comes later.
+  **Landed:** `computePlacement` (`domains/planning/engine/computePlacement.ts`), `PlannedBlockService`, the `plannedBlocks(from: DateTime!, to: DateTime!)` GraphQL query, and the `ci.events` columns `task_id` + `planned_minutes` (`20260818185920_task_proposed_and_pending_changes.sql`).
+  **Not landed:** `ci.planning_prefs` (no table, no migration), and the rest of the `ci.events` extension named above (`is_locked`, `is_auto`, `occurrence_date`, `recurrence_*`, `last_moved_at`, `auto_run_id`, `category_tag_id`, `color_token`, the widened `status` CHECK).
+- **M4 — Search, recall, MCP.** *Not started* — `'task'` is absent from `INDEXABLE_ENTITIES`. `'task'` in `INDEXABLE_ENTITIES` + `ENTITY_SOURCE_MAP`; `TaskSearchIndexListener` cloned from `NoteSearchIndexListener`; task cases in `SerializerService` and `domains/entity-resolution`; a `planning` intent domain with `planning.findTasks` / `planning.createTask`.
+- **M5 — Jobs (partial).** Queue `planning` on pg-boss; Jobs page category `planning`. Five landed handlers, fanned out by `PlanningJobsCron`:
+  - `planning.todo_scan` (`0 6 * * *`) — daily fan-out; search memory → LLM surface → dedupe → `decide(task_create)` → `open` or `proposed`
+  - `planning.todo_process` (`0 */6 * * *`) — every 6h; append / revise / reparent / complete under `task_mutate` / `task_complete`
+  - `planning.inbox_scan` (`*/30 * * * *`) — LLM triage of recent email/SMS/chat into surfaced tasks, matching CI-Planning's `ingest_gmail` cadence (`InboxScanService`)
+  - `planning.event_now` (`15 * * * *`) — hourly; revise planned blocks entering the present (`event_revise`)
+  - `planning.verify_done` (`45 * * * *`) — hourly; after block end, auto-complete or ask on Plan
   Plan page remains the only user backlog (Proposed / Needs confirmation / date buckets). `/jobs` shows process jobs only — not a second to-do list.
   Still TODO for full M5: `ci.reminders` + web push.
 

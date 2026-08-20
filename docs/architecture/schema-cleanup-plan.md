@@ -2,6 +2,19 @@
 
 # CI-Server schema cleanup plan
 
+> **Status: proposal, partly overtaken by events.** This plan was never executed as a
+> workstream of its own. A **different** workstream —
+> [schema-consolidation.md](./schema-consolidation.md), waves A–E — has since landed
+> several of the same changes, so before executing any item below, check whether the
+> migrations already did it. Verified against `main` on 2026-08-19: **Wave 1 item 1.1 is
+> already done** (see the amended C1), and the two `ci.pipeline_state`-era subsystems the
+> plan predates ([adr-pipeline-ledger.md](./adr-pipeline-ledger.md)) and the CTI conversion
+> of `ci.events` / `ci.communications` / `ci.content` / `ci.inventory` both changed the
+> schema this plan measured. Treat the 63 tables / 968 columns / 281 indexes baseline as a
+> 2026-08 snapshot, not as current.
+>
+> Nothing else in the body has been re-audited item by item.
+
 Companion to [`schema-comparison-lifescope.html`](./schema-comparison-lifescope.html).
 
 Produced by a 41-agent audit: 5 agents scoped the work, 35 independently tried to break each
@@ -15,6 +28,15 @@ Three defects were found in the generated plan after it was produced. They are c
 **not** rewritten throughout the body below, so where the two disagree, this section wins.
 
 ### C1. Item 1.1 is not "zero-risk" and should be split
+
+> **[2026-08-19] Moot — item 1.1 has already shipped, and the risk it flagged evaporated.**
+> `20260808150100_schema_consolidation.sql` (Wave A of the *other* workstream) drops both
+> `ci.agent_messages` and `ci.agents` in its first two statements. The reason `ci.agents`
+> was "live" is also gone: `backend/apps/summary/src/agent_registration.py` no longer
+> exists — it was deleted along with Temporal in `c984f5613`, which removed the summary
+> service's worker, workflows and schedules entirely. There is no product decision left to
+> take. **Do not run the SQL in 1.1.** The analysis below is kept as the record of why the
+> split was called for at the time.
 
 Wave 1 is titled *zero-risk deletions*, and item 1.1 drops **two** tables. Only one of them is
 zero-risk:
@@ -149,11 +171,20 @@ Nothing reads any of these. Every item was executed against `ci-schema-probe` an
 
 ---
 
-### 1.1 `drop_dead_agent_tables`
+### 1.1 `drop_dead_agent_tables` — **already done, do not run**
 
 **Blast radius:** one table, 34 columns, 8 indexes, 5 FKs, 4 CHECKs, 2 enum types, plus deletion of one Python module in the summary sidecar.
 
-> **See correction C1 above — split this item.** Dropping `ci.agent_messages` is zero-risk.
+> **[2026-08-19] Superseded — both drops shipped elsewhere.**
+> `20260808150100_schema_consolidation.sql` opens with
+> `DROP TABLE IF EXISTS ci.agent_messages;` / `DROP TABLE IF EXISTS ci.agents;`, and
+> `backend/apps/summary/src/ci/summary/agent_registration.py` was deleted by `c984f5613`
+> (the Temporal removal) along with the summary service's `worker.py`, `workflows.py` and
+> `system_workflows.py`. Running the SQL below now is a no-op at best. Kept for the
+> reasoning and for the `-- migrate:down` body.
+>
+> The original split guidance follows. **See correction C1 above — split this item.**
+> Dropping `ci.agent_messages` is zero-risk.
 > Dropping `ci.agents` additionally deletes `backend/apps/summary/src/agent_registration.py`,
 > which is a feature removal and needs sign-off. The SQL below does both; run only the
 > `agent_messages` half unless you have decided about the registration module.
@@ -295,11 +326,19 @@ ALTER TABLE ONLY ci.agents ADD CONSTRAINT agents_last_modified_by_fkey FOREIGN K
 
 **Code changes — ship these FIRST, in their own release (R1):**
 
+> **[2026-08-19] The first two rows are already done, and the third's remedy is wrong now.**
+> `agent_registration.py` and `worker.py` were both deleted from the summary service by
+> `c984f5613` — there is no Temporal worker any more, and no `src/workflows.py` or
+> `src/schedules.py` to point a diagram line at. Scheduling is owned by the NestJS API's
+> pg-boss crons, which dispatch to `POST /functions/run`; the summary service's entry points
+> are `ci/summary/functions.py` and `ci/summary/runner.py`. The README was rewritten to
+> describe exactly that. Only the HTML row is still outstanding.
+
 | File | Change |
 |---|---|
-| `backend/apps/summary/src/agent_registration.py` | **DELETE the file.** It contains `SELECT agent_id, is_active FROM agents` (:31), `UPDATE agents` (:44, :162, :177), `INSERT INTO agents` (:127). `database.py:30` pins `search_path=ci,public`, so unqualified `agents` binds to `ci.agents`. |
-| `backend/apps/summary/src/worker.py` | Remove the import at :22, the `register()` block at :244-250, the `deregister()` call at :111. |
-| `backend/apps/summary/README.md` | Cut the `agent_messages` queue protocol at :18, :32, :319-322, :373, :387-388, :399, :404-406. **Do not delete wholesale** — :31 ("Self-registers in CI-Server agents table") is about to become false too, and the SQL examples interleave dead `agent_messages` with live `agents`. Replace :18's diagram line with the Temporal trigger path (`src/workflows.py`, `src/schedules.py`, `src/worker.py`). |
+| ~~`backend/apps/summary/src/agent_registration.py`~~ | **Done** — file deleted by `c984f5613`. (Was: **DELETE the file.** It contains `SELECT agent_id, is_active FROM agents` (:31), `UPDATE agents` (:44, :162, :177), `INSERT INTO agents` (:127). `database.py:30` pins `search_path=ci,public`, so unqualified `agents` binds to `ci.agents`.) |
+| ~~`backend/apps/summary/src/worker.py`~~ | **Done** — the whole worker was deleted by `c984f5613`; there is nothing left to edit. |
+| ~~`backend/apps/summary/README.md`~~ | **Done** — its Architecture section now describes the pg-boss path and its Monitoring section states both tables were dropped. One nit remains: that note cites migration `20260808065716_drop_agents_and_agent_messages.sql`, which does not exist; the drops are in `20260808150100_schema_consolidation.sql`. |
 | `docs/architecture/schema-comparison-lifescope.html` | :809, :1041-1042, :1229, :1579, :1689 — currently asserts both tables are dead and recommends dropping both; that is now correct, but the surrounding column counts change. |
 
 **Why code-first is strictly safer here:** if the migration lands against an old summary image, the worker does not crash (`worker.py:248` catches) but `database.py:47` calls `logger.error`, which routes through structlog's stdlib `LoggerFactory` into sentry_sdk's default ERROR-level `LoggingIntegration`. With `restart: unless-stopped`, that is one Sentry event per boot, forever.
