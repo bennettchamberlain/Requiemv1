@@ -95,3 +95,14 @@ retention. The failure mode was misapplication, not the tool.
 - If `ci.entity_mutations` (or a successor audit stream) gets a bounded
   retention decision, it becomes the next candidate to evaluate against these
   gates; unbounded history means it stays plain.
+
+> **Status check, 2026-08-19.** The rule has held: **no new hypertable has been created
+> since this ADR**, and the three survivors are exactly `ci.position` (time-only,
+> `chunk_time_interval => 1 month`), `ci.user_snapshots` (time-only, 7 days) and
+> `hbpe.prediction_log`. `ci.entity_mutations` was never built — the graph audit trail
+> is still `ci.graph_deltas`, now written explicitly by `GraphDeltaWriter` after the
+> database triggers that briefly wrote it were dropped (`20260811210000`). So the "next
+> candidate" above remains hypothetical, and `ci.graph_deltas` stays a plain table with
+> no retention policy. The 84 migrations added since — including the whole `ci_import`
+> staging schema and the `ci_derived` analytics schema — contain no `create_hypertable`
+> call at all.
