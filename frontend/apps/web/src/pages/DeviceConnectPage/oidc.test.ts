@@ -25,6 +25,7 @@ vi.mock('@ci/common', () => ({
 
     return unlisten;
   }),
+  apiFetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
 }));
 
 function openedAuthorizeUrl(): URL {
@@ -88,6 +89,7 @@ describe('loginWithPortalOidc', () => {
 
     const [tokenUrl, init] = (vi.mocked(fetch).mock.calls[0] ?? []) as [string, RequestInit];
     expect(tokenUrl).toBe(`${DEFAULT_PORTAL_URL}/api/auth/oauth2/token`);
+    expect(init.headers).toMatchObject({ Origin: DEFAULT_PORTAL_URL });
     const body = new URLSearchParams(String(init.body));
     expect(body.get('grant_type')).toBe('authorization_code');
     expect(body.get('code')).toBe('auth-code-1');
