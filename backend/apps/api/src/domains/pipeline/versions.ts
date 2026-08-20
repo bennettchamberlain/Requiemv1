@@ -227,11 +227,23 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.ENRICH_PERSON_LINK]: 1,
   [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: 1,
 
+  /**
+   * v1 — initial self-claim producer (PERSON_SELF_CLAIM_GENERATION in
+   * PersonSelfClaimStage.ts). Bump alongside that generation.
+   */
+  [STAGE_IDS.ENRICH_PERSON_SELF_CLAIM]: 1,
+
   /** v1 — initial temporal repair. Bump when SOURCE_TIME_SPECS gains a source; only a bump re-opens a skip. */
   [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 1,
 
-  /** v1 — initial duplicate proposer. A bump rescores pending candidates; it never resurrects a rejected pair. */
-  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 1,
+  /**
+   * v2 — DUPLICATE_CANDIDATE_GENERATION bumped to 2: the evidence set widened
+   * to include enrich.person_self_claim's claims (contact-card/vCard/Apple
+   * Contacts Persons that never resolved from a communication or event now
+   * have evidence too). A bump rescores pending candidates; it never
+   * resurrects a rejected pair.
+   */
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 2,
 
   /** v1 — initial identifier canonicaliser. Deliberately NOT tied to IDENTITY_SPEC_VERSION, which versions the object identity ladder. */
   [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 1,

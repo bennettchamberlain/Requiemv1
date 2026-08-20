@@ -83,8 +83,9 @@ describe('the version', () => {
   it('is monotone in each generation, so a bump can only go up', () => {
     // A hash would be uniformly distributed and would move the version DOWN half
     // the time, which pins the corpus to the abandoned high-water mark forever.
-    // A sum cannot.
-    expect(DUPLICATE_DETECT_VERSION).toBe(1);
+    // A sum cannot. 2 = DUPLICATE_SCORING_GENERATION (1) + DUPLICATE_CANDIDATE_GENERATION
+    // (2, since enrich.person_self_claim widened the evidence set) - 1.
+    expect(DUPLICATE_DETECT_VERSION).toBe(2);
   });
 });
 

@@ -315,6 +315,19 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
   },
 
   /**
+   * NIGHTLY. A PRODUCER of `clean.duplicate_detect` alongside both person-link
+   * legs (`STAGE_DEPENDENCIES`), same tier and same night for the same
+   * producer/consumer reason as `clean.identifier_normalize` below.
+   */
+  [STAGE_IDS.ENRICH_PERSON_SELF_CLAIM]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'enrichment',
+    minInterval: 1 * DAYS,
+    maxStaleness: 3 * DAYS,
+  },
+
+  /**
    * NIGHTLY. Moves `start_time` on events the user may already have looked at.
    *
    * The one nightly stage with a human argument for `manual`, and it is not

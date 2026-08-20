@@ -362,7 +362,11 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
   [STAGE_IDS.PROMOTE_PLACE_POSITION]: [STAGE_IDS.ENRICH_POSITION_REVERSE],
   [STAGE_IDS.ENRICH_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
-  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: [STAGE_IDS.ENRICH_PERSON_LINK, STAGE_IDS.ENRICH_EVENT_PERSON_LINK],
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: [
+    STAGE_IDS.ENRICH_PERSON_LINK,
+    STAGE_IDS.ENRICH_EVENT_PERSON_LINK,
+    STAGE_IDS.ENRICH_PERSON_SELF_CLAIM,
+  ],
   // The edge projections are pure consumers of the linkage columns their
   // producers fill: person-link writes communications' from/to columns; the
   // event leg additionally reads `location_entity_id`, which `promote.place`
