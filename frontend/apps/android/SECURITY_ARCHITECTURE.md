@@ -51,8 +51,8 @@ Every row below was read, not assumed.
 | Fact | Where | Status |
 |---|---|---|
 | Native auth is a long-lived API key sent as `x-api-key`, held in a module singleton so the request layer can read it synchronously | [`common/src/utils/apiAuth.ts`](../../packages/common/src/utils/apiAuth.ts) | **[V]** |
-| Key + key id persist under `ci.apiKey` / `ci.apiKeyId` via `secureStorage*` → `capacitor-secure-storage-plugin` | [`hooks/useAuth.ts:24-25`](../web/src/hooks/useAuth.ts), [`common/src/utils/nativeBridge.ts:110-167`](../../packages/common/src/utils/nativeBridge.ts) | **[V]** |
-| The appliance base URL is *also* mirrored into the keystore so native App Intents can read it | `nativeBridge.ts:393-411` (`syncNativeIntentConfig`) | **[V]** |
+| Key + key id persist under `ci.apiKey` / `ci.apiKeyId` via `secureStorage*` → `capacitor-secure-storage-plugin` | [`hooks/useAuth.ts:29-30`](../web/src/hooks/useAuth.ts), [`common/src/utils/nativeBridge.ts:195-310`](../../packages/common/src/utils/nativeBridge.ts) | **[V]** |
+| The appliance base URL is *also* mirrored into the keystore so native App Intents can read it | `nativeBridge.ts:579-597` (`syncNativeIntentConfig`) | **[V]** |
 | **iOS**: the plugin writes with `withAccessibility: .afterFirstUnlock` — *not* `…ThisDeviceOnly` | `node_modules/capacitor-secure-storage-plugin/ios/Plugin/SecureStoragePluginPlugin.swift:15` | **[V]** — see §2.4 |
 | **Android**: an RSA/ECB/PKCS1 keypair in AndroidKeyStore (alias `<pkg>_cap_sec`) wraps values stored in the `cap_sec` SharedPreferences file — with a **silent fallback to unencrypted Base64 in the same file** if Keystore init throws | `node_modules/capacitor-secure-storage-plugin/android/…/PasswordStorageHelper.java:53-67, 102-146` | **[V]** — see §2.4 |
 | `android:allowBackup="false"` keeps that SharedPreferences file out of adb/cloud backup | [`AndroidManifest.xml`](./android/app/src/main/AndroidManifest.xml) | **[V]** |
@@ -66,7 +66,7 @@ Every row below was read, not assumed.
 | `onUpgrade` **throws** rather than migrating — deliberately, so an upgrade can never drop unflushed user data | `OutboxStore.kt:112-117` | **[V]** — makes adding SQLCipher a schema-version event, see §2.1 |
 | Hard cap 5000 items, rejects rather than evicts (HTTP 507) | `OutboxStore.kt:339`, [`outbox.ts:51`](../../packages/common/src/utils/outbox.ts) | **[V]** |
 | ~~**iOS has no outbox at all yet**~~ **SUPERSEDED.** iOS has a real outbox: `OutboxStore.swift`, SQLCipher-backed from commit one (S2's stated goal), verified on an iOS 27 simulator to create the database in the app container — `sqlite_sequence` present, `journal_mode=wal` | [`OutboxStore.swift`](../../packages/capacitor-local-hub/ios/Sources/LocalHubPlugin/OutboxStore.swift) | **[V]** exists · **[P]** ciphertext |
-| PowerSync keeps a local SQLite copy in the WebView via `IDBBatchAtomicVFS` (IndexedDB), file `ci-powersync.db`. The comment states this is the only VFS that works without cross-origin-isolation headers the Capacitor webview can't set — "Do not switch to OPFSCoopSyncVFS or similar" | [`PowerSyncProvider.tsx:27-39`](../web/src/api/powersync/PowerSyncProvider.tsx) | **[V]** |
+| PowerSync keeps a local SQLite copy in the WebView via `IDBBatchAtomicVFS` (IndexedDB), file `ci-powersync.db`. The comment states this is the only VFS that works without cross-origin-isolation headers the Capacitor webview can't set; native uses Capacitor SQLite instead | [`webDatabase.ts:5-16`](../web/src/api/powersync/webDatabase.ts), [`nativeDatabase.ts`](../web/src/api/powersync/nativeDatabase.ts) | **[V]** |
 | Installed version is `@powersync/web@1.39.1` | `.yarn/cache/@powersync-web-npm-1.39.1-…zip` | **[V]** |
 | Logout calls `database.disconnect()`, **not** `disconnectAndClear()` — locally synced rows survive logout. Flagged in-source as a known gap | `PowerSyncProvider.tsx:43-51` | **[V]** — this is the wipe primitive, see §4 |
 | `PowerSyncProvider` is mounted unconditionally in the app tree — no feature flag | `App.tsx:101` | **[V]** |
@@ -100,14 +100,14 @@ underneath: the data the boundary protects is on disk in the clear.
 |---|---|---|
 | `android:usesCleartextTraffic="true"` app-wide; **no** `networkSecurityConfig`; `res/xml/` contains only `config.xml` and `file_paths.xml` | `AndroidManifest.xml`, `android/app/src/main/res/xml/` | **[V]** |
 | `androidScheme: 'https'` + `android.allowMixedContent: true` | [`capacitor.config.ts`](./capacitor.config.ts) | **[V]** |
-| iOS ATS carries **two** exceptions — `NSAllowsArbitraryLoadsInWebContent` (WKWebView content only) and `NSAllowsLocalNetworking` (`.local` + unqualified/private-range LAN, for the plain-`URLSession` App Intents clients). Still narrower than the app-wide `NSAllowsArbitraryLoads`, and neither needs a review justification. Reaching a LAN address additionally requires `NSLocalNetworkUsageDescription`, which is set — Local Network Privacy is a separate gate from ATS | [`Info.plist`](./ios/App/App/Info.plist) | **[V]** |
+| iOS ATS carries **two** exceptions — `NSAllowsArbitraryLoadsInWebContent` (WKWebView content only) and `NSAllowsLocalNetworking` (`.local` + unqualified/private-range LAN, for the plain-`URLSession` App Intents clients). Still narrower than the app-wide `NSAllowsArbitraryLoads`, and neither needs a review justification. Reaching a LAN address additionally requires `NSLocalNetworkUsageDescription`, which is set — Local Network Privacy is a separate gate from ATS | [`Info.plist`](../ios/ios/App/App/Info.plist) | **[V]** |
 
 ### 1e. Server-side revocation
 
 | Fact | Where | Status |
 |---|---|---|
 | `DELETE /api/keys/:id` **hard-deletes the row**; `validateKey` then finds nothing and returns null → 401 on every subsequent request | [`ApiKeyService.ts:322-329, 361-398`](../../../backend/apps/api/src/domains/auth/services/ApiKeyService.ts) | **[V]** |
-| Every `/api/keys` route is guarded by `JwtOrPortalAuthGuard` — **never an API key**, explicitly "so a leaked key cannot mint successors that outlive its revocation" | [`ApiKeyController.ts:74-79`](../../../backend/apps/api/src/domains/auth/controllers/ApiKeyController.ts) | **[V]** |
+| Every `/api/keys` route is guarded by `JwtOrPortalAuthGuard` — **never an API key**, explicitly "so a leaked key cannot mint successors that outlive its revocation" | [`ApiKeyController.ts:81-90`](../../../backend/apps/api/src/domains/auth/controllers/ApiKeyController.ts) | **[V]** |
 | Keys are SHA-256 hashed at rest, 32 random bytes, with `scopes` (`memory`/`intents`/`mcp`) and `capability` (`read`/`write`/`full`) as two orthogonal axes | `ApiKeyService.ts:46-48, 400-402`, `ApiKeyCapability.ts` | **[V]** |
 | `ci.devices` exists with `is_active`, `push_token`, and an **unused `privacy_settings` jsonb** column | [`DeviceEntity.ts:51-65`](../../../backend/apps/api/src/domains/devices/entities/DeviceEntity.ts) | **[V]** |
 | **`ci.devices` and `ci.api_keys` are unrelated tables** — no FK, no column joining them | both entities | **[V]** — this is the missing link for §4 |
@@ -119,8 +119,8 @@ This list is the input to §5. All **[V]**.
 
 | Lane | Choke point | Coverable by a JS hook? |
 |---|---|---|
-| REST (incl. outbox flush, health probes) | single `fetch()` at [`fetchJson.ts:202`](../../packages/common/src/utils/fetchJson.ts) | ✅ yes |
-| GraphQL | `createHttpLink({ uri: buildApiUrl('/api/graphql') })` + `setContext` auth link, [`ApolloProvider.tsx:23-37`](../web/src/api/ApolloProvider.tsx) | ✅ yes, via a custom `fetch` |
+| REST (incl. outbox flush, health probes) | single `fetch()` at [`fetchJson.ts:264`](../../packages/common/src/utils/fetchJson.ts) | ✅ yes |
+| GraphQL | `createHttpLink({ uri: buildApiUrl('/api/graphql') })` + `setContext` auth link, [`ApolloProvider.tsx:26-37`](../web/src/api/ApolloProvider.tsx) | ✅ yes, via a custom `fetch` |
 | PowerSync credentials + upload | own `fetch` calls in [`powersync/connector.ts`](../web/src/api/powersync/connector.ts) | ✅ yes |
 | **PowerSync download stream** | opened inside `@powersync/web`, in a Web Worker | ❌ **no** — not reachable from app code |
 | LLM generate (remote fallback) | raw `fetch` at `nativeBridge.ts:501` | ⚠️ bypasses `fetchJson` |
@@ -292,7 +292,7 @@ first (S0 in §8).
 
 The full S0 replacement above is still the right destination. In the meantime the **iOS**
 half of D1 is mitigated in-repo by
-[`ios/App/App/KeychainHardening.swift`](./ios/App/App/KeychainHardening.swift), which
+[`ios/App/App/KeychainHardening.swift`](../ios/ios/App/App/KeychainHardening.swift), which
 sweeps every `cap_sec` item to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` via
 `SecItemUpdate`. `AppDelegate` runs it at launch and again on entering the background —
 the second call matters because the web layer can store a fresh key mid-session, and a
@@ -660,7 +660,7 @@ what turns that from a claim into something a user can check.
 
 | Lane | Hook |
 |---|---|
-| REST | One counter inside `fetchJson` around the single `fetch()` at `fetchJson.ts:202`. Covers the outbox flush and health probes for free — both go through it **[V]** |
+| REST | One counter inside `fetchJson` around the single `fetch()` at `fetchJson.ts:264`. Covers the outbox flush and health probes for free — both go through it **[V]** |
 | GraphQL | An `ApolloLink` after `authLink` for operation names, **plus a custom `fetch` passed to `createHttpLink({ fetch })`** for actual byte counts in both directions. The link alone cannot see response size |
 | PowerSync upload | Wrap the `fetch` calls in `connector.ts`; count CRUD entries in `uploadData` |
 | PowerSync **download** | **Not observable.** The sync stream lives in a Web Worker inside `@powersync/web` **[V]**. Use `db.registerListener` / `SyncStatus` to report **rows synced**, and **label it as rows, not bytes.** Do not fabricate a byte figure |

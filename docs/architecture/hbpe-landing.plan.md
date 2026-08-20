@@ -25,6 +25,21 @@ isProject: false
 
 # HBPE landing — paper as contract, appliance as product
 
+> **Historical snapshot.** This is the plan as written, kept for the reasoning. It
+> shipped: `feat/hbpe-landing` merged to `main` on 2026-08-17 as
+> [#2045](https://github.com/companionintelligence/CI-Server/pull/2045). Every
+> `todos` entry above is `completed`, and the "What is true today" diagnosis below
+> describes the **pre-landing** tree — in particular the structured hierarchical
+> attention mask and the real `P(L0)·CE(L1|L0)` loss are no longer missing
+> (`hierarchical_src_mask` in `model/transformer.py`, `_joint_loss` in
+> `model/trainer.py`, whose docstring now reads "No more hard-coded weight of 1.0").
+> For current state read [hbpe-landing.md](hbpe-landing.md), not this file.
+>
+> Two mechanical notes for anyone following the links below: they are written as
+> `CI-Server/backend/…` from a workspace root, so they do **not** resolve from
+> `docs/architecture/`; and the Python package was re-rooted from `ci.*` to
+> `ci.hbpe.*` — the paths here already use the post-re-root spelling.
+
 The paper is still the right **ontology and loop**. We have evolved past treating it as the **product backlog**. Paper-only would finish a 120k-param day reconstructor and leave tomorrow’s histogram as the same Nadaraya–Watson average that scoring already calls weak — while ignoring daily_metrics, week-horizon, Forecast, and agents.
 
 ## What is true today
