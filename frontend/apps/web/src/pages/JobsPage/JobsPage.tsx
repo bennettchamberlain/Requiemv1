@@ -146,7 +146,7 @@ export function JobsPage() {
               {jobsTable}
               {historyCharts}
               {schedules}
-              {deadLettersCard}
+              <div className="order-last">{deadLettersCard}</div>
             </>
           ) : (
             <>

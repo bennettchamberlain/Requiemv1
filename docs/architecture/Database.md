@@ -218,8 +218,8 @@ cached place keeps its footprint), `ci.saved_searches` (captured explorer
 and the communications hypertable companion `ci.communications_source_dedup` were
 removed (`20251006113900_prune_old_tables.sql`, `20260212191500_drop_unused_tables…`,
 `20260213131500_drop_screen_captures_and_sensors.sql`,
-`20260808065716_drop_agents_and_agent_messages.sql`,
-`20260807072321_dehypertable_communications.sql`). Older docs describing the
+`20260807072321_dehypertable_communications.sql`,
+`20260808150100_schema_consolidation.sql`). Older docs describing the
 documents→chunks→facts pipeline, the devices→sensors→measurements hierarchy, or
 the agents chat tables refer to these dead tables.
 
