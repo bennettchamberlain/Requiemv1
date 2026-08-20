@@ -162,6 +162,10 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   excluded_retweet: 'filtered',
   outside_timeframe: 'filtered',
   non_message: 'filtered',
+  // A line WhatsApp wrote itself — "X added you", "Y left" — recognised by its
+  // U+200E marker plus the system-verb pattern. Policy, not a failure: the
+  // conversation is the user's, the announcement around it is not.
+  whatsapp_system_line: 'filtered',
 
   // The source says it did not happen.
   cancelled_order: 'cancelled',
