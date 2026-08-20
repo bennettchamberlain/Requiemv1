@@ -253,6 +253,31 @@ function requestData(body: BodyInit | null | undefined): unknown {
 }
 
 /**
+ * CapacitorHttp.request JSON-serializes `data`. Multipart (and other binary
+ * bodies) must keep the webview/patched `fetch` path so the boundary and bytes
+ * survive — otherwise `POST /api/files/upload` lands as `{}`.
+ */
+function isBinaryBody(body: BodyInit | null | undefined): boolean {
+  if (body == null || typeof body === 'string') {
+    return false;
+  }
+
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    return true;
+  }
+
+  if (typeof Blob !== 'undefined' && body instanceof Blob) {
+    return true;
+  }
+
+  if (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) {
+    return true;
+  }
+
+  return typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(body);
+}
+
+/**
  * Native webview `fetch` is CORS-bound and has no Hub cookie. CapacitorHttp
  * goes out as a real origin-less request so Traefik/Memory see the call.
  * Web and tests without the plugin keep `window.fetch`.
@@ -260,17 +285,37 @@ function requestData(body: BodyInit | null | undefined): unknown {
 async function nativeAwareFetch(input: RequestInfo, init: RequestInit, timeout?: number): Promise<Response> {
   const cap = typeof input === 'string' ? capacitorHttp() : undefined;
 
-  if (!cap?.request || typeof input !== 'string') {
+  if (!cap?.request || typeof input !== 'string' || isBinaryBody(init.body)) {
     return fetch(input, init);
   }
 
-  const result = await cap.request({
-    url: input,
-    method: (init.method ?? 'GET').toUpperCase(),
-    headers: flattenHeaders(init.headers),
-    data: requestData(init.body),
-    ...(timeout != null ? { connectTimeout: timeout, readTimeout: timeout } : {}),
-  });
+  // URLSession rejects relative paths (`/api/...`) and non-http(s) schemes
+  // (`capacitor://…`) as "unsupported URL". Never hand those to CapacitorHttp.
+  if (!/^https?:\/\//i.test(input)) {
+    throw new Error(
+      `Native HTTP needs an absolute http(s) URL (got "${input}"). Pick a Memory Server again.`,
+    );
+  }
+
+  let result: { status: number; data?: unknown; headers?: HeadersInit };
+
+  try {
+    result = await cap.request({
+      url: input,
+      method: (init.method ?? 'GET').toUpperCase(),
+      headers: flattenHeaders(init.headers),
+      data: requestData(init.body),
+      ...(timeout != null ? { connectTimeout: timeout, readTimeout: timeout } : {}),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+
+    if (/unsupported url/i.test(message)) {
+      throw new Error(`Could not request ${input} (${message})`);
+    }
+
+    throw err;
+  }
   const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? {});
 
   return new Response(body, { status: result.status, headers: result.headers });

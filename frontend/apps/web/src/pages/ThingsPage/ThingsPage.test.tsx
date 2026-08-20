@@ -323,4 +323,65 @@ describe('ThingsPage', () => {
     );
     expect(screen.queryByText(/Could not record that/)).toBeNull();
   });
+
+  it('keeps the desktop filter row inline', async () => {
+    renderWithProviders(<ThingsPage />, {
+      route: '/memory/things',
+      mocks: [
+        mockQuery(GET_THINGS, BASE_VARIABLES, makeThingsResult([makeThing(THING_A, 'Drill')]), {
+          maxUsageCount: 3,
+        }),
+        duplicatesMock(NO_DUPLICATES),
+      ],
+    });
+
+    expect(await screen.findByLabelText('Codes')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /filters/i })).not.toBeInTheDocument();
+  });
+
+  it('opens filters from a sheet on mobile instead of stacking every control', async () => {
+    const originalMatchMedia = window.matchMedia;
+
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+
+    renderWithProviders(<ThingsPage />, {
+      route: '/memory/things',
+      mocks: [
+        mockQuery(GET_THINGS, BASE_VARIABLES, makeThingsResult([makeThing(THING_A, 'Drill')]), {
+          maxUsageCount: 3,
+        }),
+        mockQuery(
+          GET_THINGS,
+          { ...BASE_VARIABLES, hasIdentifier: false },
+          makeThingsResult([makeThing(THING_B, 'Uncoded lamp')]),
+          { maxUsageCount: 3 },
+        ),
+        duplicatesMock(NO_DUPLICATES, 5),
+      ],
+    });
+
+    expect(await screen.findByRole('button', { name: /filters/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Codes')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }));
+    fireEvent.click(await screen.findByLabelText('Codes'));
+    fireEvent.click(await screen.findByRole('option', { name: 'No code' }));
+
+    expect(await screen.findByText('Uncoded lamp')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+    expect(await screen.findByRole('button', { name: 'Clear No code' })).toBeInTheDocument();
+
+    window.matchMedia = originalMatchMedia;
+  });
 });

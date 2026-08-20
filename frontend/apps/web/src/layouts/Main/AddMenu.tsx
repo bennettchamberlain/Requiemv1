@@ -54,6 +54,16 @@ export function AddMenu() {
 
   const [, { upload, reset: resetUploader }] = useUploadFile();
 
+  const overlayOpen =
+    isCaptureModalOpen ||
+    isUploadModalOpen ||
+    isAddPersonModalOpen ||
+    isAddConceptModalOpen ||
+    isItemModalOpen ||
+    isAddEventModalOpen ||
+    isAddPlaceModalOpen ||
+    isScanModalOpen;
+
   const handleUpload = (files: FileList) => {
     return upload(Array.from(files));
   };
@@ -63,7 +73,7 @@ export function AddMenu() {
       <div className="flex items-center">
         <DropdownMenu modal={false}>
           <DropdownMenu.Trigger asChild>
-            <IconButton variant="default" size="icon-lg" label={t('NAV_ADD')}>
+            <IconButton variant="default" size="icon-lg" label={t('NAV_ADD')} hideTooltip={overlayOpen}>
               <Plus strokeWidth={2} className="h-5 w-5" />
             </IconButton>
           </DropdownMenu.Trigger>

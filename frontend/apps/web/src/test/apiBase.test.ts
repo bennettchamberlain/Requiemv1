@@ -7,6 +7,7 @@ import {
   isNativePlatform,
   needsNativeCloudConnect,
   persistApiBaseUrl,
+  resolveHttpOrigin,
   setApiBaseUrl,
 } from '@ci/common/src/utils/apiBase';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -144,6 +145,14 @@ describe('apiBase — native detection + persistence', () => {
 
     expect(getApiBaseUrl()).toBe('https://new.example.com');
     expect(store.get('ci.apiBaseUrl')).toBe('https://new.example.com');
+  });
+
+  it('resolveHttpOrigin() prefixes a bare hostname so iOS never sees a relative URL', () => {
+    expect(resolveHttpOrigin('ci-memory-core7.example.com')).toBe('https://ci-memory-core7.example.com');
+    expect(resolveHttpOrigin('https://memory.example.com/app?x=1')).toBe('https://memory.example.com');
+    expect(resolveHttpOrigin('http://192.168.1.9:8642/')).toBe('http://192.168.1.9:8642');
+    expect(() => resolveHttpOrigin('ftp://memory.example.com')).toThrow(/http or https/i);
+    expect(() => resolveHttpOrigin('not a url')).toThrow(/not a valid/i);
   });
 
   it('isLocalApplianceOrigin() flags docker / LAN leftovers, not a Hub Memory URL', () => {

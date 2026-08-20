@@ -202,7 +202,7 @@ describe('useAuth', () => {
       },
     };
 
-    setFetch((url) => {
+    const fetchMock = setFetch((url) => {
       if (url.endsWith('/api/keys')) {
         return jsonResponse({ id: 'key-portal', key: 'portal-minted-key' });
       }
@@ -215,8 +215,16 @@ describe('useAuth', () => {
 
     let ok = false;
     await act(async () => {
-      ok = await result.current[1].completePortalMemoryConnect('portal-id-token');
+      ok = await result.current[1].completePortalMemoryConnect(
+        'portal-id-token',
+        'https://memory.example.com',
+      );
     });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://memory.example.com/api/keys',
+      expect.objectContaining({ method: 'POST' }),
+    );
 
     expect(ok).toBe(true);
     expect(result.current[0].authenticated).toBe(true);

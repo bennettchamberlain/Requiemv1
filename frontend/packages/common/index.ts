@@ -14,6 +14,7 @@ export {
   isNativePlatform,
   needsNativeCloudConnect,
   persistApiBaseUrl,
+  resolveHttpOrigin,
   setApiBaseUrl,
 } from './src/utils/apiBase';
 export {
@@ -115,6 +116,7 @@ export {
   secureStorageSet,
   setStatusBarStyle,
   syncNativeIntentConfig,
+  takeNativePhoto,
 } from './src/utils/nativeBridge';
 export type { LocalNotification } from './src/utils/nativeBridge';
 export {

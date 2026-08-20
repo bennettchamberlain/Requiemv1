@@ -5,6 +5,7 @@ import {
   createHookContext,
   fetchJson,
   FetchJsonError,
+  getApiBaseUrl,
   getLaunchUrl,
   isIosPlatform,
   isNativePlatform,
@@ -211,8 +212,10 @@ interface CreateApiKeyResponse {
 // Exchange a freshly-issued JWT for a long-lived API key (the /api/keys endpoint is
 // JWT-guarded, so this must run while we still hold the login JWT), persist it to the
 // keystore, and activate it for subsequent requests. Returns the raw key, or null.
-async function mintAndStoreApiKey(jwt: string): Promise<string | null> {
-  const created = await fetchJson<CreateApiKeyResponse>('/api/keys', {
+async function mintAndStoreApiKey(jwt: string, memoryOrigin?: string): Promise<string | null> {
+  const origin = memoryOrigin || getApiBaseUrl();
+  const keysUrl = /^https?:\/\//i.test(origin) ? `${origin.replace(/\/+$/, '')}/api/keys` : '/api/keys';
+  const created = await fetchJson<CreateApiKeyResponse>(keysUrl, {
     method: 'POST',
     skipApiKey: true,
     headers: {
@@ -294,7 +297,7 @@ type ReturnValue = [
      * After Portal cloud-connect: trade a portal OIDC bearer for a Memory API
      * key so the phone does not do a second Safari/login hop.
      */
-    completePortalMemoryConnect: (portalBearer: string) => Promise<boolean>;
+    completePortalMemoryConnect: (portalBearer: string, memoryOrigin?: string) => Promise<boolean>;
   },
 ];
 
@@ -360,8 +363,8 @@ function useAuth(): ReturnValue {
     [navigate, location.state],
   );
 
-  const completePortalMemoryConnect = useCallback(async (portalBearer: string): Promise<boolean> => {
-    const key = await mintAndStoreApiKey(portalBearer);
+  const completePortalMemoryConnect = useCallback(async (portalBearer: string, memoryOrigin?: string): Promise<boolean> => {
+    const key = await mintAndStoreApiKey(portalBearer, memoryOrigin);
 
     if (!key) {
       throw new Error('Memory Server did not return an API key.');
