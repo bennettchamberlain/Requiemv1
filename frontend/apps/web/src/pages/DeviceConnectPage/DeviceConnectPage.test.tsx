@@ -21,7 +21,13 @@ const h = vi.hoisted(() => ({
   authenticated: false,
 }));
 
-vi.mock('@ci/common', () => ({
+// Spread the real module rather than allow-listing exports: this page also reaches
+// `@ci/common` *transitively* — the real `probeMemoryOrigin` in ./portal-client calls
+// `apiFetch` — so an allow-list mock silently blanks whatever the next import adds.
+// Only `persistApiBaseUrl` is stubbed, because the tests assert on it and it must not
+// write the origin to localStorage.
+vi.mock('@ci/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@ci/common')>()),
   persistApiBaseUrl: h.persistApiBaseUrl,
 }));
 
