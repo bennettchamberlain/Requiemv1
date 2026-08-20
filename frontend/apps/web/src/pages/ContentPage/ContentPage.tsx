@@ -23,10 +23,15 @@ const GET_CONTENT = gql(`
       id
       title
       text
-      # The drawer renders the image; the page used to select nothing to render it with.
       mimetype
       contentUrl: url
       sourceUrl
+      # The local copy (external_id -> ci.files), resolved server-side. Preferred
+      # over url/sourceUrl, which for imported photos is often the provider's
+      # web page (e.g. photos.google.com/photo/…) — not an image, and blocked
+      # by the browser when used as one.
+      mediaUrl
+      previewUrl
       tags {
         id
         label
@@ -108,9 +113,11 @@ export function ContentPage() {
             >
               {contentItem.mimetype?.startsWith('image/') && (
                 <EntityMedia
-                  src={resolveStaticUrl(contentItem.contentUrl ?? contentItem.sourceUrl)}
+                  src={resolveStaticUrl(contentItem.mediaUrl ?? contentItem.contentUrl ?? contentItem.sourceUrl)}
+                  previewSrc={resolveStaticUrl(contentItem.previewUrl)}
                   contentType={contentItem.mimetype}
                   alt={contentItem.title ?? ''}
+                  fallbackHref={contentItem.contentUrl ?? contentItem.sourceUrl}
                 />
               )}
             </EntityFieldsCard>

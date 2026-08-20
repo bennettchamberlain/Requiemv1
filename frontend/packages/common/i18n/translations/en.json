@@ -78,6 +78,7 @@
   "PROVIDER_BACK_TO_CONNECTIONS": "Back to connections",
   "PROVIDER_API_KEY_HELP": "Where to find your API key",
   "CONNECTIONS_CREATE": "Create connection",
+  "CONTENT_UNTITLED": "Untitled",
   "FILES_UNTITLED": "Untitled",
   "NOTES_DELETE": "Delete note",
   "PLAN_TASK_DELETE": "Delete {{title}}",

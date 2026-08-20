@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntityMedia } from './EntityDetailScaffold';
@@ -76,5 +76,41 @@ describe('EntityMedia progressive image', () => {
 
     act(() => FakeImage.instances[1].onload?.());
     expect(screen.getByAltText('photo')).toHaveAttribute('src', '/static/companion/other');
+  });
+});
+
+describe('EntityMedia load failure', () => {
+  /**
+   * Regression: a content row whose `url` is a provider web page
+   * (photos.google.com/photo/…) was rendered as an <img>; the browser blocks
+   * the non-image response (ERR_BLOCKED_BY_ORB) and left a broken glyph.
+   */
+  it('swaps to an unavailable notice with a link to the original when the image fails', () => {
+    render(
+      <EntityMedia
+        src="https://photos.google.com/photo/abc"
+        contentType="image/jpeg"
+        alt="photo"
+        fallbackHref="https://photos.google.com/photo/abc"
+      />,
+    );
+
+    fireEvent.error(screen.getByRole('img', { name: 'photo' }));
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent("Media couldn't be loaded");
+    const link = screen.getByRole('link', { name: /open original/i });
+    expect(link).toHaveAttribute('href', 'https://photos.google.com/photo/abc');
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  it('retries when the source changes to a new entity', () => {
+    const { rerender } = render(<EntityMedia src="/static/a" contentType="image/png" alt="a" />);
+
+    fireEvent.error(screen.getByRole('img', { name: 'a' }));
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+
+    rerender(<EntityMedia src="/static/b" contentType="image/png" alt="b" />);
+    expect(screen.getByRole('img', { name: 'b' })).toBeInTheDocument();
   });
 });

@@ -34,3 +34,29 @@ export function resolveFileTileUrl(opts: {
 
   return undefined;
 }
+
+/**
+ * Thumbnail for a content row. `previewUrl`/`mediaUrl` are hydrated server-side
+ * from the linked file (external_id -> ci.files) when there is one; rows that
+ * point at an image by url/sourceUrl (bookmarked images, imported photos
+ * without a local copy) fall back to that.
+ */
+export function resolveContentTileUrl(data: {
+  mimetype?: string | null;
+  previewUrl?: string | null;
+  mediaUrl?: string | null;
+  contentUrl?: string | null;
+  sourceUrl?: string | null;
+}): string | undefined {
+  const preview = resolveMediaUrl(data.previewUrl);
+
+  if (preview) {
+    return preview;
+  }
+
+  if (data.mimetype?.startsWith('image/')) {
+    return resolveMediaUrl(data.mediaUrl ?? data.contentUrl ?? data.sourceUrl);
+  }
+
+  return undefined;
+}

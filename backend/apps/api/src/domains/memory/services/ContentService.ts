@@ -494,6 +494,9 @@ export class ContentService {
       alias: 'content',
       timeProp: 'createdAt',
       userId: context.userId,
+      // Same rule as findById/findByIds: a deleted event's photo must not resurface
+      // in the paginated library (and must not inflate totalCount).
+      scope: (qb) => this.excludeDeletedEventMedia(qb, 'content'),
     });
 
     return {

@@ -47,6 +47,7 @@ export function ContentDetails({ entity }: Props) {
           previewSrc={mediaPreviewSrc}
           contentType={data.mimetype}
           alt={data.title ?? ''}
+          fallbackHref={data.contentUrl ?? data.sourceUrl}
         />
       }
       editFields={[
@@ -58,7 +59,22 @@ export function ContentDetails({ entity }: Props) {
           variables: { input: { id: entity.id, title: values.title, text: values.text } },
         });
       }}
-      metaItems={[{ label: 'Type', value: data.mimetype ?? 'Content' }]}
+      metaItems={[
+        { label: 'Type', value: data.mimetype ?? 'Content' },
+        {
+          label: 'Link',
+          value: data.contentUrl ? (
+            <a
+              href={data.contentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all text-primary hover:underline"
+            >
+              {data.contentUrl}
+            </a>
+          ) : null,
+        },
+      ]}
       rawData={data}
     />
   );
