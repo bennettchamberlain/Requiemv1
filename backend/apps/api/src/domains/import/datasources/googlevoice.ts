@@ -555,6 +555,21 @@ export class GoogleVoiceFileImporter implements FileImporter {
                 To: (attributed.isOutbound ? counterpart.name : owner) || undefined,
               }
             : {}),
+          // MediaStage's upload leg never sees this item: `content.mediaType`
+          // is deliberately left '' (see below) so `isMediaItem()` stays
+          // false and the primary media predicate skips it. Only the
+          // ATTACHMENT leg (gated on MediaAttachments, same as a voicemail
+          // recording above) uploads the bytes and links them to a message —
+          // uploading via BOTH legs would produce two ci.files rows for the
+          // same picture, one of them orphaned.
+          MediaAttachments: [
+            {
+              path: filename,
+              filename: path.basename(filename),
+              type: attachmentMediaKind(mimeForAttachment(filename)),
+              mimetype: mimeForAttachment(filename),
+            },
+          ],
         },
       };
       params.pipeline.push({
@@ -859,6 +874,19 @@ function resolveAttachment(stub: string, dir: string): string | undefined {
   }
 
   return undefined;
+}
+
+/** MIME for an MMS image attachment, which resolveAttachment names only by extension. */
+function mimeForAttachment(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+
+  return ext === '.jpg' || ext === '.jpeg'
+    ? 'image/jpeg'
+    : ext === '.gif'
+      ? 'image/gif'
+      : ext === '.png'
+        ? 'image/png'
+        : '';
 }
 
 // Attachment filenames embed the real send time, e.g.
