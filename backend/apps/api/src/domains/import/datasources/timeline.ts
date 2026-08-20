@@ -294,6 +294,18 @@ export interface ImportPipeline {
    * at receipt discovery did. Optional, like `drop`.
    */
   keep?: (reason: string) => void;
+  /**
+   * Report N records this file/pass actually offered the parser — the floor
+   * `reconciled` checks against — independent of how many became rows or
+   * drops. Optional: a parser that never calls this keeps today's derived
+   * floor (`consumed = produced + dropped`), which is definitionally always
+   * reconciled and can never catch a record vanishing through a branch that
+   * forgot `drop()`. Cheap for the common array/CSV-shaped parser (one call
+   * per file with the array's own `.length`, not a per-row counter); only a
+   * genuinely streaming/line-based parser needs a real per-iteration
+   * increment.
+   */
+  consumed?: (n: number) => void;
 }
 export interface ImportParams {
   options?: unknown;

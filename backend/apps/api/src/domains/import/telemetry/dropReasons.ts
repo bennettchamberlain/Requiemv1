@@ -154,6 +154,9 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   // auto-played, a title abandoned in the first seconds.
   abandoned_playback: 'filtered',
   promo_playback: 'filtered',
+  // Spotify's own skip signal: under a second of `ms_played` on an
+  // end-of-play/streaming-history row.
+  sub_second_play: 'filtered',
 
   // Deliberate policy exclusions.
   bulk_filtered: 'filtered',
@@ -209,6 +212,9 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
 
   // Shape.
   unsupported_entity_type: 'unsupported_shape',
+  // A Spotify play row with none of the track/episode/audiobook fields set —
+  // the source recorded a play but not what was played.
+  unresolvable_playback_stub: 'unsupported_shape',
 
   // Read failures.
   no_end_marker: 'unreadable_source',
