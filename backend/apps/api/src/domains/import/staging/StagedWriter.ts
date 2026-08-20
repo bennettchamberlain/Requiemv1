@@ -46,6 +46,14 @@ export interface StagedCounts {
    * landed, so counting them as drops would report a rescue as a loss.
    */
   keeps: Record<string, number>;
+  /**
+   * What a parser reported via {@link ImportPipeline.consumed} it actually
+   * read, summed across every call. `undefined` — not `0` — when no parser
+   * called it at all, so `ParseStage` can tell "never reported" apart from
+   * "reported zero" and fall back to the derived floor (`produced + dropped`)
+   * only in the first case.
+   */
+  recordsRead?: number;
 }
 
 /** Graphs buffered before a flush. Bounded so a 40GB parse is observable, not one commit at the end. */
@@ -216,6 +224,15 @@ export class StagedWriter implements ImportPipeline {
    */
   keep(reason: string): void {
     this.counts.keeps[reason] = (this.counts.keeps[reason] ?? 0) + 1;
+  }
+
+  /**
+   * Record N records the parser actually read, summed across every call this
+   * attempt — see {@link ImportPipeline.consumed}. Purely additive: a parser
+   * that never calls this leaves {@link StagedCounts.recordsRead} `undefined`.
+   */
+  consumed(n: number): void {
+    this.counts.recordsRead = (this.counts.recordsRead ?? 0) + n;
   }
 
   /** True when the buffer has reached the point where the runner should flush. */

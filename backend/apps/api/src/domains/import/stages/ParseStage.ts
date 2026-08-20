@@ -342,10 +342,12 @@ export class ParseStage implements ImportStageRunner {
  *  - `entitiesGrown` — a repeat sighting of a person or a dish merged into the
  *    row already staged. Also a record consumed that did not become a new row.
  *
- * `consumed` is left to be derived rather than measured: no parser reports how
- * many records it read, so `produced + dropped` is the honest floor and the
- * summary says as much by construction. Claiming a measured figure the parsers
- * do not supply would be worse than deriving one.
+ * `consumed` is derived (`produced + dropped`) unless the parser called
+ * `pipeline.consumed()` — `counts.recordsRead` is then a MEASURED figure
+ * (`consumedOverride`), and the reconciliation check in `stageSummary.ts` can
+ * actually fail for that unit instead of holding by construction. A parser
+ * that never calls it keeps the derived floor, which can never disagree with
+ * itself.
  *
  * `counts.keeps` is deliberately NOT folded in here. A keep is a record a gate
  * would have discarded and the parser rescued — it IS in `produced`, so adding
@@ -380,6 +382,7 @@ function parseUnit(
     // the QA corpus, and the answer is always "look at what it matched".
     path: where,
     ...(error != null ? { error } : {}),
+    ...(counts.recordsRead != null ? { consumedOverride: counts.recordsRead } : {}),
   };
 }
 
