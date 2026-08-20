@@ -50,8 +50,8 @@ transaction; tombstones are removed from *both* search stores (`ci_search.embedd
   `ci.entity_identifiers` rather than widening its CHECK, so people-resolution and
   thing-resolution do not share one unique index.
 - `ci.object_observations` — a sighting ("a mug is visible in this photo") as a distinct, weaker
-  claim than ownership ("I own this mug"), which is what `InventoryListener` was conflating.
-- `ci.inventory` gained `merged_into_object_id`, a model link, a lifecycle and a confidence.
+  claim than ownership ("I own this mug"), which is what the retired inventory listener was conflating.
+- `ci.objects` gained `merged_into_object_id`, a model link, a lifecycle and a confidence.
 
 `ObjectMergeService` and `ObjectDuplicateService` are named in those migrations' comments as the
 owners of re-pointing and duplicate surfacing. **Both shipped on 2026-08-19 in
@@ -100,7 +100,7 @@ written, plus one service outside it.
 | 5 | LLM / CV inference | `GraphEnrichmentService`, `WriteKnowledgeTool`, `CvDetectionsListener` | varies; often none |
 | 6 | `promote.place` — Locations from forward-geocoded event locations | `PlacePromoteStage` → `PlaceService.findOrCreateForGeocode` + `ensureHierarchy` | provider `place_id` first, then the 0.001° snap cell |
 | 7 | `promote.place_position` — Locations from reverse-geocoded position fixes | `PositionPlacePromoteStage`, composing the same two `PlaceService` methods | as #6 — deliberately one implementation, so the admin-place fold cannot fork |
-| 8 | `promote.object` — `ci.inventory` units from receipts and identified objects | `ObjectPromoteStage` | `ci.inventory.source_type` + the provenance triple |
+| 8 | `promote.object` — `ci.objects` units from receipts and identified objects | `ObjectPromoteStage` | `ci.objects.source_type` + the provenance triple |
 | 9 | `promote.observation` — sightings from `capture.scan` | `ObservationPromoteStage` → `ObjectObservationService` | the observation table's own idempotency arbiters |
 | 10 | Receipt lines → owned units | `ObjectMintService` | `source_type = 'receipt-line'`, triple `(receipt-line, <receipt source_system>, …)` |
 
@@ -281,13 +281,13 @@ catalog models, so the two are separate audit lineages rather than one blurred o
 
 - **Model** ("Sony WH-1000XM5" as a product class): merges on GTIN/MPN/normalized name.
   `ObjectMergeService.mergeProductModels` re-points identifiers, receipt line items,
-  `ci.inventory.product_id` and observations.
+  `ci.objects.product_id` and observations.
 - **Instance** (my specific pair): **two of the same product are two objects.**
   `ObjectMergeService` folds units, moving identifiers, observations, inventory parent/related
   links, receipt line items, tag links, and deleting the source's search rows.
 
 **Nothing auto-merges.** `ObjectDuplicateService` is candidate generation only — three rungs,
-strongest first: `identifier` (unnesting `ci.inventory.identifier_codes` and unioning the
+strongest first: `identifier` (unnesting `ci.objects.identifier_codes` and unioning the
 `ci.object_identifiers` claim index, because that index is first-writer-wins and therefore hides
 the duplicate by construction), then `product_name`, then `brand_model`. Groups are capped at six
 members and carry `totalItems` so the UI can say "showing 6 of 900" for the junk-SKU groups a bad
@@ -444,7 +444,7 @@ adds an entity reference then fails CI instead of failing silently years later. 
 cheapest item in this document and it has no dependencies.**
 
 The list above is a starting point, not a survey — it must be derived, which is the whole point.
-An earlier draft of it carried `ci.inventory.object_entity_id`, which
+An earlier draft of it carried `ci.objects.object_entity_id`, which
 `20260811061402_convert_inventory_to_cti.sql` had already dropped as "a dead precursor of this link
 (no writer anywhere, all NULL)". A hand-maintained registry rots in both directions.
 
@@ -506,7 +506,7 @@ Never compare all pairs. Candidates come only from a blocking key:
 |------|-------------|
 | Person | normalized email / phone / name — `ci.identifier_claims` *is* the block |
 | Location | PostGIS `ST_DWithin` on a geohash-bucketed grid |
-| Object/Item | *Shipped* (§3.2): identifier rung over `ci.inventory.identifier_codes` ∪ `ci.object_identifiers`, then product name, then brand+model |
+| Object/Item | *Shipped* (§3.2): identifier rung over `ci.objects.identifier_codes` ∪ `ci.object_identifiers`, then product name, then brand+model |
 | Concept | `properties.type` + kNN over `ci_search.embeddings` (top-k, not all-pairs) |
 
 For Person this is already the shape `DuplicateDetectStage` implements; extending it means widening

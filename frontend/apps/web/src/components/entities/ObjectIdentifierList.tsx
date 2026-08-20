@@ -357,7 +357,7 @@ export function ObjectIdentifierList({ itemId, identifiers, onChanged, readOnly 
           <AlertDialog.Header>
             <AlertDialog.Title>Merge into one thing?</AlertDialog.Title>
             <AlertDialog.Description>
-              {`Codes, sightings, receipt lines and inventory links from "${conflict?.otherItem?.name || 'the other thing'}" will move onto this one, and it will keep the code ${conflict?.value ?? ''}. This cannot be undone from the UI.`}
+              {`Codes, sightings, receipt lines and object links from "${conflict?.otherItem?.name || 'the other thing'}" will move onto this one, and it will keep the code ${conflict?.value ?? ''}. This cannot be undone from the UI.`}
             </AlertDialog.Description>
           </AlertDialog.Header>
           <AlertDialog.Footer>

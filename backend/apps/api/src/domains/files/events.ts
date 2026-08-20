@@ -26,7 +26,8 @@ export type FileUploadedPayload = {
   /** The identifier of the newly created user */
   fileId: string;
   userId: string;
-  inventoryCapture: boolean;
+  /** The upload was a deliberate thing-capture shot; see ThingVisionListener. */
+  thingCapture: boolean;
   skipDescription?: boolean;
   model?: string;
 };

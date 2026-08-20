@@ -91,10 +91,10 @@ interface ProductIdRow {
  * Read/write surface for `ci.product_models` — the CATALOG half of the
  * product/instance split.
  *
- * `ci.inventory` holds the owned UNITS ("the iPhone on my desk, serial F2LX…,
+ * `ci.objects` holds the owned UNITS ("the iPhone on my desk, serial F2LX…,
  * cracked screen"); this holds what those units are instances of ("iPhone 15
  * Pro 256GB Blue Titanium"). Before the table existed, buying three of the same
- * headphones produced three unrelated inventory rows with the brand/model
+ * headphones produced three unrelated object rows with the brand/model
  * strings duplicated three times and nowhere to hang the canonical barcode,
  * spec sheet, MSRP or manual.
  *
@@ -105,7 +105,7 @@ interface ProductIdRow {
  * A tombstoned model is a row that LOST a merge; its data has already been
  * folded into the survivor. Returning one is not a stale read, it is a wrong
  * answer — the caller gets a product that nothing points at any more, mints
- * inventory against it, and re-creates the duplicate the merge just removed.
+ * objects against it, and re-creates the duplicate the merge just removed.
  * The filter lives in {@link liveScope} so no read path can forget it.
  */
 @Injectable()

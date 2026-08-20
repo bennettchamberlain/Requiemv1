@@ -15,7 +15,7 @@ export class ProductMergeCountsType {
 
   /** Owned units whose `productId` moved onto the target. */
   @Field(() => Int)
-  inventoryProduct!: number;
+  objectProduct!: number;
 
   @Field(() => Int)
   observations!: number;
@@ -24,7 +24,7 @@ export class ProductMergeCountsType {
     return {
       identifiers: counts.identifiers,
       receiptLineItems: counts.receiptLineItems,
-      inventoryProduct: counts.inventoryProduct,
+      objectProduct: counts.objectProduct,
       observations: counts.observations,
     };
   }

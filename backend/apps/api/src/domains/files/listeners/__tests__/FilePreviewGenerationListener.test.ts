@@ -91,7 +91,7 @@ describe('FilePreviewGenerationListener', () => {
   it('generates a preview for a JPEG with warning-level defects (stray bytes before restart markers)', async () => {
     const { listener, fileService, eventService, created } = makeListener(QUIRKY_JPEG);
 
-    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false });
+    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false });
 
     expect(fileService.create).toHaveBeenCalledTimes(1);
     const preview = created[0] as { contentType: string; width: number; height: number; buffer: Buffer };
@@ -116,7 +116,7 @@ describe('FilePreviewGenerationListener', () => {
     const { listener, fileService, eventService } = makeListener(Buffer.from('this is not an image at all'));
 
     await expect(
-      listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false }),
+      listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false }),
     ).resolves.toBeUndefined();
 
     expect(fileService.create).not.toHaveBeenCalled();
@@ -126,7 +126,7 @@ describe('FilePreviewGenerationListener', () => {
   it('logs fileId and contentType on a decode skip so the undecodable corpus is countable', async () => {
     const { listener, logger } = makeListener(Buffer.from('not an image'), 'image/heic');
 
-    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false });
+    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false });
 
     const decodeWarn = logger.warn.mock.calls.find(
       ([message]) => message === 'Image decode failed, skipping preview generation',
@@ -150,7 +150,7 @@ describe('FilePreviewGenerationListener', () => {
     const { listener, fileService } = makeListener(truncated, 'image/jpeg', truncated.length + 4096);
 
     await expect(
-      listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false }),
+      listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false }),
     ).rejects.toThrow();
 
     expect(fileService.create).not.toHaveBeenCalled();
@@ -162,7 +162,7 @@ describe('FilePreviewGenerationListener', () => {
     // can still show in the drawer, and they are already in hand.
     const { listener, fileService } = makeListener(Buffer.from('not an image'), 'image/heic');
 
-    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false });
+    await listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false });
 
     expect(fileService.setDimensions).toHaveBeenCalledWith(expect.anything(), 'file-1', {
       width: 64,
@@ -182,7 +182,7 @@ describe('FilePreviewGenerationListener', () => {
     });
 
     await expect(
-      listener.generatePreview({ userId: 'u1', fileId: 'file-1', inventoryCapture: false }),
+      listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false }),
     ).rejects.toThrow('S3 object body was empty');
     expect(fileService.create).not.toHaveBeenCalled();
   });

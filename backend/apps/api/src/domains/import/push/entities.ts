@@ -17,6 +17,14 @@ const ENTITY_TYPES: Record<string, string> = {
   place: 'Location',
   location: 'Location',
   address: 'Location',
+  // A catalogued product (a book, a device model) and a concrete object.
+  // Without these both fall through to `Concept`, which is where every
+  // purchased thing lands in the graph: unqueryable as a product, and
+  // indistinguishable from a topic tag — `GraphController` never removes
+  // connective types (Concept, Goal, Tag) with the explorer's type filter, so
+  // they cannot even be filtered back out.
+  product: 'Product',
+  object: 'Object',
 };
 
 const DEFAULT_ENTITY_TYPE = 'Concept';
@@ -157,4 +165,30 @@ export function toGraphEntity(staged: StagedEntity): GraphEntityInputDto | null 
     sourceSystem: staged.dataSource ?? 'unknown',
     properties,
   };
+}
+
+/**
+ * The relations a staged edge uses to name WHERE a record happened.
+ *
+ * The parsers' own vocabulary, mapped to `Location` by {@link ENTITY_TYPES}
+ * — a place edge is read the same way `resolveCorrespondents` reads a
+ * `from`/`to` edge, through `ci_import.entity_mappings`.
+ */
+export const PLACE_RELATIONS: readonly string[] = ['place', 'location', 'venue', 'address'];
+
+/** The `ci.entities.entity_type` a place resolves to. Same value {@link ENTITY_TYPES} gives. */
+export const PLACE_ENTITY_TYPE = ENTITY_TYPES.place;
+
+/**
+ * The natural key a place NAME resolves under — the same string
+ * {@link naturalKeyFor} mints for a staged entity of type `place`.
+ *
+ * Deliberately identical, and that is the whole point: a record that only
+ * STATES an address in its metadata and a parser that staged the same place as
+ * an entity must land on ONE graph node, not two spellings of one location.
+ */
+export function placeKeyFor(name: string): string | null {
+  const trimmed = name.trim().toLowerCase();
+
+  return trimmed ? `place:${trimmed}` : null;
 }

@@ -263,7 +263,7 @@ Cross-cutting infrastructure (guards, request context, zod validation, body limi
 
 `ci.entities` is the **root of an inheritance hierarchy**, not a side table.
 Person / Pet / Group / Concept / File / Location are single-table-inheritance rows
-in `ci.entities` itself; `ci.inventory` (`Item`), `ci.events` (`Event`),
+in `ci.entities` itself; `ci.objects` (`Item`), `ci.events` (`Event`),
 `ci.communications` (`Communication`) and `ci.content` (`Content`) are
 **class-table inheritance**: each detail row *requires* a base row that shares its
 uuid. For `events` and `inventory` the base row is the **sole owner** of the
@@ -539,8 +539,8 @@ gantt
 
 | Question | Context |
 |---|---|
-| When does an item become an `entity` vs. stay in `inventory`? | **Settled by construction.** Class-table inheritance (`20260811061402`) makes an `Item` base row in `ci.entities` *mandatory* for every `ci.inventory` row, so the old "only significant things get an entity" heuristic no longer describes the schema. What remains open is the softer question the heuristic was really about: which items deserve *relationships* and surface area, not which get a row. |
-| Instance vs. model | `ci.inventory` holds the owned **unit**; `ci.product_models` holds the catalog **model** it is an instance of. Today that link is a plain `inventory.product_id` column surfaced through GraphQL, **not** a graph edge — `INSTANCE_OF`, `PURCHASED_AT`, `PURCHASED_FROM` and `SEEN_AT` appear only in the memory domain's filter mirror and cannot be written. |
+| When does an item become an `entity` vs. stay in `objects`? | **Settled by construction.** Class-table inheritance (`20260811061402`) makes an `Item` base row in `ci.entities` *mandatory* for every `ci.objects` row, so the old "only significant things get an entity" heuristic no longer describes the schema. What remains open is the softer question the heuristic was really about: which items deserve *relationships* and surface area, not which get a row. |
+| Instance vs. model | `ci.objects` holds the owned **unit**; `ci.product_models` holds the catalog **model** it is an instance of. Today that link is a plain `objects.product_id` column surfaced through GraphQL, **not** a graph edge — `INSTANCE_OF`, `PURCHASED_AT`, `PURCHASED_FROM` and `SEEN_AT` appear only in the memory domain's filter mirror and cannot be written. |
 | How aggressively to prune the graph? | The old facts-as-cold-storage design was never implemented and its tables were dropped; compaction remains an open design question (§7.3). |
 | Where does multi-user logic live? | Today: single user per Hub. Multi-tenant would touch `auth`, `connections`, `etl`, and Portal contracts. |
 | In-Hub saved-search sharing vs. single-tenant model | Saved searches are link-shareable: the share token authorizes running the search **as the owner** (`SearchResolver.runSharedSearch`; `SavedSearchService.findByShareToken` is intentionally not user-scoped) — the first cross-user read path inside a Hub. Capability-scoped (the token only surfaces the owner's stored query/types/tags; viewer-supplied filters are ignored) and still behind `JwtOrApiKeyAuthGuard` (signed-in viewers only, **not** anonymous). A node's sub-fields (media/relations/tags) resolve under the node's owner, so a shared result's signed media URLs are the owner's — forwardable until the URL's TTL. Distinct from the Portal-brokered federation in §7.3. |
@@ -554,7 +554,7 @@ gantt
 | Term | Meaning |
 |---|---|
 | **Entity** | A row in `ci.entities` — the root of the memory model, discriminated by `entity_type`, with arbitrary `properties` JSONB. Embeddings live in `ci_search.embeddings`, keyed `(entity_type, entity_id)`; the old per-table `embedding` columns were dropped in `20260213113000`. |
-| **CTI** | Class-table inheritance: `ci.inventory` / `ci.events` / `ci.communications` / `ci.content` each hold *detail* columns and require a `ci.entities` *base* row sharing the same uuid. For `inventory` and `events` the base row owns the name/title and description; for `content`, the title. `communications` keeps its own subject/content/preview/summary and the base row carries only a derived display label. |
+| **CTI** | Class-table inheritance: `ci.objects` / `ci.events` / `ci.communications` / `ci.content` each hold *detail* columns and require a `ci.entities` *base* row sharing the same uuid. For `objects` and `events` the base row owns the name/title and description; for `content`, the title. `communications` keeps its own subject/content/preview/summary and the base row carries only a derived display label. |
 | **Relationship** | A typed edge between entities (`PREFERS`, `KNOWS`, `LIVES_IN`, ...) with its own `properties`. The write-time vocabulary is `RelationshipType` in `domains/graph/types.ts`. |
 | **Pipeline stage** | A unit of enrichment with a declared integer **version**; `ci.pipeline_state` records per `(entity_type, entity_id, stage)` whether it ran and what it decided, so bumping the version in `versions.ts` re-enriches the corpus without a backfill script. |
 | **Fact** | *(historical)* Atomic, cold-storage information extracted from document chunks. The `facts`/`document_chunks` tables were dropped (`20260212191500`); the cold-storage compaction idea survives only as the §7.3 roadmap item. Document parsing itself came back as `domains/parsing` → `ci.file_chunks`. |

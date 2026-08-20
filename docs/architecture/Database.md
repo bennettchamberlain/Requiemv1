@@ -71,7 +71,7 @@ Authoritative column lists live in the migrations and the matching TypeORM entit
 | `ci.event_analytics` | Side table for rarely-written analytics columns moved off the hot events row (`salience`, `access_count`, …) | — |
 | `ci.communications` | Email/SMS/chat/calls — **plain table** (de-hypertabled; see [Hypertables](#hypertables)). **CTI detail table** (`'Communication'`) | `memory/entities/CommunicationEntity.ts` (+ `CommunicationBaseEntity.ts`) |
 | `ci.content` | Rich content records (articles, media, web pages), optional FK to an event (`content.event_id`). **CTI detail table** (`'Content'`) | `memory/entities/ContentEntity.ts` (+ `ContentBaseEntity.ts`) |
-| `ci.inventory` | The owned **units** — one row per physical thing, with `product_id` pointing at the catalog model. **CTI detail table** (`'Item'`) | `memory/entities/ItemEntity.ts` (+ `ItemBaseEntity.ts`) |
+| `ci.objects` | The owned **units** — one row per physical thing, with `product_id` pointing at the catalog model. **CTI detail table** (`'Item'`) | `memory/entities/ItemEntity.ts` (+ `ItemBaseEntity.ts`) |
 | `ci.browser_activity` | Page visits from the browser extension — **the sole home for them**. Wave D folded these into `ci.events` (`view`) + `ci.content` (`web-page`) on 2026-08-08 and that was **reverted** four days later (`20260812144811`): page views are not timeline events — the fold flooded the schedule calendar and silently changed the HBPE training corpus. `BrowserActivityService` no longer dual-writes | `browser-activity/entities/BrowserActivityEntity.ts` |
 | `ci.capture_events` | Append-only raw capture log behind `POST /v1/*`, soft link to the materialized row (`20260621021634`) | — |
 | `ci.files` | File metadata (MinIO-backed objects, previews). Every uploaded file also gets a `'File'` graph entity — `FileService.handleFileUploaded` calls `findOrCreateForFile` on every `FileUploadedEvent` | `files/entities/FileEntity.ts` |
@@ -120,19 +120,19 @@ totally mutable, so **the onus is on application-layer code to use consistent fi
 within each entity type. Retain as much source data as possible; let the sub-schemas evolve
 with the user.
 
-**Where to put what — `entities` vs. `inventory`.** This used to read: an item becomes a
+**Where to put what — `entities` vs. `objects`.** This used to read: an item becomes a
 graph entity *only* when the user has a real relationship with it (the heirloom car gets
 an entity; a box of screws does not), and only emotionally significant files get a `File`
-entity. **Both halves stopped being true in August 2026.** Under CTI every `ci.inventory`
-row *requires* an `Item` base row in `ci.entities` (`inventory_object_id_entities_fk`),
+entity. **Both halves stopped being true in August 2026.** Under CTI every `ci.objects`
+row *requires* an `Item` base row in `ci.entities` (`objects_object_id_entities_fk`),
 and that base row is the only place the item's name and description live — the same is
 true of `ci.events`, `ci.communications` and `ci.content`. And
 `FileService.handleFileUploaded` creates a `File` entity for **every** uploaded file.
 
 What survives of the old heuristic is the softer judgement it was really making: which
 things deserve *relationships*, identifiers and product links — not which things get a
-row. A `ci.inventory` unit points at its catalog model through the plain
-`inventory.product_id` column, **not** through a graph edge; `INSTANCE_OF`,
+row. A `ci.objects` unit points at its catalog model through the plain
+`objects.product_id` column, **not** through a graph edge; `INSTANCE_OF`,
 `PURCHASED_AT`, `PURCHASED_FROM` and `SEEN_AT` exist only in the memory domain's
 filter-side `RELATIONSHIP_TYPES` mirror and cannot be written by `RelationshipService`.
 
@@ -261,7 +261,7 @@ and [graphql.md §4.7](../api/graphql.md#47-bulk-ingest-mutations-the-importer-s
 |---|---|---|
 | `ci.events` | `events_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260620213807` (user-scoped `20260808065724`) |
 | `ci.content` | `content_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120300` |
-| `ci.inventory` | `inventory_source_triple_uniq (owner_user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120000` |
+| `ci.objects` | `objects_source_triple_uniq (owner_user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120000` |
 | `ci.browser_activity` | `browser_activity_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120200` |
 | `ci.communications` | `communications_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` on the plain table | `20260807072321` (replaces retired `communications_source_dedup`) |
 | `ci.entities` | `entities_linked_uniq (owner_user_id, entity_type, linked_table, linked_id) WHERE linked_table IS NOT NULL` — importer-stable graph upserts | `20260621020120` |

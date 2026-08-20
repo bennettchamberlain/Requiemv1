@@ -120,15 +120,17 @@ export interface ResolveOptions {
  *
  * ── What it never does ─────────────────────────────────────────────────────
  *
- * It never CREATES a `ci.inventory` row from a sighting. That was the old
- * `InventoryListener` behaviour and it is precisely what
+ * It never CREATES a `ci.objects` row from a sighting. That was the retired
+ * inventory listener's behaviour and it is precisely what
  * `ci.object_observations` was introduced to stop: a vision guess is evidence
  * that an object was VISIBLE, never evidence that it is OWNED, and writing one
  * puts every object that ever appeared in frame into the user's possessions.
- * Minting has exactly one legitimate trigger — a purchase — and that is
- * {@link ObjectMintService}'s job. The auto-apply threshold below therefore
- * gates the only automatic write there is: linking a sighting to a unit that
- * already exists.
+ * Minting has two legitimate triggers, neither of them inference: a purchase
+ * ({@link ObjectMintService}) and a user who explicitly said "these are my
+ * things" on the upload (`ThingVisionListener`, which asks this ladder FIRST
+ * and mints only what it declines to match). The auto-apply threshold below
+ * therefore gates the only automatic write there is: linking a sighting to a
+ * unit that already exists.
  *
  * It also never sets `confirmed_by_user`, and never overwrites a resolution a
  * human confirmed — both guarantees come from routing every write through
@@ -300,7 +302,7 @@ export class ObjectResolutionService {
 
       const units = await this.dataSource.query<Array<{ object_id: string }>>(
         `SELECT object_id
-           FROM ci.inventory
+           FROM ci.objects
           WHERE user_id = $1::uuid
             AND product_id = $2::uuid
             AND merged_into_object_id IS NULL
@@ -453,7 +455,7 @@ export class ObjectResolutionService {
    * unit; the outer `WHERE` then decides whether that one is near ENOUGH. Same
    * answer, one distance comparison instead of N.
    *
-   * The join back to `ci.inventory` is what keeps a TOMBSTONE from answering: a
+   * The join back to `ci.objects` is what keeps a TOMBSTONE from answering: a
    * merged-away unit keeps its embedding until the merge deletes it, and a
    * resolver that matched one would re-create the duplicate the merge removed.
    * It sits INSIDE the limit, so the index keeps yielding neighbours until one
@@ -473,7 +475,7 @@ export class ObjectResolutionService {
           SELECT e.entity_id AS object_id,
                  e.embedding <=> ${probe} AS distance
             FROM ci_search.embeddings e
-            JOIN ci.inventory inv
+            JOIN ci.objects inv
               ON inv.object_id = e.entity_id
              AND inv.merged_into_object_id IS NULL
            WHERE e.user_id = $1::uuid
@@ -500,7 +502,7 @@ export class ObjectResolutionService {
    *
    * "Known to be there" is two things — a confirmed last sighting
    * (`last_seen_place_entity_id`) or a purchase made there (the mint provenance
-   * bag, since `ci.inventory` has no acquisition-place column). AMBIGUITY IS
+   * bag, since `ci.objects` has no acquisition-place column). AMBIGUITY IS
    * NOT A MATCH: two candidates mean the place told us nothing that separates
    * them, so the rung declines rather than guessing.
    */
@@ -520,7 +522,7 @@ export class ObjectResolutionService {
 
     const rows = await this.dataSource.query<Array<{ object_id: string }>>(
       `SELECT inv.object_id
-         FROM ci.inventory inv
+         FROM ci.objects inv
          JOIN ci.entities base ON base.entity_id = inv.object_id
         WHERE inv.user_id = $1::uuid
           AND inv.merged_into_object_id IS NULL
@@ -576,7 +578,7 @@ export class ObjectResolutionService {
 
     const rows = await this.dataSource.query<Array<{ object_id: string }>>(
       `SELECT inv.object_id
-         FROM ci.inventory inv
+         FROM ci.objects inv
          JOIN ci.entities base ON base.entity_id = inv.object_id
         WHERE inv.user_id = $1::uuid
           AND inv.merged_into_object_id IS NULL
@@ -613,7 +615,7 @@ export class ObjectResolutionService {
     observation: ObjectObservation,
   ): Promise<void> {
     await this.dataSource.query(
-      `UPDATE ci.inventory
+      `UPDATE ci.objects
           SET last_seen_at = $3,
               last_seen_place_entity_id = COALESCE($4::uuid, last_seen_place_entity_id),
               updated_at = now()

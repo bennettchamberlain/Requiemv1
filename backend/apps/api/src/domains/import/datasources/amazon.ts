@@ -20,7 +20,7 @@ import path from 'node:path';
 import { parseCSV } from './csv';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams, Item } from './timeline';
+import type { ImportParams, Item, LineItemRecord, ObjectIdentifierRef } from './timeline';
 import { mimeForFile, timeframeContains } from './timeline';
 
 // Filename signature: modern Retail.OrderHistory.* or legacy "Order History".
@@ -114,6 +114,38 @@ const CURRENCY_COLS = ['Currency', 'OurPriceCurrencyCode', 'Base Currency Code',
  */
 const ASIN_SENTINELS = new Set(['', '_asinless_', 'not available', 'n/a', 'na']);
 
+/**
+ * The object identifier an Amazon line states, in the shape
+ * `CanonicalRecord.identifiers` is built from.
+ *
+ * Amazon reuses ONE column for two namespaces: an ASIN for everything, and a
+ * book's ISBN-10 (the export header even says `ASIN/ISBN`). The shape decides —
+ * 9 digits plus a digit-or-X check character is an ISBN-10 — and the shared
+ * normalizer then upconverts it to ISBN-13, so the book bought here and the
+ * same book scanned off its barcode land on ONE identity. Getting this wrong is
+ * not cosmetic: it splits a book into two objects forever.
+ *
+ * An all-digit ASIN needs no help — `normalizeObjectIdentifier` re-routes it —
+ * but an ISBN-10 ending in 'X' passes the ASIN grammar and would stick in the
+ * wrong namespace, which is what this shape check is for.
+ */
+function identifiersFor(asin: string): ObjectIdentifierRef[] | undefined {
+  if (!asin) {
+    return undefined;
+  }
+
+  const namespace = /^[0-9]{9}[0-9X]$/i.test(asin.trim()) ? 'isbn' : 'asin';
+
+  return [{ namespace, value: asin }];
+}
+
+/** The primitive part of a metadata value (a receipt line holds no arrays). */
+function primitive(v: unknown): string | number | boolean | null | undefined {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v == null
+    ? (v as string | number | boolean | null | undefined)
+    : undefined;
+}
+
 /** The ASIN when the column holds a real one, else '' (see ASIN_SENTINELS). */
 function realAsin(raw: string): string {
   const trimmed = raw.trim();
@@ -172,7 +204,7 @@ function rowIdentity(row: Record<string, string>, orderId: string, base: string)
  * Why this row is not a purchase, or null when it is one.
  *
  * Importing a non-purchase is actively wrong rather than merely noisy:
- * `Unit Price` survives on these rows and is what the inventory mapping reads
+ * `Unit Price` survives on these rows and is what the things mapping reads
  * for `purchasePrice`, so each one lands in stock at full price having never
  * been bought.
  *
@@ -267,6 +299,18 @@ function money(n: number | undefined): string | undefined {
 }
 
 /**
+ * The id of the per-order aggregate an order id rolls up into.
+ *
+ * ONE definition, used by both ends of the rollup: the aggregate's own item id
+ * and the `ReceiptRollupId` each line carries. They are two halves of one
+ * pointer, and a rollup marker that does not spell the aggregate's id exactly
+ * routes the line's receipt nowhere (push/canonical.ts `isRolledUp`).
+ */
+function orderRollupId(orderId: string): string {
+  return `amazon:order:${orderId}`;
+}
+
+/**
  * Merge the rows of ONE order line from an order-history CSV.
  *
  * Amazon splits a multi-unit line across one row per SHIPMENT — the same order
@@ -311,9 +355,9 @@ function mergeLine(rows: Record<string, string>[]): Record<string, string | numb
  * name — "Digital Content Orders.csv", "Digital Items.csv",
  * "Retail.DigitalSoftwareAndVideogames.Entitlements.1.csv". Nothing in those
  * rows is a physical object, so they belong in CI-Server's `content` table,
- * not `inventory`. The mapping otherwise guesses from the product name
+ * not `things`. The mapping otherwise guesses from the product name
  * (mapping.ts `isDigitalGood`), which cannot know that "Prime Membership Fee"
- * is not a thing on a shelf — 143 of these landed in physical inventory. The
+ * is not a thing on a shelf — 143 of these landed in the physical-things plane. The
  * filename is the reliable signal, so items from such a file carry an explicit
  * `metadata.Digital` that overrides the guess.
  *
@@ -582,7 +626,11 @@ export class AmazonFileImporter implements FileImporter {
     if (stat.isFile()) {
       files = [root];
     } else if (stat.isDirectory()) {
-      files = await this.findFiles(root);
+      // Sorted: the order aggregate's line numbers follow the order the lines
+      // are parsed in, and readdir order is filesystem-dependent. Sorting makes
+      // the numbering reproducible across machines and re-imports, which
+      // matters because `(receipt_id, line_number)` is a natural key.
+      files = (await this.findFiles(root)).sort();
     }
 
     // The digital sidecars (ownership records, entitlements, viewing history)
@@ -592,9 +640,19 @@ export class AmazonFileImporter implements FileImporter {
     const searchRoot = stat.isDirectory() ? root : path.dirname(root);
     const getDigitalCtx = () => (digitalCtx ??= this.loadDigitalContext(searchRoot, params));
 
+    // The per-order aggregate spans EVERY file in this export, not each file on
+    // its own. An order id legitimately appears in two matched CSVs (Retail and
+    // Digital, or a split "Your Orders" export), and a per-file rollup emitted
+    // two receipts for it — each renumbering its lines from 1, so the
+    // (receipt_id, line_number) natural key collided across the halves. The
+    // lines are collected here and rolled up once, after the last file.
+    const orderLines: Item[] = [];
+
     for (const fpath of files) {
-      await this.processFile(fpath, getDigitalCtx, params);
+      await this.processFile(fpath, getDigitalCtx, params, orderLines);
     }
+
+    this.pushOrders(orderLines, params);
   }
 
   /**
@@ -710,10 +768,17 @@ export class AmazonFileImporter implements FileImporter {
     return ctx;
   }
 
+  /**
+   * Parse one order CSV, pushing a timeline item per line. The emitted line
+   * items are APPENDED to `orderLines` (the export-wide accumulator) rather
+   * than rolled up here: the order aggregate is built once for the whole export
+   * — see {@link fileImport} and {@link pushOrders}.
+   */
   private async processFile(
     fpath: string,
     getDigitalCtx: () => DigitalContext,
     params: ImportParams,
+    orderLines: Item[],
   ): Promise<void> {
     const base = path.basename(fpath);
     let raw: string;
@@ -778,16 +843,21 @@ export class AmazonFileImporter implements FileImporter {
       }
     }
 
-    this.pushOrders(lines, params);
+    orderLines.push(...lines);
   }
 
   /**
    * One 'order' item per order id — the ACT of purchasing, which becomes the
    * order's single timeline EVENT in CI-Server (kind commerce.order → events).
-   * The per-line items above are the THINGS and keep their inventory/content
+   * The per-line items above are the THINGS and keep their things/content
    * homes; without this, a five-item order was either five timeline events or
    * none. Aggregated from the emitted lines, so dropped rows (cancelled,
    * unfulfilled) and out-of-timeframe lines never contribute.
+   *
+   * READ-ONLY over `lines`. Each line already carries its own
+   * `ReceiptRollupId` (see pushLine) — this method must never write back onto
+   * an item it was handed, because by the time it runs those items have been
+   * pushed and, past the flush threshold, already written.
    */
   private pushOrders(lines: Item[], params: ImportParams): void {
     interface OrderAgg {
@@ -795,6 +865,8 @@ export class AmazonFileImporter implements FileImporter {
       total?: number;
       currency?: string;
       products: string[];
+      /** The order's receipt lines, in CSV order — see the LineItems note below. */
+      lineItems: LineItemRecord[];
     }
     const orders = new Map<string, OrderAgg>();
     for (const line of lines) {
@@ -806,7 +878,7 @@ export class AmazonFileImporter implements FileImporter {
 
       let agg = orders.get(oid);
       if (!agg) {
-        agg = { products: [] };
+        agg = { products: [], lineItems: [] };
         orders.set(oid, agg);
       }
 
@@ -826,6 +898,30 @@ export class AmazonFileImporter implements FileImporter {
       if (typeof m.Product === 'string' && m.Product) {
         agg.products.push(m.Product);
       }
+
+      // The itemisation, which is what makes the order a RECEIPT rather than
+      // just an event (push/canonical.ts destinationsFor: a commerce.* record
+      // carrying LineItems also routes to `receipts`).
+      //
+      // LINE NUMBER STABILITY: `lines` is built by iterating each CSV in file
+      // order, over a sorted file list, so a re-import of the same export
+      // produces the same sequence and therefore the same line numbers — which
+      // are half of a line's identity server-side. It is stated explicitly
+      // rather than left to the array index so a future change to the receipt
+      // mapper cannot renumber them.
+      agg.lineItems.push({
+        LineNumber: agg.lineItems.length + 1,
+        Product: primitive(m.Product),
+        Quantity: primitive(m.Quantity),
+        'Unit Price': primitive(m['Unit Price']),
+        Total: primitive(m.Total),
+        Currency: primitive(m.Currency),
+        Category: primitive(m.Category),
+        Identifiers: Array.isArray(m.Identifiers) ? (m.Identifiers as ObjectIdentifierRef[]) : undefined,
+        // The digital/physical evidence the line carried, so the receipt
+        // mapper's per-line verdict matches the line's own routing.
+        IsDigital: primitive(m.Digital),
+      });
     }
 
     for (const [oid, agg] of orders) {
@@ -834,8 +930,10 @@ export class AmazonFileImporter implements FileImporter {
       params.pipeline.push({
         item: {
           // Distinct namespace from the line ids (`amazon:<oid>:<ident>`), and
-          // just as position-free: a re-export maps onto the same event.
-          id: `amazon:order:${oid}`,
+          // just as position-free: a re-export maps onto the same event. The
+          // SAME string each line already carries as its `ReceiptRollupId` —
+          // see orderRollupId and pushLine.
+          id: orderRollupId(oid),
           classification: 'order',
           timestamp: agg.ts,
           content: { filename: 'order.txt', mediaType: 'text/plain', data: async () => Buffer.from(summary) },
@@ -855,6 +953,10 @@ export class AmazonFileImporter implements FileImporter {
             // purchase history — which was already sitting there, unread.
             Amount: money(agg.total),
             Currency: agg.currency,
+            LineItems: agg.lineItems,
+            // CANONICAL merchant key (push/commerceKeys.ts): the receipt header
+            // needs a merchant, and for a "Your Orders" export it is Amazon.
+            Merchant: 'Amazon',
             Source: 'Amazon',
           },
         },
@@ -989,7 +1091,7 @@ export class AmazonFileImporter implements FileImporter {
     // Modern "Retail.OrderHistory.*.csv" carries the product taxonomy in a
     // `Category` column (Amazon's internal product type, e.g. ELECTRONIC_CABLE,
     // ABIS_BOOK, ABIS_KITCHEN) plus an ASIN/ISBN identifier. Surface both so the
-    // CI-Server inventory mapping can record a real category instead of the
+    // CI-Server things mapping can record a real category instead of the
     // single generic "commerce" bucket. Header names vary slightly across export
     // vintages, so accept the common aliases.
     const category = primary['Category'] || primary['Product Category'] || '';
@@ -1038,11 +1140,30 @@ export class AmazonFileImporter implements FileImporter {
         // source_data.
         'Order Date': ts?.toISOString(),
         'Order ID': orderId,
+        // The order aggregate this line is already itemised on, stamped BEFORE
+        // the push below — never patched onto the item afterwards.
+        //
+        // Without it a five-item order produces five single-line receipts AND
+        // the itemised one (push/canonical.ts `isRolledUp`). It used to be
+        // stamped by pushOrders, after the whole export had been pushed, on the
+        // theory that the pipeline holds the graph by reference until a later
+        // flush. StagedWriter does hold it by reference — and splices the batch
+        // out and writes it the moment `push` reaches the flush threshold, many
+        // awaits before the export finishes. On a 10-file × 100-line export
+        // that left 500 of 1,000 lines marker-less and duplicated their orders.
+        // A marker is part of the record's identity, so it is computed where
+        // the record is: here.
+        ReceiptRollupId: orderId ? orderRollupId(orderId) : undefined,
         Category: category || undefined,
         ASIN: asin || undefined,
+        // Canonical identifier list (push/canonical.ts CanonicalRecord.
+        // identifiers). `ASIN` above stays for back-compat with readers of the
+        // old flat key; this is the one the product-model / observation lanes
+        // read.
+        Identifiers: identifiersFor(asin),
         Condition: condition || undefined,
         Payment: payment,
-        // Routes the record to `content` instead of `inventory` — see
+        // Routes the record to `content` instead of `things` — see
         // isDigitalContentFile. Only ever set true; left off otherwise so the
         // mapping's product-name heuristic still decides for other files.
         Digital: digital || undefined,

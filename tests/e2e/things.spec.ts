@@ -8,7 +8,7 @@ import { expect, type Page, test } from '@playwright/test';
 // it, claim a code on it, and resolve a duplicate — against the seeded stack.
 //
 // Every step is skipped rather than failed when the seed has no data for it: an
-// empty inventory is a legitimate state of the seeded database, and asserting
+// an empty Things list is a legitimate state of the seeded database, and asserting
 // on rows that were never seeded would make this spec a seed test rather than a
 // UI test.
 

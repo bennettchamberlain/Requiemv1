@@ -1,7 +1,7 @@
 import { Field, ID, Int, ObjectType, Float, registerEnumType } from '@nestjs/graphql';
 import GraphQLJSONObject from 'graphql-type-json';
 
-import { type InventoryLifecycleState, type Item } from '@ci/domains/memory';
+import { type ObjectLifecycleState, type Item } from '@ci/domains/memory';
 
 import { EntityTagType } from './EntityTagType';
 import { FileType } from './FileType';
@@ -136,7 +136,7 @@ export class ItemType implements Node, Taggable {
   @Field(() => ItemLifecycleState, {
     description: 'Ownership state. A disposed thing keeps its row — it still happened.',
   })
-  lifecycleState!: InventoryLifecycleState;
+  lifecycleState!: ObjectLifecycleState;
 
   @Field(() => Float, {
     description:

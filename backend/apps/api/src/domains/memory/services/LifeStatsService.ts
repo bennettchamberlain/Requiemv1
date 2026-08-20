@@ -48,7 +48,7 @@ export interface LifeStatsRange {
 }
 
 /**
- * Server-side aggregates for the stats page life charts. Inventory totals stay
+ * Server-side aggregates for the stats page life charts. Thing totals stay
  * on {@link GraphUtilityService} / {@link EventService.getTimelineStats}; this
  * service only builds spend / time / conversation / social series so the
  * browser never pages those tables.

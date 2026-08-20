@@ -22,12 +22,12 @@ import { EventService } from '@ci/domains/events';
 import { ContentCreatedEvent, ContentRemovedEvent, ContentUpdatedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
+import { BaseEntity } from '../entities/BaseEntity';
 import { ContentBaseEntity } from '../entities/ContentBaseEntity';
 import { Content, ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
 import { classifyExternalId } from '../externalIdKind';
 import { CreateContentDto, SearchContentDto, UpdateContentDto } from '../types';
-import { BaseEntity } from '../entities/BaseEntity';
 
 import { CtiAggregate } from './CtiAggregate';
 import { GraphDeltaWriter } from './GraphDeltaWriter';

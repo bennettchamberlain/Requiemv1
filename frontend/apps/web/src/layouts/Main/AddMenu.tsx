@@ -21,8 +21,8 @@ import { useUploadFile, useTriggerHbpe } from '@/api';
 import { AddEventModal, AddPersonModal, AddPlaceModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
-import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
 import { ScanBarcodeModal } from '@/components/modals/ScanBarcodeModal';
+import { ThingModal } from '@/components/modals/ThingModal';
 import { UploadModal } from '@/components/modals/UploadModal';
 import { useModalControls } from '@/hooks';
 
@@ -297,7 +297,7 @@ export function AddMenu() {
           Evicting the root `items` field rather than naming the queries keeps
           the nav from having to know which pages list things; `refetchQueries`
           re-runs exactly the active ones the eviction touched. */}
-      <InventoryItemModal
+      <ThingModal
         open={isItemModalOpen}
         onClose={closeItemModal}
         item={null}

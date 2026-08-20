@@ -16,7 +16,7 @@ import { type WeightedText } from '../types';
  * `GraphEventService.upsertNode` — reached only through `WriteKnowledgeTool`,
  * its sole caller — writes ONE row: `ci.entities`. It never creates a matching
  * detail row in whatever table actually backs a search-vocabulary type
- * (`ci.events`, `ci.inventory`, `ci.content`, `ci.files`, `ci.notes`, ...). So a
+ * (`ci.events`, `ci.objects`, `ci.content`, `ci.files`, `ci.notes`, ...). So a
  * graph-authored node is resolvable by `EntityResolutionService` ONLY for types
  * whose data lives entirely in `ci.entities` — which today is none of them:
  *

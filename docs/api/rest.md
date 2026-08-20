@@ -71,7 +71,7 @@ Every lane **except `/v1/notes`** runs the same three-layer `captureAndMateriali
 | POST | `/v1/events` | `:267` | `EventService.create` (bulk) — timeline events |
 | POST | `/v1/communications` | `:501` | `CommunicationService.createMany` |
 | POST | `/v1/contents` | `:521` | `ContentService.createMany` |
-| POST | `/v1/inventory` | `:541` | `ItemService.createMany` |
+| POST | `/v1/things` | `:541` | `ItemService.createMany` — `/v1/inventory` remains registered as a deprecated alias to the same handler |
 | POST | `/v1/browser-activity` | `:561` | `BrowserActivityService.createMany` |
 | POST | `/v1/notes` | `:605` | `NoteService` — **the one exception to the provenance triple**: notes carry none, so they dedupe on their client-minted primary key |
 | POST | `/v1/positions` | `:640` | `PositionService.create` (bulk) |
@@ -79,11 +79,11 @@ Every lane **except `/v1/notes`** runs the same three-layer `captureAndMateriali
 | POST | `/v1/product-models` | `:688` | `ProductModelService` |
 | POST | `/v1/observations` | `:709` | `ObjectObservationService` |
 
-**Record shapes** live in `domains/ingest/types.ts`. Field naming is **snake_case for every kind except `inventory`**, which is camelCase (`CreateItemDto` is the one camelCase ingest DTO and stays the only one).
+**Record shapes** live in `domains/ingest/types.ts`. Field naming is **snake_case for every kind except `things`**, which is camelCase (`CreateItemDto` is the one camelCase ingest DTO and stays the only one).
 
 **Two lanes are JSON-envelope only** (no NDJSON), so their envelope validates as a plain `@Body` pipe: `/v1/events` and `/v1/notes` (`ingestNotes` takes `{ records: BulkNoteRecord[] }` through `ingestNotesSchema`, `:604-609` — nothing streams notes, and NDJSON's per-batch response has no way to carry that lane's 409 ownership conflict). The events envelope is `{ events: CaptureEvent[] }`, **1–1000 events per request** (`types.ts:96`). Each `CaptureEvent` (`types.ts:73-93`): `source_system` (str, req), `source_id` (str, req), `source_type?` (str — a bulk importer presents its real source type; capture sources omit it and keep the historical `'capture'` stamp), `kind` (str, req; open text in v1), `occurred_at` (ISO datetime, req), `ended_at?` (ISO — materializes as `events.end_time`), `observed_at?` (ISO), `title?`, `description?`, `payload` (record, default `{}`), `confidence_score?` (0–1).
 
-The other **eight** lanes speak **two encodings**, switched on `Content-Type` by `isNdjsonRequest` (`BulkIngestController.ts:509,529,549,569,648,676,696,716` — communications, contents, inventory, browser-activity, positions, receipts, product-models, observations):
+The other **eight** lanes speak **two encodings**, switched on `Content-Type` by `isNdjsonRequest` (`BulkIngestController.ts:509,529,549,569,648,676,696,716` — communications, contents, things, browser-activity, positions, receipts, product-models, observations):
 
 **1. NDJSON — the default bulk contract** (`application/x-ndjson`). One JSON record per line (same per-kind record schema as the envelope, `domains/ingest/types.ts`). The raw stream is parsed incrementally and flushed to the service in **batches of 1,000 as it arrives** — no overall request-size cap, bounded memory, suitable for unbounded exports. Defensive limits: **1 MB per line** (oversized lines are rejected, stream continues), rejection detail list capped at 1,000 (`rejectedTruncated: true` past that). Malformed / schema-invalid lines and failed batches are rejected **without aborting the stream**; batch flushes are idempotent on the provenance triple, so retrying a broken stream is safe. Blank lines and CRLF are tolerated.
 
@@ -117,7 +117,7 @@ Batch upload lane (the bulk counterpart to `POST /files/upload`, whose `[{id}]` 
 
 | Verb | Path | Auth | Purpose |
 |------|------|------|---------|
-| POST | `/v1/files` | `JwtOrApiKeyAuthGuard` (`:59`) | Multipart batch upload, field **`files`**, **max 50 files/request** (51st → 400), **1 GB per file** (single-file lane `/files/upload` allows 10 GB). Optional form fields `skipDescription` / `inventoryCapture` / `model` as on `/files/upload`. |
+| POST | `/v1/files` | `JwtOrApiKeyAuthGuard` (`:59`) | Multipart batch upload, field **`files`**, **max 50 files/request** (51st → 400), **1 GB per file** (single-file lane `/files/upload` allows 10 GB). Optional form fields `skipDescription` / `thingCapture` / `model` as on `/files/upload` (`inventoryCapture` still accepted as a deprecated alias). |
 
 > ⚠️ Same gap as `/v1/ingest`: this route carries **no `@RequireScopes`**, so the `capture` scope does not reach it even though `POST /files/upload` (which it mirrors) declares `@RequireScopes('capture')` + `@RequireCapability('write')`. A scope-limited capture key gets a 403 here.
 
@@ -180,7 +180,7 @@ Both routes carry `@RequireScopes('capture')` + `@RequireCapability('write')` (`
 | POST | `/files/upload` | `JwtOrApiKeyAuthGuard` (`:34`) | Multipart binary upload; hash-dedupes, stores to MinIO/S3, kicks off preview + (optional) Ollama image description. |
 | PATCH | `/files/:id` | `JwtOrApiKeyAuthGuard` (`:121`) | Overwrite a file's user-facing `title`/`description`. |
 
-**Upload request**: `multipart/form-data`, field name **`files`** (`FilesInterceptor('files', …)`, `:39`), **per-file limit 10 GB** (`limits.fileSize: 10*1024³`, `:41`), temp `dest: tmpdir()`. Optional form fields: `inventoryCapture` (`'true'`/bool), `skipDescription` (`'true'`/bool), `model` (str). Uploads are content-hash de-duplicated within the batch (`:63-95`); 400 if no files (`:52`). **Response**: `[{ id }]`, one per unique file (`:97-99`). Temp files always unlinked in `finally` (`:100-110`).
+**Upload request**: `multipart/form-data`, field name **`files`** (`FilesInterceptor('files', …)`, `:39`), **per-file limit 10 GB** (`limits.fileSize: 10*1024³`, `:41`), temp `dest: tmpdir()`. Optional form fields: `thingCapture` (`'true'`/bool; `inventoryCapture` still accepted as a deprecated alias), `skipDescription` (`'true'`/bool), `model` (str). Uploads are content-hash de-duplicated within the batch (`:63-95`); 400 if no files (`:52`). **Response**: `[{ id }]`, one per unique file (`:97-99`). Temp files always unlinked in `finally` (`:100-110`).
 **PATCH request**: `@Body` `title?`/`description?` (at least one required else 400, `:141`); 404 if file not found (`:147`). **Response**: `{ id }`.
 
 > Bulk clients that need to map inputs → ids deterministically should use `POST /v1/files` (see the Ingest section), which returns one `{ filename, sha256, id, deduped }` entry per input file in input order.
@@ -221,7 +221,7 @@ Both routes carry `@RequireScopes('capture')` + `@RequireCapability('write')` (`
 
 Body `orchestrateSchema` (`:352-381`): `stages?` (subset of `ORCHESTRATE_STAGES` — unknown names 400), `options?` (per-leg passthrough), `abortOnError?` (def false = fail-soft), `searchIndexDrain?.timeoutMs?`. Execution order is **always canonical**, whatever subset is named (`ORCHESTRATE_STAGES`, `services/MaintenanceOrchestratorService.ts:51-68`) — sixteen stages:
 
-`extract_people` → `link_communications` → `link_events` → `heal_self_collation` → `materialize_edges` → `normalize_relationships` → `derive_relationships` → `fold_notes` → `extract_graph` → `geocode` → `reverse_geocode` → `reverse_position` → `reverse_inventory` → `estimate_locations` → `media_dimensions` → `search_index`
+`extract_people` → `link_communications` → `link_events` → `heal_self_collation` → `materialize_edges` → `normalize_relationships` → `derive_relationships` → `fold_notes` → `extract_graph` → `geocode` → `reverse_geocode` → `reverse_position` → `reverse_object` → `estimate_locations` → `media_dimensions` → `search_index`
 
 The order encodes real data dependencies: `extract_people` seeds the identifier index the two link legs resolve against; `materialize_edges` projects the columns those legs just filled; geocoding lands before the estimator so it only fills what nothing else could; `search_index` runs last so the embeds cover the enriched rows.
 
@@ -562,14 +562,14 @@ still documents the REST/GraphQL contract any importer client uses. Prefer **RES
 when the server advertises it (`GET /v1/ingest/status`); GraphQL bulk mutations remain the
 fallback for older servers.
 
-1. **Data push (REST `/v1/*`, preferred):** NDJSON batches to `/v1/{communications,contents,inventory,browser-activity,positions,receipts,product-models,observations}`, dedup on the source triple; `/v1/events` and `/v1/notes` take the JSON envelope instead — they have no NDJSON lane. Falls back to GraphQL `create*` mutations when `/v1` is unavailable.
+1. **Data push (REST `/v1/*`, preferred):** NDJSON batches to `/v1/{communications,contents,things,browser-activity,positions,receipts,product-models,observations}`, dedup on the source triple; `/v1/events` and `/v1/notes` take the JSON envelope instead — they have no NDJSON lane. Falls back to GraphQL `create*` mutations when `/v1` is unavailable.
 2. **Media (REST):** binary upload → **`POST /v1/files`** (or `/files/upload`), then links the returned `{id}` into records.
 3. **Post-push enrichment:** `POST /v1/ingest/finish` (`searchIndexOnly` / staged orchestration) when available; otherwise `api/maintenance/*` (`orchestrate` or the per-leg chain ending in `search-index/backfill`). A `browser-activity`-scoped search backfill also indexes dual-written `event` + `content` rows on the server.
 4. **Graph sync (GraphQL):** entities + relationships via `bulkIngestGraph`, and item↔item edges (email→attachment, photo→album) via `bulkIngestItemRelationships`.
 5. **Embed-drain progress (REST):** polls ingest status / embedded-count endpoints to animate the drain bar (best-effort).
 
 > **Destination ordering matters.** The in-process push writes destinations in the order
-> `communications → events → content → inventory → browser_activity → position`
+> `product_models → communications → events → content → receipts → things → observations → browser_activity → position`
 > (`domains/import/stages/PushStage.ts:152-159`). `events` comes **before** `content` because
 > `ContentService.createManyDetailed` resolves `ci.content.event_id` from the provenance triple
 > at INSERT time — writing content first left that column NULL for every row of every import.

@@ -50,7 +50,7 @@ registerEnumType(ReceiptChannelEnum, {
 /**
  * Purchase evidence: a receipt header, and (through `lineItems`) what was on it.
  *
- * A receipt is EVIDENCE, not inventory. It is what justifies minting an owned
+ * A receipt is EVIDENCE, not an owned thing. It is what justifies minting an owned
  * unit — the acquisition provenance an {@link ItemType} points back at through
  * `acquisition` — and it stays around after the thing is gone, which is why it
  * is a first-class record rather than a bag of fields on the item.

@@ -83,6 +83,94 @@ export function parseMime(rawHeaders: string, body: string): ParsedMimeResult {
   return { textBody: decoded.toString('utf8'), attachments: [] };
 }
 
+/** The five predefined XML entities plus the ones real mail actually uses. */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+
+/** A numeric entity's character, or '' when the code point is not representable. */
+function safeCodePoint(code: number): string {
+  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff) {
+    return '';
+  }
+
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Flatten an HTML mail body to readable plain text — dependency-free.
+ *
+ * WHY. A receipt is very often HTML-ONLY (no text/plain alternative), and
+ * {@link parseMime} hands that body back as raw markup. Everything downstream
+ * then reads tag soup: the metadata `Text` snippet is `<table style=…`, the
+ * receipt detector's body signal cannot see the total through the attributes,
+ * and the embedding indexes CSS. This is the smallest transform that makes such
+ * a body mean something:
+ *
+ *   - `<script>` / `<style>` blocks are removed WITH their contents (CSS and JS
+ *     are not text the user wrote).
+ *   - `<br>`, `</p>`, `</tr>`, `</div>`, block ends → newline; `</td>`/`</th>`
+ *     → tab, so a receipt's item/price columns stay side by side and a total
+ *     stays next to its label.
+ *   - every other tag is dropped, entities decoded (`&amp;`, `&nbsp;`, `&#39;`,
+ *     `&#x27;`), and runs of blank lines collapsed.
+ *
+ * Not an HTML parser and not trying to be: no DOM, no nesting rules, no
+ * attribute semantics. It converts markup to text well enough to read, which is
+ * strictly more than the raw markup did.
+ */
+export function htmlToText(html: string | undefined | null): string {
+  if (!html) {
+    return '';
+  }
+
+  let out = html
+    // Drop script/style/comment noise with their contents.
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    // Cell boundaries become tabs so a label and its amount stay on one line.
+    .replace(/<\/\s*(?:td|th)\s*>/gi, '\t')
+    // Line-breaking elements become newlines.
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/\s*(?:p|div|tr|table|li|ul|ol|h[1-6]|blockquote|section|article|header|footer)\s*>/gi, '\n')
+    .replace(/<\s*(?:p|div|tr|li|h[1-6])\b[^>]*>/gi, '\n')
+    // Everything else: gone.
+    .replace(/<[^>]*>/g, '');
+
+  out = out
+    .replace(/&#x([0-9a-f]+);/gi, (_m, hex: string) => safeCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_m, dec: string) => safeCodePoint(parseInt(dec, 10)))
+    .replace(/&([a-z]+);/gi, (m, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? m);
+
+  return (
+    out
+      // Non-breaking space is whitespace once decoded; keep it from gluing words.
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^[ \t]+|[ \t]+$/gm, '')
+      .trim()
+  );
+}
+
+/**
+ * The readable body of a parsed message: the text/plain part when the sender
+ * provided one, else the HTML part flattened by {@link htmlToText}.
+ */
+export function readableBody(mime: ParsedMimeResult): string {
+  return mime.textBody || htmlToText(mime.htmlBody);
+}
+
 function headerMap(raw: string): Record<string, string> {
   const map: Record<string, string> = {};
   for (const line of raw.split(/\n/)) {

@@ -12,7 +12,7 @@ import { ItemUpdatedEvent } from '@ci/domains/memory/events';
 const DEFAULT_PAGE = 200;
 const DEFAULT_MAX = 2000;
 
-export interface InventoryReverseResult {
+export interface ObjectReverseResult {
   examined: number;
   placed: number;
   skipped: number;
@@ -20,11 +20,11 @@ export interface InventoryReverseResult {
 }
 
 /**
- * Reverse-geocode inventory pins onto `last_seen_place_entity_id`.
+ * Reverse-geocode object pins onto `last_seen_place_entity_id`.
  * No new column — the FK already exists; this is the missing writer.
  */
 @Injectable()
-export class InventoryReverseService {
+export class ObjectReverseService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly geocodeService: GeocodeService,
@@ -32,10 +32,10 @@ export class InventoryReverseService {
     private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
-    this.logger.setContext(InventoryReverseService.name);
+    this.logger.setContext(ObjectReverseService.name);
   }
 
-  async reverse(userId: string, options: { limit?: number } = {}): Promise<InventoryReverseResult> {
+  async reverse(userId: string, options: { limit?: number } = {}): Promise<ObjectReverseResult> {
     const maxIds = options.limit ?? DEFAULT_MAX;
     const context = { userId } satisfies UserServiceContext;
     const placedIds: string[] = [];
@@ -50,7 +50,7 @@ export class InventoryReverseService {
         SELECT object_id::text AS id,
                ST_Y(current_location_coordinates::geometry) AS lat,
                ST_X(current_location_coordinates::geometry) AS lng
-          FROM ci.inventory
+          FROM ci.objects
          WHERE user_id::uuid = $1
            AND current_location_coordinates IS NOT NULL
            AND last_seen_place_entity_id IS NULL
@@ -92,13 +92,13 @@ export class InventoryReverseService {
             components: outcome.components,
           });
           await this.dataSource.query(
-            `UPDATE ci.inventory SET last_seen_place_entity_id = $2 WHERE object_id = $1 AND last_seen_place_entity_id IS NULL`,
+            `UPDATE ci.objects SET last_seen_place_entity_id = $2 WHERE object_id = $1 AND last_seen_place_entity_id IS NULL`,
             [row.id, place.id],
           );
           placedIds.push(row.id);
         } catch (error) {
           skipped += 1;
-          this.logger.warn('Inventory reverse failed for item', {
+          this.logger.warn('Object reverse failed for item', {
             itemId: row.id,
             error: error instanceof Error ? error.message : String(error),
           });
@@ -120,7 +120,7 @@ export class InventoryReverseService {
           })),
         );
       } catch (error) {
-        this.logger.warn('Could not enqueue item search after inventory reverse', {
+        this.logger.warn('Could not enqueue item search after object reverse', {
           count: placedIds.length,
           error: error instanceof Error ? error.message : String(error),
         });

@@ -89,7 +89,7 @@ reviewed change.
 > `INSTANCE_OF`, `PURCHASED_AT`, `PURCHASED_FROM`, `SEEN_AT` — that the graph domain's
 > `RelationshipType` does not, so `normalizeRelationship` returns `null` for them,
 > `RelationshipService` cannot write them, and no rule in `deterministicEdgeMatrix.ts` emits them.
-> The product/instance link is today the plain `ci.inventory.product_id` column surfaced through
+> The product/instance link is today the plain `ci.objects.product_id` column surfaced through
 > GraphQL, not an edge. The drift runs the other way too: the mirror omits `SKILLED_IN`, `AVOIDS`,
 > `PRACTICES`, `WANTS` and `EMPLOYS`, among others. Do not cite the mirror as the writable
 > vocabulary.

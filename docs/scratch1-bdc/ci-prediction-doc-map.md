@@ -159,7 +159,7 @@ These proposals do **not** depend on the knowledge graph service (`domains/graph
 | Out of scope for this work | Notes |
 |---|---|
 | `GraphIngestService`, entity/relationship promotion accept | Existing code only — do not extend |
-| Smart rotation `graph_link`, `graph_enrich`, `hydrate_inventory` | Separate from this pipeline |
+| Smart rotation `graph_link`, `graph_enrich`, `hydrate_things` | Separate from this pipeline |
 | `LifeContextService` / `graph_deltas` novelty | Not used by these docs |
 | Ambient completion P3 | Deferred; when built, use `ci.events` / receipts, not graph traversal |
 

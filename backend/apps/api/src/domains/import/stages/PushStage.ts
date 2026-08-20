@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { LoggerService } from '@ci/common/logging';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
 import { EventService as SignallingEventService } from '@ci/domains/events';
-import { type GraphEntityInputDto, GraphIngestService } from '@ci/domains/graph';
+import { type GraphEntityInputDto, GraphIngestService, ObjectIdentifierService } from '@ci/domains/graph';
 // The events leaf, NOT the maintenance barrel: the barrel would close the
 // module cycle maintenance → llm → tools → import.
 import {
@@ -14,7 +14,15 @@ import {
   SEARCH_INDEX_BACKFILL_QUEUE,
   SearchIndexBackfillRequestEvent,
 } from '@ci/domains/maintenance/events';
-import { CommunicationService, ContentService, EventService, ItemService } from '@ci/domains/memory';
+import {
+  CommunicationService,
+  ContentService,
+  EventService,
+  ItemService,
+  ObjectObservationService,
+  ProductModelService,
+  ReceiptService,
+} from '@ci/domains/memory';
 import { PositionService } from '@ci/domains/position';
 
 import type { StagedEntity } from '../entities/StagedEntityEntity';
@@ -27,7 +35,13 @@ import {
   type CanonicalRecord,
   type Destination,
 } from '../push/canonical';
-import { isGraphExcluded, toGraphEntity } from '../push/entities';
+import {
+  isGraphExcluded,
+  placeKeyFor,
+  toGraphEntity,
+  PLACE_ENTITY_TYPE,
+  PLACE_RELATIONS,
+} from '../push/entities';
 import {
   isFacebookMessengerRecord,
   isWhatsAppRecord,
@@ -36,9 +50,15 @@ import {
   toContentInput,
   toEventInput,
   toFacebookMessengerCommunicationInput,
-  toInventoryInput,
+  toThingInput,
+  toObservationInput,
   toPositionInput,
+  toProductModelInput,
+  toReceiptInput,
+  toReceiptLineItemInputs,
   toWhatsAppCommunicationInput,
+  productModelIdentifiers,
+  type ReceiptEntityLinks,
 } from '../push/inputs';
 import {
   type IsSelf,
@@ -148,15 +168,39 @@ const UNRESOLVED_EXAMPLE_LIMIT = 5;
  * preserved the per-row behaviour and that "an Audible listen still reaches
  * `content` before `events`" — an Audible listen is `media.listen`, which
  * returns `['events', 'content']`, so the claim was exactly backwards.
+ *
+ * The commerce plane has an order requirement of its own, for the same class of
+ * reason. `product_models` runs FIRST because it is the IDENTITY the rest of a
+ * commerce batch points at: `ReceiptService.upsertFromExtraction` resolves each
+ * line's product by looking up its identifier claim and only falls back to
+ * find-or-create when nothing resolves — so with receipts first, an ISBN this
+ * very batch is about to catalogue mints a SECOND, brand+model-guessed product
+ * row, and the claim index is first-writer-wins, so the guessed row keeps the
+ * barcode forever. `observations` runs last: a sighting is only worth recording
+ * once the thing it sighted has an identity.
  */
 export const DESTINATION_ORDER: readonly Destination[] = [
+  'product_models',
   'communications',
   'events',
   'content',
-  'inventory',
+  'receipts',
+  'things',
+  'observations',
   'browser_activity',
   'position',
 ];
+
+/**
+ * The `ci.object_identifiers.source` stamped on claims the importer asserts for
+ * a catalogue row.
+ *
+ * Distinct from `ReceiptService`'s `'receipt'`: this claim comes from a
+ * structured export that STATED the identifier (a Goodreads ISBN column, an
+ * Amazon `ASIN/ISBN` cell), not from reading it off a purchase document, and
+ * the provenance is the only thing that tells the two apart afterwards.
+ */
+const PRODUCT_IDENTIFIER_SOURCE = 'import';
 
 /** One staged row's journey through a batch: what it is, where it goes, what happened. */
 interface RowPlan {
@@ -282,6 +326,10 @@ export class PushStage implements ImportStageRunner {
     private readonly contents: ContentService,
     private readonly events: EventService,
     private readonly items: ItemService,
+    private readonly receipts: ReceiptService,
+    private readonly productModels: ProductModelService,
+    private readonly observations: ObjectObservationService,
+    private readonly objectIdentifiers: ObjectIdentifierService,
     private readonly positions: PositionService,
     private readonly browserActivity: BrowserActivityService,
     private readonly graph: GraphIngestService,
@@ -1029,6 +1077,100 @@ export class PushStage implements ImportStageRunner {
   }
 
   /**
+   * WHERE each receipt in a batch happened, as a `ci.entities` Location id.
+   *
+   * `ci.receipts.place_entity_id` was populated by NO import path — the column
+   * that makes a purchase mappable, and the `place_prior` rung
+   * `ObjectResolutionService` leans on, were both dead for imported data. It is
+   * resolved the two ways a record can state a place, in the order of how much
+   * the parser committed to:
+   *
+   *   1. a STAGED EDGE naming a place entity (relations in
+   *      {@link PLACE_RELATIONS}) — read through `ci_import.entity_mappings`,
+   *      the same join `resolveCorrespondents` uses for a message's from/to, so
+   *      a place the parser already staged needs nothing new;
+   *   2. failing that, the record's own `locationName` (the allow-listed
+   *      `Location`/`Place`/`Venue`/`Address` metadata keys — see
+   *      `canonical.locationNameFor`), resolved-or-created through
+   *      `GraphIngestService` under the SAME natural key a staged `place`
+   *      entity would have taken ({@link placeKeyFor}), so the two can never
+   *      become two nodes for one location.
+   *
+   * ONE `ingest` call for the whole batch, and none at all when nothing in it
+   * names a place — which today is the common case: no commerce parser states
+   * an address yet, so this fires for a receipt whose source does (and every
+   * one that later does costs nothing more to wire).
+   *
+   * A failure to resolve is not a failure to import: the receipt is written
+   * without a place, which is what it had before.
+   */
+  private async receiptPlacesFor(
+    ctx: { userId: string },
+    rows: ReadonlyArray<{ record: CanonicalRecord; participants: Map<string, string[]> }>,
+  ): Promise<ReceiptEntityLinks[]> {
+    const links: ReceiptEntityLinks[] = rows.map(() => ({}));
+    // key -> the row indices waiting on it, so one name is ingested once.
+    const pending = new Map<string, { name: string; sourceSystem: string; indices: number[] }>();
+
+    rows.forEach(({ record, participants }, index) => {
+      for (const relation of PLACE_RELATIONS) {
+        const [staged] = participants.get(relation) ?? [];
+
+        if (staged) {
+          links[index] = { placeEntityId: staged };
+
+          return;
+        }
+      }
+
+      const name = record.locationName;
+
+      if (!name) {
+        return;
+      }
+
+      const key = placeKeyFor(name);
+
+      if (!key) {
+        return;
+      }
+
+      const waiting = pending.get(key);
+
+      if (waiting) {
+        waiting.indices.push(index);
+      } else {
+        pending.set(key, { name, sourceSystem: record.sourceSystem, indices: [index] });
+      }
+    });
+
+    if (pending.size === 0) {
+      return links;
+    }
+
+    const result = await this.graph.ingest(
+      { userId: ctx.userId },
+      {
+        entities: [...pending].map(([key, { name, sourceSystem }]) => ({
+          key,
+          entityType: PLACE_ENTITY_TYPE,
+          name,
+          sourceSystem,
+        })),
+        relationships: [],
+      },
+    );
+
+    for (const mapping of result.entities) {
+      for (const index of pending.get(mapping.key)?.indices ?? []) {
+        links[index] = { placeEntityId: mapping.entityId };
+      }
+    }
+
+    return links;
+  }
+
+  /**
    * The same lookup for a whole batch, in ONE query.
    *
    * Asked per row, this was the first of the three round trips every staged row
@@ -1693,15 +1835,126 @@ export class PushStage implements ImportStageRunner {
           destination,
         );
 
-      case 'inventory':
+      case 'things':
         return aligned(
           await this.items.createManyDetailed(
             ctx,
-            group.map((plan) => toInventoryInput(plan.record)),
+            group.map((plan) => toThingInput(plan.record)),
           ),
           group,
           destination,
         );
+
+      case 'product_models': {
+        // Sparse by construction: `destinationsFor` routes a record here on its
+        // identifiers, and the mapper still refuses one that names nothing.
+        const planned = group.flatMap((plan, index) => {
+          const input = toProductModelInput(plan.record);
+
+          return input ? [{ index, input, record: plan.record }] : [];
+        });
+
+        const wrote = group.map(() => false);
+
+        if (planned.length === 0) {
+          return wrote;
+        }
+
+        // Idempotent on the IDENTITY triple (see toProductModelInput), so the
+        // same ISBN arriving from Goodreads and from an Amazon order is one
+        // catalogue row and the second push reports `inserted: false`.
+        const results = await this.productModels.createManyDetailed(
+          ctx,
+          planned.map(({ input }) => input),
+        );
+
+        if (results.length !== planned.length) {
+          throw new Error(
+            `${destination} returned ${results.length} result(s) for ${planned.length} input(s); ` +
+              `the batched write cannot be attributed to rows`,
+          );
+        }
+
+        // Claim the barcodes for every catalogued row, not only the newly
+        // inserted ones. The claim index is first-writer-wins, so re-asserting
+        // an existing claim is a no-op — while skipping the call for a row that
+        // was already present would leave anything minted by an earlier,
+        // claim-less push permanently unreachable by barcode.
+        const claims = planned.flatMap(({ record }, i) => {
+          const identifiers = productModelIdentifiers(record);
+
+          if (identifiers.length === 0) {
+            return [];
+          }
+
+          return [
+            {
+              subjectType: 'product_model' as const,
+              subjectId: results[i].entity.id,
+              identifiers: identifiers.map((identifier) => ({
+                namespace: identifier.namespace,
+                value: identifier.value,
+                ...(identifier.confidence != null ? { confidence: identifier.confidence } : {}),
+              })),
+              source: PRODUCT_IDENTIFIER_SOURCE,
+            },
+          ];
+        });
+
+        if (claims.length > 0) {
+          await this.objectIdentifiers.upsertForSubjects(ctx.userId, claims);
+        }
+
+        planned.forEach(({ index }, i) => {
+          wrote[index] = results[i].inserted;
+        });
+
+        return wrote;
+      }
+
+      case 'receipts': {
+        // One transaction per receipt, deliberately. `upsertFromExtraction` is
+        // header + lines + product resolution + identifier promotion as a unit,
+        // and the unit is the point: a claim inserted outside the transaction
+        // that created its product survives that product's rollback, and
+        // first-writer-wins makes the orphan permanent. Receipts are a small
+        // fraction of any import, so the round trips are affordable in a way
+        // they would not be for events or content.
+        const wrote: boolean[] = [];
+        // Batched, so the whole group costs at most ONE graph round trip.
+        const places = await this.receiptPlacesFor(ctx, group);
+
+        for (const [index, plan] of group.entries()) {
+          await this.receipts.upsertFromExtraction(
+            ctx,
+            toReceiptInput(plan.record, toReceiptLineItemInputs(plan.record), places[index]),
+          );
+          // `upsertFromExtraction` has no inserted/found signal — it patches a
+          // matched header rather than reporting one — so this counts receipts
+          // WRITTEN, not receipts new. Same honest limitation `position` carries.
+          wrote.push(true);
+        }
+
+        return wrote;
+      }
+
+      case 'observations': {
+        const built = group.map((plan) => toObservationInput(plan.record));
+        const rows = built.filter((row): row is NonNullable<typeof row> => row != null);
+
+        if (rows.length > 0) {
+          // Keyed on the provenance triple (every row here carries one), so a
+          // re-import updates rather than duplicating. The write result counts
+          // rows, not inputs, so it cannot be aligned per row — see below.
+          await this.observations.createMany(ctx, rows);
+        }
+
+        // A row that produced an input reached the service; one that produced
+        // none never did. `createMany` reports batch totals rather than a
+        // per-input verdict, so this is "offered", not "inserted" — the same
+        // shape `position` uses.
+        return built.map((row) => row != null);
+      }
 
       case 'browser_activity':
         return aligned(
@@ -1805,8 +2058,64 @@ export class PushStage implements ImportStageRunner {
         // the batched path is idempotent. A bare object takes `createOne`, which
         // inserts unconditionally.
         return wroteAnything(await this.events.createDetailed(ctx, [toEventInput(record)]));
-      case 'inventory':
-        return wroteAnything(await this.items.createManyDetailed(ctx, [toInventoryInput(record)]));
+      case 'things':
+        return wroteAnything(await this.items.createManyDetailed(ctx, [toThingInput(record)]));
+      case 'product_models': {
+        const input = toProductModelInput(record);
+
+        if (input == null) {
+          return false;
+        }
+
+        const [result] = await this.productModels.createManyDetailed(ctx, [input]);
+        const identifiers = productModelIdentifiers(record);
+
+        if (result != null && identifiers.length > 0) {
+          await this.objectIdentifiers.upsertForSubjects(ctx.userId, [
+            {
+              subjectType: 'product_model',
+              subjectId: result.entity.id,
+              identifiers: identifiers.map((identifier) => ({
+                namespace: identifier.namespace,
+                value: identifier.value,
+                ...(identifier.confidence != null ? { confidence: identifier.confidence } : {}),
+              })),
+              source: PRODUCT_IDENTIFIER_SOURCE,
+            },
+          ]);
+        }
+
+        return result?.inserted ?? false;
+      }
+
+      case 'receipts': {
+        const [place] = await this.receiptPlacesFor(ctx, [{ record, participants }]);
+
+        await this.receipts.upsertFromExtraction(
+          ctx,
+          toReceiptInput(record, toReceiptLineItemInputs(record), place),
+        );
+
+        // Written, not necessarily new — `upsertFromExtraction` patches a
+        // matched header rather than reporting one. See `sendMany`.
+        return true;
+      }
+
+      case 'observations': {
+        const input = toObservationInput(record);
+
+        // `destinationsFor` routes on the record's identifiers and so does this
+        // builder — but it returns null rather than throwing, so a disagreement
+        // between the two skips the row instead of failing the import.
+        if (input == null) {
+          return false;
+        }
+
+        await this.observations.createMany(ctx, [input]);
+
+        return true;
+      }
+
       case 'browser_activity':
         return wroteAnything(
           await this.browserActivity.createManyDetailed(ctx, [toBrowserActivityInput(record)]),

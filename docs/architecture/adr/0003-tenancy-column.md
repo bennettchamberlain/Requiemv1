@@ -43,9 +43,11 @@ it unclear which spelling new tables should use.
 documentation of the product data model.
 
 **`owner_user_id` is retained** on `ci.entities` and `ci.relationships`, where it is
-the tenancy column. Renaming it is out of scope for this consolidation wave — the
-blast radius (indexes, TypeORM entities, raw SQL, importer contracts) is large for no
-runtime win.
+the tenancy column, and on `ci.objects` and the commerce tables (`ci.product_models`,
+`ci.receipts`, `ci.receipt_line_items`, `ci.object_observations`, `ci.object_identifiers`),
+which share that provenance pattern. Renaming it is out of scope for this consolidation
+wave — the blast radius (indexes, TypeORM entities, raw SQL, importer contracts) is large
+for no runtime win.
 
 **On inventory/commerce, `owner_user_id` stays for a different reason**: it is not a
 second spelling of tenancy there but a distinct fact (auto-detected owner), and the

@@ -22,8 +22,16 @@
  * and `dated` remembers which of the two it is — the fallback is import time,
  * and a record dated that way must not be presented as a timeline occurrence.
  */
+import {
+  isGloballyUniqueNamespace,
+  normalizeObjectIdentifier,
+  type ObjectIdentifierNamespace,
+} from '@ci/domains/graph';
+
 import { mimeForFile, type MediaAttachment } from '../datasources/timeline';
 import type { StagedItem } from '../entities/StagedItemEntity';
+
+import { readCommerceField } from './commerceKeys';
 
 /**
  * The integration that produced these records.
@@ -122,6 +130,29 @@ export interface CanonicalRecord {
   locationSource: 'gps' | 'exif' | 'address' | 'wifi' | undefined;
   /** Parsed items.metadata merged with file-location fields. */
   metadata: Record<string, unknown>;
+  /**
+   * Object identifiers the source stated about the THING this record is about —
+   * a book's ISBN, a product's ASIN or barcode, a device's serial.
+   *
+   * Populated from `metadata.Identifiers` (an array the datasource emits) and
+   * normalized through the SHARED {@link normalizeObjectIdentifier} rule — the
+   * same one `ci.object_identifiers` is written with — so an ISBN-10 off a
+   * Goodreads row and the ISBN-13 printed on the same book's barcode arrive as
+   * ONE value. Values the rule cannot make matchable are dropped (a rejected
+   * identifier is not an error — see that module).
+   *
+   * Absent — not `[]` — when the record states none, so `identifiers` on a
+   * record always means "the source said something".
+   */
+  identifiers?: CanonicalIdentifier[];
+}
+
+/** One normalized object identifier as it rides on a canonical record. */
+export interface CanonicalIdentifier {
+  namespace: ObjectIdentifierNamespace;
+  value: string;
+  /** 0..1, when the source is guessing (OCR off a receipt) rather than stating. */
+  confidence?: number;
 }
 
 function basename(p: string): string {
@@ -171,10 +202,15 @@ const KIND_BY_CLASSIFICATION: Record<string, string> = {
   search: 'web.search',
   purchase: 'commerce.purchase',
   transaction: 'commerce.transaction',
+  // A record that IS a receipt: an order-confirmation email the gmail/email
+  // importer detected (see datasources/receipt_detect.ts), or a receipt
+  // document. It is not correspondence and not a money movement — it is the
+  // itemised record of a purchase, and routes to `receipts`.
+  receipt: 'commerce.receipt',
   // The ACT of placing an order, one per order id — emitted by the Amazon
   // importer alongside its per-line 'purchase' items so a five-item order is
   // one timeline event, not five. Routes via `commerce.*` → events alone; the
-  // line items keep their inventory/content homes.
+  // line items keep their things/content homes.
   order: 'commerce.order',
   // Direction-aware transaction kinds (see paypal.ts): money leaving as cash
   // (withdrawal), arriving (credit), or leaving as spend (payment).
@@ -263,7 +299,7 @@ export function kindFor(classification: string | null, mediaType: string | null)
 
 /**
  * CI-Server object table a record routes to. Each non-`events` destination has a
- * dedicated batch GraphQL mutation (createInventoryItems / createCommunications /
+ * dedicated batch GraphQL mutation (createThings / createCommunications /
  * createBrowserActivities / createContents / createPositions); everything else
  * falls through to `createEvent`.
  *
@@ -273,12 +309,22 @@ export function kindFor(classification: string | null, mediaType: string | null)
  * partition falls back to `createEvents`, which keeps today's behavior unchanged.
  */
 export type Destination =
-  | 'inventory'
+  | 'things'
   | 'communications'
   | 'browser_activity'
   | 'content'
   | 'events'
-  | 'position';
+  | 'position'
+  // The commerce plane (`ci.receipts` + `ci.receipt_line_items`,
+  // `ci.product_models`, `ci.object_observations`). `receipts` is the
+  // merchant/time/total header plus its line items — the thing that gives a
+  // purchase a place and a timeline presence; `product_models` is the catalogue
+  // entry a line's globally-unique identifier (ISBN/ASIN/GTIN) mints;
+  // `observations` records that an object with that identity was observed
+  // (here: acquired) at a moment.
+  | 'receipts'
+  | 'product_models'
+  | 'observations';
 
 /**
  * The `entityType` values CI-Server's search-index backfill sweep understands
@@ -296,7 +342,9 @@ export type BackfillEntityType =
   | 'item'
   | 'browser-activity'
   | 'file'
-  | 'position';
+  | 'position'
+  | 'receipt'
+  | 'product';
 
 /**
  * Map an import `Destination` to the CI-Server backfill `entityType` its rows land
@@ -312,9 +360,15 @@ const DESTINATION_TO_BACKFILL_ENTITY: Record<Destination, BackfillEntityType | n
   events: 'event',
   content: 'content',
   communications: 'communication',
-  inventory: 'item',
+  things: 'item',
   browser_activity: 'browser-activity',
   position: 'position',
+  receipts: 'receipt',
+  product_models: 'product',
+  // An observation is a (object, time, place) sighting with no text of its own
+  // — nothing to embed, the same answer `browser_activity` gets from the edge
+  // matrix below.
+  observations: null,
 };
 
 /**
@@ -340,6 +394,8 @@ export function backfillEntityTypesFor(destinations: Iterable<Destination>): Bac
     'browser-activity',
     'file',
     'position',
+    'product',
+    'receipt',
   ];
 
   return ORDER.filter((e) => seen.has(e));
@@ -357,7 +413,14 @@ export function backfillEntityTypesFor(destinations: Iterable<Destination>): Bac
  * The wire strings are the contract; the listener validates and drops anything
  * it does not recognise.
  */
-export type EdgeProjectionSource = 'communications' | 'events' | 'content' | 'inventory' | 'positions';
+export type EdgeProjectionSource =
+  | 'communications'
+  | 'events'
+  | 'content'
+  | 'objects'
+  | 'positions'
+  | 'receipts'
+  | 'observations';
 
 /**
  * Map an import {@link Destination} to the edge-projection source its rows land
@@ -377,9 +440,18 @@ const DESTINATION_TO_EDGE_SOURCE: Record<Destination, EdgeProjectionSource | nul
   events: 'events',
   content: 'content',
   communications: 'communications',
-  inventory: 'inventory',
+  things: 'objects',
   browser_activity: null,
   position: 'positions',
+  // Both spellings are the matrix's own (`EDGE_STAGES_BY_SOURCE`), and both are
+  // plural where the destination is not — same seam, same hazard, as `position`
+  // → `positions` above.
+  receipts: 'receipts',
+  observations: 'observations',
+  // A catalogue entry is not a sighting and not a possession: `ci.product_models`
+  // has no rule in the deterministic-edge matrix, so requesting a leg for it
+  // would be a sweep that can only ever find zero candidates.
+  product_models: null,
 };
 
 /**
@@ -403,34 +475,126 @@ export function edgeProjectionSourcesFor(destinations: Iterable<Destination>): E
 
   // Stable order mirroring the matrix's own rule order for deterministic
   // requests and tests.
-  const ORDER: EdgeProjectionSource[] = ['communications', 'events', 'content', 'inventory', 'positions'];
+  const ORDER: EdgeProjectionSource[] = [
+    'communications',
+    'events',
+    'content',
+    'objects',
+    'receipts',
+    'observations',
+    'positions',
+  ];
 
   return ORDER.filter((s) => seen.has(s));
 }
 
 /**
- * Heuristic: is a purchased good DIGITAL (→ content) vs PHYSICAL (→ inventory)?
- * Amazon's "Your Orders" CSV carries no product-type field, so we sniff the
- * product name. Best-effort; defaults to physical.
+ * Last-resort heuristic: is a purchased good DIGITAL (→ content) vs PHYSICAL
+ * (→ things)? Amazon's oldest "Your Orders" CSVs carry no product-type
+ * field, so the product NAME is all there is. Kept as the final step of
+ * {@link isDigitalGood} — it is a guess, and every stated fact outranks it.
  */
 const DIGITAL_GOOD_RE =
   /\b(kindle|e-?book|audiobook|audible|\[digital\]|digital (?:download|code|copy)|app store|in-app|software|subscription|prime video|mp3|gift\s?card|download)\b/i;
 
-function isDigitalGood(rec: CanonicalRecord): boolean {
-  // An importer that KNOWS the good is digital says so outright, and that
-  // outranks the guess below: Amazon files digital purchases in their own
-  // export file, where "Prime Membership Fee" and most game titles match no
-  // keyword and were landing in physical inventory.
-  const declared = rec.metadata.Digital;
-  if (typeof declared === 'boolean') {
+/**
+ * Source category/product-type tokens that STATE the good is digital. Matched
+ * against the CATEGORY field (Category / Product Category / Product Type /
+ * Type) as whole words, so `ELECTRONIC_CABLE` and `Home & Kitchen` can never
+ * match while `DIGITAL_VIDEO_DOWNLOAD`, `Mobile Application` and `eBook` do.
+ *
+ * Deliberately NARROW. `music`, `game(s)` and `app` are excluded: Amazon files
+ * a physical CD under ABIS_MUSIC and a board game under TOYS_AND_GAMES, so a
+ * looser pattern would send real objects to `content` and lose them from
+ * things — the exact failure this ordering exists to fix, inverted.
+ */
+const DIGITAL_CATEGORY_RE =
+  /(?:^|[^a-z])(digital|ebook|e-book|kindle|audiobook|software|subscription|membership|streaming|download|mobile[_\s-]?application|in-app)(?:[^a-z]|$)/i;
+
+/**
+ * Merchants whose goods are digital by definition. A hint, not a fact: it
+ * outranks the name regex (a Steam purchase called "Portal 2" matches no
+ * keyword) but yields to anything the source stated.
+ */
+const DIGITAL_MERCHANT_RE =
+  /\b(app\s?store|google\s?play|play\s?store|steam|itunes|kindle\s?store|audible|epic\s?games|nintendo\s?eshop|playstation\s?store|xbox\s?(?:live|store)|humble\s?bundle|reddit)\b/i;
+
+/** An explicitly-declared boolean out of metadata ('true'/'yes'/'1' count), or null. */
+function declaredBool(v: unknown): boolean | null {
+  if (typeof v === 'boolean') {
+    return v;
+  }
+
+  if (typeof v === 'string' && v.trim()) {
+    if (/^(true|yes|1)$/i.test(v.trim())) {
+      return true;
+    }
+
+    if (/^(false|no|0)$/i.test(v.trim())) {
+      return false;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Is a purchased good DIGITAL (→ content) vs PHYSICAL (→ things)?
+ *
+ * Evidence order, strongest first — each step only fires when it has something
+ * to say, so a source that states nothing still reaches the name guess:
+ *
+ *   1. An explicit `IsDigital` (or the legacy `Digital`) flag from an importer
+ *      that KNOWS — Amazon files digital purchases in their own export file,
+ *      where "Prime Membership Fee" matches no keyword and used to land in
+ *      a physical thing; Uber Eats states that a dish is not one. A
+ *      DECLARATION IS NOT A HEURISTIC: it outranks every guess below, in BOTH
+ *      directions.
+ *   2. A stated product type / category that names a digital class. Amazon's
+ *      `DIGITAL_VIDEO_DOWNLOAD`, an app store's `Mobile Application`.
+ *   3. The merchant, when it sells nothing physical.
+ *   4. {@link DIGITAL_GOOD_RE} over the product name — the old whole rule, now
+ *      the last resort.
+ *
+ * ── Why the order is load-bearing ──────────────────────────────────────────
+ *
+ * The first attempt at this in the retired importer put the category guess
+ * FIRST, and an explicit `Digital: false` on a row categorised "Subscription"
+ * was overridden — moving a physical good out of `ci.objects` and into
+ * `ci.content` on the next push, the same thing in two tables, with no
+ * migration to undo it. A declaration wins.
+ *
+ * Steps 2 and 3 are NEW evidence (the rule used to be the declaration and the
+ * name regex), so they re-route record shapes that state a digital category or
+ * a digital-only merchant and nothing else: those move from `ci.objects` to
+ * `ci.content`. That is the correct home, but there is no migration for rows
+ * already pushed under the old rule — see `docs/import/etl-agent-guide.md` §2.2.
+ *
+ * The verdict is written onto each receipt line as `isPhysical` (see
+ * `toReceiptLineItemInputs`) so it is a recorded, auditable decision rather than
+ * something silently re-derived on every push.
+ */
+export function isDigitalGood(rec: CanonicalRecord): boolean {
+  const m = rec.metadata;
+  const declared = declaredBool(m.IsDigital) ?? declaredBool(m.Digital);
+
+  if (declared !== null) {
     return declared;
   }
 
-  if (typeof declared === 'string' && declared.trim()) {
-    return /^(true|yes|1)$/i.test(declared.trim());
+  const category = str(readCommerceField(m, 'CATEGORY'));
+
+  if (category && DIGITAL_CATEGORY_RE.test(category)) {
+    return true;
   }
 
-  const name = str(rec.metadata.Product) || rec.title || '';
+  const merchant = str(readCommerceField(m, 'MERCHANT'));
+
+  if (merchant && DIGITAL_MERCHANT_RE.test(merchant)) {
+    return true;
+  }
+
+  const name = str(readCommerceField(m, 'PRODUCT')) || rec.title || '';
 
   return DIGITAL_GOOD_RE.test(name);
 }
@@ -443,13 +607,22 @@ function isDigitalGood(rec: CanonicalRecord): boolean {
  * timeline but invisible to search). `events` stays the default/load-bearing
  * arm so an unrecognised kind is never dropped.
  *
- *   commerce.purchase   -> inventory | content | nothing   physical good vs digital good (home =
- *                                                the thing); a subscription fee is neither and
- *                                                pushes nowhere (its order event marks the purchase)
+ *   commerce.purchase   -> receipts + (things | content)  every purchase gets a receipt (the
+ *                                                merchant/money/moment), plus the good's own home:
+ *                                                things for a physical thing, content for a
+ *                                                digital one. A subscription fee keeps only its
+ *                                                receipt. An identified physical good also donates
+ *                                                an observation. A line rolled up into a
+ *                                                per-order receipt (metadata.ReceiptRollupId)
+ *                                                skips the receipt — it is already on that one.
+ *   commerce.receipt    -> receipts (+ communications when the mail gate had passed it anyway)
  *   commerce.transaction / .withdrawal / .credit / .payment
- *                       -> events                a money movement is an occurrence, not content
+ *                       -> events (+ receipts when the record carries LineItems)
+ *                                                a money movement is an occurrence, not content
  *   commerce.order      -> events                  one timeline event per Amazon order id
  *   commerce.*          -> events
+ *   any record whose identifiers include a globally-unique one
+ *                       -> + product_models       the catalogue entry an ISBN/ASIN/GTIN mints
  *   communication.*     -> communications | communications+position  a geotagged
  *                                                message donates its fix too
  *   web.bookmark        -> content
@@ -733,7 +906,68 @@ export function redditMediaUrl(rec: CanonicalRecord): RedditMediaRef | null {
   return null;
 }
 
+/**
+ * The line items a record carries (`metadata.LineItems`), or `[]` — the raw
+ * objects as the datasource emitted them, before `toReceiptLineItemInputs` maps
+ * them. A record with lines is a receipt whatever else it is: the lines are
+ * what a receipt IS.
+ */
+export function commerceLineItems(rec: CanonicalRecord): Array<Record<string, unknown>> {
+  const raw = readCommerceField(rec.metadata, 'LINE_ITEMS');
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.filter((l): l is Record<string, unknown> => !!l && typeof l === 'object' && !Array.isArray(l));
+}
+
+/**
+ * Can a product-model (catalogue) row be minted from this record? Only a
+ * GLOBALLY-UNIQUE identifier qualifies — an ISBN, ASIN, GTIN, IMEI or VIN
+ * identifies the same product for everyone, whereas a SKU or an order id is
+ * unique only inside one retailer's scope and would mint a catalogue entry
+ * nobody else can ever match (see `normalizeObjectIdentifier.computeQualifier`).
+ */
+export function mintsProductModel(rec: CanonicalRecord): boolean {
+  return (rec.identifiers ?? []).some((i) => isGloballyUniqueNamespace(i.namespace));
+}
+
+/**
+ * Is this line's receipt carried by an ITEMISED aggregate elsewhere? The
+ * emitting datasource says so by stamping `metadata.ReceiptRollupId` with the
+ * aggregate record's id (see `amazon.ts` pushOrders). Without the marker a
+ * five-item Amazon order would produce five single-line receipts on top of the
+ * itemised one.
+ */
+function isRolledUp(rec: CanonicalRecord): boolean {
+  return typeof rec.metadata.ReceiptRollupId === 'string' && rec.metadata.ReceiptRollupId.length > 0;
+}
+
+/**
+ * Route a record to its destination table(s). Thin wrapper over
+ * {@link baseDestinationsFor} that adds `product_models` for any record
+ * carrying a globally-unique identifier: minting the catalogue entry is a
+ * property of the IDENTIFIER, not of the kind, so a Goodreads book (an
+ * annotation) and an Amazon line (a purchase) both mint one.
+ *
+ * FIRST in the list, not appended. The catalogue row is the identity everything
+ * else in the batch points at — `ReceiptService` resolves a line's product by
+ * looking up its identifier claim — and `PushStage.DESTINATION_ORDER` writes
+ * destinations in its own fixed order, which this list has to stay a
+ * subsequence of (see stages/__tests__/destinationOrder.test.ts).
+ */
 export function destinationsFor(rec: CanonicalRecord): Destination[] {
+  const dests = baseDestinationsFor(rec);
+
+  if (!mintsProductModel(rec) || dests.includes('product_models')) {
+    return dests;
+  }
+
+  return ['product_models', ...dests];
+}
+
+function baseDestinationsFor(rec: CanonicalRecord): Destination[] {
   const kind = rec.kind;
   // Reddit posts and comments are authored communications, not timeline
   // events: they go to /communications only. A content row rides along ONLY
@@ -743,26 +977,64 @@ export function destinationsFor(rec: CanonicalRecord): Destination[] {
   }
 
   if (kind === 'commerce.purchase') {
+    // EVERY purchase produces a receipt. The receipt is what carries the
+    // merchant, the money and the moment — a purchase without one has no
+    // place, no timeline presence and no way to answer "where did I buy this?".
+    // The good's OWN home (the thing bought) rides alongside: things for a
+    // physical object, content for a digital one.
+    //
     // A subscription fee (Prime, Kindle Unlimited, an Audible plan — the
     // amazon importer stamps metadata.Subscription from the export's own
-    // Subscription Order Type) is a service, not a thing: it is neither
-    // content nor inventory, so the line pushes nowhere. The purchase itself
-    // is still marked — the importer's per-order aggregate (commerce.order)
-    // carries it to events.
+    // Subscription Order Type) is a service, not a thing, so it still gets no
+    // things/content row — but it is a real purchase and now keeps its
+    // receipt, where before it pushed NOWHERE and the money was invisible.
     if (rec.metadata.Subscription === true) {
-      return [];
+      return isRolledUp(rec) ? [] : ['receipts'];
     }
 
-    return [isDigitalGood(rec) ? 'content' : 'inventory'];
+    const good: Destination = isDigitalGood(rec) ? 'content' : 'things';
+    // ...unless the receipt is over THERE. A source that emits both per-line
+    // purchases and a per-order aggregate (amazon.ts) stamps the line with the
+    // aggregate's id: the itemised order receipt already contains this line, so
+    // minting a second single-line receipt for it would double every order.
+    const receipt: Destination[] = isRolledUp(rec) ? [] : ['receipts'];
+
+    // A physical good with a globally-unique identifier also donates an
+    // OBSERVATION: this object, identified, was in the user's hands at this
+    // moment. That is the (object, time, place) evidence
+    // `ci.object_observations` exists for, and a receipt is the most reliable
+    // producer of it.
+    return good === 'things' && mintsProductModel(rec)
+      ? [...receipt, good, 'observations']
+      : [...receipt, good];
+  }
+
+  // A record the source already calls a receipt (a detected order-confirmation
+  // email, a scanned receipt document) IS the receipt.
+  //
+  // It ALSO stays a communication when it was mail the importer would have kept
+  // anyway — `metadata.HumanCorrespondence` is the parser stating that its own
+  // human-correspondence gate passed this message. Without that distinction,
+  // reclassifying an order confirmation that Gmail filed under Category
+  // Personal would REMOVE it from ci.communications, where it lands today: the
+  // receipt lane must only ever add. A receipt rescued FROM the bulk filter has
+  // no such history — it was being dropped entirely — so it goes to receipts
+  // alone rather than adding tens of thousands of no-reply notifications to the
+  // correspondence table.
+  if (kind === 'commerce.receipt') {
+    // `communications` first only because this list must stay a subsequence of
+    // PushStage.DESTINATION_ORDER; the two writes are independent.
+    return rec.metadata.HumanCorrespondence === true ? ['communications', 'receipts'] : ['receipts'];
   }
 
   // A transaction (any direction: transaction/withdrawal/credit/payment) is a
   // timeline occurrence (money moved at a moment), not a piece of content —
   // there is no document/media "thing" behind it worth a searchable corpus
-  // row. Events only. This also covers future commerce.* kinds; only purchase
-  // (above) has a different home.
+  // row. Events only... UNLESS it carries line items: an Uber Eats order or an
+  // Amazon order aggregate knows WHAT was bought, and that itemisation is a
+  // receipt whether or not the money movement is also an event.
   if (kind.startsWith('commerce.')) {
-    return ['events'];
+    return commerceLineItems(rec).length > 0 ? ['events', 'receipts'] : ['events'];
   }
 
   if (kind.startsWith('communication.')) {
@@ -1225,6 +1497,89 @@ function locationNameFor(m: Record<string, unknown>): string | null {
 }
 
 /** Map a raw timeline row to the transport-agnostic canonical record. */
+/** The object-identifier namespaces the shared normalizer knows. */
+const IDENTIFIER_NAMESPACES: ReadonlySet<string> = new Set<ObjectIdentifierNamespace>([
+  'gtin',
+  'isbn',
+  'asin',
+  'mpn',
+  'sku',
+  'serial',
+  'imei',
+  'vin',
+  'order_id',
+  'rfid',
+  'qr',
+  'custom',
+]);
+
+/**
+ * The normalized object identifiers a metadata bag states, from
+ * `metadata.Identifiers`.
+ *
+ * Shape emitted by datasources: `[{ namespace, value, confidence? }]`. Each
+ * value goes through `normalizeObjectIdentifier` — the SAME rule
+ * `ObjectIdentifierService` writes `ci.object_identifiers` with, which is what
+ * makes the importer's pre-normalized value and the server's re-normalization
+ * of the same barcode land on one row. A value the rule rejects is SKIPPED (a
+ * receipt line with an unreadable barcode is still a valid line), and so is an
+ * unknown namespace: inventing one would write a claim nothing can ever look up.
+ *
+ * NOTE the namespace can CHANGE during normalization — an all-digit "ASIN" is
+ * an ISBN-10 and a Bookland GTIN is an ISBN — which is the entire point: one
+ * book, one identity, however it arrived.
+ *
+ * Exported because a receipt LINE carries its own identifiers, in the same
+ * shape, inside `metadata.LineItems[]`.
+ */
+export function identifiersFrom(metadata: Record<string, unknown> | undefined | null): CanonicalIdentifier[] {
+  const raw = readCommerceField(metadata, 'IDENTIFIERS');
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const out: CanonicalIdentifier[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue;
+    }
+
+    const e = entry as Record<string, unknown>;
+    const ns = str(e.namespace)?.toLowerCase();
+    const value = str(e.value) ?? str(e.valueRaw);
+
+    if (!ns || !value || !IDENTIFIER_NAMESPACES.has(ns)) {
+      continue;
+    }
+
+    const normalized = normalizeObjectIdentifier(ns as ObjectIdentifierNamespace, value);
+
+    if (!normalized) {
+      continue;
+    }
+
+    const key = `${normalized.namespace}|${normalized.valueNormalized}`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    const confidence = num(e.confidence);
+
+    out.push({
+      namespace: normalized.namespace,
+      value: normalized.valueNormalized,
+      ...(confidence != null ? { confidence } : {}),
+    });
+  }
+
+  return out;
+}
+
 export function toCanonical(row: StagedItem): CanonicalRecord {
   const metadata: Record<string, unknown> = { ...(row.metadata ?? {}) };
   if (row.filename) {
@@ -1256,6 +1611,7 @@ export function toCanonical(row: StagedItem): CanonicalRecord {
     };
   const accuracyMeters =
     accuracyMetersFor(metadata) ?? (locationSource ? ACCURACY_DEFAULT_BY_SOURCE[locationSource] : undefined);
+  const identifiers = identifiersFrom(metadata);
 
   return {
     sourceType: SOURCE_TYPE,
@@ -1283,6 +1639,8 @@ export function toCanonical(row: StagedItem): CanonicalRecord {
     accuracyMeters,
     locationSource,
     metadata,
+    // Absent (not []) when the source states none — see CanonicalRecord.
+    ...(identifiers.length ? { identifiers } : {}),
   };
 }
 
@@ -1402,8 +1760,17 @@ export function communicationMediaAttachmentsFrom(
       path: filePath,
       filename: str(a.filename) ?? undefined,
       // 'file' passes through for non-media attachments (an email's PDF): the
-      // content row over it should say file, not media.
-      type: type === 'image' || type === 'video' || type === 'audio' || type === 'file' ? type : 'media',
+      // content row over it should say file, not media. 'receipt_document' is
+      // the receipt-aware refinement of 'file' (see
+      // datasources/timeline.AttachmentDescriptor).
+      type:
+        type === 'image' ||
+        type === 'video' ||
+        type === 'audio' ||
+        type === 'file' ||
+        type === 'receipt_document'
+          ? type
+          : 'media',
       mimetype: str(a.mimetype) ?? undefined,
       url: str(a.url) ?? undefined,
     });

@@ -89,7 +89,7 @@ Consequences for a bulk load:
   `POST /api/maintenance/orchestrate` (`extract_people → link_communications →
   link_events → heal_self_collation → materialize_edges → normalize_relationships →
   derive_relationships → fold_notes → extract_graph → geocode → reverse_geocode →
-  reverse_position → reverse_inventory → estimate_locations → media_dimensions →
+  reverse_position → reverse_object → estimate_locations → media_dimensions →
   search_index`; `ORCHESTRATE_STAGES` in
   `src/domains/maintenance/services/MaintenanceOrchestratorService.ts`). `POST
   /v1/ingest/finish` is the same call for a `/v1` client, and takes
@@ -196,7 +196,7 @@ Of the bulk-ingest destinations, **only `ci.position` is still a hypertable** �
 time-only (the `user_id` space partition was dropped in
 `20260807071631_departition_position.sql`), `chunk_time_interval` 1 month, with
 **columnar compression after 7 days** (`add_compression_policy('ci.position', INTERVAL
-'7 days')`). `ci.events`, `ci.communications`, `ci.content`, `ci.inventory` and
+'7 days')`). `ci.events`, `ci.communications`, `ci.content`, `ci.objects` and
 `ci.browser_activity` are all plain tables — the index-deferral helper alone is the
 relevant optimization there.
 

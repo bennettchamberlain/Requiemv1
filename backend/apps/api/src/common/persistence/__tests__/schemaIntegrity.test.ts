@@ -147,13 +147,18 @@ describe('describeSchemaIntegrity', () => {
     const onDisk = migrationVersionsOnDisk(migrationsDir);
     const message = describeSchemaIntegrity(
       await inspectSchemaIntegrity({
-        probe: probeFor(null, [...onDisk.slice(0, -1), '20260820004455']),
+        // A synthetic version that can never exist on disk. Do NOT use a
+        // plausible-looking timestamp here: this test previously hardcoded
+        // 20260820004455, and the day a real migration was created with that
+        // exact stamp the "ahead of the code" case silently stopped being
+        // ahead of anything and the assertion got null.
+        probe: probeFor(null, [...onDisk, '29991231235959']),
         migrationsDir,
       }),
     );
 
     expect(message).toContain('AHEAD of the code');
-    expect(message).toContain('20260820004455');
+    expect(message).toContain('29991231235959');
     expect(message).toContain('make migrate');
     expect(message).toContain('CI_SKIP_SCHEMA_CHECK');
   });

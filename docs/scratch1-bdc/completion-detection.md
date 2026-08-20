@@ -126,19 +126,19 @@ The upload and vision infrastructure is shipping — this channel is a listener 
 
 - **Upload → MinIO → dedup → presign:** `FileService.uploadWithDedupInfo` (`FileService.ts:375-418`), `POST /api/files/upload` (`FilesController.ts:29`).
 - **Event fan-out:** `FileUploadedEvent` → `FilePreviewGenerationListener` → `PreviewGeneratedEvent` (`files/events.ts:8-12`).
-- **Vision LLM, twice over:** `ImageDescriptionListener` (`llava:7b`) and `InventoryListener` (`llama3.2-vision:11b`). Both do base64 → `OllamaService.chat(..., {images, format:'json'})` → fence-stripping → brace-slice → zod `safeParse`. That JSON-repair pattern is hand-rolled identically in both — copy it, do not reinvent it.
+- **Vision LLM, twice over:** `ImageDescriptionListener` (`llava:7b`) and `ThingVisionListener` (`llama3.2-vision:11b`). Both do base64 → `OllamaService.chat(..., {images, format:'json'})` → fence-stripping → brace-slice → zod `safeParse`. That JSON-repair pattern is hand-rolled identically in both — copy it, do not reinvent it.
 - **Receipt schema, migrated and empty:** `ci.receipts` (`20260803223019:23-84`) with `merchant_name`, `purchased_at`, integer-minor-unit money columns, `extraction_state ∈ pending|extracted|failed|manual|not_applicable`, `extraction_confidence`, `raw_text`, `event_id`, and a drain-queue index. Plus `ci.receipt_line_items` and `ci.object_observations`. `Database.md:103-105` marks the whole family pre-implementation: "schema present, product surface not shipped."
 
 ### 4.2 What is new
 
-- A **`ReceiptExtractionListener`** on `FileUploadedEvent`, gated on a new `receiptCapture` payload flag, modeled directly on `InventoryListener`.
+- A **`ReceiptExtractionListener`** on `FileUploadedEvent`, gated on a new `receiptCapture` payload flag, modeled directly on `ThingVisionListener`.
 - A receipt-extraction prompt + zod schema → writes `ci.receipts` + `ci.receipt_line_items`.
 - The matcher (§3) and the confirmation surface (§5).
 - `ObjectResolutionService` / `ObjectObservationService` — named in migration headers, do not exist. Only needed if line-item → inventory resolution is in scope; **out of scope for completion detection**, which only needs merchant, timestamp, and line-item descriptions.
 
 ### 4.3 Two traps to avoid
 
-1. **Do not use the preview.** `ImageDescriptionListener` runs on `PreviewGeneratedEvent`, whose image is capped at 300px (`PREVIEW_MAX_DIMENSION`). That is unusable for receipt text. Follow `InventoryListener`, which listens to `FileUploadedEvent` and fetches the **original** bytes.
+1. **Do not use the preview.** `ImageDescriptionListener` runs on `PreviewGeneratedEvent`, whose image is capped at 300px (`PREVIEW_MAX_DIMENSION`). That is unusable for receipt text. Follow `ThingVisionListener`, which listens to `FileUploadedEvent` and fetches the **original** bytes.
 2. **`pinned.demo.models` silently swaps the model.** `OllamaService.resolveModel` (now at `OllamaService.ts:732-751`, was `:482-484`) overrides any requested model with `gemma3:27b` whenever visual content is present — and with `qwen3:14b` when there is none. The flag ships `false`; with it off, `resolveServedChatModel` picks a model that is actually loaded on the active backend, preferring a vision-capable one for image turns. Verify the target environment's flag before benchmarking a chosen model — otherwise you are measuring a different one.
 
 ### 4.4 Honest risk
@@ -288,7 +288,7 @@ Indexes: `(user_id, completed_at DESC)` for HBPE's per-day reads; `(user_id, sub
 | **P1** | `ci.completion_records` migration; Emotion Complexity setting + `EmotionSection`; modal on the existing `/plan` checkbox (explicit channel only — no vision yet); HBPE consumes completion records for confidence weighting |
 | **P2** | `ReceiptExtractionListener` + prompt + zod schema; `ci.receipts` writes; matcher (§3); post-upload modal; `feed_queue` item type + card |
 | **P3** | Ambient inference channels (place-visit dwell vs scheduled block, purchase events, elapsed-calendar prompts); negative-feedback loop into matcher ranking |
-| **P4** | Line-item → `ci.inventory` resolution via `ObjectResolutionService` (only if inventory is a product goal — not required for completion) |
+| **P4** | Line-item → `ci.objects` resolution via `ObjectResolutionService` (only if inventory is a product goal — not required for completion) |
 
 **Dependencies:** P1 of this doc gates [HBPE](hbpe-data-rich-redesign.md) P2 (confidence weighting) and P3 (seasonal insight retrieval). P2 depends on roll-forward from [Tasks & Scheduling](tasks-and-scheduling.md) P1 for the forward-only rule to be sound.
 

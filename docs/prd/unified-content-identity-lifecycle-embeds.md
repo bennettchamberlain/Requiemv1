@@ -74,14 +74,14 @@ below exists to fix these.
 > - **1.1 is FIXED.** `20260808150100_schema_consolidation.sql:7-10` dropped and recreated
 >   `events_source_triple_uniq` as `(user_id, source_type, source_system, source_id) WHERE
 >   source_id IS NOT NULL`, so the arbiter and the hydration SELECT now agree on scope. The
->   sibling `inventory_source_triple_uniq` and `product_models_source_triple_uniq` are
+>   sibling `objects_source_triple_uniq` and `product_models_source_triple_uniq` are
 >   owner-scoped in the same migration.
 > - **1.3 has moved, not closed.** `INGEST_REFRESH_COLUMNS` now lives at
 >   `backend/apps/api/src/common/persistence/ingestRefreshColumns.ts`, carries an
 >   `INGEST_SCHEMA_VERSION` and four populated lists (`communication`, `product_model`,
 >   `receipt`, `receipt_line_item` — the last three declarative until their services pass
 >   `conflictUpdateColumns`). `event`, `content` and `browser_activity` are still `[]`;
->   `item` is now empty **on purpose**, because `ci.inventory` is the one ingest table a
+>   `item` is now empty **on purpose**, because `ci.objects` is the one ingest table a
 >   user edits directly.
 > - **1.5 is FIXED** — see the P0 note in the header.
 >

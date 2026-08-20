@@ -301,12 +301,16 @@ function AppRoutes() {
             }
           />
 
-          {/* Ungated, like /memory/people and /memory/places. `enable.inventory.page`
-              ships `true` in the API's own default.json and nothing in the repo turns
-              it off, so it never gated anything in practice — but it DID make the
-              route 404 for the moment before the global flag fetch settles, and it
-              cannot cover the sibling Receipts surface (which has no flag of its
-              own). Half a gate over one coherent surface is worse than none. */}
+          {/* Ungated, like /memory/people and /memory/places. The old
+              `enable.inventory.page` flag shipped `true` in the API's own
+              default.json and nothing in the repo turned it off, so it never
+              gated anything in practice — but it DID make the route 404 for the
+              moment before the global flag fetch settles, and it could not cover
+              the sibling Receipts surface (which has no flag of its own). Half a
+              gate over one coherent surface is worse than none; the flag is gone.
+
+              `/inventory` stays as a redirect, not a route: it is the URL the
+              retired feature shipped under and may sit in a bookmark. */}
           <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
           <Route
             path="/memory/things"

@@ -19,11 +19,11 @@ export class ObjectMergeCountsType {
 
   /** Child units whose parent pointer moved onto the target. */
   @Field(() => Int)
-  inventoryParent!: number;
+  objectParent!: number;
 
   /** Units related to a source, re-pointed at the target. */
   @Field(() => Int)
-  inventoryRelated!: number;
+  objectRelated!: number;
 
   @Field(() => Int)
   receiptLineItems!: number;
@@ -39,8 +39,8 @@ export class ObjectMergeCountsType {
     return {
       identifiers: counts.identifiers,
       observations: counts.observations,
-      inventoryParent: counts.inventoryParent,
-      inventoryRelated: counts.inventoryRelated,
+      objectParent: counts.objectParent,
+      objectRelated: counts.objectRelated,
       receiptLineItems: counts.receiptLineItems,
       searchRowsDeleted: counts.searchRowsDeleted,
       tagLinksMoved: counts.tagLinksMoved,

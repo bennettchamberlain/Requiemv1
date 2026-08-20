@@ -50,7 +50,7 @@ export const INGEST_REFRESH_COLUMNS: Record<IngestEntityKind, readonly string[]>
   // binds parameters in THIS order — keep them in lockstep.
   communication: ['direction', 'participants_metadata', 'content', 'preview', 'subject'],
   event: [],
-  // EMPTY ON PURPOSE, and load-bearing: ci.inventory is the one ingest table a
+  // EMPTY ON PURPOSE, and load-bearing: ci.objects is the one ingest table a
   // user edits directly (renaming a thing, correcting its condition, recording
   // what it is worth now). A refresh list here would let the next re-sync of
   // the same triple overwrite those edits with whatever the importer still

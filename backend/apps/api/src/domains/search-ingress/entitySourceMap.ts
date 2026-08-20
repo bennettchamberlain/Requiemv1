@@ -32,7 +32,7 @@ export interface EntitySource {
    * Extra SQL predicate (over source alias `s`) the BACKFILL sweep applies so
    * rows that must never (re-)index are not treated as "missing". Used by every
    * type whose table carries a merge tombstone — the ci.entities-backed ones
-   * (`merged_into_entity_id`), `item` (`ci.inventory.merged_into_object_id`) and
+   * (`merged_into_entity_id`), `item` (`ci.objects.merged_into_object_id`) and
    * `product` (`ci.product_models.merged_into_product_id`): a merge deletes the
    * tombstone's embedding+vector, and without this filter the sweep would
    * re-find and re-index it via PersonCreatedEvent.
@@ -53,7 +53,7 @@ export interface EntitySource {
  * | event            | ci.events            | event_id    | —                             |
  * | file             | ci.entities          | entity_id   | entity_type = 'File'          |
  * | file-chunk       | ci.file_chunks       | id          | —                             |
- * | item             | ci.inventory         | object_id   | — (live rows only, see below) |
+ * | item             | ci.objects         | object_id   | — (live rows only, see below) |
  * | message          | ci.agent_memories    | id          | —                             |
  * | note             | ci.notes             | id          | —                             |
  * | person           | ci.entities          | entity_id   | entity_type = 'Person'        |
@@ -95,7 +95,7 @@ export const ENTITY_SOURCE_MAP: Readonly<Record<IndexableEntity, EntitySource>> 
   // ItemCreatedEvent, resurrecting a thing the user merged away.
   item: {
     schema: 'ci',
-    table: 'inventory',
+    table: 'objects',
     idColumn: 'object_id',
     backfillPredicate: 's.merged_into_object_id IS NULL',
   },

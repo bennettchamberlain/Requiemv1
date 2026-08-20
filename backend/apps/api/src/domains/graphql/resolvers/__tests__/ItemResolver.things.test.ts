@@ -80,6 +80,11 @@ function build(overrides: Partial<Record<string, unknown>> = {}) {
     ...(overrides.productModelService as object),
   };
 
+  const entityMergeBlockService = {
+    blockAllPairs: jest.fn(async () => 1),
+    ...(overrides.entityMergeBlockService as object),
+  };
+
   const resolver = new ItemResolver(
     undefined as never,
     itemService as never,
@@ -92,9 +97,10 @@ function build(overrides: Partial<Record<string, unknown>> = {}) {
     undefined as never,
     undefined as never,
     productModelService as never,
+    entityMergeBlockService as never,
   );
 
-  return { resolver, itemService, objectIdentifierService, productModelService };
+  return { resolver, itemService, objectIdentifierService, productModelService, entityMergeBlockService };
 }
 
 describe('ItemResolver.items', () => {

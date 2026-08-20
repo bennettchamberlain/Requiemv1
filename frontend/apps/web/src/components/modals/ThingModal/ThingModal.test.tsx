@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { mockQuery } from '@/test/gql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
-import { CREATE_INVENTORY_ITEM, InventoryItemModal, type InventoryItem } from './InventoryItemModal';
+import { CREATE_THING, ThingModal, type ThingModalItem } from './ThingModal';
 
-const CAMERA: InventoryItem = {
+const CAMERA: ThingModalItem = {
   id: 'item-1',
   name: 'Camera bag',
   brand: 'Domke',
@@ -22,9 +22,9 @@ const CAMERA: InventoryItem = {
   acquisitionMethod: 'GIFT',
 };
 
-describe('InventoryItemModal', () => {
+describe('ThingModal', () => {
   it('shows stored measurements back in the unit they were entered in', () => {
-    renderWithProviders(<InventoryItemModal open onClose={vi.fn()} item={CAMERA} create={false} />);
+    renderWithProviders(<ThingModal open onClose={vi.fn()} item={CAMERA} create={false} />);
 
     // 304.8 mm is 12 in — the number the owner actually typed, not the one the
     // database holds.
@@ -42,11 +42,11 @@ describe('InventoryItemModal', () => {
     // re-rendering the same item as metric — the conversion under test is the
     // same one either path runs.
     const { rerender } = renderWithProviders(
-      <InventoryItemModal open onClose={vi.fn()} item={CAMERA} create={false} />,
+      <ThingModal open onClose={vi.fn()} item={CAMERA} create={false} />,
     );
 
     rerender(
-      <InventoryItemModal
+      <ThingModal
         open
         onClose={vi.fn()}
         item={{ ...CAMERA, id: 'item-2', unitSystem: 'METRIC' }}
@@ -60,7 +60,7 @@ describe('InventoryItemModal', () => {
   });
 
   it('offers the physical vocabulary a thing has, not just its name and price', () => {
-    renderWithProviders(<InventoryItemModal open onClose={vi.fn()} item={null} create />);
+    renderWithProviders(<ThingModal open onClose={vi.fn()} item={null} create />);
 
     for (const label of ['Name', 'Length (cm)', 'Weight (kg)', 'Capacity (L)', 'Colours', 'Made of']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe('InventoryItemModal', () => {
   });
 
   it('will not submit an unnamed item', () => {
-    renderWithProviders(<InventoryItemModal open onClose={vi.fn()} item={null} create />);
+    renderWithProviders(<ThingModal open onClose={vi.fn()} item={null} create />);
 
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
   });
@@ -84,7 +84,7 @@ describe('InventoryItemModal', () => {
     // only matches if the conversion is right, so a wrong factor fails here
     // rather than silently storing 9 millimetres.
     const created = mockQuery(
-      CREATE_INVENTORY_ITEM,
+      CREATE_THING,
       {
         input: {
           name: 'Mug',
@@ -127,6 +127,7 @@ describe('InventoryItemModal', () => {
             currentValue: null,
             purchasePrice: null,
             condition: null,
+            lifecycleState: 'ACTIVE' as const,
             quantity: 1,
             acquiredAt: null,
             acquisitionMethod: null,
@@ -149,7 +150,7 @@ describe('InventoryItemModal', () => {
       },
     );
 
-    renderWithProviders(<InventoryItemModal open onClose={onClose} item={null} create />, {
+    renderWithProviders(<ThingModal open onClose={onClose} item={null} create />, {
       mocks: [created],
     });
 
@@ -168,7 +169,7 @@ describe('InventoryItemModal', () => {
 
     // No matching mock, so the mutation errors — which is what the server does
     // for an impossible measurement, and the dialog must keep the user's input.
-    renderWithProviders(<InventoryItemModal open onClose={onClose} item={null} create />);
+    renderWithProviders(<ThingModal open onClose={onClose} item={null} create />);
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Mug' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));

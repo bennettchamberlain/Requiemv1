@@ -213,11 +213,11 @@ export class SmartRotationListener {
         return;
       }
 
-      case 'hydrate_inventory': {
+      case 'hydrate_things': {
         const context = { userId } as UserServiceContext;
-        const result = await this.crossTableHydrationService.hydrateInventory(context);
+        const result = await this.crossTableHydrationService.hydrateThings(context);
 
-        this.logger.log('Smart rotation hydrate inventory', { userId, ...result });
+        this.logger.log('Smart rotation hydrate things', { userId, ...result });
 
         return;
       }

@@ -120,10 +120,13 @@ way round.
 | Stage runners | `.../import/stages/{UnpackStage,ParseStage,MediaStage,PushStage}.ts` |
 | Archive extraction, zip-slip and cap enforcement | `.../import/archive/{extract,unpack,repairEntryNames,systemExtract}.ts` |
 | Recognition + the 71 parsers | `.../import/datasources/` (`registry.ts`, `index.ts`, one file per source) |
+| Staging writer, within-run dedupe, drop **and keep** ledgers | `.../import/staging/{StagedWriter,identity,contentDigest}.ts` |
 | Staging writer, within-run dedupe, drop ledger | `.../import/staging/{StagedWriter,identity,contentDigest}.ts` |
 | **Per-stage telemetry**: the closed drop vocabulary, the `consumed = produced + dropped` summary, the failure context | `.../import/telemetry/{dropReasons,stageSummary,stageError}.ts` |
 | **Routing**: one staged row → which destinations | `.../import/push/canonical.ts` (`destinationsFor`) |
 | **Mapping**: canonical record → each destination's DTO | `.../import/push/inputs.ts` (`toXInput`) |
+| **Commerce vocabulary**: which metadata key means what, and every spelling a reader tolerates | `.../import/push/commerceKeys.ts` |
+| Receipt discovery in mail archives (`isLikelyReceipt`, field extraction) | `.../import/datasources/receipt_detect.ts` |
 | Graph entities + the "is this actually a name" guard | `.../import/push/entities.ts`, `.../graph/utils/participantSanity.ts` |
 | Owner/self resolution (message direction) | `.../import/push/self.ts` |
 | Inbox scan/claim | `.../import/services/ImportInboxService.ts` |
@@ -141,7 +144,7 @@ way round.
 | Stage | Weight | Does | Loses, if anything, at |
 |---|---|---|---|
 | `unpack` | 20 | Acquires the source **by rename**, expands through the guarded extractor (zip-slip, entry/byte caps), recursively expands nested archives, flattens the `Takeout/` wrapper, strips symlinks | `detail.rejected[]`, `detail.extractionLoss`, `detail.symlinksRemoved` |
-| `parse` | 35 | Recognises data sources under the tree, then runs one parser per match into `StagedWriter` | `detail.failures[]` (a parser that threw), `detail.sources[N].drops` (records a parser deliberately discarded), `detail.sources[N].itemsDeduped` |
+| `parse` | 35 | Recognises data sources under the tree, then runs one parser per match into `StagedWriter` | `detail.failures[]` (a parser that threw), `detail.sources[N].drops` (records a parser deliberately discarded), `detail.sources[N].itemsDeduped`. Its opposite, `detail.sources[N].keeps`, counts records a gate would have discarded and the parser rescued — deliberately NOT folded into `drops` |
 | `media` | 30 | Uploads every staged row's bytes to the object store and stamps `metadata.FileId` | `detail.failed`; a row whose bytes could not be read gets `metadata.FileMediaError` and is skipped by the resume query |
 | `push` | 15 | Fans each staged row through `destinationsFor` into the in-process `ci.*` services | `staged_items.push_status='failed'` + `.push_error`; `detail.entities.unresolved` |
 
@@ -355,10 +358,13 @@ event and should have. Fixed in commit `a02540179`.
 
 | Condition | Destinations |
 |---|---|
+| any record whose `identifiers` include a **globally-unique** one (ISBN/ASIN/GTIN/IMEI/VIN) | `product_models`, **prepended** to whatever the kind gives it |
 | `isRedditPost` / `isRedditComment` | `communications`, plus `content` when `redditMediaUrl` finds media |
-| `commerce.purchase` with `metadata.Subscription === true` | **nothing** (a subscription fee is a service, not a thing) |
-| `commerce.purchase` otherwise | `content` if `isDigitalGood`, else `inventory` |
-| any other `commerce.*` | `events` |
+| `commerce.purchase` with `metadata.Subscription === true` | `receipts` (a subscription fee is a service, so no `inventory`/`content` row — but it is a real purchase and the money must be visible) |
+| `commerce.purchase` otherwise | `receipts` + (`content` if `isDigitalGood`, else `inventory`), plus `observations` when a physical good carries a globally-unique identifier |
+| …any `commerce.purchase` carrying `metadata.ReceiptRollupId` | the `receipts` half is dropped — the per-order aggregate already itemises this line (`amazon.ts` stamps the marker) |
+| `commerce.receipt` (a detected order-confirmation email) | `receipts`, plus `communications` when `metadata.HumanCorrespondence === true` |
+| any other `commerce.*` | `events`, plus `receipts` when the record carries `metadata.LineItems` |
 | `communication.*` | `communications`, plus `position` if geotagged |
 | `web.bookmark` | `content` |
 | `web.page_view`, `web.search` | `browser_activity`, plus `position` if geotagged |
@@ -409,6 +415,127 @@ skipped with `NO_DESTINATION_REASON` and the stage summary counts it under the
 `no_destination` drop reason, which is classified a **gap**, not an expected
 outcome.
 
+**A purchase ALWAYS produces a receipt**, and that is the third scar. The
+receipt is what carries the merchant, the money and the moment; an
+`ci.objects` row alone cannot answer "where did I buy this?" and has no
+timeline presence at all. Before the commerce plane, a subscription fee routed
+NOWHERE and its spend was invisible.
+
+### 2.2.1 The commerce plane, and the order it is written in
+
+Three destinations, three questions, three tables:
+
+| Destination | Table | Answers | Written by |
+|---|---|---|---|
+| `product_models` | `ci.product_models` | WHAT the thing is, independent of this purchase | `ProductModelService.createManyDetailed` + `ObjectIdentifierService.upsertForSubjects` |
+| `receipts` | `ci.receipts` + `ci.receipt_line_items` | WHEN and WHERE money changed hands, and for WHAT | `ReceiptService.upsertFromExtraction` |
+| `observations` | `ci.object_observations` | THAT an identified object was somewhere at some moment | `ObjectObservationService.createMany` |
+
+Four things about this that are easy to get wrong:
+
+- **`product_models` is written FIRST** (`DESTINATION_ORDER`, and
+  `destinationsFor` prepends it so the two agree).
+  `ReceiptService.upsertFromExtraction` resolves each line's product by looking
+  up its identifier claim and only falls back to find-or-create by brand+model
+  when nothing resolves. Written second, an ISBN the same batch is about to
+  catalogue mints a *second*, guessed product row — and
+  `ci.object_identifiers` is **first-writer-wins**, so the guess keeps the
+  barcode forever.
+- **The catalogue row is keyed on the IDENTITY, not on the record.** Its
+  provenance triple is `(ci-import-tools, object_identity, '<namespace>:<value>')`,
+  so the same ISBN arriving from Goodreads and from an Amazon order is ONE row.
+  The parser that minted it is in `metadata.mintedFrom`.
+- **The receipt extraction sets `skipMint: true`.** The importer already owns
+  the `ci.objects` row for a purchase (`toInventoryInput`); letting
+  `ObjectMintService` create a unit from the same line is a duplicate
+  possession with no way to tell which is real.
+- **Money is integer MINOR units** on `ci.receipts` / `ci.receipt_line_items`.
+  The parsers speak major units, so `toReceiptInput` converts through the
+  currency's own exponent (`minorUnitExponent`) — dividing yen by 100 turns
+  ¥1,200 into ¥12.
+
+`line_number` is 1-based and **stable**: `(receipt_id, line_number)` is the
+natural key `replaceLineItems` upserts on, and it folds within-batch repeats
+last-write-wins — so two lines sharing a number does not fail, it silently
+DELETES one.
+
+**A negative amount is refused, not written.** The canonical TOTAL chain reaches
+`Amount` / `Net` / `Gross` / `Total Owed`, which are SIGNED ledger columns:
+PayPal books a refund as a negative `Amount`, and `amazon.ts` writes `Total`
+verbatim from a CSV that does the same. Neither `ci.receipts.total_minor` nor
+`ci.receipt_line_items.total_price_minor` has a CHECK, so `-19.99` landed
+silently as `-1999` and every "what did I spend" read summed a credit as a cost.
+`toCostMinorUnits` refuses it — on the line's unit price and total, and on the
+receipt's total, subtotal and tax — and a refused receipt total does **not** fall
+back to the sum of the lines, which would report whatever positive line survived
+the same guard. It is refused rather than *modelled* because `ci.receipts` has no
+status column to say "this is a credit" with: the lifecycle it carries
+(`extraction_state`) is about the READ of the document, not about the purchase.
+Modelling refunds honestly needs that column and a migration. The amount is not
+dropped on the floor — it stays on the row as `metadata.NegativeTotalRefused`.
+
+**WHERE the purchase happened** is `ci.receipts.place_entity_id`, the `place_prior`
+rung `ObjectResolutionService` leans on and the only thing that puts an imported
+purchase on a map. It was populated by no import path at all. `PushStage.receiptPlacesFor`
+resolves it two ways, in order: a staged edge naming a place entity (relations
+`place`/`location`/`venue`/`address`, read back through `ci_import.entity_mappings`
+— the same join a message's from/to uses), then the record's own `locationName`
+(the allow-listed `Location`/`Place`/`Venue`/`Address` metadata keys), ingested
+through `GraphIngestService` under the SAME natural key a staged `place` entity
+takes (`place:<lowercased name>`), so the two can never become two nodes for one
+location. **Today this rarely fires**: no commerce parser states an address yet,
+so the honest reading is that the wiring is in place and waiting on a source that
+does. `merchant_entity_id` is still null by choice — resolving every merchant
+string into a graph Organization is a node-volume decision that belongs with the
+merchant-resolution work, and `merchant_name` already carries the name as printed.
+
+**A rollup marker is computed in a PRE-PASS, never patched on after the push.**
+`amazon.ts` emits one item per order LINE and one aggregate per ORDER, and each
+line carries `metadata.ReceiptRollupId` naming its aggregate so `destinationsFor`
+suppresses the line's own single-line receipt. The aggregate can only be built
+after the last file (an order id legitimately spans two CSVs), so the marker used
+to be written onto the line items afterwards — safe, the reasoning went, because
+`StagedWriter` buffers the graph by reference. It buffers by reference AND
+splices the batch out at `DEFAULT_FLUSH_THRESHOLD`, then reads `item.metadata`
+inside the write, many awaits later. On a 10-file × 100-line export that left
+half the lines marker-less and duplicated their orders. **Anything that is part
+of a record's identity must be set before `pipeline.push`.**
+
+### 2.2.2 Receipt discovery in the mail importers
+
+`gmail.ts` runs `isLikelyReceipt` **before** its bulk gate and overrides it,
+because `isHumanCorrespondence` rejects Category Promotions/Updates,
+`List-Unsubscribe` and `no-reply@` senders — a precise description of how a
+merchant sends a receipt.
+
+- Flagged by `CI_IMPORT_RECEIPTS` (default **on**; `0`/`false`/`no`/`off` turns
+  it off and restores the old behaviour exactly).
+- The override is only as safe as its false-positive rate, so the weak paths
+  (a marketing-shaped subject, a shop-shaped sender) require **body evidence** —
+  a currency amount AND a receipt structure word. Only an unambiguous subject
+  ("Your receipt from …", "Invoice #4417") skips the body.
+- A rescued message is counted in the **keep** ledger
+  (`detail.sources[N].keeps.receipt_kept_from_bulk`), never in `drops`. The drop
+  ledger is the run's loss report; counting a save there reports it as a loss.
+- HTML-only bodies are flattened by `email_mime.htmlToText` before the body
+  signal reads them, and the body cap rises from 4k to 32k for a receipt (an
+  itemised order confirmation IS its body).
+- The message ID is **not** affected by that flattening. A message with no
+  `Message-ID` falls back to a sha1 of its headers plus its body, and that hash
+  is taken over the body as `parseMime` returns it — raw markup for an HTML-only
+  message — precisely because it predates `readableBody`. Hashing the flattened
+  text would give every such message a new id and fork it from the row a
+  previous import already staged, with no migration behind it. **An id must
+  outlive a change to how a body is READ.**
+- A non-media attachment on a receipt is stamped `receipt_document` instead of
+  `file` on the staged `metadata.MediaAttachments` descriptor (`gmail.ts`,
+  `email.ts`, and `canonical.communicationMediaAttachments` passes the value
+  through). **Nothing consumes it yet.**
+  `communicationMediaAttachments` has no callers anywhere in the repo — that is
+  pre-existing, not something this work removed — so no `ci.content` row is
+  catalogued from it today and no attachment is currently filed as a receipt
+  document. The descriptor is written and correct; the reader is missing.
+
 ### 2.3 The provenance triple
 
 Every input carries `(source_type, source_system, source_id)`:
@@ -448,7 +575,7 @@ appliance the unfiltered query returns one
 | `ci.communications` | `communications_source_triple_uniq` | yes |
 | `ci.content` | `content_source_triple_uniq` | yes |
 | `ci.events` | `events_source_triple_uniq` | yes |
-| `ci.inventory` | `inventory_source_triple_uniq` | yes |
+| `ci.objects` | `objects_source_triple_uniq` | yes |
 | `ci.object_observations` | `object_observations_source_triple_uniq` | yes |
 | `ci.product_models` | `product_models_source_triple_uniq` | yes |
 | `ci.receipts` | `receipts_source_triple_uniq` | yes |
@@ -497,13 +624,17 @@ An **empty list means `DO NOTHING`** — find-or-return. The existing row is lef
 exactly as it is.
 
 The five keys map onto the destinations as: `communication` → `ci.communications`,
-`event` → `ci.events`, `item` → `ci.inventory` (the `ItemEntity` table),
+`event` → `ci.events`, `item` → `ci.objects` (the `ItemEntity` table),
 `content` → `ci.content`, `browser_activity` → `ci.browser_activity`. So:
 
-**for `ci.events`, `ci.inventory`, `ci.content` and `ci.browser_activity`, a
+**for `ci.events`, `ci.objects`, `ci.content` and `ci.browser_activity`, a
 re-import repairs nothing** — four of the five kinds in that list.
 `ci.communications` self-heals only those five named columns. `ci.position` is
-not in the list at all and does not self-heal (§2.3). This has bitten several
+not in the list at all and does not self-heal (§2.3), and neither is
+`ci.product_models` — but `ci.receipts` is the exception that does: its header
+is a PATCH of the fields an extraction actually supplied
+(`ReceiptService.upsertHeader`), and its lines re-upsert on
+`(receipt_id, line_number)`, so a re-import genuinely corrects them. This has bitten several
 fixes in a row, in both directions:
 
 1. **A code fix alone does not fix the corpus.** "Fixed forward" means *new*

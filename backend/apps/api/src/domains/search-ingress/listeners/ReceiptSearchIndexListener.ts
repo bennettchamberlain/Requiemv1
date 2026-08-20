@@ -27,7 +27,7 @@ import { type WeightedText } from '../types';
  * A receipt is indexed as itself rather than only through the things minted off
  * it: "the Home Depot receipt from March" is a question about the EVIDENCE, and
  * a receipt whose lines never minted anything (a meal, a service call) has no
- * inventory row to be found through at all.
+ * object row to be found through at all.
  */
 @Injectable()
 export class ReceiptSearchIndexListener {

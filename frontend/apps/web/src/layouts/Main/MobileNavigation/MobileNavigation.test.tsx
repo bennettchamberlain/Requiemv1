@@ -29,7 +29,7 @@ vi.mock('@/components/modals/AddItemModal', () => ({
   AddPlaceModal: () => null,
 }));
 vi.mock('@/components/modals/AddItemModal/AddConceptModal.tsx', () => ({ AddConceptModal: () => null }));
-vi.mock('@/components/modals/InventoryItemModal', () => ({ InventoryItemModal: () => null }));
+vi.mock('@/components/modals/ThingModal', () => ({ ThingModal: () => null }));
 
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api');

@@ -637,7 +637,7 @@ adjectives.
 > **These are machinery numbers from a seeded corpus, not appliance numbers.**
 > An earlier version of this suite ran over the operator's own 324,044 imported
 > events and kept them safe with a rolled-back transaction. That did not hold —
-> it committed ~599,000 ledger rows, 2,147 `ci.inventory` objects and 2,875
+> it committed ~599,000 ledger rows, 2,147 `ci.objects` objects and 2,875
 > time-provenance labels into a personal archive. A test that drives real
 > enrichers writes real tables by name, and the only isolation worth having for
 > that is a database of its own. The ratios below (ticks to converge, attempts
@@ -653,7 +653,7 @@ adjectives.
 | Ticks to converge | **3** (1,000 + 1,000 + 790 ids) |
 | Wall clock per tick | 137, 133, 104 ms |
 | Outcomes | 2,170 `done`, 620 `skipped: order_rollup_no_line_item`, 0 failed |
-| Objects written | 2,170 `ci.inventory` rows, from 0 — and `done` matches that count exactly |
+| Objects written | 2,170 `ci.objects` rows, from 0 — and `done` matches that count exactly |
 | Idle ticks after convergence | 5, **all dispatching 0** |
 | Rows claimed more than once | **0** (`max(attempts) = 1` across all 2,790) |
 
@@ -726,7 +726,7 @@ is a recurring bill.
 | `hit the hop ceiling (10000)` in the log | the cursor advances but the source never drains | the applicability predicate is matching rows the stage never terminates |
 | `running` rows that never settle | worker died mid-slice | nothing to do. The 15-minute claim lease expires and the next sweep re-selects them |
 | `quarantined` climbing | 5 failed attempts | read the reason, fix the enricher, **bump the version** — a bump re-admits quarantined rows |
-| Ledger grows but nothing is enriched | the stage's target table is not being written | compare `done` against a `count(*)` on the target, e.g. `ci.inventory WHERE source_type = 'promote.object'` |
+| Ledger grows but nothing is enriched | the stage's target table is not being written | compare `done` against a `count(*)` on the target, e.g. `ci.objects WHERE source_type = 'promote.object'` |
 
 The single most useful check, and the one to run first:
 
