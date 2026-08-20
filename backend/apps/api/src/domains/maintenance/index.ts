@@ -130,7 +130,7 @@ export {
   SearchIndexBackfillService,
   BACKFILLABLE_ENTITIES,
   PIPELINE_COVERED_STAGES,
-  expandBackfillEntityTypes,
+  normalizeBackfillEntityTypes,
   type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';
