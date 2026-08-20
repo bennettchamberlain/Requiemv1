@@ -64,6 +64,24 @@ describe('Roblox datasource', () => {
     expect(messages[0].item.timestamp instanceof Date).toBe(true);
   });
 
+  it('classifies by the file name, not by the directory path it was extracted to', async () => {
+    // The report is a user-supplied folder — an inbox subfolder, a Downloads
+    // directory, the checkout a test runs from. Words in ANY ancestor segment
+    // must not decide the classification of every row inside it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-roblox-message-order-'));
+    for (const name of fs.readdirSync(ROBLOX_DIR)) {
+      fs.copyFileSync(path.join(ROBLOX_DIR, name), path.join(dir, name));
+    }
+
+    const pipeline = await run(dir);
+    expect(pipeline.length).toBe(6);
+    const byClass = (c: string) => pipeline.filter((p) => p.item.classification === c).length;
+    // 'message' and 'order' both appear in the parent directory name above.
+    expect(byClass('message')).toBe(2); // ChatLogs.csv
+    expect(byClass('purchase')).toBe(2); // PurchaseHistory.json
+    expect(byClass('social')).toBe(2); // LoginHistory.csv
+  });
+
   it('malformed input does not throw', async () => {
     const p = tmpFile('{ broken json,,,\n\x00\x01', 'roblox.json');
     await expect(run(p)).resolves.toBeDefined();
