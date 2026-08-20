@@ -61,8 +61,13 @@ export const PROMOTE_EDGE_PLACE_STAGE_ID = 'promote.edge_place';
  * Generation 4: life-graph matrix alignment — Event→Place and receipt place
  * edges store LOCATED_AT (HAPPENED_AT is a write alias); Content→Event stores
  * DOCUMENTS; Place→Place PART_OF and File→File DERIVED_FROM rules added.
+ *
+ * Generation 5: `communication.has_attachment` — File→Communication
+ * ATTACHED_TO, so a successfully uploaded message attachment is reachable
+ * from the message it arrived in (previously nothing ever wrote this edge,
+ * even though the graph domain already declared it a valid pair).
  */
-export const EDGE_PROJECTION_RULE_GENERATION = 4;
+export const EDGE_PROJECTION_RULE_GENERATION = 5;
 
 /**
  * Communication-leg version: this stage's edges are a COPY of what
@@ -206,7 +211,11 @@ export const PROMOTE_EDGE_COMMUNICATION_SOURCE: StageSource = {
   userColumn: 'user_id',
   predicate:
     `(s.from_entity_id IS NOT NULL ` +
-    `OR (s.to_entity_ids IS NOT NULL AND cardinality(s.to_entity_ids) > 0))`,
+    `OR (s.to_entity_ids IS NOT NULL AND cardinality(s.to_entity_ids) > 0) ` +
+    // communication.has_attachment (generation 5) needs no person-link at
+    // all — a message with an attachment is due the moment MediaStage
+    // uploads it, independent of whether anyone has resolved its sender.
+    `OR jsonb_array_length(s.attachments) > 0)`,
 };
 
 /** Same shape over `ci.events`: any of the four linkage columns populated
