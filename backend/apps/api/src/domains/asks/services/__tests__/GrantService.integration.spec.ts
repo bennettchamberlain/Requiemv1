@@ -5,7 +5,7 @@ import type { LoggerService } from '@ci/common/logging';
 
 import { databaseAvailability, resolveConnection } from '../../../__tests__/support/databaseConnection';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
-import type { Ask } from '../../entities/AskEntity';
+import { AskEntity, type Ask } from '../../entities/AskEntity';
 import { AskGrantEntity } from '../../entities/AskGrantEntity';
 import { GrantService } from '../GrantService';
 
@@ -51,7 +51,7 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
   const strangerAsker = { userId: uuidv7() };
   const strangerOwner = { userId: uuidv7() };
 
-  const noopLogger = { setContext: () => undefined } as unknown as LoggerService;
+  const noopLogger = { setContext: () => undefined, log: () => undefined } as unknown as LoggerService;
 
   function askBetween(askerUserId: string, responderUserId: string, overrides: Partial<Ask> = {}): Ask {
     return {
@@ -86,7 +86,7 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
             password: connection.password,
             database: connection.database,
           }),
-      entities: [AskGrantEntity],
+      entities: [AskGrantEntity, AskEntity],
       synchronize: false,
       extra: { options: '-c search_path=ci,public' },
     });
@@ -111,7 +111,11 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
       );
     }
 
-    grantService = new GrantService(dataSource.getRepository(AskGrantEntity), noopLogger);
+    grantService = new GrantService(
+      dataSource.getRepository(AskGrantEntity),
+      dataSource.getRepository(AskEntity),
+      noopLogger,
+    );
   });
 
   afterAll(async () => {
@@ -207,5 +211,132 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
     ).resolves.toEqual({ decision: 'review' });
 
     await grantService.revoke(owner, block.id);
+  });
+
+  /**
+   * The grant LIFECYCLE columns, against the real DDL.
+   *
+   * These four facts are all schema-shaped — an expiry column that exists and is
+   * honoured, a supersede chain that a self-referencing FK will actually accept,
+   * a history read with no liveness clause, and a cascade that writes to
+   * `ci.asks`. None of them can be proved by a mocked repository: the unit specs
+   * next door show the service's INTENT, and only real DDL shows that the
+   * columns, constraints and cross-table write behave.
+   */
+  async function insertAsk(askerUserId: string, responderUserId: string, consentBasis: string) {
+    const id = uuidv7();
+    await dataSource.query(
+      `INSERT INTO ci.asks (id, asker_user_id, responder_user_id, query, status, consent_basis, direction)
+       VALUES ($1, $2, $3, $4::jsonb, 'delivered', $5, 'local')`,
+      [id, askerUserId, responderUserId, JSON.stringify({ queryType: 'photos', prompt: 'q' }), consentBasis],
+    );
+
+    return id;
+  }
+
+  async function readAsk(id: string): Promise<{ status: string; consent_basis: string | null }> {
+    const [row] = await dataSource.query('SELECT status, consent_basis FROM ci.asks WHERE id = $1', [id]);
+
+    return row;
+  }
+
+  it('SECURITY: revoking a grant retroactively withdraws pre-authorization from a delivered ask', async () => {
+    const grant = await grantService.create(owner, {
+      granteeUserId: grantee.userId,
+      queryType: 'photos',
+      mode: 'auto',
+    });
+    const askId = await insertAsk(grantee.userId, owner.userId, grant.id);
+
+    await grantService.revoke(owner, grant.id);
+
+    // `delivered` + a consent basis is the shape `isAnswerable` accepts, so the
+    // ask must lose the basis, not merely stop matching for FUTURE asks.
+    const after = await readAsk(askId);
+    expect(after.consent_basis).toBeNull();
+    expect(after.status).toBe('under_review');
+
+    await dataSource.query('DELETE FROM ci.asks WHERE id = $1', [askId]);
+  });
+
+  it('SECURITY: a lapsed grant (expires_at in the past) stops auto-answering', async () => {
+    const grant = await grantService.create(owner, {
+      granteeUserId: grantee.userId,
+      queryType: 'lapsing',
+      mode: 'auto',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const query = { queryType: 'lapsing', prompt: 'q' };
+
+    await expect(grantService.evaluate(askBetween(grantee.userId, owner.userId, { query }))).resolves.toEqual(
+      { decision: 'auto', grantId: grant.id },
+    );
+
+    // Same row, evaluated after the expiry — nothing was revoked, and the row is
+    // still `revoked_at IS NULL`, so only the expiry can be excluding it.
+    await expect(
+      grantService.evaluate(
+        askBetween(grantee.userId, owner.userId, { query }),
+        new Date(Date.now() + 120_000),
+      ),
+    ).resolves.toEqual({ decision: 'review' });
+
+    await grantService.revoke(owner, grant.id);
+  });
+
+  it('a change writes a supersede chain the FK accepts, and cascades like a revoke', async () => {
+    const original = await grantService.create(owner, {
+      granteeUserId: grantee.userId,
+      queryType: 'superseding',
+      dataClass: 'beach',
+      mode: 'auto',
+    });
+    const askId = await insertAsk(grantee.userId, owner.userId, original.id);
+
+    const replacement = await grantService.supersede(owner, original.id, { mode: 'review' });
+
+    expect(replacement.id).not.toBe(original.id);
+    expect(replacement.version).toBe(2);
+    expect(replacement.supersedesGrantId).toBe(original.id);
+    expect(replacement.dataClass).toBe('beach');
+
+    const previous = await grantService.findByIdForOwner(owner, original.id);
+    expect(previous?.revokedAt).not.toBeNull();
+    expect(previous?.revocationReason).toBe('superseded');
+    // The old posture survives on the old row — that is the whole point of not
+    // UPDATE-ing in place.
+    expect(previous?.mode).toBe('auto');
+
+    const after = await readAsk(askId);
+    expect(after.consent_basis).toBeNull();
+    expect(after.status).toBe('under_review');
+
+    // Both rows are in history; only the replacement is in the active list.
+    const history = await grantService.listHistoryForOwner(owner);
+    expect(history.map((g) => g.id)).toEqual(expect.arrayContaining([original.id, replacement.id]));
+
+    const active = await grantService.listForOwner(owner);
+    expect(active.map((g) => g.id)).toContain(replacement.id);
+    expect(active.map((g) => g.id)).not.toContain(original.id);
+
+    await dataSource.query('DELETE FROM ci.asks WHERE id = $1', [askId]);
+    await grantService.revoke(owner, replacement.id);
+  });
+
+  it('a revoked grant is still resolvable by id — the History surface depends on it', async () => {
+    const grant = await grantService.create(owner, {
+      granteeUserId: grantee.userId,
+      queryType: 'resolvable',
+      mode: 'auto',
+    });
+    await grantService.revoke(owner, grant.id);
+
+    const found = await grantService.findByIdForOwner(owner, grant.id);
+    expect(found?.id).toBe(grant.id);
+    expect(found?.revocationReason).toBe('revoked');
+
+    // …but it must not leak to another owner, and must not come back as active.
+    await expect(grantService.findByIdForOwner(strangerOwner, grant.id)).resolves.toBeNull();
+    expect((await grantService.listForOwner(owner)).map((g) => g.id)).not.toContain(grant.id);
   });
 });

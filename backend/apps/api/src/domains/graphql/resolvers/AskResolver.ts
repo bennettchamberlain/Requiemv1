@@ -23,7 +23,12 @@ import {
 import { OutboundAskService, type PeerAskRequest, PeerLinkService } from '@ci/domains/peers';
 
 import { AskAnswerType } from '../types/AskAnswerType';
-import { CreateAskGrantInput, CreateAskInput, SendPeerAskInput } from '../types/AskInputs';
+import {
+  CreateAskGrantInput,
+  CreateAskInput,
+  SendPeerAskInput,
+  UpdateAskGrantInput,
+} from '../types/AskInputs';
 import {
   AskGrantPayload,
   AskPayload,
@@ -384,6 +389,94 @@ export class AskResolver {
     const rows = await this.auditService.listForResponder(toServiceContext(context));
 
     return rows.map(AskAuditType.toType);
+  }
+
+  /**
+   * CHANGE a standing grant — the Grant Manager matrix's core interaction
+   * (`onChangeMode(grantId, mode)`), which until now had no backing mutation at
+   * all. The only expressible "change" was `createAskGrant` a second time, which
+   * left BOTH rows live and both matching the same asks.
+   *
+   * The change is applied as a supersede rather than an in-place update, so the
+   * previous posture stays on the record; see `GrantService.supersede`. The
+   * returned grant is the NEW row — its `supersedesGrantId` names the one it
+   * replaced, and `myAskGrantHistory` shows both.
+   */
+  @Mutation(() => AskGrantPayload)
+  async updateAskGrant(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+    @Args('input') input: UpdateAskGrantInput,
+  ): Promise<AskGrantPayload> {
+    if (!(await this.enabled())) {
+      return { success: false };
+    }
+
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('ask-grant', gid);
+
+    // `clearExpiry` and `expiresAt` are contradictory instructions, and guessing
+    // which one the caller meant is how a grant ends up permanent by accident.
+    if (input.clearExpiry === true && input.expiresAt != null) {
+      throw new BadRequestException('Pass either expiresAt or clearExpiry, not both');
+    }
+
+    const expiresAt = input.clearExpiry === true ? null : input.expiresAt;
+
+    const grant = await this.grantService.supersede(serviceContext, id, {
+      mode: input.mode as GrantMode | undefined,
+      dataClass: input.dataClass,
+      // An omitted `dataClasses` inherits the previous scope; passing an empty
+      // list is a real instruction ("no classes"), not an absence.
+      scope: input.dataClasses ? { dataClasses: input.dataClasses } : undefined,
+      purpose: input.purpose,
+      expiresAt,
+    });
+
+    return { success: true, grant: AskGrantType.toType(grant) };
+  }
+
+  /**
+   * Every grant the caller ever wrote, newest first — revoked, lapsed and
+   * superseded included.
+   *
+   * Separate from {@link myAskGrants} (which stays active-only) because the two
+   * answer different questions: that one is "what am I sharing?", this one is
+   * "what have I ever shared, and what happened to it?". History is also what
+   * lets a disclosure-history row resolve a `consentBasis` naming a grant that
+   * has since been revoked — before this, every read path filtered revoked
+   * grants out, so that basis resolved to nothing.
+   */
+  @Query(() => [AskGrantType])
+  async myAskGrantHistory(@Context() context: RequestContext): Promise<AskGrantType[]> {
+    if (!(await this.enabled())) {
+      return [];
+    }
+
+    const rows = await this.grantService.listHistoryForOwner(toServiceContext(context));
+
+    return rows.map(AskGrantType.toType);
+  }
+
+  /**
+   * One of the caller's own grants by id, in ANY lifecycle state — the lookup
+   * behind "what was the basis for this disclosure?" when the grant behind it
+   * has since been revoked.
+   */
+  @Query(() => AskGrantType, { nullable: true })
+  async askGrant(
+    @Context() context: RequestContext,
+    @Args('id', { type: () => ID }) gid: string,
+  ): Promise<AskGrantType | null> {
+    if (!(await this.enabled())) {
+      return null;
+    }
+
+    const serviceContext = toServiceContext(context);
+    const id = GlobalUID.parse('ask-grant', gid);
+    const grant = await this.grantService.findByIdForOwner(serviceContext, id);
+
+    return grant ? AskGrantType.toType(grant) : null;
   }
 
   private async enabled(): Promise<boolean> {

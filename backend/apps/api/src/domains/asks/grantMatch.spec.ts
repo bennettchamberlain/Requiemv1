@@ -1,5 +1,5 @@
 import type { AskGrant } from './entities/AskGrantEntity';
-import { evaluateGrant } from './grantMatch';
+import { evaluateGrant, isGrantActive } from './grantMatch';
 import type { AskGrantScope, AskQuery, GrantMode } from './types';
 
 const NOW = new Date('2026-07-15T00:00:00Z');
@@ -15,7 +15,12 @@ function grant(overrides: Partial<AskGrant> = {}): AskGrant {
     mode: 'auto' as GrantMode,
     purpose: null,
     createdAt: NOW,
+    updatedAt: NOW,
     revokedAt: null,
+    expiresAt: null,
+    revocationReason: null,
+    version: 1,
+    supersedesGrantId: null,
     ...overrides,
   } as AskGrant;
 }
@@ -74,10 +79,80 @@ describe('evaluateGrant', () => {
       decision: 'deny',
       grantId: 'block-medical',
     });
-    // A concrete ask in a different class is unaffected by the medical block.
+    // A concrete ask in a different class is unaffected by the medical block —
+    // but it does NOT auto-answer either: `auto-health` names no data class, and
+    // a class-less auto grant is not a wildcard (see the DEFECT 1 block below).
+    // It is downgraded to owner review with that grant as the basis.
     expect(evaluateGrant(ask({ queryType: 'health', dataClass: 'fitness' }), grants, NOW)).toEqual({
-      decision: 'auto',
+      decision: 'review',
       grantId: 'auto-health',
+    });
+  });
+
+  // DEFECT 1 — the auto/block asymmetry on a null data_class.
+  describe('SECURITY: a class-less `auto` grant is not a wildcard', () => {
+    it('does not auto-answer an ask that declares a class the grant never named', () => {
+      // The audit's exact reproduction: an `auto` grant on the `photos` query
+      // type with data_class NULL, and an ask declaring `medical-records`.
+      const plainPhotos = grant({ id: 'auto-photos', mode: 'auto', queryType: 'photos', dataClass: null });
+
+      expect(evaluateGrant(ask({ dataClass: 'medical-records' }), [plainPhotos], NOW)).toEqual({
+        decision: 'review',
+        grantId: 'auto-photos',
+      });
+    });
+
+    it('still auto-answers a class-less ask (the archetypes that have no data class)', () => {
+      const plain = grant({ id: 'auto-availability', mode: 'auto', queryType: 'availability' });
+
+      expect(evaluateGrant(ask({ queryType: 'availability' }), [plain], NOW)).toEqual({
+        decision: 'auto',
+        grantId: 'auto-availability',
+      });
+    });
+
+    it('a class-less BLOCK stays a wildcard — the asymmetry is the point', () => {
+      // Both nulls resolve toward denial: broad for block, narrow for auto.
+      const blockAll = grant({ id: 'block-all', mode: 'block', dataClass: null });
+
+      expect(evaluateGrant(ask({ dataClass: 'medical-records' }), [blockAll], NOW)).toEqual({
+        decision: 'deny',
+        grantId: 'block-all',
+      });
+    });
+
+    it('an explicitly class-named auto grant is unaffected', () => {
+      const named = grant({ id: 'auto-medical', mode: 'auto', dataClass: 'medical-records' });
+      const enumerated = grant({ id: 'auto-set', mode: 'auto', scope: { dataClasses: ['medical-records'] } });
+
+      expect(evaluateGrant(ask({ dataClass: 'medical-records' }), [named], NOW)).toEqual({
+        decision: 'auto',
+        grantId: 'auto-medical',
+      });
+      expect(evaluateGrant(ask({ dataClass: 'medical-records' }), [enumerated], NOW)).toEqual({
+        decision: 'auto',
+        grantId: 'auto-set',
+      });
+    });
+
+    it('a whitespace-only data_class does not count as naming a class', () => {
+      // canonicalDataClass('  ') is null, so this must behave like data_class NULL
+      // rather than like a class literally named "  ".
+      const blank = grant({ id: 'auto-blank', mode: 'auto', dataClass: '   ' });
+
+      expect(evaluateGrant(ask({ dataClass: 'medical-records' }), [blank], NOW).decision).toBe('review');
+    });
+
+    it('a matching explicit `review` grant is preferred as the basis over a downgraded auto', () => {
+      const grants = [
+        grant({ id: 'auto-wild', mode: 'auto', dataClass: null }),
+        grant({ id: 'review-explicit', mode: 'review', dataClass: null }),
+      ];
+
+      expect(evaluateGrant(ask({ dataClass: 'beach' }), grants, NOW)).toEqual({
+        decision: 'review',
+        grantId: 'review-explicit',
+      });
     });
   });
 
@@ -111,9 +186,37 @@ describe('evaluateGrant', () => {
     expect(evaluateGrant(ask(), [revoked], NOW)).toEqual({ decision: 'review' });
   });
 
-  it('treats a future revocation as still active', () => {
-    const future = grant({ mode: 'auto', revokedAt: new Date('2026-07-16T00:00:00Z') });
-    expect(evaluateGrant(ask(), [future], NOW)).toEqual({ decision: 'auto', grantId: 'grant-1' });
+  // DEFECTS 3 + 4 — `revoked_at` is an event, `expires_at` is the schedule.
+  describe('revocation vs expiry', () => {
+    it('SECURITY: a FUTURE revokedAt is revoked, not "scheduled"', () => {
+      // This used to evaluate to `auto`: the matcher read a future `revoked_at`
+      // as a pending expiry. Every SQL read path filters `revoked_at IS NULL`,
+      // so the database already considered such a grant gone — two readers of
+      // the same column disagreeing about whether consent stands. The branch is
+      // deleted; `expiresAt` below is the real schedule.
+      const future = grant({ mode: 'auto', revokedAt: new Date('2026-07-16T00:00:00Z') });
+      expect(evaluateGrant(ask(), [future], NOW)).toEqual({ decision: 'review' });
+    });
+
+    it('honours a future expiresAt as still active', () => {
+      const live = grant({ mode: 'auto', expiresAt: new Date('2026-12-31T00:00:00Z') });
+      expect(evaluateGrant(ask(), [live], NOW)).toEqual({ decision: 'auto', grantId: 'grant-1' });
+    });
+
+    it('SECURITY: ignores a grant whose expiresAt has passed', () => {
+      const lapsed = grant({ mode: 'auto', expiresAt: new Date('2026-07-14T00:00:00Z') });
+      expect(evaluateGrant(ask(), [lapsed], NOW)).toEqual({ decision: 'review' });
+    });
+
+    it('isGrantActive is the single liveness predicate the SQL paths reuse', () => {
+      expect(isGrantActive(grant(), NOW)).toBe(true);
+      expect(isGrantActive(grant({ revokedAt: new Date('2026-07-14T00:00:00Z') }), NOW)).toBe(false);
+      expect(isGrantActive(grant({ revokedAt: new Date('2026-07-16T00:00:00Z') }), NOW)).toBe(false);
+      expect(isGrantActive(grant({ expiresAt: new Date('2026-07-14T00:00:00Z') }), NOW)).toBe(false);
+      expect(isGrantActive(grant({ expiresAt: new Date('2026-07-16T00:00:00Z') }), NOW)).toBe(true);
+      // Expiry exactly at `now` has already passed.
+      expect(isGrantActive(grant({ expiresAt: NOW }), NOW)).toBe(false);
+    });
   });
 
   it('respects a grant pinned to a specific data class', () => {

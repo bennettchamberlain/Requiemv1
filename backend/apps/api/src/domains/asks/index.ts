@@ -68,7 +68,7 @@ export {
   AskExecutorService,
   AskAnswerService,
 };
-export { evaluateGrant, canonicalDataClass } from './grantMatch';
+export { evaluateGrant, canonicalDataClass, isGrantActive } from './grantMatch';
 export { checkSlidingWindow } from './rateLimit';
 export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems } from './disclosure';
 export {
@@ -107,11 +107,13 @@ export type {
   AskAuditOutcome,
   GrantMode,
   GrantDecision,
+  GrantRevocationReason,
   AskQuery,
   AskGrantScope,
   GrantEvaluation,
   CreateAskDto,
   CreateAskGrantDto,
+  UpdateAskGrantDto,
   RecordAskAuditDto,
   AnswerForm,
   AnswerSource,

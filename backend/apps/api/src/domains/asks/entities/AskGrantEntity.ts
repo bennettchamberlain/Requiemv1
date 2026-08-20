@@ -1,12 +1,19 @@
-import { Entity, PrimaryColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-import type { AskGrantScope, GrantMode } from '../types';
+import type { AskGrantScope, GrantMode, GrantRevocationReason } from '../types';
 
 /**
  * `ci.ask_grants` — standing consent for the ask path. Replaces reliance on the
  * single `saved_searches.is_public` boolean with a per-grantee, per-query-type
  * grant whose `mode` selects the Grant Manager's three-state posture
- * (auto / review / block). Revocable via `revokedAt`.
+ * (auto / review / block).
+ *
+ * Rows are **append-only from the owner's point of view**: a grant is revoked
+ * (`revokedAt`) or lapses (`expiresAt`), and CHANGING one writes a new row that
+ * points back at its predecessor via `supersedesGrantId` rather than mutating in
+ * place. Consent history is evidence — an UPDATE would erase what the owner
+ * previously allowed and for how long, which is precisely what a disclosure
+ * audit has to be able to reconstruct.
  */
 @Entity({ schema: 'ci', name: 'ask_grants' })
 export class AskGrantEntity {
@@ -46,8 +53,36 @@ export class AskGrantEntity {
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
+  @UpdateDateColumn({ type: 'timestamptz', name: 'updated_at' })
+  updatedAt!: Date;
+
+  /**
+   * When the owner withdrew this grant. An EVENT, never a schedule — see
+   * {@link expiresAt}, and `isGrantActive` in grantMatch.ts for why a future
+   * value here must not be read as "still active".
+   */
   @Column({ type: 'timestamptz', name: 'revoked_at', nullable: true })
   revokedAt!: Date | null;
+
+  /**
+   * Scheduled lapse — the Grant Manager's "Expires {date}". NULL means the grant
+   * stands until revoked. Distinct from {@link revokedAt} so the audit can tell
+   * "I withdrew this" from "this ran out".
+   */
+  @Column({ type: 'timestamptz', name: 'expires_at', nullable: true })
+  expiresAt!: Date | null;
+
+  /** Why the grant stopped being in force; only set alongside `revokedAt`. */
+  @Column({ type: 'text', name: 'revocation_reason', nullable: true })
+  revocationReason!: GrantRevocationReason | null;
+
+  /** 1 for an original grant, incremented by each supersede. */
+  @Column({ type: 'int', name: 'version', default: 1 })
+  version!: number;
+
+  /** The grant this row replaced, when it was written by a change (not a create). */
+  @Column({ type: 'uuid', name: 'supersedes_grant_id', nullable: true })
+  supersedesGrantId!: string | null;
 
   static toEgressType(entity: AskGrantEntity): AskGrant {
     return {
@@ -61,7 +96,12 @@ export class AskGrantEntity {
       mode: entity.mode,
       purpose: entity.purpose,
       createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
       revokedAt: entity.revokedAt,
+      expiresAt: entity.expiresAt,
+      revocationReason: entity.revocationReason,
+      version: entity.version,
+      supersedesGrantId: entity.supersedesGrantId,
     };
   }
 }

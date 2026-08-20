@@ -151,6 +151,20 @@ export class AskService {
       throw new BadRequestException(`Ask ${id} is not ready to answer (status: ${entity.status})`);
     }
 
+    // The consent basis was stamped at SUBMIT time and says nothing about now.
+    // Re-check the standing grant at ANSWER time, or a grant the owner revoked
+    // (or that lapsed) an hour ago still authorizes this disclosure.
+    //
+    // Scoped to the auto path on purpose: an ask in `answering` was approved by
+    // the owner for that specific ask, and that human decision is not undone by
+    // withdrawing an unrelated standing grant. Revocation of a STANDING
+    // pre-authorization is the thing that has to be retroactive.
+    if (isAuto && !(await this.grantService.isConsentStanding(AskEntity.toEgressType(entity)))) {
+      throw new BadRequestException(
+        `Ask ${id} was pre-authorized by a grant that is no longer in force; it needs owner review`,
+      );
+    }
+
     if (entity.status === 'delivered') {
       entity.status = assertAskTransition(entity.status, 'answering');
     }
