@@ -27,7 +27,10 @@ vi.mock('@/hooks', () => ({
 
 const fetchJson = vi.hoisted(() => vi.fn());
 
-vi.mock('@ci/common', () => ({ fetchJson }));
+vi.mock('@ci/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@ci/common')>()),
+  fetchJson,
+}));
 
 function letter(overrides: Partial<DeadLetter> = {}): DeadLetter {
   return {
