@@ -50,6 +50,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.cookie = 'csrfToken=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  sessionStorage.clear();
   // Drop the native runtime stub so the web-path tests aren't seen as native.
   delete (window as unknown as { Capacitor?: unknown }).Capacitor;
 });
@@ -176,6 +177,50 @@ describe('useAuth', () => {
     // The JWT was traded for a durable API key, minted via /api/keys and stored.
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/keys'))).toBe(true);
     expect(secureStore.get('ci.apiKey')).toBe('stored-api-key');
+  });
+
+  it('completePortalMemoryConnect mints a Memory API key from a portal bearer', async () => {
+    const secureStore = new Map<string, string>();
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        SecureStoragePlugin: {
+          get: vi.fn(async ({ key }: { key: string }) => {
+            if (!secureStore.has(key)) {
+              throw new Error('not found');
+            }
+
+            return { value: secureStore.get(key) };
+          }),
+          set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+            secureStore.set(key, value);
+
+            return { value: true };
+          }),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    setFetch((url) => {
+      if (url.endsWith('/api/keys')) {
+        return jsonResponse({ id: 'key-portal', key: 'portal-minted-key' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current[1].completePortalMemoryConnect('portal-id-token');
+    });
+
+    expect(ok).toBe(true);
+    expect(result.current[0].authenticated).toBe(true);
+    expect(secureStore.get('ci.apiKey')).toBe('portal-minted-key');
   });
 
   it('captures the error when login fails', async () => {
@@ -500,6 +545,58 @@ describe('useAuth', () => {
       ),
     ).toBe(true);
     expect(secureStore.get('ci.apiKey')).toBe('stored-api-key');
+  });
+
+  it('iOS: does not replay a consumed Memory OIDC code after remount', async () => {
+    const getLaunchUrl = vi.fn(async () => ({ url: 'companion://oidc/callback?code=otc-replay' }));
+    const addListener = vi.fn(async () => ({ remove: async () => undefined }));
+    const secureStore = new Map<string, string>();
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: {
+        App: { getLaunchUrl, addListener },
+        SecureStoragePlugin: {
+          get: vi.fn(async ({ key }: { key: string }) => {
+            if (!secureStore.has(key)) {
+              throw new Error('not found');
+            }
+
+            return { value: secureStore.get(key) };
+          }),
+          set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+            secureStore.set(key, value);
+
+            return { value: true };
+          }),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    let exchanges = 0;
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/oidc/native/exchange')) {
+        exchanges += 1;
+
+        return jsonResponse({ accessToken: 'native-jwt' });
+      }
+
+      if (url.endsWith('/api/keys')) {
+        return jsonResponse({ id: 'key-1', key: 'stored-api-key' });
+      }
+
+      return emptyResponse();
+    });
+
+    const first = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(first.result.current[0].authenticated).toBe(true));
+    first.unmount();
+
+    const second = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(second.result.current[0].authenticated).toBe(true));
+    expect(exchanges).toBe(1);
   });
 
   it('Android: does not consume getLaunchUrl for Memory OIDC', async () => {

@@ -90,6 +90,51 @@ export function isIosPlatform(): boolean {
 }
 
 /**
+ * Loopback / .localhost / .local appliance URLs. iOS must not treat these as a
+ * finished pairing — the phone always goes through Portal cloud-connect.
+ */
+export function isLocalApplianceOrigin(url: string): boolean {
+  if (!url) {
+    return true;
+  }
+
+  try {
+    const { hostname } = new URL(url);
+
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local')
+    );
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Whether the native shell should send the user through `/device-connect`.
+ *
+ * iOS always uses that Portal cloud-connect flow. A leftover docker / LAN origin
+ * does not skip it. Android still only pairs when no origin is set yet.
+ */
+export function needsNativeCloudConnect(): boolean {
+  if (!isNativePlatform()) {
+    return false;
+  }
+
+  const origin = getApiBaseUrl();
+
+  if (!origin) {
+    return true;
+  }
+
+  return isIosPlatform() && isLocalApplianceOrigin(origin);
+}
+
+/**
  * Initialize the API origin at startup. Call once from the app entrypoint before
  * rendering. On web this is a no-op (origin stays `''` → same-origin). On native it
  * loads the user-configured server origin from localStorage (which the Capacitor

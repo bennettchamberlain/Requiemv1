@@ -5,8 +5,9 @@ import {
   DeviceLayoutProvider,
   LoadingPage,
   OutboxQueueProvider,
-  getApiBaseUrl,
+  isIosPlatform,
   isNativePlatform,
+  needsNativeCloudConnect,
 } from '@ci/common';
 import {
   BrowserRouter as Router,
@@ -154,13 +155,13 @@ function AppRoutes() {
   // the user has enabled it in Settings -> Location. Inert when disabled.
   useLocationTracking();
 
-  // On the native app the API origin must be configured before anything else can
-  // load. Route to `/device-connect` (Portal picker). `/server` is Advanced URL
-  // entry. `/connect` is Sources and must not be used here.
+  // Native pairing: `/device-connect` is Portal cloud-connect; `/server` is the
+  // Advanced URL fallback. iOS always uses cloud-connect (a leftover docker/LAN
+  // origin does not skip it). `/connect` is Sources and must not be used here.
   useEffect(() => {
     const pairing = location.pathname === '/device-connect' || location.pathname === '/server';
 
-    if (isNativePlatform() && !getApiBaseUrl() && !pairing) {
+    if (needsNativeCloudConnect() && !pairing) {
       navigate('/device-connect', { replace: true });
     }
   }, [location.pathname, navigate]);
@@ -172,7 +173,9 @@ function AppRoutes() {
           path="/"
           element={
             <RedirectKnownUser>
-              <SplashPage />
+              {/* Native: Safari / cold start always reopens `/`. The marketing
+                  splash is web-only; the phone's first screen is cloud-connect. */}
+              {isNativePlatform() ? <Navigate to="/device-connect" replace /> : <SplashPage />}
             </RedirectKnownUser>
           }
         />
@@ -202,9 +205,15 @@ function AppRoutes() {
           <Route
             path="/login"
             element={
-              <RedirectKnownUser>
-                <LoginPage />
-              </RedirectKnownUser>
+              // iOS always cloud-connects. Safari restores the last SPA path
+              // (`/login` from an earlier hop), which dropped Portal PKCE.
+              isIosPlatform() ? (
+                <Navigate to="/device-connect" replace />
+              ) : (
+                <RedirectKnownUser>
+                  <LoginPage />
+                </RedirectKnownUser>
+              )
             }
           />
 
