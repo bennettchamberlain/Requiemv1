@@ -259,14 +259,15 @@ cd frontend/apps/ios
 # assets/ holds: icon-only.png, icon-foreground.png, icon-background.png (1024²)
 #                splash.png, splash-dark.png (2732²)
 npx @capacitor/assets generate \
-  --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#0b1418' \
-  --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#0b1418'
+  --iconBackgroundColor '#000000' --iconBackgroundColorDark '#000000' \
+  --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#0b1f28'
 ```
 
-The current icon is the CI globe mark (rendered from
-`frontend/apps/web/public/logo.svg` at 1024px). Re-run after changing the artwork,
-then rebuild. (Note: `icon-only.png` is required for the flat iOS/legacy icon; without
-it the iOS icon falls back to the tool's placeholder.)
+The home-screen icon is the Companion Memory mark from CI-Marketplace
+(`apps/ci-memory/metadata/logo.png` — neural-map brain on black). The splash
+keeps the CI globe, slightly larger than the original 201px mark. Re-run after
+changing the artwork, then rebuild. (Note: `icon-only.png` is required for the
+flat iOS/legacy icon; without it the iOS icon falls back to the tool's placeholder.)
 
 ## iOS 26 SDK compatibility (re-apply if you regenerate `ios/`)
 
