@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
@@ -24,9 +24,16 @@ export class AskAuditService {
     this.logger.setContext(AskAuditService.name);
   }
 
-  /** Record the outcome of an ask. */
-  async record(data: RecordAskAuditDto): Promise<AskAudit> {
-    const record = this.auditRepository.create({
+  /**
+   * Record the outcome of an ask.
+   *
+   * `manager` enrolls the write in a caller-owned transaction, so the audit and
+   * the answer it describes commit together or not at all. Omitted, the write
+   * runs on its own connection exactly as before.
+   */
+  async record(data: RecordAskAuditDto, manager?: EntityManager): Promise<AskAudit> {
+    const repository = this.repository(manager);
+    const record = repository.create({
       id: uuidv7(),
       askId: data.askId,
       askerUserId: data.askerUserId,
@@ -37,8 +44,9 @@ export class AskAuditService {
       consentBasis: data.consentBasis ?? null,
       outcome: data.outcome,
       disclosedEntities: data.disclosedEntities ?? [],
+      backingEntities: data.backingEntities ?? [],
     });
-    const entity = await this.auditRepository.save(record);
+    const entity = await repository.save(record);
 
     return AskAuditEntity.toEgressType(entity);
   }
@@ -51,5 +59,15 @@ export class AskAuditService {
     });
 
     return rows.map(AskAuditEntity.toEgressType);
+  }
+
+  /**
+   * The transaction's repository when one is supplied, otherwise the injected
+   * one. `manager.getRepository` is what binds the write to the caller's
+   * transaction — the injected repository has its own connection and would
+   * commit independently, which is exactly the split this exists to close.
+   */
+  private repository(manager?: EntityManager): Repository<AskAuditEntity> {
+    return manager ? manager.getRepository(AskAuditEntity) : this.auditRepository;
   }
 }

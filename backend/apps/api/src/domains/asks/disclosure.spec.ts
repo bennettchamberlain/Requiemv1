@@ -1,4 +1,4 @@
-import { buildDisclosedAnswer, formDisclosesItems, inferAnswerForm } from './disclosure';
+import { buildDisclosedAnswer, countFreeSummary, formDisclosesItems, inferAnswerForm } from './disclosure';
 import type { AskQuery, DisclosedItem } from './types';
 
 function query(overrides: Partial<AskQuery> = {}): AskQuery {
@@ -72,5 +72,28 @@ describe('buildDisclosedAnswer', () => {
     const existenceNone = buildDisclosedAnswer({ form: 'existence', matches: [], consentBasis: null });
     expect(existenceNone.items).toEqual([]);
     expect(existenceNone.summary).toMatch(/none/i);
+  });
+});
+
+/**
+ * The summary the ASKER is allowed to read. `buildSummary` and the ceiling's
+ * `countOnlySummary` both put the match count into prose, so gating only the
+ * numeric field moved the oracle rather than closing it.
+ */
+describe('countFreeSummary', () => {
+  it('never contains a digit, for any form', () => {
+    const forms = ['boolean', 'existence', 'attribute', 'identity', 'retrieval'] as const;
+    for (const form of forms) {
+      expect(countFreeSummary(form, true)).not.toMatch(/\d/);
+      expect(countFreeSummary(form, false)).not.toMatch(/\d/);
+    }
+  });
+
+  it('still distinguishes "something" from "nothing" — the boolean floor the rung allows', () => {
+    expect(countFreeSummary('boolean', true)).toBe('Yes.');
+    expect(countFreeSummary('boolean', false)).toBe('No.');
+    expect(countFreeSummary('existence', true)).toBe('They have at least one matching item.');
+    expect(countFreeSummary('existence', false)).toBe('They have none.');
+    expect(countFreeSummary('identity', true)).toBe('Confirmed.');
   });
 });

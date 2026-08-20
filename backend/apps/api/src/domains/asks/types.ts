@@ -178,5 +178,11 @@ export interface RecordAskAuditDto {
   query: AskQuery;
   consentBasis?: string | null;
   outcome: AskAuditOutcome;
+  /** Entity references the ASKER actually received. Empty for non-itemizing forms. */
   disclosedEntities?: string[];
+  /**
+   * Entity ids the answer was computed over (post-redaction, PRE-ceiling).
+   * Owner-visible accountability only — never disclosed to the asker.
+   */
+  backingEntities?: string[];
 }

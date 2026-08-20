@@ -27,6 +27,7 @@ function makeResolver(enabled: boolean) {
     decline: jest.fn(),
     findById: jest.fn(),
     complete: jest.fn(),
+    completeWithAnswer: jest.fn(),
     listInbox: jest.fn().mockResolvedValue([fakeAsk()]),
     listOutbox: jest.fn().mockResolvedValue([]),
   };
@@ -34,6 +35,8 @@ function makeResolver(enabled: boolean) {
     create: jest.fn(),
     revoke: jest.fn(),
     listForOwner: jest.fn().mockResolvedValue([]),
+    // No matching grant → review, and therefore no grant-imposed ceiling.
+    evaluate: jest.fn().mockResolvedValue({ decision: 'review' }),
   };
   const auditService = { listForResponder: jest.fn().mockResolvedValue([]) };
   const rateLimitService = { consume: jest.fn() };
@@ -51,6 +54,22 @@ function makeResolver(enabled: boolean) {
     ),
     findByAskId: jest.fn(),
   };
+  // Mirror the real service: `completeWithAnswer` persists the answer and
+  // finalizes the ask in one transaction. Delegating to the two underlying
+  // mocks keeps every assertion below pointed at the half it is about.
+  askService.completeWithAnswer = jest.fn(
+    async (
+      ctx: unknown,
+      id: string,
+      disclosure: { answer: unknown; disclosedEntityIds: string[]; backingEntityIds: string[] },
+    ) => ({
+      ask: await askService.complete(ctx, id, disclosure.disclosedEntityIds, {
+        backingEntityIds: disclosure.backingEntityIds,
+      }),
+      answer: await answerService.create({ askId: id, answer: disclosure.answer }),
+    }),
+  );
+
   const peerLinkService = { findById: jest.fn().mockResolvedValue(null) };
   const outboundAskService = { send: jest.fn() };
   const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(enabled) };
@@ -100,7 +119,7 @@ describe('AskResolver — feature-flag gating', () => {
 });
 
 describe('AskResolver — enabled', () => {
-  it('createAsk rate-limits, decodes the responder id, submits, and surfaces the decision', async () => {
+  it('createAsk rate-limits, decodes the responder id, submits, and acknowledges', async () => {
     const { resolver, askService, rateLimitService } = makeResolver(true);
 
     const result = await resolver.createAsk(CTX, {
@@ -117,7 +136,9 @@ describe('AskResolver — enabled', () => {
       },
     );
     expect(result.success).toBe(true);
-    expect(result.decision).toBe('review');
+    // The responder's grant posture is NOT the asker's to read: `auto`,
+    // `review` and `deny` all come back as the same acknowledgement.
+    expect(result.decision).toBe('accepted');
     expect(result.ask?.status).toBe('under_review');
   });
 
@@ -147,8 +168,14 @@ describe('AskResolver — enabled', () => {
         answer: expect.objectContaining({ form: 'retrieval', disclosedCount: 1, withheldCount: 0 }),
       }),
     );
-    // the audit records the backing entity ids (post-redaction)
-    expect(askService.complete).toHaveBeenCalledWith({ userId: 'user-1' }, 'ask-1', ['e1']);
+    // The audit records what the asker RECEIVED, plus the backing set under its
+    // own name. Here they coincide (household tier, retrieval form, nothing
+    // clamped); the disclosureIntegrity suite covers the case where they differ.
+    expect(askService.completeWithAnswer).toHaveBeenCalledWith({ userId: 'user-1' }, 'ask-1', {
+      answer: expect.objectContaining({ form: 'retrieval' }),
+      disclosedEntityIds: ['e1'],
+      backingEntityIds: ['e1'],
+    });
     expect(result.success).toBe(true);
     expect(result.disclosedCount).toBe(1);
     expect(result.answer?.form).toBe('retrieval');
@@ -174,8 +201,12 @@ describe('AskResolver — enabled', () => {
         answer: expect.objectContaining({ disclosedCount: 1, withheldCount: 2 }),
       }),
     );
-    // only the kept (non-redacted) entity is audited as backing the disclosure
-    expect(askService.complete).toHaveBeenCalledWith({ userId: 'user-1' }, 'ask-1', ['e1']);
+    // only the kept (non-redacted) entity is audited, as backing AND as disclosed
+    expect(askService.completeWithAnswer).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      'ask-1',
+      expect.objectContaining({ disclosedEntityIds: ['e1'], backingEntityIds: ['e1'] }),
+    );
     expect(result.disclosedCount).toBe(1);
     expect(result.withheldCount).toBe(2);
   });
