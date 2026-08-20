@@ -91,18 +91,18 @@ running_env = $(shell docker compose ls --format json 2>/dev/null \
 # which depends on resolving the compose model (file paths, active profiles) and
 # returns nothing for a profile-gated service on some Compose versions.
 #
-# Empty means no `database` container is running for this project. The primary
-# checkout may then assume the conventional 5432; a worktree must not. Silently
-# falling back to 5432 would point seed/migrate/dbclear at the primary stack's
-# database. So a worktree with no running stack errors out (see below).
+# Empty means no `database` container is running for this project, and there is
+# no safe fallback: 5432 belongs to whichever stack happened to claim it, which
+# is often another worktree. The primary checkout used to assume 5432 here, and
+# that is how seed/migrate/dbclear reached a sibling stack's database and left
+# it on a schema no branch describes. No container, no port — the $(error)
+# below then names the fix instead.
 db_host_port = $(shell \
-	port=$$(docker ps \
+	docker ps \
 		--filter "label=com.docker.compose.project=$(COMPOSE_PROJECT_NAME)" \
 		--filter "label=com.docker.compose.service=database" \
 		--format '{{.Ports}}' 2>/dev/null \
-		| sed -n 's/.*:\([0-9]*\)->5432\/tcp.*/\1/p' | head -n1); \
-	if [ -n "$$port" ]; then echo "$$port"; \
-	elif [ "$(PROJECT_NAME)" = "$(REPO)" ]; then echo 5432; fi)
+		| sed -n 's/.*:\([0-9]*\)->5432\/tcp.*/\1/p' | head -n1)
 
 # Point every local-DB target at that port. node-config reads DATABASE_PORT, and
 # dotenv won't override an already-set env var, so this wins over .env's 5432.

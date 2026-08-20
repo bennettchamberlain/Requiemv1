@@ -370,6 +370,39 @@ make dev-down
 
 To run the api/web individually instead, see their READMEs ([api](backend/apps/api/README.md), [web](frontend/apps/web/README.md)).
 
+### Reaching the right database
+
+Each worktree's stack publishes PostgreSQL on **its own host port**, but `.env`
+pins `DATABASE_PORT=5432`. Anything that resolves the port from `.env` therefore
+lands on whichever stack currently holds 5432 — often a different worktree.
+Applying one branch's migrations to another branch's stack leaves that database
+on a schema no branch describes, and dbmate cannot undo it: the versions are
+recorded, so the next `migrate` is a silent no-op and the app queries tables
+that were never created.
+
+**Run DB commands through `make`** (`make migrate`, `make seed`, `make dbshell`,
+`make dburl`, `make dbclear`). Those targets read the real port off this
+project's running `database` container, and error out if the stack is not up
+rather than falling back to 5432. A bare `yarn workspace @ci/be-api migrate`
+does not.
+
+Two guards back this up:
+
+- `make dev` stamps the owning compose project onto the database (the
+  `ci.stack_key` setting). `yarn migrate` refuses to write to a database another
+  stack owns.
+- The api refuses to boot when `schema_migrations` does not match the migration
+  files on disk, naming the drift in both directions instead of failing later
+  with an unrelated-looking missing relation. Set `CI_SKIP_SCHEMA_CHECK=1` to
+  boot anyway.
+
+A database that is *ahead* of the branch cannot be migrated back — recreate the
+volume:
+
+```bash
+make dbdestroy && make migrate
+```
+
 ### OAuth in a worktree
 
 Most local development needs no OAuth. The provider always redirects back to one fixed, registered host (the host of `OAUTH_CALLBACK_URL` in `.env`, `memory.local.companionintelligence.com`), never the per-worktree `<project>.localhost`. Only one stack can answer that host at a time. With your stack running, claim it for the current worktree:
