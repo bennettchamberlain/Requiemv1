@@ -179,6 +179,9 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
 
   // Nothing to key it by.
   unnamed_product: 'no_identity',
+  // A download row whose URL chain and tab URL are both empty: ci.browser_activity
+  // is keyed by url, so there is nothing to file it under.
+  download_no_url: 'no_identity',
   unnamed_track: 'no_identity',
   grok_unknown_sender: 'no_identity',
   note_tweet_unmatched: 'no_identity',

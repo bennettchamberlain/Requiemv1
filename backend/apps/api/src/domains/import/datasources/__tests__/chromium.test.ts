@@ -456,3 +456,137 @@ describe('visit dwell time', () => {
     expect(views.every((i) => i.metadata.URL === 'https://example.com')).toBe(true);
   });
 });
+
+// Chrome's `downloads` table was not read at all — the string "download" did
+// not occur in chromium.ts, firefox.ts or google_chrome.ts, while
+// ci.browser_activity has modelled action_type='download' in its DTO union the
+// whole time and held 0 such rows. It is not recoverable by another route
+// either: for 255 of 278 downloads in the reference profile the final URL of
+// the download chain appears nowhere in `urls`.
+describe('downloads', () => {
+  function makeDbWithDownloads(
+    dir: string,
+    rows: Array<{
+      guid: string;
+      target: string | null;
+      chainUrl: string | null;
+      tabUrl?: string | null;
+      state?: number;
+      mime?: string;
+      received?: number;
+      total?: number;
+    }>,
+  ): string {
+    const p = path.join(dir, 'History');
+    const db = new Database(p);
+    db.exec(`
+      CREATE TABLE urls (id INTEGER PRIMARY KEY, url TEXT, title TEXT, last_visit_time INTEGER);
+      CREATE TABLE visits (id INTEGER PRIMARY KEY, url INTEGER, visit_time INTEGER);
+      CREATE TABLE downloads (id INTEGER PRIMARY KEY, guid TEXT, current_path TEXT, target_path TEXT,
+        start_time INTEGER, received_bytes INTEGER, total_bytes INTEGER, state INTEGER,
+        mime_type TEXT, referrer TEXT, tab_url TEXT);
+      CREATE TABLE downloads_url_chains (id INTEGER, chain_index INTEGER, url TEXT);
+    `);
+    const d = db.prepare(`INSERT INTO downloads
+      (id, guid, target_path, start_time, received_bytes, total_bytes, state, mime_type, referrer, tab_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const c = db.prepare('INSERT INTO downloads_url_chains (id, chain_index, url) VALUES (?, ?, ?)');
+    rows.forEach((r, i) => {
+      d.run(
+        i + 1,
+        r.guid,
+        r.target,
+        toChromeTime(`2025-04-0${i + 1}T00:00:00Z`),
+        r.received ?? 100,
+        r.total ?? 100,
+        r.state ?? 1,
+        r.mime ?? 'application/pdf',
+        'https://ref.example',
+        r.tabUrl ?? null,
+      );
+      if (r.chainUrl) {
+        // A redirect chain: the LAST hop is where the bytes came from.
+        c.run(i + 1, 0, 'https://redirect.example/start');
+        c.run(i + 1, 1, r.chainUrl);
+      }
+    });
+    db.close();
+
+    return p;
+  }
+
+  const downloadsFrom = async (rows: Parameters<typeof makeDbWithDownloads>[1]) => {
+    const items = await runImport(makeDbWithDownloads(tmpdir(), rows));
+    return items.filter((i) => i.classification === 'download');
+  };
+
+  it('imports a download the visits table knows nothing about', async () => {
+    const got = await downloadsFrom([
+      {
+        guid: 'g1',
+        target: '/Users/x/Downloads/statement.pdf',
+        chainUrl: 'https://files.example/statement.pdf',
+      },
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0].metadata.URL).toBe('https://files.example/statement.pdf');
+    expect(got[0].metadata.Filename).toBe('statement.pdf');
+    expect(got[0].metadata.MimeType).toBe('application/pdf');
+    expect(got[0].metadata.Completed).toBe(true);
+  });
+
+  it('takes the LAST hop of the redirect chain as the source URL', async () => {
+    // chain_index 0 is where the click went; the final hop is where the bytes
+    // actually came from, and is the one that identifies the file.
+    const got = await downloadsFrom([
+      { guid: 'g1', target: '/d/a.zip', chainUrl: 'https://cdn.example/final.zip' },
+    ]);
+    expect(got[0].metadata.URL).toBe('https://cdn.example/final.zip');
+  });
+
+  it('records an interrupted download as not completed, rather than dropping it', async () => {
+    const got = await downloadsFrom([
+      {
+        guid: 'g1',
+        target: '/d/partial.iso',
+        chainUrl: 'https://files.example/partial.iso',
+        state: 4,
+        received: 40,
+        total: 100,
+      },
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0].metadata.Completed).toBe(false);
+    // received is what is on disk; total is what the server promised.
+    expect(got[0].metadata.SizeBytes).toBe(40);
+    expect(got[0].metadata.ExpectedBytes).toBe(100);
+  });
+
+  it('falls back to the tab URL when the chain is empty', async () => {
+    const got = await downloadsFrom([
+      { guid: 'g1', target: '/d/a.pdf', chainUrl: null, tabUrl: 'https://page.example/report' },
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0].metadata.URL).toBe('https://page.example/report');
+  });
+
+  it('drops a download with no URL at all rather than filing it under an empty key', async () => {
+    const got = await downloadsFrom([{ guid: 'g1', target: '/d/a.pdf', chainUrl: null, tabUrl: null }]);
+    expect(got).toHaveLength(0);
+  });
+
+  it('keys on the guid so a re-import of the same profile dedups', async () => {
+    const got = await downloadsFrom([
+      { guid: 'stable-guid', target: '/d/a.pdf', chainUrl: 'https://files.example/a.pdf' },
+    ]);
+    expect(got[0].id).toContain('stable-guid');
+  });
+
+  it('imports visits normally on a profile with no downloads table', async () => {
+    // The caller's catch turns a bad query into ZERO imported visits, so an
+    // unguarded reference here would empty the history of an older profile.
+    const items = await runImport(makeHistoryDb(tmpdir()));
+    expect(items.filter((i) => i.classification === 'page_view').length).toBeGreaterThan(0);
+    expect(items.filter((i) => i.classification === 'download')).toHaveLength(0);
+  });
+});

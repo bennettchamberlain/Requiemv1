@@ -200,6 +200,7 @@ const KIND_BY_CLASSIFICATION: Record<string, string> = {
   page_view: 'web.page_view',
   bookmark: 'web.bookmark',
   search: 'web.search',
+  download: 'web.download',
   purchase: 'commerce.purchase',
   transaction: 'commerce.transaction',
   // A record that IS a receipt: an order-confirmation email the gmail/email
@@ -627,6 +628,7 @@ export function isDigitalGood(rec: CanonicalRecord): boolean {
  *                                                message donates its fix too
  *   web.bookmark        -> content
  *   web.page_view       -> browser_activity
+ *   web.download        -> browser_activity
  *   calendar.event      -> events | events+content  content ONLY when the event carries
  *                                                   a file (attachment on disk / media MIME)
  *   media.play|watch|listen -> events + content  timeline occurrence (when watched/played) +
@@ -1075,7 +1077,12 @@ function baseDestinationsFor(rec: CanonicalRecord): Destination[] {
   // stamps Latitude/Longitude on search and browse CSVs) — those donate a
   // position row alongside their browser_activity home, same as geotagged
   // captures, so the fix reaches /v1/positions and the location estimator.
-  if (kind === 'web.page_view' || kind === 'web.search') {
+  // A download is a browsing action for the same reason a search is:
+  // `ci.browser_activity` models it natively via action_type='download', and it
+  // is the only table that records the file was fetched at all — a download's
+  // own URL is usually never a page visit (255 of 278 in the reference profile
+  // appear nowhere in the browser's `urls`).
+  if (kind === 'web.page_view' || kind === 'web.search' || kind === 'web.download') {
     return rec.coordinates ? ['browser_activity', 'position'] : ['browser_activity'];
   }
 

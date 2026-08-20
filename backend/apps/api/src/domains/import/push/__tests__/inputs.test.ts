@@ -1037,6 +1037,14 @@ describe('toBrowserActivityInput', () => {
     }
   });
 
+  it('marks a download with action_type download, not visit', () => {
+    // ci.browser_activity has modelled this action_type all along and held 0
+    // rows, because nothing produced web.download.
+    const dl = recordFor({ classification: 'download', metadata: { URL: 'https://files.example/a.pdf' } });
+
+    expect(toBrowserActivityInput(dl).action_type).toBe('download');
+  });
+
   it('does not pass through a non-numeric dwell time', () => {
     const view = recordFor({
       classification: 'page_view',

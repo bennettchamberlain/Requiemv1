@@ -116,6 +116,12 @@ describe('destinationsFor', () => {
     expect(destinationsFor(recordFor({ classification: 'search' }))).toEqual(['browser_activity']);
   });
 
+  it('sends a download to browser activity, not the timeline', () => {
+    // Without this rule a download falls through to the default 'events'
+    // bucket, the same way ~96k searches once did.
+    expect(destinationsFor(recordFor({ classification: 'download' }))).toEqual(['browser_activity']);
+  });
+
   it('keeps a raw GPS fix out of events entirely', () => {
     const track = recordFor({ classification: 'location', latitude: 1, longitude: 2 });
 
