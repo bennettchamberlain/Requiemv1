@@ -27,6 +27,7 @@ import { Content, ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
 import { classifyExternalId } from '../externalIdKind';
 import { CreateContentDto, SearchContentDto, UpdateContentDto } from '../types';
+import { BaseEntity } from '../entities/BaseEntity';
 
 import { CtiAggregate } from './CtiAggregate';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
@@ -889,7 +890,7 @@ export class ContentService {
     // egress composition share one query.
     let executable = this.contentRepository
       .createQueryBuilder('content')
-      .innerJoin('ci.entities', 'base', "base.entity_id = content.id AND base.entity_type = 'Content'")
+      .innerJoin(BaseEntity, 'base', "base.entity_id = content.id AND base.entity_type = 'Content'")
       .addSelect('base.name', 'base_name')
       .addSelect('base.description', 'base_description');
 
