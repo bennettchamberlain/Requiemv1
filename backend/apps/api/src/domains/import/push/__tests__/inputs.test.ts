@@ -1138,3 +1138,50 @@ describe('the conversation key reaching thread_id', () => {
     expect(toCommunicationInput(recordFor({ classification: 'message' })).thread_id).toBeUndefined();
   });
 });
+
+describe('communication attachments reach the column', () => {
+  /**
+   * The read side of the lane, which was never dead — `attachmentsFor` has
+   * always built this column from `AttachmentFileIds`/`AttachmentContentIds`.
+   * It had no producer, so it ran on every communication in the corpus and
+   * produced `[]` 325,198 times. These assert the contract the media leg now
+   * writes against.
+   */
+  it('turns the stamped file ids into attachment references', () => {
+    const message = recordFor({
+      classification: 'message',
+      dataSource: 'twitter',
+      metadata: { Text: 'look', AttachmentFileIds: ['file-a', 'file-b'] },
+    });
+
+    expect(toCommunicationInput(message).attachments).toEqual([
+      { type: 'file', id: 'file-a' },
+      { type: 'file', id: 'file-b' },
+    ]);
+  });
+
+  it('carries the content rows alongside the files for a source that catalogues them', () => {
+    const message = recordFor({
+      classification: 'message',
+      dataSource: 'facebook',
+      metadata: {
+        Text: 'photo',
+        AttachmentFileIds: ['file-a'],
+        AttachmentContentIds: ['content-a'],
+      },
+    });
+
+    expect(toCommunicationInput(message).attachments).toEqual([
+      { type: 'file', id: 'file-a' },
+      { type: 'content', id: 'content-a' },
+    ]);
+  });
+
+  it('leaves the column unset for a message with no attachments', () => {
+    // The default the whole corpus sat at, and the correct answer for a message
+    // that genuinely carried nothing.
+    const message = recordFor({ classification: 'message', metadata: { Text: 'hi' } });
+
+    expect(toCommunicationInput(message).attachments).toBeUndefined();
+  });
+});

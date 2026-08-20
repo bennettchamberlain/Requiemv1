@@ -250,6 +250,14 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   media_not_a_file: 'media_unsupported',
   /** MediaStage: the object store refused or errored on the upload. */
   media_upload_failed: 'media_store_failed',
+  /**
+   * MediaStage: a message declared an attachment that carried no local path, so
+   * there were no bytes to store. An iMessage row whose attachment survived the
+   * export as a guid alone is the common case.
+   */
+  attachment_no_path: 'media_missing',
+  /** MediaStage: the attachment's bytes stored, but its ci.content row did not. */
+  attachment_content_failed: 'media_store_failed',
   /** UnpackStage: an archive that could not be expanded. Everything inside it is absent. */
   archive_rejected: 'archive_rejected',
   /** PushStage: rows still `pending` when the stage stopped. */

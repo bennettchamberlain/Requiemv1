@@ -4,10 +4,10 @@ import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 
-import { mediaItemForAsset, insideRoot } from './_ai_media';
+import { mediaAttachmentsFor, mediaItemForAsset, insideRoot } from './_ai_media';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams } from './timeline';
+import type { ImportParams, MediaAttachment } from './timeline';
 import { timeframeContains } from './timeline';
 
 // iOS 12-hr: [M/D/YY, H:MM:SS AM] Sender: message
@@ -317,6 +317,20 @@ export class WhatsAppFileImporter implements FileImporter {
       // emit it as its own 'media' item (the text item below still carries
       // the transcript line, e.g. "<attached: X.jpg>", so nothing about the
       // original message is lost — this only adds the actual bytes).
+      //
+      // The message ALSO carries the resolved file as a `MediaAttachments`
+      // descriptor, which is what links the two. Without it the export produced
+      // two unrelated rows: a `ci.files` blob with no idea which message it
+      // arrived in, and a message whose whole body was the placeholder
+      // "<attached: X.jpg>" and whose `attachments` column was empty. The media
+      // leg uploads both paths, but they are the same bytes, so the object
+      // store's content hash resolves them onto ONE file — the attachment costs
+      // no storage and the message gains the reference.
+      //
+      // Deliberately no `AttachmentContent`: unlike Messenger, this file is
+      // already a standalone media item, so it already catalogues itself. Opting
+      // in would mint a SECOND ci.content row over the same bytes.
+      let attachments: MediaAttachment[] = [];
       const attached = attachedFilename(p.text);
       if (attached) {
         // path.basename strips any directory components the reference might
@@ -333,6 +347,7 @@ export class WhatsAppFileImporter implements FileImporter {
             { Sender: p.sender, Conversation: conversationName },
           );
           if (mediaItem) {
+            attachments = mediaAttachmentsFor([mediaItem]);
             params.pipeline.push({
               item: mediaItem,
               edges: p.sender
@@ -368,6 +383,7 @@ export class WhatsAppFileImporter implements FileImporter {
             // carries it through to CI-Server; otherwise it only lives in content.data.
             Text: p.text || undefined,
             ...(loc && { Location: `${loc.latitude}, ${loc.longitude}` }),
+            ...(attachments.length > 0 && { MediaAttachments: attachments }),
           },
         },
         // Link the message to whoever sent it, so the graph view gets a real
