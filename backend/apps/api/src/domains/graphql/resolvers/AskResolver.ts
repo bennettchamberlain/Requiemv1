@@ -17,12 +17,16 @@ import {
   disclosureCeiling,
   inferAnswerForm,
   isAnswerable,
+  minRung,
+  narrowerForm,
+  type AnswerForm,
+  type DisclosureRung,
   type GrantMode,
   type TrustTier,
 } from '@ci/domains/asks';
 import { OutboundAskService, type PeerAskRequest, PeerLinkService } from '@ci/domains/peers';
 
-import { AskAnswerType } from '../types/AskAnswerType';
+import { AnswerFormEnum, AskAnswerType } from '../types/AskAnswerType';
 import {
   CreateAskGrantInput,
   CreateAskInput,
@@ -30,6 +34,7 @@ import {
   UpdateAskGrantInput,
 } from '../types/AskInputs';
 import {
+  ASK_ACCEPTED,
   AskGrantPayload,
   AskPayload,
   CreateAskPayload,
@@ -79,7 +84,7 @@ export class AskResolver {
     this.rateLimitService.consume(serviceContext.userId);
     const responderUserId = GlobalUID.parse('user', input.responderId);
 
-    const { ask, decision } = await this.askService.submit(serviceContext, {
+    const { ask } = await this.askService.submit(serviceContext, {
       responderUserId,
       query: {
         queryType: input.query.queryType,
@@ -88,7 +93,9 @@ export class AskResolver {
       },
     });
 
-    return { success: true, ask: AskType.toType(ask, serviceContext.userId), decision };
+    // The grant decision is deliberately NOT returned — see {@link ASK_ACCEPTED}.
+    // `submit` still needs to make it; the asker just does not get to read it.
+    return { success: true, ask: AskType.toType(ask, serviceContext.userId), decision: ASK_ACCEPTED };
   }
 
   @Mutation(() => AskPayload)
@@ -130,6 +137,11 @@ export class AskResolver {
    * the responder's memory scope. `redactItemIds` is the owner's "deny all but X"
    * set — matched entity ids to withhold (counted, never itemized to the asker).
    *
+   * `disclosureForm` is the owner's choice of ANSWER SHAPE — "answer this as a
+   * yes/no" — and can only ever narrow what the archetype already implies (see
+   * {@link narrowerForm}). Without it the shape of the answer is decided by
+   * `inferAnswerForm`, which reads the ASKER's `queryType`.
+   *
    * The answer carries entity id+type REFERENCES and a templated summary only —
    * never raw node content or forwardable signed media URLs.
    */
@@ -138,6 +150,8 @@ export class AskResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
     @Args('redactItemIds', { type: () => [String], nullable: true }) redactItemIds?: string[],
+    @Args('disclosureForm', { type: () => AnswerFormEnum, nullable: true })
+    disclosureForm?: AnswerFormEnum,
   ): Promise<RunAskPayload> {
     if (!(await this.enabled())) {
       return { success: false };
@@ -169,27 +183,59 @@ export class AskResolver {
     const matches = identifiers.map((identifier) => ({ id: identifier.id, type: identifier.type }));
 
     const redacted = new Set(redactItemIds ?? []);
-    // Entities that back the disclosure (post-redaction) — recorded in the audit
-    // for accountability regardless of whether they are itemized to the asker.
+    // Entities the answer is COMPUTED OVER, post-redaction. Not a disclosure —
+    // the ceiling below can (and usually does) reduce what actually reaches the
+    // asker to a count or a yes/no. Audited under its own name; see below.
     const backingIds = matches.filter((match) => !redacted.has(match.id)).map((match) => match.id);
 
+    // The form is the OWNER's to choose. `inferAnswerForm` reads the
+    // asker-supplied `queryType`, so with no owner choice the asker decides how
+    // much shape their answer has. `narrowerForm` keeps whichever of the two
+    // sits lower on the disclosure ladder, so the owner can say "just yes or no"
+    // to a retrieval ask but never the reverse.
+    const inferred = inferAnswerForm(ask.query);
+    const form = disclosureForm ? narrowerForm(disclosureForm as AnswerForm, inferred) : inferred;
+
     const built = buildDisclosedAnswer({
-      form: inferAnswerForm(ask.query),
+      form,
       matches,
       redactedIds: redactItemIds,
       consentBasis: ask.consentBasis,
     });
 
-    // Phase 2 policy engine: clamp the answer to the asker's tier ceiling. This
-    // is defence in depth, applied AFTER the grant already said yes — a grant
-    // authorizes an ask, the ceiling caps how much any answer to it may reveal,
-    // and the two are enforced independently so a mis-scoped grant cannot leak
-    // more than the relationship allows.
+    // Phase 2 policy engine. THREE independent limits are combined, each only
+    // able to reduce: the tier ceiling (what this relationship may ever
+    // receive), the deciding grant's own `maxDisclosure`, and the form above.
+    // A grant authorizes an ask; a ceiling caps how much any answer to it may
+    // reveal — enforced separately so a mis-scoped grant cannot leak more than
+    // the relationship allows.
+    //
+    // The grant ceiling is what this path used to drop on the floor:
+    // `evaluateGrant` computes it and `AskService.submit` reads the same
+    // evaluation for the consent basis, but nothing carried it here, so a grant
+    // reading "digest only" still disclosed in full. The federated path
+    // (`PeerAskService`) already combined both; only the LOCAL path did not.
     const tier = await this.resolveTier(serviceContext, ask);
-    const answer = applyDisclosureCeiling(built, disclosureCeiling(tier, ask.query.dataClass));
+    const tierCeiling = disclosureCeiling(tier, ask.query.dataClass);
+    const grantCeiling = await this.resolveGrantCeiling(ask);
+    const ceiling = grantCeiling != null ? minRung(tierCeiling, grantCeiling) : tierCeiling;
+    const answer = applyDisclosureCeiling(built, ceiling);
 
-    const savedAnswer = await this.answerService.create({ askId: id, answer });
-    const completed = await this.askService.complete(serviceContext, id, backingIds);
+    // The audit records what was ACTUALLY disclosed — which for every form but
+    // `retrieval` is nothing at all. Auditing `backingIds` here (as this did)
+    // made the audit and `ci.ask_answers` disagree about the same event, with
+    // the audit always claiming the larger, pre-ceiling number. The candidate
+    // set is still kept, under `backingEntities`, where it does not masquerade
+    // as a disclosure.
+    const disclosedIds = answer.items.map((item) => item.id);
+
+    // One transaction: an answer with no audit row is PERMANENT, because the
+    // insert-only guard in `AskAnswerService.create` rejects the retry.
+    const { ask: completed, answer: savedAnswer } = await this.askService.completeWithAnswer(
+      serviceContext,
+      id,
+      { answer, disclosedEntityIds: disclosedIds, backingEntityIds: backingIds },
+    );
 
     return {
       success: true,
@@ -217,6 +263,33 @@ export class AskResolver {
     const link = await this.peerLinkService.findById(context, ask.peerLinkId);
 
     return (link?.trustTier as TrustTier | undefined) ?? 'stranger';
+  }
+
+  /**
+   * The disclosure ceiling the deciding standing grant imposes on this ask.
+   *
+   * RE-DERIVED rather than persisted. `AskService.submit` already evaluates the
+   * grants and stores the deciding grant id as the ask's `consentBasis`, but it
+   * stores only the id — and on the review path not even that — so there is no
+   * stored ceiling to read. Re-running the pure evaluation is cheaper and
+   * narrower than a column that could drift out of step with the grant it
+   * copies.
+   *
+   * A `deny` is mapped to `none`: if a block grant covers this ask NOW, nothing
+   * may cross, whatever authorized it earlier. Downgrading is always the safe
+   * direction on this ladder.
+   *
+   * The one drift window this leaves open: if the authorizing grant is revoked
+   * between submit and run, the re-evaluation finds no grant and therefore no
+   * ceiling, so only the tier ceiling applies. That is looser than the revoked
+   * grant was, but a revoked grant should stop the ask from being ANSWERABLE at
+   * all — a lifecycle question (`isAnswerable`), not a ceiling one, and left to
+   * the epic that owns revocation semantics.
+   */
+  private async resolveGrantCeiling(ask: Ask): Promise<DisclosureRung | undefined> {
+    const evaluation = await this.grantService.evaluate(ask);
+
+    return evaluation.decision === 'deny' ? 'none' : evaluation.maxDisclosure;
   }
 
   /** The disclosure-filtered answer for an ask (visible to asker or responder). */

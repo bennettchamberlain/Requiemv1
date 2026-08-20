@@ -91,6 +91,13 @@ type Documents = {
     "\n  fragment FeedBadgeAction on ActionType {\n    id\n    seen\n    dismissed\n  }\n": typeof types.FeedBadgeActionFragmentDoc,
     "\n  fragment FeedBadgeSummary on SummaryType {\n    id\n    seen\n    dismissed\n  }\n": typeof types.FeedBadgeSummaryFragmentDoc,
     "\n  query GetFeedBadgeCount($actionLimit: Int, $summaryFirst: Int) {\n    feedActions(limit: $actionLimit) {\n      ...FeedBadgeAction\n    }\n    summaries(first: $summaryFirst) {\n      edges {\n        node {\n          ...FeedBadgeSummary\n        }\n      }\n    }\n  }\n  \n  \n": typeof types.GetFeedBadgeCountDocument,
+    "\n  query AskInbox {\n    askInbox {\n      id\n      status\n      createdAt\n      consentBasis\n      askerId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n": typeof types.AskInboxDocument,
+    "\n  query AskOutbox {\n    askOutbox {\n      id\n      status\n      createdAt\n      responderId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n": typeof types.AskOutboxDocument,
+    "\n  query MyAskGrants {\n    myAskGrants {\n      id\n      mode\n      queryType\n      dataClass\n      purpose\n      granteeId\n      granteePeerLinkId\n      revokedAt\n      createdAt\n    }\n  }\n": typeof types.MyAskGrantsDocument,
+    "\n  mutation ApproveAsk($id: ID!) {\n    approveAsk(id: $id) {\n      success\n    }\n  }\n": typeof types.ApproveAskDocument,
+    "\n  mutation DeclineAsk($id: ID!) {\n    declineAsk(id: $id) {\n      success\n    }\n  }\n": typeof types.DeclineAskDocument,
+    "\n  mutation RunAsk($id: ID!, $redactItemIds: [String!]) {\n    runAsk(id: $id, redactItemIds: $redactItemIds) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n": typeof types.RunAskDocument,
+    "\n  mutation RevokeAskGrant($id: ID!) {\n    revokeAskGrant(id: $id) {\n      success\n    }\n  }\n": typeof types.RevokeAskGrantDocument,
     "\n  query GetCommunication($id: ID!) {\n    communication(id: $id) {\n      id\n      type\n      subject\n      preview\n      content\n\n      # When it was sent, and which way it went. The page used to select\n      # neither, so /communications/:id could not answer \"when was this?\".\n      time\n      direction\n\n      from {\n        id\n        name\n      }\n\n      to {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetCommunicationDocument,
     "\n  mutation UpdateCommunicationPageFields($input: UpdateCommunicationInput!) {\n    updateCommunication(input: $input) {\n      id\n      subject\n      content\n    }\n  }\n": typeof types.UpdateCommunicationPageFieldsDocument,
     "\n  query GetConcept($id: ID!) {\n    concept(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": typeof types.GetConceptDocument,
@@ -309,6 +316,13 @@ const documents: Documents = {
     "\n  fragment FeedBadgeAction on ActionType {\n    id\n    seen\n    dismissed\n  }\n": types.FeedBadgeActionFragmentDoc,
     "\n  fragment FeedBadgeSummary on SummaryType {\n    id\n    seen\n    dismissed\n  }\n": types.FeedBadgeSummaryFragmentDoc,
     "\n  query GetFeedBadgeCount($actionLimit: Int, $summaryFirst: Int) {\n    feedActions(limit: $actionLimit) {\n      ...FeedBadgeAction\n    }\n    summaries(first: $summaryFirst) {\n      edges {\n        node {\n          ...FeedBadgeSummary\n        }\n      }\n    }\n  }\n  \n  \n": types.GetFeedBadgeCountDocument,
+    "\n  query AskInbox {\n    askInbox {\n      id\n      status\n      createdAt\n      consentBasis\n      askerId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n": types.AskInboxDocument,
+    "\n  query AskOutbox {\n    askOutbox {\n      id\n      status\n      createdAt\n      responderId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n": types.AskOutboxDocument,
+    "\n  query MyAskGrants {\n    myAskGrants {\n      id\n      mode\n      queryType\n      dataClass\n      purpose\n      granteeId\n      granteePeerLinkId\n      revokedAt\n      createdAt\n    }\n  }\n": types.MyAskGrantsDocument,
+    "\n  mutation ApproveAsk($id: ID!) {\n    approveAsk(id: $id) {\n      success\n    }\n  }\n": types.ApproveAskDocument,
+    "\n  mutation DeclineAsk($id: ID!) {\n    declineAsk(id: $id) {\n      success\n    }\n  }\n": types.DeclineAskDocument,
+    "\n  mutation RunAsk($id: ID!, $redactItemIds: [String!]) {\n    runAsk(id: $id, redactItemIds: $redactItemIds) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n": types.RunAskDocument,
+    "\n  mutation RevokeAskGrant($id: ID!) {\n    revokeAskGrant(id: $id) {\n      success\n    }\n  }\n": types.RevokeAskGrantDocument,
     "\n  query GetCommunication($id: ID!) {\n    communication(id: $id) {\n      id\n      type\n      subject\n      preview\n      content\n\n      # When it was sent, and which way it went. The page used to select\n      # neither, so /communications/:id could not answer \"when was this?\".\n      time\n      direction\n\n      from {\n        id\n        name\n      }\n\n      to {\n        edges {\n          node {\n            id\n            name\n          }\n        }\n      }\n\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetCommunicationDocument,
     "\n  mutation UpdateCommunicationPageFields($input: UpdateCommunicationInput!) {\n    updateCommunication(input: $input) {\n      id\n      subject\n      content\n    }\n  }\n": types.UpdateCommunicationPageFieldsDocument,
     "\n  query GetConcept($id: ID!) {\n    concept(id: $id) {\n      id\n      name\n      description\n      tags {\n        id\n        label\n      }\n    }\n  }\n": types.GetConceptDocument,
@@ -760,6 +774,34 @@ export function gql(source: "\n  fragment FeedBadgeSummary on SummaryType {\n   
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetFeedBadgeCount($actionLimit: Int, $summaryFirst: Int) {\n    feedActions(limit: $actionLimit) {\n      ...FeedBadgeAction\n    }\n    summaries(first: $summaryFirst) {\n      edges {\n        node {\n          ...FeedBadgeSummary\n        }\n      }\n    }\n  }\n  \n  \n"): (typeof documents)["\n  query GetFeedBadgeCount($actionLimit: Int, $summaryFirst: Int) {\n    feedActions(limit: $actionLimit) {\n      ...FeedBadgeAction\n    }\n    summaries(first: $summaryFirst) {\n      edges {\n        node {\n          ...FeedBadgeSummary\n        }\n      }\n    }\n  }\n  \n  \n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query AskInbox {\n    askInbox {\n      id\n      status\n      createdAt\n      consentBasis\n      askerId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n"): (typeof documents)["\n  query AskInbox {\n    askInbox {\n      id\n      status\n      createdAt\n      consentBasis\n      askerId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query AskOutbox {\n    askOutbox {\n      id\n      status\n      createdAt\n      responderId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n"): (typeof documents)["\n  query AskOutbox {\n    askOutbox {\n      id\n      status\n      createdAt\n      responderId\n      peerHandle\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query MyAskGrants {\n    myAskGrants {\n      id\n      mode\n      queryType\n      dataClass\n      purpose\n      granteeId\n      granteePeerLinkId\n      revokedAt\n      createdAt\n    }\n  }\n"): (typeof documents)["\n  query MyAskGrants {\n    myAskGrants {\n      id\n      mode\n      queryType\n      dataClass\n      purpose\n      granteeId\n      granteePeerLinkId\n      revokedAt\n      createdAt\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation ApproveAsk($id: ID!) {\n    approveAsk(id: $id) {\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation ApproveAsk($id: ID!) {\n    approveAsk(id: $id) {\n      success\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation DeclineAsk($id: ID!) {\n    declineAsk(id: $id) {\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation DeclineAsk($id: ID!) {\n    declineAsk(id: $id) {\n      success\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation RunAsk($id: ID!, $redactItemIds: [String!]) {\n    runAsk(id: $id, redactItemIds: $redactItemIds) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n"): (typeof documents)["\n  mutation RunAsk($id: ID!, $redactItemIds: [String!]) {\n    runAsk(id: $id, redactItemIds: $redactItemIds) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation RevokeAskGrant($id: ID!) {\n    revokeAskGrant(id: $id) {\n      success\n    }\n  }\n"): (typeof documents)["\n  mutation RevokeAskGrant($id: ID!) {\n    revokeAskGrant(id: $id) {\n      success\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

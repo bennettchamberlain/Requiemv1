@@ -77,6 +77,42 @@ export function buildDisclosedAnswer(params: {
 }
 
 /**
+ * The count-free restatement of a summary, for the projection to the ASKER.
+ *
+ * The numeric `disclosedCount` is already gated for forms that do not itemize
+ * (`AskAnswerType.toType`), but the templated summary embeds the SAME number in
+ * prose — "3 matching items." — so gating only the field moved the count oracle
+ * from one column of the response into another. This is what the asker may read
+ * instead: the yes/no floor the rung already permits, and nothing about
+ * magnitude.
+ *
+ * `hasMatch` is derived from the STORED count, which is post-ceiling — at the
+ * `none` rung it is already zero, so a fully withheld answer reads as a
+ * negative rather than leaking that anything matched.
+ *
+ * Pure.
+ */
+export function countFreeSummary(form: AnswerForm, hasMatch: boolean): string {
+  switch (form) {
+    case 'boolean':
+      return hasMatch ? 'Yes.' : 'No.';
+    case 'identity':
+      return hasMatch ? 'Confirmed.' : 'Not confirmed.';
+    case 'existence':
+      return hasMatch ? 'They have at least one matching item.' : 'They have none.';
+    case 'attribute':
+      return hasMatch ? 'They shared the requested detail.' : 'They had nothing to share.';
+    case 'retrieval':
+    default:
+      // Unreachable in practice: `retrieval` itemizes, so its counts ARE the
+      // answer and it never takes this path. Kept total rather than throwing —
+      // a new form must degrade to the least-disclosing wording, not crash the
+      // projection.
+      return hasMatch ? 'They shared some items.' : 'They had nothing to share.';
+  }
+}
+
+/**
  * A templated, non-leaking summary. Replacing this with an LLM-synthesized
  * natural-language answer (completing the answer-inference RAG path) is a
  * follow-up; the template must never reveal more than the counts/form already do.

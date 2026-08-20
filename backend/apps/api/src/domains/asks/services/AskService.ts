@@ -1,17 +1,31 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { UserEntity } from '@ci/domains/user';
 
 import { assertAskTransition } from '../askStatus';
+import { type AskAnswer } from '../entities/AskAnswerEntity';
 import { type Ask, AskEntity } from '../entities/AskEntity';
-import type { AskStatus, CreateAskDto, GrantDecision } from '../types';
+import type { AskStatus, CreateAskDto, DisclosedAnswer, GrantDecision } from '../types';
 
+import { AskAnswerService } from './AskAnswerService';
 import { AskAuditService } from './AskAuditService';
 import { GrantService } from './GrantService';
+
+/**
+ * The single failure a caller gets for an unroutable responder.
+ *
+ * "You cannot ask yourself" and "no such user" MUST be indistinguishable. They
+ * used to differ badly: a self-ask raised this, while an unknown id fell through
+ * to the `asks_responder_user_id_fkey` violation from Postgres — a 500 carrying
+ * the constraint name. That turns `createAsk` into an account-enumeration
+ * oracle usable by any signed-in user against arbitrary ids.
+ */
+const UNROUTABLE_RESPONDER = 'An ask must be directed at another user';
 
 /**
  * Owns the {@link AskEntity} lifecycle and the submit orchestration that ties
@@ -34,8 +48,13 @@ export class AskService {
   constructor(
     @InjectRepository(AskEntity)
     private readonly askRepository: Repository<AskEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
     private readonly grantService: GrantService,
     private readonly auditService: AskAuditService,
+    private readonly answerService: AskAnswerService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(AskService.name);
@@ -50,10 +69,26 @@ export class AskService {
       throw new BadRequestException('An inbound ask must carry its peer link');
     }
 
-    // A local ask must be directed at someone else. An inbound peer ask has no
-    // local asker at all, so the self-ask guard does not apply to it.
-    if (!isInbound && data.responderUserId === context.userId) {
-      throw new BadRequestException('An ask must be directed at another user');
+    // A local ask must be directed at someone else, and at someone who exists.
+    // An inbound peer ask has no local asker at all, so the self-ask guard does
+    // not apply to it — but its responder is the link owner, which we already
+    // resolved from a live link.
+    //
+    // Both failures raise the IDENTICAL message (see {@link UNROUTABLE_RESPONDER}).
+    // Checking existence here rather than letting the FK fire is the point: the
+    // constraint violation names the responder column, which answers "does this
+    // account exist?" for any id the caller cares to try.
+    //
+    // An OUTBOUND ask carries a null responder (the responder is the peer named
+    // by the link), so there is no local account to look up and nothing to
+    // enumerate.
+    if (!isInbound) {
+      const unroutable =
+        data.responderUserId === context.userId ||
+        (data.responderUserId != null && !(await this.userExists(data.responderUserId)));
+      if (unroutable) {
+        throw new BadRequestException(UNROUTABLE_RESPONDER);
+      }
     }
 
     const record = this.askRepository.create({
@@ -138,13 +173,60 @@ export class AskService {
   }
 
   /**
+   * Persist a disclosure and finalize its ask ATOMICALLY.
+   *
+   * The answer row and the audit row are one disclosure recorded twice; written
+   * on separate connections they could disagree permanently. A crash between
+   * them left an answer the asker could read with no audit row saying it
+   * happened — and NOT a transient state: `AskAnswerService.create` is
+   * insert-only, so the retry raises a conflict instead of writing the missing
+   * audit. One transaction is what makes the two halves inseparable.
+   *
+   * The lifecycle gate still lives in {@link complete}, which runs INSIDE the
+   * transaction — a refusal there rolls the answer back rather than leaving it
+   * behind.
+   */
+  async completeWithAnswer(
+    context: UserServiceContext,
+    id: string,
+    disclosure: {
+      answer: DisclosedAnswer;
+      /** References that actually crossed to the asker. */
+      disclosedEntityIds: string[];
+      /** Entities the answer was computed over (post-redaction, pre-ceiling). */
+      backingEntityIds: string[];
+    },
+  ): Promise<{ ask: Ask; answer: AskAnswer }> {
+    return this.dataSource.transaction(async (manager) => {
+      const answer = await this.answerService.create({ askId: id, answer: disclosure.answer }, manager);
+      const ask = await this.complete(context, id, disclosure.disclosedEntityIds, {
+        backingEntityIds: disclosure.backingEntityIds,
+        manager,
+      });
+
+      return { ask, answer };
+    });
+  }
+
+  /**
    * Finalize an answerable ask (owner-approved `answering`, or auto-authorized
    * `delivered` with a consent basis) into `answered`, recording the terminal
-   * audit with the disclosed entity ids. Responder-scoped. An auto-authorized
-   * ask is first advanced `delivered → answering` so the lifecycle is honored.
+   * audit. Responder-scoped. An auto-authorized ask is first advanced
+   * `delivered → answering` so the lifecycle is honored.
+   *
+   * `disclosedEntityIds` is what the ASKER received — for every form but
+   * `retrieval` that is empty, because those answers itemize nothing.
+   * `options.backingEntityIds` is the owner-only record of what the answer was
+   * computed over; the two are separate fields precisely so the audit stops
+   * claiming the candidate set was disclosed.
    */
-  async complete(context: UserServiceContext, id: string, disclosedEntityIds: string[]): Promise<Ask> {
-    const entity = await this.responderOwned(context, id);
+  async complete(
+    context: UserServiceContext,
+    id: string,
+    disclosedEntityIds: string[],
+    options: { backingEntityIds?: string[]; manager?: EntityManager } = {},
+  ): Promise<Ask> {
+    const entity = await this.responderOwned(context, id, options.manager);
 
     const isAuto = entity.status === 'delivered' && entity.consentBasis != null;
     if (entity.status !== 'answering' && !isAuto) {
@@ -170,17 +252,21 @@ export class AskService {
     }
 
     entity.status = assertAskTransition(entity.status, 'answered');
-    const saved = await this.askRepository.save(entity);
+    const saved = await this.asks(options.manager).save(entity);
 
-    await this.auditService.record({
-      askId: saved.id,
-      askerUserId: saved.askerUserId,
-      responderUserId: saved.responderUserId,
-      query: saved.query,
-      consentBasis: saved.consentBasis,
-      outcome: isAuto ? 'auto_answered' : 'answered',
-      disclosedEntities: disclosedEntityIds,
-    });
+    await this.auditService.record(
+      {
+        askId: saved.id,
+        askerUserId: saved.askerUserId,
+        responderUserId: saved.responderUserId,
+        query: saved.query,
+        consentBasis: saved.consentBasis,
+        outcome: isAuto ? 'auto_answered' : 'answered',
+        disclosedEntities: disclosedEntityIds,
+        backingEntities: options.backingEntityIds ?? [],
+      },
+      options.manager,
+    );
 
     return AskEntity.toEgressType(saved);
   }
@@ -280,8 +366,12 @@ export class AskService {
     });
   }
 
-  private async responderOwned(context: UserServiceContext, id: string): Promise<AskEntity> {
-    const entity = await this.askRepository.findOne({
+  private async responderOwned(
+    context: UserServiceContext,
+    id: string,
+    manager?: EntityManager,
+  ): Promise<AskEntity> {
+    const entity = await this.asks(manager).findOne({
       where: { id, responderUserId: context.userId },
     });
     if (entity == null) {
@@ -289,6 +379,19 @@ export class AskService {
     }
 
     return entity;
+  }
+
+  /** The transaction's ask repository when one is supplied, otherwise the injected one. */
+  private asks(manager?: EntityManager): Repository<AskEntity> {
+    return manager ? manager.getRepository(AskEntity) : this.askRepository;
+  }
+
+  /**
+   * Does this local account exist? A bare existence probe — never surfaced to
+   * the caller as its own outcome (see {@link UNROUTABLE_RESPONDER}).
+   */
+  private async userExists(userId: string): Promise<boolean> {
+    return (await this.userRepository.countBy({ id: userId })) > 0;
   }
 
   private async byId(id: string): Promise<AskEntity> {

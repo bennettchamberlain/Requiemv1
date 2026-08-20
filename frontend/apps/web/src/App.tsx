@@ -47,6 +47,7 @@ const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
 const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
 const EventPage = lazy(() => import('@/pages/EventPage'));
+const AsksPage = lazy(() => import('@/pages/AsksPage'));
 const ForecastPage = lazy(() => import('@/pages/ForecastPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
@@ -435,6 +436,22 @@ function AppRoutes() {
               element={
                 <ProtectedRoute>
                   <JobsPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
+
+          {/* Asks — interpersonal questions between Companions. Gated on `ask`,
+              the same flag the backend resolvers check: with it off every ask
+              mutation returns `success: false`, so a registered route would be
+              a page of dead buttons. Flag-gated routes in this app are never
+              registered rather than blocked, which is what we want here. */}
+          {isFeatureEnabled('ask') && (
+            <Route
+              path="/asks"
+              element={
+                <ProtectedRoute>
+                  <AsksPage />
                 </ProtectedRoute>
               }
             />
