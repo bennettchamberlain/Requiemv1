@@ -1,6 +1,6 @@
-import { Field, GraphQLISODateTime, ID, ObjectType, registerEnumType } from '@nestjs/graphql';
+import { Field, GraphQLISODateTime, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 
-import type { Ask, AskAudit, AskGrant, AskQuery } from '@ci/domains/asks';
+import { isGrantActive, type Ask, type AskAudit, type AskGrant, type AskQuery } from '@ci/domains/asks';
 
 import { GlobalUID } from './GlobalUID';
 
@@ -155,8 +155,35 @@ export class AskGrantType {
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
 
+  @Field(() => GraphQLISODateTime)
+  updatedAt!: Date;
+
   @Field(() => GraphQLISODateTime, { nullable: true })
   revokedAt!: Date | null;
+
+  /** Scheduled lapse — the Grant Manager's "Expires {date}". */
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  expiresAt!: Date | null;
+
+  /** 'revoked' | 'superseded'; set only alongside `revokedAt`. */
+  @Field(() => String, { nullable: true })
+  revocationReason!: string | null;
+
+  /** 1 for an original grant, incremented by each change. */
+  @Field(() => Int)
+  version!: number;
+
+  /** The grant this one replaced, when it was written by a change. */
+  @Field(() => ID, { nullable: true })
+  supersedesGrantId!: string | null;
+
+  /**
+   * Whether the grant is in force right now. Computed rather than stored: a
+   * client that reasons from `revokedAt == null` alone silently treats a lapsed
+   * grant as live, which is the whole reason `expiresAt` exists.
+   */
+  @Field(() => Boolean)
+  active!: boolean;
 
   static toType(grant: AskGrant): AskGrantType {
     return {
@@ -168,7 +195,15 @@ export class AskGrantType {
       mode: grant.mode as GrantModeEnum,
       purpose: grant.purpose,
       createdAt: grant.createdAt,
+      updatedAt: grant.updatedAt,
       revokedAt: grant.revokedAt,
+      expiresAt: grant.expiresAt,
+      revocationReason: grant.revocationReason,
+      version: grant.version,
+      supersedesGrantId: grant.supersedesGrantId
+        ? GlobalUID.encode('ask-grant', grant.supersedesGrantId)
+        : null,
+      active: isGrantActive(grant),
     };
   }
 }

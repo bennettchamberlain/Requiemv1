@@ -31,6 +31,17 @@ export type GrantMode = 'auto' | 'review' | 'block';
 export type GrantDecision = 'auto' | 'review' | 'deny';
 
 /**
+ * Why a grant stopped being in force. Only ever set alongside `revokedAt`; a
+ * grant that merely lapsed carries `expiresAt` and no reason, because lapsing is
+ * not something the owner did.
+ *
+ * `superseded` marks a grant that was CHANGED: the replacement row points back
+ * at it via `supersedesGrantId`. Keeping the two apart is the difference between
+ * "they withdrew consent" and "they narrowed it" in the disclosure history.
+ */
+export type GrantRevocationReason = 'revoked' | 'superseded';
+
+/**
  * Relationship tier of an asker, coarsest trust last. `household` is a member of
  * the owner's own box; the rest mirror `PeerTrustTier` in the peers domain
  * (declared here rather than imported because peers depends on asks, not the
@@ -166,6 +177,23 @@ export interface CreateAskGrantDto {
   scope?: AskGrantScope | null;
   mode?: GrantMode;
   purpose?: string | null;
+  /** Scheduled lapse; must be in the future. NULL/omitted = stands until revoked. */
+  expiresAt?: Date | null;
+}
+
+/**
+ * A change to a standing grant. Applied by SUPERSEDING (revoke + replacement
+ * row), never by UPDATE — see {@link AskGrantEntity}. Every field is optional;
+ * an omitted one is inherited from the grant being replaced. `expiresAt` is
+ * `Date | null` rather than optional-only so a change can explicitly REMOVE an
+ * expiry, which is a different intent from "leave it alone".
+ */
+export interface UpdateAskGrantDto {
+  mode?: GrantMode;
+  dataClass?: string | null;
+  scope?: AskGrantScope | null;
+  purpose?: string | null;
+  expiresAt?: Date | null;
 }
 
 export interface RecordAskAuditDto {

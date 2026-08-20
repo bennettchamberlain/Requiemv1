@@ -1,4 +1,4 @@
-import { Field, ID, InputType, Int } from '@nestjs/graphql';
+import { Field, GraphQLISODateTime, ID, InputType, Int } from '@nestjs/graphql';
 
 import { GrantModeEnum } from './AskType';
 
@@ -46,6 +46,52 @@ export class CreateAskGrantInput {
   /** Optional DPV purpose URI (ECOSYSTEM.md Δ2). */
   @Field(() => String, { nullable: true })
   purpose?: string;
+
+  // NOTE: no `expiresAt` here yet. `CreateAskGrantDto` and `GrantService.create`
+  // both accept one, but wiring it through means editing `createAskGrant`'s body
+  // in AskResolver, which is being changed concurrently — a field the resolver
+  // silently drops would be worse than no field. Set an expiry with
+  // `updateAskGrant` until that one line lands.
+}
+
+/**
+ * A change to an existing standing grant — the Grant Manager matrix's
+ * `onChangeMode(grantId, mode)`.
+ *
+ * Every field is optional and an omitted one is INHERITED from the grant being
+ * replaced, so a mode flip does not have to restate the whole grant. Note that
+ * the grantee and the query type are absent by design: those identify which
+ * grant this is, and changing them would make it a different grant, so the
+ * caller creates one instead.
+ *
+ * Applied as a supersede — the old grant is closed out and a new row replaces
+ * it. `GrantService.supersede` explains why.
+ */
+@InputType()
+export class UpdateAskGrantInput {
+  @Field(() => GrantModeEnum, { nullable: true })
+  mode?: GrantModeEnum;
+
+  @Field(() => String, { nullable: true })
+  dataClass?: string;
+
+  @Field(() => [String], { nullable: true })
+  dataClasses?: string[];
+
+  @Field(() => String, { nullable: true })
+  purpose?: string;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  expiresAt?: Date;
+
+  /**
+   * Explicitly REMOVE the expiry, as distinct from leaving it alone. GraphQL
+   * cannot tell an omitted nullable input field from one passed as null, so the
+   * intent needs its own flag; without it, "make this grant permanent" is
+   * inexpressible.
+   */
+  @Field(() => Boolean, { nullable: true })
+  clearExpiry?: boolean;
 }
 
 /**

@@ -131,16 +131,19 @@ function mutableEntity(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeServiceWithRepo(entity: Record<string, unknown>) {
+function makeServiceWithRepo(entity: Record<string, unknown>, consentStanding = true) {
   const repo = {
     findOne: jest.fn().mockResolvedValue(entity),
     save: jest.fn().mockImplementation((e: unknown) => Promise.resolve(e)),
   };
-  const grantService = { evaluate: jest.fn() };
+  const grantService = {
+    evaluate: jest.fn(),
+    isConsentStanding: jest.fn().mockResolvedValue(consentStanding),
+  };
   const auditService = { record: jest.fn().mockResolvedValue(undefined) };
   const service = buildService({ repo, grantService, auditService });
 
-  return { service, repo, auditService };
+  return { service, repo, auditService, grantService };
 }
 
 const OWNER: UserServiceContext = { userId: 'responder-1' };
@@ -196,6 +199,39 @@ describe('AskService.complete', () => {
 
     await expect(service.complete(OWNER, 'ask-1', [])).rejects.toThrow();
     expect(auditService.record).not.toHaveBeenCalled();
+  });
+
+  // DEFECT 2 — revocation must reach an ALREADY-authorized ask.
+  //
+  // `submit` stamps consentBasis at submit time and `isAnswerable` trusts the
+  // stamp, so before this an ask pre-authorized under a grant stayed answerable
+  // for as long as it lived, no matter what the owner did to the grant
+  // afterwards. The UI promises "revocable in one tap"; a user reads that as
+  // "stops future disclosure", not "stops future asks only".
+  it('SECURITY: refuses to answer an auto-authorized ask whose grant is no longer in force', async () => {
+    const entity = mutableEntity({ status: 'delivered', consentBasis: 'grant-auto' });
+    const { service, auditService, grantService } = makeServiceWithRepo(entity, false);
+
+    await expect(service.complete(OWNER, 'ask-1', ['e1'])).rejects.toThrow(/no longer in force/);
+
+    expect(grantService.isConsentStanding).toHaveBeenCalled();
+    // Nothing is finalized and nothing is audited as answered — the ask stays
+    // where it was, for the owner to decide on personally.
+    expect(entity.status).toBe('delivered');
+    expect(auditService.record).not.toHaveBeenCalled();
+  });
+
+  // The other half of the same rule: an ask the owner personally approved is
+  // authorized by that decision, not by a standing grant, so the grant re-check
+  // must not run and must not be able to break it.
+  it('does NOT re-check grants for an ask the owner approved personally', async () => {
+    const entity = mutableEntity({ status: 'answering', consentBasis: null });
+    const { service, grantService } = makeServiceWithRepo(entity, false);
+
+    const result = await service.complete(OWNER, 'ask-1', ['e1']);
+
+    expect(result.status).toBe('answered');
+    expect(grantService.isConsentStanding).not.toHaveBeenCalled();
   });
 });
 
