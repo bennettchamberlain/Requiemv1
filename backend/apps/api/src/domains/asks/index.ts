@@ -20,6 +20,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { SearchNextModule } from '@ci/domains/search-next';
+import { UserEntity } from '@ci/domains/user';
 
 import { AskAnswerEntity } from './entities/AskAnswerEntity';
 import { AskAuditEntity } from './entities/AskAuditEntity';
@@ -37,7 +38,10 @@ import { GrantService } from './services/GrantService';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AskEntity, AskGrantEntity, AskAuditEntity, AskAnswerEntity]),
+    // UserEntity is registered read-only: AskService probes it to refuse an ask
+    // aimed at an account that does not exist, WITHOUT letting the FK violation
+    // answer that question for an attacker.
+    TypeOrmModule.forFeature([AskEntity, AskGrantEntity, AskAuditEntity, AskAnswerEntity, UserEntity]),
     SearchNextModule,
   ],
   providers: [
@@ -70,12 +74,13 @@ export {
 };
 export { evaluateGrant, canonicalDataClass } from './grantMatch';
 export { checkSlidingWindow } from './rateLimit';
-export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems } from './disclosure';
+export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems, countFreeSummary } from './disclosure';
 export {
   DISCLOSURE_RUNGS,
   applyDisclosureCeiling,
   disclosureCeiling,
   minRung,
+  narrowerForm,
   rungAtLeast,
   rungForForm,
 } from './policy';

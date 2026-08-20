@@ -1790,7 +1790,7 @@ type Mutation {
   """Return a placed event to the slate, deleting the event it minted"""
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   revokeAskGrant(id: ID!): AskGrantPayload!
-  runAsk(id: ID!, redactItemIds: [String!]): RunAskPayload!
+  runAsk(disclosureForm: AnswerForm, id: ID!, redactItemIds: [String!]): RunAskPayload!
 
   """
   Place an open task into the next free workday gap as a planned calendar block. The click is consent — trust dial does not re-ask.

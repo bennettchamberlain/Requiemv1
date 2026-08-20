@@ -1,4 +1,11 @@
-import { applyDisclosureCeiling, disclosureCeiling, minRung, rungAtLeast, rungForForm } from './policy';
+import {
+  applyDisclosureCeiling,
+  disclosureCeiling,
+  minRung,
+  narrowerForm,
+  rungAtLeast,
+  rungForForm,
+} from './policy';
 import type { DisclosedAnswer } from './types';
 
 function answer(overrides: Partial<DisclosedAnswer> = {}): DisclosedAnswer {
@@ -93,5 +100,30 @@ describe('applyDisclosureCeiling', () => {
     const boolAnswer = answer({ form: 'boolean', items: [] });
     expect(applyDisclosureCeiling(boolAnswer, 'full').items).toEqual([]);
     expect(rungForForm('boolean')).toBe('boolean');
+  });
+});
+
+/**
+ * The owner's choice of form is a LIMIT, not a selector. If it could raise the
+ * rung, the argument that exists to let the responder share less would become a
+ * way for a caller to share more than the ask's own archetype implies.
+ */
+describe('narrowerForm', () => {
+  it('takes the owner’s form when it discloses less', () => {
+    expect(narrowerForm('boolean', 'retrieval')).toBe('boolean');
+    expect(narrowerForm('existence', 'retrieval')).toBe('existence');
+    expect(narrowerForm('attribute', 'retrieval')).toBe('attribute');
+  });
+
+  it('keeps the inferred form when the owner’s would disclose MORE', () => {
+    expect(narrowerForm('retrieval', 'boolean')).toBe('boolean');
+    expect(narrowerForm('attribute', 'existence')).toBe('existence');
+    expect(narrowerForm('existence', 'boolean')).toBe('boolean');
+  });
+
+  it('gives a tie to the owner, who is the one expressing intent', () => {
+    // Both sit on the `boolean` rung; the wording the asker sees differs.
+    expect(narrowerForm('identity', 'boolean')).toBe('identity');
+    expect(narrowerForm('boolean', 'identity')).toBe('boolean');
   });
 });

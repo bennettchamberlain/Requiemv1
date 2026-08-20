@@ -27,16 +27,43 @@ function fakeAsk(overrides: Partial<Ask> = {}): Ask {
   } as Ask;
 }
 
+/**
+ * Construct AskService naming only the collaborators a test actually exercises.
+ *
+ * Positional DI past three or four dependencies is easy to get silently wrong —
+ * a swapped pair still compiles behind `as never` and only shows up as a weird
+ * failure elsewhere. Every call site names what it supplies; everything else is
+ * an inert stub.
+ *
+ * `users` defaults to "the responder exists", because that is the precondition
+ * of nearly every test here and not the thing under test.
+ */
+function buildService(
+  parts: {
+    repo?: unknown;
+    users?: unknown;
+    grantService?: unknown;
+    auditService?: unknown;
+    answerService?: unknown;
+    dataSource?: unknown;
+  } = {},
+): AskService {
+  return new AskService(
+    (parts.repo ?? {}) as never,
+    (parts.users ?? { countBy: jest.fn().mockResolvedValue(1) }) as never,
+    (parts.grantService ?? {}) as never,
+    (parts.auditService ?? {}) as never,
+    (parts.answerService ?? {}) as never,
+    (parts.dataSource ?? {}) as never,
+    { setContext: jest.fn() } as never,
+  );
+}
+
 function makeService() {
   const grantService = { evaluate: jest.fn() };
   const auditService = { record: jest.fn().mockResolvedValue(undefined) };
-  const logger = { setContext: jest.fn() };
-  const service = new AskService(
-    {} as never, // repository — create/systemTransition/setConsentBasis are spied
-    grantService as never,
-    auditService as never,
-    logger as never,
-  );
+  // repository omitted — create/systemTransition/setConsentBasis are spied.
+  const service = buildService({ grantService, auditService });
 
   return { service, grantService, auditService };
 }
@@ -111,13 +138,7 @@ function makeServiceWithRepo(entity: Record<string, unknown>) {
   };
   const grantService = { evaluate: jest.fn() };
   const auditService = { record: jest.fn().mockResolvedValue(undefined) };
-  const logger = { setContext: jest.fn() };
-  const service = new AskService(
-    repo as never,
-    grantService as never,
-    auditService as never,
-    logger as never,
-  );
+  const service = buildService({ repo, grantService, auditService });
 
   return { service, repo, auditService };
 }
@@ -134,6 +155,25 @@ describe('AskService.complete', () => {
     expect(result.status).toBe('answered');
     expect(auditService.record).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'answered', disclosedEntities: ['e1', 'e2'] }),
+      undefined,
+    );
+  });
+
+  it('audits the backing set under its OWN name, never as the disclosure', async () => {
+    const entity = mutableEntity({ status: 'answering' });
+    const { service, auditService } = makeServiceWithRepo(entity);
+
+    // The shape a clamped answer produces: nothing itemized to the asker, four
+    // entities read to compute it. Writing the four into `disclosedEntities` is
+    // what made the audit and ci.ask_answers disagree about the same event.
+    await service.complete(OWNER, 'ask-1', [], { backingEntityIds: ['e1', 'e2', 'e3', 'e4'] });
+
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        disclosedEntities: [],
+        backingEntities: ['e1', 'e2', 'e3', 'e4'],
+      }),
+      undefined,
     );
   });
 
@@ -144,7 +184,10 @@ describe('AskService.complete', () => {
     const result = await service.complete(OWNER, 'ask-1', []);
 
     expect(result.status).toBe('answered'); // delivered → answering → answered
-    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'auto_answered' }));
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'auto_answered' }),
+      undefined,
+    );
   });
 
   it('refuses to complete an ask that is not yet answerable', async () => {
@@ -161,10 +204,10 @@ function makeServiceForCreate() {
     create: jest.fn().mockImplementation((data: Record<string, unknown>) => data),
     save: jest.fn().mockImplementation((entity: Record<string, unknown>) => Promise.resolve(entity)),
   };
-  const logger = { setContext: jest.fn() };
-  const service = new AskService(repo as never, {} as never, {} as never, logger as never);
+  const users = { countBy: jest.fn().mockResolvedValue(1) };
+  const service = buildService({ repo, users });
 
-  return { service, repo };
+  return { service, repo, users };
 }
 
 describe('AskService.create — the self-ask guard', () => {
@@ -186,6 +229,132 @@ describe('AskService.create — the self-ask guard', () => {
       responderUserId: 'responder-1',
       status: 'delivered',
     });
+  });
+
+  /**
+   * The account-enumeration oracle. `create` used to do no existence check at
+   * all, so an unknown responder id fell through to Postgres and came back as
+   * the `asks_responder_user_id_fkey` violation — a different, recognizable
+   * failure from every other refusal. Any signed-in user could then test
+   * arbitrary ids for the existence of an account.
+   *
+   * The property is not "unknown ids are refused" (they always were, by the FK)
+   * but that the refusal is INDISTINGUISHABLE from the one a self-ask gets.
+   */
+  it('refuses an unknown responder with the SAME failure as a self-ask, never the FK error', async () => {
+    const { service, repo, users } = makeServiceForCreate();
+    users.countBy.mockResolvedValue(0); // no such account
+
+    const unknown = service.create(CTX, { ...DTO, responderUserId: 'ghost-1' });
+    await expect(unknown).rejects.toThrow('An ask must be directed at another user');
+    // Never reaches the database, so the constraint name never reaches the caller.
+    expect(repo.save).not.toHaveBeenCalled();
+
+    // Byte-for-byte the same message the self-ask guard raises.
+    const self = service.create({ userId: 'user-1' }, { ...DTO, responderUserId: 'user-1' });
+    const [unknownError, selfError] = await Promise.all([
+      unknown.catch((error: Error) => error.message),
+      self.catch((error: Error) => error.message),
+    ]);
+    expect(unknownError).toBe(selfError);
+  });
+
+  it('does not probe for a local account on an OUTBOUND ask, whose responder is a peer', async () => {
+    const { service, users } = makeServiceForCreate();
+
+    await expect(
+      service.create(CTX, { ...DTO, responderUserId: null, direction: 'outbound', peerLinkId: 'link-1' }),
+    ).resolves.toMatchObject({ responderUserId: null });
+    expect(users.countBy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The answer row and the audit row are ONE disclosure written twice. Split
+ * across two connections, a failure between them is permanent rather than
+ * transient: `AskAnswerService.create` is insert-only, so the retry hits the
+ * conflict instead of writing the audit that is missing.
+ */
+describe('AskService.completeWithAnswer — the disclosure and its audit are atomic', () => {
+  const DISCLOSED = {
+    answer: {
+      form: 'retrieval' as const,
+      items: [{ id: 'e1', type: 'file' }],
+      disclosedCount: 1,
+      withheldCount: 0,
+      summary: 'They shared 1 item.',
+      consentBasis: null,
+    },
+    disclosedEntityIds: ['e1'],
+    backingEntityIds: ['e1', 'e2'],
+  };
+
+  function makeTransactionalService(options: { failAudit?: boolean } = {}) {
+    const entity = mutableEntity({ status: 'answering' });
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(entity),
+      save: jest.fn().mockImplementation((e: unknown) => Promise.resolve(e)),
+    };
+    const auditService = {
+      record: options.failAudit
+        ? jest.fn().mockRejectedValue(new Error('audit write failed'))
+        : jest.fn().mockResolvedValue(undefined),
+    };
+    const answerService = { create: jest.fn().mockResolvedValue({ id: 'answer-1' }) };
+
+    // A faithful-enough stand-in: it hands the callback a manager and, like a
+    // real transaction, does NOT swallow a rejection — the rollback is the
+    // caller's error propagating rather than each write having already
+    // committed on its own connection.
+    const manager = { getRepository: jest.fn().mockReturnValue(repo) };
+    const dataSource = {
+      transaction: jest.fn(async (work: (m: unknown) => Promise<unknown>) => work(manager)),
+    };
+    const service = buildService({ repo, auditService, answerService, dataSource });
+
+    return { service, dataSource, manager, auditService, answerService };
+  }
+
+  it('writes the answer and the audit inside ONE transaction, both bound to its manager', async () => {
+    const { service, dataSource, manager, auditService, answerService } = makeTransactionalService();
+
+    const result = await service.completeWithAnswer(OWNER, 'ask-1', DISCLOSED);
+
+    expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+    // Both writes must be enrolled — an unenrolled one commits independently and
+    // reintroduces exactly the split this closes.
+    expect(answerService.create).toHaveBeenCalledWith({ askId: 'ask-1', answer: DISCLOSED.answer }, manager);
+    expect(auditService.record).toHaveBeenCalledWith(expect.any(Object), manager);
+    expect(result.ask.status).toBe('answered');
+    expect(result.answer).toEqual({ id: 'answer-1' });
+  });
+
+  it('propagates a failed audit write instead of leaving the answer behind', async () => {
+    const { service } = makeTransactionalService({ failAudit: true });
+
+    await expect(service.completeWithAnswer(OWNER, 'ask-1', DISCLOSED)).rejects.toThrow('audit write failed');
+  });
+
+  it('runs the lifecycle gate INSIDE the transaction, so a refusal takes the answer with it', async () => {
+    const entity = mutableEntity({ status: 'under_review' });
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(entity),
+      save: jest.fn(),
+    };
+    const manager = { getRepository: jest.fn().mockReturnValue(repo) };
+    const dataSource = {
+      transaction: jest.fn(async (work: (m: unknown) => Promise<unknown>) => work(manager)),
+    };
+    const answerService = { create: jest.fn().mockResolvedValue({ id: 'answer-1' }) };
+    const service = buildService({ repo, answerService, dataSource, auditService: { record: jest.fn() } });
+
+    await expect(service.completeWithAnswer(OWNER, 'ask-1', DISCLOSED)).rejects.toThrow(
+      /not ready to answer/,
+    );
+    // The answer write happened first — which is precisely why it has to be
+    // inside the transaction that then aborts.
+    expect(answerService.create).toHaveBeenCalledWith(expect.any(Object), manager);
+    expect(dataSource.transaction).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -265,12 +434,7 @@ describe('AskService.findById — participant-only visibility', () => {
   it('is visible to the asker', async () => {
     const ask = fakeAskRow({ id: 'ask-1', askerUserId: 'alice', responderUserId: 'bob' });
     const repo = fakeAskRepository([ask]);
-    const service = new AskService(
-      repo as never,
-      {} as never,
-      {} as never,
-      { setContext: jest.fn() } as never,
-    );
+    const service = buildService({ repo });
 
     await expect(service.findById({ userId: 'alice' }, 'ask-1')).resolves.toMatchObject({ id: 'ask-1' });
   });
@@ -278,12 +442,7 @@ describe('AskService.findById — participant-only visibility', () => {
   it('is visible to the responder', async () => {
     const ask = fakeAskRow({ id: 'ask-1', askerUserId: 'alice', responderUserId: 'bob' });
     const repo = fakeAskRepository([ask]);
-    const service = new AskService(
-      repo as never,
-      {} as never,
-      {} as never,
-      { setContext: jest.fn() } as never,
-    );
+    const service = buildService({ repo });
 
     await expect(service.findById({ userId: 'bob' }, 'ask-1')).resolves.toMatchObject({ id: 'ask-1' });
   });
@@ -295,12 +454,7 @@ describe('AskService.findById — participant-only visibility', () => {
     // anything".
     const otherAsk = fakeAskRow({ id: 'ask-2', askerUserId: 'carol', responderUserId: 'dave' });
     const repo = fakeAskRepository([ask, otherAsk]);
-    const service = new AskService(
-      repo as never,
-      {} as never,
-      {} as never,
-      { setContext: jest.fn() } as never,
-    );
+    const service = buildService({ repo });
 
     await expect(service.findById({ userId: 'carol' }, 'ask-1')).resolves.toBeNull();
     await expect(service.findById({ userId: 'dave' }, 'ask-1')).resolves.toBeNull();
@@ -329,12 +483,7 @@ describe('AskService.listInbox — responder-scoped review queue', () => {
     const someoneElses = fakeAskRow({ id: 'inbox-4', responderUserId: 'carol', status: 'delivered' });
 
     const repo = fakeAskRepository([mine1, mine2, answered, someoneElses]);
-    const service = new AskService(
-      repo as never,
-      {} as never,
-      {} as never,
-      { setContext: jest.fn() } as never,
-    );
+    const service = buildService({ repo });
 
     const inbox = await service.listInbox({ userId: 'bob' });
 
@@ -353,12 +502,7 @@ describe('AskService.listOutbox — asker-scoped sent history', () => {
     });
 
     const repo = fakeAskRepository([mine, someoneElses]);
-    const service = new AskService(
-      repo as never,
-      {} as never,
-      {} as never,
-      { setContext: jest.fn() } as never,
-    );
+    const service = buildService({ repo });
 
     const outbox = await service.listOutbox({ userId: 'alice' });
 

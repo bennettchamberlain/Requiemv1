@@ -217,11 +217,17 @@ export class PeerAskService {
     const disclosed = applyDisclosureCeiling(built, ceiling);
 
     await this.answerService.create({ askId: ask.id, answer: disclosed });
+    // Same split the local path makes: `disclosed.items` is what actually
+    // crossed to the peer (empty here — the peer protocol exposes no retrieval
+    // archetype), while the match set is the owner's own record of what the
+    // answer was computed over. Recording the matches as DISCLOSED made the
+    // audit over-report every federated answer.
     await this.recordAudit(
       ask,
       link,
       consentBasis,
       'auto_answered',
+      disclosed.items.map((item) => item.id),
       matches.map((match) => match.id),
     );
 
@@ -247,6 +253,7 @@ export class PeerAskService {
     consentBasis: string | null,
     outcome: 'auto_answered' | 'declined',
     disclosedEntities: string[],
+    backingEntities: string[] = [],
   ): Promise<void> {
     await this.auditService.record({
       askId: ask.id,
@@ -258,6 +265,7 @@ export class PeerAskService {
       consentBasis,
       outcome,
       disclosedEntities,
+      backingEntities,
     });
   }
 }

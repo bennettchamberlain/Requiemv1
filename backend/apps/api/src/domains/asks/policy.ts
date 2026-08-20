@@ -88,6 +88,25 @@ export function disclosureCeiling(tier: TrustTier, dataClass?: string | null): D
   return forClass ?? table['*'] ?? 'boolean';
 }
 
+/**
+ * The more restrictive of two answer forms, compared on the disclosure ladder.
+ *
+ * Used to let the OWNER pick the form without letting them widen it. The
+ * archetype-inferred form comes from `inferAnswerForm`, which reads the
+ * asker-supplied `queryType` — so an owner choice that discloses MORE than the
+ * archetype implies would hand the shape of the answer back to the asker's
+ * input. Only a lower rung survives.
+ *
+ * A tie goes to `chosen`, not `inferred`: `boolean` and `identity` sit on the
+ * same rung but read differently to the asker, and at equal disclosure the
+ * owner's explicit pick is the one that carries intent.
+ *
+ * Pure.
+ */
+export function narrowerForm(chosen: AnswerForm, inferred: AnswerForm): AnswerForm {
+  return rungAtLeast(rungForForm(inferred), rungForForm(chosen)) ? chosen : inferred;
+}
+
 /** The rung an answer of this form naturally occupies when nothing is withheld. */
 export function rungForForm(form: AnswerForm): DisclosureRung {
   switch (form) {

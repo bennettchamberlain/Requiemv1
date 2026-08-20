@@ -43,8 +43,23 @@ export class AskAuditEntity {
   @Column({ type: 'text', name: 'outcome' })
   outcome!: AskAuditOutcome;
 
+  /**
+   * The entity references that ACTUALLY crossed to the asker. Empty for every
+   * form that does not itemize — which is most of them — because those answers
+   * disclose a count or a yes/no and no references at all.
+   */
   @Column({ type: 'jsonb', name: 'disclosed_entities', default: () => "'[]'::jsonb" })
   disclosedEntities!: string[];
+
+  /**
+   * The entity ids the answer was computed over: post-redaction, PRE-ceiling.
+   * Never disclosed to the asker — this is the owner's own record of what their
+   * box read on the asker's behalf. Kept separate from
+   * {@link disclosedEntities} because conflating the two made the audit
+   * over-report every non-retrieval disclosure.
+   */
+  @Column({ type: 'jsonb', name: 'backing_entities', default: () => "'[]'::jsonb" })
+  backingEntities!: string[];
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
@@ -61,6 +76,7 @@ export class AskAuditEntity {
       consentBasis: entity.consentBasis,
       outcome: entity.outcome,
       disclosedEntities: entity.disclosedEntities,
+      backingEntities: entity.backingEntities,
       createdAt: entity.createdAt,
     };
   }
