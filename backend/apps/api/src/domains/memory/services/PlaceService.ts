@@ -6,6 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { isUniqueViolation } from '@ci/common/constants';
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import { computeChunkSize } from '@ci/common/persistence';
+import { isGeocodingConfigured } from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -27,6 +28,15 @@ export interface PlaceVisitStats {
   visitCount: number;
   firstVisitAt: Date | null;
   lastVisitAt: Date | null;
+  /**
+   * `confirmed`: this IS a fact about the place. `pending_enrichment`: this
+   * zero is not yet a measurement — geocoding isn't configured, or place
+   * promotion for this user has work outstanding, so an event that WILL
+   * eventually count as a visit here just hasn't been linked yet. A place
+   * with a non-zero visitCount is always `confirmed` — enrichment being
+   * behind cannot make an already-counted visit less real.
+   */
+  status: 'confirmed' | 'pending_enrichment';
 }
 
 /**
@@ -570,8 +580,33 @@ export class PlaceService {
       return out;
     }
 
+    // A zero-visit place is `pending_enrichment`, not a confirmed fact, when
+    // either (a) geocoding isn't configured — ENRICH_GEOCODE can never run,
+    // so PROMOTE_PLACE never gets a location_coordinates to work from — or
+    // (b) this user has enrich.geocode/promote.place work that hasn't
+    // finished. One cheap existence query per BATCH (not per place) so this
+    // never turns into an N+1.
+    const pending =
+      !isGeocodingConfigured() ||
+      (
+        await this.placeRepository.manager.query(
+          `SELECT EXISTS (
+             SELECT 1 FROM ci.pipeline_state
+              WHERE user_id = $1
+                AND stage IN ('enrich.geocode', 'promote.place')
+                AND status IN ('pending', 'failed', 'running')
+           ) AS exists`,
+          [context.userId],
+        )
+      )[0].exists;
+
     for (const id of placeIds) {
-      out.set(id, { visitCount: 0, firstVisitAt: null, lastVisitAt: null });
+      out.set(id, {
+        visitCount: 0,
+        firstVisitAt: null,
+        lastVisitAt: null,
+        status: pending ? 'pending_enrichment' : 'confirmed',
+      });
     }
 
     const rows: Array<{ place_id: string; n: string; first_at: Date | null; last_at: Date | null }> =
@@ -587,10 +622,13 @@ export class PlaceService {
       );
 
     for (const row of rows) {
+      // A place with at least one counted visit is confirmed regardless of
+      // outstanding enrichment elsewhere — this specific number is real.
       out.set(row.place_id, {
         visitCount: Number(row.n),
         firstVisitAt: row.first_at,
         lastVisitAt: row.last_at,
+        status: 'confirmed',
       });
     }
 

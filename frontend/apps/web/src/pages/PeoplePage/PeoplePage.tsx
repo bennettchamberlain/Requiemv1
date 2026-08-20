@@ -9,7 +9,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { gql } from '@/graphql';
-import type { GetMergeCandidatesQuery, GetPeopleQuery, GetPersonDuplicatesQuery } from '@/graphql/graphql';
+import type { GetMergeCandidatesQuery, GetPeopleQuery } from '@/graphql/graphql';
 
 // Matches MemoryPage's PAGE_SIZE. Keeping it small also keeps the batch handed
 // to PersonInteractionStatsLoader small — that resolver aggregates over the
@@ -52,30 +52,13 @@ const GET_PEOPLE = gql(`
   }
 `);
 
-const GET_PERSON_DUPLICATES = gql(`
-  query GetPersonDuplicates($limit: Int, $offset: Int, $reasons: [String!]) {
-    personDuplicates(limit: $limit, offset: $offset, reasons: $reasons) {
-      totalCount
-      hasMore
-      groups {
-        reason
-        value
-        totalPeople
-        people {
-          id
-          name
-          description
-          avatarUrl
-          isSelf
-        }
-      }
-    }
-  }
-`);
-
 // The duplicate-detection pipeline's own queue: pairs it scored, with the
-// evidence behind each one. Separate from GET_PERSON_DUPLICATES, which
-// recomputes cruder exact matches on every request.
+// evidence behind each one — the sole source of merge suggestions now that
+// `clean.duplicate_detect` has a real evidence producer for every Person
+// (enrich.person_self_claim), not only ones a communication or event
+// resolved to. This page used to ALSO run its own cruder exact-match
+// recomputation (personDuplicates) on every request; that path is retired
+// in favour of this one, single, human-reviewed queue.
 const GET_MERGE_CANDIDATES = gql(`
   query GetMergeCandidates($first: Int, $after: String) {
     mergeCandidates(first: $first, after: $after) {
@@ -171,20 +154,11 @@ interface MergeOutcome {
 }
 
 type PersonNode = GetPeopleQuery['people']['edges'][number]['node'];
-type DuplicateGroup = GetPersonDuplicatesQuery['personDuplicates']['groups'][number];
 type MergeCandidate = GetMergeCandidatesQuery['mergeCandidates']['edges'][number]['node'];
-type MergablePerson = DuplicateGroup['people'][number];
+type MergablePerson = MergeCandidate['people'][number];
 
-/** Duplicate groups per page, and candidates per page. Both are "load more"-able. */
-export const DUPLICATE_PAGE_SIZE = 25;
+/** Candidates per page — "load more"-able. */
 export const CANDIDATE_PAGE_SIZE = 20;
-
-const DUPLICATE_REASONS = [
-  { value: null, label: 'All' },
-  { value: 'email', label: 'Email' },
-  { value: 'phone', label: 'Phone' },
-  { value: 'name', label: 'Name' },
-] as const;
 
 function resolveAvatarUrl(avatarUrl: string | null | undefined): string | undefined {
   if (!avatarUrl) {
@@ -439,39 +413,6 @@ function MergeSuggestionCard({
   );
 }
 
-function DuplicateGroupCard({
-  group,
-  onMerged,
-}: {
-  group: DuplicateGroup;
-  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
-}) {
-  // A group can be truncated (six members of a value shared by hundreds); say
-  // so rather than implying the merge would cover all of them.
-  const truncated = group.totalPeople > group.people.length;
-
-  return (
-    <MergeSuggestionCard
-      people={group.people}
-      onMerged={onMerged}
-      heading={
-        <>
-          <Merge className="h-4 w-4" />
-          <span>
-            Same {group.reason === 'name' ? 'name' : group.reason}:{' '}
-            <span className="font-medium text-foreground">{group.value}</span>
-          </span>
-        </>
-      }
-      note={
-        truncated
-          ? `Showing ${group.people.length} of ${group.totalPeople} people sharing this ${group.reason} — merging affects only the ${group.people.length} shown.`
-          : null
-      }
-    />
-  );
-}
-
 /** A scored pair from `ci.merge_candidates`, with the evidence behind it. */
 function MergeCandidateCard({
   candidate,
@@ -520,27 +461,6 @@ export function PeoplePage() {
     variables: peopleVariables,
     notifyOnNetworkStatusChange: true,
   });
-  // Which kind of duplicate group to show. The page used to ask for an
-  // unfiltered top 25, ordered so email and phone groups always won — with
-  // thousands of name groups behind them, they were unreachable.
-  const [duplicateReason, setDuplicateReason] = useState<string | null>(null);
-  // Pages fetched, not groups rendered: the server drops rejected pairs from a
-  // page AFTER applying OFFSET, so counting the groups on screen would walk the
-  // offset backwards and re-request rows already seen.
-  const [duplicatePages, setDuplicatePages] = useState(1);
-  const {
-    data: duplicatesData,
-    error: duplicatesError,
-    refetch: refetchDuplicates,
-    fetchMore: fetchMoreDuplicates,
-  } = useQuery(GET_PERSON_DUPLICATES, {
-    variables: {
-      limit: DUPLICATE_PAGE_SIZE,
-      offset: 0,
-      reasons: duplicateReason == null ? null : [duplicateReason],
-    },
-    notifyOnNetworkStatusChange: true,
-  });
 
   // The scored queue the duplicate-detection pipeline has been filling.
   const {
@@ -566,45 +486,11 @@ export function PeoplePage() {
   // may have none at all — a recency sort would put the garbage name right back
   // on top of the list, reintroducing the bug the backend ordering fixed.
   const people = useMemo(() => (view?.people.edges ?? []).map((edge) => edge.node), [view]);
-  const duplicates = duplicatesData?.personDuplicates;
-  const duplicateGroups = duplicates?.groups ?? [];
   const mergeCandidates = useMemo(
     () => (candidatesData?.mergeCandidates.edges ?? []).map((edge) => edge.node),
     [candidatesData],
   );
   const candidatesPageInfo = candidatesData?.mergeCandidates.pageInfo;
-
-  // Append the next page of duplicate groups. Offset-based: the groups are
-  // recomputed per request and have no stable cursor, and the server order is
-  // deterministic (reason, then size, then value).
-  const loadMoreDuplicates = () => {
-    setDuplicatePages((pages) => pages + 1);
-
-    void fetchMoreDuplicates({
-      variables: { offset: duplicatePages * DUPLICATE_PAGE_SIZE },
-      updateQuery: (prev, { fetchMoreResult }) => {
-        if (!fetchMoreResult?.personDuplicates) {
-          return prev;
-        }
-
-        const seen = new Set(
-          (prev.personDuplicates?.groups ?? []).map((group) => `${group.reason}:${group.value}`),
-        );
-
-        return {
-          personDuplicates: {
-            ...fetchMoreResult.personDuplicates,
-            groups: [
-              ...(prev.personDuplicates?.groups ?? []),
-              ...fetchMoreResult.personDuplicates.groups.filter(
-                (group) => !seen.has(`${group.reason}:${group.value}`),
-              ),
-            ],
-          },
-        };
-      },
-    });
-  };
 
   const loadMoreCandidates = () =>
     void fetchMoreCandidates({
@@ -740,14 +626,13 @@ export function PeoplePage() {
               fetchPolicy: 'network-only',
             })
           : Promise.resolve(),
-        refetchDuplicates(),
         refetchCandidates(),
       ]);
 
-      // Only now that the duplicate groups and scored candidates have been
-      // re-read (so nothing still references them) is it safe to drop the
-      // merged-away people; evicting first would leave those queries pointing
-      // at missing objects mid-render.
+      // Only now that the scored candidates have been re-read (so nothing
+      // still references them) is it safe to drop the merged-away people;
+      // evicting first would leave that query pointing at missing objects
+      // mid-render.
       if (removed.size > 0) {
         for (const id of removedIds) {
           client.cache.evict({ id: client.cache.identify({ __typename: 'PersonType', id }) });
@@ -756,7 +641,7 @@ export function PeoplePage() {
         client.cache.gc();
       }
     },
-    [client, peopleVariables, refetchCandidates, refetchDuplicates],
+    [client, peopleVariables, refetchCandidates],
   );
 
   let content: ReactNode | null = null;
@@ -818,72 +703,6 @@ export function PeoplePage() {
 
                   <div className="text-center text-xs text-muted-foreground">
                     {mergeCandidates.length} of {candidatesData?.mergeCandidates.totalCount ?? 0} shown
-                  </div>
-                </Card.Content>
-              </Card>
-            )}
-
-            {duplicatesError && (
-              <div className="text-sm text-muted-foreground">
-                Duplicate suggestions are unavailable right now ({duplicatesError.message}).
-              </div>
-            )}
-
-            {(duplicateGroups.length > 0 || duplicateReason != null) && (
-              <Card>
-                <Card.Header>
-                  <Card.Title className="flex items-center gap-2 text-base">
-                    <Merge className="h-4 w-4" />
-                    Possible duplicates
-                    <Badge variant="secondary">{duplicates?.totalCount ?? 0}</Badge>
-                  </Card.Title>
-                  <Card.Description>
-                    These people share an email, phone number or name. Review and merge the ones that are the
-                    same person.
-                  </Card.Description>
-                  <div className="flex flex-wrap items-center gap-2 pt-2">
-                    {DUPLICATE_REASONS.map((option) => (
-                      <Button
-                        key={option.label}
-                        size="sm"
-                        variant={duplicateReason === option.value ? 'secondary' : 'ghost'}
-                        onClick={() => {
-                          // New filter, new offset space — a stale page count
-                          // would start the next "load more" mid-list.
-                          setDuplicatePages(1);
-                          setDuplicateReason(option.value);
-                        }}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </div>
-                </Card.Header>
-                <Card.Content className="flex flex-col gap-3">
-                  {duplicateGroups.length === 0 ? (
-                    <div className="py-2 text-sm text-muted-foreground">
-                      No duplicate groups match this filter.
-                    </div>
-                  ) : (
-                    duplicateGroups.map((group) => (
-                      <DuplicateGroupCard
-                        key={`${group.reason}:${group.value}`}
-                        group={group}
-                        onMerged={onMerged}
-                      />
-                    ))
-                  )}
-
-                  {duplicates?.hasMore && (
-                    <div className="flex justify-center">
-                      <Button variant="outline" size="sm" onClick={loadMoreDuplicates}>
-                        Load more duplicate groups
-                      </Button>
-                    </div>
-                  )}
-
-                  <div className="text-center text-xs text-muted-foreground">
-                    {duplicateGroups.length} of {duplicates?.totalCount ?? 0} groups shown
                   </div>
                 </Card.Content>
               </Card>

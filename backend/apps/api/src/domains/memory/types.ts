@@ -968,6 +968,8 @@ export interface CreateCommunicationDto {
   from_entity_id?: string;
   to_entity_ids?: string[];
   participants_metadata?: Record<string, unknown>;
+  // Catch-all for whatever the parser set that has no dedicated column.
+  metadata?: Record<string, unknown>;
   subject?: string;
   content: string;
   attachments?: unknown[];

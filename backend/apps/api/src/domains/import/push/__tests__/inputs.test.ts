@@ -310,6 +310,42 @@ describe('toCommunicationInput', () => {
     expect(toCommunicationInput(outbound).direction).toBe('outbound');
   });
 
+  // ci.communications had no metadata column at all, so a field a parser set
+  // that has no dedicated one was silently dropped at push — a tweet's
+  // permalink, likes, retweets, language and reply-parent, concretely.
+  it('carries fields with no dedicated column through metadata', () => {
+    const tweet = recordFor({
+      classification: 'social',
+      dataSource: 'twitter',
+      metadata: {
+        URL: 'https://x.com/user/status/123',
+        Retweets: 5,
+        Likes: 12,
+        Lang: 'en',
+        ReplyTo: '999',
+      },
+    });
+
+    expect(toCommunicationInput(tweet).metadata).toMatchObject({
+      URL: 'https://x.com/user/status/123',
+      Retweets: 5,
+      Likes: 12,
+      Lang: 'en',
+      ReplyTo: '999',
+    });
+  });
+
+  it('keeps a field ALSO promoted to a dedicated column inside metadata too', () => {
+    // Same round-trip-completeness reason toEventInput keeps Duration (minutes)
+    // in metadata even after promoting it to duration_seconds.
+    const call = recordFor({ classification: 'call', metadata: { Duration: 90, Subject: 'Weekly sync' } });
+    const input = toCommunicationInput(call);
+
+    expect(input.duration_seconds).toBe(90);
+    expect(input.subject).toBe('Weekly sync');
+    expect(input.metadata).toMatchObject({ Duration: 90, Subject: 'Weekly sync' });
+  });
+
   describe('Reddit posts and comments', () => {
     it('files an authored post as outbound, subject = title, thread = subreddit', () => {
       const post = recordFor({

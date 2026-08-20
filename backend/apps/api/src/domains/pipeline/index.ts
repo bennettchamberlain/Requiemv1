@@ -72,6 +72,7 @@ import { EstimateLocationStage } from './stages/enrich/EstimateLocationStage';
 import { GeocodeStage } from './stages/enrich/GeocodeStage';
 import { MediaDimensionsStage } from './stages/enrich/MediaDimensionsStage';
 import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLinkStage';
+import { PersonSelfClaimStage } from './stages/enrich/PersonSelfClaimStage';
 import { PositionReverseStage } from './stages/enrich/PositionReverseStage';
 import { EmbedStage } from './stages/index/EmbedStage';
 import {
@@ -160,6 +161,7 @@ const stageProviders: Provider[] = [
   // two tables.
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_PERSON_LINK], useClass: PersonLinkStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_EVENT_PERSON_LINK], useClass: EventPersonLinkStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_PERSON_SELF_CLAIM], useClass: PersonSelfClaimStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_TEMPORAL_REPAIR], useClass: TemporalRepairStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_DUPLICATE_DETECT], useClass: DuplicateDetectStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },

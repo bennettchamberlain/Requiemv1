@@ -194,6 +194,37 @@ describe('Google Voice datasource', () => {
     expect(attachment!.item.timestamp!.toISOString()).toBe('2025-01-15T09:33:00.000Z');
   });
 
+  // MMS image attachments were pushed with classification 'message' and no
+  // way to be recognized as file-bearing, so 0 of them ever uploaded even
+  // though the message itself landed. MediaAttachments is the same
+  // descriptor shape (and the same MediaStage attachment leg) that already
+  // carries a voicemail recording — see 'voicemail recordings' below.
+  it('attaches the MMS image via MediaAttachments so MediaStage can upload it', async () => {
+    const exportDir = path.join(FIXTURES_DIR, 'google-voice-export');
+    const fi = new GoogleVoiceFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    await fi.fileImport({}, { filename: 'google-voice-export', fullPath: exportDir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const attachment = pipeline.find((p) => p.item?.metadata?.Attachment === 'image');
+    expect(attachment).toBeDefined();
+    const mediaAttachments = attachment!.item.metadata?.MediaAttachments as
+      Array<{ path: string; filename: string; type: string; mimetype: string }> | undefined;
+    expect(mediaAttachments).toHaveLength(1);
+    expect(mediaAttachments![0].type).toBe('image');
+    expect(mediaAttachments![0].mimetype).toBe('image/jpeg');
+    expect(mediaAttachments![0].filename).toBe(attachment!.item.content?.filename);
+
+    // Left '' on purpose: a real MIME here would make MediaStage's primary
+    // media leg upload the same bytes a SECOND time via a separate, orphaned
+    // path — only the attachment leg (gated on MediaAttachments) should ever
+    // see this item as file-bearing.
+    expect(attachment!.item.content?.mediaType).toBe('');
+  });
+
   it('imports call and voicemail records (haudio markup) as classification "call" instead of dropping them', async () => {
     // Real Google Voice "Missed"/"Placed"/"Voicemail" HTML files use
     // <div class="haudio"> markup with no <q> text body and no <div
@@ -842,6 +873,7 @@ describe('voicemail transcripts in real export markup', () => {
       { filename: 'google-voice-export-realmarkup', fullPath: exportDir },
       { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
     );
+
     return pipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item);
   }
 
@@ -916,6 +948,7 @@ describe('voicemail recordings', () => {
       { filename: 'google-voice-export-realmarkup', fullPath: exportDir },
       { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
     );
+
     return pipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item);
   }
 

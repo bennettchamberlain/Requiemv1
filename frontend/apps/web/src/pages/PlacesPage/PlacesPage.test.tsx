@@ -44,6 +44,7 @@ const GET_PLACES = gql(`
             visitCount
             firstVisitAt
             lastVisitAt
+            status
           }
         }
       }
@@ -53,6 +54,7 @@ const GET_PLACES = gql(`
 
 const GET_KNOWN_PLACES = gql(`
   query GetKnownPlaces {
+    geocodingConfigured
     knownPlaces {
       id
       locationId
@@ -137,11 +139,18 @@ function emptyPlacesMock() {
   return placesMock({ totalCount: 0, edges: [] });
 }
 
-function knownPlacesMock(overrides: { knownPlaces?: unknown[]; knownPlaceCandidates?: unknown[] } = {}) {
+function knownPlacesMock(
+  overrides: {
+    knownPlaces?: unknown[];
+    knownPlaceCandidates?: unknown[];
+    geocodingConfigured?: boolean;
+  } = {},
+) {
   return {
     request: { query: GET_KNOWN_PLACES },
     result: {
       data: {
+        geocodingConfigured: overrides.geocodingConfigured ?? true,
         knownPlaces: overrides.knownPlaces ?? [],
         knownPlaceCandidates: overrides.knownPlaceCandidates ?? [],
       },
@@ -186,7 +195,11 @@ function knownPlace(overrides: Record<string, unknown> = {}) {
 const PLACE_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff6fd';
 const PLACE_GLOBAL_ID = btoa(`place:${PLACE_UUID}`);
 
-function placeEdge({ id = PLACE_GLOBAL_ID, name = 'Bletchley Park' } = {}) {
+function placeEdge({
+  id = PLACE_GLOBAL_ID,
+  name = 'Bletchley Park',
+  visitStats,
+}: { id?: string; name?: string; visitStats?: Record<string, unknown> } = {}) {
   return {
     __typename: 'PlaceEdge' as const,
     cursor: id,
@@ -199,11 +212,12 @@ function placeEdge({ id = PLACE_GLOBAL_ID, name = 'Bletchley Park' } = {}) {
       latitude: null,
       longitude: null,
       parent: null,
-      visitStats: {
+      visitStats: visitStats ?? {
         __typename: 'PlaceVisitStatsType' as const,
         visitCount: 0,
         firstVisitAt: null,
         lastVisitAt: null,
+        status: 'confirmed' as const,
       },
     },
   };
@@ -267,6 +281,43 @@ describe('PlacesPage', () => {
     expect(screen.getByText(/loaded/).textContent).toContain('1 of 1179 loaded');
   });
 
+  /**
+   * A zero-visit place used to render identically to "0 visits" whether that
+   * was a genuine measurement or enrichment hadn't finished linking events to
+   * it yet. `status: 'pending_enrichment'` must read differently.
+   */
+  it('shows "Visits pending" instead of "0 visits" for a place not yet enriched', async () => {
+    renderWithProviders(<PlacesPage />, {
+      mocks: [
+        placesMock({
+          edges: [
+            placeEdge({
+              visitStats: {
+                __typename: 'PlaceVisitStatsType',
+                visitCount: 0,
+                firstVisitAt: null,
+                lastVisitAt: null,
+                status: 'pending_enrichment',
+              },
+            }),
+          ],
+        }),
+        knownPlacesMock(),
+      ],
+    });
+
+    expect(await screen.findByText('Bletchley Park')).toBeInTheDocument();
+    expect(screen.getByText('Visits pending')).toBeInTheDocument();
+    expect(screen.queryByText('0 visits')).not.toBeInTheDocument();
+  });
+
+  it('still shows "0 visits" for a confirmed zero — enrichment being caught up is not enough to hide it', async () => {
+    renderWithProviders(<PlacesPage />, { mocks });
+
+    expect(await screen.findByText('Bletchley Park')).toBeInTheDocument();
+    expect(screen.getByText('0 visits')).toBeInTheDocument();
+  });
+
   it('appends the next page when the sentinel scrolls into view', async () => {
     const SECOND_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff6fe';
     const SECOND_GLOBAL_ID = btoa(`place:${SECOND_UUID}`);
@@ -299,6 +350,35 @@ describe('PlacesPage', () => {
   });
 
   describe('KnownPlacesCard', () => {
+    /**
+     * Every candidate defaults to "Unknown place · looks like Other" when
+     * reverse-geocoding hasn't named it — which used to read as a fact about
+     * the places rather than as configuration work not yet done.
+     */
+    it('explains why candidates are unnamed when geocoding is not configured', async () => {
+      renderWithProviders(<PlacesPage />, {
+        mocks: [
+          emptyPlacesMock(),
+          knownPlacesMock({ knownPlaceCandidates: [candidate()], geocodingConfigured: false }),
+        ],
+      });
+
+      expect(await screen.findByText('Corner Cafe')).toBeInTheDocument();
+      expect(screen.getByText(/Geocoding isn.t configured on this appliance/)).toBeInTheDocument();
+    });
+
+    it('says nothing about geocoding once it is configured', async () => {
+      renderWithProviders(<PlacesPage />, {
+        mocks: [
+          emptyPlacesMock(),
+          knownPlacesMock({ knownPlaceCandidates: [candidate()], geocodingConfigured: true }),
+        ],
+      });
+
+      expect(await screen.findByText('Corner Cafe')).toBeInTheDocument();
+      expect(screen.queryByText(/Geocoding isn.t configured/)).not.toBeInTheDocument();
+    });
+
     it('confirms a candidate and reflects the success by refetching it off the candidate list', async () => {
       renderWithProviders(<PlacesPage />, {
         mocks: [
