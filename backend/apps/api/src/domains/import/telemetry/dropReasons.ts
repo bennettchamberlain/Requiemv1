@@ -162,6 +162,13 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   excluded_retweet: 'filtered',
   outside_timeframe: 'filtered',
   non_message: 'filtered',
+  /**
+   * A WhatsApp system notice ("Messages are end-to-end encrypted", a group
+   * rename) — excluded on purpose, and not a message anyone wrote. Registered
+   * here late: the parser has emitted it since the filter was written, so it
+   * counted as `unclassified` and the registry test has been failing on it.
+   */
+  whatsapp_system_line: 'filtered',
 
   // The source says it did not happen.
   cancelled_order: 'cancelled',
@@ -246,6 +253,14 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   media_not_a_file: 'media_unsupported',
   /** MediaStage: the object store refused or errored on the upload. */
   media_upload_failed: 'media_store_failed',
+  /**
+   * MediaStage: a message declared an attachment that carried no local path, so
+   * there were no bytes to store. An iMessage row whose attachment survived the
+   * export as a guid alone is the common case.
+   */
+  attachment_no_path: 'media_missing',
+  /** MediaStage: the attachment's bytes stored, but its ci.content row did not. */
+  attachment_content_failed: 'media_store_failed',
   /** UnpackStage: an archive that could not be expanded. Everything inside it is absent. */
   archive_rejected: 'archive_rejected',
   /** PushStage: rows still `pending` when the stage stopped. */

@@ -31,6 +31,7 @@ import { UserModule } from '@ci/domains/user';
 import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 
 import { GraphQLController } from './controllers/GraphQLController';
+import { AttachmentFileLoader } from './loaders/AttachmentFileLoader';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
 import { ContentFileLoader } from './loaders/ContentFileLoader';
 import { ContentLoader } from './loaders/ContentLoader';
@@ -168,6 +169,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     NoteResolver,
     TaskResolver,
     AnswerResolver,
+    AttachmentFileLoader,
     EventContentsLoader,
     EventLoader,
     EventMediaLoader,
