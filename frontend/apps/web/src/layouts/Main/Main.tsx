@@ -27,7 +27,15 @@ export function Main() {
     return (
       <PowerRailProvider variant="overlay">
         <div className="flex h-lvh flex-col pt-[calc(var(--safe-area-top)+0.5rem)]">
-          <Toaster position="top-right" theme={themeState.mode} />
+          {/* Viewport-fixed; default 16px top sits under the status bar /
+              Dynamic Island. Offset past safe-area + the phone header so the
+              toast is in the content well, not the notch. */}
+          <Toaster
+            position="top-center"
+            offset={{ top: 'calc(var(--safe-area-top) + 3.5rem)' }}
+            mobileOffset={{ top: 'calc(var(--safe-area-top) + 3.5rem)' }}
+            theme={themeState.mode}
+          />
           <MobileTopBar />
           <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
             <Suspense fallback={<LoadingPage />}>
