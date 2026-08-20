@@ -10,6 +10,7 @@ import Database from 'better-sqlite3';
 import { isShortCode } from '../staging/identity';
 
 import { attachmentMediaKind } from './attachment_extract';
+import { decodeAttributedBody } from './attributed_body';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
 import type { AttachmentDescriptor, Entity, Graph, ImportParams, Item } from './timeline';
@@ -267,6 +268,7 @@ class iMessageFileImporter implements FileImporter {
         'message.guid as guid',
         'message.date as message_date',
         'message.text as message_text',
+        has('attributedBody') && 'message.attributedBody as attributed_body',
         'message.is_from_me',
         'message.service',
         has('date_read') && 'message.date_read',
@@ -301,6 +303,7 @@ class iMessageFileImporter implements FileImporter {
         guid?: string | null;
         message_date?: number | null;
         message_text?: string | null;
+        attributed_body?: Buffer | null;
         is_from_me?: number | null;
         service?: string | null;
         date_read?: number | null;
@@ -365,6 +368,10 @@ class iMessageFileImporter implements FileImporter {
           const threadIdentifier =
             chat?.identifier ??
             (correspondent && oneToOneChatIdentifiers.has(correspondent) ? correspondent : undefined);
+          // Recent macOS leaves `text` NULL and stores the body only in the
+          // binary `attributedBody` column, so the plain column alone loses
+          // most of the current year (see decodeAttributedBody).
+          const bodyText = row.message_text || decodeAttributedBody(row.attributed_body);
           const item: Item = {
             id: row.guid ? row.guid : `imessage_${row.message_id}`,
             classification: 'message',
@@ -372,7 +379,7 @@ class iMessageFileImporter implements FileImporter {
             content: { filename: `message_${row.message_id}.txt` },
             metadata: {
               Source: 'iMessage',
-              ...(row.message_text && { Text: row.message_text }),
+              ...(bodyText && { Text: bodyText }),
               'From Me': row.is_from_me === 1,
               Service: row.service,
               ...(senderHandle && { Sender: senderHandle }),
