@@ -25,16 +25,26 @@ vi.mock('./HistoryTab', () => ({ HistoryTab: () => <div>history surface</div> })
 describe('ImportSurface', () => {
   // The defect the pinned region exists for: /sources/import opens on Pick — a
   // service picker — and a 13-source import could run for an hour behind it
-  // with nothing on screen saying so. It has to be above the navigation row and
-  // present on EVERY surface, not just the one that happened to start the run.
-  it('pins live import progress above everything, on every surface', () => {
-    render(<ImportSurface />);
+  // with nothing on screen saying so. It has to be present on EVERY surface,
+  // not just the one that happened to start the run.
+  it('pins live import progress outside every panel, on every surface', () => {
+    const { container } = render(<ImportSurface />);
 
+    const surface = container.firstElementChild;
     const activity = screen.getByText('import activity');
 
     expect(activity).toBeInTheDocument();
-    // First child of the surface — above the step row, not tucked under a tab.
-    expect(activity.parentElement?.firstElementChild).toBe(activity);
+    // A direct child of the surface, not of a panel. #2182 moved it from the
+    // very top to below the navigation row, which changes nothing that matters;
+    // moving it INSIDE the wizard/Inbox/History panel would, because it would
+    // then vanish the moment you left the surface that started the run — which
+    // is the entire defect this region exists for.
+    expect(activity.parentElement).toBe(surface);
+    // And ahead of the wizard in the column, so it shares the screen with the
+    // step you are on instead of sitting below it.
+    expect(
+      activity.compareDocumentPosition(screen.getByText('wizard surface')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /history/i }));
     expect(screen.getByText('import activity')).toBeInTheDocument();
@@ -63,7 +73,10 @@ describe('ImportSurface', () => {
     // service grid — the default step's entire content — measured ZERO. The cap
     // is fixed rather than proportional because the thing that must survive is
     // a grid of fixed-height rows. Raising it re-breaks the picker, so the test
-    // names the value.
+    // names the value — and #2182 raised it to 40rem, which is 640px and cannot
+    // bind inside a 440px column, so the cap silently stopped existing. The
+    // region is `shrink-0` with its own internal scroller: it never yields
+    // space under pressure, and this ceiling is all that bounds it.
     expect(activity.className).toContain('sm:max-h-[8.5rem]');
     // And no cap on a phone, where this column is ~200px and half of it is
     // less than the region's own summary — that clipped it mid-sentence.
