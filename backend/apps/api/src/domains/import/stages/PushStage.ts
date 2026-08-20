@@ -17,6 +17,7 @@ import {
 import {
   CommunicationService,
   ContentService,
+  type CreateContentDto,
   EventService,
   ItemService,
   ObjectObservationService,
@@ -43,6 +44,7 @@ import {
   PLACE_RELATIONS,
 } from '../push/entities';
 import {
+  discordAttachmentContentInputs,
   isFacebookMessengerRecord,
   isWhatsAppRecord,
   toBrowserActivityInput,
@@ -1558,7 +1560,7 @@ export class PushStage implements ImportStageRunner {
     context: StageRunContext,
   ): Promise<void> {
     try {
-      const wrote = await this.sendMany(ctx, destination, group, isSelf, selfEntityId);
+      const wrote = await this.sendMany(ctx, destination, group, counts, isSelf, selfEntityId);
 
       for (const [index, plan] of group.entries()) {
         if (wrote[index]) {
@@ -1586,7 +1588,7 @@ export class PushStage implements ImportStageRunner {
 
     for (const plan of group) {
       try {
-        if (await this.send(ctx, destination, plan.record, plan.participants, isSelf, selfEntityId)) {
+        if (await this.send(ctx, destination, plan.record, plan.participants, counts, isSelf, selfEntityId)) {
           counts[destination] = (counts[destination] ?? 0) + 1;
           plan.wrote = true;
         }
@@ -1767,7 +1769,114 @@ export class PushStage implements ImportStageRunner {
   }
 
   /**
-   * Hand a whole batch's share of ONE destination to the service that owns it,  /**
+   * Catalogue the attachments a message LINKS to rather than carries.
+   *
+   * The other shape of the communication-attachment lane. Sources whose export
+   * ships the bytes are handled upstream by MediaStage, which uploads each file
+   * and stamps `metadata.AttachmentContentIds` before the push ever runs.
+   * Discord ships no bytes at all: every upload survives in the package only as
+   * a signed cdn.discordapp.com URL in the message's `Attachments` field,
+   * space-separated when a message carries several. There is nothing to upload,
+   * so there is nothing for MediaStage to do — and the rows still have to be
+   * written by something.
+   *
+   * ## Why here, and not as a `content` destination
+   *
+   * Two reasons, and the first is fatal on its own.
+   *
+   * `attachmentsFor` builds `communications.attachments` out of the ids in
+   * metadata, so the content rows have to EXIST before the message that points
+   * at them is built. {@link DESTINATION_ORDER} writes `communications` first;
+   * anything the `content` destination wrote would land after the row that was
+   * supposed to reference it, and the column would stay empty. The `content`
+   * destination is also strictly one input per record — `sendMany` maps
+   * `group` through {@link toContentInput} and {@link aligned} rejects any
+   * length mismatch — and a message with three attachment links needs three
+   * rows, not one. So this is a pre-step of the communications lane rather than
+   * a destination of its own, which is exactly what the mapping has always said
+   * it was (see `discordAttachmentUrls`).
+   *
+   * ## What it writes
+   *
+   * One row per link, from {@link discordAttachmentContentInputs}: the
+   * uploaded filename decoded out of the signed URL, a mimetype only when the
+   * extension gives one honestly, and the message's provenance triple with an
+   * `:attachment:<n>` suffix on the sourceId — the same identity convention
+   * MediaStage uses for the bytes-bearing half, so the two halves of the lane
+   * cannot mint colliding or differently-shaped rows. The triple makes the
+   * write idempotent: a re-import, or the row-by-row retry of a failed batch,
+   * resolves onto the same ids rather than duplicating them.
+   *
+   * `AttachmentFileIds` is deliberately NOT written. `attachmentsFor` documents
+   * the two arrays as index-aligned pairs of `{ file, content }`, and there is
+   * no file half here — a link is all the package gave us. It concatenates the
+   * two lists independently, so a content-only list arrives as
+   * `[{ type: 'content', id }, …]`, which is the honest description of a
+   * message whose attachments live on someone else's CDN.
+   *
+   * Counted under `content` because that is the table it wrote, which is what
+   * makes the post-push search-index and graph-edge kicks fire for these rows
+   * — a Discord-only import writes to no other content lane, so without the
+   * tally the rows would sit unindexed until the next hourly sweep. The unit is
+   * a ROW here, not a staged record: one message can produce several.
+   */
+  private async catalogueLinkAttachments(
+    ctx: { userId: string },
+    records: CanonicalRecord[],
+    counts: DestinationCounts,
+  ): Promise<void> {
+    // One call for the whole batch, so a 500-message batch is one round trip
+    // rather than 500. `plans` keeps each record's slice of the flattened
+    // input list, because the ids come back in input order and have to be
+    // stamped back onto the record that produced them.
+    const inputs: CreateContentDto[] = [];
+    const plans: Array<{ record: CanonicalRecord; start: number; length: number }> = [];
+
+    for (const record of records) {
+      const built = discordAttachmentContentInputs(record);
+
+      if (built.length === 0) {
+        continue;
+      }
+
+      plans.push({ record, start: inputs.length, length: built.length });
+      inputs.push(...built);
+    }
+
+    if (inputs.length === 0) {
+      return;
+    }
+
+    // emitCreated:false, like every other destination on this path: bulk ingest
+    // defers indexing to the post-load batch machinery kicked at the end of the
+    // stage.
+    const results = await this.contents.createManyDetailed(ctx, inputs, { emitCreated: false });
+
+    // Same contract, and the same reason to check it, as `aligned`: a short
+    // result array would silently re-pair every attachment after the gap onto
+    // the wrong message. Throwing hands the group to the row-by-row retry,
+    // which asks the same question one message at a time.
+    if (results.length !== inputs.length) {
+      throw new Error(
+        `content returned ${results.length} result(s) for ${inputs.length} attachment input(s); ` +
+          'the batched write cannot be attributed to messages',
+      );
+    }
+
+    for (const plan of plans) {
+      const slice = results.slice(plan.start, plan.start + plan.length);
+
+      plan.record.metadata.AttachmentContentIds = slice.map((result) => result.entity.id);
+    }
+
+    const inserted = results.filter((result) => result.inserted).length;
+
+    if (inserted > 0) {
+      counts.content = (counts.content ?? 0) + inserted;
+    }
+  }
+
+  /**
    * Hand a whole batch's share of ONE destination to the service that owns it,
    * and report per row whether that destination actually wrote.
    *
@@ -1786,11 +1895,21 @@ export class PushStage implements ImportStageRunner {
     ctx: { userId: string },
     destination: Destination,
     group: RowPlan[],
+    counts: DestinationCounts,
     isSelf: IsSelf,
     selfEntityId: string | null,
   ): Promise<boolean[]> {
     switch (destination) {
       case 'communications': {
+        // Before the messages, not after: the ids these rows resolve to ride in
+        // the message's own `attachments` column, and this lane is the only
+        // chance to put them there. See `catalogueLinkAttachments`.
+        await this.catalogueLinkAttachments(
+          ctx,
+          group.map((plan) => plan.record),
+          counts,
+        );
+
         const inputs = group.map((plan) => {
           // WhatsApp and Messenger get their own mappers — see `send`.
           const input = isWhatsAppRecord(plan.record)
@@ -2006,11 +2125,17 @@ export class PushStage implements ImportStageRunner {
     destination: Destination,
     record: CanonicalRecord,
     participants: Map<string, string[]>,
+    counts: DestinationCounts,
     isSelf: IsSelf,
     selfEntityId: string | null,
   ): Promise<boolean> {
     switch (destination) {
       case 'communications': {
+        // Same pre-step as the batch path, for the same reason — and re-running
+        // it after a failed batch is free: the content rows dedup on their
+        // provenance triple, so the record resolves onto the ids it already had.
+        await this.catalogueLinkAttachments(ctx, [record], counts);
+
         // WhatsApp and Messenger get their own mappers, because their exports
         // carry no "this one is me" signal for the generic path to read: a
         // `_chat.txt` line is a display name and a body, so `directionFor`
