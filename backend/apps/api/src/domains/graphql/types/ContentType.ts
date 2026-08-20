@@ -3,6 +3,7 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Content } from '@ci/domains/memory';
 
+import { EmbedPlayerType } from './EmbedPlayerType';
 import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
@@ -61,6 +62,14 @@ export class ContentType implements Node, Taggable {
   /** Byte size of the linked ORIGINAL — lets a client avoid using it as a thumbnail. */
   @Field(() => Float, { nullable: true })
   mediaSize?: number | null;
+
+  /**
+   * Provider-hosted player derived from `url` / `externalId` alone (YouTube,
+   * Spotify, Vimeo, SoundCloud, Dailymotion). Null when the URL belongs to no
+   * supported provider. Resolved, never stored.
+   */
+  @Field(() => EmbedPlayerType, { nullable: true })
+  player?: EmbedPlayerType | null;
 
   static toType(entity: Content): ContentType {
     return {

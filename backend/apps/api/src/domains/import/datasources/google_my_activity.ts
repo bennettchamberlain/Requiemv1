@@ -9,11 +9,24 @@
      Explored on Google Maps<br>Jun 18, 2026, 6:59:05 PM PDT<br>
 
    These files can be hundreds of MB, so we scan the body cells with a regex
-   rather than building a DOM. */
+   rather than building a DOM.
+
+   The product is read from each entry's header cell ("mdl-typography--title"),
+   falling back to the Takeout folder name only when a file has none — a
+   MyActivity.html downloaded straight from myactivity.google.com sits in no
+   product folder and mixes products (YouTube, YouTube Music) in one file.
+
+   YouTube / YouTube Music entries are not generic page-views: "Watched",
+   "Searched for", "Liked" and "Subscribed to" go through _youtube_activity.ts,
+   attributed to the `youtube` data source, so they land exactly as the YouTube
+   Takeout's own watch-history.html would (media.watch with the channel, etc.)
+   and dedup against it. Verbs that module does not model (Viewed a post,
+   Dismissed a shelf) keep the generic handling below. */
 import fs from 'node:fs';
 import { open, readdir, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
+import { isYouTubeProduct, parseActivityCell, youtubeActivityGraph } from './_youtube_activity';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
 import type { ImportParams, Graph, Metadata } from './timeline';
@@ -23,6 +36,11 @@ import { timeframeContains } from './timeline';
 // cell carry no activity text, so we only match the plain body-1 cell.
 const BODY_CELL_RE =
   /<div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">([\s\S]*?)<\/div>/g;
+// The header cell naming the product, immediately before each body cell.
+const HEADER_TITLE = 'mdl-typography--title">';
+// Header and body are adjacent in the entry; anything further back belongs to
+// the previous entry.
+const HEADER_LOOKBEHIND = 400;
 // First <a href="…">…</a> inside a body cell — the action's primary target.
 const FIRST_LINK_RE = /<a [^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/;
 // Trailing "Mon DD, YYYY, H:MM:SS AM/PM TZ" timestamp line.
@@ -56,6 +74,20 @@ function parseGoogleDate(s: string | undefined): Date | undefined {
 // Product folder name from a MyActivity.html path: …/My Activity/<Product>/MyActivity.html
 function productFor(fpath: string): string {
   return path.basename(path.dirname(fpath)) || 'Activity';
+}
+
+/** The product named in the header cell just before the body cell at `at`. */
+function headerProductBefore(raw: string, at: number): string | undefined {
+  const start = raw.lastIndexOf(HEADER_TITLE, at);
+  if (start === -1 || at - start > HEADER_LOOKBEHIND) {
+    return undefined;
+  }
+
+  const from = start + HEADER_TITLE.length;
+  const end = raw.indexOf('<', from);
+  const name = decodeEntities(raw.slice(from, end === -1 ? from : end));
+
+  return name || undefined;
 }
 
 async function* walkActivityFiles(root: string, depth = 0): AsyncGenerator<string> {
@@ -166,7 +198,7 @@ export class GoogleMyActivityFileImporter implements FileImporter {
       return;
     }
 
-    const product = productFor(fpath);
+    const folderProduct = productFor(fpath);
     // index is the per-file parse order, so the stable id stays deterministic
     // across re-imports even when entries share an action, target, and second.
     let index = 0;
@@ -185,10 +217,36 @@ export class GoogleMyActivityFileImporter implements FileImporter {
         continue;
       }
 
-      this.pushEntry(cellHtml, product, index++, params);
+      const product = headerProductBefore(raw, m.index) ?? folderProduct;
+      const i = index++;
+      if (isYouTubeProduct(product) && this.pushYouTube(cellHtml, i, params)) {
+        continue;
+      }
+
+      this.pushEntry(cellHtml, product, i, params);
     }
 
     params.pipeline.consumed?.(total);
+  }
+
+  /** YouTube's own shape for the verbs _youtube_activity models; false otherwise. */
+  private pushYouTube(cellHtml: string, index: number, params: ImportParams): boolean {
+    const cell = parseActivityCell(cellHtml);
+    if (!cell.anchors.length) {
+      return false;
+    }
+
+    const g = youtubeActivityGraph(cell, { index, dataSource: 'youtube' });
+    if (!g) {
+      return false;
+    }
+
+    if (timeframeContains(params.timeframe, cell.ts)) {
+      params.pipeline.push(g);
+    }
+
+    // Out-of-timeframe is still "handled": it must not fall through to a page-view.
+    return true;
   }
 
   private pushEntry(cellHtml: string, product: string, index: number, params: ImportParams): void {

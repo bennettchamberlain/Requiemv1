@@ -3,7 +3,21 @@ import { resolveMediaUrl } from '@/components/entities/resolveMediaUrl';
 import { eventDisplayTitle } from '../Components/utils';
 import type { EntityItem } from '../useEntityService';
 
-export type EntityMediaKind = 'image' | 'video';
+export type EntityMediaKind = 'image' | 'video' | 'embed';
+
+/**
+ * A provider-hosted player (YouTube, Spotify, …) derived server-side from the
+ * content row's URL. The gallery never mounts it on its own: the tile shows
+ * `posterUrl` (or a provider badge) and the iframe loads only inside the
+ * lightbox, after an explicit click.
+ */
+export interface EmbedPlayer {
+  provider: string;
+  playerUrl: string;
+  posterUrl: string | null;
+  aspectRatio: number;
+  mediaKind: string;
+}
 
 /**
  * A resolved, renderable piece of media derived from an entity. Generalises
@@ -24,6 +38,8 @@ export interface EntityMedia {
   fullUrl: string;
   /** Human label for caption / alt text. */
   title: string;
+  /** Present only for `kind === 'embed'`; `fullUrl` is then the provider page. */
+  player?: EmbedPlayer;
 }
 
 /**
@@ -91,9 +107,11 @@ export function pickThumbUrl(input: {
  * Mimetypes whose subtype names a *provider*, not a container or codec. The ETL
  * writes these alongside a watch-page URL rather than a media file, so treating
  * them as playable renders an `<img>`/`<video>` pointed at an HTML page — always
- * broken. They resolve to no media, which leaves the entity as a plain tile
- * until the embed player lands (see
- * `docs/prd/unified-content-identity-lifecycle-embeds.md` §6).
+ * broken. They resolve to no media here; rows whose URL the server can turn
+ * into a provider player arrive with `galleryPlayer` set and take the `embed`
+ * branch in {@link getEntityMedia} instead (tier 0 of
+ * `docs/prd/unified-content-identity-lifecycle-embeds.md` §6). Anything else
+ * stays a plain tile.
  */
 const PROVIDER_PSEUDO_MIMETYPES = new Set([
   'video/youtube',
@@ -195,6 +213,31 @@ export function getEntityMedia(entity: EntityItem): EntityMedia | null {
 
     case 'ContentType': {
       const contentType = entity.galleryMimetype;
+
+      // A provider player wins over whatever the mimetype says: the row for a
+      // Spotify track is `audio/spotify` (a provider, not a codec), and the
+      // only thing that can render it is the provider's own player.
+      const player = entity.galleryPlayer;
+      if (player) {
+        const page = entity.galleryContentUrl ?? entity.galleryContentSourceUrl ?? player.playerUrl;
+
+        return {
+          entityId: entity.id,
+          kind: 'embed',
+          contentType: contentType ?? `${player.mediaKind}/${player.provider}`,
+          thumbUrl: player.posterUrl ?? null,
+          fullUrl: page,
+          title: entity.galleryTitle ?? 'Untitled',
+          player: {
+            provider: player.provider,
+            playerUrl: player.playerUrl,
+            posterUrl: player.posterUrl ?? null,
+            aspectRatio: player.aspectRatio,
+            mediaKind: player.mediaKind,
+          },
+        };
+      }
+
       const kind = mediaKind(contentType);
       if (!kind || !contentType) {
         return null;

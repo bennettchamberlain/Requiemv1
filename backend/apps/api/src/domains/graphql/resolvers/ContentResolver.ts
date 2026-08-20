@@ -3,6 +3,7 @@ import { Args, Float, ID, Parent, Query, Mutation, Resolver, ResolveField } from
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { derivePlayer } from '@ci/domains/embed';
 import { CreateContentInput } from '@ci/domains/graphql/types/CreateContentInput';
 import { UpdateContentInput } from '@ci/domains/graphql/types/UpdateContentInput';
 import { ContentService, classifyExternalId } from '@ci/domains/memory';
@@ -15,6 +16,7 @@ import { ContentEdge } from '../types/ContentEdge';
 import { ContentType } from '../types/ContentType';
 import { DeleteByIdInput } from '../types/DeleteByIdInput';
 import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
+import { EmbedPlayerType } from '../types/EmbedPlayerType';
 import { EntityTagType } from '../types/EntityTagType';
 import { EventType } from '../types/EventType';
 import { GlobalUID } from '../types/GlobalUID';
@@ -322,6 +324,28 @@ export class ContentResolver {
   @ResolveField(() => Float, { nullable: true })
   async mediaSize(@Context() context: RequestContext, @Parent() parent: ContentType): Promise<number | null> {
     return (await this.resolveFileMedia(context, parent))?.size ?? null;
+  }
+
+  /**
+   * Tier-0 embed: a pure function of the row's URL, so no loader and no I/O.
+   * `externalId` is tried first because import writes the provider's native
+   * handle there (`spotify:track:…`), which canonicalizes even when `url` is
+   * absent; `sourceUrl` covers ETL-written rows whose `url` is a media file.
+   */
+  @ResolveField(() => EmbedPlayerType, { nullable: true })
+  player(@Parent() parent: ContentType): EmbedPlayerType | null {
+    const { externalId, externalIdKind, url, sourceUrl } = parent.__source;
+    const kind = externalIdKind ?? classifyExternalId(externalId);
+    const candidates = [kind === 'external_uri' ? externalId : null, url, sourceUrl];
+
+    for (const candidate of candidates) {
+      const player = derivePlayer(candidate);
+      if (player) {
+        return EmbedPlayerType.toType(player);
+      }
+    }
+
+    return null;
   }
 
   @ResolveField(() => [EntityTagType])

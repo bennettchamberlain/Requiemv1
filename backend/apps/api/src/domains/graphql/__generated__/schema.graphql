@@ -455,6 +455,7 @@ type ContentType implements Node & Taggable {
   mediaSize: Float
   mediaUrl: String
   mimetype: String
+  player: EmbedPlayerType
   previewUrl: String
   sourceData: JSON
   sourceUrl: String
@@ -995,6 +996,15 @@ type DueItemType {
 interface Edge {
   cursor: String!
   node: Node!
+}
+
+type EmbedPlayerType {
+  aspectRatio: Float!
+  mediaKind: String!
+  playerUrl: String!
+  posterUrl: String
+  provider: String!
+  providerRef: String!
 }
 
 type EntityTagType implements Node {

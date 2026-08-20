@@ -58,6 +58,16 @@ const SEARCH_QUERY = gql(`
             galleryPreviewUrl: previewUrl
             galleryFileUrl: mediaUrl
             galleryMediaSize: mediaSize
+            # Provider-hosted player derived server-side from url/externalId
+            # (YouTube, Spotify, …). Null for anything without one. The tile
+            # shows the poster; the iframe mounts only when the lightbox opens.
+            galleryPlayer: player {
+              provider
+              playerUrl
+              posterUrl
+              aspectRatio
+              mediaKind
+            }
           }
 
           ...AnswerGridItemData

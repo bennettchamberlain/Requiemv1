@@ -202,6 +202,55 @@ describe('getEntityMedia', () => {
       },
     );
 
+    // With a server-derived player the same row becomes an embed tile: poster
+    // (when the provider has one) in the grid, provider iframe in the lightbox.
+    it('resolves a provider player to embed media, poster as the thumbnail', () => {
+      const media = getEntityMedia(
+        entity({
+          __typename: 'ContentType',
+          id: 'c-yt',
+          galleryMimetype: 'video/youtube',
+          galleryContentUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          galleryTitle: 'A liked video',
+          galleryPlayer: {
+            provider: 'youtube',
+            playerUrl: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+            posterUrl: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+            aspectRatio: 16 / 9,
+            mediaKind: 'video',
+          },
+        }),
+      );
+      expect(media).toMatchObject({
+        kind: 'embed',
+        thumbUrl: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+        fullUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        title: 'A liked video',
+        player: { provider: 'youtube', playerUrl: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ' },
+      });
+    });
+
+    it('keeps a poster-less player (Spotify) as an embed with a null thumbnail', () => {
+      const media = getEntityMedia(
+        entity({
+          __typename: 'ContentType',
+          id: 'c-sp',
+          galleryMimetype: 'audio/mpeg',
+          galleryContentUrl: 'https://open.spotify.com/track/3fzTpBMSQKjo9sW0T8Tw2O',
+          galleryPlayer: {
+            provider: 'spotify',
+            playerUrl: 'https://open.spotify.com/embed/track/3fzTpBMSQKjo9sW0T8Tw2O',
+            posterUrl: null,
+            aspectRatio: 352 / 152,
+            mediaKind: 'audio',
+          },
+        }),
+      );
+      expect(media?.kind).toBe('embed');
+      expect(media?.thumbUrl).toBeNull();
+      expect(media?.player?.provider).toBe('spotify');
+    });
+
     it('is case-insensitive about provider pseudo-mimetypes', () => {
       expect(
         getEntityMedia(

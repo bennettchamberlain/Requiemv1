@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { FileIcon } from '@/components/icons';
 
+import { EmbedPlayer } from './EmbedPlayer';
 import type { EntityMedia } from './media';
 
 interface Props {
@@ -215,6 +216,12 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
                 {canDownload ? t('MEMORY_LIGHTBOX_DOWNLOAD') : t('MEMORY_LIGHTBOX_OPEN_ORIGINAL')}
               </a>
             </div>
+          ) : current.kind === 'embed' && current.player ? (
+            // The only place a provider iframe is ever mounted: the user
+            // clicked a tile to get here. Width is bounded by the viewport in
+            // both axes via the aspect box so a square Spotify card and a 16:9
+            // video both fit without scrolling.
+            <EmbedPlayer player={current.player} title={current.title} fitViewport />
           ) : current.kind === 'video' ? (
             <video
               key={current.fullUrl}

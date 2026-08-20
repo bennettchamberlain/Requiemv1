@@ -226,3 +226,85 @@ describe('Google My Activity datasource', () => {
     });
   });
 });
+
+// A MyActivity.html downloaded straight from myactivity.google.com: no product
+// folder (it sits in a date folder), products mixed in one file, and the bulk
+// of it is YouTube watch history that the YouTube Takeout no longer ships.
+describe('Google My Activity — standalone file with YouTube entries', () => {
+  const STANDALONE = path.join(__dirname, 'fixtures', 'google_my_activity', '2026-07-24', 'MyActivity.html');
+
+  it('takes the product from each header cell, not the folder name', async () => {
+    const items = await runImport(STANDALONE);
+    const visited = items.find((i) => i.metadata.Action === 'Visited Example')!;
+    expect(visited.metadata.Product).toBe('Search');
+    expect(visited.id).toBe('gactivity:Search:7');
+    expect(items.some((i) => String(i.metadata.Product).includes('2026-07-24'))).toBe(false);
+  });
+
+  it('imports YouTube watches as youtube watch items with the channel', async () => {
+    const items = await runImport(STANDALONE);
+    const watches = items.filter((i) => i.classification === 'watch');
+    expect(watches).toHaveLength(2);
+    const lwt = watches.find((i) => String(i.metadata.Title).startsWith('UK & Makerfield'))!;
+    expect(lwt.dataSource).toBe('youtube');
+    expect(lwt.id).toMatch(/^youtube:[0-9a-f]{40}$/);
+    expect(lwt.timestamp?.toISOString()).toBe('2026-06-19T02:30:56.000Z');
+    expect(lwt.metadata).toMatchObject({
+      URL: 'https://www.youtube.com/watch?v=RZL_TctrNco',
+      Channel: 'LastWeekTonight',
+      ChannelUrl: 'https://www.youtube.com/channel/UC3XTzVzaHQEd30rQbuvCtTQ',
+      Source: 'YouTube',
+    });
+    // YouTube Music is YouTube activity too.
+    expect(watches.find((i) => i.metadata.Title === 'Some Song')?.dataSource).toBe('youtube');
+  });
+
+  it('imports searches, likes and subscriptions under their own classifications', async () => {
+    const items = await runImport(STANDALONE);
+    const search = items.find((i) => i.classification === 'search')!;
+    expect(search.dataSource).toBe('youtube');
+    expect(search.metadata).toMatchObject({ Query: 'companion intelligence', Kind: 'search' });
+
+    const like = items.find((i) => i.classification === 'like')!;
+    expect(like.id).toMatch(/^youtube:like:[0-9a-f]{40}$/);
+    expect(like.metadata).toMatchObject({
+      Title: 'Pompeii: Out of Time - Official Trailer (2026)',
+      Channel: 'IGN',
+      Kind: 'like',
+    });
+
+    // Same id subscriptions.csv mints for this channel, so the two collapse.
+    const sub = items.find((i) => i.classification === 'subscription')!;
+    expect(sub.id).toBe('youtube:sub:UC6IxnFzHofFJ5X2PycSMsww');
+    expect(sub.metadata).toMatchObject({ Channel: 'Some Channel', ChannelId: 'UC6IxnFzHofFJ5X2PycSMsww' });
+  });
+
+  it('keeps the generic handling for verbs the YouTube shape does not model', async () => {
+    const items = await runImport(STANDALONE);
+    const dismissed = items.find((i) => i.metadata.Action === 'Dismissed shelf')!;
+    expect(dismissed.classification).toBe('page_view');
+    expect(dismissed.dataSource).toBeUndefined();
+    expect(dismissed.metadata.Product).toBe('YouTube');
+    const viewed = items.find((i) => String(i.metadata.Action).startsWith('Viewed'))!;
+    expect(viewed.classification).toBe('page_view');
+    expect(viewed.dataSource).toBeUndefined();
+  });
+
+  it('lands a My Activity watch under the same id as the YouTube Takeout would', async () => {
+    const items = await runImport(STANDALONE);
+    const lwt = items.find((i) => String(i.metadata.Title).startsWith('UK & Makerfield'))!;
+    // youtube.ts: sha1(`${url} ${ts.toISOString()}`)
+    const crypto = await import('node:crypto');
+    const expected = crypto
+      .createHash('sha1')
+      .update('https://www.youtube.com/watch?v=RZL_TctrNco 2026-06-19T02:30:56.000Z')
+      .digest('hex');
+    expect(lwt.id).toBe(`youtube:${expected}`);
+  });
+
+  it('applies the timeframe to YouTube entries without leaking them to page_view', async () => {
+    const items = await runImport(STANDALONE, 'MyActivity.html', { since: new Date('2026-06-18T00:00:00Z') });
+    expect(items.filter((i) => i.classification === 'watch')).toHaveLength(1);
+    expect(items.filter((i) => i.classification === 'page_view')).toHaveLength(0);
+  });
+});
