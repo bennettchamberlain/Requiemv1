@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react';
 
-import { buildApiUrl, getApiBaseUrl, persistApiBaseUrl } from '@ci/common';
+import { buildApiUrl, getApiBaseUrl, persistApiBaseUrl, resolveHttpOrigin } from '@ci/common';
 import { Button, Card, Input, Label } from '@ci/shadcn';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,13 +31,7 @@ export function ServerSettingsPage() {
   // request URLs like `${origin}/api/...` resolve correctly. Returns null if invalid.
   function toOrigin(value: string): string | null {
     try {
-      const parsed = new URL(value.trim());
-
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        return null;
-      }
-
-      return parsed.origin;
+      return resolveHttpOrigin(value);
     } catch {
       return null;
     }

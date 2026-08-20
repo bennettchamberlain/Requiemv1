@@ -58,6 +58,40 @@ export function buildApiUrl(path: string): string {
   return `${apiBaseUrl}${path}`;
 }
 
+/**
+ * Parse a Hub/user-supplied Memory address into a clean `http:`/`https:` origin.
+ * Hostnames without a scheme get `https://` so a Portal row like
+ * `ci-memory-core7.example.com` does not become a relative URL against the
+ * Capacitor live-reload origin (which iOS URLSession reports as "unsupported URL").
+ */
+export function resolveHttpOrigin(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    throw new Error('This Memory Server has no address.');
+  }
+
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  let parsed: URL;
+
+  try {
+    parsed = new URL(withScheme);
+  } catch {
+    throw new Error(`Not a valid Memory Server URL (${trimmed}).`);
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Memory Server URL must be http or https (${trimmed}).`);
+  }
+
+  if (!parsed.hostname) {
+    throw new Error(`Memory Server URL is missing a host (${trimmed}).`);
+  }
+
+  return parsed.origin;
+}
+
 const STORAGE_KEY = 'ci.apiBaseUrl';
 
 /**

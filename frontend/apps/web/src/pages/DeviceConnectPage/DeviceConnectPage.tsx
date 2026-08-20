@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from 'react';
 
-import { persistApiBaseUrl } from '@ci/common';
+import { persistApiBaseUrl, resolveHttpOrigin } from '@ci/common';
 import { Button, Card, Input, LoadingButton, PasswordInput } from '@ci/shadcn';
 import { useNavigate } from 'react-router-dom';
 
@@ -247,7 +247,7 @@ export function DeviceConnectPage() {
     setSignInError(null);
 
     try {
-      const origin = new URL(device.memoryUrl).origin;
+      const origin = resolveHttpOrigin(device.memoryUrl);
       await probeMemoryOrigin(origin);
 
       const bearers = auth?.kind === 'oauth' ? [auth.idToken, auth.token].filter((value): value is string => Boolean(value)) : [];
@@ -258,21 +258,22 @@ export function DeviceConnectPage() {
         return;
       }
 
-      // Persist only after a key is minted. A leftover origin was sending Safari
-      // returns to /login, where Portal PKCE never finishes.
-      persistApiBaseUrl(origin);
+      // Mint against the Portal URL directly. Persisting first used to leave a
+      // leftover origin that sent Safari returns to /login; persisting only on
+      // success also avoids /api/keys going out as a relative path (iOS
+      // "unsupported URL" through CapacitorHttp).
       let lastError: unknown;
 
       for (const bearer of bearers) {
         try {
-          await completePortalMemoryConnect(bearer);
+          await completePortalMemoryConnect(bearer, origin);
+          persistApiBaseUrl(origin);
           return;
         } catch (err) {
           lastError = err;
         }
       }
 
-      persistApiBaseUrl('');
       throw lastError instanceof Error
         ? lastError
         : new Error('Could not sign in to this Memory Server with your Portal account.');
@@ -282,7 +283,7 @@ export function DeviceConnectPage() {
           ? 'Could not reach your Companion Memory (timed out).'
           : /load failed|failed to fetch/i.test(err instanceof Error ? err.message : '')
             ? 'Could not reach this Memory Server from the phone (webview blocked the request). Retry after the app reloads native HTTP.'
-            : `Could not sign in to this Memory Server. ${err instanceof Error ? err.message : ''}`.trim(),
+            : `Could not sign in to ${device.memoryUrl}. ${err instanceof Error ? err.message : ''}`.trim(),
       );
       setConnectingId(null);
     }

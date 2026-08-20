@@ -1,9 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
-import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
-import { AlertDialog, Badge, Button, Card, Input, Select, Tabs } from '@ci/shadcn';
-import { Merge } from '@ci/shadcn/icons';
+import { EmptyState, GlobalUID, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
+import { AlertDialog, Badge, Button, Card, Input, Select, Sheet, Tabs } from '@ci/shadcn';
+import { Filter, Merge, X } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
 import { EntityGrid, ItemGridItem } from '@/components/entities';
@@ -175,6 +175,147 @@ const DUPLICATE_REASON_LABELS: Record<DuplicateGroup['reason'], string> = {
   BRAND_MODEL: 'Same brand and model, bought the same day',
 };
 
+type FilterLayout = 'row' | 'stack';
+
+function ThingsFilterFields({
+  layout,
+  category,
+  brand,
+  condition,
+  lifecycleState,
+  hasIdentifier,
+  sort,
+  onCategory,
+  onBrand,
+  onCondition,
+  onLifecycleState,
+  onHasIdentifier,
+  onSort,
+}: {
+  layout: FilterLayout;
+  category: string;
+  brand: string;
+  condition: ItemCondition | null;
+  lifecycleState: ItemLifecycleState | null;
+  hasIdentifier: boolean | null;
+  sort: ItemSortOrder;
+  onCategory: (value: string) => void;
+  onBrand: (value: string) => void;
+  onCondition: (value: ItemCondition | null) => void;
+  onLifecycleState: (value: ItemLifecycleState | null) => void;
+  onHasIdentifier: (value: boolean | null) => void;
+  onSort: (value: ItemSortOrder) => void;
+}) {
+  const stacked = layout === 'stack';
+  const inputClass = stacked ? 'w-full' : 'w-40';
+  const selectClass = stacked ? 'w-full min-w-0' : 'w-44';
+  const sortClass = stacked ? 'w-full min-w-0' : 'w-48';
+
+  const field = (label: string, control: ReactNode) =>
+    stacked ? (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        {control}
+      </div>
+    ) : (
+      control
+    );
+
+  return (
+    <>
+      {field(
+        'Category',
+        <Input
+          aria-label="Category"
+          placeholder="Category"
+          value={category}
+          onChange={(e) => onCategory(e.target.value)}
+          className={inputClass}
+        />,
+      )}
+      {field(
+        'Brand',
+        <Input
+          aria-label="Brand"
+          placeholder="Brand"
+          value={brand}
+          onChange={(e) => onBrand(e.target.value)}
+          className={inputClass}
+        />,
+      )}
+      {field(
+        'Condition',
+        <Select
+          value={condition ?? ANY}
+          onValueChange={(next) => onCondition(next === ANY ? null : (next as ItemCondition))}
+        >
+          <Select.Trigger className={selectClass} aria-label="Condition">
+            <Select.Value placeholder="Any condition" />
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value={ANY}>Any condition</Select.Item>
+            {CONDITIONS.map((option) => (
+              <Select.Item key={option} value={option}>
+                {humanizeEnum(option)}
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select>,
+      )}
+      {field(
+        'Status',
+        <Select
+          value={lifecycleState ?? ANY}
+          onValueChange={(next) => onLifecycleState(next === ANY ? null : (next as ItemLifecycleState))}
+        >
+          <Select.Trigger className={selectClass} aria-label="Status">
+            <Select.Value placeholder="Any status" />
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value={ANY}>Any status</Select.Item>
+            {LIFECYCLE_STATES.map((option) => (
+              <Select.Item key={option} value={option}>
+                {humanizeEnum(option)}
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select>,
+      )}
+      {field(
+        'Codes',
+        <Select
+          value={hasIdentifier == null ? ANY : hasIdentifier ? HAS_CODE : NO_CODE}
+          onValueChange={(next) => onHasIdentifier(next === ANY ? null : next === HAS_CODE)}
+        >
+          <Select.Trigger className={selectClass} aria-label="Codes">
+            <Select.Value placeholder="Any code" />
+          </Select.Trigger>
+          <Select.Content>
+            <Select.Item value={ANY}>Any code</Select.Item>
+            <Select.Item value={HAS_CODE}>Has a code</Select.Item>
+            <Select.Item value={NO_CODE}>No code</Select.Item>
+          </Select.Content>
+        </Select>,
+      )}
+      {field(
+        'Sort',
+        <Select value={sort} onValueChange={(next) => onSort(next as ItemSortOrder)}>
+          <Select.Trigger className={sortClass} aria-label="Sort">
+            <Select.Value />
+          </Select.Trigger>
+          <Select.Content>
+            {SORT_ORDERS.map((option) => (
+              <Select.Item key={option} value={option}>
+                {SORT_LABELS[option]}
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select>,
+      )}
+    </>
+  );
+}
+
 function describeThing(thing: DuplicateItem): string {
   const parts = [thing.brand, thing.model, thing.category].filter(Boolean);
 
@@ -320,7 +461,9 @@ function DuplicateGroupCard({
 export function ThingsPage() {
   usePageTitle('Things - Companion Intelligence');
 
+  const { isMobile } = useDeviceLayout();
   const navigate = useNavigate();
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState('');
@@ -384,6 +527,115 @@ export function ThingsPage() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const markFilterChanged = useCallback(() => {
+    setLoadMoreError(null);
+  }, []);
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ id: string; label: string; onClear: () => void }> = [];
+
+    if (category.trim()) {
+      chips.push({
+        id: 'category',
+        label: category.trim(),
+        onClear: () => {
+          setCategory('');
+          markFilterChanged();
+        },
+      });
+    }
+
+    if (brand.trim()) {
+      chips.push({
+        id: 'brand',
+        label: brand.trim(),
+        onClear: () => {
+          setBrand('');
+          markFilterChanged();
+        },
+      });
+    }
+
+    if (condition) {
+      chips.push({
+        id: 'condition',
+        label: humanizeEnum(condition),
+        onClear: () => {
+          setCondition(null);
+          markFilterChanged();
+        },
+      });
+    }
+
+    if (lifecycleState) {
+      chips.push({
+        id: 'status',
+        label: humanizeEnum(lifecycleState),
+        onClear: () => {
+          setLifecycleState(null);
+          markFilterChanged();
+        },
+      });
+    }
+
+    if (hasIdentifier != null) {
+      chips.push({
+        id: 'codes',
+        label: hasIdentifier ? 'Has a code' : 'No code',
+        onClear: () => {
+          setHasIdentifier(null);
+          markFilterChanged();
+        },
+      });
+    }
+
+    if (sort !== 'RECENTLY_SEEN') {
+      chips.push({
+        id: 'sort',
+        label: SORT_LABELS[sort],
+        onClear: () => {
+          setSort('RECENTLY_SEEN');
+          markFilterChanged();
+        },
+      });
+    }
+
+    return chips;
+  }, [brand, category, condition, hasIdentifier, lifecycleState, markFilterChanged, sort]);
+
+  const filterFieldProps = {
+    category,
+    brand,
+    condition,
+    lifecycleState,
+    hasIdentifier,
+    sort,
+    onCategory: (value: string) => {
+      setCategory(value);
+      markFilterChanged();
+    },
+    onBrand: (value: string) => {
+      setBrand(value);
+      markFilterChanged();
+    },
+    onCondition: (value: ItemCondition | null) => {
+      setCondition(value);
+      markFilterChanged();
+    },
+    onLifecycleState: (value: ItemLifecycleState | null) => {
+      setLifecycleState(value);
+      markFilterChanged();
+    },
+    onHasIdentifier: (value: boolean | null) => {
+      setHasIdentifier(value);
+      markFilterChanged();
+    },
+    onSort: (value: ItemSortOrder) => {
+      setSort(value);
+      markFilterChanged();
+    },
+  };
 
   const loadMore = useCallback(() => {
     if (!hasNextPage || loadingMore || loadMoreError != null || !pageInfo?.endCursor) {
@@ -504,109 +756,82 @@ export function ThingsPage() {
                     // New query, new cursor space — a stale failure must not gate it.
                     setLoadMoreError(null);
                   }}
-                  className="max-w-xl flex-1"
+                  className="max-w-xl min-w-0 flex-1"
                 />
                 <div className="text-sm text-muted-foreground">{totalCount} things</div>
+                {isMobile ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => setFiltersOpen(true)}
+                  >
+                    <Filter className="h-4 w-4" />
+                    Filters
+                    {activeFilterChips.length > 0 ? (
+                      <Badge variant="secondary">{activeFilterChips.length}</Badge>
+                    ) : null}
+                  </Button>
+                ) : null}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  aria-label="Category"
-                  placeholder="Category"
-                  value={category}
-                  onChange={(e) => {
-                    setCategory(e.target.value);
-                    setLoadMoreError(null);
-                  }}
-                  className="w-40"
-                />
-                <Input
-                  aria-label="Brand"
-                  placeholder="Brand"
-                  value={brand}
-                  onChange={(e) => {
-                    setBrand(e.target.value);
-                    setLoadMoreError(null);
-                  }}
-                  className="w-40"
-                />
+              {isMobile && activeFilterChips.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {activeFilterChips.map((chip) => (
+                    <Badge key={chip.id} variant="secondary" className="gap-1 pr-1 font-normal">
+                      {chip.label}
+                      <button
+                        type="button"
+                        aria-label={`Clear ${chip.label}`}
+                        className="rounded-sm p-0.5 hover:bg-muted"
+                        onClick={chip.onClear}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
 
-                <Select
-                  value={condition ?? ANY}
-                  onValueChange={(next) => {
-                    setCondition(next === ANY ? null : (next as ItemCondition));
-                    setLoadMoreError(null);
-                  }}
-                >
-                  <Select.Trigger className="w-44" aria-label="Condition">
-                    <Select.Value placeholder="Any condition" />
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Item value={ANY}>Any condition</Select.Item>
-                    {CONDITIONS.map((option) => (
-                      <Select.Item key={option} value={option}>
-                        {humanizeEnum(option)}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select>
-
-                <Select
-                  value={lifecycleState ?? ANY}
-                  onValueChange={(next) => {
-                    setLifecycleState(next === ANY ? null : (next as ItemLifecycleState));
-                    setLoadMoreError(null);
-                  }}
-                >
-                  <Select.Trigger className="w-44" aria-label="Status">
-                    <Select.Value placeholder="Any status" />
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Item value={ANY}>Any status</Select.Item>
-                    {LIFECYCLE_STATES.map((option) => (
-                      <Select.Item key={option} value={option}>
-                        {humanizeEnum(option)}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select>
-
-                <Select
-                  value={hasIdentifier == null ? ANY : hasIdentifier ? HAS_CODE : NO_CODE}
-                  onValueChange={(next) => {
-                    setHasIdentifier(next === ANY ? null : next === HAS_CODE);
-                    setLoadMoreError(null);
-                  }}
-                >
-                  <Select.Trigger className="w-44" aria-label="Codes">
-                    <Select.Value placeholder="Any code" />
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Item value={ANY}>Any code</Select.Item>
-                    <Select.Item value={HAS_CODE}>Has a code</Select.Item>
-                    <Select.Item value={NO_CODE}>No code</Select.Item>
-                  </Select.Content>
-                </Select>
-
-                <Select
-                  value={sort}
-                  onValueChange={(next) => {
-                    setSort(next as ItemSortOrder);
-                    setLoadMoreError(null);
-                  }}
-                >
-                  <Select.Trigger className="w-48" aria-label="Sort">
-                    <Select.Value />
-                  </Select.Trigger>
-                  <Select.Content>
-                    {SORT_ORDERS.map((option) => (
-                      <Select.Item key={option} value={option}>
-                        {SORT_LABELS[option]}
-                      </Select.Item>
-                    ))}
-                  </Select.Content>
-                </Select>
-              </div>
+              {isMobile ? (
+                <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                  <Sheet.Content side="bottom" className="max-h-[85dvh] gap-0">
+                    <Sheet.Header>
+                      <Sheet.Title>Filter things</Sheet.Title>
+                      <Sheet.Description>Narrow the list by category, brand, condition, or code.</Sheet.Description>
+                    </Sheet.Header>
+                    <div className="flex flex-col gap-3 overflow-y-auto px-4 pb-4">
+                      <ThingsFilterFields layout="stack" {...filterFieldProps} />
+                    </div>
+                    <Sheet.Footer className="flex-row justify-between">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={activeFilterChips.length === 0}
+                        onClick={() => {
+                          setCategory('');
+                          setBrand('');
+                          setCondition(null);
+                          setLifecycleState(null);
+                          setHasIdentifier(null);
+                          setSort('RECENTLY_SEEN');
+                          markFilterChanged();
+                        }}
+                      >
+                        Clear all
+                      </Button>
+                      <Sheet.Close asChild>
+                        <Button type="button">Done</Button>
+                      </Sheet.Close>
+                    </Sheet.Footer>
+                  </Sheet.Content>
+                </Sheet>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <ThingsFilterFields layout="row" {...filterFieldProps} />
+                </div>
+              )}
 
               {duplicatesError && (
                 <div className="text-sm text-muted-foreground">
