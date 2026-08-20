@@ -106,6 +106,28 @@ interface LocalLlmPlugin {
   ): Promise<PluginListenerHandle>;
 }
 
+/**
+ * `@capacitor/camera`. Stills only — video goes through the system camera via a
+ * file input `capture` attribute. `getPhoto` with `source: CAMERA` uses the OS
+ * camera UI and does not need PhotoKit / `NSPhotoLibraryUsageDescription`.
+ * Do not call `pickImages` / photos permission from here (picker-first library
+ * ingest stays on `<input type="file">` / PHPicker).
+ */
+interface CameraPlugin {
+  getPhoto(options: {
+    quality?: number;
+    allowEditing?: boolean;
+    resultType: 'uri' | 'base64' | 'dataUrl';
+    source?: 'PROMPT' | 'CAMERA' | 'PHOTOS';
+    saveToGallery?: boolean;
+  }): Promise<{
+    dataUrl?: string;
+    webPath?: string;
+    format?: string;
+  }>;
+  requestPermissions?(options?: { permissions?: Array<'camera' | 'photos'> }): Promise<unknown>;
+}
+
 interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
   LocalHub?: LocalHubPlugin;
@@ -115,6 +137,7 @@ interface CapacitorPlugins {
   StatusBar?: StatusBarPlugin;
   LocalNotifications?: LocalNotificationsPlugin;
   LocalLLM?: LocalLlmPlugin;
+  Camera?: CameraPlugin;
 }
 
 export interface LocalNotification {
@@ -552,6 +575,92 @@ export async function scheduleLocalNotification(
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Open the system camera for a still. Returns a `File` ready to POST to
+ * `/api/files/upload`, or `null` when the plugin is missing or the user cancels.
+ * Web callers should fall through to a capture file input.
+ */
+export async function takeNativePhoto(): Promise<File | null> {
+  const camera = plugins()?.Camera;
+
+  if (!isNativePlatform() || !camera?.getPhoto) {
+    return null;
+  }
+
+  try {
+    await camera.requestPermissions?.({ permissions: ['camera'] });
+  } catch {
+    // Permission prompt is best-effort; getPhoto will fail clearly if denied.
+  }
+
+  try {
+    const photo = await camera.getPhoto({
+      quality: 90,
+      allowEditing: false,
+      resultType: 'uri',
+      source: 'CAMERA',
+      saveToGallery: false,
+    });
+
+    return nativePhotoToFile(photo);
+  } catch {
+    return null;
+  }
+}
+
+async function nativePhotoToFile(photo: {
+  dataUrl?: string;
+  webPath?: string;
+  format?: string;
+}): Promise<File | null> {
+  const format = (photo.format || 'jpeg').replace(/^jpg$/i, 'jpeg');
+  const ext = format === 'jpeg' ? 'jpg' : format;
+  const name = `IMG_${Date.now()}.${ext}`;
+
+  if (photo.webPath) {
+    try {
+      const response = await fetch(photo.webPath);
+      const blob = await response.blob();
+      const type = blob.type || `image/${format}`;
+
+      return new File([blob], name, { type });
+    } catch {
+      // Fall through to dataUrl if the capacitor file URL could not be read.
+    }
+  }
+
+  if (photo.dataUrl) {
+    return fileFromDataUrl(photo.dataUrl, name, `image/${format}`);
+  }
+
+  return null;
+}
+
+function fileFromDataUrl(dataUrl: string, name: string, fallbackType: string): File | null {
+  const comma = dataUrl.indexOf(',');
+
+  if (comma < 0) {
+    return null;
+  }
+
+  const header = dataUrl.slice(0, comma);
+  const payload = dataUrl.slice(comma + 1);
+  const mime = /data:([^;]+)/.exec(header)?.[1] ?? fallbackType;
+
+  try {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    return new File([bytes], name, { type: mime });
+  } catch {
+    return null;
   }
 }
 
