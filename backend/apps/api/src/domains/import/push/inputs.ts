@@ -1553,7 +1553,14 @@ export function toBrowserActivityInput(rec: CanonicalRecord): CreateBrowserActiv
       (rec.kind === 'web.search' ? str(m.Search) || str(m.Query) || str(m.query) : '') ||
       rec.title ||
       '',
-    action_type: rec.kind === 'web.bookmark' ? 'bookmark' : rec.kind === 'web.search' ? 'search' : 'visit',
+    action_type:
+      rec.kind === 'web.bookmark'
+        ? 'bookmark'
+        : rec.kind === 'web.search'
+          ? 'search'
+          : rec.kind === 'web.download'
+            ? 'download'
+            : 'visit',
     properties: m,
     ...sourceTriple(rec),
   };
