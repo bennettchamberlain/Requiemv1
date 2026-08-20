@@ -2169,6 +2169,7 @@ type PlaceType implements Node & Taggable {
 type PlaceVisitStatsType {
   firstVisitAt: DateTime
   lastVisitAt: DateTime
+  status: String!
   visitCount: Int!
 }
 
@@ -2390,6 +2391,7 @@ type Query {
 
   """Past forecast-vs-actual buckets from hbpe.prediction_log"""
   forecastHistory(days: Int = 5): [ForecastHistoryDayType!]!
+  geocodingConfigured: Boolean!
 
   """
   User knowledge graph (entities + relationships). Preferred over REST /api/graph/*.

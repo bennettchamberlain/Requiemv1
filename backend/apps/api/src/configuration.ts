@@ -744,6 +744,34 @@ parsed.geocoding.portalBaseUrl = resolveGeocodingPortalBaseUrl(
   parsed.ciPortal.url,
 );
 
+/**
+ * Whether the SELECTED geocoding provider actually has what it needs to make a
+ * request, mirroring exactly what each provider's own postBatch/geocode check
+ * already gates on (PortalGeocodeProvider's `!this.baseUrl || !this.deviceKey`,
+ * GoogleGeocodeProvider's `!this.apiKey`) — kept as ONE function, here rather
+ * than in the geocode domain, so a domain that cannot depend on geocode (the
+ * geocode domain itself depends on MemoryModule, so PlaceService importing
+ * back from geocode would be circular) can still ask the same question a
+ * boot-time warning and a GraphQL status query also ask, and none of the three
+ * can quietly disagree about what "configured" means.
+ *
+ * Portal is the default provider, so a bare `GEOCODING_PORTAL_BASE_URL` with no
+ * `HUB_API_KEY` reads as unconfigured — before this, that exact combination
+ * produced zero warnings anywhere, so ENRICH_GEOCODE silently never ran and
+ * every place downstream showed "0 visits" indistinguishable from a genuinely
+ * quiet place.
+ */
+export function isGeocodingConfigured(
+  cfg: {
+    geocoding: { provider: string; apiKey?: string; portalBaseUrl?: string };
+    ciPortal: { apiKey?: string };
+  } = parsed,
+): boolean {
+  return cfg.geocoding.provider === 'google'
+    ? Boolean(cfg.geocoding.apiKey)
+    : Boolean(cfg.geocoding.portalBaseUrl) && Boolean(cfg.ciPortal.apiKey);
+}
+
 // Warn (don't throw) on a geocoding misconfiguration: the server must still
 // boot, and the backfill simply reports a transient/denied status until it is
 // fixed. Each provider has its own requirement, so only warn about the one in use.
@@ -759,6 +787,18 @@ if (parsed.geocoding.provider === 'portal' && !parsed.geocoding.portalBaseUrl) {
     '[configuration] geocoding.provider is "portal" but no base URL is configured ' +
       '(GEOCODING_PORTAL_BASE_URL / CI_CLOUD_URL). Geocode backfills will report a transient ' +
       'failure until one is set.',
+  );
+}
+
+// A base URL with no device key is just as unconfigured as no base URL at
+// all (PortalGeocodeProvider.postBatch gates on both), but only the missing
+// URL used to warn here — a box with GEOCODING_PORTAL_BASE_URL set and no
+// HUB_API_KEY produced zero warnings anywhere except a private, latched,
+// log-only line inside PortalGeocodeProvider itself.
+if (parsed.geocoding.provider === 'portal' && parsed.geocoding.portalBaseUrl && !parsed.ciPortal.apiKey) {
+  console.warn(
+    '[configuration] geocoding.provider is "portal" but no device key is configured ' +
+      '(HUB_API_KEY). Geocode backfills will report a transient failure until one is set.',
   );
 }
 

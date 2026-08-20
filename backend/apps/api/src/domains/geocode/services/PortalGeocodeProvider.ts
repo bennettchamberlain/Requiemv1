@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import plimit from 'p-limit';
 
 import { LoggerService } from '@ci/common/logging';
-import config from '@ci/configuration';
+import config, { isGeocodingConfigured } from '@ci/configuration';
 
 import type { GeocodeBounds, GeocodePoint, GeocodeProvider, GeocodeProviderResult } from './GeocodeProvider';
 
@@ -315,7 +315,7 @@ export class PortalGeocodeProvider implements GeocodeProvider {
     count: number,
     direction: GeocodeDirection,
   ): Promise<GeocodeProviderResult[]> {
-    if (!this.baseUrl || !this.deviceKey) {
+    if (!isGeocodingConfigured()) {
       this.warnUnconfiguredOnce();
 
       // Transient, NOT REQUEST_DENIED: missing configuration is a deployment
