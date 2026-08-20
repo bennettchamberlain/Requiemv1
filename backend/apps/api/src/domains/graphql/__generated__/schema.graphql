@@ -344,9 +344,14 @@ type CommunicationType implements Node & Taggable {
   direction: String!
   from: PersonType
   id: ID!
+  participantsMetadata: JSON!
   preview: String
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
   subject: String
   tags: [EntityTagType!]!
+  threadId: String
   time: DateTime!
   to(after: String, before: String, first: Int, last: Int): PersonConnection!
   type: String!
