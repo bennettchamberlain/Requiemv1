@@ -1,4 +1,5 @@
-import { stat } from 'node:fs/promises';
+import fs from 'node:fs';
+import { rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { Injectable } from '@nestjs/common';
@@ -99,6 +100,18 @@ interface AttachmentOutcome {
  * and returns the existing file when they are already held, which is what makes
  * a re-import of the same archive cost nothing and makes a `-edited` duplicate
  * share one object.
+ *
+ * ## Disk
+ *
+ * This stage DUPLICATES bytes: every media file exists in the run's scratch
+ * tree and, once stored, in the object store — which on the appliance is the
+ * same physical volume. Two guards keep that from filling the disk mid-stage
+ * the way it did on a real 351GB Takeout (5,318 files refused by the store's
+ * free-space floor): a preflight that refuses to start without plausible
+ * headroom ({@link assertStoreHeadroom}), and a per-file reclaim that frees
+ * each file's scratch copy as soon as its store copy is durable
+ * ({@link reclaimScratchCopy}), which is what caps the peak near 1.5× the
+ * media bytes instead of 2×.
  */
 /**
  * How many media files are uploaded at once.
@@ -112,6 +125,39 @@ interface AttachmentOutcome {
 const MEDIA_CONCURRENCY = Number(process.env.CI_IMPORT_MEDIA_CONCURRENCY ?? 8);
 
 const limit = plimit(MEDIA_CONCURRENCY);
+
+/**
+ * Disk the preflight demands beyond what the pending media already occupies,
+ * as a fraction of the pending bytes.
+ *
+ * The stage copies every media file into the object store, which on the
+ * appliance lives on the SAME volume as the scratch tree — so without
+ * reclamation its peak footprint is 2× the media bytes (scratch copy + store
+ * copy), which is exactly how a 351GB Takeout ran the store into its
+ * threshold with 5,318 files still to go. With the per-file reclaim in
+ * `uploadOne` the two copies mostly do NOT coexist: each file's scratch bytes
+ * are freed as its store copy lands, so the peak is nearer 1.5× than 2× —
+ * the scratch copy is already on disk, and the extra headroom only has to
+ * cover the store copies that pile up ahead of their reclaims (in-flight
+ * uploads, rows sharing one file, failed rows that keep their bytes for a
+ * retry) plus thumbnails and store metadata. Half the pending bytes is the
+ * honest ceiling for that: generous against uneven reclamation, far below
+ * the 2× that would refuse imports the stage can actually finish.
+ */
+const PREFLIGHT_HEADROOM_FACTOR = 0.5;
+
+/**
+ * What the object store keeps in reserve and will not let writes consume.
+ *
+ * MinIO refuses PUTs while its backing disk is near-full — the observed
+ * failure was "Storage backend has reached its minimum free drive threshold"
+ * with double-digit gigabytes still free — so a preflight that only demands
+ * the bytes themselves passes and then dies at the store's floor anyway. A
+ * couple of percent of the volume, capped, approximates that floor without
+ * hard-coding one MinIO version's rule.
+ */
+const STORE_RESERVE_FRACTION = 0.02;
+const STORE_RESERVE_CAP_BYTES = 100 * 1024 ** 3; // 100 GiB
 
 @Injectable()
 export class MediaStage implements ImportStageRunner {
@@ -156,6 +202,14 @@ export class MediaStage implements ImportStageRunner {
       };
     }
 
+    await this.assertStoreHeadroom(context);
+
+    // Read once, before anything is reclaimed: the media pass and the
+    // attachment pass can name the same bytes. See attachmentPathsInUse.
+    // Skipped when there is no media pass to reclaim anything — `null` is the
+    // defer-everything answer, which is what a run with no reclaims wants.
+    const attachmentPaths = remaining > 0 ? await this.attachmentPathsInUse(context.runId) : null;
+
     let uploaded = 0;
     let deduped = 0;
     let failed = 0;
@@ -181,7 +235,7 @@ export class MediaStage implements ImportStageRunner {
       const results = await Promise.all(
         batch.map((row) =>
           limit(async () => {
-            const outcome = await this.uploadOne(context, row);
+            const outcome = await this.uploadOne(context, row, attachmentPaths);
 
             // Counted here, inside the limiter, so progress advances as each
             // file lands rather than jumping a whole batch at a time.
@@ -244,6 +298,70 @@ export class MediaStage implements ImportStageRunner {
         [SUMMARY_KEY]: await this.summarize(context.runId, false),
       },
     };
+  }
+
+  /**
+   * Refuse to start when the store cannot plausibly hold what this stage is
+   * about to give it — the same fail-loudly-up-front contract the unpack
+   * stage's disk preflight makes, for the same reason: without it, the store
+   * hits its floor mid-stage and thousands of files fail quietly into the
+   * ledger (5,318 on a real Takeout) after the scratch tree's lifetime has
+   * already been spent.
+   *
+   * Measured against the SCRATCH volume, which on the appliance is also the
+   * store's volume — the topology this guard exists for. When the store is
+   * remote this measures the wrong disk, but then the reclaim keeps local
+   * usage flat and the demanded headroom is modest, so the guard errs small.
+   * No statfs, or nothing pending, means no preflight: the guard must never
+   * be the thing that breaks an import.
+   *
+   * The demand is deliberately NOT the naive 2× (scratch copy + store copy):
+   * see PREFLIGHT_HEADROOM_FACTOR for why reclamation makes half the pending
+   * bytes the honest requirement, plus the store's own reserve.
+   *
+   * Counts the MEDIA pass only. The attachment pass stores bytes too, but its
+   * descriptors mostly carry no declared size, so folding them in would add
+   * zeroes rather than accuracy — and the ones that ARE also standalone media
+   * items are already in this sum. Another way this guard errs small.
+   */
+  private async assertStoreHeadroom(context: StageRunContext): Promise<void> {
+    // Sum of DECLARED sizes; rows without one count zero, so this is a floor —
+    // acceptable for a guard whose alternative is no guard at all.
+    const [row] = (await this.dataSource.query(
+      `SELECT COALESCE(sum(size_bytes), 0)::bigint AS bytes
+         FROM ci_import.staged_items
+        WHERE ${this.mediaPredicate()}`,
+      [context.runId, this.classifications],
+    )) as Array<{ bytes: string | number }>;
+
+    const pendingBytes = Number(row?.bytes ?? 0);
+
+    if (pendingBytes === 0) {
+      return;
+    }
+
+    let free: number;
+    let total: number;
+    try {
+      const stats = fs.statfsSync(context.scratchDir);
+
+      free = Number(stats.bavail) * Number(stats.bsize);
+      total = Number(stats.blocks) * Number(stats.bsize);
+    } catch {
+      return;
+    }
+
+    const reserve = Math.min(total * STORE_RESERVE_FRACTION, STORE_RESERVE_CAP_BYTES);
+    const needed = pendingBytes * PREFLIGHT_HEADROOM_FACTOR + reserve;
+
+    if (needed > free) {
+      throw new Error(
+        `not enough disk space to store this import's media: ${(pendingBytes / 1e9).toFixed(1)}GB of ` +
+          `media needs ~${(needed / 1e9).toFixed(1)}GB free (headroom plus the object store's reserve) ` +
+          `but only ${(free / 1e9).toFixed(1)}GB is free on that volume — free up space and retry the ` +
+          `stage. Nothing was uploaded, so a retry starts where this run stands.`,
+      );
+    }
   }
 
   /**
@@ -704,6 +822,7 @@ export class MediaStage implements ImportStageRunner {
   private async uploadOne(
     context: StageRunContext,
     row: MediaRow,
+    attachmentPaths: ReadonlySet<string> | null,
   ): Promise<'uploaded' | 'deduped' | 'failed'> {
     const resolved = path.resolve(row.localPath);
 
@@ -742,6 +861,7 @@ export class MediaStage implements ImportStageRunner {
       );
 
       await this.markUploaded(row.id, file.id);
+      await this.reclaimScratchCopy(context, row, resolved, attachmentPaths);
 
       return deduped ? 'deduped' : 'uploaded';
     } catch (err) {
@@ -756,6 +876,119 @@ export class MediaStage implements ImportStageRunner {
       await this.markFailed(row.id, mediaFailureReason(err), reason);
 
       return 'failed';
+    }
+  }
+
+  /**
+   * Free a file's scratch bytes the moment its store copy is durable.
+   *
+   * The store copy and the scratch copy are the same bytes twice on what is
+   * one volume on the appliance, and end-of-run cleanup is too late to matter:
+   * holding both for the whole stage is a 2× peak, and a 351GB Takeout ran the
+   * store into its free-space floor exactly that way (5,318 files lost). The
+   * row's `FileId` is already committed by the time this runs, so a crash
+   * between upload and reclaim costs nothing but bytes the run's cleanup
+   * sweeps anyway.
+   *
+   * Deferred while any UNSETTLED row still points at the same file — a settled
+   * row has `FileId`; a failed one does not, and keeps its bytes so a media
+   * retry has something to read. Deferred too while an unsettled ATTACHMENT row
+   * names the same path, which is a different question and needs its own
+   * answer: see {@link attachmentPathsInUse}. Best-effort: a reclaim that cannot
+   * delete changes nothing the end-of-run reclaim will not fix.
+   */
+  private async reclaimScratchCopy(
+    context: StageRunContext,
+    row: MediaRow,
+    resolved: string,
+    attachmentPaths: ReadonlySet<string> | null,
+  ): Promise<void> {
+    // `null` is "could not tell", and the safe answer to that is to keep the
+    // bytes — the attachment pass has not run yet and cannot re-fetch them.
+    if (attachmentPaths == null || attachmentPaths.has(resolved)) {
+      return;
+    }
+
+    try {
+      const others = (await this.dataSource.query(
+        `SELECT 1 AS present
+           FROM ci_import.staged_items
+          WHERE run_id = $1::uuid
+            AND id <> $2::uuid
+            AND COALESCE(intermediate_location, original_location) = $3
+            AND metadata->>'FileId' IS NULL
+          LIMIT 1`,
+        [context.runId, row.id, row.localPath],
+      )) as unknown[];
+
+      if (others.length > 0) {
+        return;
+      }
+
+      await rm(resolved, { force: true });
+    } catch (err) {
+      this.logger.debug('Could not reclaim a stored media file; end-of-run cleanup will', {
+        runId: context.runId,
+        stagedItemId: row.id,
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Scratch paths an unsettled attachment row still has to be able to read.
+   *
+   * The two passes of this stage can name the SAME bytes on purpose. WhatsApp
+   * emits an attached photo twice — once as a standalone media item, once as a
+   * `MediaAttachments` descriptor on the message it arrived in — precisely so
+   * the message gains the reference while the object store's content hash
+   * resolves both onto one file. The media pass runs first and now reclaims, so
+   * without this the reclaim would delete the descriptor's bytes before
+   * {@link runAttachments} ever opened them: the deliberate cross-reference
+   * would come back as a declined attachment and a partial run.
+   *
+   * Read ONCE, before the media loop. Nothing settles an attachment row until
+   * the attachment pass runs, so the answer cannot go stale underneath the
+   * loop, and one query beats a jsonb scan per uploaded file on an archive with
+   * tens of thousands of them.
+   *
+   * `null` means the question could not be answered, and every reclaim defers
+   * on it. Losing some disk headroom is the cost of a query that failed;
+   * deleting bytes the next pass needs is not recoverable.
+   */
+  private async attachmentPathsInUse(runId: string): Promise<ReadonlySet<string> | null> {
+    try {
+      const rows = (await this.dataSource.query(
+        `SELECT DISTINCT x.path AS path
+           FROM ci_import.staged_items s
+           CROSS JOIN LATERAL (
+             SELECT a->>'path' AS path
+               FROM jsonb_array_elements(
+                      CASE WHEN jsonb_typeof(s.metadata->'MediaAttachments') = 'array'
+                           THEN s.metadata->'MediaAttachments'
+                           ELSE '[]'::jsonb END) a
+             UNION ALL
+             SELECT f #>> '{}' AS path
+               FROM jsonb_array_elements(
+                      CASE WHEN jsonb_typeof(s.metadata->'MediaFilePaths') = 'array'
+                           THEN s.metadata->'MediaFilePaths'
+                           ELSE '[]'::jsonb END) f
+           ) x
+          WHERE ${this.attachmentPredicate()}
+            AND x.path IS NOT NULL`,
+        [runId],
+      )) as Array<{ path: string }>;
+
+      // Resolved, because that is the form `reclaimScratchCopy` tests and the
+      // form `storeAttachment` will open them by.
+      return new Set(rows.map((row) => path.resolve(row.path)));
+    } catch (err) {
+      this.logger.warn('Could not read the attachment paths in use; keeping every scratch copy', {
+        runId,
+        error: (err as Error).message,
+      });
+
+      return null;
     }
   }
 

@@ -208,11 +208,15 @@ export function EventDetails({ entity }: Props) {
     ...extraLocationDetails(props),
   ].filter((item) => item.value);
 
-  // Photo/video events: thumbnail (PREVIEW) for images, full source for video so
-  // it plays inline. Resolved server-side via the linked file (data.previewUrl /
-  // data.mediaUrl); null for non-media events, which render no media block.
+  // Photo/video events: the ORIGINAL is what renders (a 300px PREVIEW upscaled
+  // into the sheet reads as blur on any large screen), with the preview passed
+  // alongside so EntityMedia can paint it during the original's download.
+  // Videos take the full source directly so they play inline. Resolved
+  // server-side via the linked file (data.previewUrl / data.mediaUrl); null
+  // for non-media events, which render no media block.
   const isVideo = data.mediaContentType?.startsWith('video/') ?? false;
-  const mediaSrc = resolveStaticUrl(isVideo ? data.mediaUrl : (data.previewUrl ?? data.mediaUrl));
+  const mediaSrc = resolveStaticUrl(data.mediaUrl ?? data.previewUrl);
+  const mediaPreviewSrc = isVideo ? undefined : resolveStaticUrl(data.previewUrl);
   const dimensions = data.mediaWidth && data.mediaHeight ? `${data.mediaWidth} × ${data.mediaHeight}` : null;
 
   const title = eventDisplayTitle({
@@ -229,7 +233,14 @@ export function EventDetails({ entity }: Props) {
       subtitle="Event"
       taggable
       media={
-        mediaSrc ? <EntityMedia src={mediaSrc} contentType={data.mediaContentType} alt={title} /> : undefined
+        mediaSrc ? (
+          <EntityMedia
+            src={mediaSrc}
+            previewSrc={mediaPreviewSrc}
+            contentType={data.mediaContentType}
+            alt={title}
+          />
+        ) : undefined
       }
       editFields={[
         { key: 'title', label: 'Title', value: data.title ?? '' },

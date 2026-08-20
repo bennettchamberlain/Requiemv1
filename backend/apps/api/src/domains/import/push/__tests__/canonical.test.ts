@@ -287,6 +287,60 @@ describe('destinationsFor', () => {
 
       expect(destinationsFor(other)).toEqual(['events', 'content']);
     });
+
+    it('sends an undated saved post to content alone, never wearing import time', () => {
+      // Reddit's saved_posts.csv is `id, permalink` — no date of any kind. A
+      // communications row would be forced to a NOT NULL time, i.e. the import
+      // moment presented as real (verified live: eight saved posts/comments
+      // all stamped the second they were parsed).
+      const saved = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        occurredAt: null,
+        metadata: { Title: 'English is weird', Kind: 'saved_post', Subreddit: 'Jokes' },
+      });
+
+      expect(destinationsFor(saved)).toEqual(['content']);
+    });
+
+    it('keeps a DATED saved post in communications', () => {
+      // The rule is about the missing date, not about being saved: a future
+      // export that dates its saved items gets the normal routing.
+      const dated = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Title: 'Dated after all', Kind: 'saved_post', Subreddit: 'space' },
+      });
+
+      expect(destinationsFor(dated)).toEqual(['communications']);
+    });
+  });
+
+  describe('undated social records', () => {
+    it('sends an undated authored social record to content alone', () => {
+      const undated = recordFor({
+        classification: 'social',
+        dataSource: 'mastodon',
+        occurredAt: null,
+        metadata: { Title: 'A post with no date', Kind: 'post' },
+      });
+
+      expect(destinationsFor(undated)).toEqual(['content']);
+    });
+
+    it('keeps an undated affiliation on its event home', () => {
+      // An affiliation models CURRENT state — its event title carries the whole
+      // fact, and its content row is the empty one isSocialAffiliation exists
+      // to prevent. Content-only would erase it entirely.
+      const membership = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        occurredAt: null,
+        metadata: { Kind: 'subscribed_subreddit', Subreddit: 'bitscoop' },
+      });
+
+      expect(destinationsFor(membership)).toEqual(['events']);
+    });
   });
 
   describe('social affiliations', () => {

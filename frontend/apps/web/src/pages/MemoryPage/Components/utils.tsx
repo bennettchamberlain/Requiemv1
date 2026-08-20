@@ -228,11 +228,23 @@ interface DateBucket {
   label: string;
 }
 
-/** Coarse, human-friendly bucket for a date: Today / Yesterday / This Week / This Month / "Month Year". */
+/**
+ * Coarse, human-friendly bucket for a date: Upcoming / In The Next Week /
+ * Tomorrow / Today / Yesterday / This Week / This Month / "Month Year".
+ *
+ * The forward direction exists because memory is no longer purely the past:
+ * a calendar import carries future events, and with only lower-bound checks
+ * the "Today" test (`day >= today`) was open-ended upward — an event in June
+ * 2027 rendered under Today, pinned to the top of every newest-first view.
+ */
 export function getDateBucket(date: Date, now: Date = new Date()): DateBucket {
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
   const today = startOfDay(now);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const weekAhead = new Date(today);
+  weekAhead.setDate(today.getDate() + 7);
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
   const weekStart = new Date(today);
@@ -240,6 +252,18 @@ export function getDateBucket(date: Date, now: Date = new Date()): DateBucket {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const day = startOfDay(date).getTime();
+
+  if (day >= weekAhead.getTime()) {
+    return { key: 'upcoming', label: 'Upcoming' };
+  }
+
+  if (day > tomorrow.getTime()) {
+    return { key: 'next-week', label: 'In The Next Week' };
+  }
+
+  if (day >= tomorrow.getTime()) {
+    return { key: 'tomorrow', label: 'Tomorrow' };
+  }
 
   if (day >= today.getTime()) {
     return { key: 'today', label: 'Today' };

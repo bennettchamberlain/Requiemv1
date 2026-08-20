@@ -25,9 +25,15 @@ export function ContentDetails({ entity }: Props) {
   const data = useFragment(CONTENT_FRAGMENT, entity);
   const [updateContent] = useMutation(UPDATE_CONTENT);
 
-  const mediaSrc = data.mimetype?.startsWith('image/')
-    ? resolveStaticUrl(data.contentUrl ?? data.sourceUrl)
+  // The ORIGINAL renders (mediaUrl — the linked file's full-resolution
+  // variant), with the PREVIEW painted while it downloads, same as the event
+  // pane. Rows without a linked file (bookmarks, articles) fall back to the
+  // row's own url/sourceUrl exactly as before.
+  const isImage = data.mimetype?.startsWith('image/') ?? false;
+  const mediaSrc = isImage
+    ? resolveStaticUrl(data.mediaUrl ?? data.contentUrl ?? data.sourceUrl)
     : undefined;
+  const mediaPreviewSrc = isImage ? resolveStaticUrl(data.previewUrl) : undefined;
 
   return (
     <EntityDetailScaffold
@@ -35,7 +41,14 @@ export function ContentDetails({ entity }: Props) {
       title={data.title || 'Content'}
       subtitle="Content"
       taggable
-      media={<EntityMedia src={mediaSrc} contentType={data.mimetype} alt={data.title ?? ''} />}
+      media={
+        <EntityMedia
+          src={mediaSrc}
+          previewSrc={mediaPreviewSrc}
+          contentType={data.mimetype}
+          alt={data.title ?? ''}
+        />
+      }
       editFields={[
         { key: 'title', label: 'Title', value: data.title ?? '' },
         { key: 'text', label: 'Text', value: data.text ?? '', multiline: true },

@@ -26,6 +26,25 @@ describe('getDateBucket', () => {
     expect(getDateBucket(new Date(2026, 0, 15, 8, 0, 0), NOW).label).toBe('Today');
   });
 
+  it('labels the next day as Tomorrow', () => {
+    expect(getDateBucket(new Date(2026, 0, 16), NOW).label).toBe('Tomorrow');
+  });
+
+  it('labels days after tomorrow but inside a week as In The Next Week', () => {
+    // Day after tomorrow through six days out.
+    expect(getDateBucket(new Date(2026, 0, 17), NOW).label).toBe('In The Next Week');
+    expect(getDateBucket(new Date(2026, 0, 21), NOW).label).toBe('In The Next Week');
+  });
+
+  it('labels one week out and beyond as Upcoming', () => {
+    // The boundary day itself (Jan 22 = NOW + 7 days) is already Upcoming, so
+    // the two future buckets tile the calendar with no gap between them.
+    expect(getDateBucket(new Date(2026, 0, 22), NOW).label).toBe('Upcoming');
+    // The motivating case: a calendar event more than a year ahead rendered
+    // under "Today", because the today check was open-ended upward.
+    expect(getDateBucket(new Date(2027, 5, 1), NOW).label).toBe('Upcoming');
+  });
+
   it('labels the prior day as Yesterday', () => {
     expect(getDateBucket(new Date(2026, 0, 14), NOW).label).toBe('Yesterday');
   });

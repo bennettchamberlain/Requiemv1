@@ -54,7 +54,7 @@ export class ParseStage implements ImportStageRunner {
   async run(context: StageRunContext): Promise<StageOutcome> {
     await context.progress({ processed: 0, total: null, phase: 'recognizing' });
 
-    const recognized = await this.recognize(context.scratchDir);
+    const recognized = await this.recognize(context, context.scratchDir);
 
     if (recognized.length === 0) {
       // Not an error. A person can upload something this appliance has no parser
@@ -205,15 +205,46 @@ export class ParseStage implements ImportStageRunner {
    * `descend: true` because the tree is whatever the archive contained: a bare
    * `.gpx` sitting one level down is the single-file drag-and-drop case, and
    * without descent the containing folder matches nothing at all.
+   *
+   * Recognition ticks its progress per entry scanned. It is normally
+   * sub-second, but it is also thousands of tiny reads — and when the disk is
+   * busy (a neighbouring run's 350GB unpack) those crawl, and a real LinkedIn
+   * import sat at a bare "recognizing" for six minutes, indistinguishable from
+   * a hang. The stage writes nothing between "recognizing" and the first
+   * "parsing …", so this tick is the only thing that can show the difference.
    */
-  private async recognize(scratchDir: string): Promise<DataSourceRecognition[]> {
+  private async recognize(context: StageRunContext, scratchDir: string): Promise<DataSourceRecognition[]> {
     const entry: DirEntry = {
       filename: path.basename(scratchDir),
       fullPath: scratchDir,
       fsRoot: scratchDir,
     };
 
-    const matches = await dataSourcesRecognize(undefined, entry, {}, { descend: true });
+    // Locally throttled: the listener already caps writes at one per second,
+    // but every un-throttled call still costs a promise and a formatted string
+    // per directory entry. Fire-and-forget — recognition must not wait on its
+    // own progress line.
+    let lastTick = 0;
+    const matches = await dataSourcesRecognize(
+      undefined,
+      entry,
+      {},
+      {
+        descend: true,
+        onEntry: (scanned) => {
+          const now = Date.now();
+
+          if (now - lastTick < 1_000) {
+            return;
+          }
+
+          lastTick = now;
+          void context
+            .progress({ processed: 0, total: null, phase: `recognizing (${scanned} scanned)` })
+            .catch(() => undefined);
+        },
+      },
+    );
 
     return dropGenericWhenSpecialised(matches);
   }

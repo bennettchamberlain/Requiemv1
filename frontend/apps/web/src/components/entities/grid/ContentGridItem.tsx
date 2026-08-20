@@ -13,6 +13,8 @@ export const CONTENT_FRAGMENT = gql(`
     contentUrl: url
     sourceUrl
     mimetype
+    mediaUrl
+    previewUrl
   }
 `);
 
