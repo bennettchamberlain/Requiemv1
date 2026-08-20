@@ -19,7 +19,6 @@ import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule, ObjectObservationEntity, ReceiptLineItemEntity } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
-import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PeersModule } from '@ci/domains/peers';
 import { PlanningModule } from '@ci/domains/planning';
@@ -80,7 +79,6 @@ import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
 import { ObjectObservationResolver } from './resolvers/ObjectObservationResolver';
-import { PairingResolver } from './resolvers/PairingResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { ProductModelResolver } from './resolvers/ProductModelResolver';
@@ -126,7 +124,6 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     }),
     AsksModule,
     PeersModule,
-    PairingModule,
     ActivityModule,
     BrowserActivityModule,
     ConnectionsModule,
@@ -156,7 +153,6 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     AskResolver,
     ForecastResolver,
     ScheduleCandidateResolver,
-    PairingResolver,
     BrowserActivityResolver,
     CommunicationResolver,
     ComplexityPlugin,

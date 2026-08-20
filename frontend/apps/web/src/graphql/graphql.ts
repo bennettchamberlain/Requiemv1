@@ -1739,7 +1739,6 @@ export type Mutation = {
   setSavedSearchSharing: UpdateSavedSearchPayload;
   /** Defer a candidate until a future instant */
   snoozeCandidate: ScheduleCandidateType;
-  startPairing: StartPairingPayload;
   /** Refresh the slate from current actions and insight key_actions. Idempotent; returns rows written. */
   syncScheduleSuggestions: Scalars['Int']['output'];
   tagEntities: Array<TaggableEntityType>;
@@ -2505,18 +2504,6 @@ export type PageInfo = {
   startCursor?: Maybe<Scalars['String']['output']>;
 };
 
-export type PairingStatusPayload = {
-  __typename?: 'PairingStatusPayload';
-  appletAccessToken?: Maybe<Scalars['String']['output']>;
-  deviceId?: Maybe<Scalars['String']['output']>;
-  errorMessage?: Maybe<Scalars['String']['output']>;
-  status: Scalars['String']['output'];
-  success: Scalars['Boolean']['output'];
-  userEmail?: Maybe<Scalars['String']['output']>;
-  userId?: Maybe<Scalars['String']['output']>;
-  userName?: Maybe<Scalars['String']['output']>;
-};
-
 export type PersonAddressInput = {
   city?: InputMaybe<Scalars['String']['input']>;
   country?: InputMaybe<Scalars['String']['input']>;
@@ -2917,7 +2904,6 @@ export type Query = {
   notes: NoteConnection;
   oAuthCallbackUrl: Scalars['String']['output'];
   objectByIdentifier: ObjectByIdentifierPayload;
-  pairingStatus: PairingStatusPayload;
   people: PersonConnection;
   person?: Maybe<PersonType>;
   personDuplicates: PersonDuplicatesPayload;
@@ -3251,12 +3237,6 @@ export type QueryObjectByIdentifierArgs = {
   namespace: ObjectIdentifierNamespace;
   sourceSystem?: InputMaybe<Scalars['String']['input']>;
   value: Scalars['String']['input'];
-};
-
-
-export type QueryPairingStatusArgs = {
-  pairingToken: Scalars['String']['input'];
-  pollKey: Scalars['String']['input'];
 };
 
 
@@ -3841,15 +3821,6 @@ export type SendPeerAskPayload = {
 export type SetSavedSearchSharingInput = {
   id: Scalars['ID']['input'];
   isPublic: Scalars['Boolean']['input'];
-};
-
-export type StartPairingPayload = {
-  __typename?: 'StartPairingPayload';
-  errorMessage?: Maybe<Scalars['String']['output']>;
-  pairingPath?: Maybe<Scalars['String']['output']>;
-  pairingToken?: Maybe<Scalars['String']['output']>;
-  pollKey?: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
 };
 
 export type SummaryConnection = Connection & {

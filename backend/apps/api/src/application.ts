@@ -51,7 +51,6 @@ import { McpModule } from '@ci/domains/mcp';
 import { MemoryModule } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { OnboardingModule } from '@ci/domains/onboarding';
-import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PeersModule } from '@ci/domains/peers';
 import { PersonaModule } from '@ci/domains/persona';
@@ -101,7 +100,6 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     LoggingModule,
     EventEmitterModule.forRoot(),
     NestCronModule.forRoot(),
-    PairingModule,
     ActivityModule,
     AgentModule,
     AsksModule,
