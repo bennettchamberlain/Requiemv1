@@ -16,6 +16,8 @@ import {
   NoteGridItem,
   PersonGridItem,
   PlaceGridItem,
+  ProductGridItem,
+  ReceiptGridItem,
   ThreadGridItem,
 } from '@/components/entities';
 
@@ -200,6 +202,12 @@ export function GalleryView() {
 
               case 'PlaceType':
                 return <PlaceGridItem key={item.id} place={item} onClick={() => setActiveEntity(item)} />;
+
+              case 'ProductModelType':
+                return <ProductGridItem key={item.id} product={item} onClick={() => setActiveEntity(item)} />;
+
+              case 'ReceiptType':
+                return <ReceiptGridItem key={item.id} receipt={item} onClick={() => setActiveEntity(item)} />;
 
               case 'ThreadType':
                 return <ThreadGridItem key={item.id} thread={item} onClick={() => setActiveEntity(item)} />;

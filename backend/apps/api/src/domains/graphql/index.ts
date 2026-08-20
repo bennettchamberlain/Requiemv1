@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { Module } from '@nestjs/common';
 import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ActivityModule } from '@ci/domains/activity';
 import { AsksModule } from '@ci/domains/asks';
@@ -16,7 +17,7 @@ import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
-import { MemoryModule } from '@ci/domains/memory';
+import { MemoryModule, ObjectObservationEntity, ReceiptLineItemEntity } from '@ci/domains/memory';
 import { NotesModule } from '@ci/domains/notes';
 import { PairingModule } from '@ci/domains/pairing';
 import { ParsingModule } from '@ci/domains/parsing';
@@ -33,11 +34,16 @@ import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 import { GraphQLController } from './controllers/GraphQLController';
 import { ConnectionLoader } from './loaders/ConnectionLoader';
 import { ContentFileLoader } from './loaders/ContentFileLoader';
+import { ContentLoader } from './loaders/ContentLoader';
 import { EventContentsLoader } from './loaders/EventContentsLoader';
 import { EventLoader } from './loaders/EventLoader';
 import { EventMediaLoader } from './loaders/EventMediaLoader';
 import { FileItemsLoader } from './loaders/FileItemsLoader';
+import { ItemAcquisitionLoader, ReceiptLineItemsLoader } from './loaders/ItemAcquisitionLoader';
 import { ItemFileLoader } from './loaders/ItemFileLoader';
+import { ItemIdentifierLoader, ProductIdentifierLoader } from './loaders/ItemIdentifierLoader';
+import { ItemObservationLoader } from './loaders/ItemObservationLoader';
+import { ItemProductLoader } from './loaders/ItemProductLoader';
 import { PersonIdentifiersLoader } from './loaders/PersonIdentifiersLoader';
 import { PersonInteractionStatsLoader } from './loaders/PersonInteractionStatsLoader';
 import { PersonLoader } from './loaders/PersonLoader';
@@ -73,12 +79,15 @@ import { ItemResolver } from './resolvers/ItemResolver';
 import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
+import { ObjectObservationResolver } from './resolvers/ObjectObservationResolver';
 import { PairingResolver } from './resolvers/PairingResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
+import { ProductModelResolver } from './resolvers/ProductModelResolver';
 import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
 import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
+import { ReceiptResolver } from './resolvers/ReceiptResolver';
 import { RelationshipResolver } from './resolvers/RelationshipResolver';
 import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
 import { ScheduleCandidateResolver } from './resolvers/ScheduleCandidateResolver';
@@ -92,6 +101,13 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
 
 @Module({
   imports: [
+    // Entities owned by the memory domain, registered here so the object-identity
+    // DataLoaders can batch-read them. Their services expose no batched read on
+    // these keys (`ObjectObservationService.find` has no resolvedObjectId
+    // predicate; `ReceiptService.findLines` reads one receipt at a time), and the
+    // only alternative is a query per row — the N+1 a loader exists to prevent.
+    // Both reads scope on `user_id` exactly as the services do.
+    TypeOrmModule.forFeature([ObjectObservationEntity, ReceiptLineItemEntity]),
     NestGraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
       autoSchemaFile: path.join(__dirname, '__generated__/schema.graphql'),
@@ -149,6 +165,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ConnectionResolver,
     ConnectionSyncJobResolver,
     ContentFileLoader,
+    ContentLoader,
     ContentResolver,
     DailyMetricsResolver,
     NodeResolver,
@@ -163,10 +180,15 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     FileResolver,
     GraphIngestResolver,
     GraphResolver,
+    ItemAcquisitionLoader,
     ItemFileLoader,
+    ItemIdentifierLoader,
+    ItemObservationLoader,
+    ItemProductLoader,
     ItemRelationshipResolver,
     ItemResolver,
     KnownPlacesResolver,
+    ObjectObservationResolver,
     PersonIdentifiersLoader,
     PersonInteractionStatsLoader,
     PersonLoader,
@@ -175,12 +197,16 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     PlaceVisitStatsLoader,
     PlaceResolver,
     PreviewLoader,
+    ProductIdentifierLoader,
+    ProductModelResolver,
     ProviderResolver,
     ProviderKeyLoader,
     ProviderKeyResolver,
     ProviderLoader,
     QuestionLoader,
     QuestionResolver,
+    ReceiptLineItemsLoader,
+    ReceiptResolver,
     RelationshipResolver,
     SavedSearchResolver,
     SearchResolver,

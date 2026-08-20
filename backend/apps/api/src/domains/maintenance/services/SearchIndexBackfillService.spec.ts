@@ -117,9 +117,11 @@ describe('PIPELINE_COVERED_STAGES', () => {
 
   it('covers every backfillable type except the declared exceptions', () => {
     // `position` arrived with the GPS→places indexing and has no pipeline
-    // stage yet — the old backfill path still owns it. Anything ELSE missing
-    // from the map is a regression: the pipeline is the indexing path.
-    const uncovered = ['position'];
+    // stage yet — the old backfill path still owns it. `product` and `receipt`
+    // arrived the same way with the object tables: their listeners exist, their
+    // pipeline `index.embed_*` stages do not. Anything ELSE missing from the map
+    // is a regression: the pipeline is the indexing path.
+    const uncovered = ['position', 'product', 'receipt'];
 
     expect(Object.keys(PIPELINE_COVERED_STAGES).sort()).toEqual(
       BACKFILLABLE_ENTITIES.filter((type) => !uncovered.includes(type)).sort(),
@@ -152,6 +154,8 @@ describe('SearchIndexBackfillService', () => {
         file: 2,
         person: 1,
         position: 0,
+        product: 0,
+        receipt: 0,
       },
       // No embeddings configured for this DS → drain count is 0 for every type.
       embedded: 0,
@@ -164,6 +168,8 @@ describe('SearchIndexBackfillService', () => {
         file: 0,
         person: 0,
         position: 0,
+        product: 0,
+        receipt: 0,
       },
     });
 

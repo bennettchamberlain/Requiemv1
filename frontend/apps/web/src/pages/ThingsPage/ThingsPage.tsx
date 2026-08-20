@@ -1,0 +1,708 @@
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { useMutation, useQuery } from '@apollo/client';
+import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
+import { AlertDialog, Badge, Button, Card, Input, Select, Tabs } from '@ci/shadcn';
+import { Merge } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
+
+import { EntityGrid, ItemGridItem } from '@/components/entities';
+import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
+import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
+import { gql } from '@/graphql';
+import type {
+  GetItemDuplicatesQuery,
+  GetThingsQuery,
+  ItemCondition,
+  ItemLifecycleState,
+  ItemSortOrder,
+} from '@/graphql/graphql';
+import { humanizeEnum } from '@/lib/utils';
+
+import { ObservationReview } from './ObservationReview';
+
+/** Matches MemoryPage's PAGE_SIZE, and the gallery grid it renders into. */
+export const PAGE_SIZE = 30;
+
+/** Duplicate groups per page. Offset-based — the groups are recomputed per request. */
+export const DUPLICATE_PAGE_SIZE = 20;
+
+/** Exported so tests can mock the exact document the page sends. */
+export const GET_THINGS = gql(`
+  query GetThings(
+    $query: String
+    $category: String
+    $brand: String
+    $condition: ItemCondition
+    $lifecycleState: ItemLifecycleState
+    $hasIdentifier: Boolean
+    $sort: ItemSortOrder
+    $first: Int
+    $after: String
+  ) {
+    items(
+      query: $query
+      category: $category
+      brand: $brand
+      condition: $condition
+      lifecycleState: $lifecycleState
+      hasIdentifier: $hasIdentifier
+      sort: $sort
+      first: $first
+      after: $after
+    ) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        cursor
+        node {
+          # Unmasked alongside the card fragment so the page can key the grid
+          # and route a click without unmasking what the card selects.
+          id
+          name
+          ...ItemGridItemData
+        }
+      }
+    }
+  }
+`);
+
+export const GET_ITEM_DUPLICATES = gql(`
+  query GetItemDuplicates($limit: Int, $offset: Int) {
+    itemDuplicates(limit: $limit, offset: $offset) {
+      totalCount
+      hasMore
+      groups {
+        reason
+        value
+        totalItems
+        items {
+          id
+          name
+          brand
+          model
+          category
+          quantity
+          lifecycleState
+        }
+      }
+    }
+  }
+`);
+
+export const MERGE_ITEMS = gql(`
+  mutation MergeThings($input: MergeItemsInput!) {
+    mergeItems(input: $input) {
+      success
+      item {
+        id
+        name
+      }
+      counts {
+        identifiers
+        observations
+        receiptLineItems
+      }
+    }
+  }
+`);
+
+type ThingNode = GetThingsQuery['items']['edges'][number]['node'];
+type DuplicateGroup = GetItemDuplicatesQuery['itemDuplicates']['groups'][number];
+type DuplicateItem = DuplicateGroup['items'][number];
+
+/** The sentinel a Select uses for "no choice", since Radix forbids an empty value. */
+const ANY = '__any__';
+
+// `hasIdentifier` is a Boolean on the server but a THREE-way choice in the UI,
+// and Radix Select values are strings — so the two real answers get sentinels
+// of their own rather than being stringified booleans.
+const HAS_CODE = '__has__';
+const NO_CODE = '__none__';
+
+// Listed rather than derived: `enumsAsTypes` leaves no runtime object to
+// iterate, and this is also the order each menu shows.
+const CONDITIONS = [
+  'NEW',
+  'LIKE_NEW',
+  'GOOD',
+  'FAIR',
+  'POOR',
+  'BROKEN',
+  'NA',
+] as const satisfies readonly ItemCondition[];
+
+const LIFECYCLE_STATES = [
+  'ACTIVE',
+  'STORED',
+  'LENT_OUT',
+  'LOST',
+  'RETURNED',
+  'CONSUMED',
+  'DISPOSED',
+  'ARCHIVED',
+] as const satisfies readonly ItemLifecycleState[];
+
+const SORT_ORDERS = [
+  'RECENTLY_SEEN',
+  'RECENTLY_ACQUIRED',
+  'NEWEST',
+  'OLDEST',
+  'NAME_ASC',
+  'NAME_DESC',
+  'VALUE_DESC',
+  'VALUE_ASC',
+] as const satisfies readonly ItemSortOrder[];
+
+const SORT_LABELS: Record<ItemSortOrder, string> = {
+  RECENTLY_SEEN: 'Recently seen',
+  RECENTLY_ACQUIRED: 'Recently acquired',
+  NEWEST: 'Newest',
+  OLDEST: 'Oldest',
+  NAME_ASC: 'Name A–Z',
+  NAME_DESC: 'Name Z–A',
+  VALUE_DESC: 'Most valuable',
+  VALUE_ASC: 'Least valuable',
+};
+
+const DUPLICATE_REASON_LABELS: Record<DuplicateGroup['reason'], string> = {
+  IDENTIFIER: 'Same code',
+  PRODUCT_NAME: 'Same product',
+  BRAND_MODEL: 'Same brand and model, bought the same day',
+};
+
+function describeThing(thing: DuplicateItem): string {
+  const parts = [thing.brand, thing.model, thing.category].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(' · ') : 'No brand or model recorded';
+}
+
+/**
+ * One duplicate suggestion: a set of things the server collapsed onto a shared
+ * code, product or brand+model, and the merge that folds them into one.
+ *
+ * There is no "not the same" here, unlike the people queue: the GraphQL surface
+ * has no mutation to record a rejected item pair, so offering the button would
+ * be a lie — the group would come straight back on the next load. The gap is
+ * called out in the card's own copy rather than hidden behind a dead control.
+ */
+function DuplicateGroupCard({
+  group,
+  onMerged,
+}: {
+  group: DuplicateGroup;
+  onMerged: () => Promise<unknown>;
+}) {
+  const [mergeItems, { loading }] = useMutation(MERGE_ITEMS);
+  const [pendingTargetId, setPendingTargetId] = useState<string | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  // A group can be truncated (six units of a value shared by hundreds); say so
+  // rather than implying the merge would cover all of them.
+  const truncated = group.totalItems > group.items.length;
+  const defaultTargetId = group.items[0]?.id ?? null;
+  const pendingTarget = group.items.find((thing) => thing.id === pendingTargetId);
+
+  const merge = async (targetId: string) => {
+    const sourceIds = group.items.map((thing) => thing.id).filter((id) => id !== targetId);
+
+    try {
+      await mergeItems({ variables: { input: { targetId, sourceIds } } });
+      setPendingTargetId(null);
+      setMergeError(null);
+      await onMerged();
+    } catch (error) {
+      // Keep the dialog open and show what went wrong instead of silently
+      // closing on failure.
+      setMergeError(error instanceof Error ? error.message : 'The merge failed. Please try again.');
+    }
+  };
+
+  return (
+    <div className="rounded-md border p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <Merge className="h-4 w-4" />
+        <span>
+          {DUPLICATE_REASON_LABELS[group.reason]}:{' '}
+          <span className="font-medium text-foreground">{group.value}</span>
+        </span>
+      </div>
+
+      {truncated && (
+        <div className="mb-2 text-xs text-muted-foreground">
+          {`Showing ${group.items.length} of ${group.totalItems} things sharing this — merging affects only the ${group.items.length} shown.`}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {group.items.map((thing) => (
+          <div key={thing.id} className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{thing.name || 'Unnamed thing'}</div>
+              <div className="truncate text-sm text-muted-foreground">{describeThing(thing)}</div>
+            </div>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={loading}
+              onClick={() => {
+                setMergeError(null);
+                setPendingTargetId(thing.id);
+              }}
+            >
+              Use as the kept thing
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t pt-2">
+        {mergeError && pendingTargetId == null && (
+          <span className="text-sm text-destructive">{mergeError}</span>
+        )}
+        <Button
+          size="sm"
+          disabled={loading || defaultTargetId == null}
+          onClick={() => {
+            if (defaultTargetId != null) {
+              setMergeError(null);
+              setPendingTargetId(defaultTargetId);
+            }
+          }}
+        >
+          Merge into one thing
+        </Button>
+      </div>
+
+      <AlertDialog
+        open={pendingTargetId != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingTargetId(null);
+          }
+        }}
+      >
+        <AlertDialog.Content>
+          <AlertDialog.Header>
+            <AlertDialog.Title>Merge into one thing?</AlertDialog.Title>
+            <AlertDialog.Description>
+              {`Codes, sightings, receipt lines and inventory links from the other ${group.items.length - 1 === 1 ? 'thing' : `${group.items.length - 1} things`} will move onto "${pendingTarget?.name || 'Unnamed thing'}". This cannot be undone from the UI.`}
+            </AlertDialog.Description>
+          </AlertDialog.Header>
+          {mergeError && <div className="text-sm text-destructive">{mergeError}</div>}
+          <AlertDialog.Footer>
+            <AlertDialog.Cancel disabled={loading}>Cancel</AlertDialog.Cancel>
+            <AlertDialog.Action
+              disabled={loading || pendingTargetId == null}
+              onClick={(e) => {
+                // Radix auto-closes on Action click; keep the dialog open so a
+                // failure (or the in-flight state) stays visible.
+                e.preventDefault();
+                if (pendingTargetId != null) {
+                  void merge(pendingTargetId);
+                }
+              }}
+            >
+              {loading ? 'Merging…' : 'Merge into one thing'}
+            </AlertDialog.Action>
+          </AlertDialog.Footer>
+        </AlertDialog.Content>
+      </AlertDialog>
+    </div>
+  );
+}
+
+export function ThingsPage() {
+  usePageTitle('Things - Companion Intelligence');
+
+  const navigate = useNavigate();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [category, setCategory] = useState('');
+  const [brand, setBrand] = useState('');
+  const [condition, setCondition] = useState<ItemCondition | null>(null);
+  const [lifecycleState, setLifecycleState] = useState<ItemLifecycleState | null>(null);
+  // Tri-state, not a checkbox: `null` is "don't filter", and `false` ("things
+  // carrying no code at all") is a genuinely useful answer — it is the worklist
+  // for anything a scanner cannot find.
+  const [hasIdentifier, setHasIdentifier] = useState<boolean | null>(null);
+  const [sort, setSort] = useState<ItemSortOrder>('RECENTLY_SEEN');
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const variables = useMemo(
+    () => ({
+      // Empty strings are not "no filter" on the server — they are a filter
+      // that matches everything with an empty value. Send null instead.
+      query: searchQuery.trim() === '' ? null : searchQuery.trim(),
+      category: category.trim() === '' ? null : category.trim(),
+      brand: brand.trim() === '' ? null : brand.trim(),
+      condition,
+      lifecycleState,
+      hasIdentifier,
+      sort,
+      first: PAGE_SIZE,
+    }),
+    [brand, category, condition, hasIdentifier, lifecycleState, searchQuery, sort],
+  );
+
+  const { data, previousData, loading, error, fetchMore, refetch } = useQuery(GET_THINGS, {
+    variables,
+    notifyOnNetworkStatusChange: true,
+  });
+
+  // Pages fetched, not groups rendered: the offset space belongs to the server's
+  // own recomputation, so counting what is on screen would walk it backwards.
+  const [duplicatePages, setDuplicatePages] = useState(1);
+  const {
+    data: duplicatesData,
+    error: duplicatesError,
+    refetch: refetchDuplicates,
+    fetchMore: fetchMoreDuplicates,
+  } = useQuery(GET_ITEM_DUPLICATES, {
+    variables: { limit: DUPLICATE_PAGE_SIZE, offset: 0 },
+    notifyOnNetworkStatusChange: true,
+  });
+
+  // Keep the previous result on screen while new variables are in flight —
+  // swapping to a full-page loader would unmount the search input and drop
+  // focus on the first keystroke of every new query.
+  const view = data ?? previousData;
+  const things: ThingNode[] = useMemo(() => (view?.items.edges ?? []).map((edge) => edge.node), [view]);
+  const pageInfo = view?.items.pageInfo;
+  const hasNextPage = pageInfo?.hasNextPage ?? false;
+  const totalCount = view?.items.totalCount ?? 0;
+
+  const duplicates = duplicatesData?.itemDuplicates;
+  const duplicateGroups = duplicates?.groups ?? [];
+
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const loadMore = useCallback(() => {
+    if (!hasNextPage || loadingMore || loadMoreError != null || !pageInfo?.endCursor) {
+      return;
+    }
+
+    setLoadingMore(true);
+
+    fetchMore({
+      variables: { after: pageInfo.endCursor },
+      updateQuery: (prev, { fetchMoreResult }) => {
+        if (!fetchMoreResult?.items) {
+          return prev;
+        }
+
+        const prevEdges = prev.items?.edges ?? [];
+        const seen = new Set(prevEdges.map((edge) => edge.cursor));
+
+        return {
+          items: {
+            ...fetchMoreResult.items,
+            edges: [...prevEdges, ...fetchMoreResult.items.edges.filter((edge) => !seen.has(edge.cursor))],
+          },
+        };
+      },
+    })
+      .catch((cause: unknown) => {
+        // Latch the failure rather than just clearing `loadingMore`: the
+        // sentinel is still on screen, so rebuilding the observer would re-fire
+        // it immediately and spin a request loop against a failing page.
+        setLoadMoreError(cause instanceof Error ? cause.message : 'Something went wrong.');
+      })
+      .finally(() => setLoadingMore(false));
+  }, [fetchMore, hasNextPage, loadMoreError, loadingMore, pageInfo?.endCursor]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+
+    if (!sentinel || !hasNextPage) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMore();
+        }
+      },
+      { root: scrollRef.current, rootMargin: '400px' },
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [hasNextPage, loadMore]);
+
+  const loadMoreDuplicates = () => {
+    setDuplicatePages((pages) => pages + 1);
+
+    void fetchMoreDuplicates({
+      variables: { offset: duplicatePages * DUPLICATE_PAGE_SIZE },
+      updateQuery: (prev, { fetchMoreResult }) => {
+        if (!fetchMoreResult?.itemDuplicates) {
+          return prev;
+        }
+
+        const seen = new Set(
+          (prev.itemDuplicates?.groups ?? []).map((group) => `${group.reason}:${group.value}`),
+        );
+
+        return {
+          itemDuplicates: {
+            ...fetchMoreResult.itemDuplicates,
+            groups: [
+              ...(prev.itemDuplicates?.groups ?? []),
+              ...fetchMoreResult.itemDuplicates.groups.filter(
+                (group) => !seen.has(`${group.reason}:${group.value}`),
+              ),
+            ],
+          },
+        };
+      },
+    });
+  };
+
+  // A merge changes both lists — the merged-away things leave the browse, and
+  // the group that proposed them is gone. Refetch both rather than patching the
+  // cache by hand; the browse carries at most a few pages here, and a
+  // hand-written splice would have to keep totalCount honest too.
+  const onMerged = useCallback(async () => {
+    setDuplicatePages(1);
+    await Promise.all([refetch(), refetchDuplicates({ limit: DUPLICATE_PAGE_SIZE, offset: 0 })]);
+  }, [refetch, refetchDuplicates]);
+
+  let content: ReactNode | null = null;
+
+  if (loading && view == null) {
+    content = <LoadingPage />;
+  } else if (error && view == null) {
+    content = <EmptyState message={`Couldn't load things: ${error.message}`} />;
+  } else {
+    content = (
+      <PageContent ref={scrollRef} className="gap-4 p-0">
+        <MemoryHubShell actions={<Button onClick={() => setCreateOpen(true)}>New thing</Button>}>
+          <Tabs defaultValue="things" className="flex flex-col gap-4 px-4 pb-4">
+            <Tabs.List className="self-start">
+              <Tabs.Trigger value="things">Things</Tabs.Trigger>
+              <Tabs.Trigger value="review">Review sightings</Tabs.Trigger>
+            </Tabs.List>
+
+            <Tabs.Content value="things" className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  placeholder="Search things by name, brand, model or category..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    // New query, new cursor space — a stale failure must not gate it.
+                    setLoadMoreError(null);
+                  }}
+                  className="max-w-xl flex-1"
+                />
+                <div className="text-sm text-muted-foreground">{totalCount} things</div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  aria-label="Category"
+                  placeholder="Category"
+                  value={category}
+                  onChange={(e) => {
+                    setCategory(e.target.value);
+                    setLoadMoreError(null);
+                  }}
+                  className="w-40"
+                />
+                <Input
+                  aria-label="Brand"
+                  placeholder="Brand"
+                  value={brand}
+                  onChange={(e) => {
+                    setBrand(e.target.value);
+                    setLoadMoreError(null);
+                  }}
+                  className="w-40"
+                />
+
+                <Select
+                  value={condition ?? ANY}
+                  onValueChange={(next) => {
+                    setCondition(next === ANY ? null : (next as ItemCondition));
+                    setLoadMoreError(null);
+                  }}
+                >
+                  <Select.Trigger className="w-44" aria-label="Condition">
+                    <Select.Value placeholder="Any condition" />
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Item value={ANY}>Any condition</Select.Item>
+                    {CONDITIONS.map((option) => (
+                      <Select.Item key={option} value={option}>
+                        {humanizeEnum(option)}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select>
+
+                <Select
+                  value={lifecycleState ?? ANY}
+                  onValueChange={(next) => {
+                    setLifecycleState(next === ANY ? null : (next as ItemLifecycleState));
+                    setLoadMoreError(null);
+                  }}
+                >
+                  <Select.Trigger className="w-44" aria-label="Status">
+                    <Select.Value placeholder="Any status" />
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Item value={ANY}>Any status</Select.Item>
+                    {LIFECYCLE_STATES.map((option) => (
+                      <Select.Item key={option} value={option}>
+                        {humanizeEnum(option)}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select>
+
+                <Select
+                  value={hasIdentifier == null ? ANY : hasIdentifier ? HAS_CODE : NO_CODE}
+                  onValueChange={(next) => {
+                    setHasIdentifier(next === ANY ? null : next === HAS_CODE);
+                    setLoadMoreError(null);
+                  }}
+                >
+                  <Select.Trigger className="w-44" aria-label="Codes">
+                    <Select.Value placeholder="Any code" />
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Item value={ANY}>Any code</Select.Item>
+                    <Select.Item value={HAS_CODE}>Has a code</Select.Item>
+                    <Select.Item value={NO_CODE}>No code</Select.Item>
+                  </Select.Content>
+                </Select>
+
+                <Select
+                  value={sort}
+                  onValueChange={(next) => {
+                    setSort(next as ItemSortOrder);
+                    setLoadMoreError(null);
+                  }}
+                >
+                  <Select.Trigger className="w-48" aria-label="Sort">
+                    <Select.Value />
+                  </Select.Trigger>
+                  <Select.Content>
+                    {SORT_ORDERS.map((option) => (
+                      <Select.Item key={option} value={option}>
+                        {SORT_LABELS[option]}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select>
+              </div>
+
+              {duplicatesError && (
+                <div className="text-sm text-muted-foreground">
+                  Duplicate suggestions are unavailable right now ({duplicatesError.message}).
+                </div>
+              )}
+
+              {duplicateGroups.length > 0 && (
+                <Card>
+                  <Card.Header>
+                    <Card.Title className="flex items-center gap-2 text-base">
+                      <Merge className="h-4 w-4" />
+                      Possible duplicates
+                      <Badge variant="secondary">{duplicates?.totalCount ?? 0}</Badge>
+                    </Card.Title>
+                    <Card.Description>
+                      These things share a code, a product, or a brand and model bought the same day. Merging
+                      is the only decision here — there is no way yet to record that two things are genuinely
+                      different, so a group you leave alone will be proposed again.
+                    </Card.Description>
+                  </Card.Header>
+                  <Card.Content className="flex flex-col gap-3">
+                    {duplicateGroups.map((group) => (
+                      <DuplicateGroupCard
+                        key={`${group.reason}:${group.value}`}
+                        group={group}
+                        onMerged={onMerged}
+                      />
+                    ))}
+
+                    {duplicates?.hasMore && (
+                      <div className="flex justify-center">
+                        <Button variant="outline" size="sm" onClick={loadMoreDuplicates}>
+                          Load more duplicate groups
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="text-center text-xs text-muted-foreground">
+                      {duplicateGroups.length} of {duplicates?.totalCount ?? 0} groups shown
+                    </div>
+                  </Card.Content>
+                </Card>
+              )}
+
+              {things.length === 0 ? (
+                <EmptyState message="No things found" />
+              ) : (
+                <>
+                  <EntityGrid>
+                    {things.map((thing) => (
+                      <ItemGridItem
+                        key={thing.id}
+                        item={thing}
+                        onClick={() => navigate(`/items/${GlobalUID.parse('item', thing.id)}`)}
+                      />
+                    ))}
+                  </EntityGrid>
+
+                  {hasNextPage && loadMoreError == null && <div ref={sentinelRef} className="h-8" />}
+
+                  {loadMoreError != null && (
+                    <div className="flex flex-col items-center gap-2 py-3">
+                      <div className="text-sm text-muted-foreground">
+                        Couldn&apos;t load more things: {loadMoreError}
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => setLoadMoreError(null)}>
+                        Try again
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="py-3 text-center text-xs text-muted-foreground">
+                    {things.length} of {totalCount} loaded
+                    {loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
+                  </div>
+                </>
+              )}
+            </Tabs.Content>
+
+            <Tabs.Content value="review">
+              <ObservationReview onResolved={() => refetch()} />
+            </Tabs.Content>
+          </Tabs>
+        </MemoryHubShell>
+
+        <InventoryItemModal
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          item={null}
+          create
+          onSaved={() => refetch()}
+        />
+      </PageContent>
+    );
+  }
+
+  return <>{content}</>;
+}

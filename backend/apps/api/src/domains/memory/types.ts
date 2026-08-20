@@ -1,6 +1,7 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
+import type { InventoryLifecycleState, Item } from './entities/ItemEntity';
 import type {
   ObservationBoundingBox,
   ObservationLabelSource,
@@ -8,6 +9,7 @@ import type {
   ObservationSourceKind,
 } from './entities/ObjectObservationEntity';
 import type { PlaceKind } from './entities/PlaceEntity';
+import type { ReceiptChannel, ReceiptExtractionState } from './entities/ReceiptEntity';
 import { type NormalizedFieldMap, type PropertiesBag } from './normalizedProperties';
 import type { AcquisitionMethod, UnitSystem } from './physicalProperties';
 
@@ -334,6 +336,24 @@ export interface CreateItemDto extends PhysicalItemPropertiesDto {
   identityConfidence?: number;
   images?: string[];
   metadata?: Record<string, unknown>;
+
+  // ---------------------------------------------------------------------------
+  // Object identity (migration 20260803223025). ALL OPTIONAL, and omitting every
+  // one of them must reproduce the pre-object-identity write byte for byte —
+  // the importer and every existing caller pass none of these.
+  // ---------------------------------------------------------------------------
+
+  /** The catalog model this unit is an instance of. */
+  productId?: string | null;
+  acquisitionReceiptId?: string | null;
+  /** The receipt line this unit was minted from. */
+  acquisitionLineItemId?: string | null;
+  /** Queryable ownership state; the schema defaults it to 'active'. */
+  lifecycleState?: InventoryLifecycleState;
+  /** Last confirmed sighting, denormalized from ci.object_observations. */
+  lastSeenAt?: Date | null;
+  lastSeenPlaceEntityId?: string | null;
+
   // Provenance triple for idempotent re-ingest (see inventory_source_triple_uniq).
   sourceType?: string;
   sourceSystem?: string;
@@ -355,6 +375,14 @@ export interface UpdateItemDto extends PhysicalItemPropertiesDto {
   quantity?: number;
   images?: string[];
   metadata?: Record<string, unknown> | undefined;
+
+  // Object identity — same optionality contract as CreateItemDto.
+  productId?: string | null;
+  acquisitionReceiptId?: string | null;
+  acquisitionLineItemId?: string | null;
+  lifecycleState?: InventoryLifecycleState;
+  lastSeenAt?: Date | null;
+  lastSeenPlaceEntityId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +488,200 @@ export interface FindObjectObservationsFilter {
   observedTo?: Date;
   limit?: number;
   offset?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Product models — the catalog half of the product/instance split
+// ---------------------------------------------------------------------------
+
+/**
+ * A catalog model as callers supply it.
+ *
+ * `identityConfidence` is deliberately not defaulted here: the column defaults
+ * to 1.0, which reads as ground truth to HBPE and RAG, so anything DERIVED (a
+ * receipt line, a vision guess) has to say so explicitly. See the constants on
+ * {@link ProductModelService}.
+ */
+export interface CreateProductModelDto {
+  id?: string;
+  title: string;
+  brand?: string | null;
+  manufacturer?: string | null;
+  modelNumber?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  productType?: string | null;
+  description?: string | null;
+  /** Variant AXES only ({color, capacity, size}) — never descriptive specs. */
+  variantAttributes?: Record<string, unknown>;
+  spec?: Record<string, unknown>;
+  /** Integer MINOR units of `currency`. Never a float of dollars. */
+  msrpMinor?: number | null;
+  currency?: string | null;
+  imageContentId?: string | null;
+  manualContentIds?: string[] | null;
+  isDigital?: boolean;
+  identityConfidence?: number;
+  productEntityId?: string | null;
+  metadata?: Record<string, unknown>;
+  // Provenance triple for idempotent re-ingest (product_models_source_triple_uniq).
+  sourceType?: string | null;
+  sourceSystem?: string | null;
+  sourceId?: string | null;
+}
+
+/** A patch to a catalog model. Absent keys are left alone; explicit null clears. */
+export type UpdateProductModelDto = Partial<Omit<CreateProductModelDto, 'id'>>;
+
+/** Scoped read filter for {@link ProductModelService.find}. */
+export interface FindProductModelsFilter {
+  /** Case-insensitive exact match on the trimmed brand. */
+  brand?: string;
+  category?: string;
+  subcategory?: string;
+  productType?: string;
+  isDigital?: boolean;
+  /** Case-insensitive substring of the title. */
+  titleContains?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Receipts — purchase evidence and the line items minted from it
+// ---------------------------------------------------------------------------
+
+/** A receipt header as callers supply it. Money is integer minor units throughout. */
+export interface CreateReceiptDto {
+  id?: string;
+  merchantName?: string | null;
+  merchantEntityId?: string | null;
+  placeEntityId?: string | null;
+  purchasedAt?: Date | null;
+  currency?: string | null;
+  subtotalMinor?: number | null;
+  taxMinor?: number | null;
+  tipMinor?: number | null;
+  shippingMinor?: number | null;
+  discountMinor?: number | null;
+  totalMinor?: number | null;
+  paymentMethod?: string | null;
+  /** Last four digits ONLY. A full card number is never stored. */
+  paymentLast4?: string | null;
+  orderNumber?: string | null;
+  channel?: ReceiptChannel | null;
+  documentContentId?: string | null;
+  sourceFileId?: string | null;
+  sourceMessageId?: string | null;
+  extractionState?: ReceiptExtractionState;
+  extractionConfidence?: number | null;
+  extractionModel?: string | null;
+  extractionError?: string | null;
+  rawText?: string | null;
+  eventId?: string | null;
+  metadata?: Record<string, unknown>;
+  sourceType?: string | null;
+  sourceSystem?: string | null;
+  sourceId?: string | null;
+}
+
+/** A patch to a receipt header. */
+export type UpdateReceiptDto = Partial<Omit<CreateReceiptDto, 'id'>>;
+
+/**
+ * One line as callers supply it.
+ *
+ * `lineNumber` is 1-based and STABLE: it is half of the natural key
+ * `(receipt_id, line_number)`, so re-extracting the same document must produce
+ * the same numbering or lines fork instead of updating in place.
+ */
+export interface ReceiptLineItemInput {
+  lineNumber: number;
+  description: string;
+  quantity?: number;
+  unitPriceMinor?: number | null;
+  totalPriceMinor?: number | null;
+  currency?: string | null;
+  productId?: string | null;
+  brand?: string | null;
+  modelNumber?: string | null;
+  category?: string | null;
+  /** FALSE for ebooks, subscriptions and gift cards. Only physical lines mint units. */
+  isPhysical?: boolean;
+  /**
+   * Identifiers printed on (or attached to) the line — `{gtin: '0123…', asin: 'B0…'}`.
+   * Promoted into `ci.object_identifiers` by
+   * {@link ReceiptService.upsertFromExtraction}; never written verbatim.
+   */
+  identifierCodes?: Record<string, string | null | undefined>;
+  /** Distinct serial numbers supplied by the line. N serials mint N units. */
+  serials?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A whole extracted receipt: the header plus its lines, as one transactional
+ * unit. See {@link ReceiptService.upsertFromExtraction}.
+ */
+export interface ReceiptExtraction extends CreateReceiptDto {
+  lines: ReceiptLineItemInput[];
+  /**
+   * Where the claims came from. Decides the confidence written onto promoted
+   * identifiers: an OCR read of a crumpled receipt is not a retailer's own
+   * order feed.
+   */
+  extractionSource?: 'ocr' | 'structured';
+  /** Skip the minting step (import backfills that only want the evidence). */
+  skipMint?: boolean;
+}
+
+/** Scoped, keyset read filter for {@link ReceiptService.find}. */
+export interface FindReceiptsFilter {
+  merchantName?: string;
+  merchantEntityId?: string;
+  placeEntityId?: string;
+  extractionState?: ReceiptExtractionState;
+  purchasedFrom?: Date;
+  purchasedTo?: Date;
+  limit?: number;
+  /**
+   * Keyset cursor: the `(purchasedAt, id)` of the last row of the previous
+   * page. Strictly newer-than-exclusive, matching the DESC sort.
+   */
+  afterPurchasedAt?: Date | null;
+  afterId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Owned units — the keyset read the things list needs
+// ---------------------------------------------------------------------------
+
+/** Scoped filter for {@link ItemService.findPage}. */
+export interface FindItemsFilter {
+  category?: string;
+  subcategory?: string;
+  /** Case-insensitive exact match on the trimmed brand. */
+  brand?: string;
+  productId?: string;
+  lifecycleState?: InventoryLifecycleState;
+  isDigital?: boolean;
+  acquiredFrom?: Date;
+  acquiredTo?: Date;
+}
+
+/** Keyset cursor for {@link ItemService.findPage}: `(createdAt, id)` DESC. */
+export interface ItemKeyset {
+  limit?: number;
+  afterCreatedAt?: Date | null;
+  afterId?: string | null;
+}
+
+/** One page of owned units, newest first. */
+export interface ItemPage {
+  items: Item[];
+  hasMore: boolean;
+  /** Cursor to pass back as `afterCreatedAt`/`afterId`; null when the page is the last. */
+  nextCursor: { createdAt: Date; id: string } | null;
 }
 
 export interface CreatePersonDto {

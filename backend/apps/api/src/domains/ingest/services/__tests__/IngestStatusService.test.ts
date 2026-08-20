@@ -15,6 +15,10 @@ describe('IngestStatusService.snapshot', () => {
               inventory: '40',
               browser_activity: '50',
               position: '60',
+              product_models: '70',
+              receipts: '80',
+              receipt_line_items: '90',
+              object_observations: '100',
             },
           ];
         }
@@ -56,6 +60,10 @@ describe('IngestStatusService.snapshot', () => {
       inventory: 40,
       browser_activity: 50,
       position: 60,
+      product_models: 70,
+      receipts: 80,
+      receipt_line_items: 90,
+      object_observations: 100,
     });
     expect(snapshot.searchIndex.embeddingsByType).toEqual({ communication: 7 });
     expect(snapshot.searchIndex.skipsByType).toEqual({ event: 2 });

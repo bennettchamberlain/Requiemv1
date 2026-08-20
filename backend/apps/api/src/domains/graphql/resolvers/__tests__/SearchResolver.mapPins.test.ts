@@ -87,6 +87,8 @@ describe('SearchResolver — mapPins', () => {
       stub('getEntitiesForNotes') as never,
       stub('getEntitiesForPeople') as never,
       stub('getEntitiesForPlaces') as never,
+      stub('getEntitiesForProducts') as never,
+      stub('getEntitiesForReceipts') as never,
       stub('getEntitiesForAnswers') as never,
       { findByShareToken: jest.fn().mockResolvedValue(null) } as never,
       searchService as never,
