@@ -109,6 +109,48 @@ export function threadKeyFor(fpath: string, conversation: string | undefined): s
   return `${GV_FILE_THREAD_PREFIX}${base.replace(/\.[^.]+$/, '')}`;
 }
 
+/**
+ * The spoken text of a voicemail.
+ *
+ * Google Voice stores it as `<span class="full-text">` nested inside the
+ * `<span class="description">` of the hAudio block:
+ *
+ *   <span class="description"><span class="full-text">the transcript</span>
+ *     <span class="word high">the<span class="start-time">…</span>
+ *       <span class="end-time">…</span><span class="confidence">0.94</span></span>
+ *     …one such span per word…
+ *   </span>
+ *
+ * This used to read `<span class="note">`, which is what an older export shape
+ * used and what the comment above still described. That class does not occur
+ * ONCE in a current export — 0 of 71,946 files in the reference corpus — so
+ * `transcript` was always undefined and every voicemail fell back to the
+ * synthesized `"<Type> call from <contact>"` label, both as its body and in
+ * `metadata.Transcript`. 2,521 voicemails carried a transcript that was never
+ * read. `note` is still accepted so an older export keeps working.
+ *
+ * The per-word spans are SIBLINGS that follow the full-text span, not children
+ * of it, and no `full-text` element in the corpus contains a nested tag (0 of
+ * 2,818), so a non-greedy match to the first `</span>` takes the whole
+ * transcript and none of the timing markup.
+ *
+ * Returns undefined for an element that is present but empty — 297 files,
+ * mostly missed calls that were never spoken into — so the caller's existing
+ * fallback to the synthesized label still applies to them.
+ */
+function extractTranscript(raw: string): string | undefined {
+  const match =
+    /<span class="full-text"[^>]*>([\s\S]*?)<\/span>/i.exec(raw) ??
+    /<span class="note"[^>]*>([\s\S]*?)<\/span>/i.exec(raw);
+  if (!match) {
+    return undefined;
+  }
+
+  const text = decodeHtml(stripTags(match[1])).trim();
+
+  return text || undefined;
+}
+
 export class GoogleVoiceFileImporter implements FileImporter {
   private owner?: { name?: string; phones: string[] };
 
@@ -263,8 +305,9 @@ export class GoogleVoiceFileImporter implements FileImporter {
     // Call / voicemail records ("Missed"/"Placed"/"Received"/"Recorded"/"Voicemail"
     // HTML files) use a completely different markup shape: a single
     // <div class="haudio"> block (hAudio microformat) with <abbr class="published">
-    // / <abbr class="duration"> and, for voicemails, a <span class="note">
-    // transcript — never a <div class="message"> or a <q> text body. The
+    // / <abbr class="duration"> and, for voicemails, a <span class="full-text">
+    // transcript (see extractTranscript) — never a <div class="message"> or a
+    // <q> text body. The
     // messageBlocks() below doesn't match haudio divs at all, so without this branch
     // every call/voicemail file silently produced zero items. Route them to a
     // dedicated handler instead of falling into the SMS/MMS message loop.
@@ -458,7 +501,8 @@ export class GoogleVoiceFileImporter implements FileImporter {
   //       <span class="fn">Name</span></a></span>
   //     <abbr class="published" title="2025-01-15T09:30:00.000Z">…</abbr>
   //     <abbr class="duration" title="00:01:15">(00:01:15)</abbr>
-  //     <span class="note">voicemail transcript text</span>   (voicemail only)
+  //     <span class="description"><span class="full-text">transcript</span>
+  //       …per-word <span class="word …"> spans…</span>       (voicemail only)
   //   </div>
   // Call direction/type (Missed/Placed/Received/Voicemail/Recorded) is most
   // reliably read from the filename — Google Voice names each call-log file
@@ -497,8 +541,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     const sender = extractSender(raw);
     const contact = sender.name || sender.phone || conversation;
 
-    const noteMatch = /<span class="note">([\s\S]*?)<\/span>/i.exec(raw);
-    const transcript = noteMatch ? decodeHtml(stripTags(noteMatch[1])).trim() : undefined;
+    const transcript = extractTranscript(raw);
 
     const preposition = direction === 'outgoing' ? 'to' : 'from';
     const contentStr = `${callType} call ${preposition} ${contact || 'unknown'}`;

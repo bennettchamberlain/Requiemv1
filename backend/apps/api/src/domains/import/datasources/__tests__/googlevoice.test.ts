@@ -820,3 +820,83 @@ describe('a short code is a correspondent, not a person', () => {
     expect(staged.map(graphType)).toEqual(['Person']);
   });
 });
+
+// The transcript of a voicemail lived in `<span class="note">` in an older
+// export shape, and the parser read that class. A current export does not
+// contain it ONCE — 0 of 71,946 files in the reference corpus — so every
+// voicemail fell back to the synthesized "<Type> call from <contact>" label
+// and 2,521 real transcripts were never read.
+//
+// The reason this survived a green suite is worth stating: the existing
+// fixture above was written to match the PARSER, using `class="note"`, so it
+// could never falsify the parser's assumption. These fixtures use the markup a
+// real export actually ships — `<span class="full-text">` nested in
+// `<span class="description">`, with per-word timing spans as siblings AFTER
+// it — so they fail against the old regex.
+describe('voicemail transcripts in real export markup', () => {
+  async function importRealMarkup() {
+    const exportDir = path.join(FIXTURES_DIR, 'google-voice-export-realmarkup');
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport(
+      {},
+      { filename: 'google-voice-export-realmarkup', fullPath: exportDir },
+      { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
+    );
+    return pipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item);
+  }
+
+  it('reads the transcript out of <span class="full-text">', async () => {
+    const calls = await importRealMarkup();
+    const bob = calls.find((c) => c.metadata.Contact === 'Bob Smith');
+    expect(bob).toBeDefined();
+    expect(bob!.metadata.Transcript).toBe("Hi it's Bob, the meeting moved to Thursday.");
+  });
+
+  it('does not swallow the per-word timing spans that follow it', async () => {
+    // The <span class="word …"> siblings carry start-time/end-time/confidence.
+    // A greedy match, or one that read the enclosing <span class="description">,
+    // would splice those numbers into the sentence.
+    const calls = await importRealMarkup();
+    const bob = calls.find((c) => c.metadata.Contact === 'Bob Smith');
+    const transcript = bob!.metadata.Transcript as string;
+    expect(transcript).not.toMatch(/0\.98|0\.42/);
+    expect(transcript).not.toMatch(/start-time|end-time|confidence/);
+    expect(transcript.endsWith('Thursday.')).toBe(true);
+  });
+
+  it('uses the transcript as the item body, not the synthesized label', async () => {
+    const calls = await importRealMarkup();
+    const bob = calls.find((c) => c.metadata.Contact === 'Bob Smith');
+    const body = await (bob!.content as { data: () => Promise<Buffer> }).data();
+    expect(body.toString()).toBe("Hi it's Bob, the meeting moved to Thursday.");
+    // The label is still recorded separately.
+    expect(bob!.metadata.Description).toContain('Voicemail call from');
+  });
+
+  it('falls back to the label when the element is present but empty', async () => {
+    // 297 of the 2,818 files in the corpus have an empty <span class="full-text">.
+    // Those must keep the old behaviour rather than store an empty body.
+    const calls = await importRealMarkup();
+    const carol = calls.find((c) => c.metadata.Contact === 'Carol Diaz');
+    expect(carol).toBeDefined();
+    expect(carol!.metadata.Transcript).toBeUndefined();
+    const body = await (carol!.content as { data: () => Promise<Buffer> }).data();
+    expect(body.toString()).toContain('Voicemail call from');
+  });
+
+  it('still reads the legacy <span class="note"> shape', async () => {
+    // An older export keeps working — the original fixture uses that markup.
+    const exportDir = path.join(FIXTURES_DIR, 'google-voice-export-calls');
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport(
+      {},
+      { filename: 'google-voice-export-calls', fullPath: exportDir },
+      { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
+    );
+    const vm = pipeline
+      .filter((p) => p.item?.classification === 'call')
+      .map((p) => p.item)
+      .find((c) => c.metadata.CallType === 'Voicemail');
+    expect(vm!.metadata.Transcript).toBe("Hey it's Alice, call me back when you get a chance.");
+  });
+});
