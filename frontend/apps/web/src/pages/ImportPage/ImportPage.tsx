@@ -162,8 +162,17 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
           single run. That viewport scrolls instead, and the region sizes to
           what it has to say. The Jobs page passes no cap for the same reason —
           there the page itself scrolls, and clipping the region would hide the
-          very thing an operator opened it to read. */}
-      <ImportActivity className="max-h-none sm:max-h-[40rem]" />
+          very thing an operator opened it to read.
+
+          RAISING THIS NUMBER RE-BREAKS THE PICKER. #2182 moved this block below
+          the navigation row and took the ceiling to `40rem` — 640px, which
+          cannot bind inside a 440px column, so the cap stopped existing and the
+          measurement above came back. The region is `shrink-0` with its own
+          internal scroller, so it does not yield space under pressure: an
+          outside ceiling is the only thing between it and the picker. It still
+          sits above the wizard, which is why moving it down the column did not
+          change any of this. */}
+      <ImportActivity className="max-h-none sm:max-h-[8.5rem]" />
 
       {/* The wizard stays MOUNTED and is hidden, never unmounted.
 
