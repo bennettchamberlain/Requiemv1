@@ -21,9 +21,14 @@ const h = vi.hoisted(() => ({
   authenticated: false,
 }));
 
-vi.mock('@ci/common', () => ({
-  persistApiBaseUrl: h.persistApiBaseUrl,
-}));
+vi.mock('@ci/common', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ci/common')>();
+
+  return {
+    ...actual,
+    persistApiBaseUrl: h.persistApiBaseUrl,
+  };
+});
 
 vi.mock('@/hooks', () => ({
   useAuth: () => [
@@ -144,8 +149,9 @@ describe('DeviceConnectPage', () => {
     fireEvent.click(screen.getByTestId('memory-row-home'));
 
     await waitFor(() => {
-      expect(h.completePortalMemoryConnect).toHaveBeenCalledWith('oidc-id');
+      expect(h.completePortalMemoryConnect).toHaveBeenCalledWith('oidc-id', 'https://memory.example.com');
     });
+    expect(h.persistApiBaseUrl).toHaveBeenCalledWith('https://memory.example.com');
     rerender(<DeviceConnectPage />);
     await waitFor(() => {
       expect(navigate).toHaveBeenCalledWith('/', { replace: true });
@@ -171,7 +177,7 @@ describe('DeviceConnectPage', () => {
     expect(await screen.findByText('Home')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('memory-row-home'));
 
-    expect(await screen.findByText(/could not sign in to this memory server/i)).toBeInTheDocument();
+    expect(await screen.findByText(/could not sign in to https:\/\/memory\.example\.com\/app/i)).toBeInTheDocument();
     expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true });
     expect(navigate).not.toHaveBeenCalledWith('/', { replace: true });
   });

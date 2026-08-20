@@ -169,6 +169,36 @@ describe('fetchJson — native CapacitorHttp', () => {
     );
   });
 
+  it('refuses to send a relative path through CapacitorHttp (iOS "unsupported URL")', async () => {
+    const fetchMock = stubFetch();
+    const request = vi.fn(async () => ({ status: 200, data: {} }));
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { CapacitorHttp: { request } },
+    };
+
+    await expect(fetchJson('/api/keys')).rejects.toThrow(/absolute http/i);
+    expect(request).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rewrites CapacitorHttp "unsupported URL" to include the request URL', async () => {
+    stubFetch();
+    const request = vi.fn(async () => {
+      throw new Error('unsupported URL');
+    });
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { CapacitorHttp: { request } },
+    };
+
+    await expect(fetchJson('https://memory.example.com/api/health')).rejects.toThrow(
+      /Could not request https:\/\/memory\.example\.com\/api\/health/i,
+    );
+  });
+
   it('falls back to fetch when CapacitorHttp is missing', async () => {
     const fetchMock = stubFetch();
 
@@ -180,5 +210,24 @@ describe('fetchJson — native CapacitorHttp', () => {
     await fetchJson('/api/x');
 
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('sends FormData through fetch so multipart keeps its boundary', async () => {
+    const fetchMock = stubFetch();
+    const request = vi.fn(async () => ({ status: 200, data: [] }));
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { CapacitorHttp: { request } },
+    };
+
+    const body = new FormData();
+    body.append('files', new File(['a'], 'a.jpg', { type: 'image/jpeg' }));
+
+    await fetchJson('/api/files/upload', { method: 'POST', body });
+
+    expect(request).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalled();
+    expect(callArgs(fetchMock)[1]?.body).toBe(body);
   });
 });

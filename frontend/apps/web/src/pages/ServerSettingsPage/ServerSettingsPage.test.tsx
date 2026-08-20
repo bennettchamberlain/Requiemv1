@@ -24,11 +24,16 @@ const h = vi.hoisted(() => ({
   persistApiBaseUrl: vi.fn(),
 }));
 
-vi.mock('@ci/common', () => ({
-  getApiBaseUrl: () => h.apiBaseUrl,
-  buildApiUrl: (path: string) => `${h.apiBaseUrl}${path}`,
-  persistApiBaseUrl: h.persistApiBaseUrl,
-}));
+vi.mock('@ci/common', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ci/common')>();
+
+  return {
+    ...actual,
+    getApiBaseUrl: () => h.apiBaseUrl,
+    buildApiUrl: (path: string) => `${h.apiBaseUrl}${path}`,
+    persistApiBaseUrl: h.persistApiBaseUrl,
+  };
+});
 
 function fillUrl(value: string) {
   fireEvent.change(screen.getByLabelText('Memory Server URL'), { target: { value } });
