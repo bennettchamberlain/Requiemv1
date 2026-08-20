@@ -11,7 +11,7 @@ const SOURCE_B = '00000000-0000-0000-0000-0000000000c2';
 
 const CONTEXT: UserServiceContext = { userId: USER } as UserServiceContext;
 
-interface InventoryRow {
+interface ObjectRow {
   object_id: string;
   user_id: string;
   merged_into_object_id: string | null;
@@ -25,7 +25,7 @@ interface InventoryRow {
   [key: string]: unknown;
 }
 
-function inventoryRow(id: string, overrides: Partial<InventoryRow> = {}): InventoryRow {
+function objectRow(id: string, overrides: Partial<ObjectRow> = {}): ObjectRow {
   return {
     object_id: id,
     user_id: USER,
@@ -64,13 +64,13 @@ interface Harness {
   send: jest.Mock;
 }
 
-function makeHarness(rows: InventoryRow[]): Harness {
+function makeHarness(rows: ObjectRow[]): Harness {
   const statements: Array<{ sql: string; params: unknown[] }> = [];
 
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     statements.push({ sql, params });
 
-    if (sql.includes('FROM ci.inventory') && sql.includes('FOR UPDATE')) {
+    if (sql.includes('FROM ci.objects') && sql.includes('FOR UPDATE')) {
       const requested = (params[1] as string[]) ?? [];
 
       return rows.filter((row) => requested.includes(row.object_id));
@@ -143,7 +143,7 @@ function statementsMatching(harness: Harness, fragment: string) {
 
 describe('ObjectMergeService.mergeObjects validation', () => {
   it('rejects a merge with no source distinct from the target', async () => {
-    const harness = makeHarness([inventoryRow(TARGET)]);
+    const harness = makeHarness([objectRow(TARGET)]);
 
     await expect(harness.service.mergeObjects(CONTEXT, [TARGET], TARGET)).rejects.toThrow(
       BadRequestException,
@@ -151,7 +151,7 @@ describe('ObjectMergeService.mergeObjects validation', () => {
   });
 
   it('rejects a missing source', async () => {
-    const harness = makeHarness([inventoryRow(TARGET)]);
+    const harness = makeHarness([objectRow(TARGET)]);
 
     await expect(harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET)).rejects.toThrow(
       NotFoundException,
@@ -160,8 +160,8 @@ describe('ObjectMergeService.mergeObjects validation', () => {
 
   it('refuses a tombstoned target — its data is already folded into someone else', async () => {
     const harness = makeHarness([
-      inventoryRow(TARGET, { merged_into_object_id: SOURCE_B }),
-      inventoryRow(SOURCE_A),
+      objectRow(TARGET, { merged_into_object_id: SOURCE_B }),
+      objectRow(SOURCE_A),
     ]);
 
     await expect(harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET)).rejects.toThrow(
@@ -170,10 +170,7 @@ describe('ObjectMergeService.mergeObjects validation', () => {
   });
 
   it('refuses a tombstoned source, so nothing is moved twice', async () => {
-    const harness = makeHarness([
-      inventoryRow(TARGET),
-      inventoryRow(SOURCE_A, { merged_into_object_id: TARGET }),
-    ]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A, { merged_into_object_id: TARGET })]);
 
     await expect(harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET)).rejects.toThrow(
       BadRequestException,
@@ -181,7 +178,7 @@ describe('ObjectMergeService.mergeObjects validation', () => {
   });
 
   it('locks the target and every source in one FOR UPDATE', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A), inventoryRow(SOURCE_B)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A), objectRow(SOURCE_B)]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A, SOURCE_B], TARGET);
 
@@ -192,7 +189,7 @@ describe('ObjectMergeService.mergeObjects validation', () => {
 
 describe('ObjectMergeService.mergeObjects re-points', () => {
   it('re-points identifiers through the sanctioned service, inside the transaction', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
 
     const { counts } = await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
@@ -207,7 +204,7 @@ describe('ObjectMergeService.mergeObjects re-points', () => {
   });
 
   it('re-points observations, parents, related arrays and receipt lines', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
 
     const { counts } = await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
@@ -218,7 +215,7 @@ describe('ObjectMergeService.mergeObjects re-points', () => {
   });
 
   it('de-duplicates a related_object_ids row that referenced two sources', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A), inventoryRow(SOURCE_B)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A), objectRow(SOURCE_B)]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A, SOURCE_B], TARGET);
 
@@ -229,7 +226,7 @@ describe('ObjectMergeService.mergeObjects re-points', () => {
   });
 
   it('never lets the target become its own parent', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
@@ -243,8 +240,8 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
     const early = new Date('2020-01-01T00:00:00Z');
     const late = new Date('2026-03-02T10:00:00Z');
     const harness = makeHarness([
-      inventoryRow(TARGET, { quantity: 2, acquired_at: late, last_seen_at: early }),
-      inventoryRow(SOURCE_A, {
+      objectRow(TARGET, { quantity: 2, acquired_at: late, last_seen_at: early }),
+      objectRow(SOURCE_A, {
         quantity: 3,
         acquired_at: early,
         last_seen_at: late,
@@ -266,8 +263,8 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
 
   it('lets the target win a scalar it already has', async () => {
     const harness = makeHarness([
-      inventoryRow(TARGET, { brand: 'Sony' }),
-      inventoryRow(SOURCE_A, { brand: 'SONY CORP' }),
+      objectRow(TARGET, { brand: 'Sony' }),
+      objectRow(SOURCE_A, { brand: 'SONY CORP' }),
     ]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
@@ -276,10 +273,7 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
   });
 
   it('takes a source scalar the target is missing', async () => {
-    const harness = makeHarness([
-      inventoryRow(TARGET, { brand: null }),
-      inventoryRow(SOURCE_A, { brand: 'Sony' }),
-    ]);
+    const harness = makeHarness([objectRow(TARGET, { brand: null }), objectRow(SOURCE_A, { brand: 'Sony' })]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
@@ -288,8 +282,8 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
 
   it('merges the jsonb bags with the target on top', async () => {
     const harness = makeHarness([
-      inventoryRow(TARGET, { identifier_codes: { gtin: 'target' } }),
-      inventoryRow(SOURCE_A, { identifier_codes: { gtin: 'source', asin: 'B0' } }),
+      objectRow(TARGET, { identifier_codes: { gtin: 'target' } }),
+      objectRow(SOURCE_A, { identifier_codes: { gtin: 'source', asin: 'B0' } }),
     ]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
@@ -301,7 +295,7 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
   });
 
   it('tombstones the sources and compresses an existing tombstone chain', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
@@ -315,7 +309,7 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
   });
 
   it('deactivates the CTI base rows so the graph stops traversing them', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
@@ -325,12 +319,12 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
   });
 
   it('deletes BOTH search stores, not just the embeddings', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
 
     const { counts } = await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
     // ci_search.vectors is the keyword CANDIDATE source and joins nothing back
-    // to ci.inventory, so deleting only the embedding leaves the tombstone
+    // to ci.objects, so deleting only the embedding leaves the tombstone
     // fully findable.
     expect(statementsMatching(harness, 'DELETE FROM ci_search.embeddings')).toHaveLength(1);
     expect(statementsMatching(harness, 'DELETE FROM ci_search.vectors')).toHaveLength(1);
@@ -338,7 +332,7 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
   });
 
   it('writes one audit row per source, typed ObjectInstance', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A), inventoryRow(SOURCE_B)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A), objectRow(SOURCE_B)]);
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A, SOURCE_B], TARGET);
 
@@ -350,7 +344,7 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
   });
 
   it('emits the target update only after the transaction has committed', async () => {
-    const harness = makeHarness([inventoryRow(TARGET), inventoryRow(SOURCE_A)]);
+    const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
     let sentDuringTransaction = false;
     harness.send.mockImplementation(async () => {
       sentDuringTransaction = harness.statements.length === 0;
@@ -421,7 +415,7 @@ describe('ObjectMergeService.mergeProductModels', () => {
     ...overrides,
   });
 
-  it('re-points line items, inventory and observations onto the surviving model', async () => {
+  it('re-points line items, objects and observations onto the surviving model', async () => {
     const harness = productHarness([productRow(TARGET), productRow(SOURCE_A)]);
 
     const { counts } = await harness.service.mergeProductModels(CONTEXT, [SOURCE_A], TARGET);
@@ -436,7 +430,7 @@ describe('ObjectMergeService.mergeProductModels', () => {
     expect(counts).toEqual({
       identifiers: 1,
       receiptLineItems: 1,
-      inventoryProduct: 1,
+      objectProduct: 1,
       observations: 1,
     });
   });

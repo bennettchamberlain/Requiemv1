@@ -64,7 +64,7 @@ export const minorUnitsTransformer: ValueTransformer = {
  * ISO-4217 currencies whose minor unit is NOT 1/100.
  *
  * Only the exceptions are listed; everything else is two decimal places. The
- * list matters because the legacy `ci.inventory.purchase_price` column is
+ * list matters because the legacy `ci.objects.purchase_price` column is
  * `DECIMAL(10,2)` in MAJOR units, so writing a receipt's minor-unit amount into
  * it needs the divisor — and dividing yen by 100 turns ¥1,200 into ¥12.
  */
@@ -106,11 +106,11 @@ export function minorUnitExponent(currency: string | null | undefined): number {
 
 /**
  * Integer minor units -> major units, for the LEGACY `DECIMAL` money columns
- * only (`ci.inventory.purchase_price` / `current_value`).
+ * only (`ci.objects.purchase_price` / `current_value`).
  *
  * Nothing new should call this: new columns are `*_minor` BIGINT and stay in
  * minor units end to end. It exists so a receipt line can populate the decimal
- * column the existing inventory UI already reads, without pretending every
+ * column the existing Things UI already reads, without pretending every
  * currency has two decimal places.
  */
 export function minorUnitsToDecimal(

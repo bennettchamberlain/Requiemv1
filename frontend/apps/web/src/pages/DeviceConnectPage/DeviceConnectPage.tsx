@@ -108,9 +108,7 @@ export function DeviceConnectPage() {
 
       try {
         const tokens = await resumePendingOidcLogin();
-        const stored = tokens
-          ? null
-          : readStoredPortalAuth();
+        const stored = tokens ? null : readStoredPortalAuth();
 
         if (cancelled || (!tokens && !stored)) {
           return;
@@ -250,11 +248,15 @@ export function DeviceConnectPage() {
       const origin = new URL(device.memoryUrl).origin;
       await probeMemoryOrigin(origin);
 
-      const bearers = auth?.kind === 'oauth' ? [auth.idToken, auth.token].filter((value): value is string => Boolean(value)) : [];
+      const bearers =
+        auth?.kind === 'oauth'
+          ? [auth.idToken, auth.token].filter((value): value is string => Boolean(value))
+          : [];
 
       if (bearers.length === 0) {
         setSignInError('Sign in with Companion Intelligence first, then pick this server again.');
         setConnectingId(null);
+
         return;
       }
 
@@ -266,6 +268,7 @@ export function DeviceConnectPage() {
       for (const bearer of bearers) {
         try {
           await completePortalMemoryConnect(bearer);
+
           return;
         } catch (err) {
           lastError = err;

@@ -23,7 +23,7 @@ import { PositionService } from '@ci/domains/position';
 
 import { BulkIngestController } from '../controllers/BulkIngestController';
 import { IngestCoalesceService } from '../services/IngestCoalesceService';
-import { bulkInventoryRecordSchema } from '../types';
+import { bulkThingRecordSchema } from '../types';
 
 const mockCanActivate = jest.fn();
 
@@ -175,9 +175,9 @@ describe('Bulk ingest routes (/v1/*)', () => {
     });
 
   /**
-   * An inventory record shaped EXACTLY the way today's importer sends one —
+   * A thing record shaped EXACTLY the way today's importer sends one —
    * every field it populates, and not one field it does not. The object-identity
-   * additions to `bulkInventoryRecordSchema` are all optional, and this is the
+   * additions to `bulkThingRecordSchema` are all optional, and this is the
    * fixture that proves the additions cost the existing client nothing.
    */
   const todaysImporterItem = () => ({
@@ -500,7 +500,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
       const lines = Array.from({ length: 2500 }, (_, i) => JSON.stringify({ name: `Item ${i}` })).join('\n');
 
       const res = await request(app.getHttpServer())
-        .post('/v1/inventory')
+        .post('/v1/things')
         .set('content-type', 'application/x-ndjson')
         .send(lines)
         .expect(201);
@@ -582,7 +582,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
       ).join('');
 
       const res = await request(app.getHttpServer())
-        .post('/v1/inventory')
+        .post('/v1/things')
         .set('content-type', 'application/x-ndjson')
         .send(body)
         .expect(201);
@@ -593,9 +593,9 @@ describe('Bulk ingest routes (/v1/*)', () => {
   });
 
   /**
-   * The object-identity fields added to `bulkInventoryRecordSchema` are all
+   * The object-identity fields added to `bulkThingRecordSchema` are all
    * optional, and the whole point is that adding them changed NOTHING for the
-   * client already pushing inventory. These are the tests that would fail if
+   * client already pushing things. These are the tests that would fail if
    * someone later made one of them required, renamed one, or let one leak into
    * the DTO.
    */
@@ -603,7 +603,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
     it('validates byte-identically — nothing added, nothing dropped, nothing renamed', () => {
       const record = todaysImporterItem();
 
-      const parsed = bulkInventoryRecordSchema.parse(record);
+      const parsed = bulkThingRecordSchema.parse(record);
 
       // Deep equality BOTH ways: `toEqual` alone would pass if the schema had
       // grown a defaulted key, because it ignores undefined-valued properties.
@@ -615,7 +615,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
       const record = todaysImporterItem();
 
       await request(app.getHttpServer())
-        .post('/v1/inventory')
+        .post('/v1/things')
         .send({ records: [record] })
         .expect(201);
 
@@ -647,12 +647,12 @@ describe('Bulk ingest routes (/v1/*)', () => {
       // CI-Import-Tools already sends these. Undeclared, zod stripped them
       // before the raw log ever saw them, so the claim was unrecoverable;
       // declared, they survive in ci.capture_events.payload for a later
-      // promotion pass. They are still not a column on ci.inventory, so they
+      // promotion pass. They are still not a column on ci.objects, so they
       // must not reach ItemService either.
       const identifiers = [{ namespace: 'asin', value: 'B09XS7JWHH', confidence: 0.9 }];
 
       await request(app.getHttpServer())
-        .post('/v1/inventory')
+        .post('/v1/things')
         .send({ records: [{ ...todaysImporterItem(), identifiers }] })
         .expect(201);
 
@@ -706,7 +706,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
       };
 
       await request(app.getHttpServer())
-        .post('/v1/inventory')
+        .post('/v1/things')
         .send({
           records: [
             { ...todaysImporterItem(), sourceId: 'item-1', ...ref },
@@ -740,7 +740,7 @@ describe('Bulk ingest routes (/v1/*)', () => {
       // thing the user owns to protect a pointer a repair pass can still fill in
       // is the wrong trade.
       const res = await request(app.getHttpServer())
-        .post('/v1/inventory')
+        .post('/v1/things')
         .send({
           records: [
             {

@@ -188,12 +188,12 @@ describe('FileService.uploadWithDedupInfo', () => {
     expect(result).toEqual({ file: expect.objectContaining({ id: 'existing-id' }), deduped: true });
     expect(repo.save).not.toHaveBeenCalled();
     expect(s3Send).not.toHaveBeenCalled();
-    // Not an inventory capture, so the dedup hit is silent — no event fan-out
+    // Not a thing capture, so the dedup hit is silent — no event fan-out
     // for content the pipeline has already processed once.
     expect(eventService.send).not.toHaveBeenCalled();
   });
 
-  it('still notifies on a dedup hit when inventoryCapture is set', async () => {
+  it('still notifies on a dedup hit when thingCapture is set', async () => {
     const repo = makeRepo();
     const existing = { id: 'existing-id', userId: 'owner-1', hash: 'dupe-hash', bucket: null, key: null };
     repo.findOne.mockResolvedValue(existing);
@@ -202,13 +202,13 @@ describe('FileService.uploadWithDedupInfo', () => {
     await service.uploadWithDedupInfo(ownerCtx, {
       buffer: Buffer.from('duplicate bytes'),
       filename: 'dup.txt',
-      inventoryCapture: true,
+      thingCapture: true,
     });
 
     expect(eventService.send).toHaveBeenCalledWith(FileUploadedEvent, {
       fileId: 'existing-id',
       userId: 'owner-1',
-      inventoryCapture: true,
+      thingCapture: true,
       skipDescription: false,
       model: undefined,
     });
@@ -222,7 +222,7 @@ describe('FileService.uploadWithDedupInfo', () => {
     const result = await service.uploadWithDedupInfo(ownerCtx, {
       buffer: Buffer.from('brand new bytes'),
       filename: 'new.txt',
-      inventoryCapture: false,
+      thingCapture: false,
       skipDescription: true,
     });
 
@@ -232,7 +232,7 @@ describe('FileService.uploadWithDedupInfo', () => {
     expect(eventService.send).toHaveBeenCalledWith(FileUploadedEvent, {
       fileId: result.file.id,
       userId: 'owner-1',
-      inventoryCapture: false,
+      thingCapture: false,
       skipDescription: true,
       model: undefined,
     });

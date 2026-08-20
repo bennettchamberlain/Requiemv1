@@ -46,35 +46,67 @@ are produced manually (not in CI) and committed under `docs/images/`.
 - Keep files reasonably sized (prefer < 500 KB; compress large PNGs).
 - One screen per file; name by the screen, not by the route.
 
+## Where the screens are
+
+Routes are from `frontend/apps/web` (`App.tsx`); the navigation these tables
+follow is `layouts/Main/railDestinations.ts` (the **Power Rail** — there are no
+breadcrumbs any more) and `components/MemoryHub/memoryHubSections.ts` (the
+Memory hub tabs).
+
+- The **Power Rail** has nine destinations, top to bottom: Plan, Today,
+  Forecast, Memory, Saved Searches, Chat, Sources, Jobs, Stats.
+- **Memory is a hub**, not a single screen: `/memory/*` holds eight sibling
+  sections (Events, People, Places, Things, Receipts, Content, Tags,
+  Reflections). The Explorer is the Events section at `/memory/events`.
+- A pile of older addresses are now **redirects** and should never be the route
+  in a capture note: `/memory` → `/memory/events`, `/feed`, `/brief`,
+  `/schedule`, `/insights` → `/today`, `/files` → `/memory/content`,
+  `/inventory` → `/memory/things`, `/tags` → `/memory/tags`, `/prompts` and
+  `/memory/questions` → `/memory/reflections`, `/people` → `/memory/people`,
+  `/places` → `/memory/places`, `/connect`, `/connections` →
+  `/sources/connect`, `/import` → `/sources/import`, `/memory/knowledge` →
+  `/memory/events?view=graph`.
+
 ## Screens to capture
 
-Routes are from `frontend/apps/web` (`App.tsx`). Items are unchecked until the
-screenshot exists in `docs/images/` and is wired into a doc.
+Items are unchecked until the screenshot exists in `docs/images/` and is wired
+into a doc. Rows marked with a flag only exist when that feature flag is on;
+all of the ones listed default to `true` in
+`backend/apps/api/config/default.json`.
 
 | Screen | Route | Suggested file | What it should show |
 |---|---|---|---|
 | Login | `/login` | `login.png` | OIDC-primary login screen (the default landing for a logged-out user) |
 | Onboarding | `/onboarding` | `onboarding.png` | First-run focus-areas / preferences flow |
-| Memory | `/memory` | `memory-list.png` | Default memory view (List) of entities |
-| Memory graph | `/memory` | `memory-graph.png` | 3D force-graph view of entities & relationships |
-| Search | `/search` | `search.png` | Query box with ranked results |
-| Chat / Ask | `/chat` | `chat.png` | "Ask my memory" conversation surface |
-| Today | `/today` | `today.png` | Daily brief surface |
-| Feed | `/feed` | `feed.png` | Activity / import feed with progress |
-| Insights | `/insights` | `insights.png` | HBPE-derived insights / predictions |
-| Forecast | `/forecast` | `forecast.png` | HBPE forecast strip / week view |
-| Plan | `/plan` | `plan.png` | Task list (planning domain) |
-| Schedule | `/schedule` | `schedule.png` | Schedule surface with event candidates |
-| Sources | `/sources` | `sources.png` | Data sources overview |
-| Import | `/import` | `import.png` | Native import run kickoff + progress |
-| Connections | `/connections` | `connections.png` | Connected providers (Google, Microsoft, Facebook, Spotify) |
-| Connect | `/connect` | `connect.png` | Add-a-connection / OAuth start |
-| Files | `/files` | `files.png` | Uploaded files and document pipeline |
-| Inventory | `/inventory` | `inventory.png` | Inventory of items |
+| Today | `/today` | `today.png` | The home surface — Schedule stacked above the Brief |
+| Summary detail | `/brief/summaries/:id` | `summary-detail.png` | A single generated summary opened from Today |
+| Forecast | `/forecast` | `forecast.png` | HBPE forecast strip, week ahead, divergence heatmap, calibration |
+| Plan | `/plan` | `plan.png` | Task list + triage inbox (planning domain; flag `planning.page`) |
+| Memory · Explorer (List) | `/memory/events` | `memory-list.png` | Default Explorer view — List, with the What bar and filter chips |
+| Memory · Explorer (Gallery) | `/memory/events?view=gallery` | `memory-gallery.png` | Media grid with thumbnails |
+| Memory · Explorer (Map) | `/memory/events?view=map` | `memory-map.png` | Located events on the map, with the timeline strip |
+| Memory · Explorer (Graph) | `/memory/events?view=graph` | `memory-graph.png` | Force-graph view of entities & relationships |
+| Memory · People | `/memory/people` | `people.png` | People browse + merge-candidate review queue |
+| Memory · Places | `/memory/places` | `places.png` | Places browse |
+| Memory · Things | `/memory/things` | `things.png` | Owned items (formerly "Inventory"), incl. the sightings review queue |
+| Memory · Receipts | `/memory/receipts` | `receipts.png` | Receipts browse |
+| Memory · Content | `/memory/content` | `content.png` | Files/content browse and the file viewer (flag `files.page`) |
+| Memory · Tags | `/memory/tags` | `tags.png` | Tag list with rename/delete (flag `tags.page`) |
+| Memory · Reflections | `/memory/reflections` | `reflections.png` | Reflection catalogue (formerly "Questions"; flag `insights.page`) |
+| Saved searches | `/saved-searches` | `saved-searches.png` | Saved-search rows with the Shared badge and the active filter dimensions |
+| Shared search viewer | `/shared/:token` | `shared-search.png` | Read-only shared explorer (see [saved-search-sharing.md](saved-search-sharing.md)) |
+| Search | `/search` | `search.png` | Standalone query box with ranked results |
+| Chat / Ask | `/chat` | `chat.png` | "Ask my memory" conversation surface (flag `chat.page`) |
+| Sources · Connect | `/sources/connect` | `sources-connect.png` | Connected accounts above the 17-service catalogue (Google, Microsoft, Meta, Spotify, Steam, GitHub, …; 8 of the 17 render as "coming soon") |
+| Sources · Import | `/sources/import` | `sources-import.png` | Native import run kickoff + stage progress (flag `import.page` — with it off the route still resolves but redirects to `/sources/connect`) |
+| Sources · Devices | `/sources/devices` | `sources-devices.png` | Registered devices, plus the browser-extension (Chrome/Firefox/Safari) and Companion Capture (macOS/Windows/Linux) galleries |
+| Connection detail | `/connections/:id` | `connection.png` | One connection: sync state, scopes, history |
+| Jobs | `/jobs` | `jobs.png` | Job dashboard, filterable list, history charts, dead letters (flag `jobs.page`) |
+| Stats | `/stats` | `stats.png` | "Life stats" — entities by type and by tag (flag `stats.page`) |
 | Notes | `/notes` | `notes.png` | Notes list + editor |
-| Jobs | `/jobs` | `jobs.png` | Background job / queue status |
 | Settings | `/settings` | `settings.png` | Settings (appearance, API keys, OAuth) |
 | System | `/system` | `system.png` | System / health view |
+| Device connect | `/device-connect` | `device-connect.png` | Native first-launch Portal sign-in + Memory Server picker (`/server` is the Advanced URL fallback) |
 
 ## Existing visuals
 

@@ -23,7 +23,7 @@ import { GraphUtilityService } from '../services/GraphUtilityService';
  * (only a re-rank boost).
  *
  * Every other graph type is NOT indexed today. Its row has no detail half in
- * whatever table its own domain service reads (`ci.events`, `ci.inventory`,
+ * whatever table its own domain service reads (`ci.events`, `ci.objects`,
  * `ci.content`, `ci.files`, ...), so that per-type listener would find nothing
  * and log "not found, skipping indexing" if invoked — and
  * `GraphNodeSearchIndexListener` in search-ingress, which DOES see the payload

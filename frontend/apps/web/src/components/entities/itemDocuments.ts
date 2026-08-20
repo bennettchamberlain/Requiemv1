@@ -6,9 +6,9 @@ import { PRODUCT_MODEL_FRAGMENT } from './ProductModelCard';
 
 /**
  * The full read of one owned thing, shared by the Thing page and by the
- * inventory modal.
+ * Thing modal.
  *
- * It lives here rather than on the page because `InventoryItemModal` used to
+ * It lives here rather than on the page because `ThingModal` used to
  * import it from `@/pages/ItemPage/ItemPage` — a component reaching up into a
  * page, which inverts the dependency direction and drags the whole page module
  * (its graph panel, evolution panel and relationship cards) into the bundle of

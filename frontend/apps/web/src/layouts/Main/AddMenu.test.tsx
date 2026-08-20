@@ -1,8 +1,8 @@
 /**
- * The Add menu's inventory modal is the ONE modal here that has to refresh
+ * The Add menu's Thing modal is the ONE modal here that has to refresh
  * something after it writes.
  *
- * `InventoryItemModal` used to splice the new thing into every cached `items`
+ * `ThingModal` used to splice the new thing into every cached `items`
  * field itself (a `cache.modify` block); that was replaced by an `onSaved`
  * callback, and this call site was left without one — so a thing created from
  * "+" stayed invisible until a manual reload, including on the Things browse
@@ -22,8 +22,8 @@ import { AddMenu } from './AddMenu';
 
 const savedProps: { onSaved?: () => Promise<unknown> | void }[] = [];
 
-vi.mock('@/components/modals/InventoryItemModal', () => ({
-  InventoryItemModal: (props: { onSaved?: () => Promise<unknown> | void }) => {
+vi.mock('@/components/modals/ThingModal', () => ({
+  ThingModal: (props: { onSaved?: () => Promise<unknown> | void }) => {
     savedProps.push(props);
 
     return null;
@@ -95,7 +95,7 @@ async function renderAddMenu(): Promise<ApolloClient<object>> {
 }
 
 describe('AddMenu', () => {
-  it('gives the inventory modal an onSaved — without one a new thing never appears', async () => {
+  it('gives the Thing modal an onSaved — without one a new thing never appears', async () => {
     await renderAddMenu();
 
     expect(savedProps.length).toBeGreaterThan(0);

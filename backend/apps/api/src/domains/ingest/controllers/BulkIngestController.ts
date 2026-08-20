@@ -33,7 +33,7 @@ import {
   type BulkCommunicationRecord,
   type BulkContentRecord,
   type BulkIngestResponse,
-  type BulkInventoryRecord,
+  type BulkThingRecord,
   type BulkNoteRecord,
   type BulkObservationRecord,
   type BulkPositionRecord,
@@ -44,7 +44,7 @@ import {
   bulkBrowserActivityRecordSchema,
   bulkCommunicationRecordSchema,
   bulkContentRecordSchema,
-  bulkInventoryRecordSchema,
+  bulkThingRecordSchema,
   bulkObservationRecordSchema,
   bulkPositionRecordSchema,
   bulkProductModelRecordSchema,
@@ -53,7 +53,7 @@ import {
   ingestCommunicationsSchema,
   ingestContentsSchema,
   ingestEventsSchema,
-  ingestInventorySchema,
+  ingestThingsSchema,
   ingestNotesSchema,
   ingestObservationsSchema,
   ingestPositionsSchema,
@@ -76,7 +76,7 @@ type CaptureDestination =
   | 'events'
   | 'communications'
   | 'content'
-  | 'inventory'
+  | 'things'
   | 'browser_activity'
   | 'position'
   | 'receipts'
@@ -181,11 +181,11 @@ async function envelopeResponse(
  *
  * Destination rule: each kind writes its own table and only its own table.
  * `/v1/events` is the `ci.events` timeline; `/v1/browser-activity` is
- * `ci.browser_activity`; `/v1/contents` and `/v1/inventory` are their own
+ * `ci.browser_activity`; `/v1/contents` and `/v1/things` are their own
  * tables (content may link to an event via `event_id` / shared provenance);
  * positions stay sensor hypertables; communications stay the dedicated plain
  * table; and the object plane keeps the product/instance split intact —
- * `/v1/product-models` writes the CATALOG (`ci.product_models`), `/v1/inventory`
+ * `/v1/product-models` writes the CATALOG (`ci.product_models`), `/v1/things`
  * the owned UNITS, `/v1/receipts` the purchase EVIDENCE (header +
  * `ci.receipt_line_items`), `/v1/observations` mere SIGHTINGS
  * (`ci.object_observations`), which is the one that most needs saying: an
@@ -538,8 +538,8 @@ export class BulkIngestController {
   }
 
   @UseGuards(JwtOrApiKeyAuthGuard)
-  @Post('inventory')
-  async ingestInventory(
+  @Post('things')
+  async ingestThings(
     @Context() context: RequestContext,
     @Req() req: Request,
     @Body() body?: unknown,
@@ -547,14 +547,36 @@ export class BulkIngestController {
     const serviceContext = toServiceContext(context);
 
     if (isNdjsonRequest(req)) {
-      return ingestNdjsonStream(req, bulkInventoryRecordSchema, (records) =>
-        this.flushInventory(serviceContext, records),
+      return ingestNdjsonStream(req, bulkThingRecordSchema, (records) =>
+        this.flushThings(serviceContext, records),
       );
     }
 
-    const { records } = inventoryEnvelopePipe.transform(body) as { records: BulkInventoryRecord[] };
+    const { records } = thingsEnvelopePipe.transform(body) as { records: BulkThingRecord[] };
 
-    return envelopeResponse(() => this.flushInventory(serviceContext, records));
+    return envelopeResponse(() => this.flushThings(serviceContext, records));
+  }
+
+  /**
+   * DEPRECATED alias of `POST /v1/things`, kept because the retired inventory
+   * feature shipped this path and capture clients live in other repos — a
+   * sweep of THIS repo found no caller, which is not the same as none existing.
+   * Same handler, same schema, same response; nothing behind it says inventory
+   * any more.
+   *
+   * Removable in the release after every first-party capture client
+   * (CI-Capture, CI-Browser-Extension, CI-Connect) has shipped a build that
+   * posts `/v1/things`, and no earlier: an unrecognised path is a 404 the
+   * client's outbox will retry forever.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Post('inventory')
+  async ingestThingsLegacyAlias(
+    @Context() context: RequestContext,
+    @Req() req: Request,
+    @Body() body?: unknown,
+  ): Promise<BulkIngestResponse | NdjsonIngestResponse> {
+    return this.ingestThings(context, req, body);
   }
 
   @UseGuards(JwtOrApiKeyAuthGuard)
@@ -797,16 +819,16 @@ export class BulkIngestController {
     });
   }
 
-  private flushInventory(
+  private flushThings(
     serviceContext: UserServiceContext,
-    records: BulkInventoryRecord[],
+    records: BulkThingRecord[],
   ): Promise<{ ingested: number; duplicate: number }> {
     return this.captureAndMaterialize({
       serviceContext,
       records,
-      destination: 'inventory',
-      kindOf: () => 'inventory.item',
-      // Inventory is the one camelCase /v1 kind (CreateItemDto vocabulary).
+      destination: 'things',
+      kindOf: () => 'thing.item',
+      // Things is the one camelCase /v1 kind (CreateItemDto vocabulary).
       tripleOf: (r) => ({ sourceType: r.sourceType, sourceSystem: r.sourceSystem, sourceId: r.sourceId }),
       occurredAtOf: (r) => r.acquiredAt ?? null,
       // The WHOLE wire record, including the object-identity fields the DTO has
@@ -861,7 +883,7 @@ export class BulkIngestController {
    *
    * A reference misses for reasons that are entirely the client's business:
    * the receipt is in a later batch of the same load, or the push order is
-   * receipts-after-inventory, or the receipt failed extraction and was never
+   * receipts-after-things, or the receipt failed extraction and was never
    * sent. Rejecting the row would discard a thing the user owns to protect a
    * pointer that a later repair pass can fill in from the very same triples,
    * which are preserved in `ci.capture_events.payload`. So a miss resolves to
@@ -869,18 +891,18 @@ export class BulkIngestController {
    */
   private async resolveObjectRefs(
     serviceContext: UserServiceContext,
-    records: BulkInventoryRecord[],
+    records: BulkThingRecord[],
   ): Promise<{
     forRecord: (
       productRef: ProvenanceRef | undefined,
-      acquisitionLineItem: BulkInventoryRecord['acquisitionLineItem'],
+      acquisitionLineItem: BulkThingRecord['acquisitionLineItem'],
     ) => Pick<CreateItemDto, 'productId' | 'acquisitionReceiptId' | 'acquisitionLineItemId'>;
   }> {
     const userId = serviceContext.userId;
 
     // Distinct keys only: a 5,000-row batch of one product is one lookup key.
     const productRefs = new Map<string, ProvenanceRef>();
-    const lineRefs = new Map<string, NonNullable<BulkInventoryRecord['acquisitionLineItem']>>();
+    const lineRefs = new Map<string, NonNullable<BulkThingRecord['acquisitionLineItem']>>();
 
     for (const record of records) {
       if (record.productRef) {
@@ -1248,7 +1270,7 @@ export class BulkIngestController {
 // `{ message: 'Validation failed', errors: [...] }` 400 shape as before.
 const communicationsEnvelopePipe = new ValidationPipe(ingestCommunicationsSchema);
 const contentsEnvelopePipe = new ValidationPipe(ingestContentsSchema);
-const inventoryEnvelopePipe = new ValidationPipe(ingestInventorySchema);
+const thingsEnvelopePipe = new ValidationPipe(ingestThingsSchema);
 const browserActivityEnvelopePipe = new ValidationPipe(ingestBrowserActivitySchema);
 const positionsEnvelopePipe = new ValidationPipe(ingestPositionsSchema);
 const receiptsEnvelopePipe = new ValidationPipe(ingestReceiptsSchema);

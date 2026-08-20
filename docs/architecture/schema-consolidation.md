@@ -1,6 +1,7 @@
 # Schema consolidation (LifeScope audit)
 
-**Status:** Waves A–E landed on `chore/schema-consolidation`; **Wave D was later reverted** (see the table)  
+**Status:** Waves A–E landed on `chore/schema-consolidation`; **Wave D was later reverted**
+(see the table). Re-verified against `main` 2026-08-19.  
 **Source audit:** [lifescope-vs-ci-server-schema.html](./lifescope-vs-ci-server-schema.html)
 
 ## Hypertable exceptions (already landed, do not reopen)
@@ -20,7 +21,7 @@ See [hypertable-audit.md](./hypertable-audit.md) and ADR-0002.
 | A | **done** | Drop dead `agents` / `agent_messages`; user-scoped events arbiter; delete dead/dupe entities; rename graph `FileEntity` |
 | B | **done** | Restore `ci.content.event_id` FK + `Event.contents`; analytics side table `ci.event_analytics` |
 | C | **done** | One entity-type vocab + tenancy ADR-0003; Person typed columns; location snap dedup |
-| D | **reverted** | Fold `browser_activity` → events+content (backfill + dual-write); `/v1` prefers timeline. Unfolded by `20260812144811`: page views are not timeline events — the fold flooded the schedule calendar and silently changed HBPE's training corpus, neither of which filters `ci.events` by kind. `/v1/browser-activity` writes `ci.browser_activity` only |
+| D | **reverted** | Fold `browser_activity` → events+content (backfill + dual-write); `/v1` prefers timeline. Landed as `20260808070615` (squashed into `20260808150100`), then undone by `20260812144811_revert_browser_activity_event_fold.sql`: page views are not timeline events — the fold flooded the schedule calendar and silently changed HBPE's training corpus, neither of which filters `ci.events` by kind. `/v1/browser-activity` writes `ci.browser_activity` only |
 | E | **done** | `COMMENT` on write-only commerce tables; refresh Database.md |
 
 Do not break smart-rotation tables (`questions`, `answers`, `feed_queue`, `summaries`, `actions`, `tasks`).
@@ -28,6 +29,6 @@ Do not break smart-rotation tables (`questions`, `answers`, `feed_queue`, `summa
 ## Follow-ups
 
 - **Removed after the Wave D revert:** the search-backfill widening that made a `browser-activity`-scoped import finish also index the dual-written `event` + `content` rows. With no dual-write left, it only meant a scoped request swept the whole events and content corpora, so `expandBackfillEntityTypes` was replaced by `normalizeBackfillEntityTypes` (dedupe + canonical order, no widening) in `SearchIndexBackfillService`
-- **Done (post-merge):** Removed dead analytics fields from event create/update DTOs (`prediction_model`, `productivity_impact`, `last_synced_at`, `related_event_ids`, `supersedes_event_id`) — those live on `ci.event_analytics` when written
+- **Done (post-merge):** Removed dead analytics fields from event create/update DTOs (`prediction_model`, `productivity_impact`, `last_synced_at`, `related_event_ids`, `supersedes_event_id`) — those live on `ci.event_analytics` when written. Verified still absent from the event types 2026-08-19.
 - **Cancelled by the Wave D revert:** dropping `ci.browser_activity` once dual-read consumers moved to events/content. There are no dual-read consumers and no dual-write — the table is the permanent, sole home for page views, as its `COMMENT` (set by `20260812144811`) records. Do not re-open this without a decision that reverses the revert
 - Rename remaining `owner_user_id` columns only if a dedicated blast-radius wave is scheduled (see ADR-0003)

@@ -100,6 +100,7 @@ describe('FeedModal — mobile action chat', () => {
     const dialog = await waitFor(() => {
       const node = chrome.portal.querySelector('[role="dialog"]');
       expect(node).not.toBeNull();
+
       return node as HTMLElement;
     });
 

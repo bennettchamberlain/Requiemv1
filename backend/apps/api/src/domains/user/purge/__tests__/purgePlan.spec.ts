@@ -253,7 +253,7 @@ describe('buildPurgePlan', () => {
 
     it('flattens a self-referencing hierarchy before deleting it', () => {
       // A batch has no idea which rows are parents. ci.messages,
-      // ci.threads and ci.inventory all carry a NO ACTION self reference.
+      // ci.threads and ci.objects all carry a NO ACTION self reference.
       const plan = buildPurgePlan({
         usersTable: USERS,
         userColumns: [userColumn('ci.messages', 'user_id', 'c')],

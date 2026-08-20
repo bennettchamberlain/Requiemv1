@@ -410,7 +410,7 @@ export class FileService implements OnModuleInit {
     context: UserServiceContext,
     file: UploadFileDto,
   ): Promise<{ file: SignedFile; deduped: boolean }> {
-    const { inventoryCapture = false, skipDescription = false, model, ...uploadData } = file;
+    const { thingCapture = false, skipDescription = false, model, ...uploadData } = file;
     const hash = await this.getFileHash(uploadData);
 
     if (hash) {
@@ -421,11 +421,11 @@ export class FileService implements OnModuleInit {
           existingFileId: existing.id,
         });
 
-        if (inventoryCapture) {
+        if (thingCapture) {
           await this.eventService.send(FileUploadedEvent, {
             fileId: existing.id,
             userId: context.userId,
-            inventoryCapture: true,
+            thingCapture: true,
             skipDescription,
             model,
           });
@@ -443,7 +443,7 @@ export class FileService implements OnModuleInit {
     await this.eventService.send(FileUploadedEvent, {
       fileId: created.id,
       userId: context.userId,
-      inventoryCapture,
+      thingCapture,
       skipDescription,
       model,
     });

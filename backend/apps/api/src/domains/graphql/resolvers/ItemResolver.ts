@@ -10,8 +10,9 @@ import {
   normalizeObjectIdentifier,
 } from '@ci/domains/graph';
 import {
+  EntityMergeBlockService,
   type FindItemsFilter,
-  type InventoryLifecycleState,
+  type ObjectLifecycleState,
   type Item,
   ItemService,
   ObjectDuplicateService,
@@ -26,9 +27,9 @@ import { ItemIdentifierLoader } from '../loaders/ItemIdentifierLoader';
 import { ItemObservationLoader } from '../loaders/ItemObservationLoader';
 import { ItemProductLoader } from '../loaders/ItemProductLoader';
 import { TagLoader } from '../loaders/TagLoader';
-import { CreateInventoryInput } from '../types/CreateInventoryInput';
 import { CreateItemInput } from '../types/CreateItemInput';
 import { CreateItemPayload } from '../types/CreateItemPayload';
+import { CreateThingInput } from '../types/CreateThingInput';
 import { DeleteByIdInput } from '../types/DeleteByIdInput';
 import { DeleteByIdPayload } from '../types/DeleteByIdPayload';
 import { EntityTagType } from '../types/EntityTagType';
@@ -192,13 +193,14 @@ export class ItemResolver {
     private readonly objectMergeService: ObjectMergeService,
     private readonly objectDuplicateService: ObjectDuplicateService,
     private readonly productModelService: ProductModelService,
+    private readonly entityMergeBlockService: EntityMergeBlockService,
   ) {}
 
   /**
    * The things list.
    *
    * `category`, `brand` and `lifecycleState` are real SQL predicates on
-   * `ItemService.findPage`, which walks `inventory_live_keyset_idx` and pages in
+   * `ItemService.findPage`, which walks `objects_live_keyset_idx` and pages in
    * the database — cost bounded by page size however much the user owns. That
    * is the whole point of this query no longer calling `findAll`, which loaded
    * the entire table and sliced it in memory.
@@ -228,7 +230,7 @@ export class ItemResolver {
     @Args('brand', { type: () => String, nullable: true }) brand?: string,
     @Args('condition', { type: () => ItemCondition, nullable: true }) condition?: ItemCondition,
     @Args('lifecycleState', { type: () => ItemLifecycleState, nullable: true })
-    lifecycleState?: InventoryLifecycleState,
+    lifecycleState?: ObjectLifecycleState,
     @Args('hasIdentifier', {
       type: () => Boolean,
       nullable: true,
@@ -582,17 +584,17 @@ export class ItemResolver {
   }
 
   /**
-   * Batch, idempotent inventory ingest for the importer. Each input dedupes on the
+   * Batch, idempotent things ingest for the importer. Each input dedupes on the
    * provenance triple (owner, sourceType, sourceSystem, sourceId) so a re-sync
    * returns the existing item instead of inserting a duplicate (e.g. an Amazon
    * order id mapped to identifierCodes.order_id AND sourceId). Returns the
    * created-or-existing items in input order.
    */
   @Mutation(() => [ItemType])
-  async createInventoryItems(
+  async createThings(
     @Context() context: RequestContext,
-    @Args('input', { type: () => [CreateInventoryInput] }, new MaxArraySizePipe())
-    input: CreateInventoryInput[],
+    @Args('input', { type: () => [CreateThingInput] }, new MaxArraySizePipe())
+    input: CreateThingInput[],
   ): Promise<ItemType[]> {
     const serviceContext = toServiceContext(context);
 
@@ -643,6 +645,7 @@ export class ItemResolver {
       currency: input.currency,
       acquiredAt: input.acquiredAt,
       condition: input.condition,
+      lifecycleState: input.lifecycleState,
       metadata: input.metadata,
       ...physicalProperties(input),
     });
@@ -708,6 +711,45 @@ export class ItemResolver {
       item: ItemType.toType(target),
       counts: ObjectMergeCountsType.toType(counts),
     };
+  }
+
+  /**
+   * Record that a suggested duplicate group is NOT the same thing.
+   *
+   * The counterpart to {@link ItemResolver.mergeItems}, and the reason
+   * `itemDuplicates` can afford to be derived: the groups are recomputed from
+   * identifiers, products and brand+model on every call, so without somewhere
+   * to put the rejection "no, I own two of these" survives exactly until the
+   * next page load — and the same group is proposed again, forever.
+   *
+   * Every PAIR in the group is blocked, because the group is what was offered.
+   * `ObjectDuplicateService` already reads `ci.entity_merge_blocks` through
+   * `blockedPairsAmong`/`dropBlocked`, so a blocked pair stops being proposed
+   * on the very next query and a three-member group with one blocked pair
+   * keeps the part the user never rejected.
+   *
+   * Deliberately the same shape and the same table as
+   * `PersonResolver.rejectPersonDuplicates` — `ci.entity_merge_blocks` is
+   * entity-agnostic by design, and an item's `object_id` IS an entity id. The
+   * one thing this does NOT do that its Person twin does is stamp
+   * `ci.merge_candidates`: that queue is written only by
+   * `clean.duplicate_detect`, which proposes Person pairs and nothing else, so
+   * there is no item row in it to resolve.
+   */
+  @Mutation(() => Boolean, {
+    description: 'Mark a suggested duplicate group as distinct things, so it is never re-proposed',
+  })
+  async rejectItemDuplicates(
+    @Context() context: RequestContext,
+    @Args('itemIds', { type: () => [ID] }) itemIds: string[],
+  ): Promise<boolean> {
+    const ids = itemIds.map((gid) => GlobalUID.parse('item', gid));
+
+    const serviceContext = toServiceContext(context);
+
+    await this.entityMergeBlockService.blockAllPairs(serviceContext, ids, 'user_rejected');
+
+    return true;
   }
 
   /**

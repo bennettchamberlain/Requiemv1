@@ -28,13 +28,13 @@ import {
 } from './EventParticipantBackfillService';
 import { type GraphEnrichmentOptions, GraphEnrichmentService } from './GraphEnrichmentService';
 import { type HealSelfCollationOptions, HealSelfCollationService } from './HealSelfCollationService';
-import { InventoryReverseService } from './InventoryReverseService';
 import {
   DEFAULT_ESTIMATE_SOURCE_SYSTEMS,
   DEFAULT_MAX_GAP_HOURS,
   LocationEstimateService,
 } from './LocationEstimateService';
 import { NoteContentFoldService } from './NoteContentFoldService';
+import { ObjectReverseService } from './ObjectReverseService';
 import { type PersonStubBackfillOptions, PersonStubBackfillService } from './PersonStubBackfillService';
 import { RelationshipNormalizeService } from './RelationshipNormalizeService';
 import { type SearchIndexBackfillOptions, SearchIndexBackfillService } from './SearchIndexBackfillService';
@@ -61,7 +61,7 @@ export const ORCHESTRATE_STAGES = [
   'geocode',
   'reverse_geocode',
   'reverse_position',
-  'reverse_inventory',
+  'reverse_object',
   'estimate_locations',
   'media_dimensions',
   'search_index',
@@ -196,7 +196,7 @@ export class MaintenanceOrchestratorService {
     private readonly graphEnrichmentService: GraphEnrichmentService,
     private readonly locationEstimateService: LocationEstimateService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
-    private readonly inventoryReverseService: InventoryReverseService,
+    private readonly objectReverseService: ObjectReverseService,
   ) {
     this.logger.setContext(MaintenanceOrchestratorService.name);
   }
@@ -379,8 +379,8 @@ export class MaintenanceOrchestratorService {
       case 'reverse_position':
         return this.runPositionReverseLeg(userId, options.reverseGeocode ?? {});
 
-      case 'reverse_inventory':
-        return this.inventoryReverseService.reverse(userId);
+      case 'reverse_object':
+        return this.objectReverseService.reverse(userId);
 
       case 'estimate_locations':
         return this.runEstimateLocationsLeg(userId, options.estimateLocations ?? {});

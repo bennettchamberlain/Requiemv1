@@ -17,7 +17,7 @@ import type { FkEdge, PurgePlan, PurgeScope, PurgeStep, TableRef, UserRefColumn 
  *     they go, which is what makes the job resumable at all.
  *  2. **`CASCADE` is the wrong semantics for some columns.** Nine columns are
  *     deliberately `SET NULL` — `ci.graph_deltas.changed_by_user_id`,
- *     `ci.inventory.owner_user_id` and friends — because they attribute a row
+ *     `ci.objects.owner_user_id` and friends — because they attribute a row
  *     that belongs to *someone else*. Blanket-cascading them would delete other
  *     people's data. The purge has to distinguish, which means reading each
  *     constraint's intent rather than overwriting it.
@@ -188,7 +188,7 @@ export function buildPurgePlan(input: {
   const nullSteps: PurgeStep[] = [];
 
   // Self-referencing hierarchies (ci.messages.parent_message_id,
-  // ci.threads.parent_thread_id, ci.inventory.parent_object_id). Without this a
+  // ci.threads.parent_thread_id, ci.objects.parent_object_id). Without this a
   // batch can delete a parent row while a child still points at it; flattening
   // first makes every batch order safe. Rows belonging to other accounts that
   // pointed into the doomed set are nulled too — they have to be, or their

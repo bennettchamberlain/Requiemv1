@@ -59,7 +59,7 @@ describe('Roblox datasource', () => {
     const purchases = pipeline.filter((p) => p.item.classification === 'purchase');
     const social = pipeline.filter((p) => p.item.classification === 'social');
     expect(messages.length).toBe(2); // ChatLogs.csv
-    expect(purchases.length).toBe(2); // PurchaseHistory.json → inventory, not social.post
+    expect(purchases.length).toBe(2); // PurchaseHistory.json → things, not social.post
     expect(social.length).toBe(2); // LoginHistory.csv
     expect(messages[0].item.timestamp instanceof Date).toBe(true);
   });

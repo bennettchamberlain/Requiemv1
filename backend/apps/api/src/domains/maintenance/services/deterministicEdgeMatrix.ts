@@ -22,7 +22,7 @@ export type DeterministicEdgeSource =
   | 'communications'
   | 'events'
   | 'content'
-  | 'inventory'
+  | 'objects'
   | 'receipts'
   | 'observations'
   | 'positions'
@@ -73,7 +73,7 @@ export interface DeterministicEdgeRule {
  * | content.event_id                              | Content -DOCUMENTS→ Event                  |
  * | entities.parent_place_id (Place/Location)     | Place -PART_OF→ Place                      |
  * | files.parent_id (via File entity mirror)      | File -DERIVED_FROM→ File                   |
- * | inventory.last_seen_place_entity_id           | Item -LOCATED_AT→ Place                    |
+ * | objects.last_seen_place_entity_id           | Item -LOCATED_AT→ Place                    |
  * | receipts.merchant × place_entity_id           | Merchant -LOCATED_AT→ Place                |
  * | receipts.document_content_id × event_id       | Content -PART_OF→ Event (the purchase)     |
  * | receipts.event_id × place_entity_id           | Event -HAPPENED_AT→ Place                  |
@@ -202,13 +202,13 @@ export const DETERMINISTIC_EDGE_RULES: readonly DeterministicEdgeRule[] = [
     candidateWhere: 'ct.event_id IS NOT NULL',
   },
   {
-    id: 'inventory.located_at',
+    id: 'object.located_at',
     description: 'Item → the Place it was last seen at',
     relationshipType: RelationshipType.LOCATED_AT,
     strength: 0.6,
-    properties: { derived_from: 'inventory.last_seen_place_entity_id' },
-    source: 'inventory',
-    table: 'ci.inventory i',
+    properties: { derived_from: 'objects.last_seen_place_entity_id' },
+    source: 'objects',
+    table: 'ci.objects i',
     userColumn: 'i.user_id',
     timeColumn: 'i.created_at',
     idColumn: 'i.object_id',

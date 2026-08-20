@@ -260,6 +260,60 @@ describe('WhatsApp datasource', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('links the attached file to the message that carried it', async () => {
+    /**
+     * The orphan case. WhatsApp's 172 `<attached: …>` lines DID upload — they
+     * become standalone media items — but the message that carried each one kept
+     * only the placeholder as its body and an empty `attachments` column, so the
+     * file and its message were two unlinked rows. The descriptor is what joins
+     * them; the media leg resolves both paths onto ONE stored file because they
+     * are the same bytes.
+     */
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-media-link-'));
+    const photo = path.join(dir, '00000048-PHOTO-2026-05-08-08-35-29.jpg');
+    fs.writeFileSync(photo, Buffer.from('fake-jpg-bytes'));
+    fs.writeFileSync(
+      path.join(dir, '_chat.txt'),
+      '[5/8/26, 8:35:29 AM] Alice: <attached: 00000048-PHOTO-2026-05-08-08-35-29.jpg>\n' +
+        '[5/8/26, 8:36:00 AM] Bob: no photo here\n',
+    );
+
+    const pushed: EmittedGraph[] = [];
+    const fi = new WhatsAppFileImporter();
+    await fi.fileImport({}, { filename: '_chat.txt', fullPath: path.join(dir, '_chat.txt') }, {
+      pipeline: { push: (g: Graph) => pushed.push(g as EmittedGraph), drop: () => {} },
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    const messages = pushed.filter((g) => g.item.classification === 'message');
+    const withPhoto = messages.find((g) => (g.item.metadata.Text as string).includes('attached'));
+    const withoutPhoto = messages.find((g) => g.item.metadata.Text === 'no photo here');
+
+    const attachments = withPhoto!.item.metadata.MediaAttachments as Array<Record<string, unknown>>;
+    expect(attachments).toEqual([
+      {
+        path: photo,
+        filename: '00000048-PHOTO-2026-05-08-08-35-29.jpg',
+        type: 'image',
+        mimetype: 'image/jpeg',
+      },
+    ]);
+    // The SAME path the standalone media item carries, which is what makes the
+    // object store's content hash collapse them onto one file.
+    const mediaGraph = pushed.find((g) => g.item.classification === 'media');
+    expect(mediaGraph!.item.intermediateLocation).toBe(attachments[0].path);
+
+    // No content opt-in: the standalone media item already catalogues these
+    // bytes, and opting in would mint a second ci.content row over them.
+    expect(withPhoto!.item.metadata.AttachmentContent).toBeUndefined();
+
+    // The descriptor must not leak onto the next message in the transcript.
+    expect(withoutPhoto!.item.metadata.MediaAttachments).toBeUndefined();
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('resolves an Android "X (file attached)" reference to a real media item', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-media-android-'));
     fs.writeFileSync(path.join(dir, 'IMG-20260508-WA0001.jpg'), Buffer.from('fake-jpg-bytes'));

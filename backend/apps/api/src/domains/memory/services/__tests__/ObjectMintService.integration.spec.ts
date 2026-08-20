@@ -20,7 +20,7 @@ import { type MintLineInput, type MintReceiptContext, ObjectMintService } from '
  * `INSERT INTO ci.entities … ON CONFLICT (entity_id) DO UPDATE SET name =
  * excluded.name` — undoes what the guard just protected. `name` lives ONLY on
  * the CTI base row, and `name` is the field a user edits, so that pair of
- * statements meant "the rename is safe in ci.inventory and overwritten in
+ * statements meant "the rename is safe in ci.objects and overwritten in
  * ci.entities one statement later".
  *
  * These cases need real rows: a guard that holds, a base row that keeps its
@@ -127,7 +127,7 @@ describeWithDb(`ObjectMintService — re-minting, in Postgres (${availability.ta
     if (dataSource?.isInitialized) {
       await dataSource.query('DELETE FROM ci.graph_deltas WHERE owner_user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.receipt_line_items WHERE user_id = $1', [owner.userId]);
-      await dataSource.query('DELETE FROM ci.inventory WHERE user_id = $1', [owner.userId]);
+      await dataSource.query('DELETE FROM ci.objects WHERE user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.receipts WHERE user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.entities WHERE owner_user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.users WHERE id = $1', [owner.userId]);
@@ -181,7 +181,7 @@ describeWithDb(`ObjectMintService — re-minting, in Postgres (${availability.ta
     expect(second.inserted).toBe(0);
 
     const [{ count }] = await dataSource.query(
-      `SELECT COUNT(*)::int AS count FROM ci.inventory WHERE user_id = $1 AND source_id = $2`,
+      `SELECT COUNT(*)::int AS count FROM ci.objects WHERE user_id = $1 AND source_id = $2`,
       [owner.userId, lineItemId],
     );
     expect(count).toBe(1);
@@ -205,7 +205,7 @@ describeWithDb(`ObjectMintService — re-minting, in Postgres (${availability.ta
       'My noise-cancelling headphones',
     ]);
     await dataSource.query(
-      `UPDATE ci.inventory
+      `UPDATE ci.objects
           SET metadata = metadata || '{"mint": {"service": "user"}}'::jsonb,
               condition = 'good'
         WHERE object_id = $1`,
@@ -217,10 +217,9 @@ describeWithDb(`ObjectMintService — re-minting, in Postgres (${availability.ta
     ]);
 
     // The unit upsert's guard held…
-    const [unit] = await dataSource.query(
-      `SELECT category, condition FROM ci.inventory WHERE object_id = $1`,
-      [objectId],
-    );
+    const [unit] = await dataSource.query(`SELECT category, condition FROM ci.objects WHERE object_id = $1`, [
+      objectId,
+    ]);
     expect(unit).toMatchObject({ category: 'electronics', condition: 'good' });
 
     // …and so did the base row, which is where the rename actually lives.

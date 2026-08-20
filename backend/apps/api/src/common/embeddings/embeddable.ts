@@ -218,7 +218,7 @@ const GRAPH_TYPE_ALIASES: Record<string, string> = {
   // pointed at by ci.product_models.product_entity_id). It maps to 'product',
   // NOT to 'item': a model is what a thing IS, an item is a thing the user
   // OWNS, and collapsing the two would file every catalog row into the
-  // inventory's slice of the embedding space.
+  // the object slice of the embedding space.
   Product: 'product',
   Event: 'event',
   Content: 'content',

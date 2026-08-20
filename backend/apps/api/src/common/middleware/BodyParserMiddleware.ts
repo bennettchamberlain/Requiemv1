@@ -23,7 +23,7 @@ const GRAPHQL_PATH = '/graphql';
  * The `/v1/*` machine-ingest plane carries bulk payloads: `POST /v1/events`
  * perception snapshots from Companion Capture (a single vizier baseline snapshot
  * serializes to ~1MB+), and the batch ingest endpoints
- * (`/v1/communications`, `/v1/contents`, `/v1/inventory`,
+ * (`/v1/communications`, `/v1/contents`, `/v1/things`,
  * `/v1/browser-activity`, `/v1/positions` — see BulkIngestController) which
  * accept up to 10,000 records per request. All far over the 100kb default, so
  * the whole `/v1` prefix gets the same 10mb limit as GraphQL. Like GraphQL,

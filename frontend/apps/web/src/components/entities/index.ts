@@ -8,7 +8,7 @@ export { EventGridItem } from './grid/EventGridItem';
 export { FileChunkGridItem } from './grid/FileChunkGridItem';
 export { FileGridItem } from './grid/FileGridItem';
 export { ItemGridItem } from './grid/ItemGridItem';
-export type { ItemInventoryPreview } from './grid/ItemGridItem';
+export type { ItemThingPreview } from './grid/ItemGridItem';
 export { NoteGridItem } from './grid/NoteGridItem';
 export { PersonGridItem } from './grid/PersonGridItem';
 export { PlaceGridItem } from './grid/PlaceGridItem';

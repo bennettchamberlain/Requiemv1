@@ -5,9 +5,9 @@ import { Repository } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
+import { BaseEntity } from '../entities/BaseEntity';
 import { pairKey } from '../entities/EntityMergeBlockEntity';
 import { type Item, ItemEntity } from '../entities/ItemEntity';
-import { BaseEntity } from '../entities/BaseEntity';
 
 import { EntityMergeBlockService } from './EntityMergeBlockService';
 
@@ -107,7 +107,7 @@ function dropBlocked(items: Item[], blocked: Set<string>): Item[] {
  * qualifier)` and FIRST-WRITER-WINS, so when a second unit asserts a barcode
  * another unit already claims, the row is never inserted — the duplicate is
  * INVISIBLE in that table by construction. What survives is the raw assertion
- * in `ci.inventory.identifier_codes`, the jsonb bag the importer has been
+ * in `ci.objects.identifier_codes`, the jsonb bag the importer has been
  * writing ASINs into since 2025-09. So the identifier rung unnests THAT, and
  * unions in the claim table so a unit whose bag is empty but whose claim won
  * still participates. Exactly the shape `PersonDuplicateService` uses for
@@ -159,7 +159,7 @@ export class ObjectDuplicateService {
                   inv.acquired_at,
                   inv.identifier_codes,
                   base.name
-             FROM ci.inventory inv
+             FROM ci.objects inv
              JOIN ci.entities base ON base.entity_id = inv.object_id
             WHERE inv.user_id = $1::uuid
               -- Live only. A tombstone has already been folded into its
@@ -241,7 +241,7 @@ export class ObjectDuplicateService {
 
     // Pairs the user has already said are NOT the same thing. Fetched once for
     // the whole sweep rather than per group. `ci.entity_merge_blocks` is
-    // entity-agnostic by design, and an inventory object_id IS an entity id
+    // entity-agnostic by design, and a ci.objects object_id IS an entity id
     // (the CTI base row shares it), so no object-specific table is needed.
     const blocked = await this.mergeBlockService.blockedPairsAmong(context, allIds);
 

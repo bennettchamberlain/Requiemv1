@@ -3,17 +3,25 @@
 > Status: **active — seed.** Foundation for ratcheting coverage toward the `planning.md` → CI-Server target of **>70% line coverage**.
 > Owner: CI-Server.
 
-## 1. Today (re-surveyed 2026-07-06)
+## 1. Today (re-surveyed 2026-08-19)
 
 | Layer | Tooling | What exists |
 |---|---|---|
-| Unit / controller | Jest + `@nestjs/testing` + `supertest` (`backend/apps/api/jest.config.mjs`, swc transform) | **82 spec/test files** colocated with source (`*.spec.ts` + `__tests__/*.test.ts`) — auth, memory bulk-ingest services, maintenance backfills, saved-search sharing, persistence helpers, graphql resolvers, and more. `yarn workspace @ci/be-api test`. |
-| Integration | Jest (same runner), Docker-backed Postgres + Minio via `make dev`. | Used by the `Routes.e2e.test.ts` patterns in `auth/` and `files/`. |
-| Browser / E2E | Playwright — `tests/BetaOneLoginFlow.spec.ts` plus the full-stack suite in `tests/e2e/` (auth, chat, memory views/search/map, mobile, onboarding, settings). | The frontend additionally has its own vitest + Playwright harness under `frontend/apps/web/src/test/`. |
-| Coverage gate | Jest `coverageThreshold` | **Not currently set** in `jest.config.mjs` — the ratchet below (§4) remains the plan, not the present. |
+| Unit / controller | Jest + `@nestjs/testing` + `supertest` (`backend/apps/api/jest.config.mjs`, swc transform) | **597 spec/test files** colocated with source — 203 `*.spec.ts` plus 394 `*.test.ts` (392 of them under `__tests__/`) — auth, memory bulk-ingest services, maintenance backfills, saved-search sharing, persistence helpers, graphql resolvers, the pipeline stages, the import domain, and more. `yarn workspace @ci/be-api test`. |
+| Integration | Jest (same runner), Docker-backed Postgres + Minio via `make dev`. | Used by the `Routes.e2e.test.ts` patterns in `auth/` and `files/`, and by DB-gated suites that skip loudly without a connection string (`AccountPurgeService.integration.spec.ts` needs `DATABASE_ADMIN_PASSWORD`; `TaskService.tenancy.integration.test.ts` needs `PLANNING_TEST_DATABASE_URL`). |
+| Browser / E2E | Playwright — `tests/BetaOneLoginFlow.spec.ts` plus 13 specs in `tests/e2e/` (auth, chat, import, mcp-api-key, memory views / search+filter+detail / map-bbox / people, mobile, onboarding, settings-persistence, stats, things). | The frontend additionally has its own vitest + Playwright harness under `frontend/apps/web/src/test/` — 247 `*.test.ts(x)` files under `frontend/apps/web/src`. |
+| Coverage gate | Jest `coverageThreshold` | **Set, but scoped — not global.** `jest.config.mjs` carries one entry, `./src/domains/planning/` at 88 statements / 76 branches / 76 functions / 90 lines. §4 explains why it is scoped. |
 
-> Known flake: `SessionController` logout (204→404) under parallel jest — re-run or
-> `--runInBand`; it is not your change.
+> Known flake: `SessionController` logout (204→404) under parallel jest
+> (`domains/auth/__tests__/SessionController.test.ts`) — re-run or `--runInBand`;
+> it is not your change.
+
+> **CI is manual.** All seven workflows under `.github/workflows/` are
+> `workflow_dispatch`-only as of 2026-08-17 — nothing runs on push, pull request,
+> tag or schedule. An absent or green check means **nobody dispatched it**, not
+> that the suite passed. Run one deliberately with
+> `gh workflow run <file> --ref <branch>`. That makes §5's enforcement question
+> more urgent, not less.
 
 ## 2. Where to invest, in order
 
@@ -23,7 +31,14 @@ This is the priority queue. Each item should land its own ratcheted coverage flo
 
 1. **`HealthController`** — done (seed).
 2. **`AuthService` + Csrf** — auth is the gate to everything else; bugs are silent breakage.
-3. **`EventsIngestController`** — shipped, with `__tests__/EventsIngestController.test.ts`; keep ratcheting toward **>90% line coverage on this controller and its zod schemas** per [`event-ingest-spec.md`](event-ingest-spec.md) §7.
+3. **The `/v1` capture ingest controller** — shipped. It is now
+   `domains/ingest/controllers/BulkIngestController.ts` with
+   `controllers/__tests__/BulkIngestController.test.ts` and
+   `domains/ingest/__tests__/Routes.e2e.test.ts`; the standalone
+   `EventsIngestController` no longer exists. Keep ratcheting toward **>90% line
+   coverage on this controller and its zod schemas** per
+   [`event-ingest-spec.md`](event-ingest-spec.md) §7 — noting it now carries ten
+   lanes, not one.
 4. **`browser-activity` write path** — first capture source migrated through G1; parity tests vs. legacy POST.
 
 ### Tier 2 — within one release of G1
@@ -57,30 +72,53 @@ This is the priority queue. Each item should land its own ratcheted coverage flo
 
 ## 4. Coverage ratchet
 
-There is **no `coverageThreshold` in `jest.config.mjs` yet** — the first PR to add one
-should set it to the then-current floor (a fence so the number can only go up). From there,
-every PR that adds tests should:
-
-1. Land the test.
-2. Read the resulting global coverage number from `yarn test --coverage` output.
-3. Update `coverageThreshold.global` to **the floor of that number** (never higher than achieved, never lower than current).
-
-This avoids "wishing thinking" thresholds. The floor only ever moves up.
-
-When per-area coverage matters more than global — notably `EventsIngestController` per G1 — add a path-specific threshold:
+`jest.config.mjs` now carries a `coverageThreshold`, and it is **scoped rather than
+global** — deliberately, and the config says so: the global number is still low, so a
+global floor set to it would be a fence around nothing, while a per-domain floor lets a
+new domain land with a real one from day one. Today there is exactly one entry:
 
 ```js
 coverageThreshold: {
-  global: { lines: 35, ... },
-  'src/domains/events/controllers/EventsIngestController.ts': {
-    lines: 90, branches: 85, functions: 90, statements: 90,
+  './src/domains/planning/': {
+    statements: 88,
+    branches: 76,
+    functions: 76,
+    lines: 90,
   },
 }
 ```
 
+Note the planning floor is set just under what that suite achieves **without** a database,
+because `TaskService.tenancy.integration.test.ts` skips unless `PLANNING_TEST_DATABASE_URL`
+is set. A floor that assumed the DB-backed run would fail every laptop.
+
+The ratchet rule is unchanged; apply it per path. Every PR that adds tests should:
+
+1. Land the test.
+2. Read the resulting coverage number for that path from `yarn test --coverage` output.
+3. Update that path's `coverageThreshold` entry to **the floor of that number** (never
+   higher than achieved, never lower than current).
+
+This avoids wishful thresholds. The floor only ever moves up. A global entry is still worth
+adding once the global number is high enough to fence — that is the open item here, not the
+existence of a threshold.
+
 ## 5. CI integration
 
-`CI-Local-CICD` should run `yarn test --coverage --ci` and fail the build on coverage regression. This is the only enforcement that makes the ratchet stick.
+Where things stand: `.github/workflows/ci.yml` has a **Run backend tests** job
+(`yarn workspace @ci/be-api test`, no `--coverage`) and a **Run frontend tests** job
+(`yarn workspace @ci/fe-web test --coverage`, uploading an `fe-coverage` artifact),
+alongside type-check, lint and a Python job (`ruff`, `mypy`, `uv sync --locked`).
+
+Two gaps remain, and they compound:
+
+1. The backend job does not pass `--coverage`, so the ratchet in §4 is never evaluated in CI.
+2. The workflow is `workflow_dispatch`-only, so nothing evaluates it on a pull request either.
+
+`CI-Local-CICD` (or a restored `pull_request` trigger) should run the backend suite with
+`--coverage --ci` and fail the build on coverage regression. This is the only enforcement
+that makes the ratchet stick; until then the thresholds bind only for whoever runs the
+suite locally.
 
 The Marketplace install E2E (planning.md G3) lives separately — Playwright + Docker, run against a Hub + Marketplace + fixture-app stack. That is **not** in this Jest config; it lives in `tests/` at the repo root.
 

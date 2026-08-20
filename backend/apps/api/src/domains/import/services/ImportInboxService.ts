@@ -19,7 +19,7 @@ import { StagedSourceService } from './StagedSourceService';
 /**
  * How deep the has-any-file probe looks inside a top-level folder. A folder
  * whose only files sit deeper than this is treated as empty and not offered —
- * the probe exists to hide empty drop folders, not to inventory archives.
+ * the probe exists to hide empty drop folders, not to catalogue archives.
  */
 const FILE_PROBE_DEPTH = 4;
 

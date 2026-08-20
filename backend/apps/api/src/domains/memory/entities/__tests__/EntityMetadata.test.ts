@@ -62,7 +62,7 @@ describe('memory entity metadata', () => {
     // so nothing metadata-derived (e.g. future mutation tracking) may treat it
     // as the logical 'Item' type; that has to be stated explicitly.
     expect(discriminatorOf(ItemEntity)).toBe('ItemEntity');
-    expect(dataSource.getMetadata(ItemEntity).tableName).toBe('inventory');
+    expect(dataSource.getMetadata(ItemEntity).tableName).toBe('objects');
 
     // Children inherit the base columns; the discriminator is metadata-managed,
     // never a declared property.

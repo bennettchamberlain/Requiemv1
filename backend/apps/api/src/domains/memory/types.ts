@@ -1,7 +1,7 @@
 import type { Point } from 'typeorm';
 import { z } from 'zod';
 
-import type { InventoryLifecycleState, Item } from './entities/ItemEntity';
+import type { ObjectLifecycleState, Item } from './entities/ItemEntity';
 import type {
   ObservationBoundingBox,
   ObservationLabelSource,
@@ -349,12 +349,12 @@ export interface CreateItemDto extends PhysicalItemPropertiesDto {
   /** The receipt line this unit was minted from. */
   acquisitionLineItemId?: string | null;
   /** Queryable ownership state; the schema defaults it to 'active'. */
-  lifecycleState?: InventoryLifecycleState;
+  lifecycleState?: ObjectLifecycleState;
   /** Last confirmed sighting, denormalized from ci.object_observations. */
   lastSeenAt?: Date | null;
   lastSeenPlaceEntityId?: string | null;
 
-  // Provenance triple for idempotent re-ingest (see inventory_source_triple_uniq).
+  // Provenance triple for idempotent re-ingest (see objects_source_triple_uniq).
   sourceType?: string;
   sourceSystem?: string;
   sourceId?: string;
@@ -380,7 +380,7 @@ export interface UpdateItemDto extends PhysicalItemPropertiesDto {
   productId?: string | null;
   acquisitionReceiptId?: string | null;
   acquisitionLineItemId?: string | null;
-  lifecycleState?: InventoryLifecycleState;
+  lifecycleState?: ObjectLifecycleState;
   lastSeenAt?: Date | null;
   lastSeenPlaceEntityId?: string | null;
 }
@@ -663,7 +663,7 @@ export interface FindItemsFilter {
   /** Case-insensitive exact match on the trimmed brand. */
   brand?: string;
   productId?: string;
-  lifecycleState?: InventoryLifecycleState;
+  lifecycleState?: ObjectLifecycleState;
   isDigital?: boolean;
   acquiredFrom?: Date;
   acquiredTo?: Date;

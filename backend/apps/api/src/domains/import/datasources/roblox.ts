@@ -52,7 +52,7 @@ function findDate(rec: Record<string, unknown>): Date | undefined {
 
 // Classify by filename heuristic (Roblox's format is undocumented, so this is
 // best-effort): chat/message files → 'message', purchase/billing files →
-// 'purchase' (so they reach inventory, not social.post), everything else
+// 'purchase' (so they reach ci.objects, not social.post), everything else
 // → 'social'.
 function classify(file: string): string {
   if (/chat|message|conversation/i.test(file)) {

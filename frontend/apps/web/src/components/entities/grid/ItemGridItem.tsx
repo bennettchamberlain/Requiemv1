@@ -2,6 +2,7 @@ import { type MouseEvent, useMemo } from 'react';
 
 import { ItemIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
+import { formatAmount } from '@/lib/money';
 import { humanizeEnum } from '@/lib/utils';
 
 import { resolveMediaUrl } from '../resolveMediaUrl';
@@ -38,7 +39,7 @@ export const ITEM_FRAGMENT = gql(`
   }
 `);
 
-export interface ItemInventoryPreview {
+export interface ItemThingPreview {
   id: string;
   name: string;
   description: string | null;
@@ -50,10 +51,10 @@ export interface ItemInventoryPreview {
 interface Props {
   item: FragmentType<typeof ITEM_FRAGMENT>;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
-  onSelectInventoryItem?: (item: ItemInventoryPreview) => void;
+  onSelectThing?: (item: ItemThingPreview) => void;
 }
 
-export function ItemGridItem({ item, onClick, onSelectInventoryItem }: Props) {
+export function ItemGridItem({ item, onClick, onSelectThing }: Props) {
   const data = useFragment(ITEM_FRAGMENT, item);
 
   const url = useMemo(() => resolveMediaUrl(data.file?.sourceUrl), [data.file?.sourceUrl]);
@@ -67,11 +68,16 @@ export function ItemGridItem({ item, onClick, onSelectInventoryItem }: Props) {
   const lastSeen = data.lastSeenAt ? new Date(data.lastSeenAt) : null;
   const lastSeenLabel =
     lastSeen && !Number.isNaN(lastSeen.getTime()) ? `Seen ${lastSeen.toLocaleDateString()}` : null;
+  // The fragment has always fetched `currentValue` and `currency` and the card
+  // has never shown either — a query paying for a column nobody renders. What a
+  // thing is worth is one of the three facts a person scanning a grid of
+  // possessions is actually looking for, so it is rendered rather than dropped.
+  const value = formatAmount(data.currentValue, data.currency);
 
   return (
     <EntityGridItem
       onClick={(e) => {
-        onSelectInventoryItem?.({
+        onSelectThing?.({
           id: data.id,
           name: data.name ?? '',
           description: data.description ?? null,
@@ -109,6 +115,7 @@ export function ItemGridItem({ item, onClick, onSelectInventoryItem }: Props) {
       </EntityGridItem.Content>
 
       <EntityGridItem.Footer className="self-end gap-2">
+        {value && <span className="text-sm tabular-nums text-muted-foreground">{value}</span>}
         {/* Six of something is a different fact from one of it, and the count is
             the only field on the card that the grid cannot show twice: two rows
             of "AA battery" mean two ROWS, not two batteries. Only shown above

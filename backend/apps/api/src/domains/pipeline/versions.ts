@@ -269,7 +269,7 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * generation + PERSON_LINK_VERSION (its edges are a COPY of the linker's
    * columns, so a linker bump re-projects); the event leg additionally tracks
    * PROMOTE_PLACE_VERSION (`location_entity_id` is that stage's output); the
-   * inventory and observation legs track PROMOTE_OBJECT_VERSION; the position
+   * object and observation legs track PROMOTE_OBJECT_VERSION; the position
    * leg tracks PROMOTE_PLACE_POSITION_VERSION (`ci.position.location_entity_id`
    * is that stage's output — it had no writer at all until it landed); the
    * content, receipt and device legs have no versioned producer (importers,
@@ -285,7 +285,7 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: 4,
   [STAGE_IDS.PROMOTE_EDGE_EVENT]: 4,
   [STAGE_IDS.PROMOTE_EDGE_CONTENT]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_OBJECT]: 4,
   [STAGE_IDS.PROMOTE_EDGE_RECEIPT]: 4,
   [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: 4,
   [STAGE_IDS.PROMOTE_EDGE_POSITION]: 4,

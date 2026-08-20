@@ -33,7 +33,7 @@ import { PROMOTE_PLACE_POSITION_VERSION } from './PositionPlacePromoteStage';
 export const PROMOTE_EDGE_COMMUNICATION_STAGE_ID = 'promote.edge_communication';
 export const PROMOTE_EDGE_EVENT_STAGE_ID = 'promote.edge_event';
 export const PROMOTE_EDGE_CONTENT_STAGE_ID = 'promote.edge_content';
-export const PROMOTE_EDGE_INVENTORY_STAGE_ID = 'promote.edge_inventory';
+export const PROMOTE_EDGE_OBJECT_STAGE_ID = 'promote.edge_object';
 export const PROMOTE_EDGE_RECEIPT_STAGE_ID = 'promote.edge_receipt';
 export const PROMOTE_EDGE_OBSERVATION_STAGE_ID = 'promote.edge_observation';
 export const PROMOTE_EDGE_POSITION_STAGE_ID = 'promote.edge_position';
@@ -54,7 +54,7 @@ export const PROMOTE_EDGE_PLACE_STAGE_ID = 'promote.edge_place';
  *
  * Generation 2: the matrix gained `event.child_of` (Event −PART_OF→ parent
  * Event), `content.part_of_event` (Content −PART_OF→ Event) and
- * `inventory.located_at` (Item −LOCATED_AT→ Place).
+ * `object.located_at` (Item −LOCATED_AT→ Place).
  *
  * Generation 3: receipts, observations, positions, devices.
  *
@@ -92,11 +92,11 @@ export const PROMOTE_EDGE_EVENT_VERSION =
 export const PROMOTE_EDGE_CONTENT_VERSION = EDGE_PROJECTION_RULE_GENERATION;
 
 /**
- * Inventory-leg version: `ci.inventory.last_seen_place_entity_id` is written
+ * Object-leg version: `ci.objects.last_seen_place_entity_id` is written
  * by `promote.object` (and importers), so its version rides along — same SUM
  * offset shape as the other legs.
  */
-export const PROMOTE_EDGE_INVENTORY_VERSION = EDGE_PROJECTION_RULE_GENERATION + PROMOTE_OBJECT_VERSION - 1;
+export const PROMOTE_EDGE_OBJECT_VERSION = EDGE_PROJECTION_RULE_GENERATION + PROMOTE_OBJECT_VERSION - 1;
 
 /**
  * Receipt-leg version: `merchant_entity_id` / `place_entity_id` /
@@ -109,7 +109,7 @@ export const PROMOTE_EDGE_RECEIPT_VERSION = EDGE_PROJECTION_RULE_GENERATION;
 /**
  * Observation-leg version: `resolved_object_id` is written by
  * `promote.object`, so its version rides along — same derivation shape as the
- * inventory leg. (`place_entity_id` / `content_id` / `event_id` are set at
+ * object leg. (`place_entity_id` / `content_id` / `event_id` are set at
  * capture time.)
  */
 export const PROMOTE_EDGE_OBSERVATION_VERSION = EDGE_PROJECTION_RULE_GENERATION + PROMOTE_OBJECT_VERSION - 1;
@@ -117,7 +117,7 @@ export const PROMOTE_EDGE_OBSERVATION_VERSION = EDGE_PROJECTION_RULE_GENERATION 
 /**
  * Position-leg version: `ci.position.location_entity_id` is written by
  * `promote.place_position`, so its version rides along — same derivation shape
- * as the inventory and observation legs.
+ * as the object and observation legs.
  *
  * It did not always: this leg carried the projection generation alone, on the
  * grounds that the column was "snapped to a known place by the position domain
@@ -177,7 +177,7 @@ export function promoteEdgeStageVersion(
 promoteEdgeStageVersion(PROMOTE_EDGE_COMMUNICATION_STAGE_ID, PROMOTE_EDGE_COMMUNICATION_VERSION);
 promoteEdgeStageVersion(PROMOTE_EDGE_EVENT_STAGE_ID, PROMOTE_EDGE_EVENT_VERSION);
 promoteEdgeStageVersion(PROMOTE_EDGE_CONTENT_STAGE_ID, PROMOTE_EDGE_CONTENT_VERSION);
-promoteEdgeStageVersion(PROMOTE_EDGE_INVENTORY_STAGE_ID, PROMOTE_EDGE_INVENTORY_VERSION);
+promoteEdgeStageVersion(PROMOTE_EDGE_OBJECT_STAGE_ID, PROMOTE_EDGE_OBJECT_VERSION);
 promoteEdgeStageVersion(PROMOTE_EDGE_RECEIPT_STAGE_ID, PROMOTE_EDGE_RECEIPT_VERSION);
 promoteEdgeStageVersion(PROMOTE_EDGE_OBSERVATION_STAGE_ID, PROMOTE_EDGE_OBSERVATION_VERSION);
 promoteEdgeStageVersion(PROMOTE_EDGE_POSITION_STAGE_ID, PROMOTE_EDGE_POSITION_VERSION);
@@ -233,11 +233,11 @@ export const PROMOTE_EDGE_CONTENT_SOURCE: StageSource = {
   predicate: 's.event_id IS NOT NULL',
 };
 
-/** `ci.inventory` rows with a last-seen place — the `inventory.located_at`
+/** `ci.objects` rows with a last-seen place — the `object.located_at`
  * rule's candidates. */
-export const PROMOTE_EDGE_INVENTORY_SOURCE: StageSource = {
+export const PROMOTE_EDGE_OBJECT_SOURCE: StageSource = {
   schema: 'ci',
-  table: 'inventory',
+  table: 'objects',
   idColumn: 'object_id',
   userColumn: 'user_id',
   predicate: 's.last_seen_place_entity_id IS NOT NULL',
@@ -469,16 +469,16 @@ export class ContentEdgePromoteStage extends EdgePromoteStageBase {
 }
 
 @Injectable()
-export class InventoryEdgePromoteStage extends EdgePromoteStageBase {
-  readonly id = PROMOTE_EDGE_INVENTORY_STAGE_ID;
+export class ObjectEdgePromoteStage extends EdgePromoteStageBase {
+  readonly id = PROMOTE_EDGE_OBJECT_STAGE_ID;
 
-  readonly version = promoteEdgeStageVersion(PROMOTE_EDGE_INVENTORY_STAGE_ID, PROMOTE_EDGE_INVENTORY_VERSION);
+  readonly version = promoteEdgeStageVersion(PROMOTE_EDGE_OBJECT_STAGE_ID, PROMOTE_EDGE_OBJECT_VERSION);
 
-  readonly source = PROMOTE_EDGE_INVENTORY_SOURCE;
+  readonly source = PROMOTE_EDGE_OBJECT_SOURCE;
 
   readonly entityTypes = ['item'] as const;
 
-  protected readonly sourceKind: DeterministicEdgeSource = 'inventory';
+  protected readonly sourceKind: DeterministicEdgeSource = 'objects';
 
   // See CommunicationEdgePromoteStage: arity must be visible to the wiring spec.
   constructor(edgeService: DeterministicEdgeBackfillService, logger: LoggerService) {

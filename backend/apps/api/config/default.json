@@ -190,7 +190,6 @@
     "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
     "enable.system.prompt": true,
-    "enable.inventory.page": true,
     "advanced.theme.tab": false,
     "require.signup.codes": true,
     "files.page": true,

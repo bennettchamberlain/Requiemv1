@@ -1,25 +1,26 @@
-import type { CreateObjectObservationDto } from '@ci/domains/memory';
+import type { CreateObjectObservationDto, ObjectResolutionOutcome } from '@ci/domains/memory';
 
-import { InventoryListener } from '../InventoryListener';
+import { ThingVisionListener } from '../ThingVisionListener';
 
 /**
- * `InventoryListener` — the path the observation table was written to fix.
- *
- * `ci.object_observations`' migration header names this class by name: it
- * "writes speculative ci.inventory rows straight from a vision guess",
- * conflating "a coffee mug is visible in this photo" with "I own this specific
- * coffee mug".
+ * `ThingVisionListener` — the successor to the retired inventory listener,
+ * which `ci.object_observations` was introduced to fix. That listener "wrote
+ * speculative ci.object rows straight from a vision guess", conflating
+ * "a coffee mug is visible in this photo" with "I own this specific coffee
+ * mug", and had no arbiter at all: re-uploading a photo multiplied the rows.
  *
  * What changed, and what deliberately did not:
  *
  *  - The minting STAYS. This listener only runs when the upload carried
- *    `inventoryCapture: true` — an explicit per-upload assertion by the user
- *    that they are cataloguing their own belongings. The intent to own is real;
- *    it is the model's item-by-item reading of the photo that is a guess.
- *  - The guess is now RECORDED. Every item becomes a sighting first, and the
- *    minted row is attached to it as a resolution, so there is an auditable
- *    trail from pixels to owned unit where before an inventory row simply
- *    appeared.
+ *    `thingCapture: true` — an explicit per-upload assertion by the user that
+ *    they are cataloguing their own belongings. The intent to own is real; it
+ *    is the model's item-by-item reading of the photo that is a guess.
+ *  - The guess is now RECORDED, and the sighting is the ARBITER. Every item
+ *    becomes a sighting first; the resolution ladder gets first refusal; only
+ *    what it declines is minted, and the minted row is attached back to the
+ *    sighting. Because the sighting is keyed on (file, detector, label), the
+ *    second pass over the same photo finds it already resolved and mints
+ *    nothing.
  *
  * These tests are the witness for the second half.
  */
@@ -86,11 +87,32 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
 
   const observationService = {
     create: jest.fn(
-      async (_ctx: unknown, dto: CreateObjectObservationDto): Promise<{ id: string } | null> => ({
+      async (
+        _ctx: unknown,
+        dto: CreateObjectObservationDto,
+      ): Promise<{ id: string; resolvedObjectId: string | null } | null> => ({
         id: `obs-${dto.label.replace(/\s+/g, '-').toLowerCase()}`,
+        resolvedObjectId: null,
       }),
     ),
     resolve: jest.fn(async () => ({})),
+  };
+
+  // Declines by default: the ladder answering "no match" is what leaves the
+  // mint path reachable, and it is the common case for a first capture.
+  const declined: ObjectResolutionOutcome = {
+    observationId: 'obs-1',
+    method: 'none',
+    confidence: null,
+    objectId: null,
+    productId: null,
+    reason: 'no rung matched',
+    applied: false,
+    observation: null,
+  };
+
+  const resolutionService = {
+    resolveAndApply: jest.fn(async (): Promise<ObjectResolutionOutcome> => declined),
   };
 
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -99,7 +121,7 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
     isEnabled: jest.fn(async () => true),
   };
 
-  const listener = new InventoryListener(
+  const listener = new ThingVisionListener(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     fileService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,6 +130,8 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
     itemService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     observationService as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolutionService as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     imageDescriptionPreference as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,6 +144,7 @@ function makeListener(opts: { content?: string; externalCreatedAt?: Date | null 
     ollamaService,
     itemService,
     observationService,
+    resolutionService,
     imageDescriptionPreference,
     logger,
   };
@@ -129,13 +154,13 @@ function upload(overrides: Record<string, unknown> = {}) {
   return {
     userId: USER,
     fileId: FILE,
-    inventoryCapture: true,
+    thingCapture: true,
     ...overrides,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
-describe('InventoryListener — a vision guess is recorded as a sighting', () => {
+describe('ThingVisionListener — a vision guess is recorded as a sighting', () => {
   it('skips quietly when image description is disabled', async () => {
     const { listener, imageDescriptionPreference, ollamaService, observationService } = makeListener();
     imageDescriptionPreference.isEnabled.mockResolvedValueOnce(false);
@@ -166,7 +191,7 @@ describe('InventoryListener — a vision guess is recorded as a sighting', () =>
     observationService.create.mockImplementation(async (_ctx: unknown, dto: CreateObjectObservationDto) => {
       order.push(`observe:${dto.label}`);
 
-      return { id: `obs-${dto.label}` };
+      return { id: `obs-${dto.label}`, resolvedObjectId: null };
     });
     itemService.create.mockImplementation(async (_ctx: unknown, dto: { name: string }) => {
       order.push(`mint:${dto.name}`);
@@ -240,7 +265,7 @@ describe('InventoryListener — a vision guess is recorded as a sighting', () =>
     const { attributes } = observationService.create.mock.calls[1][1];
 
     // Dimensions and mass are unit-bearing strings that only mean anything
-    // once `normalizePhysicalProperties` has resolved them onto ci.inventory.
+    // once `normalizePhysicalProperties` has resolved them onto ci.objects.
     // A raw second copy on the sighting is a second thing to parse and
     // disagree about, so it is left off rather than half-recorded.
     expect(attributes).not.toHaveProperty('dimensions');
@@ -294,23 +319,95 @@ describe('InventoryListener — a vision guess is recorded as a sighting', () =>
     expect(dto).not.toHaveProperty('confirmedByUser');
   });
 
-  it('still mints when the sighting matched a human-confirmed row', async () => {
+  it('mints nothing when the sighting matched a human-confirmed row', async () => {
     const { listener, observationService, itemService } = makeListener();
 
-    // `create` returns null when the row is protected; that row's resolution
-    // belongs to the person who made it, so there is nothing to attach.
+    // `create` returns null when the row is protected. That row's resolution
+    // belongs to the person who made it — minting anyway would hand them a
+    // second copy of the thing they already answered about.
     observationService.create.mockResolvedValue(null);
 
     await listener.handleFileUploaded(upload());
 
-    expect(itemService.create).toHaveBeenCalledTimes(2);
+    expect(itemService.create).not.toHaveBeenCalled();
     expect(observationService.resolve).not.toHaveBeenCalled();
   });
 
-  it('does nothing at all without the explicit inventory-capture opt-in', async () => {
+  it('mints nothing on a re-upload — the sighting already points at a thing', async () => {
+    const { listener, observationService, itemService, resolutionService } = makeListener();
+
+    // What `createMany` returns the SECOND time: the same row, keyed on
+    // (file, detector, label), with the resolution columns it was given on the
+    // first pass left untouched. This is the row multiplication the retired
+    // inventory listener had no defence against.
+    observationService.create.mockImplementation(async (_ctx: unknown, dto: CreateObjectObservationDto) => ({
+      id: `obs-${dto.label}`,
+      resolvedObjectId: `item-${dto.label}`,
+    }));
+
+    await listener.handleFileUploaded(upload());
+
+    expect(itemService.create).not.toHaveBeenCalled();
+    expect(resolutionService.resolveAndApply).not.toHaveBeenCalled();
+    expect(observationService.resolve).not.toHaveBeenCalled();
+  });
+
+  it('links to an existing thing the ladder matched instead of minting a second one', async () => {
+    const { listener, itemService, observationService, resolutionService } = makeListener();
+
+    resolutionService.resolveAndApply.mockResolvedValue({
+      observationId: 'obs-coffee-mug',
+      method: 'identifier',
+      confidence: 0.95,
+      objectId: 'already-owned-mug',
+      productId: null,
+      reason: 'gtin matched one unit',
+      applied: true,
+      observation: null,
+    });
+
+    await listener.handleFileUploaded(upload());
+
+    // The whole point: the mug is already in the user's things, so the photo
+    // adds evidence, not a duplicate.
+    expect(itemService.create).not.toHaveBeenCalled();
+    expect(observationService.resolve).not.toHaveBeenCalled();
+  });
+
+  it('gives the ladder first refusal before minting anything', async () => {
+    const { listener, resolutionService, itemService } = makeListener();
+
+    const order: string[] = [];
+
+    resolutionService.resolveAndApply.mockImplementation(async () => {
+      order.push('resolve');
+
+      return {
+        observationId: 'obs-1',
+        method: 'none',
+        confidence: null,
+        objectId: null,
+        productId: null,
+        reason: 'no rung matched',
+        applied: false,
+        observation: null,
+      };
+    });
+    itemService.create.mockImplementation(async (_ctx: unknown, dto: { name: string }) => {
+      order.push('mint');
+
+      return { id: `item-${dto.name}`, name: dto.name };
+    });
+
+    await listener.handleFileUploaded(upload());
+
+    expect(order.slice(0, 2)).toEqual(['resolve', 'mint']);
+  });
+
+  it('does nothing at all without the explicit thing-capture opt-in', async () => {
     const { listener, observationService, itemService, fileService } = makeListener();
 
-    await listener.handleFileUploaded(upload({ inventoryCapture: false }));
+    await listener.handleFileUploaded(upload({ thingCapture: false }));
 
     // The user's assertion of ownership is what makes minting legitimate; with
     // no assertion there is no capture at all, and so no sighting either.

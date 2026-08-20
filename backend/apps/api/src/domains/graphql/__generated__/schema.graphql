@@ -315,6 +315,18 @@ type CalibrationScoreType {
   scoredAt: String!
 }
 
+type CommunicationAttachmentType {
+  contentId: ID
+  contentType: String
+  fileId: ID
+  filename: String
+  height: Int
+  previewUrl: String
+  size: Float
+  url: String
+  width: Int
+}
+
 type CommunicationConnection implements Connection {
   edges: [CommunicationEdge!]!
   pageInfo: PageInfo!
@@ -327,6 +339,7 @@ type CommunicationEdge implements Edge {
 }
 
 type CommunicationType implements Node & Taggable {
+  attachments: [CommunicationAttachmentType!]!
   content: String!
   direction: String!
   from: PersonType
@@ -597,75 +610,6 @@ input CreateEventInput {
   title: String
 }
 
-input CreateInventoryInput {
-  acquiredAt: DateTime
-
-  """Seller, giver or source, as free text."""
-  acquiredFrom: String
-  acquisitionMethod: ItemAcquisitionMethod
-  brand: String
-  category: String
-
-  """Dominant colour as #rrggbb."""
-  colorHex: String
-
-  """Colour names, dominant first."""
-  colors: [String!]
-
-  """
-  {material: fraction} summing to at most 1. Percentages are accepted and converted.
-  """
-  composition: JSON
-  condition: ItemCondition
-  currency: String
-  currentValue: Float
-  description: String
-
-  """
-  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
-  """
-  dimensions: String
-
-  """
-  When it stops being usable. Distinct from a warranty, which is a contract.
-  """
-  expiresAt: DateTime
-
-  """Height, in millimetres."""
-  heightMm: Float
-  identifierCodes: JSON
-
-  """A digital item is refused a mass, a size and a volume."""
-  isDigital: Boolean
-
-  """Longest dimension, in millimetres."""
-  lengthMm: Float
-
-  """When the object was made, not when it was acquired."""
-  manufacturedAt: DateTime
-
-  """As-owned mass, in grams."""
-  massG: Float
-
-  """What the object is made of."""
-  materials: [String!]
-  metadata: JSON
-  model: String
-  name: String!
-  purchasePrice: Float
-  sourceId: String
-  sourceSystem: String
-  sourceType: String
-  subcategory: String
-  unitSystem: ItemUnitSystem
-
-  """Capacity — what it holds — in millilitres."""
-  volumeMl: Float
-
-  """Width, in millimetres."""
-  widthMm: Float
-}
-
 input CreateItemInput {
   """When it was bought or received."""
   acquiredAt: DateTime
@@ -869,6 +813,75 @@ input CreateTaskInput {
 type CreateTaskPayload {
   success: Boolean!
   task: TaskType
+}
+
+input CreateThingInput {
+  acquiredAt: DateTime
+
+  """Seller, giver or source, as free text."""
+  acquiredFrom: String
+  acquisitionMethod: ItemAcquisitionMethod
+  brand: String
+  category: String
+
+  """Dominant colour as #rrggbb."""
+  colorHex: String
+
+  """Colour names, dominant first."""
+  colors: [String!]
+
+  """
+  {material: fraction} summing to at most 1. Percentages are accepted and converted.
+  """
+  composition: JSON
+  condition: ItemCondition
+  currency: String
+  currentValue: Float
+  description: String
+
+  """
+  Shorthand such as "12 x 8 x 2 in". Fills only the axes not given individually.
+  """
+  dimensions: String
+
+  """
+  When it stops being usable. Distinct from a warranty, which is a contract.
+  """
+  expiresAt: DateTime
+
+  """Height, in millimetres."""
+  heightMm: Float
+  identifierCodes: JSON
+
+  """A digital item is refused a mass, a size and a volume."""
+  isDigital: Boolean
+
+  """Longest dimension, in millimetres."""
+  lengthMm: Float
+
+  """When the object was made, not when it was acquired."""
+  manufacturedAt: DateTime
+
+  """As-owned mass, in grams."""
+  massG: Float
+
+  """What the object is made of."""
+  materials: [String!]
+  metadata: JSON
+  model: String
+  name: String!
+  purchasePrice: Float
+  sourceId: String
+  sourceSystem: String
+  sourceType: String
+  subcategory: String
+  unitSystem: ItemUnitSystem
+
+  """Capacity — what it holds — in millilitres."""
+  volumeMl: Float
+
+  """Width, in millimetres."""
+  widthMm: Float
 }
 
 """One local-day row from the daily feature store"""
@@ -1667,7 +1680,6 @@ type Mutation {
   createContents(input: [CreateContentInput!]!): [ContentType!]!
   createEvent(input: CreateEventInput!): EventType!
   createEvents(input: [CreateEventInput!]!): [EventType!]!
-  createInventoryItems(input: [CreateInventoryInput!]!): [ItemType!]!
   createItem(input: CreateItemInput!): CreateItemPayload!
   createNote(input: CreateNoteInput!): CreateNotePayload!
   createNotes(input: [CreateNoteInput!]!): [NoteType!]!
@@ -1681,6 +1693,7 @@ type Mutation {
   createRelationship(input: CreateRelationshipInput!): CreateRelationshipPayload!
   createSavedSearch(input: CreateSavedSearchInput!): CreateSavedSearchPayload!
   createTask(input: CreateTaskInput!): CreateTaskPayload!
+  createThings(input: [CreateThingInput!]!): [ItemType!]!
   declineAsk(id: ID!): AskPayload!
 
   """
@@ -1741,6 +1754,11 @@ type Mutation {
   Recompute and upsert a trailing window of daily metrics for the signed-in user.
   """
   refreshDailyMetrics(days: Int, timezone: String): [DailyMetricsType!]!
+
+  """
+  Mark a suggested duplicate group as distinct things, so it is never re-proposed
+  """
+  rejectItemDuplicates(itemIds: [ID!]!): Boolean!
   rejectObservation(id: ID!): ObjectObservationType
 
   """
@@ -1902,8 +1920,8 @@ type ObjectIdentifierType {
 
 type ObjectMergeCountsType {
   identifiers: Int!
-  inventoryParent: Int!
-  inventoryRelated: Int!
+  objectParent: Int!
+  objectRelated: Int!
   observations: Int!
   receiptLineItems: Int!
   searchRowsDeleted: Int!
@@ -2166,7 +2184,7 @@ type ProbabilityEntryType {
 
 type ProductMergeCountsType {
   identifiers: Int!
-  inventoryProduct: Int!
+  objectProduct: Int!
   observations: Int!
   receiptLineItems: Int!
 }
@@ -3199,6 +3217,7 @@ input UpdateItemInput {
 
   """Longest dimension, in millimetres."""
   lengthMm: Float
+  lifecycleState: ItemLifecycleState
 
   """When the object was made, not when it was acquired."""
   manufacturedAt: DateTime

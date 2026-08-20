@@ -12,28 +12,28 @@ import { minorUnitsToDecimal } from '../entities/minorUnits';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 /**
- * `ci.inventory.source_type` for every unit this service mints.
+ * `ci.objects.source_type` for every unit this service mints.
  *
  * The triple is `('receipt-line', <the receipt's source_system>,
  * <line_item_id>)`, which does three jobs at once:
  *
- *  1. **Idempotency.** `inventory_source_triple_uniq` is UNIQUE on
+ *  1. **Idempotency.** `objects_source_triple_uniq` is UNIQUE on
  *     `(owner_user_id, source_type, source_system, source_id)`, so re-extracting
  *     a receipt re-mints onto the SAME row instead of adding a second copy of a
  *     possession. No anti-join, no "have I minted this?" query.
  *  2. **Provenance.** `source_id` IS the `ci.receipt_line_items.line_item_id`,
  *     so every minted unit points at the exact claim that produced it — the
- *     mirror of `ci.inventory.acquisition_line_item_id`.
- *  3. **Isolation.** The importer writes `ci.inventory` under its own
+ *     mirror of `ci.objects.acquisition_line_item_id`.
+ *  3. **Isolation.** The importer writes `ci.objects` under its own
  *     `source_type`, and `ObjectPromoteStage` under `promote.object`, so a
  *     minted unit can never collide with — or be mistaken for — either.
  */
 export const MINT_SOURCE_TYPE = 'receipt-line';
 
 /**
- * `ci.inventory.lifecycle_state` for a freshly minted unit.
+ * `ci.objects.lifecycle_state` for a freshly minted unit.
  *
- * NOT `'owned'`: `inventory_lifecycle_state_check` accepts exactly
+ * NOT `'owned'`: `objects_lifecycle_state_check` accepts exactly
  * `active | stored | lent_out | lost | disposed | consumed | returned |
  * archived`, and `'owned'` is not in it — a mint that wrote it would fail the
  * CHECK on every row. `'active'` is this schema's spelling of "owned and in
@@ -43,11 +43,11 @@ export const MINT_SOURCE_TYPE = 'receipt-line';
  */
 export const MINT_LIFECYCLE_STATE = 'active';
 
-/** `ci.inventory.identity_method` for a receipt-derived unit; see inventory_identity_method_check. */
+/** `ci.objects.identity_method` for a receipt-derived unit; see objects_identity_method_check. */
 export const MINT_IDENTITY_METHOD = 'receipt';
 
 /**
- * `ci.inventory.identity_confidence` for a receipt-derived unit.
+ * `ci.objects.identity_confidence` for a receipt-derived unit.
  *
  * The tier the migration's column comment names for receipts. Below the 1.0
  * default deliberately: 1.0 means user-entered or barcode-scanned and reads as
@@ -57,9 +57,9 @@ export const MINT_IDENTITY_METHOD = 'receipt';
 export const MINT_IDENTITY_CONFIDENCE = 0.7;
 
 /**
- * `ci.inventory.acquisition_method` for a receipt-derived unit.
+ * `ci.objects.acquisition_method` for a receipt-derived unit.
  *
- * `'purchased'`, NOT `'purchase'` — `inventory_acquisition_method_check`
+ * `'purchased'`, NOT `'purchase'` — `objects_acquisition_method_check`
  * accepts `purchased | gift | inherited | found | made | borrowed | traded |
  * sample | unknown`, and the past participle is the one in the list.
  */
@@ -77,7 +77,7 @@ export interface MintReceiptContext {
   /**
    * Graph Location the purchase happened at.
    *
-   * `ci.inventory` has NO acquisition-place column (only `last_seen_*`, which
+   * `ci.objects` has NO acquisition-place column (only `last_seen_*`, which
    * is denormalized from CONFIRMED SIGHTINGS and would be a lie here — buying a
    * thing in a shop is not seeing it there afterwards). It is recorded in the
    * mint provenance bag instead, where `ObjectResolutionService`'s place_prior
@@ -105,10 +105,10 @@ export interface MintLineInput {
   isPhysical: boolean;
   /**
    * Distinct serial numbers the line supplied. THE ONLY reason a line becomes
-   * more than one inventory row — see the class docblock.
+   * more than one object row — see the class docblock.
    */
   serials?: string[];
-  /** Copied verbatim into `ci.inventory.identifier_codes`. */
+  /** Copied verbatim into `ci.objects.identifier_codes`. */
   identifierCodes?: Record<string, unknown>;
 }
 
@@ -142,11 +142,11 @@ interface MintRow {
 }
 
 /**
- * Turns a receipt LINE ITEM into the owned `ci.inventory` unit(s) it implies.
+ * Turns a receipt LINE ITEM into the owned `ci.objects` unit(s) it implies.
  *
- * The chain is receipt (evidence) -> line item (claim) -> inventory (owned
+ * The chain is receipt (evidence) -> line item (claim) -> objects (owned
  * unit), and this service is the last arrow. Before it, the importer flattened
- * a whole purchase into ONE inventory row named after the order, so a four-item
+ * a whole purchase into ONE object row named after the order, so a four-item
  * Amazon order became one "thing".
  *
  * ── How many rows a line becomes ───────────────────────────────────────────
@@ -292,7 +292,7 @@ export class ObjectMintService {
         service: 'ObjectMintService',
         receipt_id: receipt.receiptId,
         line_item_id: line.lineItemId,
-        // No acquisition-place column exists on ci.inventory; see
+        // No acquisition-place column exists on ci.objects; see
         // MintReceiptContext.placeEntityId for why it is recorded here instead.
         place_entity_id: receipt.placeEntityId,
         ...(serial != null && { serial }),
@@ -329,7 +329,7 @@ export class ObjectMintService {
   }
 
   /**
-   * `ci.inventory.quantity` is `INTEGER CHECK (quantity > 0)`, but a line's
+   * `ci.objects.quantity` is `INTEGER CHECK (quantity > 0)`, but a line's
    * quantity is `NUMERIC(12,3)` — 1.5 kg of coffee is a real receipt line.
    *
    * A fractional quantity is rounded UP to 1 whole unit rather than rejected or
@@ -345,7 +345,7 @@ export class ObjectMintService {
   }
 
   /**
-   * The upsert into `ci.inventory`.
+   * The upsert into `ci.objects`.
    *
    * Reports TWO sets, because they answer two different questions and only one
    * of them is a count:
@@ -377,7 +377,7 @@ export class ObjectMintService {
       return { inserted, written };
     }
 
-    // 16 unnest arrays + 6 scalars; the widest ci.inventory row is ~60 columns,
+    // 16 unnest arrays + 6 scalars; the widest ci.objects row is ~60 columns,
     // which is what the chunk budget is derived from.
     const chunkSize = computeChunkSize(60);
 
@@ -385,7 +385,7 @@ export class ObjectMintService {
       const chunk = rows.slice(offset, offset + chunkSize);
 
       const returned = await em.query<Array<{ object_id: string; inserted: boolean }>>(
-        `INSERT INTO ci.inventory AS inv (
+        `INSERT INTO ci.objects AS inv (
            object_id, user_id, owner_user_id, category, brand, model,
            identifier_codes, purchase_price, currency, acquired_at,
            product_id, acquisition_receipt_id, acquisition_line_item_id,
@@ -475,7 +475,7 @@ export class ObjectMintService {
         (
           await em.query<Array<{ object_id: string; source_id: string }>>(
             `SELECT object_id, source_id
-               FROM ci.inventory
+               FROM ci.objects
               WHERE owner_user_id = $1::uuid
                 AND source_type = $2
                 AND source_system IS NOT DISTINCT FROM $3
@@ -503,9 +503,9 @@ export class ObjectMintService {
   /**
    * The `ci.entities` half of the CTI aggregate.
    *
-   * `ci.inventory` is a CTI DETAIL table: the base row in `ci.entities`
+   * `ci.objects` is a CTI DETAIL table: the base row in `ci.entities`
    * (discriminated `'Item'`) is the sole owner of name/description, and
-   * `inventory_object_id_entities_fk` is a composite FK on `(object_id,
+   * `objects_object_id_entities_fk` is a composite FK on `(object_id,
    * entity_type)`. It is DEFERRABLE INITIALLY DEFERRED, which is why the detail
    * rows may land first — but it is still checked at COMMIT, so skipping this
    * write does not produce a nameless item, it aborts the transaction.
@@ -520,7 +520,7 @@ export class ObjectMintService {
    * the field the user edits. Handing every row to the unconditional
    * `ON CONFLICT (entity_id) DO UPDATE SET name = excluded.name` below would
    * undo, on the very next re-extraction, the rename the unit upsert had just
-   * gone out of its way to protect: the guard would hold on `ci.inventory` and
+   * gone out of its way to protect: the guard would hold on `ci.objects` and
    * the edit would be overwritten in `ci.entities` one statement later.
    *
    * This is the precedent the class docblock already cites —
@@ -532,7 +532,7 @@ export class ObjectMintService {
    * is checked at COMMIT), so nothing is left nameless.
    *
    * @param rows     the mint rows whose unit write succeeded, ids already
-   *                 re-pointed to the real `ci.inventory` row.
+   *                 re-pointed to the real `ci.objects` row.
    * @param inserted which of those ids were genuinely INSERTED, so the graph
    *                 delta reports `created` vs `updated` truthfully.
    */
@@ -554,7 +554,7 @@ export class ObjectMintService {
       await em.query(
         `INSERT INTO ci.entities
            (entity_id, entity_type, name, properties, owner_user_id, linked_table, linked_id)
-         SELECT u.object_id, 'Item', u.name, '{}'::jsonb, $1::uuid, 'inventory', u.object_id
+         SELECT u.object_id, 'Item', u.name, '{}'::jsonb, $1::uuid, 'objects', u.object_id
            FROM unnest($2::uuid[], $3::text[]) AS u(object_id, name)
          ON CONFLICT (entity_id) DO UPDATE SET name = excluded.name, updated_at = now()`,
         [userId, chunk.map((row) => row.objectId), chunk.map((row) => row.name)],

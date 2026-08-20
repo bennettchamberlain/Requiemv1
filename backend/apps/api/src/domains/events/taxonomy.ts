@@ -131,7 +131,7 @@ export const JOB_TYPES: Readonly<Record<string, JobTypeDescriptor>> = {
     label: 'File uploaded',
     category: JOB_CATEGORIES.ingest,
     description:
-      'The fan-out point for everything a new file needs: preview generation, document parsing, inventory extraction and search indexing all hang off this one event. By far the highest-volume job on the appliance.',
+      'The fan-out point for everything a new file needs: preview generation, document parsing, thing extraction and search indexing all hang off this one event. By far the highest-volume job on the appliance.',
   },
   'file.updated': {
     label: 'File changed',
@@ -411,7 +411,7 @@ export const SMART_ROTATION_WORK_LABELS: Readonly<Record<string, string>> = {
   graph_enrich: 'Enrich graph entities',
   context_prompt: 'Rebuild context prompt',
   hydrate_answers: 'Hydrate answers',
-  hydrate_inventory: 'Hydrate inventory',
+  hydrate_things: 'Hydrate things',
   promotion_review: 'Review entity promotions',
 };
 
