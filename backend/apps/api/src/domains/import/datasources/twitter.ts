@@ -515,6 +515,59 @@ function handlesById(tweets: Tweet[], owner: Owner): Map<string, string> {
   return out;
 }
 
+/**
+ * The namespace an unresolvable Twitter account id is written under.
+ *
+ * `id:` says what the value IS. Without it the string is `twitter:<id>`, which
+ * `PersonLinkStage.readHandle` reads as a platform-qualified HANDLE (its
+ * `QUALIFIED_HANDLE` strips an optional `@`, so `twitter:6245902` and a real
+ * `@6245902` land on the same key) — filing an account id in the handle
+ * namespace, where a different kind of value lives, is the same class of
+ * mistake as filing it in the phone one. The second colon takes it out of that
+ * regex's reach: its value part is `[A-Za-z0-9._-]`, which no colon satisfies.
+ */
+const ACCOUNT_ID_NAMESPACE = 'twitter:id:';
+
+/**
+ * How a DM partner is named when the archive never says who they are.
+ *
+ * The bare numeric id used to ride out as the participant, and a numeric
+ * participant is not inert. `classifyParticipant` types an all-digit string of
+ * seven digits or more as `kind='phone'` — `PHONE_MIN_DIGITS` is 7 and there is
+ * no upper bound, while a Twitter snowflake is 18-19 digits — and
+ * `normalizePhone` then keeps its LAST TEN DIGITS. So an account id became a
+ * Person named after itself holding a phone number that belongs to nobody:
+ *
+ *   223 digit-named `Person` rows on a fresh full-corpus import, 214 of them
+ *   Twitter DM partners, carrying 213 fabricated `phone` identifiers. 119 are
+ *   7-15 digits and therefore indistinguishable from a real number; of the 103
+ *   snowflakes, 87 reduce to a last-ten that even starts with a valid NANP
+ *   area-code digit.
+ *
+ * That is not only clutter. `PersonLinkStage` matches `phone_last10` at 0.85
+ * confidence, so a fabricated number that happens to equal a real contact's
+ * merges a stranger's DMs into a real person. No such collision exists on this
+ * corpus — all 213 values were checked — which makes it latent, not realised,
+ * and is the argument for closing it before a corpus arrives where it does.
+ *
+ * The namespaced form cannot be misread: `classifyParticipant` and
+ * `PersonLinkStage.classifyIdentifier` both require PHONE-SHAPED (`+()-./`,
+ * whitespace and digits, nothing else) before counting digits, and letters and
+ * colons fail that outright. It stays keyable — no identity is lost, which
+ * matters because a DM has a real correspondent and dropping the participant
+ * would leave the message with none: both classifiers fall through to
+ * `kind='name'`, whose `normalizeName` lower-cases a value that is already
+ * lower-case and stable, and `isNonNameParticipant` refuses none of it (no
+ * newline, no call-log heading, no export extension). `splitPersonName` reads
+ * one token, so no first/last name is invented either.
+ *
+ * The id itself is NOT lost by this: `metadata.SenderId` / `RecipientIds`
+ * carry the raw values, and always did.
+ */
+function accountRef(id: string): string {
+  return `${ACCOUNT_ID_NAMESPACE}${id}`;
+}
+
 /* -------------------------------------------------------------------------- *
  * Group conversation membership
  * -------------------------------------------------------------------------- */
@@ -1029,8 +1082,9 @@ export class TwitterFileImporter implements FileImporter {
       { base: 'direct-messages', dir: 'direct_messages_media', group: false },
       { base: 'direct-messages-group', dir: 'direct_messages_group_media', group: true },
     ];
-    // A handle when the archive lets us name the account, the raw id otherwise.
-    const who = (id: string): string => handles.get(id) ?? id;
+    // A handle when the archive lets us name the account, a NAMESPACED account
+    // id otherwise — see accountRef for why the bare id cannot ride out.
+    const who = (id: string): string => handles.get(id) ?? accountRef(id);
 
     for (const lane of lanes) {
       const conversations = readStore<DmConversation>(dataDir, lane.base, 'dmConversation');
@@ -1111,10 +1165,11 @@ export class TwitterFileImporter implements FileImporter {
               SenderName: outbound ? owner.displayName : undefined,
               // The export identifies DM participants by numeric account id and
               // never by handle, so these are resolved against the id→handle
-              // pairs tweets.js carries — falling back to the bare id, which is
-              // all the archive knows for most people. The raw ids ride along
-              // unchanged: they are the durable key CI-Server resolves against,
-              // and a handle can be reassigned to a different account.
+              // pairs tweets.js carries — falling back to a NAMESPACED account id
+              // (see accountRef), which is all the archive knows for most
+              // people. The raw ids ride along unchanged in SenderId /
+              // RecipientIds: they are the durable key CI-Server resolves
+              // against, and a handle can be reassigned to a different account.
               Sender: dm.senderId ? who(dm.senderId) : undefined,
               SenderId: dm.senderId,
               To: recipientIds.length ? recipientIds.map(who) : undefined,
