@@ -2,6 +2,7 @@ import { BrowserActivityCreatedEvent } from '@ci/domains/browser-activity/events
 import { FileCreatedEvent } from '@ci/domains/files/events';
 import {
   CommunicationCreatedEvent,
+  ConceptCreatedEvent,
   ContentCreatedEvent,
   EventCreatedEvent,
   ItemCreatedEvent,
@@ -119,9 +120,13 @@ describe('PIPELINE_COVERED_STAGES', () => {
     // `position` arrived with the GPS→places indexing and has no pipeline
     // stage yet — the old backfill path still owns it. `product` and `receipt`
     // arrived the same way with the object tables: their listeners exist, their
-    // pipeline `index.embed_*` stages do not. Anything ELSE missing from the map
-    // is a regression: the pipeline is the indexing path.
-    const uncovered = ['position', 'product', 'receipt'];
+    // pipeline `index.embed_*` stages do not. `concept` has no pipeline stage AT
+    // ALL (no INDEX_EMBED_CONCEPT in STAGE_IDS) — building one is the deliberate,
+    // larger follow-up; omitting it here just means the sweep does not
+    // double-check against ci.pipeline_state for concept, the same safe fallback
+    // `missingIds` already uses for the others. Anything ELSE missing from the
+    // map is a regression: the pipeline is the indexing path.
+    const uncovered = ['position', 'product', 'receipt', 'concept'];
 
     expect(Object.keys(PIPELINE_COVERED_STAGES).sort()).toEqual(
       BACKFILLABLE_ENTITIES.filter((type) => !uncovered.includes(type)).sort(),
@@ -139,12 +144,13 @@ describe('SearchIndexBackfillService', () => {
       'browser-activity': [['b1'], []],
       file: [['f1', 'f2'], []],
       person: [['p1'], []],
+      concept: [['k1'], []],
     });
 
     const result = await service.backfill({ batchSize: 100 });
 
     expect(result).toEqual({
-      enqueued: 10,
+      enqueued: 11,
       perType: {
         communication: 2,
         event: 1,
@@ -153,6 +159,7 @@ describe('SearchIndexBackfillService', () => {
         'browser-activity': 1,
         file: 2,
         person: 1,
+        concept: 1,
         position: 0,
         product: 0,
         receipt: 0,
@@ -167,6 +174,7 @@ describe('SearchIndexBackfillService', () => {
         'browser-activity': 0,
         file: 0,
         person: 0,
+        concept: 0,
         position: 0,
         product: 0,
         receipt: 0,
@@ -198,6 +206,12 @@ describe('SearchIndexBackfillService', () => {
     // the same bulk path so people extracted from communications become searchable.
     expect(sendMany).toHaveBeenCalledWith(SEARCH_INDEX_QUEUE, [
       { name: PersonCreatedEvent, data: { personId: 'p1' } },
+    ]);
+    // concept rows (GraphIngestService bulk upserts, same no-per-row-event path
+    // as person) ride the same bulk path — this is the regression #2175's
+    // review caught: 0 of N imported concepts were ever searchable before this.
+    expect(sendMany).toHaveBeenCalledWith(SEARCH_INDEX_QUEUE, [
+      { name: ConceptCreatedEvent, data: { conceptId: 'k1' } },
     ]);
 
     // content had an empty page — never enqueued — and nothing left the search-index queue.
