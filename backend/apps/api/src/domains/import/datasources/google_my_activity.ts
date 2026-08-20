@@ -160,6 +160,8 @@ export class GoogleMyActivityFileImporter implements FileImporter {
         file: path.basename(fpath),
         error: (e as Error).message,
       });
+      // How many activities this file held is unknowable once it can't be read.
+      params.pipeline.drop?.('unreadable_file', path.basename(fpath));
 
       return;
     }
@@ -168,17 +170,25 @@ export class GoogleMyActivityFileImporter implements FileImporter {
     // index is the per-file parse order, so the stable id stays deterministic
     // across re-imports even when entries share an action, target, and second.
     let index = 0;
+    // How many body cells this file actually offered the parser — the floor
+    // `reconciled` checks every produced/dropped entry against.
+    let total = 0;
     BODY_CELL_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = BODY_CELL_RE.exec(raw)) !== null) {
+      total++;
       const cellHtml = m[1];
       // The empty text-right body cell appears once per activity; skip it.
       if (!cellHtml.trim()) {
+        params.pipeline.drop?.('empty_after_parse');
+
         continue;
       }
 
       this.pushEntry(cellHtml, product, index++, params);
     }
+
+    params.pipeline.consumed?.(total);
   }
 
   private pushEntry(cellHtml: string, product: string, index: number, params: ImportParams): void {
@@ -189,6 +199,8 @@ export class GoogleMyActivityFileImporter implements FileImporter {
     const tsMatch = decoded.match(TIMESTAMP_RE);
     const ts = parseGoogleDate(tsMatch?.[1]);
     if (!timeframeContains(params.timeframe, ts)) {
+      params.pipeline.drop?.('outside_timeframe');
+
       return;
     }
 
