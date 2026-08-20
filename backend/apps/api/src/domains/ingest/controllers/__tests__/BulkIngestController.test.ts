@@ -7,7 +7,15 @@ import type { DataSource } from 'typeorm';
 import type { RequestContext } from '@ci/common/context';
 import { ValidationPipe } from '@ci/common/pipes';
 import type { BrowserActivityService } from '@ci/domains/browser-activity';
-import type { CommunicationService, ContentService, EventService, ItemService } from '@ci/domains/memory';
+import type {
+  CommunicationService,
+  ContentService,
+  EventService,
+  ItemService,
+  ObjectObservationService,
+  ProductModelService,
+  ReceiptService,
+} from '@ci/domains/memory';
 import type { NoteService } from '@ci/domains/notes';
 import type { PositionService } from '@ci/domains/position';
 
@@ -109,6 +117,44 @@ function makeController(opts: { captureInserted?: boolean[]; noteConflicts?: str
     })),
   } as unknown as NoteService;
 
+  // The object plane. Receipts echo their triple so the materialize->link step
+  // has something to stamp; observations report a write RESULT rather than an
+  // array, which is the one shape difference among the bulk services.
+  const receiptService = {
+    createMany: jest.fn(async (_context: unknown, data: Array<Record<string, unknown>>) =>
+      data.map((dto, i) => ({
+        id: `receipt-${i}`,
+        sourceType: dto.sourceType,
+        sourceSystem: dto.sourceSystem,
+        sourceId: dto.sourceId,
+      })),
+    ),
+    replaceLineItems: jest.fn(async () => []),
+  } as unknown as ReceiptService;
+  const productModelService = {
+    createMany: jest.fn(async (_context: unknown, data: Array<Record<string, unknown>>) =>
+      data.map((dto, i) => ({
+        id: `product-${i}`,
+        sourceType: dto.sourceType,
+        sourceSystem: dto.sourceSystem,
+        sourceId: dto.sourceId,
+      })),
+    ),
+  } as unknown as ProductModelService;
+  const objectObservationService = {
+    createMany: jest.fn(async (_context: unknown, data: Array<Record<string, unknown>>) => ({
+      written: data.map((dto, i) => ({
+        id: `observation-${i}`,
+        sourceType: dto.sourceType,
+        sourceSystem: dto.sourceSystem,
+        sourceId: dto.sourceId,
+      })),
+      protectedByConfirmation: 0,
+      duplicatesInBatch: 0,
+      rejectedUnarbitered: 0,
+    })),
+  } as unknown as ObjectObservationService;
+
   const controller = new BulkIngestController(
     communicationService,
     contentService,
@@ -117,6 +163,9 @@ function makeController(opts: { captureInserted?: boolean[]; noteConflicts?: str
     positionService,
     eventService,
     noteService,
+    receiptService,
+    productModelService,
+    objectObservationService,
     dataSource,
     { schedule: jest.fn(async () => undefined) } as never,
   );
@@ -130,6 +179,9 @@ function makeController(opts: { captureInserted?: boolean[]; noteConflicts?: str
     positionService,
     eventService,
     noteService,
+    receiptService,
+    productModelService,
+    objectObservationService,
     dataSource,
   };
 }

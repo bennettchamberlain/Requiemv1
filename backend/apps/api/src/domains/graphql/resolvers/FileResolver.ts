@@ -107,7 +107,7 @@ export class FileResolver {
     return preview ? preview.url : null;
   }
 
-  @ResolveField(() => ItemConnection, { nullable: true })
+  @ResolveField(() => ItemConnection, { nullable: true, complexity: 5 })
   async items(
     @Context() context: RequestContext,
     @Parent() parent: FileType,

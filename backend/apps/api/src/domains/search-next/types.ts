@@ -16,6 +16,12 @@ export const INDEXABLE_ENTITIES = [
   'person',
   'place',
   'position',
+  // Catalog models (ci.product_models) and purchase evidence (ci.receipts).
+  // Indexed as first-class types so "my Bose QC45" finds the model even when no
+  // owned unit carries the brand words, and "the Home Depot receipt from March"
+  // finds the evidence rather than only the things minted off it.
+  'product',
+  'receipt',
   'thread',
 ] as const;
 
@@ -33,6 +39,8 @@ export const TAGGABLE_ENTITIES = [
   'note',
   'person',
   'place',
+  'product',
+  'receipt',
   'thread',
 ] as const;
 

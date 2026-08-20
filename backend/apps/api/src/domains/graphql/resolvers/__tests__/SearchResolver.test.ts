@@ -69,6 +69,14 @@ function makeResolver() {
     getEntitiesForFileChunks: jest.fn().mockResolvedValue([]),
     countEntitiesForFileChunks: jest.fn().mockResolvedValue(0),
   };
+  const productModelService = {
+    getEntitiesForProducts: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForProducts: jest.fn().mockResolvedValue(0),
+  };
+  const receiptService = {
+    getEntitiesForReceipts: jest.fn().mockResolvedValue([] as Identifier[]),
+    countEntitiesForReceipts: jest.fn().mockResolvedValue(0),
+  };
   const resolver = new SearchResolver(
     browserActivityService as never,
     communicationService as never,
@@ -82,6 +90,8 @@ function makeResolver() {
     noteService as never,
     personService as never,
     placeService as never,
+    productModelService as never,
+    receiptService as never,
     answerService as never,
     savedSearchService as never,
     searchService as never,
@@ -109,6 +119,8 @@ function makeResolver() {
     placeService,
     conceptService,
     itemService,
+    productModelService,
+    receiptService,
   };
 }
 
@@ -386,5 +398,94 @@ describe('SearchResolver.search — undated types stay out of the unfiltered bro
     await resolver.search(ctx, {} as SearchInput);
 
     expect(fileService.getEntitiesForFiles).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * B1. "Products" and "Receipts" are members of the search union and entries in
+ * the What picker, but the timed browse's type fan-out never had a branch for
+ * either — so selecting one with no query ran a merge that asked no service
+ * anything and returned an empty page with totalCount 0, permanently. A filter
+ * that can never return anything is worse than no filter; these pin both halves
+ * of the fix (the fetch AND the count) and the gate that keeps them off the
+ * unfiltered chronology.
+ */
+describe('SearchResolver.search — products and receipts are browsable (B1)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('fetches AND counts products when the caller names the type', async () => {
+    const { resolver, productModelService, entityResolutionService } = makeResolver();
+    productModelService.getEntitiesForProducts.mockResolvedValue([{ type: 'product', id: 'pr1' }]);
+    productModelService.countEntitiesForProducts.mockResolvedValue(3);
+    entityResolutionService.resolve.mockResolvedValue(
+      resolveMap([{ type: 'product', id: 'pr1', entity: { createdAt: new Date('2026-02-01') } }]),
+    );
+
+    const result = await resolver.search(ctx, { includeTypes: ['product'] } as SearchInput);
+
+    expect(productModelService.getEntitiesForProducts).toHaveBeenCalledTimes(1);
+    expect(nodeIds(result)).toEqual(['product:pr1']);
+    // The denominator the footer renders has to come from the same predicate as
+    // the page, not from the page's length.
+    expect(result.totalCount).toBe(3);
+  });
+
+  it('fetches AND counts receipts when the caller names the type', async () => {
+    const { resolver, receiptService, entityResolutionService } = makeResolver();
+    receiptService.getEntitiesForReceipts.mockResolvedValue([{ type: 'receipt', id: 'rc1' }]);
+    receiptService.countEntitiesForReceipts.mockResolvedValue(2);
+    entityResolutionService.resolve.mockResolvedValue(
+      resolveMap([{ type: 'receipt', id: 'rc1', entity: { purchasedAt: new Date('2026-03-04') } }]),
+    );
+
+    const result = await resolver.search(ctx, { includeTypes: ['receipt'] } as SearchInput);
+
+    expect(receiptService.getEntitiesForReceipts).toHaveBeenCalledTimes(1);
+    expect(nodeIds(result)).toEqual(['receipt:rc1']);
+    expect(result.totalCount).toBe(2);
+  });
+
+  // A catalog model has no domain time and a receipt's is nullable; both would
+  // otherwise land at import time ahead of the whole timeline. Same gate as
+  // person / place / concept / item.
+  it('keeps both out of a browse with no filters', async () => {
+    const { resolver, productModelService, receiptService } = makeResolver();
+
+    await resolver.search(ctx, {} as SearchInput);
+
+    expect(productModelService.getEntitiesForProducts).not.toHaveBeenCalled();
+    expect(productModelService.countEntitiesForProducts).not.toHaveBeenCalled();
+    expect(receiptService.getEntitiesForReceipts).not.toHaveBeenCalled();
+    expect(receiptService.countEntitiesForReceipts).not.toHaveBeenCalled();
+  });
+
+  // The SQL orders receipts by COALESCE(purchased_at, created_at); the in-memory
+  // sort — which also mints the cursor — has to read the same thing, or a page
+  // boundary lands somewhere the next query does not resume from.
+  it('orders receipts by their purchase date, falling back to the row time', async () => {
+    const { resolver, receiptService, entityResolutionService } = makeResolver();
+    receiptService.getEntitiesForReceipts.mockResolvedValue([
+      { type: 'receipt', id: 'old-purchase' },
+      { type: 'receipt', id: 'undated' },
+    ]);
+    entityResolutionService.resolve.mockResolvedValue(
+      resolveMap([
+        {
+          type: 'receipt',
+          id: 'old-purchase',
+          // Bought long ago, imported today: the purchase date is the truth.
+          entity: { purchasedAt: new Date('2020-01-01'), createdAt: new Date('2026-08-19') },
+        },
+        {
+          type: 'receipt',
+          id: 'undated',
+          entity: { purchasedAt: null, createdAt: new Date('2026-08-18') },
+        },
+      ]),
+    );
+
+    const result = await resolver.search(ctx, { includeTypes: ['receipt'] } as SearchInput);
+
+    expect(nodeIds(result)).toEqual(['receipt:undated', 'receipt:old-purchase']);
   });
 });

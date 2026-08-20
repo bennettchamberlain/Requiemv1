@@ -118,13 +118,15 @@ describe('PIPELINE_COVERED_STAGES', () => {
 
   it('covers every backfillable type except the declared exceptions', () => {
     // `position` arrived with the GPS→places indexing and has no pipeline
-    // stage yet — the old backfill path still owns it. `concept` has no
-    // pipeline stage AT ALL (no INDEX_EMBED_CONCEPT in STAGE_IDS) — building
-    // one is the deliberate, larger follow-up; omitting it here just means the
-    // sweep does not double-check against ci.pipeline_state for concept, the
-    // same safe fallback `missingIds` already uses for position. Anything ELSE
-    // missing from the map is a regression: the pipeline is the indexing path.
-    const uncovered = ['position', 'concept'];
+    // stage yet — the old backfill path still owns it. `product` and `receipt`
+    // arrived the same way with the object tables: their listeners exist, their
+    // pipeline `index.embed_*` stages do not. `concept` has no pipeline stage AT
+    // ALL (no INDEX_EMBED_CONCEPT in STAGE_IDS) — building one is the deliberate,
+    // larger follow-up; omitting it here just means the sweep does not
+    // double-check against ci.pipeline_state for concept, the same safe fallback
+    // `missingIds` already uses for the others. Anything ELSE missing from the
+    // map is a regression: the pipeline is the indexing path.
+    const uncovered = ['position', 'product', 'receipt', 'concept'];
 
     expect(Object.keys(PIPELINE_COVERED_STAGES).sort()).toEqual(
       BACKFILLABLE_ENTITIES.filter((type) => !uncovered.includes(type)).sort(),
@@ -159,6 +161,8 @@ describe('SearchIndexBackfillService', () => {
         person: 1,
         concept: 1,
         position: 0,
+        product: 0,
+        receipt: 0,
       },
       // No embeddings configured for this DS → drain count is 0 for every type.
       embedded: 0,
@@ -172,6 +176,8 @@ describe('SearchIndexBackfillService', () => {
         person: 0,
         concept: 0,
         position: 0,
+        product: 0,
+        receipt: 0,
       },
     });
 

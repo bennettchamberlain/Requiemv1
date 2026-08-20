@@ -192,6 +192,9 @@ const EMBEDDABLE_SEARCH_TYPES = new Set<string>([
   'person',
   'place',
   'position',
+  // Catalog models (ci.product_models) and purchase evidence (ci.receipts).
+  'product',
+  'receipt',
   'thread',
 ]);
 
@@ -211,6 +214,12 @@ const GRAPH_TYPE_ALIASES: Record<string, string> = {
   Object: 'item',
   Thing: 'item',
   Item: 'item',
+  // The graph mirror of a catalog model (ci.entities, entity_type 'Product',
+  // pointed at by ci.product_models.product_entity_id). It maps to 'product',
+  // NOT to 'item': a model is what a thing IS, an item is a thing the user
+  // OWNS, and collapsing the two would file every catalog row into the
+  // inventory's slice of the embedding space.
+  Product: 'product',
   Event: 'event',
   Content: 'content',
   File: 'file',

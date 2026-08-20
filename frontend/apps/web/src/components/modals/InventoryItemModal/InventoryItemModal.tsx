@@ -1,9 +1,10 @@
 import { type ReactNode, useEffect, useState } from 'react';
 
-import { useMutation, type Reference, isReference } from '@apollo/client';
+import { useMutation } from '@apollo/client';
 import { Button, Dialog, Input, Label, Select, Textarea, cn } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
+import { resolveMediaUrl } from '@/components/entities/resolveMediaUrl';
 import { gql } from '@/graphql';
 import type { ItemAcquisitionMethod, ItemCondition, ItemUnitSystem } from '@/graphql/graphql';
 import {
@@ -16,7 +17,6 @@ import {
   volumeFromMl,
   volumeToMl,
 } from '@/lib/measurements';
-import { GET_ITEM } from '@/pages/ItemPage/ItemPage';
 
 export interface InventoryItem {
   id: string;
@@ -54,6 +54,18 @@ interface Props {
   item: InventoryItem | null;
   create: boolean;
   detailPagePath?: string;
+  /**
+   * Re-read whatever list or page opened this modal, after a successful write.
+   *
+   * This replaces the `cache.modify` / `writeFragment` block the modal used to
+   * run. That block hand-built an ItemType reference from a hardcoded field
+   * list and spliced it into every `items` field in the cache — so it silently
+   * wrote a partial object into pages that select more (the Things browse reads
+   * identifiers, product and lastSeenAt), and it patched `edges` without
+   * touching `totalCount`. Refetching is what PeoplePage does, and it cannot
+   * drift from the queries it is refreshing.
+   */
+  onSaved?: () => Promise<unknown> | void;
 }
 
 /**
@@ -340,7 +352,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function InventoryItemModal({ open, onClose, item, create = false, detailPagePath }: Props) {
+export function InventoryItemModal({ open, onClose, item, create = false, detailPagePath, onSaved }: Props) {
   const [formData, setFormData] = useState<ItemForm>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
 
@@ -412,6 +424,11 @@ export function InventoryItemModal({ open, onClose, item, create = false, detail
         });
       }
 
+      // Refresh whatever opened the modal BEFORE closing it, so the list the
+      // user returns to already shows the write. See the `onSaved` doc-comment
+      // for why this is not cache surgery.
+      await onSaved?.();
+
       setFormData(EMPTY_FORM);
       onClose();
     } catch (submitError) {
@@ -422,105 +439,10 @@ export function InventoryItemModal({ open, onClose, item, create = false, detail
     }
   };
 
-  const [createItem] = useMutation(CREATE_INVENTORY_ITEM, {
-    update(cache, { data }) {
-      if (data?.createItem && data.createItem.success && data.createItem.item) {
-        cache.writeQuery({
-          query: GET_ITEM,
-          variables: {
-            id: data.createItem.item.id,
-          },
-          data: {
-            item: data.createItem.item,
-          },
-        });
+  const [createItem] = useMutation(CREATE_INVENTORY_ITEM);
+  const [updateItem] = useMutation(UPDATE_INVENTORY_ITEM);
 
-        cache.modify({
-          fields: {
-            items(existingItems = { edges: [] }) {
-              const newItemRef = cache.writeFragment({
-                data: data.createItem.item,
-                fragment: gql(`
-                  fragment NewItem on ItemType {
-                    id
-                    name
-                    category
-                    description
-                    brand
-                    model
-                    currentValue
-                    condition
-                    quantity
-                    acquiredAt
-                    lengthMm
-                    widthMm
-                    heightMm
-                    massG
-                    volumeMl
-                    unitSystem
-                    colors
-                    colorHex
-                    materials
-                    composition
-                  }
-                `),
-              });
-
-              return {
-                ...existingItems,
-                edges: [{ node: newItemRef }, ...existingItems.edges],
-              };
-            },
-          },
-        });
-      }
-    },
-  });
-
-  const [updateItem] = useMutation(UPDATE_INVENTORY_ITEM, {
-    update(cache, { data }) {
-      const updatedItemId = data?.updateItem?.item?.id;
-
-      if (updatedItemId) {
-        cache.modify({
-          fields: {
-            items(
-              existingItems:
-                | {
-                    edges: { node: Reference }[];
-                  }
-                | Reference = { edges: [] },
-              { readField },
-            ) {
-              if (isReference(existingItems)) {
-                return existingItems;
-              }
-
-              return {
-                ...existingItems,
-                edges: existingItems.edges.map((edge) => {
-                  const edgeNodeId = readField('id', edge.node);
-
-                  if (!data?.updateItem?.item) {
-                    return edge;
-                  }
-
-                  return edgeNodeId !== updatedItemId
-                    ? edge
-                    : {
-                        ...edge,
-                        ...data.updateItem.item,
-                      };
-                }),
-              };
-            },
-          },
-        });
-      }
-    },
-  });
-
-  const imageUrl = item?.file?.sourceUrl ? `/static${item.file.sourceUrl}` : null;
+  const imageUrl = resolveMediaUrl(item?.file?.sourceUrl) ?? null;
   const showDetailLink = !create && Boolean(detailPagePath);
 
   return (

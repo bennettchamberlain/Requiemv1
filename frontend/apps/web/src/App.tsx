@@ -5,8 +5,9 @@ import {
   DeviceLayoutProvider,
   LoadingPage,
   OutboxQueueProvider,
-  getApiBaseUrl,
+  isIosPlatform,
   isNativePlatform,
+  needsNativeCloudConnect,
 } from '@ci/common';
 import {
   BrowserRouter as Router,
@@ -50,7 +51,9 @@ const ForecastPage = lazy(() => import('@/pages/ForecastPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
-const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
+const ThingsPage = lazy(() => import('@/pages/ThingsPage'));
+const ReceiptsPage = lazy(() => import('@/pages/ReceiptsPage'));
+const ReceiptPage = lazy(() => import('@/pages/ReceiptPage'));
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'));
 const NotePage = lazy(() => import('@/pages/NotePage'));
 const NotesPage = lazy(() => import('@/pages/NotesPage'));
@@ -154,13 +157,13 @@ function AppRoutes() {
   // the user has enabled it in Settings -> Location. Inert when disabled.
   useLocationTracking();
 
-  // On the native app the API origin must be configured before anything else can
-  // load. Route to `/device-connect` (Portal picker). `/server` is Advanced URL
-  // entry. `/connect` is Sources and must not be used here.
+  // Native pairing: `/device-connect` is Portal cloud-connect; `/server` is the
+  // Advanced URL fallback. iOS always uses cloud-connect (a leftover docker/LAN
+  // origin does not skip it). `/connect` is Sources and must not be used here.
   useEffect(() => {
     const pairing = location.pathname === '/device-connect' || location.pathname === '/server';
 
-    if (isNativePlatform() && !getApiBaseUrl() && !pairing) {
+    if (needsNativeCloudConnect() && !pairing) {
       navigate('/device-connect', { replace: true });
     }
   }, [location.pathname, navigate]);
@@ -172,7 +175,9 @@ function AppRoutes() {
           path="/"
           element={
             <RedirectKnownUser>
-              <SplashPage />
+              {/* Native: Safari / cold start always reopens `/`. The marketing
+                  splash is web-only; the phone's first screen is cloud-connect. */}
+              {isNativePlatform() ? <Navigate to="/device-connect" replace /> : <SplashPage />}
             </RedirectKnownUser>
           }
         />
@@ -202,9 +207,15 @@ function AppRoutes() {
           <Route
             path="/login"
             element={
-              <RedirectKnownUser>
-                <LoginPage />
-              </RedirectKnownUser>
+              // iOS always cloud-connects. Safari restores the last SPA path
+              // (`/login` from an earlier hop), which dropped Portal PKCE.
+              isIosPlatform() ? (
+                <Navigate to="/device-connect" replace />
+              ) : (
+                <RedirectKnownUser>
+                  <LoginPage />
+                </RedirectKnownUser>
+              )
             }
           />
 
@@ -290,19 +301,40 @@ function AppRoutes() {
             }
           />
 
-          {isFeatureEnabled('enable.inventory.page') && (
-            <>
-              <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
-              <Route
-                path="/memory/things"
-                element={
-                  <ProtectedRoute>
-                    <InventoryPage />
-                  </ProtectedRoute>
-                }
-              />
-            </>
-          )}
+          {/* Ungated, like /memory/people and /memory/places. `enable.inventory.page`
+              ships `true` in the API's own default.json and nothing in the repo turns
+              it off, so it never gated anything in practice — but it DID make the
+              route 404 for the moment before the global flag fetch settles, and it
+              cannot cover the sibling Receipts surface (which has no flag of its
+              own). Half a gate over one coherent surface is worse than none. */}
+          <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
+          <Route
+            path="/memory/things"
+            element={
+              <ProtectedRoute>
+                <ThingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/receipts" element={<Navigate to="/memory/receipts" replace />} />
+          <Route
+            path="/memory/receipts"
+            element={
+              <ProtectedRoute>
+                <ReceiptsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/receipts/:id"
+            element={
+              <ProtectedRoute>
+                <ReceiptPage />
+              </ProtectedRoute>
+            }
+          />
 
           {isFeatureEnabled('files.page') && (
             <>

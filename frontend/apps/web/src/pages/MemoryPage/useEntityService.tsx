@@ -72,6 +72,8 @@ const SEARCH_QUERY = gql(`
           ...ItemGridItemData
           ...PersonGridItemData
           ...PlaceGridItemData
+          ...ProductGridItemData
+          ...ReceiptGridItemData
           ...ThreadGridItemData
 
           ...TableAnswerRowData
@@ -85,6 +87,8 @@ const SEARCH_QUERY = gql(`
           ...TableNoteRowData
           ...TablePersonRowData
           ...TablePlaceRowData
+          ...TableProductRowData
+          ...TableReceiptRowData
           ...TableThreadRowData
           ...TableBrowserActivityRowData
 

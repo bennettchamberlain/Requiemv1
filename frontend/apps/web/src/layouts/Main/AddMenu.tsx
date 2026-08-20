@@ -1,3 +1,4 @@
+import { useApolloClient } from '@apollo/client';
 import { DropdownMenu, IconButton, Tooltip, useToast } from '@ci/shadcn';
 import {
   NotebookPen,
@@ -11,6 +12,7 @@ import {
   Package,
   CalendarPlus,
   MapPin,
+  ScanBarcode,
 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +22,7 @@ import { AddEventModal, AddPersonModal, AddPlaceModal } from '@/components/modal
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
+import { ScanBarcodeModal } from '@/components/modals/ScanBarcodeModal';
 import { UploadModal } from '@/components/modals/UploadModal';
 import { useModalControls } from '@/hooks';
 
@@ -32,6 +35,7 @@ export function AddMenu() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [, { trigger }] = useTriggerHbpe();
+  const client = useApolloClient();
 
   const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
     useModalControls();
@@ -46,6 +50,7 @@ export function AddMenu() {
     useModalControls();
   const [{ isOpen: isAddPlaceModalOpen }, { open: openAddPlaceModal, close: closeAddPlaceModal }] =
     useModalControls();
+  const [{ isOpen: isScanModalOpen }, { open: openScanModal, close: closeScanModal }] = useModalControls();
 
   const [, { upload, reset: resetUploader }] = useUploadFile();
 
@@ -119,7 +124,7 @@ export function AddMenu() {
 
                 <Tooltip delayDuration={600}>
                   <Tooltip.Content side="top" className="pointer-events-none">
-                    {t('NAV_ADD_ITEM')}
+                    {t('NAV_ADD_THING')}
                   </Tooltip.Content>
                   <Tooltip.Trigger asChild>
                     <DropdownMenu.Item
@@ -127,7 +132,7 @@ export function AddMenu() {
                       className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
                     >
                       <Package className="h-6! w-6!" strokeWidth={1.25} />
-                      <span className="text-xs text-center">Item</span>
+                      <span className="text-xs text-center">Thing</span>
                     </DropdownMenu.Item>
                   </Tooltip.Trigger>
                 </Tooltip>
@@ -191,6 +196,21 @@ export function AddMenu() {
                       >
                         <Camera className="h-6! w-6!" strokeWidth={1.25} />
                         <span className="text-xs text-center">Capture</span>
+                      </DropdownMenu.Item>
+                    </Tooltip.Trigger>
+                  </Tooltip>
+
+                  <Tooltip delayDuration={600}>
+                    <Tooltip.Content side="bottom" className="pointer-events-none">
+                      {t('NAV_ACTION_SCAN')}
+                    </Tooltip.Content>
+                    <Tooltip.Trigger asChild>
+                      <DropdownMenu.Item
+                        onSelect={openScanModal}
+                        className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"
+                      >
+                        <ScanBarcode className="h-6! w-6!" strokeWidth={1.25} />
+                        <span className="text-xs text-center">Scan</span>
                       </DropdownMenu.Item>
                     </Tooltip.Trigger>
                   </Tooltip>
@@ -270,7 +290,29 @@ export function AddMenu() {
 
       <AddConceptModal open={isAddConceptModalOpen} onClose={closeAddConceptModal} />
 
-      <InventoryItemModal open={isItemModalOpen} onClose={closeItemModal} item={null} create={true} />
+      {/* Unlike the modals above, this one MUST refresh: a thing created here
+          used to be spliced into every cached `items` field by the modal's own
+          `cache.modify`, and without a replacement it stays invisible until a
+          manual reload — on the Things browse the user was just looking at.
+          Evicting the root `items` field rather than naming the queries keeps
+          the nav from having to know which pages list things; `refetchQueries`
+          re-runs exactly the active ones the eviction touched. */}
+      <InventoryItemModal
+        open={isItemModalOpen}
+        onClose={closeItemModal}
+        item={null}
+        create={true}
+        onSaved={() =>
+          client.refetchQueries({
+            updateCache: (cache) => {
+              cache.evict({ id: 'ROOT_QUERY', fieldName: 'items' });
+              cache.gc();
+            },
+          })
+        }
+      />
+
+      <ScanBarcodeModal open={isScanModalOpen} onClose={closeScanModal} />
     </>
   );
 }

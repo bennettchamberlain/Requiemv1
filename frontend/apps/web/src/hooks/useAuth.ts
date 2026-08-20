@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   addAppUrlOpenListener,
-  buildApiUrl,
   createHookContext,
   fetchJson,
   FetchJsonError,
   getLaunchUrl,
   isIosPlatform,
   isNativePlatform,
+  claimNativeOidcCode,
   parseOidcCallbackUrl,
   secureStorageGet,
   secureStorageRemove,
@@ -71,24 +71,26 @@ async function primeCsrfCookie(): Promise<boolean> {
   // uncredentialed, or it becomes a credentialed cross-origin call and requires an
   // Access-Control-Allow-Credentials the appliance/proxy may not send. Doing this
   // here rather than at each call site means login, logout and refresh all inherit it.
+  //
+  // Go through fetchJson (CapacitorHttp on native). WKWebView `fetch` against the
+  // Memory origin is CORS-bound and fails silently here, leaving login with no
+  // header → "Missing CSRF token".
   const native = isNativePlatform();
 
   try {
-    const res = await fetch(buildApiUrl('/api/authenticate/csrf'), {
+    const body = await fetchJson<{ csrfToken?: string }>('/api/authenticate/csrf', {
+      method: 'GET',
       credentials: native ? 'omit' : 'include',
+      skipApiKey: true,
     });
 
     if (native) {
-      const body = (await res.json().catch(() => null)) as { csrfToken?: string } | null;
       nativeCsrfToken = body?.csrfToken ?? null;
+
+      return Boolean(nativeCsrfToken);
     }
 
-    // The status matters: on a non-2xx the cookie was NOT (re)issued, so the
-    // caller must not treat a retry as meaningfully different from the attempt
-    // that just failed. Swallow the error rather than propagating — a priming
-    // blip should not by itself log out a user whose session is still valid;
-    // let the refresh attempt below decide that.
-    return res.ok;
+    return true;
   } catch {
     return false;
   }
@@ -212,6 +214,7 @@ interface CreateApiKeyResponse {
 async function mintAndStoreApiKey(jwt: string): Promise<string | null> {
   const created = await fetchJson<CreateApiKeyResponse>('/api/keys', {
     method: 'POST',
+    skipApiKey: true,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${jwt}`,
@@ -287,6 +290,11 @@ type ReturnValue = [
     login: (username: string, password: string) => Promise<void>;
     logout: () => void;
     signup: (name: string, email: string, password: string, signup_code?: string) => Promise<void>;
+    /**
+     * After Portal cloud-connect: trade a portal OIDC bearer for a Memory API
+     * key so the phone does not do a second Safari/login hop.
+     */
+    completePortalMemoryConnect: (portalBearer: string) => Promise<boolean>;
   },
 ];
 
@@ -351,6 +359,18 @@ function useAuth(): ReturnValue {
     },
     [navigate, location.state],
   );
+
+  const completePortalMemoryConnect = useCallback(async (portalBearer: string): Promise<boolean> => {
+    const key = await mintAndStoreApiKey(portalBearer);
+
+    if (!key) {
+      throw new Error('Memory Server did not return an API key.');
+    }
+
+    setNativeApiKey(key);
+
+    return true;
+  }, []);
 
   const logout = useCallback(async () => {
     await disconnectAndClearPowerSync();
@@ -501,7 +521,7 @@ function useAuth(): ReturnValue {
         return;
       }
 
-      if (seenCodes.has(params.code)) {
+      if (seenCodes.has(params.code) || !claimNativeOidcCode(params.code)) {
         return;
       }
 
@@ -592,6 +612,12 @@ function useAuth(): ReturnValue {
   const pathname = location.pathname;
 
   useEffect(() => {
+    // Native cold-start from Safari lands on `/` then hops to `/login`. Do not
+    // drop an OIDC error that was raised on the first path of that hop.
+    if (pathname === '/login') {
+      return;
+    }
+
     setLoginError(null);
   }, [pathname]);
 
@@ -611,6 +637,7 @@ function useAuth(): ReturnValue {
       login,
       logout,
       signup,
+      completePortalMemoryConnect,
     },
   ];
 }

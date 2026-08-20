@@ -1,45 +1,6 @@
 [
   {
     "type": "cycle",
-    "from": "src/domains/graphql/types/FileType.ts",
-    "to": "src/domains/graphql/types/ItemConnection.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-circular"
-    },
-    "cycle": [
-      {
-        "name": "src/domains/graphql/types/ItemConnection.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/graphql/types/ItemEdge.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/graphql/types/ItemType.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      },
-      {
-        "name": "src/domains/graphql/types/FileType.ts",
-        "dependencyTypes": [
-          "local",
-          "import"
-        ]
-      }
-    ]
-  },
-  {
-    "type": "cycle",
     "from": "src/domains/search-next/entities/EntityTagEntity.ts",
     "to": "src/domains/search-next/entities/TagEntity.ts",
     "rule": {
@@ -76,6 +37,87 @@
     "type": "dependency",
     "from": "src/domains/import/push/__tests__/imessageShortCodeMigration.test.ts",
     "to": "src/domains/pipeline/stages/index/entityEmbedStages.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/index.ts",
+    "to": "src/domains/graph/entities/ObjectIdentifierEntity.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/index.ts",
+    "to": "src/domains/graph/services/ObjectIdentifierService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/ObjectMergeService.ts",
+    "to": "src/domains/graph/services/ObjectIdentifierService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/ObjectResolutionService.ts",
+    "to": "src/domains/graph/services/ObjectIdentifierService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/ObjectResolutionService.ts",
+    "to": "src/domains/graph/utils/normalizeObjectIdentifier.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/ProductModelService.ts",
+    "to": "src/domains/graph/services/ObjectIdentifierService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/ProductModelService.ts",
+    "to": "src/domains/graph/utils/normalizeObjectIdentifier.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/ReceiptService.ts",
+    "to": "src/domains/graph/services/ObjectIdentifierService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/ReceiptService.ts",
+    "to": "src/domains/graph/utils/normalizeObjectIdentifier.ts",
     "rule": {
       "severity": "error",
       "name": "no-cross-domain-internals"

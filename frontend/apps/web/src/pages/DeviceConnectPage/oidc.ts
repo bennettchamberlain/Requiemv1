@@ -98,6 +98,10 @@ function persistPendingOidc(pending: PendingOidc): void {
   }
 }
 
+export function hasPendingPortalOidc(): boolean {
+  return readPendingOidc() != null;
+}
+
 function readPendingOidc(): PendingOidc | null {
   try {
     const raw = sessionStorage.getItem(OIDC_PENDING_KEY) ?? localStorage.getItem(OIDC_PENDING_KEY);

@@ -3,7 +3,9 @@ import {
   getApiBaseUrl,
   initApiBaseUrl,
   isIosPlatform,
+  isLocalApplianceOrigin,
   isNativePlatform,
+  needsNativeCloudConnect,
   persistApiBaseUrl,
   setApiBaseUrl,
 } from '@ci/common/src/utils/apiBase';
@@ -142,5 +144,40 @@ describe('apiBase — native detection + persistence', () => {
 
     expect(getApiBaseUrl()).toBe('https://new.example.com');
     expect(store.get('ci.apiBaseUrl')).toBe('https://new.example.com');
+  });
+
+  it('isLocalApplianceOrigin() flags docker / LAN leftovers, not a Hub Memory URL', () => {
+    expect(isLocalApplianceOrigin('')).toBe(true);
+    expect(isLocalApplianceOrigin('http://localhost:64669')).toBe(true);
+    expect(isLocalApplianceOrigin('https://ci-server.localhost')).toBe(true);
+    expect(isLocalApplianceOrigin('http://memory.local')).toBe(true);
+    expect(isLocalApplianceOrigin('https://memory.example.com')).toBe(false);
+  });
+
+  it('needsNativeCloudConnect() is always on for iOS until a non-local Memory origin is set', () => {
+    installFakeWindow({ native: true, platform: 'ios' });
+    setApiBaseUrl('');
+    expect(needsNativeCloudConnect()).toBe(true);
+
+    setApiBaseUrl('https://ci-server.localhost');
+    expect(needsNativeCloudConnect()).toBe(true);
+
+    setApiBaseUrl('https://memory.example.com');
+    expect(needsNativeCloudConnect()).toBe(false);
+  });
+
+  it('needsNativeCloudConnect() on Android only fires when no origin is set', () => {
+    installFakeWindow({ native: true, platform: 'android' });
+    setApiBaseUrl('');
+    expect(needsNativeCloudConnect()).toBe(true);
+
+    setApiBaseUrl('http://localhost:64669');
+    expect(needsNativeCloudConnect()).toBe(false);
+  });
+
+  it('needsNativeCloudConnect() is false on web', () => {
+    delete (globalThis as unknown as { window?: unknown }).window;
+    setApiBaseUrl('');
+    expect(needsNativeCloudConnect()).toBe(false);
   });
 });
