@@ -1,7 +1,7 @@
 import { lazy } from 'react';
 
 import { usePageTitle } from '@ci/common';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 
 import { ResponsiveLoader } from '@/components/ResponsiveLoader';
 
@@ -11,6 +11,25 @@ import { parseBbox } from './bbox';
 
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
 const MobilePage = lazy(() => import('./MobileMemoryPage'));
+
+/**
+ * What a BARE `/memory/events` means: the list view, events only.
+ *
+ * Without a type filter the explorer returns every entity kind, and the
+ * newest-first list led with whatever imported last — including undated
+ * Content rows, which aren't memories of anything happening. The default is
+ * expressed as an ordinary URL rather than hidden query plumbing, so the
+ * toolbar shows the Event filter as an applied, removable chip and widening
+ * the view is the same gesture as any other filter change.
+ *
+ * ONLY the fully-bare URL gets it. A deep link that carries any param keeps
+ * its exact meaning: `?search=` (the global search box) and `?tags=` must
+ * search everything, `?view=graph` (`/memory/knowledge`) already narrows
+ * nothing — forcing Event onto those would silently shrink their results.
+ * In-page filter changes never re-trigger it either, because the toolbar
+ * always keeps `view` while clearing filters.
+ */
+export const DEFAULT_MEMORY_EVENTS_SEARCH = 'view=list&includedEntityTypes=Event';
 
 /**
  * The explorer's query comes from the URL and nothing else. Every view — List,
@@ -30,6 +49,11 @@ const MobilePage = lazy(() => import('./MobileMemoryPage'));
 export function MemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
   const [searchParams] = useSearchParams();
+
+  // Before the provider mounts, so the unfiltered everything-query never fires.
+  if ([...searchParams.keys()].length === 0) {
+    return <Navigate to={{ search: DEFAULT_MEMORY_EVENTS_SEARCH }} replace />;
+  }
 
   return (
     <EntityServiceProvider

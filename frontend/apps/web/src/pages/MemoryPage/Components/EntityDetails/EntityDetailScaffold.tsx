@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { GlobalUID } from '@ci/common';
 import { Button, Card, IconButton, Label, Sheet, cn, useToast } from '@ci/shadcn';
@@ -145,36 +145,98 @@ export function resolveStaticUrl(value?: string | null): string | undefined {
 }
 
 /**
+ * Show the low-res preview only until the full-size bytes are here.
+ *
+ * The detail pane used to render the PREVIEW variant outright — a 300px grid
+ * thumbnail upscaled to a ~576px sheet, visibly soft on a 4K screen — while
+ * the original (which can be a 35MB, 200-megapixel camera file) was one click
+ * away. Progressive instead: the preview paints instantly, the original loads
+ * off-DOM, and the swap happens only on its onload — so the pane is never
+ * blank and never permanently blurry. Falls back to whichever URL exists when
+ * the other is missing.
+ */
+function useProgressiveSrc(src?: string | null, previewSrc?: string | null): string | null | undefined {
+  const progressive = Boolean(src && previewSrc && src !== previewSrc);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!progressive || !src) {
+      return undefined;
+    }
+
+    setLoadedSrc(null);
+    const probe = new Image();
+
+    probe.onload = () => setLoadedSrc(src);
+    probe.src = src;
+
+    // The entity changed under the open sheet: a stale probe must not swap the
+    // NEW preview for the OLD original.
+    return () => {
+      probe.onload = null;
+    };
+  }, [progressive, src]);
+
+  if (!progressive) {
+    return src ?? previewSrc;
+  }
+
+  return loadedSrc === src ? src : previewSrc;
+}
+
+/**
  * Render image/video media for a media-bearing entity. `src` should already be
  * resolved to a loadable URL (callers add the `/static` prefix where needed).
  * Falls back to treating an unknown content type as an image.
+ *
+ * For images, pass `previewSrc` alongside the full-size `src` to paint the
+ * preview while the original downloads (see {@link useProgressiveSrc}).
+ * Videos ignore `previewSrc` — they stream and paint their own poster frame.
  */
 export function EntityMedia({
   src,
+  previewSrc,
   contentType,
   alt,
 }: {
   src?: string | null;
+  previewSrc?: string | null;
   contentType?: string | null;
   alt?: string;
 }) {
-  if (!src) {
-    return null;
-  }
-
   const isVideo = contentType?.startsWith('video/') ?? false;
   const isImage = contentType ? contentType.startsWith('image/') : true;
+  const imageSrc = useProgressiveSrc(src, isVideo ? null : previewSrc);
+  const shownSrc = isVideo ? src : imageSrc;
+
+  if (!shownSrc) {
+    return null;
+  }
 
   if (!isVideo && !isImage) {
     return null;
   }
 
+  // Two guards keep a short viewport from erasing the media:
+  //
+  // `shrink-0` — the scaffold renders this inside a `min-h-0 flex-1 flex-col
+  // overflow-y-auto` body, and this wrapper's own `overflow-hidden` zeroes its
+  // automatic minimum size, which made it the ONE flex item the column could
+  // crush to nothing before scrolling. It must keep its size and let the
+  // column scroll; without this it collapsed to a zero-height strip of border
+  // whenever the sheet's content outgrew the window.
+  //
+  // The max() floor — the 45vh cap keeps a tall portrait from consuming the
+  // whole sidebar, but a bare vh bound scales with the viewport and marches
+  // toward zero on a short window (dev tools open, a small laptop). Floored
+  // at 16rem, so the media stays readable at any window height while tall
+  // screens keep the exact old behaviour.
   return (
-    <div className="flex items-center justify-center overflow-hidden rounded-md border bg-muted/40">
+    <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
       {isVideo ? (
-        <video src={src} controls className="max-h-[45vh] w-full object-contain" />
+        <video src={shownSrc} controls className="max-h-[max(45vh,16rem)] w-full object-contain" />
       ) : (
-        <img src={src} alt={alt ?? ''} className="max-h-[45vh] w-full object-contain" />
+        <img src={shownSrc} alt={alt ?? ''} className="max-h-[max(45vh,16rem)] w-full object-contain" />
       )}
     </div>
   );
