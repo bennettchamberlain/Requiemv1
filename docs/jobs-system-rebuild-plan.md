@@ -12,7 +12,20 @@ Where a prior survey or design asserted something the code does not support, the
 > References to CI-Import-Tools below describe the system as it existed when
 > this plan was written; §10 ("Changes needed in CI-Import-Tools") in particular
 > is now moot as a set of external-repo action items — any equivalent work
-> belongs in the native import domain instead.
+> belongs in the native import domain instead. Concretely, every
+> `CI-Import-Tools/backend/src/datasources/` path below is now
+> `backend/apps/api/src/domains/import/datasources/` **in this repo**, and the
+> push no longer crosses the network at all: `PushStage` calls the destination
+> services in-process.
+>
+> **Two things a search-and-replace must not touch.** (1) The *value*
+> `source_type = "ci-import-tools"` — e.g. the payload at §10 — is deliberately
+> unchanged (`domains/import/push/canonical.ts`): it is one third of the dedup
+> triple, so renaming it would duplicate every previously imported record on the
+> first re-import. (2) "Temporal" in this document means Temporal.io, the
+> orchestrator, which **was** removed in favour of pg-boss — but
+> `clean.temporal_repair` / `TemporalRepairStage` in `domains/pipeline/` mean
+> *temporal* as in time, and are an unrelated ETL stage.
 
 ---
 
@@ -186,6 +199,17 @@ web: yarn workspace @ci/fe-web dev --clearScreen false
 `migrate-database`, `setup-database`, `setup-orchestrator`. **There is no worker service and no
 replica count.** `PGBossEventService.onModuleInit` starts a poll loop per queue inside the same
 process that serves HTTP.
+
+> **Both halves of that paragraph have since changed (checked 2026-08-19).**
+> `orchestrator` and `setup-orchestrator` are gone — Temporal.io was retired in
+> favour of pg-boss, and the compose file no longer declares them. And a
+> **`worker` service now exists**: the same `ci/api` image with `CI_ROLE=worker`,
+> on the `production` profile, running `bootstrapWorker()` — the full DI graph
+> with no HTTP server — so queues and crons marked `role: 'worker'` execute in a
+> process whose event loop no interactive request shares. Today's production
+> service list is `api`, `worker`, `database`, `gateway`, `hbpe-service`,
+> `object-store`, `summary-service` plus the one-shots `generate-secrets`,
+> `migrate-database`, `setup-database`. There is still no replica count.
 
 The damage is recorded in the code that works around it:
 
@@ -1867,6 +1891,13 @@ shared helpers — `_exif.ts`, `_ai_media.ts`, `_ai_memory.ts`, `email_mime.ts`,
 
 Ten phases. Each is PR-sized-to-sprint-sized, ships alone, and leaves the system working.
 
+> **This section is the plan, not the status.** Much of it has since landed —
+> phases 1–2, 4, 5 and 8 in full or nearly so, 3 and 7 in part, 6 and 9 not
+> started as of 2026-08-19. The maintained, per-phase status table lives beside
+> the code in `backend/apps/api/src/domains/pipeline/README.md` ("Phase status"),
+> which is the one to read before planning work; it records what shipped
+> *differently* from the design below, which is most of the interesting part.
+
 ---
 
 ### Phase 0 — Routing table + priority tiers
@@ -2274,9 +2305,17 @@ exist.
    out: `deleteAfterHours: 24` is inert (v9 name) and retention is v10's 14-day default (§2.3).
    Still to confirm before Phase 1: whether `policy: 'singleton'` and `getQueueSize` behave as the
    design assumes; if not, substitute `pg_try_advisory_lock(hashtext(shardId))`.
-8. **Ledger sweep plan.** The `LEFT JOIN ci.pipeline_state` from each source table must stay
-   index-only on the largest tables. `EXPLAIN` it on real data during Phase 2 before porting more
-   stages; the fallback is a per-stage covering index.
+8. ~~**Ledger sweep plan.** The `LEFT JOIN ci.pipeline_state` from each source table must stay
+   index-only on the largest tables.~~ **RESOLVED — and the answer was no.** Measured on 324,044 real
+   `ci.events` with 50,000 ledger rows, the `LEFT JOIN` fell off `events_pkey` onto a `Parallel Seq
+   Scan` and the keyset cursor was demoted from an `Index Cond` to a `Filter`, making a full sweep
+   O(corpus²/slice). The `OR` chain reads columns from the NULL-extended side, so it cannot be
+   pushed down and the `LIMIT` cannot reach the scan; a covering index would not have fixed that.
+   `PipelineStateService.selectStale` was rewritten as a `NOT EXISTS` anti-join, which returns a
+   byte-identical id set and keeps the primary key. `realData.integration.spec.ts` now asserts the
+   indexed plan (its §14.2 tests are marked `CLOSED`), and
+   [`scripts/dev-stack/pipeline-smoke.md` §5](../scripts/dev-stack/pipeline-smoke.md) is the
+   run-it-yourself version on your own corpus.
 9. **Live row counts.** The ledger is O(subjects × stages). Derive the real number from
    `SELECT count(*)` on each source table before committing to a storage budget — the prior estimates
    in circulation are unsourced.

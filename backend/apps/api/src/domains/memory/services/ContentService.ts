@@ -22,6 +22,7 @@ import { EventService } from '@ci/domains/events';
 import { ContentCreatedEvent, ContentRemovedEvent, ContentUpdatedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
+import { BaseEntity } from '../entities/BaseEntity';
 import { ContentBaseEntity } from '../entities/ContentBaseEntity';
 import { Content, ContentEntity } from '../entities/ContentEntity';
 import { EventEntity } from '../entities/EventEntity';
@@ -889,7 +890,7 @@ export class ContentService {
     // egress composition share one query.
     let executable = this.contentRepository
       .createQueryBuilder('content')
-      .innerJoin('ci.entities', 'base', "base.entity_id = content.id AND base.entity_type = 'Content'")
+      .innerJoin(BaseEntity, 'base', "base.entity_id = content.id AND base.entity_type = 'Content'")
       .addSelect('base.name', 'base_name')
       .addSelect('base.description', 'base_description');
 

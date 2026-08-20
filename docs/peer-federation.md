@@ -1,7 +1,10 @@
 # Peer federation: asking questions across Companion memories
 
 > Two Companion Memory boxes exchanging questions, discovered through CI-Portal.
-> Feature flag: **`ask`** (off by default). Tracking: [CI-Server #1711](https://github.com/companionintelligence/CI-Server/issues/1711) → epic #1712.
+> Feature flag: **`ask`** — **on** by default since 2026-08-17 (commit `793e618c0`), so the
+> local ask/grant GraphQL surface is live out of the box. The *inbound peer* route stays
+> dark for a separate reason: it also requires `peers.audience`, and 503s until an operator
+> binds one. Tracking: [CI-Server #1711](https://github.com/companionintelligence/CI-Server/issues/1711) → epic #1712.
 
 Most questions between people are really queries against the other person's memory — *"do you have photos of us?"*, *"do you know anyone at Acme?"*, *"free for lunch Friday?"*. Today those run over the worst possible protocol: interrupt the human, wait, hope they remember, get an unsourced answer.
 
@@ -104,12 +107,25 @@ The route deliberately does **not** use `JwtOrApiKeyAuthGuard`: its portal path 
 ```
 
 Env: `CI_PEER_DIRECTORY_URL`, `CI_PEER_MEMORY_ENDPOINT`, `CI_PEER_HANDLE`, `CI_PEER_AUDIENCE`, `CI_PEER_TIMEOUT_MS`.
-The inbound surface is additionally gated by the **`ask`** feature flag (`ENABLE_ASK`), off by default.
+The inbound surface is additionally gated by the **`ask`** feature flag (`ENABLE_ASK`), which
+now ships **`true`**. Turning it off makes `POST /agent/v1/ask` return 503 — indistinguishable
+from a box with no peer surface at all.
 
 > **`peers.audience` is not optional for inbound.** Without it, a token issued for *any* first-party client would verify here — including one minted for a different Companion. The peer route refuses every request until it is set, rather than falling back to the broad list.
 
 ## Known limitations
 
+- **There is no way to create a peer link except by hand.** Both directions hard-require an
+  existing `ci.peer_links` row — inbound refuses with "No peer link", outbound with "No
+  active peer link for that handle" — but `PeerLinkService.upsert` has no caller anywhere
+  outside its tests, and no REST route or GraphQL mutation writes the table. Today a link
+  is an `INSERT` an operator runs. The three live call sites are all reads: `findById`
+  (AskResolver), `findByHandle` (OutboundAskService) and `findActiveByPeerIdentity`
+  (PeerAskService).
+- **The ask surface is not reachable in the shipped web app.** The components exist
+  (`frontend/apps/web/src/pages/AsksPage/`: `AskComposer`, `AskReviewCard`, `GrantManager`,
+  `AnswerCard`, plus stories), but nothing imports them and `App.tsx` registers no route for
+  them. Driving asks today means GraphQL.
 - **DNS rebinding** is not closed. `checkEgressUrl` validates the literal host, but a hostname that resolves to a private address at connect time would still be fetched; pinning the resolved IP through the socket is not something Node's `fetch` exposes. The residual exposure is bounded by requiring https, so the target must present a valid certificate for the name.
 - **Rate limits are per-process and in-memory.** Correct for a single-instance appliance; a shared store is needed before the ask path goes multi-instance.
 - **The peer access token is supplied by the caller**, not minted here, until Portal token exchange lands.
@@ -127,11 +143,11 @@ An unknown handle and a revoked link are refused **identically**, so a caller ca
 
 ### The token
 
-`sendPeerAsk` takes a `peerAccessToken` — a Portal-issued token whose audience is the **peer** box. Until Portal token exchange (RFC 8693) lands, the caller supplies it; this box never mints or caches one. The peer verifies that binding on receipt, which is what stops a token for one box being replayed at another.
+`sendPeerAsk` takes a `peerAccessToken` — a Portal-issued token whose audience is the **peer** box. It is a **non-nullable** field on `SendPeerAskInput`: until Portal token exchange (RFC 8693) lands, the *caller* must supply it, and this box never mints, exchanges or caches one. The peer verifies that binding on receipt, which is what stops a token for one box being replayed at another.
 
 ## Status
 
-**Both directions work.** A box can receive, gate, and answer a federated ask, and can compose and send one. Still open: peer-link management UI, an MCP tool so assistants can drive asks directly, and Portal token exchange so the access token is minted rather than passed in.
+**Both directions work — given a link and a token.** A box can receive, gate, and answer a federated ask, and can compose and send one. Still open: peer-link *management* of any kind (there is no write path for `ci.peer_links` at all, not just no UI — see Known limitations), the ask UI's route, an MCP tool so assistants can drive asks directly, and Portal token exchange so the access token is minted rather than passed in.
 
 ## See also
 

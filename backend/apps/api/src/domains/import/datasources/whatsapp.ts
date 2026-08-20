@@ -125,8 +125,29 @@ function parseWALine(line: string): ParsedLine | null {
   return null;
 }
 
-const SYSTEM_RE =
+const SYSTEM_VERB_RE =
   /^(Messages and calls are end-to-end encrypted|.+ (added|removed|left|created group|changed|deleted|updated))/i;
+
+/**
+ * True only for a line WhatsApp wrote itself.
+ *
+ * `SYSTEM_VERB_RE` alone is right-unbounded: `.+ (added|removed|left|…)` matches
+ * those words ANYWHERE in a body, so ordinary prose was being destroyed —
+ * "everybody just LEFT the house", "I CHANGED the copyright", "there is a
+ * RS-232 cable … for reading from the LEFT side elevator motherboard". Measured
+ * on one real 5,254-message export: 94 lines matched, of which only 41 were
+ * system lines and 53 were human messages, 7,901 characters of them.
+ *
+ * WhatsApp prefixes every line it generates with U+200E LEFT-TO-RIGHT MARK, and
+ * a typed message never carries one — 41/41 of the genuine system lines were
+ * marked and 0/53 of the human messages were. The marker is NOT sufficient on
+ * its own: it also sits on every `image omitted` placeholder and every
+ * `<attached: …>` reference, which must be kept. So both conditions are
+ * required, and each covers the other's failure.
+ */
+function isSystemLine(text: string): boolean {
+  return LEADING_INVISIBLE_RE.test(text) && SYSTEM_VERB_RE.test(text);
+}
 
 // Shared-location messages embed a maps link, e.g.
 //   "location: https://maps.google.com/?q=37.7749,-122.4194"
@@ -280,7 +301,13 @@ export class WhatsAppFileImporter implements FileImporter {
         return;
       }
 
-      if (SYSTEM_RE.test(p.text)) {
+      if (isSystemLine(p.text)) {
+        // Counted, not silent. The bare `return` here reported `dropped: 0` and
+        // `reconciled: true` while discarding rows — and because it sits above
+        // the attachment block, a photo whose caption tripped the old regex lost
+        // its bytes with no record either.
+        params.pipeline.drop?.('whatsapp_system_line');
+
         return;
       }
 

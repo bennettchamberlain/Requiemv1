@@ -30,7 +30,9 @@ import { PeerRateLimitService } from '../services/PeerRateLimitService';
  *
  * ADR-0005 designates a dedicated `ci-mcp` adapter as the long-term external
  * boundary; until that lands this controller is the narrow, single-purpose
- * stand-in, gated by the `ask` feature flag (off by default).
+ * stand-in, gated by the `ask` feature flag (on by default since 2026-08-17).
+ * The flag alone does not open this route: it also requires `peers.audience`,
+ * and refuses every request until an operator binds one.
  */
 @Controller('agent/v1')
 export class PeerAskController {

@@ -1788,7 +1788,6 @@ type Mutation {
 
   """Defer a candidate until a future instant"""
   snoozeCandidate(id: ID!, until: DateTime!): ScheduleCandidateType!
-  startPairing: StartPairingPayload!
 
   """
   Refresh the slate from current actions and insight key_actions. Idempotent; returns rows written.
@@ -1989,17 +1988,6 @@ type PageInfo {
   hasNextPage: Boolean!
   hasPreviousPage: Boolean!
   startCursor: String
-}
-
-type PairingStatusPayload {
-  appletAccessToken: String
-  deviceId: String
-  errorMessage: String
-  status: String!
-  success: Boolean!
-  userEmail: String
-  userId: String
-  userName: String
 }
 
 input PersonAddressInput {
@@ -2441,7 +2429,6 @@ type Query {
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
   oAuthCallbackUrl: String!
   objectByIdentifier(brand: String, namespace: ObjectIdentifierNamespace!, sourceSystem: String, value: String!): ObjectByIdentifierPayload!
-  pairingStatus(pairingToken: String!, pollKey: String!): PairingStatusPayload!
   people(after: String, before: String, first: Int, last: Int, query: String): PersonConnection!
   person(id: ID!): PersonType
   personDuplicates(limit: Int, offset: Int, reasons: [String!]): PersonDuplicatesPayload!
@@ -2867,14 +2854,6 @@ type SendPeerAskPayload {
 input SetSavedSearchSharingInput {
   id: ID!
   isPublic: Boolean!
-}
-
-type StartPairingPayload {
-  errorMessage: String
-  pairingPath: String
-  pairingToken: String
-  pollKey: String
-  success: Boolean!
 }
 
 type SummaryConnection implements Connection {
