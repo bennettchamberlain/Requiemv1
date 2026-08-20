@@ -158,13 +158,21 @@ export class FileService implements OnModuleInit {
       externalUpdatedAt: file.externalUpdatedAt,
     });
 
-    const result = await this.fileRepository.save(entity);
-
-    if (file.externalId == null) {
+    // Bytes BEFORE the row. This used to save first and upload second, so a
+    // store refusal (a full disk: "minimum free drive threshold") threw AFTER
+    // the row committed — leaving a `ci.files` row that claims bytes nobody
+    // holds. A real import leaked 5,258 of them: every consumer 404s on the
+    // signed URL, and worse, the row carries the content HASH, so the dedup
+    // above then "deduplicates" any future upload of the same bytes against an
+    // object that does not exist — a phantom that poisons its own repair.
+    // This order fails the other way: a save that dies after a successful PUT
+    // strands an unreferenced object in the store, which wastes bytes but
+    // breaks nothing and lies to nobody.
+    if (file.externalId == null && bucket != null && key != null) {
       const putOptions = {
-        Bucket: result.bucket!,
-        Key: result.key!,
-        ContentType: result.contentType,
+        Bucket: bucket,
+        Key: key,
+        ContentType: entity.contentType,
       };
 
       if (file.buffer) {
@@ -184,6 +192,8 @@ export class FileService implements OnModuleInit {
       }
     }
 
+    const result = await this.fileRepository.save(entity);
+
     return this.signFile(result);
   }
 
@@ -201,6 +211,71 @@ export class FileService implements OnModuleInit {
     });
 
     return this.signFiles(result);
+  }
+
+  /**
+   * One newest-first page of ORIGINAL files, paginated IN SQL.
+   *
+   * The files browse used to go through {@link findAll}: every page request
+   * loaded the whole library and pre-signed a URL for every row before the
+   * resolver sliced its 50 — on a real 19,747-file library that is ~20k
+   * SigV4 signatures of CPU work on the event loop PER PAGE, which froze the
+   * entire API for seconds while it ran (every other request queued behind
+   * it) and repeated on every scroll. Here the database returns one page and
+   * only that page is signed.
+   *
+   * Keyset cursor on (created_at, id) rather than OFFSET, so a page stays
+   * O(page) however deep the scroll goes and rows created mid-scroll cannot
+   * shift the window. The id tiebreak makes the order total — created_at
+   * alone left equal-timestamp rows (bulk imports produce many) in an order
+   * the planner was free to change between pages, repeating or dropping rows
+   * at page seams. An unknown `afterId` reads as "from the start", matching
+   * what the in-memory paginator did with a stale cursor.
+   */
+  async findPage(
+    context: ServiceContext,
+    page: { limit: number; afterId?: string | null },
+  ): Promise<{ files: SignedFile[]; totalCount: number; hasNextPage: boolean }> {
+    const scope = {
+      variant: FileVariant.ORIGINAL,
+      ...(context.userId !== SYSTEM_USER && {
+        userId: context.userId,
+      }),
+    };
+
+    const totalCount = await this.fileRepository.count({ where: scope });
+
+    const query = this.fileRepository
+      .createQueryBuilder('file')
+      .where('file.variant = :variant', { variant: scope.variant })
+      .orderBy('file.created_at', 'DESC')
+      .addOrderBy('file.id', 'DESC')
+      // One extra row answers hasNextPage without a second count.
+      .take(page.limit + 1);
+
+    if (scope.userId != null) {
+      query.andWhere('file.user_id = :userId', { userId: scope.userId });
+    }
+
+    if (page.afterId) {
+      const anchor = await this.fileRepository.findOne({ where: { ...scope, id: page.afterId } });
+
+      if (anchor?.createdAt != null) {
+        query.andWhere('(file.created_at, file.id) < (:anchorCreatedAt, :anchorId)', {
+          anchorCreatedAt: anchor.createdAt,
+          anchorId: anchor.id,
+        });
+      }
+    }
+
+    const rows = await query.getMany();
+    const hasNextPage = rows.length > page.limit;
+
+    return {
+      files: await this.signFiles(rows.slice(0, page.limit)),
+      totalCount,
+      hasNextPage,
+    };
   }
 
   async findById(context: ServiceContext, id: string): Promise<SignedFile | null> {
@@ -410,7 +485,7 @@ export class FileService implements OnModuleInit {
     context: UserServiceContext,
     file: UploadFileDto,
   ): Promise<{ file: SignedFile; deduped: boolean }> {
-    const { inventoryCapture = false, skipDescription = false, model, ...uploadData } = file;
+    const { thingCapture = false, skipDescription = false, model, ...uploadData } = file;
     const hash = await this.getFileHash(uploadData);
 
     if (hash) {
@@ -421,11 +496,11 @@ export class FileService implements OnModuleInit {
           existingFileId: existing.id,
         });
 
-        if (inventoryCapture) {
+        if (thingCapture) {
           await this.eventService.send(FileUploadedEvent, {
             fileId: existing.id,
             userId: context.userId,
-            inventoryCapture: true,
+            thingCapture: true,
             skipDescription,
             model,
           });
@@ -443,7 +518,7 @@ export class FileService implements OnModuleInit {
     await this.eventService.send(FileUploadedEvent, {
       fileId: created.id,
       userId: context.userId,
-      inventoryCapture,
+      thingCapture,
       skipDescription,
       model,
     });

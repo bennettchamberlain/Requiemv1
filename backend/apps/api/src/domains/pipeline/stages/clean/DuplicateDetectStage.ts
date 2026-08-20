@@ -52,8 +52,14 @@ export const DUPLICATE_SCORING_GENERATION = 1;
  * widening the comparison to `product_model` subjects should not rescore every
  * person pair, and re-weighting phone evidence should not re-sweep entities that
  * were never eligible.
+ *
+ * 2 — `enrich.person_self_claim` started writing `role = 'self'` claims for
+ * every Person's own emails/phones/name, so a contact-card/vCard/Apple
+ * Contacts Person that never resolved from a communication or event now has
+ * evidence too (loadEvidence groups on `entity_id` regardless of
+ * `subject_type`, so no query here changed — only the claim producers did).
  */
-export const DUPLICATE_CANDIDATE_GENERATION = 1;
+export const DUPLICATE_CANDIDATE_GENERATION = 2;
 
 /**
  * The stage version, derived so that improving EITHER re-runs history.

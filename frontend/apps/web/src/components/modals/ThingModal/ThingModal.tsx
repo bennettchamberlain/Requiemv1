@@ -6,7 +6,12 @@ import { Link } from 'react-router-dom';
 
 import { resolveMediaUrl } from '@/components/entities/resolveMediaUrl';
 import { gql } from '@/graphql';
-import type { ItemAcquisitionMethod, ItemCondition, ItemUnitSystem } from '@/graphql/graphql';
+import type {
+  ItemAcquisitionMethod,
+  ItemCondition,
+  ItemLifecycleState,
+  ItemUnitSystem,
+} from '@/graphql/graphql';
 import {
   UNIT_LABELS,
   type UnitSystem,
@@ -18,7 +23,7 @@ import {
   volumeToMl,
 } from '@/lib/measurements';
 
-export interface InventoryItem {
+export interface ThingModalItem {
   id: string;
   name: string;
   category?: string | null;
@@ -28,6 +33,7 @@ export interface InventoryItem {
   currentValue?: number | null;
   purchasePrice?: number | null;
   condition?: string | null;
+  lifecycleState?: string | null;
   quantity?: number | null;
   acquiredAt?: string | null;
   acquisitionMethod?: string | null;
@@ -51,7 +57,7 @@ export interface InventoryItem {
 interface Props {
   open: boolean;
   onClose: () => void;
-  item: InventoryItem | null;
+  item: ThingModalItem | null;
   create: boolean;
   detailPagePath?: string;
   /**
@@ -87,6 +93,12 @@ interface ItemForm {
   purchasePrice: string;
   /** '' is "unspecified"; the rest are the schema's own enum values. */
   condition: ItemCondition | '';
+  /**
+   * Ownership state. NOT nullable like `condition`: `objects.lifecycle_state` is
+   * NOT NULL and defaults to active, so "unspecified" is not a state a thing can
+   * be in and the picker has no Unspecified entry.
+   */
+  lifecycleState: ItemLifecycleState;
   quantity: string;
   unitSystem: UnitSystem;
   length: string;
@@ -113,6 +125,7 @@ const EMPTY_FORM: ItemForm = {
   currentValue: '',
   purchasePrice: '',
   condition: '',
+  lifecycleState: 'ACTIVE',
   quantity: '',
   unitSystem: 'metric',
   length: '',
@@ -152,6 +165,28 @@ const CONDITION_LABELS: Record<ItemCondition, string> = {
   NA: 'Not applicable',
 };
 
+const LIFECYCLE_STATES = [
+  'ACTIVE',
+  'STORED',
+  'LENT_OUT',
+  'LOST',
+  'DISPOSED',
+  'CONSUMED',
+  'RETURNED',
+  'ARCHIVED',
+] as const satisfies readonly ItemLifecycleState[];
+
+const LIFECYCLE_LABELS: Record<ItemLifecycleState, string> = {
+  ACTIVE: 'Have it',
+  STORED: 'In storage',
+  LENT_OUT: 'Lent out',
+  LOST: 'Lost',
+  DISPOSED: 'Got rid of it',
+  CONSUMED: 'Used up',
+  RETURNED: 'Returned',
+  ARCHIVED: 'Archived',
+};
+
 const ACQUISITION_METHODS = [
   'PURCHASED',
   'GIFT',
@@ -180,7 +215,7 @@ const ACQUISITION_LABELS: Record<ItemAcquisitionMethod, string> = {
 const UNSET = '__unset__';
 
 /** Exported so tests can assert on the exact variables the form sends. */
-export const CREATE_INVENTORY_ITEM = gql(`
+export const CREATE_THING = gql(`
   mutation CreateItem($input: CreateItemInput!) {
     createItem(input: $input) {
       item {
@@ -193,6 +228,7 @@ export const CREATE_INVENTORY_ITEM = gql(`
         currentValue
         purchasePrice
         condition
+        lifecycleState
         quantity
         acquiredAt
         acquisitionMethod
@@ -219,7 +255,7 @@ export const CREATE_INVENTORY_ITEM = gql(`
   }
 `);
 
-export const UPDATE_INVENTORY_ITEM = gql(`
+export const UPDATE_THING = gql(`
   mutation UpdateItem($input: UpdateItemInput!) {
     updateItem(input: $input) {
       item {
@@ -232,6 +268,7 @@ export const UPDATE_INVENTORY_ITEM = gql(`
         currentValue
         purchasePrice
         condition
+        lifecycleState
         quantity
         acquiredAt
         acquisitionMethod
@@ -301,7 +338,7 @@ function toTerms(value: string): string[] | null {
   return terms.length > 0 ? terms : null;
 }
 
-function fromForm(item: InventoryItem): ItemForm {
+function fromForm(item: ThingModalItem): ItemForm {
   const system: UnitSystem = item.unitSystem === 'IMPERIAL' ? 'imperial' : 'metric';
 
   return {
@@ -314,6 +351,7 @@ function fromForm(item: InventoryItem): ItemForm {
     currentValue: toInput(item.currentValue),
     purchasePrice: toInput(item.purchasePrice),
     condition: (item.condition as ItemCondition | null) ?? '',
+    lifecycleState: (item.lifecycleState as ItemLifecycleState | null) ?? 'ACTIVE',
     quantity: toInput(item.quantity),
     unitSystem: system,
     length: toInput(lengthFromMm(item.lengthMm, system)),
@@ -352,7 +390,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export function InventoryItemModal({ open, onClose, item, create = false, detailPagePath, onSaved }: Props) {
+export function ThingModal({ open, onClose, item, create = false, detailPagePath, onSaved }: Props) {
   const [formData, setFormData] = useState<ItemForm>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
 
@@ -419,6 +457,7 @@ export function InventoryItemModal({ open, onClose, item, create = false, detail
             input: {
               id: item!.id,
               ...commonInput(),
+              lifecycleState: formData.lifecycleState,
             },
           },
         });
@@ -439,8 +478,8 @@ export function InventoryItemModal({ open, onClose, item, create = false, detail
     }
   };
 
-  const [createItem] = useMutation(CREATE_INVENTORY_ITEM);
-  const [updateItem] = useMutation(UPDATE_INVENTORY_ITEM);
+  const [createItem] = useMutation(CREATE_THING);
+  const [updateItem] = useMutation(UPDATE_THING);
 
   const imageUrl = resolveMediaUrl(item?.file?.sourceUrl) ?? null;
   const showDetailLink = !create && Boolean(detailPagePath);
@@ -499,6 +538,30 @@ export function InventoryItemModal({ open, onClose, item, create = false, detail
                     </Select.Content>
                   </Select>
                 </Field>
+                {/* Edit only. `CreateItemInput` has no lifecycleState — a thing
+                    you are adding is a thing you have, and the column defaults
+                    to active. Editable at all only since UpdateItemInput grew
+                    the field; before that every surface showed the state and
+                    none of them could change it. */}
+                {!create && (
+                  <Field label="Status">
+                    <Select
+                      value={formData.lifecycleState}
+                      onValueChange={(value) => set('lifecycleState', value as ItemLifecycleState)}
+                    >
+                      <Select.Trigger id="lifecycleState">
+                        <Select.Value />
+                      </Select.Trigger>
+                      <Select.Content>
+                        {LIFECYCLE_STATES.map((state) => (
+                          <Select.Item key={state} value={state}>
+                            {LIFECYCLE_LABELS[state]}
+                          </Select.Item>
+                        ))}
+                      </Select.Content>
+                    </Select>
+                  </Field>
+                )}
               </div>
 
               <Field label="Description" htmlFor="description">

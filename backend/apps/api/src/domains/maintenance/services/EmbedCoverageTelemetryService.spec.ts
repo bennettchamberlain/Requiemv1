@@ -64,7 +64,7 @@ function resolveSourceType(sql: string, params: unknown[]): string {
     return 'event';
   }
 
-  if (sql.includes('"inventory"')) {
+  if (sql.includes('"objects"')) {
     return 'item';
   }
 

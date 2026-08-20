@@ -89,7 +89,12 @@ describe('ObservationReview', () => {
       mocks: [queueMock([makeObservation('obs-1', 'cordless drill')])],
     });
 
-    expect(await screen.findByText('cordless drill')).toBeInTheDocument();
+    // The label appears TWICE by design: as the tile's title, and as the
+    // bounding box's caption — which is also the box's accessible name, so a
+    // screen reader announces what the detector outlined instead of an unnamed
+    // rectangle. Asserted by role/title rather than by text for that reason.
+    expect(await screen.findByTitle('cordless drill')).toBeInTheDocument();
+    expect(screen.getByRole('figure', { name: 'cordless drill' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'This is…' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Not a thing' })).toBeInTheDocument();
   });
@@ -179,7 +184,7 @@ describe('ObservationReview', () => {
 
     expect(await screen.findByText('Sighting already resolved')).toBeInTheDocument();
     // The sighting is still there to try again on.
-    expect(screen.getByText('cordless drill')).toBeInTheDocument();
+    expect(screen.getByTitle('cordless drill')).toBeInTheDocument();
   });
 
   it('pages by offset, and cannot page past a short page', async () => {
@@ -194,12 +199,12 @@ describe('ObservationReview', () => {
       ],
     });
 
-    expect(await screen.findByText('sighting 0')).toBeInTheDocument();
+    expect(await screen.findByTitle('sighting 0')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 
-    expect(await screen.findByText('last sighting')).toBeInTheDocument();
+    expect(await screen.findByTitle('last sighting')).toBeInTheDocument();
     expect(screen.getByText('Page 2')).toBeInTheDocument();
     // A short page is the only end-of-queue signal `unresolvedObservations` has.
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();

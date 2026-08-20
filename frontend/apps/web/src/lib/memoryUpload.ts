@@ -4,7 +4,9 @@ import type { File as FileData } from '@/api/types';
 
 export interface MemoryUploadOptions {
   authToken?: string | null;
+  /** @deprecated Prefer `thingCapture`. Still accepted by the upload API. */
   inventoryCapture?: boolean;
+  thingCapture?: boolean;
   model?: string;
 }
 
@@ -27,8 +29,8 @@ export async function uploadFilesToMemory(
     formData.append('files', file);
   }
 
-  if (options.inventoryCapture) {
-    formData.append('inventoryCapture', 'true');
+  if (options.thingCapture || options.inventoryCapture) {
+    formData.append('thingCapture', 'true');
   }
 
   if (options.model) {

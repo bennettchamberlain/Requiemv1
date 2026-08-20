@@ -1,5 +1,6 @@
 import type { StagedItem } from '../../entities/StagedItemEntity';
 import {
+  communicationAttachmentsFrom,
   destinationsFor,
   discordAttachmentFilename,
   edgeProjectionSourcesFor,
@@ -115,6 +116,12 @@ describe('destinationsFor', () => {
     expect(destinationsFor(recordFor({ classification: 'search' }))).toEqual(['browser_activity']);
   });
 
+  it('sends a download to browser activity, not the timeline', () => {
+    // Without this rule a download falls through to the default 'events'
+    // bucket, the same way ~96k searches once did.
+    expect(destinationsFor(recordFor({ classification: 'download' }))).toEqual(['browser_activity']);
+  });
+
   it('keeps a raw GPS fix out of events entirely', () => {
     const track = recordFor({ classification: 'location', latitude: 1, longitude: 2 });
 
@@ -190,18 +197,36 @@ describe('destinationsFor', () => {
     expect(destinationsFor(tweet)).toEqual(['communications', 'position']);
   });
 
-  it('pushes a subscription fee nowhere at all', () => {
+  it('gives a subscription fee its receipt and nothing else', () => {
     // A Prime or Kindle Unlimited charge is a service, not a thing: neither
-    // content nor inventory. The order aggregate still carries it to events.
+    // content nor things. It is still a real purchase, so it keeps the
+    // receipt that carries the merchant and the money — before the commerce
+    // plane it pushed NOWHERE and the spend was invisible.
     const fee = recordFor({ classification: 'purchase', metadata: { Subscription: true } });
 
-    expect(destinationsFor(fee)).toEqual([]);
+    expect(destinationsFor(fee)).toEqual(['receipts']);
   });
 
-  it('sends a physical purchase to inventory and a digital one to content', () => {
+  it('leaves the receipt to the order aggregate for a rolled-up line', () => {
+    // amazon.ts stamps every line of a multi-item order with the aggregate's
+    // id. Without this branch a five-item order produces five single-line
+    // receipts on top of the itemised one.
+    const line = recordFor({
+      classification: 'purchase',
+      metadata: { ReceiptRollupId: 'amazon:order:111-2233445-6677889' },
+    });
+
+    expect(destinationsFor(line)).toEqual(['things']);
+  });
+
+  it('sends a physical purchase to things and a digital one to content, both with a receipt', () => {
     const physical = recordFor({ classification: 'purchase' });
 
-    expect(destinationsFor(physical)).toEqual(['inventory']);
+    expect(destinationsFor(physical)).toEqual(['receipts', 'things']);
+
+    const digital = recordFor({ classification: 'purchase', metadata: { Product: 'Kindle Edition' } });
+
+    expect(destinationsFor(digital)).toEqual(['receipts', 'content']);
   });
 
   it('sends a money movement to events alone', () => {
@@ -267,6 +292,60 @@ describe('destinationsFor', () => {
       });
 
       expect(destinationsFor(other)).toEqual(['events', 'content']);
+    });
+
+    it('sends an undated saved post to content alone, never wearing import time', () => {
+      // Reddit's saved_posts.csv is `id, permalink` — no date of any kind. A
+      // communications row would be forced to a NOT NULL time, i.e. the import
+      // moment presented as real (verified live: eight saved posts/comments
+      // all stamped the second they were parsed).
+      const saved = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        occurredAt: null,
+        metadata: { Title: 'English is weird', Kind: 'saved_post', Subreddit: 'Jokes' },
+      });
+
+      expect(destinationsFor(saved)).toEqual(['content']);
+    });
+
+    it('keeps a DATED saved post in communications', () => {
+      // The rule is about the missing date, not about being saved: a future
+      // export that dates its saved items gets the normal routing.
+      const dated = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        metadata: { Title: 'Dated after all', Kind: 'saved_post', Subreddit: 'space' },
+      });
+
+      expect(destinationsFor(dated)).toEqual(['communications']);
+    });
+  });
+
+  describe('undated social records', () => {
+    it('sends an undated authored social record to content alone', () => {
+      const undated = recordFor({
+        classification: 'social',
+        dataSource: 'mastodon',
+        occurredAt: null,
+        metadata: { Title: 'A post with no date', Kind: 'post' },
+      });
+
+      expect(destinationsFor(undated)).toEqual(['content']);
+    });
+
+    it('keeps an undated affiliation on its event home', () => {
+      // An affiliation models CURRENT state — its event title carries the whole
+      // fact, and its content row is the empty one isSocialAffiliation exists
+      // to prevent. Content-only would erase it entirely.
+      const membership = recordFor({
+        classification: 'social',
+        dataSource: 'reddit',
+        occurredAt: null,
+        metadata: { Kind: 'subscribed_subreddit', Subreddit: 'bitscoop' },
+      });
+
+      expect(destinationsFor(membership)).toEqual(['events']);
     });
   });
 
@@ -596,7 +675,7 @@ describe('edgeProjectionSourcesFor', () => {
     expect(edgeProjectionSourcesFor(['communications'])).toEqual(['communications']);
     expect(edgeProjectionSourcesFor(['events'])).toEqual(['events']);
     expect(edgeProjectionSourcesFor(['content'])).toEqual(['content']);
-    expect(edgeProjectionSourcesFor(['inventory'])).toEqual(['inventory']);
+    expect(edgeProjectionSourcesFor(['things'])).toEqual(['objects']);
     // The one that is NOT the destination's own name.
     expect(edgeProjectionSourcesFor(['position'])).toEqual(['positions']);
   });
@@ -659,5 +738,62 @@ describe('a contact card is a person, not a document', () => {
   it('still routes a plain file to content, so the file rule is untouched', () => {
     expect(kindFor('file', null)).toBe('import.archive_item');
     expect(destinationsFor(contactRecord({ kind: kindFor('file', null) })).length).toBeGreaterThan(0);
+  });
+});
+
+describe('communicationAttachmentsFrom', () => {
+  /**
+   * The union the media leg reads. Two parser generations wrote two different
+   * keys for the same idea and NEITHER was ever read — `MediaAttachments` by
+   * twitter, gmail, iMessage and the chat exports, `MediaFilePaths` by facebook
+   * and sms_backup_restore. Reading only one of them leaves half the sources
+   * dropping their attachments exactly as before.
+   */
+  it('reads the rich descriptor shape', () => {
+    const attachments = communicationAttachmentsFrom({
+      MediaAttachments: [
+        { path: '/scratch/a.jpg', filename: 'holiday.jpg', type: 'image', mimetype: 'image/jpeg' },
+      ],
+    });
+
+    expect(attachments).toEqual([
+      { path: '/scratch/a.jpg', filename: 'holiday.jpg', type: 'image', mimetype: 'image/jpeg' },
+    ]);
+  });
+
+  it('fills a bare path in from its own extension', () => {
+    // An MMS part is bytes and nothing else, so the filename and MIME have to
+    // come from the path or the file arrives called `d41d8cd98f…` and untyped.
+    expect(communicationAttachmentsFrom({ MediaFilePaths: ['/scratch/part-1.png'] })).toEqual([
+      { path: '/scratch/part-1.png', filename: 'part-1.png', type: 'media', mimetype: 'image/png' },
+    ]);
+  });
+
+  it('keeps a non-media attachment honest rather than calling it media', () => {
+    // An email's PDF is a file. Typing it 'media' would put it in a gallery.
+    expect(communicationAttachmentsFrom({ MediaFilePaths: ['/scratch/invoice.pdf'] })).toMatchObject([
+      { type: 'file', mimetype: 'application/pdf' },
+    ]);
+  });
+
+  it('drops a descriptor with no path, because there are no bytes to store', () => {
+    // Still counted as a gap by the caller — see MediaStage's attachment_no_path.
+    expect(communicationAttachmentsFrom({ MediaAttachments: [{ guid: 'abc', type: 'image' }] })).toEqual([]);
+  });
+
+  it('does not upload the same file twice when both keys name it', () => {
+    // A parser is allowed to write both; two entries for one photo would put
+    // the same file in `attachments` twice.
+    const attachments = communicationAttachmentsFrom({
+      MediaAttachments: [{ path: '/scratch/same.jpg', filename: 'same.jpg', type: 'image' }],
+      MediaFilePaths: ['/scratch/same.jpg', '/scratch/other.jpg'],
+    });
+
+    expect(attachments.map((a) => a.path)).toEqual(['/scratch/same.jpg', '/scratch/other.jpg']);
+  });
+
+  it('is empty for a message that carries nothing', () => {
+    expect(communicationAttachmentsFrom({ Text: 'hi' })).toEqual([]);
+    expect(communicationAttachmentsFrom(undefined)).toEqual([]);
   });
 });

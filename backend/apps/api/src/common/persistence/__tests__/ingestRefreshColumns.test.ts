@@ -26,13 +26,13 @@ describe('INGEST_REFRESH_COLUMNS', () => {
 
   it('matches the versioned snapshot (bump INGEST_SCHEMA_VERSION when a list changes)', () => {
     expect({ version: INGEST_SCHEMA_VERSION, columns: INGEST_REFRESH_COLUMNS }).toEqual({
-      version: 2,
+      version: 3,
       columns: {
         // CommunicationService.createMany self-heal UPDATE binds its VALUES
         // parameters in this order — keep it in lockstep with the service.
-        communication: ['direction', 'participants_metadata', 'content', 'preview', 'subject'],
+        communication: ['direction', 'participants_metadata', 'metadata', 'content', 'preview', 'subject'],
         event: [],
-        // Empty is the contract, not an oversight: inventory is the one ingest
+        // Empty is the contract, not an oversight: things is the one ingest
         // table a user edits directly, and a refresh list would let the next
         // re-sync clobber those edits. See the note on the map.
         item: [],

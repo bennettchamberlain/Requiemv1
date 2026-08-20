@@ -11,7 +11,10 @@ vi.mock('@/hooks', () => ({
 
 const fetchJson = vi.hoisted(() => vi.fn());
 
-vi.mock('@ci/common', () => ({ fetchJson }));
+vi.mock('@ci/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@ci/common')>()),
+  fetchJson,
+}));
 
 function setVisibility(state: 'visible' | 'hidden') {
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: state });

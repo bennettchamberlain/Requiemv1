@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 
 import { gql, useFragment, type FragmentType } from '@/graphql';
 import type { ObservationStripDataFragment } from '@/graphql/graphql';
+import { humanizeEnum } from '@/lib/utils';
 
 import { BoundingBoxOverlay } from './BoundingBoxOverlay';
 import { resolveMediaUrl } from './resolveMediaUrl';
@@ -80,17 +81,6 @@ function formatObservedAt(value?: string | Date | null): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString();
 }
 
-/** Enum values arrive SHOUTING from GraphQL; a person reads "Ollama vision". */
-function humanizeEnum(value?: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const words = value.toLowerCase().replace(/_/g, ' ');
-
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
 /**
  * The place a sighting happened.
  *
@@ -141,7 +131,7 @@ function ObservationThumbnail({
       {/* Drawn even without a thumbnail: the box still says WHERE in the frame
           the detector looked, and hiding it would make an image-less sighting
           look like it had no detection at all. */}
-      <BoundingBoxOverlay bbox={bbox} />
+      <BoundingBoxOverlay bbox={bbox} label={label} />
     </div>
   );
 }

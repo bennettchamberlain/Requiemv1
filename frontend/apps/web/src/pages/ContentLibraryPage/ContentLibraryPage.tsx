@@ -7,18 +7,18 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
-import { FileModal } from '@/components/modals/FileModal';
 import { gql } from '@/graphql';
 import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
 
-import { GridItem } from './GridItem';
+import { ContentSheet } from './ContentSheet';
+import { ContentTile } from './ContentTile';
 
 /** Content is a thumbnail grid, so a page is a few rows rather than a few items. */
 export const PAGE_SIZE = 50;
 
-const GET_FILES = gql(`
-  query GetFiles($first: Int, $after: String) {
-    files(first: $first, after: $after) {
+const GET_CONTENTS = gql(`
+  query GetContents($first: Int, $after: String) {
+    contents(first: $first, after: $after) {
       totalCount
       pageInfo {
         hasNextPage
@@ -28,47 +28,52 @@ const GET_FILES = gql(`
         cursor
         node {
           id
-          ...FileGridItemFragment
+          ...ContentTileFragment
         }
       }
     }
   }
 `);
 
-export function FilesPage() {
+/**
+ * `/memory/content` — the paginated `ci.content` library. Rows backed by a file
+ * (external_id -> ci.files) arrive with previewUrl/mediaUrl already resolved by
+ * the server, so a tile needs no second lookup to show its thumbnail.
+ */
+export function ContentLibraryPage() {
   usePageTitle('Content - Companion Intelligence');
 
   const navigate = useNavigate();
-  // The open file lives in the URL rather than in local state, so a file has a
-  // shareable address and Back closes the viewer. `/memory/content/:fileId`
+  // The open row lives in the URL rather than in local state, so it has a
+  // shareable address and Back closes the drawer. `/memory/content/:contentId`
   // carries the RAW uuid, matching /people/:id and /places/:id; the GraphQL
   // `id` is the base64 global id, so each direction converts explicitly.
-  const { fileId } = useParams<{ fileId: string }>();
+  const { contentId } = useParams<{ contentId: string }>();
 
-  const { data, loading, fetchMore } = useQuery(GET_FILES, {
+  const { data, loading, fetchMore, refetch } = useQuery(GET_CONTENTS, {
     variables: { first: PAGE_SIZE },
     fetchPolicy: 'cache-and-network',
     notifyOnNetworkStatusChange: true,
   });
 
-  const files = useMemo(() => (data?.files.edges ?? []).map((edge) => edge.node), [data]);
+  const contents = useMemo(() => (data?.contents.edges ?? []).map((edge) => edge.node), [data]);
 
   const fetchNextPage = useCallback(
     (after: string) =>
       fetchMore({
         variables: { after },
         updateQuery: (prev, { fetchMoreResult }) => {
-          if (!fetchMoreResult?.files) {
+          if (!fetchMoreResult?.contents) {
             return prev;
           }
 
-          const prevEdges = prev.files?.edges ?? [];
+          const prevEdges = prev.contents?.edges ?? [];
           const seen = new Set(prevEdges.map((edge) => edge.cursor));
-          const nextEdges = fetchMoreResult.files.edges.filter((edge) => !seen.has(edge.cursor));
+          const nextEdges = fetchMoreResult.contents.edges.filter((edge) => !seen.has(edge.cursor));
 
           return {
-            files: {
-              ...fetchMoreResult.files,
+            contents: {
+              ...fetchMoreResult.contents,
               edges: [...prevEdges, ...nextEdges],
             },
           };
@@ -78,38 +83,39 @@ export function FilesPage() {
   );
 
   const pagination = useInfiniteConnection({
-    connection: data?.files,
-    loadedCount: files.length,
+    connection: data?.contents,
+    loadedCount: contents.length,
     fetchNextPage,
   });
 
-  const selectedFileGlobalId = useMemo(() => {
-    if (!fileId) {
+  const selectedGlobalId = useMemo(() => {
+    if (!contentId) {
       return null;
     }
 
-    // A hand-typed or stale id still encodes fine; the modal then renders its
-    // own "no source available" state rather than throwing here.
-    return GlobalUID.encode('file', fileId);
-  }, [fileId]);
+    // A hand-typed or stale id still encodes fine; the sheet simply stays
+    // closed when the query returns nothing.
+    return GlobalUID.encode('content', contentId);
+  }, [contentId]);
 
   const handleSelect = useCallback(
-    (globalId: string) => navigate(`/memory/content/${GlobalUID.parse('file', globalId)}`),
+    (globalId: string) => navigate(`/memory/content/${GlobalUID.parse('content', globalId)}`),
     [navigate],
   );
   const handleClose = useCallback(() => navigate('/memory/content'), [navigate]);
+  const handleChanged = useCallback(() => void refetch(), [refetch]);
 
   return (
     <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
       <MemoryHubShell>
         <div className="flex flex-col gap-4 px-4 pb-4">
-          {loading && files.length === 0 ? (
+          {loading && contents.length === 0 ? (
             <p className="text-sm text-muted-foreground">Loading content…</p>
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {files.map((file) => (
-                  <GridItem key={file.id} file={file} onSelect={handleSelect} />
+                {contents.map((content) => (
+                  <ContentTile key={content.id} content={content} onSelect={handleSelect} />
                 ))}
               </div>
 
@@ -117,7 +123,7 @@ export function FilesPage() {
             </>
           )}
 
-          <FileModal fileId={selectedFileGlobalId} onClose={handleClose} />
+          <ContentSheet contentId={selectedGlobalId} onClose={handleClose} onChanged={handleChanged} />
         </div>
       </MemoryHubShell>
     </PageContent>

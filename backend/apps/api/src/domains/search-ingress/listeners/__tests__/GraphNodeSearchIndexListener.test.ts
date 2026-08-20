@@ -37,7 +37,7 @@ function payload(overrides: Partial<Payload['node']> = {}): Payload {
 describe('GraphNodeSearchIndexListener.indexGraphNode', () => {
   // The allowlist this listener gates on is empty today: `WriteKnowledgeTool`
   // is the ONLY producer of GRAPH_NODE_UPSERTED and it writes a `ci.entities`
-  // row alone, never the detail-table row (`ci.events` / `ci.inventory` /
+  // row alone, never the detail-table row (`ci.events` / `ci.objects` /
   // `ci.content` / `ci.files` / ...) that `EntityResolutionService` needs to
   // resolve any of these types back to a real result. Indexing them would write
   // a real, paid-for search candidate that can never resolve — see the class

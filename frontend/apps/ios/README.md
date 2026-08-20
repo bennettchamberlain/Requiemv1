@@ -32,21 +32,29 @@ separate package and must stay that way.
 
 The monorepo uses Yarn **PnP**, but the Capacitor CLI / CocoaPods / Gradle need a real
 `node_modules` tree. So this package is deliberately **excluded** from the root
-workspaces (`"!frontend/apps/ios" / "!frontend/apps/ios" / "!frontend/apps/android"` in the root `package.json`) and installed on its
-own. Its `.yarnrc.yml` sets `nodeLinker: node-modules`, so `yarn install` *inside this
-directory* produces a conventional `node_modules` + its own `yarn.lock` — the root PnP
-install is untouched. It depends on the web app only as a build artifact (`webDir`),
-never as an npm import.
+workspaces (`"!frontend/apps/ios"` and `"!frontend/apps/android"` in the root
+`package.json`) and installed on its own. Its `.yarnrc.yml` sets
+`nodeLinker: node-modules`, so `yarn install` *inside this directory* produces a
+conventional `node_modules` + its own `yarn.lock` — the root PnP install is untouched.
+It depends on the web app only as a build artifact (`webDir`), never as an npm import.
 
 ## Prerequisites
 
-- **iOS:** macOS + **Xcode 26+** (the iOS 26 SDK is required — see SDK notes below) and
+- macOS + **Xcode 26+** (the iOS 26 SDK is required — see SDK notes below) and
   **CocoaPods** (`brew install cocoapods`).
-- **Android:** **Android Studio** (bundles a JDK + SDK), or a standalone **JDK 21** +
-  Android SDK with `platform-tools`, `platforms;android-35`, `build-tools;35.0.0`.
 - Backend CORS already allows the native origins (`backend/apps/api/src/main.ts`:
   `capacitor://localhost`, `http(s)://localhost`, plus the `X-API-Key` header);
   operators can extend it with `CORS_ALLOWED_ORIGINS`.
+
+## Supported devices — iPhone only
+
+`TARGETED_DEVICE_FAMILY = 1` in **both** the Debug and Release configs of the App
+target, and the `~ipad` orientation variants were removed from `Info.plist` so the
+plist and the build setting cannot disagree. On iPad this ships as an
+iPhone-compatibility app (Apple's scaled phone window), which the `@ci/fe-web` mobile
+layout is designed for. Reversing it means editing **both** configs to `"1,2"`,
+restoring the `~ipad` orientation key, and adding a tablet tier to the layout hooks —
+the plist alone will not do it. See `DELIVERY.md` §1a.
 
 ## First-time setup
 
@@ -57,17 +65,17 @@ cd frontend/apps/ios && yarn install
 # 2) Build the web bundle (from repo root, PWA disabled):
 VITE_DISABLE_PWA=true yarn workspace @ci/fe-web build
 
-# The ios/ and android/ projects are committed. Only on a checkout that lacks them:
-#   yarn add:ios   # ⚠️ then re-apply the iOS 26 fixes — see "iOS 26 SDK" below
-#   yarn add:android
+# The ios/ project is committed. Only on a checkout that lacks it:
+#   npx cap add ios   # ⚠️ then re-apply the iOS 26 fixes — see "iOS 26 SDK" below
 yarn sync          # copies web assets + installs native plugin code
 ```
 
 `yarn build` (= `build:web` + `cap sync`) rebuilds + syncs from this directory.
+Android is a separate package — build it from [`frontend/apps/android`](../android).
 
-## Run in a simulator / emulator
+## Run in a simulator
 
-**iOS** — set `DEVELOPER_DIR` if your active toolchain isn't full Xcode (e.g. Xcode-beta):
+Set `DEVELOPER_DIR` if your active toolchain isn't full Xcode (e.g. Xcode-beta):
 
 ```bash
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # or Xcode-beta
@@ -80,33 +88,23 @@ xcrun simctl install $SIM ./DerivedData/Build/Products/Debug-iphonesimulator/App
 xcrun simctl launch  $SIM com.companionintelligence.app
 ```
 
-**Android** — Android Studio's bundled JBR is a convenient JDK 21:
-
-```bash
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
-VITE_DISABLE_PWA=true yarn workspace @ci/fe-web build
-cd frontend/apps/ios
-echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-yarn cap sync android
-(cd android && ./gradlew assembleDebug)
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.companionintelligence.app/.MainActivity
-```
-
-(Simulator builds need **no code signing**. List iOS sims with
-`xcrun simctl list devices available`; Android AVDs with `emulator -list-avds`.)
+(Simulator builds need **no code signing**. List sims with
+`xcrun simctl list devices available`.)
 
 ## CI builds (GitHub Actions)
 
 `.github/workflows/mobile-build.yml` builds both apps in CI (modelled on CI-Hub's
-`desktop-build.yml`). Trigger it from **Actions → Mobile Build → Run workflow**, or by
-pushing a `mobile-v*` tag:
+`desktop-build.yml`).
 
-```bash
-git tag mobile-v0.1.0 && git push origin mobile-v0.1.0
-```
+> ⚠️ **Manual dispatch only.** The `mobile-v*` tag trigger was removed — pushing a tag
+> builds nothing, and the workflow never runs on a pull request. **CI silence means
+> nobody dispatched it, not that anything passed.** Run it deliberately:
+>
+> ```bash
+> gh workflow run mobile-build.yml --ref <branch-or-tag>
+> ```
+>
+> or from **Actions → Mobile Build → Run workflow**.
 
 Two jobs run in parallel and upload their output as run artifacts:
 
@@ -137,17 +135,26 @@ signed `.aab` to Play's internal track.
 
 ```bash
 # Rehearsal: build + sign + validate with Apple, but submit nothing.
-gh workflow run mobile-release.yml -f dry_run=true
+# Dispatch on a BRANCH ref — see the dry-run trap below.
+gh workflow run mobile-release.yml --ref <branch> -f dry_run=true
 
-# The real thing (a tag push always submits — dry_run does not apply):
-git tag mobile-release-v0.1.0 && git push origin mobile-release-v0.1.0
+# The real thing.
+gh workflow run mobile-release.yml --ref <tag> -f dry_run=false -f version_name=0.1.0
 ```
 
-> **This workflow is not dispatchable until it is on the default branch.** GitHub only
-> exposes a `workflow_dispatch` workflow that exists on `main`, so until this file is
-> merged, `gh workflow run mobile-release.yml` answers
-> `HTTP 404: workflow not found on the default branch` — even with `--ref`. To rehearse
-> signing before the rest of the branch is ready, cherry-pick just this file onto `main`.
+> ⚠️ **Manual dispatch only.** The `mobile-release-v*` tag trigger was removed —
+> **pushing that tag no longer builds or submits anything.** Dispatch on the ref
+> instead, as above. The `dry_run` input defaults to `true`.
+
+> ⚠️ **`dry_run` is ignored on a tag ref.** The version job forces `dry_run=false`
+> whenever `GITHUB_REF` starts with `refs/tags/` — a rule written when a tag *push* was
+> the only way to reach that ref, and still in force for a dispatch. **Rehearse on a
+> branch ref**; dispatching on a tag submits for real.
+
+> GitHub only exposes a `workflow_dispatch` workflow that exists on the default branch,
+> so a copy living only on a feature branch answers
+> `HTTP 404: workflow not found on the default branch` — even with `--ref`. Both mobile
+> workflows are on `main` today; this matters only when editing them on a branch.
 
 **Always do a `dry_run: true` run first.** Both stores permanently consume a build number
 on upload, so a failed submission *after* a successful one still costs you that number.
@@ -218,31 +225,21 @@ prompt.
 `versionCode` / `versionName` in `build.gradle` and `MARKETING_VERSION` /
 `CURRENT_PROJECT_VERSION` in the Xcode project are **local-dev fallbacks only**. The
 release workflow resolves one version per run and hands identical numbers to both stores:
-the marketing version comes from the `mobile-release-v*` tag, and the build number from
+the marketing version comes from the `version_name` dispatch input, falling back to a
+`mobile-release-v*` tag ref and then to `0.1.0`; the build number comes from
 `github.run_number` (monotonic per workflow, which is exactly the "never repeats, always
 increases" rule both stores enforce). Don't hand-bump the literals expecting them to
 reach a store.
 
-### Local release builds
-
-`./gradlew bundleRelease` **fails at configuration time** unless signing is configured —
-deliberately, because Gradle will otherwise produce an *unsigned* release bundle that Play
-only rejects at the end of the upload, far from the cause. To build one locally:
-
-```bash
-export ANDROID_KEYSTORE_PATH=/path/to/upload.jks
-export ANDROID_KEYSTORE_PASSWORD=… ANDROID_KEY_ALIAS=… ANDROID_KEY_PASSWORD=…
-cd android && ./gradlew bundleRelease
-```
-
-For a sideload build, use `./gradlew assembleDebug` — it needs no keystore.
+Android's local release-build rules live in the Android package —
+[`frontend/apps/android/README.md`](../android/README.md#local-release-builds).
 
 ## On-device live reload
 
 Run the web dev server (`yarn workspace @ci/fe-web dev`, bound to `0.0.0.0`), then:
 
 ```bash
-CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173 yarn run:ios   # or run:android
+CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173 yarn run   # = cap run ios
 ```
 
 Point the in-app `/server` setting at your API origin so data calls resolve. Unset
@@ -251,7 +248,7 @@ Point the in-app `/server` setting at your API origin so data calls resolve. Uns
 ## App icons & splash
 
 Source artwork lives in `assets/` (committed); platform icons + splash are generated
-into `ios/` and `android/` with
+into `ios/` with
 [`@capacitor/assets`](https://github.com/ionic-team/capacitor-assets):
 
 ```bash
@@ -284,9 +281,6 @@ the box. The committed `ios/` already includes these fixes; if you delete and
    the `Main` storyboard; `Info.plist` declares a `UIApplicationSceneManifest` →
    `UISceneConfigurations` with `UISceneDelegateClassName =
    $(PRODUCT_MODULE_NAME).SceneDelegate`, and drops `UIMainStoryboardFile`.
-
-Android (Capacitor 7 defaults: compileSdk 35, AGP 8.7.2, JDK 21) builds cleanly with
-no source changes — it only needs the `platforms;android-35` SDK component installed.
 
 ## Native auth (wired)
 
@@ -383,7 +377,14 @@ integration with the appliance-routed chat page.
 
 The local model can call CI's **published intents** as tools, so it answers from your memory instead
 of its own weights. Enable it per platform with `LocalLLM.configureIntentTools({ baseUrl, apiKey })`;
-the plugin then fetches `GET /api/intents?tier=local` and binds what the appliance allows.
+the plugin then fetches the intent catalog with `?tier=local` and binds what the appliance allows.
+
+> **Watch the doubled `/api`.** `IntentsController` is `@Controller('api/intents')` while the
+> fronting proxy already strips a leading `/api`, so from an app holding the proxy origin the real
+> path is `<base>/api/api/intents?tier=local` — which is exactly what `CompanionIntentClient`
+> requests on both platforms. `McpController` is `@Controller('mcp')`, so it is reached at the
+> ordinary `<base>/api/mcp`. (`/api/agent/intents` is the canonical prefix for new callers;
+> `/api/intents` still serves and is what these clients use.)
 
 **One security rule, not three.** The appliance computes the `execute` / `queue` / `deny` ruling
 (`dispatchPolicy.ts`) and publishes it per intent; the phone reads `dispatch.decision` and obeys it.

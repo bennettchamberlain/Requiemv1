@@ -7,9 +7,10 @@ import { stripCallLogHeading } from '@ci/domains/graph';
 
 import { isShortCode } from '../staging/identity';
 
+import { attachmentMediaKind } from './attachment_extract';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams, EntityAttribute, Relationship } from './timeline';
+import type { AttachmentDescriptor, ImportParams, EntityAttribute, Relationship } from './timeline';
 
 type GoogleVoiceOptions = Record<string, never>;
 
@@ -107,6 +108,119 @@ export function threadKeyFor(fpath: string, conversation: string | undefined): s
   const base = path.basename(fpath);
 
   return `${GV_FILE_THREAD_PREFIX}${base.replace(/\.[^.]+$/, '')}`;
+}
+
+/**
+ * The spoken text of a voicemail.
+ *
+ * Google Voice stores it as `<span class="full-text">` nested inside the
+ * `<span class="description">` of the hAudio block:
+ *
+ *   <span class="description"><span class="full-text">the transcript</span>
+ *     <span class="word high">the<span class="start-time">…</span>
+ *       <span class="end-time">…</span><span class="confidence">0.94</span></span>
+ *     …one such span per word…
+ *   </span>
+ *
+ * This used to read `<span class="note">`, which is what an older export shape
+ * used and what the comment above still described. That class does not occur
+ * ONCE in a current export — 0 of 71,946 files in the reference corpus — so
+ * `transcript` was always undefined and every voicemail fell back to the
+ * synthesized `"<Type> call from <contact>"` label, both as its body and in
+ * `metadata.Transcript`. 2,521 voicemails carried a transcript that was never
+ * read. `note` is still accepted so an older export keeps working.
+ *
+ * The per-word spans are SIBLINGS that follow the full-text span, not children
+ * of it, and no `full-text` element in the corpus contains a nested tag (0 of
+ * 2,818), so a non-greedy match to the first `</span>` takes the whole
+ * transcript and none of the timing markup.
+ *
+ * Returns undefined for an element that is present but empty — 297 files,
+ * mostly missed calls that were never spoken into — so the caller's existing
+ * fallback to the synthesized label still applies to them.
+ */
+function extractTranscript(raw: string): string | undefined {
+  const match =
+    /<span class="full-text"[^>]*>([\s\S]*?)<\/span>/i.exec(raw) ??
+    /<span class="note"[^>]*>([\s\S]*?)<\/span>/i.exec(raw);
+  if (!match) {
+    return undefined;
+  }
+
+  const text = decodeHtml(stripTags(match[1])).trim();
+
+  return text || undefined;
+}
+
+/**
+ * The audio recording a call or voicemail HTML file points at.
+ *
+ * Google Voice ships the recording as a sibling .mp3 and names it twice in the
+ * hAudio block — an `<audio src>` and, inside it, an `<a rel="enclosure" href>`
+ * carrying the identical value:
+ *
+ *   <audio controls="controls" src="Name - Voicemail - 2019-06-23T04_34_22Z.mp3">
+ *     <a rel="enclosure" href="Name - Voicemail - 2019-06-23T04_34_22Z.mp3">…</a>
+ *   </audio>
+ *
+ * None of it was read. `resolveAttachment` only ever probes `.jpg/.gif/.png/
+ * .jpeg`, and it is unreachable from here regardless: fileImport routes a
+ * haudio file to processCallLog and RETURNS before the `<img>` attachment loop
+ * runs at all. So every voicemail recording and call recording the export
+ * shipped was skipped — 3,066 files name one, 2,718 of them resolve to bytes on
+ * disk, and `ci.files` held no audio row from any source.
+ *
+ * Unlike `resolveAttachment` there is nothing to guess here: the markup states
+ * the exact filename, so the only work is undoing the transport encodings.
+ * The href is percent-encoded, and the filenames carry accented characters that
+ * macOS stores decomposed (NFD) while the HTML names them composed (NFC) — so
+ * both sides are normalised before comparing, and the resolved path is taken
+ * from the DIRECTORY LISTING rather than rebuilt from the href, so the byte
+ * sequence handed to `readFile` is the one the filesystem actually holds.
+ *
+ * Returns undefined when the file is not beside the HTML. The descriptor is
+ * omitted entirely in that case rather than recorded path-less: unlike
+ * imessage.ts — where chat.db knows a purged attachment's name, type and guid,
+ * and "a photo was here" is worth keeping — a Voice export that is missing its
+ * mp3 tells us nothing the call record does not already say.
+ */
+function resolveRecording(raw: string, fpath: string): AttachmentDescriptor | undefined {
+  const match =
+    /<audio[^>]*\ssrc="([^"]+)"/i.exec(raw) ?? /<a[^>]*\srel="enclosure"[^>]*\shref="([^"]+)"/i.exec(raw);
+  if (!match) {
+    return undefined;
+  }
+
+  const wanted = decodeURIComponent(match[1]).normalize('NFC');
+  if (!wanted || wanted.includes('/')) {
+    return undefined;
+  }
+
+  const dir = path.dirname(fpath);
+  let actual: string | undefined;
+  try {
+    actual = fs.readdirSync(dir).find((name) => name.normalize('NFC') === wanted);
+  } catch {
+    return undefined;
+  }
+
+  if (!actual) {
+    return undefined;
+  }
+
+  return {
+    path: path.join(dir, actual),
+    filename: actual,
+    type: attachmentMediaKind(mimeForRecording(actual)),
+    mimetype: mimeForRecording(actual),
+  };
+}
+
+/** MIME for a Voice recording, which the export names only by extension. */
+function mimeForRecording(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+
+  return ext === '.mp3' ? 'audio/mpeg' : ext === '.m4a' ? 'audio/mp4' : ext === '.amr' ? 'audio/amr' : '';
 }
 
 export class GoogleVoiceFileImporter implements FileImporter {
@@ -263,8 +377,9 @@ export class GoogleVoiceFileImporter implements FileImporter {
     // Call / voicemail records ("Missed"/"Placed"/"Received"/"Recorded"/"Voicemail"
     // HTML files) use a completely different markup shape: a single
     // <div class="haudio"> block (hAudio microformat) with <abbr class="published">
-    // / <abbr class="duration"> and, for voicemails, a <span class="note">
-    // transcript — never a <div class="message"> or a <q> text body. The
+    // / <abbr class="duration"> and, for voicemails, a <span class="full-text">
+    // transcript (see extractTranscript) — never a <div class="message"> or a
+    // <q> text body. The
     // messageBlocks() below doesn't match haudio divs at all, so without this branch
     // every call/voicemail file silently produced zero items. Route them to a
     // dedicated handler instead of falling into the SMS/MMS message loop.
@@ -440,6 +555,21 @@ export class GoogleVoiceFileImporter implements FileImporter {
                 To: (attributed.isOutbound ? counterpart.name : owner) || undefined,
               }
             : {}),
+          // MediaStage's upload leg never sees this item: `content.mediaType`
+          // is deliberately left '' (see below) so `isMediaItem()` stays
+          // false and the primary media predicate skips it. Only the
+          // ATTACHMENT leg (gated on MediaAttachments, same as a voicemail
+          // recording above) uploads the bytes and links them to a message —
+          // uploading via BOTH legs would produce two ci.files rows for the
+          // same picture, one of them orphaned.
+          MediaAttachments: [
+            {
+              path: filename,
+              filename: path.basename(filename),
+              type: attachmentMediaKind(mimeForAttachment(filename)),
+              mimetype: mimeForAttachment(filename),
+            },
+          ],
         },
       };
       params.pipeline.push({
@@ -458,7 +588,8 @@ export class GoogleVoiceFileImporter implements FileImporter {
   //       <span class="fn">Name</span></a></span>
   //     <abbr class="published" title="2025-01-15T09:30:00.000Z">…</abbr>
   //     <abbr class="duration" title="00:01:15">(00:01:15)</abbr>
-  //     <span class="note">voicemail transcript text</span>   (voicemail only)
+  //     <span class="description"><span class="full-text">transcript</span>
+  //       …per-word <span class="word …"> spans…</span>       (voicemail only)
   //   </div>
   // Call direction/type (Missed/Placed/Received/Voicemail/Recorded) is most
   // reliably read from the filename — Google Voice names each call-log file
@@ -497,8 +628,8 @@ export class GoogleVoiceFileImporter implements FileImporter {
     const sender = extractSender(raw);
     const contact = sender.name || sender.phone || conversation;
 
-    const noteMatch = /<span class="note">([\s\S]*?)<\/span>/i.exec(raw);
-    const transcript = noteMatch ? decodeHtml(stripTags(noteMatch[1])).trim() : undefined;
+    const transcript = extractTranscript(raw);
+    const recording = resolveRecording(raw, fpath);
 
     const preposition = direction === 'outgoing' ? 'to' : 'from';
     const contentStr = `${callType} call ${preposition} ${contact || 'unknown'}`;
@@ -528,6 +659,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
           DurationUnit: durationSeconds != null ? 'seconds' : undefined,
           Transcript: transcript || undefined,
           Description: contentStr,
+          ...(recording && { MediaAttachments: [recording] }),
         },
       },
     });
@@ -742,6 +874,19 @@ function resolveAttachment(stub: string, dir: string): string | undefined {
   }
 
   return undefined;
+}
+
+/** MIME for an MMS image attachment, which resolveAttachment names only by extension. */
+function mimeForAttachment(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+
+  return ext === '.jpg' || ext === '.jpeg'
+    ? 'image/jpeg'
+    : ext === '.gif'
+      ? 'image/gif'
+      : ext === '.png'
+        ? 'image/png'
+        : '';
 }
 
 // Attachment filenames embed the real send time, e.g.

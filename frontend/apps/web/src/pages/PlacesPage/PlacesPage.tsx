@@ -56,6 +56,7 @@ const GET_PLACES = gql(`
             visitCount
             firstVisitAt
             lastVisitAt
+            status
           }
         }
       }
@@ -65,6 +66,7 @@ const GET_PLACES = gql(`
 
 const GET_KNOWN_PLACES = gql(`
   query GetKnownPlaces {
+    geocodingConfigured
     knownPlaces {
       id
       locationId
@@ -136,9 +138,16 @@ function PlaceRow({ place, onOpen }: { place: PlaceNode; onOpen: () => void }) {
       </div>
 
       <div className="hidden shrink-0 text-right text-sm text-muted-foreground sm:block">
-        <div>
-          {place.visitStats.visitCount} {place.visitStats.visitCount === 1 ? 'visit' : 'visits'}
-        </div>
+        {place.visitStats.visitCount === 0 && place.visitStats.status === 'pending_enrichment' ? (
+          // A zero here isn't yet a measurement (geocoding unconfigured, or
+          // this place's events haven't finished linking) — distinct from a
+          // place that is genuinely never visited, which reads "0 visits".
+          <div title="Geocoding isn't finished linking events to this place yet">Visits pending</div>
+        ) : (
+          <div>
+            {place.visitStats.visitCount} {place.visitStats.visitCount === 1 ? 'visit' : 'visits'}
+          </div>
+        )}
         {lastVisit && <div>Last {lastVisit}</div>}
       </div>
     </button>
@@ -233,6 +242,16 @@ function KnownPlacesCard() {
       </Card.Header>
       <Card.Content className="flex flex-col gap-3">
         {confirmError && <div className="text-sm text-destructive">{confirmError}</div>}
+
+        {data?.geocodingConfigured === false && candidates.length > 0 && (
+          // Every candidate below defaults to "Unknown place · looks like
+          // Other" when reverse-geocoding hasn't named it — which, without
+          // this note, reads as a fact about the places rather than as
+          // configuration work not yet done.
+          <div className="text-sm text-muted-foreground">
+            Geocoding isn&apos;t configured on this appliance, so these places haven&apos;t been named yet.
+          </div>
+        )}
 
         {knownPlaces.length > 0 && (
           <div className="flex flex-wrap gap-2">

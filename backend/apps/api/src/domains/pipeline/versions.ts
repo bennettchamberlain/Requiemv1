@@ -227,11 +227,23 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.ENRICH_PERSON_LINK]: 1,
   [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: 1,
 
+  /**
+   * v1 — initial self-claim producer (PERSON_SELF_CLAIM_GENERATION in
+   * PersonSelfClaimStage.ts). Bump alongside that generation.
+   */
+  [STAGE_IDS.ENRICH_PERSON_SELF_CLAIM]: 1,
+
   /** v1 — initial temporal repair. Bump when SOURCE_TIME_SPECS gains a source; only a bump re-opens a skip. */
   [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 1,
 
-  /** v1 — initial duplicate proposer. A bump rescores pending candidates; it never resurrects a rejected pair. */
-  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 1,
+  /**
+   * v2 — DUPLICATE_CANDIDATE_GENERATION bumped to 2: the evidence set widened
+   * to include enrich.person_self_claim's claims (contact-card/vCard/Apple
+   * Contacts Persons that never resolved from a communication or event now
+   * have evidence too). A bump rescores pending candidates; it never
+   * resurrects a rejected pair.
+   */
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 2,
 
   /** v1 — initial identifier canonicaliser. Deliberately NOT tied to IDENTITY_SPEC_VERSION, which versions the object identity ladder. */
   [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 1,
@@ -269,7 +281,7 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * generation + PERSON_LINK_VERSION (its edges are a COPY of the linker's
    * columns, so a linker bump re-projects); the event leg additionally tracks
    * PROMOTE_PLACE_VERSION (`location_entity_id` is that stage's output); the
-   * inventory and observation legs track PROMOTE_OBJECT_VERSION; the position
+   * object and observation legs track PROMOTE_OBJECT_VERSION; the position
    * leg tracks PROMOTE_PLACE_POSITION_VERSION (`ci.position.location_entity_id`
    * is that stage's output — it had no writer at all until it landed); the
    * content, receipt and device legs have no versioned producer (importers,
@@ -281,17 +293,20 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    *
    * v4 = matrix generation 4: LOCATED_AT/DOCUMENTS canonical storage, Place and
    * File hierarchy legs.
+   *
+   * v5 = matrix generation 5: communication.has_attachment (File -ATTACHED_TO->
+   * Communication).
    */
-  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_EVENT]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_CONTENT]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_RECEIPT]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_POSITION]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_DEVICE]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_FILE]: 4,
-  [STAGE_IDS.PROMOTE_EDGE_PLACE]: 4,
+  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_EVENT]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_CONTENT]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_OBJECT]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_RECEIPT]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_OBSERVATION]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_POSITION]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_DEVICE]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_FILE]: 5,
+  [STAGE_IDS.PROMOTE_EDGE_PLACE]: 5,
 };
 
 /**

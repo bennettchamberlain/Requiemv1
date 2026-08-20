@@ -24,7 +24,7 @@ import { ChatGenerateListener } from './listeners/ChatGenerateListener';
 import { CvDetectionsListener } from './listeners/CvDetectionsListener';
 import { ImageDescriptionBackfillListener } from './listeners/ImageDescriptionBackfillListener';
 import { ImageDescriptionListener } from './listeners/ImageDescriptionListener';
-import { InventoryListener } from './listeners/InventoryListener';
+import { ThingVisionListener } from './listeners/ThingVisionListener';
 import { ChatGenerationBroker } from './services/ChatGenerationBroker';
 import { ChatTurnService } from './services/ChatTurnService';
 
@@ -54,7 +54,7 @@ import { ChatTurnService } from './services/ChatTurnService';
     CvDetectionsListener,
     ImageDescriptionListener,
     ImageDescriptionBackfillListener,
-    InventoryListener,
+    ThingVisionListener,
   ],
   controllers: [OllamaController, LlmEndpointController],
   exports: [LlmCoreModule],

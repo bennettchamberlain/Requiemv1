@@ -14,7 +14,7 @@ import {
  * THE GUARD, exercised.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `enrichmentLoop.integration.spec.ts` writes `ci.events` and `ci.inventory`
+ * `enrichmentLoop.integration.spec.ts` writes `ci.events` and `ci.objects`
  * through two real declared stages, and the only thing standing between that
  * and somebody's personal archive is
  * {@link import('../scratchDatabase').assertScratchDatabase}. It is called
@@ -63,7 +63,7 @@ describeWithDatabase(`the scratch database guard (${availability.target})`, () =
               to_regclass('ci.pipeline_runs')::text   AS runs,
               to_regclass('ci.pipeline_shards')::text AS shards,
               to_regclass('ci.events')::text          AS events,
-              to_regclass('ci.inventory')::text       AS inventory`,
+              to_regclass('ci.objects')::text       AS objects`,
     )) as Array<Record<string, string | null>>;
 
     expect(present).toEqual({
@@ -71,7 +71,7 @@ describeWithDatabase(`the scratch database guard (${availability.target})`, () =
       runs: 'ci.pipeline_runs',
       shards: 'ci.pipeline_shards',
       events: 'ci.events',
-      inventory: 'ci.inventory',
+      objects: 'ci.objects',
     });
 
     // And it is EMPTY. The corpus the loop suite drives is one it seeds itself;

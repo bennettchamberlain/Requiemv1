@@ -83,7 +83,7 @@ describe('ObjectDuplicateService', () => {
 
     const { sql } = harness.statements[0];
     // The claim index is first-writer-wins, so the LOSING claim was never
-    // inserted — it survives only in ci.inventory.identifier_codes.
+    // inserted — it survives only in ci.objects.identifier_codes.
     expect(sql).toContain('jsonb_each_text');
     expect(sql).toContain("oi.subject_type = 'object_instance'");
   });

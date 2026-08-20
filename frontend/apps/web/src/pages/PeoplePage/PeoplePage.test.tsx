@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { gql } from '@/graphql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
-import { CANDIDATE_PAGE_SIZE, DUPLICATE_PAGE_SIZE, PAGE_SIZE, PeoplePage } from './PeoplePage';
+import { CANDIDATE_PAGE_SIZE, PAGE_SIZE, PeoplePage } from './PeoplePage';
 
 const navigate = vi.fn();
 
@@ -48,27 +48,6 @@ const GET_PEOPLE = gql(`
             communicationCount
             lastInteractionAt
           }
-        }
-      }
-    }
-  }
-`);
-
-const GET_PERSON_DUPLICATES = gql(`
-  query GetPersonDuplicates($limit: Int, $offset: Int, $reasons: [String!]) {
-    personDuplicates(limit: $limit, offset: $offset, reasons: $reasons) {
-      totalCount
-      hasMore
-      groups {
-        reason
-        value
-        totalPeople
-        people {
-          id
-          name
-          description
-          avatarUrl
-          isSelf
         }
       }
     }
@@ -147,21 +126,6 @@ const MERGE_PEOPLE = gql(`
   }
 `);
 
-const DUPLICATE_VARIABLES = { limit: DUPLICATE_PAGE_SIZE, offset: 0, reasons: null };
-
-function duplicatesResult(groups: unknown[], { totalCount = groups.length, hasMore = false } = {}) {
-  return {
-    data: {
-      personDuplicates: {
-        __typename: 'PersonDuplicatesPayload' as const,
-        totalCount,
-        hasMore,
-        groups,
-      },
-    },
-  };
-}
-
 function candidatesResult(
   edges: unknown[],
   { totalCount = edges.length, hasNextPage = false, endCursor = null as string | null } = {},
@@ -178,14 +142,29 @@ function candidatesResult(
   };
 }
 
-function duplicateGroup(people: unknown[], overrides: Record<string, unknown> = {}) {
+/** One `ci.merge_candidates` edge, with sane defaults for the fields the card renders. */
+function candidateEdge(people: unknown[], overrides: Record<string, unknown> = {}) {
   return {
-    __typename: 'PersonDuplicateGroupType' as const,
-    reason: 'email',
-    value: 'ada@example.com',
-    totalPeople: people.length,
-    people,
-    ...overrides,
+    __typename: 'MergeCandidateEdge' as const,
+    cursor: 'candidate-1',
+    node: {
+      __typename: 'MergeCandidateType' as const,
+      id: 'candidate-1',
+      score: 0.85,
+      status: 'pending',
+      detectedBy: 'clean.duplicate_detect',
+      createdAt: '2026-08-18T00:00:00Z',
+      evidence: [
+        {
+          __typename: 'MergeCandidateEvidenceType' as const,
+          kind: 'email',
+          value: 'ada@example.com',
+          score: 0.85,
+        },
+      ],
+      people,
+      ...overrides,
+    },
   };
 }
 
@@ -284,7 +263,7 @@ function captureIntersectionObserver({ fireOnObserve = false } = {}) {
   };
 }
 
-function mocks({ duplicates = [] as unknown[], candidates = [] as unknown[] } = {}) {
+function mocks({ candidates = [] as unknown[] } = {}) {
   return [
     {
       request: { query: GET_PEOPLE, variables: { query: null, first: PAGE_SIZE } },
@@ -298,10 +277,6 @@ function mocks({ duplicates = [] as unknown[], candidates = [] as unknown[] } = 
           },
         },
       },
-    },
-    {
-      request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
-      result: duplicatesResult(duplicates),
     },
     {
       request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
@@ -321,11 +296,11 @@ describe('PeoplePage', () => {
     expect(navigate).not.toHaveBeenCalledWith(`/people/${PERSON_GLOBAL_ID}`);
   });
 
-  it('links duplicate-group members by their decoded uuid', async () => {
+  it('links merge-candidate members by their decoded uuid', async () => {
     renderWithProviders(<PeoplePage />, {
       mocks: mocks({
-        duplicates: [
-          duplicateGroup([
+        candidates: [
+          candidateEdge([
             {
               __typename: 'PersonType' as const,
               id: PERSON_GLOBAL_ID,
@@ -410,10 +385,6 @@ describe('PeoplePage', () => {
               },
             },
           },
-        },
-        {
-          request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
-          result: duplicatesResult([]),
         },
         {
           request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
@@ -513,10 +484,6 @@ describe('PeoplePage', () => {
           },
         },
         {
-          request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
-          result: duplicatesResult([]),
-        },
-        {
           request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
           result: candidatesResult([]),
         },
@@ -576,10 +543,6 @@ describe('PeoplePage', () => {
           // and start logging "No more mocked responses".
           failingPage,
           {
-            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
-            result: duplicatesResult([]),
-          },
-          {
             request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
             result: candidatesResult([]),
           },
@@ -607,11 +570,11 @@ describe('PeoplePage', () => {
     }
   });
 
-  it('offers Merge into one person and Use as the kept person on duplicate groups', async () => {
+  it('offers Merge into one person and Use as the kept person on a merge candidate', async () => {
     renderWithProviders(<PeoplePage />, {
       mocks: mocks({
-        duplicates: [
-          duplicateGroup([
+        candidates: [
+          candidateEdge([
             {
               __typename: 'PersonType' as const,
               id: PERSON_GLOBAL_ID,
@@ -656,7 +619,7 @@ describe('PeoplePage', () => {
     const BEATRICE_GLOBAL_ID = btoa(`person:${BEATRICE_UUID}`);
     const observer = captureIntersectionObserver();
 
-    const group = duplicateGroup([
+    const candidate = candidateEdge([
       {
         __typename: 'PersonType' as const,
         id: PERSON_GLOBAL_ID,
@@ -721,12 +684,8 @@ describe('PeoplePage', () => {
             },
           },
           {
-            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
-            result: duplicatesResult([group]),
-          },
-          {
             request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
-            result: candidatesResult([]),
+            result: candidatesResult([candidate]),
           },
           {
             request: {
@@ -764,12 +723,8 @@ describe('PeoplePage', () => {
               },
             },
           },
-          // Both suggestion sources are re-read after the merge; neither
-          // re-runs the people list.
-          {
-            request: { query: GET_PERSON_DUPLICATES, variables: DUPLICATE_VARIABLES },
-            result: duplicatesResult([]),
-          },
+          // The candidate queue is re-read after the merge; it does not
+          // re-run the people list.
           {
             request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
             result: candidatesResult([]),
@@ -857,109 +812,5 @@ describe('PeoplePage', () => {
     expect(screen.getByText('85% match')).toBeInTheDocument();
     expect(screen.getByText('9145826767')).toBeInTheDocument();
     expect(screen.getByText(/Detected by clean.duplicate_detect/)).toBeInTheDocument();
-  });
-
-  /**
-   * The four call-log-heading groups (899 "Missed call from" rows and friends)
-   * used to be dropped from the queue entirely. They are surfaced truncated now,
-   * so the card must say what fraction a merge would actually cover.
-   */
-  it('discloses that an oversized duplicate group is truncated', async () => {
-    renderWithProviders(<PeoplePage />, {
-      mocks: mocks({
-        duplicates: [
-          duplicateGroup(
-            [
-              {
-                __typename: 'PersonType' as const,
-                id: PERSON_GLOBAL_ID,
-                name: 'Missed call from',
-                description: null,
-                avatarUrl: null,
-                isSelf: false,
-              },
-              {
-                __typename: 'PersonType' as const,
-                id: DUPLICATE_GLOBAL_ID,
-                name: 'Missed call from',
-                description: null,
-                avatarUrl: null,
-                isSelf: false,
-              },
-            ],
-            { reason: 'name', value: 'missed call from', totalPeople: 899 },
-          ),
-        ],
-      }),
-    });
-
-    expect(await screen.findByText(/Showing 2 of 899 people sharing this name/)).toBeInTheDocument();
-  });
-
-  it('re-queries with a reason filter when one is picked', async () => {
-    renderWithProviders(<PeoplePage />, {
-      mocks: [
-        ...mocks({
-          duplicates: [
-            duplicateGroup([
-              {
-                __typename: 'PersonType' as const,
-                id: PERSON_GLOBAL_ID,
-                name: 'Ada Lovelace',
-                description: null,
-                avatarUrl: null,
-                isSelf: false,
-              },
-              {
-                __typename: 'PersonType' as const,
-                id: DUPLICATE_GLOBAL_ID,
-                name: 'A. Lovelace',
-                description: null,
-                avatarUrl: null,
-                isSelf: false,
-              },
-            ]),
-          ],
-        }),
-        {
-          request: {
-            query: GET_PERSON_DUPLICATES,
-            variables: { limit: DUPLICATE_PAGE_SIZE, offset: 0, reasons: ['name'] },
-          },
-          result: duplicatesResult(
-            [
-              duplicateGroup(
-                [
-                  {
-                    __typename: 'PersonType' as const,
-                    id: PERSON_GLOBAL_ID,
-                    name: 'Missed call from',
-                    description: null,
-                    avatarUrl: null,
-                    isSelf: false,
-                  },
-                  {
-                    __typename: 'PersonType' as const,
-                    id: DUPLICATE_GLOBAL_ID,
-                    name: 'Missed call from',
-                    description: null,
-                    avatarUrl: null,
-                    isSelf: false,
-                  },
-                ],
-                { reason: 'name', value: 'missed call from', totalPeople: 899 },
-              ),
-            ],
-            { totalCount: 2286, hasMore: true },
-          ),
-        },
-      ],
-    });
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Name' }));
-
-    expect(await screen.findByText('missed call from')).toBeInTheDocument();
-    expect(screen.getByText(/of 2286 groups shown/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Load more duplicate groups' })).toBeInTheDocument();
   });
 });

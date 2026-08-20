@@ -254,7 +254,7 @@ interface IngestStatusResponse {
     communications: number;
     events: number;
     content: number;
-    inventory: number;
+    objects: number;
     browser_activity: number;
   };
   searchIndex: {
@@ -1258,7 +1258,7 @@ export class MaintenanceController {
           communications: string;
           events: string;
           content: string;
-          inventory: string;
+          objects: string;
           browser_activity: string;
         }>
       >(
@@ -1266,7 +1266,7 @@ export class MaintenanceController {
            (SELECT count(*) FROM ci.communications)   AS communications,
            (SELECT count(*) FROM ci.events)           AS events,
            (SELECT count(*) FROM ci.content)          AS content,
-           (SELECT count(*) FROM ci.inventory)        AS inventory,
+           (SELECT count(*) FROM ci.objects)        AS objects,
            (SELECT count(*) FROM ci.browser_activity) AS browser_activity`,
       ),
       this.dataSource.query<Array<{ entity_type: string; count: string }>>(
@@ -1298,7 +1298,7 @@ export class MaintenanceController {
         communications: Number(tables?.communications ?? 0),
         events: Number(tables?.events ?? 0),
         content: Number(tables?.content ?? 0),
-        inventory: Number(tables?.inventory ?? 0),
+        objects: Number(tables?.objects ?? 0),
         browser_activity: Number(tables?.browser_activity ?? 0),
       },
       searchIndex: {

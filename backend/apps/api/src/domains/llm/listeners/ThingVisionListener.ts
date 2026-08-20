@@ -8,7 +8,8 @@ import { FileService, FileUploadedEvent, type FileUploadedPayload } from '@ci/do
 import {
   ItemService,
   ObjectObservationService,
-  type InventoryCondition,
+  ObjectResolutionService,
+  type ObjectCondition,
   type PhysicalItemPropertiesDto,
   normalizePhysicalProperties,
 } from '@ci/domains/memory';
@@ -72,14 +73,14 @@ const PROMPT = `
   cannot see rather than guessing — a wrong measurement is worse than none.
 `;
 
-/** Matches the 'vision-guessed' tier documented on ci.inventory.identity_confidence. */
+/** Matches the 'vision-guessed' tier documented on ci.objects.identity_confidence. */
 const VISION_IDENTITY_CONFIDENCE = 0.4;
 
 /**
  * `source_kind` for a photo the user deliberately shot to catalogue their
  * things. Distinguishes it from a passive frame in the observation timeline.
  */
-const INVENTORY_SOURCE_KIND = 'photo';
+const THING_CAPTURE_SOURCE_KIND = 'photo';
 
 /** See the note on the identical helper in `CvDetectionsListener`. */
 function parseExternalDate(value: Date | string | null | undefined): Date | null {
@@ -99,59 +100,76 @@ function parseExternalDate(value: Date | string | null | undefined): Date | null
 }
 
 /**
- * Records what the vision pass SAW as well as what it MINTED.
+ * Thing capture: the Ollama vision pass behind the camera's "thing" mode.
  *
- * ── Why this listener changed, twice ───────────────────────────────────────
+ * ── What this replaced, and why the shape changed ──────────────────────────
  *
- * `ci.object_observations`' migration header names this class as the thing it
- * was written to fix: it "writes speculative ci.inventory rows straight from a
- * vision guess", conflating "a coffee mug is visible in this photo" with "I own
- * this specific coffee mug".
+ * Its ancestor (`InventoryListener`, retired along with the standalone
+ * inventory feature) minted one `ci.inventory` row per item the model read out
+ * of the photo, unconditionally. It had no arbiter of any kind, so re-uploading the
+ * same photo — or re-running the model over it — multiplied the user's
+ * possessions: three passes over one desk photo produced three keyboards.
  *
- * What is NOT true is that every write here is speculative. This listener only
- * runs when the upload carried `inventoryCapture: true` — an explicit,
- * per-upload assertion by the user that they are cataloguing their own
- * belongings (`FilesController` / `BulkFilesController` read it off the form).
- * The user's intent to own is real; it is the model's item-by-item reading of
- * the photo that is a guess.
+ * The write order here is what fixes that, and it is deliberate:
  *
- * Two changes now answer that guess from opposite ends, and they are
- * complementary rather than redundant:
+ *  1. THE SIGHTING FIRST. Every item the model reads becomes a
+ *     `ci.object_observations` row keyed on (file, detector, label) — the
+ *     `detectionKeyFor` scheme, chosen precisely because this pass returns no
+ *     bounding boxes. Re-running the model over the same photo UPDATES each
+ *     sighting in place, and two different objects in one frame stay two rows.
  *
- *  1. The MINTED ROW SAYS IT WAS GUESSED. `identity_method: 'vision'` and
- *     `identity_confidence` at {@link VISION_IDENTITY_CONFIDENCE}, so a later
- *     barcode scan outranks it instead of tying with it. That marks the claim.
- *  2. The GUESS ITSELF IS ON THE RECORD. Every item the model reads becomes a
- *     `ci.object_observations` sighting FIRST, and the minted row is attached
- *     to it as a resolution (`method: 'label'`). That leaves an auditable trail
- *     from pixels to owned unit where previously there was none: an inventory
- *     row simply appeared, with `metadata.original_analysis` as the only
- *     evidence and nothing queryable linking it to the frame it came from.
+ *  2. THE LADDER SECOND. {@link ObjectResolutionService.resolveAndApply} gets
+ *     first refusal on every sighting. If the thing in the frame is already an
+ *     owned unit — matched by identifier, embedding or place prior — the
+ *     sighting links to THAT unit and nothing is minted. This is the case the
+ *     old listener got wrong every single time.
  *
- * One grades the conclusion; the other keeps the premise. Neither is the whole
- * fix. FULLY severing this path — minting only above a configured auto-mint
- * confidence and queueing the rest for review — is what the migration header
- * describes as `ObjectResolutionService`'s job. That service does not exist
- * yet, and the threshold it needs is a product decision, not a refactor.
+ *  3. MINTING LAST, AND ONLY ONCE. A sighting that resolved to nothing mints
+ *     one unit, which is then attached to the sighting as its resolution.
+ *     Because step 1 returns the SAME observation row on a re-upload, and
+ *     because `createMany` never overwrites the resolution columns, that row
+ *     comes back already carrying `resolvedObjectId` — so the second pass sees
+ *     an answer and skips minting. The sighting is the idempotency key the old
+ *     path never had.
+ *
+ * ── Why this mints at all ──────────────────────────────────────────────────
+ *
+ * {@link ObjectResolutionService} states, correctly, that a sighting is never
+ * grounds for minting: "a coffee mug is visible in this photo" is not "I own
+ * this coffee mug", and its ladder therefore only ever LINKS. That rule is
+ * about MACHINE inference, and it is not relaxed here.
+ *
+ * This path has something the resolver does not: `thingCapture: true` on the
+ * upload, an explicit per-upload assertion by the user that they are
+ * photographing their own belongings (`FilesController` / `BulkFilesController`
+ * read it off the form). The user's intent to own is stated; only the model's
+ * item-by-item reading of the frame is a guess. So the guess is graded rather
+ * than trusted — `identity_method: 'vision'` at
+ * {@link VISION_IDENTITY_CONFIDENCE}, so a later barcode scan outranks it
+ * instead of tying with it — and the whole chain from pixels to owned unit
+ * stays queryable through the observation it hangs off.
+ *
+ * Passive frames, which carry no such assertion, go through
+ * {@link CvDetectionsListener} and mint nothing.
  */
-
 @Injectable()
-export class InventoryListener {
+export class ThingVisionListener {
   constructor(
     private readonly fileService: FileService,
     private readonly ollamaService: OllamaService,
     private readonly itemService: ItemService,
     private readonly observationService: ObjectObservationService,
+    private readonly resolutionService: ObjectResolutionService,
     private readonly imageDescriptionPreference: ImageDescriptionPreferenceService,
     private readonly logger: LoggerService,
   ) {
-    this.logger.setContext(InventoryListener.name);
+    this.logger.setContext(ThingVisionListener.name);
   }
 
-  @OnEvent(FileUploadedEvent, { queue: 'inventory' })
+  @OnEvent(FileUploadedEvent, { queue: 'thing-vision' })
   async handleFileUploaded(payload: FileUploadedPayload) {
-    if (!payload.inventoryCapture) {
-      this.logger.log('File uploaded without inventory capture enabled, skipping processing', {
+    if (!payload.thingCapture) {
+      this.logger.log('File uploaded without thing capture enabled, skipping processing', {
         fileId: payload.fileId,
       });
 
@@ -159,7 +177,7 @@ export class InventoryListener {
     }
 
     if (!(await this.imageDescriptionPreference.isEnabled(payload.userId))) {
-      this.logger.log('Image description disabled — skipping inventory vision', {
+      this.logger.log('Image description disabled — skipping thing vision', {
         fileId: payload.fileId,
         userId: payload.userId,
       });
@@ -228,7 +246,7 @@ export class InventoryListener {
       });
     } catch (error) {
       if (isNonMultimodalModelError(error)) {
-        this.logger.warn('Model cannot accept images — skipping inventory vision gracefully', {
+        this.logger.warn('Model cannot accept images — skipping thing vision gracefully', {
           model,
           fileId: payload.fileId,
           error: error instanceof Error ? error.message : String(error),
@@ -272,7 +290,7 @@ export class InventoryListener {
       // two rows instead of collapsing into one.
       const observation = await this.observationService.create(serviceContext, {
         observedAt,
-        sourceKind: INVENTORY_SOURCE_KIND,
+        sourceKind: THING_CAPTURE_SOURCE_KIND,
         fileId: payload.fileId,
         label,
         labelSource: 'ollama_vision',
@@ -285,7 +303,7 @@ export class InventoryListener {
         //
         // Recorded VERBATIM, exactly as `label` is, and deliberately NOT put
         // through `normalizePhysicalProperties`: that normalizer turns
-        // unit-bearing strings into millimetres and grams for `ci.inventory`,
+        // unit-bearing strings into millimetres and grams for `ci.objects`,
         // and a sighting is the record of what the detector SAID, not of what
         // its words resolve to. Dimensions and mass are left off entirely for
         // the same reason — they need that normalizer to mean anything, and a
@@ -298,10 +316,47 @@ export class InventoryListener {
             itemData.materials.length > 0 && { materials: itemData.materials }),
         },
         metadata: {
-          inventory_capture: true,
+          thing_capture: true,
           original_analysis: itemData,
         },
       });
+
+      // `create` returns null when the sighting matched a row a human has
+      // already confirmed. That row's resolution is theirs; there is nothing
+      // to add and nothing to log as a failure.
+      if (observation == null) {
+        continue;
+      }
+
+      // ALREADY ANSWERED. On a re-upload (or a second model pass over the same
+      // photo) step 1 returns the SAME row — `createMany` keys it on
+      // (file, detector, label) and never touches the resolution columns — so
+      // this is where the old listener's row multiplication stops. Nothing is
+      // minted for a sighting that already points at a unit.
+      if (observation.resolvedObjectId != null) {
+        this.logger.log('Sighting already resolved to a thing, not minting again', {
+          observationId: observation.id,
+          objectId: observation.resolvedObjectId,
+        });
+
+        continue;
+      }
+
+      // THE LADDER GETS FIRST REFUSAL. If the thing in frame is already an
+      // owned unit — a barcode, an embedding, the place it lives — the sighting
+      // links to that unit and this pass mints nothing.
+      const resolved = await this.resolutionService.resolveAndApply(serviceContext, observation.id);
+
+      if (resolved?.applied === true) {
+        this.logger.log('Sighting matched an existing thing, not minting', {
+          observationId: observation.id,
+          objectId: resolved.objectId,
+          method: resolved.method,
+          confidence: resolved.confidence,
+        });
+
+        continue;
+      }
 
       const item = await this.itemService.create(serviceContext, {
         name: itemData.name || 'Unknown Item',
@@ -310,7 +365,7 @@ export class InventoryListener {
         brand: itemData.brand ?? undefined,
         model: itemData.model ?? undefined,
         condition: ['new', 'like_new', 'good', 'fair', 'poor', 'broken', 'n/a'].includes(condition)
-          ? (condition as InventoryCondition)
+          ? (condition as ObjectCondition)
           : 'good',
         currentValue: itemData.estimated_value,
         // A photo is not a tape measure. Saying so is the difference between a
@@ -323,6 +378,7 @@ export class InventoryListener {
           original_analysis: itemData,
           captured_at: new Date(),
           source_file_id: payload.fileId,
+          source_observation_id: observation.id,
           // Measurement provenance, stamped at the write.
           // `identity_method` is the only other tell that these numbers were
           // eyeballed, and it is independently mutable: a later barcode scan
@@ -336,28 +392,24 @@ export class InventoryListener {
         },
       });
 
-      this.logger.log('Inventory item created', {
+      this.logger.log('Thing minted from a capture photo', {
         itemId: item.id,
         name: item.name,
+        observationId: observation.id,
       });
 
       // Attach the minted unit to the sighting it came from. `label` is the
       // honest method: nothing matched an identifier or an embedding, the model
       // read a name off a photo. Confidence is left unset rather than guessed.
-      //
-      // `create` returns null when the sighting matched a row a human has
-      // already confirmed; that row's resolution is theirs, so there is nothing
-      // to attach and nothing to log as a failure.
-      if (observation != null) {
-        await this.observationService.resolve(serviceContext, observation.id, {
-          resolvedObjectId: item.id,
-          resolutionMethod: 'label',
-          resolutionConfidence: null,
-        });
-      }
+      // This write is also what makes the NEXT pass a no-op.
+      await this.observationService.resolve(serviceContext, observation.id, {
+        resolvedObjectId: item.id,
+        resolutionMethod: 'label',
+        resolutionConfidence: null,
+      });
     }
 
-    this.logger.log('Inventory processing completed');
+    this.logger.log('Thing capture processing completed');
   }
 
   /**

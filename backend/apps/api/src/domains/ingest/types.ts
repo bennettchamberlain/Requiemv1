@@ -19,7 +19,7 @@ import { createPositionSchemaRoot } from '@ci/domains/position';
  *     product-models / observations → snake_case (CreateCommunicationDto /
  *     CreateContentDto / CreateBrowserActivityDto / CreatePositionDto /
  *     CreateReceiptDto / CreateProductModelDto / CreateObjectObservationDto);
- *   - inventory → camelCase (CreateItemDto is the one camelCase ingest DTO,
+ *   - things → camelCase (CreateItemDto is the one camelCase ingest DTO,
  *     and stays the only one — the object tables added alongside it are
  *     snake_case like every other kind).
  *
@@ -40,14 +40,14 @@ const bulkEnvelope = <T extends z.ZodTypeAny>(record: T) =>
  * server-assigned uuid.
  *
  * The bulk plane's one cross-kind referencing problem: an importer pushing a
- * receipt and then the inventory it produced does not know the uuid the server
+ * receipt and then the thing it produced does not know the uuid the server
  * minted for either — it only knows its own `(source_type, source_system,
  * source_id)` for each. All three parts are required: the partial unique
  * indexes these resolve against are `WHERE source_id IS NOT NULL` and treat the
  * triple as a whole, so a two-part reference cannot address a row.
  *
  * Resolution is BEST-EFFORT by contract — see the pre-pass in
- * `BulkIngestController.flushInventory`. A reference that misses (the receipt
+ * `BulkIngestController.flushThings`. A reference that misses (the receipt
  * has not been pushed yet, or arrived in a later batch of the same load)
  * resolves to NULL and the row is written without the link, never rejected:
  * push order is the client's business, and a rejected row is data lost, while a
@@ -216,11 +216,11 @@ export type BulkNoteRecord = z.infer<typeof bulkNoteRecordSchema>;
 export type IngestNotesRequest = z.infer<typeof ingestNotesSchema>;
 
 // ---------------------------------------------------------------------------
-// POST /v1/inventory → ItemService.createMany
+// POST /v1/things → ItemService.createMany
 // ---------------------------------------------------------------------------
 
 // Field-for-field CreateItemDto — the one camelCase ingest DTO (the entity and
-// GraphQL CreateInventoryInput are camelCase too, so the whole inventory path
+// GraphQL CreateThingInput are camelCase too, so the whole things path
 // shares one vocabulary). `acquiredAt` arrives as an ISO string and is coerced
 // to Date in the controller.
 //
@@ -231,7 +231,7 @@ export type IngestNotesRequest = z.infer<typeof ingestNotesSchema>;
 // did. `Routes.e2e.test.ts` asserts exactly that against a recorded
 // today-shaped record, so the additions cannot quietly change the existing
 // contract.
-export const bulkInventoryRecordSchema = z.object({
+export const bulkThingRecordSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(1),
   description: z.string().optional(),
@@ -337,23 +337,23 @@ export const bulkInventoryRecordSchema = z.object({
     .optional(),
   /**
    * Queryable ownership state; the schema defaults it to 'active'. The
-   * vocabulary mirrors `InventoryLifecycleState`, which itself mirrors the
-   * `inventory_lifecycle_state_check` constraint — all three move together.
+   * vocabulary mirrors `ObjectLifecycleState`, which itself mirrors the
+   * `objects_lifecycle_state_check` constraint — all three move together.
    */
   lifecycleState: z
     .enum(['active', 'stored', 'lent_out', 'lost', 'disposed', 'consumed', 'returned', 'archived'])
     .optional(),
 
-  // Provenance triple for idempotent re-ingest (inventory_source_triple_uniq).
+  // Provenance triple for idempotent re-ingest (objects_source_triple_uniq).
   sourceType: z.string().optional(),
   sourceSystem: z.string().optional(),
   sourceId: z.string().optional(),
 });
 
-export const ingestInventorySchema = bulkEnvelope(bulkInventoryRecordSchema);
+export const ingestThingsSchema = bulkEnvelope(bulkThingRecordSchema);
 
-export type BulkInventoryRecord = z.infer<typeof bulkInventoryRecordSchema>;
-export type IngestInventoryRequest = z.infer<typeof ingestInventorySchema>;
+export type BulkThingRecord = z.infer<typeof bulkThingRecordSchema>;
+export type IngestThingsRequest = z.infer<typeof ingestThingsSchema>;
 
 // ---------------------------------------------------------------------------
 // POST /v1/browser-activity → BrowserActivityService.createMany

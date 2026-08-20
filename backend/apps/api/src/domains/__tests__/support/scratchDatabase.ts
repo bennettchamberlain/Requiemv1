@@ -18,7 +18,7 @@ import { isPortOpen, resolveConnection, type DatabaseAvailability } from './data
  *
  * `enrichmentLoop.integration.spec.ts` cannot do either. It drives two REAL
  * declared stages, and a real stage names real tables: `ObjectPromoteStage`
- * reads `ci.events` and writes `ci.inventory`, `TemporalRepairStage` reads and
+ * reads `ci.events` and writes `ci.objects`, `TemporalRepairStage` reads and
  * writes `ci.events`. Those names are compiled into the stages, which is
  * correct — they are the appliance's tables — and it means the only place the
  * spec can run without touching somebody's archive is a database where
@@ -30,7 +30,7 @@ import { isPortOpen, resolveConnection, type DatabaseAvailability } from './data
  * through one {@link import('typeorm').QueryRunner} inside a transaction it
  * always rolled back, and said in its header that nothing could therefore
  * reach the operator's data. It reached the operator's data: a run against the
- * dev appliance left ~599,000 `ci.pipeline_state` rows, 2,147 `ci.inventory`
+ * dev appliance left ~599,000 `ci.pipeline_state` rows, 2,147 `ci.objects`
  * objects and 2,875 `ci.events` rows carrying repaired time provenance, none
  * of it authorised by a human.
  *
@@ -495,9 +495,9 @@ export async function assertScratchDatabase(
       `REFUSING TO RUN: ${why}\n` +
         `  connected to : ${row?.database ?? '(unknown)'}\n` +
         `  expected     : ${expected.name}\n` +
-        `This suite drives real declared stages, which write ci.events and ci.inventory BY NAME. It is ` +
+        `This suite drives real declared stages, which write ci.events and ci.objects BY NAME. It is ` +
         `only ever allowed to do that inside a database it created for this run. Pointed at an appliance ` +
-        `database it once committed ~599,000 ledger rows and 2,147 inventory objects into somebody's ` +
+        `database it once committed ~599,000 ledger rows and 2,147 objects into somebody's ` +
         `personal archive; this check is what makes that unrepeatable.`,
     );
   };

@@ -67,7 +67,7 @@ const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
 const SearchPage = lazy(() => import('@/pages/SearchPage'));
-const FilesPage = lazy(() => import('@/pages/FilesPage'));
+const ContentLibraryPage = lazy(() => import('@/pages/ContentLibraryPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
 const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
@@ -301,12 +301,16 @@ function AppRoutes() {
             }
           />
 
-          {/* Ungated, like /memory/people and /memory/places. `enable.inventory.page`
-              ships `true` in the API's own default.json and nothing in the repo turns
-              it off, so it never gated anything in practice — but it DID make the
-              route 404 for the moment before the global flag fetch settles, and it
-              cannot cover the sibling Receipts surface (which has no flag of its
-              own). Half a gate over one coherent surface is worse than none. */}
+          {/* Ungated, like /memory/people and /memory/places. The old
+              `enable.inventory.page` flag shipped `true` in the API's own
+              default.json and nothing in the repo turned it off, so it never
+              gated anything in practice — but it DID make the route 404 for the
+              moment before the global flag fetch settles, and it could not cover
+              the sibling Receipts surface (which has no flag of its own). Half a
+              gate over one coherent surface is worse than none; the flag is gone.
+
+              `/inventory` stays as a redirect, not a route: it is the URL the
+              retired feature shipped under and may sit in a bookmark. */}
           <Route path="/inventory" element={<Navigate to="/memory/things" replace />} />
           <Route
             path="/memory/things"
@@ -340,16 +344,16 @@ function AppRoutes() {
             <>
               <Route path="/files" element={<Navigate to="/memory/content" replace />} />
               {/*
-                The optional :fileId gives an individual file a shareable URL and
-                makes Back close the viewer. It is one route rather than two so
-                FilesPage stays mounted when the param changes — a second route
-                would remount it and throw away every page the user scrolled in.
+                The optional :contentId gives an individual content row a shareable
+                URL and makes Back close the drawer. It is one route rather than two
+                so ContentLibraryPage stays mounted when the param changes — a second
+                route would remount it and throw away every page the user scrolled in.
               */}
               <Route
-                path="/memory/content/:fileId?"
+                path="/memory/content/:contentId?"
                 element={
                   <ProtectedRoute>
-                    <FilesPage />
+                    <ContentLibraryPage />
                   </ProtectedRoute>
                 }
               />

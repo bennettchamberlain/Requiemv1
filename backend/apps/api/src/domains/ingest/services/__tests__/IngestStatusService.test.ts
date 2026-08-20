@@ -12,7 +12,7 @@ describe('IngestStatusService.snapshot', () => {
               communications: '10',
               events: '20',
               content: '30',
-              inventory: '40',
+              objects: '40',
               browser_activity: '50',
               position: '60',
               product_models: '70',
@@ -57,7 +57,7 @@ describe('IngestStatusService.snapshot', () => {
       communications: 10,
       events: 20,
       content: 30,
-      inventory: 40,
+      objects: 40,
       browser_activity: 50,
       position: 60,
       product_models: 70,
@@ -69,7 +69,7 @@ describe('IngestStatusService.snapshot', () => {
     expect(snapshot.searchIndex.skipsByType).toEqual({ event: 2 });
     expect(snapshot.searchIndex.queue).toEqual({ created: 5, active: 0, failed: 1 });
     expect(snapshot.coverage.geocoded.positionsAddressed).toEqual({ rows: 60, matched: 0, pct: 0 });
-    expect(snapshot.coverage.geocoded.inventoryPlaced.pct).toBeCloseTo(1 / 8);
+    expect(snapshot.coverage.geocoded.objectPlaced.pct).toBeCloseTo(1 / 8);
     expect(snapshot.coverage.embedded.communication.pctDecided).toBeCloseTo(7 / 10);
   });
 });

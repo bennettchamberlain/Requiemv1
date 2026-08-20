@@ -24,16 +24,18 @@ const h = vi.hoisted(() => ({
   persistApiBaseUrl: vi.fn(),
 }));
 
-vi.mock('@ci/common', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@ci/common')>();
-
-  return {
-    ...actual,
-    getApiBaseUrl: () => h.apiBaseUrl,
-    buildApiUrl: (path: string) => `${h.apiBaseUrl}${path}`,
-    persistApiBaseUrl: h.persistApiBaseUrl,
-  };
-});
+// Spread the real module rather than allow-listing exports. This page's health check
+// runs through the real `probeMemoryOrigin` (./DeviceConnectPage/portal-client), which
+// itself imports `apiFetch` from `@ci/common` — so an allow-list mock blanks a
+// dependency the page never names, and every probe throws before reaching `fetch`.
+// Only the three origin helpers are stubbed: the first two so the test drives the
+// configured origin, the third so it is asserted on and never hits localStorage.
+vi.mock('@ci/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@ci/common')>()),
+  getApiBaseUrl: () => h.apiBaseUrl,
+  buildApiUrl: (path: string) => `${h.apiBaseUrl}${path}`,
+  persistApiBaseUrl: h.persistApiBaseUrl,
+}));
 
 function fillUrl(value: string) {
   fireEvent.change(screen.getByLabelText('Memory Server URL'), { target: { value } });

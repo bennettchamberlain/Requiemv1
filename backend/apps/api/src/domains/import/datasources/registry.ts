@@ -159,6 +159,14 @@ export interface RecognizeRunOptions {
    * (the inbox root, uploads, the CLI/MCP path tools).
    */
   only?: ReadonlySet<string>;
+  /**
+   * Called after each directory entry the descent finishes recognizing, with
+   * the running count. Recognition is thousands of tiny reads and can crawl
+   * when the disk is busy (a concurrent 350GB unpack) — a caller with a
+   * progress surface uses this to show the crawl as movement instead of a
+   * frozen label. Fire-and-forget: the walk never waits on it.
+   */
+  onEntry?: (scanned: number) => void;
 }
 
 /** Run every importer's `recognize` against a single entry; keep the hits. */
@@ -254,7 +262,13 @@ export async function dataSourcesRecognize(
   if (runOpts.descend && entry.fullPath && (await isDirectorySafe(entry.fullPath))) {
     const maxDepth = runOpts.maxDepth ?? 4;
     const maxEntries = runOpts.maxEntriesPerDir ?? 200;
-    await descendRecognize(ctx, entry.fullPath, opts, consider, maxDepth, maxEntries, 1, runOpts.only);
+    // The count is cumulative across the whole descent, not per directory —
+    // it feeds a progress line, and a number that resets at every subfolder
+    // reads as the scan starting over.
+    let totalScanned = 0;
+    const tick = runOpts.onEntry == null ? undefined : () => runOpts.onEntry?.((totalScanned += 1));
+
+    await descendRecognize(ctx, entry.fullPath, opts, consider, maxDepth, maxEntries, 1, runOpts.only, tick);
   }
 
   const results = [...best.values()].flat();
@@ -330,6 +344,7 @@ async function descendRecognize(
   maxEntries: number,
   depth: number,
   only?: ReadonlySet<string>,
+  tick?: () => void,
 ): Promise<void> {
   if (depth > maxDepth) {
     return;
@@ -359,8 +374,10 @@ async function descendRecognize(
     }
 
     if (e.isDirectory()) {
-      await descendRecognize(ctx, childPath, opts, consider, maxDepth, maxEntries, depth + 1, only);
+      await descendRecognize(ctx, childPath, opts, consider, maxDepth, maxEntries, depth + 1, only, tick);
     }
+
+    tick?.();
   }
 }
 

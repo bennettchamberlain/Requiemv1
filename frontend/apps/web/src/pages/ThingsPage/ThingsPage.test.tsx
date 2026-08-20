@@ -5,7 +5,14 @@ import type { GetItemDuplicatesQuery } from '@/graphql/graphql';
 import { mockQuery } from '@/test/gql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
-import { GET_ITEM_DUPLICATES, GET_THINGS, MERGE_ITEMS, PAGE_SIZE, ThingsPage } from './ThingsPage';
+import {
+  GET_ITEM_DUPLICATES,
+  GET_THINGS,
+  MERGE_ITEMS,
+  PAGE_SIZE,
+  REJECT_ITEM_DUPLICATES,
+  ThingsPage,
+} from './ThingsPage';
 
 // The hub nav reads a provider the harness deliberately does not supply (see
 // renderWithProviders); PeoplePage.test.tsx stubs it the same way.
@@ -277,6 +284,44 @@ describe('ThingsPage', () => {
     fireEvent.click(confirm);
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  // The other half of the decision. `itemDuplicates` is recomputed on every
+  // request, so a decline that is not written to `ci.entity_merge_blocks` shows
+  // the identical group again on the next load — which is exactly what the page
+  // did before this mutation existed.
+  it('records a declined duplicate group, with no confirm dialog in the way', async () => {
+    renderWithProviders(<ThingsPage />, {
+      route: '/memory/things',
+      mocks: [
+        mockQuery(GET_THINGS, BASE_VARIABLES, makeThingsResult([makeThing(THING_A, 'Drill')]), {
+          maxUsageCount: 5,
+        }),
+        duplicatesMock(DUPLICATE_GROUP, 5),
+        // The mock matches on VARIABLES, so this is also the assertion that the
+        // whole group is sent: a call with anything other than both ids finds no
+        // mock, and the card renders the resulting error instead.
+        mockQuery(
+          REJECT_ITEM_DUPLICATES,
+          { itemIds: [THING_A, THING_B] },
+          {
+            rejectItemDuplicates: true,
+          },
+        ),
+      ],
+    });
+
+    const decline = await screen.findByRole('button', { name: 'Not the same thing' });
+
+    fireEvent.click(decline);
+
+    // Declining is not destructive, so unlike the merge it is one click.
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Not the same thing' })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Could not record that/)).toBeNull();
   });
 
   it('keeps the desktop filter row inline', async () => {

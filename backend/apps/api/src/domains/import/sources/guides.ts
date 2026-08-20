@@ -710,8 +710,9 @@ export const WIZARD_SOURCES: WizardSource[] = [
         '- **Windows:** `C:\\Users\\{USERNAME}\\AppData\\Local\\{Google\\Chrome|BraveSoftware\\Brave-Browser|Microsoft\\Edge|Arc}\\User Data\\Default\\`',
       ].join('\n'),
       '`Default/` is your first profile. If you use more than one profile in that browser, the others sit beside it as `Profile 1/`, `Profile 2/`, and so on — do this once per profile you want to import.',
+      'Find the file(s) named `History`, without any additional text.',
+      'Rename them to e.g. `History-chrome1` / `Bookmarks-chrome1` to tell several browsers or profiles apart — they all ship the same two filenames, so unrenamed copies overwrite each other in `browser/`.',
       UPLOAD_STEP,
-      'Rename them to e.g. `History-chrome` / `Bookmarks-chrome` to tell several browsers or profiles apart — they all ship the same two filenames, so unrenamed copies overwrite each other in `browser/`.',
     ],
     inboxPath: 'browser',
     expectedFormat:

@@ -83,13 +83,13 @@ describe('ItemService.findPage', () => {
     ]);
   });
 
-  it('carries the tombstone predicate that makes inventory_live_keyset_idx applicable', async () => {
+  it('carries the tombstone predicate that makes objects_live_keyset_idx applicable', async () => {
     const harness = makeHarness();
 
     await harness.service.findPage(CONTEXT);
 
     // The index is partial: WHERE merged_into_object_id IS NULL. Drop the
-    // predicate and the planner falls back to inventory_user_idx plus a filter.
+    // predicate and the planner falls back to objects_user_idx plus a filter.
     expect(harness.wheres[0].sql).toBe('item.merged_into_object_id IS NULL');
   });
 

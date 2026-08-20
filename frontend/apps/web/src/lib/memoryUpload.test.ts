@@ -38,6 +38,7 @@ describe('uploadFilesToMemory', () => {
 
     const body = mockedFetchJson.mock.calls[0][1]?.body as FormData;
     expect(body.getAll('files')).toEqual([file]);
+    expect(body.has('thingCapture')).toBe(false);
     expect(body.has('inventoryCapture')).toBe(false);
   });
 

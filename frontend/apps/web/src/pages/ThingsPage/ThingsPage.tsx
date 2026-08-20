@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { EntityGrid, ItemGridItem } from '@/components/entities';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
-import { InventoryItemModal } from '@/components/modals/InventoryItemModal';
+import { ThingModal } from '@/components/modals/ThingModal';
 import { gql } from '@/graphql';
 import type {
   GetItemDuplicatesQuery,
@@ -108,6 +108,12 @@ export const MERGE_ITEMS = gql(`
         receiptLineItems
       }
     }
+  }
+`);
+
+export const REJECT_ITEM_DUPLICATES = gql(`
+  mutation RejectThingDuplicates($itemIds: [ID!]!) {
+    rejectItemDuplicates(itemIds: $itemIds)
   }
 `);
 
@@ -324,12 +330,15 @@ function describeThing(thing: DuplicateItem): string {
 
 /**
  * One duplicate suggestion: a set of things the server collapsed onto a shared
- * code, product or brand+model, and the merge that folds them into one.
+ * code, product or brand+model, and the two answers a person can give it.
  *
- * There is no "not the same" here, unlike the people queue: the GraphQL surface
- * has no mutation to record a rejected item pair, so offering the button would
- * be a lie — the group would come straight back on the next load. The gap is
- * called out in the card's own copy rather than hidden behind a dead control.
+ * Both answers have to STICK. `itemDuplicates` is derived — recomputed from
+ * identifiers, products and brand+model on every request — so a decline that
+ * went nowhere would see the identical group proposed again on the next load,
+ * forever. `rejectItemDuplicates` writes every pair in the group to
+ * `ci.entity_merge_blocks`, which `ObjectDuplicateService` reads before it
+ * proposes anything; the same table and the same shape as the people queue's
+ * `rejectPersonDuplicates`.
  */
 function DuplicateGroupCard({
   group,
@@ -339,6 +348,7 @@ function DuplicateGroupCard({
   onMerged: () => Promise<unknown>;
 }) {
   const [mergeItems, { loading }] = useMutation(MERGE_ITEMS);
+  const [rejectDuplicates, { loading: rejecting }] = useMutation(REJECT_ITEM_DUPLICATES);
   const [pendingTargetId, setPendingTargetId] = useState<string | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
 
@@ -360,6 +370,19 @@ function DuplicateGroupCard({
       // Keep the dialog open and show what went wrong instead of silently
       // closing on failure.
       setMergeError(error instanceof Error ? error.message : 'The merge failed. Please try again.');
+    }
+  };
+
+  // "I own two of these" is a real answer, and until it was recorded the only
+  // way to clear a wrong suggestion was to merge two things that are not the
+  // same one.
+  const reject = async () => {
+    try {
+      await rejectDuplicates({ variables: { itemIds: group.items.map((thing) => thing.id) } });
+      setMergeError(null);
+      await onMerged();
+    } catch (error) {
+      setMergeError(error instanceof Error ? error.message : 'Could not record that. Please try again.');
     }
   };
 
@@ -406,9 +429,12 @@ function DuplicateGroupCard({
         {mergeError && pendingTargetId == null && (
           <span className="text-sm text-destructive">{mergeError}</span>
         )}
+        <Button size="sm" variant="ghost" disabled={loading || rejecting} onClick={() => void reject()}>
+          {rejecting ? 'Saving…' : 'Not the same thing'}
+        </Button>
         <Button
           size="sm"
-          disabled={loading || defaultTargetId == null}
+          disabled={loading || rejecting || defaultTargetId == null}
           onClick={() => {
             if (defaultTargetId != null) {
               setMergeError(null);
@@ -432,7 +458,7 @@ function DuplicateGroupCard({
           <AlertDialog.Header>
             <AlertDialog.Title>Merge into one thing?</AlertDialog.Title>
             <AlertDialog.Description>
-              {`Codes, sightings, receipt lines and inventory links from the other ${group.items.length - 1 === 1 ? 'thing' : `${group.items.length - 1} things`} will move onto "${pendingTarget?.name || 'Unnamed thing'}". This cannot be undone from the UI.`}
+              {`Codes, sightings, receipt lines and object links from the other ${group.items.length - 1 === 1 ? 'thing' : `${group.items.length - 1} things`} will move onto "${pendingTarget?.name || 'Unnamed thing'}". This cannot be undone from the UI.`}
             </AlertDialog.Description>
           </AlertDialog.Header>
           {mergeError && <div className="text-sm text-destructive">{mergeError}</div>}
@@ -918,7 +944,7 @@ export function ThingsPage() {
           </Tabs>
         </MemoryHubShell>
 
-        <InventoryItemModal
+        <ThingModal
           open={createOpen}
           onClose={() => setCreateOpen(false)}
           item={null}

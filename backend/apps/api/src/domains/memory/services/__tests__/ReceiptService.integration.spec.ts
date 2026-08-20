@@ -341,15 +341,15 @@ describeWithDb(`ReceiptService — provenance and line upserts, in Postgres (${a
     ]);
 
     // Stand in for a mint: the pointer is all `replaceLineItems` reads. It has
-    // to be a real ci.inventory row, because minted_object_id is a FK.
+    // to be a real ci.objects row, because minted_object_id is a FK.
     const objectId = uuidv7();
     await dataSource.query(
       `INSERT INTO ci.entities (entity_id, entity_type, name, properties, owner_user_id, linked_table, linked_id)
-       VALUES ($1, 'Item', 'Nails', '{}'::jsonb, $2, 'inventory', $1)`,
+       VALUES ($1, 'Item', 'Nails', '{}'::jsonb, $2, 'objects', $1)`,
       [objectId, owner.userId],
     );
     await dataSource.query(
-      `INSERT INTO ci.inventory (object_id, user_id, owner_user_id, lifecycle_state)
+      `INSERT INTO ci.objects (object_id, user_id, owner_user_id, lifecycle_state)
        VALUES ($1, $2, $2, 'active')`,
       [objectId, owner.userId],
     );
@@ -363,14 +363,14 @@ describeWithDb(`ReceiptService — provenance and line upserts, in Postgres (${a
     ]);
 
     // Deleting line 2 would fire ON DELETE SET NULL on
-    // ci.inventory.acquisition_line_item_id and cut the possession's provenance.
+    // ci.objects.acquisition_line_item_id and cut the possession's provenance.
     expect(after.map((line) => line.lineNumber)).toEqual([1, 2]);
 
     await dataSource.query(
       `UPDATE ci.receipt_line_items SET minted_object_id = NULL WHERE line_item_id = $1`,
       [lines[1].id],
     );
-    await dataSource.query('DELETE FROM ci.inventory WHERE object_id = $1', [objectId]);
+    await dataSource.query('DELETE FROM ci.objects WHERE object_id = $1', [objectId]);
     await dataSource.query('DELETE FROM ci.entities WHERE entity_id = $1', [objectId]);
   });
 

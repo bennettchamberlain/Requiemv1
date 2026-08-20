@@ -54,7 +54,7 @@ export class ParseStage implements ImportStageRunner {
   async run(context: StageRunContext): Promise<StageOutcome> {
     await context.progress({ processed: 0, total: null, phase: 'recognizing' });
 
-    const recognized = await this.recognize(context.scratchDir);
+    const recognized = await this.recognize(context, context.scratchDir);
 
     if (recognized.length === 0) {
       // Not an error. A person can upload something this appliance has no parser
@@ -205,15 +205,46 @@ export class ParseStage implements ImportStageRunner {
    * `descend: true` because the tree is whatever the archive contained: a bare
    * `.gpx` sitting one level down is the single-file drag-and-drop case, and
    * without descent the containing folder matches nothing at all.
+   *
+   * Recognition ticks its progress per entry scanned. It is normally
+   * sub-second, but it is also thousands of tiny reads — and when the disk is
+   * busy (a neighbouring run's 350GB unpack) those crawl, and a real LinkedIn
+   * import sat at a bare "recognizing" for six minutes, indistinguishable from
+   * a hang. The stage writes nothing between "recognizing" and the first
+   * "parsing …", so this tick is the only thing that can show the difference.
    */
-  private async recognize(scratchDir: string): Promise<DataSourceRecognition[]> {
+  private async recognize(context: StageRunContext, scratchDir: string): Promise<DataSourceRecognition[]> {
     const entry: DirEntry = {
       filename: path.basename(scratchDir),
       fullPath: scratchDir,
       fsRoot: scratchDir,
     };
 
-    const matches = await dataSourcesRecognize(undefined, entry, {}, { descend: true });
+    // Locally throttled: the listener already caps writes at one per second,
+    // but every un-throttled call still costs a promise and a formatted string
+    // per directory entry. Fire-and-forget — recognition must not wait on its
+    // own progress line.
+    let lastTick = 0;
+    const matches = await dataSourcesRecognize(
+      undefined,
+      entry,
+      {},
+      {
+        descend: true,
+        onEntry: (scanned) => {
+          const now = Date.now();
+
+          if (now - lastTick < 1_000) {
+            return;
+          }
+
+          lastTick = now;
+          void context
+            .progress({ processed: 0, total: null, phase: `recognizing (${scanned} scanned)` })
+            .catch(() => undefined);
+        },
+      },
+    );
 
     return dropGenericWhenSpecialised(matches);
   }
@@ -311,10 +342,18 @@ export class ParseStage implements ImportStageRunner {
  *  - `entitiesGrown` — a repeat sighting of a person or a dish merged into the
  *    row already staged. Also a record consumed that did not become a new row.
  *
- * `consumed` is left to be derived rather than measured: no parser reports how
- * many records it read, so `produced + dropped` is the honest floor and the
- * summary says as much by construction. Claiming a measured figure the parsers
- * do not supply would be worse than deriving one.
+ * `consumed` is derived (`produced + dropped`) unless the parser called
+ * `pipeline.consumed()` — `counts.recordsRead` is then a MEASURED figure
+ * (`consumedOverride`), and the reconciliation check in `stageSummary.ts` can
+ * actually fail for that unit instead of holding by construction. A parser
+ * that never calls it keeps the derived floor, which can never disagree with
+ * itself.
+ *
+ * `counts.keeps` is deliberately NOT folded in here. A keep is a record a gate
+ * would have discarded and the parser rescued — it IS in `produced`, so adding
+ * it to `drops` would count one row as both made and lost, and the run UI
+ * renders `drops` as the loss report. It rides on `detail.sources[].keeps`
+ * instead (ParseStage spreads `writer.totals` there).
  */
 function parseUnit(
   dataSource: string,
@@ -343,6 +382,7 @@ function parseUnit(
     // the QA corpus, and the answer is always "look at what it matched".
     path: where,
     ...(error != null ? { error } : {}),
+    ...(counts.recordsRead != null ? { consumedOverride: counts.recordsRead } : {}),
   };
 }
 

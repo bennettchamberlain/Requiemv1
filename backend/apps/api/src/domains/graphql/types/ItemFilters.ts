@@ -1,12 +1,12 @@
 import { registerEnumType } from '@nestjs/graphql';
 
-import type { InventoryLifecycleState } from '@ci/domains/memory';
+import type { ObjectLifecycleState } from '@ci/domains/memory';
 
 /**
  * Ownership state of a physical thing.
  *
  * `satisfies Record<Uppercase<T>, T>` for the same reason the physical-property
- * enums are: the `inventory_lifecycle_state_check` constraint, the domain union
+ * enums are: the `objects_lifecycle_state_check` constraint, the domain union
  * and this enum widen together or not at all.
  */
 export const ItemLifecycleState = {
@@ -18,7 +18,7 @@ export const ItemLifecycleState = {
   CONSUMED: 'consumed',
   RETURNED: 'returned',
   ARCHIVED: 'archived',
-} as const satisfies Record<Uppercase<InventoryLifecycleState>, InventoryLifecycleState>;
+} as const satisfies Record<Uppercase<ObjectLifecycleState>, ObjectLifecycleState>;
 
 export type ItemLifecycleState = (typeof ItemLifecycleState)[keyof typeof ItemLifecycleState];
 

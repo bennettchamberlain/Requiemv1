@@ -57,7 +57,7 @@ function makeHarness(): Harness {
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     statements.push({ sql, params });
 
-    if (sql.includes('INSERT INTO ci.inventory')) {
+    if (sql.includes('INSERT INTO ci.objects')) {
       // Every generated object id comes back as a genuine insert.
       const objectIds = params[7] as string[];
 
@@ -67,7 +67,7 @@ function makeHarness(): Harness {
     if (sql.includes('SELECT object_id, source_id')) {
       // The DB agrees with the ids we generated (no pre-existing rows).
       const sourceIds = params[3] as string[];
-      const insert = statements.find((s) => s.sql.includes('INSERT INTO ci.inventory'));
+      const insert = statements.find((s) => s.sql.includes('INSERT INTO ci.objects'));
       const objectIds = (insert?.params[7] ?? []) as string[];
 
       return sourceIds.map((sourceId, index) => ({
@@ -89,11 +89,11 @@ function makeHarness(): Harness {
   return { service, statements, recordMany };
 }
 
-function inventoryInsert(harness: Harness) {
-  const found = harness.statements.find(({ sql }) => sql.includes('INSERT INTO ci.inventory'));
+function objectInsert(harness: Harness) {
+  const found = harness.statements.find(({ sql }) => sql.includes('INSERT INTO ci.objects'));
 
   if (found == null) {
-    throw new Error('no ci.inventory INSERT was issued');
+    throw new Error('no ci.objects INSERT was issued');
   }
 
   return found;
@@ -107,7 +107,7 @@ describe('ObjectMintService', () => {
 
     expect(result.objectIds).toHaveLength(1);
 
-    const insert = inventoryInsert(harness);
+    const insert = objectInsert(harness);
     // params[19] is the quantity array (see the unnest column order).
     expect(insert.params[18]).toEqual([6]);
     // The arbiter is the bare line id: no serial split happened.
@@ -123,7 +123,7 @@ describe('ObjectMintService', () => {
 
     expect(result.objectIds).toHaveLength(3);
 
-    const insert = inventoryInsert(harness);
+    const insert = objectInsert(harness);
     expect(insert.params[9]).toEqual([`${LINE_A}#SN-1`, `${LINE_A}#SN-2`, `${LINE_A}#SN-3`]);
     // Each row is one unit now — the count does not travel with them.
     expect(insert.params[18]).toEqual([1, 1, 1]);
@@ -149,7 +149,7 @@ describe('ObjectMintService', () => {
 
     expect(results.find((r) => r.lineItemId === LINE_A)?.objectIds).toEqual([]);
     expect(results.find((r) => r.lineItemId === LINE_B)?.objectIds).toHaveLength(1);
-    expect(inventoryInsert(harness).params[9]).toEqual([LINE_B]);
+    expect(objectInsert(harness).params[9]).toEqual([LINE_B]);
   });
 
   it('issues no statement at all when every line is digital', async () => {
@@ -168,16 +168,16 @@ describe('ObjectMintService', () => {
 
     await harness.service.mintFromLines(CONTEXT, RECEIPT_CONTEXT, [line()]);
 
-    const insert = inventoryInsert(harness);
+    const insert = objectInsert(harness);
     expect(insert.params[2]).toBe(MINT_LIFECYCLE_STATE);
     expect(insert.params[3]).toBe(MINT_IDENTITY_CONFIDENCE);
     expect(insert.params[4]).toBe(MINT_IDENTITY_METHOD);
     expect(insert.params[5]).toBe(MINT_SOURCE_TYPE);
     expect(insert.params[22]).toBe(MINT_ACQUISITION_METHOD);
 
-    // 'owned' is not in inventory_lifecycle_state_check and would fail every row.
+    // 'owned' is not in objects_lifecycle_state_check and would fail every row.
     expect(MINT_LIFECYCLE_STATE).toBe('active');
-    // 'purchase' is not in inventory_acquisition_method_check.
+    // 'purchase' is not in objects_acquisition_method_check.
     expect(MINT_ACQUISITION_METHOD).toBe('purchased');
     // Receipt-derived identity must stay below the 1.0 ground-truth tier.
     expect(MINT_IDENTITY_CONFIDENCE).toBeLessThan(1);
@@ -188,7 +188,7 @@ describe('ObjectMintService', () => {
 
     await harness.service.mintFromLines(CONTEXT, RECEIPT_CONTEXT, [line()]);
 
-    const insert = inventoryInsert(harness);
+    const insert = objectInsert(harness);
     expect(insert.sql).toContain('ON CONFLICT (owner_user_id, source_type, source_system, source_id)');
     expect(insert.sql).toContain('WHERE source_id IS NOT NULL');
     expect(insert.params[6]).toBe('amazon');
@@ -199,7 +199,7 @@ describe('ObjectMintService', () => {
 
     await harness.service.mintFromLines(CONTEXT, RECEIPT_CONTEXT, [line()]);
 
-    const insert = inventoryInsert(harness);
+    const insert = objectInsert(harness);
     expect(insert.sql).toContain("inv.metadata->'mint'->>'service' = 'ObjectMintService'");
     // A re-extraction must not resurrect a thing the user threw away.
     expect(insert.sql).not.toContain('lifecycle_state     = excluded');
@@ -229,7 +229,7 @@ describe('ObjectMintService', () => {
     ]);
 
     // JPY has no minor unit: ¥1,200 is 1200, not 12.
-    expect(inventoryInsert(harness).params[14]).toEqual([1200]);
+    expect(objectInsert(harness).params[14]).toEqual([1200]);
   });
 
   it('rounds a fractional quantity up rather than violating quantity > 0', async () => {
@@ -237,6 +237,6 @@ describe('ObjectMintService', () => {
 
     await harness.service.mintFromLines(CONTEXT, RECEIPT_CONTEXT, [line({ quantity: 1.5 })]);
 
-    expect(inventoryInsert(harness).params[18]).toEqual([2]);
+    expect(objectInsert(harness).params[18]).toEqual([2]);
   });
 });

@@ -177,6 +177,29 @@ export const STAGE_IDS = {
   ENRICH_PERSON_LINK: 'enrich.person_link',
 
   /**
+   * A Person entity's OWN identifiers (`ci.entities.name` /
+   * `properties.emails` / `properties.phones`) as `ci.identifier_claims` rows
+   * (`subject_type = 'person'`, `role = 'self'`, `entity_id` = itself).
+   *
+   * `clean.duplicate_detect`'s evidence query groups on `entity_id`
+   * regardless of `subject_type`, so this is the missing PRODUCER, not a
+   * change to that stage: without it, only Persons a communication or event
+   * resolved to (`enrich.person_link` / `enrich.event_person_link`'s claims)
+   * ever had evidence — a contact-card/vCard/apple_contacts-imported Person
+   * who never sent a message had zero claims and could never be proposed as
+   * a duplicate of anything, no matter how many fields it shared.
+   *
+   * Deliberately NOT sourced from `ci.entity_identifiers`: that table is
+   * UNIQUE on `(owner_user_id, kind, value_normalized)`, so when two
+   * DUPLICATE Persons both hold the same email, only the first insert wins
+   * and the second's identical identifier is silently absent — exactly the
+   * pair this stage exists to find. Reading `ci.entities.properties`
+   * directly (the same JSONB `PersonDuplicateService`'s ad-hoc computation
+   * already reaches into) keeps every entity's own claim, lossy or not.
+   */
+  ENRICH_PERSON_SELF_CLAIM: 'enrich.person_self_claim',
+
+  /**
    * The same algorithm over `ci.events`, replacing
    * `EventParticipantBackfillService`.
    *
@@ -246,7 +269,7 @@ export const STAGE_IDS = {
   PROMOTE_PLACE_POSITION: 'promote.place_position',
 
   /**
-   * Promote purchases into `ci.inventory` with real identity — the first writer
+   * Promote purchases into `ci.objects` with real identity — the first writer
    * the rich object model has ever had.
    */
   PROMOTE_OBJECT: 'promote.object',
@@ -258,7 +281,7 @@ export const STAGE_IDS = {
    * CI-Spatial has been pushing one `capture.scan` event per scan, carrying
    * `payload.objects`, since the scan pipeline shipped; nothing read them, and
    * the sightings table sat empty behind a downstream edge projection that was
-   * already built. Reads event metadata only, writes no `ci.inventory` row and
+   * already built. Reads event metadata only, writes no `ci.objects` row and
    * sets no resolution column: a sighting is the weak claim.
    */
   PROMOTE_OBSERVATION: 'promote.observation',
@@ -292,11 +315,11 @@ export const STAGE_IDS = {
   PROMOTE_EDGE_CONTENT: 'promote.edge_content',
 
   /**
-   * The same projection over `ci.inventory`: `last_seen_place_entity_id`
+   * The same projection over `ci.objects`: `last_seen_place_entity_id`
    * (written by `promote.object` and importers) becomes Item −LOCATED_AT→
    * Place.
    */
-  PROMOTE_EDGE_INVENTORY: 'promote.edge_inventory',
+  PROMOTE_EDGE_OBJECT: 'promote.edge_object',
 
   /**
    * The same projection over `ci.receipts`: extraction's resolved columns

@@ -96,7 +96,7 @@ rules below are asserted in unit tests rather than discovered in production.
    parent. Three exist today — `hbpe.l1_event_cluster`, `hbpe.l2_content_cluster`,
    `ci_search.entity_tag` — and without this step the purge fails part-way.
 4. **Flatten self-references.** `ci.messages.parent_message_id`,
-   `ci.threads.parent_thread_id` and `ci.inventory.parent_object_id` are nulled
+   `ci.threads.parent_thread_id` and `ci.objects.parent_object_id` are nulled
    first, so a batch cannot delete a parent row while a child still points at it.
 5. **Order children before parents**, topologically, from the same catalog. Mandatory
    for `NO ACTION` edges; preferred for `CASCADE` ones, so the child stays inside the
