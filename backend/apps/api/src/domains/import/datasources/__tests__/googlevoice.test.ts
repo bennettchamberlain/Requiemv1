@@ -900,3 +900,119 @@ describe('voicemail transcripts in real export markup', () => {
     expect(vm!.metadata.Transcript).toBe("Hey it's Alice, call me back when you get a chance.");
   });
 });
+
+// Google Voice ships each voicemail's recording as a sibling .mp3 named by an
+// <audio src>. None of it was read: resolveAttachment only probes image
+// extensions, and it is unreachable from a call file anyway because fileImport
+// routes haudio to processCallLog and returns before the <img> loop. 3,066
+// files name a recording, 2,718 resolve to bytes, and ci.files held no audio
+// row from any source.
+describe('voicemail recordings', () => {
+  async function importRealMarkup() {
+    const exportDir = path.join(FIXTURES_DIR, 'google-voice-export-realmarkup');
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport(
+      {},
+      { filename: 'google-voice-export-realmarkup', fullPath: exportDir },
+      { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
+    );
+    return pipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item);
+  }
+
+  const attachmentsOf = (call: { metadata: Record<string, unknown> }) =>
+    call.metadata.MediaAttachments as Array<Record<string, unknown>> | undefined;
+
+  it('attaches the recording that sits beside the html', async () => {
+    const calls = await importRealMarkup();
+    const bob = calls.find((c) => c.metadata.Contact === 'Bob Smith')!;
+    const atts = attachmentsOf(bob);
+    expect(atts).toHaveLength(1);
+    expect(atts![0].filename).toBe('Bob Smith - Voicemail - 2025-03-04T08_20_00Z.mp3');
+    expect(atts![0].type).toBe('audio');
+    expect(atts![0].mimetype).toBe('audio/mpeg');
+    expect(fs.existsSync(atts![0].path as string)).toBe(true);
+  });
+
+  it('resolves a percent-encoded href whose accents are stored decomposed on disk', async () => {
+    // Built at RUNTIME, not committed as a fixture: git's core.precomposeunicode
+    // rewrites a decomposed filename to NFC on add, so a committed fixture would
+    // arrive composed on a fresh checkout and this would silently stop testing
+    // the thing it names.
+    //
+    // The export names the file composed (NFC) and percent-encoded, while macOS
+    // stores it decomposed (NFD). Comparing raw strings finds nothing.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-nfd-'));
+    const calls = path.join(dir, 'Calls');
+    fs.mkdirSync(calls);
+    const nfd = 'Renée Dupré - Voicemail - 2025-03-06T10_00_00Z.mp3'.normalize('NFD');
+    const nfc = nfd.normalize('NFC');
+    expect(nfd).not.toBe(nfc); // the case only exists if these differ
+    fs.writeFileSync(path.join(calls, nfd), 'ID3fake');
+    const href = encodeURIComponent(nfc);
+    fs.writeFileSync(
+      path.join(calls, 'Renee Dupre - Voicemail - 2025-03-06T10_00_00Z.html'),
+      `<html><body><div class="haudio"><span class="album">Voicemail</span>` +
+        `<span class="fn">Voicemail from <a class="tel" href="tel:+15551237777"><span class="fn">Renee Dupre</span></a></span>` +
+        `<div class="contributor vcard"><a class="tel" href="tel:+15551237777"><span class="fn">Renee Dupre</span></a></div>` +
+        `<abbr class="published" title="2025-03-06T10:00:00.000Z">Mar 6</abbr>` +
+        `<span class="description"><span class="full-text">Accented filename case.</span></span><br />` +
+        `<audio controls="controls" src="${href}"><a rel="enclosure" href="${href}">x</a></audio>` +
+        `<abbr class="duration" title="PT00H00M09S">(00:00:09)</abbr></div></body></html>`,
+    );
+
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+    const renee = pipeline
+      .filter((p) => p.item?.classification === 'call')
+      .map((p) => p.item)
+      .find((c) => c.metadata.Contact === 'Renee Dupre');
+    expect(renee).toBeDefined();
+
+    const atts = attachmentsOf(renee!);
+    expect(atts).toHaveLength(1);
+
+    // The path must be the byte sequence the DIRECTORY holds, not the one the
+    // href spells. existsSync alone cannot show this on macOS, where APFS
+    // compares filenames normalization-INSENSITIVELY and the NFC path resolves
+    // regardless. The appliance runs Linux, where ext4 compares bytes and the
+    // NFC path would simply not exist — so assert the bytes.
+    const resolved = path.basename(atts![0].path as string);
+    expect(fs.readdirSync(calls)).toContain(resolved);
+    expect(fs.readFileSync(atts![0].path as string).length).toBeGreaterThan(0);
+  });
+
+  it('records no attachment when the export did not ship the audio', async () => {
+    // Unlike imessage.ts, a path-less descriptor is NOT recorded here: chat.db
+    // knows a purged attachment's name, type and guid, but a Voice export
+    // missing its mp3 says nothing the call record does not already say.
+    const calls = await importRealMarkup();
+    const dan = calls.find((c) => c.metadata.Contact === 'Dan Vale')!;
+    expect(dan).toBeDefined();
+    expect(attachmentsOf(dan)).toBeUndefined();
+  });
+
+  it('still imports the call itself when the audio is missing', async () => {
+    const calls = await importRealMarkup();
+    const dan = calls.find((c) => c.metadata.Contact === 'Dan Vale')!;
+    expect(dan.metadata.CallType).toBe('Voicemail');
+    expect(dan.metadata.Transcript).toBe('Missing audio case.');
+  });
+
+  it('does not attach anything to a call with no audio element', async () => {
+    // The legacy fixture's voicemail has a transcript but no <audio>.
+    const exportDir = path.join(FIXTURES_DIR, 'google-voice-export-calls');
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport(
+      {},
+      { filename: 'google-voice-export-calls', fullPath: exportDir },
+      { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
+    );
+    const calls = pipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((c) => c.metadata.MediaAttachments === undefined)).toBe(true);
+  });
+});

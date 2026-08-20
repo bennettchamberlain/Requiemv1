@@ -7,9 +7,10 @@ import { stripCallLogHeading } from '@ci/domains/graph';
 
 import { isShortCode } from '../staging/identity';
 
+import { attachmentMediaKind } from './attachment_extract';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
-import type { ImportParams, EntityAttribute, Relationship } from './timeline';
+import type { AttachmentDescriptor, ImportParams, EntityAttribute, Relationship } from './timeline';
 
 type GoogleVoiceOptions = Record<string, never>;
 
@@ -149,6 +150,77 @@ function extractTranscript(raw: string): string | undefined {
   const text = decodeHtml(stripTags(match[1])).trim();
 
   return text || undefined;
+}
+
+/**
+ * The audio recording a call or voicemail HTML file points at.
+ *
+ * Google Voice ships the recording as a sibling .mp3 and names it twice in the
+ * hAudio block — an `<audio src>` and, inside it, an `<a rel="enclosure" href>`
+ * carrying the identical value:
+ *
+ *   <audio controls="controls" src="Name - Voicemail - 2019-06-23T04_34_22Z.mp3">
+ *     <a rel="enclosure" href="Name - Voicemail - 2019-06-23T04_34_22Z.mp3">…</a>
+ *   </audio>
+ *
+ * None of it was read. `resolveAttachment` only ever probes `.jpg/.gif/.png/
+ * .jpeg`, and it is unreachable from here regardless: fileImport routes a
+ * haudio file to processCallLog and RETURNS before the `<img>` attachment loop
+ * runs at all. So every voicemail recording and call recording the export
+ * shipped was skipped — 3,066 files name one, 2,718 of them resolve to bytes on
+ * disk, and `ci.files` held no audio row from any source.
+ *
+ * Unlike `resolveAttachment` there is nothing to guess here: the markup states
+ * the exact filename, so the only work is undoing the transport encodings.
+ * The href is percent-encoded, and the filenames carry accented characters that
+ * macOS stores decomposed (NFD) while the HTML names them composed (NFC) — so
+ * both sides are normalised before comparing, and the resolved path is taken
+ * from the DIRECTORY LISTING rather than rebuilt from the href, so the byte
+ * sequence handed to `readFile` is the one the filesystem actually holds.
+ *
+ * Returns undefined when the file is not beside the HTML. The descriptor is
+ * omitted entirely in that case rather than recorded path-less: unlike
+ * imessage.ts — where chat.db knows a purged attachment's name, type and guid,
+ * and "a photo was here" is worth keeping — a Voice export that is missing its
+ * mp3 tells us nothing the call record does not already say.
+ */
+function resolveRecording(raw: string, fpath: string): AttachmentDescriptor | undefined {
+  const match =
+    /<audio[^>]*\ssrc="([^"]+)"/i.exec(raw) ?? /<a[^>]*\srel="enclosure"[^>]*\shref="([^"]+)"/i.exec(raw);
+  if (!match) {
+    return undefined;
+  }
+
+  const wanted = decodeURIComponent(match[1]).normalize('NFC');
+  if (!wanted || wanted.includes('/')) {
+    return undefined;
+  }
+
+  const dir = path.dirname(fpath);
+  let actual: string | undefined;
+  try {
+    actual = fs.readdirSync(dir).find((name) => name.normalize('NFC') === wanted);
+  } catch {
+    return undefined;
+  }
+
+  if (!actual) {
+    return undefined;
+  }
+
+  return {
+    path: path.join(dir, actual),
+    filename: actual,
+    type: attachmentMediaKind(mimeForRecording(actual)),
+    mimetype: mimeForRecording(actual),
+  };
+}
+
+/** MIME for a Voice recording, which the export names only by extension. */
+function mimeForRecording(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+
+  return ext === '.mp3' ? 'audio/mpeg' : ext === '.m4a' ? 'audio/mp4' : ext === '.amr' ? 'audio/amr' : '';
 }
 
 export class GoogleVoiceFileImporter implements FileImporter {
@@ -542,6 +614,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
     const contact = sender.name || sender.phone || conversation;
 
     const transcript = extractTranscript(raw);
+    const recording = resolveRecording(raw, fpath);
 
     const preposition = direction === 'outgoing' ? 'to' : 'from';
     const contentStr = `${callType} call ${preposition} ${contact || 'unknown'}`;
@@ -571,6 +644,7 @@ export class GoogleVoiceFileImporter implements FileImporter {
           DurationUnit: durationSeconds != null ? 'seconds' : undefined,
           Transcript: transcript || undefined,
           Description: contentStr,
+          ...(recording && { MediaAttachments: [recording] }),
         },
       },
     });
