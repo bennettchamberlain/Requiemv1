@@ -18,6 +18,7 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
+import { BaseEntity } from '../entities/BaseEntity';
 import { EventBaseEntity } from '../entities/EventBaseEntity';
 import { EventEntity, Event } from '../entities/EventEntity';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
@@ -968,7 +969,7 @@ export class EventService {
     // columns are hydrated in the SAME query — no second composition fetch.
     let qb = this.eventRepository
       .createQueryBuilder('event')
-      .innerJoin('ci.entities', 'base', 'base.entity_id = event.event_id')
+      .innerJoin(BaseEntity, 'base', 'base.entity_id = event.event_id')
       .addSelect('base.name', 'base_name')
       .addSelect('base.description', 'base_description')
       .where('event.is_deleted = false');
@@ -1200,7 +1201,7 @@ export class EventService {
     let query = this.dataSource
       .getRepository(EventEntity)
       .createQueryBuilder('event')
-      .innerJoin('ci.entities', 'base', 'base.entity_id = event.event_id')
+      .innerJoin(BaseEntity, 'base', 'base.entity_id = event.event_id')
       .select('event.event_id', 'event_id')
       .addSelect('base.name', 'title')
       .addSelect('event.start_time', 'start_time')

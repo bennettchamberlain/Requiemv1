@@ -7,6 +7,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import { pairKey } from '../entities/EntityMergeBlockEntity';
 import { type Item, ItemEntity } from '../entities/ItemEntity';
+import { BaseEntity } from '../entities/BaseEntity';
 
 import { EntityMergeBlockService } from './EntityMergeBlockService';
 
@@ -299,7 +300,7 @@ export class ObjectDuplicateService {
 
     const { entities, raw } = await this.itemRepository
       .createQueryBuilder('item')
-      .innerJoin('ci.entities', 'base', 'base.entity_id = item.object_id')
+      .innerJoin(BaseEntity, 'base', 'base.entity_id = item.object_id')
       .addSelect('base.name', 'base_name')
       .addSelect('base.description', 'base_description')
       .where('item.user_id = :userId', { userId: context.userId })
