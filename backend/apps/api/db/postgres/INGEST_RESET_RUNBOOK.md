@@ -28,7 +28,7 @@ In a single transaction it:
 
 | What | Why |
 |------|-----|
-| `TRUNCATE ci.events, ci.communications, ci.content, ci.inventory, ci.browser_activity RESTART IDENTITY CASCADE` | the bulk-ingest destination tables |
+| `TRUNCATE ci.events, ci.communications, ci.content, ci.objects, ci.browser_activity RESTART IDENTITY CASCADE` | the bulk-ingest destination tables |
 | `TRUNCATE ci.communications_source_dedup` (same statement) | **required in lockstep** — `TRUNCATE` does not fire the per-row `AFTER DELETE` trigger that normally keeps the dedup table consistent with the hypertable. If the dedup rows survive, every provenance triple in the next re-import "dedupes" against a pointer to a deleted row and the re-import lands **0 communications** (this incident has happened). `CommunicationService.createMany` + migration `20260628120000_communications_source_dedup_table.sql` are the mechanism. |
 | `TRUNCATE ci_search.embeddings, ci_search.vectors, ci_search.index_skips` | otherwise the search index is fully orphaned (it points at deleted rows) and skip markers wrongly suppress re-indexing of re-imported rows. The list is shared with `OrphanCleanupService` (`SEARCH_TABLES`) so it cannot drift. |
 | `DELETE FROM pgboss.job WHERE name = 'search-index' AND state IN ('created','active','retry')` | queued index jobs reference rows that no longer exist; they would drain as pure entity-not-found noise |

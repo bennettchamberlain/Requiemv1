@@ -54,7 +54,7 @@ Authoritative column lists live in the migrations and the matching TypeORM entit
 | `ci.event_analytics` | Side table for rarely-written analytics columns moved off the hot events row (`salience`, `access_count`, …) | — |
 | `ci.communications` | Email/SMS/chat/calls — **plain table** (de-hypertabled; see [Hypertables](#hypertables)) | `memory/entities/CommunicationEntity.ts` |
 | `ci.content` | Rich content records (articles, media, web pages), optional FK to an event (`content.event_id`) | `memory/entities/ContentEntity.ts` |
-| `ci.inventory` | Items the user owns | `memory/entities/ItemEntity.ts` |
+| `ci.objects` | Items the user owns | `memory/entities/ItemEntity.ts` |
 | `ci.browser_activity` | **Deprecated** — page visits from the browser extension; folded into `ci.events` (`view`) + `ci.content` (`web-page`); dual-read until drop | `browser-activity/entities/BrowserActivityEntity.ts` |
 | `ci.capture_events` | Append-only raw capture log behind `POST /v1/*`, soft link to the materialized row (`20260621021634`) | — |
 | `ci.files` | File metadata (MinIO-backed objects, previews) | `files/entities/FileEntity.ts` |
@@ -78,8 +78,8 @@ totally mutable, so **the onus is on application-layer code to use consistent fi
 within each entity type. Retain as much source data as possible; let the sub-schemas evolve
 with the user.
 
-**Where to put what — `entities` vs. `inventory`.** If the user owns an item, it belongs in
-`ci.inventory`; it *additionally* becomes a graph entity only when the user has a real
+**Where to put what — `entities` vs. `objects`.** If the user owns an item, it belongs in
+`ci.objects`; it *additionally* becomes a graph entity only when the user has a real
 relationship with it (the heirloom car gets an entity; a box of screws does not). The same
 pattern holds for files: `ci.files` records every known file, and only emotionally
 significant ones also get a `File` entity in the graph.
@@ -131,7 +131,7 @@ and [graphql.md §4.7](../api/graphql.md#47-bulk-ingest-mutations-the-importer-s
 |---|---|---|
 | `ci.events` | `events_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260620213807` (user-scoped `20260808065724`) |
 | `ci.content` | `content_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120300` |
-| `ci.inventory` | `inventory_source_triple_uniq (owner_user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120000` |
+| `ci.objects` | `objects_source_triple_uniq (owner_user_id, + triple) WHERE source_id IS NOT NULL` | `20260623120000` |
 | `ci.browser_activity` | `browser_activity_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` (deprecated table; dual-writes events/content) | `20260623120200` |
 | `ci.communications` | `communications_source_triple_uniq (user_id, + triple) WHERE source_id IS NOT NULL` on the plain table | `20260807072321` (replaces retired `communications_source_dedup`) |
 | `ci.entities` | `entities_linked_uniq (owner_user_id, entity_type, linked_table, linked_id) WHERE linked_table IS NOT NULL` — importer-stable graph upserts | `20260621020120` |

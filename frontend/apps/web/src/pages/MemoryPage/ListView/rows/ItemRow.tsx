@@ -32,7 +32,7 @@ export const ITEM_FRAGMENT = gql(`
   }
 `);
 
-export interface ItemInventoryPreview {
+export interface ItemThingPreview {
   id: string;
   name: string;
   description: string | null;
@@ -45,10 +45,10 @@ interface Props {
   item: FragmentType<typeof ITEM_FRAGMENT>;
   time?: ReactNode;
   onClick?: (e: MouseEvent<HTMLDivElement>) => void;
-  onSelectInventoryItem?: (item: ItemInventoryPreview) => void;
+  onSelectThing?: (item: ItemThingPreview) => void;
 }
 
-export function ItemRow({ item, time, onClick, onSelectInventoryItem }: Props) {
+export function ItemRow({ item, time, onClick, onSelectThing }: Props) {
   const data = useFragment(ITEM_FRAGMENT, item);
 
   const primaryCode = data.identifiers[0];
@@ -71,7 +71,7 @@ export function ItemRow({ item, time, onClick, onSelectInventoryItem }: Props) {
       subtitle={provenance ?? data.description}
       time={time}
       onClick={(e) => {
-        onSelectInventoryItem?.({
+        onSelectThing?.({
           id: data.id,
           name: data.name ?? '',
           description: data.description ?? null,

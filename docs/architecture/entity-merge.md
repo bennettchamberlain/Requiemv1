@@ -48,8 +48,8 @@ transaction; tombstones are removed from *both* search stores (`ci_search.embedd
   `ci.entity_identifiers` rather than widening its CHECK, so people-resolution and
   thing-resolution do not share one unique index.
 - `ci.object_observations` — a sighting ("a mug is visible in this photo") as a distinct, weaker
-  claim than ownership ("I own this mug"), which is what `InventoryListener` was conflating.
-- `ci.inventory` gained `merged_into_object_id`, a model link, a lifecycle and a confidence.
+  claim than ownership ("I own this mug"), which is what the retired inventory listener was conflating.
+- `ci.objects` gained `merged_into_object_id`, a model link, a lifecycle and a confidence.
 
 `ObjectMergeService` and `ObjectDuplicateService` are named in those migrations' comments as the
 owners of re-pointing and duplicate surfacing. Neither exists yet — see §3.2.
@@ -391,7 +391,7 @@ adds an entity reference then fails CI instead of failing silently years later. 
 cheapest item in this document and it has no dependencies.**
 
 The list above is a starting point, not a survey — it must be derived, which is the whole point.
-An earlier draft of it carried `ci.inventory.object_entity_id`, which
+An earlier draft of it carried `ci.objects.object_entity_id`, which
 `20260811061402_convert_inventory_to_cti.sql` had already dropped as "a dead precursor of this link
 (no writer anywhere, all NULL)". A hand-maintained registry rots in both directions.
 

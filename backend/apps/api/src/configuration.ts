@@ -540,7 +540,6 @@ export const ConfigSchema = z.object({
     'scheduled.entity.promotion': booleanStringSchema,
     'pinned.demo.models': booleanStringSchema,
     'enable.system.prompt': booleanStringSchema,
-    'enable.inventory.page': booleanStringSchema,
     'advanced.theme.tab': booleanStringSchema,
     'require.signup.codes': booleanStringSchema,
     'files.page': booleanStringSchema,

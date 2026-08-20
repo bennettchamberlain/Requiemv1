@@ -13,7 +13,7 @@
  *      so a capture taken offline is not a capture lost.
  *
  * The appliance side of MOST sources already exists: `/v1/{events,communications,contents,
- * inventory,browser-activity,positions}`, so a new source is usually a client-side record
+ * things,browser-activity,positions}`, so a new source is usually a client-side record
  * mapping and a routing-table entry in `outboxFlush.ts`, and nothing else.
  *
  * `note.ts` is the exception, and it is worth knowing why before assuming the pattern

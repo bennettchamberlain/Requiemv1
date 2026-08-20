@@ -63,12 +63,12 @@ export class CrossTableHydrationService {
   }
 
   /**
-   * Inventory lives in `ci.inventory`, and has no `name` or `description`.
+   * Objects live in `ci.objects`, and has no `name` or `description`.
    *
    * This read was written against a `ci.items` table with those two columns.
    * No such table exists — `to_regclass('ci.items')` is null on a migrated
    * database — so every call threw `relation "ci.items" does not exist` and the
-   * inventory half of hydration had never run. A physical thing is identified
+   * objects half of hydration had never run. A physical thing is identified
    * here by brand/model over category/subcategory instead, which is what the
    * columns actually carry.
    *
@@ -76,14 +76,14 @@ export class CrossTableHydrationService {
    * definition, and hydrating both sides teaches the profile the same thing
    * twice.
    */
-  async hydrateInventory(context: UserServiceContext, limit = 50): Promise<HydrationResult> {
+  async hydrateThings(context: UserServiceContext, limit = 50): Promise<HydrationResult> {
     type Row = { object_id: string; name: string | null; description: string | null };
     const rows = (await this.dataSource.query(
       `
       SELECT i.object_id,
              NULLIF(TRIM(CONCAT_WS(' ', i.brand, i.model)), '')          AS name,
              NULLIF(TRIM(CONCAT_WS(', ', i.category, i.subcategory)), '') AS description
-      FROM ci.inventory i
+      FROM ci.objects i
       WHERE i.user_id = $1
         AND i.merged_into_object_id IS NULL
       ORDER BY i.created_at DESC
@@ -99,7 +99,7 @@ export class CrossTableHydrationService {
       }))
       .filter((row) => row.text.length > 0);
 
-    return this.hydrateFromTexts(context, texts, 'hydrate_inventory');
+    return this.hydrateFromTexts(context, texts, 'hydrate_things');
   }
 
   private async hydrateFromTexts(

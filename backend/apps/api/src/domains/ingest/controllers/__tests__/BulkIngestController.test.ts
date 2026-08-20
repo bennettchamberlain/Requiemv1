@@ -23,7 +23,7 @@ import {
   ingestBrowserActivitySchema,
   ingestCommunicationsSchema,
   ingestContentsSchema,
-  ingestInventorySchema,
+  ingestThingsSchema,
   ingestNotesSchema,
   ingestPositionsSchema,
 } from '../../types';
@@ -400,11 +400,11 @@ describe('BulkIngestController', () => {
     });
   });
 
-  describe('POST /v1/inventory', () => {
+  describe('POST /v1/things', () => {
     it('hands the batch to ItemService.createMany, coercing acquiredAt to Date', async () => {
       const { controller, itemService } = makeController();
 
-      const res = await controller.ingestInventory(ctx, jsonReq(), {
+      const res = await controller.ingestThings(ctx, jsonReq(), {
         records: [
           {
             name: 'Laptop',
@@ -421,6 +421,21 @@ describe('BulkIngestController', () => {
       const dtos = (itemService.createMany as jest.Mock).mock.calls[0][1];
       expect(dtos[0].acquiredAt).toEqual(new Date('2025-05-01T12:00:00.000Z'));
       expect(dtos[1].acquiredAt).toBeUndefined();
+    });
+
+    // The retired inventory feature shipped `/v1/inventory`, and capture
+    // clients live in other repos. The alias is one delegating call, so what
+    // needs pinning is that it delegates at all — a 404 here is an outbox that
+    // retries forever.
+    it('still answers on the deprecated /v1/inventory path, through the same handler', async () => {
+      const { controller, itemService } = makeController();
+
+      const res = await controller.ingestThingsLegacyAlias(ctx, jsonReq(), {
+        records: [{ name: 'Laptop' }],
+      });
+
+      expect(res).toEqual({ ingested: 1, duplicate: 0, rejected: [] });
+      expect((itemService.createMany as jest.Mock).mock.calls[0][1]).toHaveLength(1);
     });
   });
 
@@ -665,7 +680,7 @@ describe('BulkIngestController', () => {
         JSON.stringify({ name: 'Desk' }),
       ].join('\n');
 
-      const res = await controller.ingestInventory(ctx, ndjsonReq(body), undefined);
+      const res = await controller.ingestThings(ctx, ndjsonReq(body), undefined);
 
       expect(res.ingested).toBe(2);
       expect(res.rejected).toEqual([
@@ -702,7 +717,7 @@ describe('bulk envelope validation (the shapes the route ValidationPipes enforce
   const schemas = [
     ['communications', ingestCommunicationsSchema, communicationRecord('a')],
     ['contents', ingestContentsSchema, { type: 'note', text: 'x' }],
-    ['inventory', ingestInventorySchema, { name: 'Lamp' }],
+    ['things', ingestThingsSchema, { name: 'Lamp' }],
     [
       'browser-activity',
       ingestBrowserActivitySchema,

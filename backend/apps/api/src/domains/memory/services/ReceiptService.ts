@@ -151,10 +151,10 @@ interface LineRow {
  * Read/write surface for `ci.receipts` and `ci.receipt_line_items` — purchase
  * EVIDENCE and the per-product CLAIMS on it.
  *
- * The chain is receipt (evidence) -> line item (claim) -> `ci.inventory` (owned
+ * The chain is receipt (evidence) -> line item (claim) -> `ci.objects` (owned
  * unit). Keeping the three apart is what makes "where did this come from?"
  * answerable: before these tables the importer flattened a whole purchase into
- * ONE inventory row named after the order, so a four-item Amazon order became
+ * ONE object row named after the order, so a four-item Amazon order became
  * one "thing" and the tax and shipping were lost.
  *
  * ── Money ──────────────────────────────────────────────────────────────────
@@ -546,7 +546,7 @@ export class ReceiptService {
    * Lines whose number is no longer present are deleted ONLY if they never
    * minted anything. A minted line is kept and logged instead: deleting it
    * would fire `ON DELETE SET NULL` on
-   * `ci.inventory.acquisition_line_item_id`, leaving the user's thing in place
+   * `ci.objects.acquisition_line_item_id`, leaving the user's thing in place
    * with its provenance silently cut. A shorter re-extraction is far more often
    * a worse read than a corrected one, and an orphaned possession is not
    * recoverable from the receipt.

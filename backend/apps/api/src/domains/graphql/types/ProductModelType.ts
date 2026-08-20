@@ -16,7 +16,7 @@ import { Taggable } from './Taggable';
  * product model, and the pair on your desk is an {@link ItemType} that is an
  * INSTANCE_OF it. A GTIN identifies the model (every unit shares it); a serial
  * identifies one unit. Merging that distinction away is what made the old
- * inventory table unable to answer either question well.
+ * objects table unable to answer either question well.
  *
  * Money is integer MINOR units of `currency` (1299 = $12.99). Never a float of
  * dollars — see `minorUnits.ts`.

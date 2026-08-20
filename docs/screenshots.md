@@ -70,7 +70,7 @@ screenshot exists in `docs/images/` and is wired into a doc.
 | Connections | `/connections` | `connections.png` | Connected providers (Google, Microsoft, Facebook, Spotify) |
 | Connect | `/connect` | `connect.png` | Add-a-connection / OAuth start |
 | Files | `/files` | `files.png` | Uploaded files and document pipeline |
-| Inventory | `/inventory` | `inventory.png` | Inventory of items |
+| Things | `/memory/things` | `things.png` | Owned physical things |
 | Notes | `/notes` | `notes.png` | Notes list + editor |
 | Jobs | `/jobs` | `jobs.png` | Background job / queue status |
 | Settings | `/settings` | `settings.png` | Settings (appearance, API keys, OAuth) |

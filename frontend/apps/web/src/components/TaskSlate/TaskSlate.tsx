@@ -22,7 +22,7 @@ const SOURCE_LABEL: Record<string, string> = {
   insight: 'insight',
   summary: 'summary',
   answer: 'you said',
-  item: 'inventory',
+  item: 'things',
   relationship: 'people',
   due: 'coming due',
 };

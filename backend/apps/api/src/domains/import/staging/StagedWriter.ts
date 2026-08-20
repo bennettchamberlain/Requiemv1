@@ -38,6 +38,13 @@ export interface StagedCounts {
   relationships: number;
   /** Records the parsers deliberately discarded, by their stable reason slug. */
   drops: Record<string, number>;
+  /**
+   * Records a gate would have discarded and the parser deliberately RESCUED, by
+   * reason slug (today only `receipt_kept_from_bulk`). The counterpart of
+   * {@link StagedCounts.drops}, and deliberately not merged into it: these rows
+   * landed, so counting them as drops would report a rescue as a loss.
+   */
+  keeps: Record<string, number>;
 }
 
 /** Graphs buffered before a flush. Bounded so a 40GB parse is observable, not one commit at the end. */
@@ -75,6 +82,7 @@ export class StagedWriter implements ImportPipeline {
     entitiesGrown: 0,
     relationships: 0,
     drops: {},
+    keeps: {},
   };
 
   /**
@@ -193,6 +201,20 @@ export class StagedWriter implements ImportPipeline {
     this.counts.drops[reason] = (this.counts.drops[reason] ?? 0) + 1;
   }
 
+  /**
+   * Record a rescue: a record some gate would have discarded and the parser
+   * kept anyway. Reporting only — the row is staged through {@link push} like
+   * any other.
+   *
+   * A separate counter from {@link drop} on purpose. Gmail's receipt discovery
+   * keeps order confirmations the bulk filter rejects, and the first version of
+   * that change counted them as `bulk_filtered` drops — so the run report said
+   * a record was lost at the exact moment it was saved.
+   */
+  keep(reason: string): void {
+    this.counts.keeps[reason] = (this.counts.keeps[reason] ?? 0) + 1;
+  }
+
   /** True when the buffer has reached the point where the runner should flush. */
   get shouldFlush(): boolean {
     return this.buffer.length >= this.flushThreshold;
@@ -204,7 +226,7 @@ export class StagedWriter implements ImportPipeline {
 
   /** A snapshot of what has been written so far. */
   get totals(): StagedCounts {
-    return { ...this.counts, drops: { ...this.counts.drops } };
+    return { ...this.counts, drops: { ...this.counts.drops }, keeps: { ...this.counts.keeps } };
   }
 
   /**

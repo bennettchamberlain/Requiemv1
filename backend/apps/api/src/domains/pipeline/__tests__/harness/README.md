@@ -14,7 +14,7 @@ the SQL is wrong. This one can.
 | | Isolation | Use it when |
 | --- | --- | --- |
 | **`pipelineHarness.ts`** | A throwaway **schema** for its source table, plus a throwaway **stage id** for its ledger rows, in whatever database you point it at. | The stage under test is synthetic — you invent the table it sweeps. This is most pipeline tests. |
-| **`scratchDatabase.ts`** — now at [`src/domains/__tests__/support/`](../../../__tests__/support/scratchDatabase.ts) | A throwaway **database**, created and dropped per run, with this repo's migrations applied. | The test drives a **real declared stage**, which names real tables (`ci.events`, `ci.inventory`) and cannot be relocated into a scratch schema. |
+| **`scratchDatabase.ts`** — now at [`src/domains/__tests__/support/`](../../../__tests__/support/scratchDatabase.ts) | A throwaway **database**, created and dropped per run, with this repo's migrations applied. | The test drives a **real declared stage**, which names real tables (`ci.events`, `ci.objects`) and cannot be relocated into a scratch schema. |
 
 > **Moved 2026-08-13.** `scratchDatabase.ts` and the connection resolution it
 > shares with `pipelineHarness.ts` now live in `src/domains/__tests__/support/`,
@@ -208,14 +208,14 @@ it invents the stage id, so the ledger rows can be deleted by key.
 
 `enrichmentLoop.integration.spec.ts` owns neither. It drives two **real declared
 stages** — `ObjectPromoteStage` and `TemporalRepairStage` — and a real stage
-names real tables in its SQL: it reads `ci.events` and writes `ci.inventory` and
+names real tables in its SQL: it reads `ci.events` and writes `ci.objects` and
 `ci.events`. That is correct; they are the appliance's tables. It also means the
 suite has no way to be pointed away from them.
 
 The first version of that spec dealt with this by funnelling every statement
 through one `QueryRunner` inside a transaction it always rolled back, and said
 so at length in its header. **It did not hold.** A run against the dev appliance
-committed roughly 599,000 `ci.pipeline_state` rows, 2,147 `ci.inventory` objects
+committed roughly 599,000 `ci.pipeline_state` rows, 2,147 `ci.objects` objects
 and 2,875 `ci.events` rows carrying repaired time provenance into somebody's
 personal archive. Nothing was destroyed — `TemporalRepairStage` writes alongside
 a timestamp, never over it — but none of it was authorised.

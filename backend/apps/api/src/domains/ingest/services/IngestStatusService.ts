@@ -24,16 +24,16 @@ export interface IngestStatusSnapshot {
     communications: number;
     events: number;
     content: number;
-    inventory: number;
+    objects: number;
     browser_activity: number;
     position: number;
     /**
-     * The object plane. Reported alongside `inventory` rather than folded into
+     * The object plane. Reported alongside `objects` rather than folded into
      * it because the whole point of the split is that they count different
      * things: `product_models` are what units ARE, `receipts` /
      * `receipt_line_items` are where they came from, and `object_observations`
      * are sightings that may never become an owned unit at all — an
-     * observations count far ahead of an inventory count is the expected shape,
+     * observations count far ahead of an objects count is the expected shape,
      * not a backlog.
      */
     product_models: number;
@@ -62,7 +62,7 @@ export interface IngestStatusSnapshot {
     geocoded: {
       eventsNamedOrSited: CoverageCount;
       positionsAddressed: CoverageCount;
-      inventoryPlaced: CoverageCount;
+      objectPlaced: CoverageCount;
     };
   };
   /** ISO timestamp the snapshot was taken. */
@@ -96,7 +96,7 @@ export class IngestStatusService {
           communications: string;
           events: string;
           content: string;
-          inventory: string;
+          objects: string;
           browser_activity: string;
           position: string;
           product_models: string;
@@ -110,7 +110,7 @@ export class IngestStatusService {
                (SELECT count(*) FROM ci.communications WHERE user_id = $1)       AS communications,
                (SELECT count(*) FROM ci.events WHERE user_id = $1)               AS events,
                (SELECT count(*) FROM ci.content WHERE user_id = $1)              AS content,
-               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1)      AS inventory,
+               (SELECT count(*) FROM ci.objects WHERE user_id::uuid = $1)      AS objects,
                (SELECT count(*) FROM ci.browser_activity WHERE user_id = $1)     AS browser_activity,
                (SELECT count(*) FROM ci.position WHERE user_id = $1)             AS position,
                (SELECT count(*) FROM ci.product_models WHERE user_id = $1)       AS product_models,
@@ -121,7 +121,7 @@ export class IngestStatusService {
                (SELECT count(*) FROM ci.communications)       AS communications,
                (SELECT count(*) FROM ci.events)               AS events,
                (SELECT count(*) FROM ci.content)              AS content,
-               (SELECT count(*) FROM ci.inventory)            AS inventory,
+               (SELECT count(*) FROM ci.objects)            AS objects,
                (SELECT count(*) FROM ci.browser_activity)     AS browser_activity,
                (SELECT count(*) FROM ci.position)             AS position,
                (SELECT count(*) FROM ci.product_models)       AS product_models,
@@ -165,8 +165,8 @@ export class IngestStatusService {
                   OR location_coordinates IS NOT NULL
                )) AS events_geocoded,
                (SELECT count(*) FROM ci.position WHERE user_id = $1 AND COALESCE(btrim(address), '') <> '') AS positions_named,
-               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1 AND current_location_coordinates IS NOT NULL) AS inv_coords,
-               (SELECT count(*) FROM ci.inventory WHERE user_id::uuid = $1 AND last_seen_place_entity_id IS NOT NULL) AS inv_placed`
+               (SELECT count(*) FROM ci.objects WHERE user_id::uuid = $1 AND current_location_coordinates IS NOT NULL) AS inv_coords,
+               (SELECT count(*) FROM ci.objects WHERE user_id::uuid = $1 AND last_seen_place_entity_id IS NOT NULL) AS inv_placed`
           : `SELECT
                (SELECT count(*) FROM ci.communications WHERE from_entity_id IS NOT NULL) AS comms_linked,
                (SELECT count(*) FROM ci.events WHERE organizer_entity_id IS NOT NULL) AS events_linked,
@@ -176,8 +176,8 @@ export class IngestStatusService {
                   OR location_coordinates IS NOT NULL
                )) AS events_geocoded,
                (SELECT count(*) FROM ci.position WHERE COALESCE(btrim(address), '') <> '') AS positions_named,
-               (SELECT count(*) FROM ci.inventory WHERE current_location_coordinates IS NOT NULL) AS inv_coords,
-               (SELECT count(*) FROM ci.inventory WHERE last_seen_place_entity_id IS NOT NULL) AS inv_placed`,
+               (SELECT count(*) FROM ci.objects WHERE current_location_coordinates IS NOT NULL) AS inv_coords,
+               (SELECT count(*) FROM ci.objects WHERE last_seen_place_entity_id IS NOT NULL) AS inv_placed`,
         userId ? [userId] : [],
       ),
     ]);
@@ -195,7 +195,7 @@ export class IngestStatusService {
       communications: Number(tablesRaw?.communications ?? 0),
       events: Number(tablesRaw?.events ?? 0),
       content: Number(tablesRaw?.content ?? 0),
-      inventory: Number(tablesRaw?.inventory ?? 0),
+      objects: Number(tablesRaw?.objects ?? 0),
       browser_activity: Number(tablesRaw?.browser_activity ?? 0),
       position: Number(tablesRaw?.position ?? 0),
       product_models: Number(tablesRaw?.product_models ?? 0),
@@ -211,7 +211,7 @@ export class IngestStatusService {
       communication: tables.communications,
       event: tables.events,
       content: tables.content,
-      item: tables.inventory,
+      item: tables.objects,
       'browser-activity': tables.browser_activity,
       position: tables.position,
     };
@@ -247,7 +247,7 @@ export class IngestStatusService {
         geocoded: {
           eventsNamedOrSited: count(tables.events, Number(cover?.events_geocoded ?? 0)),
           positionsAddressed: count(tables.position, Number(cover?.positions_named ?? 0)),
-          inventoryPlaced: count(Number(cover?.inv_coords ?? 0), Number(cover?.inv_placed ?? 0)),
+          objectPlaced: count(Number(cover?.inv_coords ?? 0), Number(cover?.inv_placed ?? 0)),
         },
       },
       at: new Date().toISOString(),

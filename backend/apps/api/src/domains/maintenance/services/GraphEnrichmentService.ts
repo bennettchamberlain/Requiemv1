@@ -447,7 +447,7 @@ export class GraphEnrichmentService {
 
   /**
    * Parse the LLM's raw content into the extraction shape. Tolerant of markdown
-   * fences / leading prose (mirrors InventoryListener.parseAndValidateAnalysis):
+   * fences / leading prose (mirrors ThingVisionListener.parseAndValidateAnalysis):
    * slices to the outermost {...} before JSON.parse, then validates with zod.
    * Returns empty arrays on any parse/validation failure rather than throwing.
    */

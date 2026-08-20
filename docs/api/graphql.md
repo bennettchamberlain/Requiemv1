@@ -199,7 +199,7 @@ The high-throughput paths the importer calls. **Shape:** `mutation(input: [Creat
 | `createEvents` | `EventService.createManyBatched` | `bulkInsertIdempotent` | `(source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `user_id` | none (`INGEST_REFRESH_COLUMNS.event = []`) |
 | `createCommunications` | `CommunicationService.createMany` | `bulkInsertIdempotent` | `communications_source_triple_uniq` on `(user_id, source_type, source_system, source_id)` | `user_id` | **self-heals** `direction, participants_metadata, content, preview, subject` on losers |
 | `createContents` | `ContentService.createMany` | set-based `bulkInsertIdempotent` + set-based event auto-link | `content_source_triple_uniq` | `user_id` | none |
-| `createInventoryItems` | `ItemService.createMany` | `bulkInsertIdempotent` | `(owner_user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `owner_user_id` | none |
+| `createThings` | `ItemService.createMany` | `bulkInsertIdempotent` | `(owner_user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `owner_user_id` | none |
 | `createBrowserActivities` | `BrowserActivityService.createMany` | `bulkInsertIdempotent` (+ dual-write to `events`/`content`) | `(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL` | `user_id` | none |
 
 - **Communications** is a **plain table** (de-hypertabled; see [Database.md](../architecture/Database.md)). The pure provenance triple lives on `communications_source_triple_uniq` — the old `ci.communications_source_dedup` companion was dropped with the hypertable. It remains the **only** path that self-heals fields on conflict via `INGEST_REFRESH_COLUMNS.communication`.
@@ -266,7 +266,7 @@ type BulkItemRelationshipResult { inserted: Int!  skipped: Int! }
 
 **Forecast:** `ForecastType` (`horizon!, systemStatus!, buckets`), `ForecastBucketType` (`q10!, q50!, q90!, l0Probs/l1Probs/l2Probs`).
 
-**Input shapes — the provenance triple lives on all ingest inputs:** `CreateEventInput` (`startTime!` req + `sourceType, sourceSystem, sourceId`), `CreateCommunicationInput` (`communicationType!, content!, time!` req + triple), `CreateContentInput`, `CreateInventoryInput` (`name!` req + triple), `CreateBrowserActivityInput` (`url!, time!` req + triple), `CreatePersonInput`/`CreateConceptInput` (`name!` + `linkedTable, linkedId` dedup key), `GraphEntityInput`/`GraphRelationshipInput` (§4.8), `ItemRelationshipInput` (§4.9).
+**Input shapes — the provenance triple lives on all ingest inputs:** `CreateEventInput` (`startTime!` req + `sourceType, sourceSystem, sourceId`), `CreateCommunicationInput` (`communicationType!, content!, time!` req + triple), `CreateContentInput`, `CreateThingInput` (`name!` req + triple), `CreateBrowserActivityInput` (`url!, time!` req + triple), `CreatePersonInput`/`CreateConceptInput` (`name!` + `linkedTable, linkedId` dedup key), `GraphEntityInput`/`GraphRelationshipInput` (§4.8), `ItemRelationshipInput` (§4.9).
 
 **Scalars & enums:** `DateTime` (ISO-8601 UTC), `JSON` (arbitrary — `metadata`, `properties`, `sourceData`, `locationCoordinates`), `ItemCondition` (`NEW, LIKE_NEW, GOOD, FAIR, POOR, BROKEN, NA`). Note several update inputs still type the id as `String!` (e.g. `removeEvent(id: String!)`).
 

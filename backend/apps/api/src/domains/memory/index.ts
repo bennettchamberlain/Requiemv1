@@ -50,9 +50,9 @@ import { GraphNodeEntity } from './entities/GraphNodeEntity';
 import { ItemBaseEntity } from './entities/ItemBaseEntity';
 import {
   type Item,
-  type InventoryCondition,
-  type InventoryIdentityMethod,
-  type InventoryLifecycleState,
+  type ObjectCondition,
+  type ObjectIdentityMethod,
+  type ObjectLifecycleState,
   ItemEntity,
 } from './entities/ItemEntity';
 import {
@@ -413,10 +413,10 @@ export type {
   KnownPlaceSource,
   KnownPlaceCandidate,
 } from './services/KnownPlacesService';
-export type { Concept, Event, Item, InventoryCondition, Person, Communication, Place };
+export type { Concept, Event, Item, ObjectCondition, Person, Communication, Place };
 export type {
-  InventoryIdentityMethod,
-  InventoryLifecycleState,
+  ObjectIdentityMethod,
+  ObjectLifecycleState,
   ObjectObservation,
   ObservationBoundingBox,
   ObservationLabelSource,

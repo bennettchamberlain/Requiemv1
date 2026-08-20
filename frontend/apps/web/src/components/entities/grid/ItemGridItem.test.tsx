@@ -74,16 +74,14 @@ describe('ItemGridItem', () => {
     expect(screen.queryByText('Active')).toBeNull();
   });
 
-  it('fires onClick and the inventory-select callback', () => {
+  it('fires onClick and the thing-select callback', () => {
     const onClick = vi.fn();
-    const onSelectInventoryItem = vi.fn();
-    renderWithProviders(
-      <ItemGridItem item={makeItem()} onClick={onClick} onSelectInventoryItem={onSelectInventoryItem} />,
-    );
+    const onSelectThing = vi.fn();
+    renderWithProviders(<ItemGridItem item={makeItem()} onClick={onClick} onSelectThing={onSelectThing} />);
 
     fireEvent.click(screen.getByText('Drill'));
 
     expect(onClick).toHaveBeenCalledTimes(1);
-    expect(onSelectInventoryItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'i1', name: 'Drill' }));
+    expect(onSelectThing).toHaveBeenCalledWith(expect.objectContaining({ id: 'i1', name: 'Drill' }));
   });
 });

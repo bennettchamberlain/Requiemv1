@@ -22,6 +22,8 @@ describe('DESTINATION_ORDER agrees with destinationsFor', () => {
     'capture.photo',
     'calendar.event',
     'communication.message',
+    'commerce.purchase',
+    'commerce.receipt',
   ];
 
   const rank = (d: string): number => DESTINATION_ORDER.indexOf(d as never);
@@ -67,5 +69,45 @@ describe('DESTINATION_ORDER agrees with destinationsFor', () => {
   it('still writes communications before content, for reddit', () => {
     // reddit is the one branch returning ['communications', 'content'].
     expect(rank('communications')).toBeLessThan(rank('content'));
+  });
+
+  it('writes product models before receipts, so a barcode resolves instead of re-minting', () => {
+    // ReceiptService.upsertFromExtraction resolves a line's product by its
+    // identifier claim first and only falls back to find-or-create when nothing
+    // resolves. With receipts first, an ISBN this same batch is about to
+    // catalogue mints a SECOND, brand+model-guessed product — and the claim
+    // index is first-writer-wins, so the guess keeps the barcode forever.
+    expect(rank('product_models')).toBeLessThan(rank('receipts'));
+  });
+
+  it('writes observations last, after the thing they sighted has an identity', () => {
+    expect(rank('receipts')).toBeLessThan(rank('observations'));
+  });
+
+  it('keeps a receipt that is also correspondence in DESTINATION_ORDER order', () => {
+    const rec = {
+      kind: 'commerce.receipt',
+      title: 'Your receipt from Apple',
+      metadata: { HumanCorrespondence: true },
+      mediaType: null,
+      mediaPath: null,
+    } as never;
+
+    const ranks = destinationsFor(rec).map(rank);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+  });
+
+  it('orders an identified physical purchase product → receipt → thing → observation', () => {
+    const rec = {
+      kind: 'commerce.purchase',
+      title: 'Some Book',
+      metadata: { Product: 'Some Book' },
+      identifiers: [{ namespace: 'isbn', value: '9781451673319' }],
+      mediaType: null,
+      mediaPath: null,
+    } as never;
+
+    const ranks = destinationsFor(rec).map(rank);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
   });
 });

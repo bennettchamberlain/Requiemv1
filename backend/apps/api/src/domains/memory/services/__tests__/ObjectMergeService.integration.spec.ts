@@ -26,7 +26,7 @@ import { ObjectMergeService } from '../ObjectMergeService';
  *     23505 and rolls the whole merge back; tombstoning first drops the sources
  *     out of the index predicate so the fold's key is free.
  *  2. `ci_search.entity_tag` links surviving the merge. There is no FK from
- *     that table to `ci.inventory` and no tombstone filter on the read side, so
+ *     that table to `ci.objects` and no tombstone filter on the read side, so
  *     "did the tag move?" is a question about rows, not about SQL text.
  *
  * Opt-in: set `MEMORY_TEST_DATABASE_URL` (or `DATABASE_URL`) to a database with
@@ -108,12 +108,12 @@ describeWithDb(`ObjectMergeService — merge ordering, in Postgres (${availabili
     if (dataSource?.isInitialized) {
       await dataSource.query(
         `DELETE FROM ci_search.entity_tag
-          WHERE entity_id IN (SELECT object_id FROM ci.inventory WHERE user_id = $1)`,
+          WHERE entity_id IN (SELECT object_id FROM ci.objects WHERE user_id = $1)`,
         [owner.userId],
       );
       await dataSource.query(`DELETE FROM ci_search.tags WHERE user_id = $1`, [owner.userId]);
       await dataSource.query('DELETE FROM ci.entity_merges WHERE owner_user_id = $1', [owner.userId]);
-      await dataSource.query('DELETE FROM ci.inventory WHERE user_id = $1', [owner.userId]);
+      await dataSource.query('DELETE FROM ci.objects WHERE user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.product_models WHERE user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.entities WHERE owner_user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.users WHERE id = $1', [owner.userId]);
@@ -145,11 +145,11 @@ describeWithDb(`ObjectMergeService — merge ordering, in Postgres (${availabili
 
     await dataSource.query(
       `INSERT INTO ci.entities (entity_id, entity_type, name, properties, owner_user_id, linked_table, linked_id)
-       VALUES ($1, 'Item', $2, '{}'::jsonb, $3, 'inventory', $1)`,
+       VALUES ($1, 'Item', $2, '{}'::jsonb, $3, 'objects', $1)`,
       [id, name, owner.userId],
     );
     await dataSource.query(
-      `INSERT INTO ci.inventory (object_id, user_id, owner_user_id, lifecycle_state)
+      `INSERT INTO ci.objects (object_id, user_id, owner_user_id, lifecycle_state)
        VALUES ($1, $2, $2, 'active')`,
       [id, owner.userId],
     );

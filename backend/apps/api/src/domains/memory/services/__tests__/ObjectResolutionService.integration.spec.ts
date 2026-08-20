@@ -96,11 +96,11 @@ describeWithDb(`ObjectResolutionService — the embedding plan, in Postgres (${a
     for (const objectId of objectIds) {
       await dataSource.query(
         `INSERT INTO ci.entities (entity_id, entity_type, name, properties, owner_user_id, linked_table, linked_id)
-         VALUES ($1, 'Item', 'Coffee mug', '{}'::jsonb, $2, 'inventory', $1)`,
+         VALUES ($1, 'Item', 'Coffee mug', '{}'::jsonb, $2, 'objects', $1)`,
         [objectId, owner.userId],
       );
       await dataSource.query(
-        `INSERT INTO ci.inventory (object_id, user_id, owner_user_id, lifecycle_state)
+        `INSERT INTO ci.objects (object_id, user_id, owner_user_id, lifecycle_state)
          VALUES ($1, $2, $2, 'active')`,
         [objectId, owner.userId],
       );
@@ -123,7 +123,7 @@ describeWithDb(`ObjectResolutionService — the embedding plan, in Postgres (${a
     if (dataSource?.isInitialized) {
       await dataSource.query('DELETE FROM ci.object_observations WHERE user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci_search.embeddings WHERE user_id = $1', [owner.userId]);
-      await dataSource.query('DELETE FROM ci.inventory WHERE user_id = $1', [owner.userId]);
+      await dataSource.query('DELETE FROM ci.objects WHERE user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.entities WHERE owner_user_id = $1', [owner.userId]);
       await dataSource.query('DELETE FROM ci.users WHERE id = $1', [owner.userId]);
       await schemaLock?.release();
@@ -212,7 +212,7 @@ describeWithDb(`ObjectResolutionService — the embedding plan, in Postgres (${a
   it('returns the nearest LIVE unit and skips a merge tombstone', async () => {
     const [near, tombstoned] = objectIds;
 
-    await dataSource.query(`UPDATE ci.inventory SET merged_into_object_id = $2 WHERE object_id = $1`, [
+    await dataSource.query(`UPDATE ci.objects SET merged_into_object_id = $2 WHERE object_id = $1`, [
       tombstoned,
       near,
     ]);
@@ -229,7 +229,7 @@ describeWithDb(`ObjectResolutionService — the embedding plan, in Postgres (${a
     expect(rows).toHaveLength(1);
     expect(rows[0].object_id).toBe(near);
 
-    await dataSource.query(`UPDATE ci.inventory SET merged_into_object_id = NULL WHERE object_id = $1`, [
+    await dataSource.query(`UPDATE ci.objects SET merged_into_object_id = NULL WHERE object_id = $1`, [
       tombstoned,
     ]);
   });

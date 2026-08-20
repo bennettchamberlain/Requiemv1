@@ -5,16 +5,16 @@ import { ItemCondition } from './ItemType';
 import { PhysicalItemPropertiesInput } from './PhysicalItemProperties';
 
 /**
- * Batch inventory ingest input for the importer. Carries the provenance triple
+ * Batch things ingest input for the importer. Carries the provenance triple
  * (sourceType, sourceSystem, sourceId) so re-ingest is idempotent — see the
- * inventory_source_triple_uniq partial unique index and ItemService.createMany.
+ * objects_source_triple_uniq partial unique index and ItemService.createMany.
  *
  * Inherits the physical half from {@link PhysicalItemPropertiesInput}: an
  * importer that knows a product's size and weight (most product feeds do) has
  * somewhere to put them, and the server canonicalizes the units on the way in.
  */
 @InputType()
-export class CreateInventoryInput extends PhysicalItemPropertiesInput {
+export class CreateThingInput extends PhysicalItemPropertiesInput {
   @Field(() => String)
   name!: string;
 
@@ -55,7 +55,7 @@ export class CreateInventoryInput extends PhysicalItemPropertiesInput {
   /**
    * Full source metadata bag (importer-parsed fields without a first-class
    * column home — e.g. Amazon `Source`, raw `Total`, future fields). Persists
-   * to inventory.metadata so importers stop dropping correctly-parsed data.
+   * to objects.metadata so importers stop dropping correctly-parsed data.
    */
   @Field(() => GraphQLJSONObject, { nullable: true })
   metadata?: Record<string, unknown>;

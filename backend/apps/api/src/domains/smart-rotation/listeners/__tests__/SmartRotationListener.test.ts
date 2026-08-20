@@ -341,7 +341,7 @@ describe('SmartRotationListener', () => {
     });
   });
 
-  describe('hydrate_answers / hydrate_inventory', () => {
+  describe('hydrate_answers / hydrate_things', () => {
     it('delegates hydrate_answers to CrossTableHydrationService.hydrateAnswers', async () => {
       const crossTableHydrationService = {
         hydrateAnswers: jest.fn().mockResolvedValue({ written: 4 }),
@@ -354,16 +354,16 @@ describe('SmartRotationListener', () => {
       expect(crossTableHydrationService.hydrateAnswers).toHaveBeenCalledWith({ userId: 'user-1' });
     });
 
-    it('delegates hydrate_inventory to CrossTableHydrationService.hydrateInventory', async () => {
+    it('delegates hydrate_things to CrossTableHydrationService.hydrateThings', async () => {
       const crossTableHydrationService = {
-        hydrateInventory: jest.fn().mockResolvedValue({ written: 2 }),
+        hydrateThings: jest.fn().mockResolvedValue({ written: 2 }),
       } as unknown as CrossTableHydrationService;
 
       const listener = buildListener({ crossTableHydrationService });
 
-      await listener.handleWork({ userId: 'user-1', workType: 'hydrate_inventory' });
+      await listener.handleWork({ userId: 'user-1', workType: 'hydrate_things' });
 
-      expect(crossTableHydrationService.hydrateInventory).toHaveBeenCalledWith({ userId: 'user-1' });
+      expect(crossTableHydrationService.hydrateThings).toHaveBeenCalledWith({ userId: 'user-1' });
     });
   });
 

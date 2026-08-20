@@ -195,7 +195,6 @@
     "scheduled.entity.promotion": "ENABLE_SCHEDULED_ENTITY_PROMOTION",
     "pinned.demo.models": "ENABLE_PINNED_DEMO_MODELS",
     "enable.system.prompt": "ENABLE_SYSTEM_PROMPT",
-    "enable.inventory.page": "ENABLE_INVENTORY_PAGE",
     "advanced.theme.tab": "ENABLE_ADVANCED_THEME_TAB",
     "require.signup.codes": "ENABLE_REQUIRE_SIGNUP_CODES",
     "files.page": "ENABLE_FILES_PAGE",

@@ -20,7 +20,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type CaptureMode = 'photo' | 'video' | 'inventory';
+type CaptureMode = 'photo' | 'video' | 'thing';
 
 interface ModelCapabilitiesResponse {
   vision: boolean;
@@ -164,14 +164,14 @@ export function CaptureModal({ open = false, onClose }: Props) {
         return;
       }
 
-      const inventoryCapture = isImage && mode === 'inventory';
+      const thingCapture = isImage && mode === 'thing';
       const uploaded = await upload([file], {
-        inventoryCapture,
+        thingCapture,
         model: selectedModel ?? undefined,
       });
 
-      if (inventoryCapture && uploaded) {
-        toast.success('Inventory analysis started. This may take a moment.');
+      if (thingCapture && uploaded) {
+        toast.success('Thing analysis started. This may take a moment.');
       }
     },
     [ensureImageModelSupported, selectedModel, toast, upload],
@@ -183,14 +183,14 @@ export function CaptureModal({ open = false, onClose }: Props) {
         return;
       }
 
-      const inventoryCapture = mode === 'inventory';
+      const thingCapture = mode === 'thing';
       const uploaded = await upload([file], {
-        inventoryCapture,
+        thingCapture,
         model: selectedModel ?? undefined,
       });
 
-      if (inventoryCapture && uploaded) {
-        toast.success('Inventory analysis started. This may take a moment.');
+      if (thingCapture && uploaded) {
+        toast.success('Thing analysis started. This may take a moment.');
       }
     },
     [ensureImageModelSupported, selectedModel, toast, upload],

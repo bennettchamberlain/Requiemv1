@@ -15,8 +15,8 @@ import { type ProductModel, ProductModelEntity } from '../entities/ProductModelE
 export interface ObjectMergeCounts {
   identifiers: number;
   observations: number;
-  inventoryParent: number;
-  inventoryRelated: number;
+  objectParent: number;
+  objectRelated: number;
   receiptLineItems: number;
   searchRowsDeleted: number;
   /** Tag links moved from the sources onto the target; see {@link ObjectMergeService.moveTagLinks}. */
@@ -27,7 +27,7 @@ export interface ObjectMergeCounts {
 export interface ProductMergeCounts {
   identifiers: number;
   receiptLineItems: number;
-  inventoryProduct: number;
+  objectProduct: number;
   observations: number;
 }
 
@@ -35,8 +35,8 @@ export interface ProductMergeCounts {
 const OBJECT_INSTANCE_ENTITY_TYPE = 'ObjectInstance';
 const PRODUCT_MODEL_ENTITY_TYPE = 'ProductModel';
 
-/** The `ci.inventory` columns folded from the sources into the target. */
-interface InventoryRow {
+/** The `ci.objects` columns folded from the sources into the target. */
+interface ObjectRow {
   object_id: string;
   user_id: string;
   merged_into_object_id: string | null;
@@ -88,7 +88,7 @@ interface ProductRow {
 }
 
 /**
- * Merges duplicate owned units (`ci.inventory`) and duplicate catalog models
+ * Merges duplicate owned units (`ci.objects`) and duplicate catalog models
  * (`ci.product_models`) into one canonical row — the object-identity analogue of
  * {@link PersonMergeService}, whose structure this file follows deliberately so
  * the two read the same.
@@ -107,7 +107,7 @@ interface ProductRow {
  *     data twice);
  *  3. re-points `ci.object_identifiers.subject_id`;
  *  4. re-points `ci.object_observations.resolved_object_id`;
- *  5. re-points `ci.inventory.parent_object_id` and the `related_object_ids`
+ *  5. re-points `ci.objects.parent_object_id` and the `related_object_ids`
  *     array, de-duplicating rows that referenced two sources at once and
  *     dropping the self-references a re-point creates;
  *  6. re-points `ci.receipt_line_items.minted_object_id`;
@@ -130,7 +130,7 @@ interface ProductRow {
  * That table addresses BOTH of its endpoints by provenance triple
  * (`from_source_type/system/id`, `to_source_type/system/id`), not by row id —
  * deliberately, because one importer item may land in `ci.events`,
- * `ci.communications`, `ci.content` or `ci.inventory` depending on its kind,
+ * `ci.communications`, `ci.content` or `ci.objects` depending on its kind,
  * and the triple is the table-agnostic handle both sides already share.
  *
  * A merge changes which ROW is canonical; it does not and cannot change what a
@@ -173,7 +173,7 @@ export class ObjectMergeService {
     }
 
     const counts = await this.itemRepository.manager.transaction(async (em) => {
-      const rows: InventoryRow[] = await em.query(
+      const rows: ObjectRow[] = await em.query(
         `SELECT object_id, user_id, merged_into_object_id, product_id,
                 acquisition_receipt_id, acquisition_line_item_id,
                 category, subcategory, brand, model, condition, currency,
@@ -181,7 +181,7 @@ export class ObjectMergeService {
                 quantity, acquired_at, last_seen_at, last_seen_place_entity_id,
                 warranty_expires_at, storage_location, location_description,
                 lifecycle_state, identity_method, identity_confidence
-           FROM ci.inventory
+           FROM ci.objects
           WHERE user_id = $1::uuid AND object_id = ANY($2::uuid[])
           FOR UPDATE`,
         [userId, [targetId, ...sources]],
@@ -210,13 +210,13 @@ export class ObjectMergeService {
         }
       }
 
-      const sourceRows = sources.map((id) => byId.get(id) as InventoryRow);
+      const sourceRows = sources.map((id) => byId.get(id) as ObjectRow);
       const repointed = await this.repointObjectReferences(em, userId, sources, targetId);
 
-      await this.foldInventoryScalars(em, userId, target, sourceRows);
+      await this.foldObjectScalars(em, userId, target, sourceRows);
 
       await em.query(
-        `UPDATE ci.inventory
+        `UPDATE ci.objects
             SET merged_into_object_id = $3::uuid, lifecycle_state = 'archived', updated_at = now()
           WHERE user_id = $1::uuid AND object_id = ANY($2::uuid[])`,
         [userId, sources, targetId],
@@ -227,7 +227,7 @@ export class ObjectMergeService {
       // reader here follows exactly ONE hop. Without this, the second merge in
       // a chain silently re-strands the first one's sources.
       await em.query(
-        `UPDATE ci.inventory
+        `UPDATE ci.objects
             SET merged_into_object_id = $3::uuid, updated_at = now()
           WHERE user_id = $1::uuid AND merged_into_object_id = ANY($2::uuid[])`,
         [userId, sources, targetId],
@@ -339,10 +339,10 @@ export class ObjectMergeService {
 
     // A child whose parent was merged away now belongs to the target. A row
     // that IS the target must not become its own parent, hence the exclusion.
-    const inventoryParent = await countAffected(
+    const objectParent = await countAffected(
       em,
       `WITH repointed AS (
-         UPDATE ci.inventory SET parent_object_id = $3::uuid, updated_at = now()
+         UPDATE ci.objects SET parent_object_id = $3::uuid, updated_at = now()
           WHERE user_id = $1::uuid AND parent_object_id = ANY($2::uuid[]) AND object_id <> $3::uuid
           RETURNING 1
        )
@@ -353,15 +353,15 @@ export class ObjectMergeService {
     // Any row that would have become its own parent loses the edge entirely —
     // "this thing contains itself" is not a fact worth keeping.
     await em.query(
-      `UPDATE ci.inventory SET parent_object_id = NULL, updated_at = now()
+      `UPDATE ci.objects SET parent_object_id = NULL, updated_at = now()
         WHERE user_id = $1::uuid AND parent_object_id = ANY($2::uuid[]) AND object_id = $3::uuid`,
       [userId, sources, targetId],
     );
 
-    const inventoryRelated = await countAffected(
+    const objectRelated = await countAffected(
       em,
       `WITH repointed AS (
-         UPDATE ci.inventory inv
+         UPDATE ci.objects inv
             SET related_object_ids = sub.new_ids, updated_at = now()
            FROM (
              SELECT object_id,
@@ -372,7 +372,7 @@ export class ObjectMergeService {
                        -- itself once that source becomes the target.
                        WHERE CASE WHEN x = ANY($2::uuid[]) THEN $3::uuid ELSE x END <> object_id
                     ) AS new_ids
-               FROM ci.inventory
+               FROM ci.objects
               WHERE user_id = $1::uuid AND related_object_ids && $2::uuid[]
            ) sub
           WHERE inv.object_id = sub.object_id
@@ -393,7 +393,7 @@ export class ObjectMergeService {
       [userId, sources, targetId],
     );
 
-    return { identifiers, observations, inventoryParent, inventoryRelated, receiptLineItems };
+    return { identifiers, observations, objectParent, objectRelated, receiptLineItems };
   }
 
   /**
@@ -414,15 +414,15 @@ export class ObjectMergeService {
    * The jsonb bags are MERGED with the target on top, so a key only the source
    * carried survives and a key both carried keeps the target's value.
    */
-  private async foldInventoryScalars(
+  private async foldObjectScalars(
     em: EntityManager,
     userId: string,
-    target: InventoryRow,
-    sources: InventoryRow[],
+    target: ObjectRow,
+    sources: ObjectRow[],
   ): Promise<void> {
     const all = [target, ...sources];
 
-    const firstNonNull = <K extends keyof InventoryRow>(key: K): InventoryRow[K] | null => {
+    const firstNonNull = <K extends keyof ObjectRow>(key: K): ObjectRow[K] | null => {
       for (const row of all) {
         const value = row[key];
 
@@ -454,7 +454,7 @@ export class ObjectMergeService {
     );
 
     await em.query(
-      `UPDATE ci.inventory
+      `UPDATE ci.objects
           SET product_id                = $3::uuid,
               acquisition_receipt_id    = $4::uuid,
               acquisition_line_item_id  = $5::uuid,
@@ -511,7 +511,7 @@ export class ObjectMergeService {
    *
    * BOTH stores, not just the embeddings. `ci_search.vectors` is the CANDIDATE
    * source for keyword and hybrid search and is queried with no join back to
-   * `ci.inventory`, so deleting only the embedding leaves a merged-away unit
+   * `ci.objects`, so deleting only the embedding leaves a merged-away unit
    * fully findable — and clicking it lands on a row nothing points at. The
    * target re-indexes from the `ItemUpdatedEvent` emitted after commit; the
    * backfill sweep skips tombstones.
@@ -548,7 +548,7 @@ export class ObjectMergeService {
    * `'item'` is in `TAGGABLE_ENTITIES` and `ItemType` is a member of
    * `TaggableEntityType`, so an owned unit really can carry tags — and
    * `ci_search.entity_tag` addresses its rows by `(entity_type, entity_id,
-   * tag_id)` with no FK to `ci.inventory` and no tombstone filter on the read
+   * tag_id)` with no FK to `ci.objects` and no tombstone filter on the read
    * side. Left alone, every tag the user put on a merged-away unit stays
    * pointing at the tombstone: the tag page keeps listing a thing nothing
    * points at, and the surviving unit silently loses the label the user gave
@@ -606,7 +606,7 @@ export class ObjectMergeService {
    * name the same product.
    *
    * Shorter than the instance merge because a model owns fewer references —
-   * identifier claims, the receipt lines that resolved to it, the inventory
+   * identifier claims, the receipt lines that resolved to it, the object
    * units that are instances of it, and the observations that guessed it. There
    * is no search row to delete: models are not indexed as their own entity
    * type, they are reached through the units that instantiate them.
@@ -681,10 +681,10 @@ export class ObjectMergeService {
         [userId, sources, targetId],
       );
 
-      const inventoryProduct = await countAffected(
+      const objectProduct = await countAffected(
         em,
         `WITH repointed AS (
-           UPDATE ci.inventory SET product_id = $3::uuid, updated_at = now()
+           UPDATE ci.objects SET product_id = $3::uuid, updated_at = now()
             WHERE user_id = $1::uuid AND product_id = ANY($2::uuid[])
             RETURNING 1
          )
@@ -721,9 +721,9 @@ export class ObjectMergeService {
       // index predicate, so the fold's key is unclaimed by the time it runs.
       //
       // `mergeObjects` has no equivalent hazard and needs no equivalent
-      // reordering: `ci.inventory`'s only unique indexes are `inventory_pkey`
-      // and `inventory_source_triple_uniq` (owner + provenance triple), and
-      // `foldInventoryScalars` writes NEITHER a primary key nor any of
+      // reordering: `ci.objects`'s only unique indexes are `objects_pkey`
+      // and `objects_source_triple_uniq` (owner + provenance triple), and
+      // `foldObjectScalars` writes NEITHER a primary key nor any of
       // `source_type`/`source_system`/`source_id`.
       await em.query(
         `UPDATE ci.product_models
@@ -749,7 +749,7 @@ export class ObjectMergeService {
       const counts: ProductMergeCounts = {
         identifiers,
         receiptLineItems,
-        inventoryProduct,
+        objectProduct,
         observations,
       };
 

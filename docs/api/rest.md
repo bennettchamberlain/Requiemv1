@@ -67,7 +67,7 @@ The rest of the REST bulk-ingest plane: one batch route per bulk kind, all `JwtO
 |------|------|---------------------|
 | POST | `/v1/communications` | `CommunicationService.createMany` |
 | POST | `/v1/contents` | `ContentService.createMany` |
-| POST | `/v1/inventory` | `ItemService.createMany` |
+| POST | `/v1/things` | `ItemService.createMany` | (`/v1/inventory` remains as a deprecated alias to the same handler) |
 | POST | `/v1/browser-activity` | `BrowserActivityService.createMany` |
 | POST | `/v1/positions` | `PositionService.create` (bulk) |
 
@@ -101,7 +101,7 @@ Batch upload lane (the bulk counterpart to `POST /files/upload`, whose `[{id}]` 
 
 | Verb | Path | Auth | Purpose |
 |------|------|------|---------|
-| POST | `/v1/files` | `JwtOrApiKeyAuthGuard` | Multipart batch upload, field **`files`**, **max 50 files/request** (51st → 400), **1 GB per file** (single-file lane `/files/upload` allows 10 GB). Optional form fields `skipDescription` / `inventoryCapture` / `model` as on `/files/upload`. |
+| POST | `/v1/files` | `JwtOrApiKeyAuthGuard` | Multipart batch upload, field **`files`**, **max 50 files/request** (51st → 400), **1 GB per file** (single-file lane `/files/upload` allows 10 GB). Optional form fields `skipDescription` / `thingCapture` / `model` as on `/files/upload`. |
 
 Reuses the exact `/files/upload` pipeline (`FileService.uploadWithDedupInfo`: sha-256 hash-dedup, MinIO storage, preview/description fan-out). **Response — one entry per INPUT file, in input order**:
 
@@ -149,7 +149,7 @@ curl -sS http://ci-server.localhost/v1/files \
 | POST | `/files/upload` | `JwtOrApiKeyAuthGuard` (`:28`) | Multipart binary upload; hash-dedupes, stores to MinIO/S3, kicks off preview + (optional) Ollama image description. |
 | PATCH | `/files/:id` | `JwtOrApiKeyAuthGuard` (`:111`) | Overwrite a file's user-facing `title`/`description`. |
 
-**Upload request**: `multipart/form-data`, field name **`files`** (`FilesInterceptor('files', …)`, `:31`), **per-file limit 10 GB** (`limits.fileSize: 10*1024³`, `:33`), temp `dest: tmpdir()`. Optional form fields: `inventoryCapture` (`'true'`/bool), `skipDescription` (`'true'`/bool), `model` (str) (`:39-49`). Uploads are content-hash de-duplicated within the batch (`:54-72`); 400 if no files (`:43`). **Response**: `[{ id }]`, one per unique file (`:89-91`). Temp files always unlinked in `finally` (`:92-102`).
+**Upload request**: `multipart/form-data`, field name **`files`** (`FilesInterceptor('files', …)`, `:31`), **per-file limit 10 GB** (`limits.fileSize: 10*1024³`, `:33`), temp `dest: tmpdir()`. Optional form fields: `thingCapture` (`'true'`/bool; `inventoryCapture` still accepted as a deprecated alias), `skipDescription` (`'true'`/bool), `model` (str) (`:39-49`). Uploads are content-hash de-duplicated within the batch (`:54-72`); 400 if no files (`:43`). **Response**: `[{ id }]`, one per unique file (`:89-91`). Temp files always unlinked in `finally` (`:92-102`).
 **PATCH request**: `@Body` `title?`/`description?` (at least one required else 400, `:128-130`); 404 if file not found. **Response**: `{ id }`.
 
 > Bulk clients that need to map inputs → ids deterministically should use `POST /v1/files` (see the Ingest section), which returns one `{ filename, sha256, id, deduped }` entry per input file in input order.
@@ -341,7 +341,7 @@ flow in-process today. The sequence below was originally verified against the no
 CI-Import-Tools (`ZARCHIVED-CI-Import-Tools/backend/src/ci-server/`) and still documents the
 REST/GraphQL contract an importer client uses. Prefer **REST `/v1/*`** when the server advertises it (`GET /v1/ingest/status`); GraphQL bulk mutations remain the fallback for older servers.
 
-1. **Data push (REST `/v1/*`, preferred):** NDJSON batches to `/v1/{events,communications,contents,inventory,browser-activity,positions}` (`v1.ts` + `mapping.ts`), dedup on the source triple. Falls back to GraphQL `create*` mutations when `/v1` is unavailable.
+1. **Data push (REST `/v1/*`, preferred):** NDJSON batches to `/v1/{events,communications,contents,things,browser-activity,positions}` (`v1.ts` + `mapping.ts`), dedup on the source triple. Falls back to GraphQL `create*` mutations when `/v1` is unavailable.
 2. **Media (REST):** binary upload → **`POST /files/upload`** (or `/v1/files`), then links the returned `{id}` into records.
 3. **Post-push enrichment:** `POST /v1/ingest/finish` (`searchIndexOnly` / staged orchestration) when available; otherwise `api/maintenance/*` (`orchestrate` or the per-leg chain ending in `search-index/backfill`). A `browser-activity`-scoped search backfill also indexes dual-written `event` + `content` rows on the server.
 4. **Graph sync (GraphQL):** entities + relationships via `bulkIngestGraph`, and item↔item edges (email→attachment, photo→album) via `bulkIngestItemRelationships`.

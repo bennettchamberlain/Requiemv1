@@ -29,7 +29,7 @@ import { VectorService } from '@ci/domains/search-ingress/services/VectorService
 import { type WeightedText } from '@ci/domains/search-ingress/types';
 
 /**
- * The parts of an owned unit's index text that do NOT live on `ci.inventory`:
+ * The parts of an owned unit's index text that do NOT live on `ci.objects`:
  * the identifiers it claims and the catalog model it is an instance of. The
  * search index has no join back to either table, so both are denormalized into
  * the unit's own document/tsvector at index time.
@@ -205,7 +205,7 @@ export class ItemSearchIndexListener {
    * Load the unit's identifier claims and its catalog model.
    *
    * Identifier lookups are keyed on `owner_user_id`, which is nullable on
-   * `ci.inventory` and falls back to `user_id` — the claim table is written with
+   * `ci.objects` and falls back to `user_id` — the claim table is written with
    * whichever the writer had, and an item with no owner simply has no claims.
    */
   private async indexContext(item: Item): Promise<ItemIndexContext> {

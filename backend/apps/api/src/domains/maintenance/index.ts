@@ -30,10 +30,10 @@ import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { HealSelfCollationService } from './services/HealSelfCollationService';
 import { IndexDeferralService } from './services/IndexDeferralService';
 import { IngestResetService } from './services/IngestResetService';
-import { InventoryReverseService } from './services/InventoryReverseService';
 import { LocationEstimateService } from './services/LocationEstimateService';
 import { MaintenanceOrchestratorService } from './services/MaintenanceOrchestratorService';
 import { NoteContentFoldService } from './services/NoteContentFoldService';
+import { ObjectReverseService } from './services/ObjectReverseService';
 import { PersonStubBackfillService } from './services/PersonStubBackfillService';
 import { RelationshipNormalizeService } from './services/RelationshipNormalizeService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
@@ -72,7 +72,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     EmbedCoverageTelemetryService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
-    InventoryReverseService,
+    ObjectReverseService,
     EstimateLocationBatchListener,
     CommunicationParticipantLinkListener,
   ],
@@ -92,7 +92,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     EmbedCoverageTelemetryService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
-    InventoryReverseService,
+    ObjectReverseService,
   ],
 })
 export class MaintenanceModule {}

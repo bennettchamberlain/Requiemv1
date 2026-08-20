@@ -63,7 +63,7 @@ export interface ObjectIdentifierBatchEntry {
  * another subject already claims, the write is silently ignored rather than
  * re-pointed: two things claiming one barcode is a duplicate signal for review,
  * not something to resolve automatically. That is also why duplicate detection
- * must scan `ci.inventory` / `ci.product_models` directly — the losing claim was
+ * must scan `ci.objects` / `ci.product_models` directly — the losing claim was
  * never inserted, so it is invisible in this table.
  */
 @Injectable()

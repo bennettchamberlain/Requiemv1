@@ -190,18 +190,36 @@ describe('destinationsFor', () => {
     expect(destinationsFor(tweet)).toEqual(['communications', 'position']);
   });
 
-  it('pushes a subscription fee nowhere at all', () => {
+  it('gives a subscription fee its receipt and nothing else', () => {
     // A Prime or Kindle Unlimited charge is a service, not a thing: neither
-    // content nor inventory. The order aggregate still carries it to events.
+    // content nor things. It is still a real purchase, so it keeps the
+    // receipt that carries the merchant and the money — before the commerce
+    // plane it pushed NOWHERE and the spend was invisible.
     const fee = recordFor({ classification: 'purchase', metadata: { Subscription: true } });
 
-    expect(destinationsFor(fee)).toEqual([]);
+    expect(destinationsFor(fee)).toEqual(['receipts']);
   });
 
-  it('sends a physical purchase to inventory and a digital one to content', () => {
+  it('leaves the receipt to the order aggregate for a rolled-up line', () => {
+    // amazon.ts stamps every line of a multi-item order with the aggregate's
+    // id. Without this branch a five-item order produces five single-line
+    // receipts on top of the itemised one.
+    const line = recordFor({
+      classification: 'purchase',
+      metadata: { ReceiptRollupId: 'amazon:order:111-2233445-6677889' },
+    });
+
+    expect(destinationsFor(line)).toEqual(['things']);
+  });
+
+  it('sends a physical purchase to things and a digital one to content, both with a receipt', () => {
     const physical = recordFor({ classification: 'purchase' });
 
-    expect(destinationsFor(physical)).toEqual(['inventory']);
+    expect(destinationsFor(physical)).toEqual(['receipts', 'things']);
+
+    const digital = recordFor({ classification: 'purchase', metadata: { Product: 'Kindle Edition' } });
+
+    expect(destinationsFor(digital)).toEqual(['receipts', 'content']);
   });
 
   it('sends a money movement to events alone', () => {
@@ -596,7 +614,7 @@ describe('edgeProjectionSourcesFor', () => {
     expect(edgeProjectionSourcesFor(['communications'])).toEqual(['communications']);
     expect(edgeProjectionSourcesFor(['events'])).toEqual(['events']);
     expect(edgeProjectionSourcesFor(['content'])).toEqual(['content']);
-    expect(edgeProjectionSourcesFor(['inventory'])).toEqual(['inventory']);
+    expect(edgeProjectionSourcesFor(['things'])).toEqual(['objects']);
     // The one that is NOT the destination's own name.
     expect(edgeProjectionSourcesFor(['position'])).toEqual(['positions']);
   });

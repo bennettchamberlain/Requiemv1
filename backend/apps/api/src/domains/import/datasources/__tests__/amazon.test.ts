@@ -3,11 +3,93 @@ import os from 'node:os';
 import path from 'path';
 
 import { AmazonFileImporter } from '../amazon';
-import type { ImportParams } from '../timeline';
+import type { Graph, ImportPipeline, ImportParams } from '../timeline';
 
 import type { EmittedGraph, TestPipeline } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
+
+/** One record as a writer would have persisted it: read at write time, not after. */
+interface WrittenRecord {
+  id: string | undefined;
+  classification: string | undefined;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * A pipeline that behaves like `staging/StagedWriter`, which is what a real
+ * import runs through.
+ *
+ * The three properties that matter, and that a plain array does not have:
+ *
+ *   1. it buffers the graph BY REFERENCE, so an importer can still mutate a
+ *      pushed item — right up until the buffer is flushed;
+ *   2. `push` SPLICES the batch out and schedules a write the moment the buffer
+ *      reaches the threshold, in the middle of the parse;
+ *   3. the write READS the item (here: a JSON snapshot of its metadata) and is
+ *      asynchronous, so it interleaves with the importer's own awaits.
+ *
+ * Together those are what turn a post-hoc metadata patch into silent, partial
+ * data loss: everything already flushed keeps the value it had at write time.
+ */
+class FlushingPipeline implements ImportPipeline {
+  readonly written: WrittenRecord[] = [];
+
+  /** How many batches were written. >1 proves the parse really was interrupted. */
+  flushes = 0;
+
+  private readonly buffer: Graph[] = [];
+
+  private chain: Promise<void> = Promise.resolve();
+
+  constructor(private readonly threshold = 500) {}
+
+  push(g: Graph): void {
+    this.buffer.push(g);
+
+    if (this.buffer.length >= this.threshold) {
+      this.scheduleFlush();
+    }
+  }
+
+  drop(): void {}
+
+  keep(): void {}
+
+  /** Await every scheduled write, then write what is left. */
+  async settled(): Promise<void> {
+    await this.chain;
+    this.scheduleFlush();
+    await this.chain;
+  }
+
+  private scheduleFlush(): void {
+    const batch = this.buffer.splice(0, this.buffer.length);
+
+    if (batch.length === 0) {
+      return;
+    }
+
+    this.chain = this.chain.then(async () => {
+      // Stand-in for the real write's I/O: whatever the item's metadata says
+      // HERE is what lands in the database.
+      await Promise.resolve();
+      this.flushes += 1;
+
+      for (const graph of batch) {
+        if (!graph.item) {
+          continue;
+        }
+
+        this.written.push({
+          id: graph.item.id,
+          classification: graph.item.classification,
+          metadata: JSON.parse(JSON.stringify(graph.item.metadata ?? {})) as Record<string, unknown>,
+        });
+      }
+    });
+  }
+}
 
 describe('Amazon datasource', () => {
   it('recognizes export directory by Retail.OrderHistory file', async () => {
@@ -91,7 +173,7 @@ describe('Amazon datasource', () => {
     expect(purchases[2].item.metadata.Product).toContain('"Midnight Black"');
   });
 
-  // A4 — surface the real product taxonomy (Category) + ASIN so inventory rows
+  // A4 — surface the real product taxonomy (Category) + ASIN so object rows
   // get a meaningful category instead of all collapsing into "commerce".
   it('captures the Category, ASIN, and Condition columns into metadata', async () => {
     const root = path.join(FIXTURES_DIR, 'amazon-export');
@@ -274,7 +356,7 @@ describe('Amazon datasource', () => {
     expect(a.items[0].id).toBe(b.items[0].id);
   });
 
-  // Cancelled/unfulfilled lines keep a Unit Price, which the inventory mapping
+  // Cancelled/unfulfilled lines keep a Unit Price, which the things mapping
   // reads for purchasePrice — importing them puts full-price phantoms in stock.
   it('skips unfulfilled zero-quantity lines and reports them as drops', async () => {
     const csv = [
@@ -377,7 +459,7 @@ describe('Amazon datasource', () => {
 
   // Order Status is Amazon's own verdict and outranks the amount heuristic: a
   // cancelled order can still carry a non-zero Total Owed (what WOULD have been
-  // charged), which is how full-price phantoms reached inventory.
+  // charged), which is how full-price phantoms reached the things plane.
   it('skips orders Amazon marked Cancelled even when they still show an amount owed', async () => {
     const csv = [
       '"Order Date","Order ID","Product Name","Quantity","Total Owed","Currency","Unit Price","ASIN","Order Status"',
@@ -455,7 +537,7 @@ describe('Amazon datasource', () => {
 
   // One 'order' item per order id — the purchase ACT, which maps to a single
   // timeline event (kind commerce.order → events) while the line items keep
-  // their inventory/content homes. A five-item order is one event, not five.
+  // their things/content homes. A five-item order is one event, not five.
   it('emits one order-level item per order, aggregated from its lines', async () => {
     const csv = [
       HEADER,
@@ -481,6 +563,101 @@ describe('Amazon datasource', () => {
     const solo = orders.find((o) => o.metadata['Order ID'] === '112-9988776-5544332')!;
     expect(solo.metadata.Title).toBe('Amazon order — 1 item');
     expect(solo.metadata.Total).toBe('5'); // money(): whole amounts render bare
+  });
+
+  it('itemises the order aggregate, so it is a receipt and not only an event', async () => {
+    // A commerce.* record carrying LineItems routes to `receipts` as well as
+    // `events` (push/canonical.ts destinationsFor). Without the itemisation the
+    // order is a timeline entry that cannot say what was bought.
+    const csv = [
+      HEADER,
+      '"2023-03-02T10:00:00Z","111-2233445-6677889","Widget","1","10.00","USD","10.00","B07ABC123"',
+      '"2023-03-02T10:00:00Z","111-2233445-6677889","Gadget","2","25.50","USD","12.75","B07XYZ999"',
+    ].join('\n');
+    const { orders } = await importCsv('__lineitems__', csv);
+    const lines = orders[0].metadata.LineItems as Array<Record<string, unknown>>;
+
+    expect(orders[0].metadata.Merchant).toBe('Amazon');
+    expect(lines).toHaveLength(2);
+    // 1-based and STATED, not left to the array index: `(receipt_id,
+    // line_number)` is a natural key, so a renumbering re-import forks lines.
+    expect(lines.map((l) => l.LineNumber)).toEqual([1, 2]);
+    expect(lines.map((l) => l.Product)).toEqual(['Widget', 'Gadget']);
+    expect(lines[1]).toMatchObject({ Quantity: 2, 'Unit Price': '12.75', Total: '25.50' });
+    expect(lines[0].Identifiers).toEqual([{ namespace: 'asin', value: 'B07ABC123' }]);
+  });
+
+  it('marks every line with the order receipt that already contains it', async () => {
+    // Without the marker a five-item order produces five single-line receipts
+    // ON TOP of the itemised one (push/canonical.ts `isRolledUp`).
+    //
+    // Driven through a MULTI-FILE export and a pipeline that behaves like
+    // `staging/StagedWriter`: it splices a batch out at the flush threshold and
+    // reads each item's metadata when it WRITES it, asynchronously. The order
+    // aggregate spans every file in the export, so it can only be built after
+    // the last one — by which time everything flushed during the earlier files
+    // has already been written, and keeps whatever it said at that moment. A
+    // plain array (which never flushes) cannot see the difference.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-amazon-rollup-'));
+    const orderIds = ['111-2233445-6677889', '112-3344556-7788990', '113-4455667-8899001'];
+    orderIds.forEach((oid, i) => {
+      fs.writeFileSync(
+        path.join(dir, `Retail.OrderHistory.${i + 1}.csv`),
+        [
+          HEADER,
+          `"2023-03-02T10:00:00Z","${oid}","Widget","1","10.00","USD","10.00","B07ABC12${i}"`,
+          `"2023-03-02T10:00:00Z","${oid}","Gadget","2","25.50","USD","12.75","B07XYZ99${i}"`,
+        ].join('\n'),
+      );
+    });
+
+    // Two lines per file, threshold two: every file's lines are written before
+    // the next file is even read.
+    const pipeline = new FlushingPipeline(2);
+    try {
+      await new AmazonFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+        pipeline,
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams);
+      await pipeline.settled();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    const lines = pipeline.written.filter((w) => w.classification === 'purchase');
+    const orders = pipeline.written.filter((w) => w.classification === 'order');
+
+    expect(lines).toHaveLength(6);
+    expect(orders).toHaveLength(3);
+    // More than one batch was written mid-parse — otherwise this test proves
+    // nothing that a plain array would not.
+    expect(pipeline.flushes).toBeGreaterThan(1);
+
+    // AS WRITTEN, not as left in memory afterwards. A line written with no
+    // marker mints its own single-line receipt on top of the itemised one, so
+    // an unmarked line here is a double-counted order.
+    expect(lines.filter((l) => l.metadata.ReceiptRollupId == null)).toEqual([]);
+    // And the marker must name the aggregate EXACTLY, or the line's receipt is
+    // suppressed without the order receipt containing it.
+    expect(new Set(lines.map((l) => l.metadata.ReceiptRollupId))).toEqual(new Set(orders.map((o) => o.id)));
+  });
+
+  it('namespaces an ISBN-10 in the ASIN column as an ISBN, not an ASIN', () => {
+    // Amazon reuses ONE column for two namespaces (the header even says
+    // `ASIN/ISBN`). An all-digit value the normalizer re-routes anyway, but an
+    // ISBN-10 ending in X passes the ASIN grammar and would stick in the wrong
+    // namespace — splitting one book into two objects forever.
+    const csv = [
+      HEADER,
+      '"2023-03-02T10:00:00Z","111-0000000-0000009","A Book","1","10.00","USD","10.00","014028009X"',
+    ].join('\n');
+
+    return importCsv('__isbn__', csv).then(({ items }) => {
+      expect(items[0].metadata.Identifiers).toEqual([{ namespace: 'isbn', value: '014028009X' }]);
+      // The raw cell stays under its old flat key for existing readers.
+      expect(items[0].metadata.ASIN).toBe('014028009X');
+    });
   });
 
   // An order whose every line was dropped (cancelled) must not leave an event.

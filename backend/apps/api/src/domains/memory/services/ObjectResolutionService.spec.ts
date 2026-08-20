@@ -323,13 +323,13 @@ describe('ObjectResolutionService.resolveAndApply', () => {
     expect(await harness.service.resolveAndApply(CONTEXT, OBSERVATION)).toBeNull();
   });
 
-  it('never creates an inventory row from a sighting', async () => {
+  it('never creates an object row from a sighting', async () => {
     const harness = makeHarness({ embedding: [{ object_id: OBJECT, score: '0.99' }] });
 
     await harness.service.resolveAndApply(CONTEXT, OBSERVATION);
 
-    // The old InventoryListener wrote speculative possessions straight from a
+    // The retired inventory listener wrote speculative possessions straight from a
     // vision guess; ci.object_observations exists to stop exactly that.
-    expect(harness.statements.some(({ sql }) => sql.includes('INSERT INTO ci.inventory'))).toBe(false);
+    expect(harness.statements.some(({ sql }) => sql.includes('INSERT INTO ci.objects'))).toBe(false);
   });
 });

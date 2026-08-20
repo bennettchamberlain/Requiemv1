@@ -32,9 +32,9 @@ const DEFAULT_ITEM_PAGE_SIZE = 50;
 const MAX_ITEM_PAGE_SIZE = 200;
 
 /**
- * Spanning-aggregate service for the inventory CTI split: an item is ONE
+ * Spanning-aggregate service for the object CTI split: an item is ONE
  * logical entity persisted as a `ci.entities` base row (discriminated 'Item',
- * see {@link ItemBaseEntity}) plus a `ci.inventory` detail row sharing the same
+ * see {@link ItemBaseEntity}) plus a `ci.objects` detail row sharing the same
  * uuid. The base row is the SOLE owner of `name`/`description`; the detail row
  * carries only item-specific data. This service hides the split — the shared
  * {@link CtiAggregate} machinery writes both rows in one transaction (also
@@ -60,7 +60,7 @@ export class ItemService {
       detailEntity: ItemEntity,
       baseEntity: ItemBaseEntity,
       baseRepository: this.itemBaseRepository,
-      linkedTable: 'inventory',
+      linkedTable: 'objects',
       scopedWhere: (context, id) => ({
         id,
         ...(context.userId !== SYSTEM_USER && {
@@ -310,11 +310,11 @@ export class ItemService {
   }
 
   /**
-   * Batch, idempotent inventory ingest for the importer. Dedupes on the provenance
+   * Batch, idempotent things ingest for the importer. Dedupes on the provenance
    * triple (source_type, source_system, source_id), scoped to owner_user_id, via
    * one set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row findOne +
    * save loop. Re-syncing the same triple returns the existing row instead of
-   * inserting a duplicate. Paired with the inventory_source_triple_uniq partial
+   * inserting a duplicate. Paired with the objects_source_triple_uniq partial
    * unique index, which also absorbs a lost insert race.
    */
   async createMany(context: UserServiceContext, data: CreateItemDto[]): Promise<Item[]> {
@@ -380,7 +380,7 @@ export class ItemService {
     // One transaction spans both halves of the CTI aggregate: the detail rows
     // land first (the triple arbiter decides which actually insert), then a
     // base row is written for exactly the inserted set. The deferred FK
-    // (inventory_object_id_entities_fk) tolerates the detail-before-base order.
+    // (objects_object_id_entities_fk) tolerates the detail-before-base order.
     const { detailResults, bases } = await this.itemRepository.manager.transaction(async (manager) => {
       const results = await bulkInsertIdempotent({
         repository: this.itemRepository,
@@ -491,11 +491,11 @@ export class ItemService {
   /**
    * One page of live units, newest first, paged in SQL.
    *
-   * Walks `inventory_live_keyset_idx` — `(user_id, created_at DESC, object_id
+   * Walks `objects_live_keyset_idx` — `(user_id, created_at DESC, object_id
    * DESC) WHERE merged_into_object_id IS NULL` — the index the migration added
    * for exactly this query. The `merged_into_object_id IS NULL` predicate is
    * therefore not just correctness, it is what makes the index applicable: drop
-   * it and the planner falls back to `inventory_user_idx` plus a filter.
+   * it and the planner falls back to `objects_user_idx` plus a filter.
    *
    * Replaces the load-everything-then-slice shape {@link findAll} has: cost is
    * bounded by the page size regardless of how many things the user owns, and
@@ -591,7 +591,7 @@ export class ItemService {
   }
 
   /**
-   * Lightweight identifiers for the most-recent inventory items, for the
+   * Lightweight identifiers for the most-recent things, for the
    * unified search/explorer feed. Full entities are batch-resolved downstream.
    */
   async getEntitiesForItems(
@@ -700,14 +700,14 @@ export class ItemService {
       return [];
     }
 
-    const queryBuilder = this.itemRepository.createQueryBuilder('inventory');
+    const queryBuilder = this.itemRepository.createQueryBuilder('object');
 
     queryBuilder
-      .where("inventory.metadata->>'source_file_id' IN (:...fileIds)", { fileIds })
-      .andWhere('inventory.merged_into_object_id IS NULL');
+      .where("object.metadata->>'source_file_id' IN (:...fileIds)", { fileIds })
+      .andWhere('object.merged_into_object_id IS NULL');
 
     if (context.userId !== SYSTEM_USER) {
-      queryBuilder.andWhere('inventory.userId = :userId', { userId: context.userId });
+      queryBuilder.andWhere('object.userId = :userId', { userId: context.userId });
     }
 
     const entities = await queryBuilder.getMany();

@@ -32,7 +32,7 @@ describe('INGEST_REFRESH_COLUMNS', () => {
         // parameters in this order — keep it in lockstep with the service.
         communication: ['direction', 'participants_metadata', 'content', 'preview', 'subject'],
         event: [],
-        // Empty is the contract, not an oversight: inventory is the one ingest
+        // Empty is the contract, not an oversight: things is the one ingest
         // table a user edits directly, and a refresh list would let the next
         // re-sync clobber those edits. See the note on the map.
         item: [],

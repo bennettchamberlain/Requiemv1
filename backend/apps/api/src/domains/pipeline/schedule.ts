@@ -432,7 +432,7 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
     maxStaleness: 3 * DAYS,
   },
 
-  /** NIGHTLY. Purchases into `ci.inventory`. Reads nothing another stage produces. */
+  /** NIGHTLY. Purchases into `ci.objects`. Reads nothing another stage produces. */
   [STAGE_IDS.PROMOTE_OBJECT]: {
     trigger: 'scheduled',
     cost: 'local',
@@ -537,7 +537,7 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
     maxStaleness: 6 * HOURS,
   },
 
-  [STAGE_IDS.PROMOTE_EDGE_INVENTORY]: {
+  [STAGE_IDS.PROMOTE_EDGE_OBJECT]: {
     trigger: 'scheduled',
     cost: 'local',
     window: 'any',

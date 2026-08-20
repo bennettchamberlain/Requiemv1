@@ -151,9 +151,9 @@ function makeService() {
       return { notesFolded: 0 };
     }),
   };
-  const inventoryReverse = {
+  const objectReverse = {
     reverse: jest.fn(async () => {
-      callOrder.push('reverse_inventory');
+      callOrder.push('reverse_object');
 
       return { examined: 0, placed: 0, skipped: 0, status: 'noop' };
     }),
@@ -174,7 +174,7 @@ function makeService() {
     graphEnrich as never,
     locationEstimate as never,
     searchIndex as never,
-    inventoryReverse as never,
+    objectReverse as never,
   );
 
   // Kill the progress throttle by default so forwarding tests see every line;

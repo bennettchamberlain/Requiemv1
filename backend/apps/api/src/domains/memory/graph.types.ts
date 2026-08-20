@@ -57,7 +57,7 @@ export const EXPLORER_TO_GRAPH_ENTITY_TYPES: Record<string, string[]> = {
  * `entity` — the node IS the record: Person/Place/Concept are stored in `ci.entities` itself
  *   (single-table inheritance), so `entity_id` is already the GraphQL id.
  * `linked` — the node MIRRORS a record in its own table (`ci.events`, `ci.communications`,
- *   `ci.content`, `ci.files`, `ci.inventory`); `linked_id` is the GraphQL id. Ingest happens to
+ *   `ci.content`, `ci.files`, `ci.objects`); `linked_id` is the GraphQL id. Ingest happens to
  *   reuse the source uuid as `entity_id` for most of these, but `File` is proof that is a
  *   coincidence and not a contract — resolve through `linked_id`.
  */

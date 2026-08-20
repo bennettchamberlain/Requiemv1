@@ -13,7 +13,7 @@ import {
   toCommunicationInput,
   toContentInput,
   toEventInput,
-  toInventoryInput,
+  toThingInput,
   toPositionInput,
 } from '../inputs';
 
@@ -50,7 +50,7 @@ function recordFor(overrides: Partial<StagedItem> = {}): CanonicalRecord {
 }
 
 describe('the provenance triple', () => {
-  it('rides snake_case on every destination but inventory', () => {
+  it('rides snake_case on every destination but things', () => {
     const record = recordFor({ classification: 'email' });
 
     expect(toCommunicationInput(record)).toMatchObject({
@@ -60,10 +60,10 @@ describe('the provenance triple', () => {
     });
   });
 
-  it('rides camelCase on inventory, which is the one camelCase ingest DTO', () => {
+  it('rides camelCase on things, which is the one camelCase ingest DTO', () => {
     const record = recordFor({ classification: 'purchase', metadata: { Product: 'Kettle' } });
 
-    expect(toInventoryInput(record)).toMatchObject({
+    expect(toThingInput(record)).toMatchObject({
       sourceType: 'ci-import-tools',
       sourceSystem: 'gmail',
       sourceId: 'hash-1',
@@ -504,9 +504,9 @@ describe('communicationTypeFor', () => {
   });
 });
 
-describe('toInventoryInput', () => {
+describe('toThingInput', () => {
   const purchase = (condition: string) =>
-    toInventoryInput(
+    toThingInput(
       recordFor({ classification: 'purchase', metadata: { Product: 'Kettle', Condition: condition } }),
     );
 

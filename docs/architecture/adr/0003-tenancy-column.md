@@ -26,7 +26,7 @@ it unclear which spelling new tables should use.
 documentation of the product data model.
 
 **`owner_user_id` is retained** where inventory/commerce and the graph already
-use it (`ci.entities`, `ci.relationships`, `ci.inventory`, and the commerce
+use it (`ci.entities`, `ci.relationships`, `ci.objects`, and the commerce
 tables that share that provenance pattern). Renaming those columns is out of
 scope for this consolidation wave — the blast radius (indexes, TypeORM entities,
 raw SQL, importer contracts) is large for no runtime win.

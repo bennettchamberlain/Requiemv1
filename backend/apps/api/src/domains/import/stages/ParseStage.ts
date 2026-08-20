@@ -315,6 +315,12 @@ export class ParseStage implements ImportStageRunner {
  * many records it read, so `produced + dropped` is the honest floor and the
  * summary says as much by construction. Claiming a measured figure the parsers
  * do not supply would be worse than deriving one.
+ *
+ * `counts.keeps` is deliberately NOT folded in here. A keep is a record a gate
+ * would have discarded and the parser rescued — it IS in `produced`, so adding
+ * it to `drops` would count one row as both made and lost, and the run UI
+ * renders `drops` as the loss report. It rides on `detail.sources[].keeps`
+ * instead (ParseStage spreads `writer.totals` there).
  */
 function parseUnit(
   dataSource: string,

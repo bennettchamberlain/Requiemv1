@@ -579,7 +579,7 @@ export interface ItemSearchFields {
   identifierValues?: string[] | null;
   /**
    * Text from the CATALOG model this unit is an instance of
-   * (`ci.inventory.product_id` → `ci.product_models`). Denormalized into the
+   * (`ci.objects.product_id` → `ci.product_models`). Denormalized into the
    * unit's own index entry so "where are my Bose QC45" finds the unit even
    * though its own row says only "headphones" — the brand words live on the
    * model, and the search index has no join back to it.

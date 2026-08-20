@@ -21,7 +21,7 @@ closes the producer hole **behind** those columns. New metric keys are item 4.
 ## 1. The hole
 
 The user imports a year of Takeout, or the phone writes a day of location
-fixes. Rows land in `ci.position` / `ci.communications` / `ci.inventory`.
+fixes. Rows land in `ci.position` / `ci.communications` / `ci.objects`.
 Memory search, the place engine, and daily metrics then look empty:
 
 > I imported my location history. Why can't I ask where I was last Tuesday?
@@ -35,7 +35,7 @@ run**, plus two coverage gaps the deferred work would not close even if it ran.
 | Semantic search ("where was I") | `ci_search.embeddings` for the row | `/v1/*` materializes with `emitCreated: false` — no `*CreatedEvent`, so no search-index listener |
 | Place engine / `n_places` | GPS points (`ci.position.location`) | Points land. Reverse-geocode of those points is a **different** system than the finish leg named `reverse_geocode` |
 | Daily contacts / sentiment | `from_entity_id` / `to_entity_ids` filled | `extract_people` + `link_communications` only run if a client calls finish/orchestrate |
-| Inventory "where is this" | a place name on the item | `ci.inventory.current_location_coordinates` can be set; nothing reverse-geocodes it onto `last_seen_place_entity_id` |
+| Inventory "where is this" | a place name on the item | `ci.objects.current_location_coordinates` can be set; nothing reverse-geocodes it onto `last_seen_place_entity_id` |
 
 The ticket's three acceptance bullets are still the right ones. The tree has
 moved: there are **two** enrichment systems, and the client/server contract
@@ -108,7 +108,7 @@ communication, event, content, item, browser-activity, file, person
 > Positions are not a searchable entity — `BACKFILLABLE_ENTITIES` lists
 > communication/event/content/item/browser-activity/file/person, not position.
 
-> **Shipped on this branch:** `reverse_position` and `reverse_inventory` are
+> **Shipped on this branch:** `reverse_position` and `reverse_object` are
 > orchestrate legs; `position` is in `BACKFILLABLE_ENTITIES` /
 > `INDEXABLE_ENTITIES`. The lists above are the pre-fix world this plan closed.
 > See §5.
@@ -147,7 +147,7 @@ distinct 3-decimal GPS cells and path length from `ci.position.location`
 
 ### 2.5 Inventory is not `location` — it is coordinates + an empty FK
 
-The ticket says `ci.inventory.location (geography)`. That column is not on
+The ticket says `ci.objects.location (geography)`. That column is not on
 this tree. `ItemEntity` has:
 
 - `current_location_coordinates` — `geography(Point,4326)`, nullable
@@ -303,7 +303,7 @@ ALTER (see [thicker-daily-metrics.md](thicker-daily-metrics.md)).
 | positions | `reverse_position`, `estimate_locations`, `search_index.position` |
 | events | `geocode`, `reverse_geocode`, `link_events`, `search_index` |
 | communications | `extract_people`, `link_communications`, `search_index` |
-| inventory | `reverse_inventory`, `search_index` |
+| inventory | `reverse_object`, `search_index` |
 | contents / browser-activity / notes | `search_index` (notes already have a live CreatedEvent path — do not double-owe if that path still emits) |
 
 Keep this table next to `BulkIngestController` so it cannot drift from
@@ -340,14 +340,14 @@ count uses. Embed text is `{local date} {local time} at {address}` in
 
 ### 5.4 Inventory reverse
 
-New owed stage `reverse_inventory` (maintenance-shaped, cache-aware):
+New owed stage `reverse_object` (maintenance-shaped, cache-aware):
 
 - Candidates: `current_location_coordinates IS NOT NULL` AND
   `last_seen_place_entity_id IS NULL` (and not a permanent geocode skip).
 - `GeocodeService.reverseGeocode(lat, lng)`
 - `PlaceService.findOrCreateForGeocode` (already the reverse-geocode identity
   path)
-- `UPDATE ci.inventory SET last_seen_place_entity_id = …`
+- `UPDATE ci.objects SET last_seen_place_entity_id = …`
 
 Then `materialize_edges` / edge promote can emit `located_at`. Re-run
 `search_index` for those item ids so the embed can include the place name.

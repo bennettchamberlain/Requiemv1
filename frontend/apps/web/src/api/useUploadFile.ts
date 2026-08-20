@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks';
 import type { File as FileData } from './types';
 
 interface UploadOptions {
-  inventoryCapture?: boolean;
+  thingCapture?: boolean;
   model?: string;
 }
 
@@ -42,8 +42,8 @@ export function useUploadFile(): ReturnType {
         formData.append('files', file);
       });
 
-      if (options.inventoryCapture) {
-        formData.append('inventoryCapture', 'true');
+      if (options.thingCapture) {
+        formData.append('thingCapture', 'true');
       }
 
       if (options.model) {
