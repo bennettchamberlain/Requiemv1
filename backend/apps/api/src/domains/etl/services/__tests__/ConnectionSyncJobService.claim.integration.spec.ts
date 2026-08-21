@@ -75,20 +75,32 @@ describeWithDatabase(
       await scratch?.drop();
     });
 
-    /** One sync job row, in whatever state the case under test needs. */
+    /**
+     * One sync job row, in whatever state the case under test needs.
+     *
+     * Each row gets an endpoint name of its own: these cases share one
+     * connection and leave their rows behind, and
+     * `connection_sync_jobs_live_job_idx` permits only one live (pending or
+     * in-progress) job per (connection, endpoint, type).
+     */
+    let seedCount = 0;
+
     async function seedSyncJob(
       overrides: { status?: string; lastTransformed?: Date | null; transformClaimedAt?: Date | null } = {},
     ): Promise<string> {
       const id = randomUUID();
 
+      seedCount += 1;
+
       await scratch.dataSource.query(
         `INSERT INTO ci_etl.connection_sync_jobs
          (id, user_id, connection_id, endpoint_name, status, type, last_transformed, transform_claimed_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, 'messages', $4::ci_etl.job_status, 'incremental', $5, $6)`,
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::ci_etl.job_status, 'incremental', $6, $7)`,
         [
           id,
           userId,
           connectionId,
+          `messages-${seedCount}`,
           overrides.status ?? 'pending',
           overrides.lastTransformed ?? null,
           overrides.transformClaimedAt ?? null,

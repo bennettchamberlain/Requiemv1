@@ -14,7 +14,6 @@ import { SearchNextModule } from '@ci/domains/search-next';
 import './events';
 
 import { AnswerInferenceCron } from './cron/AnswerInferenceCron';
-import { EntityPromotionCron } from './cron/EntityPromotionCron';
 import {
   SmartRotationAnswerInferCron,
   SmartRotationGraphEnrichCron,
@@ -61,7 +60,6 @@ import { SmartRotationService } from './services/SmartRotationService';
     SmartRotationContextPromptCron,
     SmartRotationHydrateAnswersCron,
     SmartRotationHydrateThingsCron,
-    EntityPromotionCron,
   ],
   exports: [SmartRotationService],
 })

@@ -1,14 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
+import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
+import { Test } from '@nestjs/testing';
 import { DataSource, type QueryRunner } from 'typeorm';
 
-import type { LoggerService } from '@ci/common/logging';
+import { LoggerService } from '@ci/common/logging';
 
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { SHARD_LEASE_SECONDS, STAGE_IDS, STAGE_ID_LIST, type StageId } from '../../constants';
+import { PIPELINE_TICK, PipelineTickCron } from '../../listeners/PipelineTickCron';
 import { automaticStageIds, stageDueness, stageSchedule } from '../../schedule';
 import type { Stage } from '../../types';
-import type { EnrichmentWindowService } from '../EnrichmentWindowService';
+import { BackpressureService } from '../BackpressureService';
+import { EnrichmentWindowService } from '../EnrichmentWindowService';
 import {
   CONTINUOUS_RUN_KIND,
   MAX_SWEEPS_PER_TICK,
@@ -23,10 +27,10 @@ import {
   type ControlTickReport,
   type StageLeg,
 } from '../PipelineControlService';
-import type { PipelineDispatchService } from '../PipelineDispatchService';
-import type { PipelineRunService } from '../PipelineRunService';
-import type { PipelineStateService } from '../PipelineStateService';
-import type { StageRegistry } from '../StageRegistry';
+import { PipelineDispatchService } from '../PipelineDispatchService';
+import { PipelineRunService } from '../PipelineRunService';
+import { PipelineStateService } from '../PipelineStateService';
+import { StageRegistry } from '../StageRegistry';
 
 /**
  * The control tick is the answer to a specific, measured absence: twelve stages
@@ -1494,22 +1498,15 @@ describe('PipelineControlService', () => {
   // -------------------------------------------------------------------------
 
   describe('when something goes wrong', () => {
-    it('never rejects out of the scheduled tick — an unhandled tick would exit the process', async () => {
-      // `@Cron` is @nestjs/schedule, which builds `CronJob.from({ onTick })`
-      // without `waitForCompletion`, so `fireOnTick` never awaits the callback.
-      // An async tick that rejects is an unhandled rejection, and
-      // `application.ts` answers those with `process.exit(1)`. On a two-minute
-      // timer that is a crash loop.
-      const h = makeControl({ users: [runningRun()], failOn: /from ci\.users/ });
-
-      await expect(h.service.tickOnSchedule()).resolves.toBeUndefined();
-      expect(h.logger.error).toHaveBeenCalled();
-    });
-
     it('propagates out of the awaited tick, so a caller that asked hears about it', async () => {
-      // The two entry points diverge deliberately. A cron must never reject; a
-      // caller that awaited a tick wants to be told it failed rather than getting
-      // a report of zeroes that reads like a quiet appliance.
+      // The body throws and the TIMER contains it: a cron must never reject —
+      // `@nestjs/schedule` builds `CronJob.from({ onTick })` without
+      // `waitForCompletion`, so nothing awaits it and `application.ts` answers
+      // an unhandled rejection with `process.exit(1)`. That containment is
+      // `PipelineTickCron.runOnSchedule`'s, and its own spec pins it. Here the
+      // property is the opposite one: a caller that awaited a tick wants to be
+      // told it failed rather than getting a report of zeroes that reads like a
+      // quiet appliance.
       const h = makeControl({ users: [runningRun()], failOn: /from ci\.users/ });
 
       await expect(h.service.tick()).rejects.toThrow('connection terminated');
@@ -1597,6 +1594,70 @@ describe('PipelineControlService', () => {
       expect(userQuery?.sql).toMatch(/deleted_at is null/);
       expect(userQuery?.sql).toMatch(/is_active/);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// One tick body, one timer
+// ---------------------------------------------------------------------------
+
+/**
+ * `PipelineTickCron` owns the schedule; this service owns what a tick DOES.
+ *
+ * Both used to carry a `@Cron`, so two timers drove one `tick()` body. That was
+ * never a correctness problem — every path serialises on this service's advisory
+ * lock and then on the per-leg shard lease — but the faster schedule wins, so the
+ * appliance ticked every two minutes rather than the five `PIPELINE_TICK_CRON`
+ * argues for, and every extra tick costs a staleness anti-join per stage leg.
+ *
+ * Asserted against the LIVE registry rather than the decorator metadata on one
+ * named method: the registry is what fires timers and what the Jobs dashboard
+ * lists, so a second schedule reintroduced on ANY method of either class fails
+ * here.
+ */
+describe('the pipeline tick schedule', () => {
+  it('is registered once, by PipelineTickCron', async () => {
+    const stub = {};
+
+    const silent = {
+      setContext: () => undefined,
+      log: () => undefined,
+      debug: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+      verbose: () => undefined,
+    } as unknown as LoggerService;
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [ScheduleModule.forRoot()],
+      providers: [
+        PipelineControlService,
+        PipelineTickCron,
+        { provide: PIPELINE_TICK, useExisting: PipelineControlService },
+        // `@InjectDataSource()` resolves to the `DataSource` class token for the
+        // default connection; nothing here issues a statement.
+        { provide: DataSource, useValue: stub },
+        { provide: PipelineStateService, useValue: stub },
+        { provide: PipelineRunService, useValue: stub },
+        { provide: PipelineDispatchService, useValue: stub },
+        { provide: StageRegistry, useValue: stub },
+        { provide: EnrichmentWindowService, useValue: stub },
+        { provide: BackpressureService, useValue: stub },
+        { provide: LoggerService, useValue: silent },
+      ],
+    }).compile();
+
+    const app = moduleRef.createNestApplication();
+
+    try {
+      await app.init();
+
+      const registered = [...app.get(SchedulerRegistry).getCronJobs().keys()];
+
+      expect(registered).toEqual(['PipelineTickCron.runOnSchedule']);
+    } finally {
+      await app.close();
+    }
   });
 });
 

@@ -611,8 +611,13 @@ export const ConfigSchema = z.object({
     .default({}),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
+    /**
+     * The three `SyncOrchestrator` crons — job creation, provider fetch and
+     * transform. Off is the kill switch for all outbound provider polling,
+     * including the jobs POST /connections/sync-now enqueues; queued work
+     * resumes untouched when it is turned back on.
+     */
     'scheduled.connection.sync': booleanStringSchema,
-    'scheduled.entity.promotion': booleanStringSchema,
     'pinned.demo.models': booleanStringSchema,
     'enable.system.prompt': booleanStringSchema,
     'advanced.theme.tab': booleanStringSchema,
