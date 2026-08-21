@@ -128,12 +128,23 @@ export class FilePreviewGenerationListener {
       parentId: file.id,
     });
 
-    await this.eventService.send(PreviewGeneratedEvent, {
-      userId: payload.userId,
-      previewId: preview.id,
-      model: payload.model,
-      skipDescription: payload.skipDescription,
-    });
+    // `preview.generated` is registered on the `image-description` queue alone,
+    // and that queue declares `policy: 'short'` — under which pg-boss's unique
+    // index folds every KEYLESS job on the queue into one row
+    // (COALESCE(singleton_key,'')) and discards the rest via ON CONFLICT DO
+    // NOTHING, silently. The key is what keeps concurrent previews distinct,
+    // and it matches ImageDescriptionBackfillListener's so a re-drive of a
+    // preview already queued here is refused instead of described twice.
+    await this.eventService.send(
+      PreviewGeneratedEvent,
+      {
+        userId: payload.userId,
+        previewId: preview.id,
+        model: payload.model,
+        skipDescription: payload.skipDescription,
+      },
+      { singletonKey: `image-description:${preview.id}` },
+    );
 
     this.logger.log('Generated preview', {
       fileId: payload.fileId,

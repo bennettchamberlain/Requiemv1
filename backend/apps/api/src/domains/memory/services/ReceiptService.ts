@@ -6,12 +6,14 @@ import { v7 as uuid7 } from 'uuid';
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type BulkInsertResult, bulkInsertIdempotent, computeChunkSize } from '@ci/common/persistence';
+import { EventService } from '@ci/domains/events';
 import { ObjectIdentifierService } from '@ci/domains/graph/services/ObjectIdentifierService';
 import type {
   ObjectIdentifierBatchEntry,
   RawObjectIdentifier,
 } from '@ci/domains/graph/services/ObjectIdentifierService';
 import type { ObjectIdentifierNamespace } from '@ci/domains/graph/utils/normalizeObjectIdentifier';
+import { ReceiptUpdatedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { type Receipt, ReceiptEntity } from '../entities/ReceiptEntity';
@@ -179,6 +181,7 @@ export class ReceiptService {
     private readonly productModelService: ProductModelService,
     private readonly objectIdentifierService: ObjectIdentifierService,
     private readonly objectMintService: ObjectMintService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ReceiptService.name);
@@ -525,6 +528,8 @@ export class ReceiptService {
     const writable = patch as any;
 
     await this.receiptRepository.update({ id, ...this.userScope(context) }, writable);
+
+    await this.eventService.send(ReceiptUpdatedEvent, { receiptId: id });
 
     return this.findById(context, id);
   }

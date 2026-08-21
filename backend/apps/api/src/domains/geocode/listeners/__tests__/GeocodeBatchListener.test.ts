@@ -1,6 +1,6 @@
 import { VIRTUAL_STATUS } from '../../services/GeocodeService';
 import type { GeocodeOutcome, ReverseGeocodeOutcome } from '../../services/GeocodeService';
-import { GeocodeBatchListener, RateLimiter } from '../GeocodeBatchListener';
+import { GeocodeBatchListener } from '../GeocodeBatchListener';
 
 function makeLogger() {
   return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -141,35 +141,9 @@ function okOutcome(lowConfidence = false): GeocodeOutcome {
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
 
-describe('RateLimiter (QPS throttle)', () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
-
-  it('lets the first acquire through immediately, then spaces the rest by 1000/qps ms', async () => {
-    const limiter = new RateLimiter(10); // 100ms min interval
-
-    await limiter.acquire(); // first is immediate
-
-    let secondResolved = false;
-    const second = limiter.acquire().then(() => {
-      secondResolved = true;
-    });
-
-    // Not yet — must wait ~100ms.
-    await Promise.resolve();
-    expect(secondResolved).toBe(false);
-
-    await jest.advanceTimersByTimeAsync(100);
-    await second;
-    expect(secondResolved).toBe(true);
-  });
-
-  it('is a no-op when qps is non-positive (unthrottled)', async () => {
-    const limiter = new RateLimiter(0);
-    // Resolves without any timer advance.
-    await expect(limiter.acquire()).resolves.toBeUndefined();
-  });
-});
+// The RateLimiter (QPS throttle) unit tests moved to GeocodeService.test.ts
+// alongside the class, which now lives in GeocodeService and is shared by
+// every caller — see "GeocodeService rate limiter" there.
 
 describe('GeocodeBatchListener.handleBatch', () => {
   it('writes coordinates + confidence for an OK candidate, no extra tag for a precise hit', async () => {

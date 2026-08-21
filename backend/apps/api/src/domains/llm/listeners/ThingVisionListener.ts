@@ -14,6 +14,7 @@ import {
   normalizePhysicalProperties,
 } from '@ci/domains/memory';
 
+import { THING_VISION_QUEUE, THING_VISION_QUEUE_OPTIONS } from '../constants';
 import { ImageDescriptionPreferenceService } from '../services/ImageDescriptionPreferenceService';
 import { OllamaService } from '../services/OllamaService';
 import { isNonMultimodalModelError } from '../visionErrors';
@@ -166,7 +167,7 @@ export class ThingVisionListener {
     this.logger.setContext(ThingVisionListener.name);
   }
 
-  @OnEvent(FileUploadedEvent, { queue: 'thing-vision' })
+  @OnEvent(FileUploadedEvent, { queue: THING_VISION_QUEUE, queueOptions: THING_VISION_QUEUE_OPTIONS })
   async handleFileUploaded(payload: FileUploadedPayload) {
     if (!payload.thingCapture) {
       this.logger.log('File uploaded without thing capture enabled, skipping processing', {

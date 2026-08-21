@@ -220,6 +220,76 @@ export class ConnectionSyncJobService {
     return true;
   }
 
+  /**
+   * Atomically transitions one job from `pending` to `in_progress`, returning
+   * whether this call won the claim.
+   *
+   * `handleSyncJobExecuteEvent` used to read `status` and then, in a separate
+   * call, write `in_progress` — two concurrently-dequeued redeliveries of the
+   * same job (pg-boss's `singletonKey` only refuses a second PENDING send; it
+   * says nothing about a job already dequeued once and delivered again) could
+   * both read `pending` before either committed `in_progress`, and both run
+   * the sync. Folding the read and the write into one statement means only
+   * one caller's UPDATE can match the row.
+   */
+  async claimPending(context: ServiceContext, id: string): Promise<boolean> {
+    const scoped = context.userId !== SYSTEM_USER;
+
+    return this.wonClaim(
+      `UPDATE ci_etl.connection_sync_jobs
+          SET status = 'in_progress', updated_at = now()
+        WHERE id = $1::uuid AND status = 'pending'${scoped ? ' AND user_id = $2::uuid' : ''}
+        RETURNING id`,
+      scoped ? [id, context.userId] : [id],
+    );
+  }
+
+  /**
+   * Atomically claims one job for transformation, returning whether this call
+   * won the claim.
+   *
+   * `lastTransformed` alone only marks completion, so a transform still
+   * running past the next `executeTransformJobs` tick was re-enqueued and run
+   * again alongside itself — see `SyncOrchestrator.handleSyncJobTransformEvent`.
+   * The claim goes stale (and is re-claimable) after an hour, the same window
+   * `orchestrateSyncJobs` already uses for a stalled sync job, so a crash
+   * mid-transform is retried rather than stuck forever.
+   */
+  async claimTransform(context: ServiceContext, id: string): Promise<boolean> {
+    const scoped = context.userId !== SYSTEM_USER;
+
+    return this.wonClaim(
+      `UPDATE ci_etl.connection_sync_jobs
+          SET transform_claimed_at = now(), updated_at = now()
+        WHERE id = $1::uuid
+          AND last_transformed IS NULL
+          AND (transform_claimed_at IS NULL OR transform_claimed_at < now() - interval '1 hour')
+          ${scoped ? 'AND user_id = $2::uuid' : ''}
+        RETURNING id`,
+      scoped ? [id, context.userId] : [id],
+    );
+  }
+
+  /**
+   * Runs a `UPDATE ... RETURNING id` claim and reports whether it matched a row.
+   *
+   * TypeORM's Postgres driver special-cases UPDATE/DELETE and resolves
+   * `query()` to the pair `[rows, rowCount]` rather than to the RETURNING rows
+   * (`driver/postgres/PostgresQueryRunner.ts`), unlike a SELECT, which resolves
+   * to the rows on their own. So a claim that matched nothing arrives as
+   * `[[], 0]` — whose own `.length` is 2. Treating that pair AS the rows makes
+   * every claim "win" and the whole atomic claim inert; `personalization/
+   * placement.ts` shipped the identical bug for the same reason.
+   */
+  private async wonClaim(sql: string, params: unknown[]): Promise<boolean> {
+    const [rows] = (await this.connectionSyncJobRepository.manager.query(sql, params)) as [
+      Array<{ id: string }>,
+      number,
+    ];
+
+    return rows.length > 0;
+  }
+
   async markAsCompleted(
     context: ServiceContext,
     id: string,

@@ -468,6 +468,7 @@ export class JobMonitorService {
       .filter((item) => item.count > 0);
   }
 
+  /** Live smart.rotation.work by workType. Excludes the dead-letter queue, for the reason above. */
   private async getSmartRotationDistribution(): Promise<SmartRotationWorkDistributionDto[]> {
     const rows = await this.jobRepository
       .createQueryBuilder('job')
@@ -475,6 +476,7 @@ export class JobMonitorService {
       .addSelect('COUNT(*)::int', 'count')
       .where('job.state IN (:...states)', { states: ['created', 'active', 'retry'] })
       .andWhere("job.data->>'name' = :eventName", { eventName: 'smart.rotation.work' })
+      .andWhere('job.name != :deadLetter', { deadLetter: DEAD_LETTER_QUEUE })
       .groupBy("COALESCE(job.data->>'workType', 'unknown')")
       .orderBy('count', 'DESC')
       .getRawMany<{ workType: string | null; count: number }>();

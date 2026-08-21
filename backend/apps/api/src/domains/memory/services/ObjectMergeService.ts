@@ -6,7 +6,7 @@ import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
 import { ObjectIdentifierService } from '@ci/domains/graph/services/ObjectIdentifierService';
-import { ItemUpdatedEvent } from '@ci/domains/memory/events';
+import { ItemUpdatedEvent, ProductUpdatedEvent } from '@ci/domains/memory/events';
 
 import { type Item, ItemEntity } from '../entities/ItemEntity';
 import { type ProductModel, ProductModelEntity } from '../entities/ProductModelEntity';
@@ -29,6 +29,7 @@ export interface ProductMergeCounts {
   receiptLineItems: number;
   objectProduct: number;
   observations: number;
+  searchRowsDeleted: number;
 }
 
 /** The `ci.entity_merges.entity_type` values this service writes. */
@@ -244,7 +245,7 @@ export class ObjectMergeService {
         [userId, sources, targetId],
       );
 
-      const searchRowsDeleted = await this.deleteSearchRows(em, userId, sources);
+      const searchRowsDeleted = await this.deleteSearchRows(em, userId, 'item', sources);
       const tagLinksMoved = await this.moveTagLinks(em, sources, targetId);
 
       const counts: ObjectMergeCounts = { ...repointed, searchRowsDeleted, tagLinksMoved };
@@ -511,32 +512,46 @@ export class ObjectMergeService {
    *
    * BOTH stores, not just the embeddings. `ci_search.vectors` is the CANDIDATE
    * source for keyword and hybrid search and is queried with no join back to
-   * `ci.objects`, so deleting only the embedding leaves a merged-away unit
+   * the source table, so deleting only the embedding leaves a merged-away row
    * fully findable — and clicking it lands on a row nothing points at. The
-   * target re-indexes from the `ItemUpdatedEvent` emitted after commit; the
-   * backfill sweep skips tombstones.
+   * target re-indexes from the update event emitted after commit; the backfill
+   * sweep skips tombstones via `ENTITY_SOURCE_MAP[…].backfillPredicate`.
+   *
+   * ── Why the merge deletes these itself, rather than an event doing it ──────
+   *
+   * A search listener cannot: every by-id read filters tombstones
+   * (`ItemService.findById`, `ProductModelService.liveScope`), so a listener
+   * handed a merged-away id reads `null` and returns before it could act on
+   * one. Any "the tombstone branch will clean it up" arrangement is therefore
+   * unreachable by construction, and the rows only go away if the transaction
+   * that created the tombstone removes them.
    */
-  private async deleteSearchRows(em: EntityManager, userId: string, sources: string[]): Promise<number> {
+  private async deleteSearchRows(
+    em: EntityManager,
+    userId: string,
+    entityType: 'item' | 'product',
+    sources: string[],
+  ): Promise<number> {
     const embeddings = await countAffected(
       em,
       `WITH removed AS (
          DELETE FROM ci_search.embeddings
-          WHERE user_id = $1::uuid AND entity_type = 'item' AND entity_id = ANY($2::uuid[])
+          WHERE user_id = $1::uuid AND entity_type = $3 AND entity_id = ANY($2::uuid[])
           RETURNING 1
        )
        SELECT COUNT(*)::int AS count FROM removed`,
-      [userId, sources],
+      [userId, sources, entityType],
     );
 
     const vectors = await countAffected(
       em,
       `WITH removed AS (
          DELETE FROM ci_search.vectors
-          WHERE user_id = $1::uuid AND entity_type = 'item' AND entity_id = ANY($2::uuid[])
+          WHERE user_id = $1::uuid AND entity_type = $3 AND entity_id = ANY($2::uuid[])
           RETURNING 1
        )
        SELECT COUNT(*)::int AS count FROM removed`,
-      [userId, sources],
+      [userId, sources, entityType],
     );
 
     return embeddings + vectors;
@@ -607,9 +622,11 @@ export class ObjectMergeService {
    *
    * Shorter than the instance merge because a model owns fewer references —
    * identifier claims, the receipt lines that resolved to it, the object
-   * units that are instances of it, and the observations that guessed it. There
-   * is no search row to delete: models are not indexed as their own entity
-   * type, they are reached through the units that instantiate them.
+   * units that are instances of it, and the observations that guessed it.
+   *
+   * Like {@link mergeObjects}, it deletes the sources' rows in BOTH search
+   * stores inside the transaction — see {@link deleteSearchRows} for why that
+   * cannot be delegated to a listener.
    */
   async mergeProductModels(
     context: UserServiceContext,
@@ -746,11 +763,14 @@ export class ObjectMergeService {
         sources.map((id) => byId.get(id) as ProductRow),
       );
 
+      const searchRowsDeleted = await this.deleteSearchRows(em, userId, 'product', sources);
+
       const counts: ProductMergeCounts = {
         identifiers,
         receiptLineItems,
         objectProduct,
         observations,
+        searchRowsDeleted,
       };
 
       for (const id of sources) {
@@ -772,6 +792,12 @@ export class ObjectMergeService {
 
       return counts;
     });
+
+    // After the commit, so the re-index reads the merged row rather than
+    // racing the transaction that produced it. Only the target: a source is a
+    // tombstone now, its search rows are already gone, and every read path
+    // filters it — an event for one can do nothing but log a miss.
+    await this.eventService.send(ProductUpdatedEvent, { productId: targetId });
 
     const entity = await this.productRepository.findOne({
       where: { id: targetId, userId: context.userId },

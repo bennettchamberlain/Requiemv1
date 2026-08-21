@@ -517,6 +517,7 @@ describe('downloads', () => {
 
   const downloadsFrom = async (rows: Parameters<typeof makeDbWithDownloads>[1]) => {
     const items = await runImport(makeDbWithDownloads(tmpdir(), rows));
+
     return items.filter((i) => i.classification === 'download');
   };
 

@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 
 import type { UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { BACKFILL_JOB_PRIORITY, EventService } from '@ci/domains/events';
+import { BACKFILL_JOB_PRIORITY, EventListenerRegistry, EventService } from '@ci/domains/events';
 
 import { DEAD_LETTER_QUEUE, STAGE_ID_LIST } from '../constants';
 import type { PipelineRunDesiredState } from '../entities/PipelineRunEntity';
@@ -58,6 +58,23 @@ export const MAX_DEAD_LETTER_PAGE = 200;
  * that can never be routed.
  */
 const UNATTRIBUTABLE_EVENT_NAME = 'unknown';
+
+/**
+ * Namespace for the `singletonKey` every replayed letter carries.
+ *
+ * A replay MUST be keyed. Queues that declare pg-boss `policy: 'short'` are
+ * covered by a unique index on `(name, COALESCE(singleton_key,''))` over jobs
+ * still in `created`, inserted with ON CONFLICT DO NOTHING — so keyless sends
+ * collapse into ONE job and every send after the first returns a null id. A
+ * bulk replay of N letters onto such a queue would enqueue the first and
+ * silently drop the rest.
+ *
+ * The key is the LETTER's id, not the payload's identity: a replay is a
+ * distinct unit of work, and re-driving one letter must not be swallowed by a
+ * live job the normal producer already queued. The prefix keeps it out of every
+ * producer's key namespace in both directions.
+ */
+export const DEAD_LETTER_REPLAY_KEY_PREFIX = 'dead-letter-replay:';
 
 /** The partial unique index that makes "one active run per user" a database fact. */
 const ACTIVE_RUN_CONSTRAINT = 'pipeline_runs_active_uniq';
@@ -928,8 +945,10 @@ export class PipelineRunService {
    * replayed when it was not, which is a lie the operator cannot detect. So the
    * stamp is released on every failure path, including the silent one: `send()`
    * returns an empty array — it does not throw — when the event has no
-   * registered listener or names a queue that does not exist, and an empty
-   * replay is reported as a failure rather than as success.
+   * registered listener, when it names a queue that does not exist, and when
+   * pg-boss refuses the insert (a singletonKey already held by a `created` job
+   * on a de-duplicating queue). An empty replay is reported as a failure rather
+   * than as success, and the three causes are reported apart.
    *
    * ── Routing ────────────────────────────────────────────────────────────────
    *
@@ -1157,6 +1176,7 @@ export class PipelineRunService {
         {
           ...(queue == null ? {} : { queue }),
           priority: BACKFILL_JOB_PRIORITY,
+          singletonKey: `${DEAD_LETTER_REPLAY_KEY_PREFIX}${letterId}`,
         },
       );
     } catch (err: unknown) {
@@ -1168,13 +1188,27 @@ export class PipelineRunService {
     if (jobIds.length === 0) {
       await this.releaseReplayClaim(letterId);
 
-      // The silent path: `send()` warns and returns [] for an unknown queue or
-      // an event with no listener. Reported rather than swallowed, because the
-      // letter would otherwise read as replayed and nothing would have run.
+      // The silent path: `send()` warns and returns [] for an unknown queue, an
+      // event with no listener, AND for a job pg-boss refused to insert. Those
+      // are different incidents, and an operator reading the wrong one during a
+      // backlog goes hunting a module-loading problem that does not exist — so
+      // the two are separated here by asking the registry what actually exists.
+      const routable =
+        queue == null
+          ? EventListenerRegistry.getQueuesFor(eventName).size > 0
+          : EventListenerRegistry.getListeners().some(([, registration]) => registration.queue === queue);
+
       throw new ConflictException(
-        `Dead letter ${letterId} was not re-emitted: event "${eventName}" produced no job` +
-          `${queue == null ? ' on any queue with a listener for it' : ` on queue "${queue}"`}. ` +
-          `The listener's module is probably not loaded in this process.`,
+        routable
+          ? `Dead letter ${letterId} was not re-emitted: queue ` +
+            `${queue == null ? `for event "${eventName}"` : `"${queue}"`} has a listener but accepted no ` +
+            `job. pg-boss refuses a send whose singletonKey duplicates a job still in "created" on a queue ` +
+            `with a de-duplicating policy, so this letter is most likely already queued from an earlier ` +
+            `replay; CI_QUEUE_SUPPRESS covering the queue produces the same empty result. Nothing was ` +
+            `enqueued and the claim has been released.`
+          : `Dead letter ${letterId} was not re-emitted: nothing in this process listens for event ` +
+            `"${eventName}"${queue == null ? ' on any queue' : ` on queue "${queue}"`}, so the send ` +
+            `enqueued nothing. The listener's module is probably not loaded in this process.`,
       );
     }
 

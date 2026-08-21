@@ -20,10 +20,17 @@ export class ToolInvokedListener {
 
   @OnEvent(ToolInvokedEvent, { queue: 'telemetry' })
   handleToolInvoked(payload: ToolInvokedPayload): void {
+    // Log the full payload, not a hand-picked subset: this debug line is the entire
+    // "record the invocation" today, and the eventual HBPE consumer needs `tool`,
+    // `durationMs`, `access` and `external` as much as the fields already here.
     this.logger.debug('tool.invoked', {
       intent: payload.intent,
+      tool: payload.tool,
       domain: payload.domain,
+      access: payload.access,
+      external: payload.external,
       success: payload.success,
+      durationMs: payload.durationMs,
       userId: payload.userId,
     });
   }

@@ -98,6 +98,7 @@ describeWithDb(`ReceiptService — provenance and line upserts, in Postgres (${a
       { findOrCreateByBrandModel: async () => null } as never,
       { resolve: async () => null, upsertForSubjects: async () => 0 } as never,
       { mintFromLines: async () => [] } as never,
+      { send: async () => [] } as never,
       noopLogger,
     );
   });

@@ -1,4 +1,5 @@
 import type { UserServiceContext } from '@ci/common/context';
+import { ReceiptUpdatedEvent } from '@ci/domains/memory/events';
 
 import type { ReceiptLineItem } from '../entities/ReceiptLineItemEntity';
 import type { ReceiptExtraction } from '../types';
@@ -52,6 +53,8 @@ interface Harness {
   mintFromLines: jest.Mock;
   lines: ReceiptLineItem[];
   warn: jest.Mock;
+  update: jest.Mock;
+  send: jest.Mock;
 }
 
 function makeHarness(options: { lines?: ReceiptLineItem[]; strandedLineNumbers?: number[] } = {}): Harness {
@@ -97,6 +100,8 @@ function makeHarness(options: { lines?: ReceiptLineItem[]; strandedLineNumbers?:
       repo === lineRepository ? lineRepository : { findOne: jest.fn(async () => null), save: saveHeader },
   };
 
+  const update = jest.fn(async () => undefined);
+
   const receiptRepository = {
     manager: {
       query,
@@ -105,6 +110,7 @@ function makeHarness(options: { lines?: ReceiptLineItem[]; strandedLineNumbers?:
     findOne: jest.fn(async () => receiptEntity),
     create: (row: unknown) => row,
     save: jest.fn(async (row: unknown) => row),
+    update,
     metadata: { columns: { length: 30 } },
   };
 
@@ -113,6 +119,7 @@ function makeHarness(options: { lines?: ReceiptLineItem[]; strandedLineNumbers?:
   const findOrCreateByBrandModel = jest.fn(async () => ({ id: PRODUCT }));
   const mintFromLines = jest.fn(async () => [{ lineItemId: LINE_1, objectIds: [OBJECT], inserted: 1 }]);
   const warn = jest.fn();
+  const send = jest.fn(async () => []);
   const logger = { setContext: jest.fn(), log: jest.fn(), warn, error: jest.fn() };
 
   const service = new ReceiptService(
@@ -121,6 +128,7 @@ function makeHarness(options: { lines?: ReceiptLineItem[]; strandedLineNumbers?:
     { findOrCreateByBrandModel } as never,
     { upsertForSubjects, resolve: resolveIdentifier } as never,
     { mintFromLines } as never,
+    { send } as never,
     logger as never,
   );
 
@@ -134,6 +142,8 @@ function makeHarness(options: { lines?: ReceiptLineItem[]; strandedLineNumbers?:
     mintFromLines,
     lines,
     warn,
+    update,
+    send,
   };
 }
 
@@ -349,6 +359,26 @@ describe('ReceiptService.upsertFromExtraction', () => {
   });
 });
 
+describe('ReceiptService.update', () => {
+  it('emits ReceiptUpdatedEvent after a genuine field mutation, so search re-indexes it', async () => {
+    const harness = makeHarness();
+
+    await harness.service.update(CONTEXT, RECEIPT, { merchantName: 'Amazon Fresh' });
+
+    expect(harness.update).toHaveBeenCalled();
+    expect(harness.send).toHaveBeenCalledWith(ReceiptUpdatedEvent, { receiptId: RECEIPT });
+  });
+
+  it('does not emit when the patch is empty — nothing changed, nothing to re-index', async () => {
+    const harness = makeHarness();
+
+    await harness.service.update(CONTEXT, RECEIPT, {});
+
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.send).not.toHaveBeenCalled();
+  });
+});
+
 /** Records the predicates a query builder was handed, and returns fixed rows. */
 function makeQueryBuilderHarness(rows: Array<{ id: string; purchasedAt: Date | null }>) {
   const wheres: Array<{ sql: string; params?: Record<string, unknown> }> = [];
@@ -391,6 +421,7 @@ function makeQueryBuilderHarness(rows: Array<{ id: string; purchasedAt: Date | n
     {} as never,
     {} as never,
     {} as never,
+    { send: jest.fn(async () => []) } as never,
     logger as never,
   );
 

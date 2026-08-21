@@ -104,56 +104,66 @@ export class InboxScanService {
         continue;
       }
 
-      const confidence = clampConfidence(item.confidence);
-      const sourceRef = TaskService.memoryScanSourceRef(title, 'inbox');
-      const existing =
-        (await this.taskService.findBySourceRef(context, 'inbox', sourceRef)) ??
-        (await this.taskService.findByTitleMatch(context, title));
+      try {
+        const confidence = clampConfidence(item.confidence);
+        const sourceRef = TaskService.memoryScanSourceRef(title, 'inbox');
+        const existing =
+          (await this.taskService.findBySourceRef(context, 'inbox', sourceRef)) ??
+          (await this.taskService.findByTitleMatch(context, title));
 
-      if (existing) {
-        if (item.detail?.trim()) {
-          await this.taskService.appendNotes(context, existing.id, item.detail.trim());
+        if (existing) {
+          if (item.detail?.trim()) {
+            await this.taskService.appendNotes(context, existing.id, item.detail.trim());
+          }
+
+          continue;
         }
 
-        continue;
-      }
+        const decision = await this.personalizationService.decideAction(userId, {
+          kind: 'task_create',
+          confidence,
+          hasUserInput: false,
+        });
 
-      const decision = await this.personalizationService.decideAction(userId, {
-        kind: 'task_create',
-        confidence,
-        hasUserInput: false,
-      });
+        if (decision === 'skip') {
+          continue;
+        }
 
-      if (decision === 'skip') {
-        continue;
-      }
+        const status = decision === 'auto' ? 'open' : 'proposed';
+        const created = await this.taskService.create(context, {
+          title,
+          description: item.detail?.trim() || null,
+          status,
+          estimatedMinutes:
+            item.estimatedMinutes && item.estimatedMinutes > 0 ? Math.round(item.estimatedMinutes) : null,
+          sourceKind: 'inbox',
+          sourceRef,
+          metadata: { confidence, generator: 'planning.inbox_scan' },
+        });
 
-      const status = decision === 'auto' ? 'open' : 'proposed';
-      const created = await this.taskService.create(context, {
-        title,
-        description: item.detail?.trim() || null,
-        status,
-        estimatedMinutes:
-          item.estimatedMinutes && item.estimatedMinutes > 0 ? Math.round(item.estimatedMinutes) : null,
-        sourceKind: 'inbox',
-        sourceRef,
-        metadata: { confidence, generator: 'planning.inbox_scan' },
-      });
+        if (!created) {
+          continue;
+        }
 
-      if (!created) {
-        continue;
-      }
+        if (status === 'proposed') {
+          tallies.proposed += 1;
+          continue;
+        }
 
-      if (status === 'proposed') {
-        tallies.proposed += 1;
-        continue;
-      }
+        tallies.created += 1;
+        const placed = await this.plannedBlockService.tryPlaceAfterOpen(context, created, confidence);
 
-      tallies.created += 1;
-      const placed = await this.plannedBlockService.tryPlaceAfterOpen(context, created, confidence);
-
-      if (placed.status === 'placed') {
-        tallies.placed += 1;
+        if (placed.status === 'placed') {
+          tallies.placed += 1;
+        }
+      } catch (err) {
+        // Same reasoning as TodoScanService: don't let one item's failure
+        // force a full-batch redelivery that re-walks already-applied items.
+        this.logger.warn('Inbox scan item failed; continuing with remaining items', {
+          userId,
+          title,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

@@ -271,13 +271,18 @@ export class SyncOrchestrator {
     }
 
     for (const jobId of syncJobsToRun) {
-      await this.eventService.send(ConnectionSyncJobExecuteEvent, {
-        connectionSyncJobId: jobId,
-      });
+      // Keyed on the sync job id: the send this key guards against is
+      // `executeSyncJobs` re-sending the SAME job on the next 30-second tick
+      // while it is still pending, not two different jobs.
+      await this.eventService.send(
+        ConnectionSyncJobExecuteEvent,
+        { connectionSyncJobId: jobId },
+        { singletonKey: jobId },
+      );
     }
   }
 
-  @OnEvent(ConnectionSyncJobExecuteEvent, { queue: 'etl' })
+  @OnEvent(ConnectionSyncJobExecuteEvent, { queue: 'etl', queueOptions: { policy: 'short' } })
   async handleSyncJobExecuteEvent(payload: { connectionSyncJobId: string }): Promise<void> {
     const syncJob = await this.connectionSyncJobService.findById(
       { userId: SYSTEM_USER },
@@ -292,16 +297,19 @@ export class SyncOrchestrator {
       return;
     }
 
-    // Claim check. `executeSyncJobs` selects rows by `status: 'pending'` every
-    // 30 seconds and enqueues without an idempotency key, so a sync still
-    // running when the next tick fires gets enqueued again — and pg-boss will
-    // not stop it, because every queue here uses the default `standard` policy
-    // under which a singletonKey is stored but not enforced. Without this check
-    // the handler would then set `in_progress` a second time and re-run
-    // `serviceFunction` against the same un-advanced cursor: a duplicate
-    // provider fetch and a duplicate ingest. It also stops a completed row from
-    // being resurrected by a late redelivery.
-    if (syncJob.status !== 'pending') {
+    // Claim. `executeSyncJobs` now sends with a singletonKey and the `etl`
+    // queue below is declared `policy: 'short'`, so pg-boss refuses a second
+    // PENDING job for the same sync job while one is still queued (created).
+    // That alone does not cover a redelivery of a job already dequeued once —
+    // pg-boss 10's short-policy uniqueness index only applies to jobs still in
+    // the `created` state — so the real gate stays here: a single atomic
+    // `UPDATE ... WHERE status = 'pending' ... RETURNING`, not a separate read
+    // and write, so two concurrently-dequeued redeliveries of the same job
+    // cannot both read `pending` before either commits `in_progress`. It also
+    // stops a completed row from being resurrected by a late redelivery.
+    const claimed = await this.connectionSyncJobService.claimPending({ userId: SYSTEM_USER }, syncJob.id);
+
+    if (!claimed) {
       this.logger.debug('Sync job is no longer pending; skipping duplicate delivery', {
         connectionSyncJobId: syncJob.id,
         status: syncJob.status,
@@ -309,10 +317,6 @@ export class SyncOrchestrator {
 
       return;
     }
-
-    await this.connectionSyncJobService.update({ userId: SYSTEM_USER }, syncJob.id, {
-      status: 'in_progress',
-    });
 
     let connection = await this.connectionService.findById({ userId: SYSTEM_USER }, syncJob.connectionId);
 
@@ -421,7 +425,7 @@ export class SyncOrchestrator {
       });
 
       await this.connectionSyncJobService.markAsCompleted({ userId: SYSTEM_USER }, syncJob.id, 'failed', {
-        error: err,
+        error: err instanceof Error ? err.message : 'Unknown error',
       });
     }
   }
@@ -444,13 +448,16 @@ export class SyncOrchestrator {
     ).slice(0, 2);
 
     for (const { id } of syncJobsToTransform) {
-      await this.eventService.send(ConnectionSyncJobTransformEvent, {
-        connectionSyncJobId: id,
-      });
+      // Keyed on the sync job id, same reasoning as the execute send above.
+      await this.eventService.send(
+        ConnectionSyncJobTransformEvent,
+        { connectionSyncJobId: id },
+        { singletonKey: id },
+      );
     }
   }
 
-  @OnEvent(ConnectionSyncJobTransformEvent, { queue: 'etl' })
+  @OnEvent(ConnectionSyncJobTransformEvent, { queue: 'etl', queueOptions: { policy: 'short' } })
   async handleSyncJobTransformEvent(payload: { connectionSyncJobId: string }): Promise<void> {
     const syncJob = await this.connectionSyncJobService.findById(
       { userId: SYSTEM_USER },
@@ -472,8 +479,19 @@ export class SyncOrchestrator {
     // finished, and with the `etl` per-queue ceiling of 6 a five-minute
     // transform ended up with six concurrent copies of itself, each holding a
     // slot. GmailTransformService.transformGmail routinely exceeds a minute.
-    if (syncJob.lastTransformed != null) {
-      this.logger.debug('Sync job has already been transformed; skipping duplicate delivery', {
+    //
+    // A plain `lastTransformed == null` read only ever caught a REDELIVERY
+    // after the job had already finished — it did nothing while a transform
+    // was still in flight, which is exactly the five-minute case above. The
+    // singletonKey + `policy: 'short'` on this queue only stop a second
+    // PENDING job from being created while one is still queued (created); they
+    // say nothing once the first has been dequeued. So the claim itself is the
+    // gate: a single atomic UPDATE, not a read followed by a later write, so
+    // only one concurrent caller ever wins it.
+    const claimed = await this.connectionSyncJobService.claimTransform({ userId: SYSTEM_USER }, syncJob.id);
+
+    if (!claimed) {
+      this.logger.debug('Sync job is already claimed or transformed; skipping duplicate delivery', {
         connectionSyncJobId: syncJob.id,
       });
 

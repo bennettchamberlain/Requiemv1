@@ -44,6 +44,7 @@ function makeAnswer(
     answer?: string;
     answeredAt?: Date;
     question?: { id: string };
+    answerSource?: string;
   } = {},
 ): Answer {
   return {
@@ -51,6 +52,10 @@ function makeAnswer(
     answer: 'previous answer',
     answeredAt: new Date('2026-01-01T00:00:00Z'),
     question: { id: 'other-question' },
+    // Defaults to a prior write from THIS listener, since most callers just need
+    // "some existing answer" for unrelated assertions (related-answers context,
+    // etc). Tests of the overwrite gate itself override this explicitly.
+    answerSource: 'inferred',
     ...overrides,
   } as unknown as Answer;
 }
@@ -311,7 +316,9 @@ describe('AnswerInferenceListener.inferQuestionAnswer — update vs create', () 
   });
 
   it('updates the EXISTING answer in place instead of creating a duplicate when one already exists', async () => {
-    const existing = makeAnswer({ id: 'ans-42' });
+    // A row this same path wrote before (answerSource: 'inferred') is fair game
+    // to refresh — that is the intended re-inference path, not the overwrite bug.
+    const existing = makeAnswer({ id: 'ans-42', answerSource: 'inferred' });
     const { listener, answerService } = buildListener({
       answerService: { findByQuestionId: jest.fn().mockResolvedValue(existing) },
     });
@@ -328,25 +335,25 @@ describe('AnswerInferenceListener.inferQuestionAnswer — update vs create', () 
     expect(answerService.create).not.toHaveBeenCalled();
   });
 
-  it('overwrites a real user-authored answer with the inferred one when the decision is "auto" — the worst-case failure mode', async () => {
-    // This is the scenario the audit flags: a pre-existing, user-typed answer
-    // gets silently replaced because the update-vs-create branch only checks
-    // "does an answer already exist", not who/what wrote it.
-    const userWritten = makeAnswer({ id: 'ans-user', answer: 'I picked green myself.' });
+  it('does NOT overwrite a real user-authored answer — the worst-case failure mode', async () => {
+    // The scenario the audit flagged: a pre-existing, user-typed answer must
+    // never be silently replaced just because an answer already exists for the
+    // question. The gate is answerSource, not "does a row exist" — see
+    // AnswerProvenance on the frontend, which keys the same "Inferred" vs
+    // "Manual" distinction off this exact field.
+    const userWritten = makeAnswer({
+      id: 'ans-user',
+      answer: 'I picked green myself.',
+      answerSource: 'user_input',
+    });
     const { listener, answerService } = buildListener({
       answerService: { findByQuestionId: jest.fn().mockResolvedValue(userWritten) },
     });
 
     await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
 
-    // Documents current behavior: update() IS called with the LLM text, on the
-    // caller's real answer id — i.e. this is the exact overwrite path, verified
-    // so a future fix that gates on answerMethod can flip this assertion.
-    expect(answerService.update).toHaveBeenCalledWith(
-      { userId: 'user-1' },
-      'ans-user',
-      expect.objectContaining({ text: 'Blue, definitely blue.', answerMethod: 'inferred' }),
-    );
+    expect(answerService.update).not.toHaveBeenCalled();
+    expect(answerService.create).not.toHaveBeenCalled();
   });
 });
 

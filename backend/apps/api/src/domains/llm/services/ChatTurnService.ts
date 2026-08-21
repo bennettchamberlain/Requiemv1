@@ -198,7 +198,10 @@ export class ChatTurnService {
               ownerId: payload.ownerId,
               threadId: thread.id,
             },
-            { queue: LLM_QUEUE },
+            // LLM_QUEUE_OPTIONS is `policy: 'short'`, which is queue-wide —
+            // a keyless send here would collapse with every other thread's
+            // summarization under COALESCE(singleton_key,'').
+            { queue: LLM_QUEUE, singletonKey: `chat-summarize:${thread.id}` },
           );
         }
       }
