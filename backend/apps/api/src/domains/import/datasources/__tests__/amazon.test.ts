@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'path';
 
 import { AmazonFileImporter } from '../amazon';
-import type { Graph, ImportPipeline, ImportParams } from '../timeline';
+import type { Graph, ImportPipeline, ImportParams, LineItemRecord } from '../timeline';
 
-import type { EmittedGraph, TestPipeline } from './support/emitted';
+import type { EmittedGraph, EmittedItem, TestPipeline } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
@@ -858,5 +858,173 @@ describe('Amazon datasource', () => {
     } finally {
       await fs.promises.unlink(tmp).catch(() => {});
     }
+  });
+});
+
+/*
+ * The money breakdown, against the REAL "Your Orders" export header.
+ *
+ * `fixtures/amazon-your-orders/Order History.csv` is nine rows lifted verbatim
+ * out of a live 2,064-row export — all 28 columns in Amazon's own order, every
+ * amount, quantity, ASIN and product name untouched (only the address and
+ * cardholder columns are replaced, and nothing reads those). The rows were
+ * chosen because each one pins a different way the breakdown went wrong:
+ *
+ *   111-1329443-6205810  the reported defect: 71.85 + 5.57 tax = 77.42 charged,
+ *                        stored as a LINE total of 77.42
+ *   111-8079083-2877059  quantity 3 — proves `Unit Price Tax` is PER UNIT
+ *   111-4820738-6806659  three lines in ONE shipment, all three carrying
+ *                        `Shipment Item Subtotal` 86.77 — which is their SUM
+ *   116-7013204-3369844  a non-zero `Shipping Charge`
+ *   114-2826989-5545831  a discount, written `'-89'` — Excel text quoting
+ *   112-1742533-6120260  "11,437.78" — a thousands separator inside the cell
+ *   112-0129751-0345803  an order that genuinely does NOT reconcile ($7.00
+ *                        unexplained by any column — a state recycling fee)
+ */
+describe('Amazon money breakdown (real "Your Orders" export header)', () => {
+  const ROOT = path.join(FIXTURES_DIR, 'amazon-your-orders');
+
+  /** Import the fixture, returning everything emitted plus the warnings logged. */
+  async function runFixture(): Promise<{ pipeline: EmittedGraph[]; warnings: string[] }> {
+    const fi = new AmazonFileImporter();
+    const pipeline: EmittedGraph[] = [];
+    const warnings: string[] = [];
+    await fi.fileImport({}, { filename: 'amazon-your-orders', fullPath: ROOT }, {
+      pipeline,
+      timeframe: {},
+      log: (level: string, msg: string) => {
+        if (level === 'warn') {
+          warnings.push(msg);
+        }
+      },
+    } as unknown as ImportParams);
+
+    return { pipeline, warnings };
+  }
+
+  /** The order-level aggregate for an order id — the record that becomes the receipt. */
+  function orderFor(pipeline: EmittedGraph[], orderId: string): EmittedItem {
+    const found = pipeline.find(
+      (g) => g.item.classification === 'order' && g.item.metadata['Order ID'] === orderId,
+    );
+    expect(found).toBeDefined();
+
+    return found!.item;
+  }
+
+  /** The line items itemised on an order aggregate. */
+  function linesOf(order: EmittedItem): LineItemRecord[] {
+    return (order.metadata.LineItems ?? []) as LineItemRecord[];
+  }
+
+  it("gives a line its OWN total, not the order's", async () => {
+    const { pipeline } = await runFixture();
+    const [line] = linesOf(orderFor(pipeline, '111-1329443-6205810'));
+
+    // 71.85 + 5.57 tax = 77.42 charged. The line is worth 71.85; 77.42 is the
+    // order's, and storing it on the line is what made every single-line order
+    // "reconcile" 630/630 against a copy of its own total.
+    expect(line['Unit Price']).toBe('71.85');
+    expect(line.Subtotal).toBe('71.85');
+    expect(line.Tax).toBe('5.57');
+    expect(line.Total).toBe('77.42');
+  });
+
+  it('scales tax by quantity — Unit Price Tax is per UNIT', async () => {
+    const { pipeline } = await runFixture();
+    const order = orderFor(pipeline, '111-8079083-2877059');
+
+    // 3 × 34.95 = 104.85 subtotal, 3 × 2.71 = 8.13 tax, 112.98 charged.
+    // Reading `Unit Price Tax` as the line's tax would understate it by 5.42.
+    expect(order.metadata.Subtotal).toBe('104.85');
+    expect(order.metadata.Tax).toBe('8.13');
+    expect(order.metadata.Total).toBe('112.98');
+  });
+
+  it('never mistakes the SHIPMENT subtotal for a line subtotal', async () => {
+    const { pipeline } = await runFixture();
+    const order = orderFor(pipeline, '111-4820738-6806659');
+    const lines = linesOf(order);
+
+    // Every one of these three rows carries `Shipment Item Subtotal` = 86.77
+    // and `Shipment Item Subtotal Tax` = 6.72 — the SHIPMENT's, not the line's.
+    // Trusting that column would bill each line 86.77 and the order 260.31.
+    expect(lines.map((l) => l.Subtotal)).toEqual(['22.89', '39.99', '23.89']);
+    expect(order.metadata.Subtotal).toBe('86.77');
+    expect(order.metadata.Tax).toBe('6.72');
+    expect(order.metadata.Total).toBe('93.49');
+  });
+
+  it('carries the shipping charge into the breakdown', async () => {
+    const { pipeline } = await runFixture();
+    const order = orderFor(pipeline, '116-7013204-3369844');
+
+    expect(order.metadata.Subtotal).toBe('412');
+    expect(order.metadata.Shipping).toBe('6.99');
+    expect(order.metadata.Total).toBe('418.99');
+  });
+
+  it("reads Amazon's Excel-quoted negative discount as a positive magnitude", async () => {
+    const { pipeline } = await runFixture();
+    const order = orderFor(pipeline, '114-2826989-5545831');
+
+    // The cell holds the literal characters `'-89'`. `Number()` says NaN, which
+    // is why no discount had ever reached a receipt; and the sign has to flip,
+    // because `discount_minor` is the amount taken OFF (subtotal + tax +
+    // shipping − discount = total) and a cost column refuses a negative.
+    expect(order.metadata.Discount).toBe('89');
+    expect(order.metadata.Subtotal).toBe('229.99');
+    expect(order.metadata.Total).toBe('140.99');
+  });
+
+  it('sums a total written with a thousands separator', async () => {
+    const { pipeline } = await runFixture();
+    const order = orderFor(pipeline, '112-1742533-6120260');
+
+    // "11,437.78" is NaN to `Number()`, so this order reached the spend chart
+    // with no `Amount` at all — eleven such orders, ~$34k, in one real export.
+    expect(order.metadata.Total).toBe('11437.78');
+    expect(order.metadata.Amount).toBe('11437.78');
+    expect(order.metadata.Subtotal).toBe('10615.11');
+    expect(order.metadata.Tax).toBe('822.67');
+  });
+
+  it('reports an order whose parts do not add up, and still writes the parts', async () => {
+    const { pipeline, warnings } = await runFixture();
+    const order = orderFor(pipeline, '112-0129751-0345803');
+
+    // 329.99 + 25.57 = 355.56, but 362.56 was charged: $7.00 this export does
+    // not explain in any column. The numbers are Amazon's own, so they are
+    // still written — what must not happen is writing them silently.
+    expect(order.metadata.Subtotal).toBe('329.99');
+    expect(order.metadata.Tax).toBe('25.57');
+    expect(order.metadata.TotalsMismatchNote).toContain('362.56 was charged');
+    expect(warnings.filter((w) => w.includes('112-0129751-0345803'))).toHaveLength(1);
+  });
+
+  it('reports nothing for the orders that do reconcile', async () => {
+    const { pipeline, warnings } = await runFixture();
+    const reconciling = ['111-1329443-6205810', '111-8079083-2877059', '111-4820738-6806659'];
+
+    for (const oid of reconciling) {
+      expect(orderFor(pipeline, oid).metadata.TotalsMismatchNote).toBeUndefined();
+      expect(warnings.filter((w) => w.includes(oid))).toHaveLength(0);
+    }
+  });
+
+  it('reads a product name containing commas without shifting the columns', async () => {
+    const { pipeline } = await runFixture();
+    const order = orderFor(pipeline, '111-8079083-2877059');
+    const [line] = linesOf(order);
+
+    // "Noctua NF-A12x25 PWM, Premium Quiet Fan, 4-Pin (120mm, Brown)" holds
+    // four commas inside its quotes, and `Product Name` sits in the MIDDLE of
+    // the 28 columns — a naive split would shift every money column after it by
+    // four places and read the ship date as a price. This is the assertion that
+    // says the parser is a real CSV reader (datasources/csv.ts → csv-parse).
+    expect(line.Product).toBe('Noctua NF-A12x25 PWM, Premium Quiet Fan, 4-Pin (120mm, Brown)');
+    expect(line['Unit Price']).toBe('34.95');
+    expect(line.Quantity).toBe(3);
+    expect(order.metadata.Currency).toBe('USD');
   });
 });

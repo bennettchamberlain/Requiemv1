@@ -105,6 +105,30 @@ const TOTAL_COLS = ['Total Owed', 'Total Amount', 'Total Charged', 'Net Price'];
 const UNIT_PRICE_COLS = ['Unit Price', 'OurPrice', 'Net Price'];
 const CURRENCY_COLS = ['Currency', 'OurPriceCurrencyCode', 'Base Currency Code', 'BaseCurrencyCode'];
 
+/*
+ * The money BREAKDOWN columns — everything the total is made of. Both retail
+ * dialects carry all three of these ("Your Orders" and Retail.OrderHistory
+ * differ only in the name of the total itself); the digital/Audible dialects
+ * carry none of them, so a line from those states a total and no breakdown,
+ * which is the honest answer rather than a fabricated one.
+ *
+ * `Unit Price Tax` is PER UNIT, like `Unit Price` beside it — the line's tax is
+ * quantity × this, which is what makes the reconciliation below come out.
+ *
+ * DELIBERATELY ABSENT: `Shipment Item Subtotal` and `Shipment Item Subtotal
+ * Tax`. They read like the line's own subtotal and tax, and they are not —
+ * they are the SHIPMENT's, repeated verbatim on every line in that shipment.
+ * Order 111-4820738-6806659 in a real export is three lines of 22.89, 39.99 and
+ * 23.89, and all three carry `Shipment Item Subtotal` = 86.77 — their SUM.
+ * Using that column as a line subtotal triples a three-line shipment. It is
+ * also "Not Available" on 42 rows of that same export. Quantity × Unit Price is
+ * the line's own extended price, is always stated, and is what the export's own
+ * arithmetic checks out against (see the reconciliation note on lineMoney).
+ */
+const UNIT_TAX_COLS = ['Unit Price Tax', 'UnitPriceTax'];
+const SHIPPING_COLS = ['Shipping Charge', 'ShippingCharge'];
+const DISCOUNT_COLS = ['Total Discounts', 'TotalDiscounts'];
+
 /**
  * Values Amazon puts in the ASIN column that are NOT identifiers. Grocery and
  * Amazon Fresh line items carry the literal sentinel `_ASINLESS_` (every such
@@ -275,11 +299,49 @@ function dedupeIdenticalRows(rows: Record<string, string>[]): Record<string, str
   return out;
 }
 
+/**
+ * One money/quantity cell as a number, or undefined when the cell states none.
+ *
+ * `Number()` is NOT good enough here, and both of the ways Amazon's own CSV
+ * writer defeats it are live in a real export (counted over the 2,064 rows of
+ * one "Your Orders" download):
+ *
+ *   - THOUSANDS SEPARATORS inside the quoted cell — `"10,615.11"`, `"2,398"`.
+ *     13 `Unit Price` cells and 11 `Total Amount` cells. `Number('10,615.11')`
+ *     is NaN, so `sumOf` dropped those rows out of a merged line, and
+ *     `pushOrders` (which tested `Number.isFinite`) dropped their order totals
+ *     entirely: eleven orders — about $34k of the history — reached
+ *     `ci.events.metadata` with no `Amount` at all and vanished from the spend
+ *     chart, even though the receipt behind them had a total.
+ *   - EXCEL TEXT-PROTECTION QUOTING on `Total Discounts` — the literal
+ *     characters `'-89'`, apostrophes included, on every one of the 50 rows
+ *     that carries a discount. Also NaN, which is why no discount has ever
+ *     reached the breakdown.
+ *
+ * The cleaning rule is deliberately the SAME one `push/canonical.ts num()`
+ * applies on the far side of the push (strip everything but digits, sign and
+ * the decimal point), so the parser's arithmetic and its reader's cannot
+ * disagree about what a cell says. "Not Available" and blanks clean to nothing
+ * and answer undefined — a missing cell is not a zero.
+ */
+function amount(raw: string | undefined): number | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  const cleaned = raw.replace(/[^0-9.+-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === '+' || cleaned === '.') {
+    return undefined;
+  }
+
+  const n = Number(cleaned);
+
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** Sum the parseable values, ignoring "Not Available"/blank cells. */
 function sumOf(values: (string | undefined)[]): number | undefined {
-  const nums = values
-    .map((v) => (v === undefined || v.trim() === '' ? NaN : Number(v)))
-    .filter((n) => Number.isFinite(n));
+  const nums = values.map(amount).filter((n): n is number => n !== undefined);
   if (!nums.length) {
     return undefined;
   }
@@ -298,6 +360,74 @@ function money(n: number | undefined): string | undefined {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
 }
 
+/** An already-emitted metadata value as a number — money is written as a string, quantity as a number. */
+function numeric(v: unknown): number | undefined {
+  if (typeof v === 'number') {
+    return Number.isFinite(v) ? v : undefined;
+  }
+
+  return typeof v === 'string' ? amount(v) : undefined;
+}
+
+/** The components an order's total is made of, as canonical metadata keys. */
+const BREAKDOWN_FIELDS = ['Subtotal', 'Tax', 'Shipping', 'Discount'] as const;
+type BreakdownField = (typeof BREAKDOWN_FIELDS)[number];
+type Breakdown = Record<BreakdownField, number | undefined>;
+
+/** A breakdown that states nothing yet — every component absent, none zeroed. */
+function emptyBreakdown(): Breakdown {
+  return { Subtotal: undefined, Tax: undefined, Shipping: undefined, Discount: undefined };
+}
+
+/**
+ * The RECONCILIATION INVARIANT: subtotal + tax + shipping − discount == total.
+ *
+ * Returns a human statement of the disagreement, or undefined when the order
+ * adds up (or states too little to check — a dialect with no breakdown at all,
+ * or an order whose total never parsed, is not a violation, it is a silence).
+ *
+ * WHY THIS EXISTS. A breakdown is four numbers that are only meaningful
+ * together, and every one of them is a column this parser CHOSE to read. Get
+ * one wrong — read the shipment's subtotal as the line's, miss a discount
+ * because it arrived as `'-89'` — and the row still looks perfectly plausible:
+ * four amounts and a total, no nulls, nothing to notice. The identity is the
+ * only thing that can tell. It held on 492 of 495 orders of a real export the
+ * moment the columns were read correctly, and all 3 that fail are charges the
+ * CSV genuinely does not itemise anywhere: +$7.00 and +$6.00 on a 49" and a 50"
+ * television (a state e-waste recycling fee) and +$0.60 on a 12-pack of beer
+ * (a 5¢-per-container deposit). Exactly the class of thing a breakdown should
+ * flag rather than absorb.
+ *
+ * The numbers are still WRITTEN when they disagree: they are Amazon's own, and
+ * discarding them loses more than it protects. What must not happen is writing
+ * them SILENTLY, so the mismatch is both logged and stamped on the receipt.
+ *
+ * TOLERANCE. One hundredth of a unit, because the components are independently
+ * rounded before they are stored (a per-unit tax × a quantity of 3 rounds where
+ * Amazon's own per-line figure did not), and a cent of rounding is not a
+ * disagreement about what was charged.
+ */
+function reconcileOrder(breakdown: Breakdown, total: number | undefined): string | undefined {
+  // Nothing to check against, or nothing to check: a line with no breakdown at
+  // all (Audible, the digital ledger) states no claim that could be wrong.
+  if (total === undefined || breakdown.Subtotal === undefined) {
+    return undefined;
+  }
+
+  const cents = (n: number | undefined): number => Math.round((n ?? 0) * 100);
+  const expected =
+    cents(breakdown.Subtotal) + cents(breakdown.Tax) + cents(breakdown.Shipping) - cents(breakdown.Discount);
+  const charged = cents(total);
+  const delta = expected - charged;
+  if (Math.abs(delta) <= 1) {
+    return undefined;
+  }
+
+  const parts = BREAKDOWN_FIELDS.map((f) => `${f.toLowerCase()} ${money(breakdown[f] ?? 0)}`).join(', ');
+
+  return `${parts} → ${money(expected / 100)}, but ${money(total)} was charged (off by ${money(delta / 100)})`;
+}
+
 /**
  * The id of the per-order aggregate an order id rolls up into.
  *
@@ -311,31 +441,94 @@ function orderRollupId(orderId: string): string {
 }
 
 /**
+ * The money a line is MADE OF, as metadata strings — or an empty bag when the
+ * dialect states no breakdown at all (digital, Audible, the CamelCase family).
+ *
+ * ── WHAT THE COLUMNS ACTUALLY MEAN ────────────────────────────────────────
+ *
+ * Read straight off a real 2,064-row "Your Orders" export, not assumed:
+ *
+ *   Subtotal  Quantity × `Unit Price`      the line's own pre-tax extended price
+ *   Tax       Quantity × `Unit Price Tax`  per-unit tax, so it scales with qty
+ *   Shipping  `Shipping Charge`            per LINE, not repeated per shipment
+ *   Discount  −`Total Discounts`           Amazon states it NEGATIVE (see below)
+ *
+ * and the row's own `Total Amount`/`Total Owed` is what was CHARGED for the
+ * line — subtotal + tax + shipping − discount, tax included. That identity is
+ * not a guess: it holds to the cent on 1,995 of the 2,000 priced rows of that
+ * export, and per order on 492 of 495. `Total` therefore keeps its existing
+ * meaning here (the order aggregate sums it, and the spend chart reads that
+ * sum); the four components are what was missing, and `Subtotal` is the number
+ * `ci.receipt_line_items.total_price_minor` has always wanted — the LINE's own
+ * total, which is not the same number as what the line was charged.
+ *
+ * DISCOUNT SIGN. Amazon writes a discount as a negative, Excel-quoted string —
+ * the literal characters `'-89'` — so it is negated here into the POSITIVE
+ * magnitude the receipt breakdown subtracts (`subtotal + tax + shipping −
+ * discount = total`). Left signed it would be refused outright downstream:
+ * `toCostMinorUnits` writes no negative into a cost column.
+ *
+ * Every read goes through {@link amount}, which is what makes `'-89'` and
+ * `"10,615.11"` numbers rather than NaN.
+ */
+function lineMoney(rows: Record<string, string>[]): Record<string, string | undefined> {
+  let subtotal: number | undefined;
+  let tax: number | undefined;
+
+  for (const row of rows) {
+    const qty = amount(col(row, ...QUANTITY_COLS));
+    const unit = amount(col(row, ...UNIT_PRICE_COLS));
+    const unitTax = amount(col(row, ...UNIT_TAX_COLS));
+
+    // Summed PER ROW rather than as (merged quantity × the primary row's unit
+    // price): a line split across shipments can be split across prices too, and
+    // the shipments are disjoint, so their extended prices add.
+    if (qty !== undefined && unit !== undefined) {
+      subtotal = (subtotal ?? 0) + qty * unit;
+    }
+
+    if (qty !== undefined && unitTax !== undefined) {
+      tax = (tax ?? 0) + qty * unitTax;
+    }
+  }
+
+  const shipping = sumOf(rows.map((r) => col(r, ...SHIPPING_COLS)));
+  const discounts = sumOf(rows.map((r) => col(r, ...DISCOUNT_COLS)));
+
+  return {
+    Subtotal: money(subtotal),
+    Tax: money(tax),
+    Shipping: money(shipping),
+    Discount: discounts === undefined ? undefined : money(Math.abs(discounts)),
+  };
+}
+
+/**
  * Merge the rows of ONE order line from an order-history CSV.
  *
  * Amazon splits a multi-unit line across one row per SHIPMENT — the same order
- * id and ASIN, each row carrying that shipment's own quantity and amount (its
- * `Shipment Item Subtotal` is that row's unit price × that row's quantity, so
- * the parts are genuinely disjoint). Keeping only one row understated the
- * holding: a line of 5 units shipped 2-then-3 was recorded as 2.
+ * id and ASIN, each row carrying that shipment's own quantity, amount and
+ * shipping charge, so the parts are genuinely disjoint. Keeping only one row
+ * understated the holding: a line of 5 units shipped 2-then-3 was recorded
+ * as 2.
  *
  * A single-row line keeps its raw strings untouched; only a real merge
  * recomputes, and it records `Shipments` so the merge is visible rather than
- * silent.
+ * silent. The money BREAKDOWN ({@link lineMoney}) is always computed, on one
+ * row or five — it is arithmetic over columns, not a passthrough of one.
  */
 function mergeLine(rows: Record<string, string>[]): Record<string, string | number | undefined> {
   const primary = rows[0];
   const currency = col(primary, ...CURRENCY_COLS);
   const unitPrice = col(primary, ...UNIT_PRICE_COLS);
+  const breakdown = lineMoney(rows);
   if (rows.length === 1) {
-    const qtyRaw = col(primary, ...QUANTITY_COLS);
-    const qty = qtyRaw !== undefined ? Number(qtyRaw) : undefined;
-
     return {
-      Quantity: qty !== undefined && !isNaN(qty) ? qty : undefined,
+      Quantity: amount(col(primary, ...QUANTITY_COLS)),
       Total: col(primary, ...TOTAL_COLS),
       Currency: currency,
       'Unit Price': unitPrice,
+      ...breakdown,
     };
   }
 
@@ -345,6 +538,7 @@ function mergeLine(rows: Record<string, string>[]): Record<string, string | numb
     Currency: currency,
     'Unit Price': unitPrice,
     Shipments: rows.length,
+    ...breakdown,
   };
 }
 
@@ -863,6 +1057,8 @@ export class AmazonFileImporter implements FileImporter {
     interface OrderAgg {
       ts?: Date;
       total?: number;
+      /** The order's money breakdown — the sum of its lines', component by component. */
+      breakdown: Record<BreakdownField, number | undefined>;
       currency?: string;
       products: string[];
       /** The order's receipt lines, in CSV order — see the LineItems note below. */
@@ -878,7 +1074,7 @@ export class AmazonFileImporter implements FileImporter {
 
       let agg = orders.get(oid);
       if (!agg) {
-        agg = { products: [], lineItems: [] };
+        agg = { products: [], lineItems: [], breakdown: emptyBreakdown() };
         orders.set(oid, agg);
       }
 
@@ -886,9 +1082,24 @@ export class AmazonFileImporter implements FileImporter {
         agg.ts = line.timestamp;
       }
 
-      const total = Number(m.Total);
-      if (Number.isFinite(total)) {
+      // `amount`, not `Number`: eleven orders in a real export state a total
+      // with a thousands separator ("11,437.78"), and `Number.isFinite(NaN)`
+      // silently dropped every one of them — roughly $34k that reached the
+      // spend chart as an order with no `Amount` at all. See {@link amount}.
+      const total = numeric(m.Total);
+      if (total !== undefined) {
         agg.total = (agg.total ?? 0) + total;
+      }
+
+      // Component by component, from the lines that state each one. A line that
+      // states no tax contributes no tax; it does not contribute a zero, so an
+      // order of dialects that carry no breakdown at all keeps an empty one
+      // rather than claiming a tax of 0.00.
+      for (const field of BREAKDOWN_FIELDS) {
+        const v = numeric(m[field]);
+        if (v !== undefined) {
+          agg.breakdown[field] = (agg.breakdown[field] ?? 0) + v;
+        }
       }
 
       if (!agg.currency && typeof m.Currency === 'string') {
@@ -915,6 +1126,16 @@ export class AmazonFileImporter implements FileImporter {
         Quantity: primitive(m.Quantity),
         'Unit Price': primitive(m['Unit Price']),
         Total: primitive(m.Total),
+        // The line's own money, carried through VERBATIM rather than folded
+        // into `Total`. `Total` is what the line was CHARGED (tax in) and the
+        // order total sums it; `Subtotal` is the line's own pre-tax extended
+        // price, which is what `ci.receipt_line_items.total_price_minor` means.
+        // One place decides which of the two becomes that column —
+        // `push/inputs.ts lineFrom` — so the entry does not have to pre-empt it.
+        Subtotal: primitive(m.Subtotal),
+        Tax: primitive(m.Tax),
+        Shipping: primitive(m.Shipping),
+        Discount: primitive(m.Discount),
         Currency: primitive(m.Currency),
         Category: primitive(m.Category),
         Identifiers: Array.isArray(m.Identifiers) ? (m.Identifiers as ObjectIdentifierRef[]) : undefined,
@@ -927,6 +1148,17 @@ export class AmazonFileImporter implements FileImporter {
     for (const [oid, agg] of orders) {
       const count = agg.products.length || 1;
       const summary = agg.products.join('\n');
+      // Report, don't paper over: an order whose parts do not add up to what it
+      // charged has something this parser cannot see (an unstated promotion, a
+      // state recycling fee), and the breakdown it is about to write is wrong
+      // in a way no reader could detect. 3 of 495 orders in a real export fail
+      // it. See {@link reconcileOrder} for what "fail" means and what happens
+      // to the numbers.
+      const mismatch = reconcileOrder(agg.breakdown, agg.total);
+      if (mismatch) {
+        params.log?.('warn', `Amazon order ${oid} does not reconcile: ${mismatch}`, { orderId: oid });
+      }
+
       params.pipeline.push({
         item: {
           // Distinct namespace from the line ids (`amazon:<oid>:<ident>`), and
@@ -952,6 +1184,24 @@ export class AmazonFileImporter implements FileImporter {
             // 619 orders showed a Spending panel that said to go import
             // purchase history — which was already sitting there, unread.
             Amount: money(agg.total),
+            // The order's money BREAKDOWN — `ci.receipts.subtotal_minor`,
+            // `tax_minor`, `shipping_minor` and `discount_minor`, which were
+            // NULL on every Amazon receipt because nothing ever wrote them.
+            // Canonical keys (push/commerceKeys.ts), summed from the lines'
+            // own components; omitted, not zeroed, when no line stated one.
+            Subtotal: money(agg.breakdown.Subtotal),
+            Tax: money(agg.breakdown.Tax),
+            Shipping: money(agg.breakdown.Shipping),
+            Discount: money(agg.breakdown.Discount),
+            // The disagreement in words, recorded on the ROW as well as logged:
+            // `params.log` reaches the server log and nothing else, so without
+            // this a reader of the order has no way to see that its breakdown
+            // is suspect. Absent on an order that reconciles.
+            //
+            // Distinct key from the receipt's own `TotalsMismatch`, which
+            // `push/inputs.ts` writes as the same fact in minor units — one key
+            // per shape, so no reader has to test which it got.
+            TotalsMismatchNote: mismatch,
             Currency: agg.currency,
             LineItems: agg.lineItems,
             // CANONICAL merchant key (push/commerceKeys.ts): the receipt header

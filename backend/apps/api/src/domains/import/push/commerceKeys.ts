@@ -53,6 +53,27 @@ export const COMMERCE_KEYS = {
   MERCHANT: 'Merchant',
   UNIT_PRICE: 'Unit Price',
   TOTAL: 'Total',
+  /*
+   * The four components a TOTAL is made of — `ci.receipts.subtotal_minor`,
+   * `tax_minor`, `shipping_minor`, `discount_minor`.
+   *
+   * SUBTOTAL is doing double duty on purpose, and the two meanings are the same
+   * arithmetic at two scales: on a RECEIPT it is the pre-tax sum of the lines,
+   * on a LINE it is that line's own pre-tax extended price (quantity × unit
+   * price). `TOTAL` on the same bag is what was CHARGED — tax, shipping and
+   * discount already applied — which is why a line needs both and why
+   * `total_price_minor` reads SUBTOTAL first (see `inputs.ts lineFrom`).
+   *
+   * DISCOUNT is a POSITIVE MAGNITUDE, the amount taken OFF: the invariant is
+   * `subtotal + tax + shipping − discount = total`. Sources that state it
+   * signed (Amazon writes `'-89'`) normalise in their own parser, where the
+   * sign convention is a provable fact about that export rather than a guess
+   * here.
+   */
+  SUBTOTAL: 'Subtotal',
+  TAX: 'Tax',
+  SHIPPING: 'Shipping',
+  DISCOUNT: 'Discount',
   CURRENCY: 'Currency',
   QUANTITY: 'Quantity',
   CATEGORY: 'Category',
@@ -105,6 +126,14 @@ const FALLBACKS: Record<CommerceField, readonly string[]> = {
   // column, Uber Eats' order price, Venmo's amount, PayPal's net/gross,
   // Reddit's cost.
   TOTAL: [COMMERCE_KEYS.TOTAL, 'Total Owed', 'Order Price', 'Amount', 'Net', 'Gross', 'Cost'],
+  // The breakdown chains carry the spellings `toReceiptInput` already read
+  // inline before this module owned the vocabulary, plus each retail export's
+  // own column name — an emitter that has not been converted yet still
+  // resolves, which is what the chains are for.
+  SUBTOTAL: [COMMERCE_KEYS.SUBTOTAL, 'Sub Total', 'Subtotal Amount', 'Item Subtotal'],
+  TAX: [COMMERCE_KEYS.TAX, 'Tax Amount', 'Sales Tax', 'Total Tax'],
+  SHIPPING: [COMMERCE_KEYS.SHIPPING, 'Shipping Charge', 'Shipping Cost', 'Delivery Fee'],
+  DISCOUNT: [COMMERCE_KEYS.DISCOUNT, 'Discounts', 'Total Discounts', 'Promotion'],
   CURRENCY: [COMMERCE_KEYS.CURRENCY, 'Currency Code', 'CurrencyCode'],
   QUANTITY: [COMMERCE_KEYS.QUANTITY, 'Qty', 'Item Quantity'],
   // NOT in this chain: `Type`. It is PayPal's and Venmo's generic TRANSACTION
