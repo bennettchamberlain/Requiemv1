@@ -201,7 +201,16 @@ export class FilePreviewGenerationListener {
       // valid JPEGs that decode cleanly today, i.e. the failures were transient
       // and the retries were the only recovery they ever had. Skipping on the
       // first attempt would have removed it.
-      const expected = file.size;
+      //
+      // Number(): the entity types `size` as `number`, but it is a Postgres
+      // `bigint` column with no transformer, so TypeORM hands back a STRING at
+      // runtime. `!==` never coerces, so `430679 !== "430679"` is true — every
+      // intact-but-undecodable file was silently misrouted into the "short
+      // read" branch and retried to exhaustion instead of skipped, which is
+      // what actually put a real, complete Ultra HDR JPEG (`vips-loader:
+      // uhdrload`, unsupported by this build's bundled libvips) through 3
+      // retries and into the dead-letter queue.
+      const expected = file.size != null ? Number(file.size) : null;
       const truncated = expected != null && expected > 0 && original.length !== expected;
 
       if (truncated) {
