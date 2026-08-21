@@ -248,7 +248,7 @@ describe('useAuth', () => {
 
             return { value: secureStore.get(key) };
           }),
-          set: vi.fn(async ({ key, value }: { key: string }) => {
+          set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
             secureStore.set(key, value);
 
             return { value: true };
