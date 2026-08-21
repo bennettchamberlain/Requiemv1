@@ -887,12 +887,12 @@ export function ThingsPage() {
                       <Badge variant="secondary">{duplicates?.totalCount ?? 0}</Badge>
                     </Card.Title>
                     <Card.Description>
-                      These things share a code, a product, or a brand and model bought the same day. Merging
-                      is the only decision here — there is no way yet to record that two things are genuinely
-                      different, so a group you leave alone will be proposed again.
+                      These things share a code, a product, or a brand and model bought the same day.
                     </Card.Description>
                   </Card.Header>
-                  <Card.Content className="flex flex-col gap-3">
+                  {/* The list grows with every "Load more"; capped so the things
+                      list below stays reachable without scrolling past dozens of groups. */}
+                  <Card.Content className="flex max-h-[40em] flex-col gap-3 overflow-y-auto">
                     {duplicateGroups.map((group) => (
                       <DuplicateGroupCard
                         key={`${group.reason}:${group.value}`}

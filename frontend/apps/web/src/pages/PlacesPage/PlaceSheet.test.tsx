@@ -1,0 +1,55 @@
+import { screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { renderWithProviders } from '@/test/renderWithProviders';
+
+import { GET_PLACE_SHEET, PlaceSheet } from './PlaceSheet';
+
+// The relationship cards need the auth context for the REST graph endpoints;
+// the drawer body is what's under test.
+vi.mock('@/components/EntityRelationshipCards/EntityRelationshipCards', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/components/EntityRelationshipCards/EntityRelationshipCards')>();
+
+  return { ...actual, EntityRelationshipCards: () => null };
+});
+
+const PLACE_UUID = '019fd7c0-641c-76dd-8ed7-a5053faff6f1';
+const PLACE_GLOBAL_ID = btoa(`place:${PLACE_UUID}`);
+
+const placeMock = {
+  request: { query: GET_PLACE_SHEET, variables: { id: PLACE_GLOBAL_ID } },
+  result: {
+    data: {
+      place: {
+        __typename: 'PlaceType' as const,
+        id: PLACE_GLOBAL_ID,
+        tags: [],
+        mapProperties: { address: '1 Pier Rd', latitude: 51.5, longitude: -0.1 },
+        name: 'Bletchley Park',
+        description: 'Where the codebreakers worked',
+        properties: { address: '1 Pier Rd', latitude: 51.5, longitude: -0.1 },
+      },
+    },
+  },
+};
+
+describe('PlaceSheet', () => {
+  it('opens the shared details drawer for the routed place, with a link to its full page', async () => {
+    renderWithProviders(<PlaceSheet placeId={PLACE_GLOBAL_ID} onClose={vi.fn()} onChanged={vi.fn()} />, {
+      mocks: [placeMock],
+    });
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Bletchley Park' })).toBeInTheDocument();
+
+    const fullPage = screen.getByRole('link', { name: /open full page/i });
+    expect(fullPage).toHaveAttribute('href', `/places/${PLACE_UUID}`);
+  });
+
+  it('renders nothing when no place is routed', () => {
+    renderWithProviders(<PlaceSheet placeId={null} onClose={vi.fn()} onChanged={vi.fn()} />, { mocks: [] });
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});

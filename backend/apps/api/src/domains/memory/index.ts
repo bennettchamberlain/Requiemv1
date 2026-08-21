@@ -99,6 +99,8 @@ import { PersonActivityService } from './services/PersonActivityService';
 import { PersonDuplicateService } from './services/PersonDuplicateService';
 import { PersonMergeService } from './services/PersonMergeService';
 import { PersonService } from './services/PersonService';
+import { PlaceDuplicateService } from './services/PlaceDuplicateService';
+import { PlaceMergeService } from './services/PlaceMergeService';
 import { PlaceService } from './services/PlaceService';
 import { ProductModelService } from './services/ProductModelService';
 import { ReceiptService } from './services/ReceiptService';
@@ -160,6 +162,8 @@ import { UserContextService } from './services/UserContextService';
     PersonDuplicateService,
     MergeCandidateService,
     PersonMergeService,
+    PlaceMergeService,
+    PlaceDuplicateService,
     ConceptService,
     FileService,
     PlaceService,
@@ -193,6 +197,8 @@ import { UserContextService } from './services/UserContextService';
     PersonDuplicateService,
     MergeCandidateService,
     PersonMergeService,
+    PlaceMergeService,
+    PlaceDuplicateService,
     ConceptService,
     UserContextService,
     GraphUtilityService,
@@ -256,6 +262,8 @@ export {
   PersonDuplicateService,
   MergeCandidateService,
   PersonMergeService,
+  PlaceMergeService,
+  PlaceDuplicateService,
   ConceptService,
   UserContextService,
   GraphUtilityService,
@@ -298,6 +306,12 @@ export {
 } from './services/MergeCandidateService';
 export type { PersonInteractionStats } from './services/PersonActivityService';
 export type { MergeCounts } from './services/PersonMergeService';
+export type { PlaceMergeCounts } from './services/PlaceMergeService';
+export type {
+  PlaceDuplicateGroup,
+  PlaceDuplicatePage,
+  PlaceDuplicateReason,
+} from './services/PlaceDuplicateService';
 export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
 // The `content.external_id_kind` vocabulary and the value-shaped test behind
 // it. Exported because every domain that writes a content row (import, etl,
