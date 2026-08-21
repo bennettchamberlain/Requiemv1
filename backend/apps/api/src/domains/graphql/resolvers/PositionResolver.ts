@@ -5,6 +5,7 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { PositionService } from '@ci/domains/position';
 
+import { PositionTrackExtentType } from '../types/PositionTrackExtentType';
 import { PositionTrackInput } from '../types/PositionTrackInput';
 import { PositionTrackType } from '../types/PositionTrackType';
 
@@ -58,6 +59,33 @@ export class PositionResolver {
     });
 
     return page;
+  }
+
+  /**
+   * The signed-in user's whole `ci.position` history at a glance — first fix,
+   * last fix, count — for a control (a playback scrubber) that needs to span
+   * itself against the user's real history before requesting a single page
+   * of {@link positionTrack}. Same scoping guarantee as that query: `context`
+   * yields a concrete `userId`, never SYSTEM_USER, so there is no input shape
+   * that answers for anyone but the caller. Returns null rather than a
+   * zeroed extent when the user has no position history at all, so a caller
+   * can tell "no track" from "a track starting at the epoch".
+   */
+  @Query(() => PositionTrackExtentType, {
+    nullable: true,
+    description: "The signed-in user's whole ci.position history (first fix, last fix, count), unpaged.",
+  })
+  async positionTrackExtent(
+    @Context() context: RequestContext,
+    @Args('input', { nullable: true }) input?: PositionTrackInput,
+  ): Promise<PositionTrackExtentType | null> {
+    const serviceContext = toServiceContext(context);
+
+    return this.positionService.getTrackExtent(serviceContext, {
+      startTime: parseInstant(input?.startTime),
+      endTime: parseInstant(input?.endTime),
+      bbox: input?.bbox,
+    });
   }
 }
 

@@ -59,6 +59,13 @@ export interface TrackPoint {
 }
 
 /** One page of {@link TrackPoint}s plus everything needed to ask for the next. */
+/** First fix, last fix, and how many — the whole history at a glance. */
+export interface TrackExtent {
+  start: Date;
+  end: Date;
+  count: number;
+}
+
 export interface TrackPage {
   points: TrackPoint[];
   hasNextPage: boolean;
@@ -657,6 +664,46 @@ export class PositionService {
     );
 
     return Number(rows[0]?.n ?? 0);
+  }
+
+  /**
+   * The user's whole location history at a glance — first fix, last fix,
+   * total count — WITHOUT paging through it.
+   *
+   * Exists for a caller that needs to span a control by the user's real
+   * history before it has downloaded any of it (a playback scrubber, for
+   * instance): asking `findTrack` for that would mean reading a full page
+   * just to throw away everything but its two end timestamps. This is the
+   * same one-row min/max/count `resolveTrackSpanMs` already runs to size a
+   * bucket, generalized to answer on its own rather than only as that
+   * method's internal step, and it is deliberately UNSCOPED by bbox by
+   * default — same reasoning as `countTrackPoints`'s docstring: a scrubber
+   * spanning "what's in the current viewport" would shrink every time the
+   * user pans, which is not what a control meant to represent the whole
+   * history should do. A caller that DOES want the in-viewport extent can
+   * still pass a bbox; nothing here assumes one way or the other.
+   */
+  async getTrackExtent(context: UserServiceContext, options: TrackOptions = {}): Promise<TrackExtent | null> {
+    const boxes = normalizeBbox(options.bbox);
+    const where = this.buildTrackWhere(context, options, boxes);
+
+    const rows: Array<{ n: string; from_time: Date | null; to_time: Date | null }> =
+      await this.positionRepository.manager.query(
+        `SELECT count(*) AS n, min(time) AS from_time, max(time) AS to_time
+           FROM ci.position p
+          WHERE ${where.sql}`,
+        where.params,
+      );
+
+    const count = Number(rows[0]?.n ?? 0);
+    const from = rows[0]?.from_time;
+    const to = rows[0]?.to_time;
+
+    if (count === 0 || from == null || to == null) {
+      return null;
+    }
+
+    return { start: from, end: to, count };
   }
 
   /**

@@ -2201,6 +2201,12 @@ type PositionPointType {
   startTime: DateTime!
 }
 
+type PositionTrackExtentType {
+  count: Int!
+  end: DateTime!
+  start: DateTime!
+}
+
 input PositionTrackInput {
   after: String
   bbox: [Float!]
@@ -2518,6 +2524,11 @@ type Query {
   The signed-in user's location history (ci.position) as a downsampled, keyset-paged trace for the map. Filtered by viewport bounding box and time range.
   """
   positionTrack(input: PositionTrackInput): PositionTrackType!
+
+  """
+  The signed-in user's whole ci.position history (first fix, last fix, count), unpaged.
+  """
+  positionTrackExtent(input: PositionTrackInput): PositionTrackExtentType
 
   """Forecast self-consistency scores (not ground-truth accuracy)"""
   predictionCalibration(limit: Int = 14): PredictionCalibrationType

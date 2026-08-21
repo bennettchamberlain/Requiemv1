@@ -453,3 +453,73 @@ describe('PositionService.findTrack — projection', () => {
     expect(typeof page.points[0].longitude).toBe('number');
   });
 });
+
+describe('PositionService.getTrackExtent', () => {
+  /**
+   * A dedicated harness rather than reusing `makeService`: the extent query
+   * asks for `count(*)` and `min/max(time)` in ONE statement, which the
+   * shape-dispatch in `makeService` (built for `findTrack`'s three separate
+   * queries) cannot distinguish from its own `min(time)` branch.
+   */
+  function makeExtentService({ count = 0, from = null as Date | null, to = null as Date | null } = {}) {
+    const executed: Executed[] = [];
+    const query = jest.fn(async (sql: string, params: unknown[]) => {
+      executed.push({ sql, params });
+
+      return [{ n: String(count), from_time: from, to_time: to }];
+    });
+
+    const repository = { manager: { query } } as unknown as Repository<PositionEntity>;
+    const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn() } as unknown as LoggerService;
+
+    return {
+      executed,
+      service: new PositionService(
+        repository,
+        {} as unknown as DeviceService,
+        {} as unknown as EventService,
+        logger,
+      ),
+    };
+  }
+
+  it("answers the user's whole history in one query", async () => {
+    const from = new Date('2013-05-28T21:02:08.000Z');
+    const to = new Date('2026-08-21T04:56:01.296Z');
+    const harness = makeExtentService({ count: 63_044, from, to });
+
+    const extent = await harness.service.getTrackExtent(ctx);
+
+    expect(extent).toEqual({ start: from, end: to, count: 63_044 });
+    expect(harness.executed).toHaveLength(1);
+    expect(harness.executed[0].sql).toContain('count(*) AS n');
+    expect(harness.executed[0].sql).toContain('min(time)');
+    expect(harness.executed[0].sql).toContain('max(time)');
+  });
+
+  it('scopes to the caller, as the first bound parameter', async () => {
+    const harness = makeExtentService({ count: 1, from: new Date(), to: new Date() });
+
+    await harness.service.getTrackExtent(ctx);
+
+    expect(harness.executed[0].params[0]).toBe(ctx.userId);
+  });
+
+  it('returns null rather than a zeroed extent when the user has no track at all', async () => {
+    const harness = makeExtentService({ count: 0, from: null, to: null });
+
+    const extent = await harness.service.getTrackExtent(ctx);
+
+    expect(extent).toBeNull();
+  });
+
+  it('narrows to a bbox when one is supplied, same as findTrack', async () => {
+    const harness = makeExtentService({ count: 500, from: new Date(), to: new Date() });
+    const bbox: [number, number, number, number] = [-118.9, 33.5, -117.6, 34.8];
+
+    await harness.service.getTrackExtent(ctx, { bbox });
+
+    expect(harness.executed[0].sql).toContain('ST_MakeEnvelope(');
+    expect(harness.executed[0].params).toEqual(expect.arrayContaining(bbox));
+  });
+});

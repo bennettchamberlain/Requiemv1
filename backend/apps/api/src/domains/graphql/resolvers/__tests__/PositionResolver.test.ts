@@ -139,3 +139,81 @@ describe('PositionResolver — positionTrack', () => {
     });
   });
 });
+
+describe('PositionResolver — positionTrackExtent', () => {
+  const context = { userId: 'user-1' } as RequestContext;
+
+  function makeResolver(extent: { start: Date; end: Date; count: number } | null) {
+    const calls: Array<{ userId: unknown; options: unknown }> = [];
+
+    const positionService = {
+      getTrackExtent: jest.fn(async (serviceContext: { userId: string }, options: unknown) => {
+        calls.push({ userId: serviceContext.userId, options });
+
+        return extent;
+      }),
+    } as unknown as PositionService;
+
+    return { resolver: new PositionResolver(positionService), calls };
+  }
+
+  it('answers for the signed-in caller and nobody else', async () => {
+    const extent = {
+      start: new Date('2013-05-28T21:02:08Z'),
+      end: new Date('2026-08-21T04:56:01Z'),
+      count: 63_044,
+    };
+    const { resolver, calls } = makeResolver(extent);
+
+    const result = await resolver.positionTrackExtent(context, {} as PositionTrackInput);
+
+    expect(calls[0].userId).toBe('user-1');
+    expect(result).toEqual(extent);
+  });
+
+  it('returns null when the service reports no track, rather than a zeroed extent', async () => {
+    const { resolver } = makeResolver(null);
+
+    const result = await resolver.positionTrackExtent(context, {} as PositionTrackInput);
+
+    expect(result).toBeNull();
+  });
+
+  it('parses the ISO date filters, same as positionTrack', async () => {
+    const { resolver, calls } = makeResolver(null);
+
+    await resolver.positionTrackExtent(context, {
+      startTime: '2024-01-01T00:00:00.000Z',
+      endTime: '2024-02-01T00:00:00.000Z',
+    } as PositionTrackInput);
+
+    expect(calls[0].options).toMatchObject({
+      startTime: new Date('2024-01-01T00:00:00.000Z'),
+      endTime: new Date('2024-02-01T00:00:00.000Z'),
+    });
+  });
+
+  it('forwards the viewport when one is supplied', async () => {
+    const { resolver, calls } = makeResolver(null);
+
+    await resolver.positionTrackExtent(context, {
+      bbox: [-122.6, 37.6, -122.2, 37.9],
+    } as PositionTrackInput);
+
+    expect(calls[0].options).toMatchObject({ bbox: [-122.6, 37.6, -122.2, 37.9] });
+  });
+
+  it("works with no input at all — the scrubber's first read, before any filter exists", async () => {
+    const extent = { start: new Date(0), end: new Date(1), count: 1 };
+    const { resolver, calls } = makeResolver(extent);
+
+    const result = await resolver.positionTrackExtent(context);
+
+    expect(result).toEqual(extent);
+    expect(calls[0].options).toEqual({
+      startTime: undefined,
+      endTime: undefined,
+      bbox: undefined,
+    });
+  });
+});
