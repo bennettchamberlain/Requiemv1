@@ -147,7 +147,8 @@
   "queues": {
     "concurrency": 10,
     "fetchBatchSize": 10,
-    "perQueueConcurrency": 6
+    "perQueueConcurrency": 6,
+    "replayedDeadLetterRetentionDays": 30
   },
   "import": {
     "scratchDir": "/var/tmp/ci-import",
@@ -156,7 +157,14 @@
     "inboxDir": "/var/lib/ci-import/inbox",
     "maxArchiveEntries": 2000000,
     "maxArchiveBytes": 107374182400,
-    "databaseDataDir": ""
+    "databaseDataDir": "",
+    "retention": {
+      "enabled": true,
+      "stagingDays": 7,
+      "runHistoryDays": 90,
+      "maxRunsPerSweep": 200,
+      "deleteBatchSize": 5000
+    }
   },
   "accountDeletion": {
     "graceDays": 30,

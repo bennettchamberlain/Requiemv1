@@ -25,6 +25,39 @@ import { uploadsRoot } from '../sources/importRoots';
  */
 export const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The statuses whose row names no bytes of its own once its run is gone.
+ *
+ * `staged_sources.run_id` is `ON DELETE SET NULL`, not CASCADE, and that is
+ * deliberate: deleting a run must never take the registry row of bytes that
+ * still exist. But SET NULL applied to EVERY status, so the rows below — one
+ * per completed run, one per released inbox claim — survived their run forever
+ * with nothing left to point at. They are what {@link ImportRetentionService}
+ * deletes alongside the run itself:
+ *
+ *  - `consumed` — the run completed and its bytes went with its scratch tree;
+ *  - `moved` — the bytes were moved INTO that same tree, and the retention
+ *    sweep refuses any run whose tree still exists, so by the time this list is
+ *    read they are gone too. The row also holds `staged_sources_active_path_uq`
+ *    against its path, so keeping it would make an inbox unit whose run was
+ *    retired permanently unclaimable;
+ *  - `released` — an inbox claim already handed back; the unit sits in the
+ *    user's own folder and the path is claimable again;
+ *  - `expired` — a TTL tombstone whose file the purge already deleted.
+ *
+ * The complement is the reason SET NULL exists. A `staged` upload and a
+ * `claimed` source both name bytes sitting at `source_path` right now — an
+ * upload the user still holds, or one a claim still names — so those rows
+ * outlive their run and {@link StagedSourceService.sweepUploadOrphans} stays
+ * their backstop.
+ */
+export const SOURCE_STATUSES_SPENT_WITH_RUN = [
+  'consumed',
+  'moved',
+  'released',
+  'expired',
+] as const satisfies readonly StagedSourceStatus[];
+
 /** One row as the Postgres driver hands it back from `RETURNING *`. */
 interface StagedSourceRow {
   id: string;

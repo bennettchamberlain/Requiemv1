@@ -7,6 +7,46 @@ import { RelationshipType } from '@ci/domains/graph';
 import { GraphDeltaWriter } from '@ci/domains/memory';
 
 /**
+ * Per-call switches for {@link DerivedRelationshipService.derive}.
+ *
+ * The split exists because the three legs are not the same KIND of write. Two
+ * of them project an aggregate of edges the user's own data already asserts
+ * (people who demonstrably emailed each other; a place visited three times).
+ * The third MINTS A NEW ENTITY — a `Group` nobody's data names — which is a
+ * claim about the user's life rather than a summary of it, and therefore
+ * something the Autonomy trust dial has to be asked about first.
+ */
+export interface DerivedRelationshipOptions {
+  /**
+   * Reify household `Group` entities from LIVES_WITH + shared LIVES_IN clusters.
+   *
+   * Defaults to TRUE, which keeps every pre-existing caller (POST
+   * /api/maintenance/derive-relationships, the orchestrator's
+   * `derive_relationships` leg driven by an operator over HTTP/CLI) behaving
+   * exactly as before: a human asked for the whole stage.
+   *
+   * The scheduled caller passes FALSE unless
+   * `PersonalizationService.decideAction({ kind: 'graph_entity' })` returned
+   * `auto` — see `DerivationRunListener`. A timer is not a human, and
+   * `graph_entity` is in `GRAPH_CONNECTION_KINDS`, so only `hands_off` ever
+   * auto-applies it.
+   */
+  reifyHouseholdGroups?: boolean;
+}
+
+export interface DerivedRelationshipResult {
+  communicatesWith: number;
+  frequents: number;
+  groupsReified: number;
+  /**
+   * Why `groupsReified` is what it is. `withheld` means the leg was not run at
+   * all — a zero that says "not permitted" instead of "nothing to do", which is
+   * the difference between a signal and a silence on the Jobs dashboard.
+   */
+  householdReification: 'applied' | 'withheld';
+}
+
+/**
  * #1947 stages C–D — L2 aggregates and derived Groups.
  *
  * Aggregates upsert strength-weighted edges from episodic history; Groups are
@@ -23,23 +63,26 @@ export class DerivedRelationshipService {
     this.logger.setContext(DerivedRelationshipService.name);
   }
 
-  async derive(userId: string): Promise<{
-    communicatesWith: number;
-    frequents: number;
-    groupsReified: number;
-  }> {
+  async derive(userId: string, options: DerivedRelationshipOptions = {}): Promise<DerivedRelationshipResult> {
+    const reifyHouseholds = options.reifyHouseholdGroups !== false;
     const communicatesWith = await this.upsertCommunicatesWith(userId);
     const frequents = await this.upsertFrequents(userId);
-    const groupsReified = await this.reifyHouseholdGroups(userId);
+    const groupsReified = reifyHouseholds ? await this.reifyHouseholdGroups(userId) : 0;
 
     this.logger.log('Derived relationship pass complete', {
       userId,
       communicatesWith,
       frequents,
       groupsReified,
+      householdReification: reifyHouseholds ? 'applied' : 'withheld',
     });
 
-    return { communicatesWith, frequents, groupsReified };
+    return {
+      communicatesWith,
+      frequents,
+      groupsReified,
+      householdReification: reifyHouseholds ? 'applied' : 'withheld',
+    };
   }
 
   /**

@@ -315,6 +315,30 @@ export const ConfigSchema = z.object({
     concurrency: z.coerce.number().int().positive().default(32),
     fetchBatchSize: z.coerce.number().int().positive().default(20),
     perQueueConcurrency: z.coerce.number().int().positive().default(6),
+    /**
+     * Days a REPLAYED dead letter is kept in `ci.pipeline_dead_letters` before
+     * `DeadLetterReaperListener.purgeReplayed` reclaims it.
+     *
+     * Scope, exactly: a row whose `replayed_at` is non-NULL — meaning an
+     * operator asked for it back and `EventService.send` accepted the job (the
+     * claim is released on every failure path, so the stamp is proof of a
+     * successful re-emit, not of an attempt). An UNREPLAYED letter has no TTL
+     * and is never touched by any sweep; that promise is the reason the table
+     * exists, and no value here weakens it.
+     *
+     * 30 days matches `JobMetricsCollector`'s retention, which is the other
+     * operational history on this appliance: long enough to answer "did we
+     * already replay this, and when?" during and after an incident, short
+     * enough that the replayed half of the table cannot grow without bound
+     * behind a writer that can insert 360k rows a day.
+     *
+     * Raise it (CI_REPLAYED_DEAD_LETTER_RETENTION_DAYS=3650) to effectively
+     * suspend the purge — during an incident when the replay audit trail is
+     * still being read, or on a deployment that wants it kept forever. Positive
+     * integer only: zero or negative would mean "delete letters replayed just
+     * now", and the purge refuses such a window rather than obeying it.
+     */
+    replayedDeadLetterRetentionDays: z.coerce.number().int().positive().default(30),
   }),
   // The archive importer's working directory. A run downloads its uploaded
   // archive here, extracts it, and parses the resulting tree; the whole
@@ -369,8 +393,59 @@ export const ConfigSchema = z.object({
       // Unreadable or unset simply means the push reports "cannot say" and
       // relies on catching the disk-full error instead of predicting it.
       databaseDataDir: z.string().default(''),
+      // How long staging survives its run. Two windows, because two different
+      // things are stored here and only one of them is scratch.
+      //
+      // MEASURED, not guessed. On a dev appliance that imported one real
+      // Google Takeout three times, `ci_import` held 1678 MB against ci.*'s
+      // 1274 MB — staging was LARGER than the durable records it produced, and
+      // 56% of a 3010 MB database. `staged_items` alone was 1578 MB over
+      // 1.94M rows: 852 bytes per parsed record including indexes, so one
+      // 780,946-item run costs ~640 MB forever. `import_runs` +
+      // `import_stages` for the same 24 runs came to 240 kB — about 10 kB a
+      // run, which is why the two are given very different windows.
+      retention: z.object({
+        enabled: booleanStringSchema.default(true),
+        // The scratchpad window. Long enough to cover the deferred-push gap
+        // the Sync card is built around (parse today, push when you get to
+        // it) and any realistic re-push, and far longer than the longest
+        // observed run wall-time (~1 day for a 780k-item Takeout). Nothing
+        // resumable is ever taken regardless of this number — the sweep skips
+        // any run still holding `pending` or `failed` staged rows — so this is
+        // the disk dial, not the safety mechanism. 0 means "as soon as the run
+        // is terminal and drained", which is a defensible setting on an
+        // appliance short of disk.
+        stagingDays: z.coerce.number().int().nonnegative().default(7),
+        // The audit window. `import_runs` / `import_stages` are what the
+        // import UI renders — the run list, the stage bar, `detail->>'pushed'`
+        // for "3,412 records", and `declared_sources` for the picker's
+        // "imported ✓". None of that reads a `staged_*` row, which is what
+        // makes the split possible: history survives the payload it describes.
+        // Deleting the run row cascades everything, so this is also the
+        // backstop for a run whose payload the staging sweep declined to take.
+        runHistoryDays: z.coerce.number().int().positive().default(90),
+        // Sweep bounds. The cron is nightly and reclamation must never be the
+        // reason the disk is busy, so a sweep takes a bounded number of runs
+        // and deletes each run's rows in bounded batches rather than opening
+        // one transaction over 780k rows.
+        maxRunsPerSweep: z.coerce.number().int().positive().default(200),
+        deleteBatchSize: z.coerce.number().int().positive().default(5000),
+      }),
     })
     .superRefine((value, context) => {
+      // History must outlive the payload it describes. Inverted, the run purge
+      // would delete the audit trail while the scratchpad it points at was
+      // still being kept — which is the opposite of what the split is for.
+      if (value.retention.runHistoryDays < value.retention.stagingDays) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            `import.retention.runHistoryDays (${value.retention.runHistoryDays}) must be >= ` +
+            `import.retention.stagingDays (${value.retention.stagingDays}): run history is the audit ` +
+            'trail for staging that has already been reclaimed, so it cannot expire first.',
+        });
+      }
+
       // The three areas have different owners and different sweeps: the inbox
       // is world-writable and user-facing, uploads are root-only and TTL'd,
       // scratch belongs to runs. Nesting any inside another crosses those

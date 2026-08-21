@@ -122,6 +122,10 @@
     "perQueueConcurrency": {
       "__name": "CI_QUEUE_PER_QUEUE_CONCURRENCY",
       "__format": "json"
+    },
+    "replayedDeadLetterRetentionDays": {
+      "__name": "CI_REPLAYED_DEAD_LETTER_RETENTION_DAYS",
+      "__format": "json"
     }
   },
   "import": {
@@ -134,7 +138,26 @@
     "inboxDir": "CI_IMPORT_INBOX_DIR",
     "maxArchiveEntries": "CI_IMPORT_MAX_ARCHIVE_ENTRIES",
     "maxArchiveBytes": "CI_IMPORT_MAX_ARCHIVE_BYTES",
-    "databaseDataDir": "CI_IMPORT_DB_DATA_DIR"
+    "databaseDataDir": "CI_IMPORT_DB_DATA_DIR",
+    "retention": {
+      "enabled": "CI_IMPORT_RETENTION_ENABLED",
+      "stagingDays": {
+        "__name": "CI_IMPORT_STAGING_RETENTION_DAYS",
+        "__format": "json"
+      },
+      "runHistoryDays": {
+        "__name": "CI_IMPORT_RUN_RETENTION_DAYS",
+        "__format": "json"
+      },
+      "maxRunsPerSweep": {
+        "__name": "CI_IMPORT_RETENTION_MAX_RUNS",
+        "__format": "json"
+      },
+      "deleteBatchSize": {
+        "__name": "CI_IMPORT_RETENTION_BATCH_SIZE",
+        "__format": "json"
+      }
+    }
   },
   "accountDeletion": {
     "graceDays": {

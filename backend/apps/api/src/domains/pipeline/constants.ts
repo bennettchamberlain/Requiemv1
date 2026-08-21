@@ -627,6 +627,57 @@ export const DEAD_LETTER_REAP_BATCH = 500;
  */
 export const DEAD_LETTER_REAP_CRON = '40 */2 * * * *';
 
+/**
+ * Days a REPLAYED dead letter is kept before the reaper's purge leg reclaims it.
+ *
+ * ── Why the table needed a bound at all ────────────────────────────────────
+ *
+ * `ci.pipeline_dead_letters` is the only destination on this appliance with a
+ * scheduled, batched writer and no cap of any kind: {@link DEAD_LETTER_REAP_BATCH}
+ * rows every two minutes is a 360k/day ceiling, and every row carries a payload
+ * VERBATIM plus a full stack. The migration that created it says the rows "never
+ * expire — the payload is often the only surviving copy of the record", and that
+ * is exactly right for a letter nobody has replayed. It was never an argument
+ * about the replayed ones: replay re-emits the payload onto the bus and stamps
+ * `replayed_at`, and `pipeline_dead_letters_unreplayed_idx ... WHERE replayed_at
+ * IS NULL` already excludes those rows from every replay path. They were kept
+ * forever by omission, not by decision.
+ *
+ * ── Why deleting a replayed letter is not deleting evidence ────────────────
+ *
+ * `replayed_at` is only ever non-NULL when `EventService.send` actually accepted
+ * the job: `PipelineRunService.emitClaimedLetter` releases the claim on every
+ * failure path, including the silent one where `send()` returns no job ids. So a
+ * stamped letter is one whose payload has been handed back to the system. If the
+ * re-emitted job then died again, pg-boss dead-lettered it again and the reaper
+ * harvested a NEW row — the evidence moved forward, it did not disappear.
+ *
+ * ── Why 30 days ───────────────────────────────────────────────────────────
+ *
+ * The same window `JobMetricsCollector` keeps its samples for, and for the same
+ * reason: long enough to answer "did we already replay this, and when?" through
+ * an incident and its post-mortem, short enough that the replayed half of the
+ * table cannot outgrow the appliance.
+ *
+ * Overridable — `config/default.json` → `queues.replayedDeadLetterRetentionDays`,
+ * env `CI_REPLAYED_DEAD_LETTER_RETENTION_DAYS`. Set it to something enormous to
+ * suspend the purge while an incident is still being read.
+ */
+export const DEAD_LETTER_REPLAYED_RETENTION_DAYS = config.queues.replayedDeadLetterRetentionDays;
+
+/**
+ * Replayed dead letters deleted per purge.
+ *
+ * Deliberately the same number as {@link DEAD_LETTER_REAP_BATCH}, on the same
+ * tick: the purge can therefore drain at exactly the rate the harvest can fill,
+ * so no burst of failures can put the table permanently ahead of reclamation.
+ *
+ * Bounded for the reason every sweep here is bounded — one statement's work has
+ * to be predictable when the table is at its largest, which is precisely when
+ * this leg starts finding rows.
+ */
+export const DEAD_LETTER_PURGE_BATCH = 500;
+
 // ---------------------------------------------------------------------------
 // The nightly enrichment window
 // ---------------------------------------------------------------------------

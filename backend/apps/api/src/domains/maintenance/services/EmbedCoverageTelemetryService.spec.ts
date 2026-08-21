@@ -1,5 +1,9 @@
+import { INDEXABLE_ENTITIES } from '@ci/domains/search-next';
+
 import {
   buildCoverage,
+  buildIndexHealth,
+  DEFAULT_HEALTH_SWEEP_BUDGET_MS,
   EmbedCoverageTelemetryService,
   UNDER_COVERAGE_THRESHOLD,
 } from './EmbedCoverageTelemetryService';
@@ -232,5 +236,251 @@ describe('EmbedCoverageTelemetryService', () => {
       expect.stringContaining('Embed-coverage alarm'),
       expect.anything(),
     );
+  });
+});
+
+/**
+ * A DataSource whose `createQueryRunner()` answers all three COUNT shapes the
+ * both-tables sweep issues, and records the session statements it ran, so the
+ * timeout guard and the runner lifecycle are observable.
+ */
+function makeHealthDataSource(
+  sourceCounts: Record<string, number>,
+  embeddedCounts: Record<string, number>,
+  vectorCounts: Record<string, number>,
+  onCount?: (sql: string) => void,
+) {
+  const statements: string[] = [];
+
+  const runner = {
+    connect: jest.fn(async () => undefined),
+    release: jest.fn(async () => undefined),
+    query: jest.fn(async (sql: string, params: unknown[] = []) => {
+      statements.push(sql);
+
+      if (sql.startsWith('SET ') || sql.startsWith('RESET ')) {
+        return [];
+      }
+
+      onCount?.(sql);
+
+      if (sql.includes('ci_search.embeddings')) {
+        return [{ count: String(embeddedCounts[params[0] as string] ?? 0) }];
+      }
+
+      if (sql.includes('ci_search.vectors')) {
+        return [{ count: String(vectorCounts[params[0] as string] ?? 0) }];
+      }
+
+      return [{ count: String(sourceCounts[resolveSourceType(sql, params)] ?? 0) }];
+    }),
+  };
+
+  const dataSource = {
+    createQueryRunner: jest.fn(() => runner),
+    query: jest.fn(async () => {
+      throw new Error('the health sweep must run on its own pinned connection');
+    }),
+  };
+
+  return { dataSource, runner, statements };
+}
+
+function makeHealthService(
+  sourceCounts: Record<string, number>,
+  embeddedCounts: Record<string, number>,
+  vectorCounts: Record<string, number>,
+  onCount?: (sql: string) => void,
+) {
+  const { dataSource, runner, statements } = makeHealthDataSource(
+    sourceCounts,
+    embeddedCounts,
+    vectorCounts,
+    onCount,
+  );
+  const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const service = new EmbedCoverageTelemetryService(dataSource as any, logger as any);
+
+  return { service, dataSource, runner, statements, logger };
+}
+
+describe('buildIndexHealth', () => {
+  /**
+   * The whole reason this exists. `ci_search.vectors` is the search CANDIDATE
+   * source; `ci_search.embeddings` only re-ranks. A type whose embeddings are
+   * complete and whose vectors are absent scores a perfect embed ratio, trips
+   * no coverage alarm, and answers no search — and because the backfill sweep
+   * anti-joins on embeddings, it will never self-heal. If this case does not
+   * raise a flag of its own, the report is confidently wrong.
+   */
+  it('flags a type that is 100% embedded but has NO vectors (reads healthy, invisible to search)', () => {
+    const health = buildIndexHealth(366862, 366862, 0);
+
+    expect(health.ratio).toBe(1);
+    expect(health.alarm).toBe(false);
+    expect(health.underThreshold).toBe(false);
+
+    expect(health.vectored).toBe(0);
+    expect(health.vectorRatio).toBe(0);
+    expect(health.vectorAlarm).toBe(true);
+    expect(health.divergence).toBe(1);
+    expect(health.divergent).toBe(true);
+  });
+
+  it('does not flag an empty type on either side', () => {
+    const health = buildIndexHealth(0, 0, 0);
+
+    expect(health.vectorAlarm).toBe(false);
+    expect(health.divergent).toBe(false);
+    expect(health.divergence).toBe(0);
+  });
+
+  it('tolerates in-flight skew between the two tables but flags a real gap', () => {
+    // 1% behind: one listener mid-write, not a hole.
+    expect(buildIndexHealth(1000, 1000, 990).divergent).toBe(false);
+    // 20% behind: a fifth of the type cannot be found.
+    expect(buildIndexHealth(1000, 1000, 800).divergent).toBe(true);
+  });
+
+  it('is symmetric — vectors ahead of embeddings diverges too', () => {
+    const health = buildIndexHealth(1000, 500, 1000);
+
+    expect(health.divergence).toBeCloseTo(0.5, 6);
+    expect(health.divergent).toBe(true);
+    expect(health.vectorAlarm).toBe(false);
+  });
+
+  it('keeps every buildCoverage rule on the embedding side', () => {
+    expect(buildIndexHealth(42376, 2743, 42376)).toMatchObject({
+      total: 42376,
+      embedded: 2743,
+      ratio: 2743 / 42376,
+      alarm: false,
+      underThreshold: true,
+    });
+  });
+});
+
+describe('EmbedCoverageTelemetryService.computeIndexHealth', () => {
+  it('counts BOTH index tables per type and reports the vector hole separately', async () => {
+    const { service } = makeHealthService(
+      { content: 366862, event: 42376 },
+      { content: 366862, event: 42376 },
+      { content: 0, event: 42376 },
+    );
+
+    const report = await service.computeIndexHealth(['content', 'event']);
+
+    expect(report.perType.content.embedded).toBe(366862);
+    expect(report.perType.content.vectored).toBe(0);
+    // Nothing on the embedding side is wrong, which is exactly the trap.
+    expect(report.alarms).toEqual([]);
+    expect(report.underThreshold).toEqual([]);
+    // ...and the vector side is the alarm.
+    expect(report.vectorAlarms).toEqual(['content']);
+    expect(report.divergent).toEqual(['content']);
+  });
+
+  it('measures every indexable type by default', async () => {
+    const { service } = makeHealthService({}, {}, {});
+
+    const report = await service.computeIndexHealth();
+
+    expect(Object.keys(report.perType)).toHaveLength(INDEXABLE_ENTITIES.length);
+  });
+
+  it('runs on ONE pinned connection under a statement timeout, and resets it', async () => {
+    const { service, dataSource, runner, statements } = makeHealthService(
+      { content: 10 },
+      { content: 10 },
+      { content: 10 },
+    );
+
+    await service.computeIndexHealth(['content'], { statementTimeoutMs: 5000 });
+
+    expect(dataSource.createQueryRunner).toHaveBeenCalledTimes(1);
+    expect(statements[0]).toBe('SET statement_timeout = 5000');
+    expect(statements).toContain('RESET statement_timeout');
+    expect(runner.release).toHaveBeenCalledTimes(1);
+    // Never the shared pool helper: that is what would spread the sweep across
+    // connections instead of pinning it to one.
+    expect(dataSource.query).not.toHaveBeenCalled();
+  });
+
+  it('releases the connection even when a count throws', async () => {
+    const { service, runner } = makeHealthService({ content: 10 }, {}, {}, (sql) => {
+      if (sql.includes('ci_search.vectors')) {
+        throw new Error('canceling statement due to statement timeout');
+      }
+    });
+
+    await expect(service.computeIndexHealth(['content'])).rejects.toThrow(/statement timeout/);
+    expect(runner.release).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The per-statement timeout bounds ONE count, not the run: 54 counts each
+   * finishing just inside a 120s timeout would hold a pooled connection for
+   * ~1.8 hours. The wall-clock budget is what actually caps the hold, so it
+   * has to be checked before issuing the next count and has to abandon the run
+   * rather than return the types it managed to measure — a partial snapshot
+   * reads as a coverage collapse.
+   */
+  it('abandons the sweep once the wall-clock budget is spent, mid-run', async () => {
+    const nowSpy = jest.spyOn(Date, 'now');
+
+    try {
+      let clock = 1_000_000;
+      nowSpy.mockImplementation(() => clock);
+
+      const counted: string[] = [];
+      const { service, runner, statements } = makeHealthService(
+        { content: 10, event: 10, communication: 10 },
+        { content: 10, event: 10, communication: 10 },
+        { content: 10, event: 10, communication: 10 },
+        (sql) => {
+          counted.push(sql);
+          // Each count burns 400ms of the 1000ms budget.
+          clock += 400;
+        },
+      );
+
+      await expect(
+        service.computeIndexHealth(['content', 'event', 'communication'], { budgetMs: 1000 }),
+      ).rejects.toThrow(/wall-clock budget spent after 1\/3 types/);
+
+      // content's three counts fit (0/400/800ms in); event's first is refused
+      // at 1200ms rather than issued and paid for.
+      expect(counted).toHaveLength(3);
+      // The connection still goes back clean — the budget is a bound on the
+      // hold, not a way to leak one.
+      expect(statements).toContain('RESET statement_timeout');
+      expect(runner.release).toHaveBeenCalledTimes(1);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('completes normally when the sweep fits inside its budget', async () => {
+    const { service } = makeHealthService({ content: 10 }, { content: 10 }, { content: 10 });
+
+    const report = await service.computeIndexHealth(['content'], { budgetMs: 60_000 });
+
+    expect(report.perType.content.total).toBe(10);
+  });
+
+  it('defaults the budget well above the real cost of a sweep', () => {
+    expect(DEFAULT_HEALTH_SWEEP_BUDGET_MS).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it('warns about the invisible-to-search types by name', async () => {
+    const { service, logger } = makeHealthService({ content: 100 }, { content: 100 }, { content: 0 });
+
+    await service.computeIndexHealth(['content']);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('NO search vectors'), {
+      vectorAlarms: ['content'],
+    });
   });
 });
