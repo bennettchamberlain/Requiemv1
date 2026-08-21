@@ -22,6 +22,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { UserEntity } from '@ci/domains/user';
 
+import { AskExpiryCron } from './cron/AskExpiryCron';
 import { AskAnswerEntity } from './entities/AskAnswerEntity';
 import { AskAuditEntity } from './entities/AskAuditEntity';
 import { AskEntity } from './entities/AskEntity';
@@ -29,6 +30,7 @@ import { AskGrantEntity } from './entities/AskGrantEntity';
 import { AskAnswerService } from './services/AskAnswerService';
 import { AskAuditService } from './services/AskAuditService';
 import { AskExecutorService } from './services/AskExecutorService';
+import { AskExpiryService } from './services/AskExpiryService';
 import { AskRateLimitService } from './services/AskRateLimitService';
 import { AskService } from './services/AskService';
 import { GrantService } from './services/GrantService';
@@ -51,6 +53,10 @@ import { GrantService } from './services/GrantService';
     AskRateLimitService,
     AskExecutorService,
     AskAnswerService,
+    AskExpiryService,
+    // Registered as a provider so its @Cron method is discovered by the
+    // scheduler; nothing injects it, so it is deliberately NOT exported.
+    AskExpiryCron,
   ],
   exports: [
     AskService,
@@ -59,6 +65,7 @@ import { GrantService } from './services/GrantService';
     AskRateLimitService,
     AskExecutorService,
     AskAnswerService,
+    AskExpiryService,
   ],
 })
 export class AsksModule {}
@@ -71,6 +78,7 @@ export {
   AskRateLimitService,
   AskExecutorService,
   AskAnswerService,
+  AskExpiryService,
 };
 export { evaluateGrant, canonicalDataClass, canonicalQueryType, isGrantActive } from './grantMatch';
 export { checkSlidingWindow } from './rateLimit';

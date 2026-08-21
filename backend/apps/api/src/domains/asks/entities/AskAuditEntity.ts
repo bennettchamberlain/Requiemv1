@@ -52,6 +52,22 @@ export class AskAuditEntity {
   disclosedEntities!: string[];
 
   /**
+   * HOW MANY items the asker actually received, post-ceiling.
+   *
+   * Not derivable from {@link disclosedEntities}, and that is the whole point:
+   * only the `retrieval` form itemizes, so a `count` answer that handed over a
+   * real magnitude audited as an empty list — an owner reading their disclosure
+   * history saw "nothing was shared" for a disclosure that happened. The
+   * magnitude lives on `ci.ask_answers` too, but that row is the answer payload
+   * and is CASCADE-deleted with the ask; the audit outlives both and needs its
+   * own copy.
+   *
+   * Zero for `declined` and `expired`, where nothing crossed at all.
+   */
+  @Column({ type: 'int', name: 'disclosed_count', default: 0 })
+  disclosedCount!: number;
+
+  /**
    * The entity ids the answer was computed over: post-redaction, PRE-ceiling.
    * Never disclosed to the asker — this is the owner's own record of what their
    * box read on the asker's behalf. Kept separate from
@@ -76,6 +92,7 @@ export class AskAuditEntity {
       consentBasis: entity.consentBasis,
       outcome: entity.outcome,
       disclosedEntities: entity.disclosedEntities,
+      disclosedCount: entity.disclosedCount,
       backingEntities: entity.backingEntities,
       createdAt: entity.createdAt,
     };

@@ -209,6 +209,15 @@ export interface RecordAskAuditDto {
   /** Entity references the ASKER actually received. Empty for non-itemizing forms. */
   disclosedEntities?: string[];
   /**
+   * How many items the asker received. Kept SEPARATE from
+   * {@link disclosedEntities} because only the `retrieval` form itemizes — for
+   * every other form the references are empty by construction while the count
+   * is the actual disclosure. Omitted, it falls back to the itemized length,
+   * which is the right answer for `retrieval` and for the terminal outcomes
+   * (`declined` / `expired`) that disclose nothing.
+   */
+  disclosedCount?: number;
+  /**
    * Entity ids the answer was computed over (post-redaction, PRE-ceiling).
    * Owner-visible accountability only — never disclosed to the asker.
    */
