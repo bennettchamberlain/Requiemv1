@@ -586,7 +586,7 @@ export function ThingsPage() {
     if (condition) {
       chips.push({
         id: 'condition',
-        label: humanizeEnum(condition),
+        label: humanizeEnum(condition) ?? condition,
         onClear: () => {
           setCondition(null);
           markFilterChanged();
@@ -597,7 +597,7 @@ export function ThingsPage() {
     if (lifecycleState) {
       chips.push({
         id: 'status',
-        label: humanizeEnum(lifecycleState),
+        label: humanizeEnum(lifecycleState) ?? lifecycleState,
         onClear: () => {
           setLifecycleState(null);
           markFilterChanged();
