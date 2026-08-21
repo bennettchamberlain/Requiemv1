@@ -6,6 +6,7 @@ import {
   fetchJson,
   FetchJsonError,
   getApiBaseUrl,
+  persistApiBaseUrl,
   getLaunchUrl,
   isIosPlatform,
   isNativePlatform,
@@ -298,6 +299,11 @@ type ReturnValue = [
      * key so the phone does not do a second Safari/login hop.
      */
     completePortalMemoryConnect: (portalBearer: string, memoryOrigin?: string) => Promise<boolean>;
+    /**
+     * Fallback when the Portal bearer is rejected (401): sign in with the same
+     * Memory email/password the browser uses, then mint a key from that JWT.
+     */
+    completeMemoryPasswordConnect: (email: string, password: string, memoryOrigin: string) => Promise<boolean>;
   },
 ];
 
@@ -377,6 +383,44 @@ function useAuth(): ReturnValue {
     },
     [],
   );
+
+  const completeMemoryPasswordConnect = useCallback(async (email: string, password: string, memoryOrigin: string) => {
+    persistApiBaseUrl(memoryOrigin);
+    await primeCsrfCookie();
+
+    const native = isNativePlatform();
+    const data = await fetchJson<AuthResponse>('/api/authenticate', {
+      method: 'POST',
+      headers: withCsrfHeader({
+        'Content-Type': 'application/json',
+      }),
+      credentials: native ? 'omit' : 'include',
+      body: JSON.stringify({
+        username: email,
+        password,
+      }),
+    });
+
+    const jwt = data?.accessToken ?? null;
+
+    if (!jwt) {
+      throw new Error('Memory Server did not return a session.');
+    }
+
+    if (native) {
+      const key = await mintAndStoreApiKey(jwt, memoryOrigin);
+
+      if (!key) {
+        throw new Error('Memory Server did not return an API key.');
+      }
+
+      setNativeApiKey(key);
+    } else {
+      setAccessToken(jwt);
+    }
+
+    return true;
+  }, []);
 
   const logout = useCallback(async () => {
     await disconnectAndClearPowerSync();
@@ -644,6 +688,7 @@ function useAuth(): ReturnValue {
       logout,
       signup,
       completePortalMemoryConnect,
+      completeMemoryPasswordConnect,
     },
   ];
 }

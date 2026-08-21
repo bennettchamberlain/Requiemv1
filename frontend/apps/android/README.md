@@ -123,26 +123,21 @@ xcrun simctl launch booted com.companionintelligence.app
 ## Store releases (`.github/workflows/mobile-release.yml`)
 
 `mobile-build.yml` above is the **credential-free** lane — unsigned artifacts, no secrets.
-`mobile-release.yml` is the **distribution** lane: a signed `.ipa` to TestFlight and a
+`mobile-release.yml` is the **only** store lane: a signed `.ipa` to TestFlight and a
 signed `.aab` to Play's internal track.
 
 ```bash
-# Rehearsal: build + sign + validate with the stores, but submit nothing.
-# Dispatch on a BRANCH ref — see the dry-run trap below.
-gh workflow run mobile-release.yml --ref <branch> -f dry_run=true
+# Rehearsal: build + sign + validate, submit nothing. Dispatch on a BRANCH.
+gh workflow run mobile-release.yml --ref main -f dry_run=true -f platform=android
 
-# The real thing.
-gh workflow run mobile-release.yml --ref <tag> -f dry_run=false -f version_name=0.1.0
+# The real thing — tag the commit you want, then push the tag.
+git tag -a android-v1.0.0 -m "Android 1.0.0"
+git push origin android-v1.0.0
 ```
 
-> ⚠️ **Manual dispatch only.** The `mobile-release-v*` tag trigger was removed —
-> **pushing that tag no longer builds or submits anything.** Dispatch on the ref
-> instead, as above. The `dry_run` input defaults to `true`.
-
-> ⚠️ **`dry_run` is ignored on a tag ref.** The version job forces `dry_run=false`
-> whenever `GITHUB_REF` starts with `refs/tags/` — a rule written when a tag *push* was
-> the only way to reach that ref, and still in force for a dispatch. **Rehearse on a
-> branch ref**; dispatching on a tag submits for real.
+Tag prefixes pick the lane: `ios-v*` (TestFlight), `android-v*` (Play internal),
+`mobile-release-v*` (both). A tag **push** always submits. A manual dispatch
+honours `dry_run` even if `--ref` points at a tag.
 
 > GitHub only exposes a `workflow_dispatch` workflow that exists on the default branch,
 > so a copy living only on a feature branch answers

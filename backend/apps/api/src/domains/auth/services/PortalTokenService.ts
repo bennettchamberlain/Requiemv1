@@ -39,6 +39,21 @@ export class PortalTokenService implements PortalTokenVerifier {
     return config.auth.portal.enabled === true;
   }
 
+  /**
+   * better-auth's jwt() plugin defaults `aud` to the issuer URL (BASE_URL).
+   * OIDC id_tokens use `aud === client_id`. Accept both so a phone that only
+   * holds the access token is not 401'd while the id_token would have worked.
+   */
+  private acceptedAudiences(): string[] {
+    const configured = config.auth.portal.audience
+      .split(',')
+      .map((a) => a.trim())
+      .filter(Boolean);
+    const issuer = config.auth.portal.issuer?.trim();
+
+    return [...new Set(issuer ? [...configured, issuer] : configured)];
+  }
+
   private getJwks(): ReturnType<typeof createRemoteJWKSet> {
     if (!this.jwks) {
       this.jwks = createRemoteJWKSet(new URL(config.auth.portal.jwksUri));
@@ -61,12 +76,8 @@ export class PortalTokenService implements PortalTokenVerifier {
     try {
       ({ payload } = await jwtVerify(token, this.getJwks(), {
         issuer: config.auth.portal.issuer,
-        // The portal issues per-client tokens (aud === client_id), so accept any
-        // first-party client audience. PORTAL_OIDC_AUDIENCE is a comma-separated list.
-        audience: config.auth.portal.audience
-          .split(',')
-          .map((a) => a.trim())
-          .filter(Boolean),
+        // First-party client ids plus the issuer URL (better-auth access tokens).
+        audience: this.acceptedAudiences(),
       }));
     } catch (error) {
       // Wrong signer / issuer / audience / expired — not a valid portal token,
@@ -111,12 +122,7 @@ export class PortalTokenService implements PortalTokenVerifier {
     // verification when `aud` does not intersect, so a token addressed to a
     // different Companion is rejected rather than silently honoured.
     const audience =
-      options?.audience && options.audience.length > 0
-        ? options.audience
-        : config.auth.portal.audience
-            .split(',')
-            .map((a) => a.trim())
-            .filter(Boolean);
+      options?.audience && options.audience.length > 0 ? options.audience : this.acceptedAudiences();
 
     try {
       const { payload } = await jwtVerify(token, this.getJwks(), {

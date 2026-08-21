@@ -9,7 +9,7 @@ import { NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useFeatures } from '@/common/feature';
 import { appHomePath } from '@/lib/appHome';
 
-import { SETTINGS_SECTIONS, settingsPathToProfile } from './settingsNav';
+import { settingsPathToProfile, visibleSettingsSections } from './settingsNav';
 import { SettingsSectionBody } from './SettingsSections';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -82,7 +82,7 @@ export function SettingsPage() {
                 Settings
               </p>
 
-              {SETTINGS_SECTIONS.map((section) => {
+              {visibleSettingsSections().map((section) => {
                 const Icon = section.icon;
 
                 return (

@@ -32,13 +32,20 @@ export interface OidcTokens {
   expiresIn: number | null;
 }
 
-/** Read `email` from an OIDC id_token payload. Display-only — not a signature check. */
-export function emailFromIdToken(idToken: string | null | undefined): string | null {
-  if (!idToken) {
+export interface JwtClaims {
+  aud?: string | string[];
+  email?: string;
+  exp?: number;
+  iss?: string;
+}
+
+/** Decode a JWT payload without verifying the signature. Display / routing only. */
+export function decodeJwtPayload(token: string | null | undefined): JwtClaims | null {
+  if (!token) {
     return null;
   }
 
-  const payload = idToken.split('.')[1];
+  const payload = token.split('.')[1];
 
   if (!payload) {
     return null;
@@ -46,12 +53,63 @@ export function emailFromIdToken(idToken: string | null | undefined): string | n
 
   try {
     const padded = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const json = JSON.parse(atob(padded)) as { email?: unknown };
 
-    return typeof json.email === 'string' && json.email.trim() ? json.email.trim() : null;
+    return JSON.parse(atob(padded)) as JwtClaims;
   } catch {
     return null;
   }
+}
+
+/** Read `email` from an OIDC id_token payload. Display-only — not a signature check. */
+export function emailFromIdToken(idToken: string | null | undefined): string | null {
+  const email = decodeJwtPayload(idToken)?.email;
+
+  return typeof email === 'string' && email.trim() ? email.trim() : null;
+}
+
+/**
+ * Audiences Memory's PortalTokenService accepts today (auth.portal.audience).
+ * better-auth access tokens default `aud` to the Portal issuer URL, which is
+ * not on that list — those 401 at POST /api/keys. Prefer a token whose aud is
+ * a first-party client id (the id_token), and skip expired JWTs.
+ */
+const MEMORY_PORTAL_AUDIENCES = new Set([
+  'ci-server',
+  'ci-hub',
+  'ci-import-tools',
+  'ci-browser-extension',
+  'ci-even',
+  'ci-applet',
+]);
+
+function audienceValues(aud: JwtClaims['aud']): string[] {
+  if (!aud) {
+    return [];
+  }
+
+  return (Array.isArray(aud) ? aud : [aud]).filter((value) => value.length > 0);
+}
+
+export function isJwtExpired(token: string, nowSeconds = Date.now() / 1000): boolean {
+  const exp = decodeJwtPayload(token)?.exp;
+
+  return typeof exp === 'number' && exp < nowSeconds - 30;
+}
+
+/** Portal bearers to try against Memory `/api/keys`, id_token first when it is still valid. */
+export function selectMemoryPortalBearers(tokens: Array<string | null | undefined>): string[] {
+  const unique = [...new Set(tokens.filter((value): value is string => Boolean(value)))];
+  const notExpired = unique.filter((token) => !isJwtExpired(token));
+  const liveJwts = notExpired.filter((token) => decodeJwtPayload(token));
+  const preferred = liveJwts.filter((token) =>
+    audienceValues(decodeJwtPayload(token)?.aud).some((aud) => MEMORY_PORTAL_AUDIENCES.has(aud)),
+  );
+
+  if (preferred.length > 0) {
+    return preferred;
+  }
+
+  return liveJwts.length > 0 ? liveJwts : notExpired;
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {

@@ -57,9 +57,11 @@ make build
 `packageManager`, `uv` present — any mismatch exits 1), then hard-fails unless `overmind`,
 `caddy` (admin API live on `:2019`) and `ollama` (on `:11434`) are present.
 
-**CI is `workflow_dispatch`-only.** Nothing in `.github/workflows/` runs on push,
-pull request, tag or schedule — an absent check means nobody dispatched it, not
-that anything passed. Run one with `gh workflow run <file> --ref <branch-or-tag>`;
+**CI is `workflow_dispatch`-only, except mobile store uploads.** Check workflows
+do not run on push, pull request, tag or schedule — an absent check means nobody
+dispatched it, not that anything passed. **`mobile-release.yml` is the exception:**
+push `ios-v*`, `android-v*`, or `mobile-release-v*` to upload to TestFlight / Play
+internal. Everything else: `gh workflow run <file> --ref <branch-or-tag>`;
 see `docs/CI.md`.
 
 See `README.md` for the full prerequisite setup and the complete `make` command reference.

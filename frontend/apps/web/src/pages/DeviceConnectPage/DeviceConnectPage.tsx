@@ -6,7 +6,13 @@ import { useNavigate } from 'react-router-dom';
 
 import { useAuth, useCurrentUser } from '@/hooks';
 
-import { loginWithPortalOidc, OidcCancelledError, resumePendingOidcLogin } from './oidc';
+import {
+  emailFromIdToken,
+  loginWithPortalOidc,
+  OidcCancelledError,
+  resumePendingOidcLogin,
+  selectMemoryPortalBearers,
+} from './oidc';
 import {
   DEFAULT_PORTAL_URL,
   listMemoryServers,
@@ -56,7 +62,8 @@ function readStoredPortalAuth(): PortalAuth | null {
  */
 export function DeviceConnectPage() {
   const navigate = useNavigate();
-  const [{ authenticated, initializing }, { completePortalMemoryConnect }] = useAuth();
+  const [{ authenticated, initializing }, { completePortalMemoryConnect, completeMemoryPasswordConnect }] =
+    useAuth();
   const { user, loading: userLoading, error: userError } = useCurrentUser();
 
   // Do not leave this page until Memory has accepted the minted key and `me`
@@ -73,6 +80,9 @@ export function DeviceConnectPage() {
   const [oidcController, setOidcController] = useState<AbortController | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [memoryLoginOrigin, setMemoryLoginOrigin] = useState<string | null>(null);
+  const [memoryEmail, setMemoryEmail] = useState('');
+  const [memoryPassword, setMemoryPassword] = useState('');
 
   useEffect(() => {
     if (!initializing && authenticated && user) {
@@ -243,18 +253,31 @@ export function DeviceConnectPage() {
 
     setConnectingId(device.id);
     setSignInError(null);
+    setMemoryLoginOrigin(null);
 
     try {
       const origin = resolveHttpOrigin(device.memoryUrl);
       await probeMemoryOrigin(origin);
 
-      const bearers =
+      const rawBearers =
         auth?.kind === 'oauth'
           ? [auth.idToken, auth.token].filter((value): value is string => Boolean(value))
           : [];
+      const bearers = selectMemoryPortalBearers(rawBearers);
+
+      if (rawBearers.length === 0) {
+        setSignInError('Sign in with Companion Intelligence first, then pick this server again.');
+        setConnectingId(null);
+
+        return;
+      }
 
       if (bearers.length === 0) {
-        setSignInError('Sign in with Companion Intelligence first, then pick this server again.');
+        setSignInError(
+          'Your Companion Intelligence sign-in expired. Sign in again, or use the Memory email and password from the browser.',
+        );
+        setMemoryLoginOrigin(origin);
+        setMemoryEmail(emailFromIdToken(auth?.idToken) ?? '');
         setConnectingId(null);
 
         return;
@@ -281,14 +304,50 @@ export function DeviceConnectPage() {
         ? lastError
         : new Error('Could not sign in to this Memory Server with your Portal account.');
     } catch (err) {
+      const origin = (() => {
+        try {
+          return resolveHttpOrigin(device.memoryUrl);
+        } catch {
+          return null;
+        }
+      })();
+      const unauthorized = /unauthorized/i.test(err instanceof Error ? err.message : '');
+
       setSignInError(
         err instanceof Error && err.name === 'AbortError'
           ? 'Could not reach your Companion Memory (timed out).'
           : /load failed|failed to fetch/i.test(err instanceof Error ? err.message : '')
             ? 'Could not reach this Memory Server from the phone (webview blocked the request). Retry after the app reloads native HTTP.'
-            : `Could not sign in to ${device.memoryUrl}. ${err instanceof Error ? err.message : ''}`.trim(),
+            : unauthorized
+              ? 'This Memory Server is online, but it did not accept your Companion Intelligence token. Sign in with the email and password you use in the browser.'
+              : `Could not sign in to ${device.memoryUrl}. ${err instanceof Error ? err.message : ''}`.trim(),
       );
+      if (unauthorized && origin) {
+        setMemoryLoginOrigin(origin);
+        setMemoryEmail(emailFromIdToken(auth?.idToken) ?? '');
+      }
       setConnectingId(null);
+    }
+  };
+
+  const handleMemoryPassword = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!memoryLoginOrigin || !memoryEmail || !memoryPassword) {
+      return;
+    }
+
+    setBusy(true);
+    setSignInError(null);
+
+    try {
+      await completeMemoryPasswordConnect(memoryEmail, memoryPassword, memoryLoginOrigin);
+    } catch (err) {
+      setSignInError(
+        err instanceof Error ? err.message : 'Could not sign in to this Memory Server with that password.',
+      );
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -444,7 +503,46 @@ export function DeviceConnectPage() {
                   );
                 })
               )}
-              {signInError ? <p className="text-destructive text-sm">{signInError}</p> : null}
+              {signInError ? (
+                <p className="text-destructive text-sm" data-testid="connect-signin-error" role="alert">
+                  {signInError}
+                </p>
+              ) : null}
+              {memoryLoginOrigin ? (
+                <form onSubmit={(event) => void handleMemoryPassword(event)} className="flex flex-col gap-3">
+                  <Input
+                    type="email"
+                    className={TOUCH}
+                    aria-label="Memory email"
+                    placeholder="Memory email"
+                    autoComplete="username"
+                    inputMode="email"
+                    value={memoryEmail}
+                    onChange={(e) => setMemoryEmail(e.target.value)}
+                    required
+                    data-testid="memory-email"
+                  />
+                  <PasswordInput
+                    className={TOUCH}
+                    aria-label="Memory password"
+                    placeholder="Memory password"
+                    autoComplete="current-password"
+                    value={memoryPassword}
+                    onChange={(e) => setMemoryPassword(e.target.value)}
+                    required
+                    data-testid="memory-password"
+                  />
+                  <LoadingButton
+                    type="submit"
+                    className={TOUCH}
+                    loading={busy}
+                    disabled={busy || !memoryEmail || !memoryPassword}
+                    data-testid="memory-password-submit"
+                  >
+                    Sign in to this Memory Server
+                  </LoadingButton>
+                </form>
+              ) : null}
               <div className="mt-2 flex items-center justify-between">
                 <Button
                   variant="ghost"

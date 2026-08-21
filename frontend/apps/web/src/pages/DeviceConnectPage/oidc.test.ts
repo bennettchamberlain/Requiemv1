@@ -7,6 +7,7 @@ import {
   OIDC_REDIRECT_URI,
   OidcCancelledError,
   resumePendingOidcLogin,
+  selectMemoryPortalBearers,
 } from './oidc';
 import { DEFAULT_PORTAL_URL } from './portal-client';
 
@@ -204,5 +205,32 @@ describe('emailFromIdToken', () => {
     expect(emailFromIdToken(null)).toBeNull();
     expect(emailFromIdToken('not-a-jwt')).toBeNull();
     expect(emailFromIdToken(tokenWithPayload({ sub: 'user-1' }))).toBeNull();
+  });
+});
+
+describe('selectMemoryPortalBearers', () => {
+  function tokenWithPayload(payload: unknown): string {
+    const json = btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    return `hdr.${json}.sig`;
+  }
+
+  it('prefers an unexpired id_token whose aud Memory accepts', () => {
+    const idToken = tokenWithPayload({
+      aud: 'ci-server',
+      exp: Math.floor(Date.now() / 1000) + 600,
+    });
+    const accessToken = tokenWithPayload({
+      aud: 'https://hub.ci.computer',
+      exp: Math.floor(Date.now() / 1000) + 600,
+    });
+
+    expect(selectMemoryPortalBearers([idToken, accessToken])).toEqual([idToken]);
+  });
+
+  it('drops expired JWTs and keeps opaque tokens for the mint attempt', () => {
+    const expired = tokenWithPayload({ aud: 'ci-server', exp: Math.floor(Date.now() / 1000) - 120 });
+
+    expect(selectMemoryPortalBearers([expired, 'opaque-at'])).toEqual(['opaque-at']);
   });
 });

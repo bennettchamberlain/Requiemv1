@@ -10,7 +10,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  */
 const config: CapacitorConfig = {
   appId: 'com.companionintelligence.app',
-  appName: 'Companion',
+  appName: 'Memory',
   webDir: '../web/dist',
   server: {
     androidScheme: 'https',

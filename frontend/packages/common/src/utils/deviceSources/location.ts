@@ -43,13 +43,12 @@
  * until the appliance has a device-registration flow; when it does, populate `device_id`
  * and keep the triple as-is, and history stays intact.
  *
- * ## Foreground only
+ * ## Foreground vs background
  *
- * Nothing here asks for background location. Per `DEVICE_DATA_COMPLIANCE.md` §3.4 that
- * would pull in Play's background-location declaration plus a video review, and a
- * "passive life timeline" framing reads to a reviewer as untargeted tracking. The capture
- * runs while the app is in the foreground; the outbox is what makes a fix taken with no
- * connectivity survive until there is one.
+ * This module shapes and queues a fix. It does not talk to Core Location. On iOS,
+ * `LocationTracker` (capacitor-local-hub) owns sampling — including significant-change
+ * wakes — and writes the same outbox envelope. The web / Android-foreground path still
+ * uses `navigator.geolocation`. Android Always is out of scope this pass (Play video).
  */
 
 import { fetchJson } from '../fetchJson';
