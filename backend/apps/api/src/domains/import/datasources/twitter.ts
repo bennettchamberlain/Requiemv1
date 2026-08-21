@@ -868,6 +868,13 @@ export class TwitterFileImporter implements FileImporter {
       return;
     }
 
+    // How many rows tweets.js/tweet.js actually offered the parser — the
+    // floor `reconciled` checks every produced/dropped tweet against. A tweet
+    // whose media is missing ALSO drops (see collectTweetMedia/pushRetweet)
+    // without removing the tweet itself, so those report their own extra
+    // consumed() unit at the point they drop, additive to this one.
+    params.pipeline.consumed?.(tweets.length);
+
     // Long-form bodies, which tweets.js only carries truncated.
     const noteTexts = noteTweetTexts(dataDir, tweets, params);
     const index = mediaIndex(path.join(dataDir, 'tweets_media'));
@@ -877,11 +884,15 @@ export class TwitterFileImporter implements FileImporter {
     for (const t of tweets) {
       const id = t.id_str || t.id;
       if (!id) {
+        params.pipeline.drop?.('tweet_without_id');
+
         continue;
       }
 
       const created = parseDate(t.created_at);
       if (!timeframeContains(params.timeframe, created)) {
+        params.pipeline.drop?.('outside_timeframe');
+
         continue;
       }
 
@@ -998,7 +1009,11 @@ export class TwitterFileImporter implements FileImporter {
     // attachment lane (that belongs to communications), so it isn't imported.
     const mediaCount = mediaEntriesOf(t).length;
     if (mediaCount) {
+      // A second ledger event riding the same tweet: the retweet itself still
+      // gets pushed below, so this drop is additive to the tweets.length unit
+      // already reported for this row, not a replacement for it.
       params.pipeline.drop?.('retweet_media_not_imported', `${id} (${mediaCount})`);
+      params.pipeline.consumed?.(1);
     }
 
     params.pipeline.push({
@@ -1050,8 +1065,11 @@ export class TwitterFileImporter implements FileImporter {
       const file = findMediaFile(index, id, candidates, claimed);
       if (!file) {
         // The archive references media whose bytes it didn't ship — record the
-        // loss instead of silently dropping the attachment.
+        // loss instead of silently dropping the attachment. The tweet itself
+        // still gets pushed, so this is an extra ledger unit riding the same
+        // tweets.length row, not a substitute for it.
         params.pipeline.drop?.('media_file_missing', urlOnX ?? `${id} (${m.type ?? 'media'})`);
+        params.pipeline.consumed?.(1);
         continue;
       }
 
@@ -1092,6 +1110,13 @@ export class TwitterFileImporter implements FileImporter {
         continue;
       }
 
+      // How many conversation events this lane's file actually offered the
+      // parser. A join/leave/rename event (no messageCreate) is a real,
+      // expected member of this count — see the `dm_non_message_event` drop
+      // below — not a loss, so it still needs its own consumed() unit.
+      const laneTotal = conversations.reduce((sum, c) => sum + (c.messages?.length ?? 0), 0);
+      params.pipeline.consumed?.(laneTotal);
+
       const index = mediaIndex(path.join(dataDir, lane.dir));
       const claimed = new Set<string>();
       // Group recipients live in membership events, not on the messages — and
@@ -1116,11 +1141,15 @@ export class TwitterFileImporter implements FileImporter {
           // Non-message conversation events (joins, leaves, renames) have no
           // messageCreate — nothing was communicated.
           if (!dm?.id) {
+            params.pipeline.drop?.('non_message');
+
             continue;
           }
 
           const created = parseDate(dm.createdAt);
           if (!timeframeContains(params.timeframe, created)) {
+            params.pipeline.drop?.('outside_timeframe');
+
             continue;
           }
 
@@ -1197,7 +1226,10 @@ export class TwitterFileImporter implements FileImporter {
     for (const url of dm.mediaUrls ?? []) {
       const file = findMediaFile(index, dm.id!, [url], claimed);
       if (!file) {
+        // The DM itself still gets pushed, so this is an extra ledger unit
+        // riding the same laneTotal row, not a substitute for it.
         params.pipeline.drop?.('media_file_missing', url);
+        params.pipeline.consumed?.(1);
         continue;
       }
 
