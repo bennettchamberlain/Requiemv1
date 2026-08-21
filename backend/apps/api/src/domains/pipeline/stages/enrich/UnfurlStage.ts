@@ -135,7 +135,11 @@ export class UnfurlStage implements Stage {
     return results;
   }
 
-  private toStageResult(outcome: ReturnType<UnfurlService['resolveMany']> extends Promise<Map<string, infer R>> ? R | undefined : never): StageResult {
+  private toStageResult(
+    outcome: ReturnType<UnfurlService['resolveMany']> extends Promise<Map<string, infer R>>
+      ? R | undefined
+      : never,
+  ): StageResult {
     if (!outcome) {
       return { outcome: 'failed', reason: 'resolver_no_answer' };
     }

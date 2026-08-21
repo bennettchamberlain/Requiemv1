@@ -27,9 +27,36 @@ const THEME_MODES = [
  * what they are — settings — and the drawer should not spend three of its rows
  * on appearance.
  */
+
+/** Settings, theme, and log out — the body of the account entry. */
+export function NavUserMenu() {
+  const [, { logout }] = useAuth();
+  const location = useLocation();
+
+  return (
+    <div className="flex flex-col gap-1 pt-1">
+      {/* `backgroundLocation` keeps Settings an overlay over the page you were
+          on, which is what it has always been. */}
+      <SubRow
+        icon={<Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
+        label="Settings"
+        to="/settings/appearance"
+        state={{ backgroundLocation: location }}
+      />
+
+      <ThemeSubmenu />
+
+      <SubRow
+        icon={<LogOut className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
+        label="Log out"
+        onClick={logout}
+      />
+    </div>
+  );
+}
+
 export function NavUser() {
   const { expanded } = usePowerRail();
-  const [, { logout }] = useAuth();
   const { user } = useCurrentUser();
   const location = useLocation();
 
@@ -96,24 +123,7 @@ export function NavUser() {
         animates with Radix's --radix-collapsible-content-height.
       */}
       <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-        <div className="flex flex-col gap-1 pt-1">
-          {/* `backgroundLocation` keeps Settings an overlay over the page you were
-              on, which is what it has always been. */}
-          <SubRow
-            icon={<Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
-            label="Settings"
-            to="/settings/appearance"
-            state={{ backgroundLocation: location }}
-          />
-
-          <ThemeSubmenu />
-
-          <SubRow
-            icon={<LogOut className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
-            label="Log out"
-            onClick={logout}
-          />
-        </div>
+        <NavUserMenu />
       </Collapsible.Content>
     </Collapsible>
   );

@@ -765,7 +765,15 @@ export function ThingsPage() {
   } else {
     content = (
       <PageContent ref={scrollRef} className="gap-4 p-0">
-        <MemoryHubShell actions={<Button onClick={() => setCreateOpen(true)}>New thing</Button>}>
+        <MemoryHubShell
+          actions={
+            isMobile ? undefined : (
+              <Button type="button" onClick={() => setCreateOpen(true)}>
+                New thing
+              </Button>
+            )
+          }
+        >
           <Tabs defaultValue="things" className="flex flex-col gap-4 px-4 pb-4">
             <Tabs.List className="self-start">
               <Tabs.Trigger value="things">Things</Tabs.Trigger>
@@ -822,10 +830,15 @@ export function ThingsPage() {
 
               {isMobile ? (
                 <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-                  <Sheet.Content side="bottom" className="max-h-[85dvh] gap-0">
+                  <Sheet.Content
+                    side="bottom"
+                    className="bottom-0 max-h-[min(85dvh,var(--vv-height,100dvh))] rounded-b-none pb-[max(1rem,var(--safe-area-bottom),var(--keyboard-inset,0px))] gap-0"
+                  >
                     <Sheet.Header>
                       <Sheet.Title>Filter things</Sheet.Title>
-                      <Sheet.Description>Narrow the list by category, brand, condition, or code.</Sheet.Description>
+                      <Sheet.Description>
+                        Narrow the list by category, brand, condition, or code.
+                      </Sheet.Description>
                     </Sheet.Header>
                     <div className="flex flex-col gap-3 overflow-y-auto px-4 pb-4">
                       <ThingsFilterFields layout="stack" {...filterFieldProps} />
@@ -904,7 +917,9 @@ export function ThingsPage() {
               )}
 
               {things.length === 0 ? (
-                <EmptyState message="No things found" />
+                <div className="relative min-h-[12rem]">
+                  <EmptyState message="No things found" />
+                </div>
               ) : (
                 <>
                   <EntityGrid>

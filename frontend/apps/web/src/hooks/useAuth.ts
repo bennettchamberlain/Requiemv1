@@ -363,17 +363,20 @@ function useAuth(): ReturnValue {
     [navigate, location.state],
   );
 
-  const completePortalMemoryConnect = useCallback(async (portalBearer: string, memoryOrigin?: string): Promise<boolean> => {
-    const key = await mintAndStoreApiKey(portalBearer, memoryOrigin);
+  const completePortalMemoryConnect = useCallback(
+    async (portalBearer: string, memoryOrigin?: string): Promise<boolean> => {
+      const key = await mintAndStoreApiKey(portalBearer, memoryOrigin);
 
-    if (!key) {
-      throw new Error('Memory Server did not return an API key.');
-    }
+      if (!key) {
+        throw new Error('Memory Server did not return an API key.');
+      }
 
-    setNativeApiKey(key);
+      setNativeApiKey(key);
 
-    return true;
-  }, []);
+      return true;
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     await disconnectAndClearPowerSync();

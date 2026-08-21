@@ -199,8 +199,12 @@ export function commonsImageUrl(filename: string | undefined): string | undefine
 
 /** Flattens the parts of a wbgetentities item this resolver reads. */
 export function parseEntity(raw: Record<string, unknown>): WikidataEntity {
-  const claims = (raw.claims ?? {}) as Record<string, Array<{ mainsnak?: { datavalue?: { value?: unknown } } }>>;
-  const values = (p: string): unknown[] => (claims[p] ?? []).map((c) => c.mainsnak?.datavalue?.value).filter((v) => v !== undefined);
+  const claims = (raw.claims ?? {}) as Record<
+    string,
+    Array<{ mainsnak?: { datavalue?: { value?: unknown } } }>
+  >;
+  const values = (p: string): unknown[] =>
+    (claims[p] ?? []).map((c) => c.mainsnak?.datavalue?.value).filter((v) => v !== undefined);
   const first = (p: string): unknown => values(p)[0];
   const text = (p: string): string | undefined => {
     const v = first(p);
@@ -230,7 +234,9 @@ export function parseEntity(raw: Record<string, unknown>): WikidataEntity {
     label: labels.en?.value,
     description: descriptions.en?.value,
     enwiki: sitelinks.enwiki?.title,
-    classes: values('P31').map((v) => (v as { id?: string }).id ?? '').filter(Boolean),
+    classes: values('P31')
+      .map((v) => (v as { id?: string }).id ?? '')
+      .filter(Boolean),
     poster: text('P3383'),
     image: text('P18'),
     logo: text('P154'),
@@ -242,10 +248,15 @@ export function parseEntity(raw: Record<string, unknown>): WikidataEntity {
   };
 }
 
-export function dataFromEntity(e: WikidataEntity, summary?: { extract?: string; description?: string }): UnfurlData {
+export function dataFromEntity(
+  e: WikidataEntity,
+  summary?: { extract?: string; description?: string },
+): UnfurlData {
   const kind = classifyEntity(e) === 'tv' ? 'tv' : 'movie';
   const year = e.start ? Number.parseInt(e.start.replace(/^\+/, '').slice(0, 4), 10) : NaN;
-  const page = e.enwiki ? `https://en.wikipedia.org/wiki/${encodeURIComponent(e.enwiki.replace(/ /g, '_'))}` : undefined;
+  const page = e.enwiki
+    ? `https://en.wikipedia.org/wiki/${encodeURIComponent(e.enwiki.replace(/ /g, '_'))}`
+    : undefined;
 
   return {
     title: str(e.label ?? stripParen(e.enwiki ?? ''), 500),
@@ -281,7 +292,10 @@ export class WikidataResolver implements UnfurlResolver {
     }
 
     // 1. Naming-convention titles, one request.
-    const direct = await this.pages(fetcher, `titles=${encodeURIComponent(candidateTitles(work).join('|'))}&redirects=1`);
+    const direct = await this.pages(
+      fetcher,
+      `titles=${encodeURIComponent(candidateTitles(work).join('|'))}&redirects=1`,
+    );
     if ('status' in direct) {
       return direct;
     }
@@ -326,10 +340,13 @@ export class WikidataResolver implements UnfurlResolver {
     //    Wikidata's one-liner; best effort, never fatal.
     let summary: { extract?: string; description?: string } | undefined;
     if (picked.enwiki) {
-      const res = await fetcher.get(`${WIKIPEDIA_SUMMARY}${encodeURIComponent(picked.enwiki.replace(/ /g, '_'))}`, {
-        accept: 'application/json',
-        maxBytes: MAX_JSON_BYTES,
-      });
+      const res = await fetcher.get(
+        `${WIKIPEDIA_SUMMARY}${encodeURIComponent(picked.enwiki.replace(/ /g, '_'))}`,
+        {
+          accept: 'application/json',
+          maxBytes: MAX_JSON_BYTES,
+        },
+      );
       if (res.kind === 'ok') {
         try {
           const json = JSON.parse(res.body.toString('utf8')) as { extract?: string; description?: string };
@@ -344,10 +361,13 @@ export class WikidataResolver implements UnfurlResolver {
   }
 
   private async pages(fetcher: UnfurlFetcher, query: string): Promise<WikipediaPage[] | Fail> {
-    const res = await fetcher.get(`${WIKIPEDIA_API}?action=query&prop=pageprops&ppprop=wikibase_item&format=json&${query}`, {
-      accept: 'application/json',
-      maxBytes: MAX_JSON_BYTES,
-    });
+    const res = await fetcher.get(
+      `${WIKIPEDIA_API}?action=query&prop=pageprops&ppprop=wikibase_item&format=json&${query}`,
+      {
+        accept: 'application/json',
+        maxBytes: MAX_JSON_BYTES,
+      },
+    );
     const fail = failFrom(res);
     if (fail) {
       return fail;
@@ -355,13 +375,22 @@ export class WikidataResolver implements UnfurlResolver {
 
     try {
       const json = JSON.parse((res as OkFetch).body.toString('utf8')) as {
-        query?: { pages?: Record<string, { title?: string; index?: number; missing?: string; pageprops?: { wikibase_item?: string } }> };
+        query?: {
+          pages?: Record<
+            string,
+            { title?: string; index?: number; missing?: string; pageprops?: { wikibase_item?: string } }
+          >;
+        };
       };
       const pages = Object.values(json.query?.pages ?? {});
       // Search results carry an `index` (rank); title lookups keep request order loosely.
       pages.sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
 
-      return pages.map((p) => ({ title: p.title ?? '', qid: p.pageprops?.wikibase_item, missing: p.missing !== undefined }));
+      return pages.map((p) => ({
+        title: p.title ?? '',
+        qid: p.pageprops?.wikibase_item,
+        missing: p.missing !== undefined,
+      }));
     } catch {
       return { status: 'transport_error', detail: 'invalid_json' };
     }
@@ -380,7 +409,9 @@ export class WikidataResolver implements UnfurlResolver {
     }
 
     try {
-      const json = JSON.parse((res as OkFetch).body.toString('utf8')) as { entities?: Record<string, Record<string, unknown>> };
+      const json = JSON.parse((res as OkFetch).body.toString('utf8')) as {
+        entities?: Record<string, Record<string, unknown>>;
+      };
       const byId = new Map(Object.values(json.entities ?? {}).map((e) => [String(e.id), parseEntity(e)]));
 
       // Preserve the caller's order: it encodes naming-convention / search rank.

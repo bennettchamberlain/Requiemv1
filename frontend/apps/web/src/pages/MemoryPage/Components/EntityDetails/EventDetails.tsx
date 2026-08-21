@@ -223,7 +223,9 @@ export function EventDetails({ entity }: Props) {
   // A watch / listen / read event is ABOUT its content row: when that row has
   // a resolved preview or a player, the drawer leads with it (poster, facts,
   // click-to-play) rather than with a bare title and two timestamps.
-  const richContent = (data.contents?.edges ?? []).map((edge) => edge.node).find((node) => hasRichMedia(node));
+  const richContent = (data.contents?.edges ?? [])
+    .map((edge) => edge.node)
+    .find((node) => hasRichMedia(node));
 
   const title = eventDisplayTitle({
     title: data.title,

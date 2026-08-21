@@ -384,4 +384,33 @@ describe('ThingsPage', () => {
 
     window.matchMedia = originalMatchMedia;
   });
+
+  it('does not show a New thing button on a phone — create lives in Add', async () => {
+    const originalMatchMedia = window.matchMedia;
+
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+
+    renderWithProviders(<ThingsPage />, {
+      route: '/memory/things',
+      mocks: [
+        mockQuery(GET_THINGS, BASE_VARIABLES, makeThingsResult([], 0), { maxUsageCount: 3 }),
+        duplicatesMock(NO_DUPLICATES, 5),
+      ],
+    });
+
+    expect(await screen.findByRole('tab', { name: 'Things' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Review sightings' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New thing' })).not.toBeInTheDocument();
+
+    window.matchMedia = originalMatchMedia;
+  });
 });

@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
-import { Collapsible, Tooltip, cn } from '@ci/shadcn';
+import { Avatar, Collapsible, Tooltip, cn } from '@ci/shadcn';
 import { Camera, ChevronRight, CircleHelp, MonitorCog } from '@ci/shadcn/icons';
+import { Link } from 'react-router-dom';
 
 import { CaptureModal } from '@/components/modals/CaptureModal';
-import { useCaptureModal } from '@/hooks';
+import { useCaptureModal, useCurrentUser } from '@/hooks';
 
 import { usePowerRail } from '../PowerRailContext';
 import { NavUser } from '../PrimaryNavigation/NavUser';
@@ -108,6 +109,41 @@ function HelpSubmenu() {
   );
 }
 
+/**
+ * Phone drawer chrome: the account opens the profile page. Help and the
+ * account menus live there, not as rail dropdowns. Desktop keeps those at
+ * the foot of the rail.
+ */
+function OverlayRailHeader({ closeOverlay }: { closeOverlay: () => void }) {
+  const { user } = useCurrentUser();
+
+  const name = user?.name || user?.email || 'User';
+
+  const initials = useMemo(() => {
+    const parts = name.trim().split(/\s+/);
+    const first = parts[0]?.[0] ?? '';
+    const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
+
+    return (first + last).toUpperCase();
+  }, [name]);
+
+  return (
+    <div className="flex items-center gap-1 pt-2 pb-1.5">
+      <Link
+        to="/profile"
+        aria-label={name}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-accent hover:text-accent-foreground"
+      >
+        <Avatar className="h-8 w-8 shrink-0 rounded-full">
+          <Avatar.Fallback className="text-xs">{initials}</Avatar.Fallback>
+        </Avatar>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
+      </Link>
+      <RailEdgeToggle open onClick={closeOverlay} className="shrink-0" />
+    </div>
+  );
+}
+
 function OverlayRail({
   destinationsList,
   closeOverlay,
@@ -132,15 +168,13 @@ function OverlayRail({
           }
         }}
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-x-hidden p-2 pb-[max(0.5rem,var(--safe-area-bottom))] pt-[max(0.5rem,var(--safe-area-top))] transition-transform duration-200',
+          'fixed inset-y-0 left-0 z-40 flex w-56 flex-col overflow-x-hidden px-2 pb-[max(0.5rem,var(--safe-area-bottom))] pt-[var(--safe-area-top)] transition-transform duration-200',
           'border-r border-white/55 bg-white/35 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-white/10',
           expanded ? 'translate-x-0' : 'pointer-events-none -translate-x-full',
         )}
       >
         <Tooltip.Provider>
-          <div className="mb-1 flex justify-end">
-            <RailEdgeToggle open onClick={closeOverlay} />
-          </div>
+          <OverlayRailHeader closeOverlay={closeOverlay} />
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
             {destinationsList}
             <div className="flex flex-col gap-1">
@@ -159,12 +193,6 @@ function OverlayRail({
                 <MonitorCog className="h-6 w-6 shrink-0" strokeWidth={1.25} />
               </NavLink>
             </div>
-          </div>
-
-          <div className="mt-auto flex flex-col gap-1 pb-2">
-            <HelpSubmenu />
-
-            <NavUser />
           </div>
         </Tooltip.Provider>
       </nav>

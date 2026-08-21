@@ -179,7 +179,9 @@ describe('DeviceConnectPage', () => {
     expect(await screen.findByText('Home')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('memory-row-home'));
 
-    expect(await screen.findByText(/could not sign in to https:\/\/memory\.example\.com\/app/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/could not sign in to https:\/\/memory\.example\.com\/app/i),
+    ).toBeInTheDocument();
     expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true });
     expect(navigate).not.toHaveBeenCalledWith('/', { replace: true });
   });

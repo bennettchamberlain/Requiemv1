@@ -26,7 +26,8 @@ export interface StreamingWork {
   episodeTitle?: string;
 }
 
-const NETFLIX_SEASON_WORDS = /^(?:season|series|volume|part|chapter|book|collection|limited series|miniseries|the complete series)\b/i;
+const NETFLIX_SEASON_WORDS =
+  /^(?:season|series|volume|part|chapter|book|collection|limited series|miniseries|the complete series)\b/i;
 const NETFLIX_EPISODE_SUFFIX = /\s*\(Episode\s+(\d+)\)\s*$/i;
 const PRIME_SEASON_SUFFIX = /\s*[-–:]?\s*Season\s+(\d+)\s*$/i;
 

@@ -109,7 +109,10 @@ export function RichMediaCard({ content, title, url }: Props) {
       {player && playing ? (
         <EmbedPlayer player={player} title={heading ?? 'Player'} />
       ) : poster ? (
-        <div className="relative bg-black/5" style={{ aspectRatio: player ? String(player.aspectRatio) : undefined }}>
+        <div
+          className="relative bg-black/5"
+          style={{ aspectRatio: player ? String(player.aspectRatio) : undefined }}
+        >
           <img
             src={poster}
             alt={heading ?? ''}
@@ -140,7 +143,9 @@ export function RichMediaCard({ content, title, url }: Props) {
         {heading && <p className="text-sm font-medium leading-snug">{heading}</p>}
         {episodeTitle && <p className="text-xs text-muted-foreground">{episodeTitle}</p>}
         {facts.length > 0 && <p className="text-xs text-muted-foreground">{facts.join(' · ')}</p>}
-        {unfurl?.description && <p className="line-clamp-4 text-xs text-muted-foreground">{unfurl.description}</p>}
+        {unfurl?.description && (
+          <p className="line-clamp-4 text-xs text-muted-foreground">{unfurl.description}</p>
+        )}
         {pageUrl && (
           <a
             href={pageUrl}

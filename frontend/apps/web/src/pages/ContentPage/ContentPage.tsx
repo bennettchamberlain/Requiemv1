@@ -113,7 +113,9 @@ export function ContentPage() {
             >
               {contentItem.mimetype?.startsWith('image/') && (
                 <EntityMedia
-                  src={resolveStaticUrl(contentItem.mediaUrl ?? contentItem.contentUrl ?? contentItem.sourceUrl)}
+                  src={resolveStaticUrl(
+                    contentItem.mediaUrl ?? contentItem.contentUrl ?? contentItem.sourceUrl,
+                  )}
                   previewSrc={resolveStaticUrl(contentItem.previewUrl)}
                   contentType={contentItem.mimetype}
                   alt={contentItem.title ?? ''}

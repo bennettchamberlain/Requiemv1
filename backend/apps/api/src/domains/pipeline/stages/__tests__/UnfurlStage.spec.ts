@@ -22,8 +22,20 @@ function makeStage(rows: Array<Record<string, unknown>>, answers: Record<string,
 describe('UnfurlStage', () => {
   it('groups rows by resolve key so one request serves every play of a track', async () => {
     const rows = [
-      { id: 'a', source_system: 'spotify', url: 'https://open.spotify.com/track/3fzTpBMSQKjo9sW0T8Tw2O', external_id: 'spotify:track:3fzTpBMSQKjo9sW0T8Tw2O', external_id_kind: 'external_uri' },
-      { id: 'b', source_system: 'spotify', url: 'https://open.spotify.com/track/3fzTpBMSQKjo9sW0T8Tw2O?si=x', external_id: 'spotify:track:3fzTpBMSQKjo9sW0T8Tw2O', external_id_kind: 'external_uri' },
+      {
+        id: 'a',
+        source_system: 'spotify',
+        url: 'https://open.spotify.com/track/3fzTpBMSQKjo9sW0T8Tw2O',
+        external_id: 'spotify:track:3fzTpBMSQKjo9sW0T8Tw2O',
+        external_id_kind: 'external_uri',
+      },
+      {
+        id: 'b',
+        source_system: 'spotify',
+        url: 'https://open.spotify.com/track/3fzTpBMSQKjo9sW0T8Tw2O?si=x',
+        external_id: 'spotify:track:3fzTpBMSQKjo9sW0T8Tw2O',
+        external_id_kind: 'external_uri',
+      },
       { id: 'c', source_system: 'netflix', source_title: 'Dark: Season 1: Alpha and Omega (Episode 10)' },
     ];
     const { stage, resolveMany } = makeStage(rows, {
@@ -34,7 +46,10 @@ describe('UnfurlStage', () => {
     const results = await stage.run(ctx, ['a', 'b', 'c', 'gone']);
 
     expect(resolveMany).toHaveBeenCalledTimes(1);
-    expect(resolveMany.mock.calls[0][1].map((t) => t.key).sort()).toEqual(['oembed:spotify:track:3fzTpBMSQKjo9sW0T8Tw2O', 'wd:tv:dark']);
+    expect(resolveMany.mock.calls[0][1].map((t) => t.key).sort()).toEqual([
+      'oembed:spotify:track:3fzTpBMSQKjo9sW0T8Tw2O',
+      'wd:tv:dark',
+    ]);
     expect(results.get('a')).toEqual({ outcome: 'done' });
     expect(results.get('b')).toEqual({ outcome: 'done' });
     expect(results.get('c')).toEqual({ outcome: 'skipped', reason: 'not_found' });

@@ -121,7 +121,9 @@ describe('ETL content writers stamp external_id_kind', () => {
   it('actually inspects the transforms — a scan that matched nothing would pass vacuously', () => {
     // Sanity check on the scanner itself: the files it is meant to cover must
     // be reachable from ETL_ROOT and must contain the stamp.
-    const covered = collectSourceFiles(ETL_ROOT).filter((file) => CONTENT_WRITER.test(readFileSync(file, 'utf8')));
+    const covered = collectSourceFiles(ETL_ROOT).filter((file) =>
+      CONTENT_WRITER.test(readFileSync(file, 'utf8')),
+    );
 
     expect(covered.length).toBeGreaterThanOrEqual(15);
 

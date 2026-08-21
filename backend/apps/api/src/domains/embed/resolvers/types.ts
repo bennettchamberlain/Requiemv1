@@ -21,7 +21,13 @@ export interface UnfurlData {
  * one ever be needed) leaves no row, so the first sweep after it lands resolves
  * for real.
  */
-export type UnfurlStatus = 'ok' | 'not_found' | 'not_embeddable' | 'blocked' | 'transport_error' | 'rate_limited';
+export type UnfurlStatus =
+  | 'ok'
+  | 'not_found'
+  | 'not_embeddable'
+  | 'blocked'
+  | 'transport_error'
+  | 'rate_limited';
 
 export type UnfurlOutcome =
   | { status: 'ok'; data: UnfurlData }

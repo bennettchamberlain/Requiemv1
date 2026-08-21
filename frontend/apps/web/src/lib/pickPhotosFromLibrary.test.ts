@@ -31,7 +31,8 @@ function clickableInput(): { click: ReturnType<typeof vi.fn>; pendingInput: () =
 describe('pickFromUserDevice', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-  });  it('opens a hidden image file input (PHPicker on iOS, no library permission)', async () => {
+  });
+  it('opens a hidden image file input (PHPicker on iOS, no library permission)', async () => {
     const { click } = clickableInput();
     const pending = pickPhotosFromLibrary({ multiple: false });
     const input = document.body.querySelector('input[type="file"]') as HTMLInputElement;

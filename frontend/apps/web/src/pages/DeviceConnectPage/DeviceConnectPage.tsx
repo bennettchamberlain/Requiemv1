@@ -270,6 +270,7 @@ export function DeviceConnectPage() {
         try {
           await completePortalMemoryConnect(bearer, origin);
           persistApiBaseUrl(origin);
+
           return;
         } catch (err) {
           lastError = err;

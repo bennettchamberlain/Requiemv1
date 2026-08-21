@@ -533,7 +533,10 @@ describe('parser loss reporting (reconciliation)', () => {
 
     try {
       const fi = new WhatsAppFileImporter();
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await fi.fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
         pipeline,

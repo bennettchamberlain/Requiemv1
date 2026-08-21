@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
-import { UNFURL_SWEEP_QUEUE, UnfurlSweepRequestEvent, type UnfurlSweepRequestPayload } from '@ci/domains/embed/events';
+import {
+  UNFURL_SWEEP_QUEUE,
+  UnfurlSweepRequestEvent,
+  type UnfurlSweepRequestPayload,
+} from '@ci/domains/embed/events';
 import { OnEvent } from '@ci/domains/events';
 
 import { STAGE_IDS } from '../constants';

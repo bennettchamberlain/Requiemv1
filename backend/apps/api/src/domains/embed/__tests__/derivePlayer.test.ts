@@ -36,7 +36,9 @@ describe('derivePlayer', () => {
   });
 
   it('maps Vimeo and Dailymotion videos', () => {
-    expect(derivePlayer('https://vimeo.com/76979871')?.playerUrl).toBe('https://player.vimeo.com/video/76979871?dnt=1');
+    expect(derivePlayer('https://vimeo.com/76979871')?.playerUrl).toBe(
+      'https://player.vimeo.com/video/76979871?dnt=1',
+    );
     expect(derivePlayer('https://www.dailymotion.com/video/x7tgad0')?.playerUrl).toBe(
       'https://www.dailymotion.com/embed/video/x7tgad0',
     );

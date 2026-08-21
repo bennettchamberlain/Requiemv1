@@ -41,17 +41,34 @@ describe('ContentResolver.unfurl', () => {
     const { resolver, load } = makeResolver();
     const view = await resolver.unfurl(
       CTX,
-      node({ sourceSystem: 'netflix', sourceData: { Title: 'Dark: Season 1: Alpha and Omega (Episode 10)' }, userId: 'owner-9' }),
+      node({
+        sourceSystem: 'netflix',
+        sourceData: { Title: 'Dark: Season 1: Alpha and Omega (Episode 10)' },
+        userId: 'owner-9',
+      }),
     );
 
     expect(load).toHaveBeenCalledWith({ userId: 'owner-9' }, 'wd:tv:dark');
-    expect(view).toMatchObject({ title: 'Dark', externalRef: 'wikidata:Q28443710', thumbnailUrl: '/ci-files/abc?X-Amz-Signature=x' });
+    expect(view).toMatchObject({
+      title: 'Dark',
+      externalRef: 'wikidata:Q28443710',
+      thumbnailUrl: '/ci-files/abc?X-Amz-Signature=x',
+    });
   });
 
   it('stamps each row with ITS OWN episode coordinates over the shared work cache', async () => {
     const { resolver } = makeResolver();
-    const ep10 = await resolver.unfurl(CTX, node({ sourceSystem: 'netflix', sourceData: { Title: 'Dark: Season 1: Alpha and Omega (Episode 10)' } }));
-    const ep3 = await resolver.unfurl(CTX, node({ sourceSystem: 'netflix', sourceData: { Title: 'Dark: Season 2: Ghosts (Episode 3)' } }));
+    const ep10 = await resolver.unfurl(
+      CTX,
+      node({
+        sourceSystem: 'netflix',
+        sourceData: { Title: 'Dark: Season 1: Alpha and Omega (Episode 10)' },
+      }),
+    );
+    const ep3 = await resolver.unfurl(
+      CTX,
+      node({ sourceSystem: 'netflix', sourceData: { Title: 'Dark: Season 2: Ghosts (Episode 3)' } }),
+    );
 
     expect(ep10?.payload).toMatchObject({ season: 1, episode: 10, episode_title: 'Alpha and Omega' });
     expect(ep3?.payload).toMatchObject({ season: 2, episode: 3, episode_title: 'Ghosts' });
@@ -59,7 +76,9 @@ describe('ContentResolver.unfurl', () => {
 
   it('skips the loader entirely for a row with nothing resolvable', async () => {
     const { resolver, load } = makeResolver();
-    expect(await resolver.unfurl(CTX, node({ sourceSystem: 'audible', sourceData: { Title: 'Snuff' } }))).toBeNull();
+    expect(
+      await resolver.unfurl(CTX, node({ sourceSystem: 'audible', sourceData: { Title: 'Snuff' } })),
+    ).toBeNull();
     expect(load).not.toHaveBeenCalled();
   });
 });
