@@ -208,6 +208,19 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.ENRICH_GEOCODE]: 1,
 
   /**
+   * v1 — initial writer for `ci.events.location_name` from a coordinate.
+   *
+   * A LITERAL mirroring a derivation, the same shape as its two siblings:
+   * `EventReverseStage` computes its version from
+   * `REVERSE_GEOCODE_PROVIDER_GENERATION` — the SAME term
+   * `enrich.position_reverse` derives from, imported rather than re-declared, so
+   * a provider swap re-opens both tables or neither — plus its own rule
+   * generation, and throws at module load if this line disagrees. Not a thunk,
+   * for the reason given above.
+   */
+  [STAGE_IDS.ENRICH_EVENT_REVERSE]: 1,
+
+  /**
    * v1 — initial conversion of `LocationEstimateService.estimateBatch`.
    *
    * Also a literal mirroring a derivation, and the derivation's second term is

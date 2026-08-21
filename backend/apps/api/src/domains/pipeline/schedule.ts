@@ -106,8 +106,11 @@ const DAYS = 24 * HOURS;
  *    `promote.observation`, and `enrich.estimate_location`). None of it is
  *    user-visible within a day and none of it costs money, so it goes where it
  *    disturbs nobody.
- *  - **WEEKLY, windowed, CAPPED** (`enrich.geocode`, `enrich.position_reverse`).
- *    The two that egress to a paid provider.
+ *  - **WEEKLY, windowed, CAPPED** (`enrich.position_reverse`, `enrich.geocode`,
+ *    `enrich.event_reverse`, `enrich.unfurl`). Everything that egresses to a
+ *    metered provider. This list is prose and {@link meteredStageIds} is the
+ *    executable form; `schedule.spec.ts` asserts the weekly tier and the metered
+ *    set are the SAME set, so a fifth arrives in both or in neither.
  *
  * ── Batch affinity: why nightly beats continuous for the linkers ───────────
  *
@@ -650,6 +653,40 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
    * that IS awake at night resolves this at ~7 days and never reaches 30.
    */
   [STAGE_IDS.ENRICH_GEOCODE]: {
+    trigger: 'scheduled',
+    cost: 'metered',
+    window: 'enrichment',
+    minInterval: 7 * DAYS,
+    maxStaleness: 30 * DAYS,
+    perRunCap: 1_000,
+  },
+
+  /**
+   * WEEKLY, WINDOWED, CAPPED. The other direction over the same table:
+   * reverse-geocodes `ci.events.location_coordinates` into `location_name`.
+   *
+   * Same tier, cadence and cap as `enrich.geocode` deliberately — it is the same
+   * table, the same provider and the same order of magnitude. The two candidate
+   * sets are disjoint by construction (a row with a name is one this stage
+   * refuses, and a row without one the forward stage never selects), so a shared
+   * cap is a bound on each rather than a budget they compete for.
+   *
+   * The measurement behind the number: on the appliance this was written
+   * against, 91 events carried coordinates and 79 of them had no name — every
+   * one of them stranded, because nothing scheduled could give them one. That
+   * backlog is not a bill; it is 76 distinct cache cells. What makes the cap
+   * worth having is the shape of the corpus it is waiting for — a photo library
+   * arrives with EXIF GPS on every frame, so one Takeout import can land tens of
+   * thousands of coordinate-bearing events overnight. Cache cells hold the
+   * BILLED count far below the candidate count (an afternoon of photos in one
+   * room is one lookup), but the cap is what makes the worst case a known weekly
+   * quantity rather than an invoice.
+   *
+   * `maxStaleness: 30 * DAYS` for the reason its sibling gives: the escape hatch
+   * for an appliance that is never awake while the window is open, not a second
+   * cadence.
+   */
+  [STAGE_IDS.ENRICH_EVENT_REVERSE]: {
     trigger: 'scheduled',
     cost: 'metered',
     window: 'enrichment',
