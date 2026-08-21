@@ -1615,9 +1615,15 @@ export class PushStage implements ImportStageRunner {
    * Fail-soft: the rows are in ci.*, and a missed edge is what the edge sweep
    * exists to catch.
    */
-  private async linkSharedContent(ctx: { userId: string }, plans: RowPlan[], context: StageRunContext): Promise<void> {
+  private async linkSharedContent(
+    ctx: { userId: string },
+    plans: RowPlan[],
+    context: StageRunContext,
+  ): Promise<void> {
     const relationships = plans
-      .filter((plan) => plan.contentId && plan.eventId && plan.contentInserted === false && plan.failure == null)
+      .filter(
+        (plan) => plan.contentId && plan.eventId && plan.contentInserted === false && plan.failure == null,
+      )
       .map((plan) => ({
         fromKey: `content:${plan.contentId}`,
         toKey: `event:${plan.eventId}`,

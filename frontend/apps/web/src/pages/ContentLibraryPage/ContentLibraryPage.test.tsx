@@ -200,7 +200,12 @@ describe('ContentLibraryPage', () => {
     renderWithProviders(<ContentLibraryPage />, {
       mocks: [
         firstPage({
-          node: contentNode({ title: null, mimetype: 'text/html', text: 'An article', sourceUrl: 'https://x.test' }),
+          node: contentNode({
+            title: null,
+            mimetype: 'text/html',
+            text: 'An article',
+            sourceUrl: 'https://x.test',
+          }),
         }),
       ],
     });
@@ -225,9 +230,15 @@ describe('ContentLibraryPage', () => {
 
 describe('resolveContentTileUrl', () => {
   it('prefers the derived preview, then the original for images only', () => {
-    expect(resolveContentTileUrl({ mimetype: 'application/pdf', previewUrl: '/p', mediaUrl: '/m' })).toBe('/static/p');
-    expect(resolveContentTileUrl({ mimetype: 'image/png', mediaUrl: '/m', contentUrl: 'https://c' })).toBe('/static/m');
-    expect(resolveContentTileUrl({ mimetype: 'image/png', contentUrl: 'https://c/x.png' })).toBe('https://c/x.png');
+    expect(resolveContentTileUrl({ mimetype: 'application/pdf', previewUrl: '/p', mediaUrl: '/m' })).toBe(
+      '/static/p',
+    );
+    expect(resolveContentTileUrl({ mimetype: 'image/png', mediaUrl: '/m', contentUrl: 'https://c' })).toBe(
+      '/static/m',
+    );
+    expect(resolveContentTileUrl({ mimetype: 'image/png', contentUrl: 'https://c/x.png' })).toBe(
+      'https://c/x.png',
+    );
     expect(resolveContentTileUrl({ mimetype: 'application/pdf', mediaUrl: '/m' })).toBeUndefined();
   });
 });

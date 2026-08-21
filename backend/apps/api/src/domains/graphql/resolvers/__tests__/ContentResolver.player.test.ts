@@ -48,7 +48,9 @@ describe('ContentResolver.player', () => {
 
   it('never treats a file-kind external id as a provider handle', () => {
     expect(
-      makeResolver().player(node({ externalId: '019ee82a-2f70-71fd-b4a7-2679a8e5140b', externalIdKind: 'file' })),
+      makeResolver().player(
+        node({ externalId: '019ee82a-2f70-71fd-b4a7-2679a8e5140b', externalIdKind: 'file' }),
+      ),
     ).toBeNull();
   });
 
@@ -56,7 +58,11 @@ describe('ContentResolver.player', () => {
     const resolver = makeResolver();
 
     expect(resolver.player(node({ url: 'https://www.audible.com/pd/B005QDO084' }))).toBeNull();
-    expect(resolver.player(node({ externalId: 'primevideo:title:43780c6b2df25ceb', externalIdKind: 'external_uri' }))).toBeNull();
+    expect(
+      resolver.player(
+        node({ externalId: 'primevideo:title:43780c6b2df25ceb', externalIdKind: 'external_uri' }),
+      ),
+    ).toBeNull();
     expect(resolver.player(node({}))).toBeNull();
   });
 });

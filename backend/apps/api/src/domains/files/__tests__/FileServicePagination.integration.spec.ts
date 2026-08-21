@@ -111,9 +111,7 @@ describeWithDatabase('FileService.findPage (real database)', () => {
   });
 
   afterAll(async () => {
-    await dataSource.query(`DELETE FROM ci.files WHERE user_id = ANY($1::uuid[])`, [
-      [userId, otherUserId],
-    ]);
+    await dataSource.query(`DELETE FROM ci.files WHERE user_id = ANY($1::uuid[])`, [[userId, otherUserId]]);
     await dataSource.query(`DELETE FROM ci.users WHERE id = ANY($1::uuid[])`, [[userId, otherUserId]]);
     await schemaLock.release();
     await dataSource.destroy();

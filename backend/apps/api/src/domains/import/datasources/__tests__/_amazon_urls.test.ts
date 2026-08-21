@@ -1,4 +1,10 @@
-import { amazonMusicAlbumUrl, amazonMusicTrackUrl, asinOrUndefined, audibleUrl, kindleUrl } from '../_amazon_urls';
+import {
+  amazonMusicAlbumUrl,
+  amazonMusicTrackUrl,
+  asinOrUndefined,
+  audibleUrl,
+  kindleUrl,
+} from '../_amazon_urls';
 
 describe('_amazon_urls', () => {
   it('accepts only real 10-character ASINs', () => {
@@ -22,7 +28,9 @@ describe('_amazon_urls', () => {
       'https://music.amazon.com/albums/B000SX9IXO?trackAsin=B000SX6NYQ',
     );
     expect(amazonMusicTrackUrl('B000SX6NYQ')).toBe('https://music.amazon.com/tracks/B000SX6NYQ');
-    expect(amazonMusicTrackUrl('B000SX6NYQ', 'not-an-asin')).toBe('https://music.amazon.com/tracks/B000SX6NYQ');
+    expect(amazonMusicTrackUrl('B000SX6NYQ', 'not-an-asin')).toBe(
+      'https://music.amazon.com/tracks/B000SX6NYQ',
+    );
     expect(amazonMusicTrackUrl(undefined, 'B000SX9IXO')).toBeUndefined();
   });
 });

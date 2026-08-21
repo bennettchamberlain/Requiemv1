@@ -125,7 +125,10 @@ export class UnfurlService {
           const posterId = await this.cachePoster(ctx, row).catch(() => null);
           if (posterId) {
             row.posterFileId = posterId;
-            await this.dataSource.query(`UPDATE ci.unfurls SET poster_file_id = $2, updated_at = now() WHERE id = $1`, [row.id, posterId]);
+            await this.dataSource.query(
+              `UPDATE ci.unfurls SET poster_file_id = $2, updated_at = now() WHERE id = $1`,
+              [row.id, posterId],
+            );
           }
         }),
       ),
@@ -141,7 +144,12 @@ export class UnfurlService {
             this.logger.warn('Unfurl resolver threw', { key: target.key, error: (e as Error).message });
             out.set(target.key, {
               kind: 'row',
-              row: await this.upsert(ctx, target, { status: 'transport_error', detail: 'resolver_threw' }, cached.get(target.key)),
+              row: await this.upsert(
+                ctx,
+                target,
+                { status: 'transport_error', detail: 'resolver_threw' },
+                cached.get(target.key),
+              ),
               fresh: true,
             });
           }
@@ -152,7 +160,11 @@ export class UnfurlService {
     return out;
   }
 
-  private async resolveOne(ctx: UserServiceContext, target: ResolveTarget, previous?: UnfurlEntity): Promise<ResolveResult> {
+  private async resolveOne(
+    ctx: UserServiceContext,
+    target: ResolveTarget,
+    previous?: UnfurlEntity,
+  ): Promise<ResolveResult> {
     // Pacing lives in the fetcher, per request and per provider bucket.
     const outcome = await this.resolvers[target.resolver].resolve(target, this.fetcher);
     if (outcome.status === 'unconfigured') {
@@ -165,10 +177,10 @@ export class UnfurlService {
       const posterId = await this.cachePoster(ctx, row);
       if (posterId) {
         row.posterFileId = posterId;
-        await this.dataSource.query(`UPDATE ci.unfurls SET poster_file_id = $2, updated_at = now() WHERE id = $1`, [
-          row.id,
-          posterId,
-        ]);
+        await this.dataSource.query(
+          `UPDATE ci.unfurls SET poster_file_id = $2, updated_at = now() WHERE id = $1`,
+          [row.id, posterId],
+        );
       }
     }
 
@@ -185,7 +197,9 @@ export class UnfurlService {
     const failed = outcome.status === 'transport_error' || outcome.status === 'rate_limited';
     const failureCount = failed ? (previous?.failureCount ?? 0) + 1 : 0;
     // Back off repeat failures: 1d, 2d, 4d … capped at the ok TTL.
-    const ttl = failed ? Math.min(TTL_MS[outcome.status] * 2 ** Math.min(failureCount - 1, 5), TTL_MS.ok) : TTL_MS[outcome.status];
+    const ttl = failed
+      ? Math.min(TTL_MS[outcome.status] * 2 ** Math.min(failureCount - 1, 5), TTL_MS.ok)
+      : TTL_MS[outcome.status];
     const payload = {
       ...(data.payload ?? {}),
       ...(outcome.status !== 'ok' && outcome.detail ? { detail: outcome.detail } : {}),
@@ -255,7 +269,14 @@ export class UnfurlService {
     }
 
     const contentType = res.contentType.split(';')[0].trim();
-    const ext = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : contentType === 'image/gif' ? 'gif' : 'jpg';
+    const ext =
+      contentType === 'image/png'
+        ? 'png'
+        : contentType === 'image/webp'
+          ? 'webp'
+          : contentType === 'image/gif'
+            ? 'gif'
+            : 'jpg';
     const digest = crypto.createHash('sha1').update(row.resolveKey).digest('hex').slice(0, 16);
 
     try {
@@ -299,4 +320,3 @@ export function shouldCachePoster(target: ResolveTarget): boolean {
 
   return !(target.resolver === 'oembed' && target.providerRef?.startsWith('spotify:'));
 }
-

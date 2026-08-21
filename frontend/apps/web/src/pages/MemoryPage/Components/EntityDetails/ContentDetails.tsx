@@ -31,9 +31,7 @@ export function ContentDetails({ entity }: Props) {
   // pane. Rows without a linked file (bookmarks, articles) fall back to the
   // row's own url/sourceUrl exactly as before.
   const isImage = data.mimetype?.startsWith('image/') ?? false;
-  const mediaSrc = isImage
-    ? resolveStaticUrl(data.mediaUrl ?? data.contentUrl ?? data.sourceUrl)
-    : undefined;
+  const mediaSrc = isImage ? resolveStaticUrl(data.mediaUrl ?? data.contentUrl ?? data.sourceUrl) : undefined;
   const mediaPreviewSrc = isImage ? resolveStaticUrl(data.previewUrl) : undefined;
 
   return (

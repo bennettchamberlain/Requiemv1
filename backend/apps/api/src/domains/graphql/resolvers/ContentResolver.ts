@@ -357,7 +357,10 @@ export class ContentResolver {
    * `ci.unfurls` but the derivation itself.
    */
   @ResolveField(() => UnfurlType, { nullable: true })
-  async unfurl(@Context() context: RequestContext, @Parent() parent: ContentType): Promise<UnfurlType | null> {
+  async unfurl(
+    @Context() context: RequestContext,
+    @Parent() parent: ContentType,
+  ): Promise<UnfurlType | null> {
     const { sourceSystem, url, sourceUrl, externalId, externalIdKind, sourceData, userId } = parent.__source;
     const target = resolveTargetFor({
       sourceSystem,

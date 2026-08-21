@@ -9,7 +9,8 @@ import { GET_DRAWER_NODE, ResolvedGenericDetails } from './ResolvedGenericDetail
 
 // The relationship cards need the auth context for the REST graph endpoints; the drawer body is what's under test.
 vi.mock('@/components/EntityRelationshipCards/EntityRelationshipCards', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/components/EntityRelationshipCards/EntityRelationshipCards')>();
+  const actual =
+    await importOriginal<typeof import('@/components/EntityRelationshipCards/EntityRelationshipCards')>();
 
   return { ...actual, EntityRelationshipCards: () => null };
 });
@@ -69,7 +70,10 @@ describe('ResolvedGenericDetails', () => {
     // Stub first, full body once the node lands.
     expect(await screen.findByRole('heading', { name: 'Pier article' })).toBeInTheDocument();
     expect(screen.getByText('Long read about the pier')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'https://example.test/pier' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: 'https://example.test/pier' })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
   });
 
   it('keeps the stub view for a type with no GraphQL node', () => {

@@ -27,15 +27,32 @@ describe('UnfurlFetcher SSRF guards', () => {
     expect(isBlockedAddress(ip)).toBe(true);
   });
 
-  it.each(['8.8.8.8', '1.1.1.1', '172.32.0.1', '172.15.255.255', '100.63.255.255', '100.128.0.1', '2606:4700::1111', '::ffff:8.8.8.8'])(
-    'allows public %s',
-    (ip) => {
-      expect(isBlockedAddress(ip)).toBe(false);
-    },
-  );
+  it.each([
+    '8.8.8.8',
+    '1.1.1.1',
+    '172.32.0.1',
+    '172.15.255.255',
+    '100.63.255.255',
+    '100.128.0.1',
+    '2606:4700::1111',
+    '::ffff:8.8.8.8',
+  ])('allows public %s', (ip) => {
+    expect(isBlockedAddress(ip)).toBe(false);
+  });
 
   it('blocks hostnames that can only mean the inside', () => {
-    for (const host of ['localhost', 'LOCALHOST.', 'printer.local', 'db.internal', 'api.localhost', 'intranet', 'metadata.google.internal', '[::1]', '127.0.0.1', '10.0.0.1']) {
+    for (const host of [
+      'localhost',
+      'LOCALHOST.',
+      'printer.local',
+      'db.internal',
+      'api.localhost',
+      'intranet',
+      'metadata.google.internal',
+      '[::1]',
+      '127.0.0.1',
+      '10.0.0.1',
+    ]) {
       expect(isBlockedHostname(host)).toBe(true);
     }
 
@@ -56,7 +73,9 @@ describe('UnfurlFetcher SSRF guards', () => {
     // rebind shape: public name, private answer.
     guardedLookup('localtest.me', {}, (err, address) => {
       if (err) {
-        expect(err.name === 'BlockedAddressError' || (err as NodeJS.ErrnoException).code === 'ENOTFOUND').toBe(true);
+        expect(
+          err.name === 'BlockedAddressError' || (err as NodeJS.ErrnoException).code === 'ENOTFOUND',
+        ).toBe(true);
       } else {
         // If the resolver returned something public (unexpected), it must not be loopback.
         expect(String(address).startsWith('127.')).toBe(false);
@@ -69,7 +88,8 @@ describe('UnfurlFetcher SSRF guards', () => {
 
 describe('rate buckets', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { rateBucketFor, RateBuckets } = require('../services/UnfurlFetcher') as typeof import('../services/UnfurlFetcher');
+  const { rateBucketFor, RateBuckets } =
+    require('../services/UnfurlFetcher') as typeof import('../services/UnfurlFetcher');
 
   it("folds one operator's hosts into one budget", () => {
     expect(rateBucketFor('en.wikipedia.org')).toBe('wikimedia');

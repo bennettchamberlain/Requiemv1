@@ -181,7 +181,9 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
           nothing inside it to scroll. Half the column on those surfaces: the
           region scrolls inside a share a person can actually read, and the pane
           beneath keeps the other half. */}
-      <ImportActivity className={cn('max-h-none', surface === 'import' ? 'sm:max-h-[8.5rem]' : 'sm:max-h-[50%]')} />
+      <ImportActivity
+        className={cn('max-h-none', surface === 'import' ? 'sm:max-h-[8.5rem]' : 'sm:max-h-[50%]')}
+      />
 
       {/* The wizard stays MOUNTED and is hidden, never unmounted.
 

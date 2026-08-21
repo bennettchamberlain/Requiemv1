@@ -316,6 +316,7 @@ async function nativeAwareFetch(input: RequestInfo, init: RequestInit, timeout?:
 
     throw err;
   }
+
   const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? {});
 
   return new Response(body, { status: result.status, headers: result.headers });

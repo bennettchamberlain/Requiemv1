@@ -66,7 +66,12 @@ describe('EntityMedia progressive image', () => {
     );
 
     rerender(
-      <EntityMedia src="/static/companion/other" previewSrc="/static/companion/other-preview" contentType="image/jpeg" alt="photo" />,
+      <EntityMedia
+        src="/static/companion/other"
+        previewSrc="/static/companion/other-preview"
+        contentType="image/jpeg"
+        alt="photo"
+      />,
     );
 
     // The first probe finishing late must not flip the src: its onload was

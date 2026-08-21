@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
 
-import { AsksPage } from './AsksPage';
 import { ASK_INBOX, ASK_OUTBOX, MY_ASK_GRANTS } from './asksOperations';
+import { AsksPage } from './AsksPage';
 
 vi.mock('@ci/common', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@ci/common');

@@ -258,7 +258,9 @@ function retryAfterMs(header: string | null): number {
 
   const at = Date.parse(header);
 
-  return Number.isFinite(at) ? Math.min(MAX_RETRY_AFTER_MS, Math.max(1_000, at - Date.now())) : RATE_LIMIT_PAUSE_MS;
+  return Number.isFinite(at)
+    ? Math.min(MAX_RETRY_AFTER_MS, Math.max(1_000, at - Date.now()))
+    : RATE_LIMIT_PAUSE_MS;
 }
 
 @Injectable()
@@ -353,7 +355,11 @@ export class UnfurlFetcher {
         if (response.status === 429 || response.status === 503) {
           const pause = retryAfterMs(response.headers.get('retry-after'));
           this.buckets.pause(bucket, pause);
-          this.logger.warn('Provider throttled; pausing bucket', { bucket, status: response.status, pauseMs: pause });
+          this.logger.warn('Provider throttled; pausing bucket', {
+            bucket,
+            status: response.status,
+            pauseMs: pause,
+          });
         }
 
         await response.body?.cancel().catch(() => {});
@@ -387,7 +393,9 @@ export class UnfurlFetcher {
         clearTimeout(timer);
         const err = e as Error;
 
-        return err.name === 'AbortError' ? { kind: 'timeout', url } : { kind: 'transport', url, error: err.message };
+        return err.name === 'AbortError'
+          ? { kind: 'timeout', url }
+          : { kind: 'transport', url, error: err.message };
       }
     }
 

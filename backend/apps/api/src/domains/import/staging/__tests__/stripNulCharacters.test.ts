@@ -18,7 +18,9 @@ describe('stripNulCharacters', () => {
         name: 'some\u0000one',
         attributes: [{ name: 'email', value: 'a\u0000b@example.invalid', identity: true }],
       },
-      edges: [{ relation: 'from\u0000', to: { entity: { name: 'peer\u0000' } }, metadata: { via: '\u0000dm' } }],
+      edges: [
+        { relation: 'from\u0000', to: { entity: { name: 'peer\u0000' } }, metadata: { via: '\u0000dm' } },
+      ],
     };
 
     stripNulCharacters(graph);

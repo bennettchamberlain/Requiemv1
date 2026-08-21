@@ -12,7 +12,11 @@ describe('parseNetflixTitle', () => {
   });
 
   it('handles Volume / Limited Series and shows with their own colon', () => {
-    expect(parseNetflixTitle('Patriot Act with Hasan Minhaj: Volume 5: How America Is Causing Global Obesity (Episode 7)')).toMatchObject({
+    expect(
+      parseNetflixTitle(
+        'Patriot Act with Hasan Minhaj: Volume 5: How America Is Causing Global Obesity (Episode 7)',
+      ),
+    ).toMatchObject({
       kind: 'tv',
       title: 'Patriot Act with Hasan Minhaj',
       season: 5,
@@ -33,8 +37,14 @@ describe('parseNetflixTitle', () => {
   });
 
   it('treats films and specials as movies', () => {
-    expect(parseNetflixTitle('The Ballad of Buster Scruggs')).toEqual({ kind: 'movie', title: 'The Ballad of Buster Scruggs' });
-    expect(parseNetflixTitle('Aziz Ansari: RIGHT NOW')).toEqual({ kind: 'movie', title: 'Aziz Ansari: RIGHT NOW' });
+    expect(parseNetflixTitle('The Ballad of Buster Scruggs')).toEqual({
+      kind: 'movie',
+      title: 'The Ballad of Buster Scruggs',
+    });
+    expect(parseNetflixTitle('Aziz Ansari: RIGHT NOW')).toEqual({
+      kind: 'movie',
+      title: 'Aziz Ansari: RIGHT NOW',
+    });
     expect(parseNetflixTitle('  ')).toBeNull();
   });
 });
@@ -52,7 +62,10 @@ describe('parsePrimeVideoTitle', () => {
       title: 'Arrested Development',
       season: 2,
     });
-    expect(parsePrimeVideoTitle('To Sardines and Back-Transparent Season 3')).toMatchObject({ title: 'Transparent', season: 3 });
+    expect(parsePrimeVideoTitle('To Sardines and Back-Transparent Season 3')).toMatchObject({
+      title: 'Transparent',
+      season: 3,
+    });
   });
 
   it('does not split a hyphenated film title without a season marker', () => {
@@ -60,7 +73,10 @@ describe('parsePrimeVideoTitle', () => {
       kind: 'movie',
       title: 'Spider-Man: Into the Spider-Verse',
     });
-    expect(parsePrimeVideoTitle('Sam Smith: Dreams Come True')).toEqual({ kind: 'movie', title: 'Sam Smith: Dreams Come True' });
+    expect(parsePrimeVideoTitle('Sam Smith: Dreams Come True')).toEqual({
+      kind: 'movie',
+      title: 'Sam Smith: Dreams Come True',
+    });
   });
 });
 

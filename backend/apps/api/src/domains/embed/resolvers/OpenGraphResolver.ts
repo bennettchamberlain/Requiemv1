@@ -2,7 +2,14 @@ import type { ResolveTarget } from '../resolveKey';
 import { MAX_HTML_BYTES, MAX_JSON_BYTES, type UnfurlFetcher } from '../services/UnfurlFetcher';
 
 import { dataFromOEmbed } from './OEmbedResolver';
-import { httpUrl, str, statusOutcome, type UnfurlData, type UnfurlOutcome, type UnfurlResolver } from './types';
+import {
+  httpUrl,
+  str,
+  statusOutcome,
+  type UnfurlData,
+  type UnfurlOutcome,
+  type UnfurlResolver,
+} from './types';
 
 const META_RE = /<meta\b[^>]*>/gi;
 const LINK_RE = /<link\b[^>]*>/gi;
@@ -57,7 +64,11 @@ export function parseHead(html: string, baseUrl: string): ParsedHead {
   let oembedHref: string | undefined;
   for (const tag of head.match(LINK_RE) ?? []) {
     const a = attrs(tag);
-    if ((a.rel ?? '').toLowerCase() === 'alternate' && (a.type ?? '').toLowerCase() === 'application/json+oembed' && a.href) {
+    if (
+      (a.rel ?? '').toLowerCase() === 'alternate' &&
+      (a.type ?? '').toLowerCase() === 'application/json+oembed' &&
+      a.href
+    ) {
       try {
         oembedHref = new URL(a.href, baseUrl).toString();
       } catch {
@@ -76,7 +87,9 @@ export function parseHead(html: string, baseUrl: string): ParsedHead {
 export function dataFromHead(head: ParsedHead, pageUrl: string): UnfurlData {
   const m = head.meta;
   const get = (...keys: string[]) => keys.map((k) => m.get(k)).find((v) => v);
-  const image = httpUrl(resolveMaybe(get('og:image:secure_url', 'og:image', 'twitter:image', 'twitter:image:src'), pageUrl));
+  const image = httpUrl(
+    resolveMaybe(get('og:image:secure_url', 'og:image', 'twitter:image', 'twitter:image:src'), pageUrl),
+  );
   const durationRaw = get('og:video:duration', 'music:duration', 'video:duration');
   const duration = durationRaw ? Number.parseInt(durationRaw, 10) : NaN;
 

@@ -265,7 +265,12 @@ describe('getEntityMedia', () => {
             aspectRatio: 352 / 152,
             mediaKind: 'audio',
           },
-          galleryUnfurl: { status: 'ok', title: 'Stillness Speaks', thumbnailUrl: '/ci-files/poster?sig=1', canonicalUrl: null },
+          galleryUnfurl: {
+            status: 'ok',
+            title: 'Stillness Speaks',
+            thumbnailUrl: '/ci-files/poster?sig=1',
+            canonicalUrl: null,
+          },
         }),
       );
       expect(media?.kind).toBe('embed');
@@ -312,7 +317,11 @@ describe('getEntityMedia', () => {
           },
         }),
       );
-      expect(media).toMatchObject({ kind: 'image', thumbUrl: '/static/ci-files/wot?sig=1', pageUrl: expect.stringContaining('wikipedia.org') });
+      expect(media).toMatchObject({
+        kind: 'image',
+        thumbUrl: '/static/ci-files/wot?sig=1',
+        pageUrl: expect.stringContaining('wikipedia.org'),
+      });
     });
 
     it('ignores a non-ok unfurl', () => {
