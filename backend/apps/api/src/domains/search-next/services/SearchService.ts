@@ -5,7 +5,8 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
 
-import type { EntityIdentifier, IndexableEntity } from '../types';
+import { buildPromptQuery, type BuildPromptQueryOptions } from '../promptQuery';
+import type { EntityIdentifier, IndexableEntity, PromptSearchResult } from '../types';
 
 /**
  * PostgreSQL ts_rank weight multipliers for weighted tsvectors.
@@ -78,6 +79,18 @@ type SearchOptions =
   | (BaseSearchOptions & { excludeTypes: IndexableEntity[]; includeTypes?: never })
   | (BaseSearchOptions & { includeTypes?: never; excludeTypes?: never });
 
+/**
+ * A prompt search names its input `prompt` rather than `query`, because it is
+ * NOT a query: it is a sentence someone else wrote, and {@link buildPromptQuery}
+ * decides what part of it may constrain the owner's memory.
+ */
+type PromptSearchOptions = BuildPromptQueryOptions & {
+  prompt: string;
+  maxResults?: number;
+  includeTypes?: IndexableEntity[];
+  excludeTypes?: IndexableEntity[];
+};
+
 @Injectable()
 export class SearchService {
   constructor(
@@ -122,6 +135,133 @@ export class SearchService {
       id: result.id,
       type: result.type,
     }));
+  }
+
+  /**
+   * Keyword search for an ASKER-SUPPLIED question, with precision the owner's
+   * own searches do not need.
+   *
+   * `search({ mode: 'keyword' })` OR-joins every token with no floor, so a row
+   * matching one common word is indistinguishable from a row that answers the
+   * question. That is a recall win when the owner is searching their own memory
+   * and a fabrication risk when another person is asking: see
+   * {@link buildPromptQuery} for the measured cases ("Have you seen <invented
+   * name>?" → 297 matches, all on 'seen'). This method is a SEPARATE entry point
+   * rather than a change to `keywordSearch`, because the tools, activity and
+   * planning domains all depend on the loose behaviour and none of them is
+   * disclosing anything to a third party.
+   *
+   * The rebuilt query is `AND(required phrases) & OR(alternative terms)`:
+   * anything the asker NAMED has to be there, anything they merely mentioned is
+   * an alternative. A prompt that yields no groups at all matches NOTHING —
+   * failing closed is the whole point, because the caller of an ask executor
+   * turns an empty result into "no" and a non-empty one into "yes".
+   *
+   * Unlike the other search methods this one reports {@link
+   * PromptSearchResult.totalMatches}, so a saturated result set is
+   * distinguishable from an exact one. A count answer that silently stops at the
+   * cap states a number that is not true.
+   */
+  async searchPrompt(context: UserServiceContext, options: PromptSearchOptions): Promise<PromptSearchResult> {
+    const { prompt, maxResults = 25 } = options;
+    const groups = buildPromptQuery(prompt, { subjectIsName: options.subjectIsName });
+    const limit = Math.max(1, Math.trunc(maxResults));
+
+    // No groups means the prompt named nothing. Short-circuit rather than send a
+    // query with an empty tsquery: `vector @@ ''::tsquery` is a NULL comparison
+    // that already returns no rows, but relying on that makes "asked nothing"
+    // and "asked for everything" one code path, and only one of them is safe.
+    if (groups.length === 0) {
+      return { items: [], totalMatches: 0, truncated: false, limit };
+    }
+
+    const resolvedOptions = this.applyDefaultTypeExclusions({
+      query: prompt,
+      ...(options.includeTypes ? { includeTypes: options.includeTypes } : {}),
+      ...(options.excludeTypes ? { excludeTypes: options.excludeTypes } : {}),
+    } as SearchOptions);
+
+    const typeFilter = this.buildTypeFilter(resolvedOptions, 4, 'v');
+
+    // Each group's text crosses as a PARAMETER and is turned into a tsquery by
+    // Postgres (`phraseto_tsquery` / `plainto_tsquery`), never by concatenating
+    // asker text into SQL. The later `string_agg(tq::text, ...)` re-parses only
+    // Postgres's OWN canonical tsquery output, which round-trips exactly — so
+    // hostile punctuation in the prompt can reach the parser but never the
+    // statement. `phraseto_tsquery` is what makes a name a name: it emits
+    // `'david' <-> 'miller'`, exact adjacency, so a corpus holding Steve Miller
+    // does not answer a question about David Miller.
+    const sql = `
+      WITH parts AS (
+        SELECT
+          s.kind,
+          CASE
+            WHEN s.kind = 'phrase' THEN phraseto_tsquery('english', s.txt)
+            ELSE plainto_tsquery('english', s.txt)
+          END AS tq
+        FROM unnest($2::text[], $3::text[]) AS s(txt, kind)
+      ),
+      kept AS (
+        SELECT kind, tq FROM parts WHERE tq <> ''::tsquery
+      ),
+      grouped AS (
+        SELECT
+          (SELECT string_agg(tq::text, ' & ') FROM kept WHERE kind = 'phrase') AS phrases,
+          (SELECT string_agg(tq::text, ' | ') FROM kept WHERE kind = 'term') AS terms
+      ),
+      q AS (
+        SELECT (
+          CASE
+            WHEN phrases IS NOT NULL AND terms IS NOT NULL
+              THEN '(' || phrases || ') & (' || terms || ')'
+            WHEN phrases IS NOT NULL THEN phrases
+            ELSE terms
+          END
+        )::tsquery AS tq
+        FROM grouped
+      )
+      SELECT
+        v.entity_id,
+        v.entity_type,
+        ts_rank('${TS_RANK_WEIGHTS}', v.vector, q.tq) AS score,
+        count(*) OVER () AS total_matches
+      FROM
+        ci_search.vectors v
+        CROSS JOIN q
+      WHERE v.user_id = $1
+        AND q.tq IS NOT NULL
+        AND v.vector @@ q.tq
+        ${typeFilter.clause}
+      ORDER BY score DESC
+      LIMIT ${limit}
+    `;
+
+    const params: (string | string[])[] = [
+      context.userId,
+      groups.map((group) => group.text),
+      groups.map((group) => group.kind),
+    ];
+
+    if (typeFilter.param) {
+      params.push(typeFilter.param);
+    }
+
+    const rows: (ScoredRowResult & { total_matches: string })[] = await this.dataSource.query(sql, params);
+
+    // `count(*) OVER ()` is evaluated after WHERE and before LIMIT, so it is the
+    // TRUE size of the match set, not the truncated page. Every row carries the
+    // same value; zero rows means zero matches.
+    const totalMatches = rows.length > 0 ? Number(rows[0].total_matches) : 0;
+
+    return {
+      items: rows.map((row) => ({
+        id: row.entity_id,
+        type: row.entity_type as IndexableEntity,
+      })),
+      totalMatches,
+      truncated: totalMatches > rows.length,
+      limit,
+    };
   }
 
   /**
