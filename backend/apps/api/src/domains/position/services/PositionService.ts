@@ -685,7 +685,18 @@ export class PositionService {
     options: TrackOptions,
     boxes: TrackBbox[],
   ): Promise<number> {
-    if (options.startTime && options.endTime) {
+    // The date range IS the span of interest only when nothing else narrows
+    // the row set further. A bbox can — a user's whole date-filtered range
+    // might cover a month, but the fixes actually inside the viewport's box
+    // could span three days of it. Take the shortcut ONLY when there is no
+    // bbox: with one, the min/max query below is what finds the true in-view
+    // span, which is what makes zooming into a bbox sharpen the bucket width
+    // even while an explorer date filter is also active. Previously this
+    // short-circuited on startTime+endTime alone, so a bbox was silently
+    // ignored whenever a date filter was set — bucket width stayed pinned to
+    // the filtered range's raw width regardless of how tightly the viewport
+    // narrowed the actual fixes inside it.
+    if (options.startTime && options.endTime && boxes.length === 0) {
       return options.endTime.getTime() - options.startTime.getTime();
     }
 

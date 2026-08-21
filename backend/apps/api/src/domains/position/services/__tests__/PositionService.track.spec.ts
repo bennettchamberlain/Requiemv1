@@ -252,6 +252,33 @@ describe('PositionService.findTrack — downsampling', () => {
     expect(spanQuery!.sql).toContain('p.user_id = $1');
     expect(spanQuery!.params).toEqual(expect.arrayContaining(bbox));
   });
+
+  it('still narrows the span to the viewport when an explorer date filter is ALSO active', async () => {
+    // Regression: the raw-span shortcut (`endTime - startTime`) fired on
+    // startTime+endTime alone, before this bbox scoping existed to size a
+    // bucket from what is actually in view. A caller with both a bbox AND a
+    // date range set — exactly what the map does once the explorer's date
+    // filter is on — must still get the IN-VIEWPORT span, not the raw width
+    // of the filtered date range: a month-long date filter can hold only
+    // three days of fixes inside a given viewport, and bucketing off the
+    // wider month re-introduces "zooming doesn't sharpen the trace" for
+    // every filtered session, just scoped to the filter instead of the
+    // whole table.
+    const harness = makeService({ rows: [bucketRow()], total: 21_997 });
+    const bbox: [number, number, number, number] = [-118.9, 33.5, -117.6, 34.8];
+    const startTime = new Date('2024-01-01T00:00:00Z');
+    const endTime = new Date('2024-02-01T00:00:00Z'); // a month — much wider than the true in-view span
+
+    await run(harness, { bbox, startTime, endTime, maxPoints: 2_000 });
+
+    const spanQuery = harness.executed.find((call) => call.sql.includes('min(time)'));
+
+    // The shortcut must NOT have fired: with a bbox present, only the
+    // bbox-scoped min/max query can tell the truth about the in-view span.
+    expect(spanQuery).toBeDefined();
+    expect(spanQuery!.sql).toContain('ST_MakeEnvelope(');
+    expect(spanQuery!.params).toEqual(expect.arrayContaining(bbox));
+  });
 });
 
 describe('PositionService.findTrack — filters', () => {
