@@ -15,6 +15,19 @@ import { GraphDeltaWriter } from '@ci/domains/memory';
 const FREQUENTS_MIN_VISIT_DAYS = 3;
 
 /**
+ * The exchanged-communication count that reads as a full-strength tie.
+ *
+ * Any [0, 1] weight has to clamp somewhere; the only question is where the
+ * resolution is spent. A log curve normalised on this number spends it across
+ * the whole heavy tail of a real corpus — 1 → 0.08, 10 → 0.26, 100 → 0.50,
+ * 5,000 → 0.92 — instead of piling every correspondent above a few hundred
+ * messages into the top hundredth. Ten thousand exchanges between two people
+ * is unambiguously a strongest tie, and telling 10k apart from 40k is not a
+ * distinction the graph does anything with.
+ */
+const COMMUNICATES_FULL_STRENGTH_COUNT = 10_000;
+
+/**
  * Per-call switches for {@link DerivedRelationshipService.derive}.
  *
  * The split exists because the three legs are not the same KIND of write. Two
@@ -94,49 +107,70 @@ export class DerivedRelationshipService {
   }
 
   /**
-   * COMMUNICATES_WITH from episodic EMAILED / MESSAGED / CALLED / MET_WITH /
-   * ORGANIZED_EVENT_WITH person↔person edges.
+   * COMMUNICATES_WITH between two people, weighted by how much they actually
+   * exchanged.
    *
-   * ### What `n` is, and what it is NOT
+   * ### Which pairs, and how strongly
    *
-   * It is NOT a communication count, and no wording here should imply one. The
-   * same schema fact that made the FREQUENTS leg a no-op applies to this one:
+   * The PAIR SET comes from episodic EMAILED / MESSAGED / CALLED / MET_WITH /
+   * ORGANIZED_EVENT_WITH person↔person edges, unordered via LEAST/GREATEST. The
+   * WEIGHT comes from the evidence, not from those edges — for the same reason
+   * the FREQUENTS leg takes its day count from `ci.position`:
    * `relationships_unique_directed_idx` is UNIQUE on
    * (from_entity_id, to_entity_id, relationship_type) WHERE `is_active`, so a
-   * pair holds at most ONE active row per direction per type. Aggregating those
-   * rows therefore counts DISTINCT (direction, type) combinations — bounded at
-   * 10 for the five types above — however many emails, messages or calls
-   * actually passed between the two people. Two colleagues who exchanged 4,000
-   * emails and one who sent a single text both count 1.
+   * pair holds at most ONE active row per direction per type. Counting those
+   * rows counts DISTINCT (direction, type) combinations — bounded at 10 across
+   * the five types — however many emails, messages or calls actually passed
+   * between the two people, and `LEAST(1, LN(n+1)/LN(10)/2)` over a count that
+   * cannot exceed 10 saturates at ≈0.52. Two colleagues who traded 4,000 emails
+   * and two people who swapped one text scored the same.
    *
-   * Which is why the property is named `episodic_link_kinds`. The strength that
-   * comes off it, `LEAST(1, LN(n+1)/LN(10)/2)`, is likewise a function of that
-   * count and saturates at `LN(11)/LN(10)/2 ≈ 0.52` — a real ceiling, not a
-   * theoretical one, and the honest reading of the edge is "these two are
-   * linked in n distinct ways", not "these two talk a lot".
+   * So the volume is read off `ci.communications`: rows naming both people, in
+   * EITHER direction (`from_entity_id` = one and the other in `to_entity_ids`),
+   * summed as two index-driven counts rather than one OR so each half rides
+   * `communications_from_idx`. A pair is unordered here exactly as it is in the
+   * episodic CTE.
    *
-   * The leg still does useful work: it projects one bidirectional L2 edge per
-   * pair the user's own data already links, which is what the graph reads. It
-   * is the WEIGHT that is weaker than it looks.
+   * Both figures are kept, under names that say what they measure:
+   * `episodic_link_kinds` (how many DISTINCT ways the graph links the pair) and
+   * `communications_exchanged` (how many messages the corpus holds).
    *
-   * ### The follow-up this does not take
+   * The curve is `LN(c+1) / LN(COMMUNICATES_FULL_STRENGTH_COUNT)`, floored at
+   * the old link-kind term so no existing edge can be WEAKENED by a pair whose
+   * communications were never entity-resolved — a MET_WITH-only pair, or one
+   * whose messages carry no `to_entity_ids`, keeps exactly the weight it has
+   * today. Log, not linear: correspondence volume is heavy-tailed, and the
+   * useful question is "which of these ties is stronger", which a linear scale
+   * answers by putting every real correspondent at 1.
    *
-   * A true frequency would have to come from the evidence, the way
-   * {@link DerivedRelationshipService.upsertFrequents} now takes its day count
-   * from `ci.position` — here that means counting `ci.communications` rows
-   * naming both people (`from_entity_id` / `to_entity_ids`). That changes every
-   * existing edge's strength for every user, so it is deliberately NOT bundled
-   * into a fix pass; `ON CONFLICT DO NOTHING` means it would also need a
-   * re-derive to take effect on rows that already exist.
+   * ### Why this may UPDATE, and what it may not touch
+   *
+   * `ON CONFLICT DO NOTHING` would leave every already-derived edge at the
+   * strength the old formula gave it forever, so the re-derive that makes the
+   * new weight real would silently do nothing. The conflict action therefore
+   * updates — but only rows THIS service's provenance stamp owns, and only the
+   * `strength` and the four properties keys the derivation writes (via a shallow
+   * `||` merge that leaves everything else on the row alone). An edge a person
+   * curated, or another producer asserted, is left exactly as it stands and is
+   * not counted. That keeps the leg what `DerivationRunListener` describes: a
+   * projection of assertions the user's own data already makes, which is why it
+   * runs on a timer without a `decideAction` gate — unlike the household leg,
+   * which mints an entity and does have one.
+   *
+   * The `WHERE` on the DO UPDATE also compares before/after, so a pass that
+   * changes nothing writes nothing, returns nothing, and emits no delta.
    */
   private async upsertCommunicatesWith(userId: string): Promise<number> {
     return this.dataSource.transaction(async (manager) => {
       // Historical rows sometimes store entity types in lowercase ('person');
       // match case-insensitively and always write canonical 'Person'.
-      const inserted: Array<{
+      const upserted: Array<{
         relationship_id: string;
         from_entity_id: string;
         to_entity_id: string;
+        inserted: boolean;
+        old_strength: number | null;
+        new_strength: number;
       }> = await manager.query(
         `WITH episodic AS (
            SELECT
@@ -144,7 +178,7 @@ export class DerivedRelationshipService {
              GREATEST(from_entity_id, to_entity_id) AS b,
              -- Distinct (direction, type) rows, NOT episodes: the unique index
              -- caps this at 10. See the method comment.
-             COUNT(*)::int AS n
+             COUNT(*)::int AS link_kinds
            FROM ci.relationships
           WHERE owner_user_id = $1
             AND is_active = TRUE
@@ -153,31 +187,90 @@ export class DerivedRelationshipService {
             AND lower(to_entity_type) = 'person'
             AND from_entity_id <> to_entity_id
           GROUP BY 1, 2
+         ),
+         measured AS (
+           SELECT
+             e.a,
+             e.b,
+             e.link_kinds,
+             (
+               (SELECT COUNT(*)
+                  FROM ci.communications m
+                 WHERE m.user_id = $1
+                   AND m.from_entity_id = e.a
+                   AND m.to_entity_ids @> ARRAY[e.b])
+               +
+               (SELECT COUNT(*)
+                  FROM ci.communications m
+                 WHERE m.user_id = $1
+                   AND m.from_entity_id = e.b
+                   AND m.to_entity_ids @> ARRAY[e.a])
+             )::int AS exchanged
+           FROM episodic e
+         ),
+         -- The pre-statement strengths, so an updated edge can report what it
+         -- moved FROM. Every CTE of one statement reads the same snapshot.
+         prior AS (
+           SELECT from_entity_id, to_entity_id, strength
+             FROM ci.relationships
+            WHERE owner_user_id = $1
+              AND relationship_type = $3
+              AND is_active = TRUE
+         ),
+         upserted AS (
+           INSERT INTO ci.relationships AS r
+             (from_entity_id, to_entity_id, relationship_type, strength, properties,
+              owner_user_id, from_entity_type, to_entity_type, is_bidirectional)
+           SELECT a, b, $3,
+                  GREATEST(
+                    LEAST(1.0, LN(link_kinds + 1) / LN(10) / 2.0),
+                    LEAST(1.0, LN(exchanged + 1) / LN($4::float8))
+                  ),
+                  jsonb_build_object(
+                    'layer', 'L2',
+                    'provenance', jsonb_build_object(
+                      'source', 'DerivedRelationshipService',
+                      'job', 'communicates_with',
+                      'derived_from', 'communications.from_entity_id/to_entity_ids'
+                    ),
+                    'episodic_link_kinds', link_kinds,
+                    'communications_exchanged', exchanged
+                  ),
+                  $1, 'Person', 'Person', TRUE
+             FROM measured
+           ON CONFLICT (from_entity_id, to_entity_id, relationship_type) WHERE is_active
+           DO UPDATE SET
+             strength = EXCLUDED.strength,
+             properties = r.properties || EXCLUDED.properties,
+             updated_at = now()
+           WHERE r.properties -> 'provenance' ->> 'source' = 'DerivedRelationshipService'
+             AND (
+               r.strength IS DISTINCT FROM EXCLUDED.strength
+               OR r.properties IS DISTINCT FROM (r.properties || EXCLUDED.properties)
+             )
+           RETURNING relationship_id, from_entity_id, to_entity_id, strength, (xmax = 0) AS inserted
          )
-         INSERT INTO ci.relationships
-           (from_entity_id, to_entity_id, relationship_type, strength, properties,
-            owner_user_id, from_entity_type, to_entity_type, is_bidirectional)
-         SELECT a, b, $3,
-                LEAST(1.0, LN(n + 1) / LN(10) / 2.0),
-                jsonb_build_object(
-                  'layer', 'L2',
-                  'provenance', jsonb_build_object('source', 'DerivedRelationshipService', 'job', 'communicates_with'),
-                  'episodic_link_kinds', n
-                ),
-                $1, 'Person', 'Person', TRUE
-           FROM episodic
-         ON CONFLICT DO NOTHING
-         RETURNING relationship_id, from_entity_id, to_entity_id`,
+         SELECT u.relationship_id,
+                u.from_entity_id,
+                u.to_entity_id,
+                u.inserted,
+                p.strength AS old_strength,
+                u.strength AS new_strength
+           FROM upserted u
+           LEFT JOIN prior p
+             ON p.from_entity_id = u.from_entity_id
+            AND p.to_entity_id = u.to_entity_id`,
         [
           userId,
           ['EMAILED', 'MESSAGED', 'CALLED', 'MET_WITH', 'ORGANIZED_EVENT_WITH'],
           RelationshipType.COMMUNICATES_WITH,
+          COMMUNICATES_FULL_STRENGTH_COUNT,
         ],
       );
 
-      await this.recordCreated(manager, userId, RelationshipType.COMMUNICATES_WITH, inserted);
+      await this.recordEdgeDeltas(manager, userId, RelationshipType.COMMUNICATES_WITH, upserted);
 
-      return inserted.length;
+      return upserted.length;
     });
   }
 
@@ -257,7 +350,12 @@ export class DerivedRelationshipService {
         [userId, RelationshipType.FREQUENTS, FREQUENTS_MIN_VISIT_DAYS],
       );
 
-      await this.recordCreated(manager, userId, RelationshipType.FREQUENTS, inserted);
+      await this.recordEdgeDeltas(
+        manager,
+        userId,
+        RelationshipType.FREQUENTS,
+        inserted.map((row) => ({ ...row, inserted: true })),
+      );
 
       return inserted.length;
     });
@@ -361,20 +459,36 @@ export class DerivedRelationshipService {
     });
   }
 
-  private async recordCreated(
+  /**
+   * One `ci.graph_deltas` row per edge this pass actually wrote, in the SAME
+   * transaction as the write.
+   *
+   * A re-weighted edge is `updated`, not `created`: the insight stream reads
+   * this, and re-announcing an edge it already announced would be a phantom.
+   * `changedFields.strength` carries the move so a reader can tell a
+   * re-derivation that mattered from one that did not.
+   */
+  private async recordEdgeDeltas(
     manager: Parameters<GraphDeltaWriter['recordMany']>[1],
     userId: string,
     relationshipType: string,
-    inserted: Array<{ relationship_id: string; from_entity_id: string; to_entity_id: string }>,
+    rows: Array<{
+      relationship_id: string;
+      from_entity_id: string;
+      to_entity_id: string;
+      inserted: boolean;
+      old_strength?: number | null;
+      new_strength?: number;
+    }>,
   ): Promise<void> {
-    if (inserted.length === 0) {
+    if (rows.length === 0) {
       return;
     }
 
     await this.graphDeltaWriter.recordMany(
-      inserted.map((row) => ({
+      rows.map((row) => ({
         nodeType: 'relationship' as const,
-        changeType: 'created' as const,
+        changeType: row.inserted ? ('created' as const) : ('updated' as const),
         relationshipId: row.relationship_id,
         relationshipType,
         fromEntityId: row.from_entity_id,
@@ -382,6 +496,9 @@ export class DerivedRelationshipService {
         ownerUserId: userId,
         changeSource: 'DerivedRelationshipService',
         changeReason: relationshipType,
+        ...(row.inserted
+          ? {}
+          : { changedFields: { strength: { old: row.old_strength ?? null, new: row.new_strength } } }),
       })),
       manager,
     );
