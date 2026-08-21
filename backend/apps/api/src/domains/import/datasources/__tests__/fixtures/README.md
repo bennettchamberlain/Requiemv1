@@ -35,6 +35,12 @@ needs some file to exist.
 ### Text-based Formats
 
 - **`sample.ics`**: Calendar events in iCalendar format
+- **`apple-calendar-valarm.ics`**: A real-shaped Apple Calendar export — folded
+  lines, a `VTIMEZONE`, and a `BEGIN:VALARM` sub-component *inside* every
+  `VEVENT` carrying its own `UID`/`DESCRIPTION`/`SUMMARY`/`ATTENDEE`. The bytes
+  are the thing under test: the parser used to fold those nested properties into
+  the event and lose the event's real description and identity. Also holds a
+  recurring master plus two `RECURRENCE-ID` overrides that share its `UID`.
 - **`sample.vcf`**: vCard contacts with multiple contact entries
 - **`sample.geojson`**: GeoJSON location data with points and line strings
 
