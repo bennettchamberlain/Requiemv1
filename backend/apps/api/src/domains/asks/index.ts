@@ -72,7 +72,7 @@ export {
   AskExecutorService,
   AskAnswerService,
 };
-export { evaluateGrant, canonicalDataClass, isGrantActive } from './grantMatch';
+export { evaluateGrant, canonicalDataClass, canonicalQueryType, isGrantActive } from './grantMatch';
 export { checkSlidingWindow } from './rateLimit';
 export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems, countFreeSummary } from './disclosure';
 export {
@@ -81,6 +81,7 @@ export {
   disclosureCeiling,
   minRung,
   narrowerForm,
+  narrowestRung,
   rungAtLeast,
   rungForForm,
 } from './policy';

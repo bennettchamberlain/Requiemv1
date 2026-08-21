@@ -1,9 +1,9 @@
-import { canonicalDataClass } from './canonical';
+import { canonicalDataClass, canonicalQueryType } from './canonical';
 import type { AskGrant } from './entities/AskGrantEntity';
 import { DISCLOSURE_RUNGS } from './policy';
 import type { AskQuery, DisclosureRung, GrantEvaluation } from './types';
 
-export { canonicalDataClass };
+export { canonicalDataClass, canonicalQueryType };
 
 /**
  * Pure, per-query consent evaluation — the heart of the ask gate.
@@ -69,13 +69,37 @@ export function evaluateGrant(
   return { decision: 'review' };
 }
 
-/** The grant's own disclosure ceiling, if it declares one. */
+/**
+ * The grant's own disclosure ceiling, if it declares one.
+ *
+ * AN UNREADABLE CEILING IS THE STRICTEST ONE, NOT THE ABSENCE OF ONE. `scope`
+ * is jsonb, so `maxDisclosure` can hold anything a client or a migration ever
+ * wrote there. This used to validate against the rung list and return
+ * `undefined` on a miss — which discards the field BEFORE `minRung` can fail
+ * closed on it, so a grant reading `maxDisclosure: 'summry'` disclosed MORE
+ * than the identical grant reading `'summary'`. A typo in the owner's own
+ * restriction must not be the loosest reading of it.
+ *
+ * The value is canonicalized first (same normalizer as `dataClass`), so a
+ * `'Full'` or a `'count '` still resolves to the rung the owner meant; only a
+ * value that names no rung at all falls through to `none`. Note the direction:
+ * canonicalizing here can only ever RECOVER an owner's intent, because the
+ * fallback beneath it is already the tightest rung on the ladder.
+ */
 function ceilingOf(grant: AskGrant): DisclosureRung | undefined {
-  const max = grant.scope?.maxDisclosure;
+  const declared = grant.scope?.maxDisclosure;
 
-  return typeof max === 'string' && (DISCLOSURE_RUNGS as readonly string[]).includes(max)
-    ? (max as DisclosureRung)
-    : undefined;
+  // Absent is genuinely "this grant imposes no ceiling of its own" — only the
+  // tier ceiling applies. That is different from present-but-unreadable.
+  if (declared == null) {
+    return undefined;
+  }
+
+  const canonical = typeof declared === 'string' ? canonicalDataClass(declared) : null;
+
+  return canonical != null && (DISCLOSURE_RUNGS as readonly string[]).includes(canonical)
+    ? (canonical as DisclosureRung)
+    : 'none';
 }
 
 /**
@@ -165,7 +189,14 @@ function autoGrantNamesQueryClass(grant: AskGrant, query: AskQuery): boolean {
  * a block must stay broad (see {@link blockCoversQuery}).
  */
 function classMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
-  if (grant.queryType !== query.queryType) {
+  // BOTH SIDES, THROUGH THE SAME NORMALIZER. This compared the two `queryType`
+  // strings RAW while `dataClass` two lines down went through
+  // `canonicalDataClass` — so a block pinned to `photos` denied `photos` and
+  // let `Photos`, `PHOTOS` and `'photos '` past, into review, where a broad
+  // `auto` grant or a tired tap answers them. canonical.ts already carried the
+  // warning that any normalization here must be mirrored by every consumer; it
+  // was never applied to the field beside the one it was written for.
+  if (canonicalQueryType(grant.queryType) !== canonicalQueryType(query.queryType)) {
     return false;
   }
 
@@ -206,10 +237,13 @@ function scopeCoversQuery(grant: AskGrant, query: AskQuery): boolean {
     return true;
   }
 
-  // Archetype restriction: the ask's queryType IS its archetype.
+  // Archetype restriction: the ask's queryType IS its archetype, so it is
+  // canonicalized by the queryType normalizer rather than by a hand-rolled
+  // `trim().toLowerCase()` — a third spelling of "canonical" in this file is a
+  // third place for the two sides to drift apart.
   if (scope.archetypes != null) {
-    const allowed = scope.archetypes.map((a) => canonicalDataClass(a)).filter((a): a is string => a != null);
-    if (!allowed.includes(query.queryType.trim().toLowerCase())) {
+    const allowed = scope.archetypes.map((a) => canonicalQueryType(a)).filter((a): a is string => a != null);
+    if (!allowed.includes(canonicalQueryType(query.queryType) ?? '')) {
       return false;
     }
   }
@@ -251,7 +285,9 @@ function scopeCoversQuery(grant: AskGrant, query: AskQuery): boolean {
  * evaded by omission.
  */
 function blockCoversQuery(grant: AskGrant, query: AskQuery): boolean {
-  if (grant.queryType !== query.queryType) {
+  // Same normalizer as `classMatchesQuery` — this is the OTHER raw comparison,
+  // and the one that actually decided a `deny`.
+  if (canonicalQueryType(grant.queryType) !== canonicalQueryType(query.queryType)) {
     return false;
   }
 

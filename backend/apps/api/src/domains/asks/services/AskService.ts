@@ -10,7 +10,8 @@ import { UserEntity } from '@ci/domains/user';
 import { assertAskTransition } from '../askStatus';
 import { type AskAnswer } from '../entities/AskAnswerEntity';
 import { type Ask, AskEntity } from '../entities/AskEntity';
-import type { AskStatus, CreateAskDto, DisclosedAnswer, GrantDecision } from '../types';
+import { narrowestRung } from '../policy';
+import type { AskStatus, CreateAskDto, DisclosedAnswer, DisclosureRung, GrantDecision } from '../types';
 
 import { AskAnswerService } from './AskAnswerService';
 import { AskAuditService } from './AskAuditService';
@@ -26,6 +27,19 @@ import { GrantService } from './GrantService';
  * oracle usable by any signed-in user against arbitrary ids.
  */
 const UNROUTABLE_RESPONDER = 'An ask must be directed at another user';
+
+/**
+ * What a lifecycle move may stamp alongside the new status.
+ *
+ * Both fields distinguish `undefined` ("leave it as it is") from `null`
+ * ("clear it"), which is the whole reason they are not plain optionals with a
+ * default — a transition that silently reset a consent stamp it was not asked
+ * to touch is a consent bug, not a typing nicety.
+ */
+interface TransitionOptions {
+  consentBasis?: string | null;
+  disclosureCeiling?: DisclosureRung | null;
+}
 
 /**
  * Owns the {@link AskEntity} lifecycle and the submit orchestration that ties
@@ -142,7 +156,14 @@ export class AskService {
     }
 
     if (evaluation.decision === 'auto') {
-      const preAuthorized = await this.setConsentBasis(ask.id, evaluation.grantId ?? null);
+      // The ceiling is stamped WITH the basis, at the instant consent applies.
+      // Re-deriving it at answer time is how revoking a grant used to make the
+      // answer bigger — see {@link AskEntity.disclosureCeiling}.
+      const preAuthorized = await this.setConsentBasis(
+        ask.id,
+        evaluation.grantId ?? null,
+        evaluation.maxDisclosure ?? null,
+      );
 
       return { ask: preAuthorized, decision: 'auto' };
     }
@@ -152,9 +173,38 @@ export class AskService {
     return { ask: inboxed, decision: 'review' };
   }
 
-  /** Owner approves a pending ask → `answering` (the executor completes it). */
+  /**
+   * Owner approves a pending ask → `answering` (the executor completes it).
+   *
+   * CONSENT IS GIVEN HERE, so the disclosure ceiling is captured here. The
+   * answer path used to re-derive it from the live grants instead, which meant
+   * revoking (or outliving) the grant that capped this ask REMOVED the cap
+   * while leaving the ask answerable — the owner's `answering` decision is
+   * deliberately not undone by revocation (#2211), so the ask ran on with only
+   * the tier ceiling and disclosed MORE than it would have before the owner
+   * withdrew anything.
+   *
+   * A `deny` at approval time stamps `none`: if a block grant covers this ask
+   * now, the owner's tap must not be able to push anything past it. Everything
+   * else stamps the deciding grant's own `maxDisclosure`, or NULL when no grant
+   * capped it at all — see {@link AskEntity.disclosureCeiling} for why NULL is
+   * a value and not a gap.
+   *
+   * Any ceiling ALREADY stamped on the ask survives as a floor
+   * ({@link narrowestRung}), and that is the case that closes the loop:
+   * `withdrawPreAuthorization` sends a revoked ask back to review with its
+   * basis cleared but its ceiling intact, so approving it afterwards cannot
+   * disclose more than it would have before the owner revoked anything. An
+   * owner who genuinely means to widen does it by writing a new grant and
+   * letting the asker ask again — never as a side effect of withdrawing one.
+   */
   async approve(context: UserServiceContext, id: string): Promise<Ask> {
-    return this.transition(context, id, 'answering');
+    const entity = await this.responderOwned(context, id);
+    const evaluation = await this.grantService.evaluate(AskEntity.toEgressType(entity));
+    const evaluated = evaluation.decision === 'deny' ? 'none' : evaluation.maxDisclosure;
+    const ceiling = narrowestRung(entity.disclosureCeiling, evaluated) ?? null;
+
+    return this.applyTransition(entity, 'answering', { disclosureCeiling: ceiling });
   }
 
   /** Owner declines a pending ask → `declined`, and records the audit row. */
@@ -310,7 +360,7 @@ export class AskService {
     context: UserServiceContext,
     id: string,
     to: AskStatus,
-    options: { consentBasis?: string | null } = {},
+    options: TransitionOptions = {},
   ): Promise<Ask> {
     const entity = await this.responderOwned(context, id);
 
@@ -323,33 +373,47 @@ export class AskService {
    * used internally by {@link submit} and the expiry sweep, never from a request
    * handler on behalf of a user.
    */
-  async systemTransition(
-    id: string,
-    to: AskStatus,
-    options: { consentBasis?: string | null } = {},
-  ): Promise<Ask> {
+  async systemTransition(id: string, to: AskStatus, options: TransitionOptions = {}): Promise<Ask> {
     const entity = await this.byId(id);
 
     return this.applyTransition(entity, to, options);
   }
 
-  /** Set the consent basis on an ask without changing its status (system-only). */
-  async setConsentBasis(id: string, consentBasis: string | null): Promise<Ask> {
+  /**
+   * Stamp the standing-grant authorization on an ask without changing its
+   * status (system-only): the deciding grant AND the ceiling that grant imposed
+   * at that moment.
+   *
+   * The two are written together on purpose. A basis with no ceiling is exactly
+   * the shape the answer path had to reconstruct from live grants, and
+   * reconstructing it is what let a revocation widen the answer.
+   */
+  async setConsentBasis(
+    id: string,
+    consentBasis: string | null,
+    disclosureCeiling: DisclosureRung | null = null,
+  ): Promise<Ask> {
     const entity = await this.byId(id);
     entity.consentBasis = consentBasis;
+    entity.disclosureCeiling = disclosureCeiling;
     const saved = await this.askRepository.save(entity);
 
     return AskEntity.toEgressType(saved);
   }
 
-  private async applyTransition(
-    entity: AskEntity,
-    to: AskStatus,
-    options: { consentBasis?: string | null },
-  ): Promise<Ask> {
+  private async applyTransition(entity: AskEntity, to: AskStatus, options: TransitionOptions): Promise<Ask> {
     entity.status = assertAskTransition(entity.status, to);
     if (options.consentBasis !== undefined) {
       entity.consentBasis = options.consentBasis;
+    }
+
+    // `undefined` leaves the stamped ceiling alone; an explicit `null` clears
+    // it. `withdrawPreAuthorization` deliberately passes NEITHER: a revoked ask
+    // loses its consent basis (which is what makes it unanswerable) and KEEPS
+    // its ceiling, so the value survives as a floor for whatever the owner
+    // decides next. See {@link approve}.
+    if (options.disclosureCeiling !== undefined) {
+      entity.disclosureCeiling = options.disclosureCeiling;
     }
 
     const saved = await this.askRepository.save(entity);

@@ -30,6 +30,7 @@ function fakeAsk(overrides: Partial<Ask> = {}): Ask {
     query: { queryType: 'photos', prompt: 'do you have photos of us?' },
     status: 'answering',
     consentBasis: null,
+    disclosureCeiling: null,
     createdAt: new Date('2026-07-15T00:00:00Z'),
     updatedAt: new Date('2026-07-15T00:00:00Z'),
     expiresAt: null,
@@ -445,4 +446,129 @@ describe('createAsk — the responder’s policy posture is not part of the rece
       expect(['auto', 'review', 'deny']).not.toContain(result.decision);
     },
   );
+});
+
+/**
+ * ═══ CLOSING CONSENT MUST NEVER MAKE THE ANSWER BIGGER ═══
+ *
+ * `resolveGrantCeiling` re-derived the deciding grant's `maxDisclosure` from
+ * the LIVE grants at answer time. Every SQL read path filters
+ * `revoked_at IS NULL`, so a revoked or lapsed grant is not stale there — it is
+ * invisible. The re-evaluation returned no ceiling, and the ask ran under the
+ * tier ceiling alone.
+ *
+ * On an ask the owner had already approved that is an escalation, because
+ * status `answering` is deliberately exempt from retroactive withdrawal
+ * (#2211): a human said yes to this specific ask and revoking an unrelated
+ * standing grant must not undo that. So the ask stayed answerable while its cap
+ * evaporated. Reproduced against Postgres — with the grant in force the asker
+ * received `items: []` and "3 matching items."; with the grant REVOKED the same
+ * ask disclosed all three entity references, readable through `askAnswer`.
+ *
+ * It also made Revoke strictly more dangerous than Block: a live `block` maps
+ * to ceiling `none`, a REVOKED grant mapped to no ceiling at all.
+ *
+ * The ceiling is now captured on the ask when consent is given, and the two
+ * sources are combined by taking the NARROWER — never by letting a silent one
+ * erase a speaking one.
+ */
+describe('runAsk — revoking consent can only ever tighten the answer', () => {
+  const THREE = [
+    { id: 'e1', type: 'file' },
+    { id: 'e2', type: 'file' },
+    { id: 'e3', type: 'file' },
+  ];
+
+  it('honours the ceiling captured at consent time after the grant is revoked', async () => {
+    const { resolver, askService } = makeResolver(
+      // The owner approved this ask while a grant capping it at `count` stood.
+      fakeAsk({ status: 'answering', disclosureCeiling: 'count' }),
+      {
+        // …and then revoked it, so the live evaluation now matches nothing.
+        evaluation: { decision: 'review' },
+        matches: THREE,
+      },
+    );
+
+    await resolver.runAsk(asResponder, gid);
+
+    const answer = persistedAnswer(askService);
+    expect(answer.items).toEqual([]);
+    expect(answer.summary).toBe('3 matching items.');
+  });
+
+  it('is the CAPTURED value doing the work, not a blanket clamp', async () => {
+    // The control the escalation report used: identical ask, identical (empty)
+    // evaluation, no captured ceiling → the tier ceiling alone, which for a
+    // household asker is `full`. If this ever went quiet the test above would
+    // pass for the wrong reason.
+    const { resolver, askService } = makeResolver(fakeAsk({ status: 'answering', disclosureCeiling: null }), {
+      evaluation: { decision: 'review' },
+      matches: THREE,
+    });
+
+    await resolver.runAsk(asResponder, gid);
+
+    expect(persistedAnswer(askService).items).toHaveLength(3);
+  });
+
+  it('lets a block written AFTER consent still tighten to nothing', async () => {
+    const { resolver, askService } = makeResolver(
+      fakeAsk({ status: 'answering', disclosureCeiling: 'full' }),
+      { evaluation: { decision: 'deny', grantId: 'blk' }, matches: THREE },
+    );
+
+    await resolver.runAsk(asResponder, gid);
+
+    expect(persistedAnswer(askService).summary).toBe('Nothing was shared.');
+  });
+
+  it('refuses to let a MORE generous replacement grant raise the captured cap', async () => {
+    // Monotonicity from the other direction: superseding a grant with a wider
+    // one must not widen an ask the owner already consented to under the old
+    // one.
+    const { resolver, askService } = makeResolver(
+      fakeAsk({ status: 'answering', disclosureCeiling: 'count' }),
+      { evaluation: { decision: 'auto', grantId: 'g2', maxDisclosure: 'full' }, matches: THREE },
+    );
+
+    await resolver.runAsk(asResponder, gid);
+
+    expect(persistedAnswer(askService).items).toEqual([]);
+  });
+});
+
+/**
+ * ═══ THE GRANT-MATRIX ORACLE #2210 MOVED INSTEAD OF CLOSING ═══
+ *
+ * `CreateAskPayload.decision` was collapsed to a constant because the raw
+ * `auto` | `review` | `deny` told the asker the responder's standing-grant
+ * posture. The identical signal stayed readable one field along, as
+ * `ask.status` — reproduced against Postgres: a block grant returned
+ * `declined`, an auto grant `delivered`, no matching grant `under_review`.
+ *
+ * Masking it on `CreateAskPayload` alone would have moved it a second time,
+ * since the asker is a participant and `ask(id)` / `askOutbox` hand them the
+ * same row a round-trip later. The cut is made in the projection that already
+ * knows who is looking.
+ */
+describe('projections — the ask STATUS is the same oracle as the decision', () => {
+  it.each(['declined', 'under_review', 'answering', 'delivered', 'expired', 'sent'] as const)(
+    'shows the asker nothing distinguishable for a %s ask',
+    (status) => {
+      expect(AskType.toType(fakeAsk({ status }), ASKER).status).toBe('delivered');
+      // A caller that forgets to say who is looking gets the safe projection.
+      expect(AskType.toType(fakeAsk({ status })).status).toBe('delivered');
+    },
+  );
+
+  it('still tells the asker when an answer exists — the one thing they need', () => {
+    expect(AskType.toType(fakeAsk({ status: 'answered' }), ASKER).status).toBe('answered');
+  });
+
+  it('keeps the RESPONDER’s own lifecycle intact — they own the inbox', () => {
+    for (const status of ['declined', 'under_review', 'answering', 'expired'] as const) {
+      expect(AskType.toType(fakeAsk({ status }), RESPONDER).status).toBe(status);
+    }
+  });
 });

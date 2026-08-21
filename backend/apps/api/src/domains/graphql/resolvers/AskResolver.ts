@@ -17,8 +17,8 @@ import {
   disclosureCeiling,
   inferAnswerForm,
   isAnswerable,
-  minRung,
   narrowerForm,
+  narrowestRung,
   type AnswerForm,
   type DisclosureRung,
   type GrantMode,
@@ -213,12 +213,16 @@ export class AskResolver {
     // The grant ceiling is what this path used to drop on the floor:
     // `evaluateGrant` computes it and `AskService.submit` reads the same
     // evaluation for the consent basis, but nothing carried it here, so a grant
-    // reading "digest only" still disclosed in full. The federated path
-    // (`PeerAskService`) already combined both; only the LOCAL path did not.
+    // reading "digest only" still disclosed in full.
+    //
+    // Combined with `narrowestRung`, not `minRung(a, b ?? a)`: "this source
+    // imposes no ceiling" and "no ceiling applies" are different statements,
+    // and collapsing them is the shape of the escalation documented on
+    // {@link resolveGrantCeiling}.
     const tier = await this.resolveTier(serviceContext, ask);
     const tierCeiling = disclosureCeiling(tier, ask.query.dataClass);
     const grantCeiling = await this.resolveGrantCeiling(ask);
-    const ceiling = grantCeiling != null ? minRung(tierCeiling, grantCeiling) : tierCeiling;
+    const ceiling = narrowestRung(tierCeiling, grantCeiling) ?? tierCeiling;
     const answer = applyDisclosureCeiling(built, ceiling);
 
     // The audit records what was ACTUALLY disclosed — which for every form but
@@ -266,30 +270,61 @@ export class AskResolver {
   }
 
   /**
-   * The disclosure ceiling the deciding standing grant imposes on this ask.
+   * The disclosure ceiling the owner's standing grants impose on this ask —
+   * the NARROWER of what they said when consent was given and what they say
+   * now.
    *
-   * RE-DERIVED rather than persisted. `AskService.submit` already evaluates the
-   * grants and stores the deciding grant id as the ask's `consentBasis`, but it
-   * stores only the id — and on the review path not even that — so there is no
-   * stored ceiling to read. Re-running the pure evaluation is cheaper and
-   * narrower than a column that could drift out of step with the grant it
-   * copies.
+   * ═══ CLOSING CONSENT USED TO MAKE THE ANSWER BIGGER ═══
    *
-   * A `deny` is mapped to `none`: if a block grant covers this ask NOW, nothing
-   * may cross, whatever authorized it earlier. Downgrading is always the safe
-   * direction on this ladder.
+   * This method used to re-derive the ceiling from the live grants alone, and
+   * that "drift window" its old comment described as harmless was an
+   * escalation. Every SQL read path filters `revoked_at IS NULL`, so a revoked
+   * or lapsed grant is not merely stale here — it is INVISIBLE. The
+   * re-evaluation then found no grant, returned no ceiling, and the ask ran
+   * under the tier ceiling alone.
    *
-   * The one drift window this leaves open: if the authorizing grant is revoked
-   * between submit and run, the re-evaluation finds no grant and therefore no
-   * ceiling, so only the tier ceiling applies. That is looser than the revoked
-   * grant was, but a revoked grant should stop the ask from being ANSWERABLE at
-   * all — a lifecycle question (`isAnswerable`), not a ceiling one, and left to
-   * the epic that owns revocation semantics.
+   * On an ask the owner had already approved that is not theoretical. Status
+   * `answering` is deliberately exempt from retroactive withdrawal (#2211) —
+   * a human said yes to this specific ask, and revoking an unrelated standing
+   * grant must not undo that — so the ask stayed answerable while its cap
+   * evaporated. Reproduced against Postgres: with the grant in force the asker
+   * got `items: []` and "3 matching items."; with the grant REVOKED the same
+   * ask disclosed all three entity references, readable through `askAnswer`.
+   *
+   * It also made Revoke strictly more dangerous than Block. A live `block`
+   * grant maps to `none` below; a REVOKED grant mapped to nothing at all. The
+   * owner's strongest "stop" and their most complete "stop" pointed in
+   * opposite directions.
+   *
+   * ═══ WHY CAPTURE RATHER THAN LOOK BACK ═══
+   *
+   * The alternative was to keep re-deriving and teach the read path to include
+   * revoked grants. That fails on the review path, which stores no consent
+   * basis at all: there is no grant to look back at, and the ceiling the owner
+   * approved under would still be unrecoverable. So the ceiling is stamped on
+   * the ask at the moment consent is given ({@link AskService.approve} and the
+   * auto path in `submit`) and read from there.
+   *
+   * The two sources are combined with {@link narrowestRung}, never with `??`.
+   * A source that says nothing must not erase one that does — that is exactly
+   * the bug — so:
+   *
+   * - a revoked or lapsed grant leaves the captured ceiling standing (it
+   *   floors the answer at its last known value);
+   * - a `deny` still maps to `none`, so a block written AFTER consent tightens
+   *   the answer to nothing, as it always did;
+   * - a grant SUPERSEDED by a more generous one cannot raise the captured cap
+   *   either, which is the same monotonicity from the other direction.
+   *
+   * A NULL capture is honest rather than unknown: it means no grant capped
+   * this ask when the owner consented, and the live evaluation is then the only
+   * grant-side ceiling there is (the pre-existing behaviour, and correct).
    */
   private async resolveGrantCeiling(ask: Ask): Promise<DisclosureRung | undefined> {
     const evaluation = await this.grantService.evaluate(ask);
+    const live = evaluation.decision === 'deny' ? 'none' : evaluation.maxDisclosure;
 
-    return evaluation.decision === 'deny' ? 'none' : evaluation.maxDisclosure;
+    return narrowestRung(ask.disclosureCeiling, live);
   }
 
   /** The disclosure-filtered answer for an ask (visible to asker or responder). */

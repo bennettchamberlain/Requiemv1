@@ -69,7 +69,35 @@ describe('disclosureCeiling', () => {
 describe('applyDisclosureCeiling', () => {
   it('leaves an answer alone when the ceiling is at or above its natural rung', () => {
     expect(applyDisclosureCeiling(answer(), 'full')).toEqual(answer());
-    expect(applyDisclosureCeiling(answer(), 'redacted')).toEqual(answer());
+  });
+
+  /**
+   * `redacted` sits BELOW `full`, and it used to return the same object — the
+   * clamp read `if (effective === 'full' || effective === 'redacted') return
+   * answer`, so a grant capped at "share only what I kept" disclosed exactly as
+   * much as one with no cap at all. A rung that clamps nothing is not a rung;
+   * it is a label the owner can pick believing it does something.
+   */
+  describe('redacted is strictly below full', () => {
+    it('keeps the kept references but stops reporting how many were withheld', () => {
+      const clamped = applyDisclosureCeiling(answer(), 'redacted');
+
+      // The owner's redaction was already applied upstream, so what they kept
+      // still crosses…
+      expect(clamped.items).toEqual(answer().items);
+      // …but "and there were N more" is its own disclosure, and `redacted`
+      // means the asker learns nothing about the rest.
+      expect(clamped.withheldCount).toBe(0);
+      expect(answer().withheldCount).toBeGreaterThan(0);
+    });
+
+    it('discloses strictly less than full for the same answer', () => {
+      const atFull = applyDisclosureCeiling(answer(), 'full');
+      const atRedacted = applyDisclosureCeiling(answer(), 'redacted');
+
+      expect(atRedacted).not.toEqual(atFull);
+      expect(atRedacted.withheldCount).toBeLessThan(atFull.withheldCount);
+    });
   });
 
   it('drops item references at summary and below', () => {
