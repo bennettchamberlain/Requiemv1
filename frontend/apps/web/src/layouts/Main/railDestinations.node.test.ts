@@ -12,10 +12,23 @@ describe('visibleRailDestinations', () => {
       'forecast',
       'memory',
       'saved-searches',
+      'asks',
       'sources',
       'jobs',
       'stats',
     ]);
+  });
+
+  it('gates Asks on `ask` — the flag the /asks route itself checks', () => {
+    // /asks was reachable only by typing the URL. The row has to ride the same
+    // flag as the route: the route is not REGISTERED when `ask` is off, so a
+    // row gated on anything else would render a link to a 404.
+    const asks = RAIL_DESTINATIONS.find((destination) => destination.id === 'asks');
+
+    expect(asks?.flag).toBe('ask');
+    expect(asks?.to).toBe('/asks');
+    expect(visibleRailDestinations((flag) => flag !== 'ask').map((d) => d.id)).not.toContain('asks');
+    expect(visibleRailDestinations(() => true).map((d) => d.id)).toContain('asks');
   });
 });
 

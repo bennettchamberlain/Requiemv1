@@ -16,6 +16,35 @@
  * actually exists, or returns an explicitly unknown value.
  */
 
+/**
+ * How many trailing characters of an opaque id we show.
+ *
+ * Six is enough to tell two ids apart at a glance and short enough not to read
+ * as a name.
+ */
+const ID_TAIL = 6;
+
+/**
+ * The tail of an opaque id, presented so it reads as a TRUNCATION rather than
+ * as corrupted text.
+ *
+ * `id.slice(-6)` alone produced "Peer __devon", "Peer r_maya" and "photo
+ * a3f2b1": a bare fragment with nothing marking it as one, so it reads either
+ * as a rendering bug or — worse — as a name. The single leading ellipsis says
+ * out loud that characters precede it, which is the whole fix; "…_devon" is
+ * plainly the end of a longer identifier in a way that "__devon" is not.
+ *
+ * NOT DROPPED: the leading `_`/`-` a base64url slice often starts on. Trimming
+ * it reads more smoothly and was tried first — and it is exactly the wrong
+ * trade here, twice over. It shortens the discriminating tail, so two ids that
+ * differ only in that position stop being distinguishable; and "…devon" reads
+ * far more like somebody's name than "…_devon" does, which is the one thing
+ * this whole file exists to avoid. The fragment stays a faithful suffix.
+ */
+function idFragment(id: string): string {
+  return `…${id.slice(-ID_TAIL)}`;
+}
+
 /** A party we can only identify opaquely. */
 export function partyLabel(handle: string | null | undefined, id: string | null | undefined): string {
   if (handle) {
@@ -26,9 +55,8 @@ export function partyLabel(handle: string | null | undefined, id: string | null 
     return 'Unknown';
   }
 
-  // A GlobalUID is base64-ish and long; the tail is the discriminating part for
-  // a human comparing two of them. Never invented, just shortened.
-  return `Peer ${id.slice(-6)}`;
+  // Never invented, just shortened — see idFragment.
+  return `Peer ${idFragment(id)}`;
 }
 
 /**
@@ -44,32 +72,72 @@ export function knownAskerLabel(consentBasis: string | null | undefined): string
   return consentBasis ? 'known contact' : 'no standing grant';
 }
 
-/** True when no grant matched — the mock's "quarantined" case, as far as we can tell. */
-export function isUnknownAsker(consentBasis: string | null | undefined): boolean {
-  return !consentBasis;
-}
-
 /**
- * A legible rendering of the structured ask.
+ * A legible rendering of the structured ask — what the asker SENT.
  *
  * The mock claims this rendering IS the wire format. Today that is nearly true
  * by accident: the wire carries exactly queryType/dataClass/prompt, so showing
  * all three shows everything that is sent. It stops being true the moment
  * who/when/where are added to the input without being added here.
+ *
+ * This is NOT a statement about what will be searched. See
+ * {@link searchBreadthNote}.
  */
 export function scopeSummary(query: { queryType: string; dataClass?: string | null }): string {
   return query.dataClass ? `${query.queryType} · ${query.dataClass}` : query.queryType;
 }
 
 /**
+ * What the declared data class actually does to the search — the sentence that
+ * stops the consent card promising a narrower scope than runs.
+ *
+ * ═══ WHY THIS IS VAGUE ON PURPOSE ═══
+ *
+ * The card used to print "Would search: photos · location" and nothing else,
+ * which reads as "only your location data is searched". `AskExecutorService`
+ * turns `dataClass` into an entity-type filter through a small hint table
+ * (`photos`/`media`/`files` → file, `documents` → content+file, `events`/
+ * `calendar` → event, `messages`/`communications` → communication) and, for
+ * ANYTHING else — `location`, `health`, a typo, or a class the owner never saw
+ * before — returns `undefined`, which means the search runs UNFILTERED across
+ * every indexable entity in the responder's memory. The owner was consenting to
+ * a strictly narrower scope than the one that executed.
+ *
+ * The obvious fix is to mirror that hint table here and render the real entity
+ * types. It was rejected: the table lives in the backend and this copy would be
+ * the third normalizer of `dataClass` in the system (canonical.ts already warns
+ * that any consumer normalizing DIFFERENTLY is a security bug). Mirrored
+ * constants drift, and the drift that matters here is one-directional — the day
+ * a class is dropped from the backend table, a stale mirror keeps promising a
+ * narrowing that no longer happens, which is precisely this defect growing back
+ * silently. Over-stating breadth is safe in every direction; under-stating it is
+ * never safe.
+ *
+ * So the card states the ceiling instead of guessing the filter: the search may
+ * cover everything, and the class is a label on the request rather than a
+ * guaranteed filter. If the executor ever returns its resolved entity types on
+ * the wire, replace this with them — a fact beats a caveat.
+ */
+export function searchBreadthNote(query: { dataClass?: string | null }): string {
+  if (!query.dataClass) {
+    return 'This ask names no data class, so it searches every kind of thing in your memory.';
+  }
+
+  return (
+    `“${query.dataClass}” is a label on the request, not a guaranteed filter — ` +
+    'unless your Companion recognises it, this searches every kind of thing in your memory.'
+  );
+}
+
+/**
  * A label for a disclosed item.
  *
  * `DisclosedItemType` is `{id, type}` — there is no title, name or caption on
- * the wire. Showing the type plus a short id is the most that can be said
+ * the wire. Showing the type plus a truncated id is the most that can be said
  * truthfully; a real label needs the backend to resolve the entity.
  */
 export function itemLabel(item: { id: string; type: string }): string {
-  return `${item.type} ${item.id.slice(-6)}`;
+  return `${item.type} ${idFragment(item.id)}`;
 }
 
 /** Owner-facing words for a data class + query type pair on a grant. */

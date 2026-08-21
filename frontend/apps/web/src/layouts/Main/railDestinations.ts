@@ -9,6 +9,7 @@ import {
   FolderSearch2,
   LifeBuoy,
   ListTodo,
+  MessageCircleQuestion,
   MessagesSquare,
   Workflow,
 } from '@ci/shadcn/icons';
@@ -39,6 +40,10 @@ export const RAIL_DESTINATIONS: readonly RailDestination[] = [
   { id: 'memory', to: '/memory/events', label: 'Memory', icon: Brain, match: isMemoryHubPath },
   { id: 'saved-searches', to: '/saved-searches', label: 'Saved Searches', icon: FolderSearch2 },
   { id: 'chat', to: '/chat', label: 'Chat', icon: MessagesSquare, flag: 'chat.page' },
+  // `ask`, not `asks.page`: this is the SAME flag the /asks route and every ask
+  // resolver check, so the rail row and the page it points at can never
+  // disagree. A rail entry gated on a different flag is a link to a 404.
+  { id: 'asks', to: '/asks', label: 'Asks', icon: MessageCircleQuestion, flag: 'ask' },
   { id: 'sources', to: '/sources', label: 'Sources', icon: Cable, end: false },
   { id: 'jobs', to: '/jobs', label: 'Jobs', icon: Workflow, flag: 'jobs.page' },
   { id: 'stats', to: '/stats', label: 'Stats', icon: ChartColumn, flag: 'stats.page' },

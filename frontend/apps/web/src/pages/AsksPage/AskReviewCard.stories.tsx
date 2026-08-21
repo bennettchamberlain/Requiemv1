@@ -25,15 +25,20 @@ export const HouseholdPhotos: Story = {
   args: {
     askerName: 'Maya',
     tier: 'family',
+    decision: 'covered-review',
     prompt: 'Do you have photos of us from the lake trip?',
     scopeSummary: 'Photos · 12–15 June · people: Maya, Sam, Leo, Mia',
+    // The real string `searchBreadthNote` produces. A story that invents a
+    // narrower one would document a card this page cannot render.
+    searchBreadth:
+      '“photos” is a label on the request, not a guaranteed filter — unless your Companion recognises it, this searches every kind of thing in your memory.',
     items: [
       { id: '1', type: 'photo', label: 'Lake, morning swim' },
       { id: '2', type: 'photo', label: 'Dock at sunset' },
       { id: '3', type: 'photo', label: 'Leo on the kayak', withheld: true },
       { id: '4', type: 'photo', label: 'Campfire' },
     ],
-    downgrades: ['summary', 'boolean'],
+    downgrades: ['attribute', 'boolean'],
   },
 };
 
@@ -41,11 +46,29 @@ export const HouseholdPhotos: Story = {
 export const UnknownAsker: Story = {
   args: {
     askerName: 'Unknown asker',
-    tier: 'stranger',
+    tier: 'no standing grant',
+    decision: 'unreviewed',
     prompt: 'Where do you live?',
-    scopeSummary: 'Location · current address',
-    unknownAsker: true,
-    downgrades: ['summary', 'boolean', 'none'],
+    scopeSummary: 'location · location',
+    searchBreadth:
+      '“location” is a label on the request, not a guaranteed filter — unless your Companion recognises it, this searches every kind of thing in your memory.',
+    downgrades: ['attribute', 'existence', 'boolean'],
+  },
+};
+
+/**
+ * Already authorized by a standing grant. Nothing here is waiting on the
+ * owner's permission — only on the answer being produced.
+ */
+export const PreAuthorized: Story = {
+  args: {
+    askerName: 'Sam',
+    tier: 'known contact',
+    decision: 'pre-authorized',
+    prompt: 'Are you free Thursday evening?',
+    scopeSummary: 'availability',
+    searchBreadth: 'This ask names no data class, so it searches every kind of thing in your memory.',
+    downgrades: ['existence', 'boolean'],
   },
 };
 
@@ -53,9 +76,11 @@ export const UnknownAsker: Story = {
 export const BooleanOnly: Story = {
   args: {
     askerName: 'Devon',
-    tier: 'friend',
+    tier: 'known contact',
+    decision: 'covered-review',
     prompt: 'Do you know Carol Chen?',
-    scopeSummary: 'Relationship · one person',
+    scopeSummary: 'relationship',
+    searchBreadth: 'This ask names no data class, so it searches every kind of thing in your memory.',
     downgrades: ['boolean'],
   },
 };
