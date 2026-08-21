@@ -247,8 +247,8 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    */
   [STAGE_IDS.ENRICH_PERSON_SELF_CLAIM]: 1,
 
-  /** v1 — initial temporal repair. Bump when SOURCE_TIME_SPECS gains a source; only a bump re-opens a skip. */
-  [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 1,
+  /** v2 — reddit added to SOURCE_TIME_SPECS. Bump when it gains a source; only a bump re-opens a skip. */
+  [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 2,
 
   /**
    * v2 — DUPLICATE_CANDIDATE_GENERATION bumped to 2: the evidence set widened
