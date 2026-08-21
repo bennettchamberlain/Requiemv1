@@ -2,9 +2,10 @@ import { useState } from 'react';
 
 import { useLazyQuery } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
-import { Button, Dialog, Input, Select } from '@ci/shadcn';
+import { Button, Input, Select } from '@ci/shadcn';
 import { useNavigate } from 'react-router-dom';
 
+import { ResponsiveDialog } from '@/components/ResponsiveDialog';
 import { gql } from '@/graphql';
 import type { ObjectIdentifierNamespace } from '@/graphql/graphql';
 
@@ -144,7 +145,7 @@ export function ScanBarcodeModal({ open, onClose }: Props) {
   };
 
   return (
-    <Dialog
+    <ResponsiveDialog
       open={open}
       onOpenChange={(next) => {
         if (!next) {
@@ -152,13 +153,13 @@ export function ScanBarcodeModal({ open, onClose }: Props) {
         }
       }}
     >
-      <Dialog.Content className="sm:max-w-[480px]">
-        <Dialog.Header>
-          <Dialog.Title>Scan a code</Dialog.Title>
-          <Dialog.Description>
+      <ResponsiveDialog.Content className="sm:max-w-[480px]">
+        <ResponsiveDialog.Header>
+          <ResponsiveDialog.Title>Scan a code</ResponsiveDialog.Title>
+          <ResponsiveDialog.Description>
             Point a scanner at a barcode, or type a serial number, to open the thing that carries it.
-          </Dialog.Description>
-        </Dialog.Header>
+          </ResponsiveDialog.Description>
+        </ResponsiveDialog.Header>
 
         <div className="flex flex-col gap-3">
           <Select value={namespace} onValueChange={(next) => setNamespace(next as ObjectIdentifierNamespace)}>
@@ -193,15 +194,15 @@ export function ScanBarcodeModal({ open, onClose }: Props) {
           {message && <div className="text-sm text-muted-foreground">{message}</div>}
         </div>
 
-        <Dialog.Footer>
+        <ResponsiveDialog.Footer>
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>
           <Button disabled={loading || value.trim() === ''} onClick={() => void submit()}>
             {loading ? 'Looking up…' : 'Look up'}
           </Button>
-        </Dialog.Footer>
-      </Dialog.Content>
-    </Dialog>
+        </ResponsiveDialog.Footer>
+      </ResponsiveDialog.Content>
+    </ResponsiveDialog>
   );
 }
