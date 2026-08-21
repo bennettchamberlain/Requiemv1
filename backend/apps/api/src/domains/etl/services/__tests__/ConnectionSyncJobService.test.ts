@@ -30,6 +30,8 @@ function makeQueryBuilderSpy(results: unknown[] = []) {
   qb.where = chain('where');
   qb.andWhere = chain('andWhere');
   qb.orderBy = chain('orderBy');
+  qb.addOrderBy = chain('addOrderBy');
+  qb.take = chain('take');
   qb.getMany = jest.fn(async () => results);
 
   return { qb, calls };
@@ -165,6 +167,38 @@ describe('ConnectionSyncJobService.search — query construction', () => {
 
     const orderByCall = queryBuilderCalls.find((c) => c.method === 'orderBy');
     expect(orderByCall?.args).toEqual(['updated_at', 'DESC']);
+  });
+
+  it('appends the primary key to the sort, so a bounded search cannot straddle a tie', async () => {
+    const { service, queryBuilderCalls } = makeService();
+
+    await service.search(CONTEXT, { orderBy: 'updated_at:DESC', limit: 2 });
+
+    const tiebreak = queryBuilderCalls.find((c) => c.method === 'addOrderBy');
+    expect(tiebreak?.args).toEqual(['id', 'DESC']);
+  });
+
+  it('pushes a limit down to the query builder rather than trimming the result', async () => {
+    const { service, queryBuilderCalls } = makeService({
+      queryBuilderResults: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    });
+
+    const rows = await service.search(CONTEXT, { orderBy: 'updated_at:DESC', limit: 2 });
+
+    const take = queryBuilderCalls.find((c) => c.method === 'take');
+    expect(take?.args).toEqual([2]);
+    // Deliberately NOT trimmed here: the bound is Postgres's to apply, and a
+    // service that also sliced would hide a missing LIMIT from this test.
+    expect(rows).toHaveLength(3);
+  });
+
+  it('orders a bounded search on the primary key when the caller passes no sort', async () => {
+    const { service, queryBuilderCalls } = makeService();
+
+    await service.search(CONTEXT, { limit: 1 });
+
+    const orderByCall = queryBuilderCalls.find((c) => c.method === 'orderBy');
+    expect(orderByCall?.args).toEqual(['id', 'ASC']);
   });
 
   it('warns and skips ordering on an invalid direction instead of passing it through to SQL', async () => {
