@@ -218,6 +218,22 @@ describe('GrantService.supersede', () => {
     expect(replacement.granteeUserId).toBe('asker-1');
   });
 
+  it('keeps a PEER grantee a peer grantee', async () => {
+    // A grant addressed to a linked peer became writable through GraphQL only
+    // once `createAskGrant` learned `granteePeerLinkId`; the change path has to
+    // carry it too. `UpdateAskGrantDto` names no grantee at all — the grantee is
+    // part of WHICH grant this is — so the replacement copies both keys, which
+    // is also what keeps it on the right side of `ask_grants_grantee_chk`:
+    // exactly one of the two is set, before and after.
+    const previous = grantRow({ granteeUserId: null, granteePeerLinkId: 'link-ada' });
+    const { service } = makeService({ grants: [previous] });
+
+    const replacement = await service.supersede(OWNER, 'grant-1', { mode: 'review' });
+
+    expect(replacement.granteePeerLinkId).toBe('link-ada');
+    expect(replacement.granteeUserId).toBeNull();
+  });
+
   /**
    * ═══ NARROWING A GRANT USED TO WIDEN ITS DISCLOSURE ═══
    *
