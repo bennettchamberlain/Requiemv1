@@ -773,25 +773,52 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     id: 'pipeline-orphan-shards',
     severity: 'medium',
-    title: 'Shards still pending or running under a pipeline run that has already finished',
+    title: 'Shards left mid-flight under a run that finalised claiming it had nothing left to do',
     scope: 'ci.pipeline_shards, ci.pipeline_runs',
     remedy:
-      'The run reported done and part of its work never did. Nothing will pick these shards up — the ' +
-      'run that owned them is finished — so whatever slice of the corpus they covered is simply ' +
-      'missing from that stage. Re-run the stage for the affected keys, or delete the shards and start ' +
-      'a fresh run for that leg.',
+      'A bookkeeping contradiction, NOT lost data — and the difference is the point. A shard is a ' +
+      'run-scoped lease and progress marker with a NULL cursor: the work itself lives in ' +
+      '`ci.pipeline_state`, and the control tick re-derives the remainder from THE ONE RULE on every ' +
+      'pass, so nothing here is unreachable and re-running the stage recovers nothing that was not ' +
+      'already going to be swept. What a non-zero count means is that the run stamped `drained` ' +
+      '("there is no work left") or `cancelled` while one of its own legs never reported, so the run ' +
+      'progress view — the one place an operator looks to answer "is my import finished?" — disagrees ' +
+      'with itself. Read `ci.pipeline_runs.detail` for the run named in the sample: a leg that left ' +
+      '`detail.stages` mid-flight is the usual cause. Deleting the shards is safe and loses nothing.',
     mirrors: null,
-    // Keyed on `finished_at IS NOT NULL` rather than a status list, following
-    // 20260809032723's own reasoning for its unique index: the status vocabulary
-    // belongs to the runner and will grow, while "finished" is structural.
+    // Runs finalised `not_due` are EXCLUDED, and that exclusion is most of what
+    // this check is. `PipelineControlService` finalises a run the moment nothing
+    // is DUE even while legs still hold candidates — it has to, because
+    // `pipeline_runs_active_uniq` allows one unfinished run per user and holding
+    // one open for the six days until a weekly stage comes round would lock the
+    // user out of ever pressing "reprocess" — and it deliberately leaves those
+    // legs' shards untouched rather than saying `done` about them
+    // (`markShardDrained` is skipped, `legsNotDue` is counted, the run is stamped
+    // `finalizedReason: 'not_due'`). A pending shard under a `not_due` run is
+    // therefore the control plane's INTENDED record of "this leg has work and it
+    // is not its turn", which is why the un-narrowed predicate reported all
+    // twelve legs of a healthy appliance as a defect. Same reasoning as
+    // `events-missing-search-vector` excluding `index_skips`: a check reporting a
+    // number that can never reach zero stops being read, and takes the checks
+    // either side of it with it.
+    //
+    // Still keyed on `finished_at IS NOT NULL` rather than a run-status list,
+    // following 20260809032723's own reasoning for its unique index: the status
+    // vocabulary belongs to the runner and will grow, while "finished" is
+    // structural. `finalizedReason` is read out of `detail` for the same reason —
+    // it is what the finaliser writes — and compared with `IS DISTINCT FROM` so a
+    // run finalised before that field existed, which has none, stays VISIBLE
+    // instead of being silently exempted by a NULL.
     sql: String.raw`
       WITH bad AS (
         SELECT s.id, s.run_id, s.stage, s.shard_key, s.status, r.kind AS run_kind,
-               r.status AS run_status, r.finished_at AS run_finished_at
+               r.status AS run_status, r.finished_at AS run_finished_at,
+               r.detail->>'finalizedReason' AS finalized_reason
           FROM ci.pipeline_shards s
           JOIN ci.pipeline_runs r ON r.id = s.run_id
          WHERE s.status IN ('pending', 'running')
            AND r.finished_at IS NOT NULL
+           AND r.detail->>'finalizedReason' IS DISTINCT FROM 'not_due'
       )
       SELECT count(*)::bigint AS count,
              ${breakdownBy('stage')} AS breakdown,

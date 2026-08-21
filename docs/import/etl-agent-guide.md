@@ -1426,6 +1426,20 @@ last two assert a date range no export legitimately produces. Any of the five
 going non-zero means something stopped holding, and that is a defect, not a
 backlog.
 
+`pipeline-orphan-shards` **was narrowed after this measurement, and the `10` in
+the second column is why**. Every one of those rows — and all twelve on the
+appliance the next day — sat under a run the control tick had finalised with
+`finalizedReason: 'not_due'`, which is the state `PipelineControlService` creates
+*on purpose*: a leg that still has candidates but is not due keeps its shard
+rather than being marked `done`, because saying `done` about it would put a
+falsehood in the run progress view. The check now excludes those runs. A shard is
+a run-scoped lease marker with a NULL cursor — the work itself lives in
+`ci.pipeline_state` and THE ONE RULE re-derives the remainder every tick — so a
+non-zero count here has never meant lost data, and the check no longer says it
+does. What it means now is that a run stamped `drained` or `cancelled` while one
+of its own legs never reported: a contradiction inside the run's own bookkeeping,
+worth reading `ci.pipeline_runs.detail` over, not worth re-running a stage for.
+
 Three rules the registry enforces on itself, worth knowing before you add a check
 (`doctor/checks.ts`, `doctor/__tests__/checks.test.ts`):
 
