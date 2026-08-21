@@ -78,6 +78,13 @@ export interface SearchConnectionSyncJobDto {
   type?: string;
   properties?: Record<string, unknown> | null;
   lastTransformed?: Date | null | undefined;
+  /**
+   * Restrict to rows `ConnectionSyncJobService.claimTransform` could actually
+   * win — unclaimed, or claimed longer than its staleness window ago. Lets the
+   * sweep skip transforms already in flight instead of re-sending them every
+   * tick for the life of the transform.
+   */
+  transformClaimable?: boolean;
   orderBy?: OrderByFormat;
   /** Row cap, pushed down as a SQL LIMIT. */
   limit?: number;
