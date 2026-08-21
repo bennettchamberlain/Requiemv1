@@ -11,6 +11,11 @@ export interface GrantRow {
   note?: string;
   /** ISO date this grant stops applying, if any. */
   expiresAt?: string | null;
+  /**
+   * ISO date the owner withdrew this grant, if they have. A row carrying one is
+   * NOT in force, whatever `mode` says.
+   */
+  revokedAt?: string | null;
 }
 
 export interface GranteeGroup {
@@ -28,6 +33,12 @@ interface Props {
   onRevoke?: (grantId: string) => void;
   onAddGrant?: () => void;
   onOpenHistory?: () => void;
+  /**
+   * One sentence from the container about what this matrix cannot show, e.g. a
+   * liveness field the wire does not carry yet. Rendered where the owner reads
+   * the grants, not in a comment nobody sees.
+   */
+  caveat?: string;
 }
 
 const MODES: GrantMode[] = ['auto', 'review', 'block'];
@@ -40,6 +51,16 @@ const MODES: GrantMode[] = ['auto', 'review', 'block'];
  * the floor, so a person who has never been granted anything can still only ever
  * reach the owner's inbox. Expiry is shown inline because a grant the owner has
  * forgotten about is the main way standing consent goes wrong.
+ *
+ * ═══ INERT CONTROLS ARE WORSE THAN ABSENT ONES ═══
+ *
+ * The three mode buttons render whether or not `onChangeMode` is wired, and for
+ * the whole life of this page it was not: tapping "Blocked" moved nothing,
+ * persisted nothing, and left a button looking pressed. On a consent surface
+ * that is the most dangerous possible failure — the owner believes they have
+ * revoked access they still grant. So when no handler is supplied the buttons
+ * are `disabled` and the reason is printed beside them. The current mode stays
+ * legible either way, because the badge on the row carries it in words.
  */
 export function GrantManager({
   groups,
@@ -48,9 +69,24 @@ export function GrantManager({
   onRevoke,
   onAddGrant,
   onOpenHistory,
+  caveat,
 }: Props) {
+  const canChangeMode = onChangeMode != null;
+
   return (
     <div className="flex flex-col gap-3">
+      {canChangeMode && caveat == null ? null : (
+        <Card className="flex flex-col gap-1 p-3 text-xs">
+          {canChangeMode ? null : (
+            <p>
+              Changing a grant’s mode isn’t available yet. To change one, revoke it and create a replacement —
+              revoking works.
+            </p>
+          )}
+          {caveat ? <p className="text-muted-foreground">{caveat}</p> : null}
+        </Card>
+      )}
+
       {groups.map((group) => (
         <Card key={group.id} className="flex flex-col gap-2 p-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -63,6 +99,10 @@ export function GrantManager({
           <ul className="flex flex-col divide-y">
             {group.grants.map((grant) => {
               const badge = grantModeBadge(grant.mode);
+              // A revoked grant is history, not consent. Its mode still describes
+              // what it USED to allow, so the row keeps the label but must never
+              // present it as something currently in force.
+              const revoked = grant.revokedAt != null;
 
               return (
                 <li key={grant.id} className="flex flex-wrap items-center gap-2 py-2">
@@ -74,36 +114,44 @@ export function GrantManager({
                     {grant.expiresAt ? (
                       <p className="text-muted-foreground text-xs">Expires {grant.expiresAt}</p>
                     ) : null}
+                    {revoked ? (
+                      <p className="text-muted-foreground text-xs">
+                        Revoked {grant.revokedAt} — no longer in force
+                      </p>
+                    ) : null}
                   </div>
 
                   {/* The badge repeats the mode in words so the state never
                       depends on colour alone (WCAG 1.4.1). */}
-                  <Badge variant={badge.variant} className="text-xs">
-                    {badge.label}
+                  <Badge variant={revoked ? 'outline' : badge.variant} className="text-xs">
+                    {revoked ? 'Revoked' : badge.label}
                   </Badge>
 
-                  <div
-                    role="group"
-                    aria-label={`Consent for ${grant.label}`}
-                    className="flex flex-wrap gap-1"
-                  >
-                    {MODES.map((mode) => (
-                      <Button
-                        key={mode}
-                        size="sm"
-                        variant={grant.mode === mode ? 'default' : 'outline'}
-                        aria-pressed={grant.mode === mode}
-                        onClick={() => onChangeMode?.(grant.id, mode)}
-                      >
-                        {grantModeLabel(mode)}
-                      </Button>
-                    ))}
-                    {onRevoke ? (
-                      <Button size="sm" variant="ghost" onClick={() => onRevoke(grant.id)}>
-                        Revoke
-                      </Button>
-                    ) : null}
-                  </div>
+                  {revoked ? null : (
+                    <div
+                      role="group"
+                      aria-label={`Consent for ${grant.label}`}
+                      className="flex flex-wrap gap-1"
+                    >
+                      {MODES.map((mode) => (
+                        <Button
+                          key={mode}
+                          size="sm"
+                          variant={grant.mode === mode ? 'default' : 'outline'}
+                          aria-pressed={grant.mode === mode}
+                          disabled={!canChangeMode}
+                          onClick={() => onChangeMode?.(grant.id, mode)}
+                        >
+                          {grantModeLabel(mode)}
+                        </Button>
+                      ))}
+                      {onRevoke ? (
+                        <Button size="sm" variant="ghost" onClick={() => onRevoke(grant.id)}>
+                          Revoke
+                        </Button>
+                      ) : null}
+                    </div>
+                  )}
                 </li>
               );
             })}

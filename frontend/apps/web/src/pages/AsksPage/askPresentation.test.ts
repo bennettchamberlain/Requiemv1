@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  answerFormLabel,
+  askApproveLabel,
+  askDecisionNote,
+  askDecisionState,
   askStatusLabel,
   grantModeBadge,
   grantModeLabel,
   needsOwnerReview,
+  OWNER_ANSWER_FORMS,
   provenanceLine,
   rungLabel,
   withheldNote,
@@ -78,5 +83,47 @@ describe('rungLabel', () => {
   it('describes every rung of the disclosure ladder distinctly', () => {
     const labels = (['none', 'boolean', 'count', 'summary', 'redacted', 'full'] as const).map(rungLabel);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe('askDecisionState', () => {
+  it('separates an already-authorized ask from one still awaiting the owner', () => {
+    // `AskService.submit` leaves an auto-authorized ask at `delivered` with a
+    // consent basis stamped — exactly the second shape `isAnswerable` accepts.
+    // Rendering that as a pending consent decision claims a gate that is open.
+    expect(askDecisionState('delivered', 'grant-1')).toBe('pre-authorized');
+    expect(askDecisionState('under_review', 'grant-1')).toBe('covered-review');
+    expect(askDecisionState('under_review', null)).toBe('unreviewed');
+    expect(askDecisionState('delivered', null)).toBe('unreviewed');
+  });
+
+  it('says the quarantine line ONLY for an ask no grant covers', () => {
+    expect(askDecisionNote('unreviewed')).toMatch(/no standing grant/i);
+    expect(askDecisionNote('pre-authorized')).not.toMatch(/no standing grant/i);
+    expect(askDecisionNote('covered-review')).not.toMatch(/no standing grant/i);
+  });
+
+  it('does not ask for permission that was already given', () => {
+    expect(askDecisionNote('pre-authorized')).toMatch(/not for your permission/i);
+    expect(askApproveLabel('pre-authorized')).toBe('Answer now');
+    expect(askApproveLabel('unreviewed')).toBe('Approve and answer');
+  });
+});
+
+describe('owner answer-form ladder', () => {
+  it('offers only forms that can cap an answer, never one that reshapes it', () => {
+    // `identity` sits on the same rung as `boolean` but reads differently to the
+    // asker, so it is a different answer rather than a smaller one.
+    expect([...OWNER_ANSWER_FORMS]).toEqual(['boolean', 'existence', 'attribute']);
+  });
+
+  it('phrases every offer as a ceiling, because that is what the backend applies', () => {
+    // `narrowerForm` keeps whichever of the owner's pick and the inferred form
+    // discloses LESS, so "at most" is the only true reading of a pick.
+    for (const form of OWNER_ANSWER_FORMS) {
+      expect(answerFormLabel(form)).toMatch(/^At most /);
+    }
+
+    expect(new Set(OWNER_ANSWER_FORMS.map(answerFormLabel)).size).toBe(OWNER_ANSWER_FORMS.length);
   });
 });

@@ -1,7 +1,9 @@
 import { Badge, Button, Card } from '@ci/shadcn';
-import { ShieldAlert } from '@ci/shadcn/icons';
+import { ShieldAlert, ShieldCheck } from '@ci/shadcn/icons';
 
-import { type DisclosureRung, rungLabel } from './askPresentation';
+import type { AnswerForm } from '@/graphql/graphql';
+
+import { answerFormLabel, askApproveLabel, askDecisionNote, type AskDecisionState } from './askPresentation';
 
 export interface AskReviewItem {
   id: string;
@@ -14,21 +16,34 @@ export interface AskReviewItem {
 
 interface Props {
   askerName: string;
-  /** Relationship tier, shown so the owner can weigh the request. */
+  /**
+   * What the container can truthfully say about the asker, in its own words.
+   *
+   * NOT a trust tier, despite the name it still carries from the mock: this is
+   * an untyped display string, so whatever is passed is what the badge asserts.
+   * The page passes `knownAskerLabel`, which reports the one two-value fact on
+   * the wire. Do not pass a tier vocabulary the API never sent.
+   */
   tier: string;
   /** The question, in the asker's own words. */
   prompt: string;
-  /** What would actually be searched — the structured ask, rendered legibly. */
+  /** The structured ask as SENT, rendered legibly. */
   scopeSummary: string;
+  /**
+   * What that scope means for the search that will actually run. Required, not
+   * optional: a caller who forgets it is a caller who prints a scope with no
+   * statement of its breadth, which is the exact defect this pairing closes.
+   */
+  searchBreadth: string;
   /** The answer preview. Empty for forms that disclose no items. */
   items?: AskReviewItem[];
-  /** True when this asker has no matching grant (the quarantined case). */
-  unknownAsker?: boolean;
-  /** Coarser rungs the owner can answer at instead of declining. */
-  downgrades?: DisclosureRung[];
+  /** Where this ask stands — see AskDecisionState. */
+  decision: AskDecisionState;
+  /** Answer forms the owner can cap this ask at instead of declining. */
+  downgrades?: AnswerForm[];
   onToggleItem?: (id: string) => void;
   onApprove: () => void;
-  onDowngrade?: (rung: DisclosureRung) => void;
+  onDowngrade?: (form: AnswerForm) => void;
   onDecline: () => void;
   busy?: boolean;
 }
@@ -39,16 +54,24 @@ interface Props {
  * The rule this component exists to enforce is **never approve blind**: the
  * answer preview lives inside the consent surface, so the owner sees exactly
  * what would leave the box before anything does. The "share less" row is
- * deliberately as prominent as Approve — answering at a coarser rung should feel
- * as easy as saying yes, not like a buried setting.
+ * deliberately as prominent as Approve — capping the answer should feel as easy
+ * as saying yes, not like a buried setting.
+ *
+ * Two things this card must never do, both of which it did:
+ *
+ *   - print a scope that reads narrower than the search that runs (hence
+ *     `searchBreadth` sitting beside `scopeSummary`, and being required);
+ *   - describe an already-authorized ask as a decision the owner still owes
+ *     (hence `decision` rather than a bare `unknownAsker` boolean).
  */
 export function AskReviewCard({
   askerName,
   tier,
   prompt,
   scopeSummary,
+  searchBreadth,
   items = [],
-  unknownAsker = false,
+  decision,
   downgrades = [],
   onToggleItem,
   onApprove,
@@ -57,7 +80,8 @@ export function AskReviewCard({
   busy = false,
 }: Props) {
   const kept = items.filter((item) => !item.withheld);
-  const shareLabel = items.length > 0 ? `Share ${kept.length} of ${items.length}` : 'Answer';
+  const shareLabel = items.length > 0 ? `Share ${kept.length} of ${items.length}` : askApproveLabel(decision);
+  const preAuthorized = decision === 'pre-authorized';
 
   return (
     <Card className="flex flex-col gap-3 p-4">
@@ -65,27 +89,41 @@ export function AskReviewCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{askerName}</span>
-            <Badge variant={unknownAsker ? 'outline' : 'secondary'} className="text-xs">
+            <Badge variant={decision === 'unreviewed' ? 'outline' : 'secondary'} className="text-xs">
               {tier}
             </Badge>
+            {/* The decision state is its own badge because the tier badge beside
+                it answers a different question — "do I know them", not "is this
+                still mine to decide". */}
+            {preAuthorized ? (
+              <Badge variant="secondary" className="text-xs">
+                Already authorized
+              </Badge>
+            ) : null}
           </div>
           <p className="text-muted-foreground mt-1 text-sm">“{prompt}”</p>
         </div>
       </div>
 
-      {/* What would be searched — the structured ask, shown back in plain words. */}
-      <p className="text-muted-foreground bg-muted rounded-md px-3 py-2 text-xs">
-        Would search: {scopeSummary}
-      </p>
+      {/* What was asked for, and what that actually costs. The second line is
+          never omitted: a data class the responder's box does not recognise
+          searches EVERYTHING, and the owner has to be told that before they
+          consent, not after. */}
+      <div className="text-muted-foreground bg-muted flex flex-col gap-1 rounded-md px-3 py-2 text-xs">
+        <p>Would search: {scopeSummary}</p>
+        <p>{searchBreadth}</p>
+      </div>
 
-      {unknownAsker ? (
-        // Quarantine for askers with no standing grant. The icon is decorative;
-        // the warning is carried by the text so it survives without colour.
-        <p className="text-muted-foreground flex items-start gap-2 text-xs">
+      {/* The icon is decorative; the state is carried by the text so it survives
+          without colour (WCAG 1.4.1). */}
+      <p className="text-muted-foreground flex items-start gap-2 text-xs">
+        {preAuthorized ? (
+          <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0" />
+        ) : (
           <ShieldAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-          <span>No standing grant covers this request. Nothing is shared unless you approve it.</span>
-        </p>
-      ) : null}
+        )}
+        <span>{askDecisionNote(decision)}</span>
+      </p>
 
       {items.length > 0 ? (
         <fieldset className="flex flex-col gap-1">
@@ -110,17 +148,22 @@ export function AskReviewCard({
 
       {downgrades.length > 0 ? (
         <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground text-xs">Or answer with less</span>
+          {/* "at most" is in every label, and stated once here too: the backend
+              keeps whichever of this choice and the ask's own shape discloses
+              less, so a pick can cap the answer but never enlarge it. */}
+          <span className="text-muted-foreground text-xs">
+            Or answer with less — each of these caps the answer, and can never widen it
+          </span>
           <div className="flex flex-wrap gap-2">
-            {downgrades.map((rung) => (
+            {downgrades.map((form) => (
               <Button
-                key={rung}
+                key={form}
                 size="sm"
                 variant="outline"
                 disabled={busy}
-                onClick={() => onDowngrade?.(rung)}
+                onClick={() => onDowngrade?.(form)}
               >
-                {rungLabel(rung)}
+                {answerFormLabel(form)}
               </Button>
             ))}
           </div>
