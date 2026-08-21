@@ -73,6 +73,16 @@ yarn sync          # copies web assets + installs native plugin code
 `yarn build` (= `build:web` + `cap sync`) rebuilds + syncs from this directory.
 Android is a separate package — build it from [`frontend/apps/android`](../android).
 
+## Safari Web Extension (bundled)
+
+Memory is the containing iOS app for the Companion Memory Safari Web Extension.
+`yarn sync` runs [`scripts/sync-safari-extension.sh`](scripts/sync-safari-extension.sh):
+it builds `safari-mv3` from a sibling `CI-Browser-Extension` checkout, or downloads
+the pinned GitHub `*-safari-mobile.zip` release, into
+`ios/App/SafariWebExtension/Resources`. Xcode embeds that as
+`com.companionintelligence.app.SafariWebExtension`. Do not generate a second App
+Store wrapper with `safari-web-extension-converter`.
+
 ## Run in a simulator
 
 Set `DEVELOPER_DIR` if your active toolchain isn't full Xcode (e.g. Xcode-beta):
