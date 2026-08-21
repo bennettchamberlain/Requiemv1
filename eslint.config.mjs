@@ -11,6 +11,10 @@ export default [
       '**/build/**',
       '**/node_modules/**',
       '.pnp.*',
+      // Local-only generated viz + scratch (gitignored; ESLint does not
+      // read .gitignore). Compodoc/ChartDB vendor JS is not ours.
+      '.local/**',
+      'tools/**',
       // Nested git worktrees are full copies of this repo. ESLint does not read
       // .gitignore, so without this it walks them and re-lints every file with
       // the root config instead of the per-workspace ones.
