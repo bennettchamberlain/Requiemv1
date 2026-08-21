@@ -5,7 +5,7 @@ import path from 'path';
 import type { Graph, ImportParams } from '../timeline';
 import { WhatsAppFileImporter } from '../whatsapp';
 
-import type { EmittedGraph } from './support/emitted';
+import type { EmittedGraph, TestPipeline } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
@@ -503,6 +503,88 @@ describe('WhatsApp chat identity across export shapes', () => {
 
     expect(pushed).toHaveLength(1);
     expect(pushed[0].item.metadata!.Conversation).toBe('LITA Companion Tech Team');
+  });
+});
+
+describe('parser loss reporting (reconciliation)', () => {
+  it('reports every logical message via consumed(), one per flush() not per physical line', async () => {
+    // The fixture's 7 messages include at least one multi-line body, so this
+    // also proves consumed() counts folded (logical) messages, not raw lines.
+    const root = path.join(FIXTURES_DIR, 'whatsapp-export');
+    const fi = new WhatsAppFileImporter();
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { consumed: jest.fn() });
+
+    await fi.fileImport({}, { filename: 'whatsapp-export', fullPath: root }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    expect(pipeline.consumed).toHaveBeenCalledTimes(1);
+    expect(pipeline.consumed).toHaveBeenCalledWith(7);
+  });
+
+  it('drops a timeframe-excluded message instead of just omitting it', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-reconcile-'));
+    fs.writeFileSync(
+      path.join(dir, '_chat.txt'),
+      '[1/1/21, 8:00:00 AM] Alice: in range\n' + '[1/2/21, 8:00:00 AM] Alice: out of range\n',
+    );
+
+    try {
+      const fi = new WhatsAppFileImporter();
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+
+      await fi.fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+        pipeline,
+        timeframe: { since: new Date('2021-01-01T00:00:00Z'), until: new Date('2021-01-01T23:59:59Z') },
+        log: () => {},
+      } as unknown as ImportParams);
+
+      expect(pipeline.length).toBe(1);
+      expect(pipeline.drop).toHaveBeenCalledWith('outside_timeframe');
+      expect(pipeline.consumed).toHaveBeenCalledWith(2);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * A message with a resolved attachment pushes TWO items — the message and
+   * the media — from ONE flush(). `produced` counts every item push, so a
+   * naive "one flush() = one consumed unit" undercounts by exactly the number
+   * of resolved attachments: on the real corpus that motivated this,
+   * `produced: 5385` against a naive `consumed: 5254` — 131 messages short,
+   * one per resolved attachment. The attachment reference is a second thing
+   * this flush offers the parser, and it always resolves to one push() or one
+   * drop(), so it earns its own consumed() unit.
+   */
+  it('counts a message with a resolved attachment as 2 toward consumed(), matching its 2 pushes', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-reconcile-media-'));
+    fs.writeFileSync(path.join(dir, '00000048-PHOTO-2026-05-08-08-35-29.jpg'), Buffer.from('fake-jpg-bytes'));
+    fs.writeFileSync(
+      path.join(dir, '_chat.txt'),
+      '[5/8/26, 8:35:29 AM] Alice: <attached: 00000048-PHOTO-2026-05-08-08-35-29.jpg>\n' +
+        '[5/8/26, 8:36:00 AM] Alice: a plain text message with no attachment\n',
+    );
+
+    try {
+      const fi = new WhatsAppFileImporter();
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { consumed: jest.fn() });
+
+      await fi.fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+        pipeline,
+        timeframe: {},
+        log: () => {},
+      } as unknown as ImportParams);
+
+      // 2 items pushed for the attached message (media + text) + 1 for the
+      // plain one = 3 produced, 0 dropped — so consumed() must report 3.
+      expect(pipeline.length).toBe(3);
+      expect(pipeline.consumed).toHaveBeenCalledWith(3);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

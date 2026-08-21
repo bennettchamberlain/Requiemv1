@@ -295,9 +295,18 @@ export class WhatsAppFileImporter implements FileImporter {
 
     let current: ParsedLine | null = null;
     let seq = 0;
+    // How many logical messages this chat actually offered the parser — the
+    // floor `reconciled` checks every produced/dropped message against.
+    // Counted per flush(), not per physical line: a multi-line message folds
+    // several lines into one ParsedLine before it ever reaches here.
+    let total = 0;
 
     const flush = (p: ParsedLine) => {
+      total++;
+
       if (!timeframeContains(params.timeframe, p.ts)) {
+        params.pipeline.drop?.('outside_timeframe');
+
         return;
       }
 
@@ -333,6 +342,12 @@ export class WhatsAppFileImporter implements FileImporter {
       let attachments: MediaAttachment[] = [];
       const attached = attachedFilename(p.text);
       if (attached) {
+        // A referenced attachment is a SECOND thing this flush offers the
+        // parser beyond the message itself, and every branch below resolves
+        // it to exactly one push() (a media item) or one drop() — so it gets
+        // its own unit here too, or `produced + dropped` runs ahead of
+        // `consumed` by one for every message that carries an attachment.
+        total++;
         // path.basename strips any directory components the reference might
         // (maliciously or accidentally) contain, so the resolved path can
         // never escape mediaDir.
@@ -411,6 +426,8 @@ export class WhatsAppFileImporter implements FileImporter {
     if (current) {
       flush(current);
     }
+
+    params.pipeline.consumed?.(total);
   }
 }
 

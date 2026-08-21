@@ -17,7 +17,7 @@ import path from 'node:path';
 import type { Graph, ImportParams, Item, MediaAttachment } from '../timeline';
 import { TwitterFileImporter } from '../twitter';
 
-import type { EmittedGraph } from './support/emitted';
+import type { EmittedGraph, TestPipeline } from './support/emitted';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 const ROOT = path.join(FIXTURES_DIR, 'twitter-archive');
@@ -849,5 +849,147 @@ describe('Twitter participant identity', () => {
 
     const { byId } = await runImport({}, root);
     expect(byId('twitter:dm:d1').metadata?.RecipientIds).toEqual(['2000']);
+  });
+});
+
+describe('parser loss reporting (reconciliation)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-tw-reconcile-'));
+    fs.mkdirSync(path.join(dir, 'data'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const writeTweets = (tweets: object[]) =>
+    fs.writeFileSync(
+      path.join(dir, 'data', 'tweets.js'),
+      'window.YTD.tweets.part0 = ' + JSON.stringify(tweets.map((t) => ({ tweet: t }))),
+    );
+
+  const writeDms = (conversations: object[]) =>
+    fs.writeFileSync(
+      path.join(dir, 'data', 'direct-messages.js'),
+      'window.YTD.direct_messages.part0 = ' + JSON.stringify(conversations.map((c) => ({ dmConversation: c }))),
+    );
+
+  async function run(pipeline: TestPipeline): Promise<void> {
+    await new TwitterFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      options: { includeReplies: true, includeRetweets: true },
+      timeframe: {},
+      log: () => {},
+      pipeline,
+    } as unknown as ImportParams);
+  }
+
+  it('reconciles against the fixture archive: consumed === produced + dropped', async () => {
+    // The real fixture: 5 tweets.js rows (1 undated retweet drops, the other
+    // 4 push) + 2 direct-messages.js rows (both push) = 7 consumed, 6
+    // produced, 1 dropped.
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+    await new TwitterFileImporter().fileImport({}, { filename: 'twitter-archive', fullPath: ROOT }, {
+      options: { includeReplies: true, includeRetweets: true },
+      timeframe: {},
+      log: () => {},
+      pipeline,
+    } as unknown as ImportParams);
+
+    const consumedSum = (pipeline.consumed as jest.Mock).mock.calls.reduce(
+      (sum: number, [n]: [number]) => sum + n,
+      0,
+    );
+    const producedCount = pipeline.filter((g) => g.item).length;
+    const droppedCount = (pipeline.drop as jest.Mock).mock.calls.length;
+
+    expect(pipeline.drop).toHaveBeenCalledWith('undated_retweet', '5');
+    expect(consumedSum).toBe(producedCount + droppedCount);
+  });
+
+  it('drops a tweet with no id instead of silently skipping it', async () => {
+    writeTweets([{ created_at: 'Fri Jan 03 12:00:00 +0000 2025', full_text: 'no id on this row' }]);
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+
+    await run(pipeline);
+
+    expect(pipeline.length).toBe(0);
+    expect(pipeline.drop).toHaveBeenCalledWith('tweet_without_id');
+    expect(pipeline.consumed).toHaveBeenCalledWith(1);
+  });
+
+  it('drops a timeframe-excluded tweet instead of silently skipping it', async () => {
+    writeTweets([{ id_str: '1', created_at: 'Fri Jan 03 12:00:00 +0000 2025', full_text: 'old news' }]);
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+
+    await new TwitterFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      options: { includeReplies: true, includeRetweets: true },
+      timeframe: { since: new Date('2027-01-01T00:00:00Z') },
+      log: () => {},
+      pipeline,
+    } as unknown as ImportParams);
+
+    expect(pipeline.length).toBe(0);
+    expect(pipeline.drop).toHaveBeenCalledWith('outside_timeframe');
+    expect(pipeline.consumed).toHaveBeenCalledWith(1);
+  });
+
+  it('reports an extra consumed() unit when a retweet carries media that is not imported', async () => {
+    writeTweets([
+      {
+        id_str: '9',
+        created_at: 'Mon Jan 06 08:00:00 +0000 2025',
+        full_text: 'RT @someone: worth a look',
+        extended_entities: {
+          media: [{ type: 'photo', id_str: '1', url: 'https://t.co/pic', media_url_https: 'https://x/pic.jpg' }],
+        },
+      },
+    ]);
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+
+    await run(pipeline);
+
+    // The retweet still pushes (1 item), and the media-not-imported drop
+    // rides the same row — 2 ledger events from 1 tweets.js row.
+    expect(pipeline.filter((g) => g.item).length).toBe(1);
+    expect(pipeline.drop).toHaveBeenCalledWith('retweet_media_not_imported', expect.stringContaining('9'));
+    const consumedSum = (pipeline.consumed as jest.Mock).mock.calls.reduce(
+      (sum: number, [n]: [number]) => sum + n,
+      0,
+    );
+    expect(consumedSum).toBe(2);
+  });
+
+  it('drops a non-message DM conversation event (join/leave/rename) instead of silently skipping it', async () => {
+    writeDms([{ conversationId: 'c1', messages: [{ participantsJoin: { userIds: ['2000'] } }] }]);
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+
+    await run(pipeline);
+
+    expect(pipeline.length).toBe(0);
+    expect(pipeline.drop).toHaveBeenCalledWith('non_message');
+    expect(pipeline.consumed).toHaveBeenCalledWith(1);
+  });
+
+  it('drops a timeframe-excluded DM instead of silently skipping it', async () => {
+    writeDms([
+      {
+        conversationId: 'c1',
+        messages: [
+          { messageCreate: { id: 'd1', createdAt: '2025-01-08T23:50:38.598Z', text: 'hi', senderId: '2000' } },
+        ],
+      },
+    ]);
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+
+    await new TwitterFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      options: { includeReplies: true, includeRetweets: true },
+      timeframe: { since: new Date('2027-01-01T00:00:00Z') },
+      log: () => {},
+      pipeline,
+    } as unknown as ImportParams);
+
+    expect(pipeline.length).toBe(0);
+    expect(pipeline.drop).toHaveBeenCalledWith('outside_timeframe');
+    expect(pipeline.consumed).toHaveBeenCalledWith(1);
   });
 });
