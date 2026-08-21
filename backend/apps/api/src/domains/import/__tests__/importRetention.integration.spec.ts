@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { ConflictException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 
 import config from '@ci/configuration';
@@ -59,15 +61,21 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
   let scratchRoot: string;
   let originalRetention: Retention;
   let originalScratchDir: string;
+  /**
+   * The sweep's own logger, kept rather than discarded: the skip REASONS are
+   * reported per run only in these calls (the result carries bare counts), and
+   * counts cannot be asserted on here — the sweep is global, and sibling suites
+   * running against the same database contribute immortal runs of their own.
+   */
+  let sweepLog: { warn: jest.Mock };
 
-  const stubLogger = () =>
-    ({
-      setContext: jest.fn(),
-      log: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-      error: jest.fn(),
-    }) as never;
+  const stubLogger = () => ({
+    setContext: jest.fn(),
+    log: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  });
 
   beforeAll(async () => {
     ({ harness, teardown } = await createStagingHarness());
@@ -81,8 +89,9 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
     // about bytes the spec created rather than about the appliance's own tree.
     (config.import as { scratchDir: string }).scratchDir = scratchRoot;
 
-    scratch = new ImportScratchService(stubLogger());
-    retention = new ImportRetentionService(dataSource, scratch, stubLogger());
+    scratch = new ImportScratchService(stubLogger() as never);
+    sweepLog = stubLogger();
+    retention = new ImportRetentionService(dataSource, scratch, sweepLog as never);
   });
 
   afterAll(async () => {
@@ -260,6 +269,65 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
     return row ?? null;
   }
 
+  /** The same row with the fields a re-stage rewrites, for the tests that read them. */
+  async function sourceDetail(
+    key: string,
+  ): Promise<{ status: string; runId: string | null; claimedAt: Date | null; expiresAt: Date | null }> {
+    const [row] = await dataSource.query<
+      Array<{ status: string; runId: string | null; claimedAt: Date | null; expiresAt: Date | null }>
+    >(
+      `SELECT status, run_id AS "runId", claimed_at AS "claimedAt", expires_at AS "expiresAt"
+         FROM ci_import.staged_sources
+        WHERE drop_id = $1 OR source_path = $1`,
+      [key],
+    );
+
+    return row;
+  }
+
+  /** The run's own status column, for the tests that care what a refusal left behind. */
+  async function runStatus(runId: string): Promise<string | null> {
+    const [row] = await dataSource.query<Array<{ status: string }>>(
+      `SELECT status FROM ci_import.import_runs WHERE id = $1::uuid`,
+      [runId],
+    );
+
+    return row?.status ?? null;
+  }
+
+  /** The run's `updated_at`, for the tests that assert a write did not touch it. */
+  async function runUpdatedAt(runId: string): Promise<Date | null> {
+    const [row] = await dataSource.query<Array<{ updatedAt: Date }>>(
+      `SELECT updated_at AS "updatedAt" FROM ci_import.import_runs WHERE id = $1::uuid`,
+      [runId],
+    );
+
+    return row?.updatedAt ?? null;
+  }
+
+  /** A run's staged item ids, in the order {@link seedRun} created them. */
+  async function stagedItemIds(runId: string): Promise<string[]> {
+    const rows = await dataSource.query<Array<{ id: string }>>(
+      `SELECT id FROM ci_import.staged_items WHERE run_id = $1::uuid ORDER BY id`,
+      [runId],
+    );
+
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Stamp one staged row's metadata the way `MediaStage` does — merged, not
+   * replaced, because the keys it writes sit alongside whatever the parser left.
+   */
+  async function stampMetadata(itemId: string, patch: Record<string, unknown>): Promise<void> {
+    await dataSource.query(
+      `UPDATE ci_import.staged_items
+          SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+        WHERE id = $1::uuid`,
+      [itemId, JSON.stringify(patch)],
+    );
+  }
+
   /** The handle of the upload a harness run claimed. */
   async function uploadDropFor(runId: string): Promise<string> {
     const [row] = await dataSource.query<Array<{ dropId: string }>>(
@@ -376,6 +444,65 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
       expect(result.sourceRowsDeleted).toBeGreaterThanOrEqual(2);
     });
 
+    it('hands a claimed upload back to its owner rather than orphaning it', async () => {
+      // The crash window nothing else covers: a run reached a terminal state
+      // without `finishRun` ever stamping its source, so the claim outlived the
+      // work. Retiring the run used to leave that row behind with a null run id
+      // — an archive its owner could not see in the uploads list, could not
+      // delete, and could not import (`startRun` answers "already claimed by
+      // another import run" about a run that no longer exists), and whose bytes
+      // no sweep would ever take.
+      const runId = await retiredRun(200);
+      const dropId = await uploadDropFor(runId);
+
+      expect(await sourceRow(dropId)).toEqual({ status: 'claimed', runId });
+
+      const result = await retention.sweep();
+
+      expect(await counts(runId)).toEqual(GONE);
+
+      // Back on every surface the claim took it off.
+      const restaged = await sourceDetail(dropId);
+
+      expect(restaged).toMatchObject({ status: 'staged', runId: null, claimedAt: null });
+      expect(restaged.expiresAt!.getTime()).toBeGreaterThan(Date.now());
+      expect(result.uploadsRestaged).toBeGreaterThanOrEqual(1);
+      expect(await harness.stagedSources.listStagedUploads({ userId })).toContainEqual(
+        expect.objectContaining({ dropId }),
+      );
+    });
+
+    it('takes a claimed inbox row with the run — that unit is claimable again', async () => {
+      const runId = await retiredRun(200);
+      const inboxPath = `/nonexistent/inbox/${runId}/still-claimed`;
+
+      await dataSource.query(
+        `INSERT INTO ci_import.staged_sources
+           (user_id, origin, source_path, kind, status, run_id, claimed_at)
+         VALUES ($1::uuid, 'inbox', $2, 'directory', 'claimed', $3::uuid, now())`,
+        [userId, inboxPath, runId],
+      );
+
+      await retention.sweep();
+
+      // An inbox row is only a claim on a file that never left the user's own
+      // folder, so there is nothing here to hand back — and keeping it would
+      // hold `staged_sources_active_path_uq` against that path forever.
+      expect(await sourceRow(inboxPath)).toBeNull();
+
+      // Which the index is the proof of: the same path claims cleanly again.
+      const nextRunId = await seedRun();
+
+      await expect(
+        dataSource.query(
+          `INSERT INTO ci_import.staged_sources
+             (user_id, origin, source_path, kind, status, run_id, claimed_at)
+           VALUES ($1::uuid, 'inbox', $2, 'directory', 'claimed', $3::uuid, now())`,
+          [userId, inboxPath, nextRunId],
+        ),
+      ).resolves.not.toThrow();
+    });
+
     it('leaves an upload the user still holds — even one naming the retired run', async () => {
       const runId = await retiredRun(200);
 
@@ -391,10 +518,15 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
         heldDropId,
       ]);
 
+      const before = await sourceDetail(heldDropId);
+
       await retention.sweep();
 
       expect(await counts(runId)).toEqual(GONE);
       expect(await sourceRow(heldDropId)).toEqual({ status: 'staged', runId: null });
+      // Untouched, not merely still staged: a re-stage rewrites the TTL, and
+      // this row's window is the user's own upload window.
+      expect((await sourceDetail(heldDropId)).expiresAt).toEqual(before.expiresAt);
     });
   });
 
@@ -420,6 +552,28 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
       // Asserted about THIS run rather than about the sweep's totals: the
       // sweep is global, and a sibling test's run is not this test's subject.
       expect(await counts(runId)).toEqual(FULL);
+    });
+
+    it('leaves the claimed upload of a run still in flight', async () => {
+      const runId = await seedRun();
+      const dropId = await uploadDropFor(runId);
+
+      await drain(runId);
+      // Aged past both windows and never closed, exactly as above — but read
+      // here for the SOURCE row, because re-staging an upload whose unpack is
+      // about to move it would hand the same bytes to a second run.
+      await dataSource.query(
+        `UPDATE ci_import.import_runs
+            SET status = 'running', created_at = now() - interval '400 days',
+                updated_at = now() - interval '400 days'
+          WHERE id = $1::uuid`,
+        [runId],
+      );
+
+      await retention.sweep();
+
+      expect(await counts(runId)).toEqual(FULL);
+      expect(await sourceRow(dropId)).toEqual({ status: 'claimed', runId });
     });
 
     it('leaves a run whose status is terminal but whose stages are not', async () => {
@@ -565,6 +719,272 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
     });
   });
 
+  /**
+   * The other half of the exception above: the run age never takes, its owner
+   * can. Everything here is asserted per RUN rather than off a sweep total,
+   * for the reason `sweepLog` documents.
+   */
+  describe('discarding an abandoned parse', () => {
+    /** Runs the sweep named under `push_pending` on its most recent pass. */
+    function pushPendingRunIds(): string[] {
+      return sweepLog.warn.mock.calls
+        .map(([, detail]) => detail as { reason?: string; runId?: string })
+        .filter((detail) => detail?.reason === 'push_pending')
+        .map((detail) => detail.runId as string);
+    }
+
+    it('takes the whole parse, and the sweep stops reporting it', async () => {
+      const runId = await parsedNeverPushedRun(200);
+      const dropId = await uploadDropFor(runId);
+
+      await harness.stagedSources.markConsumed(runId);
+
+      // The premise: this run is exactly the one the sweep can never collect.
+      sweepLog.warn.mockClear();
+      await retention.sweep();
+      expect(pushPendingRunIds()).toContain(runId);
+
+      const discarded = await retention.discardRun({ userId }, runId);
+
+      expect(discarded).toEqual({
+        runId,
+        label: expect.any(String),
+        // Two staged items and one staged entity; the relationships and the
+        // entity mapping ride the cascade rather than being counted.
+        stagedRowsDeleted: 3,
+        sourceRowsDeleted: 1,
+        uploadsRestaged: 0,
+        // This run's media stage stored nothing, and the reply says so rather
+        // than omitting the question — see the media test below.
+        mediaFilesKept: 0,
+        attachmentContentsKept: 0,
+      });
+      expect(await counts(runId)).toEqual(GONE);
+      // Its consumed upload registry row went with it — the same retirement the
+      // history sweep performs, not a second delete path that forgot it.
+      expect(await sourceRow(dropId)).toBeNull();
+      // And the Sync card no longer offers a push over rows that are gone.
+      expect(await harness.service.listUnpushed({ userId })).not.toContainEqual(
+        expect.objectContaining({ run: expect.objectContaining({ id: runId }) }),
+      );
+
+      sweepLog.warn.mockClear();
+      await retention.sweep();
+      expect(pushPendingRunIds()).not.toContain(runId);
+    });
+
+    it('gives the archive back — discarding a parse is not discarding the export', async () => {
+      const runId = await parsedNeverPushedRun(200);
+      // Still `claimed`: the run never consumed it, so those bytes are sitting
+      // in the uploads directory and are not this discard's to destroy.
+      const dropId = await uploadDropFor(runId);
+
+      expect(await retention.discardRun({ userId }, runId)).toMatchObject({
+        sourceRowsDeleted: 0,
+        uploadsRestaged: 1,
+      });
+      expect(await counts(runId)).toEqual(GONE);
+      expect(await sourceRow(dropId)).toEqual({ status: 'staged', runId: null });
+    });
+
+    it('does not wait for a window — age is not what makes a parse unwanted', async () => {
+      const runId = await parsedNeverPushedRun(0);
+
+      expect(await retention.discardRun({ userId }, runId)).toMatchObject({ runId });
+      expect(await counts(runId)).toEqual(GONE);
+    });
+
+    it('will not take another user’s run — that is a 404, not a refusal', async () => {
+      const runId = await parsedNeverPushedRun(200);
+
+      expect(await retention.discardRun({ userId: randomUUID() }, runId)).toBeNull();
+      expect(await counts(runId)).toEqual(PARSED_FULL);
+    });
+
+    it('refuses a run with nothing on offer — retention already collects that one', async () => {
+      const runId = await retiredRun(200);
+
+      await expect(retention.discardRun({ userId }, runId)).rejects.toBeInstanceOf(ConflictException);
+      expect(await counts(runId)).toEqual(FULL);
+    });
+
+    it('refuses a run whose stages are still live, whatever the status column says', async () => {
+      const runId = await parsedNeverPushedRun(200);
+
+      // The status cache stays terminal; a stage does not. Deleting the run
+      // here would leave a worker writing to rows that no longer exist.
+      //
+      // `unpack`, deliberately: putting the PARSE stage back to running would
+      // also make the run un-pushable, so the refusal would prove the other
+      // guard and this one could be deleted without a test noticing.
+      await dataSource.query(
+        `UPDATE ci_import.import_stages SET status = 'running'
+          WHERE run_id = $1::uuid AND kind = 'unpack'`,
+        [runId],
+      );
+
+      await expect(retention.discardRun({ userId }, runId)).rejects.toBeInstanceOf(ConflictException);
+      expect(await counts(runId)).toEqual(PARSED_FULL);
+    });
+
+    it('refuses a run that still owns a scratch tree — its row indexes those bytes', async () => {
+      const runId = await parsedNeverPushedRun(200);
+
+      await mkdir(scratch.dirFor(userId, runId), { recursive: true });
+
+      await expect(retention.discardRun({ userId }, runId)).rejects.toBeInstanceOf(ConflictException);
+      expect(await counts(runId)).toEqual(PARSED_FULL);
+
+      // And once the tree is gone, the same run discards normally.
+      await rm(scratch.dirFor(userId, runId), { recursive: true, force: true });
+      expect(await retention.discardRun({ userId }, runId)).toMatchObject({ runId });
+      expect(await counts(runId)).toEqual(GONE);
+    });
+
+    it('refuses a run whose staged media exists only on disk — in SQL, not by inference', async () => {
+      // The sweep applies `unstoredMediaExistsSql` in all four of its candidate
+      // queries. Until the discard asked the same question itself it was safe
+      // only because `ImportStageListener` keeps the scratch tree for such a run
+      // and the tree guard then refuses — a two-component invariant with nothing
+      // asserting it. Here the tree is absent and the rule still holds.
+      const runId = await seedRun({ stages: PARSED_STAGES, classification: 'photo' });
+
+      await finish(runId, 200);
+
+      expect(await harness.service.hasUnstoredMedia(runId)).toBe(true);
+      expect(await scratch.exists(userId, runId)).toBe(false);
+
+      await expect(retention.discardRun({ userId }, runId)).rejects.toBeInstanceOf(ConflictException);
+      expect(await counts(runId)).toEqual(PARSED_FULL);
+      // A refusal leaves the run exactly as it was found — still terminal, still
+      // on the Sync card. Nothing is stamped before every guard has passed.
+      expect(await runStatus(runId)).toBe('completed');
+
+      // And once the media stage has stored those bytes, the same run discards.
+      for (const id of await stagedItemIds(runId)) {
+        await stampMetadata(id, { FileId: randomUUID() });
+      }
+
+      expect(await retention.discardRun({ userId }, runId)).toMatchObject({ runId, mediaFilesKept: 2 });
+      expect(await counts(runId)).toEqual(GONE);
+    });
+
+    /**
+     * The half a discard cannot take back, and therefore has to declare.
+     *
+     * The wizard starts every run as `['unpack', 'parse', 'media']`, so by the
+     * time the Sync card can list one its media stage has already written
+     * `ci.files` rows (bytes in the object store) and `ci.content` rows over
+     * message attachments. No cascade from `import_runs` reaches `ci.*`, and
+     * `staged_items.metadata` is the last thing naming them — which this
+     * deletes. Counting after the delete is impossible, so a reply that did not
+     * carry these numbers could never be made to.
+     */
+    it('counts the media it already stored, distinctly, before deleting what names it', async () => {
+      const runId = await parsedNeverPushedRun(200);
+      const [photo, message] = await stagedItemIds(runId);
+      const sharedFile = randomUUID();
+
+      await stampMetadata(photo, { FileId: sharedFile });
+      // A message carrying two attachments, one of which is the SAME file: the
+      // object store dedups on the bytes, so a per-reference count would report
+      // three files the user does not have.
+      await stampMetadata(message, {
+        AttachmentFileIds: [sharedFile, randomUUID()],
+        AttachmentContentIds: [randomUUID(), randomUUID()],
+      });
+
+      expect(await retention.discardRun({ userId }, runId)).toMatchObject({
+        mediaFilesKept: 2,
+        attachmentContentsKept: 2,
+      });
+      expect(await counts(runId)).toEqual(GONE);
+    });
+
+    it('takes the run off the Sync card before it deletes a row of it', async () => {
+      const runId = await parsedNeverPushedRun(200);
+      const agedAt = await runUpdatedAt(runId);
+      const failure = new Error('the appliance lost power mid-delete');
+      // The payload delete is batched and auto-committed per batch, so it can
+      // never be atomic with the decision to make it. What has to be atomic is
+      // the run ceasing to be pushable.
+      const crash = jest
+        .spyOn(retention as unknown as { deletePayload(runId: string): Promise<number> }, 'deletePayload')
+        .mockRejectedValueOnce(failure);
+
+      await expect(retention.discardRun({ userId }, runId)).rejects.toBe(failure);
+
+      crash.mockRestore();
+
+      // Every staged row survived this particular crash — but a crash one batch
+      // later would not have, and the assertion that matters is the same either
+      // way: nothing is offering to push what is being destroyed.
+      expect(await counts(runId)).toEqual(PARSED_FULL);
+      expect(await runStatus(runId)).toBe('cancelled');
+      expect(await harness.service.listUnpushed({ userId })).not.toContainEqual(
+        expect.objectContaining({ run: expect.objectContaining({ id: runId }) }),
+      );
+
+      // And the claim did not restart the history clock: what a crash leaves
+      // behind ages on the run's original timestamps, so the sweep collects it
+      // on the schedule it was always going to, rather than 90 days from now.
+      expect(await runUpdatedAt(runId)).toEqual(agedAt);
+      await retention.sweep();
+      expect(await counts(runId)).toEqual(GONE);
+    });
+
+    it('refuses a run a Sync click reached first — the check and the delete share a row lock', async () => {
+      const runId = await parsedNeverPushedRun(200);
+      // A transaction holding the very row lock `startPush` takes inside its
+      // append-and-reopen statement. The discard blocks on it, so the push below
+      // lands BEFORE the discard reads its eligibility — which is the
+      // interleaving the unlocked read could not see: it answered `pushable`
+      // from one statement and deleted in another, with no lock spanning the
+      // two.
+      const runner = dataSource.createQueryRunner();
+
+      await runner.connect();
+      await runner.startTransaction();
+      await runner.query(`SELECT id FROM ci_import.import_runs WHERE id = $1::uuid FOR UPDATE`, [runId]);
+
+      // Resolved rather than rejected, so nothing is an unhandled rejection
+      // while this test is still setting up.
+      const discard = retention.discardRun({ userId }, runId).then(
+        (value) => value as unknown,
+        (err: unknown) => err,
+      );
+
+      // Long enough for the discard to be waiting on the lock rather than
+      // racing us to it. The assertion holds under either interleaving: a
+      // discard that has not reached the lock yet reads its eligibility after
+      // this transaction commits, and sees the same push.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      await runner.query(
+        `INSERT INTO ci_import.import_stages (run_id, seq, kind, status, weight)
+         VALUES ($1::uuid,
+                 (SELECT COALESCE(MAX(seq), -1) + 1 FROM ci_import.import_stages WHERE run_id = $1::uuid),
+                 'push', 'queued', 1)`,
+        [runId],
+      );
+      await runner.query(
+        `UPDATE ci_import.import_runs SET status = 'queued', finished_at = NULL WHERE id = $1::uuid`,
+        [runId],
+      );
+      await runner.commitTransaction();
+      await runner.release();
+
+      expect(await discard).toBeInstanceOf(ConflictException);
+      // Not one row of what the push is about to write was taken, and the push
+      // stage the winner appended is still there for the worker to run.
+      expect(await counts(runId)).toEqual({ ...PARSED_FULL, stages: PARSED_FULL.stages + 1 });
+    });
+
+    it('404s a run id nothing ever minted', async () => {
+      expect(await retention.discardRun({ userId }, randomUUID())).toBeNull();
+    });
+  });
+
   // ── the dials ─────────────────────────────────────────────────────────────
 
   describe('configuration', () => {
@@ -578,6 +998,7 @@ describeWithDatabase(`import retention (${importDatabase.target})`, () => {
         stagedRowsDeleted: 0,
         runsDeleted: 0,
         sourceRowsDeleted: 0,
+        uploadsRestaged: 0,
         skipped: {},
       });
       expect(await counts(runId)).toEqual(FULL);

@@ -357,6 +357,60 @@ function UnnamedCronWarning() {
   );
 }
 
+/**
+ * What the schedule is doing, in the order of what an operator can act on.
+ *
+ * `running` is not health — the `@Cron` wrapper catches, logs and returns, so a
+ * schedule whose body throws on every tick stays started forever, and its "last
+ * run" stays two minutes old because that stamp lands before the body. The
+ * server's `overdue` (its own expression, evaluated against the last recorded
+ * attempt) is the only one of the three that can say something has gone wrong,
+ * so it takes the badge whenever it is set.
+ */
+function ScheduleStatus({ cron, className }: { cron: ScheduleRow['cron']; className?: string }) {
+  const badge = cn('text-[10px] uppercase', className);
+
+  if (!cron.running) {
+    return (
+      <Badge variant="secondary" className={badge}>
+        stopped
+      </Badge>
+    );
+  }
+
+  if (cron.overdue) {
+    return (
+      <Badge
+        variant="destructive"
+        className={badge}
+        title="The scheduler has this job started, but its expression asked for a fire that never got recorded."
+      >
+        <AlertTriangle aria-hidden className="h-3 w-3" />
+        overdue
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant="outline" className={badge}>
+      scheduled
+    </Badge>
+  );
+}
+
+/**
+ * When this schedule last completed a tick — "never" rather than "—" once it has
+ * attempted one, because a cron that fires on time and fails every time is
+ * exactly the case both "scheduled" and "last run" report as healthy.
+ */
+function lastSucceeded(cron: ScheduleRow['cron']): string {
+  if (cron.lastSuccessAt) {
+    return new Date(cron.lastSuccessAt).toLocaleTimeString();
+  }
+
+  return cron.lastRunAt ? 'never' : '—';
+}
+
 function SchedulesTable({ rows }: { rows: readonly ScheduleRow[] }) {
   return (
     <div className="overflow-x-auto">
@@ -381,8 +435,11 @@ function SchedulesTable({ rows }: { rows: readonly ScheduleRow[] }) {
             <th scope="col" className="py-1.5 pr-3 text-right font-medium">
               Next run
             </th>
-            <th scope="col" className="py-1.5 text-right font-medium">
+            <th scope="col" className="py-1.5 pr-3 text-right font-medium">
               Last run
+            </th>
+            <th scope="col" className="py-1.5 text-right font-medium">
+              Last succeeded
             </th>
           </tr>
         </thead>
@@ -407,16 +464,15 @@ function SchedulesTable({ rows }: { rows: readonly ScheduleRow[] }) {
                 {schedule.when || '—'}
               </td>
               <td className="py-1.5 pr-3">
-                <Badge variant={cron.running ? 'outline' : 'secondary'} className="text-[10px] uppercase">
-                  {cron.running ? 'scheduled' : 'stopped'}
-                </Badge>
+                <ScheduleStatus cron={cron} />
               </td>
               <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">
                 {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
               </td>
-              <td className="py-1.5 text-right tabular-nums text-muted-foreground">
+              <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">
                 {cron.lastRunAt ? new Date(cron.lastRunAt).toLocaleTimeString() : '—'}
               </td>
+              <td className="py-1.5 text-right tabular-nums text-muted-foreground">{lastSucceeded(cron)}</td>
             </tr>
           ))}
         </tbody>
@@ -468,18 +524,15 @@ function SchedulesPhoneList({ rows }: { rows: readonly ScheduleRow[] }) {
                       {descriptor.label}
                       {descriptor.unnamed && <UnnamedCronWarning />}
                     </span>
-                    <Badge
-                      variant={cron.running ? 'outline' : 'secondary'}
-                      className="shrink-0 text-[10px] uppercase"
-                    >
-                      {cron.running ? 'scheduled' : 'stopped'}
-                    </Badge>
+                    <ScheduleStatus cron={cron} className="shrink-0" />
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground" title={schedule.raw}>
                     {schedule.frequency}
                     {schedule.when ? ` · ${schedule.when}` : ''}
                     {' · next '}
                     {cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleTimeString() : '—'}
+                    {' · succeeded '}
+                    {lastSucceeded(cron)}
                   </p>
                 </li>
               ))}

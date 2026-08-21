@@ -118,8 +118,13 @@ export class RetrievalHealthService {
    * Measure, persist, prune, and compare against the ~week-old baseline.
    * Read-and-append only: it writes its own snapshot rows and deletes its own
    * expired ones, and touches no user data. Raising the alerts is the caller's
-   * job (`RetrievalHealthCron`), because that half DOES write to a user's
-   * feed and has to go through the trust dial first.
+   * job (`RetrievalHealthCron`), because that half writes `ci.actions` rows
+   * against a user. It does NOT consult the trust dial to do so — a COUNT
+   * saying the appliance's own index is broken is not an inference about the
+   * user, so it carries no confidence for the dial to rate. What the dial
+   * still gates is placement, one hop downstream: `ActionService` emits
+   * `ActionCreatedEvent` and personalization's `FeedQueuePopulationListener`
+   * runs the `feed_action` decision before anything reaches `ci.feed_queue`.
    */
   async capture(now: Date = new Date()): Promise<RetrievalHealthRun> {
     const report = await this.embedCoverageTelemetryService.computeIndexHealth();
