@@ -467,6 +467,7 @@ class ChromiumFileImporter implements FileImporter {
         };
         params.pipeline.push({ item } as Graph);
       }
+
       this.importDownloads(db, dbPath, params);
     } catch (e) {
       params.log?.('error', 'chromium query failed', { error: (e as Error).message });

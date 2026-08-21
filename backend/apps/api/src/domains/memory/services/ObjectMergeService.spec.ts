@@ -57,15 +57,27 @@ function objectRow(id: string, overrides: Partial<ObjectRow> = {}): ObjectRow {
   };
 }
 
+/**
+ * The commit and every event send, in the order they actually happened.
+ *
+ * "Emitted after the commit" is otherwise not testable from a mock: the old
+ * version of that assertion checked `statements.length === 0` inside `send`,
+ * which is false by then whether the send sits inside the transaction callback
+ * or after it — so it passed either way.
+ */
+type Timeline = Array<'commit' | 'send'>;
+
 interface Harness {
   service: ObjectMergeService;
   statements: Array<{ sql: string; params: unknown[] }>;
   repointSubject: jest.Mock;
   send: jest.Mock;
+  timeline: Timeline;
 }
 
 function makeHarness(rows: ObjectRow[]): Harness {
   const statements: Array<{ sql: string; params: unknown[] }> = [];
+  const timeline: Timeline = [];
 
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     statements.push({ sql, params });
@@ -85,7 +97,13 @@ function makeHarness(rows: ObjectRow[]): Harness {
 
   const manager = {
     query,
-    transaction: jest.fn(async (cb: (em: { query: typeof query }) => Promise<unknown>) => cb({ query })),
+    transaction: jest.fn(async (cb: (em: { query: typeof query }) => Promise<unknown>) => {
+      const result = await cb({ query });
+
+      timeline.push('commit');
+
+      return result;
+    }),
   };
 
   const itemRepository = {
@@ -95,7 +113,11 @@ function makeHarness(rows: ObjectRow[]): Harness {
   const productRepository = { manager, findOne: jest.fn(async () => ({ id: TARGET })) };
 
   const repointSubject = jest.fn(async () => 2);
-  const send = jest.fn(async () => []);
+  const send = jest.fn(async () => {
+    timeline.push('send');
+
+    return [];
+  });
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new ObjectMergeService(
@@ -106,7 +128,7 @@ function makeHarness(rows: ObjectRow[]): Harness {
     logger as never,
   );
 
-  return { service, statements, repointSubject, send };
+  return { service, statements, repointSubject, send, timeline };
 }
 
 /**
@@ -345,23 +367,23 @@ describe('ObjectMergeService.mergeObjects folds and tombstones', () => {
 
   it('emits the target update only after the transaction has committed', async () => {
     const harness = makeHarness([objectRow(TARGET), objectRow(SOURCE_A)]);
-    let sentDuringTransaction = false;
-    harness.send.mockImplementation(async () => {
-      sentDuringTransaction = harness.statements.length === 0;
-
-      return [];
-    });
 
     await harness.service.mergeObjects(CONTEXT, [SOURCE_A], TARGET);
 
     expect(harness.send).toHaveBeenCalledWith('item.updated', { itemId: TARGET });
-    expect(sentDuringTransaction).toBe(false);
+    // Sent from inside the transaction body, the re-index would race the rows
+    // it is supposed to read — so the ORDER is the assertion.
+    expect(harness.timeline).toEqual(['commit', 'send']);
   });
 });
 
 describe('ObjectMergeService.mergeProductModels', () => {
   function productHarness(rows: Array<Record<string, unknown>>) {
     const statements: Array<{ sql: string; params: unknown[] }> = [];
+    const timeline: Timeline = [];
+    // How many statements had run when the transaction callback returned, so a
+    // write can be shown to be INSIDE it rather than merely to have happened.
+    let statementsAtCommit = -1;
 
     const query = jest.fn(async (sql: string, params: unknown[] = []) => {
       statements.push({ sql, params });
@@ -377,20 +399,33 @@ describe('ObjectMergeService.mergeProductModels', () => {
 
     const manager = {
       query,
-      transaction: jest.fn(async (cb: (em: { query: typeof query }) => Promise<unknown>) => cb({ query })),
+      transaction: jest.fn(async (cb: (em: { query: typeof query }) => Promise<unknown>) => {
+        const result = await cb({ query });
+
+        statementsAtCommit = statements.length;
+        timeline.push('commit');
+
+        return result;
+      }),
     };
     const repointSubject = jest.fn(async () => 1);
     const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+    const send = jest.fn(async () => {
+      timeline.push('send');
+
+      return [];
+    });
 
     const service = new ObjectMergeService(
       { manager, findOne: jest.fn() } as never,
       { manager, findOne: jest.fn(async () => ({ id: TARGET })) } as never,
       { repointSubject } as never,
-      { send: jest.fn(async () => []) } as never,
+      { send } as never,
       logger as never,
     );
 
-    return { service, statements, repointSubject };
+    return { service, statements, repointSubject, send, timeline, committedAfter: () => statementsAtCommit };
   }
 
   const productRow = (id: string, overrides: Record<string, unknown> = {}) => ({
@@ -432,6 +467,7 @@ describe('ObjectMergeService.mergeProductModels', () => {
       receiptLineItems: 1,
       objectProduct: 1,
       observations: 1,
+      searchRowsDeleted: 2,
     });
   });
 
@@ -455,11 +491,50 @@ describe('ObjectMergeService.mergeProductModels', () => {
     );
   });
 
-  it('never touches the item search stores — models are not indexed as their own type', async () => {
+  it('deletes the sources from BOTH search stores, in the merge transaction', async () => {
+    const harness = productHarness([productRow(TARGET), productRow(SOURCE_A), productRow(SOURCE_B)]);
+
+    const { counts } = await harness.service.mergeProductModels(CONTEXT, [SOURCE_A, SOURCE_B], TARGET);
+
+    // No listener can do this: every by-id read filters tombstones, so the
+    // merged-away model reads as absent and the indexer returns before it
+    // could remove anything. Left undone, the duplicate answers search forever
+    // and every hit hydrates to nothing.
+    const embeddings = statementsMatching(harness, 'DELETE FROM ci_search.embeddings');
+    const vectors = statementsMatching(harness, 'DELETE FROM ci_search.vectors');
+
+    expect(embeddings).toHaveLength(1);
+    expect(vectors).toHaveLength(1);
+    // 'product', not 'item' — an owned unit that happens to share an id must
+    // not be unindexed by a catalog merge.
+    expect(embeddings[0].params).toEqual([USER, [SOURCE_A, SOURCE_B], 'product']);
+    expect(vectors[0].params).toEqual([USER, [SOURCE_A, SOURCE_B], 'product']);
+    expect(counts.searchRowsDeleted).toBe(2);
+
+    // Both ran before the transaction callback returned, so a rolled-back
+    // merge cannot leave a model live with its search rows deleted.
+    const deletes = harness.statements
+      .map(({ sql }, index) => ({ sql, index }))
+      .filter(({ sql }) => sql.includes('DELETE FROM ci_search.'));
+    expect(deletes.map(({ index }) => index < harness.committedAfter())).toEqual([true, true]);
+  });
+
+  it('emits ProductUpdatedEvent for the target only', async () => {
+    const harness = productHarness([productRow(TARGET), productRow(SOURCE_A), productRow(SOURCE_B)]);
+
+    await harness.service.mergeProductModels(CONTEXT, [SOURCE_A, SOURCE_B], TARGET);
+
+    // A source is a tombstone by now: its search rows are already gone and
+    // every read path filters it, so an event naming one can only log a miss.
+    expect(harness.send).toHaveBeenCalledWith('product.updated', { productId: TARGET });
+    expect(harness.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits the target update only after the transaction has committed', async () => {
     const harness = productHarness([productRow(TARGET), productRow(SOURCE_A)]);
 
     await harness.service.mergeProductModels(CONTEXT, [SOURCE_A], TARGET);
 
-    expect(harness.statements.some(({ sql }) => sql.includes('ci_search.'))).toBe(false);
+    expect(harness.timeline).toEqual(['commit', 'send']);
   });
 });

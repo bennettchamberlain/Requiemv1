@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
-import { EmbeddingGenerationService } from '@ci/common/embeddings';
+import { EmbeddingGenerationService, shouldEmbedType } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
 // Via the barrel, and provided by MemoryModule — see the note on
@@ -100,24 +100,15 @@ export class ProductSearchIndexListener {
 
     const product = await this.productModelService.findById(context, payload.productId);
 
+    // A merge tombstone lands here, not in a branch of its own:
+    // `ProductModelService.liveScope` filters `merged_into_product_id` for the
+    // system context too, so a merged-away model reads as absent and this
+    // method can never be handed one. Removing its rows is
+    // `ObjectMergeService.mergeProductModels`' job, in the transaction that
+    // tombstoned it, and the backfill sweep stays off it via
+    // `ENTITY_SOURCE_MAP.product.backfillPredicate`.
     if (product == null) {
       this.logger.warn('Product model not found, skipping indexing');
-
-      return;
-    }
-
-    // Merge tombstones must never answer search — same rule as person/item.
-    // `ENTITY_SOURCE_MAP.product.backfillPredicate` keeps the sweep off them;
-    // this is the live-path half, and it also REMOVES any rows a pre-merge
-    // index left behind (ObjectMergeService.mergeProductModels does not delete
-    // ci_search rows itself the way mergeObjects does).
-    if (product.mergedIntoProductId != null) {
-      this.logger.log('Product model is a merge tombstone, removing from search index', {
-        productId: product.id,
-      });
-
-      await this.embeddingService.remove(context, { entityType: 'product', entityId: product.id });
-      await this.vectorService.remove(context, { entityType: 'product', entityId: product.id });
 
       return;
     }
@@ -131,7 +122,9 @@ export class ProductSearchIndexListener {
     const fields = { ...product, identifierValues: await this.identifierValues(product) };
     const searchDocument = productSearchDocument(fields);
 
-    if (searchDocument == null) {
+    if (!shouldEmbedType('product')) {
+      this.logger.log('Product type not in embed allowlist, skipping embedding');
+    } else if (searchDocument == null) {
       this.logger.log('Product model has no search document, skipping embedding');
 
       // Persist the skip so the backfill sweep (a LEFT JOIN on

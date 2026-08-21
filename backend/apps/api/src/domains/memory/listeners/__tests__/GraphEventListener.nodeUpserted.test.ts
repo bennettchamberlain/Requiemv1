@@ -1,6 +1,10 @@
-import type { EventPayloads, Events } from '@ci/domains/events';
+import type { Acknowledgement, EventPayloads, Events } from '@ci/domains/events';
 
 import { GraphEventListener } from '../GraphEventListener';
+
+function makeAck(): Acknowledgement {
+  return { done: jest.fn(), fail: jest.fn(), defer: jest.fn() };
+}
 
 type Payload = EventPayloads[Events.GRAPH_NODE_UPSERTED];
 
@@ -82,13 +86,19 @@ describe('GraphEventListener.handleNodeUpserted', () => {
     expect(send).toHaveBeenCalledWith('person.updated', { personId: 'entity-1' });
   });
 
-  it('swallows a write failure without emitting a search event', async () => {
-    const { listener, send, logger, createOrUpdateNode } = makeListener(true);
+  it('fails the job via ack.fail() instead of swallowing a write failure into ack.done()', async () => {
+    const { listener, send, createOrUpdateNode } = makeListener(true);
     createOrUpdateNode.mockRejectedValueOnce(new Error('boom'));
+    const ack = makeAck();
+    const handle = listener.handleNodeUpserted.bind(listener) as unknown as (
+      p: Payload,
+      a: Acknowledgement,
+    ) => Promise<void>;
 
-    await expect(listener.handleNodeUpserted(payload('Concept'))).resolves.toBeUndefined();
+    await handle(payload('Concept'), ack);
 
+    expect(ack.fail).toHaveBeenCalledWith(expect.any(Error));
+    expect(ack.done).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalled();
   });
 });

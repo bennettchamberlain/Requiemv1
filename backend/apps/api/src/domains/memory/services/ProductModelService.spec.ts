@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { IsNull } from 'typeorm';
 
 import type { ServiceContext, UserServiceContext } from '@ci/common/context';
+import { ProductUpdatedEvent } from '@ci/domains/memory/events';
 
 import { FIND_OR_CREATE_IDENTITY_CONFIDENCE, ProductModelService } from './ProductModelService';
 
@@ -15,6 +16,8 @@ interface Harness {
   statements: Array<{ sql: string; params: unknown[] }>;
   findOne: jest.Mock;
   resolve: jest.Mock;
+  send: jest.Mock;
+  update: jest.Mock;
 }
 
 function makeHarness(options: { existingProductId?: string | null } = {}): Harness {
@@ -34,21 +37,29 @@ function makeHarness(options: { existingProductId?: string | null } = {}): Harne
   });
 
   const findOne = jest.fn(async () => ({ id: PRODUCT, title: 'Sony WH-1000XM5' }));
+  const update = jest.fn(async () => undefined);
 
   const repository = {
     manager: { query },
     findOne,
+    update,
     create: (row: unknown) => row,
     save: jest.fn(async (row: unknown) => row),
     metadata: { columns: { length: 24 } },
   };
 
   const resolve = jest.fn(async () => null);
+  const send = jest.fn(async () => []);
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
-  const service = new ProductModelService(repository as never, { resolve } as never, logger as never);
+  const service = new ProductModelService(
+    repository as never,
+    { resolve } as never,
+    { send } as never,
+    logger as never,
+  );
 
-  return { service, statements, findOne, resolve };
+  return { service, statements, findOne, resolve, send, update };
 }
 
 describe('ProductModelService.findOrCreateByBrandModel', () => {
@@ -154,6 +165,26 @@ describe('ProductModelService reads', () => {
     await expect(harness.service.create(CONTEXT, { title: 'x', identityConfidence: 1.5 })).rejects.toThrow(
       BadRequestException,
     );
+  });
+});
+
+describe('ProductModelService.update', () => {
+  it('emits ProductUpdatedEvent after a genuine field mutation, so search re-indexes it', async () => {
+    const harness = makeHarness();
+
+    await harness.service.update(CONTEXT, PRODUCT, { title: 'Sony WH-1000XM6' });
+
+    expect(harness.update).toHaveBeenCalled();
+    expect(harness.send).toHaveBeenCalledWith(ProductUpdatedEvent, { productId: PRODUCT });
+  });
+
+  it('does not emit when the patch is empty — nothing changed, nothing to re-index', async () => {
+    const harness = makeHarness();
+
+    await harness.service.update(CONTEXT, PRODUCT, {});
+
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.send).not.toHaveBeenCalled();
   });
 });
 

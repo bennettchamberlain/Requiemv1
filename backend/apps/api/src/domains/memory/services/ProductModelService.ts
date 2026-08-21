@@ -6,8 +6,10 @@ import { v7 as uuid7 } from 'uuid';
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { type BulkInsertResult, bulkInsertIdempotent, computeChunkSize } from '@ci/common/persistence';
+import { EventService } from '@ci/domains/events';
 import { ObjectIdentifierService } from '@ci/domains/graph/services/ObjectIdentifierService';
 import type { ObjectIdentifierNamespace } from '@ci/domains/graph/utils/normalizeObjectIdentifier';
+import { ProductUpdatedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { type ProductModel, ProductModelEntity } from '../entities/ProductModelEntity';
@@ -114,6 +116,7 @@ export class ProductModelService {
     @InjectRepository(ProductModelEntity)
     private readonly repository: Repository<ProductModelEntity>,
     private readonly objectIdentifierService: ObjectIdentifierService,
+    private readonly eventService: EventService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(ProductModelService.name);
@@ -476,6 +479,8 @@ export class ProductModelService {
         `Another product model already claims brand "${brand}" with model number "${modelNumber}"`,
       );
     }
+
+    await this.eventService.send(ProductUpdatedEvent, { productId: id });
 
     return this.findById(context, id);
   }

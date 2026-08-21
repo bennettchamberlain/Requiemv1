@@ -26,8 +26,8 @@
   },
   {
     "type": "dependency",
-    "from": "src/domains/import/push/__tests__/imessageShortCodeMigration.test.ts",
-    "to": "src/domains/graph/services/GraphIngestService.ts",
+    "from": "src/domains/graphql/resolvers/__tests__/ForecastResolver.triggerHbpe.test.ts",
+    "to": "src/domains/python-functions/types.ts",
     "rule": {
       "severity": "error",
       "name": "no-cross-domain-internals"
@@ -35,8 +35,26 @@
   },
   {
     "type": "dependency",
-    "from": "src/domains/import/push/__tests__/imessageShortCodeMigration.test.ts",
-    "to": "src/domains/pipeline/stages/index/entityEmbedStages.ts",
+    "from": "src/domains/llm/listeners/__tests__/llmQueuePolicy.test.ts",
+    "to": "src/domains/smart-rotation/listeners/AnswerInferenceListener.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/llm/listeners/__tests__/visionQueuePolicy.test.ts",
+    "to": "src/domains/files/listeners/FilePreviewGenerationListener.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/llm/listeners/__tests__/visionQueuePolicy.test.ts",
+    "to": "src/domains/files/services/FileService.ts",
     "rule": {
       "severity": "error",
       "name": "no-cross-domain-internals"
@@ -181,6 +199,33 @@
     "type": "dependency",
     "from": "src/domains/planning/index.ts",
     "to": "src/domains/llm/core.module.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/planning/services/__tests__/InboxScanService.test.ts",
+    "to": "src/domains/llm/services/OllamaService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/planning/services/__tests__/TodoProcessService.test.ts",
+    "to": "src/domains/llm/services/OllamaService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/planning/services/__tests__/TodoScanService.test.ts",
+    "to": "src/domains/llm/services/OllamaService.ts",
     "rule": {
       "severity": "error",
       "name": "no-cross-domain-internals"

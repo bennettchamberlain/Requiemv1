@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, type Point } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
+import config from '@ci/configuration';
 
 import { GeocodeCacheEntity } from '../entities/GeocodeCacheEntity';
 import { isVirtualLocation } from '../util/virtualLocations';
@@ -135,6 +136,48 @@ export interface ReverseGeocodeOutcome {
   bounds?: GeocodeBounds | null;
 }
 
+/**
+ * Token-bucket / minimum-interval QPS throttle. `acquire()` resolves no sooner
+ * than `1000 / qps` ms after the previous acquisition, so a burst of concurrent
+ * calls is spaced out rather than firing at once and tripping the provider's
+ * own rate limit (OVER_QUERY_LIMIT).
+ *
+ * Exported so a caller with its own separate concurrency ceiling (a p-limit
+ * cap on in-flight calls, which bounds sockets/memory) can still be tested in
+ * isolation — but the instance that actually matters is
+ * {@link GeocodeService}'s own, applied inside {@link GeocodeService.geocode}
+ * and {@link GeocodeService.reverseGeocode}. Constructing a second `RateLimiter`
+ * anywhere else recreates the bug this class exists to fix: two independent
+ * budgets that each individually respect `config.geocoding.rateLimitPerSecond`
+ * while the provider sees their sum.
+ */
+export class RateLimiter {
+  private readonly minIntervalMs: number;
+
+  private nextAvailableAt = 0;
+
+  constructor(qps: number) {
+    // Guard against a 0/negative config slipping through (schema enforces
+    // positive, but be defensive): fall back to unthrottled.
+    this.minIntervalMs = qps > 0 ? 1000 / qps : 0;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.minIntervalMs <= 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const startAt = Math.max(now, this.nextAvailableAt);
+    this.nextAvailableAt = startAt + this.minIntervalMs;
+
+    const waitMs = startAt - now;
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
 /** Options controlling a single {@link GeocodeService.geocode} call. */
 export interface GeocodeOptions {
   /**
@@ -149,6 +192,18 @@ export interface GeocodeOptions {
 
 @Injectable()
 export class GeocodeService {
+  /**
+   * The ONE QPS throttle for the metered provider. GeocodeService is a Nest
+   * singleton — every caller (`GeocodeBatchListener`, `GeocodeStage`,
+   * `PositionReverseStage`, and anything else that geocodes through this
+   * service) is handed the same instance, so this field is the appliance-wide
+   * budget rather than one budget per caller. Each caller may still keep its
+   * own concurrency ceiling (p-limit, bounding in-flight sockets/memory), but
+   * the rate at which calls actually reach the provider is decided HERE and
+   * nowhere else.
+   */
+  private readonly rateLimiter = new RateLimiter(config.geocoding.rateLimitPerSecond);
+
   constructor(
     @InjectRepository(GeocodeCacheEntity)
     private readonly cacheRepository: Repository<GeocodeCacheEntity>,
@@ -264,6 +319,12 @@ export class GeocodeService {
     }
 
     // --- Provider call -----------------------------------------------------
+    // The shared appliance-wide throttle. Applied AFTER the cache check (a hit
+    // never waits) and BEFORE the network call, so every caller of this method
+    // — regardless of which pipeline queue it runs on — draws from the same
+    // budget.
+    await this.rateLimiter.acquire();
+
     let result: GeocodeProviderResult;
     try {
       result = await this.provider.geocode(location.trim());
@@ -360,6 +421,9 @@ export class GeocodeService {
     }
 
     // --- Provider call -----------------------------------------------------
+    // Same shared throttle as the forward path — one budget for both directions.
+    await this.rateLimiter.acquire();
+
     let result: GeocodeProviderResult;
     try {
       result = await this.provider.reverseGeocode(lat, lng);

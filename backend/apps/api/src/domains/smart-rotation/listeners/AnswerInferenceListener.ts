@@ -188,10 +188,28 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
       return;
     }
 
-    const userAnswer = await this.answerService.findByQuestionId(serviceContext, payload.questionId);
+    const existingAnswer = await this.answerService.findByQuestionId(serviceContext, payload.questionId);
 
-    if (userAnswer) {
-      await this.answerService.update(serviceContext, userAnswer.id, {
+    // A row this same path wrote before (answerSource: 'inferred') is safe to
+    // refresh. Anything else — typed by the user, an about-you correction,
+    // imported — is real content, and the only thing this listener knows about
+    // it is that it did not write it. Overwriting on a benign timing race would
+    // silently replace an answer the user actually gave. See AnswerProvenance on
+    // the frontend, which keys the same "Inferred" vs "Manual" distinction off
+    // this field.
+    if (existingAnswer && existingAnswer.answerSource !== 'inferred') {
+      this.logger.log('Inferred answer discarded — existing answer is not machine-inferred', {
+        userId: ownerId,
+        questionId: payload.questionId,
+        answerId: existingAnswer.id,
+        answerSource: existingAnswer.answerSource,
+      });
+
+      return;
+    }
+
+    if (existingAnswer) {
+      await this.answerService.update(serviceContext, existingAnswer.id, {
         text: inferred.answer,
         answerMethod: 'inferred',
         answerSource: 'inferred',

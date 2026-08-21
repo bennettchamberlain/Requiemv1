@@ -1,4 +1,5 @@
 import { SYSTEM_USER } from '@ci/common/context';
+import config from '@ci/configuration';
 
 import { ReceiptSearchIndexListener } from '../ReceiptSearchIndexListener';
 
@@ -170,5 +171,28 @@ describe('ReceiptSearchIndexListener.indexReceipt / updateReceipt', () => {
     expect(embeddingService.upsert).not.toHaveBeenCalled();
     expect(vectorService.upsert).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
+describe('ReceiptSearchIndexListener CI_EMBED_TYPES allowlist', () => {
+  const originalTypes = config.embedding.types;
+
+  afterEach(() => {
+    config.embedding.types = originalTypes;
+  });
+
+  it('skips embedding (but still vectorizes) a receipt when "receipt" is excluded from the allowlist', async () => {
+    config.embedding.types = ['event'];
+
+    const { listener, embeddingService, vectorService } = makeListener({
+      id: 'receipt-1',
+      userId: 'user-1',
+      merchantName: 'Home Depot',
+    });
+
+    await listener.indexReceipt({ receiptId: 'receipt-1' } as never);
+
+    expect(embeddingService.upsert).not.toHaveBeenCalled();
+    expect(vectorService.upsert).toHaveBeenCalled();
   });
 });

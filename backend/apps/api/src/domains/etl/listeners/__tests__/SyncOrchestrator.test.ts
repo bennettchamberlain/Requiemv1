@@ -1,7 +1,8 @@
 import type { ClientFactory, Connection } from '@ci/domains/connections';
+import { EventListenerRegistry } from '@ci/domains/events';
 
 import { ConnectionSyncJobExecuteEvent, ConnectionSyncJobTransformEvent } from '../../events';
-import type { ConnectionSyncJobService } from '../../services/ConnectionSyncJobService';
+import { ConnectionSyncJobService } from '../../services/ConnectionSyncJobService';
 import type { EndpointServiceMap } from '../../services/EndpointServiceMap';
 import type { ConnectionSyncJob } from '../../types';
 import { SyncOrchestrator } from '../SyncOrchestrator';
@@ -44,6 +45,56 @@ function makeSyncJob(overrides: Partial<ConnectionSyncJob> = {}): ConnectionSync
   } as unknown as ConnectionSyncJob;
 }
 
+/**
+ * The REAL {@link ConnectionSyncJobService} claim methods, over a `manager.query`
+ * that answers the two claim UPDATEs the way Postgres does: the WHERE is
+ * evaluated and the row mutated in one uninterrupted step (nothing awaits
+ * inside), and the result is TypeORM's UPDATE shape — the pair
+ * `[rows, rowCount]`, NOT the RETURNING rows.
+ *
+ * Both of those matter. The atomicity is what a real row lock gives two racing
+ * UPDATEs, and is what makes "exactly one winner" a meaningful assertion. The
+ * shape is what the previous version of these tests could not see: they replaced
+ * `claimPending`/`claimTransform` with hand-written mocks implementing the
+ * INTENDED semantics, so they exercised the mock and stayed green while the
+ * service itself read `[[], 0]` as two rows and let every caller win.
+ */
+function claimingSyncJobService(
+  row: { status: string; lastTransformed: Date | null; transformClaimedAt: Date | null } = {
+    status: 'pending',
+    lastTransformed: null,
+    transformClaimedAt: null,
+  },
+) {
+  const managerQuery = jest.fn(async (sql: string, params: unknown[]) => {
+    const isPendingClaim = sql.includes("SET status = 'in_progress'");
+    const matched = isPendingClaim
+      ? row.status === 'pending'
+      : row.lastTransformed == null &&
+        (row.transformClaimedAt == null || row.transformClaimedAt.getTime() < Date.now() - HOUR_MS);
+
+    if (!matched) {
+      return [[], 0];
+    }
+
+    if (isPendingClaim) {
+      row.status = 'in_progress';
+    } else {
+      row.transformClaimedAt = new Date();
+    }
+
+    return [[{ id: params[0] as string }], 1];
+  });
+
+  const logger = { setContext() {}, log() {}, warn() {}, error() {} };
+  const service = new ConnectionSyncJobService(
+    { manager: { query: managerQuery } } as never,
+    logger as never,
+  );
+
+  return { service, row, managerQuery };
+}
+
 function buildOrchestrator(
   overrides: {
     connectionService?: Record<string, jest.Mock>;
@@ -66,6 +117,8 @@ function buildOrchestrator(
     findById: jest.fn().mockResolvedValue(makeSyncJob()),
     update: jest.fn().mockResolvedValue(makeSyncJob()),
     markAsCompleted: jest.fn().mockResolvedValue(makeSyncJob({ status: 'failed' })),
+    claimPending: jest.fn().mockResolvedValue(true),
+    claimTransform: jest.fn().mockResolvedValue(true),
     ...overrides.connectionSyncJobService,
   };
 
@@ -128,9 +181,11 @@ describe('SyncOrchestrator.executeSyncJobs — concurrency + per-connection dedu
 
     expect(connectionSyncJobService.search).toHaveBeenCalled();
     expect(eventService.send).toHaveBeenCalledTimes(1);
-    expect(eventService.send).toHaveBeenCalledWith(ConnectionSyncJobExecuteEvent, {
-      connectionSyncJobId: 'job-a1',
-    });
+    expect(eventService.send).toHaveBeenCalledWith(
+      ConnectionSyncJobExecuteEvent,
+      { connectionSyncJobId: 'job-a1' },
+      { singletonKey: 'job-a1' },
+    );
   });
 
   it('does not start a new job on a connection that already has one in progress', async () => {
@@ -198,15 +253,17 @@ describe('SyncOrchestrator.handleSyncJobExecuteEvent — claim check and lifecyc
     expect(connectionSyncJobService.update).not.toHaveBeenCalled();
   });
 
-  it('skips a job that is no longer pending — the redelivery/duplicate-tick claim check', async () => {
+  it('skips a job whose claim is lost — the redelivery/duplicate-tick claim check', async () => {
     const { orchestrator, connectionSyncJobService, connectionService } = buildOrchestrator({
       connectionSyncJobService: {
         findById: jest.fn().mockResolvedValue(makeSyncJob({ status: 'in_progress' })),
+        claimPending: jest.fn().mockResolvedValue(false),
       },
     });
 
     await orchestrator.handleSyncJobExecuteEvent({ connectionSyncJobId: 'job-1' });
 
+    expect(connectionSyncJobService.claimPending).toHaveBeenCalledWith(expect.anything(), 'job-1');
     expect(connectionSyncJobService.update).not.toHaveBeenCalled();
     expect(connectionService.findById).not.toHaveBeenCalled();
   });
@@ -218,11 +275,7 @@ describe('SyncOrchestrator.handleSyncJobExecuteEvent — claim check and lifecyc
 
     await orchestrator.handleSyncJobExecuteEvent({ connectionSyncJobId: 'job-1' });
 
-    expect(connectionSyncJobService.update).toHaveBeenCalledWith(
-      expect.anything(),
-      'job-1',
-      expect.objectContaining({ status: 'in_progress' }),
-    );
+    expect(connectionSyncJobService.claimPending).toHaveBeenCalledWith(expect.anything(), 'job-1');
     expect(connectionSyncJobService.markAsCompleted).toHaveBeenCalledWith(
       expect.anything(),
       'job-1',
@@ -333,7 +386,7 @@ describe('SyncOrchestrator.handleSyncJobExecuteEvent — claim check and lifecyc
     });
   });
 
-  it('marks the job failed (without throwing) when the sync function itself throws', async () => {
+  it('marks the job failed (without throwing) when the sync function itself throws, persisting a readable message', async () => {
     const serviceFunction = jest.fn().mockRejectedValue(new Error('provider rate limited'));
 
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
@@ -344,12 +397,65 @@ describe('SyncOrchestrator.handleSyncJobExecuteEvent — claim check and lifecyc
       orchestrator.handleSyncJobExecuteEvent({ connectionSyncJobId: 'job-1' }),
     ).resolves.not.toThrow();
 
+    // The bug: passing the raw `Error` object into a jsonb column persists as
+    // `{}` — `Error` has no own enumerable properties, so `JSON.stringify`
+    // (and every jsonb write path) drops `message` and `stack` entirely.
+    // Asserting the exact string (not `expect.any(Error)`) is what catches a
+    // regression back to that.
     expect(connectionSyncJobService.markAsCompleted).toHaveBeenCalledWith(
       expect.anything(),
       'job-1',
       'failed',
-      expect.objectContaining({ error: expect.any(Error) }),
+      { error: 'provider rate limited' },
     );
+  });
+});
+
+describe('SyncOrchestrator.handleSyncJobExecuteEvent — concurrent-duplicate races', () => {
+  it('runs the sync exactly once when the same job is delivered twice concurrently', async () => {
+    const { service } = claimingSyncJobService();
+    const claimPending = jest.fn((ctx: never, id: string) => service.claimPending(ctx, id));
+    const serviceFunction = jest.fn().mockResolvedValue({ data: {}, nextCursor: {} });
+
+    const { orchestrator } = buildOrchestrator({
+      connectionSyncJobService: { claimPending },
+      endpointServiceMap: { getSyncFunction: jest.fn().mockReturnValue(serviceFunction) },
+    });
+
+    await Promise.all([
+      orchestrator.handleSyncJobExecuteEvent({ connectionSyncJobId: 'job-1' }),
+      orchestrator.handleSyncJobExecuteEvent({ connectionSyncJobId: 'job-1' }),
+    ]);
+
+    expect(claimPending).toHaveBeenCalledTimes(2);
+    expect(serviceFunction).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-run a redelivered job that already reached a terminal status', async () => {
+    // The defensive `if (syncJob.status !== 'pending') return;` this handler used
+    // to carry was deleted in favour of the claim, so the claim is now the ONLY
+    // thing standing between a pg-boss redelivery of a finished job and a second
+    // provider fetch + ingest of the same data.
+    const { service, row } = claimingSyncJobService({
+      status: 'success',
+      lastTransformed: null,
+      transformClaimedAt: null,
+    });
+    const serviceFunction = jest.fn().mockResolvedValue({ data: {}, nextCursor: {} });
+
+    const { orchestrator, connectionSyncJobService } = buildOrchestrator({
+      connectionSyncJobService: {
+        claimPending: jest.fn((ctx: never, id: string) => service.claimPending(ctx, id)),
+        findById: jest.fn().mockResolvedValue(makeSyncJob({ status: 'success' })),
+      },
+      endpointServiceMap: { getSyncFunction: jest.fn().mockReturnValue(serviceFunction) },
+    });
+
+    await orchestrator.handleSyncJobExecuteEvent({ connectionSyncJobId: 'job-1' });
+
+    expect(serviceFunction).not.toHaveBeenCalled();
+    expect(connectionSyncJobService.update).not.toHaveBeenCalled();
+    expect(row.status).toBe('success');
   });
 });
 
@@ -370,12 +476,18 @@ describe('SyncOrchestrator.executeTransformJobs', () => {
     await orchestrator.executeTransformJobs();
 
     expect(eventService.send).toHaveBeenCalledTimes(2);
-    expect(eventService.send).toHaveBeenNthCalledWith(1, ConnectionSyncJobTransformEvent, {
-      connectionSyncJobId: 'j1',
-    });
-    expect(eventService.send).toHaveBeenNthCalledWith(2, ConnectionSyncJobTransformEvent, {
-      connectionSyncJobId: 'j2',
-    });
+    expect(eventService.send).toHaveBeenNthCalledWith(
+      1,
+      ConnectionSyncJobTransformEvent,
+      { connectionSyncJobId: 'j1' },
+      { singletonKey: 'j1' },
+    );
+    expect(eventService.send).toHaveBeenNthCalledWith(
+      2,
+      ConnectionSyncJobTransformEvent,
+      { connectionSyncJobId: 'j2' },
+      { singletonKey: 'j2' },
+    );
   });
 
   it('dispatches nothing when there is nothing to transform', async () => {
@@ -398,15 +510,17 @@ describe('SyncOrchestrator.handleSyncJobTransformEvent — claim check and lifec
     expect(logger.error).toHaveBeenCalled();
   });
 
-  it('skips a job that was already transformed — the self-DoS-prevention claim check', async () => {
+  it('skips a job that is already claimed or transformed — the self-DoS-prevention claim check', async () => {
     const { orchestrator, connectionSyncJobService, connectionService } = buildOrchestrator({
       connectionSyncJobService: {
         findById: jest.fn().mockResolvedValue(makeSyncJob({ lastTransformed: new Date() })),
+        claimTransform: jest.fn().mockResolvedValue(false),
       },
     });
 
     await orchestrator.handleSyncJobTransformEvent({ connectionSyncJobId: 'job-1' });
 
+    expect(connectionSyncJobService.claimTransform).toHaveBeenCalledWith(expect.anything(), 'job-1');
     expect(connectionService.findById).not.toHaveBeenCalled();
     expect(connectionSyncJobService.update).not.toHaveBeenCalled();
   });
@@ -466,6 +580,58 @@ describe('SyncOrchestrator.handleSyncJobTransformEvent — claim check and lifec
         error: expect.objectContaining({ transformError: 'OOM during transform' }),
       }),
     );
+  });
+});
+
+describe('SyncOrchestrator.handleSyncJobTransformEvent — concurrent-duplicate races', () => {
+  it('runs the transform exactly once when the same job is delivered twice concurrently', async () => {
+    // The production bug the claim closes: `lastTransformed` is only written on
+    // COMPLETION, so a transform still in flight when the next tick fired was
+    // re-enqueued and re-run alongside itself — observed as six concurrent
+    // copies of GmailTransformService.transformGmail.
+    const { service } = claimingSyncJobService();
+    const claimTransform = jest.fn((ctx: never, id: string) => service.claimTransform(ctx, id));
+    const transformFn = jest.fn().mockResolvedValue(undefined);
+
+    const { orchestrator } = buildOrchestrator({
+      connectionSyncJobService: { claimTransform },
+      endpointServiceMap: { getTransformFunction: jest.fn().mockReturnValue(transformFn) },
+    });
+
+    await Promise.all([
+      orchestrator.handleSyncJobTransformEvent({ connectionSyncJobId: 'job-1' }),
+      orchestrator.handleSyncJobTransformEvent({ connectionSyncJobId: 'job-1' }),
+    ]);
+
+    expect(claimTransform).toHaveBeenCalledTimes(2);
+    expect(transformFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-run a transform for a job already transformed', async () => {
+    // `if (syncJob.lastTransformed != null) return;` was deleted in favour of the
+    // claim, so `last_transformed IS NULL` in the claim's WHERE is now the only
+    // guard against a redelivery re-transforming finished data.
+    const { service } = claimingSyncJobService({
+      status: 'success',
+      lastTransformed: new Date(),
+      transformClaimedAt: null,
+    });
+    const transformFn = jest.fn().mockResolvedValue(undefined);
+
+    const { orchestrator, connectionSyncJobService } = buildOrchestrator({
+      connectionSyncJobService: {
+        claimTransform: jest.fn((ctx: never, id: string) => service.claimTransform(ctx, id)),
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeSyncJob({ status: 'success', lastTransformed: new Date() })),
+      },
+      endpointServiceMap: { getTransformFunction: jest.fn().mockReturnValue(transformFn) },
+    });
+
+    await orchestrator.handleSyncJobTransformEvent({ connectionSyncJobId: 'job-1' });
+
+    expect(transformFn).not.toHaveBeenCalled();
+    expect(connectionSyncJobService.update).not.toHaveBeenCalled();
   });
 });
 
@@ -705,5 +871,20 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
       expect.anything(),
       expect.objectContaining({ connectionId: 'good-conn' }),
     );
+  });
+});
+
+/**
+ * The de-duplication ImportStageListener's own dedicated test
+ * (importStageListenerRole.test.ts) pins: asserting a mocked `events.send`
+ * carries a `singletonKey` can never observe whether the QUEUE enforces it —
+ * pg-boss 10 makes de-duplication a queue property (its unique index on
+ * (name, singleton_key) is partial, `WHERE state='created' AND
+ * policy='short'`), and under the default `standard` policy a singletonKey is
+ * stored but never enforced. This asserts the queue DECLARATION itself.
+ */
+describe("SyncOrchestrator's 'etl' queue policy", () => {
+  it("declares policy 'short' on the shared etl queue, so singletonKey bites", () => {
+    expect(EventListenerRegistry.getQueueOptions('etl')?.policy).toBe('short');
   });
 });

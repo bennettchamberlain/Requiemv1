@@ -67,6 +67,13 @@ export class ConnectionSyncJobEntity {
   @Column({ type: 'timestamptz', nullable: true, name: 'last_transformed' })
   lastTransformed!: Date | null;
 
+  // Internal claim marker for `ConnectionSyncJobService.claimTransform` — not
+  // part of the public egress type (see `toEgressType` below). See the
+  // migration that added this column for why `lastTransformed` alone cannot
+  // gate concurrent transform starts.
+  @Column({ type: 'timestamptz', nullable: true, name: 'transform_claimed_at' })
+  transformClaimedAt!: Date | null;
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: 'user_id' })
   user?: UserEntity;

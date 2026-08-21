@@ -89,47 +89,59 @@ export class TodoScanService {
         continue;
       }
 
-      const confidence = clampConfidence(item.confidence);
-      const sourceRef = TaskService.memoryScanSourceRef(title);
-      const existing =
-        (await this.taskService.findBySourceRef(context, 'memory_scan', sourceRef)) ??
-        (await this.taskService.findByTitleMatch(context, title));
+      try {
+        const confidence = clampConfidence(item.confidence);
+        const sourceRef = TaskService.memoryScanSourceRef(title);
+        const existing =
+          (await this.taskService.findBySourceRef(context, 'memory_scan', sourceRef)) ??
+          (await this.taskService.findByTitleMatch(context, title));
 
-      if (existing) {
-        if (item.detail?.trim()) {
-          await this.taskService.appendNotes(context, existing.id, item.detail.trim());
-          tallies.appended += 1;
+        if (existing) {
+          if (item.detail?.trim()) {
+            await this.taskService.appendNotes(context, existing.id, item.detail.trim());
+            tallies.appended += 1;
+          }
+
+          continue;
         }
 
-        continue;
-      }
+        const decision = await this.personalizationService.decideAction(userId, {
+          kind: 'task_create',
+          confidence,
+        });
 
-      const decision = await this.personalizationService.decideAction(userId, {
-        kind: 'task_create',
-        confidence,
-      });
-
-      if (decision === 'skip') {
-        continue;
-      }
-
-      const status = decision === 'auto' ? 'open' : 'proposed';
-      const created = await this.taskService.create(context, {
-        title,
-        description: item.detail?.trim() || null,
-        status,
-        sourceKind: 'memory_scan',
-        sourceRef,
-        metadata: { confidence, generator: 'planning.todo_scan' },
-      });
-
-      if (created) {
-        if (status === 'proposed') {
-          tallies.proposed += 1;
-        } else {
-          tallies.created += 1;
-          await this.plannedBlockService.tryPlaceAfterOpen(context, created, confidence);
+        if (decision === 'skip') {
+          continue;
         }
+
+        const status = decision === 'auto' ? 'open' : 'proposed';
+        const created = await this.taskService.create(context, {
+          title,
+          description: item.detail?.trim() || null,
+          status,
+          sourceKind: 'memory_scan',
+          sourceRef,
+          metadata: { confidence, generator: 'planning.todo_scan' },
+        });
+
+        if (created) {
+          if (status === 'proposed') {
+            tallies.proposed += 1;
+          } else {
+            tallies.created += 1;
+            await this.plannedBlockService.tryPlaceAfterOpen(context, created, confidence);
+          }
+        }
+      } catch (err) {
+        // One item's failure must not force pg-boss to redeliver the whole
+        // job — that would re-walk every item already applied above. Items
+        // are idempotent on retry (sourceRef/title lookup, appendNotes
+        // content check), so it is safe to just skip this one and continue.
+        this.logger.warn('Todo scan item failed; continuing with remaining items', {
+          userId,
+          title,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 

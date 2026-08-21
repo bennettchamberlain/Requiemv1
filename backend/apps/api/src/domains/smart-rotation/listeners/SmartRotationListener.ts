@@ -41,7 +41,15 @@ export class SmartRotationListener {
     this.logger.setContext(SmartRotationListener.name);
   }
 
-  @OnEvent(SmartRotationWorkEvent, { queue: SMART_ROTATION_QUEUE })
+  // `policy: 'short'` is what makes the singletonKeys both senders rely on
+  // (`smart-rotation:${userId}:${workType}` from SmartRotationService and
+  // ContextPromptController) actually refuse a duplicate — pg-boss's default
+  // `standard` policy stores a singletonKey but never enforces it. Safe here
+  // because every send on this queue carries a key.
+  @OnEvent(SmartRotationWorkEvent, {
+    queue: SMART_ROTATION_QUEUE,
+    queueOptions: { policy: 'short' },
+  })
   async handleWork(payload: SmartRotationWorkPayload): Promise<void> {
     await this.executeWork(payload.userId, payload.workType);
   }

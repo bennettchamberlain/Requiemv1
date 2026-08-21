@@ -82,6 +82,62 @@ function stubRepository(options: { rows?: RawRow[]; entities?: unknown[]; count?
   };
 }
 
+/**
+ * A job repository stub whose query builder actually applies its predicates
+ * to `jobs`, instead of returning fixed rows regardless of the query. Needed
+ * to prove a row is excluded from a distribution's output, not just that the
+ * exclusion clause was requested.
+ */
+function stubFilteringJobRepository(jobs: Array<{ name: string; state: string; data: RawRow }>) {
+  return {
+    find: jest.fn(async () => []),
+    count: jest.fn(async () => 0),
+    createQueryBuilder: jest.fn(() => {
+      const clauses: Array<{ clause: string; params?: RawRow }> = [];
+      const applyWhere = (clause: string, params?: RawRow) => {
+        clauses.push({ clause, params });
+
+        return builder;
+      };
+
+      const builder: Omit<StubQueryBuilder, 'wheres'> = {
+        select: jest.fn(() => builder),
+        addSelect: jest.fn(() => builder),
+        setParameter: jest.fn(() => builder),
+        where: jest.fn(applyWhere),
+        andWhere: jest.fn(applyWhere),
+        groupBy: jest.fn(() => builder),
+        orderBy: jest.fn(() => builder),
+        limit: jest.fn(() => builder),
+        getRawMany: jest.fn(async () => {
+          let rows = jobs;
+
+          for (const { clause, params } of clauses) {
+            if (clause.includes('job.state IN')) {
+              const states = params?.states as string[];
+              rows = rows.filter((job) => states.includes(job.state));
+            } else if (clause.includes('!= :deadLetter')) {
+              rows = rows.filter((job) => job.name !== params?.deadLetter);
+            } else if (clause.includes("data->>'name' = :eventName")) {
+              rows = rows.filter((job) => job.data.name === params?.eventName);
+            }
+          }
+
+          const counts = new Map<string, number>();
+          for (const job of rows) {
+            const workType = (job.data.workType as string | undefined) ?? 'unknown';
+            counts.set(workType, (counts.get(workType) ?? 0) + 1);
+          }
+
+          return Array.from(counts, ([workType, count]) => ({ workType, count }));
+        }),
+      };
+
+      return builder;
+    }),
+  };
+}
+
 function makeService(options: {
   jobStateRows?: RawRow[];
   archiveStateRows?: RawRow[];
@@ -198,8 +254,52 @@ describe('JobMonitorService.getDashboard', () => {
     const clauses = jobRepository.builders.flatMap((builder) => builder.wheres);
     const deadLetterExclusions = clauses.filter((clause) => clause.includes('!= :deadLetter'));
 
-    // Both the by-handler and the by-queue distribution must exclude it.
-    expect(deadLetterExclusions).toHaveLength(2);
+    // The by-handler, by-queue, and smart.rotation.work distributions must all exclude it.
+    expect(deadLetterExclusions).toHaveLength(3);
+  });
+
+  /**
+   * getSmartRotationDistribution used to be missing this exclusion entirely —
+   * a dead-lettered smart.rotation.work job (state `created`, like live work)
+   * inflated its own workType bucket exactly the way the other two
+   * distributions were fixed to avoid above. Filtering happens for real here,
+   * not just clause-presence, because the bug is in what comes OUT.
+   */
+  it('excludes a dead-lettered smart.rotation.work job from the rotation distribution', async () => {
+    const jobRepository = stubFilteringJobRepository([
+      {
+        name: 'smart-rotation',
+        state: 'created',
+        data: { name: 'smart.rotation.work', workType: 'geo-refresh' },
+      },
+      {
+        name: 'smart-rotation',
+        state: 'active',
+        data: { name: 'smart.rotation.work', workType: 'geo-refresh' },
+      },
+      {
+        name: 'dead-letter',
+        state: 'created',
+        data: { name: 'smart.rotation.work', workType: 'geo-refresh' },
+      },
+    ]);
+    const archiveRepository = stubRepository();
+    const scheduleRepository = stubRepository({ count: 0 });
+    const queueRepository = stubRepository();
+    const schedulerRegistry = { getCronJobs: () => new Map() } as unknown as SchedulerRegistry;
+
+    const service = new JobMonitorService(
+      jobRepository as unknown as Repository<PgBossJobEntity>,
+      archiveRepository as unknown as Repository<PgBossArchiveEntity>,
+      scheduleRepository as unknown as Repository<PgBossScheduleEntity>,
+      queueRepository as unknown as Repository<PgBossQueueEntity>,
+      schedulerRegistry,
+    );
+
+    const { smartRotationDistribution } = await service.getDashboard(context);
+
+    // The dead-lettered row must not inflate the count.
+    expect(smartRotationDistribution).toEqual([{ workType: 'geo-refresh', count: 2 }]);
   });
 
   /**

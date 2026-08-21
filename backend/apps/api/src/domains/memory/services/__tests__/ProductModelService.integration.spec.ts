@@ -89,6 +89,7 @@ describeWithDb(`ProductModelService — index-decided behaviour, in Postgres (${
     service = new ProductModelService(
       dataSource.getRepository(ProductModelEntity),
       { resolve: async () => null } as never,
+      { send: async () => [] } as never,
       noopLogger,
     );
   });

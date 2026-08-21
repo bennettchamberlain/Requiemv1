@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
-import { EmbeddingGenerationService } from '@ci/common/embeddings';
+import { EmbeddingGenerationService, shouldEmbedType } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { OnEvent } from '@ci/domains/events';
 import { ReceiptService } from '@ci/domains/memory';
@@ -119,7 +119,9 @@ export class ReceiptSearchIndexListener {
 
     const searchDocument = receiptSearchDocument(fields);
 
-    if (searchDocument == null) {
+    if (!shouldEmbedType('receipt')) {
+      this.logger.log('Receipt type not in embed allowlist, skipping embedding');
+    } else if (searchDocument == null) {
       this.logger.log('Receipt has no search document, skipping embedding');
 
       // A receipt row can legitimately be blank while extraction is pending:
