@@ -1,4 +1,4 @@
-import { TIME_PRECISIONS, TIME_SOURCES } from '@ci/domains/pipeline/stages/clean/TemporalRepairStage';
+import { TIME_PRECISIONS, TIME_SOURCES } from '@ci/domains/pipeline';
 
 import type { StagedItem } from '../../entities/StagedItemEntity';
 import { destinationsFor, toCanonical, type CanonicalRecord } from '../canonical';

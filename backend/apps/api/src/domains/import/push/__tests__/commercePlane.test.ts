@@ -1,6 +1,7 @@
 import path from 'node:path';
 
-import type { ReceiptExtraction } from '../../../memory/types';
+import type { ReceiptExtraction } from '@ci/domains/memory';
+
 import type { EmittedGraph, EmittedItem } from '../../datasources/__tests__/support/emitted';
 import { AmazonFileImporter } from '../../datasources/amazon';
 import type { ImportParams } from '../../datasources/timeline';
