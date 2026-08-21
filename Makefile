@@ -556,6 +556,38 @@ dev: ## Run the development environment locally
 	@# Ctrl-C tears the route down and stops the stack.
 	@yarn tsx scripts/dev-stack/index.ts up --key $(PROJECT_NAME)
 
+.PHONY: fed-up
+fed-up: ## Federation harness: bring two CI-Server boxes + a local OIDC issuer up
+	@printf "$(call task_icon,fed-up,🤝) Starting the two-box federation harness...\n\n"
+
+	@yarn fed up
+
+.PHONY: fed-seed
+fed-seed: ## Federation harness: owners, peer links, standing grants, fixture calendar
+	@yarn fed seed
+
+.PHONY: fed-run
+fed-run: ## Federation harness: drive the five federated-ask scenarios (asserts; non-zero on violation)
+	@yarn fed run
+
+.PHONY: fed-demo
+fed-demo: ## Federation harness: bring both boxes up and run every scenario
+	@printf "$(call task_icon,fed-demo,🤝) Two Companions, one question at a time...\n\n"
+
+	@yarn fed demo
+
+.PHONY: fed-status
+fed-status: ## Federation harness: what is running, and where the logs are
+	@yarn fed status
+
+.PHONY: fed-real-data
+fed-real-data: ## Federation harness: load a bounded, READ-ONLY subset of real data into the boxes
+	@yarn fed import-real-data $(ARGS)
+
+.PHONY: fed-down
+fed-down: ## Federation harness: stop both boxes (PURGE=1 also drops their databases)
+	@yarn fed down $(if $(PURGE),--purge,)
+
 .PHONY: dev-down
 dev-down: ## Deregister this worktree's Caddy route (clears a stale route)
 	@yarn tsx scripts/dev-stack/index.ts down --key $(PROJECT_NAME)
