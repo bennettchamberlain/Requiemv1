@@ -412,6 +412,13 @@ function down(purge: boolean): void {
       state.boxes[box].workerPid = undefined;
     }
 
+    // The issuer's pid is cleared for the same reason the boxes' are: a pid on
+    // a stopped process can be REUSED, and `isAlive` cannot tell the difference
+    // — so a stale one makes the next `up` skip starting the issuer, and both
+    // boxes then verify nothing. `waitForJwks` catches it a few seconds later
+    // with a clear message, but not starting it at all is the better answer.
+    state.idpPid = undefined;
+
     writeState(state);
     console.log('\nBoth boxes stopped. Databases preserved — `make fed-up` brings them back.\n');
   }
