@@ -170,6 +170,18 @@ export interface PipelineDeadLetterView {
 
   error: string;
   failedAt: Date;
+
+  /**
+   * When this letter was successfully re-emitted, or `null` if it never was.
+   *
+   * Also the START OF ITS RETENTION CLOCK, which is the part that is not
+   * obvious from the name: `DeadLetterReaperListener.purgeReplayed` deletes
+   * stamped letters once they are older than
+   * `queues.replayedDeadLetterRetentionDays` (30 days by default), so a row
+   * that shows a timestamp here is a row that will eventually leave this list.
+   * A `null` here is permanent — unreplayed letters have no TTL and no sweep
+   * touches them, at any age.
+   */
   replayedAt: Date | null;
 }
 
@@ -935,6 +947,13 @@ export class PipelineRunService {
    * matches while it is still NULL. That single statement is what makes a
    * replay-all safe to run twice and what stops two operators re-emitting the
    * same payload concurrently — the second `UPDATE` matches nothing.
+   *
+   * The stamp now carries a second meaning, and the release-on-failure contract
+   * below is what makes it safe: a non-NULL `replayed_at` starts this letter's
+   * retention clock, and `DeadLetterReaperListener.purgeReplayed` deletes it
+   * once it is older than `queues.replayedDeadLetterRetentionDays`. A letter
+   * whose emit failed is released back to NULL and therefore never ages out —
+   * only letters the bus actually accepted are ever reclaimed.
    *
    * Emitting first and stamping after would leave a crash in between looking
    * exactly like "never replayed", and the next replay-all would re-emit it. For

@@ -28,7 +28,7 @@ the data model, the migration and backfill plan — is
 | `listeners/StageArrivalListener.ts` | `ARRIVAL_SIGNALS` — turns domain create/update events into sweeps for `onArrival` stages. |
 | `listeners/SearchIndexSweepRequestListener.ts` | Consumes `maintenance.search-index-backfill-request` (emitted by the importer's push stage) and starts the matching `index.*` sweeps. |
 | `listeners/GraphEdgeSweepRequestListener.ts` | The same shape for the `promote.edge_*` matrix. |
-| `listeners/DeadLetterReaperListener.ts` | Copies pg-boss's dead-letter queue into `ci.pipeline_dead_letters`, which nothing had ever read. |
+| `listeners/DeadLetterReaperListener.ts` | Copies pg-boss's dead-letter queue into `ci.pipeline_dead_letters`, which nothing had ever read — and, on the same tick, reclaims the letters that have already been replayed. |
 | `stages/<phase>/*.ts` | The stages themselves. Pure processing: ids in, decisions out. |
 | `entities/*.ts` | TypeORM mirrors of the control-plane tables. The SQL migrations are the source of truth. |
 | `__tests__/harness/README.md` | The integration harness — a real stage, a real Postgres, a fake queue. |
@@ -631,6 +631,31 @@ A payload that will not `zod`-parse is handled *outside* that try/catch: it has
 no `stage` or `entityType` to record, so it goes straight to pg-boss's
 dead-letter queue and `DeadLetterReaperListener` copies it into the same table
 with the raw payload — the only version worth keeping for a parse failure.
+
+### An unreplayed letter never expires; a replayed one does
+
+`ci.pipeline_dead_letters` is written by a scheduled, batched producer —
+`DEAD_LETTER_REAP_BATCH` (500) rows every two minutes, a 360k/day ceiling — and
+it had no cap of any kind. `DeadLetterReaperListener.purgeReplayed` runs on the
+reaper's own tick and deletes rows whose `replayed_at` is older than
+`queues.replayedDeadLetterRetentionDays` (30 days;
+`CI_REPLAYED_DEAD_LETTER_RETENTION_DAYS`), oldest first, bounded to
+`DEAD_LETTER_PURGE_BATCH` (500) per tick — the same rate the harvest can fill, so
+a backlog cannot outrun reclamation. `pipeline_dead_letters_replayed_idx` (partial,
+`WHERE replayed_at IS NOT NULL`) is what keeps a tick that finds nothing free.
+
+The scope is exactly `replayed_at IS NOT NULL`, and that is the whole design:
+
+- a **replayed** letter has already been handed back to the bus. `replayed_at` is
+  stamped only on a successful re-emit (`PipelineRunService.emitClaimedLetter`
+  releases the claim on every failure path), and if the replayed job died again,
+  pg-boss dead-lettered it again and the reaper harvested a NEW row. What ages
+  out is the record that a replay happened, not the record itself;
+- an **unreplayed** letter is never touched, at any age. Its payload is
+  frequently the only surviving copy of a record the source will not re-send —
+  the reason the table exists. Whether those should ever expire (a long TTL, or a
+  per-`(queue, stage)` cap) is a product decision about acceptable data loss and
+  is deliberately not made in code.
 
 Retry policy lives in `constants.ts`: `RETRY_BACKOFF_BASE_SECONDS` (60), doubling
 per attempt, capped at `RETRY_BACKOFF_MAX_SECONDS` (6 h), quarantine after

@@ -12,13 +12,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventsModule } from '@ci/domains/events';
 import { GeocodeModule } from '@ci/domains/geocode';
 import { GraphModule } from '@ci/domains/graph';
+import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { EventEntity, MemoryModule } from '@ci/domains/memory';
 import { PersonalizationModule } from '@ci/domains/personalization';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 
 import { MaintenanceController } from './controllers/MaintenanceController';
+import { DerivationCron } from './cron/DerivationCron';
+import { OrphanCleanupCron } from './cron/OrphanCleanupCron';
+import { RetrievalHealthCron } from './cron/RetrievalHealthCron';
+import { RetrievalHealthSnapshotEntity } from './entities/RetrievalHealthSnapshotEntity';
 import { CommunicationParticipantLinkListener } from './listeners/CommunicationParticipantLinkListener';
+import { DerivationRunListener } from './listeners/DerivationRunListener';
 import { EstimateLocationBatchListener } from './listeners/EstimateLocationBatchListener';
 import { CommunicationLinkBackfillService } from './services/CommunicationLinkBackfillService';
 import { DerivedRelationshipService } from './services/DerivedRelationshipService';
@@ -36,6 +42,7 @@ import { NoteContentFoldService } from './services/NoteContentFoldService';
 import { ObjectReverseService } from './services/ObjectReverseService';
 import { PersonStubBackfillService } from './services/PersonStubBackfillService';
 import { RelationshipNormalizeService } from './services/RelationshipNormalizeService';
+import { RetrievalHealthService } from './services/RetrievalHealthService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
 
 /**
@@ -43,11 +50,14 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([EventEntity]),
+    TypeOrmModule.forFeature([EventEntity, RetrievalHealthSnapshotEntity]),
     EventsModule,
     SearchIngressModule,
     GraphModule,
     GeocodeModule,
+    // RetrievalHealthCron raises its alerts as ci.actions rows (ActionService),
+    // gated by the trust dial (PersonalizationModule, already imported below).
+    IntelligenceModule,
     // GraphEnrichmentService needs the local Ollama client (LLMModule) and the
     // Person-resolution read path (GraphQueryService, exported by MemoryModule).
     LLMModule,
@@ -70,11 +80,16 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
+    RetrievalHealthService,
+    RetrievalHealthCron,
     LocationEstimateService,
     MaintenanceOrchestratorService,
     ObjectReverseService,
     EstimateLocationBatchListener,
     CommunicationParticipantLinkListener,
+    OrphanCleanupCron,
+    DerivationRunListener,
+    DerivationCron,
   ],
   exports: [
     IndexDeferralService,
@@ -90,6 +105,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     HealSelfCollationService,
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
+    RetrievalHealthService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
     ObjectReverseService,
@@ -118,7 +134,11 @@ export {
   type ExternalIdKindViolation,
 } from './services/ExternalIdKindIntegrityService';
 export { RelationshipNormalizeService } from './services/RelationshipNormalizeService';
-export { DerivedRelationshipService } from './services/DerivedRelationshipService';
+export {
+  DerivedRelationshipService,
+  type DerivedRelationshipOptions,
+  type DerivedRelationshipResult,
+} from './services/DerivedRelationshipService';
 export { NoteContentFoldService } from './services/NoteContentFoldService';
 export {
   DETERMINISTIC_EDGE_RULES,
@@ -134,6 +154,22 @@ export {
   type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';
+export { RetrievalHealthSnapshotEntity } from './entities/RetrievalHealthSnapshotEntity';
+export {
+  RetrievalHealthService,
+  buildRetrievalHealthAlerts,
+  alertKey,
+  BASELINE_LOOKBACK_DAYS,
+  BASELINE_MAX_AGE_DAYS,
+  MAX_ALERTS_PER_RUN,
+  REGRESSION_DROP,
+  RETENTION_DAYS,
+  type RetrievalHealthAlert,
+  type RetrievalHealthAlertReason,
+  type RetrievalHealthBaseline,
+  type RetrievalHealthRun,
+} from './services/RetrievalHealthService';
+export { RetrievalHealthCron, RETRIEVAL_HEALTH_CRON, ALERT_REPEAT_DAYS } from './cron/RetrievalHealthCron';
 export {
   SearchIndexBackfillRequestEvent,
   SEARCH_INDEX_BACKFILL_QUEUE,
@@ -141,4 +177,8 @@ export {
   GraphEdgeBackfillRequestEvent,
   GRAPH_EDGE_BACKFILL_QUEUE,
   type GraphEdgeBackfillRequestPayload,
+  DerivationRunRequestEvent,
+  DERIVATION_RUN_QUEUE,
+  type DerivationRunRequestPayload,
 } from './events';
+export { DerivationCron, DERIVATION_CRON } from './cron/DerivationCron';

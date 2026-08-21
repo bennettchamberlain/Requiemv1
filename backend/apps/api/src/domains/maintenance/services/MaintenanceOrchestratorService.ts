@@ -17,7 +17,7 @@ import {
   type CommunicationLinkBackfillOptions,
   CommunicationLinkBackfillService,
 } from './CommunicationLinkBackfillService';
-import { DerivedRelationshipService } from './DerivedRelationshipService';
+import { type DerivedRelationshipOptions, DerivedRelationshipService } from './DerivedRelationshipService';
 import {
   type DeterministicEdgeBackfillOptions,
   DeterministicEdgeBackfillService,
@@ -76,6 +76,14 @@ export interface OrchestrateLegOptions {
   linkEvents?: Omit<EventParticipantBackfillOptions, 'onProgress'>;
   healSelfCollation?: HealSelfCollationOptions;
   materializeEdges?: Omit<DeterministicEdgeBackfillOptions, 'onProgress'>;
+  /**
+   * `derive_relationships` switches. The only one that matters to a caller is
+   * `reifyHouseholdGroups`: the aggregate legs project edges the user's data
+   * already asserts, the household leg mints a Group entity. A SCHEDULED caller
+   * must set it from `PersonalizationService.decideAction` rather than leave it
+   * defaulted — see `DerivationRunListener`.
+   */
+  deriveRelationships?: DerivedRelationshipOptions;
   extractGraph?: Omit<GraphEnrichmentOptions, 'onProgress'>;
   geocode?: { limit?: number; retryNull?: boolean };
   reverseGeocode?: { limit?: number; retryNull?: boolean };
@@ -359,7 +367,7 @@ export class MaintenanceOrchestratorService {
         return this.relationshipNormalizeService.normalize(userId);
 
       case 'derive_relationships':
-        return this.derivedRelationshipService.derive(userId);
+        return this.derivedRelationshipService.derive(userId, options.deriveRelationships ?? {});
 
       case 'fold_notes':
         return this.noteContentFoldService.fold(userId);

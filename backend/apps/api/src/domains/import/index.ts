@@ -70,11 +70,13 @@ import { StagedEntityEntity } from './entities/StagedEntityEntity';
 import { StagedItemEntity } from './entities/StagedItemEntity';
 import { StagedRelationshipEntity } from './entities/StagedRelationshipEntity';
 import { StagedSourceEntity } from './entities/StagedSourceEntity';
+import { ImportRetentionCron } from './listeners/ImportRetentionCron';
 import { ImportStageListener } from './listeners/ImportStageListener';
 import { InboxProvisionListener } from './listeners/InboxProvisionListener';
 import { StagedUploadPurgeCron } from './listeners/StagedUploadPurgeCron';
 import { DataSourceCatalogService } from './services/DataSourceCatalogService';
 import { ImportInboxService } from './services/ImportInboxService';
+import { ImportRetentionService } from './services/ImportRetentionService';
 import { ImportRunService } from './services/ImportRunService';
 import { ImportScratchService } from './services/ImportScratchService';
 import { StagedSourceService } from './services/StagedSourceService';
@@ -113,6 +115,7 @@ import { UnpackStage } from './stages/UnpackStage';
     DataSourceCatalogService,
     ImportDoctorService,
     ImportInboxService,
+    ImportRetentionService,
     ImportRunService,
     ImportScratchService,
     StagedSourceService,
@@ -123,12 +126,14 @@ import { UnpackStage } from './stages/UnpackStage';
     ImportStageListener,
     InboxProvisionListener,
     StagedUploadPurgeCron,
+    ImportRetentionCron,
   ],
   controllers: [ImportUploadsController, ImportRunsController, ImportInboxController, ImportDoctorController],
   exports: [
     DataSourceCatalogService,
     ImportDoctorService,
     ImportInboxService,
+    ImportRetentionService,
     ImportRunService,
     ImportScratchService,
     StagedSourceService,
@@ -138,6 +143,9 @@ export class ImportModule {}
 
 export { StagedSourceService, UPLOAD_TTL_MS } from './services/StagedSourceService';
 export { StagedUploadPurgeCron, STAGED_UPLOAD_PURGE_CRON } from './listeners/StagedUploadPurgeCron';
+export { ImportRetentionCron, IMPORT_RETENTION_CRON } from './listeners/ImportRetentionCron';
+export { ImportRetentionService } from './services/ImportRetentionService';
+export type { RetentionSweepResult } from './services/ImportRetentionService';
 export type { RegisterUploadInput } from './services/StagedSourceService';
 
 export { ImportInboxService, MAX_INBOX_BATCH_UNITS } from './services/ImportInboxService';
