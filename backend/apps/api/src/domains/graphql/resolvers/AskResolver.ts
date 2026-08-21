@@ -25,7 +25,7 @@ import {
   type GrantMode,
   type TrustTier,
 } from '@ci/domains/asks';
-import { OutboundAskService, type PeerAskRequest, PeerLinkService } from '@ci/domains/peers';
+import { OutboundAskService, type PeerAskRequest, type PeerLink, PeerLinkService } from '@ci/domains/peers';
 
 import { AnswerFormEnum, AskAnswerType } from '../types/AskAnswerType';
 import {
@@ -112,7 +112,7 @@ export class AskResolver {
     const id = GlobalUID.parse('ask', gid);
     const ask = await this.askService.approve(serviceContext, id);
 
-    return { success: true, ask: AskType.toType(ask, serviceContext.userId) };
+    return { success: true, ask: await this.toAskType(serviceContext, ask) };
   }
 
   @Mutation(() => AskPayload)
@@ -126,9 +126,21 @@ export class AskResolver {
 
     const serviceContext = toServiceContext(context);
     const id = GlobalUID.parse('ask', gid);
-    const ask = await this.askService.decline(serviceContext, id);
+    // The peer, so a REFUSAL of a federated ask is attributable in the owner's
+    // history too. `PeerAskService` already stamps it on the auto-decline a block
+    // grant produces; a decline the owner made by hand used to land with
+    // `peer_handle` NULL — the same asymmetry as the approved disclosure that
+    // `runAsk` closes.
+    //
+    // Read BEFORE the transition, because `decline` writes the audit row itself.
+    // An ask that resolves to nothing here yields no link and falls through to
+    // `decline`, which raises the not-found; this lookup must not become a second
+    // error path with its own wording.
+    const existing = await this.askService.findById(serviceContext, id);
+    const link = existing == null ? null : await this.resolvePeerLink(serviceContext, existing);
+    const ask = await this.askService.decline(serviceContext, id, { peerHandle: link?.peerHandle ?? null });
 
-    return { success: true, ask: AskType.toType(ask, serviceContext.userId) };
+    return { success: true, ask: AskType.toType(ask, serviceContext.userId, link?.peerHandle ?? null) };
   }
 
   /**
@@ -220,7 +232,12 @@ export class AskResolver {
     // imposes no ceiling" and "no ceiling applies" are different statements,
     // and collapsing them is the shape of the escalation documented on
     // {@link resolveGrantCeiling}.
-    const tier = await this.resolveTier(serviceContext, ask);
+    // Resolved ONCE and shared by the two things that need it — the trust tier
+    // that caps this answer, and the handle stamped into the audit row. A second
+    // lookup is a second chance for them to name different peers for the same
+    // disclosure.
+    const link = await this.resolvePeerLink(serviceContext, ask);
+    const tier = resolveTier(ask, link);
     const tierCeiling = disclosureCeiling(tier, ask.query.dataClass);
     const grantCeiling = await this.resolveGrantCeiling(ask);
     const ceiling = narrowestRung(tierCeiling, grantCeiling) ?? tierCeiling;
@@ -239,12 +256,21 @@ export class AskResolver {
     const { ask: completed, answer: savedAnswer } = await this.askService.completeWithAnswer(
       serviceContext,
       id,
-      { answer, disclosedEntityIds: disclosedIds, backingEntityIds: backingIds },
+      {
+        answer,
+        disclosedEntityIds: disclosedIds,
+        backingEntityIds: backingIds,
+        // WHO this crossed to. Null for a local ask, and null for a federated one
+        // whose link has since been deleted — the audit still carries the link id
+        // off the ask row either way. Without it, the disclosure the owner
+        // personally approved was the only one their history could not attribute.
+        peerHandle: link?.peerHandle ?? null,
+      },
     );
 
     return {
       success: true,
-      ask: AskType.toType(completed, serviceContext.userId),
+      ask: AskType.toType(completed, serviceContext.userId, link?.peerHandle ?? null),
       // The responder just ran this — they get their own true numbers.
       answer: AskAnswerType.toType(savedAnswer, true),
       disclosedCount: answer.disclosedCount,
@@ -253,21 +279,62 @@ export class AskResolver {
   }
 
   /**
-   * The asker's relationship tier, which sets the disclosure ceiling.
+   * The peer an ask belongs to, or null when it is local.
    *
-   * A local ask comes from a member of the owner's own box (`household`). An ask
-   * carrying a peer link is federated, so the tier is the one the owner assigned
-   * that peer — and a link that has since been revoked or deleted resolves to
-   * `stranger`, the strictest posture, rather than silently widening.
+   * Owner-scoped through `findById`, and that scoping is load-bearing in both
+   * directions: the local participant of a federated ask is always the link's
+   * owner (the asker for an outbound ask, the responder for an inbound one), so
+   * a legitimate viewer resolves their own link and anybody else resolves
+   * nothing rather than learning a peer's handle.
    */
-  private async resolveTier(context: UserServiceContext, ask: Ask): Promise<TrustTier> {
+  private async resolvePeerLink(context: UserServiceContext, ask: Ask): Promise<PeerLink | null> {
     if (ask.peerLinkId == null) {
-      return 'household';
+      return null;
     }
 
-    const link = await this.peerLinkService.findById(context, ask.peerLinkId);
+    return this.peerLinkService.findById(context, ask.peerLinkId);
+  }
 
-    return (link?.trustTier as TrustTier | undefined) ?? 'stranger';
+  /**
+   * Project asks for the caller, resolving `peerHandle` for the federated ones.
+   *
+   * `AskType.peerHandle` is declared on the type and was hard-coded to null on
+   * every path, while the sibling {@link AskAuditType} projection carried it —
+   * so a federated ask rendered in the owner's review queue as if it had come
+   * from nobody. The handle is not on `ci.asks` (only the link id is), so it has
+   * to be looked up.
+   *
+   * One lookup per DISTINCT peer rather than per row: an inbox is usually one or
+   * two peers deep, and `findById` per ask is an N+1 on the review queue. A list
+   * of purely local asks never reaches the lookup at all.
+   */
+  private async toAskTypes(context: UserServiceContext, asks: Ask[]): Promise<AskType[]> {
+    const linkIds = [...new Set(asks.map((ask) => ask.peerLinkId).filter((id): id is string => id != null))];
+    const links = await Promise.all(linkIds.map((linkId) => this.peerLinkService.findById(context, linkId)));
+    const handles = new Map(
+      links.filter((link): link is PeerLink => link != null).map((link) => [link.id, link.peerHandle]),
+    );
+
+    return asks.map((ask) =>
+      AskType.toType(ask, context.userId, ask.peerLinkId == null ? null : handles.get(ask.peerLinkId)),
+    );
+  }
+
+  /** {@link toAskTypes} for a single ask. */
+  private async toAskType(context: UserServiceContext, ask: Ask): Promise<AskType> {
+    const [projected] = await this.toAskTypes(context, [ask]);
+
+    return projected;
+  }
+
+  /** One of the caller's own peer links, or a 404. Never another owner's. */
+  private async requirePeerLink(context: UserServiceContext, id: string): Promise<PeerLink> {
+    const link = await this.peerLinkService.findById(context, id);
+    if (link == null) {
+      throw new NotFoundException(`Peer link ${id} not found`);
+    }
+
+    return link;
   }
 
   /**
@@ -388,7 +455,9 @@ export class AskResolver {
 
     return {
       success: true,
-      ask: AskType.toType(ask),
+      // The handle is the one the caller addressed, so no lookup is needed to
+      // say who this outbound ask went to.
+      ask: AskType.toType(ask, undefined, input.handle),
       status: response.status,
       reason: response.reason,
     };
@@ -404,10 +473,30 @@ export class AskResolver {
     }
 
     const serviceContext = toServiceContext(context);
-    const granteeUserId = GlobalUID.parse('user', input.granteeId);
+
+    // Exactly one grantee kind, checked HERE rather than left to the DB. The
+    // CHECK constraint `ask_grants_grantee_chk` is the right backstop and it
+    // stays, but it surfaces as a 500 carrying a constraint name; a client can
+    // only act on a 400 that names the two fields. `GrantService.create` repeats
+    // the rule for callers that never pass through GraphQL.
+    const hasUser = input.granteeId != null;
+    const hasPeer = input.granteePeerLinkId != null;
+    if (hasUser === hasPeer) {
+      throw new BadRequestException('A grant must name exactly one of granteeId / granteePeerLinkId');
+    }
+
+    // A peer link id is resolved through the OWNER-SCOPED read before it is
+    // stored, for two reasons: an id naming no link lands as a
+    // `ask_grants_grantee_peer_link_id_fkey` violation (another 500), and an id
+    // naming somebody else's link would otherwise be storable — an owner writing
+    // consent against a relationship that is not theirs.
+    const granteePeerLinkId = input.granteePeerLinkId
+      ? (await this.requirePeerLink(serviceContext, input.granteePeerLinkId)).id
+      : null;
 
     const grant = await this.grantService.create(serviceContext, {
-      granteeUserId,
+      granteeUserId: input.granteeId ? GlobalUID.parse('user', input.granteeId) : null,
+      granteePeerLinkId,
       queryType: input.queryType,
       dataClass: input.dataClass ?? null,
       // `scope` used to be hard-coded to `{ dataClasses }` or null, which is why
@@ -449,7 +538,7 @@ export class AskResolver {
     const serviceContext = toServiceContext(context);
     const rows = await this.askService.listInbox(serviceContext);
 
-    return rows.map((row) => AskType.toType(row, serviceContext.userId));
+    return this.toAskTypes(serviceContext, rows);
   }
 
   /** The asker's outbox (asks I have sent). */
@@ -462,7 +551,7 @@ export class AskResolver {
     const serviceContext = toServiceContext(context);
     const rows = await this.askService.listOutbox(serviceContext);
 
-    return rows.map((row) => AskType.toType(row, serviceContext.userId));
+    return this.toAskTypes(serviceContext, rows);
   }
 
   @Query(() => AskType, { nullable: true })
@@ -478,7 +567,7 @@ export class AskResolver {
     const id = GlobalUID.parse('ask', gid);
     const found = await this.askService.findById(serviceContext, id);
 
-    return found ? AskType.toType(found, serviceContext.userId) : null;
+    return found ? this.toAskType(serviceContext, found) : null;
   }
 
   /** Standing grants owned by the caller (the Grant Manager). */
@@ -515,6 +604,13 @@ export class AskResolver {
    * previous posture stays on the record; see `GrantService.supersede`. The
    * returned grant is the NEW row — its `supersedesGrantId` names the one it
    * replaced, and `myAskGrantHistory` shows both.
+   *
+   * This works on a PEER grant unchanged, and deliberately takes no grantee
+   * input: `supersede` copies `granteePeerLinkId` (like `granteeUserId`) onto the
+   * replacement, because the grantee is part of WHICH grant this is. That is also
+   * what keeps the replacement on the right side of `ask_grants_grantee_chk` —
+   * a change that let the caller name a grantee could turn a peer grant into a
+   * user grant, or into a row naming both.
    */
   @Mutation(() => AskGrantPayload)
   async updateAskGrant(
@@ -630,6 +726,27 @@ function toGrantScope(input: { dataClasses?: string[]; maxDisclosure?: string })
   };
 
   return Object.keys(scope).length > 0 ? scope : undefined;
+}
+
+/**
+ * The asker's relationship tier, which sets the disclosure ceiling.
+ *
+ * A local ask comes from a member of the owner's own box (`household`). An ask
+ * carrying a peer link is federated, so the tier is the one the owner assigned
+ * that peer — and a link that has since been revoked or deleted resolves to
+ * `stranger`, the strictest posture, rather than silently widening.
+ *
+ * Takes the already-resolved link rather than fetching one, so the tier and the
+ * audit row's peer handle are decided from the SAME read.
+ *
+ * Pure.
+ */
+function resolveTier(ask: Ask, link: PeerLink | null): TrustTier {
+  if (ask.peerLinkId == null) {
+    return 'household';
+  }
+
+  return (link?.trustTier as TrustTier | undefined) ?? 'stranger';
 }
 
 /**

@@ -47,11 +47,46 @@ export class CreateAskInput {
   query!: AskQueryInput;
 }
 
+/**
+ * A new standing grant.
+ *
+ * ═══ EXACTLY ONE GRANTEE, AND THE PEER HALF WAS UNREACHABLE ═══
+ *
+ * `ci.ask_grants` has admitted a PEER grantee since the peer-links migration —
+ * `ask_grants_grantee_chk` requires exactly one of `grantee_user_id` /
+ * `grantee_peer_link_id`, `CreateAskGrantDto` carries both, and
+ * `GrantService.create` enforces the same rule. Only this input and the resolver
+ * were missing, and `granteeId` being REQUIRED is what made a grant addressed to
+ * a peer inexpressible: the federation harness had to write every one of them as
+ * raw SQL, and so did anyone else.
+ *
+ * Both fields are therefore nullable at the schema level and the exactly-one-of
+ * rule is enforced in the resolver, which is the only place that can turn it
+ * into a 400 that names the two fields. GraphQL has no "one of these two"
+ * construct to express it in the type itself (`@oneOf` is not in the version
+ * this schema is built against), so a nullable pair plus a checked resolver is
+ * the shape — not an oversight.
+ */
 @InputType()
 export class CreateAskGrantInput {
-  /** Opaque user id of the grantee who may ask. */
-  @Field(() => ID)
-  granteeId!: string;
+  /**
+   * Opaque user id of the grantee who may ask — a member of this box.
+   *
+   * Nullable, but not optional in practice: supply exactly one of this and
+   * {@link granteePeerLinkId}.
+   */
+  @Field(() => ID, { nullable: true })
+  granteeId?: string;
+
+  /**
+   * The linked peer Companion this grant addresses, for a FEDERATED grant.
+   *
+   * The raw `ci.peer_links.id`, matching what {@link AskGrantType
+   * .granteePeerLinkId} emits — peer links have no global-id type of their own,
+   * so encoding one here would make the value the API hands out un-resubmittable.
+   */
+  @Field(() => ID, { nullable: true })
+  granteePeerLinkId?: string;
 
   @Field(() => String)
   queryType!: string;

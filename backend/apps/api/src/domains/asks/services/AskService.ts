@@ -42,6 +42,33 @@ interface TransitionOptions {
 }
 
 /**
+ * Who a FEDERATED outcome happened with, for the audit row.
+ *
+ * ═══ THE REVIEW PATH USED TO LOSE THE PEER ═══
+ *
+ * Every terminal outcome this service records was built FROM THE ASK ALONE, and
+ * `ci.asks` carries a peer LINK ID but not a handle. `PeerAskService` writes its
+ * own audit row for the auto path and stamps both, so a standing grant that
+ * auto-answered a peer was attributable — while the ask the OWNER PERSONALLY
+ * APPROVED came through `completeWithAnswer` and landed with `peer_handle` NULL.
+ * The one disclosure a human looked at and said yes to was the one their history
+ * could not pin on anybody. `PeerAskService.persistDisclosure`'s docstring names
+ * teaching `complete` to carry this as the follow-up; this is it.
+ *
+ * Only the HANDLE travels. The link id is read off the ask row instead, for the
+ * same reason `consentBasis` is: `ci.asks.peer_link_id` IS the record of which
+ * peer an ask belongs to, and a separately threaded copy is one more chance for
+ * the two to name different peers for the same disclosure. The handle cannot
+ * come from there — it lives in the peers domain (which depends on asks, not the
+ * reverse) and is denormalized into the audit AS OF disclosure time, so a later
+ * rename or re-link cannot rewrite history.
+ */
+interface PeerAttribution {
+  /** The peer's handle when the disclosure happened. */
+  peerHandle?: string | null;
+}
+
+/**
  * Owns the {@link AskEntity} lifecycle and the submit orchestration that ties
  * the ask, the consent grants, and the audit log together.
  *
@@ -207,12 +234,19 @@ export class AskService {
     return this.applyTransition(entity, 'answering', { disclosureCeiling: ceiling });
   }
 
-  /** Owner declines a pending ask → `declined`, and records the audit row. */
-  async decline(context: UserServiceContext, id: string): Promise<Ask> {
+  /**
+   * Owner declines a pending ask → `declined`, and records the audit row.
+   *
+   * `peer` attributes the refusal when the ask came from a linked peer; see
+   * {@link PeerAttribution} for why the handle has to be handed in and the link
+   * id does not.
+   */
+  async decline(context: UserServiceContext, id: string, peer: PeerAttribution = {}): Promise<Ask> {
     const declined = await this.transition(context, id, 'declined');
     await this.auditService.record({
       askId: declined.id,
       askerUserId: declined.askerUserId,
+      ...attributeToPeer(declined, peer),
       responderUserId: declined.responderUserId,
       query: declined.query,
       consentBasis: declined.consentBasis,
@@ -235,6 +269,9 @@ export class AskService {
    * The lifecycle gate still lives in {@link complete}, which runs INSIDE the
    * transaction — a refusal there rolls the answer back rather than leaving it
    * behind.
+   *
+   * `disclosure.peerHandle` is what makes this usable for a FEDERATED
+   * disclosure; see {@link PeerAttribution}.
    */
   async completeWithAnswer(
     context: UserServiceContext,
@@ -245,6 +282,8 @@ export class AskService {
       disclosedEntityIds: string[];
       /** Entities the answer was computed over (post-redaction, pre-ceiling). */
       backingEntityIds: string[];
+      /** The peer this answer crossed to, when the ask is federated. */
+      peerHandle?: string | null;
     },
   ): Promise<{ ask: Ask; answer: AskAnswer }> {
     return this.dataSource.transaction(async (manager) => {
@@ -257,6 +296,7 @@ export class AskService {
         // number — and the audit, deriving from the ids alone, recorded that as
         // an empty disclosure.
         disclosedCount: disclosure.answer.disclosedCount,
+        peerHandle: disclosure.peerHandle,
         manager,
       });
 
@@ -280,12 +320,20 @@ export class AskService {
    * non-itemizing form is the only thing that did. Omitted, the audit falls
    * back to `disclosedEntityIds.length` — right for `retrieval`, and right for
    * the callers here that disclose nothing at all.
+   *
+   * `options.peerHandle` names the peer a FEDERATED disclosure crossed to; see
+   * {@link PeerAttribution}.
    */
   async complete(
     context: UserServiceContext,
     id: string,
     disclosedEntityIds: string[],
-    options: { backingEntityIds?: string[]; disclosedCount?: number; manager?: EntityManager } = {},
+    options: {
+      backingEntityIds?: string[];
+      disclosedCount?: number;
+      peerHandle?: string | null;
+      manager?: EntityManager;
+    } = {},
   ): Promise<Ask> {
     const entity = await this.responderOwned(context, id, options.manager);
 
@@ -319,6 +367,7 @@ export class AskService {
       {
         askId: saved.id,
         askerUserId: saved.askerUserId,
+        ...attributeToPeer(saved, { peerHandle: options.peerHandle }),
         responderUserId: saved.responderUserId,
         query: saved.query,
         consentBasis: saved.consentBasis,
@@ -478,4 +527,25 @@ export class AskService {
 
     return entity;
   }
+}
+
+/**
+ * The peer fields for an audit row, derived from the ask plus the caller's
+ * {@link PeerAttribution}.
+ *
+ * The link id comes from the ROW, and the handle is honoured ONLY when that row
+ * really carries a link — so a caller cannot pin a purely local disclosure on a
+ * peer by passing a handle, and a federated one is attributable by id even if
+ * the handle could not be resolved (a peer link deleted between the answer and
+ * the audit still leaves the id the history was written under).
+ *
+ * Pure.
+ */
+function attributeToPeer(
+  ask: Pick<AskEntity, 'peerLinkId'>,
+  peer: PeerAttribution,
+): { peerLinkId: string | null; peerHandle: string | null } {
+  const peerLinkId = ask.peerLinkId ?? null;
+
+  return { peerLinkId, peerHandle: peerLinkId == null ? null : (peer.peerHandle ?? null) };
 }

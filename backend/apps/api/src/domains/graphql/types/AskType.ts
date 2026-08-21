@@ -61,7 +61,14 @@ export class AskType {
   @Field(() => ID, { nullable: true })
   askerId!: string | null;
 
-  /** The peer this ask came from (inbound) or was sent to (outbound). */
+  /**
+   * The peer this ask came from (inbound) or was sent to (outbound).
+   *
+   * Resolved by the caller, because `ci.asks` stores only the peer LINK ID and
+   * the handle lives in the peers domain. Callers that do not resolve it get
+   * null — which is the honest answer for a local ask, and for a federated one
+   * whose link the viewer does not own.
+   */
   @Field(() => String, { nullable: true })
   peerHandle!: string | null;
 
@@ -114,14 +121,24 @@ export class AskType {
    * `viewerUserId` decides whether the responder's private reasoning is
    * included. Callers that omit it get the safe projection — an omitted argument
    * must never be the disclosing case.
+   *
+   * `peerHandle` is likewise an argument rather than something read off the ask:
+   * the ask carries a peer LINK ID, and turning that into a handle takes a read
+   * of the peers domain that this pure projection cannot do. It was hard-coded
+   * to `null` here while {@link AskAuditType} — the sibling projection over the
+   * same federated event — carried it, so every federated ask rendered as though
+   * it had come from nobody. Omitted still means null, so the safe projection is
+   * still the default one.
    */
-  static toType(ask: Ask, viewerUserId?: string): AskType {
+  static toType(ask: Ask, viewerUserId?: string, peerHandle?: string | null): AskType {
     const isResponder = viewerUserId != null && viewerUserId === ask.responderUserId;
 
     return {
       id: GlobalUID.encode('ask', ask.id),
       askerId: ask.askerUserId ? GlobalUID.encode('user', ask.askerUserId) : null,
-      peerHandle: null,
+      // Never a handle without a link to hang it on: a local ask has no peer, and
+      // saying otherwise would put a name on a disclosure that never left the box.
+      peerHandle: (ask.peerLinkId == null ? null : peerHandle) ?? null,
       direction: ask.direction,
       responderId: ask.responderUserId ? GlobalUID.encode('user', ask.responderUserId) : null,
       query: AskQueryType.toType(ask.query),

@@ -177,6 +177,10 @@ describe('AskResolver — enabled', () => {
       answer: expect.objectContaining({ form: 'retrieval' }),
       disclosedEntityIds: ['e1'],
       backingEntityIds: ['e1'],
+      // A LOCAL ask, so there is no peer to attribute it to. The federated case
+      // — where this carries the handle into the audit row — is in
+      // AskResolver.peerAttribution.test.ts.
+      peerHandle: null,
     });
     expect(result.success).toBe(true);
     expect(result.disclosedCount).toBe(1);

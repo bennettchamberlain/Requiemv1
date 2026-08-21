@@ -482,7 +482,8 @@ input CreateAnswerInput {
 input CreateAskGrantInput {
   dataClass: String
   dataClasses: [String!]
-  granteeId: ID!
+  granteeId: ID
+  granteePeerLinkId: ID
   maxDisclosure: DisclosureRung
   mode: GrantMode!
   purpose: String
