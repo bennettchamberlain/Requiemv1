@@ -148,6 +148,23 @@ export const STAGE_IDS = {
   ENRICH_GEOCODE: 'enrich.geocode',
 
   /**
+   * The OTHER direction over the same table: reverse-geocode
+   * `ci.events.location_coordinates` into `location_name`.
+   *
+   * `enrich.geocode` runs name → coordinates only, so an event that arrived with
+   * a MEASUREMENT and no label (photo EXIF GPS, a GPX check-in, a geotagged
+   * post) had no scheduled path to a name at all — the only coords → name path
+   * over `ci.events` was `MaintenanceOrchestratorService`'s operator-triggered
+   * reverse leg and the `reverse_geocode` CLI backfill, neither on a cron nor
+   * chained from an import. And a name is not cosmetic here: `promote.place`
+   * requires a coordinate AND a non-blank name, so an unnamed geotagged event
+   * never becomes a place and never reaches the map.
+   *
+   * The third stage whose sweep is a BILL. Bump deliberately.
+   */
+  ENRICH_EVENT_REVERSE: 'enrich.event_reverse',
+
+  /**
    * Resolve a content row's link (oEmbed), streaming title (Wikidata) or page
    * (OpenGraph) into `ci.unfurls` — title, author, poster, duration. External
    * providers through the SSRF chokepoint; one request per distinct key.

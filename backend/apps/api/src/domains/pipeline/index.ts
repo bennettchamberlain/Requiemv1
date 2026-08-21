@@ -71,6 +71,7 @@ import { DuplicateDetectStage } from './stages/clean/DuplicateDetectStage';
 import { IdentifierNormalizeStage } from './stages/clean/IdentifierNormalizeStage';
 import { TemporalRepairStage } from './stages/clean/TemporalRepairStage';
 import { EstimateLocationStage } from './stages/enrich/EstimateLocationStage';
+import { EventReverseStage } from './stages/enrich/EventReverseStage';
 import { GeocodeStage } from './stages/enrich/GeocodeStage';
 import { MediaDimensionsStage } from './stages/enrich/MediaDimensionsStage';
 import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLinkStage';
@@ -159,6 +160,10 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_VECTOR_BROWSER_ACTIVITY], useClass: BrowserActivityVectorStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_POSITION_REVERSE], useClass: PositionReverseStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_GEOCODE], useClass: GeocodeStage },
+  // The other direction over the same table. A second id rather than a second
+  // mode on `enrich.geocode`, because one integer could not then re-open the
+  // forward corpus without re-billing the reverse one — and vice versa.
+  { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_EVENT_REVERSE], useClass: EventReverseStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_ESTIMATE_LOCATION], useClass: EstimateLocationStage },
   // Two ids, one implementation. `PersonLinkStage.ts` carries the argument: a
   // Stage has exactly one `source`, and the three backfills these replace read
