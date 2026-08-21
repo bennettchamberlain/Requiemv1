@@ -188,7 +188,7 @@ list; the counts below are what it holds.
 | --- | --- | --- |
 | `get.*` | Land every source record as one addressable, replayable row before anything interprets it (`get.fetch`, `get.capture`, `get.materialize`). | Nothing. Phase 6, still not started. |
 | `index.*` | Make a record addressable and findable: materialize raw → typed, register identity, build keyword and vector representations. | **14** — seven dense-embed legs (`index.embed` for content plus `index.embed_{communication,event,item,person,file,browser_activity}`) and the seven matching `index.vector*` tsvector legs. Both families share the text recipes in `search-ingress/searchTexts.ts` with the live listeners. |
-| `enrich.*` | Derive facts the source did not supply. | **7** — `enrich.media_dimensions`, `enrich.geocode`, `enrich.position_reverse`, `enrich.estimate_location`, `enrich.person_link`, `enrich.event_person_link`, `enrich.unfurl` (link previews: oEmbed / Wikidata / OpenGraph into `ci.unfurls`). |
+| `enrich.*` | Derive facts the source did not supply. | **8** — `enrich.media_dimensions`, `enrich.geocode`, `enrich.event_reverse` (the coordinate → name direction over `ci.events`, which had no scheduled producer at all — see below), `enrich.position_reverse`, `enrich.estimate_location`, `enrich.person_link`, `enrich.event_person_link`, `enrich.unfurl` (link previews: oEmbed / Wikidata / OpenGraph into `ci.unfurls`). |
 | `clean.*` | Reconcile competing assertions and repair normalization. | **3** — `clean.temporal_repair`, `clean.duplicate_detect`, `clean.identifier_normalize`. |
 | `promote.*` | Project winning facts into the rich graph and object model. | **14** — `promote.place`, `promote.place_position`, `promote.object`, `promote.observation`, and the ten `promote.edge_*` legs of the deterministic edge matrix (one per source table). |
 
@@ -507,7 +507,9 @@ That is the feature. It is also a real load event on a single appliance.
   Hours of contended GPU time. The `pipeline-embed` queue exists precisely so
   this cannot take every global worker slot, but it will still be felt.
 - On any stage with an external provider: a bump is a bill. `enrich.geocode`
-  re-geocodes rows whose coordinates were never going to be re-billed.
+  re-geocodes rows whose coordinates were never going to be re-billed, and
+  `enrich.event_reverse` / `enrich.position_reverse` re-name every coordinate
+  the provider ever answered for.
 
 **Get the candidate count before you get the bill.** Every ledger row currently
 at or above the version you are replacing is what the bump re-opens:
@@ -733,7 +735,7 @@ Semantics are proven against a real database in `pipeline.integration.spec.ts`;
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1–2 | Ledger, sweep, generic worker, dead-letter reaper, HTTP control plane. | Landed. `PipelineController` serves state, runs, pause/resume/cancel, dead letters + replay and quarantine release. |
-| 3 | `enrich.geocode`, `enrich.position_reverse`, `enrich.estimate_location`; `ci.derived_facts`. | Stages landed; `ci.derived_facts` did not. |
+| 3 | `enrich.geocode`, `enrich.position_reverse`, `enrich.estimate_location`; `ci.derived_facts`. | Stages landed; `ci.derived_facts` did not. `enrich.event_reverse` was added afterwards — the phase converted `GeocodeBatchListener`'s FORWARD sweep and left its reverse leg on the listener, where nothing scheduled ever ran it, so an event with a measured coordinate and no label never became a place. |
 | 4 | `enrich.person_link` and `ci.identifier_claims`, replacing three byte-duplicated participant backfills. | Landed as `enrich.person_link` + `enrich.event_person_link`; the backfills they replace are not deleted (Phase 9). |
 | 5 | Operator UI, pause/resume/cancel, the worker process split. | Runner + pause/resume/cancel landed in `PipelineControlService`; the worker split is `CI_ROLE` (`common/roles.ts`). There is no `PipelinePage` — dead letters surface on the Jobs page (`JobsPage/DeadLettersCard.tsx`). |
 | 6 | GET consolidation: `ci.capture_events` → `ci.source_records`, per-provider mappers, ~30 `Transform*` services deleted. | Not started. |

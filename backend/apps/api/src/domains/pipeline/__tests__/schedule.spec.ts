@@ -118,6 +118,9 @@ describe('metered stages', () => {
     expect(meteredStageIds()).toEqual([
       STAGE_IDS.ENRICH_POSITION_REVERSE,
       STAGE_IDS.ENRICH_GEOCODE,
+      // The other direction over `ci.events`, and the same provider — a stage
+      // that names a coordinate is billed exactly like one that resolves a name.
+      STAGE_IDS.ENRICH_EVENT_REVERSE,
       STAGE_IDS.ENRICH_UNFURL,
     ]);
   });

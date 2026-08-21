@@ -86,12 +86,12 @@ import { StageRegistry } from './StageRegistry';
  *
  * ── Cost discipline is structural, not advisory ────────────────────────────
  *
- * `enrich.geocode` and `enrich.position_reverse` egress through Portal to a paid
- * provider: a runaway loop there is a bill, not just load. They used to be
- * excluded from {@link defaultStageSet} outright, which made "costs money" and
- * "unreachable by a timer" the same statement — so the only cadence available to
- * a metered stage was never, and the user's actual request (geocode SLOWER) had
- * no expressible answer.
+ * `enrich.geocode`, `enrich.event_reverse` and `enrich.position_reverse` egress
+ * through Portal to a paid provider: a runaway loop there is a bill, not just
+ * load. They used to be excluded from {@link defaultStageSet} outright, which
+ * made "costs money" and "unreachable by a timer" the same statement — so the
+ * only cadence available to a metered stage was never, and the user's actual
+ * request (geocode SLOWER) had no expressible answer.
  *
  * They are now timer-reachable, and three declared numbers bound them instead of
  * one exclusion — all three read from `STAGE_SCHEDULES` and none of them
@@ -309,6 +309,12 @@ const UNCLAIMABLE_SHARD_STATUSES: readonly string[] = [SHARD_STATUS.CANCELLED];
  *    column from a different source, so it too grows the promoter's candidate
  *    set. Transitive through geocode, and stated anyway: the graph is the
  *    documentation.
+ *  - `promote.place` ← `enrich.event_reverse`. The promoter needs BOTH a
+ *    coordinate and a non-blank name, and the reverse geocoder is the only
+ *    scheduled writer of the second one for an event that arrived with a
+ *    measurement and no label. Promoting first promotes the events an importer
+ *    happened to name and silently skips the rest until a version bump — the
+ *    same failure the two edges above exist to prevent, in the other column.
  *  - `enrich.person_link` / `enrich.event_person_link` ←
  *    `clean.identifier_normalize`. Person-linking joins
  *    `ci.entity_identifiers.value_normalized`; the cleaner is what makes that
@@ -338,7 +344,11 @@ const UNCLAIMABLE_SHARD_STATUSES: readonly string[] = [SHARD_STATUS.CANCELLED];
  */
 export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly StageId[]>>> = {
   [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: [STAGE_IDS.ENRICH_GEOCODE],
-  [STAGE_IDS.PROMOTE_PLACE]: [STAGE_IDS.ENRICH_GEOCODE, STAGE_IDS.ENRICH_ESTIMATE_LOCATION],
+  [STAGE_IDS.PROMOTE_PLACE]: [
+    STAGE_IDS.ENRICH_GEOCODE,
+    STAGE_IDS.ENRICH_ESTIMATE_LOCATION,
+    STAGE_IDS.ENRICH_EVENT_REVERSE,
+  ],
   [STAGE_IDS.PROMOTE_PLACE_POSITION]: [STAGE_IDS.ENRICH_POSITION_REVERSE],
   [STAGE_IDS.ENRICH_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
   [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE],
@@ -382,8 +392,9 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
 /**
  * Stages that spend money.
  *
- * Both egress through Portal to a paid, metered provider. `enrich.geocode`
- * forward-geocodes `ci.events.location_name`; `enrich.position_reverse` reverse-
+ * They egress through Portal to a paid, metered provider. `enrich.geocode`
+ * forward-geocodes `ci.events.location_name`; `enrich.event_reverse` runs the
+ * other direction over the same table; `enrich.position_reverse` reverse-
  * geocodes `ci.position`, the largest table on the appliance.
  *
  * Membership no longer decides REACHABILITY — see the cost note in this file's
