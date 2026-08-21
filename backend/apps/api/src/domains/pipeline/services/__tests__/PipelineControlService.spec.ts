@@ -499,8 +499,11 @@ describe('PipelineControlService', () => {
         expect(policy.trigger).not.toBe('onArrival');
         expect(policy.window).toBe('enrichment');
         // SECONDS, not milliseconds — schedule.ts's units, and it warns about
-        // exactly this confusion. 7 days = 604_800.
-        expect(policy.minInterval).toBeGreaterThanOrEqual(7 * 24 * 60 * 60);
+        // exactly this confusion. 7 days = 604_800. `enrich.unfurl` is the
+        // deliberate exception: daily, so a large existing corpus (tens of
+        // thousands of Spotify/YouTube keys) backfills in days, not months.
+        const minFloor = stageId === STAGE_IDS.ENRICH_UNFURL ? 24 * 60 * 60 : 7 * 24 * 60 * 60;
+        expect(policy.minInterval).toBeGreaterThanOrEqual(minFloor);
         expect(policy.perRunCap).toBeGreaterThan(0);
       }
 
@@ -964,11 +967,20 @@ describe('PipelineControlService', () => {
       // tick — and the only difference is a row in `ci.pipeline_schedule` from
       // yesterday.
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const anHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
       const h = makeControl({
         users: [runningRun()],
         stale: [...METERED_STAGES],
-        lastStartedAt: Object.fromEntries([...METERED_STAGES].map((stageId) => [stageId, yesterday])),
+        lastStartedAt: Object.fromEntries(
+          [...METERED_STAGES].map((stageId) => [
+            stageId,
+            // enrich.unfurl's own interval IS a day, so "yesterday" sits right
+            // at its boundary rather than safely inside it like every other
+            // metered stage's week.
+            stageId === STAGE_IDS.ENRICH_UNFURL ? anHourAgo : yesterday,
+          ]),
+        ),
       });
 
       const report = await h.service.tick();

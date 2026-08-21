@@ -46,6 +46,8 @@ const contentMock = {
         sourceUrl: null,
         previewUrl: null,
         mediaUrl: null,
+        player: null,
+        unfurl: null,
       },
     },
   },

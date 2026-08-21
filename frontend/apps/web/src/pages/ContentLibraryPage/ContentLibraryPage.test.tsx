@@ -70,6 +70,8 @@ function contentNode(overrides: Record<string, unknown> = {}) {
     sourceUrl: null,
     previewUrl: null,
     mediaUrl: null,
+    player: null,
+    unfurl: null,
     ...overrides,
   };
 }

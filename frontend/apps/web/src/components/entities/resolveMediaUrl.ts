@@ -39,7 +39,11 @@ export function resolveFileTileUrl(opts: {
  * Thumbnail for a content row. `previewUrl`/`mediaUrl` are hydrated server-side
  * from the linked file (external_id -> ci.files) when there is one; rows that
  * point at an image by url/sourceUrl (bookmarked images, imported photos
- * without a local copy) fall back to that.
+ * without a local copy) fall back to that. A row with neither — a Spotify
+ * track, a YouTube video, anything with `mimetype` outside `image/*` — falls
+ * back to the resolved link preview: the `enrich.unfurl` stage's cached poster
+ * (`unfurlThumbnailUrl`), then the tier-0 embed's templated poster
+ * (`playerPosterUrl`, e.g. YouTube's `hqdefault.jpg`; Spotify has none).
  */
 export function resolveContentTileUrl(data: {
   mimetype?: string | null;
@@ -47,6 +51,8 @@ export function resolveContentTileUrl(data: {
   mediaUrl?: string | null;
   contentUrl?: string | null;
   sourceUrl?: string | null;
+  unfurlThumbnailUrl?: string | null;
+  playerPosterUrl?: string | null;
 }): string | undefined {
   const preview = resolveMediaUrl(data.previewUrl);
 
@@ -58,5 +64,5 @@ export function resolveContentTileUrl(data: {
     return resolveMediaUrl(data.mediaUrl ?? data.contentUrl ?? data.sourceUrl);
   }
 
-  return undefined;
+  return resolveMediaUrl(data.unfurlThumbnailUrl) ?? resolveMediaUrl(data.playerPosterUrl) ?? undefined;
 }
