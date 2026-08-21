@@ -1,6 +1,6 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { Between, EntityManager, IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
@@ -8,14 +8,17 @@ import {
   type Ask,
   AskAnswerService,
   AskAuditService,
+  AskEntity,
   AskExecutorService,
   AskService,
   applyDisclosureCeiling,
+  assertAskTransition,
   buildDisclosedAnswer,
   disclosureCeiling,
   minRung,
   GrantService,
   type AskQuery,
+  type DisclosedAnswer,
   type DisclosureRung,
 } from '@ci/domains/asks';
 import { EventEntity } from '@ci/domains/memory';
@@ -101,7 +104,9 @@ export class PeerAskService {
       const declined = await this.askService.systemTransition(ask.id, 'declined', {
         consentBasis: decision.grantId ?? null,
       });
-      await this.recordAudit(declined, link, decision.grantId ?? null, 'declined', []);
+      // The basis comes off the transitioned row — `systemTransition` above
+      // stamped it, so the audit cites exactly what the ask now records.
+      await this.recordAudit(declined, link, 'declined', []);
 
       // A decline is shaped exactly like "nothing found" — no probing signal.
       return { askId: body.askId, status: 'declined', reason: 'Not permitted' };
@@ -124,6 +129,39 @@ export class PeerAskService {
       decision.grantId ?? null,
       decision.maxDisclosure ?? null,
     );
+
+    // ═══ THE PULL-SIDE CONSENT CHECK, WHICH THIS PATH DID NOT HAVE ═══
+    //
+    // Retroactive revocation protects the local path from two directions:
+    // GrantService PUSHES a revoked grant's pre-authorized asks back into the
+    // owner's inbox, and `AskService.complete` PULLS the current grant state
+    // before it discloses anything. The federated path had neither — it went
+    // straight from `evaluate` to disclosure — so the only thing standing
+    // between a revoked grant and a peer was the `evaluate` read, and any
+    // divergence between "no matching live grant" and "the deciding grant is
+    // still in force" failed OPEN.
+    //
+    // Two ordering traps, both load-bearing:
+    //   1. It runs AFTER `setConsentBasis`. `isConsentStanding` reads
+    //      `ask.consentBasis` and returns true vacuously when it is null, so
+    //      the pre-stamp ask would sail through the check that exists to stop
+    //      it.
+    //   2. It runs BEFORE `answerFor`. The local path re-checks at `complete`,
+    //      i.e. after the executor has already read the owner's memory; here
+    //      the check is in front of every read, so a withdrawn consent means
+    //      the owner's data is never touched at all rather than read and then
+    //      discarded.
+    //
+    // The ask lands where a revoked pre-authorization lands on the local path —
+    // basis cleared, back in front of the owner — and the peer is told
+    // `pending_review`, which is the same thing an unmatched ask is told. A
+    // distinct "your grant was revoked" would hand the peer the owner's consent
+    // posture as a side channel.
+    if (!(await this.grantService.isConsentStanding(authorized))) {
+      await this.askService.systemTransition(ask.id, 'under_review', { consentBasis: null });
+
+      return { askId: body.askId, status: 'pending_review', reason: 'Awaiting owner review' };
+    }
 
     const answer = await this.answerFor(
       context,
@@ -207,7 +245,10 @@ export class PeerAskService {
             endTime: IsNull(),
           },
         ],
-        select: { startTime: true, endTime: true, isAllDay: true },
+        // `id` is selected for the AUDIT, not for the answer — see the
+        // backing-entity note below. `computeFreeBusy` ignores it, and no id
+        // reaches the wire: the response carries interval boundaries only.
+        select: { id: true, startTime: true, endTime: true, isAllDay: true },
         take: MAX_AVAILABILITY_EVENTS,
       });
 
@@ -221,9 +262,21 @@ export class PeerAskService {
       // ask_answers CHECK admits the five local forms; `availability` is a WIRE
       // form, not a storage one) with the post-ceiling summary and no items,
       // which is exactly what crossed.
-      await this.answerService.create({
-        askId: ask.id,
-        answer: {
+      //
+      // DISCLOSED vs BACKING, for an archetype that itemizes nothing:
+      // `disclosedEntities` stays empty and that is correct — free/busy crosses
+      // as interval boundaries, never as entity references, so there is nothing
+      // the peer received to list. `backingEntities` is the half that was
+      // missing: the box read N of the owner's calendar events to compute this
+      // answer, and recording none of them left the owner's history unable to
+      // say WHICH meetings a peer's "are you free?" consulted. The content path
+      // has always recorded its candidate set here; availability now does the
+      // same. Backing entities are owner-only and are never disclosed.
+      await this.persistDisclosure(
+        context,
+        link,
+        ask,
+        {
           form: 'attribute',
           items: [],
           disclosedCount: answer.free.length,
@@ -231,8 +284,9 @@ export class PeerAskService {
           summary: answer.summary,
           consentBasis,
         },
-      });
-      await this.recordAudit(ask, link, consentBasis, 'auto_answered', []);
+        [],
+        events.map((event) => event.id),
+      );
 
       return { form: 'availability', summary: answer.summary, busy: answer.busy, free: answer.free };
     }
@@ -256,17 +310,16 @@ export class PeerAskService {
     // now uses, computed once at the top of this method.
     const disclosed = applyDisclosureCeiling(built, ceiling);
 
-    await this.answerService.create({ askId: ask.id, answer: disclosed });
     // Same split the local path makes: `disclosed.items` is what actually
     // crossed to the peer (empty here — the peer protocol exposes no retrieval
     // archetype), while the match set is the owner's own record of what the
     // answer was computed over. Recording the matches as DISCLOSED made the
     // audit over-report every federated answer.
-    await this.recordAudit(
-      ask,
+    await this.persistDisclosure(
+      context,
       link,
-      consentBasis,
-      'auto_answered',
+      ask,
+      disclosed,
       disclosed.items.map((item) => item.id),
       matches.map((match) => match.id),
     );
@@ -287,26 +340,130 @@ export class PeerAskService {
     };
   }
 
+  /**
+   * Persist a federated disclosure ATOMICALLY: the answer row, the ask's
+   * TERMINAL status, and the audit row.
+   *
+   * ═══ THE FEDERATED PATH NEVER TERMINALIZED ITS ASK ═══
+   *
+   * `answerFor` used to write an answer and an audit row and stop there, which
+   * left a fully answered inbound peer ask sitting at `delivered` with its
+   * consent basis intact — the exact shape of "auto-answerable, not yet
+   * answered". Three consequences, all reproduced:
+   *
+   *   - the owner could `decline` an ask that had already been answered,
+   *     writing a second, contradicting audit row for one disclosure;
+   *   - `approve` moved it to `answering`, from which the only legal edge is
+   *     `answered` — and `complete` would then hit the insert-only guard in
+   *     `AskAnswerService.create` and raise a conflict forever. Wedged;
+   *   - `withdrawPreAuthorization` selects exactly `status = 'delivered'` with
+   *     this grant as the basis, so REVOKING THE GRANT REWROTE A DISCLOSURE
+   *     THAT HAD ALREADY HAPPENED — status back to `under_review`, basis
+   *     nulled — and the owner's history then disagreed with the audit log
+   *     about whether anything was ever sent. `answered` is terminal and
+   *     outside that filter, which is what closes it.
+   *
+   * ═══ AND IT WROTE THE TWO ROWS UN-TRANSACTED ═══
+   *
+   * The local path wraps them (`AskService.completeWithAnswer`); this one did
+   * not. A failure between the answer insert and the audit insert leaves a
+   * `ci.ask_answers` row describing a disclosure with no audit row saying it
+   * happened — and it is PERMANENT, not transient: `AskAnswerService.create` is
+   * insert-only, so the retry raises a conflict instead of writing the missing
+   * audit. The owner's disclosure history is then silently short one entry,
+   * forever.
+   *
+   * WHY NOT `AskService.completeWithAnswer`, which already does all of this?
+   * Because the audit row it writes is built from the ask alone and cannot
+   * carry `peerLinkId` / `peerHandle`, and a federated disclosure whose audit
+   * row cannot name the peer it went to is a worse defect than the one being
+   * fixed. The lifecycle rule itself is NOT duplicated here — the transitions
+   * go through the same pure `assertAskTransition` state machine the local path
+   * uses. Teaching `complete` to carry peer attribution (and then calling it
+   * from here) is the follow-up; it lives in `domains/asks`.
+   */
+  private async persistDisclosure(
+    context: UserServiceContext,
+    link: PeerLink,
+    ask: Ask,
+    answer: DisclosedAnswer,
+    disclosedEntities: string[],
+    backingEntities: string[],
+  ): Promise<void> {
+    // The transaction is opened through an injected repository's `manager`
+    // rather than an injected `DataSource`, exactly as `GrantService.supersede`
+    // does. Which repository it is reached through is irrelevant — the manager
+    // belongs to the connection, not to `EventEntity` — and going this way
+    // keeps the constructor arity stable for the callers that build this
+    // service by hand.
+    await this.eventRepository.manager.transaction(async (manager) => {
+      await this.answerService.create({ askId: ask.id, answer }, manager);
+      const terminal = await this.terminalize(manager, context, ask);
+      await this.recordAudit(terminal, link, 'auto_answered', disclosedEntities, backingEntities, manager);
+    });
+  }
+
+  /**
+   * Drive an auto-authorized inbound ask to `answered` inside the caller's
+   * transaction.
+   *
+   * `delivered → answered` is not a legal edge, so this takes the same two
+   * hops `AskService.complete` takes — `delivered → answering → answered` —
+   * through the shared state machine rather than assigning the status
+   * directly. Reading the row back inside the transaction (rather than trusting
+   * the in-memory `ask` handed down from `handle`) is what makes the edge
+   * assertion mean something: the row is the only thing that knows whether
+   * something else moved this ask while the answer was being computed.
+   *
+   * Scoped by responder, matching `AskService.responderOwned` — an inbound peer
+   * ask has no local asker, so the link owner is the only participant who can
+   * own it.
+   */
+  private async terminalize(manager: EntityManager, context: UserServiceContext, ask: Ask): Promise<Ask> {
+    const repository = manager.getRepository(AskEntity);
+    const entity = await repository.findOne({
+      where: { id: ask.id, responderUserId: context.userId },
+    });
+
+    if (entity == null) {
+      throw new NotFoundException(`Ask ${ask.id} not found`);
+    }
+
+    if (entity.status === 'delivered') {
+      entity.status = assertAskTransition(entity.status, 'answering');
+    }
+
+    entity.status = assertAskTransition(entity.status, 'answered');
+
+    return AskEntity.toEgressType(await repository.save(entity));
+  }
+
   private async recordAudit(
     ask: Ask,
     link: PeerLink,
-    consentBasis: string | null,
     outcome: 'auto_answered' | 'declined',
     disclosedEntities: string[],
     backingEntities: string[] = [],
+    manager?: EntityManager,
   ): Promise<void> {
-    await this.auditService.record({
-      askId: ask.id,
-      askerUserId: ask.askerUserId,
-      peerLinkId: link.id,
-      peerHandle: link.peerHandle,
-      responderUserId: ask.responderUserId,
-      query: ask.query,
-      consentBasis,
-      outcome,
-      disclosedEntities,
-      backingEntities,
-    });
+    await this.auditService.record(
+      {
+        askId: ask.id,
+        askerUserId: ask.askerUserId,
+        peerLinkId: link.id,
+        peerHandle: link.peerHandle,
+        responderUserId: ask.responderUserId,
+        query: ask.query,
+        // Read off the ask rather than passed in: after `terminalize` the row
+        // IS the record of what authorized this disclosure, and a separately
+        // threaded copy could disagree with it.
+        consentBasis: ask.consentBasis,
+        outcome,
+        disclosedEntities,
+        backingEntities,
+      },
+      manager,
+    );
   }
 }
 

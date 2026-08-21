@@ -105,6 +105,19 @@ describe('OutboundAskService.send', () => {
     );
   });
 
+  it('names the peer by HANDLE, not only by link id', async () => {
+    const { service, auditService } = makeService();
+
+    await service.send(CTX as never, DTO, 'token');
+
+    // The inbound path has always denormalized the handle onto its audit rows;
+    // this one recorded the link id alone, so an outbound history row could not
+    // say who was asked once the link was revoked or re-pointed.
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ peerLinkId: 'link-1', peerHandle: 'devon' }),
+    );
+  });
+
   it('records a declined outcome when the peer declines or is unreachable', async () => {
     const { service, auditService } = makeService({
       response: { askId: 'x', status: 'declined', reason: 'Peer unreachable' },
