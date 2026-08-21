@@ -50,6 +50,39 @@ export class EventEntity {
   @Column({ type: 'timestamptz', nullable: true, name: 'end_time' })
   endTime!: Date | null;
 
+  /**
+   * WHERE the instant in `startTime` came from — the vocabulary is declared in
+   * `TIME_SOURCES` (pipeline/stages/clean/TemporalRepairStage): `source` (the
+   * export said so), `user` (a human typed it), `repaired` (the clean stage
+   * moved it, `start_time_original` holds what was there before) and `ingest`
+   * (**nothing** said so — the transform stamped a wall clock because the column
+   * is NOT NULL).
+   *
+   * Declared on the entity, and not only in the clean stage's raw UPDATE,
+   * because the honest place to say "this instant is not evidence" is the write
+   * that MINTS it. A marker only a later sweep can apply is a marker that is
+   * absent for every row between the import and the sweep — which is exactly
+   * how five Google Maps saved places ("Home", "Work", "Gym") came to sit at the
+   * top of the timeline dated the moment of the import with nothing anywhere
+   * saying they were undated. The importer now stamps `ingest` at insert
+   * (import/push/inputs.ts `toEventInput`); the clean stage still owns
+   * `repaired` and the `*_original` pair.
+   *
+   * Nullable: rows written before this existed, and every writer that genuinely
+   * has nothing to assert, leave it NULL. NULL means "unexamined", not "source".
+   */
+  @Column({ type: 'text', nullable: true, name: 'time_source' })
+  timeSource!: string | null;
+
+  /**
+   * HOW MUCH of `startTime` is meaningful — `TIME_PRECISIONS` in the same file:
+   * `second` / `minute` / `day` / `ambiguous` / `unknown`. `unknown` is the one
+   * that pairs with `timeSource = 'ingest'`: there was no source timestamp at
+   * all, so not one field of the stored instant carries information.
+   */
+  @Column({ type: 'text', nullable: true, name: 'time_precision' })
+  timePrecision!: string | null;
+
   @Column({ type: 'integer', nullable: true, insert: false, update: false, name: 'duration_minutes' })
   durationMinutes!: number | null;
 
@@ -184,6 +217,8 @@ export class EventEntity {
       category: entity.category,
       startTime: entity.startTime,
       endTime: entity.endTime,
+      timeSource: entity.timeSource,
+      timePrecision: entity.timePrecision,
       durationMinutes: entity.durationMinutes,
       locationName: entity.locationName,
       locationCoordinates: entity.locationCoordinates,

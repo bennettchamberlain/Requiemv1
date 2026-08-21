@@ -664,32 +664,76 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     id: 'events-timestamped-at-import',
     severity: 'high',
-    title: 'Events whose date is the moment they were imported, not the moment they happened',
+    title: 'Events wearing the import wall clock with no marker saying so',
     scope: 'ci.events',
     remedy:
-      "An undated record stamped with the import run's wall clock — which is why a handful of Google " +
-      'Maps saved places sit at the TOP of the timeline dated the day of the import, above everything ' +
-      "that actually happened that week. `ci.events.time_source = 'ingest'` is the declared marker " +
-      '(TemporalRepairStage sets it, and the column comment defines it as "stamped at import, i.e. not ' +
-      'a real date"); the second arm is the structural backstop for the far more common case where ' +
-      'nothing declared anything. Fix is in the parser: emit no date rather than `now()`, and let the ' +
-      'UI say "no date".',
+      'A row whose start_time lands within two seconds of created_at — the shape of an import-wall-' +
+      "clock fabrication — but carries no `time_source` saying so. `ci.events.time_source = 'ingest'` " +
+      'is the declared marker every undated record is supposed to leave (push/inputs.ts toEventInput, ' +
+      "from CanonicalRecord.dated; the column comment defines 'ingest' as \"stamped at import, i.e. not " +
+      'a real date"). A row this suspiciously-timed and still unmarked means one of two things: a row ' +
+      'imported BEFORE the fabricated-timestamp fix (repair it with 20260821084711, which marks on an ' +
+      'exact join to ci_import.staged_items.occurred_at IS NULL), or a NEW producer that fabricates a ' +
+      "date without going through toEventInput's guard — the real regression this check exists to catch. " +
+      'Fix the parser, emit no date, and let the routing and the UI say "no date" instead of stamping one.',
     mirrors: 'db/postgres/migrations/20260809184710_clean_stage_support.sql (time_source vocabulary)',
-    // The one legitimate shape this can match is a LIVE capture ingested within
-    // two seconds of the moment it records — genuinely "happened now, stored
-    // now". That is what `time_source = 'source'` is excluded for (the export
-    // said so, and it agreed), and why the breakdown is by source_system: a
-    // `google_maps` row here is the bug, a live `capture` row is not. Two
-    // seconds rather than one because a batch push writes created_at at commit
-    // time, a beat after the row was built.
+    // `time_source = 'ingest'` is EXCLUDED here, not included: as of the
+    // fabricated-timestamp fix that marker is the guard firing correctly, not
+    // the guard being skipped — a handful of Google Maps saved places and
+    // Reddit affiliations are *supposed* to carry it forever, and flagging
+    // every one of them "high" every run is exactly the standing-defect-on-
+    // correct-data failure this check used to have. What is still provably
+    // wrong is the OTHER shape: no marker at all on a timestamp that looks
+    // exactly like the import clock. `events-ingest-stamped-outside-known-
+    // shapes` below is the companion check that watches the marked population
+    // instead, at `medium`, because which shapes are legitimately undated is a
+    // judgement call and this one is not. `time_source = 'source'` stays
+    // excluded for the live-capture case: a capture genuinely ingested within
+    // two seconds of the moment it records is legitimate, and the export said
+    // so. Two seconds rather than one because a batch push writes created_at at
+    // commit time, a beat after the row was built.
     sql: String.raw`
       WITH bad AS (
         SELECT event_id, start_time, created_at, source_system, time_source
           FROM ci.events
          WHERE created_at IS NOT NULL
            AND time_source IS DISTINCT FROM 'source'
-           AND ( time_source = 'ingest'
-              OR start_time BETWEEN created_at - INTERVAL '2 seconds' AND created_at + INTERVAL '2 seconds' )
+           AND time_source IS DISTINCT FROM 'ingest'
+           AND start_time BETWEEN created_at - INTERVAL '2 seconds' AND created_at + INTERVAL '2 seconds'
+      )
+      SELECT count(*)::bigint AS count,
+             ${breakdownBy('source_system')} AS breakdown,
+             ${SAMPLE} AS sample
+        FROM bad
+    `,
+  },
+  {
+    id: 'events-ingest-stamped-outside-known-shapes',
+    severity: 'medium',
+    title: "Events marked time_source='ingest' for a (source, kind) nobody has declared undated",
+    scope: 'ci.events',
+    remedy:
+      "Not a defect by itself — `time_source = 'ingest'` is the CORRECT mark for a record whose source " +
+      'gave it no time (push/inputs.ts toEventInput). This check exists for the shapes nobody has looked ' +
+      "at yet: it excludes the (source_system, metadata->>'Kind') pairs SOURCE_TIME_SPECS " +
+      '(pipeline/stages/clean/TemporalRepairStage.ts) already declares as undatedKinds — ' +
+      'google_maps_places/labeled_place and reddit/moderated_subreddit|subscribed_subreddit — so a hit ' +
+      'is either a NEW legitimately-undated shape that belongs in that allowlist (add it, and this check ' +
+      'goes quiet for it), or a regression: a kind that is supposed to carry a real source date ' +
+      '(reddit/post, google_maps_places/place_review, …) losing it and falling back to the ingest clock. ' +
+      'The breakdown is by source_system so "which importer did this?" is the first thing a reader sees; ' +
+      "check the sample's `kind` against SOURCE_TIME_SPECS before deciding which of the two it is.",
+    mirrors: 'src/domains/pipeline/stages/clean/TemporalRepairStage.ts (SOURCE_TIME_SPECS undatedKinds)',
+    sql: String.raw`
+      WITH bad AS (
+        SELECT event_id, start_time, created_at, source_system, time_source,
+               metadata ->> 'Kind' AS kind
+          FROM ci.events
+         WHERE time_source = 'ingest'
+           AND NOT (
+             (source_system = 'google_maps_places' AND metadata ->> 'Kind' = 'labeled_place')
+             OR (source_system = 'reddit' AND metadata ->> 'Kind' IN ('moderated_subreddit', 'subscribed_subreddit'))
+           )
       )
       SELECT count(*)::bigint AS count,
              ${breakdownBy('source_system')} AS breakdown,

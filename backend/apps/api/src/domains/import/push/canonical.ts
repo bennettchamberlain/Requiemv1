@@ -967,13 +967,47 @@ function isRolledUp(rec: CanonicalRecord): boolean {
  * subsequence of (see stages/__tests__/destinationOrder.test.ts).
  */
 export function destinationsFor(rec: CanonicalRecord): Destination[] {
-  const dests = baseDestinationsFor(rec);
+  const dests = withoutFabricatedPositionFix(rec, baseDestinationsFor(rec));
 
   if (!mintsProductModel(rec) || dests.includes('product_models')) {
     return dests;
   }
 
   return ['product_models', ...dests];
+}
+
+/**
+ * Strip the `position` donation from an UNDATED record, whatever branch of
+ * {@link baseDestinationsFor} put it there.
+ *
+ * A `ci.position` row is not a description of a place — it is the assertion
+ * *"the user's body was at (lat, lon) at time T"*. Every other field is
+ * optional; the time is the claim. So when `startTime` is the created_at
+ * fallback (`dated === false`), the row is not an approximate fix or a
+ * low-confidence fix, it is a **fabricated** one, and there is no degraded form
+ * of it that would be honest: `ci.position` has no `time_source` column to
+ * mark it with, and `time` is the hypertable's partition key, so it cannot be
+ * NULL either.
+ *
+ * That matters more than the timeline noise it sits next to.
+ * `LocationEstimateService` treats position rows as its PRIMARY donors when
+ * inferring where an un-geotagged event happened, so one fabricated fix does
+ * not merely display wrong — it pulls every neighbouring inference toward a
+ * place the user was not, at a time they were not there. Live proof on this
+ * appliance: one row, `google_maps_places` / "Gym", `time =
+ * 2026-08-21T04:56:01.296Z`, i.e. the second the run parsed
+ * `Labeled places.json`, asserting the user was at their gym in the middle of
+ * the night.
+ *
+ * Applied HERE rather than in each branch on purpose. The per-kind branches
+ * below reason about what a record IS; this is a property of the *table*, true
+ * of every kind that donates to it, and a branch added next year gets it for
+ * free instead of re-introducing the bug. Nothing is lost by dropping it: the
+ * coordinates still ride on whatever home the kind gives the record (a saved
+ * place keeps its `events` row, and that row is what puts the pin on the map).
+ */
+function withoutFabricatedPositionFix(rec: CanonicalRecord, dests: Destination[]): Destination[] {
+  return rec.dated ? dests : dests.filter((d) => d !== 'position');
 }
 
 function baseDestinationsFor(rec: CanonicalRecord): Destination[] {
@@ -1083,6 +1117,28 @@ function baseDestinationsFor(rec: CanonicalRecord): Destination[] {
   // own URL is usually never a page visit (255 of 278 in the reference profile
   // appear nowhere in the browser's `urls`).
   if (kind === 'web.page_view' || kind === 'web.search' || kind === 'web.download') {
+    // An UNDATED browsing action has no honest row in `ci.browser_activity`.
+    // The table models "the user visited/searched/downloaded X **at time T**":
+    // `time` is NOT NULL, it is the hypertable's partition key, and unlike
+    // `ci.events` there is no `time_source` column in which to say the instant
+    // is not evidence. So an undated visit would land wearing the import wall
+    // clock with nothing anywhere contradicting it, and every "what was I
+    // reading last night?" query would answer with it.
+    //
+    // Content instead — the same answer the undated-file rule below gives, and
+    // for the same reason: whatever the record has (a URL, a title, or just a
+    // title) stays searchable, and nothing claims a moment. Live producer:
+    // Instagram's `shopping/recently_viewed_items.html`, whose entries carry no
+    // date at all (instagram.ts processHtmlActivity passes `timestamp: ent.ts`,
+    // undefined here) — and, verified against the corpus, no URL either: Meta
+    // never links a viewed product to a page, so `firstWebLink` returns
+    // undefined and the resulting content row is title-only. One of its rows
+    // sat in `ci.browser_activity` dated 2026-08-21T04:13:51Z — the second the
+    // run parsed the file.
+    if (!rec.dated) {
+      return ['content'];
+    }
+
     return rec.coordinates ? ['browser_activity', 'position'] : ['browser_activity'];
   }
 
@@ -1148,7 +1204,20 @@ function baseDestinationsFor(rec: CanonicalRecord): Destination[] {
     // alone keeps it searchable. Affiliations are exempt — they model current
     // state, their event title carries the whole fact, and their content row
     // is the empty one isSocialAffiliation exists to prevent. No position
-    // donation either: a position row is a fix at a TIME, and there isn't one.
+    // donation either: a position row is a fix at a TIME, and there isn't one
+    // (now enforced structurally — withoutFabricatedPositionFix).
+    //
+    // An undated AFFILIATION therefore keeps an event row it cannot date, and
+    // that is the one place in this function where the import instant survives
+    // by choice rather than by oversight. The tradeoff, stated so the next
+    // reader does not "fix" it: routing it to `content` would file an empty row
+    // (no Text, no Body, no URL — isSocialAffiliation exists because 1,977 such
+    // rows were measured), and routing it nowhere would delete the fact that
+    // the user moderates r/bitscoop, which is the only place that fact is
+    // recorded. So the row stays, and `toEventInput` stamps it
+    // `time_source = 'ingest'` / `time_precision = 'unknown'` plus
+    // `metadata.undated`, which is what makes "the UI says today" into "the UI
+    // says date unknown".
     if (!rec.dated && !isSocialAffiliation(rec)) {
       return ['content'];
     }
@@ -1173,7 +1242,34 @@ function baseDestinationsFor(rec: CanonicalRecord): Destination[] {
     // are pure donor data with no useful event narrative, so they leave events
     // entirely. Without this branch the timeline drowned in millions of trkpt
     // rows that nothing rendered usefully.
-    return rec.eventType === 'place' ? ['events', 'position'] : ['position'];
+    //
+    // An UNDATED place keeps `events` and loses `position`
+    // (withoutFabricatedPositionFix strips it above). That asymmetry is the
+    // whole decision, so it is worth stating plainly:
+    //
+    //  - `ci.position` cannot hold it honestly — see that function.
+    //  - `ci.events` CAN. `start_time` is NOT NULL, but the table carries
+    //    `time_source`/`time_precision`, and `toEventInput` now stamps
+    //    `ingest`/`unknown` at insert for exactly these rows. The instant is
+    //    still the import moment (nothing can change that; the column is NOT
+    //    NULL and there is no date to recover) but the row now SAYS so.
+    //  - And the event row is the only thing that carries the coordinates onto
+    //    the map. Four of this appliance's five labeled places ("Home", "Work",
+    //    "Gym", "Gheric") have real coordinates; routing them to `content`
+    //    alone — the treatment undated files get — would be the honest answer
+    //    about time and the wrong answer about place, taking four pins off a
+    //    map that has 121 located events in total.
+    //
+    // A raw GPS fix with no time is a different thing entirely: it IS
+    // (lat, lon, time), so without the time there is nothing left to file
+    // anywhere, and it routes nowhere (PushStage counts that as
+    // NO_DESTINATION_REASON, so the decision stays visible in the run rather
+    // than being hidden in `deduped`).
+    if (rec.eventType === 'place') {
+      return ['events', 'position'];
+    }
+
+    return rec.dated ? ['position'] : [];
   }
 
   // A file whose source never gave it a time — a drive-walk document with no

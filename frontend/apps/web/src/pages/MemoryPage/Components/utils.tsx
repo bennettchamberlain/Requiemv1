@@ -56,12 +56,33 @@ export function formatDateTime(dateStr: string, timeStr?: string): string {
 }
 
 /**
+ * `EventType.timeSource` for a row whose source gave it NO time — `startTime`
+ * is only the import wall clock (a Google Maps saved place, a Reddit
+ * affiliation, …), not evidence of anything. Mirrors `TIME_SOURCES.INGEST` in
+ * the backend's `pipeline/stages/clean/TemporalRepairStage`; mirrored rather
+ * than imported because the frontend has no dependency on backend source at
+ * all. `dateBucket.test.ts` pins this string against a fixture built from the
+ * same shape push/inputs.ts stamps, so the copy cannot drift silently.
+ */
+const INGEST_TIME_SOURCE = 'ingest';
+
+/**
  * The canonical timestamp for an entity, matching the server's ordering logic
  * (`SearchResolver.getEntityTimestamp`, which keys off `time ?? startTime`).
  * Keeping the same field priority here ensures the date-group headers we render
  * line up with the chronological order the API already returned. Entities with
  * no domain timestamp (people, places, concepts, …) return null and fall into
  * the trailing "No date" bucket.
+ *
+ * An `EventType` whose `timeSource` is `'ingest'` gets the same treatment: the
+ * value in `startTime` is not a real date — it is the moment the import ran,
+ * substituted because the column is NOT NULL (see EventEntity.timeSource on
+ * the backend) — so it is treated as undated rather than sorted/grouped as a
+ * real instant. That is what keeps a bulk import's Google Maps saved places
+ * ("Home", "Work", "Gym") from pinning themselves to the top of the dated
+ * timeline; they fall into the trailing "No date" group instead (see
+ * {@link groupEntitiesByBucket}), and {@link EventCard} shows "Date unknown"
+ * for them rather than a fabricated time.
  *
  * Reads the aliased `bucketTime`/`bucketStartTime` fields selected directly on
  * the search query's node so access is type-safe under fragment masking (rather
@@ -76,6 +97,10 @@ export function getEntityTimestamp(entity: EntityItem): Date | null {
       raw = entity.bucketTime;
       break;
     case 'EventType':
+      if (entity.bucketTimeSource === INGEST_TIME_SOURCE) {
+        return null;
+      }
+
       raw = entity.bucketStartTime;
       break;
     default:
