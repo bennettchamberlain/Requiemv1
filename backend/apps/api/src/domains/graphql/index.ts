@@ -83,6 +83,7 @@ import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
 import { ObjectObservationResolver } from './resolvers/ObjectObservationResolver';
+import { PeerLinkResolver } from './resolvers/PeerLinkResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { PositionResolver } from './resolvers/PositionResolver';
@@ -196,6 +197,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     PersonIdentifiersLoader,
     PersonInteractionStatsLoader,
     PersonLoader,
+    PeerLinkResolver,
     PersonResolver,
     PlaceLoader,
     PlaceVisitStatsLoader,

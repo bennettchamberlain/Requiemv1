@@ -711,6 +711,14 @@ type CreateNotePayload {
   success: Boolean!
 }
 
+input CreatePeerLinkInput {
+  displayName: String
+  memoryEndpoint: String!
+  peerHandle: String!
+  personEntityId: ID
+  trustTier: PeerTrustTier
+}
+
 input CreatePersonInput {
   addresses: [PersonAddressInput!]
   avatarUrl: String
@@ -1727,6 +1735,7 @@ type Mutation {
   createItem(input: CreateItemInput!): CreateItemPayload!
   createNote(input: CreateNoteInput!): CreateNotePayload!
   createNotes(input: [CreateNoteInput!]!): [NoteType!]!
+  createPeerLink(input: CreatePeerLinkInput!): PeerLinkPayload!
   createPeople(input: [CreatePersonInput!]!): [PersonType!]!
   createPerson(input: CreatePersonInput!): CreatePersonPayload!
   createPlace(input: CreatePlaceInput!): PlaceType!
@@ -1829,6 +1838,7 @@ type Mutation {
   """Return a placed event to the slate, deleting the event it minted"""
   returnEventToSlate(eventId: ID!): ScheduleCandidateType!
   revokeAskGrant(id: ID!): AskGrantPayload!
+  revokePeerLink(id: ID!): PeerLinkPayload!
   runAsk(disclosureForm: AnswerForm, id: ID!, redactItemIds: [String!]): RunAskPayload!
 
   """
@@ -1872,6 +1882,7 @@ type Mutation {
   updateItem(input: UpdateItemInput!): UpdateItemPayload!
   updateKnownPlace(input: UpdateKnownPlaceInput!): KnownPlaceType!
   updateNote(input: UpdateNoteInput!): UpdateNotePayload!
+  updatePeerLink(input: UpdatePeerLinkInput!): PeerLinkPayload!
   updatePerson(input: UpdatePersonInput!): UpdatePersonPayload!
   updatePlace(input: UpdatePlaceInput!): PlaceType
   updateProviderKey(id: ID!, input: UpdateProviderKeyInput!): ProviderKeyType
@@ -2046,6 +2057,37 @@ type PageInfo {
   hasNextPage: Boolean!
   hasPreviousPage: Boolean!
   startCursor: String
+}
+
+type PeerLinkPayload {
+  peerLink: PeerLinkType
+  success: Boolean!
+}
+
+enum PeerLinkStatus {
+  active
+  pending
+  revoked
+}
+
+type PeerLinkType {
+  createdAt: DateTime!
+  displayName: String
+  id: ID!
+  memoryEndpoint: String!
+  peerHandle: String!
+  personEntityId: ID
+  revokedAt: DateTime
+  status: PeerLinkStatus!
+  trustTier: PeerTrustTier!
+  updatedAt: DateTime!
+}
+
+enum PeerTrustTier {
+  family
+  peer
+  stranger
+  trusted
 }
 
 input PersonAddressInput {
@@ -2519,11 +2561,13 @@ type Query {
   metricSuggestions(includeDismissed: Boolean): [MetricSuggestionType!]!
   myAskGrantHistory: [AskGrantType!]!
   myAskGrants: [AskGrantType!]!
+  myPeerLinks: [PeerLinkType!]!
   node(id: ID!): Node
   note(id: ID!): NoteType
   notes(after: String, before: String, first: Int, last: Int): NoteConnection!
   oAuthCallbackUrl: String!
   objectByIdentifier(brand: String, namespace: ObjectIdentifierNamespace!, sourceSystem: String, value: String!): ObjectByIdentifierPayload!
+  peerLink(id: ID!): PeerLinkType
   people(after: String, before: String, first: Int, last: Int, query: String): PersonConnection!
   person(id: ID!): PersonType
   personDuplicates(limit: Int, offset: Int, reasons: [String!]): PersonDuplicatesPayload!
@@ -3385,6 +3429,13 @@ input UpdateNoteInput {
 type UpdateNotePayload {
   note: NoteType
   success: Boolean!
+}
+
+input UpdatePeerLinkInput {
+  displayName: String
+  id: ID!
+  personEntityId: ID
+  trustTier: PeerTrustTier
 }
 
 input UpdatePersonInput {
