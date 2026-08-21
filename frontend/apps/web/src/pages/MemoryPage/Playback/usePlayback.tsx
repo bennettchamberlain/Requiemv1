@@ -227,9 +227,23 @@ function usePlaybackController({ pins, source }: PlaybackHookArgs) {
   // Prefetch the next window as the playhead approaches the loaded edge. This
   // is the whole reason paging exists here: without it the fly-through would
   // either stall at the end of page one or issue a request per frame.
+  //
+  // Gated on `armed`, and `armed` is in the dependency array so this
+  // resubscribes with a fresh closure the moment it flips. Pressing play
+  // dispatches into the store, which notifies BOTH subscription channels —
+  // control listeners (the one above, which flips `armed`) then frame
+  // listeners (this one) — in the same synchronous call, before React has
+  // re-rendered. Without the gate, this listener would fire on that very
+  // first frame against an empty `timesRef` (nothing loaded yet, since the
+  // range effect above was still waiting on `armed`), treat "0 of 0 points
+  // loaded" as "must fetch", and kick off a page load the range effect then
+  // immediately stepped on — bumping the generation and resetting
+  // `inFlightRef` out from under the in-flight request. Net effect: three
+  // requests for what should be two eager pages, one of them a full response
+  // fetched, parsed, and discarded.
   useEffect(() => {
     return store.subscribeFrame((state) => {
-      if (exhaustedRef.current || inFlightRef.current) {
+      if (!armed || exhaustedRef.current || inFlightRef.current) {
         return;
       }
 
@@ -239,7 +253,7 @@ function usePlaybackController({ pins, source }: PlaybackHookArgs) {
         void loadNextPage();
       }
     });
-  }, [store, loadNextPage]);
+  }, [store, loadNextPage, armed]);
 
   // ── Stops ────────────────────────────────────────────────────────────────
   // Every moment the playhead can meaningfully stop at: a position fix or a
@@ -376,10 +390,25 @@ export function usePlaybackCursor(intervalMs = 200): number {
 export function useRevealedPins<T extends { sortTime: number }>(pins: T[], intervalMs = 200): T[] {
   const { status } = usePlaybackControls();
   const cursor = usePlaybackCursor(intervalMs);
-  const times = useMemo(() => pins.map((pin) => pin.sortTime), [pins]);
-  const revealed = status === 'idle' ? pins.length : stopsRevealed(times, cursor);
+  // Undated (sortTime 0) pins have no place on a timeline — usePlaybackPins in
+  // MapView.tsx already strips them before the provider's `pins` ever reach the
+  // store, so they contribute to neither `stops` nor `stopCount`. Filtering the
+  // same way here keeps this hook in step with that: without it, a sortTime-0
+  // pin sorts to the very front of an ascending list and reads as "already
+  // revealed" on frame one, popping in before the film has even started.
+  const dated = useMemo(() => pins.filter((pin) => pin.sortTime > 0), [pins]);
+  const times = useMemo(() => dated.map((pin) => pin.sortTime), [dated]);
+  const revealed = status === 'idle' ? dated.length : stopsRevealed(times, cursor);
 
-  return useMemo(() => (revealed >= pins.length ? pins : pins.slice(0, revealed)), [pins, revealed]);
+  return useMemo(() => {
+    // Idle is the one case where undated pins belong: the transport is
+    // untouched and the map is just a map, every pin included.
+    if (status === 'idle') {
+      return pins;
+    }
+
+    return revealed >= dated.length ? dated : dated.slice(0, revealed);
+  }, [status, pins, dated, revealed]);
 }
 
 /**
@@ -397,15 +426,19 @@ export function usePlayheadPin<T extends { id: string; sortTime: number }>(
 ): T | null {
   const { status } = usePlaybackControls();
   const cursor = usePlaybackCursor(intervalMs);
-  const times = useMemo(() => pins.map((pin) => pin.sortTime), [pins]);
+  // Same filter as useRevealedPins, and for the same reason: an undated pin
+  // sorts first and would otherwise be handed to the timeline as the playhead
+  // memory before the film has moved at all (effectively at t = range.start).
+  const dated = useMemo(() => pins.filter((pin) => pin.sortTime > 0), [pins]);
+  const times = useMemo(() => dated.map((pin) => pin.sortTime), [dated]);
 
-  if (status === 'idle' || pins.length === 0) {
+  if (status === 'idle' || dated.length === 0) {
     return null;
   }
 
   const revealed = stopsRevealed(times, cursor);
 
-  return revealed > 0 ? pins[revealed - 1] : null;
+  return revealed > 0 ? dated[revealed - 1] : null;
 }
 
 /**

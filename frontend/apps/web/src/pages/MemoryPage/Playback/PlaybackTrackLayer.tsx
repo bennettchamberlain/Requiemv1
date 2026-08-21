@@ -28,6 +28,21 @@ import './playback.css';
  * — the same trick as {@link AnimatedBackground}'s spring, for the same reason.
  * Genuinely large jumps (a flight, a three-month gap the skip rule crossed) get
  * Leaflet's own `flyTo`, which zooms out, travels, and zooms back in.
+ *
+ * ## What this actually does today
+ *
+ * Everything above describes what runs once `pointsRef` holds fixes from
+ * `/api/position/track` — a sibling change, not yet deployed, so that request
+ * 404s on the live API as of this writing. `onFrame` below returns immediately
+ * when `points.length === 0`: no trail, no head marker, no camera movement AT
+ * ALL. This component is a no-op right now. What still ships without it is
+ * everything upstream of this file — the located pins reveal progressively
+ * (`useRevealedPins`) and the timeline panel highlights and scrolls with the
+ * playhead (`usePlayheadPin`), through the located-memory times alone. "Play
+ * back my life" is honest today as progressive pin reveal plus a synchronised
+ * timeline highlight; the moving camera and drawn trace described above
+ * activate the moment the position-track endpoint lands, with no further
+ * changes here — see `positionTrack.ts` for the adapter and its 404 fallback.
  */
 
 /** Points kept in the bright "just now" tail. See {@link trailPoints}. */

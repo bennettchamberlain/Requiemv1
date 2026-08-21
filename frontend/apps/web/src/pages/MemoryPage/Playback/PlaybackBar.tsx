@@ -43,7 +43,15 @@ export function PlaybackBar({ className }: { className?: string } = {}) {
     }
   }, []);
 
-  const playable = !isEmptyRange(range) && stopCount > 1;
+  // `stopCount` alone is a circular gate: `stops` only gains position-fix
+  // times once the transport has already been used once (see `armed` in
+  // usePlayback.tsx), so BEFORE that, stopCount is just the count of dated
+  // pins in range — and live data shows only 32 of 582 days with a real GPS
+  // trace have two or more located events. `hasTrack` is resolved from the
+  // extent read independently of arming, so it is the alternative path: a day
+  // with a real position trace but few or no located events still gets a
+  // working playback control.
+  const playable = !isEmptyRange(range) && (stopCount > 1 || hasTrack);
 
   const scrubValue = useMemo(() => {
     if (isEmptyRange(range)) {
@@ -64,10 +72,23 @@ export function PlaybackBar({ className }: { className?: string } = {}) {
     (event: KeyboardEvent<HTMLDivElement>) => {
       // Only the bar's own keys, and only when the focus is genuinely inside it
       // — the Radix slider thumb already owns arrow keys for fine seeking.
-      if (event.key === ' ' || event.key === 'k') {
-        event.preventDefault();
-        store.dispatch({ type: 'toggle' });
+      if (event.key !== ' ' && event.key !== 'k') {
+        return;
       }
+
+      // Space is ALSO how a focused <button> activates itself — Speed, Skip
+      // empty stretches, Stop and Retry all live in here. Hijacking it
+      // unconditionally (WCAG 2.1.1) meant pressing Space on any of those
+      // toggled playback instead of pressing the button underneath the
+      // viewer's focus. Letting the native activation through does not lose
+      // the shortcut for the transport button itself: it is a <button> too,
+      // so Space still reaches it via its own onClick.
+      if (event.key === ' ' && event.target instanceof HTMLElement && event.target.closest('button')) {
+        return;
+      }
+
+      event.preventDefault();
+      store.dispatch({ type: 'toggle' });
     },
     [store],
   );

@@ -505,11 +505,20 @@ function zoomToCluster(map: L.Map, cluster: Cluster) {
 }
 
 /**
- * Trailing delay on the viewport re-sync. A human gesture ends in exactly one
+ * Max-wait on the viewport re-sync. A human gesture ends in exactly one
  * `moveend`, so this is invisible in normal use — but the playback camera calls
  * `setView` on every animation frame, and each of those fires `moveend` too.
  * Without coalescing, a fly-through would re-project and re-cluster every pin
  * in the viewport sixty times a second.
+ *
+ * This has to be a leading+trailing THROTTLE, not a pure trailing debounce.
+ * A trailing debounce reschedules on every call and only fires once the calls
+ * stop — which they never do during playback, since the camera's per-frame
+ * `setView` keeps `moveend` firing faster than the delay could ever elapse.
+ * That froze `view` for the entire playback and, with it, ClusteredMarkers'
+ * viewport-bounds filter: no marker in the region the camera was flying
+ * through ever rendered. A throttle instead guarantees a sync at most
+ * {@link VIEW_SYNC_DELAY_MS} apart no matter how densely `moveend` fires.
  */
 const VIEW_SYNC_DELAY_MS = 120;
 
@@ -527,16 +536,38 @@ function ClusteredMarkers({
   // projection, the viewport decides which pins are candidates at all.
   const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Epoch ms of the last actual sync. Starts at 0 so the very first call — the
+  // common, non-playback case — runs on the leading edge instead of waiting
+  // out a delay nobody asked for.
+  const lastSyncAtRef = useRef(0);
 
   const syncView = useCallback(() => {
+    const run = () => {
+      lastSyncAtRef.current = Date.now();
+      setView({ zoom: map.getZoom(), bounds: map.getBounds() });
+    };
+
     if (syncTimerRef.current != null) {
       clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
     }
 
-    syncTimerRef.current = setTimeout(() => {
-      syncTimerRef.current = null;
-      setView({ zoom: map.getZoom(), bounds: map.getBounds() });
-    }, VIEW_SYNC_DELAY_MS);
+    const elapsed = Date.now() - lastSyncAtRef.current;
+
+    if (elapsed >= VIEW_SYNC_DELAY_MS) {
+      // Leading edge: nothing has synced recently, so do it now rather than
+      // making an isolated human gesture wait out the delay too.
+      run();
+    } else {
+      // Trailing/max-wait edge: something synced too recently to run again
+      // immediately, but this call still has to land within the delay —
+      // otherwise a continuous stream of calls (the playback camera) would
+      // keep pushing the timer out and never fire, exactly the bug above.
+      syncTimerRef.current = setTimeout(() => {
+        syncTimerRef.current = null;
+        run();
+      }, VIEW_SYNC_DELAY_MS - elapsed);
+    }
   }, [map]);
 
   useEffect(() => {

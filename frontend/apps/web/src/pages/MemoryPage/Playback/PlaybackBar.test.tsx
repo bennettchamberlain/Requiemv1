@@ -81,9 +81,20 @@ describe('PlaybackBar', () => {
   });
 
   it('renders nothing when the range holds fewer than two stops', async () => {
-    // One lone memory and no track: there is a range, and the extent read has
-    // finished, but a film with a single frame is not a film.
-    const source = renderBar({ points: [], pins: [pin(0)] });
+    // A single dated pin with NO explicit filter would zero-width the range on
+    // its own (pinExtent.start === pinExtent.end) and trip isEmptyRange for an
+    // unrelated reason, passing this test even with the stop-count rule
+    // deleted entirely. An explicit ?from/?to wider than the one pin keeps the
+    // range genuinely non-empty, so "renders nothing" here can only be the
+    // stopCount>1 clause — confirmed by deleting that clause locally and
+    // watching this test fail while the isEmptyRange-only version would not.
+    const from = new Date(T0).toISOString();
+    const to = new Date(T0 + 3 * DAY).toISOString();
+    const source = renderBar({
+      points: [],
+      pins: [pin(0)],
+      route: `/memory?view=map&from=${from}&to=${to}`,
+    });
 
     await settleExtent(source);
 
@@ -151,6 +162,23 @@ describe('PlaybackBar', () => {
       'aria-pressed',
       'false',
     );
+  });
+
+  it('does not let Space on a focused button hijack play/pause (WCAG 2.1.1)', async () => {
+    renderBar();
+    await transport();
+
+    const skip = screen.getByRole('button', { name: 'Skip empty stretches' });
+
+    skip.focus();
+    // A real browser also fires 'click' when Space releases on a focused
+    // button — jsdom does not synthesize that for us, so this only has to
+    // prove our own handler stayed out of the way rather than pre-empting it.
+    fireEvent.keyDown(skip, { key: ' ' });
+
+    // Still 'Play back my life': the space bar shortcut must not have toggled
+    // playback out from under the focused button.
+    expect(await transport()).toHaveAccessibleName('Play back my life');
   });
 
   it('seeks with the keyboard and moves the read-out', async () => {
