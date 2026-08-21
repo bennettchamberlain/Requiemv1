@@ -8,7 +8,7 @@ import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { useAuth, useCurrentUser } from '@/hooks';
 import { HELP_LINKS } from '@/layouts/Main/railDestinations';
-import { SETTINGS_SECTIONS } from '@/pages/SettingsPage/settingsNav';
+import { visibleSettingsSections } from '@/pages/SettingsPage/settingsNav';
 import { SettingsSectionBody } from '@/pages/SettingsPage/SettingsSections';
 
 /**
@@ -68,7 +68,7 @@ function ProfileHub() {
           <h2 className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Settings
           </h2>
-          {SETTINGS_SECTIONS.map((section) => {
+          {visibleSettingsSections().map((section) => {
             const Icon = section.icon;
 
             return (
