@@ -4,8 +4,8 @@ import path from 'path';
 
 import type { StagedEntity } from '../../entities/StagedEntityEntity';
 import { entityTypeFor } from '../../push/entities';
-import { resolveEntityType } from '../../staging/identity';
-import { GoogleVoiceFileImporter } from '../googlevoice';
+import { hashItem, resolveEntityType } from '../../staging/identity';
+import { GoogleVoiceFileImporter, stripCopyIndex, threadKeyFor } from '../googlevoice';
 import type { Entity, ImportParams, Relationship } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
@@ -1048,5 +1048,112 @@ describe('voicemail recordings', () => {
     const calls = pipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item);
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((c) => c.metadata.MediaAttachments === undefined)).toBe(true);
+  });
+});
+
+describe('an export file replicated with a copy index is one record, not two', () => {
+  /**
+   * Google Voice call/voicemail items carry NO `item.id`, so `hashItem` keys
+   * them on `sha1(dataSource, classification, content.filename, isoTimestamp)`
+   * — the filename IS half the identity. A Drive/Takeout copy suffix therefore
+   * minted a second provenance triple for one call, and the
+   * `communications_source_triple_uniq` arbiter cannot collapse two different
+   * triples: on the QA appliance one 2013-06-14T15:07:34 call from Chris
+   * Spagnuolo sat in ci.communications three times, once per copy of its file.
+   *
+   * Asserted through `hashItem` rather than by eyeballing `content.filename`,
+   * because the hash is what actually decides whether the two rows merge.
+   */
+  const importCalls = async (files: Record<string, string>): Promise<EmittedGraph['item'][]> => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gv-copy-'));
+    fs.mkdirSync(path.join(dir, 'Calls'));
+    for (const [filename, body] of Object.entries(files)) {
+      fs.writeFileSync(path.join(dir, 'Calls', filename), body);
+    }
+
+    const pipeline: EmittedGraph[] = [];
+    await new GoogleVoiceFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline.filter((p) => p.item?.classification === 'call').map((p) => p.item);
+  };
+
+  const callLog = (isoTitle: string, contact: string): string =>
+    `<html><body><div class="haudio">
+       <span class="fn">Missed call from <a class="tel" href="tel:+15551230099"><span class="fn">${contact}</span></a></span>
+       <abbr class="published" title="${isoTitle}">then</abbr>
+       <abbr class="duration" title="00:00:30">(00:00:30)</abbr>
+     </div></body></html>`;
+
+  it('hashes " (2)" and "(1)" copies of one call to the SAME key as the original', async () => {
+    const body = callLog('2013-06-14T15:07:34.000Z', 'Chris Spagnuolo');
+    const items = await importCalls({
+      'Chris Spagnuolo - Missed - 2013-06-14T15_07_34Z.html': body,
+      'Chris Spagnuolo - Missed - 2013-06-14T15_07_34Z (2).html': body,
+      // The space is optional — both forms occur in the same real corpus.
+      'Chris Spagnuolo - Missed - 2013-06-14T15_07_34Z(3).html': body,
+    });
+
+    // Guard against a vacuous pass: three files must have produced three items
+    // for the hash comparison below to mean anything.
+    expect(items).toHaveLength(3);
+
+    const hashes = new Set(items.map((item) => hashItem(item, 'google_voice')));
+    expect(hashes.size).toBe(1);
+  });
+
+  it('keeps two calls apart when the copy index disambiguates a TRUNCATED name', async () => {
+    // Google Voice cuts a long filename mid-timestamp and then appends its own
+    // "(n)" to make the truncated names unique — 428 files in the reference
+    // corpus, e.g. "…Turner - Missed - 2016-01-08T17_3(1).html" and "…(2)".
+    // Those are two different calls minutes apart, and merging them would
+    // delete one of them at staging.
+    const items = await importCalls({
+      'Elisabeth (Lisa) Turner - Missed - 2016-01-08T17_3(1).html': callLog(
+        '2016-01-08T17:30:00.000Z',
+        'Elisabeth Turner',
+      ),
+      'Elisabeth (Lisa) Turner - Missed - 2016-01-08T17_3(2).html': callLog(
+        '2016-01-08T17:38:00.000Z',
+        'Elisabeth Turner',
+      ),
+    });
+
+    expect(items).toHaveLength(2);
+    expect(new Set(items.map((item) => hashItem(item, 'google_voice'))).size).toBe(2);
+  });
+
+  it('strips only a copy index that follows a COMPLETE export timestamp', () => {
+    // The anchor is the whole safety argument, so it is pinned directly.
+    expect(stripCopyIndex('Chris Spagnuolo - 2013-06-14T15_07_34Z (2).html')).toBe(
+      'Chris Spagnuolo - 2013-06-14T15_07_34Z.html',
+    );
+    expect(stripCopyIndex('+16124140453 - 2013-08-09T15_04_51Z(1).html')).toBe(
+      '+16124140453 - 2013-08-09T15_04_51Z.html',
+    );
+
+    // Truncated name: the index is Google Voice's own collision breaker.
+    expect(stripCopyIndex('Elisabeth (Lisa) Turner - Missed - 2016-01-08T17_3(1).html')).toBe(
+      'Elisabeth (Lisa) Turner - Missed - 2016-01-08T17_3(1).html',
+    );
+
+    // A parenthesised number inside the contact label is part of the name.
+    expect(stripCopyIndex('Elisabeth (Lisa) Turner - Text - 2016-01-08T17_30_00Z.html')).toBe(
+      'Elisabeth (Lisa) Turner - Text - 2016-01-08T17_30_00Z.html',
+    );
+
+    // Nothing that is not a Google Voice export name is touched.
+    expect(stripCopyIndex('IMG_0001 (1).jpg')).toBe('IMG_0001 (1).jpg');
+  });
+
+  it('threads a copied group-conversation file with the original', () => {
+    // A file that names nobody threads on its own identity (GV_FILE_THREAD_PREFIX).
+    // Two copies of one group chat must not become two conversations.
+    expect(threadKeyFor('/Calls/Group Conversation - 2019-11-11T23_27_25Z (2).html', undefined)).toBe(
+      threadKeyFor('/Calls/Group Conversation - 2019-11-11T23_27_25Z.html', undefined),
+    );
   });
 });

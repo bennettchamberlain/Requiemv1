@@ -160,11 +160,16 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'The parsers now emit a thread key wherever the source provides one (imessage.ts and ' +
       'googlevoice.ts stamp ThreadId; `Conversation` joins the fallback chain in inputs.ts), and ' +
       'imessage.ts additionally threads a chat-less message onto its correspondent when that handle ' +
-      'is a 1:1 chat identifier in the same database. Rows here predate those fixes — a re-import ' +
-      'heals every recoverable one. The honest residue is iMessage rows with no chat_message_join ' +
-      'entry AND no 1:1 correspondent evidence (37,181 of 432,173 on the reference corpus): they have ' +
-      'no conversation to recover and stay NULL. If the breakdown names another source still writing ' +
-      'new rows like this, its parser is not emitting a thread key at all, which is a parser fix.',
+      'is a 1:1 chat identifier in the same database. Rows here predate those fixes, and importantly ' +
+      'a re-import will NOT correct one: `thread_id` is not in INGEST_REFRESH_COLUMNS.communication, ' +
+      'so re-ingesting a provenance triple that already exists leaves the stored value alone (that ' +
+      'exclusion is deliberate — see the note there). Migrations 20260819000746 (from staged ChatId) ' +
+      'and 20260819000941 (from 1:1 correspondent evidence) are the only repair for a row already in ' +
+      'the database, and both read ci_import.staged_items, so they fill nothing once staging for that ' +
+      'run is purged. The honest residue is iMessage rows with no chat_message_join entry AND no 1:1 ' +
+      'correspondent evidence (37,181 of 432,173 on the reference corpus): they have no conversation ' +
+      'to recover and stay NULL. If the breakdown names another source still writing NEW rows like ' +
+      'this, its parser is not emitting a thread key at all, which is a parser fix.',
     mirrors: 'src/domains/import/push/inputs.ts toCommunicationInput (the thread-key chain)',
     sql: String.raw`
       WITH bad AS (
@@ -187,7 +192,18 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'These rows cannot be attributed to a person, so they are invisible to every people-centric view ' +
       'and contribute nothing to entity resolution. The participant edges are filled by the ' +
       '`extract_people` / `link_communications` enrichment legs — run ' +
-      '`ci-import backfill extract_people link_communications` before concluding the parser is at fault.',
+      '`ci-import backfill extract_people link_communications` before concluding the parser is at fault. ' +
+      'That backfill resolves handles out of `participants_metadata`, so it can only help a row that ' +
+      'HAS one: a row whose participants_metadata is empty names nobody to resolve, and no leg will ' +
+      'ever fill it. On the reference corpus that is 16,325 outbound iMessages whose chat.db row has ' +
+      'neither recipients nor a partner handle (see migration 20260819000941) — the counterpart is ' +
+      'genuinely unrecorded, and a name invented from a filename is the defect migration ' +
+      '20260818220731 exists to undo. Note also what a re-import does NOT do here: from_entity_id and ' +
+      'to_entity_ids are absent from INGEST_REFRESH_COLUMNS.communication (deliberately — they are ' +
+      'resolved server-side), so re-ingesting an existing triple leaves them as they are. The parser ' +
+      'fixes that stage participant edges (imessage.ts outbound fan-out, googlevoice.ts ' +
+      'counterpartEdges) apply to rows written for the first time; migration 20260819000959 is the ' +
+      'repair for rows already stored, and it too reads ci_import.staged_items.',
     mirrors: null,
     sql: String.raw`
       WITH bad AS (
