@@ -28,7 +28,7 @@ export class AccountPurgeCron {
     this.logger.setContext(AccountPurgeCron.name);
   }
 
-  @Cron(ACCOUNT_PURGE_CRON)
+  @Cron(ACCOUNT_PURGE_CRON, { name: 'AccountPurgeCron.purgeDueAccounts' })
   async purgeDueAccounts() {
     if (!config.accountDeletion.purge.enabled) {
       return;

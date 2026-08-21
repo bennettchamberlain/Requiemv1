@@ -336,6 +336,27 @@ type ScheduleRow = {
   schedule: ReturnType<typeof describeCronExpression>;
 };
 
+/**
+ * A schedule whose registry key is a UUID the scheduler minted for it.
+ *
+ * `@nestjs/schedule` falls back to `crypto.randomUUID()` when a `@Cron` has no
+ * `name`, and re-mints it on every boot, so the durable side of the job — its
+ * `ci.cron_runs` history, its last-run cell, firing it by hand — is looking up a
+ * string that no longer exists. Only a backend change fixes that, so the row
+ * asks for one instead of quietly rendering a UUID as if it were a name.
+ */
+function UnnamedCronWarning() {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-700 dark:text-amber-400"
+      title="The @Cron behind this schedule has no name, so the scheduler mints a new one every boot and its run history cannot be found. Give the decorator a { name }."
+    >
+      <AlertTriangle aria-hidden className="h-3 w-3" />
+      needs a name
+    </span>
+  );
+}
+
 function SchedulesTable({ rows }: { rows: readonly ScheduleRow[] }) {
   return (
     <div className="overflow-x-auto">
@@ -375,6 +396,7 @@ function SchedulesTable({ rows }: { rows: readonly ScheduleRow[] }) {
                     className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(descriptor.category)}`}
                   />
                   <span className="truncate">{descriptor.label}</span>
+                  {descriptor.unnamed && <UnnamedCronWarning />}
                 </span>
               </td>
               <td className="py-1.5 pr-3 text-muted-foreground">{descriptor.categoryLabel}</td>
@@ -439,8 +461,12 @@ function SchedulesPhoneList({ rows }: { rows: readonly ScheduleRow[] }) {
               {items.map(({ cron, descriptor, schedule }) => (
                 <li key={cron.name} className="border-t border-border/40 py-2">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 font-medium" title={cron.name}>
+                    <span
+                      className="flex min-w-0 flex-wrap items-center gap-1.5 font-medium"
+                      title={cron.name}
+                    >
                       {descriptor.label}
+                      {descriptor.unnamed && <UnnamedCronWarning />}
                     </span>
                     <Badge
                       variant={cron.running ? 'outline' : 'secondary'}

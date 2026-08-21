@@ -428,6 +428,68 @@ describe('JobsPage schedules', () => {
     // job-type filter, which is the point — both read from one taxonomy.
     expect(screen.getByTitle('file.uploaded')).toHaveTextContent('File uploaded');
   });
+
+  /** The schedule row a registration key identifies, label and category included. */
+  function scheduleRow(name: string): HTMLElement {
+    const row = screen.getByTitle(name).closest('tr');
+
+    if (!row) {
+      throw new Error(`No schedule row for "${name}"`);
+    }
+
+    return row;
+  }
+
+  function cron(name: string, expression = '0 0 * * * *'): JobsDashboardResponse['crons'][number] {
+    return { name, cron: expression, timezone: null, running: true, nextRunAt: null, lastRunAt: null };
+  }
+
+  it('files the planning schedules under Planning, not Maintenance', () => {
+    render({
+      dashboard: dashboard({
+        crons: [cron('PlanningJobsCron.todoScan'), cron('PlanningJobsCron.verifyDone')],
+      }),
+    });
+
+    // Plan automation used to render as "Maintenance" — the category an operator
+    // scrolls past — because no rule matched and the default swallowed it.
+    expect(scheduleRow('PlanningJobsCron.todoScan')).toHaveTextContent('Planning');
+    expect(scheduleRow('PlanningJobsCron.verifyDone')).toHaveTextContent('Planning');
+  });
+
+  it('reads two schedules on one collector as that collector doing two things', () => {
+    render({
+      dashboard: dashboard({
+        crons: [cron('JobMetricsCollector.sampleOnSchedule'), cron('JobMetricsCollector.purgeOnSchedule')],
+      }),
+    });
+
+    // "Job metrics" beside "Purge on schedule" looked like two unrelated jobs,
+    // and the purge never said what it purges.
+    expect(scheduleRow('JobMetricsCollector.sampleOnSchedule')).toHaveTextContent('Job metrics sample');
+    expect(scheduleRow('JobMetricsCollector.purgeOnSchedule')).toHaveTextContent('Job metrics purge');
+  });
+
+  it('marks a scheduler-minted name as the backend bug it is', () => {
+    const uuid = '007c9ac0-fb23-4203-809b-c2d100b373e4';
+
+    render({ dashboard: dashboard({ crons: [cron(uuid)] }) });
+
+    // A UUID here means the @Cron has no `name`, so the key changes on every
+    // boot and nothing durable can find the job. The page used to render the
+    // UUID as a name under an invented category and say nothing.
+    const row = scheduleRow(uuid);
+
+    expect(within(row).getByText('needs a name')).toBeInTheDocument();
+    expect(row).toHaveTextContent('Unclassified');
+    expect(row).toHaveTextContent(uuid);
+  });
+
+  it('leaves a named schedule unmarked', () => {
+    render({ dashboard: dashboard({ crons: [cron('PipelineTickCron.runOnSchedule')] }) });
+
+    expect(screen.queryByText('needs a name')).not.toBeInTheDocument();
+  });
 });
 
 describe('JobsPage staleness', () => {
@@ -613,5 +675,34 @@ describe('JobsPage phone layout', () => {
     await waitFor(() => {
       expect(screen.getByText('import activity').className).toContain('max-h-[36vh]');
     });
+  });
+
+  it('carries the unnamed-cron warning into the phone list', async () => {
+    setViewport(true);
+    render({
+      dashboard: dashboard({
+        crons: [
+          {
+            name: '007c9ac0-fb23-4203-809b-c2d100b373e4',
+            cron: '0 0 * * * *',
+            timezone: null,
+            running: true,
+            nextRunAt: null,
+            lastRunAt: null,
+          },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('columnheader', { name: 'Duration' })).not.toBeInTheDocument();
+    });
+
+    // The phone list is a separate renderer from the table, so it gets the same
+    // assertion rather than being assumed to have kept up.
+    fireEvent.click(screen.getByRole('button', { name: /Schedules/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Unclassified/ }));
+
+    expect(screen.getByText('needs a name')).toBeInTheDocument();
   });
 });

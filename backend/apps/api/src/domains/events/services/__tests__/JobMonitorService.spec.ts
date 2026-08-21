@@ -439,6 +439,8 @@ describe('JobMonitorService.getDashboard', () => {
         running: false,
         nextRunAt: null,
         lastRunAt: null,
+        lastSuccessAt: null,
+        overdue: false,
       },
       {
         name: 'PipelineTickCron.tick',
@@ -447,6 +449,8 @@ describe('JobMonitorService.getDashboard', () => {
         running: true,
         nextRunAt: '2026-08-17T01:00:00.000Z',
         lastRunAt: '2026-08-17T00:00:00.000Z',
+        lastSuccessAt: null,
+        overdue: false,
       },
     ]);
   });
@@ -456,8 +460,10 @@ describe('JobMonitorService.getDashboard', () => {
     const durableAt = new Date('2026-08-01T12:00:00.000Z');
 
     const spy = jest
-      .spyOn(CronRunStore, 'lastRunByName')
-      .mockResolvedValueOnce(new Map([['PipelineTickCron.tick', durableAt]]));
+      .spyOn(CronRunStore, 'runsByName')
+      .mockResolvedValueOnce(
+        new Map([['PipelineTickCron.tick', { lastRunAt: durableAt, lastSuccessAt: null }]]),
+      );
 
     try {
       const cronJobs = new Map<string, unknown>([
@@ -485,8 +491,217 @@ describe('JobMonitorService.getDashboard', () => {
           running: true,
           nextRunAt: '2026-08-18T01:00:00.000Z',
           lastRunAt: '2026-08-01T12:00:00.000Z',
+          lastSuccessAt: null,
+          overdue: false,
         },
       ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
+
+/**
+ * A stand-in for the `cron` package's `CronTime`.
+ *
+ * The real class cannot be imported here — `cron` is a transitive dependency of
+ * `@nestjs/schedule`, and PnP rejects an undeclared import, which is exactly why
+ * the service works off the live instance the registry hands it rather than
+ * parsing expressions itself. So what is modelled is the contract the service
+ * depends on: the next fires from now, and a monotonic "next fire strictly after
+ * this instant". Fire times are computed here from calendar arithmetic, not from
+ * the service's own search, so the two can disagree.
+ */
+function cronTimeStub(source: string, nextFireAfter: (fromMs: number) => number) {
+  return {
+    source,
+    timeZone: 'UTC',
+    sendAt: (count: number) => {
+      const fires: { toMillis: () => number }[] = [];
+      let at = Date.now();
+
+      for (let i = 0; i < count; i++) {
+        at = nextFireAfter(at);
+        const fireAt = at;
+        fires.push({ toMillis: () => fireAt });
+      }
+
+      return fires;
+    },
+    getNextDateFrom: (start: Date) => {
+      const at = nextFireAfter(start.getTime());
+
+      return { toMillis: () => at, toISO: () => new Date(at).toISOString() };
+    },
+  };
+}
+
+/** Every two minutes on the minute, the cadence of the pipeline tick. */
+const everyTwoMinutes = cronTimeStub(
+  '0 */2 * * * *',
+  (fromMs) => (Math.floor(fromMs / (2 * MINUTE)) + 1) * 2 * MINUTE,
+);
+
+/**
+ * 09:00 UTC Monday–Friday. The case that rules out estimating the previous fire
+ * as "next fire minus one cadence": read on a Saturday, the next two fires are
+ * Monday and Tuesday — a one-day gap that lands on Sunday, a day the job never
+ * runs, while the real previous fire was Friday.
+ */
+/**
+ * 09:00 UTC Monday–Friday. The case that rules out estimating the previous fire
+ * as "next fire minus one cadence": read on a Saturday, the next two fires are
+ * Monday and Tuesday — a one-day gap that puts the estimate on Sunday, a day the
+ * job never runs, while the real previous fire was Friday.
+ */
+const weekdaysAtNine = cronTimeStub('0 0 9 * * 1-5', (fromMs) => {
+  const from = new Date(fromMs);
+  let candidate = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate(), 9, 0, 0);
+
+  for (let day = 0; day <= 7; day++, candidate += DAY) {
+    const weekday = new Date(candidate).getUTCDay();
+
+    if (candidate > fromMs && weekday >= 1 && weekday <= 5) {
+      return candidate;
+    }
+  }
+
+  throw new Error('no weekday fire within a week');
+});
+
+async function cronRow(cronTime: unknown, lastRunAt: Date) {
+  const spy = jest
+    .spyOn(CronRunStore, 'runsByName')
+    .mockResolvedValue(new Map([['Probe.tick', { lastRunAt, lastSuccessAt: null }]]));
+
+  try {
+    const cronJobs = new Map<string, unknown>([
+      [
+        'Probe.tick',
+        {
+          cronTime,
+          isActive: true,
+          nextDate: () => null,
+          lastDate: () => null,
+        },
+      ],
+    ]);
+
+    const { service } = makeService({ cronJobs });
+    const { crons } = await service.getDashboard(context);
+
+    return crons[0];
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+/**
+ * `running` is not health: the `@Cron` wrapper catches and returns, so a
+ * schedule whose body throws every tick stays started with a two-minute-old
+ * "last run" forever. Overdue is the only signal that says the scheduler
+ * stopped firing something.
+ */
+describe('JobMonitorService cron overdue detection', () => {
+  const saturdayNoon = Date.UTC(2026, 7, 22, 12, 0, 0);
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('flags a schedule that has missed its own fire time', async () => {
+    jest.useFakeTimers({ now: saturdayNoon });
+
+    const cron = await cronRow(everyTwoMinutes, new Date(saturdayNoon - 30 * MINUTE));
+
+    expect(cron.overdue).toBe(true);
+  });
+
+  it('leaves a schedule that fired on cadence alone', async () => {
+    jest.useFakeTimers({ now: saturdayNoon });
+
+    const cron = await cronRow(everyTwoMinutes, new Date(saturdayNoon - MINUTE));
+
+    expect(cron.overdue).toBe(false);
+  });
+
+  it('does not call a weekday job overdue over a weekend it was never due', async () => {
+    jest.useFakeTimers({ now: saturdayNoon });
+
+    const fridayNine = Date.UTC(2026, 7, 21, 9, 0, 0);
+    const cron = await cronRow(weekdaysAtNine, new Date(fridayNine));
+
+    expect(cron.overdue).toBe(false);
+  });
+
+  it('flags a weekday job that skipped the weekdays it was due', async () => {
+    jest.useFakeTimers({ now: saturdayNoon });
+
+    const wednesdayNine = Date.UTC(2026, 7, 19, 9, 0, 0);
+    const cron = await cronRow(weekdaysAtNine, new Date(wednesdayNine));
+
+    expect(cron.overdue).toBe(true);
+  });
+
+  it('stays quiet when nothing has ever been recorded', async () => {
+    jest.useFakeTimers({ now: saturdayNoon });
+
+    const spy = jest.spyOn(CronRunStore, 'runsByName').mockResolvedValue(new Map());
+
+    try {
+      const cronJobs = new Map<string, unknown>([
+        [
+          'Probe.tick',
+          {
+            cronTime: everyTwoMinutes,
+            isActive: true,
+            nextDate: () => null,
+            lastDate: () => null,
+          },
+        ],
+      ]);
+
+      const { service } = makeService({ cronJobs });
+      const { crons } = await service.getDashboard(context);
+
+      expect(crons[0]).toMatchObject({ lastRunAt: null, overdue: false });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('reports the last successful tick apart from the last attempt', async () => {
+    const attemptedAt = new Date('2026-08-20T11:58:00.000Z');
+    const succeededAt = new Date('2026-08-01T09:00:00.000Z');
+
+    const spy = jest
+      .spyOn(CronRunStore, 'runsByName')
+      .mockResolvedValue(new Map([['Probe.tick', { lastRunAt: attemptedAt, lastSuccessAt: succeededAt }]]));
+
+    try {
+      const cronJobs = new Map<string, unknown>([
+        [
+          'Probe.tick',
+          {
+            cronTime: { source: '0 */2 * * * *' },
+            isActive: true,
+            nextDate: () => null,
+            lastDate: () => null,
+          },
+        ],
+      ]);
+
+      const { service } = makeService({ cronJobs });
+      const { crons } = await service.getDashboard(context);
+
+      expect(crons[0]).toMatchObject({
+        running: true,
+        lastRunAt: attemptedAt.toISOString(),
+        lastSuccessAt: succeededAt.toISOString(),
+      });
     } finally {
       spy.mockRestore();
     }

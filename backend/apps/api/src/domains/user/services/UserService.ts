@@ -59,6 +59,19 @@ export class UserService {
     return result.map((entity) => UserEntity.toEgressType(entity));
   }
 
+  /**
+   * The audience for recurring per-user background work — the same population
+   * `PythonFunctionCrons` selects with `SELECT id FROM ci.users WHERE onboarded
+   * = true`. An account that never finished FTUE has no connections, no corpus
+   * and no timezone the user chose, so every job fanned out to it can only
+   * no-op; `findAll()` includes those rows and is the wrong list to fan out on.
+   */
+  async findAllOnboarded(): Promise<User[]> {
+    const result = await this.userRepository.find({ where: { onboarded: true } });
+
+    return result.map((entity) => UserEntity.toEgressType(entity));
+  }
+
   async findById(context: ServiceContext, id: string): Promise<User | null> {
     if (context.userId !== SYSTEM_USER && context.userId !== id) {
       throw new UnauthorizedException();
