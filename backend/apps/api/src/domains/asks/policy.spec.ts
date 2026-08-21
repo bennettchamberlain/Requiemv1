@@ -41,9 +41,65 @@ describe('disclosureCeiling', () => {
 
   it('tightens as trust decreases', () => {
     expect(disclosureCeiling('trusted', 'photos')).toBe('redacted');
-    expect(disclosureCeiling('peer', 'photos')).toBe('redacted');
     expect(disclosureCeiling('peer', 'documents')).toBe('summary');
     expect(disclosureCeiling('stranger', 'photos')).toBe('boolean');
+  });
+
+  /**
+   * ═══ NAMING A CLASS USED TO BUY MORE DISCLOSURE, NOT LESS ═══
+   *
+   * The `peer` row reads `{ '*': 'summary', photos: 'redacted' }`, and
+   * `redacted` sits ABOVE `summary` on the ladder — so a peer who wrote
+   * `dataClass: 'photos'` got ITEM REFERENCES back where the identical ask
+   * without the label got a sentence. The label is asker-supplied and, because
+   * `AskExecutorService` resolves `photos` to the whole `file` entity type,
+   * those references were never confined to photographs either: every document,
+   * receipt and scan the keyword matched came back with them.
+   */
+  it('SECURITY: a per-class entry may only TIGHTEN the tier fallback, never raise it', () => {
+    expect(disclosureCeiling('peer', 'photos')).toBe('summary');
+    // The same table row read the other way round: a class entry BELOW the
+    // fallback still applies in full.
+    expect(disclosureCeiling('peer', 'location')).toBe('none'); // sensitive, capped harder still
+    expect(disclosureCeiling('family', 'location')).toBe('redacted');
+  });
+
+  /**
+   * ═══ OMITTING THE LABEL USED TO BE THE MOST GENEROUS THING AN ASKER COULD DO ═══
+   *
+   * `dataClass` is optional, so an ask can decline to name one — and an unnamed
+   * class is not a narrower ask, it is the broadest one: the executor turns it
+   * into an unfiltered search across every indexed entity type. It nonetheless
+   * received the `'*'` fallback, the ceiling written for "some ordinary class",
+   * skipping every per-class tightening the tier declared.
+   *
+   * It now gets the tier's FLOOR — the narrowest rung that tier grants anywhere.
+   * Deliberately the floor rather than a flat `none`: this function sees only a
+   * tier and a class, so it cannot tell a `relationship` ask (which has no class
+   * to name) from a `content` ask that dropped its label, and capping every
+   * class-less ask at nothing would retire the archetype rather than secure it.
+   * The AUTOMATIC path is closed at the grant layer instead — see
+   * `autoGrantNamesQueryClass`, which no longer lets any grant auto-answer an
+   * ask that names no class.
+   */
+  it('SECURITY: an ask that names NO class gets the tier floor, not the `*` fallback', () => {
+    for (const absent of [undefined, null, '', '   ']) {
+      expect(disclosureCeiling('trusted', absent)).toBe('summary'); // was 'redacted'
+      expect(disclosureCeiling('peer', absent)).toBe('count'); // was 'summary'
+      expect(disclosureCeiling('stranger', absent)).toBe('none'); // was 'boolean'
+      expect(disclosureCeiling('family', absent)).toBe('redacted'); // was 'full'
+    }
+
+    // Household is a member of the owner's own box and declares no per-class
+    // tightening at all, so its floor IS its fallback.
+    expect(disclosureCeiling('household', undefined)).toBe('full');
+  });
+
+  it('never throws on a mis-typed class, and reads it as no class named', () => {
+    // Same jsonb-shaped hazard `canonicalDataClass` is hardened against: a 500
+    // here would take out the answer path, not just the ceiling.
+    expect(disclosureCeiling('peer', 42 as never)).toBe('count');
+    expect(disclosureCeiling('peer', {} as never)).toBe('count');
   });
 
   it('caps sensitive classes at none below family, forcing owner review', () => {

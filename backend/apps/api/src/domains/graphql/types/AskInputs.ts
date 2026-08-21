@@ -1,6 +1,28 @@
-import { Field, GraphQLISODateTime, ID, InputType, Int } from '@nestjs/graphql';
+import { Field, GraphQLISODateTime, ID, InputType, Int, registerEnumType } from '@nestjs/graphql';
 
 import { GrantModeEnum } from './AskType';
+
+/**
+ * The disclosure ladder, as the owner picks it — coarsest first, mirroring
+ * `DISCLOSURE_RUNGS` in the asks domain.
+ *
+ * An ENUM rather than a String field, because this is the one input on a grant
+ * whose misspelling is silent: `scope.maxDisclosure` is jsonb, and a value that
+ * names no rung is read as `none` (fail-closed) rather than rejected. Making
+ * the vocabulary part of the schema means a client cannot write one — the
+ * server-side check in `GrantService` is the belt to this brace, for callers
+ * that reach the service without passing through GraphQL.
+ */
+export enum DisclosureRungEnum {
+  none = 'none',
+  boolean = 'boolean',
+  count = 'count',
+  summary = 'summary',
+  redacted = 'redacted',
+  full = 'full',
+}
+
+registerEnumType(DisclosureRungEnum, { name: 'DisclosureRung' });
 
 /** The bounded, asker-supplied query. Phase 2 formalizes this as a DCQL subset. */
 @InputType()
@@ -40,6 +62,21 @@ export class CreateAskGrantInput {
   @Field(() => [String], { nullable: true })
   dataClasses?: string[];
 
+  /**
+   * The MOST any answer under this grant may disclose — the owner's "digest
+   * only" / "yes or no" control.
+   *
+   * `scope.maxDisclosure` is read on three separate paths (the grant evaluator,
+   * the local answer path, the federated one) and, until this field existed, was
+   * written by NONE of them: there was no input, no resolver wiring, no default
+   * and no seed, so every clamp built on it was dead code and "digest only" was
+   * a posture the owner could not express at all. Omitted means the grant
+   * imposes no ceiling of its own — the tier ceiling still applies, and the two
+   * are combined by taking the lesser.
+   */
+  @Field(() => DisclosureRungEnum, { nullable: true })
+  maxDisclosure?: DisclosureRungEnum;
+
   @Field(() => GrantModeEnum)
   mode!: GrantModeEnum;
 
@@ -77,6 +114,18 @@ export class UpdateAskGrantInput {
 
   @Field(() => [String], { nullable: true })
   dataClasses?: string[];
+
+  /**
+   * Tighten (or raise) the grant's own disclosure ceiling.
+   *
+   * Omitting it INHERITS the ceiling already on the grant. That is worth stating
+   * because it did not use to: the scope object was assigned wholesale by
+   * `supersede`, so narrowing `dataClasses` on a grant capped at `summary`
+   * deleted the cap — a narrowing edit that WIDENED the answer. `GrantService`
+   * now merges the two, so each scope dimension is edited on its own.
+   */
+  @Field(() => DisclosureRungEnum, { nullable: true })
+  maxDisclosure?: DisclosureRungEnum;
 
   @Field(() => String, { nullable: true })
   purpose?: string;

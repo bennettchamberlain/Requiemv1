@@ -58,7 +58,11 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
       id: uuidv7(),
       askerUserId,
       responderUserId,
-      query: { queryType: 'photos', prompt: 'do you have photos of us?' },
+      // The ask NAMES a data class, and so does every grant below: an `auto`
+      // grant now requires BOTH sides to name one (see `autoGrantNamesQueryClass`),
+      // so a class-less fixture would prove the WHERE clauses these tests are
+      // about against a decision that had already fallen through to review.
+      query: { queryType: 'photos', dataClass: 'photos', prompt: 'do you have photos of us?' },
       status: 'delivered',
       consentBasis: null,
       createdAt: new Date(),
@@ -134,6 +138,7 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
     const grant = await grantService.create(owner, {
       granteeUserId: grantee.userId,
       queryType: 'photos',
+      dataClass: 'photos',
       mode: 'auto',
     });
 
@@ -172,12 +177,15 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
     const grant = await grantService.create(owner, {
       granteeUserId: grantee.userId,
       queryType: 'calendar',
+      dataClass: 'events',
       mode: 'auto',
     });
 
     await expect(
       grantService.evaluate(
-        askBetween(grantee.userId, owner.userId, { query: { queryType: 'calendar', prompt: 'q' } }),
+        askBetween(grantee.userId, owner.userId, {
+          query: { queryType: 'calendar', dataClass: 'events', prompt: 'q' },
+        }),
       ),
     ).resolves.toEqual({ decision: 'auto', grantId: grant.id });
 
@@ -185,7 +193,9 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
 
     await expect(
       grantService.evaluate(
-        askBetween(grantee.userId, owner.userId, { query: { queryType: 'calendar', prompt: 'q' } }),
+        askBetween(grantee.userId, owner.userId, {
+          query: { queryType: 'calendar', dataClass: 'events', prompt: 'q' },
+        }),
       ),
     ).resolves.toEqual({ decision: 'review' });
   });
@@ -263,10 +273,11 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
     const grant = await grantService.create(owner, {
       granteeUserId: grantee.userId,
       queryType: 'lapsing',
+      dataClass: 'photos',
       mode: 'auto',
       expiresAt: new Date(Date.now() + 60_000),
     });
-    const query = { queryType: 'lapsing', prompt: 'q' };
+    const query = { queryType: 'lapsing', dataClass: 'photos', prompt: 'q' };
 
     await expect(grantService.evaluate(askBetween(grantee.userId, owner.userId, { query }))).resolves.toEqual(
       { decision: 'auto', grantId: grant.id },
@@ -321,6 +332,63 @@ describeWithDatabase(`GrantService.evaluate — against real Postgres (${availab
 
     await dataSource.query('DELETE FROM ci.asks WHERE id = $1', [askId]);
     await grantService.revoke(owner, replacement.id);
+  });
+
+  /**
+   * ═══ THE DISCLOSURE CEILING, THROUGH THE JSONB COLUMN AND BACK ═══
+   *
+   * `scope.maxDisclosure` had three readers and no writer, so nothing ever
+   * proved it survives a round trip. Two things this cannot be shown with a
+   * mocked repository:
+   *
+   *  - `scope` is jsonb. A ceiling that serializes but does not deserialize
+   *    (or arrives back as a string when a rung was written) reads as
+   *    unrecognised, and `ceilingOf` fails CLOSED to `none` — so the grant
+   *    would answer nothing forever and look, from the service layer, exactly
+   *    like a grant with no ceiling.
+   *  - `supersede` writes the merged scope through the SAME column. A mock
+   *    returns whatever object it was handed; only a real round trip shows the
+   *    merge is what landed in the row.
+   */
+  it('SECURITY: a grant ceiling survives the jsonb round trip, and a narrowing change does not drop it', async () => {
+    const grant = await grantService.create(owner, {
+      granteeUserId: grantee.userId,
+      queryType: 'capped',
+      dataClass: 'photos',
+      mode: 'auto',
+      scope: { dataClasses: ['photos', 'events'], maxDisclosure: 'summary' },
+    });
+    const query = { queryType: 'capped', dataClass: 'photos', prompt: 'q' };
+
+    // Read back out of Postgres by the evaluator, not out of the object we
+    // just built.
+    await expect(grantService.evaluate(askBetween(grantee.userId, owner.userId, { query }))).resolves.toEqual(
+      { decision: 'auto', grantId: grant.id, maxDisclosure: 'summary' },
+    );
+
+    // The owner NARROWS the class list. This is the reproduction: the change
+    // mentions `dataClasses` only, and used to replace the scope wholesale —
+    // deleting the ceiling, so the next answer under a *tightened* grant
+    // disclosed MORE than it did before the tightening.
+    const narrowed = await grantService.supersede(owner, grant.id, {
+      scope: { dataClasses: ['photos'] },
+    });
+
+    expect(narrowed.scope).toEqual({ dataClasses: ['photos'], maxDisclosure: 'summary' });
+    await expect(grantService.evaluate(askBetween(grantee.userId, owner.userId, { query }))).resolves.toEqual(
+      { decision: 'auto', grantId: narrowed.id, maxDisclosure: 'summary' },
+    );
+
+    // And the narrowing did take effect on the dimension the owner touched.
+    await expect(
+      grantService.evaluate(
+        askBetween(grantee.userId, owner.userId, {
+          query: { queryType: 'capped', dataClass: 'events', prompt: 'q' },
+        }),
+      ),
+    ).resolves.toEqual({ decision: 'review' });
+
+    await grantService.revoke(owner, narrowed.id);
   });
 
   it('a revoked grant is still resolvable by id — the History surface depends on it', async () => {

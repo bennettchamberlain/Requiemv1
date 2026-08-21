@@ -21,9 +21,10 @@ export { canonicalDataClass, canonicalQueryType };
  * `block` taking precedence over `auto` means a narrow block can always override
  * a broad standing pre-authorization (the safe default).
  *
- * A `null` `data_class` is read in OPPOSITE directions on the two paths — a
- * wildcard for `block`, not a wildcard for `auto` — because both readings must
- * resolve toward denial. See {@link autoGrantNamesQueryClass}.
+ * A `null` data class — on the GRANT or on the ASK — is read in OPPOSITE
+ * directions on the two paths: a wildcard for `block`, never a wildcard for
+ * `auto`, because both readings must resolve toward denial. See
+ * {@link autoGrantNamesQueryClass}.
  *
  * @param grants MUST already be scoped to (owner = responder, grantee = asker);
  *   this function does not re-check ownership.
@@ -50,7 +51,9 @@ export function evaluateGrant(
 
   // An `auto` grant must additionally NAME the class it pre-authorizes
   // (see autoGrantNamesQueryClass) — a class-less auto grant is not a wildcard.
-  const auto = matches.find((grant) => grant.mode === 'auto' && autoGrantNamesQueryClass(grant, query));
+  const auto = strictestOf(
+    matches.filter((grant) => grant.mode === 'auto' && autoGrantNamesQueryClass(grant, query)),
+  );
   if (auto) {
     return { decision: 'auto', grantId: auto.id, maxDisclosure: ceilingOf(auto) };
   }
@@ -61,12 +64,66 @@ export function evaluateGrant(
   // this query type, so the ask belongs in their inbox with that grant named —
   // the only thing withheld is the automatic answer.
   const review =
-    matches.find((grant) => grant.mode === 'review') ?? matches.find((grant) => grant.mode === 'auto');
+    strictestOf(matches.filter((grant) => grant.mode === 'review')) ??
+    strictestOf(matches.filter((grant) => grant.mode === 'auto'));
   if (review) {
     return { decision: 'review', grantId: review.id, maxDisclosure: ceilingOf(review) };
   }
 
   return { decision: 'review' };
+}
+
+/**
+ * The grant that decides, when SEVERAL of the owner's grants cover the same ask.
+ *
+ * Nothing stops an owner from holding two live grants that both match — the
+ * Grant Manager writes a row per (grantee, queryType) posture and `supersede`
+ * only closes out the one row it was pointed at, so an owner who wrote "auto,
+ * summary only" and later "auto" (no ceiling) for the same asker has both
+ * standing. This used to be `matches.find(...)`, i.e. whichever row Postgres
+ * happened to return first: `GrantService.evaluate` issues an unordered
+ * `SELECT`, so the ceiling on the answer was decided by heap order, and the
+ * SAME ask could be capped at `summary` before a VACUUM and disclosed in full
+ * after it.
+ *
+ * Two properties, in this order:
+ *
+ * 1. STRICTEST WINS. A ceiling is a restriction the owner wrote down; when two
+ *    of them apply, honouring the looser one discards an instruction. This is
+ *    the same rule `narrowestRung` enforces when combining a grant ceiling with
+ *    a tier ceiling — a source that says less must never erase one that says
+ *    more. A grant declaring NO ceiling sorts last (it restricts nothing), so
+ *    it can only ever be chosen when no matching grant declares one.
+ * 2. TIE-BROKEN BY ID, so the outcome is a function of the grants alone. Grant
+ *    ids are uuidv7, so this resolves to the OLDEST matching grant at equal
+ *    strictness — stable across re-evaluations of the same ask, which is what
+ *    makes `consentBasis` reproducible in the audit.
+ *
+ * Note that the returned grant's own `ceilingOf` IS the narrowest across the
+ * whole set, precisely because that is what it was sorted on — the caller does
+ * not need to fold the ceilings separately.
+ */
+function strictestOf(grants: readonly AskGrant[]): AskGrant | undefined {
+  if (grants.length <= 1) {
+    return grants[0];
+  }
+
+  return [...grants].sort((a, b) => {
+    const byCeiling = ceilingRank(ceilingOf(a)) - ceilingRank(ceilingOf(b));
+
+    return byCeiling !== 0 ? byCeiling : a.id.localeCompare(b.id);
+  })[0];
+}
+
+/**
+ * Sort key for a ceiling: its position on the disclosure ladder, with "declares
+ * no ceiling" placed ABOVE `full`. Absent is not `full` — `full` is a decision
+ * the owner made and absent is the lack of one — but for ORDERING they rank the
+ * same way round, and keeping them distinct here is what stops an uncapped grant
+ * from displacing a capped one at equal rung.
+ */
+function ceilingRank(rung: DisclosureRung | undefined): number {
+  return rung == null ? DISCLOSURE_RUNGS.length : DISCLOSURE_RUNGS.indexOf(rung);
 }
 
 /**
@@ -95,7 +152,10 @@ function ceilingOf(grant: AskGrant): DisclosureRung | undefined {
     return undefined;
   }
 
-  const canonical = typeof declared === 'string' ? canonicalDataClass(declared) : null;
+  // No `typeof declared === 'string'` guard: `canonicalDataClass` is total over
+  // `unknown` and answers `null` for anything that is not a string, which lands
+  // on the same fail-closed `none` below.
+  const canonical = canonicalDataClass(declared);
 
   return canonical != null && (DISCLOSURE_RUNGS as readonly string[]).includes(canonical)
     ? (canonical as DisclosureRung)
@@ -166,19 +226,49 @@ function grantMatchesQuery(grant: AskGrant, query: AskQuery): boolean {
  * hardened the block path against class omission; the auto path kept the
  * wildcard.
  *
- * Note the deliberate consequence: a class-less `auto` grant still auto-answers
- * class-less asks (an availability or relationship archetype has no meaningful
- * data class), so the grant vocabulary stays usable. What it can no longer do is
- * cover a class the owner did not write down.
+ * ═══ THE OTHER HALF: THE ASK MUST NAME ONE TOO ═══
+ *
+ * The clause above closed the grant-side wildcard and left the ASK-side one
+ * open, and that is the same bypass read from the other end. `dataClass` on an
+ * ask is OPTIONAL and asker-supplied, so "the owner pre-authorized only what
+ * they named" was enforced against a label the asker chooses whether to write.
+ * The original rule ended `|| canonicalDataClass(query.dataClass) == null`,
+ * i.e. an ask that named no class was covered by a class-less `auto` grant —
+ * so an asker after a class the grant never named simply OMITTED the field and
+ * was auto-answered anyway.
+ *
+ * Omitting it is not a narrowing. It is the BROADEST an ask can be: nothing
+ * downstream re-derives the class, and `AskExecutorService` turns a null class
+ * into `includeTypes: undefined` — an unfiltered search across every indexed
+ * entity type in the owner's memory. A class-less auto grant plus a class-less
+ * ask is therefore a standing, unreviewed keyword oracle over the whole corpus,
+ * answered from the asker's own prompt.
+ *
+ * So both sides must name a class, and this is deliberately the MIRROR IMAGE of
+ * {@link blockCoversQuery}: there, an ask that omits its class is treated as
+ * COVERED by the block ("an asker must not escape a block by declining to name
+ * what they are after"); here, it is treated as NOT covered by the auto grant.
+ * Both readings resolve toward denial, which is the invariant that decides every
+ * null in this file.
+ *
+ * WHAT THIS COSTS, STATED PLAINLY: an archetype that carries no data class —
+ * `relationship` is the one that matters; `availability` already arrives as
+ * `calendar` from `toAskQuery` — can no longer be auto-answered by a standing
+ * grant. It is DOWNGRADED to review, not denied (see the caller): the owner
+ * still sees it, with the grant named, and answers in one tap. Review is the
+ * documented floor of this gate, and an unconfined oracle is exactly the shape
+ * of ask that should land in front of a human.
  *
  * A grant that pins `data_class`, or enumerates `scope.dataClasses`, has already
  * been narrowed to that class by {@link classMatchesQuery} and needs nothing
  * further here.
  */
 function autoGrantNamesQueryClass(grant: AskGrant, query: AskQuery): boolean {
-  const namesAClass = canonicalDataClass(grant.dataClass) != null || grant.scope?.dataClasses != null;
+  if (canonicalDataClass(query.dataClass) == null) {
+    return false;
+  }
 
-  return namesAClass || canonicalDataClass(query.dataClass) == null;
+  return canonicalDataClass(grant.dataClass) != null || grant.scope?.dataClasses != null;
 }
 
 /**
