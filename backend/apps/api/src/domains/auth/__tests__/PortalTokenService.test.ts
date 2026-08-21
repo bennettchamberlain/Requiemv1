@@ -66,9 +66,8 @@ describe('PortalTokenService', () => {
 
     expect(mockJwtVerify).toHaveBeenCalledWith('the-token', 'JWKS', {
       issuer: 'https://hub.test',
-      // PORTAL_OIDC_AUDIENCE is a comma-separated list, split to an array so jose
-      // accepts a token whose aud matches any first-party client.
-      audience: ['ci-server', 'ci-import-tools', 'ci-even'],
+      // PORTAL_OIDC_AUDIENCE plus the issuer URL (better-auth access-token default).
+      audience: ['ci-server', 'ci-import-tools', 'ci-even', 'https://hub.test'],
     });
   });
 

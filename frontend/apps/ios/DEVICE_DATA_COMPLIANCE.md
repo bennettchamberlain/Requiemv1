@@ -237,8 +237,16 @@ Background is a different animal:
 > user-facing purpose. The framing that has a chance is a **named, visible feature** —
 > e.g. "Place Timeline: automatically attaches the place to each memory you capture, and
 > shows a map of your day" — with a UI the video can actually show. **Budget two rejection
-> cycles.** Ship foreground-only first (Phase 2) so a background rejection cannot block the
-> rest of the release.
+> cycles.**
+
+**iOS Always (this app).** Settings → Location is Off / While using / Always. Always asks
+for `NSLocationAlwaysAndWhenInUseUsageDescription` after When-In-Use, enables
+`UIBackgroundModes: location`, and samples on **significant-change** (plus an optional home
+geofence) rather than streaming GPS. In-app copy frames this as remembering *places for
+your memory*, shows that iOS will display the blue location indicator, and writes
+`ci.position` only — Places still come from existing server enrichment. Android Always is
+**not** in this pass: do not add `ACCESS_BACKGROUND_LOCATION` until the Play video and
+foreground-service declaration exist.
 
 Apple: `NSLocationWhenInUseUsageDescription` → `NSLocationAlwaysAndWhenInUseUsageDescription`
 + `UIBackgroundModes: location`. No declaration form, but 5.1.5 requires location be

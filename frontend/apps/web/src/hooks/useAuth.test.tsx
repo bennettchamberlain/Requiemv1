@@ -5,6 +5,8 @@ import { jwtDecode } from 'jwt-decode';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setApiBaseUrl } from '@ci/common';
+
 import { AuthProvider, useAuth } from './useAuth';
 
 vi.mock('jwt-decode', () => ({ jwtDecode: vi.fn() }));
@@ -51,6 +53,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   document.cookie = 'csrfToken=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   sessionStorage.clear();
+  localStorage.removeItem('ci.apiBaseUrl');
+  setApiBaseUrl('');
   // Drop the native runtime stub so the web-path tests aren't seen as native.
   delete (window as unknown as { Capacitor?: unknown }).Capacitor;
 });
@@ -229,6 +233,70 @@ describe('useAuth', () => {
     expect(ok).toBe(true);
     expect(result.current[0].authenticated).toBe(true);
     expect(secureStore.get('ci.apiKey')).toBe('portal-minted-key');
+  });
+
+  it('completeMemoryPasswordConnect signs in to the picked Memory origin and mints a key', async () => {
+    const secureStore = new Map<string, string>();
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        SecureStoragePlugin: {
+          get: vi.fn(async ({ key }: { key: string }) => {
+            if (!secureStore.has(key)) {
+              throw new Error('not found');
+            }
+
+            return { value: secureStore.get(key) };
+          }),
+          set: vi.fn(async ({ key, value }: { key: string }) => {
+            secureStore.set(key, value);
+
+            return { value: true };
+          }),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    const fetchMock = setFetch((url) => {
+      if (url.endsWith('/api/authenticate/csrf')) {
+        return jsonBodyResponse({ csrfToken: 'native-csrf' });
+      }
+
+      if (url.endsWith('/api/authenticate')) {
+        return jsonResponse({ accessToken: 'memory-jwt' });
+      }
+
+      if (url.endsWith('/api/keys')) {
+        return jsonResponse({ id: 'key-pw', key: 'password-minted-key' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current[1].completeMemoryPasswordConnect(
+        'me@example.com',
+        'memory-secret',
+        'https://memory.example.com',
+      );
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://memory.example.com/api/authenticate',
+      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://memory.example.com/api/keys',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(ok).toBe(true);
+    expect(result.current[0].authenticated).toBe(true);
+    expect(secureStore.get('ci.apiKey')).toBe('password-minted-key');
   });
 
   it('captures the error when login fails', async () => {

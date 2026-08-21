@@ -11,7 +11,8 @@
  */
 
 import { apiKeyHeaders } from './apiAuth';
-import { buildApiUrl, isNativePlatform } from './apiBase';
+import { buildApiUrl, isIosPlatform, isNativePlatform } from './apiBase';
+import type { LocationTrackingMode } from './deviceSources/locationMode';
 
 /**
  * `capacitor-secure-storage-plugin`. **Legacy — read-only, for migration.** It used to hold
@@ -46,6 +47,30 @@ interface LocalHubPlugin {
   secureSet(options: { key: string; value: string }): Promise<void>;
   secureRemove(options: { key: string }): Promise<void>;
   openUrl(options: { url: string }): Promise<void>;
+  setLocationMode?(options: {
+    mode: LocationTrackingMode;
+    deviceKey: string;
+  }): Promise<NativeLocationStatus>;
+  getLocationStatus?(): Promise<NativeLocationStatus>;
+  setLocationHome?(options: { latitude?: number; longitude?: number } | Record<string, never>): Promise<void>;
+  openAppSettings?(): Promise<void>;
+}
+
+export type NativeLocationAuthorization =
+  | 'not_determined'
+  | 'denied'
+  | 'restricted'
+  | 'when_in_use'
+  | 'always'
+  | 'unsupported';
+
+export interface NativeLocationStatus {
+  mode: LocationTrackingMode;
+  authorization: NativeLocationAuthorization;
+  /** True while iOS is still showing the Always upgrade prompt. Do not snap back yet. */
+  pendingAlways?: boolean;
+  lastFixAt?: string | null;
+  lastError?: string | null;
 }
 
 interface BrowserPlugin {
@@ -358,6 +383,59 @@ export async function openExternalUrl(url: string): Promise<void> {
 
   if (typeof window !== 'undefined') {
     window.location.assign(url);
+  }
+}
+
+/**
+ * iOS Core Location mode. No-op on web / Android — those keep using
+ * `navigator.geolocation` while the app is open.
+ */
+export async function setNativeLocationMode(options: {
+  mode: LocationTrackingMode;
+  deviceKey: string;
+}): Promise<NativeLocationStatus | null> {
+  const hub = plugins()?.LocalHub;
+
+  if (!isIosPlatform() || !hub?.setLocationMode) {
+    return null;
+  }
+
+  return hub.setLocationMode(options);
+}
+
+export async function getNativeLocationStatus(): Promise<NativeLocationStatus | null> {
+  const hub = plugins()?.LocalHub;
+
+  if (!isIosPlatform() || !hub?.getLocationStatus) {
+    return null;
+  }
+
+  return hub.getLocationStatus();
+}
+
+export async function setNativeLocationHome(
+  home: { latitude: number; longitude: number } | null,
+): Promise<void> {
+  const hub = plugins()?.LocalHub;
+
+  if (!isIosPlatform() || !hub?.setLocationHome) {
+    return;
+  }
+
+  if (home) {
+    await hub.setLocationHome({ latitude: home.latitude, longitude: home.longitude });
+
+    return;
+  }
+
+  await hub.setLocationHome({});
+}
+
+export async function openNativeAppSettings(): Promise<void> {
+  const hub = plugins()?.LocalHub;
+
+  if (isIosPlatform() && hub?.openAppSettings) {
+    await hub.openAppSettings();
   }
 }
 

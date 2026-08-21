@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   loginWithPortalOidc: vi.fn(),
   resumePendingOidcLogin: vi.fn(async () => null),
   completePortalMemoryConnect: vi.fn(async () => false),
+  completeMemoryPasswordConnect: vi.fn(async () => false),
   authenticated: false,
 }));
 
@@ -34,7 +35,10 @@ vi.mock('@ci/common', async (importOriginal) => ({
 vi.mock('@/hooks', () => ({
   useAuth: () => [
     { authenticated: h.authenticated, initializing: false },
-    { completePortalMemoryConnect: h.completePortalMemoryConnect },
+    {
+      completePortalMemoryConnect: h.completePortalMemoryConnect,
+      completeMemoryPasswordConnect: h.completeMemoryPasswordConnect,
+    },
   ],
   useCurrentUser: () => ({
     user: h.authenticated ? { id: 'u1', onboarded: true } : null,
@@ -73,6 +77,8 @@ beforeEach(() => {
   h.resumePendingOidcLogin.mockResolvedValue(null);
   h.completePortalMemoryConnect.mockReset();
   h.completePortalMemoryConnect.mockResolvedValue(false);
+  h.completeMemoryPasswordConnect.mockReset();
+  h.completeMemoryPasswordConnect.mockResolvedValue(false);
   h.authenticated = false;
   sessionStorage.clear();
 });
@@ -180,9 +186,51 @@ describe('DeviceConnectPage', () => {
     fireEvent.click(screen.getByTestId('memory-row-home'));
 
     expect(
-      await screen.findByText(/could not sign in to https:\/\/memory\.example\.com\/app/i),
+      await screen.findByText(/did not accept your Companion Intelligence token/i),
     ).toBeInTheDocument();
+    expect(screen.getByTestId('memory-password-submit')).toBeInTheDocument();
     expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true });
     expect(navigate).not.toHaveBeenCalledWith('/', { replace: true });
+  });
+
+  it('after a Portal 401, Memory email/password mints against the picked origin', async () => {
+    h.loginWithPortalOidc.mockResolvedValue({
+      accessToken: 'oidc-at',
+      idToken: 'oidc-id',
+      tokenType: 'Bearer',
+      expiresIn: 3600,
+    });
+    h.listMemoryServers.mockResolvedValue([
+      { id: 'home', name: 'Home', status: 'active', memoryUrl: 'https://memory.example.com/app' },
+    ]);
+    h.completePortalMemoryConnect.mockRejectedValue(new Error('Unauthorized'));
+    h.completeMemoryPasswordConnect.mockImplementation(async () => {
+      h.authenticated = true;
+
+      return true;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
+
+    const { rerender } = render(<DeviceConnectPage />);
+    fireEvent.click(screen.getByTestId('oidc-login-btn'));
+    expect(await screen.findByText('Home')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('memory-row-home'));
+
+    expect(await screen.findByTestId('memory-password-submit')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('memory-email'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByTestId('memory-password'), { target: { value: 'memory-secret' } });
+    fireEvent.click(screen.getByTestId('memory-password-submit'));
+
+    await waitFor(() => {
+      expect(h.completeMemoryPasswordConnect).toHaveBeenCalledWith(
+        'me@example.com',
+        'memory-secret',
+        'https://memory.example.com',
+      );
+    });
+    rerender(<DeviceConnectPage />);
+    await waitFor(() => {
+      expect(navigate).toHaveBeenCalledWith('/', { replace: true });
+    });
   });
 });

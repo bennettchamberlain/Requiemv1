@@ -546,11 +546,11 @@ docker compose exec hbpe-service python -c \
 `.github/workflows/publish.yml` builds every `companion/*` image natively per architecture, merges
 the legs into a multi-arch manifest list, and registers the result with CI-Portal.
 
-**It is not triggered by pushing a tag.** As of 2026-08-17 every workflow in
-`.github/workflows/` is `workflow_dispatch`-only — nothing runs on push, pull request, tag or
-schedule, so an absent or green check means nobody dispatched it, not that anything passed. Cut a
-release by tagging and then dispatching the workflow **on that tag**, since `VERSION` is parsed
-from the ref:
+**Image publish is not triggered by pushing a tag.** Check workflows are
+`workflow_dispatch`-only — an absent or green check means nobody dispatched it, not
+that anything passed. The exception is `mobile-release.yml` (`ios-v*` / `android-v*` /
+`mobile-release-v*`), which uploads to TestFlight / Play. Cut a container release by
+tagging and then dispatching **on that tag**, since `VERSION` is parsed from the ref:
 
 ```bash
 git tag v2026.7.27 && git push origin v2026.7.27

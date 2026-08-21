@@ -57,3 +57,19 @@ export type {
   PositionRecord,
   PositionRecordOptions,
 } from './location';
+export {
+  BACKGROUND_MAX_ACCURACY_METERS,
+  BACKGROUND_MIN_DISTANCE_METERS,
+  BACKGROUND_MIN_INTERVAL_MS,
+  HOME_GEOFENCE_RADIUS_METERS,
+  LOCATION_ENABLED_STORAGE_KEY,
+  LOCATION_MODE_CHANGE_EVENT,
+  LOCATION_MODE_STORAGE_KEY,
+  LOCATION_TRACKING_MODES,
+  isLocationTrackingEnabled,
+  isLocationTrackingMode,
+  publishLocationTrackingMode,
+  readLocationTrackingMode,
+  writeLocationTrackingMode,
+} from './locationMode';
+export type { LocationTrackingMode } from './locationMode';

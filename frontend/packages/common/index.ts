@@ -28,6 +28,14 @@ export {
 export type { ConnectionMode } from './src/utils/connectionMode';
 export { createHookContext } from './src/utils/createHookContext';
 export {
+  BACKGROUND_MAX_ACCURACY_METERS,
+  BACKGROUND_MIN_DISTANCE_METERS,
+  BACKGROUND_MIN_INTERVAL_MS,
+  HOME_GEOFENCE_RADIUS_METERS,
+  LOCATION_ENABLED_STORAGE_KEY,
+  LOCATION_MODE_CHANGE_EVENT,
+  LOCATION_MODE_STORAGE_KEY,
+  LOCATION_TRACKING_MODES,
   MIN_DISTANCE_METERS,
   MIN_INTERVAL_MS,
   buildNoteRecord,
@@ -39,10 +47,15 @@ export {
   fixFromGeolocationPosition,
   forgetQueuedNote,
   haversineMeters,
+  isLocationTrackingEnabled,
+  isLocationTrackingMode,
   isQueuedNote,
   newNoteId,
   positionSourceId,
+  publishLocationTrackingMode,
+  readLocationTrackingMode,
   rememberQueuedNote,
+  writeLocationTrackingMode,
 } from './src/utils/deviceSources';
 export type {
   CaptureLocationOptions,
@@ -51,6 +64,7 @@ export type {
   LocationSample,
   LocationSampler,
   LocationSourceKind,
+  LocationTrackingMode,
   NoteCaptureOutcome,
   NoteRecord,
   PositionRecord,
@@ -108,8 +122,12 @@ export {
   getLaunchUrl,
   hasNotificationPermission,
   hideSplashScreen,
+  getNativeLocationStatus,
   openExternalUrl,
+  openNativeAppSettings,
   requestNotificationPermission,
+  setNativeLocationHome,
+  setNativeLocationMode,
   scheduleLocalNotification,
   secureStorageGet,
   secureStorageRemove,
@@ -118,7 +136,7 @@ export {
   syncNativeIntentConfig,
   takeNativePhoto,
 } from './src/utils/nativeBridge';
-export type { LocalNotification } from './src/utils/nativeBridge';
+export type { LocalNotification, NativeLocationAuthorization, NativeLocationStatus } from './src/utils/nativeBridge';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,

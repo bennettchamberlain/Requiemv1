@@ -9,8 +9,12 @@ const h = vi.hoisted(() => ({
   authToken: null as string | null,
   authenticated: false,
   isNativePlatform: vi.fn(() => false),
+  isIosPlatform: vi.fn(() => false),
   captureLocationFix: vi.fn(),
   createLocationSampler: vi.fn(),
+  setNativeLocationMode: vi.fn(),
+  getNativeLocationStatus: vi.fn(),
+  setNativeLocationHome: vi.fn(),
 }));
 
 vi.mock('./useAuth', () => ({
@@ -32,6 +36,10 @@ vi.mock('@ci/common', async (importOriginal) => ({
     capturedAtMs: position.timestamp,
   }),
   isNativePlatform: h.isNativePlatform,
+  isIosPlatform: h.isIosPlatform,
+  setNativeLocationMode: h.setNativeLocationMode,
+  getNativeLocationStatus: h.getNativeLocationStatus,
+  setNativeLocationHome: h.setNativeLocationHome,
 }));
 
 interface FakeSampler {
@@ -90,6 +98,18 @@ beforeEach(() => {
   h.authenticated = false;
   h.isNativePlatform.mockReset();
   h.isNativePlatform.mockReturnValue(false);
+  h.isIosPlatform.mockReset();
+  h.isIosPlatform.mockReturnValue(false);
+  h.setNativeLocationMode.mockReset();
+  h.setNativeLocationMode.mockResolvedValue({
+    mode: 'off',
+    authorization: 'not_determined',
+    pendingAlways: false,
+  });
+  h.getNativeLocationStatus.mockReset();
+  h.getNativeLocationStatus.mockResolvedValue(null);
+  h.setNativeLocationHome.mockReset();
+  h.setNativeLocationHome.mockResolvedValue(undefined);
   h.captureLocationFix.mockReset();
   h.captureLocationFix.mockResolvedValue({ status: 'queued', record: {}, id: 'row-1' });
   h.createLocationSampler.mockReset();
@@ -134,7 +154,35 @@ describe('useLocationTracking — the enable/disable consent toggle', () => {
     act(() => result.current.setEnabled(false));
 
     expect(result.current.enabled).toBe(false);
+    expect(result.current.mode).toBe('off');
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
+  });
+
+  it('migrates a stored "true" to when_in_use, not always', () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+
+    const { result } = renderHook(() => useLocationTracking({ watch: false }));
+
+    expect(result.current.enabled).toBe(true);
+    expect(result.current.mode).toBe('when_in_use');
+  });
+
+  it('downgrades always to when_in_use off iPhone', () => {
+    h.isIosPlatform.mockReturnValue(false);
+    const { result } = renderHook(() => useLocationTracking({ watch: false }));
+
+    act(() => result.current.setMode('always'));
+
+    expect(result.current.mode).toBe('when_in_use');
+  });
+
+  it('keeps always on iPhone', () => {
+    h.isIosPlatform.mockReturnValue(true);
+    const { result } = renderHook(() => useLocationTracking({ watch: false }));
+
+    act(() => result.current.setMode('always'));
+
+    expect(result.current.mode).toBe('always');
   });
 
   it('reads a choice persisted by a previous session on mount', () => {
@@ -324,5 +372,27 @@ describe('useLocationTracking — cleanup', () => {
 
     expect(clearWatch).toHaveBeenCalledWith(watchId);
     expect(sampler.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useLocationTracking — iOS native is the only writer', () => {
+  it('does not start navigator.geolocation on iPhone; it hands the mode to native', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+    const { getCurrentPosition, watchPosition } = installGeolocation();
+    h.authenticated = true;
+    h.isIosPlatform.mockReturnValue(true);
+    h.setNativeLocationMode.mockResolvedValue({
+      mode: 'when_in_use',
+      authorization: 'when_in_use',
+      pendingAlways: false,
+    });
+
+    renderHook(() => useLocationTracking());
+
+    await waitFor(() => expect(h.setNativeLocationMode).toHaveBeenCalled());
+
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(watchPosition).not.toHaveBeenCalled();
+    expect(h.setNativeLocationMode.mock.calls[0][0]).toMatchObject({ mode: 'when_in_use' });
   });
 });

@@ -47,6 +47,8 @@ Dependency-vulnerability scanning runs through Dependabot
 GitHub Actions workflows. It opens PRs; bumps are reviewed and merged
 deliberately rather than auto-merged.
 
-Note that **every workflow in `.github/workflows/` is `workflow_dispatch`-only**
+Note that **check workflows in `.github/workflows/` are `workflow_dispatch`-only**
 as of 2026-08-17 — no check runs on push, pull request, tag or schedule, so an
-absent check is not evidence that anything passed. See [`docs/CI.md`](docs/CI.md).
+absent check is not evidence that anything passed. `mobile-release.yml` is the
+store-upload exception (`ios-v*` / `android-v*` / `mobile-release-v*` tags).
+See [`docs/CI.md`](docs/CI.md).

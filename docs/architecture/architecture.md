@@ -455,12 +455,13 @@ one-shot (image `ci/setup-secrets`, production compose), with provider OAuth
 credentials, DB credentials, JWT signing keys, and the cross-service shared secret
 used by HBPE and Summary to sign service JWTs.
 
-> **CI is dispatch-only.** As of 2026-08-17 all seven GitHub Actions workflows
-> (`ci`, `e2e`, `migration-integrity-check`, `mobile-build`, `mobile-release`,
-> `publish`, `style-canon-lint`) declare only `workflow_dispatch`. Nothing runs on
+> **CI is dispatch-only, with one release exception.** As of 2026-08-17 the check
+> workflows (`ci`, `e2e`, `migration-integrity-check`, `mobile-build`, `publish`,
+> `style-canon-lint`) declare only `workflow_dispatch`. Nothing in those runs on
 > push, pull request, tag or schedule — pushing a version tag does **not** publish
-> images. Run them with `gh workflow run <file> --ref <branch-or-tag>`; an absent
-> check means nobody dispatched it, not that anything passed.
+> images. **`mobile-release.yml` is the exception:** a push of `ios-v*`,
+> `android-v*`, or `mobile-release-v*` uploads to TestFlight / Play internal.
+> An absent check still means nobody dispatched it, not that anything passed.
 
 ---
 

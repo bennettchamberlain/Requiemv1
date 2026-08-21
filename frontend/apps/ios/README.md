@@ -130,26 +130,31 @@ xcrun simctl launch booted com.companionintelligence.app
 ## Store releases (`.github/workflows/mobile-release.yml`)
 
 `mobile-build.yml` above is the **credential-free** lane — unsigned artifacts, no secrets.
-`mobile-release.yml` is the **distribution** lane: a signed `.ipa` to TestFlight and a
-signed `.aab` to Play's internal track.
+`mobile-release.yml` is the **only** store lane: a signed `.ipa` to TestFlight and a
+signed `.aab` to Play's internal track. Xcode Cloud is not part of this chain —
+turn it off (see below).
 
 ```bash
-# Rehearsal: build + sign + validate with Apple, but submit nothing.
-# Dispatch on a BRANCH ref — see the dry-run trap below.
-gh workflow run mobile-release.yml --ref <branch> -f dry_run=true
+# Rehearsal: build + sign + validate with Apple, submit nothing.
+# Always dispatch on a BRANCH. dry_run defaults to true; platform defaults to ios.
+gh workflow run mobile-release.yml --ref main -f dry_run=true -f platform=ios
 
-# The real thing.
-gh workflow run mobile-release.yml --ref <tag> -f dry_run=false -f version_name=0.1.0
+# The real thing — tag the commit you want, then push the tag.
+git tag -a ios-v1.0.0 -m "iOS 1.0.0"
+git push origin ios-v1.0.0
 ```
 
-> ⚠️ **Manual dispatch only.** The `mobile-release-v*` tag trigger was removed —
-> **pushing that tag no longer builds or submits anything.** Dispatch on the ref
-> instead, as above. The `dry_run` input defaults to `true`.
+Tag prefixes pick the lane:
 
-> ⚠️ **`dry_run` is ignored on a tag ref.** The version job forces `dry_run=false`
-> whenever `GITHUB_REF` starts with `refs/tags/` — a rule written when a tag *push* was
-> the only way to reach that ref, and still in force for a dispatch. **Rehearse on a
-> branch ref**; dispatching on a tag submits for real.
+| Tag | What submits |
+|---|---|
+| `ios-v1.0.0` | TestFlight only |
+| `android-v1.0.0` | Play internal only |
+| `mobile-release-v1.0.0` | both |
+
+A tag **push** always submits. A manual dispatch honours `dry_run` even if `--ref`
+points at a tag. Marketing version comes from the tag suffix (or `version_name`);
+the build number is `github.run_number`.
 
 > GitHub only exposes a `workflow_dispatch` workflow that exists on the default branch,
 > so a copy living only on a feature branch answers
@@ -165,12 +170,17 @@ a build number already used) — and stops short of submitting.
 Each platform **skips rather than fails** when its secrets are missing, so you can wire up
 one store before the other.
 
-## Xcode Cloud (`ci_scripts/ci_post_clone.sh`)
+## Xcode Cloud (`ci_scripts/ci_post_clone.sh`) — do not use for TestFlight
 
-There is a **second** route to TestFlight: an Xcode Cloud workflow named
-`App | BuildTestFlight`, configured in App Store Connect rather than in this repository.
-Nothing in the repo declares it, so it is easy to miss when reasoning about why an iOS
-build is red — check App Store Connect → Xcode Cloud → Manage Workflows.
+`App | BuildTestFlight` in App Store Connect is a **second, automatic** route to
+TestFlight. It starts from branch activity, not from a release tag, and that is
+too easy to fire by accident. **Turn it off** (or delete the workflow):
+
+App Store Connect → Xcode Cloud → Manage Workflows → `App | BuildTestFlight`
+→ Start Conditions → **Manual start only**, or delete the workflow.
+
+Keep the `ci_scripts/ci_post_clone.sh` bootstrap in the repo so a future
+intentional Xcode Cloud run still works. It is not a trigger.
 
 Xcode Cloud clones the repo and runs `xcodebuild` against `ios/App/App.xcworkspace`
 directly. It has no equivalent of a workflow step, so everything the GitHub Actions lanes
@@ -225,11 +235,11 @@ prompt.
 `versionCode` / `versionName` in `build.gradle` and `MARKETING_VERSION` /
 `CURRENT_PROJECT_VERSION` in the Xcode project are **local-dev fallbacks only**. The
 release workflow resolves one version per run and hands identical numbers to both stores:
-the marketing version comes from the `version_name` dispatch input, falling back to a
-`mobile-release-v*` tag ref and then to `0.1.0`; the build number comes from
-`github.run_number` (monotonic per workflow, which is exactly the "never repeats, always
-increases" rule both stores enforce). Don't hand-bump the literals expecting them to
-reach a store.
+the marketing version comes from the `version_name` dispatch input, falling back to an
+`ios-v*` / `android-v*` / `mobile-release-v*` tag suffix and then to `0.1.0`; the build
+number comes from `github.run_number` (monotonic per workflow, which is exactly the
+"never repeats, always increases" rule both stores enforce). Don't hand-bump the
+literals expecting them to reach a store.
 
 Android's local release-build rules live in the Android package —
 [`frontend/apps/android/README.md`](../android/README.md#local-release-builds).
