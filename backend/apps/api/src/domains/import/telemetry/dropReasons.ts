@@ -193,6 +193,8 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   // is keyed by url, so there is nothing to file it under.
   download_no_url: 'no_identity',
   unnamed_track: 'no_identity',
+  // A Connections.csv row with no First Name and no Last Name.
+  unnamed_connection: 'no_identity',
   grok_unknown_sender: 'no_identity',
   // A grok-chat-item.js row with no chatId — nothing to group it under or key
   // its id by.
