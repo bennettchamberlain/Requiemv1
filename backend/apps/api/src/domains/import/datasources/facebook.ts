@@ -1,5 +1,7 @@
 /* Facebook — "Download Your Information" export. Imports Messenger threads
- * (messages/inbox/) and Posts (posts/), including their attached photos/videos,
+ * (every thread lane under messages/ — inbox, filtered_threads,
+ * message_requests, archived_threads, e2ee_cutover; see threadLaneDirs) and
+ * Posts (posts/), including their attached photos/videos,
  * plus the HTML-format equivalents nested under your_facebook_activity/. Does
  * NOT cover friends/connections, events, comments_and_reactions, groups,
  * marketplace, or logged_information/personal_information/preferences (location
@@ -313,6 +315,80 @@ function threadKey(threadDirName: string): string {
   return m ? m[1] : threadDirName;
 }
 
+// One paginated message file of a thread, in either export format.
+const THREAD_FILE_RE = /^message_\d+\.(?:json|html)$/i;
+
+function isDirectory(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The thread-holding subdirectories ("lanes") of one messages/ root.
+ *
+ * Meta does NOT keep every conversation under messages/inbox/. It splits them
+ * across sibling lanes — inbox/, filtered_threads/, message_requests/,
+ * archived_threads/, e2ee_cutover/ (the last added only when the account was
+ * migrated to encrypted Messenger) — and invents new ones between export
+ * generations. Hard-coding "inbox" therefore dropped whole conversations
+ * silently: a real export here carried 24 messages across three lanes and only
+ * the 7 in inbox/ were imported, with no loss report to show for the rest.
+ *
+ * So enumerate rather than name: any subdirectory holding at least one
+ * <thread>/message_N.{json,html} is a lane. That picks up the lanes Meta ships
+ * today AND whatever it renames them to tomorrow, while skipping the media
+ * siblings (photos/, gifs/, stickers_used/, videos/) without having to list
+ * them — their children are files, or files-in-files, never message pages.
+ * Sorted so lane order is deterministic across platforms.
+ */
+function threadLaneDirs(messagesDir: string): string[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(messagesDir);
+  } catch {
+    return [];
+  }
+
+  const lanes: string[] = [];
+  for (const name of names.sort()) {
+    const laneDir = path.join(messagesDir, name);
+    if (!isDirectory(laneDir)) {
+      continue;
+    }
+
+    let threads: string[];
+    try {
+      threads = fs.readdirSync(laneDir);
+    } catch {
+      continue;
+    }
+
+    // First thread-shaped child is enough — `.some` short-circuits, so a real
+    // lane costs one extra readdir and a media sibling costs one stat per child.
+    const holdsThreads = threads.some((thread) => {
+      const threadDir = path.join(laneDir, thread);
+      if (!isDirectory(threadDir)) {
+        return false;
+      }
+
+      try {
+        return fs.readdirSync(threadDir).some((f) => THREAD_FILE_RE.test(f));
+      } catch {
+        return false;
+      }
+    });
+
+    if (holdsThreads) {
+      lanes.push(laneDir);
+    }
+  }
+
+  return lanes;
+}
+
 /**
  * The attachment half of a message's metadata, from export-root-relative uris.
  *
@@ -398,28 +474,24 @@ export class FacebookFileImporter implements FileImporter {
       return;
     }
 
-    // Messages — JSON format lives directly under messages/inbox/<thread>/.
-    // The HTML ("Download Your Information" HTML) format nests under
-    // your_facebook_activity/messages/inbox/. Try both roots; per thread,
+    // Messages — JSON format lives directly under messages/<lane>/<thread>/.
+    // The HTML ("Download Your Information" HTML) format nests the same tree
+    // under your_facebook_activity/messages/. Try both roots; per thread,
     // prefer JSON when present and fall back to HTML otherwise.
-    const inboxDirs = [
-      path.join(root, 'messages', 'inbox'),
-      path.join(root, 'your_facebook_activity', 'messages', 'inbox'),
-    ];
-    for (const inboxDir of inboxDirs) {
-      if (!fs.existsSync(inboxDir)) {
-        continue;
-      }
-
+    const laneDirs = [
+      path.join(root, 'messages'),
+      path.join(root, 'your_facebook_activity', 'messages'),
+    ].flatMap((messagesDir) => threadLaneDirs(messagesDir));
+    for (const laneDir of laneDirs) {
       let threads: string[];
       try {
-        threads = fs.readdirSync(inboxDir);
+        threads = fs.readdirSync(laneDir);
       } catch {
         continue;
       }
 
       for (const thread of threads) {
-        const threadDir = path.join(inboxDir, thread);
+        const threadDir = path.join(laneDir, thread);
         let files: string[];
         try {
           if (!fs.statSync(threadDir).isDirectory()) {
