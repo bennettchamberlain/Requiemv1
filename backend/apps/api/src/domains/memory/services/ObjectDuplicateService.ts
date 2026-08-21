@@ -51,6 +51,49 @@ const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
 /**
+ * Which `identifier_codes` bag keys count as an IDENTIFIER of the thing itself.
+ *
+ * The bag is a grab-bag: the importer also drops `order_id` and `quantity` in
+ * it (`import/push/inputs.ts`) as the human-facing copy of the purchase. An
+ * order id belongs to the ORDER, not to any one thing in it, so grouping on it
+ * proposes every line of a multi-item order — jeans, shorts, pajama pants — as
+ * one duplicate. Hence an allow-list rather than a deny-list: a key a future
+ * importer invents is ignored here until someone decides it identifies a unit
+ * or a model. Mirrors `ReceiptService.CODE_KEY_NAMESPACES`, aliases included.
+ */
+const IDENTIFIER_BAG_KEYS: readonly string[] = [
+  'gtin',
+  'upc',
+  'ean',
+  'isbn',
+  'asin',
+  'mpn',
+  'sku',
+  'serial',
+  'imei',
+  'vin',
+];
+
+/**
+ * The `ci.object_identifiers` namespaces that identify a thing or its model.
+ * `order_id` is a namespace there too (datasources may state it in
+ * `metadata.Identifiers`), and is excluded for the reason above; `custom` is
+ * excluded because nothing guarantees two custom codes mean the same thing.
+ */
+const IDENTIFIER_CLAIM_NAMESPACES: readonly string[] = [
+  'gtin',
+  'isbn',
+  'asin',
+  'mpn',
+  'sku',
+  'serial',
+  'imei',
+  'vin',
+  'rfid',
+  'qr',
+];
+
+/**
  * Shortest identifier worth grouping on, after normalization.
  *
  * Short codes ("1", "AA", "N/A") appear in `identifier_codes` bags as
@@ -176,7 +219,8 @@ export class ObjectDuplicateService {
                   LATERAL jsonb_each_text(
                     CASE WHEN jsonb_typeof(u.identifier_codes) = 'object'
                          THEN u.identifier_codes ELSE '{}'::jsonb END) AS code(key, value)
-            WHERE length(regexp_replace(code.value, '[^0-9A-Za-z]', '', 'g')) >= $6
+            WHERE lower(btrim(code.key)) = ANY($7::text[])
+              AND length(regexp_replace(code.value, '[^0-9A-Za-z]', '', 'g')) >= $6
            UNION ALL
            -- ...and from the claim table, so a unit that WON a claim but never
            -- kept the raw code in its bag is still in the group.
@@ -186,6 +230,7 @@ export class ObjectDuplicateService {
              JOIN units u ON u.object_id = oi.subject_id
             WHERE oi.owner_user_id = $1::uuid
               AND oi.subject_type = 'object_instance'
+              AND oi.namespace = ANY($8::text[])
               AND length(regexp_replace(oi.value_normalized, '[^0-9A-Za-z]', '', 'g')) >= $6
            UNION ALL
            -- (b) Same catalog model AND same name: two rows claiming to be the
@@ -224,7 +269,16 @@ export class ObjectDuplicateService {
                    n DESC,
                    val ASC
           LIMIT $2 OFFSET $5`,
-      [context.userId, limit + 1, MAX_GROUP_SIZE, reasons, offset, MIN_IDENTIFIER_LENGTH],
+      [
+        context.userId,
+        limit + 1,
+        MAX_GROUP_SIZE,
+        reasons,
+        offset,
+        MIN_IDENTIFIER_LENGTH,
+        IDENTIFIER_BAG_KEYS,
+        IDENTIFIER_CLAIM_NAMESPACES,
+      ],
     );
 
     if (rows.length === 0) {

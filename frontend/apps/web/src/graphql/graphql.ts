@@ -1576,6 +1576,18 @@ export type MergePeoplePayload = {
   success: Scalars['Boolean']['output'];
 };
 
+export type MergePlacesInput = {
+  sourceIds: Array<Scalars['ID']['input']>;
+  targetId: Scalars['ID']['input'];
+};
+
+export type MergePlacesPayload = {
+  __typename?: 'MergePlacesPayload';
+  counts?: Maybe<PlaceMergeCountsType>;
+  place?: Maybe<PlaceType>;
+  success: Scalars['Boolean']['output'];
+};
+
 export type MergeProductModelsInput = {
   sourceIds: Array<Scalars['ID']['input']>;
   targetId: Scalars['ID']['input'];
@@ -1761,6 +1773,7 @@ export type Mutation = {
   markSummaryAsSeen?: Maybe<SummaryType>;
   mergeItems: MergeItemsPayload;
   mergePeople: MergePeoplePayload;
+  mergePlaces: MergePlacesPayload;
   mergeProductModels: MergeProductModelsPayload;
   /** Rebuild stay-point clusters and recency-decayed transitions for the current user */
   rebuildPlaces: Scalars['String']['output'];
@@ -1771,6 +1784,8 @@ export type Mutation = {
   rejectObservation?: Maybe<ObjectObservationType>;
   /** Mark a suggested duplicate group as distinct people, so it is never re-proposed */
   rejectPersonDuplicates: Scalars['Boolean']['output'];
+  /** Mark a suggested duplicate group as distinct places, so it is never re-proposed */
+  rejectPlaceDuplicates: Scalars['Boolean']['output'];
   removeAnswer: Scalars['Boolean']['output'];
   removeContent: Scalars['Boolean']['output'];
   removeEvent: Scalars['Boolean']['output'];
@@ -2173,6 +2188,11 @@ export type MutationMergePeopleArgs = {
 };
 
 
+export type MutationMergePlacesArgs = {
+  input: MergePlacesInput;
+};
+
+
 export type MutationMergeProductModelsArgs = {
   input: MergeProductModelsInput;
 };
@@ -2196,6 +2216,11 @@ export type MutationRejectObservationArgs = {
 
 export type MutationRejectPersonDuplicatesArgs = {
   personIds: Array<Scalars['ID']['input']>;
+};
+
+
+export type MutationRejectPlaceDuplicatesArgs = {
+  placeIds: Array<Scalars['ID']['input']>;
 };
 
 
@@ -2698,6 +2723,26 @@ export type PlaceConnection = Connection & {
   totalCount: Scalars['Int']['output'];
 };
 
+export type PlaceDuplicateGroupType = {
+  __typename?: 'PlaceDuplicateGroupType';
+  places: Array<PlaceType>;
+  reason: PlaceDuplicateReason;
+  totalPlaces: Scalars['Int']['output'];
+  value: Scalars['String']['output'];
+};
+
+/** What a duplicate place group collapsed on: the same provider place id, or the same name within 150 m. */
+export type PlaceDuplicateReason =
+  | 'NAME_PROXIMITY'
+  | 'PLACE_ID';
+
+export type PlaceDuplicatesPayload = {
+  __typename?: 'PlaceDuplicatesPayload';
+  groups: Array<PlaceDuplicateGroupType>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
+};
+
 export type PlaceEdge = Edge & {
   __typename?: 'PlaceEdge';
   cursor: Scalars['String']['output'];
@@ -2716,6 +2761,22 @@ export type PlaceForecastItemType = {
   probability: Scalars['Float']['output'];
   share: Scalars['Float']['output'];
   visits: Scalars['Int']['output'];
+};
+
+export type PlaceMergeCountsType = {
+  __typename?: 'PlaceMergeCountsType';
+  childPlaces: Scalars['Int']['output'];
+  events: Scalars['Int']['output'];
+  identifiers: Scalars['Int']['output'];
+  objects: Scalars['Int']['output'];
+  observations: Scalars['Int']['output'];
+  positions: Scalars['Int']['output'];
+  receipts: Scalars['Int']['output'];
+  relationshipsDropped: Scalars['Int']['output'];
+  relationshipsFrom: Scalars['Int']['output'];
+  relationshipsTo: Scalars['Int']['output'];
+  searchRowsDeleted: Scalars['Int']['output'];
+  tagLinksMoved: Scalars['Int']['output'];
 };
 
 export type PlaceNearType = {
@@ -3015,6 +3076,7 @@ export type Query = {
   person?: Maybe<PersonType>;
   personDuplicates: PersonDuplicatesPayload;
   place?: Maybe<PlaceType>;
+  placeDuplicates: PlaceDuplicatesPayload;
   /** Likely next places from the stay-point transition model (recency-decayed, hour/dow backoff) */
   placeForecast: Array<PlaceForecastItemType>;
   places: PlaceConnection;
@@ -3379,6 +3441,12 @@ export type QueryPersonDuplicatesArgs = {
 
 export type QueryPlaceArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type QueryPlaceDuplicatesArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
 
@@ -5857,6 +5925,38 @@ export type UpdatePlacePageFieldsMutationVariables = Exact<{
 
 export type UpdatePlacePageFieldsMutation = { __typename?: 'Mutation', updatePlace?: { __typename?: 'PlaceType', id: string, name?: string | null, description?: string | null, properties: any } | null };
 
+export type GetPlaceDuplicatesQueryVariables = Exact<{
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+
+export type GetPlaceDuplicatesQuery = { __typename?: 'Query', placeDuplicates: { __typename?: 'PlaceDuplicatesPayload', totalCount: number, hasMore: boolean, groups: Array<{ __typename?: 'PlaceDuplicateGroupType', reason: PlaceDuplicateReason, value: string, totalPlaces: number, places: Array<{ __typename?: 'PlaceType', id: string, name?: string | null, description?: string | null, placeKind?: string | null, properties: any }> }> } };
+
+export type MergePlacesMutationVariables = Exact<{
+  input: MergePlacesInput;
+}>;
+
+
+export type MergePlacesMutation = { __typename?: 'Mutation', mergePlaces: { __typename?: 'MergePlacesPayload', success: boolean, place?: { __typename?: 'PlaceType', id: string, name?: string | null } | null, counts?: { __typename?: 'PlaceMergeCountsType', events: number, childPlaces: number, relationshipsFrom: number, relationshipsTo: number } | null } };
+
+export type RejectPlaceDuplicatesMutationVariables = Exact<{
+  placeIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+
+export type RejectPlaceDuplicatesMutation = { __typename?: 'Mutation', rejectPlaceDuplicates: boolean };
+
+export type GetPlaceSheetQueryVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+
+export type GetPlaceSheetQuery = { __typename?: 'Query', place?: (
+    { __typename: 'PlaceType', id: string, mapProperties: any, tags: Array<{ __typename?: 'EntityTagType', label: string }> }
+    & { ' $fragmentRefs'?: { 'PlaceGridItemDataFragment': PlaceGridItemDataFragment;'TablePlaceRowDataFragment': TablePlaceRowDataFragment } }
+  ) | null };
+
 export type GetPlacesQueryVariables = Exact<{
   query?: InputMaybe<Scalars['String']['input']>;
   first?: InputMaybe<Scalars['Int']['input']>;
@@ -6424,6 +6524,10 @@ export const GetPersonDocument = {"kind":"Document","definitions":[{"kind":"Oper
 export const UpdatePersonDescriptionDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdatePersonDescription"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdatePersonInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updatePerson"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"person"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]}}]}}]} as unknown as DocumentNode<UpdatePersonDescriptionMutation, UpdatePersonDescriptionMutationVariables>;
 export const GetPlaceDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlace"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"place"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"properties"}},{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}}]}}]}}]}}]} as unknown as DocumentNode<GetPlaceQuery, GetPlaceQueryVariables>;
 export const UpdatePlacePageFieldsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdatePlacePageFields"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdatePlaceInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updatePlace"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"properties"}}]}}]}}]} as unknown as DocumentNode<UpdatePlacePageFieldsMutation, UpdatePlacePageFieldsMutationVariables>;
+export const GetPlaceDuplicatesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaceDuplicates"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"offset"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"placeDuplicates"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}},{"kind":"Argument","name":{"kind":"Name","value":"offset"},"value":{"kind":"Variable","name":{"kind":"Name","value":"offset"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"hasMore"}},{"kind":"Field","name":{"kind":"Name","value":"groups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"value"}},{"kind":"Field","name":{"kind":"Name","value":"totalPlaces"}},{"kind":"Field","name":{"kind":"Name","value":"places"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"placeKind"}},{"kind":"Field","name":{"kind":"Name","value":"properties"}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetPlaceDuplicatesQuery, GetPlaceDuplicatesQueryVariables>;
+export const MergePlacesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MergePlaces"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"MergePlacesInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"mergePlaces"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"success"}},{"kind":"Field","name":{"kind":"Name","value":"place"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}},{"kind":"Field","name":{"kind":"Name","value":"counts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"events"}},{"kind":"Field","name":{"kind":"Name","value":"childPlaces"}},{"kind":"Field","name":{"kind":"Name","value":"relationshipsFrom"}},{"kind":"Field","name":{"kind":"Name","value":"relationshipsTo"}}]}}]}}]}}]} as unknown as DocumentNode<MergePlacesMutation, MergePlacesMutationVariables>;
+export const RejectPlaceDuplicatesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"RejectPlaceDuplicates"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"placeIds"}},"type":{"kind":"NonNullType","type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"rejectPlaceDuplicates"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"placeIds"},"value":{"kind":"Variable","name":{"kind":"Name","value":"placeIds"}}}]}]}}]} as unknown as DocumentNode<RejectPlaceDuplicatesMutation, RejectPlaceDuplicatesMutationVariables>;
+export const GetPlaceSheetDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaceSheet"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"place"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"__typename"}},{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"tags"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}}]}},{"kind":"Field","alias":{"kind":"Name","value":"mapProperties"},"name":{"kind":"Name","value":"properties"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"PlaceGridItemData"}},{"kind":"FragmentSpread","name":{"kind":"Name","value":"TablePlaceRowData"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"PlaceGridItemData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaceType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"properties"}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"TablePlaceRowData"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"PlaceType"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}}]}}]} as unknown as DocumentNode<GetPlaceSheetQuery, GetPlaceSheetQueryVariables>;
 export const GetPlacesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPlaces"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"query"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"first"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"after"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"places"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"query"},"value":{"kind":"Variable","name":{"kind":"Name","value":"query"}}},{"kind":"Argument","name":{"kind":"Name","value":"first"},"value":{"kind":"Variable","name":{"kind":"Name","value":"first"}}},{"kind":"Argument","name":{"kind":"Name","value":"after"},"value":{"kind":"Variable","name":{"kind":"Name","value":"after"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalCount"}},{"kind":"Field","name":{"kind":"Name","value":"pageInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"hasNextPage"}},{"kind":"Field","name":{"kind":"Name","value":"endCursor"}}]}},{"kind":"Field","name":{"kind":"Name","value":"edges"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"cursor"}},{"kind":"Field","name":{"kind":"Name","value":"node"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"placeKind"}},{"kind":"Field","name":{"kind":"Name","value":"latitude"}},{"kind":"Field","name":{"kind":"Name","value":"longitude"}},{"kind":"Field","name":{"kind":"Name","value":"parent"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"placeKind"}}]}},{"kind":"Field","name":{"kind":"Name","value":"visitStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"visitCount"}},{"kind":"Field","name":{"kind":"Name","value":"firstVisitAt"}},{"kind":"Field","name":{"kind":"Name","value":"lastVisitAt"}},{"kind":"Field","name":{"kind":"Name","value":"status"}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<GetPlacesQuery, GetPlacesQueryVariables>;
 export const GetKnownPlacesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetKnownPlaces"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"geocodingConfigured"}},{"kind":"Field","name":{"kind":"Name","value":"knownPlaces"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"confidence"}},{"kind":"Field","name":{"kind":"Name","value":"source"}},{"kind":"Field","name":{"kind":"Name","value":"coordinates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"lat"}},{"kind":"Field","name":{"kind":"Name","value":"lng"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"knownPlaceCandidates"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"lat"}},{"kind":"Field","name":{"kind":"Name","value":"lng"}},{"kind":"Field","name":{"kind":"Name","value":"eventCount"}},{"kind":"Field","name":{"kind":"Name","value":"confidence"}}]}}]}}]} as unknown as DocumentNode<GetKnownPlacesQuery, GetKnownPlacesQueryVariables>;
 export const ConfirmKnownPlaceDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ConfirmKnownPlace"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpdateKnownPlaceInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateKnownPlace"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}}]}}]}}]} as unknown as DocumentNode<ConfirmKnownPlaceMutation, ConfirmKnownPlaceMutationVariables>;

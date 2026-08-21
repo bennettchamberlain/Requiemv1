@@ -40,6 +40,19 @@ export interface PlaceVisitStats {
 }
 
 /**
+ * How far apart two same-named resolutions can be and still be one place.
+ *
+ * The snap-cell index below dedupes on a 0.001° grid (~90 m east–west at
+ * mid-latitudes), which has a boundary problem: two pickups 80 m apart at the
+ * same street address straddle a cell edge and become two Locations named
+ * identically. A name that matches byte-for-byte within this radius is the
+ * same place — a different venue sharing a name ("Starbucks") sits far
+ * further away than this. Same figure the Places page uses to decide a
+ * candidate IS an already-confirmed place.
+ */
+const SAME_NAME_MERGE_METRES = 150;
+
+/**
  * Geocode address components -> hierarchy levels, most-specific first. Only
  * admin levels city and above become shared hierarchy nodes; street-level
  * detail stays on the place itself.
@@ -127,6 +140,33 @@ export class PlaceService {
 
         return { id, created: false };
       }
+    }
+
+    // 1b. Same name, close by: the provider gave no place_id (or a different
+    // one) but an identically named Location already sits within walking
+    // distance. The snap-cell index cannot catch this when the two points
+    // fall either side of a cell edge, so check proximity explicitly.
+    const byNameNearby: Array<{ entity_id: string }> = await this.placeRepository.manager.query(
+      `SELECT entity_id
+         FROM ci.entities
+        WHERE entity_type = 'Location'
+          AND owner_user_id = $1
+          AND merged_into_entity_id IS NULL
+          AND is_active IS DISTINCT FROM FALSE
+          AND lower(btrim(name)) = lower($2)
+          AND location_point IS NOT NULL
+          AND ST_DWithin(location_point, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5)
+        ORDER BY ST_Distance(location_point, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography)
+        LIMIT 1`,
+      [context.userId, trimmedName, input.lng, input.lat, SAME_NAME_MERGE_METRES],
+    );
+
+    if (byNameNearby.length > 0) {
+      const id = byNameNearby[0].entity_id;
+      await this.enrichResolvedPlace(context, id, input.lat, input.lng, placeId, input.bounds);
+      await this.ensureHierarchy(context, id, input.components ?? null);
+
+      return { id, created: false };
     }
 
     const newId = uuidv7();

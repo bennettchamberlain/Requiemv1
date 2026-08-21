@@ -173,6 +173,27 @@ describe('ObjectDuplicateService', () => {
     expect(page.groups).toHaveLength(1);
   });
 
+  it('groups on product/unit identifiers only — never on the order id the importer keeps in the same bag', async () => {
+    const harness = makeHarness([]);
+
+    await harness.service.findDuplicateGroups(CONTEXT);
+
+    const { sql, params } = harness.statements[0];
+    // The raw bag rung is keyed by an allow-list of bag keys...
+    expect(sql).toContain('lower(btrim(code.key)) = ANY($7::text[])');
+    const bagKeys = params[6] as string[];
+    expect(bagKeys).toEqual(expect.arrayContaining(['asin', 'gtin', 'upc', 'isbn', 'serial']));
+    expect(bagKeys).not.toContain('order_id');
+    expect(bagKeys).not.toContain('quantity');
+
+    // ...and the claim-table rung by an allow-list of namespaces.
+    expect(sql).toContain('oi.namespace = ANY($8::text[])');
+    const namespaces = params[7] as string[];
+    expect(namespaces).toEqual(expect.arrayContaining(['asin', 'gtin', 'serial']));
+    expect(namespaces).not.toContain('order_id');
+    expect(namespaces).not.toContain('custom');
+  });
+
   it('passes a NULL reason filter when the caller names none', async () => {
     const harness = makeHarness([]);
 

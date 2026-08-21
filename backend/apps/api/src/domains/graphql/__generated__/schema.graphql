@@ -1579,6 +1579,17 @@ type MergePeoplePayload {
   success: Boolean!
 }
 
+input MergePlacesInput {
+  sourceIds: [ID!]!
+  targetId: ID!
+}
+
+type MergePlacesPayload {
+  counts: PlaceMergeCountsType
+  place: PlaceType
+  success: Boolean!
+}
+
 input MergeProductModelsInput {
   sourceIds: [ID!]!
   targetId: ID!
@@ -1787,6 +1798,7 @@ type Mutation {
   markSummaryAsSeen(id: ID!): SummaryType
   mergeItems(input: MergeItemsInput!): MergeItemsPayload!
   mergePeople(input: MergePeopleInput!): MergePeoplePayload!
+  mergePlaces(input: MergePlacesInput!): MergePlacesPayload!
   mergeProductModels(input: MergeProductModelsInput!): MergeProductModelsPayload!
 
   """
@@ -1809,6 +1821,11 @@ type Mutation {
   Mark a suggested duplicate group as distinct people, so it is never re-proposed
   """
   rejectPersonDuplicates(personIds: [ID!]!): Boolean!
+
+  """
+  Mark a suggested duplicate group as distinct places, so it is never re-proposed
+  """
+  rejectPlaceDuplicates(placeIds: [ID!]!): Boolean!
   removeAnswer(id: ID!): Boolean!
   removeContent(id: ID!): Boolean!
   removeEvent(id: ID!): Boolean!
@@ -2156,6 +2173,27 @@ type PlaceConnection implements Connection {
   totalCount: Int!
 }
 
+type PlaceDuplicateGroupType {
+  places: [PlaceType!]!
+  reason: PlaceDuplicateReason!
+  totalPlaces: Int!
+  value: String!
+}
+
+"""
+What a duplicate place group collapsed on: the same provider place id, or the same name within 150 m.
+"""
+enum PlaceDuplicateReason {
+  NAME_PROXIMITY
+  PLACE_ID
+}
+
+type PlaceDuplicatesPayload {
+  groups: [PlaceDuplicateGroupType!]!
+  hasMore: Boolean!
+  totalCount: Int!
+}
+
 type PlaceEdge implements Edge {
   cursor: String!
   node: PlaceType!
@@ -2174,6 +2212,21 @@ type PlaceForecastItemType {
   probability: Float!
   share: Float!
   visits: Int!
+}
+
+type PlaceMergeCountsType {
+  childPlaces: Int!
+  events: Int!
+  identifiers: Int!
+  objects: Int!
+  observations: Int!
+  positions: Int!
+  receipts: Int!
+  relationshipsDropped: Int!
+  relationshipsFrom: Int!
+  relationshipsTo: Int!
+  searchRowsDeleted: Int!
+  tagLinksMoved: Int!
 }
 
 type PlaceNearType {
@@ -2528,6 +2581,7 @@ type Query {
   person(id: ID!): PersonType
   personDuplicates(limit: Int, offset: Int, reasons: [String!]): PersonDuplicatesPayload!
   place(id: ID!): PlaceType
+  placeDuplicates(limit: Int, offset: Int): PlaceDuplicatesPayload!
 
   """
   Likely next places from the stay-point transition model (recency-decayed, hour/dow backoff)
