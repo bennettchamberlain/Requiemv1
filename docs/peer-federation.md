@@ -53,6 +53,8 @@ Shape and vocabulary follow OID4VP/DCQL's "request specific claims, get a select
 
 Because the output is provably free/busy only, an availability ask is **safe to auto-answer under a standing grant** — no human interruption. That is the unlock for agent-to-agent scheduling: two assistants can find a lunch slot without either seeing the other's calendar.
 
+> **That argument is about the SHAPE of one answer, not about a SERIES of them.** Repeated over weeks, auto-answered free/busy is a presence log, and at the `family` and `trusted` tiers what crosses is the owner's real interval boundaries. See [asks-threat-model.md § T2](asks-threat-model.md#3-t2--stalking-via-availability) before widening this path or relying on this paragraph as a safety argument.
+
 ## The inbound pipeline
 
 `POST /agent/v1/ask` and `GET /agent/v1/ask/:askId` are the **only** routes
