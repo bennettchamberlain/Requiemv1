@@ -2,9 +2,10 @@ import { ConflictException } from '@nestjs/common';
 
 import { AskEntity, GrantService, TERMINAL_ASK_STATUSES } from '@ci/domains/asks';
 
-import type { PeerAskBody } from '../protocol';
+import { PEER_ASK_NO_ANSWER_REASON, PEER_ASK_PENDING, type PeerAskBody } from '../protocol';
 
-import { PeerAskService, toAskQuery } from './PeerAskService';
+import { requestDigest } from './PeerAskCorrelationService';
+import { PeerAskService, clampAvailability, toAskQuery, toWireAnswer } from './PeerAskService';
 
 const PEER = { issuer: 'https://hub.test', subject: 'peer-sub' };
 
@@ -47,6 +48,12 @@ function makeService(
     maxDisclosure?: string;
     events?: unknown[];
     consentStanding?: boolean;
+    /** A correlation already on file for this (link, askId) — the replay case. */
+    correlation?: { askId: string; requestDigest: string } | null;
+    /** What `AskAnswerService.findByAskId` returns when a replay reads it back. */
+    storedAnswer?: unknown;
+    /** The status the persisted ask row starts at (a replay reads it). */
+    askStatus?: string;
   } = {},
 ) {
   const peerLinkService = {
@@ -75,6 +82,10 @@ function makeService(
   // one would hide exactly the per-archetype ceiling bug these tests cover.
   let created = baseAsk;
   const askService = {
+    // A replay reads the row back rather than trusting anything it was handed —
+    // the recorded outcome is the only thing that knows whether the owner has
+    // answered since.
+    findById: jest.fn().mockImplementation(() => Promise.resolve({ ...created, status: askRow.status })),
     create: jest.fn().mockImplementation((_ctx: unknown, data: { query: unknown }) => {
       created = { ...baseAsk, query: data.query as typeof baseAsk.query };
       askRow.query = created.query;
@@ -133,9 +144,19 @@ function makeService(
     }),
   };
   const manager = { getRepository: jest.fn().mockReturnValue(askRepository) };
+  // `PeerAskService` reaches the correlation table through the injected
+  // repository's MANAGER rather than through a constructor dependency, so that
+  // the several places that build this service by hand (including the DB-backed
+  // suites) do not break every time it grows one. The mock has to model that.
+  const correlationRepository = {
+    findOne: jest.fn().mockResolvedValue(opts.correlation === undefined ? null : opts.correlation),
+    create: jest.fn().mockImplementation((row: unknown) => row),
+    save: jest.fn().mockImplementation((row: unknown) => Promise.resolve(row)),
+  };
   const eventRepository = {
     find: jest.fn().mockResolvedValue(opts.events ?? []),
     manager: {
+      getRepository: jest.fn().mockReturnValue(correlationRepository),
       transaction: jest.fn().mockImplementation(async (work: (m: unknown) => Promise<unknown>) => {
         transacting = true;
         try {
@@ -152,6 +173,7 @@ function makeService(
 
       return Promise.resolve({});
     }),
+    findByAskId: jest.fn().mockResolvedValue(opts.storedAnswer ?? null),
   };
   const auditService = {
     record: jest.fn().mockImplementation((_dto: unknown, enrolled: unknown) => {
@@ -161,6 +183,10 @@ function makeService(
     }),
   };
   const logger = { setContext: jest.fn(), warn: jest.fn(), log: jest.fn() };
+
+  if (opts.askStatus) {
+    askRow.status = opts.askStatus;
+  }
 
   const service = new PeerAskService(
     peerLinkService as never,
@@ -183,6 +209,7 @@ function makeService(
     auditService,
     eventRepository,
     askRepository,
+    correlationRepository,
     askRow,
     manager,
     writes,
@@ -228,14 +255,48 @@ describe('PeerAskService.handle', () => {
 
     const result = await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
 
-    expect(result.status).toBe('declined');
+    expect(result.status).toBe(PEER_ASK_PENDING);
     expect(result.answer).toBeUndefined();
     // No EntityManager: a decline writes ONE row and has nothing to be atomic
     // with. Only the answer path carries a transaction.
     expect(auditService.record).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'declined', peerLinkId: 'link-1', consentBasis: 'g1' }),
+      expect.objectContaining({
+        outcome: 'declined',
+        peerLinkId: 'link-1',
+        consentBasis: 'g1',
+        disclosedCount: 0,
+      }),
       undefined,
     );
+  });
+
+  it('SECURITY: a block and an ask awaiting a human are the SAME reply, field for field', async () => {
+    const { service: blocking } = makeService({ decision: 'deny' });
+    const { service: reviewing } = makeService({ decision: 'review' });
+
+    const blocked = await blocking.handle(PEER, body({ archetype: 'content', subject: 'x' }));
+    const pending = await reviewing.handle(PEER, body({ archetype: 'content', subject: 'x' }));
+
+    // The wire used to say `declined` / 'Not permitted' versus `pending_review`
+    // / 'Awaiting owner review'. Everything BELOW the status word was already
+    // identical, so the word itself was a one-bit read on the responder's grant
+    // matrix — mappable at 10 asks a minute by varying queryType and dataClass.
+    // #2210/#2216 closed exactly this for a LOCAL asker and left the federated
+    // path emitting it.
+    expect(blocked).toEqual(pending);
+    expect(blocked.reason).toBe(PEER_ASK_NO_ANSWER_REASON);
+  });
+
+  it('SECURITY: a revoked pre-authorization is that same reply too', async () => {
+    const { service: reviewing } = makeService({ decision: 'review' });
+    const { service: withdrawn } = makeService({ consentStanding: false });
+
+    const pending = await reviewing.handle(PEER, body({ archetype: 'content', subject: 'x' }));
+    const revoked = await withdrawn.handle(PEER, body({ archetype: 'content', subject: 'x' }));
+
+    // "Your grant was revoked" would hand the peer the owner's consent posture
+    // as a side channel, one step removed.
+    expect(revoked).toEqual(pending);
   });
 
   it('SECURITY: a denied ask is transitioned to declined, not left actionable in the inbox', async () => {
@@ -255,7 +316,7 @@ describe('PeerAskService.handle', () => {
 
     const result = await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
 
-    expect(result.status).toBe('pending_review');
+    expect(result.status).toBe(PEER_ASK_PENDING);
     // Nothing executed against the owner's memory without consent.
     expect(executorService.execute).not.toHaveBeenCalled();
     // And it is moved into the review queue rather than left in limbo.
@@ -708,7 +769,7 @@ describe('PeerAskService — consent is re-checked before anything is read', () 
 
     const result = await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
 
-    expect(result.status).toBe('pending_review');
+    expect(result.status).toBe(PEER_ASK_PENDING);
     expect(result.answer).toBeUndefined();
     // Nothing read, nothing written, nothing disclosed.
     expect(executorService.execute).not.toHaveBeenCalled();
@@ -752,5 +813,352 @@ describe('PeerAskService — consent is re-checked before anything is read', () 
     expect(grantService.isConsentStanding).toHaveBeenCalledWith(
       expect.objectContaining({ consentBasis: 'g1' }),
     );
+  });
+});
+
+/**
+ * ═══ THE FEDERATED AUDIT UNDER-REPORTED WHAT CROSSED ═══
+ *
+ * `ci.ask_audit.disclosed_count` exists because `disclosed_entities` is EMPTY
+ * for every form but `retrieval`, so deriving the count from it audits a real
+ * count/boolean disclosure as "nothing was shared". The LOCAL path forwards it
+ * (`AskService.completeWithAnswer` → `complete`'s `disclosedCount`); this one
+ * did not, because `recordAudit` had no such parameter at all.
+ *
+ * Reproduced against two real boxes: the peer was told "1 matching item" and
+ * the audit row recorded 0; an availability answer said "4 free slots",
+ * `ci.ask_answers.disclosed_count` said 4, and the audit row said 0.
+ */
+describe('PeerAskService — the audit records the MAGNITUDE that crossed', () => {
+  it('forwards the disclosed count of an existence answer', async () => {
+    const { service, executorService, auditService } = makeService();
+    executorService.execute.mockResolvedValue([
+      { id: 'e1', type: 'file' },
+      { id: 'e2', type: 'file' },
+    ]);
+
+    const result = await service.handle(PEER, body({ archetype: 'content', subject: 'beach' }));
+
+    expect(result.answer?.disclosedCount).toBe(2);
+    // Not `disclosedEntities.length` — that is 0 here, which is precisely the
+    // fallback that made the owner's history under-report the disclosure.
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ disclosedCount: 2, disclosedEntities: [] }),
+      expect.anything(),
+    );
+  });
+
+  it('forwards it on the availability branch too, which itemizes nothing at all', async () => {
+    const { service, auditService, eventRepository } = makeService();
+    eventRepository.find.mockResolvedValue([
+      { id: 'ev-1', startTime: new Date('2026-09-15T16:00:00Z'), endTime: new Date('2026-09-15T16:30:00Z') },
+    ]);
+
+    const result = await service.handle(
+      PEER,
+      body({
+        archetype: 'availability',
+        from: '2026-09-15T15:00:00.000Z',
+        to: '2026-09-15T23:59:00.000Z',
+        minMinutes: 45,
+      }),
+    );
+
+    const free = result.answer?.free?.length ?? 0;
+    expect(free).toBeGreaterThan(0);
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ disclosedCount: free }),
+      expect.anything(),
+    );
+  });
+
+  it('records 0 for a decline, explicitly rather than by falling back', async () => {
+    const { service, auditService } = makeService({ decision: 'deny' });
+
+    await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
+
+    expect(auditService.record).toHaveBeenCalledWith(
+      expect.objectContaining({ disclosedCount: 0 }),
+      undefined,
+    );
+  });
+});
+
+/**
+ * ═══ AN APPROVED ANSWER NEVER CROSSED BACK ═══
+ *
+ * `POST /agent/v1/ask`'s synchronous reply was the only channel that existed.
+ * `askId` was documented as an idempotency key and read by nothing, so a
+ * re-ask minted a NEW `ci.asks` row and was re-evaluated from scratch — it
+ * landed in review a second time and the answer a human had approved stayed on
+ * the responder's box forever.
+ */
+describe('PeerAskService — the correlation id is a real idempotency key', () => {
+  const CONTENT = { archetype: 'content', subject: 'quarterly review deck', dataClass: 'documents' } as const;
+
+  it('a repeat does not create a second ask, and does not re-evaluate anything', async () => {
+    const { service, askService, grantService, executorService } = makeService({
+      decision: 'review',
+      correlation: { askId: 'ask-1', requestDigest: requestDigest(body(CONTENT)) },
+      askStatus: 'under_review',
+    });
+
+    const again = await service.handle(PEER, body(CONTENT));
+
+    expect(askService.create).not.toHaveBeenCalled();
+    expect(grantService.evaluate).not.toHaveBeenCalled();
+    expect(executorService.execute).not.toHaveBeenCalled();
+    expect(again.status).toBe(PEER_ASK_PENDING);
+  });
+
+  it('a repeat DOES deliver the answer once the owner has approved it', async () => {
+    const { service } = makeService({
+      correlation: { askId: 'ask-1', requestDigest: requestDigest(body(CONTENT)) },
+      askStatus: 'answered',
+      storedAnswer: {
+        form: 'existence',
+        summary: 'They have 1 matching item.',
+        disclosedEntities: [],
+        disclosedCount: 1,
+        withheldCount: 0,
+      },
+    });
+
+    const again = await service.handle(PEER, body(CONTENT));
+
+    expect(again.status).toBe('answered');
+    expect(again.answer?.summary).toBe('They have 1 matching item.');
+    expect(again.answer?.disclosedCount).toBe(1);
+  });
+
+  it('records the correlation on the FIRST ask, before the grant is even evaluated', async () => {
+    const { service, correlationRepository, grantService } = makeService({ decision: 'review' });
+
+    await service.handle(PEER, body(CONTENT));
+
+    expect(correlationRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ peerLinkId: 'link-1', correlationId: 'ask-corr-1', askId: 'ask-1' }),
+    );
+    // Written before the decision, so an ask that lands in the owner's inbox —
+    // the ONLY kind a poll exists for — is collectable the moment they approve.
+    expect(correlationRepository.save.mock.invocationCallOrder[0]).toBeLessThan(
+      grantService.evaluate.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('SECURITY: one key can never answer a DIFFERENT question', async () => {
+    const { service } = makeService({
+      correlation: { askId: 'ask-1', requestDigest: 'a-digest-for-some-other-question' },
+      askStatus: 'answered',
+    });
+
+    // Reusing a key for another ask would hand back the first one's answer —
+    // no new disclosure, but an answer to a question nobody asked.
+    await expect(service.handle(PEER, body(CONTENT))).rejects.toThrow(/Malformed ask/);
+  });
+
+  it('SECURITY: a replay of a non-answered ask is the SAME reply a stranger gets', async () => {
+    const { service } = makeService({
+      correlation: { askId: 'ask-1', requestDigest: requestDigest(body(CONTENT)) },
+      askStatus: 'declined',
+    });
+
+    const replayed = await service.handle(PEER, body(CONTENT));
+
+    expect(replayed).toEqual({
+      askId: 'ask-corr-1',
+      status: PEER_ASK_PENDING,
+      reason: PEER_ASK_NO_ANSWER_REASON,
+    });
+  });
+});
+
+describe('PeerAskService.result — the collect route', () => {
+  it('hands back an answer the owner approved after the ask was queued', async () => {
+    const { service } = makeService({
+      correlation: { askId: 'ask-1', requestDigest: 'anything' },
+      askStatus: 'answered',
+      storedAnswer: {
+        form: 'existence',
+        summary: 'They have 1 matching item.',
+        disclosedEntities: [],
+        disclosedCount: 1,
+        withheldCount: 0,
+      },
+    });
+
+    const collected = await service.result(PEER, 'ask-corr-1');
+
+    expect(collected.status).toBe('answered');
+    expect(collected.askId).toBe('ask-corr-1');
+  });
+
+  it('creates nothing, evaluates nothing and audits nothing — it is a READ', async () => {
+    const { service, askService, grantService, executorService, auditService, answerService } = makeService({
+      correlation: { askId: 'ask-1', requestDigest: 'anything' },
+      askStatus: 'answered',
+      storedAnswer: {
+        form: 'existence',
+        summary: 's',
+        disclosedEntities: [],
+        disclosedCount: 1,
+        withheldCount: 0,
+      },
+    });
+
+    await service.result(PEER, 'ask-corr-1');
+
+    expect(askService.create).not.toHaveBeenCalled();
+    expect(grantService.evaluate).not.toHaveBeenCalled();
+    expect(executorService.execute).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+    expect(answerService.create).not.toHaveBeenCalled();
+  });
+
+  it('SECURITY: an UNKNOWN correlation id is not a 404 — it is the ordinary non-answer', async () => {
+    const { service } = makeService({ correlation: null });
+
+    const collected = await service.result(PEER, 'never-seen-this-one');
+
+    // A 404 here would answer "has this peer ever asked me that?" for free, and
+    // separate it from "asked, and refused".
+    expect(collected).toEqual({
+      askId: 'never-seen-this-one',
+      status: PEER_ASK_PENDING,
+      reason: PEER_ASK_NO_ANSWER_REASON,
+    });
+  });
+
+  it('SECURITY: an answer row on a NON-answered ask is still not readable', async () => {
+    const { service } = makeService({
+      correlation: { askId: 'ask-1', requestDigest: 'anything' },
+      askStatus: 'under_review',
+      storedAnswer: {
+        form: 'existence',
+        summary: 'leaked',
+        disclosedEntities: [],
+        disclosedCount: 9,
+        withheldCount: 0,
+      },
+    });
+
+    const collected = await service.result(PEER, 'ask-corr-1');
+
+    // The gate is the ask's STATUS, not the existence of a row — the same
+    // ground `AskResolver.askAnswer` refuses on for a local asker.
+    expect(collected.status).toBe(PEER_ASK_PENDING);
+    expect(JSON.stringify(collected)).not.toContain('leaked');
+  });
+
+  it('refuses an unlinked peer exactly as `handle` does', async () => {
+    const { service } = makeService({ links: [] });
+
+    await expect(service.result(PEER, 'ask-corr-1')).rejects.toThrow();
+  });
+});
+
+/**
+ * A replay projects a STORED row back onto the wire, and the stored row is not
+ * automatically peer-shaped: an owner-approved federated ask is answered by the
+ * LOCAL pipeline, which has a `retrieval` form that itemizes real entity
+ * references. The peer protocol exposes no retrieval archetype at all.
+ */
+describe('toWireAnswer', () => {
+  it('SECURITY: never emits item references, even from a `retrieval` row', () => {
+    const wire = toWireAnswer({
+      form: 'retrieval',
+      summary: '2 items.',
+      disclosedEntities: [
+        { id: 'entity-1', type: 'file' },
+        { id: 'entity-2', type: 'file' },
+      ],
+      disclosedCount: 2,
+      withheldCount: 0,
+    } as never);
+
+    expect(wire.items).toEqual([]);
+    expect(JSON.stringify(wire)).not.toContain('entity-1');
+  });
+
+  it('SECURITY: a boolean replay carries no cardinality, same as a live one', () => {
+    const wire = toWireAnswer({
+      form: 'boolean',
+      summary: 'Yes.',
+      disclosedEntities: [],
+      disclosedCount: 7,
+      withheldCount: 0,
+    } as never);
+
+    // Otherwise a replay is a keyword-frequency oracle the live answer refuses
+    // to be.
+    expect(wire.disclosedCount).toBeUndefined();
+    expect(wire.withheldCount).toBeUndefined();
+  });
+
+  it('an existence replay does carry it — that is what the form means', () => {
+    const wire = toWireAnswer({
+      form: 'existence',
+      summary: '3 items.',
+      disclosedEntities: [],
+      disclosedCount: 3,
+      withheldCount: 1,
+    } as never);
+
+    expect(wire.disclosedCount).toBe(3);
+    expect(wire.withheldCount).toBe(1);
+  });
+});
+
+/**
+ * ═══ THE COUNT AN AVAILABILITY ANSWER DISCLOSES IS NOT `free.length` ═══
+ *
+ * `clampAvailability` empties BOTH interval arrays at every rung below
+ * `redacted`, so reading the disclosed count off its result recorded 0 for
+ * exactly the rungs where a number is the only thing that crossed. Reproduced
+ * across two real boxes: a peer was told "4 free slots" under a `count` ceiling
+ * while `ci.ask_answers.disclosed_count` and `ci.ask_audit.disclosed_count` both
+ * said 0.
+ */
+describe('clampAvailability — the magnitude it reports', () => {
+  const freeBusy = {
+    busy: [{ start: '2026-09-15T16:00:00.000Z', end: '2026-09-15T16:30:00.000Z' }],
+    free: [
+      { start: '2026-09-15T15:00:00.000Z', end: '2026-09-15T16:00:00.000Z' },
+      { start: '2026-09-15T16:30:00.000Z', end: '2026-09-15T19:00:00.000Z' },
+      { start: '2026-09-15T20:00:00.000Z', end: '2026-09-15T22:00:00.000Z' },
+    ],
+  } as never;
+
+  it.each(['full', 'redacted', 'summary', 'count'] as const)(
+    'reports the real slot count at `%s`, whether or not the intervals crossed',
+    (rung) => {
+      const clamped = clampAvailability(freeBusy, rung, 'They');
+
+      expect(clamped.disclosedCount).toBe(3);
+    },
+  );
+
+  it('drops the intervals at `summary` and `count` while still reporting the magnitude', () => {
+    for (const rung of ['summary', 'count'] as const) {
+      const clamped = clampAvailability(freeBusy, rung, 'They');
+
+      expect(clamped.free).toEqual([]);
+      expect(clamped.busy).toEqual([]);
+      // The array is empty and the disclosure is not. That gap is the defect.
+      expect(clamped.disclosedCount).toBe(3);
+    }
+  });
+
+  it('reports NOTHING at `boolean` — a yes/no carries no cardinality', () => {
+    const clamped = clampAvailability(freeBusy, 'boolean', 'They');
+
+    expect(clamped.summary).toMatch(/some free time/);
+    // Recording 3 here would over-report as badly as `free.length` under-reports
+    // the rungs above: the peer was told there is *some*, not how much.
+    expect(clamped.disclosedCount).toBe(0);
+  });
+
+  it('reports nothing at `none`', () => {
+    expect(clampAvailability(freeBusy, 'none', 'They').disclosedCount).toBe(0);
   });
 });

@@ -13,7 +13,7 @@ import {
   GrantService,
 } from '@ci/domains/asks';
 import { EventEntity } from '@ci/domains/memory';
-import { PeerAskService, PeerLinkEntity } from '@ci/domains/peers';
+import { PeerAskCorrelationEntity, PeerAskService, PeerLinkEntity } from '@ci/domains/peers';
 import { UserEntity } from '@ci/domains/user';
 
 import { databaseAvailability, resolveConnection } from '../../../__tests__/support/databaseConnection';
@@ -119,6 +119,11 @@ describeWithDatabase(`ask disclosure ceilings — against real Postgres (${avail
         AskAnswerEntity,
         UserEntity,
         PeerLinkEntity,
+        // `PeerAskService.handle` reads the correlation table before it creates
+        // an ask — `askId` is an idempotency key, and a repeat must replay
+        // rather than create a second ask. This DataSource lists its entities
+        // explicitly, so the repository has no metadata without it.
+        PeerAskCorrelationEntity,
         EventEntity,
       ],
       synchronize: false,

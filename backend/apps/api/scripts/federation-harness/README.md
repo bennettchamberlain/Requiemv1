@@ -28,8 +28,8 @@ down, in advance, what Ada may ask about — that is the whole product.
 | | The question Ada asks | What Devon's Companion does | What crosses |
 |---|---|---|---|
 | **a** | "anything about the design standup?" | a standing `auto` grant answers | a count. No item references, no titles. Devon is never interrupted |
-| **b** | "do you have the quarterly review deck?" | nothing matches → **review is the floor** | "pending review". Devon approves it by hand, and it is answered *on Devon's box* |
-| **c** | "have you got messages from Priya?" | a `block` grant refuses | "Not permitted", and nothing else — no count, no class, no grant id |
+| **b** | "do you have the quarterly review deck?" | nothing matches → **review is the floor** | "no answer is available". Devon approves it by hand, and **Ada collects it** with `GET /agent/v1/ask/:askId` |
+| **c** | "have you got messages from Priya?" | a `block` grant refuses | the reply from (b), byte for byte — the refusal is not distinguishable from a wait |
 | **d** | "free for lunch on the 15th?" | an `auto` grant **capped at `count`** | *how many* free slots. Never *when*. The box read three real meetings to say it |
 | **e** | (a) again, after Devon taps Revoke | the pre-authorization is gone | it lands in front of Devon instead. **The answer does not get wider** |
 
@@ -40,7 +40,7 @@ withdrawn". The fix — capture the ceiling on `ci.asks.disclosure_ceiling` at
 consent time and combine it with `narrowestRung` — must stay fixed. This
 harness re-proves it across a real box boundary on every run.
 
-A green run is **44 assertions passed, 0 failed**, and exits 0.
+A green run is **53 assertions passed, 0 failed**, and exits 0.
 
 ---
 
@@ -238,25 +238,37 @@ Never put this issuer in a real box's `PORTAL_OIDC_ISSUER`.
 
 ## Findings this harness produced
 
-These are things the run demonstrates end to end, not opinions. Four are pinned
-by assertions that describe *current* behaviour, so the day one is fixed the run
-fails and the assertion gets deleted.
+These are things the run demonstrates end to end, not opinions. Four of the
+seven have since been fixed *because* the run demonstrated them; those are
+marked ✅ and the assertions that pinned the old behaviour have been replaced by
+assertions that pin the new. The rest are still true and still pinned.
 
-### 1. The federated audit under-reports what crossed — `disclosed_count = 0`
+### 1. ✅ FIXED — the federated audit under-reported what crossed
 
 `ci.ask_audit.disclosed_count` was added (migration `20260821013030`) precisely
 because `disclosed_entities` is empty for every form but `retrieval`, so
 deriving the count from it "audited a real count/boolean disclosure as nothing
-was shared". The local path forwards it —
+was shared". The local path forwarded it —
 `AskService.completeWithAnswer` passes `disclosure.answer.disclosedCount`. The
-**federated** path does not: `PeerAskService.recordAudit` passes
-`disclosedEntities` and `backingEntities` only, so the fallback fires.
+**federated** path did not: `PeerAskService.recordAudit` had no count parameter
+at all, so the fallback fired.
 
 Observed in scenario (a): the peer was told **"1 matching item"**, and Devon's
-disclosure history records **0**. Same in (d): the peer was told **"4 free
-slots"**, `ci.ask_answers.disclosed_count` says 4, and the audit row says 0.
+disclosure history recorded **0**. Same in (d): the peer was told **"4 free
+slots"**, `ci.ask_answers.disclosed_count` said 4, and the audit row said 0.
 
-The one-line fix is a `disclosedCount` on the two `recordAudit` call sites.
+`recordAudit` now takes `disclosedCount` as a REQUIRED parameter with no
+default, which is the part that matters: a defaulted one is how it was lost the
+first time — the method simply never mentioned the field and every call site
+inherited the wrong answer in silence. (a) and (d) now assert that the answer
+row and the audit row agree.
+
+Fixing the audit exposed a SECOND under-report on the availability branch, which
+the original finding had assumed away: `ci.ask_answers.disclosed_count` was
+`clampAvailability(...).free.length`, and the clamp empties that array at every
+rung below `redacted` — so the row said 0 for exactly the ceilings where a
+number is the only thing that crosses. Both rows now carry 4. See
+[Failure modes](#failure-modes-hit-while-building-this).
 
 ### 2. The review path loses peer attribution — `peer_handle = NULL`
 
@@ -270,33 +282,78 @@ names this as the follow-up.
 So the one disclosure a human looked at and approved is the one the owner's
 history cannot attribute to anybody. Observed in scenario (b).
 
-### 3. An approved answer never crosses back
+Still open, and it lives in `domains/asks`: teaching `complete` to carry peer
+attribution is a change to the local path's audit shape, not to federation.
 
-`POST /agent/v1/ask`'s synchronous reply is the only channel that exists. There
-is no callback, no poll, no delivery route, and nothing reads `askId` as the
-idempotency key its docstring calls it. A re-ask mints a **new** `ci.asks` row
-and is re-evaluated from scratch — so it lands in review again, and Devon's
-approved answer sits on Devon's box forever. Federated review is, today, a
+### 3. ✅ FIXED — an approved answer never crossed back
+
+`POST /agent/v1/ask`'s synchronous reply was the only channel that existed.
+There was no callback, no poll, no delivery route, and nothing read `askId` as
+the idempotency key its docstring called it. A re-ask minted a **new** `ci.asks`
+row and was re-evaluated from scratch — so it landed in review again, and
+Devon's approved answer sat on Devon's box forever. Federated review was a
 one-way trip. Observed in scenario (b).
 
-### 4. The wire still distinguishes `declined` from `pending_review`
+Two pieces closed it:
+
+**`ci.peer_ask_correlations`** (migration `20260821120000`) binds the asker's
+`askId` to the local ask it produced, scoped by peer link — two peers may
+independently mint the same uuid, and one must never collect the other's answer.
+A repeat now REPLAYS the recorded outcome instead of creating a second ask, and
+never re-evaluates or re-executes anything. A `request_digest` binds one key to
+one question, so a key reused for a different ask is refused as malformed rather
+than answered with the first question's answer.
+
+**`GET /agent/v1/ask/:askId`** collects it. A poll rather than a callback,
+because a callback inverts who has to be reachable: today exactly one direction
+of egress is required (asker → responder) and `checkEgressUrl` is built around
+that, whereas a callback would make the RESPONDER dial an address the ASKER
+supplied — a second and more directly attacker-controlled SSRF sink, on the box
+that holds the data — and would make a home appliance an inbound server for its
+peers. The poll is a READ: no grant evaluation, no executor, no ask row, no
+audit row. Its own rate-limit bucket (30/60s) keeps collecting an answer from
+spending the ask budget that protects a human's review inbox.
+
+It is not a new oracle. An ask in review, an ask a block refused, an ask that
+expired, an id this box has never seen, and an id belonging to a *different*
+peer are all the same reply — in particular an unknown id is **not** a 404,
+which would answer "has this peer ever asked me that?" for free.
+
+**What is left.** The responder half and the asker's client half are both here:
+`OutboundAskService.pollForAnswer` drives `PeerAskClient.poll`, persists the
+answer with `answerSource: 'peer'`, terminalizes the local ask and writes its
+audit row. What is NOT here is the one GraphQL mutation that would let a person
+press the button — `pollPeerAsk` belongs in `AskResolver`, which was out of
+scope for this change. Scenario (b) drives the HTTP route directly, exactly as
+the rest of the harness drives the ask route.
+
+### 4. ✅ FIXED — the wire distinguished `declined` from `pending_review`
 
 #2210 and #2216 closed this oracle for a **local** asker: `CreateAskPayload
 .decision` is the constant `ASK_ACCEPTED`, `askerVisibleStatus` folds every
 non-answered status to `delivered`, and `askerVisibleUpdatedAt` pins the clock
 so responder activity is not readable through timestamps.
 
-Across a box boundary it is still there. `PeerAskService` returns
+Across a box boundary it was still there. `PeerAskService` returned
 `status: 'declined'` for a block and `status: 'pending_review'` for review, and
-`SendPeerAskPayload` surfaces it verbatim. Everything *below* the status word is
-identical — no answer object, no counts, no grant id, no data-class echo, same
-HTTP status — which scenario (c) asserts field by field. But the word itself is
-a one-bit oracle the local path no longer has, and the grant matrix is mappable
-at 10 probes a minute.
+`SendPeerAskPayload` surfaced it verbatim — while `SendPeerAskPayload`'s own
+docstring cited the federated path as the precedent for the local collapse.
+Everything *below* the status word was identical, which scenario (c) asserts
+field by field. But the word itself was a one-bit oracle, and the grant matrix
+is mappable at 10 probes a minute.
 
-Not a claim that it is wrong: the responder arguably owes a peer a real answer
-about whether to wait. It is a claim that the two paths made **opposite**
-decisions about the same question, and only one of them wrote down why.
+The wire now carries `answered` or `pending`, and one constant reason. The
+collapse is made at the RESPONDER rather than on receipt, because hiding it on
+the asker's box would bind only a well-behaved asker while the word stayed on
+the wire. `PeerAskClient` additionally folds the reply into the LOCAL vocabulary
+(`answered` / `delivered` — the two words `askerVisibleStatus` already uses) and
+drops the peer's `reason` string entirely; a reason this box observed itself
+survives, because that is a fact about our own request. Scenario (c) now asserts
+the two replies are identical byte for byte.
+
+What the asker loses is a real answer to "should I wait?", which was the honest
+argument for keeping `pending_review`. It is answered instead by the ask being
+pollable — see finding 3.
 
 ### 5. No API creates a peer grant, and none creates a peer link
 
@@ -317,17 +374,49 @@ existing one, so no input removes a ceiling. That is the safe direction to be
 missing — and it is why scenario (d)'s control has to revoke the capped grant
 and write a fresh one to show the un-capped answer.
 
-### 7. `peer_links.trust_tier` has four values, `TrustTier` has five
+### 7. ✅ FIXED — `peer_links.trust_tier` had four values, `TrustTier` five
 
 The CHECK admits `('family','trusted','peer','stranger')`. `household` is in the
 TypeScript union but is the *local* tier — a peer can never be one. Writing it
-lands a `23514`, not a validation error.
+landed a `23514`, not a validation error.
 
----
+The **type** is what narrowed, not the CHECK, and deliberately: `household`
+means "a member of the owner's own box" and carries the widest ceiling in
+`TIER_CEILINGS` (`{'*': 'full'}`, the only tier exempt from the sensitive-class
+floor), so widening the CHECK to five would have made that writable for a
+REMOTE box. `PeerTrustTier` is now `Exclude<TrustTier, 'household'>` by
+construction rather than a second hand-maintained list that happened to agree,
+with a compile-time assertion in both directions so a sixth tier cannot drift
+silently. `PeerLinkService.upsert` carries the runtime half — a `400` naming the
+bad value instead of a `23514` surfaced as a bare 500.
 
 ## Failure modes hit while building this
 
 Each of these cost real time and each is now handled.
+
+**A global guard 404s any route param whose NAME ends in `id`.**
+`IdFormatGuard` (`common/guards/`) throws `NotFoundException` for any route
+parameter matching `/id$/i` whose value is not a uuid. Every local route it was
+written for passes a local row id, so that is sound there — and wrong for
+`GET /agent/v1/ask/:askId`, whose path segment is a correlation id minted by the
+PEER and bounded by `PEER_ASK_ID_PATTERN`, not by uuid syntax. Every collect
+returned `404 Not Found` while the repeat-POST replay worked perfectly beside
+it, so the run read as "the answer is not there" rather than "the route is not
+reachable" — the assertion that caught it says *the answer never crossed back*,
+which was the exact defect being fixed. Only the stack trace in `box-b.log`
+names the guard. The parameter is now called `:correlation`; relaxing a global
+guard so one route may accept non-uuids would weaken it everywhere.
+
+**The count an availability answer discloses is not `free.length`.**
+`clampAvailability` empties BOTH interval arrays at every rung below `redacted`,
+so reading the disclosed count off its RESULT records 0 for exactly the rungs
+where a number is the only thing that crossed. Scenario (d) told the peer
+"4 free slots" under a `count` ceiling while both `ci.ask_answers` and
+`ci.ask_audit` recorded 0 — the same under-reporting as finding 1, arrived at by
+a completely different route, and invisible until an assertion compared the two
+rows to each other. The clamp now reports the magnitude it disclosed (the slot
+count down to `count`, nothing at `boolean`, nothing at `none`), which is the
+only place that knows.
 
 **`CI_IMPORT_ROOTS` is JSON, not a path.** `custom-environment-variables.json`
 declares it `"__format": "json"`, so node-config runs the value through JSON5

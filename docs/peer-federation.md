@@ -55,12 +55,46 @@ Because the output is provably free/busy only, an availability ask is **safe to 
 
 ## The inbound pipeline
 
-`POST /agent/v1/ask` is the **only** route another Companion can reach.
+`POST /agent/v1/ask` and `GET /agent/v1/ask/:askId` are the **only** routes
+another Companion can reach.
 
 ```
-verified (iss,sub) → peer link → ask record → grant evaluation
+verified (iss,sub) → peer link → known askId ?  replay, decide nothing
+                                             :  ask record → grant evaluation
    → auto ?  execute run-as-owner + disclosure filter  :  owner's review inbox
 ```
+
+### `askId` is a real idempotency key
+
+It was documented as one and read by nothing, so a repeat minted a **second**
+`ci.asks` row and was re-evaluated from scratch: an ask the owner had personally
+approved landed back in review, and the approved answer never left their box.
+`ci.peer_ask_correlations` now binds the asker's id to the ask it produced,
+**scoped by peer link** — two peers may independently mint the same uuid, and
+one must never collect the other's answer. A `request_digest` binds one key to
+one question, so a key reused for a different ask is refused as malformed rather
+than answered with the first question's answer.
+
+### Collecting an answer a human approved
+
+`GET /agent/v1/ask/:askId` is the return path. It is a **read**: it evaluates no
+grant, runs no executor, creates no ask and writes no audit row — it can only
+hand back a disclosure that already happened, and a replay is never wider than
+the live answer was (no item references, and the cardinality rule the live path
+applies).
+
+**A poll, not a callback.** A callback inverts who has to be reachable: exactly
+one direction of egress is required today (asker → responder), and
+`checkEgressUrl` is built around that. A callback would make the *responder*
+dial an address the *asker* supplied — a second and more directly
+attacker-controlled SSRF sink, on the box that holds the data — and would make a
+home appliance an inbound server for its peers.
+
+**And not an oracle.** An unknown `askId` is not a 404; it is the ordinary
+non-answer. A 404 would answer "has this peer ever asked me that?" for free, and
+separate it from "asked, and refused". Its own rate-limit bucket (30/60s, versus
+10/60s for asks) keeps collecting an answer from spending the budget that exists
+to protect a human's review inbox.
 
 Everything after the peer-link step is the machinery Phases 0–1 already built and tested. **Federation adds a transport and an identity, not a second policy engine.**
 
@@ -75,9 +109,10 @@ The route deliberately does **not** use `JwtOrApiKeyAuthGuard`: its portal path 
 | **Unlinked = refused** | An ask from an unknown or revoked peer is rejected without detail; a stranger can't distinguish "no such user here" from "you aren't linked". |
 | **Revocation is immediate** | Only `status='active'` links match, so revoking takes effect on the very next ask. |
 | **No existence oracle** | Declines and pending-review responses are shaped identically to "nothing found". |
-| **Hostile input** | Bodies are zod-validated against the archetype union and rejected off-contract. Peer *responses* are equally untrusted — `PeerAskClient.normalize()` carries forward only recognized fields and degrades an unknown status to `declined`. |
+| **Hostile input** | Bodies are zod-validated against the archetype union and rejected off-contract. Peer *responses* are equally untrusted — `PeerAskClient.normalize()` carries forward only recognized fields, folds anything that is not `answered` to `delivered`, and drops the peer's `reason` string outright rather than echoing an attacker-supplied string into the local UI. |
 | **No enumeration** | Portal search returns only opt-in `discoverable` entries; resolution requires an exact handle. |
-| **Bounded blast radius** | Every outbound call is timeout-bounded; a slow or hostile peer degrades to `declined` rather than hanging the caller. |
+| **Bounded blast radius** | Every outbound call is timeout-bounded; a slow or hostile peer degrades to a non-answer rather than hanging the caller. |
+| **A non-answer says nothing about why** | The wire carries `answered` or `pending`, and one constant reason. A block grant, an ask in the owner's review inbox, an ask that expired, and an `askId` this box has never seen are the SAME reply. `declined` vs `pending_review` was a one-bit read on the grant matrix, mappable at 10 probes a minute — the same oracle #2210/#2216 closed for a local asker, which this had been cited as the precedent for. The collapse is made at the **responder**: hiding it on receipt would bind only a well-behaved asker while the word stayed on the wire. |
 | **No SSRF** | Every server-side fetch passes `checkEgressUrl()`: https only, no credentials, no non-standard ports, no private/loopback/link-local/CGNAT/metadata address — including IPv4-mapped IPv6 in **both** spellings, since `URL` normalizes `::ffff:10.0.0.1` to hex. |
 | **Token can't be replayed at another box** | The peer surface verifies the token against **this box's own `peers.audience`**, not the broad first-party list. It refuses to accept anything until that is configured. |
 | **Inbound flooding is bounded** | `PeerRateLimitService` limits on the verified `(issuer, subject)` **before** the peer-link lookup, so an unknown caller is limited too. |
@@ -129,6 +164,14 @@ from a box with no peer surface at all.
 - **DNS rebinding** is not closed. `checkEgressUrl` validates the literal host, but a hostname that resolves to a private address at connect time would still be fetched; pinning the resolved IP through the socket is not something Node's `fetch` exposes. The residual exposure is bounded by requiring https, so the target must present a valid certificate for the name.
 - **Rate limits are per-process and in-memory.** Correct for a single-instance appliance; a shared store is needed before the ask path goes multi-instance.
 - **The peer access token is supplied by the caller**, not minted here, until Portal token exchange lands.
+- **Nothing in GraphQL drives the collect route.** `OutboundAskService.pollForAnswer` and
+  `PeerAskClient.poll` are both here and both tested, but no mutation calls them, so
+  collecting an approved answer today means driving `GET /agent/v1/ask/:askId` directly (as
+  the federation harness does). A `pollPeerAsk` mutation belongs in `AskResolver`.
+- **`SendPeerAskPayload.answer` is never populated.** The peer's answer IS persisted locally
+  the moment it arrives, so it reads through `askAnswer(askId)` like any other — which is
+  the only route that works for an answer collected later anyway — but the field on the
+  send payload stays null.
 
 ## Sending an ask (outbound)
 
@@ -137,7 +180,9 @@ from a box with no peer surface at all.
 Two details worth knowing:
 
 - The local `Ask` row is written **before** the request leaves, so an outbound ask is auditable even when the peer never answers — a peer that goes silent still leaves a record that this box asked.
-- A **fresh correlation id** is sent per ask, never the local row id, which would leak this box's identifiers to the peer.
+- A **fresh correlation id** is sent per ask, never the local row id, which would leak this box's identifiers to the peer. It is persisted before the request leaves too: the id is minted internally and returned to nobody, so without the row a send that comes back with no answer — the only case a poll exists for — could never be named again.
+- The peer's answer is **persisted** when it arrives: a `ci.ask_answers` row with `answer_source: 'peer'`, the local ask driven to `answered`, and one audit row, all in one transaction. Nothing used to write any of it, so even an auto-answered federated ask left this box with no readable answer. The responder's `consent_basis` is deliberately NOT stored — it is their grant id, and "standing pre-authorization or human decision?" is exactly the distinction the collapsed wire status exists to stop crossing.
+- An outbound ask that was **not** answered writes no audit row at all. It is not a terminal outcome — it can still be collected — and the previous behaviour (an `outcome: 'declined'` row beside an ask still sitting at `delivered`) both contradicted itself and would now double-count once the answer was collected.
 
 An unknown handle and a revoked link are refused **identically**, so a caller cannot use the error to discover which handles the owner has ever been linked to.
 
@@ -147,7 +192,7 @@ An unknown handle and a revoked link are refused **identically**, so a caller ca
 
 ## Status
 
-**Both directions work — given a link and a token.** A box can receive, gate, and answer a federated ask, and can compose and send one. Still open: peer-link *management* of any kind (there is no write path for `ci.peer_links` at all, not just no UI — see Known limitations), the ask UI's route, an MCP tool so assistants can drive asks directly, and Portal token exchange so the access token is minted rather than passed in.
+**Both directions work, including the return trip — given a link and a token.** A box can receive, gate, and answer a federated ask; can compose and send one; and can now collect an answer its peer's owner approved after the fact. Still open: peer-link *management* of any kind (there is no write path for `ci.peer_links` at all, not just no UI — see Known limitations), a `pollPeerAsk` mutation so a person can press the collect button, the ask UI's route, an MCP tool so assistants can drive asks directly, and Portal token exchange so the access token is minted rather than passed in.
 
 ## See also
 

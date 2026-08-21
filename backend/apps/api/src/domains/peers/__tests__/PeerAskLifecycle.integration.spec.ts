@@ -17,7 +17,9 @@ import { UserEntity } from '@ci/domains/user';
 
 import { databaseAvailability, resolveConnection } from '../../__tests__/support/databaseConnection';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../__tests__/support/schemaLock';
+import { PeerAskCorrelationEntity } from '../entities/PeerAskCorrelationEntity';
 import { PeerLinkEntity } from '../entities/PeerLinkEntity';
+import { PEER_ASK_PENDING } from '../protocol';
 import { PeerAskService } from '../services/PeerAskService';
 
 /**
@@ -158,6 +160,7 @@ describeWithDatabase(`federated ask lifecycle — against real Postgres (${avail
         AskAnswerEntity,
         UserEntity,
         PeerLinkEntity,
+        PeerAskCorrelationEntity,
         EventEntity,
       ],
       synchronize: false,
@@ -324,5 +327,161 @@ describeWithDatabase(`federated ask lifecycle — against real Postgres (${avail
     });
     // The owner's own record of what the answer was computed over.
     expect(audit.backing_entities).toHaveLength(1);
+  });
+
+  /**
+   * ═══ THE MAGNITUDE, AS A ROW ═══
+   *
+   * `disclosed_count` is a COLUMN, and the fallback that broke it —
+   * `disclosedEntities.length` — is also a column read. A mock can show the
+   * service passed a number; only the row shows what the owner's disclosure
+   * history will actually report when they open it.
+   */
+  it('records the count that crossed, not the (empty) itemization', async () => {
+    const link = await freshLink();
+    await autoGrantFor(link);
+    const service = serviceFor(link, [
+      { id: uuidv7(), type: 'file' },
+      { id: uuidv7(), type: 'file' },
+    ]);
+
+    const wire = await service.handle(PEER, askBody(link));
+    const answered = await askRow(link.id);
+
+    const [audit] = await dataSource.query(
+      `SELECT disclosed_count, disclosed_entities FROM ci.ask_audit WHERE ask_id = $1`,
+      [answered.id],
+    );
+    const [answer] = await dataSource.query(`SELECT disclosed_count FROM ci.ask_answers WHERE ask_id = $1`, [
+      answered.id,
+    ]);
+
+    expect(wire.answer?.disclosedCount).toBe(2);
+    // The answer row and the audit row have to agree. They did not: the peer
+    // was told a number, ci.ask_answers recorded it, and ci.ask_audit said 0.
+    expect(answer.disclosed_count).toBe(2);
+    expect(audit.disclosed_count).toBe(2);
+    expect(audit.disclosed_entities).toHaveLength(0);
+  });
+
+  /**
+   * ═══ THE RETURN PATH, AS ROWS ═══
+   *
+   * Idempotency is a UNIQUE INDEX and a foreign key, and "the re-ask created a
+   * second ask" is a COUNT over `ci.asks`. Neither is observable in a mock.
+   */
+  describe('the correlation id is a real idempotency key', () => {
+    async function asksFor(peerLinkId: string): Promise<number> {
+      const [{ n }] = await dataSource.query(
+        'SELECT count(*)::int AS n FROM ci.asks WHERE peer_link_id = $1',
+        [peerLinkId],
+      );
+
+      return n as number;
+    }
+
+    it('a repeat writes NO second ask row', async () => {
+      const link = await freshLink();
+      const service = serviceFor(link);
+
+      // No grant, so review is the floor and it lands in front of the owner.
+      const first = await service.handle(PEER, askBody(link));
+      expect(first.status).toBe(PEER_ASK_PENDING);
+      expect(await asksFor(link.id)).toBe(1);
+
+      const again = await service.handle(PEER, askBody(link));
+
+      // It used to mint a NEW ci.asks row and re-evaluate from scratch — so the
+      // owner was queued a second time and the answer they approved on the
+      // first one could never be collected.
+      expect(again.status).toBe(PEER_ASK_PENDING);
+      expect(await asksFor(link.id)).toBe(1);
+    });
+
+    it('and the correlation row points at that one ask', async () => {
+      const link = await freshLink();
+      const service = serviceFor(link);
+
+      await service.handle(PEER, askBody(link));
+      const created = await askRow(link.id);
+
+      const [correlation] = await dataSource.query(
+        'SELECT ask_id, correlation_id FROM ci.peer_ask_correlations WHERE peer_link_id = $1',
+        [link.id],
+      );
+
+      expect(correlation.ask_id).toBe(created.id);
+      expect(correlation.correlation_id).toBe(askBody(link).askId);
+    });
+
+    it('delivers the answer the OWNER approved, through the collect route', async () => {
+      const link = await freshLink();
+      const service = serviceFor(link, [{ id: uuidv7(), type: 'file' }]);
+
+      // Queued for the owner...
+      await service.handle(PEER, askBody(link));
+      const queued = await askRow(link.id);
+      expect(queued.status).toBe('under_review');
+
+      // ...the owner approves and answers it through the LOCAL path, exactly as
+      // `runAsk` does...
+      await askService.approve({ userId: owner }, queued.id);
+      await askService.completeWithAnswer({ userId: owner }, queued.id, {
+        answer: {
+          form: 'existence',
+          items: [],
+          disclosedCount: 1,
+          withheldCount: 0,
+          summary: 'They have 1 matching item.',
+          consentBasis: null,
+        },
+        disclosedEntityIds: [],
+        backingEntityIds: [],
+      });
+
+      // ...and the peer collects it without creating anything.
+      const collected = await service.result(PEER, askBody(link).askId);
+
+      expect(collected.status).toBe('answered');
+      expect(collected.answer?.summary).toBe('They have 1 matching item.');
+      expect(collected.answer?.disclosedCount).toBe(1);
+      expect(await asksFor(link.id)).toBe(1);
+    });
+
+    it("SECURITY: one peer cannot collect ANOTHER peer's answer with the same id", async () => {
+      const mine = await freshLink();
+      const theirs = await freshLink();
+      const service = serviceFor(mine, [{ id: uuidv7(), type: 'file' }]);
+
+      await autoGrantFor(mine);
+      const body = askBody(mine);
+      await service.handle(PEER, body);
+
+      // Same correlation id, different peer link. The lookup is scoped by link,
+      // so this is the ordinary non-answer rather than someone else's answer.
+      const eavesdropper = serviceFor(theirs);
+      const collected = await eavesdropper.result(PEER, body.askId);
+
+      expect(collected.status).toBe(PEER_ASK_PENDING);
+      expect(collected.answer).toBeUndefined();
+    });
+  });
+
+  /**
+   * `household` is the LOCAL tier — the widest ceiling in `TIER_CEILINGS`, and
+   * the only one exempt from the sensitive-class floor. The CHECK is what stops
+   * it being written to a link that names a REMOTE box; `PeerTrustTier` is
+   * derived as `Exclude<TrustTier, 'household'>` so the two cannot drift apart.
+   */
+  it('the trust_tier CHECK admits every peer tier, and refuses `household`', async () => {
+    const link = await freshLink();
+
+    for (const tier of ['family', 'trusted', 'peer', 'stranger']) {
+      await dataSource.query('UPDATE ci.peer_links SET trust_tier = $1 WHERE id = $2', [tier, link.id]);
+    }
+
+    await expect(
+      dataSource.query('UPDATE ci.peer_links SET trust_tier = $1 WHERE id = $2', ['household', link.id]),
+    ).rejects.toThrow(/peer_links_trust_tier_check/);
   });
 });
