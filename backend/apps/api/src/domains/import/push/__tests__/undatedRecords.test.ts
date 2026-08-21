@@ -2,7 +2,7 @@ import { TIME_PRECISIONS, TIME_SOURCES } from '@ci/domains/pipeline/stages/clean
 
 import type { StagedItem } from '../../entities/StagedItemEntity';
 import { destinationsFor, toCanonical, type CanonicalRecord } from '../canonical';
-import { toContentInput, toEventInput } from '../inputs';
+import { toContentInput, toEventInput, UNDATED_TIME_PRECISION, UNDATED_TIME_SOURCE } from '../inputs';
 
 /**
  * A record whose SOURCE gave it no time must not end up claiming one.
@@ -133,32 +133,47 @@ describe('destinationsFor — no fabricated GPS fix', () => {
   });
 });
 
+/**
+ * The live shape: Instagram's `shopping/recently_viewed_items.html` entry —
+ * verified against `ci_import.staged_items` (content_hash
+ * 'instagram:recently_viewed_items.html#0'): Title/Type/Source/Description,
+ * NO url key. Meta never links a viewed product to a page, so
+ * `firstWebLink(html)` returns undefined and `instagram.ts` never stamps
+ * `metadata.URL` for this lane — deliberately url-less, not a parser gap (see
+ * 20260821024948_cleanup_urlless_instagram_activity_rows.sql, which verifies
+ * the same lane URL-less both before and after the permalink fix).
+ */
+function recentlyViewedItem(overrides: Partial<StagedItem> = {}): CanonicalRecord {
+  return recordFor({
+    dataSource: 'instagram',
+    classification: 'page_view',
+    occurredAt: null,
+    metadata: {
+      Type: 'Instagram recently viewed',
+      Title: 'Instagram recently viewed',
+      Source: 'Instagram',
+      Description: 'Product names Tattoo Balm',
+    },
+    ...overrides,
+  });
+}
+
 describe('destinationsFor — no fabricated browsing moment', () => {
   it('routes an undated page view to content instead of browser_activity', () => {
     // ci.browser_activity models "visited X AT TIME T": `time` is NOT NULL, it
     // is the hypertable's partition key, and unlike ci.events there is no
     // time_source column in which to say the instant is not evidence.
-    const viewed = recordFor({
-      dataSource: 'instagram',
-      classification: 'page_view',
-      occurredAt: null,
-      metadata: { Title: 'Instagram recently viewed', URL: 'https://instagram.com/p/abc' },
-    });
-
-    expect(destinationsFor(viewed)).toEqual(['content']);
+    expect(destinationsFor(recentlyViewedItem())).toEqual(['content']);
   });
 
-  it('types that content row as a bookmark rather than the bare kind prefix', () => {
-    // What survives an undated visit is the page, not the visit. 'web' — what
-    // the prefix rule would give it — is a bucket nothing renders.
-    const viewed = recordFor({
-      dataSource: 'instagram',
-      classification: 'page_view',
-      occurredAt: null,
-      metadata: { Title: 'Instagram recently viewed', URL: 'https://instagram.com/p/abc' },
-    });
+  it('types that content row as a url-less bookmark rather than the bare kind prefix', () => {
+    // What survives an undated visit is the page, not the visit — but this
+    // producer never had a page to begin with: only a title survives. 'web' —
+    // what the prefix rule would give it — is a bucket nothing renders.
+    const input = toContentInput(recentlyViewedItem());
 
-    expect(toContentInput(viewed)).toMatchObject({ type: 'bookmark', url: 'https://instagram.com/p/abc' });
+    expect(input).toMatchObject({ type: 'bookmark', title: 'Instagram recently viewed' });
+    expect(input.url).toBeUndefined();
   });
 
   it('leaves a dated page view in browser_activity', () => {
@@ -223,12 +238,15 @@ describe('toEventInput — the row an undated event still gets says so', () => {
 });
 
 describe('the mirrored time vocabulary', () => {
-  it('matches the constants TemporalRepairStage declares', () => {
+  it("matches push/inputs.ts's own copy of the constants TemporalRepairStage declares", () => {
     // push/inputs.ts mirrors these two literals rather than importing them (the
-    // import domain has no other dependency on the pipeline domain). This test
-    // is the thing that stops the copy drifting: if either constant is renamed
-    // or re-valued, the stamps above stop matching and this file goes red.
-    expect(TIME_SOURCES.INGEST).toBe('ingest');
-    expect(TIME_PRECISIONS.UNKNOWN).toBe('unknown');
+    // import domain has no other dependency on the pipeline domain) and
+    // exports them so this comparison can be direct rather than inferred from
+    // toEventInput's output. If either copy is renamed or re-valued without
+    // the other following, this goes red — the actual failure mode a silent
+    // drift would produce, not just a restatement of what TIME_SOURCES.INGEST
+    // itself equals.
+    expect(UNDATED_TIME_SOURCE).toBe(TIME_SOURCES.INGEST);
+    expect(UNDATED_TIME_PRECISION).toBe(TIME_PRECISIONS.UNKNOWN);
   });
 });

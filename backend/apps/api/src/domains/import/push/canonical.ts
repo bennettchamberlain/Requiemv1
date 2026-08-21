@@ -1126,12 +1126,15 @@ function baseDestinationsFor(rec: CanonicalRecord): Destination[] {
     // reading last night?" query would answer with it.
     //
     // Content instead — the same answer the undated-file rule below gives, and
-    // for the same reason: the URL and the title stay searchable, and nothing
-    // claims a moment. Live producer: Instagram's
-    // `shopping/recently_viewed_items.html`, whose entries carry no date at all
-    // (instagram.ts processHtmlActivity passes `timestamp: ent.ts`, undefined
-    // here). One of its rows sat in `ci.browser_activity` dated
-    // 2026-08-21T04:13:51Z — the second the run parsed the file.
+    // for the same reason: whatever the record has (a URL, a title, or just a
+    // title) stays searchable, and nothing claims a moment. Live producer:
+    // Instagram's `shopping/recently_viewed_items.html`, whose entries carry no
+    // date at all (instagram.ts processHtmlActivity passes `timestamp: ent.ts`,
+    // undefined here) — and, verified against the corpus, no URL either: Meta
+    // never links a viewed product to a page, so `firstWebLink` returns
+    // undefined and the resulting content row is title-only. One of its rows
+    // sat in `ci.browser_activity` dated 2026-08-21T04:13:51Z — the second the
+    // run parsed the file.
     if (!rec.dated) {
       return ['content'];
     }

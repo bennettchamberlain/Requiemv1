@@ -65,15 +65,18 @@ import { readCommerceField } from './commerceKeys';
  * vocabulary is defined and documented. Mirrored rather than imported because
  * the import domain has no other dependency on the pipeline domain, and pulling
  * that barrel in for one string literal would couple a hot per-row transform to
- * a Nest module full of injectable stages. `__tests__/inputs.undated.test.ts`
- * imports the real constants and asserts these two equal them, so the copy
- * cannot drift without a red test — the "second reader that drifted" failure
- * this file's own header warns about.
+ * a Nest module full of injectable stages. `__tests__/undatedRecords.test.ts`
+ * imports these two constants directly (exported for that reason alone — the
+ * production coupling this docblock warns against is to the pipeline
+ * module's DI graph, not to a plain string a test file reads) and asserts
+ * them against the real TIME_SOURCES/TIME_PRECISIONS, so the copy cannot
+ * drift without a red test — the "second reader that drifted" failure this
+ * file's own header warns about.
  */
-const UNDATED_TIME_SOURCE = 'ingest';
+export const UNDATED_TIME_SOURCE = 'ingest';
 
 /** `ci.events.time_precision` for the same rows — mirrors `TIME_PRECISIONS.UNKNOWN`. */
-const UNDATED_TIME_PRECISION = 'unknown';
+export const UNDATED_TIME_PRECISION = 'unknown';
 
 /** The full source triple every per-destination input carries. */
 /**
@@ -2019,13 +2022,15 @@ export function toEventInput(rec: CanonicalRecord): CreateEventDto {
   //    pipeline/stages/clean/TemporalRepairStage (TIME_SOURCES /
   //    TIME_PRECISIONS) and mirrored here rather than imported, because the
   //    import domain has no other dependency on the pipeline domain and one
-  //    string pair is not worth minting one. `inputs.undated.test.ts` asserts
+  //    string pair is not worth minting one. `undatedRecords.test.ts` asserts
   //    the two literals still equal the constants, so the mirror cannot drift
   //    silently.
   //  - `metadata.undated` is the same fact on a field the read path ALREADY
-  //    exposes (`EventType.metadata` is a GraphQLJSONObject), so a client can
-  //    render "date unknown" today without a schema change. `time_source` has
-  //    no GraphQL field yet.
+  //    exposed (`EventType.metadata` is a GraphQLJSONObject) before
+  //    `EventType.timeSource` existed as its own field. `timeSource` is now
+  //    exposed too (domains/graphql/types/EventType.ts) and is what the web
+  //    client actually reads (Components/utils.tsx getEntityTimestamp) — this
+  //    key is kept for any consumer still reading it, not as the only way in.
   //
   // Why stamp it here rather than let TemporalRepairStage discover it: that
   // stage can only label a source it has a declared SourceTimeSpec for, and

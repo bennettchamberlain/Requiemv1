@@ -146,9 +146,13 @@ DELETE FROM ci.position p
 -- 3. ci.browser_activity -- delete, for the same reason.
 --
 -- The live row is Instagram's `shopping/recently_viewed_items.html` entry,
--- which carries no date in the export at all. Its URL and title survive: the
--- fixed router now sends an undated browsing action to ci.content typed
--- 'bookmark', so a re-import repopulates it there rather than here.
+-- which carries no date in the export at all -- and no URL either; verified
+-- against ci_import.staged_items (content_hash
+-- 'instagram:recently_viewed_items.html#0'): the entry's metadata has no url
+-- key, only Title/Type/Source/Description (Meta never links a viewed product
+-- to a page). Its title survives: the fixed router now sends an undated
+-- browsing action to ci.content typed 'bookmark' with no url, so a re-import
+-- repopulates it there rather than here.
 --
 -- ci_search rows are keyed by entity id and browser_activity is not a
 -- ci.entities subtype (no entity_id, no search index rows), so unlike the

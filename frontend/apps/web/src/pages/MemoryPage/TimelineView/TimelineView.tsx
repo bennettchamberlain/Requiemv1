@@ -18,8 +18,12 @@ import {
 import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 
 // Only these entity types render as timeline cards (EntityCard returns null for
-// the rest), and all of them carry a domain timestamp — so filtering here keeps
-// the timeline free of empty cards and undated groups.
+// the rest), so filtering here keeps the timeline free of empty cards. Almost
+// all of them carry a real domain timestamp; the one exception is an
+// EventType whose timeSource is 'ingest' (a Google Maps saved place, a Reddit
+// affiliation, …) — getEntityTimestamp treats that as undated rather than
+// sorting it by the import instant, so it still lands in the trailing "No
+// date" group (see groupEntitiesByBucket) instead of being filtered out here.
 const TIMELINE_TYPES: ReadonlySet<string> = new Set([
   'BrowserActivityType',
   'EventType',
