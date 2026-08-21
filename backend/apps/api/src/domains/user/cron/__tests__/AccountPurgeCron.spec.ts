@@ -1,7 +1,11 @@
-import type { LoggerService } from '@ci/common/logging';
+import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
+import { Test } from '@nestjs/testing';
+
+import { LoggerService } from '@ci/common/logging';
+import { CronRunStore } from '@ci/common/schedule';
 import config from '@ci/configuration';
 
-import type { AccountPurgeService, PurgeRunSummary } from '../../services/AccountPurgeService';
+import { AccountPurgeService, type PurgeRunSummary } from '../../services/AccountPurgeService';
 import { AccountPurgeCron } from '../AccountPurgeCron';
 
 const emptySummary: PurgeRunSummary = {
@@ -91,5 +95,55 @@ describe('AccountPurgeCron', () => {
     await cron.purgeDueAccounts();
 
     expect(purgeDueAccounts).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The dashboard joins the live SchedulerRegistry to the durable `ci.cron_runs`
+ * row on the schedule name. `@nestjs/schedule` keys the registry on
+ * `options.name || crypto.randomUUID()`, so a cron with no explicit name gets a
+ * fresh UUID every boot and can never match the stable string the `@Cron`
+ * wrapper stamps — "last run —" forever, and no stable name to fire it by hand.
+ */
+describe('AccountPurgeCron schedule identity', () => {
+  const NAME = 'AccountPurgeCron.purgeDueAccounts';
+
+  it('registers with the scheduler under the same name it stamps ci.cron_runs with', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ScheduleModule.forRoot()],
+      providers: [
+        AccountPurgeCron,
+        {
+          provide: AccountPurgeService,
+          useValue: { purgeDueAccounts: jest.fn().mockResolvedValue(emptySummary) },
+        },
+        {
+          provide: LoggerService,
+          useValue: { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() },
+        },
+      ],
+    }).compile();
+
+    const app = moduleRef.createNestApplication();
+
+    try {
+      await app.init();
+
+      const registered = Array.from(app.get(SchedulerRegistry).getCronJobs().keys());
+
+      expect(registered).toContain(NAME);
+
+      const record = jest.spyOn(CronRunStore, 'record').mockImplementation(() => undefined);
+
+      try {
+        await app.get(AccountPurgeCron).purgeDueAccounts();
+
+        expect(record).toHaveBeenCalledWith(NAME);
+      } finally {
+        record.mockRestore();
+      }
+    } finally {
+      await app.close();
+    }
   });
 });

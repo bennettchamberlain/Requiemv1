@@ -184,6 +184,7 @@ type AskAuditType {
   askerId: ID
   consentBasis: String
   createdAt: DateTime!
+  disclosedCount: Int!
   id: ID!
   outcome: AskAuditOutcome!
   peerHandle: String

@@ -1,6 +1,14 @@
 import { Logger } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 
+/** One durable `ci.cron_runs` row: when the schedule last fired, and last finished. */
+export interface CronRunRecord {
+  /** Last attempt — stamped before the body, so a throwing tick still counts. */
+  readonly lastRunAt: Date;
+  /** Last tick whose body returned without throwing. Null until one does. */
+  readonly lastSuccessAt: Date | null;
+}
+
 /**
  * Process-wide hook the `@Cron` decorator uses to persist last-fire times
  * without Nest DI in the decorator itself.
@@ -22,46 +30,80 @@ class CronRunStoreImpl {
    * the schedule is more important than the dashboard cell.
    */
   record(name: string, at: Date = new Date()): void {
-    const dataSource = this.dataSource;
-    if (!dataSource || !name) {
-      return;
-    }
-
-    void dataSource
-      .query(
-        `
-          INSERT INTO ci.cron_runs (name, last_run_at)
-          VALUES ($1, $2)
-          ON CONFLICT (name) DO UPDATE
-            SET last_run_at = EXCLUDED.last_run_at
-        `,
-        [name, at],
-      )
-      .catch((err: unknown) => {
-        this.logger.warn(
-          `Failed to persist last_run_at for ${name}`,
-          err instanceof Error ? err.stack : String(err),
-        );
-      });
+    this.upsert(
+      name,
+      `
+        INSERT INTO ci.cron_runs (name, last_run_at)
+        VALUES ($1, $2)
+        ON CONFLICT (name) DO UPDATE
+          SET last_run_at = EXCLUDED.last_run_at
+      `,
+      at,
+      'last_run_at',
+    );
   }
 
-  async lastRunByName(): Promise<Map<string, Date>> {
+  /**
+   * Stamped only once the body has returned. Kept separate from {@link record}
+   * because that one fires before the body: without this column a schedule
+   * whose body throws every tick still reports a fresh "last run".
+   *
+   * Inserts `last_run_at` too, because `record`'s upsert is fire-and-forget and
+   * may not have landed yet; the attempt row overwrites it with the earlier,
+   * correct time when it does.
+   */
+  recordSuccess(name: string, at: Date = new Date()): void {
+    this.upsert(
+      name,
+      `
+        INSERT INTO ci.cron_runs (name, last_run_at, last_success_at)
+        VALUES ($1, $2, $2)
+        ON CONFLICT (name) DO UPDATE
+          SET last_success_at = EXCLUDED.last_success_at
+      `,
+      at,
+      'last_success_at',
+    );
+  }
+
+  async runsByName(): Promise<Map<string, CronRunRecord>> {
     const dataSource = this.dataSource;
     if (!dataSource) {
       return new Map();
     }
 
-    const rows = await dataSource.query<{ name: string; last_run_at: Date | string }[]>(
-      `SELECT name, last_run_at FROM ci.cron_runs`,
-    );
+    const rows = await dataSource.query<
+      { name: string; last_run_at: Date | string; last_success_at: Date | string | null }[]
+    >(`SELECT name, last_run_at, last_success_at FROM ci.cron_runs`);
 
-    const map = new Map<string, Date>();
+    const map = new Map<string, CronRunRecord>();
     for (const row of rows) {
-      map.set(row.name, row.last_run_at instanceof Date ? row.last_run_at : new Date(row.last_run_at));
+      map.set(row.name, {
+        lastRunAt: toDate(row.last_run_at),
+        lastSuccessAt: row.last_success_at == null ? null : toDate(row.last_success_at),
+      });
     }
 
     return map;
   }
+
+  private upsert(name: string, sql: string, at: Date, column: string): void {
+    const dataSource = this.dataSource;
+    if (!dataSource || !name) {
+      return;
+    }
+
+    void dataSource.query(sql, [name, at]).catch((err: unknown) => {
+      this.logger.warn(
+        `Failed to persist ${column} for ${name}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    });
+  }
+}
+
+function toDate(value: Date | string): Date {
+  return value instanceof Date ? value : new Date(value);
 }
 
 export const CronRunStore = new CronRunStoreImpl();

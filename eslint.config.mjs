@@ -48,4 +48,31 @@ export default [
   },
 
   ...eslintShared,
+
+  {
+    // `@ci/common/schedule` wraps Nest's `Cron` with the three things the Jobs
+    // dashboard depends on: the durable `ci.cron_runs` stamp, a traceId around
+    // the tick, and an error log that names the schedule. A cron decorated with
+    // the raw import silently loses all three and reads "never run" after every
+    // restart. The wrapper itself is the one place that may import it, and only
+    // the `Cron` symbol is restricted — `CronExpression` and `SchedulerRegistry`
+    // stay importable.
+    files: ['**/*.ts'],
+    ignores: ['**/src/common/schedule/**'],
+
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@nestjs/schedule',
+              importNames: ['Cron'],
+              message: "Import Cron from '@ci/common/schedule' instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
