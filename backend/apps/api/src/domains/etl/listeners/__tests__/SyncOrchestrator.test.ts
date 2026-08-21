@@ -5,7 +5,7 @@ import { EventListenerRegistry } from '@ci/domains/events';
 import { ConnectionSyncJobExecuteEvent, ConnectionSyncJobTransformEvent } from '../../events';
 import { ConnectionSyncJobService } from '../../services/ConnectionSyncJobService';
 import type { EndpointServiceMap } from '../../services/EndpointServiceMap';
-import type { ConnectionSyncJob } from '../../types';
+import type { ConnectionSyncJob, SearchConnectionSyncJobDto } from '../../types';
 import { SyncOrchestrator } from '../SyncOrchestrator';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -115,6 +115,8 @@ function buildOrchestrator(
 
   const connectionSyncJobService = {
     search: jest.fn().mockResolvedValue([]),
+    countInProgress: jest.fn().mockResolvedValue(0),
+    findDispatchablePending: jest.fn().mockResolvedValue([]),
     create: jest.fn().mockResolvedValue(makeSyncJob()),
     findById: jest.fn().mockResolvedValue(makeSyncJob()),
     update: jest.fn().mockResolvedValue(makeSyncJob()),
@@ -172,79 +174,77 @@ function buildOrchestrator(
   };
 }
 
-describe('SyncOrchestrator.executeSyncJobs — concurrency + per-connection dedup', () => {
-  it('runs at most one pending job per connection, even with multiple pending jobs on the same connection', async () => {
-    const { orchestrator, eventService, connectionSyncJobService } = buildOrchestrator({
+/**
+ * The selection rules themselves — one job per connection, five in flight —
+ * now live in `ConnectionSyncJobService.findDispatchablePending`'s SQL, and are
+ * pinned against real Postgres in
+ * `services/__tests__/ConnectionSyncJobService.bounds.integration.spec.ts`.
+ * They had to move: this cron runs every 30 seconds against a table with no
+ * index but its primary key, and a rule applied in JavaScript needs every
+ * candidate row in memory to apply it. What is left to assert here is that the
+ * cron asks for no more than it can dispatch.
+ */
+describe('SyncOrchestrator.executeSyncJobs — bounded reads and the in-flight budget', () => {
+  it('asks only for the ids this tick can dispatch, instead of reading every pending and in-progress row', async () => {
+    const { orchestrator, connectionSyncJobService, eventService } = buildOrchestrator({
       connectionSyncJobService: {
-        search: jest.fn().mockImplementation(async (_ctx, filter: { status: string }) => {
-          if (filter.status === 'pending') {
-            return [
-              makeSyncJob({ id: 'job-a1', connectionId: 'conn-a' }),
-              makeSyncJob({ id: 'job-a2', connectionId: 'conn-a' }),
-            ];
-          }
-
-          return [];
-        }),
+        countInProgress: jest.fn().mockResolvedValue(3),
+        findDispatchablePending: jest.fn().mockResolvedValue(['job-a1', 'job-b1']),
       },
     });
 
     await orchestrator.executeSyncJobs();
 
-    expect(connectionSyncJobService.search).toHaveBeenCalled();
-    expect(eventService.send).toHaveBeenCalledTimes(1);
-    expect(eventService.send).toHaveBeenCalledWith(
+    // The count stops at the cap, and the dispatch query gets what is left of it.
+    expect(connectionSyncJobService.countInProgress).toHaveBeenCalledWith(expect.anything(), 5);
+    expect(connectionSyncJobService.findDispatchablePending).toHaveBeenCalledWith(expect.anything(), 2);
+    expect(connectionSyncJobService.search).not.toHaveBeenCalled();
+    expect(eventService.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('spends the whole cap as budget when nothing is in flight', async () => {
+    const { orchestrator, connectionSyncJobService } = buildOrchestrator();
+
+    await orchestrator.executeSyncJobs();
+
+    expect(connectionSyncJobService.findDispatchablePending).toHaveBeenCalledWith(expect.anything(), 5);
+  });
+
+  it('dispatches nothing — and does not go looking for work at all — once the cap is full', async () => {
+    const { orchestrator, connectionSyncJobService, eventService } = buildOrchestrator({
+      connectionSyncJobService: { countInProgress: jest.fn().mockResolvedValue(5) },
+    });
+
+    await orchestrator.executeSyncJobs();
+
+    expect(connectionSyncJobService.findDispatchablePending).not.toHaveBeenCalled();
+    expect(eventService.send).not.toHaveBeenCalled();
+  });
+
+  it('sends one execute event per dispatchable id, keyed on that id', async () => {
+    const { orchestrator, eventService } = buildOrchestrator({
+      connectionSyncJobService: {
+        findDispatchablePending: jest.fn().mockResolvedValue(['job-a1', 'job-b1']),
+      },
+    });
+
+    await orchestrator.executeSyncJobs();
+
+    expect(eventService.send).toHaveBeenNthCalledWith(
+      1,
       ConnectionSyncJobExecuteEvent,
       { connectionSyncJobId: 'job-a1' },
       { singletonKey: 'job-a1' },
     );
-  });
-
-  it('does not start a new job on a connection that already has one in progress', async () => {
-    const { orchestrator, eventService } = buildOrchestrator({
-      connectionSyncJobService: {
-        search: jest.fn().mockImplementation(async (_ctx, filter: { status: string }) => {
-          if (filter.status === 'in_progress') {
-            return [makeSyncJob({ id: 'job-busy', connectionId: 'conn-busy', status: 'in_progress' })];
-          }
-
-          if (filter.status === 'pending') {
-            return [makeSyncJob({ id: 'job-new', connectionId: 'conn-busy' })];
-          }
-
-          return [];
-        }),
-      },
-    });
-
-    await orchestrator.executeSyncJobs();
-
-    expect(eventService.send).not.toHaveBeenCalled();
-  });
-
-  it('caps total in-flight jobs at 5, counting in-progress jobs toward the cap', async () => {
-    const inProgress = Array.from({ length: 4 }, (_, i) =>
-      makeSyncJob({ id: `busy-${i}`, connectionId: `busy-conn-${i}`, status: 'in_progress' }),
+    expect(eventService.send).toHaveBeenNthCalledWith(
+      2,
+      ConnectionSyncJobExecuteEvent,
+      { connectionSyncJobId: 'job-b1' },
+      { singletonKey: 'job-b1' },
     );
-    const pending = Array.from({ length: 4 }, (_, i) =>
-      makeSyncJob({ id: `pending-${i}`, connectionId: `pending-conn-${i}` }),
-    );
-
-    const { orchestrator, eventService } = buildOrchestrator({
-      connectionSyncJobService: {
-        search: jest.fn().mockImplementation(async (_ctx, filter: { status: string }) => {
-          return filter.status === 'in_progress' ? inProgress : pending;
-        }),
-      },
-    });
-
-    await orchestrator.executeSyncJobs();
-
-    // 4 already in progress + only 1 more pending job admitted = 5 total.
-    expect(eventService.send).toHaveBeenCalledTimes(1);
   });
 
-  it('dispatches nothing when there are no pending jobs', async () => {
+  it('dispatches nothing when there is no dispatchable pending job', async () => {
     const { orchestrator, eventService } = buildOrchestrator();
 
     await orchestrator.executeSyncJobs();
@@ -472,20 +472,21 @@ describe('SyncOrchestrator.handleSyncJobExecuteEvent — concurrent-duplicate ra
 });
 
 describe('SyncOrchestrator.executeTransformJobs', () => {
-  it('dispatches at most 2 transform jobs even when more are eligible', async () => {
-    const { orchestrator, eventService } = buildOrchestrator({
+  it('asks Postgres for at most 2 transform jobs, instead of slicing the full result in JavaScript', async () => {
+    const { orchestrator, eventService, connectionSyncJobService } = buildOrchestrator({
       connectionSyncJobService: {
-        search: jest
-          .fn()
-          .mockResolvedValue([
-            makeSyncJob({ id: 'j1' }),
-            makeSyncJob({ id: 'j2' }),
-            makeSyncJob({ id: 'j3' }),
-          ]),
+        search: jest.fn().mockResolvedValue([makeSyncJob({ id: 'j1' }), makeSyncJob({ id: 'j2' })]),
       },
     });
 
     await orchestrator.executeTransformJobs();
+
+    expect(connectionSyncJobService.search).toHaveBeenCalledWith(expect.anything(), {
+      status: 'success',
+      lastTransformed: null,
+      orderBy: 'updated_at:DESC',
+      limit: 2,
+    });
 
     expect(eventService.send).toHaveBeenCalledTimes(2);
     expect(eventService.send).toHaveBeenNthCalledWith(
@@ -652,6 +653,41 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
     return { connection: makeConnection(overrides), lastSyncedAt: null };
   }
 
+  function historicalConnection(TTL?: number) {
+    return makeConnection({
+      provider: {
+        id: 'provider-1',
+        name: 'signal',
+        endpoints: [{ name: 'messages', iterationType: 'historical', TTL }],
+      } as never,
+    });
+  }
+
+  /**
+   * A `search()` stand-in that applies the filters it is handed.
+   *
+   * The sweep now issues up to three DIFFERENT bounded queries per endpoint —
+   * the live job, the last success, and (only when there is neither) whether the
+   * endpoint has any history at all — where it used to issue one unbounded one
+   * and sort the answer out in JavaScript. A mock that returns the same array
+   * whatever it is asked cannot tell those apart: it would answer "the most
+   * recent success" with an in-progress row, and every assertion below would be
+   * about the mock rather than about the sweep.
+   */
+  function searchOver(rows: ConnectionSyncJob[]) {
+    return jest.fn(async (_ctx: unknown, query: SearchConnectionSyncJobDto) => {
+      const matched = rows
+        .filter((row) => query.connectionId == null || row.connectionId === query.connectionId)
+        .filter((row) => query.endpointName == null || row.endpointName === query.endpointName)
+        .filter((row) => query.type == null || row.type === query.type)
+        .filter((row) => query.status == null || row.status === query.status)
+        .filter((row) => query.statuses == null || query.statuses.includes(row.status))
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+      return query.limit == null ? matched : matched.slice(0, query.limit);
+    });
+  }
+
   it('logs and continues past an endpoint the provider no longer declares', async () => {
     const connection = makeConnection({ activeEndpoints: ['ghost-endpoint'] });
     const { orchestrator, connectionSyncJobService, logger } = buildOrchestrator({
@@ -683,7 +719,69 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: { findActiveConnections: jest.fn().mockResolvedValue([activeConnection()]) },
       connectionSyncJobService: {
-        search: jest.fn().mockResolvedValue([makeSyncJob({ status: 'pending' })]),
+        search: searchOver([makeSyncJob({ status: 'pending' })]),
+      },
+    });
+
+    await orchestrator.orchestrateSyncJobs();
+
+    expect(connectionSyncJobService.create).not.toHaveBeenCalled();
+  });
+
+  it('does not create a second incremental job while a healthy one is in progress', async () => {
+    // The inverted predicate, in one case. "Is anything already live?" was
+    // answered by a test that counted an in-progress job only once it had gone
+    // STALE — so a sync that had been running for a minute counted as nothing at
+    // all, and every tick queued another job beside it for the same endpoint.
+    const { orchestrator, connectionSyncJobService } = buildOrchestrator({
+      connectionService: { findActiveConnections: jest.fn().mockResolvedValue([activeConnection()]) },
+      connectionSyncJobService: {
+        search: searchOver([
+          makeSyncJob({
+            id: 'running',
+            status: 'in_progress',
+            updatedAt: new Date(Date.now() - 60_000),
+          }),
+          makeSyncJob({
+            id: 'done',
+            status: 'success',
+            nextCursor: { page: 3 },
+            updatedAt: new Date(Date.now() - 10 * 60_000),
+          }),
+        ]),
+      },
+    });
+
+    await orchestrator.orchestrateSyncJobs();
+
+    expect(connectionSyncJobService.create).not.toHaveBeenCalled();
+    expect(connectionSyncJobService.markAsCompleted).not.toHaveBeenCalled();
+  });
+
+  it('does not create a second historical job while a healthy one is in progress', async () => {
+    const { orchestrator, connectionSyncJobService } = buildOrchestrator({
+      connectionService: {
+        findActiveConnections: jest
+          .fn()
+          .mockResolvedValue([{ connection: historicalConnection(), lastSyncedAt: null }]),
+      },
+      connectionSyncJobService: {
+        search: searchOver([
+          makeSyncJob({
+            id: 'running',
+            type: 'historical',
+            status: 'in_progress',
+            updatedAt: new Date(Date.now() - 60_000),
+          }),
+          makeSyncJob({
+            id: 'done',
+            type: 'historical',
+            status: 'success',
+            nextCursor: { page: 3 },
+            completedAt: new Date(Date.now() - 10 * 60_000),
+            updatedAt: new Date(Date.now() - 10 * 60_000),
+          }),
+        ]),
       },
     });
 
@@ -693,15 +791,22 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
   });
 
   it('marks a stalled (> 1hr) in-progress incremental job failed and enqueues a fresh one', async () => {
-    const stalledUpdatedAt = new Date(Date.now() - HOUR_MS - 60_000);
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: { findActiveConnections: jest.fn().mockResolvedValue([activeConnection()]) },
       connectionSyncJobService: {
-        search: jest
-          .fn()
-          .mockResolvedValue([
-            makeSyncJob({ id: 'stalled-job', status: 'in_progress', updatedAt: stalledUpdatedAt }),
-          ]),
+        search: searchOver([
+          makeSyncJob({
+            id: 'stalled-job',
+            status: 'in_progress',
+            updatedAt: new Date(Date.now() - HOUR_MS - 60_000),
+          }),
+          makeSyncJob({
+            id: 'done',
+            status: 'success',
+            nextCursor: { page: 4 },
+            updatedAt: new Date(Date.now() - 3 * HOUR_MS),
+          }),
+        ]),
       },
     });
 
@@ -713,13 +818,17 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
       'failed',
       expect.objectContaining({ error: 'Sync job stalled in progress' }),
     );
+    expect(connectionSyncJobService.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: 'incremental', cursor: { page: 4 }, status: 'pending' }),
+    );
   });
 
   it("starts a new incremental job carrying forward the previous success's nextCursor", async () => {
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: { findActiveConnections: jest.fn().mockResolvedValue([activeConnection()]) },
       connectionSyncJobService: {
-        search: jest.fn().mockResolvedValue([makeSyncJob({ status: 'success', nextCursor: { page: 9 } })]),
+        search: searchOver([makeSyncJob({ status: 'success', nextCursor: { page: 9 } })]),
       },
     });
 
@@ -731,17 +840,25 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
     );
   });
 
-  it('creates the first historical sync job when none exists yet', async () => {
-    const connection = makeConnection({
-      provider: {
-        id: 'provider-1',
-        name: 'signal',
-        endpoints: [{ name: 'messages', iterationType: 'historical' }],
-      } as never,
+  it('leaves an endpoint whose only history is failures alone, rather than retrying it every minute', async () => {
+    const { orchestrator, connectionSyncJobService } = buildOrchestrator({
+      connectionService: { findActiveConnections: jest.fn().mockResolvedValue([activeConnection()]) },
+      connectionSyncJobService: {
+        search: searchOver([makeSyncJob({ id: 'failed-1', status: 'failed' })]),
+      },
     });
+
+    await orchestrator.orchestrateSyncJobs();
+
+    expect(connectionSyncJobService.create).not.toHaveBeenCalled();
+  });
+
+  it('creates the first historical sync job when none exists yet', async () => {
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: {
-        findActiveConnections: jest.fn().mockResolvedValue([{ connection, lastSyncedAt: null }]),
+        findActiveConnections: jest
+          .fn()
+          .mockResolvedValue([{ connection: historicalConnection(), lastSyncedAt: null }]),
       },
     });
 
@@ -754,19 +871,14 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
   });
 
   it('does not create a new historical job while one is pending or in progress', async () => {
-    const connection = makeConnection({
-      provider: {
-        id: 'provider-1',
-        name: 'signal',
-        endpoints: [{ name: 'messages', iterationType: 'historical' }],
-      } as never,
-    });
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: {
-        findActiveConnections: jest.fn().mockResolvedValue([{ connection, lastSyncedAt: null }]),
+        findActiveConnections: jest
+          .fn()
+          .mockResolvedValue([{ connection: historicalConnection(), lastSyncedAt: null }]),
       },
       connectionSyncJobService: {
-        search: jest.fn().mockResolvedValue([makeSyncJob({ type: 'historical', status: 'pending' })]),
+        search: searchOver([makeSyncJob({ type: 'historical', status: 'pending' })]),
       },
     });
 
@@ -776,19 +888,14 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
   });
 
   it('starts a new historical job when the previous success left a nextCursor (more pages to fetch)', async () => {
-    const connection = makeConnection({
-      provider: {
-        id: 'provider-1',
-        name: 'signal',
-        endpoints: [{ name: 'messages', iterationType: 'historical' }],
-      } as never,
-    });
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: {
-        findActiveConnections: jest.fn().mockResolvedValue([{ connection, lastSyncedAt: null }]),
+        findActiveConnections: jest
+          .fn()
+          .mockResolvedValue([{ connection: historicalConnection(), lastSyncedAt: null }]),
       },
       connectionSyncJobService: {
-        search: jest.fn().mockResolvedValue([
+        search: searchOver([
           makeSyncJob({
             type: 'historical',
             status: 'success',
@@ -808,24 +915,17 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
   });
 
   it('re-triggers a completed historical sync once its TTL has elapsed', async () => {
-    const connection = makeConnection({
-      provider: {
-        id: 'provider-1',
-        name: 'signal',
-        endpoints: [{ name: 'messages', iterationType: 'historical', TTL: 60 }], // 60s TTL
-      } as never,
-    });
     const longAgo = new Date(Date.now() - 120_000); // 120s ago > 60s TTL
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: {
-        findActiveConnections: jest.fn().mockResolvedValue([{ connection, lastSyncedAt: null }]),
+        findActiveConnections: jest
+          .fn()
+          .mockResolvedValue([{ connection: historicalConnection(60), lastSyncedAt: null }]),
       },
       connectionSyncJobService: {
-        search: jest
-          .fn()
-          .mockResolvedValue([
-            makeSyncJob({ type: 'historical', status: 'success', nextCursor: {}, completedAt: longAgo }),
-          ]),
+        search: searchOver([
+          makeSyncJob({ type: 'historical', status: 'success', nextCursor: {}, completedAt: longAgo }),
+        ]),
       },
     });
 
@@ -838,24 +938,17 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
   });
 
   it('does NOT re-trigger a completed historical sync before its TTL has elapsed', async () => {
-    const connection = makeConnection({
-      provider: {
-        id: 'provider-1',
-        name: 'signal',
-        endpoints: [{ name: 'messages', iterationType: 'historical', TTL: 3600 }], // 1hr TTL
-      } as never,
-    });
-    const justNow = new Date(Date.now() - 1000); // 1s ago, well under TTL
+    const justNow = new Date(Date.now() - 1000); // 1s ago, well under the 1hr TTL
     const { orchestrator, connectionSyncJobService } = buildOrchestrator({
       connectionService: {
-        findActiveConnections: jest.fn().mockResolvedValue([{ connection, lastSyncedAt: null }]),
+        findActiveConnections: jest
+          .fn()
+          .mockResolvedValue([{ connection: historicalConnection(3600), lastSyncedAt: null }]),
       },
       connectionSyncJobService: {
-        search: jest
-          .fn()
-          .mockResolvedValue([
-            makeSyncJob({ type: 'historical', status: 'success', nextCursor: {}, completedAt: justNow }),
-          ]),
+        search: searchOver([
+          makeSyncJob({ type: 'historical', status: 'success', nextCursor: {}, completedAt: justNow }),
+        ]),
       },
     });
 
@@ -883,6 +976,91 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
       expect.anything(),
       expect.objectContaining({ connectionId: 'good-conn' }),
     );
+  });
+
+  it('bounds every read it makes, instead of fetching an endpoint’s whole history', async () => {
+    // The cost, not the correctness: one search per connection × endpoint ×
+    // iteration type, each returning every job that endpoint has ever run, once
+    // a minute — of which the sweep used `[0]` and `.length`.
+    const { orchestrator, connectionSyncJobService } = buildOrchestrator({
+      connectionService: { findActiveConnections: jest.fn().mockResolvedValue([activeConnection()]) },
+    });
+
+    await orchestrator.orchestrateSyncJobs();
+
+    expect(connectionSyncJobService.search).toHaveBeenCalled();
+
+    for (const [, query] of connectionSyncJobService.search.mock.calls as Array<
+      [unknown, SearchConnectionSyncJobDto]
+    >) {
+      expect(query.limit).toBe(1);
+      expect(query.connectionId).toBe('conn-1');
+      expect(query.endpointName).toBe('messages');
+    }
+  });
+
+  it('does not start a second sweep while the previous one is still running', async () => {
+    // The cron has a one-minute period and the sweep is a database round trip
+    // per connection × endpoint × iteration type, so a slow tick meets the next
+    // one. Without the guard both sweeps read the same state and both act on it.
+    let releaseFirstSweep: () => void = () => undefined;
+
+    const firstSweepGate = new Promise<void>((resolve) => {
+      releaseFirstSweep = () => resolve();
+    });
+
+    const findActiveConnections = jest.fn(async () => {
+      await firstSweepGate;
+
+      return [];
+    });
+
+    const { orchestrator, logger } = buildOrchestrator({
+      connectionService: { findActiveConnections },
+    });
+
+    const firstTick = orchestrator.orchestrateSyncJobs();
+
+    // Let the feature-flag await settle so the first tick is genuinely inside
+    // the sweep, which is the state the second tick has to find.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(findActiveConnections).toHaveBeenCalledTimes(1);
+
+    // Started but not awaited: an unguarded second tick walks straight into the
+    // sweep and blocks on the same gate, so awaiting it here would report the
+    // defect as a test timeout instead of as the extra call it is.
+    const secondTick = orchestrator.orchestrateSyncJobs();
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(findActiveConnections).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith('Skipping sync orchestration; previous run still in progress');
+
+    releaseFirstSweep();
+    await Promise.all([firstTick, secondTick]);
+
+    // And the guard clears: a skipped tick must not disable the schedule.
+    await orchestrator.orchestrateSyncJobs();
+
+    expect(findActiveConnections).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the overlap guard even when the sweep throws', async () => {
+    // A flag set outside a `try`/`finally` would latch on the first failure and
+    // silently retire the schedule. The @Cron wrapper swallows the throw (it
+    // logs and returns), so nothing else would report it either.
+    const findActiveConnections = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('pool timeout'))
+      .mockResolvedValue([]);
+
+    const { orchestrator } = buildOrchestrator({ connectionService: { findActiveConnections } });
+
+    await orchestrator.orchestrateSyncJobs();
+    await orchestrator.orchestrateSyncJobs();
+
+    expect(findActiveConnections).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -8,11 +8,38 @@ import { LoggerService } from '@ci/common/logging';
 
 import { ConnectionSyncJobEntity } from '../entities/ConnectionSyncJobEntity';
 import {
+  LIVE_JOB_STATUSES,
   type ConnectionSyncJob,
   type CreateConnectionSyncJobDto,
   type SearchConnectionSyncJobDto,
   type UpdateConnectionSyncJobDto,
 } from '../types';
+
+/** Postgres `unique_violation`. */
+const UNIQUE_VIOLATION = '23505';
+
+/**
+ * The partial unique index over (connection_id, endpoint_name, type) while a job
+ * is pending or in progress — migration
+ * `20260821064758_add_connection_sync_jobs_live_job_unique`.
+ */
+const LIVE_JOB_INDEX = 'connection_sync_jobs_live_job_idx';
+
+/**
+ * Whether this error is the live-job index refusing a second live job.
+ *
+ * Both spellings are checked because TypeORM's `QueryFailedError` copies the
+ * driver error's own properties onto itself but also keeps the original under
+ * `driverError`, and which one a caller sees depends on how the error was
+ * re-thrown on the way up.
+ */
+function isLiveJobConflict(err: unknown): boolean {
+  const driverError = (err as { driverError?: { code?: string; constraint?: string } }).driverError;
+  const code = (err as { code?: string }).code ?? driverError?.code;
+  const constraint = (err as { constraint?: string }).constraint ?? driverError?.constraint;
+
+  return code === UNIQUE_VIOLATION && constraint === LIVE_JOB_INDEX;
+}
 
 @Injectable()
 export class ConnectionSyncJobService {
@@ -24,6 +51,24 @@ export class ConnectionSyncJobService {
     this.logger.setContext(ConnectionSyncJobService.name);
   }
 
+  /**
+   * Create a sync job, or return the live one that already exists for the same
+   * connection endpoint and iteration type.
+   *
+   * Every caller here is a read-then-write: `SyncOrchestrator.orchestrateSyncJobs`
+   * and `SyncNowService.enqueueForUser` both look for live work and then, in a
+   * separate statement, insert if they saw none. Two overlapping cron ticks, two
+   * replicas, or a sync-now request racing the cron could all pass that check
+   * concurrently and create duplicates — each of which is dispatched
+   * independently, so the provider is fetched twice.
+   *
+   * `connection_sync_jobs_live_job_idx` is what actually prevents that, and the
+   * loser of the race lands here: a violation of that index is not a failure but
+   * the answer "somebody already created it", so the row it collided with is
+   * returned instead. Handled in the service rather than in one caller because
+   * the constraint binds all three of them, and an unhandled 23505 in
+   * `SyncNowService` would surface to the user as a 500.
+   */
   async create(context: UserServiceContext, data: CreateConnectionSyncJobDto): Promise<ConnectionSyncJob> {
     const id = data.id ?? uuidv7();
 
@@ -39,9 +84,40 @@ export class ConnectionSyncJobService {
       properties: data.properties ?? null,
     });
 
-    const result = await this.connectionSyncJobRepository.save(SyncJob);
+    try {
+      const result = await this.connectionSyncJobRepository.save(SyncJob);
 
-    return ConnectionSyncJobEntity.toEgressType(result);
+      return ConnectionSyncJobEntity.toEgressType(result);
+    } catch (err) {
+      if (!isLiveJobConflict(err)) {
+        throw err;
+      }
+
+      const [live] = await this.search(context, {
+        connectionId: data.connectionId,
+        endpointName: data.endpointName,
+        type: data.type,
+        statuses: LIVE_JOB_STATUSES,
+        orderBy: 'updated_at:DESC',
+        limit: 1,
+      });
+
+      // The conflicting row is gone already — it reached a terminal status
+      // between the INSERT and this read. Nothing to hand back, and swallowing
+      // the error would leave the caller with no job at all.
+      if (!live) {
+        throw err;
+      }
+
+      this.logger.debug('Live sync job already exists for endpoint; returning it', {
+        connectionId: data.connectionId,
+        endpointName: data.endpointName,
+        type: data.type,
+        connectionSyncJobId: live.id,
+      });
+
+      return ConnectionSyncJobEntity.toEgressType(live);
+    }
   }
 
   async findAll(context: UserServiceContext): Promise<ConnectionSyncJob[]> {
@@ -290,6 +366,75 @@ export class ConnectionSyncJobService {
     return rows.length > 0;
   }
 
+  /**
+   * How many jobs are in flight, counted no further than `cap`.
+   *
+   * `executeSyncJobs` only ever needs this to work out how much of its
+   * five-job budget is left, so the count stops at the cap: the LIMIT lets
+   * Postgres abandon the scan after `cap` rows instead of reading every
+   * historical row in a table whose only index is its primary key and which
+   * nothing prunes.
+   */
+  async countInProgress(context: ServiceContext, cap: number): Promise<number> {
+    const scoped = context.userId !== SYSTEM_USER;
+
+    const rows = (await this.connectionSyncJobRepository.manager.query(
+      `SELECT count(*)::int AS count
+         FROM (SELECT 1
+                 FROM ci_etl.connection_sync_jobs
+                WHERE status = 'in_progress'${scoped ? ' AND user_id = $2::uuid' : ''}
+                LIMIT $1) capped`,
+      scoped ? [cap, context.userId] : [cap],
+    )) as Array<{ count: number }>;
+
+    return rows[0]?.count ?? 0;
+  }
+
+  /**
+   * The pending jobs `executeSyncJobs` may dispatch this tick: the oldest
+   * pending job of each connection that has nothing already in flight, oldest
+   * connection first, at most `limit` of them.
+   *
+   * Both of that cron's rules are expressed here rather than in the caller
+   * because the caller cannot apply them to a truncated list. A plain
+   * `status = 'pending'` search bounded at `limit` can hand back nothing but
+   * rows whose connections are already busy — dispatching nothing while work
+   * waits — and an unbounded one hydrates every pending row on the box twice a
+   * minute. The `DISTINCT ON` picks each connection's oldest pending row, and
+   * the outer sort then spends the budget on the connections that have waited
+   * longest.
+   *
+   * `updated_at` is not unique, so both sorts carry the primary key as a
+   * tiebreaker: without it the LIMIT would pick an arbitrary member of a tied
+   * group, and a different one on the next tick.
+   */
+  async findDispatchablePending(context: ServiceContext, limit: number): Promise<string[]> {
+    if (limit <= 0) {
+      return [];
+    }
+
+    const scoped = context.userId !== SYSTEM_USER;
+
+    const rows = (await this.connectionSyncJobRepository.manager.query(
+      `SELECT id
+         FROM (SELECT DISTINCT ON (connection_id) id, updated_at
+                 FROM ci_etl.connection_sync_jobs pending
+                WHERE pending.status = 'pending'
+                  ${scoped ? 'AND pending.user_id = $2::uuid' : ''}
+                  AND NOT EXISTS (SELECT 1
+                                    FROM ci_etl.connection_sync_jobs busy
+                                   WHERE busy.connection_id = pending.connection_id
+                                     AND busy.status = 'in_progress'
+                                     ${scoped ? 'AND busy.user_id = $2::uuid' : ''})
+                ORDER BY connection_id, updated_at ASC, id ASC) dispatchable
+        ORDER BY updated_at ASC, id ASC
+        LIMIT $1`,
+      scoped ? [limit, context.userId] : [limit],
+    )) as Array<{ id: string }>;
+
+    return rows.map((row) => row.id);
+  }
+
   async markAsCompleted(
     context: ServiceContext,
     id: string,
@@ -329,6 +474,10 @@ export class ConnectionSyncJobService {
       executable = executable.andWhere('status = :status', { status: query.status });
     }
 
+    if (query.statuses != null && query.statuses.length > 0) {
+      executable = executable.andWhere('status IN (:...statuses)', { statuses: [...query.statuses] });
+    }
+
     if (query.type) {
       executable = executable.andWhere('type = :type', { type: query.type });
     }
@@ -349,6 +498,8 @@ export class ConnectionSyncJobService {
       });
     }
 
+    let ordered = false;
+
     if (query.orderBy != null) {
       const [field, direction] = query.orderBy.split(':');
       if (direction !== 'DESC' && direction !== 'ASC') {
@@ -357,8 +508,23 @@ export class ConnectionSyncJobService {
           direction,
         });
       } else {
-        executable = executable.orderBy(field, direction);
+        // `updated_at` — the sort key every caller passes — is not unique, so a
+        // bounded search sorted on it alone returns an arbitrary member of each
+        // tied group, and a different one on the next tick. The primary key
+        // makes the sort total.
+        executable = executable.orderBy(field, direction).addOrderBy('id', direction);
+        ordered = true;
       }
+    }
+
+    if (query.limit != null) {
+      // A LIMIT is only meaningful over a deterministic order, so a caller that
+      // asks for one without a usable sort still gets one.
+      if (!ordered) {
+        executable = executable.orderBy('id', 'ASC');
+      }
+
+      executable = executable.take(query.limit);
     }
 
     return executable.getMany();

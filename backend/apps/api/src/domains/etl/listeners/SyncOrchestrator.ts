@@ -5,15 +5,48 @@ import { SYSTEM_USER } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
-import { ConnectionService, ClientFactory } from '@ci/domains/connections';
+import { ConnectionService, ClientFactory, type Connection } from '@ci/domains/connections';
 import { OnEvent, EventService } from '@ci/domains/events';
 
+import type { ConnectionSyncJobEntity } from '../entities/ConnectionSyncJobEntity';
 import { ConnectionSyncJobExecuteEvent, ConnectionSyncJobTransformEvent } from '../events';
 import { ConnectionSyncJobService } from '../services/ConnectionSyncJobService';
 import { EndpointServiceMap } from '../services/EndpointServiceMap';
+import { LIVE_JOB_STATUSES } from '../types';
+
+/** Sync jobs allowed in flight across the appliance at once. */
+const MAX_SYNC_JOBS_IN_FLIGHT = 5;
+
+/** Transform jobs dispatched per tick. */
+const MAX_TRANSFORM_JOBS_PER_TICK = 2;
+
+/**
+ * How long a job may sit in `in_progress` before the orchestrator gives up on
+ * it. Matches the staleness window `ConnectionSyncJobService.claimTransform`
+ * uses for an abandoned transform claim.
+ */
+const STALLED_SYNC_MS = 60 * 60 * 1000;
+
+/** One endpoint of the provider a connection belongs to. */
+type ProviderEndpoint = NonNullable<Connection['provider']>['endpoints'][number];
+
+/** The two ways an endpoint is walked, and half of a sync job's natural key. */
+type SyncJobType = 'incremental' | 'historical';
+
+/**
+ * Whether a job has been left in `in_progress` long enough to be treated as
+ * dead. `updated_at` moves on every write the executor makes, so a job that is
+ * genuinely working keeps resetting the window.
+ */
+function isStalled(job: Pick<ConnectionSyncJobEntity, 'status' | 'updatedAt'>): boolean {
+  return job.status === 'in_progress' && Date.now() > new Date(job.updatedAt).getTime() + STALLED_SYNC_MS;
+}
 
 @Injectable()
 export class SyncOrchestrator {
+  /** Guards {@link SyncOrchestrator.orchestrateSyncJobs} against overrunning itself. */
+  private orchestrating = false;
+
   constructor(
     private readonly connectionService: ConnectionService,
     private readonly connectionSyncJobService: ConnectionSyncJobService,
@@ -38,13 +71,43 @@ export class SyncOrchestrator {
       return;
     }
 
+    // Overlap guard — the same per-process flag AccountPurgeCron and
+    // DailyMetricsCron carry. The sweep is a handful of round trips per
+    // connection × endpoint × iteration type on a one-minute tick, so it
+    // overruns on a box with many connections or a busy database, and the next
+    // tick then starts on top of state the previous one is still acting on.
+    //
+    // A flag and not an advisory lock, deliberately. A boolean says nothing
+    // about a second replica, and this cron must not depend on there being only
+    // one — which is why the invariant it protects lives in the database
+    // instead: `connection_sync_jobs_live_job_idx` lets two orchestrators race
+    // to insert the same job and admits exactly one, whatever either process
+    // believes. With that in place a lock would buy only what the flag already
+    // buys — one process not spending a tick on work it is still doing — at the
+    // cost of holding a connection for the length of the sweep.
+    if (this.orchestrating) {
+      this.logger.warn('Skipping sync orchestration; previous run still in progress');
+
+      return;
+    }
+
+    this.orchestrating = true;
+
+    try {
+      await this.sweepActiveConnections();
+    } finally {
+      this.orchestrating = false;
+    }
+  }
+
+  private async sweepActiveConnections(): Promise<void> {
     const activeConnections = await this.connectionService.findActiveConnections();
 
     // for...of, not forEach. `Array.prototype.forEach` discards the promise an
     // async callback returns, so a rejection inside the body is orphaned: it
     // reaches neither this method's caller, nor the @Cron wrapper, nor Nest's
     // own scheduler catch — it surfaces as an unhandled rejection, which
-    // application.ts turns into process.exit(1). The body below makes six
+    // application.ts turns into process.exit(1). The body below makes several
     // awaited database calls and runs every minute, so one pool timeout was
     // enough to restart the API. Awaiting also bounds the concurrency, which was
     // previously every connection × every endpoint at once.
@@ -63,174 +126,210 @@ export class SyncOrchestrator {
           continue;
         }
 
-        const iterationType = providerEndpoint.iterationType;
-
-        const iterationTypes = iterationType.split(',');
+        const iterationTypes = providerEndpoint.iterationType.split(',');
 
         if (iterationTypes.includes('incremental')) {
-          const existingIncrementalSyncs = await this.connectionSyncJobService.search(
-            { userId: connection.userId },
-            {
-              connectionId: connection.id,
-              userId: connection.userId,
-              endpointName: endpoint,
-              type: 'incremental',
-              orderBy: 'updated_at:DESC',
-            },
-          );
-
-          if (existingIncrementalSyncs.length === 0) {
-            await this.connectionSyncJobService.create(
-              { userId: connection.userId },
-              {
-                connectionId: connection.id,
-                userId: connection.userId,
-                endpointName: endpoint,
-                type: 'incremental',
-                status: 'pending',
-              },
-            );
-          } else {
-            const pendingOrInProgress = existingIncrementalSyncs.some(
-              (sync) =>
-                sync.status === 'pending' ||
-                (sync.status === 'in_progress' &&
-                  new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000),
-            );
-            const successes = existingIncrementalSyncs.filter((sync) => sync.status === 'success');
-            const stalledInProgress = existingIncrementalSyncs.filter(
-              (sync) =>
-                sync.status === 'in_progress' &&
-                new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000,
-            );
-
-            if (stalledInProgress) {
-              // for...of: an async forEach callback orphans its rejection (see
-              // orchestrateSyncJobs above).
-              for (const sync of stalledInProgress) {
-                await this.connectionSyncJobService.markAsCompleted(
-                  { userId: connection.userId },
-                  sync.id,
-                  'failed',
-                  { error: 'Sync job stalled in progress' },
-                );
-              }
-            }
-
-            if (successes.length > 0 && (!pendingOrInProgress || stalledInProgress.length > 0)) {
-              const success0 = successes[0];
-              await this.connectionSyncJobService.create(
-                { userId: connection.userId },
-                {
-                  connectionId: connection.id,
-                  userId: connection.userId,
-                  endpointName: endpoint,
-                  type: 'incremental',
-                  cursor: success0.nextCursor,
-                  status: 'pending',
-                },
-              );
-            }
-          }
+          await this.orchestrateIncremental(connection, endpoint);
         }
 
         if (iterationTypes.includes('historical')) {
-          const existingHistoricalSyncs = await this.connectionSyncJobService.search(
-            { userId: connection.userId },
-            {
-              connectionId: connection.id,
-              userId: connection.userId,
-              endpointName: endpoint,
-              type: 'historical',
-              orderBy: 'updated_at:DESC',
-            },
-          );
-
-          if (existingHistoricalSyncs.length === 0) {
-            await this.connectionSyncJobService.create(
-              { userId: connection.userId },
-              {
-                connectionId: connection.id,
-                userId: connection.userId,
-                endpointName: endpoint,
-                type: 'historical',
-                status: 'pending',
-              },
-            );
-          } else {
-            const pendingOrInProgress = existingHistoricalSyncs.some(
-              (sync) =>
-                sync.status === 'pending' ||
-                (sync.status === 'in_progress' &&
-                  new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000),
-            );
-            const successes = existingHistoricalSyncs.filter((sync) => sync.status === 'success');
-            const stalledInProgress = existingHistoricalSyncs.filter(
-              (sync) =>
-                sync.status === 'in_progress' &&
-                new Date().getTime() > new Date(sync.updatedAt).getTime() + 60 * 60 * 1000,
-            );
-
-            if (stalledInProgress.length > 0) {
-              // for...of: an async forEach callback orphans its rejection (see
-              // orchestrateSyncJobs above).
-              for (const sync of stalledInProgress) {
-                await this.connectionSyncJobService.markAsCompleted(
-                  { userId: connection.userId },
-                  sync.id,
-                  'failed',
-                  { error: 'Sync job stalled in progress' },
-                );
-              }
-            }
-
-            if (pendingOrInProgress) {
-              // `continue`, not `return` — see the note at the top of the loop.
-              continue;
-            }
-
-            if (successes.length > 0) {
-              const success0 = successes[0];
-              if (Object.keys(success0.nextCursor).length > 0) {
-                await this.connectionSyncJobService.create(
-                  { userId: connection.userId },
-                  {
-                    connectionId: connection.id,
-                    userId: connection.userId,
-                    endpointName: endpoint,
-                    type: 'historical',
-                    status: 'pending',
-                    cursor: success0.nextCursor,
-                  },
-                );
-              }
-
-              if (
-                Object.keys(success0.nextCursor).length === 0 &&
-                success0.completedAt &&
-                providerEndpoint.TTL != null
-              ) {
-                const dateNow = new Date().getTime();
-                const completedAt = new Date(success0.completedAt).getTime();
-
-                if (dateNow > completedAt + providerEndpoint.TTL * 1000) {
-                  await this.connectionSyncJobService.create(
-                    { userId: connection.userId },
-                    {
-                      connectionId: connection.id,
-                      userId: connection.userId,
-                      endpointName: endpoint,
-                      type: 'historical',
-                      status: 'pending',
-                    },
-                  );
-                }
-              }
-            }
-          }
+          await this.orchestrateHistorical(connection, endpoint, providerEndpoint);
         }
       }
     }
+  }
+
+  /**
+   * Incremental: hold one live job per endpoint, and start the next one from the
+   * cursor the last successful one left behind.
+   */
+  private async orchestrateIncremental(connection: Connection, endpoint: string): Promise<void> {
+    const live = await this.findLiveJob(connection, endpoint, 'incremental');
+
+    if (live && !isStalled(live)) {
+      // A pending job, or one running inside the stall window, IS the next sync.
+      //
+      // This is the test that used to be inverted: the predicate deciding
+      // whether anything was already live counted an in-progress job only once
+      // it had gone STALE, so a healthy running sync did not suppress creation
+      // and every tick queued another job beside it. Staleness belongs to the
+      // recovery path below, not to this one.
+      return;
+    }
+
+    if (live) {
+      await this.failStalledJob(connection, live);
+    }
+
+    const lastSuccess = await this.findLatestSuccess(connection, endpoint, 'incremental');
+
+    if (lastSuccess) {
+      await this.createSyncJob(connection, endpoint, 'incremental', lastSuccess.nextCursor);
+
+      return;
+    }
+
+    if (!(await this.hasAnyJob(connection, endpoint, 'incremental'))) {
+      await this.createSyncJob(connection, endpoint, 'incremental');
+    }
+  }
+
+  /**
+   * Historical: walk the endpoint's pages until the cursor runs out, then leave
+   * it alone until its TTL expires.
+   */
+  private async orchestrateHistorical(
+    connection: Connection,
+    endpoint: string,
+    providerEndpoint: ProviderEndpoint,
+  ): Promise<void> {
+    const live = await this.findLiveJob(connection, endpoint, 'historical');
+
+    if (live && !isStalled(live)) {
+      return;
+    }
+
+    if (live) {
+      await this.failStalledJob(connection, live);
+    }
+
+    const lastSuccess = await this.findLatestSuccess(connection, endpoint, 'historical');
+
+    if (!lastSuccess) {
+      if (!(await this.hasAnyJob(connection, endpoint, 'historical'))) {
+        await this.createSyncJob(connection, endpoint, 'historical');
+      }
+
+      return;
+    }
+
+    const nextCursor = lastSuccess.nextCursor ?? {};
+
+    if (Object.keys(nextCursor).length > 0) {
+      await this.createSyncJob(connection, endpoint, 'historical', nextCursor);
+
+      return;
+    }
+
+    // No cursor left: the endpoint has been walked to the end, so the only
+    // reason to walk it again is the provider's TTL expiring.
+    if (lastSuccess.completedAt == null || providerEndpoint.TTL == null) {
+      return;
+    }
+
+    if (Date.now() > new Date(lastSuccess.completedAt).getTime() + providerEndpoint.TTL * 1000) {
+      await this.createSyncJob(connection, endpoint, 'historical');
+    }
+  }
+
+  /**
+   * The live job for this endpoint and iteration type, if there is one.
+   *
+   * At most one can be: `connection_sync_jobs_live_job_idx` is unique over
+   * exactly this key while the status is pending or in progress. So `limit: 1`
+   * is the whole answer rather than a sample of it — where this read used to
+   * fetch the endpoint's ENTIRE history, once a minute, per connection ×
+   * endpoint × iteration type, to look at `[0]` and `.length` of it.
+   */
+  private async findLiveJob(
+    connection: Connection,
+    endpoint: string,
+    type: SyncJobType,
+  ): Promise<ConnectionSyncJobEntity | undefined> {
+    const [live] = await this.connectionSyncJobService.search(
+      { userId: connection.userId },
+      {
+        connectionId: connection.id,
+        userId: connection.userId,
+        endpointName: endpoint,
+        type,
+        statuses: LIVE_JOB_STATUSES,
+        orderBy: 'updated_at:DESC',
+        limit: 1,
+      },
+    );
+
+    return live;
+  }
+
+  /** The most recent successful job for this endpoint and iteration type. */
+  private async findLatestSuccess(
+    connection: Connection,
+    endpoint: string,
+    type: SyncJobType,
+  ): Promise<ConnectionSyncJobEntity | undefined> {
+    const [success] = await this.connectionSyncJobService.search(
+      { userId: connection.userId },
+      {
+        connectionId: connection.id,
+        userId: connection.userId,
+        endpointName: endpoint,
+        type,
+        status: 'success',
+        orderBy: 'updated_at:DESC',
+        limit: 1,
+      },
+    );
+
+    return success;
+  }
+
+  /**
+   * Whether this endpoint has ever had a job of this type at all.
+   *
+   * Only asked when there is neither a live job nor a successful one, which is
+   * the one case where the two are not enough to decide: it separates "never
+   * synced" (start the first job) from "every attempt so far failed" (leave it
+   * alone — the orchestrator has never retried a failure, and starting one here
+   * would turn a permanently failing endpoint into a per-minute retry loop).
+   */
+  private async hasAnyJob(connection: Connection, endpoint: string, type: SyncJobType): Promise<boolean> {
+    const [any] = await this.connectionSyncJobService.search(
+      { userId: connection.userId },
+      {
+        connectionId: connection.id,
+        userId: connection.userId,
+        endpointName: endpoint,
+        type,
+        orderBy: 'updated_at:DESC',
+        limit: 1,
+      },
+    );
+
+    return any != null;
+  }
+
+  private async failStalledJob(connection: Connection, job: ConnectionSyncJobEntity): Promise<void> {
+    await this.connectionSyncJobService.markAsCompleted({ userId: connection.userId }, job.id, 'failed', {
+      error: 'Sync job stalled in progress',
+    });
+  }
+
+  /**
+   * Enqueue one sync job.
+   *
+   * No check that one does not already exist: the caller has just read that, and
+   * a read cannot hold between two statements. A tick that loses the race to
+   * another tick or another replica gets the live job back from
+   * `ConnectionSyncJobService.create` instead of a second row.
+   */
+  private async createSyncJob(
+    connection: Connection,
+    endpoint: string,
+    type: SyncJobType,
+    cursor?: Record<string, unknown>,
+  ): Promise<void> {
+    await this.connectionSyncJobService.create(
+      { userId: connection.userId },
+      {
+        connectionId: connection.id,
+        userId: connection.userId,
+        endpointName: endpoint,
+        type,
+        status: 'pending',
+        ...(cursor != null && { cursor }),
+      },
+    );
   }
 
   /**
@@ -250,41 +349,29 @@ export class SyncOrchestrator {
       return;
     }
 
-    const pendingSyncJobs = await this.connectionSyncJobService.search(
+    // Both reads are bounded by what this tick can actually dispatch. They used
+    // to be two unbounded `search()` calls — every pending row and every
+    // in-progress row on the box, hydrated into entities twice a minute, to
+    // pick at most five ids out of them — against a table whose only index is
+    // its primary key and which nothing prunes.
+    const inFlight = await this.connectionSyncJobService.countInProgress(
       { userId: SYSTEM_USER },
-      {
-        status: 'pending',
-        orderBy: 'updated_at:ASC',
-      },
+      MAX_SYNC_JOBS_IN_FLIGHT,
     );
 
-    const inProgressSyncJobs = await this.connectionSyncJobService.search(
+    const budget = MAX_SYNC_JOBS_IN_FLIGHT - inFlight;
+
+    if (budget <= 0) {
+      return;
+    }
+
+    // One id per connection with nothing already in flight, oldest first — the
+    // two rules above, applied in SQL. They cannot be applied to a truncated
+    // list, so the bound has to travel with them.
+    const syncJobsToRun = await this.connectionSyncJobService.findDispatchablePending(
       { userId: SYSTEM_USER },
-      {
-        status: 'in_progress',
-        orderBy: 'updated_at:ASC',
-      },
+      budget,
     );
-
-    const connectionsToRun = new Set<string>();
-    const syncJobsToRun = new Set<string>();
-
-    for (const syncJob of inProgressSyncJobs) {
-      connectionsToRun.add(syncJob.connectionId);
-    }
-
-    for (const syncJob of pendingSyncJobs) {
-      if (connectionsToRun.has(syncJob.connectionId)) {
-        continue;
-      } else {
-        connectionsToRun.add(syncJob.connectionId);
-        syncJobsToRun.add(syncJob.id);
-      }
-
-      if (syncJobsToRun.size + inProgressSyncJobs.length >= 5) {
-        break;
-      }
-    }
 
     for (const jobId of syncJobsToRun) {
       // Keyed on the sync job id: the send this key guards against is
@@ -456,16 +543,18 @@ export class SyncOrchestrator {
       return;
     }
 
-    const syncJobsToTransform = (
-      await this.connectionSyncJobService.search(
-        { userId: SYSTEM_USER },
-        {
-          status: 'success',
-          lastTransformed: null,
-          orderBy: 'updated_at:DESC',
-        },
-      )
-    ).slice(0, 2);
+    // `limit`, not a `.slice()` on the result: the cap has always been two, but
+    // it used to be applied in JavaScript after Postgres had returned — and
+    // hydrated — every untransformed successful sync job in the table.
+    const syncJobsToTransform = await this.connectionSyncJobService.search(
+      { userId: SYSTEM_USER },
+      {
+        status: 'success',
+        lastTransformed: null,
+        orderBy: 'updated_at:DESC',
+        limit: MAX_TRANSFORM_JOBS_PER_TICK,
+      },
+    );
 
     for (const { id } of syncJobsToTransform) {
       // Keyed on the sync job id, same reasoning as the execute send above.

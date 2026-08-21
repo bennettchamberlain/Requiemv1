@@ -26,6 +26,60 @@
   },
   {
     "type": "dependency",
+    "from": "src/domains/etl/services/__tests__/ConnectionSyncJobService.bounds.integration.spec.ts",
+    "to": "src/domains/connections/entities/ConnectionEntity.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/etl/services/__tests__/ConnectionSyncJobService.bounds.integration.spec.ts",
+    "to": "src/domains/connections/entities/ProviderEntity.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/etl/services/__tests__/ConnectionSyncJobService.bounds.integration.spec.ts",
+    "to": "src/domains/user/entities/UserEntity.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/etl/services/__tests__/ConnectionSyncJobService.indexes.integration.spec.ts",
+    "to": "src/domains/connections/entities/ConnectionEntity.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/etl/services/__tests__/ConnectionSyncJobService.indexes.integration.spec.ts",
+    "to": "src/domains/connections/entities/ProviderEntity.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/etl/services/__tests__/ConnectionSyncJobService.indexes.integration.spec.ts",
+    "to": "src/domains/user/entities/UserEntity.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/domains/graphql/resolvers/__tests__/ForecastResolver.triggerHbpe.test.ts",
     "to": "src/domains/python-functions/types.ts",
     "rule": {
