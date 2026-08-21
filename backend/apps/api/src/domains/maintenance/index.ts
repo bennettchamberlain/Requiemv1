@@ -55,8 +55,13 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     SearchIngressModule,
     GraphModule,
     GeocodeModule,
-    // RetrievalHealthCron raises its alerts as ci.actions rows (ActionService),
-    // gated by the trust dial (PersonalizationModule, already imported below).
+    // RetrievalHealthCron raises its alerts as ci.actions rows (ActionService).
+    // Not through the trust dial: an index COUNT is a fact about the appliance,
+    // not an inference about the user, so there is no confidence to rate. The
+    // dial still decides placement one hop downstream, in personalization's
+    // FeedQueuePopulationListener. PersonalizationModule below is imported for
+    // the providers here that DO inject PersonalizationService (GraphEnrichment,
+    // PersonStubBackfill, HealSelfCollation and the two listeners).
     IntelligenceModule,
     // GraphEnrichmentService needs the local Ollama client (LLMModule) and the
     // Person-resolution read path (GraphQueryService, exported by MemoryModule).

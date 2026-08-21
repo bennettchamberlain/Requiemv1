@@ -7,6 +7,14 @@ import { RelationshipType } from '@ci/domains/graph';
 import { GraphDeltaWriter } from '@ci/domains/memory';
 
 /**
+ * How many separate days at a place make it one the owner FREQUENTS.
+ *
+ * Days rather than visits: `ci.position` is the only repeat-visit signal the
+ * schema carries, and it counts GPS fixes, not arrivals.
+ */
+const FREQUENTS_MIN_VISIT_DAYS = 3;
+
+/**
  * Per-call switches for {@link DerivedRelationshipService.derive}.
  *
  * The split exists because the three legs are not the same KIND of write. Two
@@ -86,8 +94,40 @@ export class DerivedRelationshipService {
   }
 
   /**
-   * COMMUNICATES_WITH from episodic EMAILED / MESSAGED / CALLED / SENT-pair
-   * person↔person edges. Strength = min(1, log10(count+1)/2).
+   * COMMUNICATES_WITH from episodic EMAILED / MESSAGED / CALLED / MET_WITH /
+   * ORGANIZED_EVENT_WITH person↔person edges.
+   *
+   * ### What `n` is, and what it is NOT
+   *
+   * It is NOT a communication count, and no wording here should imply one. The
+   * same schema fact that made the FREQUENTS leg a no-op applies to this one:
+   * `relationships_unique_directed_idx` is UNIQUE on
+   * (from_entity_id, to_entity_id, relationship_type) WHERE `is_active`, so a
+   * pair holds at most ONE active row per direction per type. Aggregating those
+   * rows therefore counts DISTINCT (direction, type) combinations — bounded at
+   * 10 for the five types above — however many emails, messages or calls
+   * actually passed between the two people. Two colleagues who exchanged 4,000
+   * emails and one who sent a single text both count 1.
+   *
+   * Which is why the property is named `episodic_link_kinds`. The strength that
+   * comes off it, `LEAST(1, LN(n+1)/LN(10)/2)`, is likewise a function of that
+   * count and saturates at `LN(11)/LN(10)/2 ≈ 0.52` — a real ceiling, not a
+   * theoretical one, and the honest reading of the edge is "these two are
+   * linked in n distinct ways", not "these two talk a lot".
+   *
+   * The leg still does useful work: it projects one bidirectional L2 edge per
+   * pair the user's own data already links, which is what the graph reads. It
+   * is the WEIGHT that is weaker than it looks.
+   *
+   * ### The follow-up this does not take
+   *
+   * A true frequency would have to come from the evidence, the way
+   * {@link DerivedRelationshipService.upsertFrequents} now takes its day count
+   * from `ci.position` — here that means counting `ci.communications` rows
+   * naming both people (`from_entity_id` / `to_entity_ids`). That changes every
+   * existing edge's strength for every user, so it is deliberately NOT bundled
+   * into a fix pass; `ON CONFLICT DO NOTHING` means it would also need a
+   * re-derive to take effect on rows that already exist.
    */
   private async upsertCommunicatesWith(userId: string): Promise<number> {
     return this.dataSource.transaction(async (manager) => {
@@ -102,6 +142,8 @@ export class DerivedRelationshipService {
            SELECT
              LEAST(from_entity_id, to_entity_id) AS a,
              GREATEST(from_entity_id, to_entity_id) AS b,
+             -- Distinct (direction, type) rows, NOT episodes: the unique index
+             -- caps this at 10. See the method comment.
              COUNT(*)::int AS n
            FROM ci.relationships
           WHERE owner_user_id = $1
@@ -120,7 +162,7 @@ export class DerivedRelationshipService {
                 jsonb_build_object(
                   'layer', 'L2',
                   'provenance', jsonb_build_object('source', 'DerivedRelationshipService', 'job', 'communicates_with'),
-                  'episode_count', n
+                  'episodic_link_kinds', n
                 ),
                 $1, 'Person', 'Person', TRUE
            FROM episodic
@@ -140,7 +182,27 @@ export class DerivedRelationshipService {
   }
 
   /**
-   * FREQUENTS from VISITED edges — places visited ≥ 3 times (strength by count).
+   * FREQUENTS for places the owner visited on ≥ {@link FREQUENTS_MIN_VISIT_DAYS}
+   * separate days (strength by day count).
+   *
+   * A repeat visit is NOT countable from `ci.relationships`:
+   * `relationships_unique_directed_idx` is UNIQUE on (from, to, type) WHERE
+   * is_active, so a person→place pair holds at most ONE active VISITED row no
+   * matter how many times the place was visited. Counting those rows is always
+   * `1`, which is what made this leg a nightly no-op.
+   *
+   * The count comes from the evidence the edge was projected from instead:
+   * `ci.position` rows whose `location_entity_id` snapped to the place (the
+   * `position.visited` rule in the deterministic-edge matrix). Distinct days,
+   * not fixes — telemetry emits fixes by the minute, so a row count would call
+   * a single afternoon a habit.
+   *
+   * The VISITED edge is still the gate: FREQUENTS only ever strengthens a
+   * place the graph already asserts the owner goes to, and the per-place
+   * LATERAL keeps the position scan on `position_entity_idx` rather than
+   * grouping the whole hypertable. Day boundaries are UTC because
+   * `ci.users.timezone` is unvalidated free text and one bad value there would
+   * fault the entire nightly pass.
    */
   private async upsertFrequents(userId: string): Promise<number> {
     return this.dataSource.transaction(async (manager) => {
@@ -149,14 +211,29 @@ export class DerivedRelationshipService {
         from_entity_id: string;
         to_entity_id: string;
       }> = await manager.query(
-        `WITH visits AS (
-           SELECT from_entity_id, to_entity_id, from_entity_type, to_entity_type, COUNT(*)::int AS n
-             FROM ci.relationships
-            WHERE owner_user_id = $1
-              AND is_active = TRUE
-              AND relationship_type = 'VISITED'
-            GROUP BY 1, 2, 3, 4
-           HAVING COUNT(*) >= 3
+        // Every VISITED edge starts at the owner's own Person entity
+        // (ci.users.entity_id) — both producers, the position projection and
+        // KnownPlacesService, anchor it there — and ci.position holds only the
+        // owner's telemetry, so the join is what keeps a count of the owner's
+        // fixes from being attributed to somebody else's visits.
+        `WITH visited AS (
+           SELECT r.from_entity_id, r.to_entity_id, r.from_entity_type, r.to_entity_type
+             FROM ci.relationships r
+             JOIN ci.users u ON u.entity_id = r.from_entity_id AND u.id = $1
+            WHERE r.owner_user_id = $1
+              AND r.is_active = TRUE
+              AND r.relationship_type = 'VISITED'
+         ),
+         visits AS (
+           SELECT v.from_entity_id, v.to_entity_id, v.from_entity_type, v.to_entity_type, d.days AS n
+             FROM visited v
+             CROSS JOIN LATERAL (
+               SELECT COUNT(DISTINCT (p.time AT TIME ZONE 'UTC')::date)::int AS days
+                 FROM ci.position p
+                WHERE p.user_id = $1
+                  AND p.location_entity_id = v.to_entity_id
+             ) d
+            WHERE d.days >= $3
          )
          INSERT INTO ci.relationships
            (from_entity_id, to_entity_id, relationship_type, strength, properties,
@@ -166,14 +243,18 @@ export class DerivedRelationshipService {
                 jsonb_build_object(
                   'layer', 'L2',
                   'context', 'unknown',
-                  'provenance', jsonb_build_object('source', 'DerivedRelationshipService', 'job', 'frequents'),
-                  'visit_count', n
+                  'provenance', jsonb_build_object(
+                    'source', 'DerivedRelationshipService',
+                    'job', 'frequents',
+                    'derived_from', 'position.location_entity_id'
+                  ),
+                  'visit_days', n
                 ),
                 $1, from_entity_type, to_entity_type, FALSE
            FROM visits
          ON CONFLICT DO NOTHING
          RETURNING relationship_id, from_entity_id, to_entity_id`,
-        [userId, RelationshipType.FREQUENTS],
+        [userId, RelationshipType.FREQUENTS, FREQUENTS_MIN_VISIT_DAYS],
       );
 
       await this.recordCreated(manager, userId, RelationshipType.FREQUENTS, inserted);
