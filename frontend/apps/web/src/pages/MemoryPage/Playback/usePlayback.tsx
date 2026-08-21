@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import { useApolloClient } from '@apollo/client';
 import { createHookContext } from '@ci/common';
 import { useSearchParams } from 'react-router-dom';
 
@@ -8,7 +9,7 @@ import { createPlaybackStore, type PlaybackControlSnapshot, type PlaybackStore }
 import {
   TRACK_PAGE_SIZE,
   TRACK_PREFETCH_LEAD,
-  createRestPositionTrackSource,
+  createGraphqlPositionTrackSource,
   mergeStops,
   type PositionTrackSource,
   type TrackPoint,
@@ -41,7 +42,15 @@ const EAGER_PAGES = 2;
 
 function usePlaybackController({ pins, source }: PlaybackHookArgs) {
   const [searchParams] = useSearchParams();
-  const trackSource = useMemo(() => source ?? createRestPositionTrackSource(), [source]);
+  const apolloClient = useApolloClient();
+  // `positionTrack`/`positionTrackExtent` now exist and are wired (see
+  // `positionTrack.ts`'s `createGraphqlPositionTrackSource` docblock) — the
+  // REST adapter this defaulted to is dead code kept only for the handful of
+  // tests/stories that construct their own source directly.
+  const trackSource = useMemo(
+    () => source ?? createGraphqlPositionTrackSource(apolloClient),
+    [source, apolloClient],
+  );
 
   // The playback range is the explorer's OWN date filter — `?from`/`?to`, the
   // same two params the toolbar's date control and the activity heatmap already

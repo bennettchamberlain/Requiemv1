@@ -1,3 +1,4 @@
+import { MockedProvider } from '@apollo/client/testing';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,9 +39,15 @@ function useSyncHarness() {
 
 function renderSync() {
   return renderHook(useSyncHarness, {
+    // usePlaybackController now calls useApolloClient() unconditionally (to
+    // build the default GraphQL track source when no `source` is given) —
+    // every test here passes its own SOURCE and never touches the client,
+    // but the hook still needs *a* client in context to render at all.
     wrapper: ({ children }) => (
       <MemoryRouter initialEntries={['/memory?view=map']}>
-        <PlaybackProvider args={[{ pins: PINS, source: SOURCE }]}>{children}</PlaybackProvider>
+        <MockedProvider mocks={[]}>
+          <PlaybackProvider args={[{ pins: PINS, source: SOURCE }]}>{children}</PlaybackProvider>
+        </MockedProvider>
       </MemoryRouter>
     ),
   });

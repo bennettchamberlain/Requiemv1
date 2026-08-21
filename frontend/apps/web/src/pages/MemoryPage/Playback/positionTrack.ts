@@ -1,4 +1,7 @@
+import type { ApolloClient } from '@apollo/client';
 import { FetchJsonError, fetchJson } from '@ci/common';
+
+import { gql } from '@/graphql';
 
 /**
  * The playback's substrate: `ci.position`, read a window at a time.
@@ -211,6 +214,112 @@ export function createRestPositionTrackSource(): PositionTrackSource {
 
 function isNotFound(error: unknown): boolean {
   return error instanceof FetchJsonError && error.status === 404;
+}
+
+/**
+ * The playback's own read of `positionTrack` — the SAME query
+ * `MapView/TraceLayer.tsx` uses to draw the trace layer, called with
+ * `maxPoints: 0` so the server never buckets: a fly-through camera
+ * interpolates between individual real fixes, and a bucket's synthesized
+ * timestamp would make the camera jump rather than glide.
+ *
+ * `positionTrack`'s `endTime` is EXCLUSIVE (see `PositionTrackInput`), while
+ * this adapter's own contract (`FetchPageArgs.end`) is INCLUSIVE — a caller
+ * asking for "everything through 23:59:59.999" must not silently lose the
+ * fix that landed exactly there. One millisecond is added at the call site
+ * below to close that gap, rather than changing the shared query's contract
+ * for every other caller.
+ */
+const POSITION_TRACK_PAGE_QUERY = gql(`
+  query PlaybackPositionTrackPage($startTime: String, $endTime: String, $after: String, $first: Int) {
+    positionTrack(
+      input: { startTime: $startTime, endTime: $endTime, after: $after, first: $first, maxPoints: 0 }
+    ) {
+      points {
+        latitude
+        longitude
+        startTime
+      }
+      endCursor
+      hasNextPage
+    }
+  }
+`);
+
+/**
+ * `positionTrackExtent`, unscoped — the scrubber represents the user's WHOLE
+ * history, not whatever the map's viewport currently shows, so this
+ * deliberately passes no bbox and no date range.
+ */
+const POSITION_TRACK_EXTENT_QUERY = gql(`
+  query PlaybackPositionTrackExtent {
+    positionTrackExtent {
+      start
+      end
+      count
+    }
+  }
+`);
+
+/**
+ * The real adapter, wired to `positionTrack`/`positionTrackExtent` — the two
+ * queries `feat/map-geodata` built for exactly this. Supersedes
+ * {@link createRestPositionTrackSource}, whose `/api/position/track*` REST
+ * routes were never built anywhere in this repo (verified: `PositionController`
+ * exposes only `POST /`, `GET stats`, `GET/PATCH/DELETE :id`) — so a caller
+ * still on the REST adapter 404s forever and playback silently falls back to
+ * the located-memories-only mode, no matter how much real GPS history exists.
+ *
+ * No 404 handling here: these queries exist and are wired, so a failure is a
+ * real one and should propagate exactly like the REST adapter's non-404 path
+ * already does.
+ */
+export function createGraphqlPositionTrackSource(client: ApolloClient<object>): PositionTrackSource {
+  return {
+    async fetchPage({ start, end, after, limit, signal }: FetchPageArgs): Promise<PositionTrackPage> {
+      const inclusiveEnd = new Date(new Date(end).getTime() + 1).toISOString();
+
+      const { data } = await client.query({
+        query: POSITION_TRACK_PAGE_QUERY,
+        variables: { startTime: start, endTime: inclusiveEnd, after: after ?? undefined, first: limit },
+        fetchPolicy: 'network-only',
+        context: signal ? { fetchOptions: { signal } } : undefined,
+      });
+
+      const points = (data?.positionTrack?.points ?? [])
+        .map((point) => normalizeTrackRow({ t: point.startTime, lat: point.latitude, lng: point.longitude }))
+        .filter((point): point is TrackPoint => point != null)
+        .sort((a, b) => a.t - b.t);
+
+      return {
+        points,
+        nextCursor: data?.positionTrack?.hasNextPage ? (data.positionTrack.endCursor ?? null) : null,
+      };
+    },
+
+    async fetchExtent({ signal }: { signal?: AbortSignal } = {}): Promise<PositionTrackExtent | null> {
+      const { data } = await client.query({
+        query: POSITION_TRACK_EXTENT_QUERY,
+        fetchPolicy: 'network-only',
+        context: signal ? { fetchOptions: { signal } } : undefined,
+      });
+
+      const extent = data?.positionTrackExtent;
+
+      if (extent == null) {
+        return null;
+      }
+
+      const start = new Date(extent.start).getTime();
+      const end = new Date(extent.end).getTime();
+
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+        return null;
+      }
+
+      return { start, end, count: extent.count };
+    },
+  };
 }
 
 /**
