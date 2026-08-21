@@ -38,6 +38,7 @@ import { Module, type Provider } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmbeddingModule } from '@ci/common/embeddings';
+import { EmbedModule } from '@ci/domains/embed';
 import { EventsModule } from '@ci/domains/events';
 import { FileEntity, FilesModule } from '@ci/domains/files';
 import { GeocodeModule } from '@ci/domains/geocode';
@@ -58,6 +59,7 @@ import { PipelineSliceListener } from './listeners/PipelineSliceListener';
 import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
 import { SearchIndexSweepRequestListener } from './listeners/SearchIndexSweepRequestListener';
 import { StageArrivalListener } from './listeners/StageArrivalListener';
+import { UnfurlSweepRequestListener } from './listeners/UnfurlSweepRequestListener';
 import { BackpressureService } from './services/BackpressureService';
 import { EnrichmentWindowService } from './services/EnrichmentWindowService';
 import { PipelineControlService } from './services/PipelineControlService';
@@ -74,6 +76,7 @@ import { MediaDimensionsStage } from './stages/enrich/MediaDimensionsStage';
 import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLinkStage';
 import { PersonSelfClaimStage } from './stages/enrich/PersonSelfClaimStage';
 import { PositionReverseStage } from './stages/enrich/PositionReverseStage';
+import { UnfurlStage } from './stages/enrich/UnfurlStage';
 import { EmbedStage } from './stages/index/EmbedStage';
 import {
   BrowserActivityEmbedStage,
@@ -136,6 +139,7 @@ import { PositionPlacePromoteStage } from './stages/promote/PositionPlacePromote
  */
 const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_MEDIA_DIMENSIONS], useClass: MediaDimensionsStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_UNFURL], useClass: UnfurlStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED], useClass: EmbedStage },
   // The rest of the dense-embed family — one id per source table, one shared
   // implementation (DenseEmbedStageBase), all at the model-derived version.
@@ -231,6 +235,9 @@ const stageProviders: Provider[] = [
     FilesModule,
     EmbeddingModule,
     GeocodeModule,
+    //  - `EmbedModule`     -> UnfurlService (ci.unfurls cache + resolvers + SSRF
+    //                        fetcher) for `enrich.unfurl`.
+    EmbedModule,
     //  - `MemoryModule`    -> PlaceService (find-or-create place identity + the
     //                        city/region/country hierarchy fold) for `promote.place`.
     MemoryModule,
@@ -263,6 +270,7 @@ const stageProviders: Provider[] = [
     // until a scheduled sweep — `ci.relationships` is the only table a
     // traversal reads, and nothing was telling it a corpus had landed.
     GraphEdgeSweepRequestListener,
+    UnfurlSweepRequestListener,
     PipelineTickCron,
     // The cron owns the schedule and the cluster-safe advisory lock; the control
     // service owns what a tick DOES. Binding by token rather than importing the

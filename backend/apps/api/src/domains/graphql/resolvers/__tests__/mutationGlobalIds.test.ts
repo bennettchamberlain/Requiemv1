@@ -81,6 +81,7 @@ const cases: Case[] = [
         undefined as never,
         undefined as never,
         undefined as never,
+        undefined as never,
       );
 
       return { service, call: (id: string) => resolver.removeContent(context, id) };

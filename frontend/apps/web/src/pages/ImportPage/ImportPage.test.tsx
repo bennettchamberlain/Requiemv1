@@ -83,6 +83,28 @@ describe('ImportSurface', () => {
     expect(activity.className).toContain('max-h-none');
   });
 
+  /**
+   * The cap is about the WIZARD, and the wizard is hidden on the other two
+   * surfaces. Keeping 8.5rem there left the run list a few pixels tall on the
+   * Inbox page — the region's own chrome spends nearly all of 136px — with
+   * nothing to scroll. Those surfaces scroll themselves, so the region gets
+   * half the column and scrolls inside it.
+   */
+  it('gives the region room on the Inbox and History surfaces', () => {
+    render(<ImportSurface />);
+
+    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
+    expect(screen.getByText('import activity').className).toContain('sm:max-h-[50%]');
+    expect(screen.getByText('import activity').className).not.toContain('sm:max-h-[8.5rem]');
+
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    expect(screen.getByText('import activity').className).toContain('sm:max-h-[50%]');
+
+    // Back on the wizard the picker's ceiling returns.
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    expect(screen.getByText('import activity').className).toContain('sm:max-h-[8.5rem]');
+  });
+
   it('opens on the wizard', () => {
     render(<ImportSurface />);
 

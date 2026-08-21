@@ -291,6 +291,26 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
   },
 
   /**
+   * Every key is a request to someone else's server, so this is metered even
+   * though nobody bills for it: provider oEmbed endpoints and Wikimedia both
+   * rate-limit, and a full-corpus first pass (tens of thousands of YouTube and
+   * Spotify keys) is hours of polite 2/s traffic. Weekly, like every metered
+   * stage; the per-run cap is sized to what 2/s fits in one enrichment window
+   * (rows, not requests — rows sharing a key cost one request). The cache
+   * row's expiry, not the schedule, decides when a key is asked again. A
+   * first pass over a large corpus is best started by hand:
+   * `POST /pipeline/sweeps { stage: 'enrich.unfurl' }`.
+   */
+  [STAGE_IDS.ENRICH_UNFURL]: {
+    trigger: 'scheduled',
+    cost: 'metered',
+    window: 'enrichment',
+    minInterval: 7 * DAYS,
+    maxStaleness: 30 * DAYS,
+    perRunCap: 20_000,
+  },
+
+  /**
    * NIGHTLY. Four Postgres statements per slice; no provider.
    *
    * Nightly for BATCH AFFINITY, not merely for politeness — see the note on

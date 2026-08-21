@@ -914,7 +914,12 @@ describe('PipelineControlService', () => {
       // tonight instead of in a week — and the ONLY thing bounding that first
       // pass is `perRunCap`, which is the argument for the cap mattering more
       // than the interval.
-      const h = makeControl({ users: [runningRun()], stale: [...STAGE_ID_LIST] });
+      //
+      // Only the metered legs are stale here: a tick starts at most
+      // MAX_SWEEPS_PER_TICK sweeps in declaration order, so with EVERY stage
+      // stale the metered ones (declared last) would simply wait for the next
+      // tick — which is the cap working, not the policy failing.
+      const h = makeControl({ users: [runningRun()], stale: [...METERED_STAGES] });
 
       await h.service.tick();
 

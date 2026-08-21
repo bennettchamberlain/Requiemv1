@@ -181,14 +181,14 @@ A stage id is `<phase>.<name>`. The prefix is a naming convention, not something
 the code enforces — it makes a stage's position in the flow legible from its id
 alone and makes coverage groupable.
 
-**37 stages are registered today.** `constants.ts` `STAGE_IDS` is the authoritative
+**38 stages are registered today.** `constants.ts` `STAGE_IDS` is the authoritative
 list; the counts below are what it holds.
 
 | Namespace | Responsibility | In this repo today |
 | --- | --- | --- |
 | `get.*` | Land every source record as one addressable, replayable row before anything interprets it (`get.fetch`, `get.capture`, `get.materialize`). | Nothing. Phase 6, still not started. |
 | `index.*` | Make a record addressable and findable: materialize raw → typed, register identity, build keyword and vector representations. | **14** — seven dense-embed legs (`index.embed` for content plus `index.embed_{communication,event,item,person,file,browser_activity}`) and the seven matching `index.vector*` tsvector legs. Both families share the text recipes in `search-ingress/searchTexts.ts` with the live listeners. |
-| `enrich.*` | Derive facts the source did not supply. | **6** — `enrich.media_dimensions`, `enrich.geocode`, `enrich.position_reverse`, `enrich.estimate_location`, `enrich.person_link`, `enrich.event_person_link`. |
+| `enrich.*` | Derive facts the source did not supply. | **7** — `enrich.media_dimensions`, `enrich.geocode`, `enrich.position_reverse`, `enrich.estimate_location`, `enrich.person_link`, `enrich.event_person_link`, `enrich.unfurl` (link previews: oEmbed / Wikidata / OpenGraph into `ci.unfurls`). |
 | `clean.*` | Reconcile competing assertions and repair normalization. | **3** — `clean.temporal_repair`, `clean.duplicate_detect`, `clean.identifier_normalize`. |
 | `promote.*` | Project winning facts into the rich graph and object model. | **14** — `promote.place`, `promote.place_position`, `promote.object`, `promote.observation`, and the ten `promote.edge_*` legs of the deterministic edge matrix (one per source table). |
 

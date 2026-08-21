@@ -8,6 +8,7 @@ import { EVENT_FRAGMENT } from '../EntityCard/EventCard';
 import { eventDisplayTitle, formatBytes } from '../utils';
 
 import { EntityDetailScaffold, EntityMedia, resolveStaticUrl } from './EntityDetailScaffold';
+import { hasRichMedia, RichMediaCard } from './RichMediaCard';
 
 const UPDATE_EVENT = gql(`
   mutation UpdateEventDetail($input: UpdateEventInput!) {
@@ -219,6 +220,11 @@ export function EventDetails({ entity }: Props) {
   const mediaPreviewSrc = isVideo ? undefined : resolveStaticUrl(data.previewUrl);
   const dimensions = data.mediaWidth && data.mediaHeight ? `${data.mediaWidth} × ${data.mediaHeight}` : null;
 
+  // A watch / listen / read event is ABOUT its content row: when that row has
+  // a resolved preview or a player, the drawer leads with it (poster, facts,
+  // click-to-play) rather than with a bare title and two timestamps.
+  const richContent = (data.contents?.edges ?? []).map((edge) => edge.node).find((node) => hasRichMedia(node));
+
   const title = eventDisplayTitle({
     title: data.title,
     startTime: data.startTime,
@@ -240,6 +246,8 @@ export function EventDetails({ entity }: Props) {
             contentType={data.mediaContentType}
             alt={title}
           />
+        ) : richContent ? (
+          <RichMediaCard content={richContent} title={richContent.title} url={richContent.contentUrl} />
         ) : undefined
       }
       editFields={[

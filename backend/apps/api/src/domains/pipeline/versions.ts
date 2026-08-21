@@ -111,6 +111,20 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.ENRICH_MEDIA_DIMENSIONS]: 1,
 
   /**
+   * v1 — oEmbed (YouTube/Spotify/Vimeo/SoundCloud/Dailymotion/X), Wikidata +
+   * Wikipedia for Netflix + Prime titles, OpenGraph with oEmbed discovery for
+   * the rest. Bump when a resolver's ANSWER for an unchanged key changes (new
+   * field, better entity pick); the `ci.unfurls` row's expiry — not this —
+   * governs re-fetching.
+   *
+   * v2 — streaming titles moved from TMDB to Wikidata/Wikipedia (licence), and
+   * poster copies are real objects now (v1 wrote `ci.files` rows with no bytes).
+   * v1 never shipped; its rows were cleared by hand on the one dev database
+   * that had them, and this bump re-offers every row so they are re-resolved.
+   */
+  [STAGE_IDS.ENRICH_UNFURL]: 2,
+
+  /**
    * DERIVED, not chosen — the one entry in this map nobody bumps by hand.
    *
    * `embedStageVersion()` reads `config.embedding.model` and the pgvector column

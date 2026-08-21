@@ -12,6 +12,7 @@ import { ConnectionsModule } from '@ci/domains/connections';
 import { ConversationModule } from '@ci/domains/conversations';
 import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { DeviceModule } from '@ci/domains/devices';
+import { EmbedModule } from '@ci/domains/embed';
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
@@ -57,6 +58,7 @@ import { TagAssignmentCountLoader } from './loaders/TagAssignmentCountLoader';
 import { TagLoader } from './loaders/TagLoader';
 import { ThreadLoader } from './loaders/ThreadLoader';
 import { ThreadMessagesLoader } from './loaders/ThreadMessagesLoader';
+import { UnfurlLoader } from './loaders/UnfurlLoader';
 import { ComplexityPlugin } from './plugins/ComplexityPlugin';
 import { ActionResolver } from './resolvers/ActionResolver';
 import { ActivityResolver } from './resolvers/ActivityResolver';
@@ -136,6 +138,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     EntityResolutionModule,
     EtlModule,
     FilesModule,
+    EmbedModule,
     GraphModule,
     IntelligenceModule,
     MemoryModule,
@@ -211,6 +214,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     SummaryResolver,
     TagAssignmentCountLoader,
     TagLoader,
+    UnfurlLoader,
     TagResolver,
     ThreadLoader,
     ThreadMessagesLoader,

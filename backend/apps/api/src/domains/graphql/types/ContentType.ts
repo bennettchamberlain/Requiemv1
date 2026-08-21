@@ -3,10 +3,12 @@ import GraphQLJSONObject from 'graphql-type-json';
 
 import { type Content } from '@ci/domains/memory';
 
+import { EmbedPlayerType } from './EmbedPlayerType';
 import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
 import { Taggable } from './Taggable';
+import { UnfurlType } from './UnfurlType';
 
 @ObjectType({ implements: () => [Node, Taggable] })
 export class ContentType implements Node, Taggable {
@@ -61,6 +63,23 @@ export class ContentType implements Node, Taggable {
   /** Byte size of the linked ORIGINAL — lets a client avoid using it as a thumbnail. */
   @Field(() => Float, { nullable: true })
   mediaSize?: number | null;
+
+  /**
+   * Provider-hosted player derived from `url` / `externalId` alone (YouTube,
+   * Spotify, Vimeo, SoundCloud, Dailymotion). Null when the URL belongs to no
+   * supported provider. Resolved, never stored.
+   */
+  @Field(() => EmbedPlayerType, { nullable: true })
+  player?: EmbedPlayerType | null;
+
+  /**
+   * Resolved link preview (title, author, poster, duration) from the
+   * `enrich.unfurl` stage — oEmbed for provider links, Wikidata/Wikipedia for
+   * Netflix/Prime titles, OpenGraph for everything else. Null until resolved. Read from the
+   * cache only; never triggers a fetch.
+   */
+  @Field(() => UnfurlType, { nullable: true })
+  unfurl?: UnfurlType | null;
 
   static toType(entity: Content): ContentType {
     return {

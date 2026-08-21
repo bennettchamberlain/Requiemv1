@@ -62,11 +62,13 @@ describe('EntityRelationshipCards', () => {
     useNodeGraphServiceMock.mockReturnValue({ data: SUBGRAPH, loading: false, error: null });
   });
 
-  it('renders a card for the related entity, naming the relationship and the neighbor', () => {
+  it('renders a card for the related entity, naming the neighbor but not the edge type', () => {
     renderCards();
 
     expect(screen.getByText('Frida Friend')).toBeInTheDocument();
-    expect(screen.getByText('Knows')).toBeInTheDocument();
+    // The raw edge type (KNOWS, DOCUMENTS…) is graph vocabulary and is not shown.
+    expect(screen.queryByText('Knows')).not.toBeInTheDocument();
+    expect(screen.queryByText('KNOWS')).not.toBeInTheDocument();
   });
 
   it('navigates to the related entity route when a card is clicked', async () => {
