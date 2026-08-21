@@ -197,15 +197,21 @@ type AskGrantPayload {
 }
 
 type AskGrantType {
+  active: Boolean!
   createdAt: DateTime!
   dataClass: String
+  expiresAt: DateTime
   granteeId: ID
   granteePeerLinkId: ID
   id: ID!
   mode: GrantMode!
   purpose: String
   queryType: String!
+  revocationReason: String
   revokedAt: DateTime
+  supersedesGrantId: ID
+  updatedAt: DateTime!
+  version: Int!
 }
 
 type AskPayload {
@@ -476,6 +482,7 @@ input CreateAskGrantInput {
   dataClass: String
   dataClasses: [String!]
   granteeId: ID!
+  maxDisclosure: DisclosureRung
   mode: GrantMode!
   purpose: String
   queryType: String!
@@ -953,6 +960,15 @@ type DescriptiveQuestionType {
 type DisclosedItemType {
   id: String!
   type: String!
+}
+
+enum DisclosureRung {
+  boolean
+  count
+  full
+  none
+  redacted
+  summary
 }
 
 """HBPE renewal predictions: periodic behaviors coming due or overdue"""
@@ -1831,6 +1847,7 @@ type Mutation {
   unscheduleTask(id: ID!): TaskType
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateAskGrant(id: ID!, input: UpdateAskGrantInput!): AskGrantPayload!
   updateBrowserActivity(input: UpdateBrowserActivityInput!): BrowserActivityType
   updateCommunication(input: UpdateCommunicationInput!): CommunicationType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
@@ -2335,6 +2352,7 @@ type Query {
   ask(id: ID!): AskType
   askAnswer(id: ID!): AskAnswerType
   askDisclosureHistory: [AskAuditType!]!
+  askGrant(id: ID!): AskGrantType
   askInbox: [AskType!]!
   askOutbox: [AskType!]!
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
@@ -2454,6 +2472,7 @@ type Query {
   Evidence-linked suggestions. Findings persist even when derivation.engines is off.
   """
   metricSuggestions(includeDismissed: Boolean): [MetricSuggestionType!]!
+  myAskGrantHistory: [AskGrantType!]!
   myAskGrants: [AskGrantType!]!
   node(id: ID!): Node
   note(id: ID!): NoteType
@@ -3098,6 +3117,16 @@ type UnfurlType {
 input UpdateAnswerInput {
   answer: String!
   id: ID!
+}
+
+input UpdateAskGrantInput {
+  clearExpiry: Boolean
+  dataClass: String
+  dataClasses: [String!]
+  expiresAt: DateTime
+  maxDisclosure: DisclosureRung
+  mode: GrantMode
+  purpose: String
 }
 
 input UpdateBrowserActivityInput {

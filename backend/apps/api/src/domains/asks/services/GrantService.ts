@@ -9,7 +9,8 @@ import { LoggerService } from '@ci/common/logging';
 import { type Ask, AskEntity } from '../entities/AskEntity';
 import { type AskGrant, AskGrantEntity } from '../entities/AskGrantEntity';
 import { evaluateGrant, isGrantActive } from '../grantMatch';
-import type { CreateAskGrantDto, GrantEvaluation, UpdateAskGrantDto } from '../types';
+import { DISCLOSURE_RUNGS } from '../policy';
+import type { AskGrantScope, CreateAskGrantDto, GrantEvaluation, UpdateAskGrantDto } from '../types';
 
 /**
  * Owns standing consent grants and evaluates an incoming ask against them. The
@@ -48,6 +49,7 @@ export class GrantService {
     }
 
     assertFutureExpiry(data.expiresAt);
+    assertReadableCeiling(data.scope);
 
     const record = this.grantRepository.create({
       id: data.id ?? uuidv7(),
@@ -121,6 +123,7 @@ export class GrantService {
 
     const expiresAt = changes.expiresAt === undefined ? previous.expiresAt : changes.expiresAt;
     assertFutureExpiry(expiresAt);
+    assertReadableCeiling(changes.scope);
 
     const replacement = this.grantRepository.create({
       id: uuidv7(),
@@ -131,7 +134,7 @@ export class GrantService {
       // either would make it a different grant, so they are not editable here.
       queryType: previous.queryType,
       dataClass: changes.dataClass === undefined ? previous.dataClass : changes.dataClass,
-      scope: changes.scope === undefined ? previous.scope : changes.scope,
+      scope: mergeScope(previous.scope, changes.scope),
       mode: changes.mode ?? previous.mode,
       purpose: changes.purpose === undefined ? previous.purpose : changes.purpose,
       revokedAt: null,
@@ -338,4 +341,77 @@ function assertFutureExpiry(expiresAt: Date | null | undefined, now: Date = new 
   if (expiresAt != null && expiresAt <= now) {
     throw new BadRequestException('A grant expiry must be in the future');
   }
+}
+
+/**
+ * A declared disclosure ceiling must name a real rung.
+ *
+ * `scope` is jsonb, so nothing at the storage layer stops `maxDisclosure:
+ * 'summry'` from being written — and `ceilingOf` in grantMatch deliberately
+ * reads an unreadable ceiling as `none`, the STRICTEST rung, so a typo cannot
+ * become the loosest reading of the owner's own restriction. That is the right
+ * behaviour at READ time and a terrible experience at WRITE time: the owner
+ * picks "summary", fat-fingers the API, and their grant silently answers
+ * nothing forever with no indication why.
+ *
+ * So the two halves are paired on purpose: strict here (a 400 the caller can
+ * act on), fail-closed there (a value already in the table can never widen).
+ * Compared against the rung vocabulary EXACTLY rather than through
+ * `canonicalDataClass` — this is a fixed enum the client picks from, not a
+ * free-text label a human typed, and accepting `'Full '` here would make the
+ * stored value depend on how it was spelled.
+ */
+function assertReadableCeiling(scope: AskGrantScope | null | undefined): void {
+  const declared = scope?.maxDisclosure;
+  if (declared == null) {
+    return;
+  }
+
+  if (!(DISCLOSURE_RUNGS as readonly unknown[]).includes(declared)) {
+    throw new BadRequestException(`scope.maxDisclosure must be one of: ${DISCLOSURE_RUNGS.join(', ')}`);
+  }
+}
+
+/**
+ * Fold a scope CHANGE onto the scope being replaced.
+ *
+ * ═══ WHY THIS IS A MERGE AND NOT AN ASSIGNMENT ═══
+ *
+ * `scope` carries several INDEPENDENT restrictions — `dataClasses`,
+ * `maxDisclosure`, `notBefore`/`notAfter`, `purpose` — and the Grant Manager
+ * edits them one at a time. This used to be `changes.scope ?? previous.scope`,
+ * which replaced the object WHOLESALE, so an owner narrowing the class list of
+ * a grant capped at "digest only" sent `{ dataClasses: [...] }` and silently
+ * DELETED `maxDisclosure` along with it. The next ask under that grant
+ * disclosed in full. Tightening one dimension must not be able to drop another:
+ * a narrowing edit that widens the answer is the exact inversion of what the
+ * owner asked for, and it is invisible in the UI because the field they touched
+ * did narrow.
+ *
+ * The three cases are distinct instructions, not shades of one:
+ *
+ * - `undefined` — "leave the scope alone". Inherit it whole.
+ * - `null` — "remove every scope restriction". Honoured as written; it is the
+ *   only way to widen, and it is explicit.
+ * - an object — "set these keys". Merged over the previous scope, so keys the
+ *   caller did not mention survive.
+ *
+ * Shallow by design: every field of {@link AskGrantScope} is a leaf or a whole
+ * list, and a deep merge of `dataClasses` would make "narrow this grant to
+ * photos" mean "add photos to whatever it already covered" — a widening edit
+ * wearing a narrowing's clothes.
+ */
+function mergeScope(
+  previous: AskGrantScope | null,
+  changes: AskGrantScope | null | undefined,
+): AskGrantScope | null {
+  if (changes === undefined) {
+    return previous;
+  }
+
+  if (changes === null || previous == null) {
+    return changes;
+  }
+
+  return { ...previous, ...changes };
 }

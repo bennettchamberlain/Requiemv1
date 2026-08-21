@@ -218,6 +218,118 @@ describe('GrantService.supersede', () => {
     expect(replacement.granteeUserId).toBe('asker-1');
   });
 
+  /**
+   * ═══ NARROWING A GRANT USED TO WIDEN ITS DISCLOSURE ═══
+   *
+   * `scope` carries several INDEPENDENT restrictions and the Grant Manager edits
+   * them one at a time, but `supersede` assigned the object WHOLESALE
+   * (`changes.scope ?? previous.scope`). So an owner tightening the class list of
+   * a grant capped at "digest only" sent `{ dataClasses: [...] }` and silently
+   * DELETED `maxDisclosure` with it — the next ask under that grant disclosed in
+   * full. The edit the owner made did narrow; the one they did not make widened,
+   * invisibly, in the same tap.
+   */
+  describe('SECURITY: a scope change MERGES, so tightening one dimension cannot drop another', () => {
+    const capped = () => grantRow({ scope: { maxDisclosure: 'summary', dataClasses: ['beach'] } });
+
+    it('keeps maxDisclosure when only dataClasses is changed', async () => {
+      const { service } = makeService({ grants: [capped()] });
+
+      const replacement = await service.supersede(OWNER, 'grant-1', {
+        scope: { dataClasses: ['beach', 'lake'] },
+      });
+
+      expect(replacement.scope).toEqual({ maxDisclosure: 'summary', dataClasses: ['beach', 'lake'] });
+    });
+
+    it('keeps dataClasses when only maxDisclosure is changed', async () => {
+      const { service } = makeService({ grants: [capped()] });
+
+      const replacement = await service.supersede(OWNER, 'grant-1', {
+        scope: { maxDisclosure: 'count' },
+      });
+
+      expect(replacement.scope).toEqual({ maxDisclosure: 'count', dataClasses: ['beach'] });
+    });
+
+    it('replaces a list rather than appending to it — narrowing must stay narrowing', async () => {
+      // Shallow by design: a deep merge would make "narrow this to lake" mean
+      // "add lake to whatever it already covered".
+      const { service } = makeService({ grants: [capped()] });
+
+      const replacement = await service.supersede(OWNER, 'grant-1', { scope: { dataClasses: ['lake'] } });
+
+      expect(replacement.scope?.dataClasses).toEqual(['lake']);
+    });
+
+    it('still honours an explicit null as "remove every scope restriction"', async () => {
+      const { service } = makeService({ grants: [capped()] });
+
+      const replacement = await service.supersede(OWNER, 'grant-1', { scope: null });
+
+      expect(replacement.scope).toBeNull();
+    });
+
+    it('merges onto a grant that had no scope at all', async () => {
+      const { service } = makeService({ grants: [grantRow({ scope: null })] });
+
+      const replacement = await service.supersede(OWNER, 'grant-1', {
+        scope: { maxDisclosure: 'boolean' },
+      });
+
+      expect(replacement.scope).toEqual({ maxDisclosure: 'boolean' });
+    });
+  });
+
+  /**
+   * Strict at WRITE time, fail-closed at READ time — the two halves are paired
+   * on purpose. `ceilingOf` reads an unreadable `maxDisclosure` as `none`, the
+   * strictest rung, so a typo can never be the loosest reading of the owner's
+   * own restriction; that is right for a value already in the table and useless
+   * as feedback, because the owner's grant would simply answer nothing forever
+   * with no indication why.
+   */
+  describe('a declared disclosure ceiling must name a real rung', () => {
+    it.each(['summry', 'everything', 'FULL', 'full ', '', 42, {}])('rejects %p on create', async (value) => {
+      const { service, grantRepository } = makeService();
+
+      await expect(
+        service.create(OWNER, {
+          granteeUserId: 'asker-1',
+          queryType: 'photos',
+          scope: { maxDisclosure: value as never },
+        }),
+      ).rejects.toThrow(/maxDisclosure/);
+      expect(grantRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects it on a change too, before anything is written', async () => {
+      const { service, grantRepository } = makeService();
+
+      await expect(
+        service.supersede(OWNER, 'grant-1', { scope: { maxDisclosure: 'summry' as never } }),
+      ).rejects.toThrow(/maxDisclosure/);
+      expect(grantRepository.manager.transaction).not.toHaveBeenCalled();
+    });
+
+    it('accepts every rung on the ladder, and an omitted ceiling', async () => {
+      for (const rung of ['none', 'boolean', 'count', 'summary', 'redacted', 'full'] as const) {
+        const { service } = makeService();
+        const created = await service.create(OWNER, {
+          granteeUserId: 'asker-1',
+          queryType: 'photos',
+          scope: { maxDisclosure: rung },
+        });
+        expect(created.scope?.maxDisclosure).toBe(rung);
+      }
+
+      const { service } = makeService();
+      await expect(
+        service.create(OWNER, { granteeUserId: 'asker-1', queryType: 'photos', scope: { dataClasses: [] } }),
+      ).resolves.toMatchObject({ scope: { dataClasses: [] } });
+    });
+  });
+
   it('distinguishes "clear the expiry" (explicit null) from "leave it alone" (omitted)', async () => {
     const withExpiry = () => grantRow({ expiresAt: new Date('2026-12-31T00:00:00Z') });
 

@@ -91,6 +91,10 @@ const SENSITIVE_CLASSES: ReadonlySet<string> = new Set([
  * This is a CEILING, not a grant: it can only ever reduce what a grant allows.
  * A tier never authorizes disclosure on its own — an ask still needs a matching
  * grant to be answered at all.
+ *
+ * A PER-CLASS ENTRY MAY ONLY TIGHTEN `'*'`, and {@link disclosureCeiling}
+ * enforces that rather than trusting the table — see the note there on why
+ * `peer.photos` was a disclosure UPGRADE bought with an asker-supplied label.
  */
 const TIER_CEILINGS: Readonly<Record<TrustTier, Readonly<Record<string, DisclosureRung>>>> = {
   // Members of the owner's own household on the same box.
@@ -101,24 +105,65 @@ const TIER_CEILINGS: Readonly<Record<TrustTier, Readonly<Record<string, Disclosu
   stranger: { '*': 'boolean', location: 'none' },
 };
 
+/** The narrowest rung this tier imposes on ANY class — its floor. */
+function strictestIn(table: Readonly<Record<string, DisclosureRung>>): DisclosureRung {
+  return Object.values(table).reduce<DisclosureRung>(minRung, table['*'] ?? 'boolean');
+}
+
 /**
  * The most this asker may ever receive for this data class.
  *
  * Sensitive classes are capped at `none` for every tier below `family`, which
  * routes them to owner review rather than silently auto-answering. Unknown tiers
  * fall back to the strictest posture.
+ *
+ * ═══ NAMING A CLASS MUST NEVER BUY MORE DISCLOSURE ═══
+ *
+ * Two rules below both exist because `dataClass` is an OPTIONAL, ASKER-SUPPLIED
+ * label, and because naming it does not actually confine what gets searched:
+ * `AskExecutorService` resolves a class to a coarse ENTITY TYPE (`photos` →
+ * `file`, so every document, receipt and scan the keyword matches comes back
+ * with the holiday snaps) and resolves an unknown or absent class to no filter
+ * at all. The label describes the ask; it does not bound the answer.
+ *
+ * 1. A CLASS THE ASK DOES NOT NAME gets the tier's FLOOR, not its `'*'`
+ *    fallback. An omitted class is the broadest an ask can be — unfiltered
+ *    across every indexed entity type — so handing it the fallback written for
+ *    "some ordinary class" rewarded the omission. This is the tier-side mirror
+ *    of {@link autoGrantNamesQueryClass}: at the grant layer an unnamed class
+ *    can no longer be auto-answered at all, which is what makes SENSITIVE_CLASSES'
+ *    "never disclosed automatically" true for the omission case; here the
+ *    REVIEWED path additionally loses the generous fallback. Deliberately the
+ *    floor rather than a flat `none`: the tier layer cannot tell a `relationship`
+ *    ask (no class exists to name) from a `content` one that dropped its label,
+ *    and answering "Nothing was shared." to every non-family relationship ask
+ *    would retire the archetype rather than secure it.
+ *
+ * 2. A PER-CLASS ENTRY MAY ONLY TIGHTEN `'*'`. `peer` reads
+ *    `{ '*': 'summary', photos: 'redacted' }`, and `redacted` sits ABOVE
+ *    `summary` on the ladder — so a peer who wrote `dataClass: 'photos'`
+ *    received ITEM REFERENCES where the same ask without the label received a
+ *    sentence. Since `photos` resolves to the whole `file` type, those
+ *    references were not confined to photographs either. Clamping to the
+ *    fallback keeps a class entry doing the only thing a ceiling table should
+ *    do — restrict.
  */
-export function disclosureCeiling(tier: TrustTier, dataClass?: string | null): DisclosureRung {
+export function disclosureCeiling(tier: TrustTier, dataClass?: unknown): DisclosureRung {
   const table = TIER_CEILINGS[tier] ?? TIER_CEILINGS.stranger;
+  const fallback = table['*'] ?? 'boolean';
   const canonical = canonicalDataClass(dataClass);
 
-  if (canonical != null && SENSITIVE_CLASSES.has(canonical) && tier !== 'household' && tier !== 'family') {
+  if (canonical == null) {
+    return strictestIn(table);
+  }
+
+  if (SENSITIVE_CLASSES.has(canonical) && tier !== 'household' && tier !== 'family') {
     return 'none';
   }
 
-  const forClass = canonical != null ? table[canonical] : undefined;
+  const forClass = table[canonical];
 
-  return forClass ?? table['*'] ?? 'boolean';
+  return forClass != null ? minRung(forClass, fallback) : fallback;
 }
 
 /**

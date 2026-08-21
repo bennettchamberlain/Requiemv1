@@ -269,8 +269,18 @@ describe('runAsk — the owner decides how much leaves, not the asker', () => {
   it('lets a generous grant do nothing when the TIER is the tighter of the two', async () => {
     // The converse direction, so the min is proved rather than the grant simply
     // replacing the tier: `stranger` caps at `boolean` however open the grant is.
+    //
+    // The ask NAMES its class, and has to: an ask that names none is now given
+    // the tier's floor rather than its `'*'` fallback (`stranger` declares
+    // `location: 'none'`, so its floor is `none`), which would prove the clamp
+    // with the wrong ceiling.
     const { resolver, askService } = makeResolver(
-      fakeAsk({ status: 'delivered', consentBasis: 'grant-abc', peerLinkId: 'link-1' }),
+      fakeAsk({
+        status: 'delivered',
+        consentBasis: 'grant-abc',
+        peerLinkId: 'link-1',
+        query: { queryType: 'photos', dataClass: 'photos', prompt: 'do you have photos of us?' },
+      }),
       {
         evaluation: { decision: 'auto', grantId: 'grant-abc', maxDisclosure: 'full' },
         peerLink: { trustTier: 'stranger' },

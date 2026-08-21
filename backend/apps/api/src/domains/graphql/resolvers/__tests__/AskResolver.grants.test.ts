@@ -40,7 +40,7 @@ function fakeGrant(overrides: Partial<AskGrant> = {}): AskGrant {
 
 function makeResolver(enabled = true) {
   const grantService = {
-    create: jest.fn(),
+    create: jest.fn().mockResolvedValue(fakeGrant()),
     revoke: jest.fn(),
     supersede: jest.fn().mockResolvedValue(fakeGrant()),
     listForOwner: jest.fn().mockResolvedValue([]),
@@ -65,6 +65,95 @@ function makeResolver(enabled = true) {
 }
 
 const GRANT_GID = GlobalUID.encode('ask-grant', 'grant-1');
+
+/**
+ * ═══ THE DISCLOSURE CEILING HAD THREE READERS AND NO WRITER ═══
+ *
+ * `scope.maxDisclosure` is read by the grant evaluator, by the local answer
+ * path and by the federated one — and was written by nothing. Both grant
+ * mutations hard-coded `scope` to `{ dataClasses }` or `null`, there was no
+ * input field, no default and no seed, so "digest only" was a posture the owner
+ * could not express and every clamp built on it was inert.
+ */
+describe('AskResolver grant mutations write the disclosure ceiling', () => {
+  it('createAskGrant persists maxDisclosure into the grant scope', async () => {
+    const { resolver, grantService } = makeResolver();
+
+    await resolver.createAskGrant(CTX, {
+      granteeId: GlobalUID.encode('user', 'asker-1'),
+      queryType: 'photos',
+      dataClasses: ['beach'],
+      maxDisclosure: 'summary',
+      mode: 'auto',
+    } as never);
+
+    expect(grantService.create).toHaveBeenCalledWith(
+      { userId: 'owner-1' },
+      expect.objectContaining({ scope: { dataClasses: ['beach'], maxDisclosure: 'summary' } }),
+    );
+  });
+
+  it('createAskGrant still stores a NULL scope when no dimension is supplied', async () => {
+    // Not `{}` — an empty object would claim the grant carries a scope.
+    const { resolver, grantService } = makeResolver();
+
+    await resolver.createAskGrant(CTX, {
+      granteeId: GlobalUID.encode('user', 'asker-1'),
+      queryType: 'photos',
+      mode: 'auto',
+    } as never);
+
+    expect(grantService.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ scope: null }),
+    );
+  });
+
+  it('a ceiling can be set WITHOUT restating the class list', async () => {
+    // The half that used to be inexpressible: `scope` was built from
+    // `dataClasses` alone, so there was no way to say "cap this" at all.
+    const { resolver, grantService } = makeResolver();
+
+    await resolver.updateAskGrant(CTX, GRANT_GID, { maxDisclosure: 'boolean' } as never);
+
+    expect(grantService.supersede).toHaveBeenCalledWith(
+      expect.anything(),
+      'grant-1',
+      expect.objectContaining({ scope: { maxDisclosure: 'boolean' } }),
+    );
+  });
+
+  it('narrowing dataClasses passes ONLY that dimension, leaving the ceiling for the merge', async () => {
+    // The resolver must not reconstruct the whole scope from the input, or it
+    // would re-create the wholesale replacement that deleted `maxDisclosure`.
+    // It sends the dimensions the caller touched; `GrantService.supersede`
+    // folds them onto the previous scope.
+    const { resolver, grantService } = makeResolver();
+
+    await resolver.updateAskGrant(CTX, GRANT_GID, { dataClasses: ['beach'] } as never);
+
+    expect(grantService.supersede).toHaveBeenCalledWith(
+      expect.anything(),
+      'grant-1',
+      expect.objectContaining({ scope: { dataClasses: ['beach'] } }),
+    );
+  });
+
+  it('an EMPTY dataClasses list is a real instruction, not an absence', async () => {
+    // "No classes permitted" is a posture an owner can hold, and `[]` is
+    // falsy — the presence test has to be `!= null` or this reads as "omitted"
+    // and silently inherits the previous list instead.
+    const { resolver, grantService } = makeResolver();
+
+    await resolver.updateAskGrant(CTX, GRANT_GID, { dataClasses: [] } as never);
+
+    expect(grantService.supersede).toHaveBeenCalledWith(
+      expect.anything(),
+      'grant-1',
+      expect.objectContaining({ scope: { dataClasses: [] } }),
+    );
+  });
+});
 
 // DEFECT 6 — the matrix's core interaction had no backing mutation.
 describe('AskResolver.updateAskGrant', () => {

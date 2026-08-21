@@ -62,8 +62,24 @@ const UNICODE_SPACE = /[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u300
  * An empty result is `null`, never `''`: the callers read "no class named" off
  * a nullish value, and an empty string is not a class the owner wrote down.
  */
-function canonicalToken(value: string | null | undefined): string | null {
-  if (value == null) {
+function canonicalToken(value: unknown): string | null {
+  // NOT `value == null`. `dataClass` and `queryType` reach here from jsonb
+  // (`ask_grants.scope.dataClasses`, `asks.query`) and from service callers that
+  // bypass the GraphQL/zod schemas, so the declared `string` type is a claim,
+  // not a guarantee — a row written by a migration, a fixture, or a peer that
+  // predates the schema can hold a number, an object, or an array. This used to
+  // call `.normalize()` on whatever it was handed, which throws a TypeError on
+  // every non-string, and that throw surfaces as a 500 from deep inside consent
+  // evaluation (`AskService.submit` has already inserted the ask row by then, so
+  // the failure also strands it).
+  //
+  // A non-string is NOT coerced to its `String()` form: `42` is not a class the
+  // owner wrote down, and coercing would invent one — and an attacker-supplied
+  // object with a `toString` would get to choose it. It reads as "no class
+  // named", which both call sites already resolve toward denial: a block covers
+  // an ask that names no class, and (see `autoGrantNamesQueryClass`) an `auto`
+  // grant does not.
+  if (typeof value !== 'string') {
     return null;
   }
 
@@ -77,8 +93,15 @@ function canonicalToken(value: string | null | undefined): string | null {
   return normalized ? normalized : null;
 }
 
-/** Canonical form of a data class, for BOTH grant matching and query execution. */
-export function canonicalDataClass(value: string | null | undefined): string | null {
+/**
+ * Canonical form of a data class, for BOTH grant matching and query execution.
+ *
+ * Accepts `unknown` deliberately — see {@link canonicalToken}. The parameter is
+ * widened rather than the callers being asked to pre-validate, because there are
+ * three of them on the security path and the one that forgets is the one that
+ * 500s.
+ */
+export function canonicalDataClass(value: unknown): string | null {
   return canonicalToken(value);
 }
 
@@ -95,6 +118,6 @@ export function canonicalDataClass(value: string | null | undefined): string | n
  * the normalization everywhere — was written for `dataClass` and simply was
  * not honoured for the field beside it.
  */
-export function canonicalQueryType(value: string | null | undefined): string | null {
+export function canonicalQueryType(value: unknown): string | null {
   return canonicalToken(value);
 }

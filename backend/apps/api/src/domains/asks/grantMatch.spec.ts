@@ -4,13 +4,21 @@ import type { AskGrantScope, AskQuery, GrantMode } from './types';
 
 const NOW = new Date('2026-07-15T00:00:00Z');
 
+/**
+ * Both fixtures NAME a data class, and that is load-bearing rather than
+ * cosmetic: an `auto` grant now requires the grant AND the ask to name one (see
+ * `autoGrantNamesQueryClass`), so a class-less default would make every test
+ * below silently exercise the class rule instead of the window / purpose /
+ * archetype / lifecycle rule it is written for. Tests about the null cases pass
+ * `dataClass: null` explicitly.
+ */
 function grant(overrides: Partial<AskGrant> = {}): AskGrant {
   return {
     id: overrides.id ?? 'grant-1',
     ownerUserId: 'owner',
     granteeUserId: 'asker',
     queryType: 'photos',
-    dataClass: null,
+    dataClass: 'photos',
     scope: null as AskGrantScope | null,
     mode: 'auto' as GrantMode,
     purpose: null,
@@ -26,7 +34,7 @@ function grant(overrides: Partial<AskGrant> = {}): AskGrant {
 }
 
 function ask(overrides: Partial<AskQuery> = {}): AskQuery {
-  return { queryType: 'photos', prompt: 'do you have photos of us?', ...overrides };
+  return { queryType: 'photos', dataClass: 'photos', prompt: 'do you have photos of us?', ...overrides };
 }
 
 describe('evaluateGrant', () => {
@@ -75,7 +83,7 @@ describe('evaluateGrant', () => {
       grantId: 'block-medical',
     });
     // ...and an ask that OMITS the class must not slip through to auto.
-    expect(evaluateGrant(ask({ queryType: 'health' }), grants, NOW)).toEqual({
+    expect(evaluateGrant(ask({ queryType: 'health', dataClass: undefined }), grants, NOW)).toEqual({
       decision: 'deny',
       grantId: 'block-medical',
     });
@@ -102,13 +110,48 @@ describe('evaluateGrant', () => {
       });
     });
 
-    it('still auto-answers a class-less ask (the archetypes that have no data class)', () => {
-      const plain = grant({ id: 'auto-availability', mode: 'auto', queryType: 'availability' });
+    // ── THE OTHER HALF: THE ASK MUST NAME A CLASS TOO ──────────────────────
+    //
+    // The rule above was enforced against `grant.dataClass` only, so it was
+    // still decided by an OPTIONAL, ASKER-SUPPLIED label: a class-less `auto`
+    // grant went on auto-answering any ask that simply OMITTED `dataClass`.
+    // That is not a narrower ask, it is the broadest one there is —
+    // `AskExecutorService` turns a null class into `includeTypes: undefined`,
+    // an unfiltered search across every indexed entity type — so the pair was a
+    // standing, unreviewed keyword oracle over the owner's whole memory.
+    it('SECURITY: does not auto-answer an ask that OMITS its class, whatever the grant says', () => {
+      const plain = grant({
+        id: 'auto-availability',
+        mode: 'auto',
+        queryType: 'availability',
+        dataClass: null,
+      });
 
-      expect(evaluateGrant(ask({ queryType: 'availability' }), [plain], NOW)).toEqual({
-        decision: 'auto',
+      // Downgraded to review, not denied: the owner still sees it, with the
+      // grant named as the basis. Only the automatic answer is withheld.
+      expect(evaluateGrant(ask({ queryType: 'availability', dataClass: undefined }), [plain], NOW)).toEqual({
+        decision: 'review',
         grantId: 'auto-availability',
       });
+    });
+
+    it.each([undefined, null, '', '   ', '\u200b'])(
+      'SECURITY: an ask whose class canonicalizes to nothing (%p) is never auto-answered',
+      (dataClass) => {
+        // Every one of these renders as "no class named" to the executor too,
+        // so each is the same unfiltered search wearing a different spelling.
+        const broad = grant({ id: 'auto-any', mode: 'auto', dataClass: null });
+
+        expect(evaluateGrant(ask({ dataClass: dataClass as never }), [broad], NOW).decision).toBe('review');
+      },
+    );
+
+    it('a class-named grant is still not reachable by an ask that omits the class', () => {
+      // `classMatchesQuery` already refuses this pairing; asserted here so the
+      // two halves of the rule cannot be "simplified" into one and leave a gap.
+      const named = grant({ id: 'auto-photos', mode: 'auto', dataClass: 'photos' });
+
+      expect(evaluateGrant(ask({ dataClass: undefined }), [named], NOW)).toEqual({ decision: 'review' });
     });
 
     it('a class-less BLOCK stays a wildcard — the asymmetry is the point', () => {
@@ -123,7 +166,15 @@ describe('evaluateGrant', () => {
 
     it('an explicitly class-named auto grant is unaffected', () => {
       const named = grant({ id: 'auto-medical', mode: 'auto', dataClass: 'medical-records' });
-      const enumerated = grant({ id: 'auto-set', mode: 'auto', scope: { dataClasses: ['medical-records'] } });
+      // `dataClass: null` on purpose — the narrowing here is `scope.dataClasses`,
+      // and leaving the column pinned to the fixture default would narrow it
+      // twice and prove nothing about the scope list.
+      const enumerated = grant({
+        id: 'auto-set',
+        mode: 'auto',
+        dataClass: null,
+        scope: { dataClasses: ['medical-records'] },
+      });
 
       expect(evaluateGrant(ask({ dataClass: 'medical-records' }), [named], NOW)).toEqual({
         decision: 'auto',
@@ -174,7 +225,7 @@ describe('evaluateGrant', () => {
   });
 
   it('treats an empty scope.dataClasses as "no classes permitted" (matches nothing)', () => {
-    const emptyScoped = grant({ mode: 'auto', scope: { dataClasses: [] } });
+    const emptyScoped = grant({ mode: 'auto', dataClass: null, scope: { dataClasses: [] } });
     expect(evaluateGrant(ask({ dataClass: 'beach' }), [emptyScoped], NOW)).toEqual({
       decision: 'review',
     });
@@ -231,7 +282,7 @@ describe('evaluateGrant', () => {
   });
 
   it('enforces scope.dataClasses membership', () => {
-    const scoped = grant({ mode: 'auto', scope: { dataClasses: ['beach', 'lake'] } });
+    const scoped = grant({ mode: 'auto', dataClass: null, scope: { dataClasses: ['beach', 'lake'] } });
     expect(evaluateGrant(ask({ dataClass: 'lake' }), [scoped], NOW)).toEqual({
       decision: 'auto',
       grantId: 'grant-1',
@@ -321,6 +372,66 @@ describe('grant vocabulary (Phase 2)', () => {
         const g = grant({ mode: 'auto', scope: { maxDisclosure: value as never } });
         expect(evaluateGrant(ask(), [g], NOW).maxDisclosure).toBe(value.trim().toLowerCase());
       }
+    });
+  });
+
+  /**
+   * ═══ WITH TWO LIVE MATCHING GRANTS, POSTGRES DECIDED THE CEILING ═══
+   *
+   * Nothing stops an owner from holding two grants that both cover an ask — the
+   * Grant Manager writes a row per posture and `supersede` only closes the row it
+   * was pointed at. `evaluateGrant` used `matches.find(...)`, and
+   * `GrantService.evaluate` issues an unordered `SELECT`, so the ceiling on the
+   * answer was whichever row came back first out of the heap: the same ask could
+   * be capped at `boolean` today and disclosed in `full` after a VACUUM moved the
+   * rows, with nothing in the audit to show why.
+   */
+  describe('SECURITY: several matching grants resolve to the STRICTEST, deterministically', () => {
+    const tight = grant({ id: 'g-tight', mode: 'auto', scope: { maxDisclosure: 'boolean' } });
+    const loose = grant({ id: 'g-loose', mode: 'auto', scope: { maxDisclosure: 'full' } });
+    const uncapped = grant({ id: 'g-uncapped', mode: 'auto' });
+
+    it('picks the narrowest ceiling regardless of the order the rows arrive in', () => {
+      for (const grants of [
+        [tight, loose],
+        [loose, tight],
+      ]) {
+        expect(evaluateGrant(ask(), grants, NOW)).toEqual({
+          decision: 'auto',
+          grantId: 'g-tight',
+          maxDisclosure: 'boolean',
+        });
+      }
+    });
+
+    it('a grant declaring NO ceiling never displaces one that does', () => {
+      // Absent is "this grant imposes no ceiling", which restricts nothing — so
+      // it sorts last, even though it is not `full`.
+      for (const grants of [
+        [uncapped, loose],
+        [loose, uncapped],
+      ]) {
+        expect(evaluateGrant(ask(), grants, NOW).grantId).toBe('g-loose');
+      }
+    });
+
+    it('breaks a tie by grant id, so consentBasis is reproducible across re-evaluations', () => {
+      const a = grant({ id: 'g-aaa', mode: 'auto', scope: { maxDisclosure: 'count' } });
+      const b = grant({ id: 'g-bbb', mode: 'auto', scope: { maxDisclosure: 'count' } });
+
+      expect(evaluateGrant(ask(), [b, a], NOW).grantId).toBe('g-aaa');
+      expect(evaluateGrant(ask(), [a, b], NOW).grantId).toBe('g-aaa');
+    });
+
+    it('applies the same rule on the review path', () => {
+      const looseReview = grant({ id: 'r-loose', mode: 'review', scope: { maxDisclosure: 'full' } });
+      const tightReview = grant({ id: 'r-tight', mode: 'review', scope: { maxDisclosure: 'count' } });
+
+      expect(evaluateGrant(ask(), [looseReview, tightReview], NOW)).toEqual({
+        decision: 'review',
+        grantId: 'r-tight',
+        maxDisclosure: 'count',
+      });
     });
   });
 

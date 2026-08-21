@@ -20,6 +20,7 @@ import {
   narrowerForm,
   narrowestRung,
   type AnswerForm,
+  type AskGrantScope,
   type DisclosureRung,
   type GrantMode,
   type TrustTier,
@@ -409,7 +410,12 @@ export class AskResolver {
       granteeUserId,
       queryType: input.queryType,
       dataClass: input.dataClass ?? null,
-      scope: input.dataClasses ? { dataClasses: input.dataClasses } : null,
+      // `scope` used to be hard-coded to `{ dataClasses }` or null, which is why
+      // `maxDisclosure` had three readers and no writer — the owner's disclosure
+      // ceiling was unreachable from the API that creates grants. Built from
+      // every scope dimension the input carries, and left NULL when it carries
+      // none, so an unscoped grant still stores null rather than `{}`.
+      scope: toGrantScope(input) ?? null,
       mode: input.mode as GrantMode,
       purpose: input.purpose ?? null,
     });
@@ -534,9 +540,12 @@ export class AskResolver {
     const grant = await this.grantService.supersede(serviceContext, id, {
       mode: input.mode as GrantMode | undefined,
       dataClass: input.dataClass,
-      // An omitted `dataClasses` inherits the previous scope; passing an empty
-      // list is a real instruction ("no classes"), not an absence.
-      scope: input.dataClasses ? { dataClasses: input.dataClasses } : undefined,
+      // An omitted scope dimension inherits the previous grant's value for THAT
+      // dimension — `GrantService.supersede` merges rather than assigns, so
+      // narrowing `dataClasses` no longer deletes `maxDisclosure`. `undefined`
+      // here (neither dimension supplied) inherits the scope whole; an empty
+      // `dataClasses` list is a real instruction ("no classes"), not an absence.
+      scope: toGrantScope(input),
       purpose: input.purpose,
       expiresAt,
     });
@@ -598,6 +607,31 @@ export class AskResolver {
  * authorized it (`delivered` carrying a consent basis). Kept in sync with
  * AskService.complete — both must agree or the gate is bypassable.
  */
+/**
+ * Build the grant's structured scope from the flat mutation input.
+ *
+ * Shared by create and update so the two cannot disagree about which input
+ * fields are scope dimensions — they already had, which is how `maxDisclosure`
+ * ended up with readers and no writer while `dataClasses` was wired on both.
+ *
+ * Returns `undefined`, never `{}`, when the input names no scope dimension at
+ * all: the two callers read that absence differently and both readings are
+ * load-bearing. `create` turns it into a NULL scope column (this grant has no
+ * scope); `supersede` treats it as "leave the previous scope alone" and inherits
+ * it whole. An empty object would tell create to store `{}` and tell supersede
+ * to merge nothing — the same value meaning two different, wrong things.
+ */
+function toGrantScope(input: { dataClasses?: string[]; maxDisclosure?: string }): AskGrantScope | undefined {
+  const scope: AskGrantScope = {
+    // An empty `dataClasses` list is a real instruction ("no classes permitted"),
+    // so the presence test is `!= null`, not truthiness.
+    ...(input.dataClasses != null ? { dataClasses: input.dataClasses } : {}),
+    ...(input.maxDisclosure != null ? { maxDisclosure: input.maxDisclosure as DisclosureRung } : {}),
+  };
+
+  return Object.keys(scope).length > 0 ? scope : undefined;
+}
+
 /**
  * Narrow the flat GraphQL input back to the discriminated protocol shape.
  *
