@@ -273,7 +273,10 @@ describe('LinkedIn datasource', () => {
     it('reports Connections.csv: 1 base unit per row + 1 extra for the always-attempted event', async () => {
       const fpath = path.join(FIXTURES_DIR, 'linkedin-export', 'Connections.csv');
       const fi = new LinkedInFileImporter();
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
       await fi.fileImport({}, { filename: 'Connections.csv', fullPath: fpath }, {
         pipeline,
         timeframe: {},
@@ -301,7 +304,10 @@ describe('LinkedIn datasource', () => {
       ].join('\n');
       fs.writeFileSync(path.join(dir, 'Connections.csv'), csv);
       const fi = new LinkedInFileImporter();
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await fi.fileImport({}, { filename: 'Connections.csv', fullPath: path.join(dir, 'Connections.csv') }, {
         pipeline,
@@ -323,7 +329,10 @@ describe('LinkedIn datasource', () => {
       ].join('\n');
       fs.writeFileSync(path.join(dir, 'Connections.csv'), csv);
       const fi = new LinkedInFileImporter();
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await fi.fileImport({}, { filename: 'Connections.csv', fullPath: path.join(dir, 'Connections.csv') }, {
         pipeline,
@@ -365,7 +374,10 @@ describe('LinkedIn datasource', () => {
       ].join('\n');
       fs.writeFileSync(path.join(dir, 'messages.csv'), csv);
       const fi = new LinkedInFileImporter();
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await fi.fileImport({}, { filename: 'messages.csv', fullPath: path.join(dir, 'messages.csv') }, {
         pipeline,
@@ -387,7 +399,10 @@ describe('LinkedIn datasource', () => {
       ].join('\n');
       fs.writeFileSync(path.join(dir, 'messages.csv'), csv);
       const fi = new LinkedInFileImporter();
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await fi.fileImport({}, { filename: 'messages.csv', fullPath: path.join(dir, 'messages.csv') }, {
         pipeline,

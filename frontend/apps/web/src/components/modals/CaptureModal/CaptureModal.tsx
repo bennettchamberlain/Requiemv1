@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 
 import { Camera } from '@ci/capture';
 import { FetchJsonError, fetchJson, useDeviceLayout } from '@ci/common';
 import { Button, Dialog, cn, IconButton, Popover, useToast } from '@ci/shadcn';
-import { Camera as CameraIcon, FileUp, Images, Mic, Send, Settings, Square, Video, X } from '@ci/shadcn/icons';
+import {
+  Camera as CameraIcon,
+  FileUp,
+  Images,
+  Mic,
+  Send,
+  Settings,
+  Square,
+  Video,
+  X,
+} from '@ci/shadcn/icons';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { useUploadFile } from '@/api';
@@ -638,7 +648,13 @@ function InlineCaptureShell({
     <div data-testid="capture-shell" className="fixed inset-0 z-[100] bg-zinc-950 text-white">
       <div className="flex items-center justify-between px-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h1 className="px-3 text-lg font-semibold">{title}</h1>
-        <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" className="text-white" onClick={onClose}>
+        <IconButton
+          label={t('COMMON_CLOSE')}
+          variant="ghost"
+          size="icon"
+          className="text-white"
+          onClick={onClose}
+        >
           <X />
         </IconButton>
       </div>
@@ -709,7 +725,13 @@ function ActionTile({
   );
 }
 
-function AudioRecorderPanel({ onComplete, onCancel }: { onComplete: (file: File) => void; onCancel: () => void }) {
+function AudioRecorderPanel({
+  onComplete,
+  onCancel,
+}: {
+  onComplete: (file: File) => void;
+  onCancel: () => void;
+}) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [elapsed, setElapsed] = useState(0);

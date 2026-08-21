@@ -44,10 +44,15 @@ export class UnfurlLoader extends Loader<UnfurlView | null, string> {
     this.logger.setContext(UnfurlLoader.name);
   }
 
-  protected async batchLoad(context: UserServiceContext, keys: readonly string[]): Promise<readonly (UnfurlView | null)[]> {
+  protected async batchLoad(
+    context: UserServiceContext,
+    keys: readonly string[],
+  ): Promise<readonly (UnfurlView | null)[]> {
     const rows = await this.unfurlService.findByKeys(context, [...keys]);
 
-    const posterIds = [...new Set([...rows.values()].map((r) => r.posterFileId).filter((id): id is string => !!id))];
+    const posterIds = [
+      ...new Set([...rows.values()].map((r) => r.posterFileId).filter((id): id is string => !!id)),
+    ];
     const posters = posterIds.length ? await this.fileService.findByIds(context, posterIds) : [];
     const posterUrlById = new Map(posterIds.map((id, i) => [id, posters[i]?.url ?? null]));
 

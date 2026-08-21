@@ -8,7 +8,8 @@ import { ContentSheet } from './ContentSheet';
 
 // The relationship cards need the auth context for the REST graph endpoints; the drawer body is what's under test.
 vi.mock('@/components/EntityRelationshipCards/EntityRelationshipCards', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/components/EntityRelationshipCards/EntityRelationshipCards')>();
+  const actual =
+    await importOriginal<typeof import('@/components/EntityRelationshipCards/EntityRelationshipCards')>();
 
   return { ...actual, EntityRelationshipCards: () => null };
 });
@@ -57,9 +58,12 @@ describe('ContentSheet', () => {
    * /memory/content/:id and nothing opened.
    */
   it('opens the details drawer for the routed content row, with a link to its full page', async () => {
-    renderWithProviders(<ContentSheet contentId={CONTENT_GLOBAL_ID} onClose={vi.fn()} onChanged={vi.fn()} />, {
-      mocks: [contentMock],
-    });
+    renderWithProviders(
+      <ContentSheet contentId={CONTENT_GLOBAL_ID} onClose={vi.fn()} onChanged={vi.fn()} />,
+      {
+        mocks: [contentMock],
+      },
+    );
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Holiday photo' })).toBeInTheDocument();
@@ -75,7 +79,9 @@ describe('ContentSheet', () => {
   });
 
   it('renders nothing when no row is routed', () => {
-    renderWithProviders(<ContentSheet contentId={null} onClose={vi.fn()} onChanged={vi.fn()} />, { mocks: [] });
+    renderWithProviders(<ContentSheet contentId={null} onClose={vi.fn()} onChanged={vi.fn()} />, {
+      mocks: [],
+    });
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });

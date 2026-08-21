@@ -41,7 +41,10 @@ export async function upsertContentForEvent({
   let created = false;
 
   if (!contentId) {
-    const [content] = await contentService.create(context, eventId ? { ...input, event: { id: eventId } } : input);
+    const [content] = await contentService.create(
+      context,
+      eventId ? { ...input, event: { id: eventId } } : input,
+    );
     contentId = content?.id;
     created = true;
   }

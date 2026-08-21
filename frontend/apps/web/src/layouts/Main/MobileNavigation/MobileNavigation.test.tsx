@@ -52,6 +52,11 @@ vi.mock('@/hooks', async () => {
   };
 });
 
+vi.mock('@/components/ThemePicker', () => ({
+  useTheme: () => ({ themeState: { mode: 'light' }, setTheme: vi.fn() }),
+  ColorPicker: () => null,
+}));
+
 vi.mock('@/components/SearchBox', () => ({
   GlobalSearchBox: () => <input aria-label="Search memory" />,
 }));
@@ -95,6 +100,24 @@ describe('MobileNavigation', () => {
     expect(await screen.findByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
     expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
     expect(screen.getAllByRole('button', { name: 'Close menu' }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('puts the account in the header, left of the close chevron, linking to profile', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    const nav = await screen.findByRole('navigation');
+    const account = screen.getByRole('link', { name: 'Test User' });
+    const close = nav.querySelector('[aria-label="Close menu"]');
+    const plan = screen.getByRole('link', { name: 'Plan' });
+
+    expect(account).toHaveAttribute('href', '/profile');
+    expect(screen.queryByRole('button', { name: 'Help' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument();
+    expect(close).toBeTruthy();
+    expect(account.compareDocumentPosition(close as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect((close as Node).compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('opens on a right swipe from the left edge', async () => {

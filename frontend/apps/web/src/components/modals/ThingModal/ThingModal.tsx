@@ -1,10 +1,12 @@
 import { type ReactNode, useEffect, useState } from 'react';
 
 import { useMutation } from '@apollo/client';
-import { Button, Dialog, Input, Label, Select, Textarea, cn } from '@ci/shadcn';
+import { useDeviceLayout } from '@ci/common';
+import { Button, Input, Label, Select, Textarea, cn } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { resolveMediaUrl } from '@/components/entities/resolveMediaUrl';
+import { ResponsiveDialog } from '@/components/ResponsiveDialog';
 import { gql } from '@/graphql';
 import type {
   ItemAcquisitionMethod,
@@ -391,6 +393,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function ThingModal({ open, onClose, item, create = false, detailPagePath, onSaved }: Props) {
+  const { isMobile } = useDeviceLayout();
   const [formData, setFormData] = useState<ItemForm>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
 
@@ -485,9 +488,14 @@ export function ThingModal({ open, onClose, item, create = false, detailPagePath
   const showDetailLink = !create && Boolean(detailPagePath);
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <Dialog.Content className="sm:max-w-[900px] overflow-hidden">
-        <div className="flex flex-col md:flex-row h-[80vh] md:h-[640px]">
+    <ResponsiveDialog open={open} onOpenChange={onClose}>
+      <ResponsiveDialog.Content className="overflow-hidden sm:max-w-[900px]">
+        <div
+          className={cn(
+            'flex flex-col md:flex-row',
+            isMobile ? 'min-h-0 flex-1 overflow-y-auto' : 'h-[80vh] md:h-[640px]',
+          )}
+        >
           {/* Image Section */}
           {!create && (
             <div className="w-full md:w-2/5 bg-stone-100 dark:bg-zinc-900 flex items-center justify-center overflow-hidden">
@@ -501,9 +509,9 @@ export function ThingModal({ open, onClose, item, create = false, detailPagePath
 
           {/* Form Section */}
           <div className={cn('w-full p-6 flex flex-col gap-4 overflow-y-auto', !create && 'md:w-3/5')}>
-            <Dialog.Header>
-              <Dialog.Title>{create ? 'Create item' : 'Item details'}</Dialog.Title>
-            </Dialog.Header>
+            <ResponsiveDialog.Header>
+              <ResponsiveDialog.Title>{create ? 'Create item' : 'Item details'}</ResponsiveDialog.Title>
+            </ResponsiveDialog.Header>
 
             <div className="grid gap-4 py-2">
               <Field label="Name" htmlFor="name">
@@ -797,7 +805,7 @@ export function ThingModal({ open, onClose, item, create = false, detailPagePath
             </div>
           </div>
         </div>
-        <Dialog.Footer className="flex gap-2 justify-end">
+        <ResponsiveDialog.Footer className="flex gap-2 justify-end">
           {showDetailLink && (
             <Button asChild type="button" variant="outline">
               <Link to={detailPagePath!}>View details</Link>
@@ -822,8 +830,8 @@ export function ThingModal({ open, onClose, item, create = false, detailPagePath
           >
             {create ? 'Add' : 'Update'}
           </Button>
-        </Dialog.Footer>
-      </Dialog.Content>
-    </Dialog>
+        </ResponsiveDialog.Footer>
+      </ResponsiveDialog.Content>
+    </ResponsiveDialog>
   );
 }

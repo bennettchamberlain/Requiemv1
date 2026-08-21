@@ -20,15 +20,21 @@ function makeMocks() {
   let nextEvent = 0;
   const contentService = {
     search: jest.fn().mockResolvedValue([]),
-    create: jest.fn().mockImplementation(async (_ctx: unknown, dto: { id?: string }) => [
-      { id: dto.id ?? 'content-1' },
-    ]),
+    create: jest
+      .fn()
+      .mockImplementation(async (_ctx: unknown, dto: { id?: string }) => [{ id: dto.id ?? 'content-1' }]),
   };
   const eventService = {
     create: jest.fn().mockImplementation(async () => [{ id: `event-${++nextEvent}` }]),
   };
   const graph = { ingest: jest.fn().mockResolvedValue({ errors: [] }) };
-  const logger = { setContext: jest.fn(), log: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  const logger = {
+    setContext: jest.fn(),
+    log: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  };
 
   return { contentService, eventService, graph, logger };
 }
@@ -55,7 +61,10 @@ describe('upsertContentForEvent', () => {
     });
 
     expect(result).toEqual({ contentId: 'content-1', created: true });
-    expect(m.contentService.create).toHaveBeenCalledWith(context, expect.objectContaining({ event: { id: 'event-1' } }));
+    expect(m.contentService.create).toHaveBeenCalledWith(
+      context,
+      expect.objectContaining({ event: { id: 'event-1' } }),
+    );
     expect(edgesOf(m.graph)).toEqual([
       expect.objectContaining({
         fromEntityId: 'content-1',
@@ -101,7 +110,10 @@ describe('upsertContentForEvent', () => {
       input: { type: 'Episode', external_id: 'ep-1' },
     });
 
-    expect(m.contentService.create).toHaveBeenCalledWith(context, expect.not.objectContaining({ event: expect.anything() }));
+    expect(m.contentService.create).toHaveBeenCalledWith(
+      context,
+      expect.not.objectContaining({ event: expect.anything() }),
+    );
     expect(m.graph.ingest).not.toHaveBeenCalled();
   });
 
@@ -120,7 +132,10 @@ describe('upsertContentForEvent', () => {
     });
 
     expect(result.created).toBe(true);
-    expect(m.logger.warn).toHaveBeenCalledWith(expect.stringContaining('edge sweep'), expect.objectContaining({ eventId: 'event-1' }));
+    expect(m.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('edge sweep'),
+      expect.objectContaining({ eventId: 'event-1' }),
+    );
   });
 });
 
@@ -191,10 +206,16 @@ describe('Spotify transforms link every event to its content', () => {
       m.logger as never,
     );
 
-    await service.transform({ connection, syncJob: job({ tracks: [{ track, added_at: '2020-01-01T00:00:00Z' }] }) });
+    await service.transform({
+      connection,
+      syncJob: job({ tracks: [{ track, added_at: '2020-01-01T00:00:00Z' }] }),
+    });
 
     expect(order).toEqual(['event', 'content']);
-    expect(m.contentService.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ event: { id: 'event-1' } }));
+    expect(m.contentService.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ event: { id: 'event-1' } }),
+    );
     expect(edgesOf(m.graph)).toHaveLength(1);
   });
 
@@ -210,13 +231,23 @@ describe('Spotify transforms link every event to its content', () => {
 
     await service.transform({
       connection,
-      syncJob: job({ episodes: [{ episode }, { episode: { ...episode, id: 'ep-2' }, added_at: '2020-01-01T00:00:00Z' }] }),
+      syncJob: job({
+        episodes: [{ episode }, { episode: { ...episode, id: 'ep-2' }, added_at: '2020-01-01T00:00:00Z' }],
+      }),
     });
 
     expect(m.eventService.create).toHaveBeenCalledTimes(1);
     expect(m.contentService.create).toHaveBeenCalledTimes(2);
-    expect(m.contentService.create).toHaveBeenNthCalledWith(1, expect.anything(), expect.not.objectContaining({ event: expect.anything() }));
-    expect(m.contentService.create).toHaveBeenNthCalledWith(2, expect.anything(), expect.objectContaining({ event: { id: 'event-1' } }));
+    expect(m.contentService.create).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.not.objectContaining({ event: expect.anything() }),
+    );
+    expect(m.contentService.create).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ event: { id: 'event-1' } }),
+    );
     expect(edgesOf(m.graph)).toHaveLength(1);
   });
 
@@ -238,7 +269,12 @@ describe('Spotify transforms link every event to its content', () => {
     });
 
     expect(m.contentService.create).not.toHaveBeenCalled();
-    expect(m.eventService.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: 'Saved audiobook A Book' }));
-    expect(edgesOf(m.graph)).toEqual([expect.objectContaining({ fromEntityId: 'audiobook-1', toEntityId: 'event-1' })]);
+    expect(m.eventService.create).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ title: 'Saved audiobook A Book' }),
+    );
+    expect(edgesOf(m.graph)).toEqual([
+      expect.objectContaining({ fromEntityId: 'audiobook-1', toEntityId: 'event-1' }),
+    ]);
   });
 });

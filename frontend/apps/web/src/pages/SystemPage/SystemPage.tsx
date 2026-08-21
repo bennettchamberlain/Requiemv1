@@ -80,15 +80,14 @@ function Navigation() {
     <div className="flex flex-col justify-center">
       <div className="grid grid-cols-2 gap-4 p-3">
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          {/* TODO: The profile page doesn't exist, we will eventually create one. */}
-          <Link to="/system">
+          <Link to="/profile">
             <User className="h-4 w-4" />
             Profile
           </Link>
         </Button>
 
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/settings">
+          <Link to="/profile">
             <Settings2 className="h-4 w-4" />
             Settings
           </Link>

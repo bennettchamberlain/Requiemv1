@@ -81,7 +81,12 @@ export function ContentTile({
         >
           {imageUrl ? (
             <>
-              <img src={imageUrl} alt={content.title || ''} className="w-full h-full object-cover" loading="lazy" />
+              <img
+                src={imageUrl}
+                alt={content.title || ''}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
               {content.title && (
                 <div className="absolute bottom-0 w-full truncate bg-gradient-to-t from-black/70 to-transparent p-2 px-3 text-sm text-white">
                   {content.title}
@@ -96,7 +101,9 @@ export function ContentTile({
               </div>
 
               {content.text ? (
-                <p className="line-clamp-5 text-xs leading-snug text-muted-foreground break-words">{content.text}</p>
+                <p className="line-clamp-5 text-xs leading-snug text-muted-foreground break-words">
+                  {content.text}
+                </p>
               ) : (
                 <div className="flex grow items-center justify-center">
                   <Icon className="h-10 w-10 text-muted-foreground/60" aria-hidden />

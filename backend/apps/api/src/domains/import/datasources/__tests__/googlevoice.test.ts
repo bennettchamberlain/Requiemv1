@@ -212,7 +212,8 @@ describe('Google Voice datasource', () => {
     const attachment = pipeline.find((p) => p.item?.metadata?.Attachment === 'image');
     expect(attachment).toBeDefined();
     const mediaAttachments = attachment!.item.metadata?.MediaAttachments as
-      Array<{ path: string; filename: string; type: string; mimetype: string }> | undefined;
+      | Array<{ path: string; filename: string; type: string; mimetype: string }>
+      | undefined;
     expect(mediaAttachments).toHaveLength(1);
     expect(mediaAttachments![0].type).toBe('image');
     expect(mediaAttachments![0].mimetype).toBe('image/jpeg');

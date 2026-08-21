@@ -74,6 +74,7 @@ const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
 const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
 // Pulls SchedulePage and FeedPage in with it — neither is routed on its own.
@@ -492,6 +493,15 @@ function AppRoutes() {
             element={
               <ProtectedRoute>
                 <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/profile/*"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

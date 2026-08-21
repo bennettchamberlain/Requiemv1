@@ -269,7 +269,8 @@ class FirefoxFileImporter implements FileImporter {
       let tagsRootId: number | null = null;
       try {
         const row = db.prepare("SELECT id FROM moz_bookmarks WHERE guid = 'tags________'").get() as
-          BookmarkIdRow | undefined;
+          | BookmarkIdRow
+          | undefined;
         if (row) {
           tagsRootId = row.id;
         }

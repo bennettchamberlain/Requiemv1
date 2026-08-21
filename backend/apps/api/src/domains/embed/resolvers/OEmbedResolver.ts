@@ -1,7 +1,14 @@
 import type { ResolveTarget } from '../resolveKey';
 import { MAX_JSON_BYTES, type UnfurlFetcher } from '../services/UnfurlFetcher';
 
-import { httpUrl, str, statusOutcome, type UnfurlData, type UnfurlOutcome, type UnfurlResolver } from './types';
+import {
+  httpUrl,
+  str,
+  statusOutcome,
+  type UnfurlData,
+  type UnfurlOutcome,
+  type UnfurlResolver,
+} from './types';
 
 /**
  * Public, unauthenticated oEmbed endpoints, keyed by the identity domain's
@@ -21,7 +28,15 @@ export const OEMBED_ENDPOINTS: Readonly<Record<string, (pageUrl: string) => stri
 export function dataFromOEmbed(json: Record<string, unknown>, pageUrl: string): UnfurlData {
   const duration = typeof json.duration === 'number' ? Math.round(json.duration) : undefined;
   const payload: Record<string, unknown> = {};
-  for (const key of ['type', 'provider_name', 'thumbnail_width', 'thumbnail_height', 'width', 'height', 'upload_date']) {
+  for (const key of [
+    'type',
+    'provider_name',
+    'thumbnail_width',
+    'thumbnail_height',
+    'width',
+    'height',
+    'upload_date',
+  ]) {
     if (json[key] !== undefined) {
       payload[key] = json[key];
     }
@@ -48,7 +63,10 @@ export class OEmbedResolver implements UnfurlResolver {
       return { status: 'not_embeddable', detail: 'no_oembed_endpoint' };
     }
 
-    const res = await fetcher.get(endpoint(target.url), { accept: 'application/json', maxBytes: MAX_JSON_BYTES });
+    const res = await fetcher.get(endpoint(target.url), {
+      accept: 'application/json',
+      maxBytes: MAX_JSON_BYTES,
+    });
     switch (res.kind) {
       case 'blocked':
         return { status: 'blocked' };

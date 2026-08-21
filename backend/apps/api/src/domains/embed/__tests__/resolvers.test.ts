@@ -67,23 +67,56 @@ describe('OEmbedResolver', () => {
 
   it('maps HTTP statuses to the stored vocabulary', async () => {
     const r = new OEmbedResolver();
-    expect(await r.resolve(target, fakeFetcher((url) => ({ kind: 'status', status: 404, url })))).toEqual({ status: 'not_found' });
-    expect(await r.resolve(target, fakeFetcher((url) => ({ kind: 'status', status: 401, url })))).toMatchObject({ status: 'not_embeddable' });
-    expect(await r.resolve(target, fakeFetcher((url) => ({ kind: 'status', status: 429, url })))).toEqual({ status: 'rate_limited' });
-    expect(await r.resolve(target, fakeFetcher((url) => ({ kind: 'blocked', url })))).toEqual({ status: 'blocked' });
-    expect(await r.resolve(target, fakeFetcher((url) => ({ kind: 'timeout', url })))).toMatchObject({ status: 'transport_error' });
+    expect(
+      await r.resolve(
+        target,
+        fakeFetcher((url) => ({ kind: 'status', status: 404, url })),
+      ),
+    ).toEqual({ status: 'not_found' });
+    expect(
+      await r.resolve(
+        target,
+        fakeFetcher((url) => ({ kind: 'status', status: 401, url })),
+      ),
+    ).toMatchObject({ status: 'not_embeddable' });
+    expect(
+      await r.resolve(
+        target,
+        fakeFetcher((url) => ({ kind: 'status', status: 429, url })),
+      ),
+    ).toEqual({ status: 'rate_limited' });
+    expect(
+      await r.resolve(
+        target,
+        fakeFetcher((url) => ({ kind: 'blocked', url })),
+      ),
+    ).toEqual({ status: 'blocked' });
+    expect(
+      await r.resolve(
+        target,
+        fakeFetcher((url) => ({ kind: 'timeout', url })),
+      ),
+    ).toMatchObject({ status: 'transport_error' });
   });
 
   it('treats an empty 200 (a delisted Spotify track) as not_found', async () => {
     const out = await new OEmbedResolver().resolve(
-      { ...target, providerRef: 'spotify:track:3fzTpBMSQKjo9sW0T8Tw2O', url: 'https://open.spotify.com/track/3fzTpBMSQKjo9sW0T8Tw2O' },
-      fakeFetcher((url) => ok(url, { html: '<iframe …>', provider_name: 'Spotify', type: 'rich', title: '' })),
+      {
+        ...target,
+        providerRef: 'spotify:track:3fzTpBMSQKjo9sW0T8Tw2O',
+        url: 'https://open.spotify.com/track/3fzTpBMSQKjo9sW0T8Tw2O',
+      },
+      fakeFetcher((url) =>
+        ok(url, { html: '<iframe …>', provider_name: 'Spotify', type: 'rich', title: '' }),
+      ),
     );
     expect(out).toEqual({ status: 'not_found', detail: 'empty_oembed' });
   });
 
   it('drops non-http thumbnail/author URLs', () => {
-    expect(dataFromOEmbed({ thumbnail_url: 'javascript:alert(1)', author_url: 'ftp://x' }, 'https://a')).toMatchObject({
+    expect(
+      dataFromOEmbed({ thumbnail_url: 'javascript:alert(1)', author_url: 'ftp://x' }, 'https://a'),
+    ).toMatchObject({
       thumbnailUrl: undefined,
       authorUrl: undefined,
     });
@@ -91,7 +124,11 @@ describe('OEmbedResolver', () => {
 });
 
 describe('WikidataResolver', () => {
-  const dark: ResolveTarget = { resolver: 'wikidata', key: 'wd:tv:dark', work: { kind: 'tv', title: 'Dark', season: 1, episode: 10 } };
+  const dark: ResolveTarget = {
+    resolver: 'wikidata',
+    key: 'wd:tv:dark',
+    work: { kind: 'tv', title: 'Dark', season: 1, episode: 10 },
+  };
 
   const entity = (id: string, extra: Record<string, unknown>, claims: Record<string, unknown[]> = {}) => ({
     id,
@@ -99,7 +136,10 @@ describe('WikidataResolver', () => {
     descriptions: { en: { value: extra.description } },
     sitelinks: extra.enwiki ? { enwiki: { title: extra.enwiki } } : {},
     claims: Object.fromEntries(
-      Object.entries(claims).map(([p, vals]) => [p, vals.map((value) => ({ mainsnak: { datavalue: { value } } }))]),
+      Object.entries(claims).map(([p, vals]) => [
+        p,
+        vals.map((value) => ({ mainsnak: { datavalue: { value } } })),
+      ]),
     ),
   });
 
@@ -115,7 +155,11 @@ describe('WikidataResolver', () => {
       P2437: [{ amount: '+3' }],
     },
   );
-  const darkness = entity('Q204170', { label: 'darkness', description: 'lack of light', enwiki: 'Darkness' }, { P31: [{ id: 'Q16889133' }] });
+  const darkness = entity(
+    'Q204170',
+    { label: 'darkness', description: 'lack of light', enwiki: 'Darkness' },
+    { P31: [{ id: 'Q16889133' }] },
+  );
 
   it('resolves through the naming-convention title, gates on P31, and reads Commons + summary', async () => {
     const calls: string[] = [];
@@ -139,14 +183,21 @@ describe('WikidataResolver', () => {
       }
 
       if (url.includes('/page/summary/')) {
-        return ok(url, { description: '2017 German science-fiction television series', extract: 'Dark is a German science-fiction mystery thriller…' });
+        return ok(url, {
+          description: '2017 German science-fiction television series',
+          extract: 'Dark is a German science-fiction mystery thriller…',
+        });
       }
 
       throw new Error(`unexpected ${url}`);
     });
 
     const out = await new WikidataResolver().resolve(dark, fetcher);
-    expect(calls.map((c) => new URL(c).host)).toEqual(['en.wikipedia.org', 'www.wikidata.org', 'en.wikipedia.org']);
+    expect(calls.map((c) => new URL(c).host)).toEqual([
+      'en.wikipedia.org',
+      'www.wikidata.org',
+      'en.wikipedia.org',
+    ]);
     expect(out).toMatchObject({
       status: 'ok',
       data: {
@@ -164,10 +215,20 @@ describe('WikidataResolver', () => {
   });
 
   it('falls back to full-text search when no convention title hits, preserving search rank', async () => {
-    const kimmy = entity('Q18128516', { label: 'Unbreakable Kimmy Schmidt', description: 'American sitcom', enwiki: 'Unbreakable Kimmy Schmidt' }, { P31: [{ id: 'Q5398426' }] });
+    const kimmy = entity(
+      'Q18128516',
+      {
+        label: 'Unbreakable Kimmy Schmidt',
+        description: 'American sitcom',
+        enwiki: 'Unbreakable Kimmy Schmidt',
+      },
+      { P31: [{ id: 'Q5398426' }] },
+    );
     const fetcher = fakeFetcher((url) => {
       if (url.includes('titles=')) {
-        return ok(url, { query: { pages: { '-1': { title: 'Unbreakable Kimmy Schmidt (TV series)', missing: '' } } } });
+        return ok(url, {
+          query: { pages: { '-1': { title: 'Unbreakable Kimmy Schmidt (TV series)', missing: '' } } },
+        });
       }
 
       if (url.includes('generator=search')) {
@@ -175,24 +236,44 @@ describe('WikidataResolver', () => {
           query: {
             pages: {
               '9': { index: 2, title: 'Ellie Kemper', pageprops: { wikibase_item: 'Q258505' } },
-              '4': { index: 1, title: 'Unbreakable Kimmy Schmidt', pageprops: { wikibase_item: 'Q18128516' } },
+              '4': {
+                index: 1,
+                title: 'Unbreakable Kimmy Schmidt',
+                pageprops: { wikibase_item: 'Q18128516' },
+              },
             },
           },
         });
       }
 
       if (url.includes('wikidata.org')) {
-        return ok(url, { entities: { Q18128516: kimmy, Q258505: entity('Q258505', { label: 'Ellie Kemper', description: 'American actress' }, { P31: [{ id: 'Q5' }] }) } });
+        return ok(url, {
+          entities: {
+            Q18128516: kimmy,
+            Q258505: entity(
+              'Q258505',
+              { label: 'Ellie Kemper', description: 'American actress' },
+              { P31: [{ id: 'Q5' }] },
+            ),
+          },
+        });
       }
 
       return ok(url, {});
     });
 
     const out = await new WikidataResolver().resolve(
-      { resolver: 'wikidata', key: 'wd:tv:unbreakable kimmy schmidt', work: { kind: 'tv', title: 'Unbreakable Kimmy Schmidt' } },
+      {
+        resolver: 'wikidata',
+        key: 'wd:tv:unbreakable kimmy schmidt',
+        work: { kind: 'tv', title: 'Unbreakable Kimmy Schmidt' },
+      },
       fetcher,
     );
-    expect(out).toMatchObject({ status: 'ok', data: { externalRef: 'wikidata:Q18128516', title: 'Unbreakable Kimmy Schmidt' } });
+    expect(out).toMatchObject({
+      status: 'ok',
+      data: { externalRef: 'wikidata:Q18128516', title: 'Unbreakable Kimmy Schmidt' },
+    });
   });
 
   it('rejects disambiguation pages and people, and reports not_found', async () => {
@@ -201,9 +282,22 @@ describe('WikidataResolver', () => {
         return ok(url, { query: { pages: { '1': { title: 'Foo', pageprops: { wikibase_item: 'Q1' } } } } });
       }
 
-      return ok(url, { entities: { Q1: entity('Q1', { label: 'Foo', description: 'Wikimedia disambiguation page' }, { P31: [{ id: 'Q4167410' }] }) } });
+      return ok(url, {
+        entities: {
+          Q1: entity(
+            'Q1',
+            { label: 'Foo', description: 'Wikimedia disambiguation page' },
+            { P31: [{ id: 'Q4167410' }] },
+          ),
+        },
+      });
     });
-    expect(await new WikidataResolver().resolve({ resolver: 'wikidata', key: 'wd:movie:foo', work: { kind: 'movie', title: 'Foo' } }, fetcher)).toEqual({
+    expect(
+      await new WikidataResolver().resolve(
+        { resolver: 'wikidata', key: 'wd:movie:foo', work: { kind: 'movie', title: 'Foo' } },
+        fetcher,
+      ),
+    ).toEqual({
       status: 'not_found',
     });
   });
@@ -212,8 +306,18 @@ describe('WikidataResolver', () => {
     const film = parseEntity(
       entity(
         'Q37342034',
-        { label: 'The Ballad of Buster Scruggs', description: '2018 film', enwiki: 'The Ballad of Buster Scruggs' },
-        { P31: [{ id: 'Q11424' }], P18: ['The-ballad-of-buster-scruggs.png'], P3383: ['Buster poster.jpg'], P2047: [{ amount: '+133' }], P577: [{ time: '+2018-08-31T00:00:00Z' }] },
+        {
+          label: 'The Ballad of Buster Scruggs',
+          description: '2018 film',
+          enwiki: 'The Ballad of Buster Scruggs',
+        },
+        {
+          P31: [{ id: 'Q11424' }],
+          P18: ['The-ballad-of-buster-scruggs.png'],
+          P3383: ['Buster poster.jpg'],
+          P2047: [{ amount: '+133' }],
+          P577: [{ time: '+2018-08-31T00:00:00Z' }],
+        },
       ),
     );
     expect(classifyEntity(film)).toBe('movie');
@@ -225,7 +329,13 @@ describe('WikidataResolver', () => {
   });
 
   it('picks the exact-title entity of the right kind over a popular partial match', () => {
-    const knight = parseEntity(entity('Q163872', { label: 'The Dark Knight', description: '2008 film', enwiki: 'The Dark Knight' }, { P31: [{ id: 'Q11424' }] }));
+    const knight = parseEntity(
+      entity(
+        'Q163872',
+        { label: 'The Dark Knight', description: '2008 film', enwiki: 'The Dark Knight' },
+        { P31: [{ id: 'Q11424' }] },
+      ),
+    );
     const darkTv = parseEntity(darkSeries);
     expect(pickEntity([knight, darkTv], { kind: 'tv', title: 'Dark' })?.id).toBe('Q28443710');
     expect(pickEntity([knight, darkTv], { kind: 'movie', title: 'Dark' })?.id).toBe('Q28443710'); // cross-kind exact label
@@ -233,10 +343,24 @@ describe('WikidataResolver', () => {
   });
 
   it('refuses a same-kind candidate whose name does not resemble the work', () => {
-    const other = parseEntity(entity('Q5151551', { label: 'Comes a Bright Day', description: '2012 film', enwiki: 'Comes a Bright Day' }, { P31: [{ id: 'Q11424' }] }));
+    const other = parseEntity(
+      entity(
+        'Q5151551',
+        { label: 'Comes a Bright Day', description: '2012 film', enwiki: 'Comes a Bright Day' },
+        { P31: [{ id: 'Q11424' }] },
+      ),
+    );
     expect(pickEntity([other], { kind: 'movie', title: 'Sam Smith: Dreams Come True' })).toBeUndefined();
-    const close = parseEntity(entity('Q1', { label: 'Sam Smith: Dreams Come True – The Film', description: '2015 film' }, { P31: [{ id: 'Q11424' }] }));
-    expect(pickEntity([other, close], { kind: 'movie', title: 'Sam Smith: Dreams Come True' })?.id).toBe('Q1');
+    const close = parseEntity(
+      entity(
+        'Q1',
+        { label: 'Sam Smith: Dreams Come True – The Film', description: '2015 film' },
+        { P31: [{ id: 'Q11424' }] },
+      ),
+    );
+    expect(pickEntity([other, close], { kind: 'movie', title: 'Sam Smith: Dreams Come True' })?.id).toBe(
+      'Q1',
+    );
     expect(titlesResemble('Stargate SG-1 (TV series)', 'Stargate SG-1')).toBe(true);
     expect(titlesResemble('The Dark Knight', 'Dark')).toBe(true); // containment — exactness is decided earlier
     expect(titlesResemble('Ellie Kemper', 'Unbreakable Kimmy Schmidt')).toBe(false);
@@ -268,31 +392,65 @@ describe('OpenGraphResolver', () => {
   });
 
   it('merges discovered oEmbed over the meta tags', async () => {
-    const target: ResolveTarget = { resolver: 'opengraph', key: 'og:https://reddit.com/x', url: 'https://www.reddit.com/x' };
+    const target: ResolveTarget = {
+      resolver: 'opengraph',
+      key: 'og:https://reddit.com/x',
+      url: 'https://www.reddit.com/x',
+    };
     const fetcher = fakeFetcher((url) =>
-      url.includes('/oembed') ? ok(url, { title: 'Better title', author_name: 'u/someone' }) : ok(url, page, 'text/html; charset=utf-8'),
+      url.includes('/oembed')
+        ? ok(url, { title: 'Better title', author_name: 'u/someone' })
+        : ok(url, page, 'text/html; charset=utf-8'),
     );
     const out = await new OpenGraphResolver().resolve(target, fetcher);
     expect(out).toMatchObject({
       status: 'ok',
-      data: { title: 'Better title', authorName: 'u/someone', siteName: 'Reddit', payload: { oembed_discovered: true } },
+      data: {
+        title: 'Better title',
+        authorName: 'u/someone',
+        siteName: 'Reddit',
+        payload: { oembed_discovered: true },
+      },
     });
   });
 
   it('treats a direct image as its own thumbnail and other binaries as not embeddable', async () => {
-    const target: ResolveTarget = { resolver: 'opengraph', key: 'og:https://i.redd.it/a.png', url: 'https://i.redd.it/a.png' };
-    expect(await new OpenGraphResolver().resolve(target, fakeFetcher((url) => ok(url, 'x', 'image/png')))).toMatchObject({
+    const target: ResolveTarget = {
+      resolver: 'opengraph',
+      key: 'og:https://i.redd.it/a.png',
+      url: 'https://i.redd.it/a.png',
+    };
+    expect(
+      await new OpenGraphResolver().resolve(
+        target,
+        fakeFetcher((url) => ok(url, 'x', 'image/png')),
+      ),
+    ).toMatchObject({
       status: 'ok',
       data: { thumbnailUrl: 'https://i.redd.it/a.png' },
     });
-    expect(await new OpenGraphResolver().resolve(target, fakeFetcher((url) => ok(url, 'x', 'application/pdf')))).toMatchObject({
+    expect(
+      await new OpenGraphResolver().resolve(
+        target,
+        fakeFetcher((url) => ok(url, 'x', 'application/pdf')),
+      ),
+    ).toMatchObject({
       status: 'not_embeddable',
     });
   });
 
   it('is not_embeddable for a page with no usable metadata', async () => {
-    const target: ResolveTarget = { resolver: 'opengraph', key: 'og:https://x.test/', url: 'https://x.test/' };
-    expect(await new OpenGraphResolver().resolve(target, fakeFetcher((url) => ok(url, '<html><head></head></html>', 'text/html')))).toMatchObject({
+    const target: ResolveTarget = {
+      resolver: 'opengraph',
+      key: 'og:https://x.test/',
+      url: 'https://x.test/',
+    };
+    expect(
+      await new OpenGraphResolver().resolve(
+        target,
+        fakeFetcher((url) => ok(url, '<html><head></head></html>', 'text/html')),
+      ),
+    ).toMatchObject({
       status: 'not_embeddable',
       detail: 'no_metadata',
     });

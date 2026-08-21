@@ -45,5 +45,7 @@ export function amazonMusicTrackUrl(
 
   const album = asinOrUndefined(albumAsin);
 
-  return album ? `https://music.amazon.com/albums/${album}?trackAsin=${t}` : `https://music.amazon.com/tracks/${t}`;
+  return album
+    ? `https://music.amazon.com/albums/${album}?trackAsin=${t}`
+    : `https://music.amazon.com/tracks/${t}`;
 }

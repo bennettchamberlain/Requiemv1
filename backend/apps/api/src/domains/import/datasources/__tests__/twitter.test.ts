@@ -871,7 +871,8 @@ describe('parser loss reporting (reconciliation)', () => {
   const writeDms = (conversations: object[]) =>
     fs.writeFileSync(
       path.join(dir, 'data', 'direct-messages.js'),
-      'window.YTD.direct_messages.part0 = ' + JSON.stringify(conversations.map((c) => ({ dmConversation: c }))),
+      'window.YTD.direct_messages.part0 = ' +
+        JSON.stringify(conversations.map((c) => ({ dmConversation: c }))),
     );
 
   async function run(pipeline: TestPipeline): Promise<void> {
@@ -887,7 +888,10 @@ describe('parser loss reporting (reconciliation)', () => {
     // The real fixture: 5 tweets.js rows (1 undated retweet drops, the other
     // 4 push) + 2 direct-messages.js rows (both push) = 7 consumed, 6
     // produced, 1 dropped.
-    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+      drop: jest.fn(),
+      consumed: jest.fn(),
+    });
     await new TwitterFileImporter().fileImport({}, { filename: 'twitter-archive', fullPath: ROOT }, {
       options: { includeReplies: true, includeRetweets: true },
       timeframe: {},
@@ -908,7 +912,10 @@ describe('parser loss reporting (reconciliation)', () => {
 
   it('drops a tweet with no id instead of silently skipping it', async () => {
     writeTweets([{ created_at: 'Fri Jan 03 12:00:00 +0000 2025', full_text: 'no id on this row' }]);
-    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+      drop: jest.fn(),
+      consumed: jest.fn(),
+    });
 
     await run(pipeline);
 
@@ -919,7 +926,10 @@ describe('parser loss reporting (reconciliation)', () => {
 
   it('drops a timeframe-excluded tweet instead of silently skipping it', async () => {
     writeTweets([{ id_str: '1', created_at: 'Fri Jan 03 12:00:00 +0000 2025', full_text: 'old news' }]);
-    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+      drop: jest.fn(),
+      consumed: jest.fn(),
+    });
 
     await new TwitterFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
       options: { includeReplies: true, includeRetweets: true },
@@ -940,11 +950,16 @@ describe('parser loss reporting (reconciliation)', () => {
         created_at: 'Mon Jan 06 08:00:00 +0000 2025',
         full_text: 'RT @someone: worth a look',
         extended_entities: {
-          media: [{ type: 'photo', id_str: '1', url: 'https://t.co/pic', media_url_https: 'https://x/pic.jpg' }],
+          media: [
+            { type: 'photo', id_str: '1', url: 'https://t.co/pic', media_url_https: 'https://x/pic.jpg' },
+          ],
         },
       },
     ]);
-    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+      drop: jest.fn(),
+      consumed: jest.fn(),
+    });
 
     await run(pipeline);
 
@@ -961,7 +976,10 @@ describe('parser loss reporting (reconciliation)', () => {
 
   it('drops a non-message DM conversation event (join/leave/rename) instead of silently skipping it', async () => {
     writeDms([{ conversationId: 'c1', messages: [{ participantsJoin: { userIds: ['2000'] } }] }]);
-    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+      drop: jest.fn(),
+      consumed: jest.fn(),
+    });
 
     await run(pipeline);
 
@@ -975,11 +993,16 @@ describe('parser loss reporting (reconciliation)', () => {
       {
         conversationId: 'c1',
         messages: [
-          { messageCreate: { id: 'd1', createdAt: '2025-01-08T23:50:38.598Z', text: 'hi', senderId: '2000' } },
+          {
+            messageCreate: { id: 'd1', createdAt: '2025-01-08T23:50:38.598Z', text: 'hi', senderId: '2000' },
+          },
         ],
       },
     ]);
-    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+    const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+      drop: jest.fn(),
+      consumed: jest.fn(),
+    });
 
     await new TwitterFileImporter().fileImport({}, { filename: path.basename(dir), fullPath: dir }, {
       options: { includeReplies: true, includeRetweets: true },

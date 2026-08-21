@@ -16,7 +16,7 @@ export function MemoryHubNav({ actions }: { actions?: ReactNode }) {
   const visible = MEMORY_HUB_SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
 
   // Phone: the Power Rail Memory submenu already lists these destinations.
-  // Keep page actions (e.g. "New thing") so create is not buried in Add.
+  // Create lives in the top-bar Add menu, so page actions are omitted.
   if (isMobile) {
     if (!actions) {
       return null;

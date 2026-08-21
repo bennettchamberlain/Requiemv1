@@ -494,7 +494,10 @@ describe('Grok chats inside an X archive', () => {
       // mediaId, despite its recorded filename not matching — see the
       // "resolves a generated image" test above) — a fourth pushed item.
       const root = writeXArchive();
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await runWithPipeline(pipeline, root);
 
@@ -516,7 +519,10 @@ describe('Grok chats inside an X archive', () => {
       const root = writeXArchive({
         rows: [{ createdAt: TURN_AT, sender: { name: 'User' }, message: 'no chatId on this row' }],
       });
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await runWithPipeline(pipeline, root);
 
@@ -529,7 +535,10 @@ describe('Grok chats inside an X archive', () => {
       const root = writeXArchive({
         rows: [{ chatId: 'chat1', createdAt: TURN_AT, sender: { name: 'User' }, message: 'old news' }],
       });
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await new GrokFileImporter().fileImport({}, { filename: path.basename(root), fullPath: root }, {
         timeframe: { since: new Date('2027-01-01T00:00:00Z') },
@@ -547,7 +556,10 @@ describe('Grok chats inside an X archive', () => {
       const root = writeXArchive({
         rows: [{ chatId: 'chat1', createdAt: TURN_AT, sender: { name: 'User' }, message: '' }],
       });
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await runWithPipeline(pipeline, root);
 
@@ -570,7 +582,10 @@ describe('Grok chats inside an X archive', () => {
           },
         ],
       });
-      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], { drop: jest.fn(), consumed: jest.fn() });
+      const pipeline: TestPipeline = Object.assign([] as EmittedGraph[], {
+        drop: jest.fn(),
+        consumed: jest.fn(),
+      });
 
       await runWithPipeline(pipeline, root);
 

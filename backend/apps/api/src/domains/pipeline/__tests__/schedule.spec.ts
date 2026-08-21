@@ -115,7 +115,11 @@ describe('metered stages', () => {
 
     // STAGE_ID_LIST order — declaration order, so the answer is comparable
     // between runs and between log lines.
-    expect(meteredStageIds()).toEqual([STAGE_IDS.ENRICH_POSITION_REVERSE, STAGE_IDS.ENRICH_GEOCODE, STAGE_IDS.ENRICH_UNFURL]);
+    expect(meteredStageIds()).toEqual([
+      STAGE_IDS.ENRICH_POSITION_REVERSE,
+      STAGE_IDS.ENRICH_GEOCODE,
+      STAGE_IDS.ENRICH_UNFURL,
+    ]);
   });
 
   it('agrees with the map for every stage, in both directions', () => {
