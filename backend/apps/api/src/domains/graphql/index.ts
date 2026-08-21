@@ -23,6 +23,7 @@ import { NotesModule } from '@ci/domains/notes';
 import { ParsingModule } from '@ci/domains/parsing';
 import { PeersModule } from '@ci/domains/peers';
 import { PlanningModule } from '@ci/domains/planning';
+import { PositionModule } from '@ci/domains/position';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { PythonFunctionsModule } from '@ci/domains/python-functions';
 import { ScheduleModule } from '@ci/domains/schedule';
@@ -84,6 +85,7 @@ import { NoteResolver } from './resolvers/NoteResolver';
 import { ObjectObservationResolver } from './resolvers/ObjectObservationResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
+import { PositionResolver } from './resolvers/PositionResolver';
 import { ProductModelResolver } from './resolvers/ProductModelResolver';
 import { ProviderKeyResolver } from './resolvers/ProviderKeyResolver';
 import { ProviderResolver } from './resolvers/ProviderResolver';
@@ -145,6 +147,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     NotesModule,
     ParsingModule,
     PlanningModule,
+    PositionModule,
     SearchNextModule,
     ScheduleModule,
     SummariesModule,
@@ -197,6 +200,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     PlaceLoader,
     PlaceVisitStatsLoader,
     PlaceResolver,
+    PositionResolver,
     PreviewLoader,
     ProductIdentifierLoader,
     ProductModelResolver,

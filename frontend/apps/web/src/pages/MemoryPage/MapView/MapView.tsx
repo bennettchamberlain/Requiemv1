@@ -21,6 +21,7 @@ import { TimelineView } from '../TimelineView';
 import { clusterDiameterPx, mergeCollidingClusters, type PixelCluster } from './clusterOverlap';
 import { readCoordinates, readGeoJsonPoint } from './mapCoordinates';
 import { fitSignature, pinsInBounds, routePoints } from './pinSet';
+import { PositionTraceLayer, TraceToggleControl } from './TraceLayer';
 import './memory-map.css';
 
 // Colour/icon-code each marker by what it represents, like the old LifeScope map.
@@ -1003,6 +1004,12 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
     setActiveEntity,
   } = useMapView(readOnly);
   const rowElementsRef = useRef(new globalThis.Map<string, HTMLDivElement>());
+  // The location-history trace is on by default: `ci.position` is where the
+  // overwhelming majority of this user's geography lives (63,044 fixes against
+  // 121 located events on the QA appliance), so a map that hides it by default
+  // is the empty map all over again. The toggle is there to get it out of the
+  // way once you have found what you came for.
+  const [showTrace, setShowTrace] = useState(true);
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const activeEntityId = hoveredEntityId ?? selectedEntityId;
@@ -1059,6 +1066,17 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
       {/* "Search this area" writes ?bbox, which the shared viewer can't honour
           (the server ignores viewer filters), so hide it in read-only mode. */}
       {!readOnly && <SearchAreaControl />}
+      {/* The trace answers `positionTrack`, which resolves for the SIGNED-IN
+          caller — so, like mapPins, it has no place on the shared viewer, whose
+          results belong to somebody else. Padded past the 300px timeline panel. */}
+      {!readOnly && (
+        <TraceToggleControl
+          enabled={showTrace}
+          onToggle={() => setShowTrace((value) => !value)}
+          className="left-[312px]"
+        />
+      )}
+      {!readOnly && <PositionTraceLayer enabled={showTrace} fitToTrace={pins.length === 0} />}
       {readOnly && (
         <LoadMorePinsControl
           shown={pins.length}
@@ -1103,11 +1121,20 @@ export function MobileMapView({ readOnly = false }: { readOnly?: boolean } = {})
     loadingMore,
     loadMore,
   } = useMapView(readOnly);
+  const [showTrace, setShowTrace] = useState(true);
 
   return (
     <Map center={[37.7749, -122.4194]}>
       <Map.Controls position="top-right" />
       {!readOnly && <SearchAreaControl />}
+      {!readOnly && (
+        <TraceToggleControl
+          enabled={showTrace}
+          onToggle={() => setShowTrace((value) => !value)}
+          className="top-14"
+        />
+      )}
+      {!readOnly && <PositionTraceLayer enabled={showTrace} fitToTrace={pins.length === 0} />}
       {readOnly && (
         <LoadMorePinsControl
           shown={pins.length}

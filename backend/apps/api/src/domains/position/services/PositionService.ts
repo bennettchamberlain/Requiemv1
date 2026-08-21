@@ -23,6 +23,78 @@ import type {
   UpdatePositionDto,
 } from '../types';
 
+import {
+  clampMaxPoints,
+  clampPageSize,
+  decodeTrackCursor,
+  encodeTrackCursor,
+  normalizeBbox,
+  resolveBucketSeconds,
+  type TrackBbox,
+} from './positionTrack';
+
+/**
+ * One point on the map's location trace.
+ *
+ * Deliberately NOT a {@link Position}: a trace draws tens of thousands of these
+ * at once and needs a coordinate, an instant and a weight — not the fix's
+ * device, dilution-of-precision pair, relative orientation or reverse-geocoded
+ * address. When the read is downsampled a point stands for a whole time bucket,
+ * which is what `fixCount` and the `startTime`/`endTime` pair say: the
+ * coordinate is the bucket's FIRST real fix, never an average, so every point
+ * the map draws is somewhere the user actually was.
+ */
+export interface TrackPoint {
+  /** First fix in the bucket (the fix's own time when the read is raw). */
+  startTime: Date;
+  /** Last fix in the bucket (equal to `startTime` when the read is raw). */
+  endTime: Date;
+  latitude: number;
+  longitude: number;
+  /** Fixes this point stands for — 1 when raw, the bucket's weight when downsampled. */
+  fixCount: number;
+  activityType: string | null;
+  /** Keyset cursor to resume strictly after this point. */
+  cursor: string;
+}
+
+/** One page of {@link TrackPoint}s plus everything needed to ask for the next. */
+export interface TrackPage {
+  points: TrackPoint[];
+  hasNextPage: boolean;
+  endCursor: string | null;
+  /** Bucket width the page was cut with, or null when the points are raw fixes. */
+  bucketSeconds: number | null;
+  /**
+   * Raw fixes matching the filters, ignoring the downsample and the page cap —
+   * answered on the FIRST page only (null on continuations, see
+   * {@link PositionService.findTrack}).
+   */
+  totalCount: number | null;
+}
+
+/** Filters and paging for {@link PositionService.findTrack}. */
+export interface TrackOptions {
+  startTime?: Date;
+  endTime?: Date;
+  /** Viewport as [minLon, minLat, maxLon, maxLat] (EPSG:4326). */
+  bbox?: number[];
+  first?: number;
+  after?: string;
+  /** Downsample budget for the whole window; 0 asks for raw fixes. */
+  maxPoints?: number;
+}
+
+/** Shape of one raw/bucketed row as Postgres hands it back. */
+interface TrackRow {
+  started_at: Date;
+  ended_at: Date;
+  latitude: string | number;
+  longitude: string | number;
+  fix_count: number;
+  activity_type: string | null;
+}
+
 @Injectable()
 export class PositionService {
   constructor(
@@ -423,6 +495,231 @@ export class PositionService {
     );
 
     return this.mapRawResultsToPositions(rawResults);
+  }
+
+  /**
+   * One page of the user's location history, for the map's trace layer.
+   *
+   * ── Why this exists ────────────────────────────────────────────────────────
+   * The memory map plotted located EVENTS and nothing else. On the QA appliance
+   * that is 121 pins — while `ci.position` holds 63,044 real GPS fixes spanning
+   * 2013-05-28 → 2026-08-21 that no map query had ever touched. The map looked
+   * empty because it was reading the wrong table.
+   *
+   * ── Why it is shaped like this ─────────────────────────────────────────────
+   * Three constraints, and each one picks a piece of the query:
+   *
+   *   1. A world-zoom request must never ship 63k rows. So the read is
+   *      DOWNSAMPLED server-side: the window's span divided by the caller's
+   *      point budget gives a bucket width, and each bucket collapses to its
+   *      first real fix plus a count. Thirteen years against a 2,000-point
+   *      budget is a 2.4-day bucket and 316 points — measured, because only 582
+   *      of those 4,833 days carry a fix.
+   *   2. The client must be able to page through EVERYTHING, so paging is
+   *      keyset, not offset: `time > cursor`. `ci.position`'s primary key is
+   *      (time, user_id), so for one user `time` is unique — a single-column
+   *      cursor is exact, no tie-break column needed. In bucketed mode the
+   *      cursor is the bucket's MAX(time), which is strictly past every row the
+   *      page consumed and strictly before every row it did not.
+   *   3. It has to be fast on a hypertable. Every predicate here is chosen to
+   *      land on an existing index: user + time on `position_user_id_time_idx`
+   *      (user_id, time DESC), the viewport on `position_location_idx` (GiST on
+   *      the geography, partial `WHERE location IS NOT NULL` — which is why the
+   *      IS NOT NULL clause is spelled out rather than implied). Measured on the
+   *      live 63k-row table: 29ms for the whole thirteen-year bucketed read,
+   *      107ms with a city-sized viewport box.
+   *
+   * Always user-scoped, structurally: the context type is
+   * {@link UserServiceContext}, so unlike the other reads on this service there
+   * is no SYSTEM_USER branch that could union every user's whereabouts. A trace
+   * is the single most sensitive projection of this table and nothing on the
+   * appliance has a legitimate reason to read one across users.
+   */
+  async findTrack(context: UserServiceContext, options: TrackOptions = {}): Promise<TrackPage> {
+    const cursor = decodeTrackCursor(options.after);
+    const pageSize = clampPageSize(options.first);
+    const boxes = normalizeBbox(options.bbox);
+
+    // A continuation INHERITS its bucket from the cursor instead of deriving it
+    // again: the derivation depends on the window's span, and on an appliance
+    // that is still ingesting, `max(time)` moves between pages. Re-deriving
+    // would cut later pages on different boundaries and either duplicate or
+    // skip a slice of the trace. It also saves the span round trip.
+    const bucketSeconds =
+      cursor != null
+        ? cursor.bucketSeconds
+        : resolveBucketSeconds(
+            await this.resolveTrackSpanMs(context, options),
+            clampMaxPoints(options.maxPoints),
+          );
+
+    const where = this.buildTrackWhere(context, options, boxes, cursor?.time);
+    const params = [...where.params];
+    // Appended, not reserved: Postgres rejects a bind that supplies more
+    // parameters than the statement mentions, so the raw query and the count —
+    // which have no bucket — must not carry a slot for one.
+    const bucketPlaceholder = bucketSeconds == null ? '' : `$${params.push(bucketSeconds)}`;
+    // Over-fetch by one so `hasNextPage` is a fact rather than a guess ("we
+    // returned a full page, so there is probably more").
+    const limitPlaceholder = `$${params.push(pageSize + 1)}`;
+
+    const sql =
+      bucketSeconds == null
+        ? `SELECT p.time AS started_at,
+                  p.time AS ended_at,
+                  1 AS fix_count,
+                  ST_Y(p.location::geometry) AS latitude,
+                  ST_X(p.location::geometry) AS longitude,
+                  p.activity_type
+             FROM ci.position p
+            WHERE ${where.sql}
+            ORDER BY p.time
+            LIMIT ${limitPlaceholder}`
+        : // GROUP BY the alias (Postgres resolves output names in GROUP BY /
+          // ORDER BY), and order by the bucket so the page is chronological —
+          // which is what makes `time > cursor` a valid continuation.
+          `SELECT time_bucket(make_interval(secs => ${bucketPlaceholder}), p.time) AS bucket_start,
+                  min(p.time) AS started_at,
+                  max(p.time) AS ended_at,
+                  count(*)::int AS fix_count,
+                  first(ST_Y(p.location::geometry), p.time) AS latitude,
+                  first(ST_X(p.location::geometry), p.time) AS longitude,
+                  first(p.activity_type, p.time) AS activity_type
+             FROM ci.position p
+            WHERE ${where.sql}
+            GROUP BY bucket_start
+            ORDER BY bucket_start
+            LIMIT ${limitPlaceholder}`;
+
+    const rows: TrackRow[] = await this.positionRepository.manager.query(sql, params);
+    const hasNextPage = rows.length > pageSize;
+    const points = (hasNextPage ? rows.slice(0, pageSize) : rows).map((row) => ({
+      startTime: row.started_at,
+      endTime: row.ended_at,
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+      fixCount: Number(row.fix_count),
+      activityType: row.activity_type,
+      // The cursor is the LAST instant this point consumed, so resuming at
+      // `time > cursor` can neither re-emit nor skip a fix.
+      cursor: encodeTrackCursor(row.ended_at, bucketSeconds),
+    }));
+
+    return {
+      points,
+      hasNextPage,
+      endCursor: points.length > 0 ? points[points.length - 1].cursor : null,
+      bucketSeconds,
+      // Counted once per walk, on the first page. A COUNT(*) is a second scan of
+      // the same rows, and the answer cannot change between pages of one walk —
+      // paying for it on every page would double the cost of the whole trace.
+      totalCount: cursor == null ? await this.countTrackPoints(context, options) : null,
+    };
+  }
+
+  /**
+   * Raw fixes matching a track read's filters, ignoring the downsample and the
+   * page cap — so the UI can say "316 of 63,044 fixes" rather than presenting a
+   * sampled trace as the whole history.
+   */
+  async countTrackPoints(context: UserServiceContext, options: TrackOptions = {}): Promise<number> {
+    const where = this.buildTrackWhere(context, options, normalizeBbox(options.bbox));
+
+    const rows: Array<{ n: string }> = await this.positionRepository.manager.query(
+      `SELECT count(*) AS n FROM ci.position p WHERE ${where.sql}`,
+      where.params,
+    );
+
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  /**
+   * The span the downsample budget is divided by.
+   *
+   * When the caller bounded the window (the explorer's date filters), that IS
+   * the span — no query needed. Otherwise it is the user's own first-to-last
+   * fix, read off `position_user_id_time_idx` (~30ms on the 63k-row table).
+   * Deliberately NOT narrowed by the viewport box: that would need the GiST
+   * scan, and the budget is a bound on how much we ship, not a measurement —
+   * a wrong-by-a-factor span only makes the trace coarser or finer, never wrong.
+   */
+  private async resolveTrackSpanMs(context: UserServiceContext, options: TrackOptions): Promise<number> {
+    if (options.startTime && options.endTime) {
+      return options.endTime.getTime() - options.startTime.getTime();
+    }
+
+    const params: unknown[] = [context.userId];
+    let sql = 'SELECT min(time) AS from_time, max(time) AS to_time FROM ci.position WHERE user_id = $1';
+
+    if (options.startTime) {
+      params.push(options.startTime);
+      sql += ` AND time >= $${params.length}`;
+    }
+
+    if (options.endTime) {
+      params.push(options.endTime);
+      sql += ` AND time < $${params.length}`;
+    }
+
+    const rows: Array<{ from_time: Date | null; to_time: Date | null }> =
+      await this.positionRepository.manager.query(sql, params);
+    const from = rows[0]?.from_time;
+    const to = rows[0]?.to_time;
+
+    return from != null && to != null ? to.getTime() - from.getTime() : 0;
+  }
+
+  /**
+   * The WHERE shared by the page read and its count, so a truncated page and
+   * the total it is truncated against always describe the same set of fixes.
+   *
+   * Callers append their own trailing parameters (bucket width, LIMIT) to the
+   * returned array — nothing here reserves a slot, because Postgres rejects a
+   * bind that supplies a parameter the statement never mentions.
+   */
+  private buildTrackWhere(
+    context: UserServiceContext,
+    options: TrackOptions,
+    boxes: TrackBbox[],
+    after?: Date,
+  ): { sql: string; params: unknown[] } {
+    const params: unknown[] = [context.userId];
+    const clauses = [
+      'p.user_id = $1',
+      // Spelled out rather than implied by the bbox predicate: it matches
+      // position_location_idx's own `WHERE location IS NOT NULL`, and a fix with
+      // no point has nothing to draw even when no viewport is supplied.
+      'p.location IS NOT NULL',
+    ];
+
+    if (options.startTime) {
+      params.push(options.startTime);
+      clauses.push(`p.time >= $${params.length}`);
+    }
+
+    if (options.endTime) {
+      params.push(options.endTime);
+      clauses.push(`p.time < $${params.length}`);
+    }
+
+    if (after) {
+      clauses.push(`p.time > $${params.push(after)}`);
+    }
+
+    if (boxes.length > 0) {
+      // OR of one or two envelopes — two when the viewport straddles the
+      // antimeridian (see normalizeBbox). `&&` is bounding-box overlap on the
+      // geography, which is exactly what the GiST index answers.
+      const envelopes = boxes.map(([minLon, minLat, maxLon, maxLat]) => {
+        const base = params.push(minLon, minLat, maxLon, maxLat) - 3;
+
+        return `p.location && ST_MakeEnvelope($${base}, $${base + 1}, $${base + 2}, $${base + 3}, 4326)::geography`;
+      });
+
+      clauses.push(`(${envelopes.join(' OR ')})`);
+    }
+
+    return { sql: clauses.join(' AND '), params };
   }
 
   private createPositionEntity(context: UserServiceContext, item: CreatePositionDto): PositionEntity {

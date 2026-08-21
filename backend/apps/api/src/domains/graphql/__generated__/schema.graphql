@@ -197,15 +197,21 @@ type AskGrantPayload {
 }
 
 type AskGrantType {
+  active: Boolean!
   createdAt: DateTime!
   dataClass: String
+  expiresAt: DateTime
   granteeId: ID
   granteePeerLinkId: ID
   id: ID!
   mode: GrantMode!
   purpose: String
   queryType: String!
+  revocationReason: String
   revokedAt: DateTime
+  supersedesGrantId: ID
+  updatedAt: DateTime!
+  version: Int!
 }
 
 type AskPayload {
@@ -1831,6 +1837,7 @@ type Mutation {
   unscheduleTask(id: ID!): TaskType
   untagEntities(input: TagEntitiesInput!): [TaggableEntityType!]!
   updateAnswer(input: UpdateAnswerInput!): AnswerType
+  updateAskGrant(id: ID!, input: UpdateAskGrantInput!): AskGrantPayload!
   updateBrowserActivity(input: UpdateBrowserActivityInput!): BrowserActivityType
   updateCommunication(input: UpdateCommunicationInput!): CommunicationType
   updateConcept(input: UpdateConceptInput!): UpdateConceptPayload!
@@ -2184,6 +2191,33 @@ type PlaceVisitStatsType {
   visitCount: Int!
 }
 
+type PositionPointType {
+  activityType: String
+  cursor: String!
+  endTime: DateTime!
+  fixCount: Int!
+  latitude: Float!
+  longitude: Float!
+  startTime: DateTime!
+}
+
+input PositionTrackInput {
+  after: String
+  bbox: [Float!]
+  endTime: String
+  first: Int
+  maxPoints: Int
+  startTime: String
+}
+
+type PositionTrackType {
+  bucketSeconds: Int
+  endCursor: String
+  hasNextPage: Boolean!
+  points: [PositionPointType!]!
+  totalCount: Int
+}
+
 """
 Forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy.
 """
@@ -2335,6 +2369,7 @@ type Query {
   ask(id: ID!): AskType
   askAnswer(id: ID!): AskAnswerType
   askDisclosureHistory: [AskAuditType!]!
+  askGrant(id: ID!): AskGrantType
   askInbox: [AskType!]!
   askOutbox: [AskType!]!
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
@@ -2454,6 +2489,7 @@ type Query {
   Evidence-linked suggestions. Findings persist even when derivation.engines is off.
   """
   metricSuggestions(includeDismissed: Boolean): [MetricSuggestionType!]!
+  myAskGrantHistory: [AskGrantType!]!
   myAskGrants: [AskGrantType!]!
   node(id: ID!): Node
   note(id: ID!): NoteType
@@ -2477,6 +2513,11 @@ type Query {
   Planned blocks (`event_type = planned_block`) overlapping [from, to). SQL-pushdown, not the explorer events() feed.
   """
   plannedBlocks(from: DateTime!, to: DateTime!): [EventType!]!
+
+  """
+  The signed-in user's location history (ci.position) as a downsampled, keyset-paged trace for the map. Filtered by viewport bounding box and time range.
+  """
+  positionTrack(input: PositionTrackInput): PositionTrackType!
 
   """Forecast self-consistency scores (not ground-truth accuracy)"""
   predictionCalibration(limit: Int = 14): PredictionCalibrationType
@@ -3098,6 +3139,15 @@ type UnfurlType {
 input UpdateAnswerInput {
   answer: String!
   id: ID!
+}
+
+input UpdateAskGrantInput {
+  clearExpiry: Boolean
+  dataClass: String
+  dataClasses: [String!]
+  expiresAt: DateTime
+  mode: GrantMode
+  purpose: String
 }
 
 input UpdateBrowserActivityInput {
