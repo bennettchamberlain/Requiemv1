@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
@@ -7,6 +7,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
 import {
+  isPeerTrustTier,
   type PeerLink,
   PeerLinkEntity,
   type PeerLinkStatus,
@@ -40,6 +41,16 @@ export class PeerLinkService {
 
   /** Link a peer (idempotent on (owner, handle) — re-linking refreshes it). */
   async upsert(context: UserServiceContext, data: CreatePeerLinkDto): Promise<PeerLink> {
+    // The DB CHECK on `trust_tier` is the real boundary, and it fails as a
+    // `23514` the driver raises after the statement — surfaced to a caller as a
+    // bare 500. `PeerTrustTier` already excludes `household` at COMPILE time,
+    // but this method's input arrives from a Portal directory descriptor and
+    // from GraphQL, where a type is only a promise. Rejected here, by name, in
+    // front of the write. See {@link PEER_TRUST_TIERS}.
+    if (data.trustTier !== undefined && !isPeerTrustTier(data.trustTier)) {
+      throw new BadRequestException(`Unknown peer trust tier: ${String(data.trustTier)}`);
+    }
+
     const existing = await this.repository.findOne({
       where: { ownerUserId: context.userId, peerHandle: data.peerHandle },
     });

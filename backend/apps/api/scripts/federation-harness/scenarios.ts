@@ -139,6 +139,15 @@ export async function askPeer(
   request: Record<string, unknown>,
   prompt: string,
   idpIssuer: string,
+  /**
+   * Reuse a correlation id from an earlier ask instead of minting a new one.
+   *
+   * `askId` is an IDEMPOTENCY KEY, so this is how a repeat is driven: same key,
+   * same question, and the responder replays what it already decided rather
+   * than creating a second ask. Minting a fresh id — which is what every other
+   * call here does — is a genuinely different ask and is treated as one.
+   */
+  askId?: string,
 ): Promise<PeerAskWire> {
   askCounter += 1;
 
@@ -156,9 +165,10 @@ export async function askPeer(
       accept: 'application/json',
     },
     body: JSON.stringify({
-      // `peerAskBodySchema` requires 8–64 characters; a short counter alone is
-      // rejected as 'Malformed ask' with no hint about which field.
-      askId: `fedharness-${String(askCounter).padStart(4, '0')}-${Date.now()}`,
+      // `peerAskBodySchema` requires 8–64 characters matching
+      // PEER_ASK_ID_PATTERN; a short counter alone is rejected as 'Malformed
+      // ask' with no hint about which field.
+      askId: askId ?? `fedharness-${String(askCounter).padStart(4, '0')}-${Date.now()}`,
       askerHandle: BOXES.a.handle,
       prompt,
       request,
@@ -174,6 +184,44 @@ export async function askPeer(
     throw new Error(
       'box B rate-limited the harness (PeerRateLimitService: 10 asks / 60s per peer identity). ' +
         'Wait a minute and re-run, or restart box B to clear its in-memory window.',
+    );
+  }
+
+  return { status: response.status, body };
+}
+
+/**
+ * COLLECT the answer to an ask already sent — `GET /agent/v1/ask/:askId`.
+ *
+ * The return path for an ask a human approved, which had no channel at all
+ * before: `POST /agent/v1/ask`'s synchronous reply was the only one there was,
+ * so an approved answer stayed on the responder's box forever.
+ *
+ * It spends the POLL budget (30/60s), not the ask budget (10/60s) — collecting
+ * an answer must not consume the allowance that exists to protect a human's
+ * review inbox.
+ */
+export async function collectPeerAsk(
+  responder: BoxRuntime,
+  askId: string,
+  idpIssuer: string,
+): Promise<PeerAskWire> {
+  const token = await mintToken({
+    subject: BOXES.a.subject,
+    audience: BOXES.b.audience,
+    issuer: idpIssuer,
+  });
+
+  const response = await fetch(
+    `http://127.0.0.1:${responder.apiPort}/agent/v1/ask/${encodeURIComponent(askId)}`,
+    { method: 'GET', headers: { authorization: `Bearer ${token}`, accept: 'application/json' } },
+  );
+
+  const body = (await response.json().catch(() => ({}))) as PeerAskWire['body'];
+
+  if (response.status === 429) {
+    throw new Error(
+      'box B rate-limited the harness on the COLLECT route (30 polls / 60s per peer identity).',
     );
   }
 
@@ -242,6 +290,22 @@ async function latestInboundAsk(client: Client, ownerUserId: string): Promise<As
   }
 
   return rows[0];
+}
+
+/**
+ * How many inbound asks this peer link has produced.
+ *
+ * The unit the idempotency claim is measured in: "the repeat did not create a
+ * second ask" is a COUNT, and a wire reply cannot show it. Before `askId` was
+ * read as a key, every repeat added one to this number.
+ */
+async function countInboundAsks(client: Client, peerLinkId: string): Promise<number> {
+  const { rows } = await client.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM ci.asks WHERE peer_link_id = $1 AND direction = 'inbound'`,
+    [peerLinkId],
+  );
+
+  return Number(rows[0].n);
 }
 
 async function auditFor(client: Client, askId: string): Promise<AuditRow[]> {
@@ -333,6 +397,7 @@ async function scenarioAuto(ctx: Context): Promise<AskRow> {
   const ask = await withClient(ctx.boxB, async (client) => {
     const row = await latestInboundAsk(client, ctx.responderUserId);
     const audit = await showResponderRecord(client, row);
+    const answerCount = (await answerFor(client, row.id))?.disclosed_count ?? 0;
 
     assert('the ask is answered on the wire', wire.body.status === 'answered', wire.body.status);
     assert(
@@ -352,33 +417,30 @@ async function scenarioAuto(ctx: Context): Promise<AskRow> {
       audit[0]?.outcome,
     );
 
-    // ═══ THE MAGNITUDE THE FEDERATED AUDIT DOES NOT RECORD ═══
+    // ═══ THE MAGNITUDE THE FEDERATED AUDIT USED TO DROP ═══
     //
     // `ci.ask_audit.disclosed_count` exists precisely because
     // `disclosed_entities` is empty for every form but `retrieval`, so deriving
     // the count from it "audited a real count/boolean disclosure as nothing was
     // shared" (AskAuditService.record's own comment). The LOCAL path passes it:
     // `AskService.completeWithAnswer` forwards `disclosure.answer.disclosedCount`.
-    // The FEDERATED path does not — `PeerAskService.recordAudit` passes
-    // `disclosedEntities` and `backingEntities` only, so the fallback fires and
-    // the row reads 0 while a real count crossed the wire.
-    //
-    // Pinned as CURRENT behaviour, with the contradiction stated: the peer was
-    // told a number and the owner's history says nothing was shared.
+    // The FEDERATED path did not — `PeerAskService.recordAudit` had no such
+    // parameter at all — so the fallback fired and the row read 0 while a real
+    // count crossed the wire. This run used to print `disclosed_count = 0` next
+    // to a peer that had just been told "1 matching item".
     const crossed = wire.body.answer?.disclosedCount ?? 0;
     assert(
-      'KNOWN GAP, pinned: the federated audit under-reports the magnitude that crossed',
-      crossed > 0 && audit[0]?.disclosed_count === 0,
+      'the audit records the magnitude that actually crossed, not the (empty) itemization',
+      crossed > 0 && audit[0]?.disclosed_count === crossed,
       { crossedToPeer: crossed, recordedInAudit: audit[0]?.disclosed_count },
     );
+    assert('and the answer row and the audit row agree about it', answerCount === crossed, {
+      inAnswerRow: answerCount,
+      crossedToPeer: crossed,
+    });
 
     return row;
   });
-
-  finding('THE FEDERATED AUDIT LOSES THE COUNT. The peer was told "1 matching item"; ci.ask_audit says');
-  finding('disclosed_count = 0, because PeerAskService.recordAudit never forwards it and the fallback is');
-  finding('the itemized length — empty for every form but `retrieval`. That is the exact defect the');
-  finding('disclosed_count column was added for, fixed on the local path and not on this one.');
 
   const inbox = await graphql<{ askInbox: { id: string }[] }>(ctx.boxB, '{ askInbox { id } }');
   assert(
@@ -402,11 +464,17 @@ async function scenarioReview(ctx: Context): Promise<PeerAskWire> {
     `${BOLD}Ada asks:${RESET} "do you have the quarterly review deck?"  ${DIM}(content / documents)${RESET}`,
   );
 
+  // The correlation id is minted HERE and reused below: `askId` is an
+  // idempotency key, and collecting the approved answer means naming the same
+  // ask again rather than asking a second question.
+  const correlationId = `fedharness-review-${Date.now()}`;
+
   const wire = await askPeer(
     ctx.boxB,
     { archetype: 'content', subject: 'quarterly review deck', dataClass: 'documents' },
     'do you have the quarterly review deck?',
     ctx.idpIssuer,
+    correlationId,
   );
 
   step(`${BOLD}Devon's Companion replies:${RESET} ${wire.body.status}  ${DIM}"${wire.body.reason}"${RESET}`);
@@ -414,7 +482,11 @@ async function scenarioReview(ctx: Context): Promise<PeerAskWire> {
   const ask = await withClient(ctx.boxB, async (client) => {
     const row = await latestInboundAsk(client, ctx.responderUserId);
 
-    assert('the peer is told it is pending review', wire.body.status === 'pending_review', wire.body.status);
+    assert(
+      'the peer is told nothing beyond "no answer yet"',
+      wire.body.status === 'pending',
+      wire.body.status,
+    );
     assert('nothing was disclosed with it', wire.body.answer === undefined);
     assert('the responder parked it under review', row.status === 'under_review', row.status);
     assert(
@@ -501,35 +573,92 @@ async function scenarioReview(ctx: Context): Promise<PeerAskWire> {
   finding('which builds its audit row from the ask alone — so "who did I share this with?" has no');
   finding('answer for exactly the disclosures a human looked at and approved.');
 
-  // ── the gap ────────────────────────────────────────────────────────────────
-  step(`${BOLD}Ada asks the same question again${RESET} to collect the answer Devon just approved.`);
+  // ── the return path ────────────────────────────────────────────────────────
+  //
+  // This is where the run used to end with a shrug. The synchronous reply to
+  // `POST /agent/v1/ask` was the only channel there was — no callback, no poll,
+  // no delivery — and `askId` was documented as an idempotency key that nothing
+  // read, so asking again minted a NEW ci.asks row, was re-evaluated from
+  // scratch, and landed in front of Devon a second time. The answer a human had
+  // personally approved sat on Devon's box forever.
+  const asksBefore = await withClient(ctx.boxB, (client) => countInboundAsks(client, ctx.peerLinkId));
+
+  step(`${BOLD}Ada collects the answer${RESET} — ${DIM}GET /agent/v1/ask/${correlationId}${RESET}`);
+
+  const collected = await collectPeerAsk(ctx.boxB, correlationId, ctx.idpIssuer);
+
+  step(
+    `${BOLD}Devon's Companion hands it over:${RESET} ${collected.body.status}  ${DIM}"${collected.body.answer?.summary ?? collected.body.reason}"${RESET}`,
+  );
+  detail('form', collected.body.answer?.form);
+  detail('disclosedCount', collected.body.answer?.disclosedCount);
+
+  assert(
+    'THE APPROVED ANSWER CROSSES BACK — the review path is no longer one-way',
+    collected.body.status === 'answered',
+    collected.body.status,
+  );
+  assert(
+    'it is the answer Devon approved, not a re-run',
+    collected.body.answer?.summary === ran.runAsk.answer?.summary,
+    { collected: collected.body.answer?.summary, approved: ran.runAsk.answer?.summary },
+  );
+  assert(
+    'still no item references — a replay is never wider than the live answer was',
+    (collected.body.answer?.items?.length ?? 0) === 0,
+    collected.body.answer?.items,
+  );
+
+  const asksAfterCollect = await withClient(ctx.boxB, (client) => countInboundAsks(client, ctx.peerLinkId));
+  assert(
+    'collecting creates NOTHING — it evaluates no grant and writes no ask',
+    asksAfterCollect === asksBefore,
+    { before: asksBefore, after: asksAfterCollect },
+  );
+
+  step(`${BOLD}And asking again with the same id${RESET} replays it rather than re-asking.`);
 
   const again = await askPeer(
     ctx.boxB,
     { archetype: 'content', subject: 'quarterly review deck', dataClass: 'documents' },
     'do you have the quarterly review deck?',
     ctx.idpIssuer,
+    correlationId,
   );
+
+  const asksAfterRepeat = await withClient(ctx.boxB, (client) => countInboundAsks(client, ctx.peerLinkId));
+
+  assert('the repeat is the SAME ask, replayed — no second ci.asks row', asksAfterRepeat === asksBefore, {
+    before: asksBefore,
+    after: asksAfterRepeat,
+  });
+  assert('and it carries the approved answer too', again.body.status === 'answered', again.body.status);
+
+  // ── the oracle the collect route must not become ───────────────────────────
+  step(`${BOLD}Ada tries an id Devon has never seen.${RESET}`);
+
+  const unknown = await collectPeerAsk(ctx.boxB, `fedharness-never-sent-${Date.now()}`, ctx.idpIssuer);
 
   step(
-    `${BOLD}Devon's Companion replies:${RESET} ${again.body.status}  ${DIM}"${again.body.reason}"${RESET}`,
+    `${BOLD}Devon's Companion replies:${RESET} ${unknown.body.status}  ${DIM}"${unknown.body.reason}"${RESET}`,
   );
-  finding('AN APPROVED ANSWER NEVER CROSSES BACK. The synchronous reply to POST /agent/v1/ask is the only');
-  finding('channel there is — no callback, no poll, no delivery. `askId` is documented as an idempotency');
-  finding('key but nothing reads it: the re-ask mints a NEW ci.asks row and is re-evaluated from scratch,');
-  finding('so it lands in review again. Federated review is, today, a one-way trip.');
-
   assert(
-    'the re-ask is a NEW ask, re-evaluated — not the stored answer (pinning the known gap)',
-    again.body.status === 'pending_review' && again.body.answer === undefined,
-    again.body.status,
+    'an unknown id is the ordinary non-answer, not a 404 — "have I ever asked that?" is not free',
+    unknown.status === 200 && unknown.body.status === 'pending',
+    { http: unknown.status, status: unknown.body.status },
   );
 
-  // Handed to (c) as the thing its refusal is held up against. It is a REAL
-  // reply off the wire, not a fixture: a synthesized one cannot notice that
-  // Nest answers `@Post` with 201, which is exactly the kind of difference the
-  // comparison exists to catch.
-  return again;
+  finding('THE RETURN PATH IS A POLL, NOT A CALLBACK. A callback would invert who has to be reachable —');
+  finding('the RESPONDER would need egress to an address the ASKER supplied, i.e. a second and more');
+  finding('directly attacker-controlled SSRF sink, on the box that holds the data — and it would make a');
+  finding('home appliance an inbound server for its peers. The poll costs latency and nothing else: it');
+  finding('evaluates no grant, runs no executor, writes no ask and writes no audit row.');
+
+  // The pending reply is handed to (c) as the thing its refusal is held up
+  // against. It is a REAL reply off the wire, not a fixture: a synthesized one
+  // cannot notice that Nest answers `@Post` with 201, which is exactly the kind
+  // of difference the comparison exists to catch.
+  return wire;
 }
 
 /**
@@ -556,7 +685,11 @@ async function scenarioBlock(ctx: Context, pending: PeerAskWire): Promise<void> 
     const row = await latestInboundAsk(client, ctx.responderUserId);
     const audit = await showResponderRecord(client, row);
 
-    assert('the ask is refused', wire.body.status === 'declined', wire.body.status);
+    assert(
+      'the peer is told nothing beyond "no answer yet"',
+      wire.body.status === 'pending',
+      wire.body.status,
+    );
     assert(
       'the responder recorded the refusal as terminal, not actionable',
       row.status === 'declined',
@@ -573,7 +706,9 @@ async function scenarioBlock(ctx: Context, pending: PeerAskWire): Promise<void> 
   assert('a blocked ask never becomes actionable in the owner’s inbox', inbox.askInbox.length >= 0);
 
   // ── the indistinguishability claim, stated precisely ───────────────────────
-  console.log(`\n      ${DIM}— compared field by field against the pending_review reply from (b) —${RESET}`);
+  console.log(
+    `\n      ${DIM}— compared field by field against the awaiting-a-human reply from (b) —${RESET}`,
+  );
   detail('blocked  →', { status: wire.body.status, reason: wire.body.reason, answer: wire.body.answer });
   detail('pending  →', {
     status: pending.body.status,
@@ -587,20 +722,45 @@ async function scenarioBlock(ctx: Context, pending: PeerAskWire): Promise<void> 
     wire.body.answer === undefined,
   );
   assert('it carries no count', wire.body.answer === undefined);
-  assert('it names no grant, no class and no reason beyond a constant', wire.body.reason === 'Not permitted');
+  assert(
+    'it names no grant, no class and no reason beyond a constant',
+    wire.body.reason === 'No answer is available',
+    wire.body.reason,
+  );
   assert(
     'both replies carry the SAME HTTP status — the refusal is not a status-code oracle',
     wire.status === pending.status,
     `${wire.status} vs ${pending.status}`,
   );
 
-  finding('THE COLLAPSE THAT SHIPPED IS LOCAL-ONLY. #2210/#2216 made a LOCAL asker unable to tell deny from');
-  finding('review from auto: `ASK_ACCEPTED` is a constant, `askerVisibleStatus` folds every non-answered');
-  finding('status to `delivered`, and `askerVisibleUpdatedAt` pins the clock. Across a box boundary the');
-  finding('wire still says `declined` vs `pending_review` in the `status` field, and `SendPeerAskPayload`');
-  finding('surfaces it verbatim. Everything BELOW the status word is identical — no answer, no counts, no');
-  finding('grant id, no class echo, same 200 — but the word itself is a one-bit oracle the local path no');
-  finding('longer has. See the README, "The one-bit oracle that survives the boundary".');
+  // ═══ AND NOW THE WORD ITSELF ═══
+  //
+  // Everything BELOW the status word was already identical. The word was not:
+  // `declined` for a block, `pending_review` for an ask awaiting a human — a
+  // one-bit read on the grant matrix, mappable at 10 probes a minute by varying
+  // queryType and dataClass. #2210/#2216 closed exactly that for a LOCAL asker
+  // (`ASK_ACCEPTED` is a constant, `askerVisibleStatus` folds every non-answered
+  // status to `delivered`) and left the federated path emitting it, while
+  // `SendPeerAskPayload`'s docstring cited the federated path as the precedent.
+  //
+  // The collapse is made at the RESPONDER, not on receipt: hiding it on the
+  // asker's box would bind only a well-behaved asker while the word stayed on
+  // the wire.
+  // Everything except the correlation id, which is the ASKER's own and differs
+  // by construction — it is echoed straight back, and is the one field in the
+  // reply that carries no information about the responder at all.
+  const withoutAskId = ({ askId: _askId, ...rest }: PeerAskWire['body']) => JSON.stringify(rest);
+
+  assert(
+    'the two replies are now IDENTICAL, field for field — the status word is no longer an oracle',
+    withoutAskId(wire.body) === withoutAskId(pending.body),
+    { blocked: wire.body, pending: pending.body },
+  );
+
+  finding('WHAT THE ASKER LOSES BY THIS, AND WHY IT NO LONGER MATTERS. The responder arguably owed a peer');
+  finding('a real answer to "should I wait?" — that was the honest argument for keeping `pending_review`.');
+  finding('It is answered instead by the ask being POLLABLE: an asker that wants to know whether an answer');
+  finding('arrived asks for it by id and is told, rather than inferring it from a consent posture.');
 }
 
 /**
@@ -656,6 +816,17 @@ async function scenarioCeiling(ctx: Context): Promise<void> {
       audit[0]?.backing_entities.length,
     );
     assert('the availability disclosure is recorded, under the `attribute` storage form', audit.length === 1);
+
+    // The availability branch is the harder half of the same defect: it
+    // itemizes NOTHING by construction, so `disclosed_entities.length` is 0 and
+    // always was — the fallback could never be right here. The answer row said
+    // 4 and the audit row said 0.
+    const slots = (await answerFor(client, row.id))?.disclosed_count ?? 0;
+    assert(
+      'and the audit records the same number of free slots the answer row does',
+      slots > 0 && audit[0]?.disclosed_count === slots,
+      { inAnswerRow: slots, inAudit: audit[0]?.disclosed_count },
+    );
 
     return audit[0]?.backing_entities.length ?? 0;
   });

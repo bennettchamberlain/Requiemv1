@@ -6,6 +6,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import {
   type Ask,
+  type AskAnswer,
   AskAnswerService,
   AskAuditService,
   AskEntity,
@@ -24,9 +25,16 @@ import {
 import { EventEntity } from '@ci/domains/memory';
 
 import { computeFreeBusy, summarizeAvailability, type FreeBusy } from '../availability';
+import { PeerAskCorrelationEntity } from '../entities/PeerAskCorrelationEntity';
 import { type PeerLink } from '../entities/PeerLinkEntity';
-import type { BusyInterval, PeerAskBody, PeerAskResponse } from '../protocol';
+import { type BusyInterval, type PeerAskBody, type PeerAskResponse, peerAskPending } from '../protocol';
 
+import {
+  type CorrelationRepository,
+  findCorrelation,
+  recordCorrelation,
+  requestDigest,
+} from './PeerAskCorrelationService';
 import { PeerLinkService } from './PeerLinkService';
 
 /**
@@ -66,25 +74,40 @@ export class PeerAskService {
     peerIdentity: { issuer: string; subject: string },
     body: PeerAskBody,
   ): Promise<PeerAskResponse> {
-    const links = await this.peerLinkService.findActiveByPeerIdentity(
-      peerIdentity.issuer,
-      peerIdentity.subject,
-    );
-
-    // Not a linked (or no longer linked) peer. Refused without detail — a
-    // stranger must not be able to distinguish "no such user on this box" from
-    // "you are not linked to them".
-    if (links.length === 0) {
-      throw new ForbiddenException('No peer link');
-    }
-
-    // Multi-user household: refuse rather than answer as an arbitrary member.
-    if (links.length > 1) {
-      throw new ForbiddenException('Ambiguous peer link');
-    }
-
-    const link = links[0];
+    const link = await this.resolveLink(peerIdentity);
     const context: UserServiceContext = { userId: link.ownerUserId };
+
+    // ═══ THE IDEMPOTENCY KEY, FINALLY READ ═══
+    //
+    // `askId` was documented as an idempotency key and read by nothing. A
+    // repeat minted a SECOND `ci.asks` row and re-evaluated it from scratch,
+    // with two consequences that made federated review a one-way trip:
+    //
+    //   - an ask the owner had PERSONALLY APPROVED could never be collected.
+    //     The approved answer sat on this box; the peer asking again was queued
+    //     in front of the owner a second time, forever;
+    //   - a peer could re-run an evaluation against the owner's memory at will
+    //     by resending, which is an execution amplifier a correlation id was
+    //     supposed to prevent.
+    //
+    // A replay NEVER re-evaluates and NEVER executes. It hands back what was
+    // already decided for THIS correlation id, or says nothing is available.
+    const digest = requestDigest(body);
+    const existing = await findCorrelation(this.correlations, link.id, body.askId);
+
+    if (existing != null) {
+      // One key, one question. Without this a peer could reuse a key for a
+      // DIFFERENT ask and be handed the first one's answer — no new disclosure
+      // (it already crossed to this same peer), but an answer to a question
+      // nobody asked. Refused as `Malformed ask`, the same refusal an
+      // off-contract body gets, so it adds no new distinguishable outcome.
+      if (existing.requestDigest !== digest) {
+        throw new BadRequestException('Malformed ask');
+      }
+
+      return this.replay(link, body.askId, existing.askId);
+    }
+
     const query = toAskQuery(body);
 
     const ask = await this.askService.create(context, {
@@ -92,6 +115,18 @@ export class PeerAskService {
       query,
       peerLinkId: link.id,
       direction: 'inbound',
+    });
+
+    // Recorded BEFORE the ask is evaluated, so an ask that reaches the owner's
+    // inbox is collectable the moment they approve it. Writing it after the
+    // decision would leave every `pending` ask — the only ones a poll exists
+    // for — unnameable until something else touched them. See
+    // {@link PeerAskCorrelationEntity} for why this is not one transaction.
+    await recordCorrelation(this.correlations, {
+      peerLinkId: link.id,
+      correlationId: body.askId,
+      askId: ask.id,
+      requestDigest: digest,
     });
 
     const decision = await this.grantService.evaluate(ask);
@@ -106,10 +141,16 @@ export class PeerAskService {
       });
       // The basis comes off the transitioned row — `systemTransition` above
       // stamped it, so the audit cites exactly what the ask now records.
-      await this.recordAudit(declined, link, 'declined', []);
+      // `disclosedCount: 0` is stated rather than left to the fallback: the
+      // fallback happens to agree here, and stating it is what keeps every
+      // `recordAudit` call site honest about a field that silently defaults.
+      await this.recordAudit(declined, link, 'declined', [], [], undefined, 0);
 
-      // A decline is shaped exactly like "nothing found" — no probing signal.
-      return { askId: body.askId, status: 'declined', reason: 'Not permitted' };
+      // A decline is shaped exactly like "nothing found", and now says the same
+      // WORD too — see {@link PEER_ASK_PENDING}. The refusal is recorded in
+      // full on this box (`ci.asks.status = 'declined'`, an audit row naming
+      // the block grant); what changes is that none of it is told to the peer.
+      return peerAskPending(body.askId);
     }
 
     if (decision.decision !== 'auto') {
@@ -117,7 +158,7 @@ export class PeerAskService {
       // than leaving it in the delivered limbo.
       await this.askService.systemTransition(ask.id, 'under_review');
 
-      return { askId: body.askId, status: 'pending_review', reason: 'Awaiting owner review' };
+      return peerAskPending(body.askId);
     }
 
     // Auto-authorized: record WHICH grant authorized it, so the answer and the
@@ -153,14 +194,14 @@ export class PeerAskService {
     //      discarded.
     //
     // The ask lands where a revoked pre-authorization lands on the local path —
-    // basis cleared, back in front of the owner — and the peer is told
-    // `pending_review`, which is the same thing an unmatched ask is told. A
+    // basis cleared, back in front of the owner — and the peer is told the same
+    // thing an unmatched ask, a blocked ask and an unknown ask are told. A
     // distinct "your grant was revoked" would hand the peer the owner's consent
     // posture as a side channel.
     if (!(await this.grantService.isConsentStanding(authorized))) {
       await this.askService.systemTransition(ask.id, 'under_review', { consentBasis: null });
 
-      return { askId: body.askId, status: 'pending_review', reason: 'Awaiting owner review' };
+      return peerAskPending(body.askId);
     }
 
     const answer = await this.answerFor(
@@ -173,6 +214,128 @@ export class PeerAskService {
     );
 
     return { askId: body.askId, status: 'answered', answer };
+  }
+
+  /**
+   * THE RETURN PATH: hand back the answer to an ask this peer already sent.
+   *
+   * ═══ WHY A POLL AND NOT A CALLBACK ═══
+   *
+   * An approved answer never crossed back at all: the synchronous reply to
+   * `POST /agent/v1/ask` was the only channel there was, so federated AUTO
+   * worked end to end and federated REVIEW did not — the one disclosure a human
+   * personally approved could not be delivered to the person who asked for it.
+   *
+   * A callback (responder POSTs the answer to the asker) was rejected on
+   * reachability and on attack surface, not on effort:
+   *
+   *   - IT INVERTS WHO MUST BE REACHABLE. Today exactly one direction of egress
+   *     is required — asker → responder — and `urlPolicy.checkEgressUrl` is
+   *     built around that: `memory_endpoint` comes from a directory descriptor,
+   *     so it is attacker-influenced and treated as an SSRF sink. A callback
+   *     would require the RESPONDER to hold and dial an address supplied by the
+   *     asker, i.e. a second, more directly attacker-controlled egress sink, on
+   *     the box that holds the data.
+   *   - IT MAKES A HOME APPLIANCE AN INBOUND SERVER FOR ITS PEERS. A box behind
+   *     NAT can ask and receive answers today; under a callback it could only
+   *     ask.
+   *
+   * The poll costs latency and nothing else. It is a READ: it never evaluates a
+   * grant, never runs the executor, never writes an ask, never writes an audit
+   * row. It can only hand back a disclosure that already happened.
+   *
+   * ═══ AND IT IS NOT A NEW ORACLE ═══
+   *
+   * Every non-answer is the same reply: an ask still in the owner's review
+   * inbox, an ask a block grant refused, an ask that expired unanswered, a
+   * correlation id this box has never seen, and a correlation id belonging to a
+   * DIFFERENT peer are all {@link peerAskPending}. In particular this route
+   * does not 404 on an unknown id — a 404 would answer "has this peer ever
+   * asked me that?" for free.
+   */
+  async result(
+    peerIdentity: { issuer: string; subject: string },
+    correlationId: string,
+  ): Promise<PeerAskResponse> {
+    const link = await this.resolveLink(peerIdentity);
+    // Scoped by peer link, so one peer can never collect another's answer even
+    // if it guesses the correlation id.
+    const existing = await findCorrelation(this.correlations, link.id, correlationId);
+
+    if (existing == null) {
+      return peerAskPending(correlationId);
+    }
+
+    return this.replay(link, correlationId, existing.askId);
+  }
+
+  /**
+   * The correlation table, reached through the injected repository's manager
+   * rather than through an injected repository of its own.
+   *
+   * Same reason `persistDisclosure` reaches its transaction that way: the
+   * manager belongs to the connection, not to `EventEntity`, and this service
+   * is constructed BY HAND in several places — the DB-backed lifecycle suites
+   * and the disclosure-ceiling integration suite among them. Growing the
+   * constructor for a dependency that is one `getRepository` call away breaks
+   * those at a distance, and that arity has already been documented as
+   * load-bearing once.
+   */
+  private get correlations(): CorrelationRepository {
+    return this.eventRepository.manager.getRepository(PeerAskCorrelationEntity);
+  }
+
+  /**
+   * Resolve a verified (issuer, subject) to the ONE peer link that may act on
+   * it. Shared by every peer-facing entry point so the two refusals stay
+   * identical — a stranger must not be able to distinguish "no such user on
+   * this box" from "you are not linked to them".
+   */
+  private async resolveLink(peerIdentity: { issuer: string; subject: string }): Promise<PeerLink> {
+    const links = await this.peerLinkService.findActiveByPeerIdentity(
+      peerIdentity.issuer,
+      peerIdentity.subject,
+    );
+
+    if (links.length === 0) {
+      throw new ForbiddenException('No peer link');
+    }
+
+    // Multi-user household: refuse rather than answer as an arbitrary member.
+    if (links.length > 1) {
+      throw new ForbiddenException('Ambiguous peer link');
+    }
+
+    return links[0];
+  }
+
+  /**
+   * Hand back the recorded outcome of an ask, computing nothing.
+   *
+   * Reached from two places with identical semantics: a repeat POST carrying a
+   * known `askId`, and a poll naming one. Neither may re-run anything — the
+   * whole point of the correlation is that the disclosure decision was taken
+   * once.
+   *
+   * The status gate is `ask.status === 'answered'`, not "an answer row exists".
+   * An answer row can exist for an ask that never reached a terminal answered
+   * state, and `AskResolver.askAnswer` already refuses to read one on exactly
+   * that ground; a peer must not be a weaker reader than the local asker.
+   */
+  private async replay(link: PeerLink, correlationId: string, askId: string): Promise<PeerAskResponse> {
+    const ask = await this.askService.findById({ userId: link.ownerUserId }, askId);
+
+    if (ask == null || ask.status !== 'answered') {
+      return peerAskPending(correlationId);
+    }
+
+    const answer = await this.answerService.findByAskId(askId);
+
+    if (answer == null) {
+      return peerAskPending(correlationId);
+    }
+
+    return { askId: correlationId, status: 'answered', answer: toWireAnswer(answer) };
   }
 
   /** Execute an authorized ask and build its disclosure-filtered answer. */
@@ -279,7 +442,22 @@ export class PeerAskService {
         {
           form: 'attribute',
           items: [],
-          disclosedCount: answer.free.length,
+          // ═══ NOT `answer.free.length` — THAT IS THE POST-CLAMP ARRAY ═══
+          //
+          // `clampAvailability` empties both interval arrays at every rung
+          // below `redacted`, so reading the count off the clamped result
+          // recorded 0 for exactly the rungs where a number is the ONLY thing
+          // that crossed. Reproduced across two boxes: the peer was told
+          // "4 free slots" under a `count` ceiling and both `ci.ask_answers`
+          // and `ci.ask_audit` said 0 — the same under-reporting the audit's
+          // own `disclosed_count` column exists to prevent, arrived at by a
+          // different route.
+          //
+          // The clamp reports the magnitude IT disclosed, which is the slot
+          // count down to `count` and nothing at `boolean` (a yes/no carries no
+          // cardinality, the same rule `carriesCount` applies below) and
+          // nothing at `none`.
+          disclosedCount: answer.disclosedCount,
           withheldCount: 0,
           summary: answer.summary,
           consentBasis,
@@ -399,7 +577,16 @@ export class PeerAskService {
     await this.eventRepository.manager.transaction(async (manager) => {
       await this.answerService.create({ askId: ask.id, answer }, manager);
       const terminal = await this.terminalize(manager, context, ask);
-      await this.recordAudit(terminal, link, 'auto_answered', disclosedEntities, backingEntities, manager);
+      await this.recordAudit(
+        terminal,
+        link,
+        'auto_answered',
+        disclosedEntities,
+        backingEntities,
+        manager,
+        // THE MAGNITUDE, which this path used to drop. See {@link recordAudit}.
+        answer.disclosedCount,
+      );
     });
   }
 
@@ -438,13 +625,34 @@ export class PeerAskService {
     return AskEntity.toEgressType(await repository.save(entity));
   }
 
+  /**
+   * ═══ THE COUNT HAS TO BE PASSED, BECAUSE THE FALLBACK IS WRONG HERE ═══
+   *
+   * `ci.ask_audit.disclosed_count` exists precisely because
+   * `disclosedEntities` is EMPTY for every form but `retrieval` — so deriving
+   * the count from it "audited a real count/boolean disclosure as nothing was
+   * shared" (`AskAuditService.record`). The local path forwards it
+   * (`AskService.completeWithAnswer` → `complete`'s `disclosedCount`); this one
+   * did not, so the fallback fired on every federated answer and the owner's
+   * disclosure history under-reported a disclosure that had really been made.
+   *
+   * Reproduced against two real boxes: a peer was told "1 matching item" and
+   * `ci.ask_audit.disclosed_count` recorded 0; an availability answer said
+   * "4 free slots", `ci.ask_answers.disclosed_count` said 4, and the audit row
+   * said 0.
+   *
+   * It is a REQUIRED parameter with no default on purpose. A defaulted one is
+   * how this was lost the first time: `recordAudit` simply never mentioned the
+   * field, and every call site inherited the wrong answer silently.
+   */
   private async recordAudit(
     ask: Ask,
     link: PeerLink,
     outcome: 'auto_answered' | 'declined',
     disclosedEntities: string[],
     backingEntities: string[] = [],
-    manager?: EntityManager,
+    manager: EntityManager | undefined,
+    disclosedCount: number,
   ): Promise<void> {
     await this.auditService.record(
       {
@@ -460,11 +668,55 @@ export class PeerAskService {
         consentBasis: ask.consentBasis,
         outcome,
         disclosedEntities,
+        disclosedCount,
         backingEntities,
       },
       manager,
     );
   }
+}
+
+/**
+ * Project a STORED answer row back onto the peer wire.
+ *
+ * ═══ A REPLAY MUST NEVER BE WIDER THAN THE LIVE ANSWER WAS ═══
+ *
+ * The stored row is not automatically peer-shaped. An owner-approved federated
+ * ask is answered through `runAsk` → `AskService.completeWithAnswer`, i.e. by
+ * the LOCAL pipeline, and the local pipeline has a `retrieval` form that
+ * itemizes real entity references. The peer protocol deliberately exposes no
+ * retrieval archetype — `answerFor` only ever builds `boolean` or `existence` —
+ * so echoing `disclosed_entities` verbatim would hand a peer item references
+ * that the inbound path is not even capable of producing. Hence: no items, ever.
+ *
+ * The cardinality rule is the one `answerFor` applies, spelled once and applied
+ * in both places. A `boolean` answer ("do you know X?") must carry no count, or
+ * the archetype degrades into a keyword-frequency oracle over the responder's
+ * whole corpus; only `existence` and `retrieval` are permitted to say how much.
+ *
+ * ═══ WHAT A REPLAYED AVAILABILITY ANSWER LOSES, AND WHY THAT IS RIGHT ═══
+ *
+ * Free/busy boundaries are not stored: `persistDisclosure` writes availability
+ * under the `attribute` form with the post-ceiling SUMMARY and no items,
+ * because that is what the ask_answers CHECK admits and because interval
+ * boundaries are not entity references. So a replayed availability answer
+ * carries its summary and no intervals. A replay recomputing them would be a
+ * fresh read of the owner's calendar under a consent decision taken minutes or
+ * days ago — exactly the thing the correlation exists to prevent. Narrower on
+ * replay is the safe direction.
+ *
+ * Pure.
+ */
+export function toWireAnswer(stored: AskAnswer): NonNullable<PeerAskResponse['answer']> {
+  const carriesCount = stored.form === 'existence' || stored.form === 'retrieval';
+
+  return {
+    form: stored.form,
+    summary: stored.summary ?? '',
+    items: [],
+    disclosedCount: carriesCount ? stored.disclosedCount : undefined,
+    withheldCount: carriesCount ? stored.withheldCount : undefined,
+  };
 }
 
 /**
@@ -498,24 +750,38 @@ export function clampAvailability(
   freeBusy: FreeBusy,
   ceiling: DisclosureRung,
   who: string,
-): { summary: string; busy: BusyInterval[]; free: BusyInterval[] } {
+): { summary: string; busy: BusyInterval[]; free: BusyInterval[]; disclosedCount: number } {
   const hasFree = freeBusy.free.length > 0;
+  const slots = freeBusy.free.length;
 
   switch (ceiling) {
     case 'full':
     case 'redacted':
-      return { summary: summarizeAvailability(freeBusy, who), busy: freeBusy.busy, free: freeBusy.free };
+      return {
+        summary: summarizeAvailability(freeBusy, who),
+        busy: freeBusy.busy,
+        free: freeBusy.free,
+        disclosedCount: slots,
+      };
     case 'summary':
       // The sentence carries a slot count and a duration but no instants, which
-      // is the same trade `summary` makes elsewhere: magnitude, not content.
-      return { summary: summarizeAvailability(freeBusy, who), busy: [], free: [] };
+      // is the same trade `summary` makes elsewhere: magnitude, not content. So
+      // the MAGNITUDE still crossed, even though the arrays did not — which is
+      // exactly why the count cannot be read off the returned arrays.
+      return {
+        summary: summarizeAvailability(freeBusy, who),
+        busy: [],
+        free: [],
+        disclosedCount: slots,
+      };
     case 'count':
       return {
         summary: hasFree
-          ? `${who} have ${freeBusy.free.length} free slot${freeBusy.free.length === 1 ? '' : 's'} in that window.`
+          ? `${who} have ${slots} free slot${slots === 1 ? '' : 's'} in that window.`
           : `${who} have no free time in that window.`,
         busy: [],
         free: [],
+        disclosedCount: slots,
       };
     case 'boolean':
       return {
@@ -524,10 +790,15 @@ export function clampAvailability(
           : `${who} have no free time in that window.`,
         busy: [],
         free: [],
+        // A yes/no carries no cardinality — the same rule `answerFor` applies
+        // to a `boolean` disclosure form. Recording a number the peer was never
+        // told would over-report this one as badly as `free.length` under-reports
+        // the rungs above it.
+        disclosedCount: 0,
       };
     case 'none':
     default:
-      return { summary: 'Nothing was shared.', busy: [], free: [] };
+      return { summary: 'Nothing was shared.', busy: [], free: [], disclosedCount: 0 };
   }
 }
 

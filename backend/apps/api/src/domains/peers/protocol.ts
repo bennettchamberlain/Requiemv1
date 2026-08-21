@@ -70,9 +70,34 @@ export const availabilityAskSchema = z.object({
   purpose: z.string().max(200).optional(),
 });
 
+/**
+ * The shape of an asker-minted correlation id: 8–64 characters of word
+ * characters, dot, colon or hyphen. Wide enough for a uuid, a urn and a
+ * timestamped label; narrow enough to be a URL path segment without escaping,
+ * which is what the collect route needs.
+ */
+export const PEER_ASK_ID_PATTERN = /^[\w.:-]{8,64}$/;
+
 export const peerAskBodySchema = z.object({
-  /** Correlation id minted by the asker; the answer echoes it (idempotency key). */
-  askId: z.string().min(8).max(64),
+  /**
+   * Correlation id minted by the asker, and a REAL idempotency key.
+   *
+   * It used to be documented as one and read by nothing: a re-ask minted a
+   * fresh `ci.asks` row and was evaluated from scratch, so an ask the owner had
+   * personally approved could never be collected — the approved answer sat on
+   * the responder's box forever and the asker got queued a second time. It is
+   * now persisted per peer link (`ci.peer_ask_correlations`), which is what
+   * makes both halves of the return path work: a repeat POST replays the
+   * recorded outcome instead of creating a second ask, and
+   * `GET /agent/v1/ask/:askId` collects it without creating anything at all.
+   *
+   * The character class is {@link PEER_ASK_ID_PATTERN} rather than "any 8–64
+   * characters", because the same id is now also a URL PATH SEGMENT on the poll
+   * route. One definition, so the two routes cannot disagree about which ids
+   * exist — a body-only bound would accept ids the collect route could never
+   * name back.
+   */
+  askId: z.string().regex(PEER_ASK_ID_PATTERN),
   /** The asker's Portal handle, for display and peer-link matching. */
   askerHandle: z.string().min(1).max(120),
   /** Natural-language question, shown to the responder in their review inbox. */
@@ -102,13 +127,55 @@ export interface BusyInterval {
 }
 
 /**
- * The peer's response. `status` distinguishes an answer from a deliberate
- * non-answer, and a declined/pending ask is INDISTINGUISHABLE in content from
- * "nothing found" — a peer must not be able to probe existence by inference.
+ * The ONE word a non-answer is allowed to be, and the ONE sentence that may
+ * accompany it.
+ *
+ * ═══ THE DECLINE ORACLE THAT SURVIVED THE BOX BOUNDARY ═══
+ *
+ * The wire used to carry `declined` for a block grant and `pending_review` for
+ * an ask queued for a human, with `reason` spelling out which
+ * ("Not permitted" / "Awaiting owner review"). Everything BELOW the status word
+ * was already identical — no answer object, no counts, no grant id, no
+ * data-class echo, the same HTTP status — but the word itself is a one-bit read
+ * on the responder's grant matrix, and at the inbound limit of 10 asks a minute
+ * the whole matrix is mappable by varying `queryType` and `dataClass`.
+ *
+ * #2210 and #2216 closed exactly this oracle for a LOCAL asker:
+ * `CreateAskPayload.decision` became the constant `ASK_ACCEPTED`, and
+ * `askerVisibleStatus` folds every non-`answered` status to `delivered`. The two
+ * paths had made OPPOSITE decisions about the same question, and
+ * `SendPeerAskPayload`'s docstring was already claiming the federated one
+ * behaved like the local one ("a declined result is deliberately
+ * indistinguishable from an unreachable peer"). This is what makes that true.
+ *
+ * WHY THE RESPONDER COLLAPSES IT, RATHER THAN THE ASKER'S BOX HIDING IT.
+ * Collapsing on receipt would only bind a well-behaved asker: the raw word
+ * would still be on the wire, and an asker box that simply declined to fold it
+ * would keep the oracle. The distinction has to stop being SENT.
+ *
+ * WHAT THE ASKER LOSES, AND WHY IT NO LONGER MATTERS. The responder arguably
+ * owed a peer a real answer to "should I wait?". That was the honest argument
+ * for keeping `pending_review` — and it is answered instead by
+ * {@link PeerAskResponse} being pollable: an asker that wants to know whether an
+ * answer arrived asks again for the SAME `askId` and is told, rather than
+ * inferring it from the responder's consent posture.
+ */
+export const PEER_ASK_PENDING = 'pending';
+
+/** The only reason string a non-answer ever carries. Deliberately uninformative. */
+export const PEER_ASK_NO_ANSWER_REASON = 'No answer is available';
+
+/**
+ * The peer's response.
+ *
+ * `status` is `answered` or {@link PEER_ASK_PENDING} — and NOTHING else. A
+ * refusal, an ask sitting in the owner's review inbox, an ask that expired
+ * unanswered, and an `askId` this box has never seen are all the same reply,
+ * byte for byte. See {@link PEER_ASK_PENDING}.
  */
 export interface PeerAskResponse {
   askId: string;
-  status: 'answered' | 'pending_review' | 'declined';
+  status: 'answered' | typeof PEER_ASK_PENDING;
   /** Present only when status === 'answered'. */
   answer?: {
     /** Mirrors the disclosure form used locally. */
@@ -126,6 +193,38 @@ export interface PeerAskResponse {
     free?: BusyInterval[];
   };
   /** Human-readable reason for a non-answer. Deliberately vague by design. */
+  reason?: string;
+}
+
+/** A non-answer, in the only shape one is ever allowed to take. */
+export function peerAskPending(askId: string): PeerAskResponse {
+  return { askId, status: PEER_ASK_PENDING, reason: PEER_ASK_NO_ANSWER_REASON };
+}
+
+/**
+ * What an OUTBOUND ask's own box is allowed to know about the reply.
+ *
+ * Deliberately NOT {@link PeerAskResponse}: this is the local side of the
+ * boundary, so it speaks the LOCAL vocabulary — the same two words
+ * `askerVisibleStatus` folds an ask's lifecycle down to, rather than a second,
+ * parallel set that would then need its own mapping in every reader. `answered`
+ * means an answer is waiting; `delivered` means the ask reached the peer and
+ * nothing more is known.
+ *
+ * `reason` survives ONLY for a failure this box observed FIRST-HAND — an
+ * endpoint the egress policy refused, a peer that did not respond, an HTTP
+ * error. Those are facts about our own request, not about the responder's
+ * consent posture. A reason the PEER supplied is dropped at
+ * {@link PeerAskClient} rather than carried inward, because echoing an untrusted
+ * string into the local UI is how the collapsed status would have been undone
+ * one field along.
+ */
+export interface AskerVisiblePeerReply {
+  askId: string;
+  status: 'answered' | 'delivered';
+  /** The disclosure-filtered answer, when the peer answered. */
+  answer?: PeerAskResponse['answer'];
+  /** Set only for locally-observed failures; never a reason the peer supplied. */
   reason?: string;
 }
 

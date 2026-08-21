@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   Headers,
   Inject,
+  Param,
   Post,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -14,7 +16,7 @@ import { PORTAL_TOKEN_VERIFIER, type PortalTokenVerifier } from '@ci/common/guar
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
-import { peerAskBodySchema, type PeerAskResponse } from '../protocol';
+import { PEER_ASK_ID_PATTERN, peerAskBodySchema, type PeerAskResponse } from '../protocol';
 import { PeerAskService } from '../services/PeerAskService';
 import { PeerRateLimitService } from '../services/PeerRateLimitService';
 
@@ -52,6 +54,80 @@ export class PeerAskController {
     @Headers('authorization') authorization: string | undefined,
     @Body() body: unknown,
   ): Promise<PeerAskResponse> {
+    const identity = await this.authenticate(authorization);
+
+    // Rate-limit on the verified peer identity, BEFORE the peer-link lookup, so
+    // an unlinked caller cannot hammer the endpoint for free.
+    this.rateLimitService.consume(identity);
+
+    const parsed = peerAskBodySchema.safeParse(body);
+    if (!parsed.success) {
+      // The body is attacker-controlled; reject anything off-contract outright.
+      throw new BadRequestException('Malformed ask');
+    }
+
+    return this.peerAskService.handle(identity, parsed.data);
+  }
+
+  /**
+   * Collect the answer to an ask this peer already sent — the return path for
+   * an ask a HUMAN approved, which had no channel at all before.
+   *
+   * It is a READ. It evaluates no grant, runs no executor, creates no ask and
+   * writes no audit row; it can only hand back a disclosure that already
+   * happened. See {@link PeerAskService.result} for why a poll rather than a
+   * callback, and why an unknown id answers `pending` instead of 404.
+   *
+   * The path segment is the asker's own correlation id (the body's `askId`),
+   * never a local row id, so this route leaks no identifier of this box. Its
+   * own rate-limit bucket keeps collecting an answer from spending the budget
+   * that protects the owner's review inbox — see
+   * {@link PeerRateLimitService.consumePoll}.
+   *
+   * ═══ WHY THE PARAM IS NOT CALLED `askId` ═══
+   *
+   * `IdFormatGuard` is a GLOBAL guard that 404s any route parameter whose NAME
+   * matches `/id$/i` and whose VALUE is not a uuid. Every local route it was
+   * written for passes a local row id, so that is a sound assumption there — and
+   * completely wrong here: a correlation id is minted by the PEER, is opaque to
+   * this box by design, and is bounded by {@link PEER_ASK_ID_PATTERN} rather
+   * than by uuid syntax.
+   *
+   * Naming it `askId` made every collect return `404 Not Found` — reproduced
+   * against two real boxes, with the repeat-POST replay working perfectly
+   * beside it, so it read as "the answer is not there" rather than "the route
+   * is not reachable". Renaming the parameter is the fix: relaxing a global
+   * guard so one route can accept non-uuid ids would weaken it for every route
+   * that legitimately depends on it.
+   */
+  @Get('ask/:correlation')
+  async result(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('correlation') askId: string,
+  ): Promise<PeerAskResponse> {
+    const identity = await this.authenticate(authorization);
+
+    this.rateLimitService.consumePoll(identity);
+
+    // The same bound `peerAskBodySchema` puts on `askId` — one definition, so
+    // the two routes cannot disagree about which ids exist. This route has no
+    // body, so nothing else would apply it.
+    if (!PEER_ASK_ID_PATTERN.test(askId)) {
+      throw new BadRequestException('Malformed ask');
+    }
+
+    return this.peerAskService.result(identity, askId);
+  }
+
+  /**
+   * The gates every peer-facing route shares, in the order they have to run:
+   * feature flag, bearer token, configured audience, verified claims. Factored
+   * out rather than copied so a second route cannot quietly acquire a weaker
+   * set — which is how a poll endpoint would have become the way in.
+   */
+  private async authenticate(
+    authorization: string | undefined,
+  ): Promise<{ issuer: string; subject: string }> {
     if (!(await this.featureService.isFeatureEnabled('ask'))) {
       // Dark by default: indistinguishable from a box that has no peer surface.
       throw new ServiceUnavailableException('Peer asks are not enabled');
@@ -78,17 +154,7 @@ export class PeerAskController {
       throw new UnauthorizedException('Invalid token');
     }
 
-    // Rate-limit on the verified peer identity, BEFORE the peer-link lookup, so
-    // an unlinked caller cannot hammer the endpoint for free.
-    this.rateLimitService.consume(identity);
-
-    const parsed = peerAskBodySchema.safeParse(body);
-    if (!parsed.success) {
-      // The body is attacker-controlled; reject anything off-contract outright.
-      throw new BadRequestException('Malformed ask');
-    }
-
-    return this.peerAskService.handle(identity, parsed.data);
+    return identity;
   }
 }
 
