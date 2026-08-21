@@ -45,6 +45,16 @@ export interface CreateEventDto {
   category?: string;
   start_time: Date;
   end_time?: Date;
+  /**
+   * Provenance for `start_time` — the `TIME_SOURCES` vocabulary declared in
+   * pipeline/stages/clean/TemporalRepairStage (`source` | `user` | `repaired` |
+   * `ingest`). A writer that stamps an instant it has no evidence for MUST send
+   * `'ingest'` here, so the row says so from the moment it exists rather than
+   * from whenever a sweep next visits it.
+   */
+  time_source?: string;
+  /** How much of `start_time` is meaningful — `TIME_PRECISIONS` (…|`unknown`). */
+  time_precision?: string;
   location_name?: string;
   location_entity_id?: string;
   location_coordinates?: Point;

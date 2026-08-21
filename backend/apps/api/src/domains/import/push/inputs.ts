@@ -55,6 +55,29 @@ import {
 } from './canonical';
 import { readCommerceField } from './commerceKeys';
 
+/**
+ * `ci.events.time_source` for a row whose source gave it NO time — the instant
+ * in `start_time` was synthesized by the transform and is not evidence of
+ * anything.
+ *
+ * Mirrors `TIME_SOURCES.INGEST` in
+ * `domains/pipeline/stages/clean/TemporalRepairStage`, which is where the
+ * vocabulary is defined and documented. Mirrored rather than imported because
+ * the import domain has no other dependency on the pipeline domain, and pulling
+ * that barrel in for one string literal would couple a hot per-row transform to
+ * a Nest module full of injectable stages. `__tests__/undatedRecords.test.ts`
+ * imports these two constants directly (exported for that reason alone — the
+ * production coupling this docblock warns against is to the pipeline
+ * module's DI graph, not to a plain string a test file reads) and asserts
+ * them against the real TIME_SOURCES/TIME_PRECISIONS, so the copy cannot
+ * drift without a red test — the "second reader that drifted" failure this
+ * file's own header warns about.
+ */
+export const UNDATED_TIME_SOURCE = 'ingest';
+
+/** `ci.events.time_precision` for the same rows — mirrors `TIME_PRECISIONS.UNKNOWN`. */
+export const UNDATED_TIME_PRECISION = 'unknown';
+
 /** The full source triple every per-destination input carries. */
 /**
  * The provenance triple, snake_case — the spelling every ingest DTO uses except
@@ -117,6 +140,16 @@ function contentTypeFor(kind: string, mediaType: string | null): string {
   }
 
   if (kind === 'web.bookmark') {
+    return 'bookmark';
+  }
+
+  // A browsing action that reached the content lane instead of
+  // ci.browser_activity is an UNDATED one (destinationsFor). What survives is
+  // the page itself — its URL and title — not the visit, because the visit is
+  // precisely the part with no time. 'bookmark' is what that is: a URL the user
+  // is on record as having had, with no moment attached. Without this branch
+  // the prefix rule types it 'web', a bucket nothing renders.
+  if (kind === 'web.page_view' || kind === 'web.search' || kind === 'web.download') {
     return 'bookmark';
   }
 
@@ -745,8 +778,23 @@ function lineFrom(
   const currency =
     str(readCommerceField(source, 'CURRENCY')) ?? str(readCommerceField(rec.metadata, 'CURRENCY'));
   const unitPrice = num(readCommerceField(source, 'UNIT_PRICE'));
+  // `total_price_minor` is the LINE's own total, and that is a PRE-TAX number:
+  // the header carries tax, shipping and discount in their own columns, and
+  // `subtotal + tax + shipping − discount = total` only closes if the lines
+  // sum to the subtotal. So a stated `Subtotal` — the line's extended price —
+  // wins over a stated `Total`, which on a per-line export is what that line
+  // was CHARGED with its share of tax already in it.
+  //
+  // Amazon is where this bit: every one of its lines stated `Total` = the row's
+  // `Total Amount`, so a 71.85 item with 5.57 of tax was stored as a line total
+  // of 77.42, and single-line orders "reconciled" 630/630 purely because the
+  // line had been handed the order's own total. The fallback to `Total`
+  // survives for the sources that state only that (Uber Eats, a receipt email),
+  // and unit × quantity for the ones that state neither.
   const total =
-    num(readCommerceField(source, 'TOTAL')) ?? (unitPrice != null ? unitPrice * (quantity ?? 1) : undefined);
+    num(readCommerceField(source, 'SUBTOTAL')) ??
+    num(readCommerceField(source, 'TOTAL')) ??
+    (unitPrice != null ? unitPrice * (quantity ?? 1) : undefined);
 
   const line: ReceiptLineItemInput = {
     lineNumber,
@@ -847,6 +895,49 @@ export function toReceiptLineItemInputs(rec: CanonicalRecord): ReceiptLineItemIn
   });
 }
 
+/** A receipt's money breakdown disagreeing with its total, or null when it adds up. */
+export interface ReceiptTotalsMismatch {
+  /** subtotal + tax + shipping − discount, in minor units. */
+  expectedMinor: number;
+  /** What the receipt says it came to, in minor units. */
+  statedMinor: number;
+  /** expected − stated. Positive: the parts overshoot what was charged. */
+  deltaMinor: number;
+}
+
+/**
+ * Does this breakdown add up to this total?
+ *
+ * Returns the disagreement, or null when it reconciles OR when there is not
+ * enough to check — a receipt that states no subtotal, or no total, is silent
+ * rather than wrong, and a silence must not be reported as a violation.
+ *
+ * A missing tax/shipping/discount counts as ZERO here, deliberately: a source
+ * that states a subtotal and a total but no tax is claiming there was none, and
+ * that claim is exactly what this invariant is for.
+ *
+ * TOLERANCE is one minor unit. The components are rounded into minor units
+ * independently (a per-unit tax times a quantity of three rounds where the
+ * source's own per-line figure did not), and a cent of rounding is not a
+ * disagreement about what was charged.
+ */
+function reconciliationMismatch(
+  subtotal: number | undefined,
+  tax: number | undefined,
+  shipping: number | undefined,
+  discount: number | undefined,
+  total: number | null | undefined,
+): ReceiptTotalsMismatch | null {
+  if (subtotal == null || total == null) {
+    return null;
+  }
+
+  const expectedMinor = subtotal + (tax ?? 0) + (shipping ?? 0) - (discount ?? 0);
+  const deltaMinor = expectedMinor - total;
+
+  return Math.abs(deltaMinor) <= 1 ? null : { expectedMinor, statedMinor: total, deltaMinor };
+}
+
 /**
  * Graph nodes the PUSH resolved for a receipt, because this mapper cannot: they
  * are `ci.entities` ids, and only the stage has the entity mappings and the
@@ -936,14 +1027,45 @@ export function toReceiptInput(
     extraction.metadata = { ...m, NegativeTotalRefused: stated };
   }
 
-  const subtotal = toCostMinorUnits(num(m.Subtotal) ?? num(m['Sub Total']), currency);
+  // The money BREAKDOWN. All four are COST columns, so a negative is refused
+  // rather than written (see toCostMinorUnits) — including `Discount`, which is
+  // the positive MAGNITUDE taken off the order, not a signed adjustment. A
+  // source whose export states discounts negatively normalises the sign in its
+  // own parser, where that convention is a verified fact about the export.
+  const subtotal = toCostMinorUnits(num(readCommerceField(m, 'SUBTOTAL')), currency);
   if (subtotal != null) {
     extraction.subtotalMinor = subtotal;
   }
 
-  const tax = toCostMinorUnits(num(m.Tax) ?? num(m['Tax Amount']), currency);
+  const tax = toCostMinorUnits(num(readCommerceField(m, 'TAX')), currency);
   if (tax != null) {
     extraction.taxMinor = tax;
+  }
+
+  const shipping = toCostMinorUnits(num(readCommerceField(m, 'SHIPPING')), currency);
+  if (shipping != null) {
+    extraction.shippingMinor = shipping;
+  }
+
+  const discount = toCostMinorUnits(num(readCommerceField(m, 'DISCOUNT')), currency);
+  if (discount != null) {
+    extraction.discountMinor = discount;
+  }
+
+  // THE RECONCILIATION INVARIANT: subtotal + tax + shipping − discount = total.
+  //
+  // A breakdown is four numbers that only mean anything together, and a wrong
+  // one is invisible on its own — the row still shows four plausible amounts
+  // and a total. This identity is the only thing that can catch it, so it runs
+  // on every receipt that states enough to be checked, whatever wrote it.
+  //
+  // The components are still WRITTEN when they disagree: they are the source's
+  // own numbers and dropping them loses more than it protects. What is not
+  // allowed is storing a wrong breakdown SILENTLY, so the disagreement is
+  // stamped on the receipt where a reader of the row will find it.
+  const mismatch = reconciliationMismatch(subtotal, tax, shipping, discount, extraction.totalMinor);
+  if (mismatch) {
+    extraction.metadata = { ...extraction.metadata, TotalsMismatch: mismatch };
   }
 
   const orderId = str(readCommerceField(m, 'ORDER_ID'));
@@ -1975,6 +2097,42 @@ export function toEventInput(rec: CanonicalRecord): CreateEventDto {
     metadata.mediaType = rec.mediaType;
   }
 
+  // ── The record's source gave it no time ──────────────────────────────────
+  //
+  // `ci.events.start_time` is NOT NULL, so `toCanonical` fell back to the
+  // staged row's own created_at — the import wall clock. There is no date to
+  // recover and no way to store "none", so the only honest thing left is to say
+  // so ON the row, at the moment it is minted.
+  //
+  // Two channels, deliberately, because they have different readers:
+  //
+  //  - `time_source` / `time_precision` are the FIRST-CLASS columns, and their
+  //    vocabulary is not ours: it is declared once in
+  //    pipeline/stages/clean/TemporalRepairStage (TIME_SOURCES /
+  //    TIME_PRECISIONS) and mirrored here rather than imported, because the
+  //    import domain has no other dependency on the pipeline domain and one
+  //    string pair is not worth minting one. `undatedRecords.test.ts` asserts
+  //    the two literals still equal the constants, so the mirror cannot drift
+  //    silently.
+  //  - `metadata.undated` is the same fact on a field the read path ALREADY
+  //    exposed (`EventType.metadata` is a GraphQLJSONObject) before
+  //    `EventType.timeSource` existed as its own field. `timeSource` is now
+  //    exposed too (domains/graphql/types/EventType.ts) and is what the web
+  //    client actually reads (Components/utils.tsx getEntityTimestamp) — this
+  //    key is kept for any consumer still reading it, not as the only way in.
+  //
+  // Why stamp it here rather than let TemporalRepairStage discover it: that
+  // stage can only label a source it has a declared SourceTimeSpec for, and
+  // only after a sweep has visited the row. Between the import and the sweep —
+  // and forever, for any source with no spec — the row is indistinguishable
+  // from one whose export really did say "now". The transform is the only place
+  // that KNOWS, because it is the thing doing the substituting. The stage stays
+  // the owner of `repaired` and the `*_original` pair; this is only the
+  // negative assertion it would otherwise have to re-derive.
+  if (!rec.dated) {
+    metadata.undated = true;
+  }
+
   if (rec.contentHash) {
     metadata.contentHash = rec.contentHash;
   }
@@ -1993,6 +2151,22 @@ export function toEventInput(rec: CanonicalRecord): CreateEventDto {
     // kind — an honest "a photo happened" beats an empty title on the timeline.
     title: rec.title ?? rec.kind,
     start_time: new Date(rec.startTime),
+    // See the `!rec.dated` block above. ONLY the negative assertion is stamped;
+    // a dated row is left NULL rather than claimed as `source`.
+    //
+    // That asymmetry is deliberate and it is the safer half of this change.
+    // `dated` means only "the parser produced a non-null instant", which is a
+    // weaker claim than TIME_SOURCES.SOURCE ("the source supplied this instant
+    // and it survived ingest intact") — a parser that FABRICATES an instant
+    // (nmea.ts used to fill a dateless GGA sentence in with today's date)
+    // satisfies the first and violates the second. Stamping `source` on the
+    // strength of non-nullness would launder exactly that bug into a provenance
+    // claim, and it would switch off the structural arm of the
+    // `events-timestamped-at-import` doctor check for every imported row, since
+    // that check excludes `time_source = 'source'` as its legitimate-shape
+    // escape hatch. NULL keeps meaning "unexamined", which is what
+    // TemporalRepairStage and the doctor both already assume.
+    ...(rec.dated ? {} : { time_source: UNDATED_TIME_SOURCE, time_precision: UNDATED_TIME_PRECISION }),
     metadata,
     ...sourceTriple(rec),
   };

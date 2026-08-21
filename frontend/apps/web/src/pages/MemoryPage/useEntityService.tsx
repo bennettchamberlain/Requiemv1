@@ -128,6 +128,15 @@ const SEARCH_QUERY = gql(`
 
           ... on EventType {
             bucketStartTime: startTime
+            # time_source = 'ingest' means the export gave this record no
+            # time and startTime is only the import wall clock (a Google Maps
+            # saved place, a Reddit affiliation, …) — getEntityTimestamp reads
+            # this to keep such rows OUT of the dated timeline instead of
+            # sorting them by the moment they were imported. NOTE: no
+            # backtick characters in this comment — it lives inside a
+            # backtick-delimited JS template literal, and an unescaped one
+            # silently truncates the query string.
+            bucketTimeSource: timeSource
             # The event's kind (visited / messaged / traveled / …), unmasked so
             # the Events tab can group its timeline by activity without
             # unmasking the card fragment.

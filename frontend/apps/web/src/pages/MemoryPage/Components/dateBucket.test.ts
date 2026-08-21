@@ -85,6 +85,33 @@ describe('getEntityTimestamp', () => {
   it('returns null for entity types with no domain timestamp', () => {
     expect(getEntityTimestamp(entity({ __typename: 'PersonType' }))).toBeNull();
   });
+
+  it('treats an ingest-sourced event as undated rather than sorting by the import instant', () => {
+    // The motivating bug: a Google Maps saved place ("Home") carries a real
+    // (non-null) startTime — the moment the import ran, because ci.events.
+    // start_time is NOT NULL — but the backend marks it timeSource = 'ingest'
+    // because the export gave it no time at all. This string is a mirror of
+    // the backend's TIME_SOURCES.INGEST (pipeline/stages/clean/
+    // TemporalRepairStage); pinned here as a literal so a drift in the local
+    // copy shows up as a red test rather than a silently-reintroduced pin.
+    const savedPlace = entity({
+      __typename: 'EventType',
+      bucketStartTime: new Date().toISOString(),
+      bucketTimeSource: 'ingest',
+    });
+
+    expect(getEntityTimestamp(savedPlace)).toBeNull();
+  });
+
+  it('still reads bucketStartTime when timeSource is anything else (including unset)', () => {
+    const date = new Date('2026-01-10T10:00:00Z');
+
+    for (const bucketTimeSource of [undefined, null, 'source', 'user', 'repaired']) {
+      expect(
+        getEntityTimestamp(entity({ __typename: 'EventType', bucketStartTime: date, bucketTimeSource })),
+      ).toEqual(date);
+    }
+  });
 });
 
 describe('groupEntitiesByBucket', () => {
@@ -137,6 +164,22 @@ describe('groupEntitiesByBucket', () => {
     const groups = groupEntitiesByBucket([event('2026-01-15T09:00:00')], NOW);
 
     expect(groups.map((g) => g.bucket)).toEqual(['today']);
+  });
+
+  it('drops an ingest-sourced saved place into "No date" instead of pinning it to the top', () => {
+    // The exact shape of the bug this fixes: the server sorts newest-first, so
+    // a Google Maps saved place whose start_time IS the import instant sorts
+    // ahead of everything the user actually did that week — unless its
+    // timeSource marks it as not a real date.
+    const savedPlace = entity({
+      __typename: 'EventType',
+      bucketStartTime: new Date().toISOString(),
+      bucketTimeSource: 'ingest',
+    });
+    const groups = groupEntitiesByBucket([savedPlace, event('2026-01-15T09:00:00')], NOW);
+
+    expect(groups.map((g) => g.label)).toEqual(['Today', 'No date']);
+    expect(groups[groups.length - 1].entities).toEqual([savedPlace]);
   });
 });
 

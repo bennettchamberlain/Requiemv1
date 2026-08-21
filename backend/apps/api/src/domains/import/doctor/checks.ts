@@ -160,11 +160,16 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'The parsers now emit a thread key wherever the source provides one (imessage.ts and ' +
       'googlevoice.ts stamp ThreadId; `Conversation` joins the fallback chain in inputs.ts), and ' +
       'imessage.ts additionally threads a chat-less message onto its correspondent when that handle ' +
-      'is a 1:1 chat identifier in the same database. Rows here predate those fixes — a re-import ' +
-      'heals every recoverable one. The honest residue is iMessage rows with no chat_message_join ' +
-      'entry AND no 1:1 correspondent evidence (37,181 of 432,173 on the reference corpus): they have ' +
-      'no conversation to recover and stay NULL. If the breakdown names another source still writing ' +
-      'new rows like this, its parser is not emitting a thread key at all, which is a parser fix.',
+      'is a 1:1 chat identifier in the same database. Rows here predate those fixes, and importantly ' +
+      'a re-import will NOT correct one: `thread_id` is not in INGEST_REFRESH_COLUMNS.communication, ' +
+      'so re-ingesting a provenance triple that already exists leaves the stored value alone (that ' +
+      'exclusion is deliberate — see the note there). Migrations 20260819000746 (from staged ChatId) ' +
+      'and 20260819000941 (from 1:1 correspondent evidence) are the only repair for a row already in ' +
+      'the database, and both read ci_import.staged_items, so they fill nothing once staging for that ' +
+      'run is purged. The honest residue is iMessage rows with no chat_message_join entry AND no 1:1 ' +
+      'correspondent evidence (37,181 of 432,173 on the reference corpus): they have no conversation ' +
+      'to recover and stay NULL. If the breakdown names another source still writing NEW rows like ' +
+      'this, its parser is not emitting a thread key at all, which is a parser fix.',
     mirrors: 'src/domains/import/push/inputs.ts toCommunicationInput (the thread-key chain)',
     sql: String.raw`
       WITH bad AS (
@@ -187,7 +192,18 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'These rows cannot be attributed to a person, so they are invisible to every people-centric view ' +
       'and contribute nothing to entity resolution. The participant edges are filled by the ' +
       '`extract_people` / `link_communications` enrichment legs — run ' +
-      '`ci-import backfill extract_people link_communications` before concluding the parser is at fault.',
+      '`ci-import backfill extract_people link_communications` before concluding the parser is at fault. ' +
+      'That backfill resolves handles out of `participants_metadata`, so it can only help a row that ' +
+      'HAS one: a row whose participants_metadata is empty names nobody to resolve, and no leg will ' +
+      'ever fill it. On the reference corpus that is 16,325 outbound iMessages whose chat.db row has ' +
+      'neither recipients nor a partner handle (see migration 20260819000941) — the counterpart is ' +
+      'genuinely unrecorded, and a name invented from a filename is the defect migration ' +
+      '20260818220731 exists to undo. Note also what a re-import does NOT do here: from_entity_id and ' +
+      'to_entity_ids are absent from INGEST_REFRESH_COLUMNS.communication (deliberately — they are ' +
+      'resolved server-side), so re-ingesting an existing triple leaves them as they are. The parser ' +
+      'fixes that stage participant edges (imessage.ts outbound fan-out, googlevoice.ts ' +
+      'counterpartEdges) apply to rows written for the first time; migration 20260819000959 is the ' +
+      'repair for rows already stored, and it too reads ci_import.staged_items.',
     mirrors: null,
     sql: String.raw`
       WITH bad AS (
@@ -648,32 +664,76 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     id: 'events-timestamped-at-import',
     severity: 'high',
-    title: 'Events whose date is the moment they were imported, not the moment they happened',
+    title: 'Events wearing the import wall clock with no marker saying so',
     scope: 'ci.events',
     remedy:
-      "An undated record stamped with the import run's wall clock — which is why a handful of Google " +
-      'Maps saved places sit at the TOP of the timeline dated the day of the import, above everything ' +
-      "that actually happened that week. `ci.events.time_source = 'ingest'` is the declared marker " +
-      '(TemporalRepairStage sets it, and the column comment defines it as "stamped at import, i.e. not ' +
-      'a real date"); the second arm is the structural backstop for the far more common case where ' +
-      'nothing declared anything. Fix is in the parser: emit no date rather than `now()`, and let the ' +
-      'UI say "no date".',
+      'A row whose start_time lands within two seconds of created_at — the shape of an import-wall-' +
+      "clock fabrication — but carries no `time_source` saying so. `ci.events.time_source = 'ingest'` " +
+      'is the declared marker every undated record is supposed to leave (push/inputs.ts toEventInput, ' +
+      "from CanonicalRecord.dated; the column comment defines 'ingest' as \"stamped at import, i.e. not " +
+      'a real date"). A row this suspiciously-timed and still unmarked means one of two things: a row ' +
+      'imported BEFORE the fabricated-timestamp fix (repair it with 20260821084711, which marks on an ' +
+      'exact join to ci_import.staged_items.occurred_at IS NULL), or a NEW producer that fabricates a ' +
+      "date without going through toEventInput's guard — the real regression this check exists to catch. " +
+      'Fix the parser, emit no date, and let the routing and the UI say "no date" instead of stamping one.',
     mirrors: 'db/postgres/migrations/20260809184710_clean_stage_support.sql (time_source vocabulary)',
-    // The one legitimate shape this can match is a LIVE capture ingested within
-    // two seconds of the moment it records — genuinely "happened now, stored
-    // now". That is what `time_source = 'source'` is excluded for (the export
-    // said so, and it agreed), and why the breakdown is by source_system: a
-    // `google_maps` row here is the bug, a live `capture` row is not. Two
-    // seconds rather than one because a batch push writes created_at at commit
-    // time, a beat after the row was built.
+    // `time_source = 'ingest'` is EXCLUDED here, not included: as of the
+    // fabricated-timestamp fix that marker is the guard firing correctly, not
+    // the guard being skipped — a handful of Google Maps saved places and
+    // Reddit affiliations are *supposed* to carry it forever, and flagging
+    // every one of them "high" every run is exactly the standing-defect-on-
+    // correct-data failure this check used to have. What is still provably
+    // wrong is the OTHER shape: no marker at all on a timestamp that looks
+    // exactly like the import clock. `events-ingest-stamped-outside-known-
+    // shapes` below is the companion check that watches the marked population
+    // instead, at `medium`, because which shapes are legitimately undated is a
+    // judgement call and this one is not. `time_source = 'source'` stays
+    // excluded for the live-capture case: a capture genuinely ingested within
+    // two seconds of the moment it records is legitimate, and the export said
+    // so. Two seconds rather than one because a batch push writes created_at at
+    // commit time, a beat after the row was built.
     sql: String.raw`
       WITH bad AS (
         SELECT event_id, start_time, created_at, source_system, time_source
           FROM ci.events
          WHERE created_at IS NOT NULL
            AND time_source IS DISTINCT FROM 'source'
-           AND ( time_source = 'ingest'
-              OR start_time BETWEEN created_at - INTERVAL '2 seconds' AND created_at + INTERVAL '2 seconds' )
+           AND time_source IS DISTINCT FROM 'ingest'
+           AND start_time BETWEEN created_at - INTERVAL '2 seconds' AND created_at + INTERVAL '2 seconds'
+      )
+      SELECT count(*)::bigint AS count,
+             ${breakdownBy('source_system')} AS breakdown,
+             ${SAMPLE} AS sample
+        FROM bad
+    `,
+  },
+  {
+    id: 'events-ingest-stamped-outside-known-shapes',
+    severity: 'medium',
+    title: "Events marked time_source='ingest' for a (source, kind) nobody has declared undated",
+    scope: 'ci.events',
+    remedy:
+      "Not a defect by itself — `time_source = 'ingest'` is the CORRECT mark for a record whose source " +
+      'gave it no time (push/inputs.ts toEventInput). This check exists for the shapes nobody has looked ' +
+      "at yet: it excludes the (source_system, metadata->>'Kind') pairs SOURCE_TIME_SPECS " +
+      '(pipeline/stages/clean/TemporalRepairStage.ts) already declares as undatedKinds — ' +
+      'google_maps_places/labeled_place and reddit/moderated_subreddit|subscribed_subreddit — so a hit ' +
+      'is either a NEW legitimately-undated shape that belongs in that allowlist (add it, and this check ' +
+      'goes quiet for it), or a regression: a kind that is supposed to carry a real source date ' +
+      '(reddit/post, google_maps_places/place_review, …) losing it and falling back to the ingest clock. ' +
+      'The breakdown is by source_system so "which importer did this?" is the first thing a reader sees; ' +
+      "check the sample's `kind` against SOURCE_TIME_SPECS before deciding which of the two it is.",
+    mirrors: 'src/domains/pipeline/stages/clean/TemporalRepairStage.ts (SOURCE_TIME_SPECS undatedKinds)',
+    sql: String.raw`
+      WITH bad AS (
+        SELECT event_id, start_time, created_at, source_system, time_source,
+               metadata ->> 'Kind' AS kind
+          FROM ci.events
+         WHERE time_source = 'ingest'
+           AND NOT (
+             (source_system = 'google_maps_places' AND metadata ->> 'Kind' = 'labeled_place')
+             OR (source_system = 'reddit' AND metadata ->> 'Kind' IN ('moderated_subreddit', 'subscribed_subreddit'))
+           )
       )
       SELECT count(*)::bigint AS count,
              ${breakdownBy('source_system')} AS breakdown,
@@ -773,25 +833,52 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
   {
     id: 'pipeline-orphan-shards',
     severity: 'medium',
-    title: 'Shards still pending or running under a pipeline run that has already finished',
+    title: 'Shards left mid-flight under a run that finalised claiming it had nothing left to do',
     scope: 'ci.pipeline_shards, ci.pipeline_runs',
     remedy:
-      'The run reported done and part of its work never did. Nothing will pick these shards up — the ' +
-      'run that owned them is finished — so whatever slice of the corpus they covered is simply ' +
-      'missing from that stage. Re-run the stage for the affected keys, or delete the shards and start ' +
-      'a fresh run for that leg.',
+      'A bookkeeping contradiction, NOT lost data — and the difference is the point. A shard is a ' +
+      'run-scoped lease and progress marker with a NULL cursor: the work itself lives in ' +
+      '`ci.pipeline_state`, and the control tick re-derives the remainder from THE ONE RULE on every ' +
+      'pass, so nothing here is unreachable and re-running the stage recovers nothing that was not ' +
+      'already going to be swept. What a non-zero count means is that the run stamped `drained` ' +
+      '("there is no work left") or `cancelled` while one of its own legs never reported, so the run ' +
+      'progress view — the one place an operator looks to answer "is my import finished?" — disagrees ' +
+      'with itself. Read `ci.pipeline_runs.detail` for the run named in the sample: a leg that left ' +
+      '`detail.stages` mid-flight is the usual cause. Deleting the shards is safe and loses nothing.',
     mirrors: null,
-    // Keyed on `finished_at IS NOT NULL` rather than a status list, following
-    // 20260809032723's own reasoning for its unique index: the status vocabulary
-    // belongs to the runner and will grow, while "finished" is structural.
+    // Runs finalised `not_due` are EXCLUDED, and that exclusion is most of what
+    // this check is. `PipelineControlService` finalises a run the moment nothing
+    // is DUE even while legs still hold candidates — it has to, because
+    // `pipeline_runs_active_uniq` allows one unfinished run per user and holding
+    // one open for the six days until a weekly stage comes round would lock the
+    // user out of ever pressing "reprocess" — and it deliberately leaves those
+    // legs' shards untouched rather than saying `done` about them
+    // (`markShardDrained` is skipped, `legsNotDue` is counted, the run is stamped
+    // `finalizedReason: 'not_due'`). A pending shard under a `not_due` run is
+    // therefore the control plane's INTENDED record of "this leg has work and it
+    // is not its turn", which is why the un-narrowed predicate reported all
+    // twelve legs of a healthy appliance as a defect. Same reasoning as
+    // `events-missing-search-vector` excluding `index_skips`: a check reporting a
+    // number that can never reach zero stops being read, and takes the checks
+    // either side of it with it.
+    //
+    // Still keyed on `finished_at IS NOT NULL` rather than a run-status list,
+    // following 20260809032723's own reasoning for its unique index: the status
+    // vocabulary belongs to the runner and will grow, while "finished" is
+    // structural. `finalizedReason` is read out of `detail` for the same reason —
+    // it is what the finaliser writes — and compared with `IS DISTINCT FROM` so a
+    // run finalised before that field existed, which has none, stays VISIBLE
+    // instead of being silently exempted by a NULL.
     sql: String.raw`
       WITH bad AS (
         SELECT s.id, s.run_id, s.stage, s.shard_key, s.status, r.kind AS run_kind,
-               r.status AS run_status, r.finished_at AS run_finished_at
+               r.status AS run_status, r.finished_at AS run_finished_at,
+               r.detail->>'finalizedReason' AS finalized_reason
           FROM ci.pipeline_shards s
           JOIN ci.pipeline_runs r ON r.id = s.run_id
          WHERE s.status IN ('pending', 'running')
            AND r.finished_at IS NOT NULL
+           AND r.detail->>'finalizedReason' IS DISTINCT FROM 'not_due'
       )
       SELECT count(*)::bigint AS count,
              ${breakdownBy('stage')} AS breakdown,

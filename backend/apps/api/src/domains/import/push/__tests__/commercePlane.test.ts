@@ -1,3 +1,9 @@
+import path from 'node:path';
+
+import type { ReceiptExtraction } from '../../../memory/types';
+import type { EmittedGraph, EmittedItem } from '../../datasources/__tests__/support/emitted';
+import { AmazonFileImporter } from '../../datasources/amazon';
+import type { ImportParams } from '../../datasources/timeline';
 import type { StagedItem } from '../../entities/StagedItemEntity';
 import {
   backfillEntityTypesFor,
@@ -571,5 +577,290 @@ describe('toObservationInput', () => {
 
   it('refuses a record that identifies no object', () => {
     expect(toObservationInput(recordFor({ metadata: { Product: 'Cast Iron Pan' } }))).toBeNull();
+  });
+});
+
+/*
+ * The money breakdown and the invariant that guards it.
+ *
+ * `ci.receipts` has carried subtotal / tax / shipping / discount columns since
+ * the table was created, and NOTHING wrote three of them — every Amazon receipt
+ * in a real database had four NULLs and a total. The numbers were in the export
+ * all along; what was missing was a mapper that read them and a check that says
+ * whether what it read makes sense.
+ */
+describe('receipt money breakdown', () => {
+  /** One Amazon order as the parser now emits it: total charged + its four parts. */
+  const amazonOrder = recordFor({
+    classification: 'order',
+    metadata: {
+      Merchant: 'Amazon',
+      'Order ID': '111-1329443-6205810',
+      Currency: 'USD',
+      Total: '77.42',
+      Subtotal: '71.85',
+      Tax: '5.57',
+      Shipping: '0',
+      Discount: '0',
+      LineItems: [
+        {
+          LineNumber: 1,
+          Product: 'Castrol GTX Full Synthetic 0W-20 Motor Oil, 5 Quarts, Pack of 3',
+          Quantity: 1,
+          'Unit Price': '71.85',
+          Total: '77.42',
+          Subtotal: '71.85',
+          Tax: '5.57',
+          Currency: 'USD',
+        },
+      ],
+    },
+  });
+
+  it("stores a line's OWN total, not what the line was charged", () => {
+    const [line] = toReceiptLineItemInputs(amazonOrder);
+
+    // The defect this replaces: the line carried the order's tax-inclusive
+    // 77.42, so `quantity × unit_price` NEVER equalled `total_price_minor` and
+    // every single-line receipt "reconciled" against a copy of its own total.
+    expect(line.unitPriceMinor).toBe(7185);
+    expect(line.totalPriceMinor).toBe(7185);
+  });
+
+  it('fills subtotal, tax, shipping and discount on the header', () => {
+    const withShipping = recordFor({
+      classification: 'order',
+      metadata: {
+        Currency: 'USD',
+        Total: '418.99',
+        Subtotal: '412',
+        Tax: '0',
+        Shipping: '6.99',
+        Discount: '0',
+        LineItems: [{ Product: 'Laptop', Quantity: 1, 'Unit Price': '412', Subtotal: '412' }],
+      },
+    });
+
+    expect(toReceiptInput(withShipping, toReceiptLineItemInputs(withShipping))).toMatchObject({
+      subtotalMinor: 41200,
+      taxMinor: 0,
+      shippingMinor: 699,
+      discountMinor: 0,
+      totalMinor: 41899,
+    });
+  });
+
+  it('subtracts a discount rather than adding it', () => {
+    const discounted = recordFor({
+      classification: 'order',
+      metadata: {
+        Currency: 'USD',
+        Total: '140.99',
+        Subtotal: '229.99',
+        Tax: '0',
+        Shipping: '0',
+        Discount: '89',
+        LineItems: [{ Product: 'Projector', Quantity: 1, 'Unit Price': '229.99', Subtotal: '229.99' }],
+      },
+    });
+    const extraction = toReceiptInput(discounted, toReceiptLineItemInputs(discounted));
+
+    // 229.99 − 89.00 = 140.99. `Discount` is the magnitude taken OFF, so a
+    // breakdown that ADDED it would be 318.99 and would fail the invariant.
+    expect(extraction.discountMinor).toBe(8900);
+    expect(extraction.metadata?.TotalsMismatch).toBeUndefined();
+  });
+
+  it('refuses a negative discount instead of writing one into a cost column', () => {
+    const withDiscount = (discount: string): CanonicalRecord =>
+      recordFor({
+        classification: 'order',
+        metadata: { Currency: 'USD', Total: '140.99', Subtotal: '229.99', Discount: discount },
+      });
+
+    // Sign conventions are a fact about an EXPORT, so they normalise in the
+    // parser that knows the export. Here a negative is simply refused, exactly
+    // as every other cost column refuses one — and the refusal shows up as a
+    // reconciliation mismatch rather than as a plausible-looking wrong number.
+    // Asserted against its own positive twin, so "refused" cannot be confused
+    // with "never read this key at all".
+    const positive = withDiscount('89');
+    const signed = withDiscount('-89');
+
+    expect(toReceiptInput(positive, toReceiptLineItemInputs(positive)).discountMinor).toBe(8900);
+    expect(toReceiptInput(signed, toReceiptLineItemInputs(signed)).discountMinor).toBeUndefined();
+  });
+
+  it('stamps a receipt whose parts do not add up to its total', () => {
+    const offBySeven = recordFor({
+      classification: 'order',
+      metadata: {
+        Currency: 'USD',
+        Total: '362.56',
+        Subtotal: '329.99',
+        Tax: '25.57',
+        Shipping: '0',
+        Discount: '0',
+        LineItems: [{ Product: 'TV', Quantity: 1, 'Unit Price': '329.99', Subtotal: '329.99' }],
+      },
+    });
+
+    // 32999 + 2557 = 35556, charged 36256. Real: a state recycling fee Amazon
+    // charges and does not itemise. The parts are still written — they are the
+    // source's own — but never silently.
+    expect(toReceiptInput(offBySeven, toReceiptLineItemInputs(offBySeven))).toMatchObject({
+      subtotalMinor: 32999,
+      taxMinor: 2557,
+      metadata: { TotalsMismatch: { expectedMinor: 35556, statedMinor: 36256, deltaMinor: -700 } },
+    });
+  });
+
+  it('treats an unstated component as a claim of zero', () => {
+    // A receipt that states a subtotal and a total but no tax is CLAIMING there
+    // was none. That claim is exactly what the invariant is for, so a missing
+    // tax counts as zero rather than excusing the check.
+    const silentTax = recordFor({
+      classification: 'order',
+      metadata: { Currency: 'USD', Total: '77.42', Subtotal: '71.85' },
+    });
+
+    expect(toReceiptInput(silentTax, toReceiptLineItemInputs(silentTax)).metadata?.TotalsMismatch).toEqual({
+      expectedMinor: 7185,
+      statedMinor: 7742,
+      deltaMinor: -557,
+    });
+  });
+
+  it('says nothing when there is nothing to check', () => {
+    // No subtotal is a SILENCE, not a violation: an Audible credit purchase and
+    // a digital component ledger state a total and no breakdown at all, and
+    // reporting them would bury the receipts that really are wrong.
+    const noBreakdown = recordFor({
+      classification: 'order',
+      metadata: { Currency: 'USD', Total: '6.00', LineItems: [{ Product: 'Audiobook', Total: '6.00' }] },
+    });
+
+    expect(
+      toReceiptInput(noBreakdown, toReceiptLineItemInputs(noBreakdown)).metadata?.TotalsMismatch,
+    ).toBeUndefined();
+  });
+
+  it('tolerates a single minor unit of rounding', () => {
+    // The components are rounded into minor units independently (a per-unit tax
+    // × a quantity of 3 rounds where the source's own per-line figure did not).
+    const roundedOff = recordFor({
+      classification: 'order',
+      metadata: { Currency: 'USD', Total: '10.00', Subtotal: '9.00', Tax: '1.01' },
+    });
+
+    expect(
+      toReceiptInput(roundedOff, toReceiptLineItemInputs(roundedOff)).metadata?.TotalsMismatch,
+    ).toBeUndefined();
+  });
+
+  it('leaves a source that states only a line total alone', () => {
+    // Uber Eats and a detected receipt email state a per-line `Total` and no
+    // subtotal. Preferring SUBTOTAL must not disturb them.
+    const uber = recordFor({
+      classification: 'order',
+      metadata: {
+        Currency: 'USD',
+        LineItems: [{ 'Item Name': 'Pad Thai', 'Order Price': '18.50' }],
+      },
+    });
+
+    expect(toReceiptLineItemInputs(uber)[0].totalPriceMinor).toBe(1850);
+  });
+});
+
+/*
+ * The SEAM: the real Amazon export, through the parser, through this mapper,
+ * to the numbers that land in `ci.receipts` and `ci.receipt_line_items`.
+ *
+ * Both halves of the defect lived here rather than in either file alone — the
+ * parser wrote a key meaning "charged" and the mapper read it into a column
+ * meaning "the line's own total" — and a test on either side alone cannot see
+ * that. It runs the same nine-row fixture the datasource tests use
+ * (`datasources/__tests__/fixtures/amazon-your-orders/Order History.csv`,
+ * verbatim rows from a live export, all 28 columns) and asserts the receipt
+ * that comes out the far end.
+ */
+describe('Amazon export → receipt, end to end', () => {
+  /** Every order aggregate the importer emits for the real-header fixture. */
+  async function importedOrders(): Promise<EmittedItem[]> {
+    const root = path.join(
+      __dirname,
+      '..',
+      '..',
+      'datasources',
+      '__tests__',
+      'fixtures',
+      'amazon-your-orders',
+    );
+    const pipeline: EmittedGraph[] = [];
+    await new AmazonFileImporter().fileImport({}, { filename: 'amazon-your-orders', fullPath: root }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+
+    return pipeline.filter((g) => g.item.classification === 'order').map((g) => g.item);
+  }
+
+  /** The receipt an emitted order becomes, with no database in the way. */
+  function receiptFor(order: EmittedItem): ReceiptExtraction {
+    const rec = recordFor({
+      classification: 'order',
+      metadata: order.metadata as Record<string, unknown>,
+    });
+
+    return toReceiptInput(rec, toReceiptLineItemInputs(rec));
+  }
+
+  it('books the reported order as 71.85 of oil plus 5.57 of tax', async () => {
+    const orders = await importedOrders();
+    const receipt = receiptFor(orders.find((o) => o.metadata['Order ID'] === '111-1329443-6205810')!);
+
+    // Every number in this assertion was NULL or wrong before: the line total
+    // was 7742 (the order's), and all four breakdown columns were NULL.
+    expect(receipt).toMatchObject({
+      orderNumber: '111-1329443-6205810',
+      merchantName: 'Amazon',
+      currency: 'USD',
+      subtotalMinor: 7185,
+      taxMinor: 557,
+      shippingMinor: 0,
+      discountMinor: 0,
+      totalMinor: 7742,
+    });
+    expect(receipt.lines.map((l) => [l.quantity, l.unitPriceMinor, l.totalPriceMinor])).toEqual([
+      [1, 7185, 7185],
+    ]);
+    expect(receipt.metadata?.TotalsMismatch).toBeUndefined();
+  });
+
+  it('makes every reconciling order in the fixture actually reconcile', async () => {
+    const orders = await importedOrders();
+    const receipts = orders.map(receiptFor);
+
+    // The check that the old code could not fail: with each line carrying a
+    // copy of its order's total, "the parts add up" was true by construction.
+    // Here the parts are four independent columns and one of them (the TV's
+    // unexplained $7.00 recycling fee) genuinely does not add up.
+    const failing = receipts.filter((r) => r.metadata?.TotalsMismatch);
+    expect(failing).toHaveLength(1);
+    expect(failing[0].orderNumber).toBe('112-0129751-0345803');
+
+    for (const receipt of receipts.filter((r) => !r.metadata?.TotalsMismatch)) {
+      const expected =
+        (receipt.subtotalMinor ?? 0) +
+        (receipt.taxMinor ?? 0) +
+        (receipt.shippingMinor ?? 0) -
+        (receipt.discountMinor ?? 0);
+      expect(expected).toBe(receipt.totalMinor);
+      // And the lines are the subtotal — which is what makes the sum meaningful
+      // rather than a restatement of the header total.
+      expect(receipt.lines.reduce((a, l) => a + (l.totalPriceMinor ?? 0), 0)).toBe(receipt.subtotalMinor);
+    }
   });
 });

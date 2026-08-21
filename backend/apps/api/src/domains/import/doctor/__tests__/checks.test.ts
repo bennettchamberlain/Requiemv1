@@ -1,3 +1,5 @@
+import { INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+
 import { DOCTOR_CHECKS, DOCTOR_CHECK_IDS, findCheck } from '../checks';
 
 /**
@@ -107,6 +109,39 @@ describe('doctor check registry', () => {
     }
   });
 
+  it('promises a re-import heal only for columns a re-ingest actually refreshes', () => {
+    // The remedy is the field an agent acts on, and for the communications
+    // checks it makes a claim the ingest contract either backs or contradicts.
+    // `comms-missing-thread-id` used to say "a re-import heals every
+    // recoverable one" while `thread_id` was NOT in
+    // INGEST_REFRESH_COLUMNS.communication — so the ON CONFLICT DO UPDATE
+    // (CommunicationService.createMany) left the stored NULL exactly as it
+    // was, and an operator who followed the advice re-ran a multi-hour import
+    // for nothing. `comms-placeholder-content` makes the same promise and is
+    // CORRECT, because `content` and `preview` are on the list.
+    //
+    // Pinned in both directions on purpose: adding thread_id to the refresh set
+    // later fails this test too, which is the moment to rewrite the remedy
+    // rather than leave two sources of truth disagreeing.
+    const columnUnderTest: Record<string, string> = {
+      'comms-missing-thread-id': 'thread_id',
+      'comms-missing-participants': 'from_entity_id',
+      'comms-placeholder-content': 'content',
+    };
+
+    for (const [id, column] of Object.entries(columnUnderTest)) {
+      const remedy = findCheck(id)?.remedy ?? '';
+      // Sentence-bounded, so "a re-import will NOT correct one" in one sentence
+      // and "heals" in another cannot read as a promise.
+      const promisesHeal = /re-import[^.]*\bheals?\b|\bheals?\b[^.]*re-import/i.test(remedy);
+
+      expect({ id, promisesHeal }).toEqual({
+        id,
+        promisesHeal: INGEST_REFRESH_COLUMNS.communication.includes(column),
+      });
+    }
+  });
+
   it('finds a check by id and nothing by a wrong one', () => {
     expect(findCheck('pipeline-dead-letters')?.severity).toBe('high');
     expect(findCheck('comms-null-thread')).toBeUndefined();
@@ -144,5 +179,55 @@ describe('position-not-a-place-name must not drift from the guard it mirrors', (
   it('bounds place names at the same 14 words the guard does', () => {
     // A different number here is drift wearing the right shape.
     expect(sql()).toMatch(/regexp_split_to_array\([^)]*\)[^>]*>\s*14/);
+  });
+});
+
+describe('pipeline-orphan-shards must not report the control plane’s intended not_due state', () => {
+  /**
+   * As first written this check matched EVERY `pending` shard under a finished
+   * run and told the operator that "whatever slice of the corpus they covered is
+   * simply missing from that stage". That is the state `PipelineControlService`
+   * creates on purpose: a leg with candidates that is merely not DUE keeps its
+   * shard rather than being marked `done` — saying `done` about it would put a
+   * falsehood in the run progress view — and the run is finalised anyway, because
+   * `pipeline_runs_active_uniq` allows one unfinished run per user and holding it
+   * open until a weekly stage comes round would lock the user out of "reprocess".
+   * All twelve rows the check reported on the live appliance were that state, and
+   * the remedy it printed — re-run the stage — recovers nothing, because a shard
+   * carries a NULL cursor and the work is re-derived from `ci.pipeline_state`.
+   *
+   * Asserted against the SQL and remedy TEXT for the same reason the
+   * `position-not-a-place-name` block above is: the predicate is one line of a
+   * statement only a real Postgres can run, and the failure being guarded is that
+   * line going missing again — after which the check quietly goes back to
+   * reporting a healthy appliance as data loss, and nothing else notices.
+   */
+  const check = () => findCheck('pipeline-orphan-shards');
+
+  it('excludes runs the control tick finalised as not_due, and does so NULL-safely', () => {
+    expect(check()?.sql).toContain(String.raw`r.detail->>'finalizedReason' IS DISTINCT FROM 'not_due'`);
+    // `IS DISTINCT FROM`, never `<>`: under `<>` a NULL reason evaluates to NULL,
+    // the row is filtered out, and every run finalised before `finalizedReason`
+    // existed silently stops being checked at all.
+    expect(check()?.sql).not.toMatch(/finalizedReason'\s*(<>|!=)/);
+  });
+
+  it('still reports a shard left behind by a run that claimed it was drained', () => {
+    // The narrowing is ONE excluded reason, not an allow-list: `drained` and
+    // `cancelled` both stay in scope, because a leg that never reported under
+    // either of them is precisely the contradiction this check exists for.
+    expect(check()?.sql).not.toMatch(/'drained'|'cancelled'/);
+    expect(check()?.sql).toContain("s.status IN ('pending', 'running')");
+    expect(check()?.sql).toContain('r.finished_at IS NOT NULL');
+  });
+
+  it('no longer tells the operator a slice of the corpus is missing', () => {
+    const remedy = check()?.remedy ?? '';
+
+    expect(remedy).not.toMatch(/missing from that stage|Re-run the stage/);
+    // The remedy is the field an agent acts on, so it has to name where the work
+    // actually lives — the ledger, not the shard. Without that sentence the
+    // honest predicate still produces the dishonest action.
+    expect(remedy).toContain('ci.pipeline_state');
   });
 });

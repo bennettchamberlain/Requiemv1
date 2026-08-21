@@ -48,6 +48,29 @@ export const INGEST_REFRESH_COLUMNS: Record<IngestEntityKind, readonly string[]>
   // importer's fixed email `direction` or a newly-populated
   // `participants_metadata`. The UPDATE ... FROM (VALUES ...) statement there
   // binds parameters in THIS order — keep them in lockstep.
+  //
+  // Three columns are ABSENT deliberately, because each looks like it belongs:
+  //
+  //  * `thread_id` is genuinely source-derived and genuinely mutable, so the
+  //    rule above would admit it — and it is left out anyway. The conflict
+  //    action is `col = EXCLUDED.col` (bulkUpsert.ts), which is a straight
+  //    overwrite in BOTH directions, and for this column the import-time value
+  //    is not always the better one. Two repair migrations
+  //    (20260819000746 from staged ChatId, 20260819000941 from 1:1
+  //    correspondent evidence) wrote thread ids the parser cannot always
+  //    re-derive: imessage.ts builds its `oneToOneChatIdentifiers` index from
+  //    `chat` / `chat_handle_join`, and CATCHES the failure to read them — an
+  //    older or partial chat.db degrades to "no thread key at all" rather than
+  //    aborting. Refreshing on that import would null every repaired row.
+  //    A heal that can only run in the safe direction (COALESCE the existing
+  //    value) is a different conflict action than this map can express, so
+  //    until bulkUpsert grows one, thread_id is repaired by migration only —
+  //    which is what the `comms-missing-thread-id` doctor remedy now says.
+  //  * `from_entity_id` / `to_entity_ids` are RESOLVED server-side by the
+  //    enrich.person_link leg from `participants_metadata` (which IS refreshed,
+  //    so the raw handles still self-heal and re-linking still improves the
+  //    row). The importer sends nulls there; a refresh would un-link every
+  //    communication enrichment had already attributed to a person.
   communication: ['direction', 'participants_metadata', 'metadata', 'content', 'preview', 'subject'],
   event: [],
   // EMPTY ON PURPOSE, and load-bearing: ci.objects is the one ingest table a

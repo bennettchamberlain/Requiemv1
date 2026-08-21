@@ -1093,6 +1093,16 @@ type EventType implements Node & Taggable {
 
   """Task this planned block schedules (`event_type = planned_block`)."""
   taskId: ID
+
+  """
+  How much of `startTime` is meaningful: 'second' | 'minute' | 'day' | 'ambiguous' | 'unknown'. 'unknown' pairs with `timeSource = 'ingest'` — no field of the stored instant carries information (see EventEntity.timePrecision).
+  """
+  timePrecision: String
+
+  """
+  Provenance for `startTime`: 'source' | 'user' | 'repaired' | 'ingest', or null for a row written before this column existed. 'ingest' means the value is NOT a real date — the source gave this record no time, and `startTime` carries the import wall clock only because the column is NOT NULL. A client MUST treat 'ingest' as "no date" rather than sort or display it as a real instant (see EventEntity.timeSource).
+  """
+  timeSource: String
   title: String
 }
 
@@ -2203,6 +2213,39 @@ type PlaceVisitStatsType {
   visitCount: Int!
 }
 
+type PositionPointType {
+  activityType: String
+  cursor: String!
+  endTime: DateTime!
+  fixCount: Int!
+  latitude: Float!
+  longitude: Float!
+  startTime: DateTime!
+}
+
+type PositionTrackExtentType {
+  count: Int!
+  end: DateTime!
+  start: DateTime!
+}
+
+input PositionTrackInput {
+  after: String
+  bbox: [Float!]
+  endTime: String
+  first: Int
+  maxPoints: Int
+  startTime: String
+}
+
+type PositionTrackType {
+  bucketSeconds: Int
+  endCursor: String
+  hasNextPage: Boolean!
+  points: [PositionPointType!]!
+  totalCount: Int
+}
+
 """
 Forecast self-consistency against Qwen-derived behavior labels — not ground-truth accuracy.
 """
@@ -2498,6 +2541,16 @@ type Query {
   Planned blocks (`event_type = planned_block`) overlapping [from, to). SQL-pushdown, not the explorer events() feed.
   """
   plannedBlocks(from: DateTime!, to: DateTime!): [EventType!]!
+
+  """
+  The signed-in user's location history (ci.position) as a downsampled, keyset-paged trace for the map. Filtered by viewport bounding box and time range.
+  """
+  positionTrack(input: PositionTrackInput): PositionTrackType!
+
+  """
+  The signed-in user's whole ci.position history (first fix, last fix, count), unpaged.
+  """
+  positionTrackExtent(input: PositionTrackInput): PositionTrackExtentType
 
   """Forecast self-consistency scores (not ground-truth accuracy)"""
   predictionCalibration(limit: Int = 14): PredictionCalibrationType
