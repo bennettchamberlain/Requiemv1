@@ -147,6 +147,12 @@ export {
   stripCallLogHeading,
 } from './utils/participantSanity';
 export {
+  type PlaceholderPersonNameReason,
+  isPlaceholderPersonName,
+  placeholderPersonNameReason,
+  resetPlaceholderPersonNameLog,
+} from './utils/placeholderPersonName';
+export {
   type NormalizedObjectIdentifier,
   type ObjectIdentifierNamespace,
   computeQualifier,
