@@ -1,4 +1,7 @@
-import { isGeocodingConfigured, resolveGeocodingPortalBaseUrl } from './configuration';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import config, { isGeocodingConfigured, resolveGeocodingPortalBaseUrl } from './configuration';
 
 /**
  * Covers the geocoding portalBaseUrl fallback (previously an inline `if` at
@@ -85,5 +88,44 @@ describe('isGeocodingConfigured', () => {
         ciPortal: { apiKey: '' },
       }),
     ).toBe(true);
+  });
+});
+
+/**
+ * `scheduled.entity.promotion` gated one cron, `EntityPromotionCron`, whose
+ * backing table `ci.promotion_candidates` was dropped by
+ * `20260816010000_context_prompts_and_drop_promotion_candidates`. Both are gone.
+ *
+ * A feature flag lives in three files that have to agree — the default, the
+ * env-var mapping and the schema — and only one of the three fails loudly on
+ * its own: `booleanStringSchema` carries no default, so a schema entry with
+ * nothing behind it is a boot crash. A leftover default or env mapping is
+ * silently stripped by zod instead, and survives as a knob that does nothing.
+ */
+describe('retired feature flags', () => {
+  function featureKeysIn(file: string): string[] {
+    const contents = JSON.parse(readFileSync(join(__dirname, '..', 'config', file), 'utf8')) as {
+      features: Record<string, unknown>;
+    };
+
+    return Object.keys(contents.features).sort();
+  }
+
+  const resolvedKeys = Object.keys(config.features).sort();
+
+  it('leaves no trace of scheduled.entity.promotion in the resolved config', () => {
+    expect(resolvedKeys).not.toContain('scheduled.entity.promotion');
+  });
+
+  it('leaves none in the default or the env-var mapping either', () => {
+    expect(featureKeysIn('default.json')).not.toContain('scheduled.entity.promotion');
+    expect(featureKeysIn('custom-environment-variables.json')).not.toContain('scheduled.entity.promotion');
+  });
+
+  it('keeps the three files describing the same set of flags', () => {
+    // The stripping is what makes drift invisible, so this holds for every
+    // flag rather than only the retired one.
+    expect(featureKeysIn('default.json')).toEqual(resolvedKeys);
+    expect(featureKeysIn('custom-environment-variables.json')).toEqual(resolvedKeys);
   });
 });

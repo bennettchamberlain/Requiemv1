@@ -1,4 +1,10 @@
-import { guardedLookup, isBlockedAddress, isBlockedHostname } from '../services/UnfurlFetcher';
+import {
+  guardedLookup,
+  isBlockedAddress,
+  isBlockedHostname,
+  rateBucketFor,
+  RateBuckets,
+} from '../services/UnfurlFetcher';
 
 describe('UnfurlFetcher SSRF guards', () => {
   it.each([
@@ -87,10 +93,6 @@ describe('UnfurlFetcher SSRF guards', () => {
 });
 
 describe('rate buckets', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { rateBucketFor, RateBuckets } =
-    require('../services/UnfurlFetcher') as typeof import('../services/UnfurlFetcher');
-
   it("folds one operator's hosts into one budget", () => {
     expect(rateBucketFor('en.wikipedia.org')).toBe('wikimedia');
     expect(rateBucketFor('www.wikidata.org')).toBe('wikimedia');

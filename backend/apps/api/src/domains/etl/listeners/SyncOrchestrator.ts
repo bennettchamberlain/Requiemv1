@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 
 import { SYSTEM_USER } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { Cron } from '@ci/common/schedule';
 import { ConnectionService, ClientFactory } from '@ci/domains/connections';
@@ -19,6 +20,7 @@ export class SyncOrchestrator {
     private readonly eventService: EventService,
     private readonly endpointServiceMap: EndpointServiceMap,
     private readonly clientFactory: ClientFactory,
+    private readonly featureService: FeatureService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(SyncOrchestrator.name);
@@ -32,6 +34,10 @@ export class SyncOrchestrator {
    */
   @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.orchestrateSyncJobs' })
   async orchestrateSyncJobs(): Promise<void> {
+    if (!(await this.featureService.isFeatureEnabled('scheduled.connection.sync'))) {
+      return;
+    }
+
     const activeConnections = await this.connectionService.findActiveConnections();
 
     // for...of, not forEach. `Array.prototype.forEach` discards the promise an
@@ -234,6 +240,16 @@ export class SyncOrchestrator {
    */
   @Cron(CronExpression.EVERY_30_SECONDS, { name: 'SyncOrchestrator.executeSyncJobs' })
   async executeSyncJobs(): Promise<void> {
+    // This cron is the only executor of pending sync jobs, including the ones
+    // `SyncNowService` enqueues from POST /connections/sync-now — so turning
+    // `scheduled.connection.sync` off stops every outbound provider fetch, not
+    // just the ones `orchestrateSyncJobs` created. That is the point of the
+    // switch: an operator reaching for it wants the appliance to stop calling
+    // out. Nothing is lost — the rows stay `pending` and run when it is back on.
+    if (!(await this.featureService.isFeatureEnabled('scheduled.connection.sync'))) {
+      return;
+    }
+
     const pendingSyncJobs = await this.connectionSyncJobService.search(
       { userId: SYSTEM_USER },
       {
@@ -436,6 +452,10 @@ export class SyncOrchestrator {
    */
   @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.executeTransformJobs' })
   async executeTransformJobs(): Promise<void> {
+    if (!(await this.featureService.isFeatureEnabled('scheduled.connection.sync'))) {
+      return;
+    }
+
     const syncJobsToTransform = (
       await this.connectionSyncJobService.search(
         { userId: SYSTEM_USER },

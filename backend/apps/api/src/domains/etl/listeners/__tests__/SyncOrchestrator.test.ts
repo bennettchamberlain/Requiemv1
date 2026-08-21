@@ -1,3 +1,4 @@
+import type { FeatureService } from '@ci/common/feature';
 import type { ClientFactory, Connection } from '@ci/domains/connections';
 import { EventListenerRegistry } from '@ci/domains/events';
 
@@ -102,6 +103,7 @@ function buildOrchestrator(
     eventService?: Record<string, jest.Mock>;
     endpointServiceMap?: Record<string, jest.Mock>;
     clientFactory?: Record<string, jest.Mock>;
+    syncFeatureEnabled?: boolean;
   } = {},
 ) {
   const connectionService = {
@@ -138,6 +140,14 @@ function buildOrchestrator(
     ...overrides.clientFactory,
   };
 
+  const featureService = {
+    isFeatureEnabled: jest
+      .fn()
+      .mockImplementation(
+        async (key: string) => key === 'scheduled.connection.sync' && overrides.syncFeatureEnabled !== false,
+      ),
+  };
+
   const logger = { setContext() {}, log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
 
   const orchestrator = new SyncOrchestrator(
@@ -146,6 +156,7 @@ function buildOrchestrator(
     eventService as never,
     endpointServiceMap as unknown as EndpointServiceMap,
     clientFactory as unknown as ClientFactory,
+    featureService as unknown as FeatureService,
     logger as never,
   );
 
@@ -156,6 +167,7 @@ function buildOrchestrator(
     eventService,
     endpointServiceMap,
     clientFactory,
+    featureService,
     logger,
   };
 }
@@ -871,6 +883,54 @@ describe('SyncOrchestrator.orchestrateSyncJobs', () => {
       expect.anything(),
       expect.objectContaining({ connectionId: 'good-conn' }),
     );
+  });
+});
+
+describe('SyncOrchestrator — scheduled.connection.sync', () => {
+  it('creates no sync job when the feature is off, even with an active connection due for one', async () => {
+    const { orchestrator, connectionSyncJobService, featureService } = buildOrchestrator({
+      syncFeatureEnabled: false,
+      connectionService: {
+        findActiveConnections: jest
+          .fn()
+          .mockResolvedValue([{ connection: makeConnection(), lastSyncedAt: null }]),
+      },
+    });
+
+    await orchestrator.orchestrateSyncJobs();
+
+    expect(featureService.isFeatureEnabled).toHaveBeenCalledWith('scheduled.connection.sync');
+    expect(connectionSyncJobService.create).not.toHaveBeenCalled();
+  });
+
+  it('enqueues no execute event when the feature is off, even with a job already pending', async () => {
+    const { orchestrator, eventService } = buildOrchestrator({
+      syncFeatureEnabled: false,
+      connectionSyncJobService: {
+        search: jest
+          .fn()
+          .mockImplementation(async (_ctx, filter: { status: string }) =>
+            filter.status === 'pending' ? [makeSyncJob({ id: 'job-pending' })] : [],
+          ),
+      },
+    });
+
+    await orchestrator.executeSyncJobs();
+
+    expect(eventService.send).not.toHaveBeenCalled();
+  });
+
+  it('enqueues no transform event when the feature is off, even with untransformed jobs waiting', async () => {
+    const { orchestrator, eventService } = buildOrchestrator({
+      syncFeatureEnabled: false,
+      connectionSyncJobService: {
+        search: jest.fn().mockResolvedValue([makeSyncJob({ id: 'j1' }), makeSyncJob({ id: 'j2' })]),
+      },
+    });
+
+    await orchestrator.executeTransformJobs();
+
+    expect(eventService.send).not.toHaveBeenCalled();
   });
 });
 

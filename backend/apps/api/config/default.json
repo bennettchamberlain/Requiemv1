@@ -187,7 +187,6 @@
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
-    "scheduled.entity.promotion": true,
     "pinned.demo.models": false,
     "enable.system.prompt": true,
     "advanced.theme.tab": false,

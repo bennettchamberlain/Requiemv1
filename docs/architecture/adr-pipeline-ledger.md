@@ -338,10 +338,11 @@ since 2026-08-09, so nothing in the body is read as a current-state description.
   minutes — deliberately not the 30 s its own header first proposed, because a
   perpetual tick makes enrichment a permanent tenant of the shared Ollama);
   `PipelineControlService` is the run/shard runner, with pause / resume / cancel
-  and a lease reaper. Note that `PipelineControlService.tickOnSchedule` still
-  carries its own `@Cron('10 */2 * * * *')` fallback, which its doc comment says
-  should be deleted now that the listener landed — harmless (every path takes the
-  advisory lock and then the shard lease) but it is two timers for one loop.
+  and a lease reaper. It declares no cadence of its own: `PipelineTickCron` is the
+  single timer, bound to it through `{ provide: PIPELINE_TICK, useExisting:
+  PipelineControlService }`. The second `@Cron('10 */2 * * * *')` this note used to
+  describe was deleted once the listener landed, so the loop is no longer driven at
+  two different cadences.
 - **There is an HTTP control plane.** `PipelineController` is declared
   `@Controller('api/pipeline')` and exposes `GET state`, `GET runs`,
   `GET runs/:id`, `POST runs/:id/{pause,resume,cancel}`, `GET dead-letters`,
