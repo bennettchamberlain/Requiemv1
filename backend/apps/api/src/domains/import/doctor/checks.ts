@@ -670,10 +670,16 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       "An undated record stamped with the import run's wall clock — which is why a handful of Google " +
       'Maps saved places sit at the TOP of the timeline dated the day of the import, above everything ' +
       "that actually happened that week. `ci.events.time_source = 'ingest'` is the declared marker " +
-      '(TemporalRepairStage sets it, and the column comment defines it as "stamped at import, i.e. not ' +
-      'a real date"); the second arm is the structural backstop for the far more common case where ' +
-      'nothing declared anything. Fix is in the parser: emit no date rather than `now()`, and let the ' +
-      'UI say "no date".',
+      '(the column comment defines it as "stamped at import, i.e. not a real date"); the second arm ' +
+      'is the structural backstop for the case where nothing declared anything. As of the fabricated-' +
+      'timestamp fix the marker is written by the PRODUCER at insert (push/inputs.ts toEventInput, ' +
+      'from CanonicalRecord.dated) as well as by TemporalRepairStage after the fact, so a row minted ' +
+      'from now on is marked from the moment it exists rather than from whenever a sweep next visits ' +
+      'it. A hit here is therefore one of three things: a row imported BEFORE that fix (repair it with ' +
+      '20260821084711, which marks on an exact join to ci_import.staged_items.occurred_at IS NULL); a ' +
+      'live capture ingested within two seconds of the moment it records, which is legitimate; or a ' +
+      'parser that FABRICATES a date rather than emitting none, which is the real bug — fix it in the ' +
+      'parser, emit no date, and let the routing and the UI say "no date".',
     mirrors: 'db/postgres/migrations/20260809184710_clean_stage_support.sql (time_source vocabulary)',
     // The one legitimate shape this can match is a LIVE capture ingested within
     // two seconds of the moment it records — genuinely "happened now, stored

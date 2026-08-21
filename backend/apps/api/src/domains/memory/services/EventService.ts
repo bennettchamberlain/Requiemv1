@@ -218,6 +218,20 @@ export class EventService {
       toCreate.endTime = item.end_time;
     }
 
+    // Timestamp provenance. Renamed here for the reason spelled out below the
+    // is_predicted block: `repository.create()` matches on propertyName, so a
+    // snake_case key that is not translated is silently DROPPED — and a dropped
+    // `time_source: 'ingest'` is the worst possible failure for this pair,
+    // because the row still gets its fabricated instant and loses the only
+    // thing that said the instant was fabricated.
+    if (item.time_source) {
+      toCreate.timeSource = item.time_source;
+    }
+
+    if (item.time_precision) {
+      toCreate.timePrecision = item.time_precision;
+    }
+
     if (item.source_system) {
       toCreate.sourceSystem = item.source_system;
     }
