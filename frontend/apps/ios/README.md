@@ -325,7 +325,7 @@ the Android `AndroidManifest.xml` intent-filter (documented in `capacitor.config
 `navigator.mediaDevices.getUserMedia`) works natively once the OS permissions are
 declared — the webview's permission request maps to the OS prompt on first use. Wired:
 - **iOS** (`Info.plist`): `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`,
-  `NSPhotoLibraryAddUsageDescription`.
+  `NSPhotoLibraryAddUsageDescription`, `NSPhotoLibraryUsageDescription`.
 - **Android** (`AndroidManifest.xml`): `CAMERA`, `RECORD_AUDIO`,
   `MODIFY_AUDIO_SETTINGS` (+ `<uses-feature camera required="false">`).
 

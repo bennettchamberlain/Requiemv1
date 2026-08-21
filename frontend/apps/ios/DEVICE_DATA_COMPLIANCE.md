@@ -278,9 +278,9 @@ guarantee that your app has access to unredacted EXIF metadata."*
 > privacy story. Note also: `READ_MEDIA_VISUAL_USER_SELECTED` (Android 14 partial access) is
 > a middle tier if you later need repeat access to a user-chosen subset.
 
-> ⚠️ Current iOS state: only `NSPhotoLibraryAddUsageDescription` exists in `Info.plist`. The
-> picker path needs **no** new key. If you ever add full read, you need
-> `NSPhotoLibraryUsageDescription` **and** a re-filed nutrition label.
+> `NSPhotoLibraryUsageDescription` is present because Capacitor Camera / Photos APIs
+> are linked even when the product path is picker-style. Apple rejects the upload
+> without the key. Re-file the nutrition label if the app ever does a full-library read.
 
 ---
 
