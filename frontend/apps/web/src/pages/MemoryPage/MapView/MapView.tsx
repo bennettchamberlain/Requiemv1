@@ -16,6 +16,17 @@ import { boundsToBbox, bboxCenter, formatBbox, parseBbox } from '../bbox';
 import { Empty, ErrorState, formatEventTimeRange } from '../Components';
 import { EVENT_FRAGMENT } from '../Components/EntityCard/EventCard';
 import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
+import {
+  EMPTY_TRACK_SOURCE,
+  PlaybackBar,
+  PlaybackProvider,
+  PlaybackTrackLayer,
+  useOptionalPlayback,
+  usePlaybackControls,
+  usePlayheadPin,
+  useRevealedPins,
+  type PlaybackPin,
+} from '../Playback';
 import { TimelineView } from '../TimelineView';
 
 import { clusterDiameterPx, mergeCollidingClusters, type PixelCluster } from './clusterOverlap';
@@ -493,6 +504,15 @@ function zoomToCluster(map: L.Map, cluster: Cluster) {
   map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 17 });
 }
 
+/**
+ * Trailing delay on the viewport re-sync. A human gesture ends in exactly one
+ * `moveend`, so this is invisible in normal use — but the playback camera calls
+ * `setView` on every animation frame, and each of those fires `moveend` too.
+ * Without coalescing, a fly-through would re-project and re-cluster every pin
+ * in the viewport sixty times a second.
+ */
+const VIEW_SYNC_DELAY_MS = 120;
+
 function ClusteredMarkers({
   pins,
   onSelect,
@@ -506,10 +526,26 @@ function ClusteredMarkers({
   // One state for both, because clustering depends on both: zoom decides the
   // projection, the viewport decides which pins are candidates at all.
   const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncView = useCallback(() => {
-    setView({ zoom: map.getZoom(), bounds: map.getBounds() });
+    if (syncTimerRef.current != null) {
+      clearTimeout(syncTimerRef.current);
+    }
+
+    syncTimerRef.current = setTimeout(() => {
+      syncTimerRef.current = null;
+      setView({ zoom: map.getZoom(), bounds: map.getBounds() });
+    }, VIEW_SYNC_DELAY_MS);
   }, [map]);
+
+  useEffect(() => {
+    return () => {
+      if (syncTimerRef.current != null) {
+        clearTimeout(syncTimerRef.current);
+      }
+    };
+  }, []);
 
   // `moveend` covers panning AND zooming (Leaflet fires it after a zoom too);
   // `zoomend` is kept so a zoom with no pan still resyncs on every path.
@@ -565,6 +601,10 @@ function SearchAreaControl() {
   const activeBbox = parseBbox(searchParams.get('bbox'));
   const [movedSinceSearch, setMovedSinceSearch] = useState(false);
   const map = useLeafletMap();
+  // Read imperatively, never subscribed to: this control must know whether a
+  // move came from the viewer or from the playback camera, and subscribing to
+  // the playhead would re-render it on every frame.
+  const playback = useOptionalPlayback();
 
   const setBbox = useCallback(
     (value: string | null) => {
@@ -590,6 +630,13 @@ function SearchAreaControl() {
   // searched area's centre has scrolled out of view, drop the filter.
   useMapEvents({
     moveend: () => {
+      // A fly-through drives the camera across the whole world; letting it
+      // count as "the user panned away" would silently drop their area filter
+      // and re-run the search underneath them mid-playback.
+      if (playback?.store.getState().status === 'playing') {
+        return;
+      }
+
       setMovedSinceSearch(true);
 
       if (activeBbox && !map.getBounds().contains(L.latLng(bboxCenter(activeBbox)))) {
@@ -985,7 +1032,44 @@ function useMapView(readOnly: boolean) {
   };
 }
 
+/**
+ * The map pins, reduced to what a playback needs and stripped of the undated.
+ *
+ * An undated pin has no place on a timeline: it would sort to 1970 and be
+ * "revealed" before the film starts. `pins` is already time-ascending, so the
+ * filtered result is too.
+ */
+function usePlaybackPins(pins: Pin[]): PlaybackPin[] {
+  return useMemo(
+    () =>
+      pins
+        .filter((pin) => pin.sortTime > 0)
+        .map((pin) => ({ id: pin.id, coords: pin.coords, sortTime: pin.sortTime })),
+    [pins],
+  );
+}
+
 export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}) {
+  const view = useMapView(readOnly);
+  const playbackPins = usePlaybackPins(view.pins);
+
+  return (
+    <PlaybackProvider
+      args={[
+        {
+          pins: playbackPins,
+          // The shared viewer reads the owner's saved search, and a saved
+          // search never carries their position history.
+          source: readOnly ? EMPTY_TRACK_SOURCE : undefined,
+        },
+      ]}
+    >
+      <DesktopMapSurface view={view} readOnly={readOnly} />
+    </PlaybackProvider>
+  );
+}
+
+function DesktopMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapView>; readOnly: boolean }) {
   const {
     pins,
     routeLocations,
@@ -1001,7 +1085,7 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
     loadingMore,
     loadMore,
     setActiveEntity,
-  } = useMapView(readOnly);
+  } = view;
   const rowElementsRef = useRef(new globalThis.Map<string, HTMLDivElement>());
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
@@ -1009,6 +1093,18 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
 
   const pinsById = useMemo(() => new globalThis.Map(pins.map((pin) => [pin.id, pin])), [pins]);
   const activePin = activeEntityId ? (pinsById.get(activeEntityId) ?? null) : null;
+
+  // ── Playback ────────────────────────────────────────────────────────────
+  // The playhead drives both halves of this view: the map reveals pins as it
+  // crosses them, and the timeline panel highlights and scrolls to the memory
+  // it has just reached — through TimelineView's EXISTING `activeEntityId`
+  // prop, so playback adds no second selection mechanism. Hover still wins
+  // while playback is idle, which is the whole of the map's normal behaviour.
+  const { status: playbackStatus } = usePlaybackControls();
+  const revealedPins = useRevealedPins(pins);
+  const playheadPin = usePlayheadPin(pins);
+  const playing = playbackStatus === 'playing';
+  const timelineActiveId = playing ? (playheadPin?.id ?? null) : activeEntityId;
 
   const registerTimelineRow = useCallback((entityId: string, element: HTMLDivElement | null) => {
     if (element) {
@@ -1048,7 +1144,7 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
       <Map.Controls position="top-right" />
       <Map.Panel position="left" className="w-[300px] relative">
         <TimelineView
-          activeEntityId={activeEntityId}
+          activeEntityId={timelineActiveId}
           onEntityHover={handleTimelineHover}
           onEntitySelect={handleTimelineSelect}
           registerTimelineRow={registerTimelineRow}
@@ -1067,10 +1163,17 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
           onLoadMore={loadMore}
         />
       )}
-      {truncated && <PinCountNotice shown={pins.length} totalCount={totalCount} />}
-      <MapTimelineConnector active={activePin} rowElementsRef={rowElementsRef} />
+      {truncated && !playing && <PinCountNotice shown={pins.length} totalCount={totalCount} />}
+      {/* The connector is a hover affordance for a still map. During a
+          fly-through it would whip a dashed line across the viewport on every
+          frame, and recompute two bounding rects to do it. */}
+      <MapTimelineConnector active={playing ? null : activePin} rowElementsRef={rowElementsRef} />
       <Map.RouteLayer locations={routeLocations} />
-      <ClusteredMarkers pins={pins} onSelect={handlePinSelect} onHoverPin={handlePinHover} />
+      <PlaybackTrackLayer />
+      <ClusteredMarkers pins={revealedPins} onSelect={handlePinSelect} onHoverPin={handlePinHover} />
+      {/* Fitted to the WHOLE set, never the revealed subset — otherwise every
+          pin the playhead crossed would re-fit the viewport and fight the
+          playback camera for control of it. */}
       <FitBoundsToPins pins={pins} />
       {/* Padded past the 300px timeline panel so the state reads over the map
           itself rather than half-hidden behind the panel. Padding, not `left`,
@@ -1083,11 +1186,24 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
         onRetry={refetch}
         className="pl-[300px]"
       />
+      {/* Cleared past the timeline panel so the transport never sits under it. */}
+      <PlaybackBar className="left-[312px]" />
     </Map>
   );
 }
 
 export function MobileMapView({ readOnly = false }: { readOnly?: boolean } = {}) {
+  const view = useMapView(readOnly);
+  const playbackPins = usePlaybackPins(view.pins);
+
+  return (
+    <PlaybackProvider args={[{ pins: playbackPins, source: readOnly ? EMPTY_TRACK_SOURCE : undefined }]}>
+      <MobileMapSurface view={view} readOnly={readOnly} />
+    </PlaybackProvider>
+  );
+}
+
+function MobileMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapView>; readOnly: boolean }) {
   const {
     pins,
     routeLocations,
@@ -1102,7 +1218,10 @@ export function MobileMapView({ readOnly = false }: { readOnly?: boolean } = {})
     hasNextPage,
     loadingMore,
     loadMore,
-  } = useMapView(readOnly);
+  } = view;
+  const { status: playbackStatus } = usePlaybackControls();
+  const revealedPins = useRevealedPins(pins);
+  const playing = playbackStatus === 'playing';
 
   return (
     <Map center={[37.7749, -122.4194]}>
@@ -1116,11 +1235,14 @@ export function MobileMapView({ readOnly = false }: { readOnly?: boolean } = {})
           onLoadMore={loadMore}
         />
       )}
-      {truncated && <PinCountNotice shown={pins.length} totalCount={totalCount} />}
+      {/* Both live at the bottom centre; the transport wins while it is out. */}
+      {truncated && !playing && <PinCountNotice shown={pins.length} totalCount={totalCount} />}
       <Map.RouteLayer locations={routeLocations} />
-      <ClusteredMarkers pins={pins} onSelect={selectPin} />
+      <PlaybackTrackLayer />
+      <ClusteredMarkers pins={revealedPins} onSelect={selectPin} />
       <FitBoundsToPins pins={pins} />
       <MapStatusOverlay loading={loading} error={error} empty={empty} filtered={filtered} onRetry={refetch} />
+      <PlaybackBar />
     </Map>
   );
 }
