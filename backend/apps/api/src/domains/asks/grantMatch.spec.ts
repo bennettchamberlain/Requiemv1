@@ -284,9 +284,44 @@ describe('grant vocabulary (Phase 2)', () => {
     const g = grant({ mode: 'auto', scope: { maxDisclosure: 'count' } });
     expect(evaluateGrant(ask(), [g], NOW).maxDisclosure).toBe('count');
 
-    // a bogus rung is ignored rather than trusted
-    const bogus = grant({ mode: 'auto', scope: { maxDisclosure: 'everything' as never } });
-    expect(evaluateGrant(ask(), [bogus], NOW).maxDisclosure).toBeUndefined();
+    // A grant that declares no ceiling genuinely imposes none of its own —
+    // only the tier ceiling applies. That is the ONLY nullish case.
+    const uncapped = grant({ mode: 'auto', scope: { dataClasses: ['photos'] } });
+    expect(evaluateGrant(ask(), [uncapped], NOW).maxDisclosure).toBeUndefined();
+  });
+
+  /**
+   * An unreadable restriction is the STRICTEST reading of it, not the absence
+   * of one.
+   *
+   * `scope` is jsonb, so `maxDisclosure` can hold anything. This used to
+   * validate against the rung list and return `undefined` on a miss — which
+   * discards the field before `minRung` can fail closed on it, so a grant
+   * reading `maxDisclosure: 'summry'` disclosed MORE than the identical grant
+   * reading `'summary'`. A typo in the owner's own cap must not be the loosest
+   * interpretation of it.
+   */
+  describe('an unrecognised maxDisclosure fails CLOSED', () => {
+    it.each(['everything', 'bogus', 'summry', '', '   ', 42, true])('clamps to none for %p', (value) => {
+      const bogus = grant({ mode: 'auto', scope: { maxDisclosure: value as never } });
+      expect(evaluateGrant(ask(), [bogus], NOW).maxDisclosure).toBe('none');
+    });
+
+    it('treats an ABSENT ceiling as no ceiling, not as a typo', () => {
+      // `null`/omitted is the one nullish case that must stay nullish: the
+      // grant declares nothing, so only the tier ceiling applies.
+      const g = grant({ mode: 'auto', scope: { maxDisclosure: null as never } });
+      expect(evaluateGrant(ask(), [g], NOW).maxDisclosure).toBeUndefined();
+    });
+
+    it('still recovers a rung the owner merely mis-cased or padded', () => {
+      // Canonicalizing here can only ever RECOVER intent: the fallback beneath
+      // it is already the tightest rung on the ladder.
+      for (const value of ['Full', 'COUNT', ' summary ']) {
+        const g = grant({ mode: 'auto', scope: { maxDisclosure: value as never } });
+        expect(evaluateGrant(ask(), [g], NOW).maxDisclosure).toBe(value.trim().toLowerCase());
+      }
+    });
   });
 
   describe('a block is never narrowed by its own scope', () => {
@@ -315,5 +350,79 @@ describe('grant vocabulary (Phase 2)', () => {
         grantId: 'blk',
       });
     });
+  });
+});
+
+/**
+ * ═══ A BLOCK GRANT WAS EVADABLE BY CASING AND PADDING ═══
+ *
+ * `classMatchesQuery` and `blockCoversQuery` compared the two `queryType`
+ * strings RAW, while `dataClass` beside them went through `canonicalDataClass`.
+ * canonical.ts already carried the rule — "any normalization added here MUST be
+ * mirrored by every consumer" — and it was never applied to the field next
+ * door. Reproduced: a block on `photos` denied `photos` and let `Photos` and
+ * `'photos '` through to REVIEW, from where a broad `auto` grant or a tired tap
+ * answers them. A zero-width space in `dataClass` evaded a class-pinned block
+ * the same way.
+ *
+ * The asker supplies both strings, so both are hostile input, and both are now
+ * canonicalized on BOTH sides.
+ */
+describe('a block cannot be evaded by respelling the query', () => {
+  const blocked = grant({ id: 'blk', mode: 'block', queryType: 'photos', dataClass: null });
+
+  it.each(['photos', 'Photos', 'PHOTOS', 'photos ', ' photos', 'photos\u00a0', '\ufeffphotos'])(
+    'denies queryType %j',
+    (queryType) => {
+      expect(evaluateGrant(ask({ queryType }), [blocked], NOW).decision).toBe('deny');
+    },
+  );
+
+  it('does not over-match a genuinely different archetype', () => {
+    // The canonicalizer folds spelling, not meaning — a block on `photos` still
+    // says nothing about `calendar`.
+    expect(evaluateGrant(ask({ queryType: 'calendar' }), [blocked], NOW).decision).toBe('review');
+  });
+
+  const classBlocked = grant({ id: 'blk2', mode: 'block', queryType: 'photos', dataClass: 'photos' });
+
+  it.each([
+    'photos',
+    'Photos',
+    'photos ',
+    'pho\u200btos',
+    'photos\u200b',
+    '\uff50\uff48\uff4f\uff54\uff4f\uff53',
+  ])('denies dataClass %j against a class-pinned block', (dataClass) => {
+    expect(evaluateGrant(ask({ queryType: 'photos', dataClass }), [classBlocked], NOW).decision).toBe('deny');
+  });
+
+  it('closes the same hole on the POSITIVE path, so a respelt ask cannot ride a broad auto grant', () => {
+    // The other half of the evasion: `Photos` used to miss the block AND miss
+    // the auto grant, landing in review. It must now match both — and the block
+    // wins, because a matching block always does.
+    const auto = grant({ id: 'a', mode: 'auto', queryType: 'photos', dataClass: 'photos' });
+
+    expect(evaluateGrant(ask({ queryType: 'Photos', dataClass: 'PHOTOS' }), [auto], NOW)).toMatchObject({
+      decision: 'auto',
+      grantId: 'a',
+    });
+    expect(
+      evaluateGrant(ask({ queryType: 'Photos', dataClass: 'PHOTOS' }), [auto, classBlocked], NOW).decision,
+    ).toBe('deny');
+  });
+
+  it('canonicalizes the archetype scope the same way, not with its own trim/lowercase', () => {
+    const scoped = grant({
+      id: 's',
+      mode: 'auto',
+      queryType: 'photos',
+      dataClass: 'photos',
+      scope: { archetypes: ['Photos'] },
+    });
+
+    expect(evaluateGrant(ask({ queryType: 'photos', dataClass: 'photos' }), [scoped], NOW).decision).toBe(
+      'auto',
+    );
   });
 });

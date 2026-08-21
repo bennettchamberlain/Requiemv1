@@ -20,6 +20,7 @@ function fakeAsk(overrides: Partial<Ask> = {}): Ask {
     query: DTO.query,
     status: 'delivered',
     consentBasis: null,
+    disclosureCeiling: null,
     createdAt: new Date('2026-07-15T00:00:00Z'),
     updatedAt: new Date('2026-07-15T00:00:00Z'),
     expiresAt: null,
@@ -85,9 +86,13 @@ describe('AskService.submit — grant decision wiring', () => {
     expect(result).toEqual({ ask: declined, decision: 'deny' });
   });
 
-  it('records the consent basis and leaves the ask delivered when auto-authorized', async () => {
+  it('records the consent basis AND its ceiling, leaving the ask delivered when auto-authorized', async () => {
     const { service, grantService, auditService } = makeService();
-    grantService.evaluate.mockResolvedValue({ decision: 'auto', grantId: 'grant-auto' });
+    grantService.evaluate.mockResolvedValue({
+      decision: 'auto',
+      grantId: 'grant-auto',
+      maxDisclosure: 'count',
+    });
     jest.spyOn(service, 'create').mockResolvedValue(fakeAsk());
     const preauth = fakeAsk({ consentBasis: 'grant-auto' });
     const consentSpy = jest.spyOn(service, 'setConsentBasis').mockResolvedValue(preauth);
@@ -95,7 +100,10 @@ describe('AskService.submit — grant decision wiring', () => {
 
     const result = await service.submit(CTX, DTO);
 
-    expect(consentSpy).toHaveBeenCalledWith('ask-1', 'grant-auto');
+    // Basis and ceiling are stamped TOGETHER. A basis with no ceiling is the
+    // shape the answer path used to reconstruct from live grants, and
+    // reconstructing it is what let a revocation widen the answer.
+    expect(consentSpy).toHaveBeenCalledWith('ask-1', 'grant-auto', 'count');
     expect(sysSpy).not.toHaveBeenCalled(); // stays delivered for the executor
     expect(auditService.record).not.toHaveBeenCalled(); // no terminal outcome yet
     expect(result).toEqual({ ask: preauth, decision: 'auto' });
@@ -455,6 +463,7 @@ function fakeAskRow(overrides: Partial<FakeRow> = {}): FakeRow {
     query: DTO.query,
     status: 'delivered',
     consentBasis: null,
+    disclosureCeiling: null,
     createdAt: new Date('2026-07-15T00:00:00Z'),
     updatedAt: new Date('2026-07-15T00:00:00Z'),
     expiresAt: null,
@@ -543,5 +552,93 @@ describe('AskService.listOutbox — asker-scoped sent history', () => {
     const outbox = await service.listOutbox({ userId: 'alice' });
 
     expect(outbox.map((a) => a.id)).toEqual(['out-1']);
+  });
+});
+
+/**
+ * ═══ THE CEILING IS CAPTURED WHEN THE OWNER CONSENTS, NOT WHEN THE ANSWER RUNS ═══
+ *
+ * `AskResolver` used to re-derive the deciding grant's `maxDisclosure` at
+ * answer time. Every SQL read path filters `revoked_at IS NULL`, so a revoked
+ * or lapsed grant is INVISIBLE there — the re-evaluation found nothing,
+ * returned no ceiling, and the ask ran under the tier ceiling alone. On an ask
+ * the owner had already approved (status `answering`, deliberately exempt from
+ * retroactive withdrawal per #2211) the answer therefore GREW when consent was
+ * withdrawn: reproduced against Postgres as `items: []` / "3 matching items."
+ * with the grant in force, and three readable entity references with it
+ * revoked.
+ *
+ * `approve` is one of the two moments consent is given, so it is one of the two
+ * places the ceiling is stamped (the other is the `auto` branch of `submit`).
+ */
+describe('AskService.approve — capturing the disclosure ceiling', () => {
+  function approvable(overrides: Partial<Ask> = {}) {
+    const entity = { ...fakeAsk({ status: 'under_review', ...overrides }) } as Record<string, unknown>;
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(entity),
+      save: jest.fn().mockImplementation((row: unknown) => Promise.resolve(row)),
+    };
+    const grantService = { evaluate: jest.fn() };
+
+    return { entity, repo, grantService, service: buildService({ repo, grantService }) };
+  }
+
+  const OWNER: UserServiceContext = { userId: 'responder-1' };
+
+  it("stamps the deciding grant's maxDisclosure onto the ask", async () => {
+    const { service, grantService, entity } = approvable();
+    grantService.evaluate.mockResolvedValue({ decision: 'review', grantId: 'g1', maxDisclosure: 'count' });
+
+    const approved = await service.approve(OWNER, 'ask-1');
+
+    expect(approved.status).toBe('answering');
+    expect(approved.disclosureCeiling).toBe('count');
+    expect(entity.disclosureCeiling).toBe('count');
+  });
+
+  it('stamps `none` when a block grant covers the ask at approval time', async () => {
+    // The owner's tap must not be able to push anything past their own block.
+    const { service, grantService } = approvable();
+    grantService.evaluate.mockResolvedValue({ decision: 'deny', grantId: 'blk' });
+
+    expect((await service.approve(OWNER, 'ask-1')).disclosureCeiling).toBe('none');
+  });
+
+  it('stamps NULL when no grant capped the ask — no cap is not the same as a typo', async () => {
+    const { service, grantService } = approvable();
+    grantService.evaluate.mockResolvedValue({ decision: 'review' });
+
+    expect((await service.approve(OWNER, 'ask-1')).disclosureCeiling).toBeNull();
+  });
+
+  /**
+   * The loop-closing case. `withdrawPreAuthorization` sends a revoked ask back
+   * to review with its basis cleared and its ceiling INTACT, so the ceiling the
+   * owner originally consented under survives as a floor — approving the ask
+   * afterwards cannot disclose more than it would have before the revoke.
+   */
+  it('never RAISES a ceiling already stamped on the ask', async () => {
+    const { service, grantService } = approvable({ disclosureCeiling: 'count' });
+    // The grant that capped it is gone, so the live evaluation finds nothing…
+    grantService.evaluate.mockResolvedValue({ decision: 'review' });
+
+    expect((await service.approve(OWNER, 'ask-1')).disclosureCeiling).toBe('count');
+
+    // …and a MORE generous replacement cannot raise it either.
+    const wider = approvable({ disclosureCeiling: 'count' });
+    wider.grantService.evaluate.mockResolvedValue({
+      decision: 'auto',
+      grantId: 'g2',
+      maxDisclosure: 'full',
+    });
+
+    expect((await wider.service.approve(OWNER, 'ask-1')).disclosureCeiling).toBe('count');
+  });
+
+  it('still lets a LOWER live ceiling tighten one already stamped', async () => {
+    const { service, grantService } = approvable({ disclosureCeiling: 'full' });
+    grantService.evaluate.mockResolvedValue({ decision: 'review', grantId: 'g3', maxDisclosure: 'boolean' });
+
+    expect((await service.approve(OWNER, 'ask-1')).disclosureCeiling).toBe('boolean');
   });
 });

@@ -27,7 +27,9 @@ function body(request: PeerAskBody['request']): PeerAskBody {
   return { askId: 'ask-corr-1', askerHandle: 'devon', prompt: 'q?', request };
 }
 
-function makeService(opts: { links?: unknown[]; decision?: string } = {}) {
+function makeService(
+  opts: { links?: unknown[]; decision?: string; maxDisclosure?: string; events?: unknown[] } = {},
+) {
   const peerLinkService = {
     findActiveByPeerIdentity: jest.fn().mockResolvedValue(opts.links ?? [link()]),
   };
@@ -40,26 +42,39 @@ function makeService(opts: { links?: unknown[]; decision?: string } = {}) {
     consentBasis: null,
     query: { queryType: 'content', prompt: 'q?' },
   };
+  // The ask ECHOES the query it was created with, rather than pinning a content
+  // one for every archetype. The tier ceiling is resolved from
+  // `ask.query.dataClass`, so a mock that flattened the three archetypes into
+  // one would hide exactly the per-archetype ceiling bug these tests cover.
+  let created = baseAsk;
   const askService = {
-    create: jest.fn().mockResolvedValue(baseAsk),
+    create: jest.fn().mockImplementation((_ctx: unknown, data: { query: unknown }) => {
+      created = { ...baseAsk, query: data.query as typeof baseAsk.query };
+
+      return Promise.resolve(created);
+    }),
     // The lifecycle must actually be persisted — a denied peer ask that stays
     // `delivered` would remain actionable in the owner's inbox.
     systemTransition: jest
       .fn()
-      .mockImplementation((_id: string, to: string) => Promise.resolve({ ...baseAsk, status: to })),
+      .mockImplementation((_id: string, to: string) => Promise.resolve({ ...created, status: to })),
     setConsentBasis: jest
       .fn()
       .mockImplementation((_id: string, basis: string | null) =>
-        Promise.resolve({ ...baseAsk, consentBasis: basis }),
+        Promise.resolve({ ...created, consentBasis: basis }),
       ),
   };
   const grantService = {
-    evaluate: jest.fn().mockResolvedValue({ decision: opts.decision ?? 'auto', grantId: 'g1' }),
+    evaluate: jest.fn().mockResolvedValue({
+      decision: opts.decision ?? 'auto',
+      grantId: 'g1',
+      ...(opts.maxDisclosure ? { maxDisclosure: opts.maxDisclosure } : {}),
+    }),
   };
   const executorService = { execute: jest.fn().mockResolvedValue([{ id: 'e1', type: 'file' }]) };
   const answerService = { create: jest.fn().mockResolvedValue({}) };
   const auditService = { record: jest.fn().mockResolvedValue(undefined) };
-  const eventRepository = { find: jest.fn().mockResolvedValue([]) };
+  const eventRepository = { find: jest.fn().mockResolvedValue(opts.events ?? []) };
   const logger = { setContext: jest.fn(), warn: jest.fn(), log: jest.fn() };
 
   const service = new PeerAskService(
@@ -79,6 +94,7 @@ function makeService(opts: { links?: unknown[]; decision?: string } = {}) {
     askService,
     grantService,
     executorService,
+    answerService,
     auditService,
     eventRepository,
   };
@@ -154,12 +170,15 @@ describe('PeerAskService.handle', () => {
     expect(askService.systemTransition).toHaveBeenCalledWith('ask-1', 'under_review');
   });
 
-  it('records which grant auto-authorized an ask as its consent basis', async () => {
-    const { service, askService } = makeService({ decision: 'auto' });
+  it('records which grant auto-authorized an ask, AND the ceiling it imposed', async () => {
+    const { service, askService } = makeService({ decision: 'auto', maxDisclosure: 'count' });
 
     await service.handle(PEER, body({ archetype: 'content', subject: 'x' }));
 
-    expect(askService.setConsentBasis).toHaveBeenCalledWith('ask-1', 'g1');
+    // The ceiling is stamped WITH the basis. Re-deriving it later is what let a
+    // revoked grant widen an answer on the local path; the same stamp keeps a
+    // re-run of this ask capped at what the owner consented to.
+    expect(askService.setConsentBasis).toHaveBeenCalledWith('ask-1', 'g1', 'count');
   });
 
   it('answers a relationship ask as a boolean with NO item references', async () => {
@@ -286,5 +305,81 @@ describe('toAskQuery', () => {
         body({ archetype: 'availability', from: '2026-08-07T09:00:00.000Z', to: '2026-08-07T17:00:00.000Z' }),
       ),
     ).toMatchObject({ queryType: 'availability', dataClass: 'calendar' });
+  });
+});
+
+/**
+ * ═══ THE AVAILABILITY ARCHETYPE BYPASSED BOTH CEILINGS ═══
+ *
+ * `answerFor` computed the tier ceiling and the grant ceiling on its
+ * relationship/content path — AFTER the availability branch had already
+ * returned. So the one archetype that answers straight out of the owner's
+ * calendar was the one archetype no ceiling applied to.
+ *
+ * Reproduced against Postgres: `trustTier: 'stranger'` (tier ceiling `boolean`)
+ * together with a grant carrying `maxDisclosure: 'none'` still handed the peer
+ * the owner's real busy interval 12:00–13:00 and both free windows, and wrote
+ * no `ci.ask_answers` row at all. The CONTENT archetype under the identical
+ * `none` ceiling correctly returned "Nothing was shared."
+ */
+describe('PeerAskService — availability is subject to the same ceilings as everything else', () => {
+  const WINDOW = {
+    archetype: 'availability',
+    from: '2026-09-01T09:00:00Z',
+    to: '2026-09-01T17:00:00Z',
+  } as const;
+  const BUSY_NOON = [
+    { startTime: new Date('2026-09-01T12:00:00Z'), endTime: new Date('2026-09-01T13:00:00Z') },
+  ];
+
+  async function availability(opts: { trustTier?: string; maxDisclosure?: string }) {
+    const harness = makeService({
+      links: [link({ trustTier: opts.trustTier ?? 'trusted' })],
+      decision: 'auto',
+      maxDisclosure: opts.maxDisclosure,
+      events: BUSY_NOON,
+    });
+    const result = await harness.service.handle(PEER, body({ ...WINDOW }));
+
+    return { ...harness, answer: result.answer! };
+  }
+
+  it('discloses NOTHING under a grant capped at none, whatever the calendar says', async () => {
+    const { answer } = await availability({ trustTier: 'stranger', maxDisclosure: 'none' });
+
+    // The exact bypass: the owner's real meeting used to come back here.
+    expect(answer.busy).toEqual([]);
+    expect(answer.free).toEqual([]);
+    expect(answer.summary).toBe('Nothing was shared.');
+  });
+
+  it('gives a stranger a yes/no, not the owner’s meeting times', async () => {
+    // The tier ceiling ALONE, with no grant cap at all — proving the tier half
+    // of the bypass is closed independently of the grant half.
+    const { answer } = await availability({ trustTier: 'stranger' });
+
+    expect(answer.busy).toEqual([]);
+    expect(answer.free).toEqual([]);
+    expect(answer.summary).toMatch(/have some free time/);
+  });
+
+  it('still gives a trusted peer the actual intervals — the ceiling is not a blanket', async () => {
+    const { answer } = await availability({ trustTier: 'family' });
+
+    expect(answer.busy).toEqual([{ start: '2026-09-01T12:00:00.000Z', end: '2026-09-01T13:00:00.000Z' }]);
+    expect(answer.free).toHaveLength(2);
+  });
+
+  it('records what it disclosed — the availability branch wrote no answer row at all', async () => {
+    const { answerService } = await availability({ trustTier: 'stranger', maxDisclosure: 'none' });
+
+    // Stored under `attribute`: the ask_answers CHECK admits the five local
+    // forms, and `availability` is a WIRE form, not a storage one.
+    expect(answerService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        askId: 'ask-1',
+        answer: expect.objectContaining({ form: 'attribute', items: [], summary: 'Nothing was shared.' }),
+      }),
+    );
   });
 });

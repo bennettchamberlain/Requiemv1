@@ -139,7 +139,9 @@ describe('AskResolver — enabled', () => {
     // The responder's grant posture is NOT the asker's to read: `auto`,
     // `review` and `deny` all come back as the same acknowledgement.
     expect(result.decision).toBe('accepted');
-    expect(result.ask?.status).toBe('under_review');
+    // …and neither is the ask's raw STATUS, which carried the same three-way
+    // signal one field along (`declined` / `delivered` / `under_review`).
+    expect(result.ask?.status).toBe('delivered');
   });
 
   it('askInbox maps the responder inbox to GraphQL types', async () => {

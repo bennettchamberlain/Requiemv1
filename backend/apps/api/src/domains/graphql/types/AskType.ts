@@ -77,6 +77,10 @@ export class AskType {
   @Field(() => AskQueryType)
   query!: AskQueryType;
 
+  /**
+   * The ask's lifecycle state — FULL for the responder, collapsed for the
+   * asker. See {@link askerVisibleStatus}.
+   */
   @Field(() => AskStatusEnum)
   status!: AskStatusEnum;
 
@@ -117,13 +121,56 @@ export class AskType {
       direction: ask.direction,
       responderId: ask.responderUserId ? GlobalUID.encode('user', ask.responderUserId) : null,
       query: AskQueryType.toType(ask.query),
-      status: ask.status as AskStatusEnum,
+      status: isResponder ? (ask.status as AskStatusEnum) : askerVisibleStatus(ask.status),
       consentBasis: isResponder ? ask.consentBasis : null,
       createdAt: ask.createdAt,
       updatedAt: ask.updatedAt,
       expiresAt: ask.expiresAt,
     };
   }
+}
+
+/**
+ * What the ASKER is allowed to know about an ask's lifecycle: whether an answer
+ * is waiting, and nothing else.
+ *
+ * ═══ THE ORACLE #2210 MOVED INSTEAD OF CLOSING ═══
+ *
+ * `CreateAskPayload.decision` was collapsed to the constant `ASK_ACCEPTED`
+ * because the raw `auto` | `review` | `deny` told the asker the responder's
+ * standing-grant posture. The SAME information stayed reachable on the same
+ * payload through `ask.status`, one field along — and reproduced exactly that
+ * way against Postgres: a block grant returned `status: 'declined'`, an auto
+ * grant `'delivered'`, and no matching grant `'under_review'`. Three probes,
+ * three distinguishable answers, bounded only by the rate limit.
+ *
+ * Masking it on `CreateAskPayload` alone would have moved it a second time: the
+ * asker is a participant, so `ask(id)` and `askOutbox` hand them the same row
+ * one round-trip later. The cut is therefore made HERE, in the projection that
+ * already knows who is looking and already withholds `consentBasis` from the
+ * asker for exactly this reason — one place, every read path.
+ *
+ * The collapse follows {@link ASK_ACCEPTED}'s own argument to its conclusion:
+ *
+ * - `declined` → `delivered`. Whether a block grant refused the ask, or the
+ *   owner declined it after reading it, or the owner simply has not got to it,
+ *   are indistinguishable to the asker. `SendPeerAskPayload` already makes this
+ *   trade across a box boundary ("a declined result is deliberately
+ *   indistinguishable from an unreachable peer"); this makes it inside one.
+ * - `under_review` / `answering` → `delivered`. That an ask reached a human, or
+ *   that the human approved it, is the responder's business until an answer
+ *   exists.
+ * - `expired` → `delivered`. The asker already holds `expiresAt` and can read
+ *   their own clock, so the state adds nothing — and leaving it visible would
+ *   restore the deny/expire contrast by another name.
+ * - `answered` survives, because it is the one thing the asker legitimately
+ *   needs: there is an answer, go and read it. A blocked ask never acquires
+ *   one, which is the same shape as a responder who never got around to it.
+ *
+ * Pure.
+ */
+export function askerVisibleStatus(status: string): AskStatusEnum {
+  return status === 'answered' ? AskStatusEnum.answered : AskStatusEnum.delivered;
 }
 
 /** A standing consent grant (the Grant Manager matrix). */

@@ -9,8 +9,8 @@ import type { AnswerForm, DisclosedAnswer, DisclosureRung, TrustTier } from './t
  *   boolean  — yes/no only
  *   count    — how many, no references
  *   summary  — a templated sentence + count
- *   redacted — item references the owner explicitly kept
- *   full     — every matching item reference
+ *   redacted — the item references the owner kept, and nothing about the rest
+ *   full     — every matching item reference, and how many were held back
  */
 export const DISCLOSURE_RUNGS: readonly DisclosureRung[] = [
   'none',
@@ -34,6 +34,39 @@ export function rungAtLeast(a: DisclosureRung, b: DisclosureRung): boolean {
 /** The lesser (safer) of two rungs. */
 export function minRung(a: DisclosureRung, b: DisclosureRung): DisclosureRung {
   return RUNG_INDEX[a] <= RUNG_INDEX[b] ? a : b;
+}
+
+/**
+ * The narrower of two ceilings that may not exist.
+ *
+ * Nullish means "this SOURCE imposes no ceiling" — not "no ceiling applies".
+ * Every caller combines several independent sources (the tier, the grant's own
+ * `maxDisclosure`, the ceiling stamped when the owner consented) and the rule
+ * is the same for all of them: a source that says nothing must not be able to
+ * erase one that does.
+ *
+ * That is precisely the bug this exists to make unwriteable. The answer path
+ * read a live grant ceiling and used it *instead of* the one captured at
+ * consent time, so a revoked grant — which reads as nothing at all, because
+ * every SQL path filters `revoked_at IS NULL` — dropped the cap and the answer
+ * grew when the owner withdrew consent. `undefined ?? live` is the shape of
+ * that bug; this function is the shape of the fix.
+ *
+ * Pure.
+ */
+export function narrowestRung(
+  a: DisclosureRung | null | undefined,
+  b: DisclosureRung | null | undefined,
+): DisclosureRung | undefined {
+  if (a == null) {
+    return b ?? undefined;
+  }
+
+  if (b == null) {
+    return a;
+  }
+
+  return minRung(a, b);
 }
 
 /**
@@ -138,9 +171,30 @@ export function applyDisclosureCeiling(answer: DisclosedAnswer, ceiling: Disclos
   const natural = rungForForm(answer.form);
   const effective = minRung(natural, ceiling);
 
-  if (effective === 'full' || effective === 'redacted') {
+  if (effective === 'full') {
     // The item set already reflects the owner's redaction; nothing to clamp.
     return answer;
+  }
+
+  // `redacted` sits BELOW `full` on the ladder, and it used to return the same
+  // object — `if (effective === 'full' || effective === 'redacted') return
+  // answer` — which made a grant capped at "share only what I kept" disclose
+  // exactly as much as one with no cap at all. A rung that clamps nothing is
+  // not a rung; it is a label the owner can pick believing it does something.
+  //
+  // What the two rungs actually differ by, once `buildDisclosedAnswer` has
+  // already dropped the owner's redacted ids, is the WITHHELD COUNT:
+  //
+  //   full     — every matching item reference, AND how many were held back
+  //   redacted — the references the owner kept, and nothing about the rest
+  //
+  // So the clamp is to zero `withheldCount`. That is the same cut this function
+  // already makes at every rung below (see the note above about a withheld
+  // count being its own signal about how much the responder holds) — `redacted`
+  // was simply skipping it. The asker keeps the references the owner chose to
+  // share and stops learning that a redaction happened at all.
+  if (effective === 'redacted') {
+    return { ...answer, withheldCount: 0 };
   }
 
   const base = { ...answer, items: [] };

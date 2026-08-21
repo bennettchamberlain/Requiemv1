@@ -1,6 +1,6 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-import type { AskDirection, AskQuery, AskStatus } from '../types';
+import type { AskDirection, AskQuery, AskStatus, DisclosureRung } from '../types';
 
 /**
  * `ci.asks` — an interpersonal question directed at another user's memory.
@@ -41,6 +41,24 @@ export class AskEntity {
   @Column({ type: 'text', name: 'consent_basis', nullable: true })
   consentBasis!: string | null;
 
+  /**
+   * The disclosure ceiling in force WHEN CONSENT WAS GIVEN — stamped at submit
+   * on the auto path and at `approve()` on the review path, never re-derived.
+   *
+   * This exists because the answer path used to re-run the grant evaluation to
+   * find the ceiling, and a revoked or lapsed grant is invisible to every SQL
+   * read path — so withdrawing consent DELETED the cap instead of keeping it,
+   * and the answer to an already-approved ask grew. See the migration
+   * `20260821010000_add_ask_disclosure_ceiling.sql`.
+   *
+   * NULL means "no grant capped this ask when the owner consented", not
+   * "unknown": the answer path falls back to the live evaluation for it. The
+   * two sources are combined by taking the NARROWER, so a later revocation can
+   * tighten the answer and can never widen it.
+   */
+  @Column({ type: 'text', name: 'disclosure_ceiling', nullable: true })
+  disclosureCeiling!: DisclosureRung | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -60,6 +78,7 @@ export class AskEntity {
       query: entity.query,
       status: entity.status,
       consentBasis: entity.consentBasis,
+      disclosureCeiling: entity.disclosureCeiling ?? null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       expiresAt: entity.expiresAt,

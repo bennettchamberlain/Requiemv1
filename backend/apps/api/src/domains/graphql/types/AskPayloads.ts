@@ -28,6 +28,12 @@ import { MutationPayload } from './MutationPayload';
  * Nothing is lost that the asker could not learn honestly: an auto-answered ask
  * simply has an answer waiting when they read it, and a blocked one never
  * acquires one — the same shape as a responder who never got around to it.
+ *
+ * COLLAPSING THIS FIELD WAS NOT ENOUGH ON ITS OWN. The identical three-way
+ * signal stayed readable through `ask.status` on this very payload — `declined`
+ * / `delivered` / `under_review` for deny / auto / review — so the oracle was
+ * relocated, not closed. `AskType.toType` now collapses the status for the
+ * asker too; see `askerVisibleStatus`.
  */
 export const ASK_ACCEPTED = 'accepted';
 

@@ -20,9 +20,9 @@ import {
 } from '@ci/domains/asks';
 import { EventEntity } from '@ci/domains/memory';
 
-import { computeFreeBusy, summarizeAvailability } from '../availability';
+import { computeFreeBusy, summarizeAvailability, type FreeBusy } from '../availability';
 import { type PeerLink } from '../entities/PeerLinkEntity';
-import type { PeerAskBody, PeerAskResponse } from '../protocol';
+import type { BusyInterval, PeerAskBody, PeerAskResponse } from '../protocol';
 
 import { PeerLinkService } from './PeerLinkService';
 
@@ -116,8 +116,14 @@ export class PeerAskService {
     }
 
     // Auto-authorized: record WHICH grant authorized it, so the answer and the
-    // audit both carry a real consent basis rather than null.
-    const authorized = await this.askService.setConsentBasis(ask.id, decision.grantId ?? null);
+    // audit both carry a real consent basis rather than null — and the ceiling
+    // that grant imposed AT THIS MOMENT, so a later revocation cannot widen a
+    // re-run of the same ask (see {@link AskEntity.disclosureCeiling}).
+    const authorized = await this.askService.setConsentBasis(
+      ask.id,
+      decision.grantId ?? null,
+      decision.maxDisclosure ?? null,
+    );
 
     const answer = await this.answerFor(
       context,
@@ -142,9 +148,36 @@ export class PeerAskService {
   ): Promise<NonNullable<PeerAskResponse['answer']>> {
     const who = link.displayName ?? 'They';
 
+    // ═══ THE CEILING IS COMPUTED BEFORE THE ARCHETYPE BRANCH, NOT AFTER ═══
+    //
+    // It used to be computed below, on the relationship/content path only, and
+    // the availability branch returned before ever reaching it. Both ceilings —
+    // the tier the owner assigned this peer AND the deciding grant's own
+    // `maxDisclosure` — were therefore skipped entirely for the one archetype
+    // that answers straight out of the owner's calendar. Reproduced against
+    // Postgres: `trustTier: 'stranger'` (tier ceiling `boolean`) plus a grant
+    // carrying `maxDisclosure: 'none'` still handed the peer the owner's real
+    // busy interval and both free windows, while the CONTENT archetype under
+    // the identical `none` ceiling correctly returned "Nothing was shared."
+    //
+    // Two independent ceilings, combined by taking the LESSER: a grant can
+    // tighten the tier default but never loosen it, so neither a generous grant
+    // nor a generous tier alone can widen what a peer receives.
+    //
+    // The class comes from the ASK's own query rather than being re-derived per
+    // archetype (`archetype === 'content' ? request.dataClass : undefined`).
+    // `toAskQuery` already set it — 'calendar' for availability, the requested
+    // class for content, absent for relationship — and reading it from one
+    // place is what stops a fourth archetype from quietly inheriting
+    // `undefined` the way availability inherited "no ceiling at all".
+    const tierCeiling = disclosureCeiling(link.trustTier, ask.query.dataClass);
+    const ceiling = grantCeiling != null ? minRung(tierCeiling, grantCeiling) : tierCeiling;
+
     // Availability has its own executor: it never touches the search index and
     // returns interval boundaries only, which is what makes it safe to
-    // auto-answer under a standing grant.
+    // auto-answer under a standing grant — but "interval boundaries only" is a
+    // statement about the SHAPE of the disclosure, not its size, and it is not
+    // a reason to skip the ceiling.
     if (body.request.archetype === 'availability') {
       const { from, to } = boundedWindow(body.request.from, body.request.to);
 
@@ -159,7 +192,7 @@ export class PeerAskService {
       const events = await this.eventRepository.find({
         where: [
           {
-            user: { id: context.userId },
+            userId: context.userId,
             // Events are tombstoned, not destroyed (`EventService.softDeleteFlag`),
             // so a raw repository read has to skip flagged rows itself. Without
             // this a deleted meeting still marks the owner busy to a peer.
@@ -168,7 +201,7 @@ export class PeerAskService {
             endTime: MoreThanOrEqual(from),
           },
           {
-            user: { id: context.userId },
+            userId: context.userId,
             isDeleted: false,
             startTime: Between(from, to),
             endTime: IsNull(),
@@ -179,14 +212,29 @@ export class PeerAskService {
       });
 
       const freeBusy = computeFreeBusy(events, { from, to }, { minMinutes: body.request.minMinutes });
+      const answer = clampAvailability(freeBusy, ceiling, who);
+
+      // The availability branch wrote NO `ci.ask_answers` row at all — the one
+      // archetype with no ceiling was also the one with no record of what it
+      // disclosed, so neither the owner's history nor an incident review could
+      // reconstruct it. It is persisted under the `attribute` form (the
+      // ask_answers CHECK admits the five local forms; `availability` is a WIRE
+      // form, not a storage one) with the post-ceiling summary and no items,
+      // which is exactly what crossed.
+      await this.answerService.create({
+        askId: ask.id,
+        answer: {
+          form: 'attribute',
+          items: [],
+          disclosedCount: answer.free.length,
+          withheldCount: 0,
+          summary: answer.summary,
+          consentBasis,
+        },
+      });
       await this.recordAudit(ask, link, consentBasis, 'auto_answered', []);
 
-      return {
-        form: 'availability',
-        summary: summarizeAvailability(freeBusy, who),
-        busy: freeBusy.busy,
-        free: freeBusy.free,
-      };
+      return { form: 'availability', summary: answer.summary, busy: answer.busy, free: answer.free };
     }
 
     // relationship / content resolve through the shared run-as-owner executor
@@ -204,16 +252,8 @@ export class PeerAskService {
       responderLabel: who,
     });
 
-    // Phase 2 policy engine. Two independent ceilings are combined by taking the
-    // LESSER: the tier the owner assigned this peer, and any `maxDisclosure` the
-    // deciding grant declared. A grant can tighten the tier default but never
-    // loosen it, so neither a generous grant nor a generous tier alone can widen
-    // what a peer receives.
-    // `dataClass` is only carried by the content archetype; the others have no
-    // class of their own, so the tier's default ceiling applies.
-    const requestedClass = body.request.archetype === 'content' ? body.request.dataClass : undefined;
-    const tierCeiling = disclosureCeiling(link.trustTier, requestedClass);
-    const ceiling = grantCeiling != null ? minRung(tierCeiling, grantCeiling) : tierCeiling;
+    // Phase 2 policy engine — the same `ceiling` the availability branch above
+    // now uses, computed once at the top of this method.
     const disclosed = applyDisclosureCeiling(built, ceiling);
 
     await this.answerService.create({ askId: ask.id, answer: disclosed });
@@ -267,6 +307,70 @@ export class PeerAskService {
       disclosedEntities,
       backingEntities,
     });
+  }
+}
+
+/**
+ * Clamp a free/busy answer down to a disclosure rung.
+ *
+ * `applyDisclosureCeiling` cannot do this job: it operates on a
+ * {@link DisclosedAnswer}, whose unit of disclosure is an ITEM REFERENCE, and
+ * an availability answer discloses interval BOUNDARIES instead. So the ladder
+ * is spelled out here in the same shape and the same order, and it degrades the
+ * same way — each rung strictly removes what the one above it revealed:
+ *
+ *   full / redacted — the busy and free intervals, as computed
+ *   summary         — the templated sentence only (slot count + longest gap),
+ *                     no boundaries. This is where the tier defaults land for
+ *                     the `peer` tier.
+ *   count           — how many free slots, with no durations and no boundaries
+ *   boolean         — "is there any free time at all", nothing else. Where the
+ *                     `stranger` tier lands, and where the reproduced bypass
+ *                     was handing over the owner's actual meeting times.
+ *   none            — nothing, worded identically to a `none` answer on every
+ *                     other archetype so a refusal is not distinguishable from
+ *                     an empty calendar.
+ *
+ * The intervals are dropped BEFORE the summary is rewritten, because
+ * `summarizeAvailability` reads them — a clamp that rewrote the sentence and
+ * left the arrays populated would disclose everything it claimed to withhold.
+ *
+ * Pure.
+ */
+export function clampAvailability(
+  freeBusy: FreeBusy,
+  ceiling: DisclosureRung,
+  who: string,
+): { summary: string; busy: BusyInterval[]; free: BusyInterval[] } {
+  const hasFree = freeBusy.free.length > 0;
+
+  switch (ceiling) {
+    case 'full':
+    case 'redacted':
+      return { summary: summarizeAvailability(freeBusy, who), busy: freeBusy.busy, free: freeBusy.free };
+    case 'summary':
+      // The sentence carries a slot count and a duration but no instants, which
+      // is the same trade `summary` makes elsewhere: magnitude, not content.
+      return { summary: summarizeAvailability(freeBusy, who), busy: [], free: [] };
+    case 'count':
+      return {
+        summary: hasFree
+          ? `${who} have ${freeBusy.free.length} free slot${freeBusy.free.length === 1 ? '' : 's'} in that window.`
+          : `${who} have no free time in that window.`,
+        busy: [],
+        free: [],
+      };
+    case 'boolean':
+      return {
+        summary: hasFree
+          ? `${who} have some free time in that window.`
+          : `${who} have no free time in that window.`,
+        busy: [],
+        free: [],
+      };
+    case 'none':
+    default:
+      return { summary: 'Nothing was shared.', busy: [], free: [] };
   }
 }
 
