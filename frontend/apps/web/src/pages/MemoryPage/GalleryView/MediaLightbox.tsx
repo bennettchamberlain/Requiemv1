@@ -129,7 +129,10 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
 
   const hasPrev = index > 0;
   const hasNext = index < count - 1;
-  const canDownload = isSameOrigin(current.fullUrl);
+  // A poster standing in for a page (TMDB art for a Netflix episode) opens the
+  // PAGE, not the poster file, and is never offered as a download.
+  const openUrl = current.pageUrl ?? current.fullUrl;
+  const canDownload = !current.pageUrl && isSameOrigin(current.fullUrl);
   const isBroken = brokenUrl === current.fullUrl;
 
   return (
@@ -151,7 +154,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
         </span>
         <div className="flex items-center gap-1">
           <a
-            href={current.fullUrl}
+            href={openUrl}
             {...(canDownload ? { download: current.title } : {})}
             target="_blank"
             rel="noopener noreferrer"
@@ -206,7 +209,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
               <FileIcon className="h-12 w-12 text-white/50" />
               <p className="text-sm text-white/80">Couldn&apos;t load this media.</p>
               <a
-                href={current.fullUrl}
+                href={openUrl}
                 {...(canDownload ? { download: current.title } : {})}
                 target="_blank"
                 rel="noopener noreferrer"

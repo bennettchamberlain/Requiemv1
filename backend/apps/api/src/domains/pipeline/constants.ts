@@ -148,6 +148,13 @@ export const STAGE_IDS = {
   ENRICH_GEOCODE: 'enrich.geocode',
 
   /**
+   * Resolve a content row's link (oEmbed), streaming title (Wikidata) or page
+   * (OpenGraph) into `ci.unfurls` — title, author, poster, duration. External
+   * providers through the SSRF chokepoint; one request per distinct key.
+   */
+  ENRICH_UNFURL: 'enrich.unfurl',
+
+  /**
    * Fill a physical-presence event's coordinates from the nearest-in-time REAL
    * location, replacing `LocationEstimateService`'s temporal fill — and its
    * `forced` flag, a request-scoped re-run lever that recorded nothing anywhere.

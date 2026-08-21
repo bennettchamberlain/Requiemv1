@@ -171,8 +171,17 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
           internal scroller, so it does not yield space under pressure: an
           outside ceiling is the only thing between it and the picker. It still
           sits above the wizard, which is why moving it down the column did not
-          change any of this. */}
-      <ImportActivity className="max-h-none sm:max-h-[8.5rem]" />
+          change any of this.
+
+          ONLY while the wizard is showing. On Inbox and History the wizard is
+          `hidden` and the pane below scrolls itself, so there is no picker to
+          protect — and 8.5rem there is a clip, not a ceiling: the heading, bar,
+          counts line and the "Show all" toggle spend ~110px of the 136px before
+          the run list gets any, which left the list a few pixels tall with
+          nothing inside it to scroll. Half the column on those surfaces: the
+          region scrolls inside a share a person can actually read, and the pane
+          beneath keeps the other half. */}
+      <ImportActivity className={cn('max-h-none', surface === 'import' ? 'sm:max-h-[8.5rem]' : 'sm:max-h-[50%]')} />
 
       {/* The wizard stays MOUNTED and is hidden, never unmounted.
 

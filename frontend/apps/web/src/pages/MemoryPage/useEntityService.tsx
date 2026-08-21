@@ -68,6 +68,15 @@ const SEARCH_QUERY = gql(`
               aspectRatio
               mediaKind
             }
+            # Resolved link preview from the enrich.unfurl stage: the poster
+            # for a Spotify track (no predictable poster URL) or a Netflix
+            # episode (no URL at all), plus the provider's title.
+            galleryUnfurl: unfurl {
+              status
+              title
+              thumbnailUrl
+              canonicalUrl
+            }
           }
 
           ...AnswerGridItemData

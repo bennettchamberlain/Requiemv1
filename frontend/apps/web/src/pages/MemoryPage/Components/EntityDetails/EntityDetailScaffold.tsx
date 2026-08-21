@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
+import { useApolloClient } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
 import { Button, Card, IconButton, Label, Sheet, cn, useToast } from '@ci/shadcn';
 import { ImageOff, Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
@@ -22,11 +23,12 @@ import {
 } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { TagInput } from '@/components/TagInput';
 
-import type { MemoryEntity } from '../../../MemoryPage/useEntityService';
+import type { GenericEntity, MemoryEntity } from '../../../MemoryPage/useEntityService';
 
 import { DeleteEntityDialog } from './DeleteEntityDialog';
 import { DELETE_TARGETS } from './deleteTargets';
 import { useEntityDrawerHost } from './drawerHost';
+import { GET_DRAWER_NODE, genericEntityGlobalId, isDetailNode } from './drawerNode';
 import { useReadOnly } from './readOnly';
 
 // The field/meta contract now lives with the shared editor so the full-page
@@ -312,6 +314,9 @@ function RawDataDetails({ data }: { data: unknown }) {
   );
 }
 
+/** How long a related-card click waits for the typed node before showing the stub. */
+const RELATED_RESOLVE_BUDGET_MS = 1_500;
+
 export function EntityDetailScaffold({
   entity,
   title,
@@ -331,23 +336,65 @@ export function EntityDetailScaffold({
   const currentTags = useMemo(() => readTags(entity), [entity]);
   const { tagEntities, untagEntities } = useTagEntityService();
   const { refetch, setActiveEntity } = useEntityDrawerHost();
+  const apolloClient = useApolloClient();
   const { toast } = useToast();
   // Shared-search viewer: the drawer is display-only. Suppress every mutation /
   // navigation affordance (the writes are owner-scoped and would silently fail).
   const readOnly = useReadOnly();
 
+  // Resolve the typed node BEFORE switching the drawer to it. Switching to the
+  // stub first and upgrading in place (ResolvedGenericDetails) mounted two
+  // different detail bodies in a row, and each body owns its Sheet.Content, so
+  // the sheet replayed its slide-in twice — a visible double flash on every
+  // card click. With the node in hand the drawer transitions exactly once.
+  // The stub is still the fallback: a slow or failed lookup must not make the
+  // click feel dead, and the in-drawer upgrade still happens from there.
   const handleOpenRelatedEntity = useCallback(
     (target: RelatedEntityOpenTarget) => {
-      setActiveEntity({
+      const stub: GenericEntity = {
         __typename: 'GenericEntity',
         id: target.id,
         name: target.name,
         entityType: target.entityType,
         description: target.description,
         properties: target.properties,
-      });
+      };
+      const globalId = genericEntityGlobalId(stub);
+      if (!globalId) {
+        setActiveEntity(stub);
+
+        return;
+      }
+
+      let settled = false;
+      const fallback = window.setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          setActiveEntity(stub);
+        }
+      }, RELATED_RESOLVE_BUDGET_MS);
+
+      apolloClient
+        .query({ query: GET_DRAWER_NODE, variables: { id: globalId }, fetchPolicy: 'cache-first' })
+        .then(({ data }) => {
+          const node = data?.node ?? null;
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          window.clearTimeout(fallback);
+          setActiveEntity(node && isDetailNode(node) ? node : stub);
+        })
+        .catch(() => {
+          if (!settled) {
+            settled = true;
+            window.clearTimeout(fallback);
+            setActiveEntity(stub);
+          }
+        });
     },
-    [setActiveEntity],
+    [apolloClient, setActiveEntity],
   );
 
   // Deleting is offered for every type the server can actually remove, keyed off

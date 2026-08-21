@@ -6,6 +6,7 @@ import { gql, useFragment } from '@/graphql';
 import type { MemoryEntityOf } from '../../useEntityService';
 
 import { EntityDetailScaffold, EntityMedia, resolveStaticUrl } from './EntityDetailScaffold';
+import { hasRichMedia, RichMediaCard } from './RichMediaCard';
 
 const UPDATE_CONTENT = gql(`
   mutation UpdateContentDetail($input: UpdateContentInput!) {
@@ -42,13 +43,19 @@ export function ContentDetails({ entity }: Props) {
       subtitle="Content"
       taggable
       media={
-        <EntityMedia
-          src={mediaSrc}
-          previewSrc={mediaPreviewSrc}
-          contentType={data.mimetype}
-          alt={data.title ?? ''}
-          fallbackHref={data.contentUrl ?? data.sourceUrl}
-        />
+        // A link with a resolved preview or a provider player shows THAT — the
+        // poster, the facts, click-to-play — instead of a file glyph.
+        hasRichMedia(data) ? (
+          <RichMediaCard content={data} title={data.title} url={data.contentUrl ?? data.sourceUrl} />
+        ) : (
+          <EntityMedia
+            src={mediaSrc}
+            previewSrc={mediaPreviewSrc}
+            contentType={data.mimetype}
+            alt={data.title ?? ''}
+            fallbackHref={data.contentUrl ?? data.sourceUrl}
+          />
+        )
       }
       editFields={[
         { key: 'title', label: 'Title', value: data.title ?? '' },

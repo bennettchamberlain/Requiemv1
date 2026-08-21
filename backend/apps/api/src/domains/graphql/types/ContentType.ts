@@ -8,6 +8,7 @@ import { EntityTagType } from './EntityTagType';
 import { GlobalUID } from './GlobalUID';
 import { Node } from './Node';
 import { Taggable } from './Taggable';
+import { UnfurlType } from './UnfurlType';
 
 @ObjectType({ implements: () => [Node, Taggable] })
 export class ContentType implements Node, Taggable {
@@ -70,6 +71,15 @@ export class ContentType implements Node, Taggable {
    */
   @Field(() => EmbedPlayerType, { nullable: true })
   player?: EmbedPlayerType | null;
+
+  /**
+   * Resolved link preview (title, author, poster, duration) from the
+   * `enrich.unfurl` stage — oEmbed for provider links, Wikidata/Wikipedia for
+   * Netflix/Prime titles, OpenGraph for everything else. Null until resolved. Read from the
+   * cache only; never triggers a fetch.
+   */
+  @Field(() => UnfurlType, { nullable: true })
+  unfurl?: UnfurlType | null;
 
   static toType(entity: Content): ContentType {
     return {

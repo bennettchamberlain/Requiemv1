@@ -4,7 +4,9 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { BrowserActivityService } from '@ci/domains/browser-activity';
+import { UNFURL_SWEEP_QUEUE, UnfurlSweepRequestEvent } from '@ci/domains/embed/events';
 import { EventService as SignallingEventService } from '@ci/domains/events';
+// Events leaf only (see the maintenance import below for why a barrel would cycle).
 import { type GraphEntityInputDto, GraphIngestService, ObjectIdentifierService } from '@ci/domains/graph';
 // The events leaf, NOT the maintenance barrel: the barrel would close the
 // module cycle maintenance → llm → tools → import.
@@ -214,6 +216,18 @@ interface RowPlan {
   wrote: boolean;
   /** Set only by the per-row retry, and only for a genuine failure. */
   failure: string | null;
+  /**
+   * The event this record resolved to (created or pre-existing), recorded by
+   * the events destination so the content destination — which runs after it —
+   * can link to it EXPLICITLY. The provenance-triple auto-link cannot: a
+   * work-keyed content row (spotify:track:…, audible:asin:…) carries the
+   * work's URI as its source_id while the event carries the per-play id, so
+   * they never match and 33k Spotify tracks sat unlinked to 118k listens.
+   */
+  eventId?: string;
+  /** The content row this record resolved to, and whether this push inserted it. */
+  contentId?: string;
+  contentInserted?: boolean;
 }
 
 /**
@@ -409,6 +423,7 @@ export class PushStage implements ImportStageRunner {
     let pushed = prior.items.pushed;
     let deduped = prior.items.deduped;
     let failed = prior.items.failed;
+    let contentHandled = 0;
 
     const total = (await this.pendingCount(context.runId)) + entitiesProcessed + pushed + deduped + failed;
 
@@ -432,6 +447,7 @@ export class PushStage implements ImportStageRunner {
       pushed += outcome.pushed;
       failed += outcome.failed;
       deduped += outcome.deduped;
+      contentHandled += outcome.contentHandled;
 
       await context.progress({
         processed: entitiesProcessed + pushed + failed + deduped,
@@ -456,6 +472,11 @@ export class PushStage implements ImportStageRunner {
     // else, so until the edge legs project the linkage columns this push just
     // wrote, every row here is an island.
     const graphEdges = await this.kickGraphEdgeProjection(context, counts);
+    // …and give what it links to a face. Content rows arrive with a URL or a
+    // streaming title and nothing else; the `enrich.unfurl` stage turns those
+    // into titles and posters, and its scheduled cadence is weekly. The Sync
+    // step ends here, so this is where "import finished" meets "now enrich".
+    const unfurl = await this.kickUnfurlSweep(context, counts, contentHandled);
 
     return {
       // Every staged row is RESOLVED one way or another, and this stage's work
@@ -523,6 +544,8 @@ export class PushStage implements ImportStageRunner {
         // nothing the deterministic-edge matrix has a rule for — a
         // browser-activity-only import is the ordinary case.
         ...(graphEdges ? { graphEdges } : {}),
+        // Same, for link previews. Absent when no content rows were written.
+        ...(unfurl ? { unfurl } : {}),
         // Additive. `pushed`, `deduped`, `failed`, `destinations` and
         // `entities` above are read by RunPipeline and ImportRunService and
         // keep their exact meaning; this is the per-data-source, reconciled
@@ -823,6 +846,45 @@ export class PushStage implements ImportStageRunner {
       });
 
       return { requested: sources, error: message };
+    }
+  }
+
+  /**
+   * Ask the pipeline to unfurl what this push just wrote. Fail-soft like the
+   * two kicks above: the rows are in `ci.*`, the sweep is idempotent, and the
+   * weekly cadence covers whatever a failed enqueue left behind.
+   */
+  private async kickUnfurlSweep(
+    context: StageRunContext,
+    counts: DestinationCounts,
+    contentHandled: number,
+  ): Promise<Record<string, unknown> | null> {
+    // Handled, not written: a re-import of an archive dedups every row and
+    // writes nothing, and that is precisely when someone pressing Sync expects
+    // enrichment to catch up. The sweep costs one query when nothing is stale.
+    if (contentHandled === 0) {
+      return null;
+    }
+
+    try {
+      await this.signals.send(
+        UnfurlSweepRequestEvent,
+        { userId: context.userId, requestedBy: `import-run:${context.runId}` },
+        // One pending sweep per user at a time: a multi-part Takeout pushes in
+        // several runs and each would otherwise queue its own identical sweep.
+        { queue: UNFURL_SWEEP_QUEUE, singletonKey: `unfurl-sweep:${context.userId}` },
+      );
+      this.logger.log('Post-push unfurl sweep requested', { runId: context.runId, content: contentHandled });
+
+      return { requested: true, content: contentHandled };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn('Post-push unfurl request failed; previews wait for the scheduled sweep', {
+        runId: context.runId,
+        error: message,
+      });
+
+      return { requested: false, error: message };
     }
   }
 
@@ -1501,7 +1563,7 @@ export class PushStage implements ImportStageRunner {
     counts: DestinationCounts,
     isSelf: IsSelf,
     selfEntityId: string | null,
-  ): Promise<{ pushed: number; failed: number; deduped: number; unrouted: number }> {
+  ): Promise<{ pushed: number; failed: number; deduped: number; unrouted: number; contentHandled: number }> {
     const ctx = { userId: context.userId };
 
     // ONE query for the batch's edges, not one per row.
@@ -1533,7 +1595,53 @@ export class PushStage implements ImportStageRunner {
       await this.sendGroup(ctx, destination, group, counts, isSelf, selfEntityId, context);
     }
 
-    return this.recordOutcomes(context, plans);
+    await this.linkSharedContent(ctx, plans, context);
+
+    return {
+      ...(await this.recordOutcomes(context, plans)),
+      // Routed to content at all — written, deduped or failed — for the unfurl kick.
+      contentHandled: plans.filter((plan) => plan.destinations.includes('content')).length,
+    };
+  }
+
+  /**
+   * `Content -DOCUMENTS-> Event` for every record whose content row ALREADY
+   * EXISTED when this push reached it. A work-keyed content row has one
+   * `event_id` and it belongs to the first play; the second and every later
+   * play of the same track/book/title can only reach their content through
+   * the edge. (An inserted row carries its event in the column, and the
+   * `promote.edge_content` stage projects that into the same edge — so those
+   * are left to it, and the edge upsert makes the two paths converge anyway.)
+   * Fail-soft: the rows are in ci.*, and a missed edge is what the edge sweep
+   * exists to catch.
+   */
+  private async linkSharedContent(ctx: { userId: string }, plans: RowPlan[], context: StageRunContext): Promise<void> {
+    const relationships = plans
+      .filter((plan) => plan.contentId && plan.eventId && plan.contentInserted === false && plan.failure == null)
+      .map((plan) => ({
+        fromKey: `content:${plan.contentId}`,
+        toKey: `event:${plan.eventId}`,
+        fromEntityId: plan.contentId!,
+        fromEntityType: 'Content',
+        toEntityId: plan.eventId!,
+        toEntityType: 'Event',
+        type: 'DOCUMENTS',
+        properties: { derived_from: 'import_push' },
+      }));
+
+    if (relationships.length === 0) {
+      return;
+    }
+
+    try {
+      await this.graph.ingest(ctx, { entities: [], relationships });
+    } catch (err) {
+      this.logger.warn('Linking shared content rows to their events failed; the edge sweep will retry', {
+        runId: context.runId,
+        edges: relationships.length,
+        error: (err as Error).message,
+      });
+    }
   }
 
   /**
@@ -1934,25 +2042,30 @@ export class PushStage implements ImportStageRunner {
         return aligned(await this.communications.createManyDetailed(ctx, inputs), group, destination);
       }
 
-      case 'content':
-        return aligned(
-          await this.contents.createManyDetailed(
-            ctx,
-            group.map((plan) => toContentInput(plan.record)),
-          ),
-          group,
-          destination,
+      case 'content': {
+        const results = await this.contents.createManyDetailed(
+          ctx,
+          group.map((plan) => withEvent(toContentInput(plan.record), plan.eventId)),
         );
+        group.forEach((plan, index) => {
+          plan.contentId = results[index]?.entity?.id;
+          plan.contentInserted = results[index]?.inserted ?? false;
+        });
 
-      case 'events':
-        return aligned(
-          await this.events.createDetailed(
-            ctx,
-            group.map((plan) => toEventInput(plan.record)),
-          ),
-          group,
-          destination,
+        return aligned(results, group, destination);
+      }
+
+      case 'events': {
+        const results = await this.events.createDetailed(
+          ctx,
+          group.map((plan) => toEventInput(plan.record)),
         );
+        group.forEach((plan, index) => {
+          plan.eventId = results[index]?.entity?.id;
+        });
+
+        return aligned(results, group, destination);
+      }
 
       case 'things':
         return aligned(
@@ -2178,6 +2291,8 @@ export class PushStage implements ImportStageRunner {
 
       case 'content':
         return wroteAnything(await this.contents.createManyDetailed(ctx, [toContentInput(record)]));
+      // (The per-row retry carries no plan, so it cannot pass the event; the
+      // batched path above is the one that links, and the edge sweep covers it.)
       case 'events':
         // An ARRAY, deliberately: `createDetailed` is the batched path, and only
         // the batched path is idempotent. A bare object takes `createOne`, which
@@ -2337,6 +2452,15 @@ export class PushStage implements ImportStageRunner {
  * so a mismatch fails the group instead — the caller's row-by-row retry then
  * gets the honest per-row answer.
  */
+/** The content input with its record's event attached, unless the record named one itself. */
+function withEvent<T extends { event?: { id: string } }>(input: T, eventId: string | undefined): T {
+  if (input.event || !eventId) {
+    return input;
+  }
+
+  return { ...input, event: { id: eventId } };
+}
+
 function aligned<Entity>(
   results: Array<{ inserted: boolean; entity: Entity }>,
   group: RowPlan[],

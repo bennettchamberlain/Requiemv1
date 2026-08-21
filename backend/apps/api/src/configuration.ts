@@ -675,6 +675,25 @@ export const ConfigSchema = z.object({
   // every appliance; `google` is the direct-key fallback and is the only mode
   // that reads `apiKey` (GEOCODING_API_KEY, falling back to the legacy
   // GOOGLE_MAPS_KEY — see custom-environment-variables.json + the transform below).
+  /**
+   * Link previews ("unfurls") — what `enrich.unfurl` may fetch on the user's
+   * behalf. Every call is a server-side request to a host the content chose,
+   * through the SSRF chokepoint in domains/embed/services/UnfurlFetcher.ts.
+   */
+  unfurl: z.object({
+    /** Master switch; off records every candidate as skipped: disabled. */
+    enabled: z.coerce.boolean().default(true),
+    /** Per-host request ceiling. Provider oEmbed endpoints and Wikimedia's APIs are generous at this rate. */
+    ratePerSecond: z.coerce.number().positive().default(2),
+    /**
+     * Follow arbitrary http(s) content URLs for OpenGraph metadata. Provider
+     * oEmbed and Wikimedia are fixed hosts; this one is the long tail and the only
+     * setting that makes the appliance fetch a page it has never heard of.
+     */
+    openGraph: z.coerce.boolean().default(true),
+    /** Copy posters into object storage so a dead provider link does not blank the tile. */
+    cachePosters: z.coerce.boolean().default(true),
+  }),
   geocoding: z.object({
     apiKey: z.string().optional(),
     batchSize: z.coerce.number().int().positive().default(200),

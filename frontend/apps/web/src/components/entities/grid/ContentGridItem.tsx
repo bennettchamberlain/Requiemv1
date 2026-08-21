@@ -15,6 +15,7 @@ export const CONTENT_FRAGMENT = gql(`
     mimetype
     mediaUrl
     previewUrl
+    ...RichMediaData
   }
 `);
 

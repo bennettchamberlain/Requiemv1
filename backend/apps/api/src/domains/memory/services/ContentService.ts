@@ -671,36 +671,68 @@ export class ContentService {
    * Batch-load content rows linked to each of `eventIds`, oldest first.
    * Returns one `Content[]` per input id (same order), so a GraphQL DataLoader
    * can resolve `Event.contents` in a single query. Ownership is scoped through
-   * the joined event's `user_id` — same rationale as {@link findMediaFilesByEventIds}.
+   * the event's `user_id` — same rationale as {@link findMediaFilesByEventIds}.
+   *
+   * Two links are followed, because a content row has ONE `event_id` but may
+   * stand for many events: every Audible session of a book, every Netflix
+   * viewing of a title, shares the work's single content row, and only the
+   * first session's id fits in the column. The rest are reachable through the
+   * `Content -DOCUMENTS-> Event` edge the pipeline projects for each of them,
+   * so without the second arm a drawer for the third viewing showed nothing.
    */
   async findByEventIds(context: UserServiceContext, eventIds: string[]): Promise<Content[][]> {
     if (eventIds.length === 0) {
       return [];
     }
 
+    const rows = await this.contentRepository.manager.query<Array<{ content_id: string; event_id: string }>>(
+      `SELECT DISTINCT l.content_id, l.event_id
+         FROM (
+           SELECT c.id AS content_id, c.event_id
+             FROM ci.content c
+            WHERE c.event_id = ANY($1::uuid[])
+           UNION ALL
+           SELECT r.from_entity_id AS content_id, r.to_entity_id AS event_id
+             FROM ci.relationships r
+            WHERE r.to_entity_id = ANY($1::uuid[])
+              AND r.relationship_type = 'DOCUMENTS'
+              AND r.is_active IS DISTINCT FROM false
+         ) l
+         JOIN ci.events e ON e.event_id = l.event_id AND e.user_id = $2::uuid
+         JOIN ci.content c ON c.id = l.content_id AND c.user_id = $2::uuid`,
+      [eventIds, context.userId],
+    );
+
+    const contentIds = [...new Set(rows.map((row) => row.content_id))];
+    if (contentIds.length === 0) {
+      return eventIds.map(() => []);
+    }
+
     const entities = await this.contentRepository
       .createQueryBuilder('content')
-      .innerJoinAndSelect('content.event', 'event')
-      .where('event.userId = :userId', { userId: context.userId })
-      .andWhere('content.event_id IN (:...eventIds)', { eventIds })
+      .leftJoinAndSelect('content.event', 'event')
+      .where('content.id IN (:...contentIds)', { contentIds })
       .orderBy('content.created_at', 'ASC')
       .getMany();
 
     const contents = await this.composeMany(entities);
     const contentsMap = new Map<string, Content[]>();
 
+    // Preserve created_at order within each event's list.
     for (const content of contents) {
-      const eventId = content.eventId;
-      if (!eventId) {
-        continue;
-      }
+      for (const link of rows) {
+        if (link.content_id !== content.id) {
+          continue;
+        }
 
-      const list = contentsMap.get(eventId);
-
-      if (list) {
-        list.push(content);
-      } else {
-        contentsMap.set(eventId, [content]);
+        const list = contentsMap.get(link.event_id);
+        if (list) {
+          if (!list.includes(content)) {
+            list.push(content);
+          }
+        } else {
+          contentsMap.set(link.event_id, [content]);
+        }
       }
     }
 

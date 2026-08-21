@@ -36,6 +36,18 @@ export const EVENT_FRAGMENT = gql(`
     tags {
       label
     }
+    # What the event is about, for events that ARE a watch/listen/read: the
+    # first linked content rows, with their resolved preview and player.
+    contents(first: 3) {
+      edges {
+        node {
+          id
+          title
+          contentUrl: url
+          ...RichMediaData
+        }
+      }
+    }
   }
 `);
 

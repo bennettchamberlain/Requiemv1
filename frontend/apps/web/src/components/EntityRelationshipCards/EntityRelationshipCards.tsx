@@ -7,7 +7,6 @@ import { Link } from 'react-router-dom';
 
 import { useNodeGraphService } from '@/api/useNodeGraphService';
 import { Tag } from '@/components/Tag';
-import { formatEnumLabel } from '@/lib/utils';
 
 const CARD_MIN_WIDTH = 180;
 const CARD_GAP_PX = 12;
@@ -565,9 +564,12 @@ export function EntityRelationshipCards({ entityId, onOpenRelatedEntity }: Props
     <Card.Content className="p-3 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            {formatEnumLabel(card.relationshipType)}
-          </p>
+          {/* The edge type (DOCUMENTS, SENT, PARTICIPATED_IN…) is deliberately not
+              shown: it is the graph's vocabulary, not the reader's, and read
+              from the wrong end of the edge ("Documents" over a song on an
+              event's card) it misleads more than it informs. The other entity's
+              name and type badge say what the link is. Still on the card data
+              for sorting/filtering. */}
           <p className="text-sm font-semibold leading-tight line-clamp-2">{card.otherEntityName}</p>
         </div>
         <div className="flex max-w-[45%] shrink-0 flex-col items-end gap-1 text-right">

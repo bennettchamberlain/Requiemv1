@@ -463,6 +463,7 @@ type ContentType implements Node & Taggable {
   text: String
   title: String
   type: String
+  unfurl: UnfurlType
   url: String
 }
 
@@ -3076,6 +3077,22 @@ type ThreadType implements Node & Taggable {
   messages(after: String, before: String, first: Int, last: Int): MessageConnection!
   name: String
   tags: [EntityTagType!]!
+}
+
+type UnfurlType {
+  authorName: String
+  authorUrl: String
+  canonicalUrl: String
+  description: String
+  durationSeconds: Int
+  externalRef: String
+  fetchedAt: DateTime!
+  payload: JSON!
+  resolver: String!
+  siteName: String
+  status: String!
+  thumbnailUrl: String
+  title: String
 }
 
 input UpdateAnswerInput {

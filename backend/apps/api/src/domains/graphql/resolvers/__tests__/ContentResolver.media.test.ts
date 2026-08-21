@@ -27,6 +27,7 @@ function makeResolver() {
     { load: jest.fn() } as never,
     { load: jest.fn() } as never,
     { load } as never,
+    { load: jest.fn() } as never,
   );
 
   return { resolver, load };

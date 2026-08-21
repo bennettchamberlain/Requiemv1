@@ -6,9 +6,13 @@ import { ContentResolver } from '../ContentResolver';
  * tests only pin which column feeds it and that non-provider rows stay null.
  */
 function makeResolver() {
-  return new ContentResolver({} as never, { load: jest.fn() } as never, { load: jest.fn() } as never, {
-    load: jest.fn(),
-  } as never);
+  return new ContentResolver(
+    {} as never,
+    { load: jest.fn() } as never,
+    { load: jest.fn() } as never,
+    { load: jest.fn() } as never,
+    { load: jest.fn() } as never,
+  );
 }
 
 function node(source: Partial<ContentType['__source']>): ContentType {

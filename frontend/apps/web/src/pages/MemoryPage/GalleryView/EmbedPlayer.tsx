@@ -20,8 +20,11 @@ interface Props {
  * the user asks for one. No `sandbox`: a cross-origin frame is already
  * origin-isolated, and `allow-scripts allow-same-origin` would only strip the
  * popup/storage access YouTube's and Spotify's controls rely on.
- * `referrerpolicy="no-referrer"` keeps this appliance's hostname out of the
- * provider's logs.
+ * `referrerpolicy="origin"`: the provider sees only the scheme and host
+ * (`https://<stack>.localhost/`), never the path, so which entity or page was
+ * open stays private. NOT `no-referrer` — YouTube's player refuses to start
+ * without a Referer to validate the embed against ("Error 153 – Video player
+ * configuration error"), and the origin is the least it accepts.
  */
 export function EmbedPlayer({ player, title, fitViewport = false, className }: Props) {
   const ar = player.aspectRatio;
@@ -36,7 +39,7 @@ export function EmbedPlayer({ player, title, fitViewport = false, className }: P
         src={player.playerUrl}
         title={title}
         loading="lazy"
-        referrerPolicy="no-referrer"
+        referrerPolicy="origin"
         allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
         allowFullScreen
         className="h-full w-full rounded-lg border-0 bg-black"

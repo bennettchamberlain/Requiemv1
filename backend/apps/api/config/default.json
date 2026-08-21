@@ -223,6 +223,12 @@
     "apiKey": "",
     "deviceId": ""
   },
+  "unfurl": {
+    "enabled": true,
+    "ratePerSecond": 2,
+    "openGraph": true,
+    "cachePosters": true
+  },
   "geocoding": {
     "apiKey": "",
     "batchSize": 200,

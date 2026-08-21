@@ -224,13 +224,27 @@ const reverseProxy = (port: number, stream = false) => ({
  * /api/llm/generate. */
 const stripApi = { handler: 'rewrite', strip_path_prefix: '/api' };
 
+/** The provider players the gallery can mount in an iframe (derivePlayer in
+ * backend domains/embed). Without an explicit frame-src, `default-src 'self'`
+ * governs frames and Chrome shows "This content is blocked" the moment a play
+ * button is clicked. Mirror of the list in infrastructure/gateway/nginx.conf —
+ * a new provider goes in both places, plus derivePlayer.ts. */
+const PLAYER_FRAME_SRC = [
+  'https://www.youtube-nocookie.com',
+  'https://open.spotify.com',
+  'https://player.vimeo.com',
+  'https://w.soundcloud.com',
+  'https://www.dailymotion.com',
+].join(' ');
+
 function buildRoute(key: string, p: { apiPort: number; webPort: number; objPort: number }) {
   const host = `${key}.localhost`;
   const csp =
     "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' " +
     "https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src * data: blob:; " +
     `media-src 'self' blob:; connect-src 'self' ws://${host} wss://${host}; worker-src 'self'; ` +
-    "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';";
+    "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; " +
+    `frame-src ${PLAYER_FRAME_SRC};`;
 
   // Order matters: most specific first; the catch-all (web) is last.
   const routes = [

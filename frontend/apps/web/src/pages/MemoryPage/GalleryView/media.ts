@@ -40,6 +40,11 @@ export interface EntityMedia {
   title: string;
   /** Present only for `kind === 'embed'`; `fullUrl` is then the provider page. */
   player?: EmbedPlayer;
+  /**
+   * The page the media stands for, when `fullUrl` is only a poster of it (a
+   * TMDB poster for a Netflix episode): the lightbox's "open original" target.
+   */
+  pageUrl?: string | null;
 }
 
 /**
@@ -214,6 +219,11 @@ export function getEntityMedia(entity: EntityItem): EntityMedia | null {
     case 'ContentType': {
       const contentType = entity.galleryMimetype;
 
+      // A resolved link preview, when the unfurl stage has visited the row.
+      // Only an `ok` one carries anything renderable.
+      const unfurl = entity.galleryUnfurl?.status === 'ok' ? entity.galleryUnfurl : null;
+      const unfurlPoster = resolveMediaUrl(unfurl?.thumbnailUrl);
+
       // A provider player wins over whatever the mimetype says: the row for a
       // Spotify track is `audio/spotify` (a provider, not a codec), and the
       // only thing that can render it is the provider's own player.
@@ -225,9 +235,10 @@ export function getEntityMedia(entity: EntityItem): EntityMedia | null {
           entityId: entity.id,
           kind: 'embed',
           contentType: contentType ?? `${player.mediaKind}/${player.provider}`,
-          thumbUrl: player.posterUrl ?? null,
+          // Tier-0 poster (YouTube) first; the unfurl's (Spotify album art) fills the gap.
+          thumbUrl: player.posterUrl ?? unfurlPoster ?? null,
           fullUrl: page,
-          title: entity.galleryTitle ?? 'Untitled',
+          title: entity.galleryTitle ?? unfurl?.title ?? 'Untitled',
           player: {
             provider: player.provider,
             playerUrl: player.playerUrl,
@@ -238,11 +249,6 @@ export function getEntityMedia(entity: EntityItem): EntityMedia | null {
         };
       }
 
-      const kind = mediaKind(contentType);
-      if (!kind || !contentType) {
-        return null;
-      }
-
       // A media content row is a link, not a document: `url`/`sourceUrl` are
       // NULL on every one of them and the binary hangs off
       // `external_id -> ci.files`, which the server resolves into
@@ -250,29 +256,47 @@ export function getEntityMedia(entity: EntityItem): EntityMedia | null {
       // only the first two is what left these tiles blank. Web content (a
       // bookmarked image, an oEmbed thumbnail) still arrives via url/sourceUrl,
       // so both sources are kept.
+      const kind = mediaKind(contentType);
       const preview = resolveMediaUrl(entity.galleryPreviewUrl);
       const url =
         resolveMediaUrl(entity.galleryFileUrl) ??
         resolveMediaUrl(entity.galleryContentUrl) ??
         resolveMediaUrl(entity.galleryContentSourceUrl) ??
         preview;
-      if (!url) {
-        return null;
+
+      if (kind && contentType && url) {
+        return {
+          entityId: entity.id,
+          kind,
+          contentType,
+          thumbUrl: pickThumbUrl({
+            kind,
+            previewUrl: preview,
+            fullUrl: url,
+            sizeBytes: entity.galleryMediaSize ?? null,
+          }),
+          fullUrl: url,
+          title: entity.galleryTitle ?? 'Untitled',
+        };
       }
 
-      return {
-        entityId: entity.id,
-        kind,
-        contentType,
-        thumbUrl: pickThumbUrl({
-          kind,
-          previewUrl: preview,
-          fullUrl: url,
-          sizeBytes: entity.galleryMediaSize ?? null,
-        }),
-        fullUrl: url,
-        title: entity.galleryTitle ?? 'Untitled',
-      };
+      // Nothing playable, but a poster was resolved — a Netflix episode
+      // (text/plain, no URL) or a Prime Video watch (video/mp4 with no file
+      // behind it) via Wikidata, a bookmarked article's og:image: an image
+      // tile that opens the poster, with "open original" pointing at the page.
+      if (unfurlPoster) {
+        return {
+          entityId: entity.id,
+          kind: 'image',
+          contentType: 'image/*',
+          thumbUrl: unfurlPoster,
+          fullUrl: unfurlPoster,
+          title: entity.galleryTitle ?? unfurl?.title ?? 'Untitled',
+          pageUrl: entity.galleryContentUrl ?? unfurl?.canonicalUrl ?? null,
+        };
+      }
+
+      return null;
     }
 
     default:

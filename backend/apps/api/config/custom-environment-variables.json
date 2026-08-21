@@ -228,6 +228,24 @@
     "deviceId": "HUB_DEVICE_ID",
     "apiKey": "HUB_API_KEY"
   },
+  "unfurl": {
+    "enabled": {
+      "__name": "UNFURL_ENABLED",
+      "__format": "json"
+    },
+    "ratePerSecond": {
+      "__name": "UNFURL_RATE_PER_SECOND",
+      "__format": "json"
+    },
+    "openGraph": {
+      "__name": "UNFURL_OPEN_GRAPH",
+      "__format": "json"
+    },
+    "cachePosters": {
+      "__name": "UNFURL_CACHE_POSTERS",
+      "__format": "json"
+    }
+  },
   "geocoding": {
     "apiKey": "GEOCODING_API_KEY",
     "batchSize": {
