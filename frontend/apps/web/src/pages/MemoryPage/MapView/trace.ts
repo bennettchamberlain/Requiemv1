@@ -123,7 +123,12 @@ export function describeTrace({
 
   const from = totalFixes != null ? ` from ${totalFixes.toLocaleString()} fixes` : '';
 
-  return `${shown}${from}, averaged over ${formatBucket(bucketSeconds)}`;
+  // NOT "averaged" — the server's `first(..., time)` picks one real fix per
+  // bucket rather than averaging them, precisely so a bucket spanning a
+  // flight lands on a real point and not an average position in the ocean.
+  // The copy has to say what the number actually is: a real fix sampled every
+  // so often, not a synthetic mean.
+  return `${shown}${from}, sampled every ${formatBucket(bucketSeconds)}`;
 }
 
 /** A bucket width as the coarsest unit that still reads as a round number. */

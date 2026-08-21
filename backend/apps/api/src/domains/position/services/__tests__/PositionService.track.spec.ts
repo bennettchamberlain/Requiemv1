@@ -63,7 +63,12 @@ function makeService({ rows = [] as Record<string, unknown>[], total = 0 } = {})
     ),
     executed,
     page: () =>
-      executed.find((call) => /FROM ci\.position p/.test(call.sql) && !call.sql.includes('count(*) AS n'))!,
+      executed.find(
+        (call) =>
+          /FROM ci\.position p/.test(call.sql) &&
+          !call.sql.includes('count(*) AS n') &&
+          !call.sql.includes('min(time)'),
+      )!,
     count: () => executed.find((call) => call.sql.includes('count(*) AS n')),
   };
 }
@@ -122,7 +127,9 @@ describe('PositionService.findTrack — user scoping', () => {
 
 describe('PositionService.findTrack — downsampling', () => {
   it("buckets a thirteen-year window to the caller's point budget", async () => {
-    const harness = makeService({ rows: [bucketRow()] });
+    // total exceeds the budget, or the in-view count alone would pick raw
+    // mode and the bucketed branch below would never run.
+    const harness = makeService({ rows: [bucketRow()], total: 63_044 });
 
     const page = await run(harness, { maxPoints: 2_000 });
 
@@ -135,7 +142,7 @@ describe('PositionService.findTrack — downsampling', () => {
   });
 
   it('groups and orders by the bucket, which is what makes the time cursor valid', async () => {
-    const harness = makeService({ rows: [bucketRow()] });
+    const harness = makeService({ rows: [bucketRow()], total: 63_044 });
 
     await run(harness, {});
 
@@ -146,7 +153,7 @@ describe('PositionService.findTrack — downsampling', () => {
   });
 
   it("takes each bucket's first REAL fix, never an average of it", async () => {
-    const harness = makeService({ rows: [bucketRow()] });
+    const harness = makeService({ rows: [bucketRow()], total: 63_044 });
 
     await run(harness, {});
 
@@ -158,7 +165,7 @@ describe('PositionService.findTrack — downsampling', () => {
   });
 
   it('reports the bucket weight so a heat layer is honest about density', async () => {
-    const harness = makeService({ rows: [bucketRow({ fix_count: 4_129 })] });
+    const harness = makeService({ rows: [bucketRow({ fix_count: 4_129 })], total: 63_044 });
 
     const page = await run(harness, {});
 
@@ -167,7 +174,7 @@ describe('PositionService.findTrack — downsampling', () => {
   });
 
   it('reads raw fixes when the caller switches downsampling off', async () => {
-    const harness = makeService({ rows: [bucketRow({ fix_count: 1 })] });
+    const harness = makeService({ rows: [bucketRow({ fix_count: 1 })], total: 63_044 });
 
     const page = await run(harness, { maxPoints: 0 });
 
@@ -179,8 +186,22 @@ describe('PositionService.findTrack — downsampling', () => {
     expect(harness.page().sql).not.toContain('make_interval');
   });
 
+  it('skips the span round trip entirely once maxPoints:0 already settles raw mode', async () => {
+    const harness = makeService({ rows: [], total: 63_044 });
+
+    await run(harness, { maxPoints: 0 });
+
+    // The whole point of asking for raw fixes is to skip downsampling — the
+    // min/max read exists only to size a bucket, so it must never fire here,
+    // even though the in-view total (63,044) is far past the point budget.
+    expect(harness.executed.some((call) => call.sql.includes('min(time)'))).toBe(false);
+  });
+
   it('reads raw fixes for a window too narrow to be worth bucketing', async () => {
-    const harness = makeService({ rows: [] });
+    // total still exceeds the budget so the bounded-window shortcut inside
+    // resolveTrackSpanMs — not the in-view-count raw shortcut — is what this
+    // test is actually exercising.
+    const harness = makeService({ rows: [], total: 5_000 });
 
     const page = await run(harness, {
       startTime: new Date('2026-08-20T10:00:00Z'),
@@ -190,6 +211,46 @@ describe('PositionService.findTrack — downsampling', () => {
     expect(page.bucketSeconds).toBeNull();
     // A bounded window is its own span — no min/max round trip needed.
     expect(harness.executed.some((call) => call.sql.includes('min(time)'))).toBe(false);
+  });
+
+  it('serves every fix once the viewport holds fewer of them than the point budget', async () => {
+    // The whole reason this matters: a street-level viewport with only a few
+    // hundred real fixes must show each one, not the same coarse sample the
+    // world view gets — zooming in has to actually sharpen the trace.
+    const harness = makeService({ rows: [bucketRow({ fix_count: 1 })], total: 340 });
+
+    const page = await run(harness, {
+      bbox: [-118.3, 34.05, -118.28, 34.07],
+      maxPoints: 2_000,
+    });
+
+    expect(page.bucketSeconds).toBeNull();
+    expect(harness.page().sql).not.toContain('time_bucket');
+    // Bucketing exists only to shrink a read past the budget — 340 already
+    // fits, so the span this method exists to size a bucket from must never
+    // be read.
+    expect(harness.executed.some((call) => call.sql.includes('min(time)'))).toBe(false);
+  });
+
+  it("sizes the bucket off the viewport's OWN span, not the whole table's", async () => {
+    // A viewport packed with 21,997 fixes still needs bucketing (the budget
+    // is 2,000), but the bucket must come from what's actually in the box —
+    // otherwise every zoom level sees the same whole-history bucket width and
+    // zooming in never sharpens anything.
+    const harness = makeService({ rows: [bucketRow()], total: 21_997 });
+    const bbox: [number, number, number, number] = [-118.9, 33.5, -117.6, 34.8];
+
+    await run(harness, { bbox, maxPoints: 2_000 });
+
+    const spanQuery = harness.executed.find((call) => call.sql.includes('min(time)'));
+
+    expect(spanQuery).toBeDefined();
+    // The span read must carry the SAME viewport predicate the page and the
+    // count do — a bucket derived from an unfiltered min/max is exactly the
+    // whole-history-span bug this scoping fixes.
+    expect(spanQuery!.sql).toContain('ST_MakeEnvelope(');
+    expect(spanQuery!.sql).toContain('p.user_id = $1');
+    expect(spanQuery!.params).toEqual(expect.arrayContaining(bbox));
   });
 });
 
@@ -275,7 +336,7 @@ describe('PositionService.findTrack — keyset paging', () => {
 
   it('cuts the cursor at the LAST instant the point consumed', async () => {
     const endedAt = new Date('2016-04-08T01:00:00.000Z');
-    const harness = makeService({ rows: [bucketRow({ ended_at: endedAt })] });
+    const harness = makeService({ rows: [bucketRow({ ended_at: endedAt })], total: 63_044 });
 
     const page = await run(harness, { maxPoints: 2_000 });
 

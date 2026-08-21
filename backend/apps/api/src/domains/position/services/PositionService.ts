@@ -510,11 +510,19 @@ export class PositionService {
    * Three constraints, and each one picks a piece of the query:
    *
    *   1. A world-zoom request must never ship 63k rows. So the read is
-   *      DOWNSAMPLED server-side: the window's span divided by the caller's
-   *      point budget gives a bucket width, and each bucket collapses to its
-   *      first real fix plus a count. Thirteen years against a 2,000-point
-   *      budget is a 2.4-day bucket and 316 points — measured, because only 582
-   *      of those 4,833 days carry a fix.
+   *      DOWNSAMPLED server-side: the bucket width is the IN-VIEW window's span
+   *      — bbox included, not just the caller's date filters — divided by the
+   *      point budget, and each bucket collapses to its first real fix plus a
+   *      count. That scoping is load-bearing: a bucket sized off the WHOLE
+   *      table is the same width at every zoom level, so panning into a city
+   *      that only touches three of those thirteen years used to buy nothing —
+   *      the trace stayed exactly as coarse as the world view. At world zoom,
+   *      thirteen years against a 2,000-point budget is a 2.4-day bucket and
+   *      316 points — measured, because only 582 of those 4,833 days carry a
+   *      fix — and a city-sized viewport gets its own, usually much finer,
+   *      bucket from its own in-view span. Below the point budget the read
+   *      skips bucketing altogether and returns raw fixes, one row per point —
+   *      which is what makes a fully zoomed-in view show every fix it holds.
    *   2. The client must be able to page through EVERYTHING, so paging is
    *      keyset, not offset: `time > cursor`. `ci.position`'s primary key is
    *      (time, user_id), so for one user `time` is unique — a single-column
@@ -539,19 +547,35 @@ export class PositionService {
     const cursor = decodeTrackCursor(options.after);
     const pageSize = clampPageSize(options.first);
     const boxes = normalizeBbox(options.bbox);
+    const maxPoints = clampMaxPoints(options.maxPoints);
 
     // A continuation INHERITS its bucket from the cursor instead of deriving it
     // again: the derivation depends on the window's span, and on an appliance
     // that is still ingesting, `max(time)` moves between pages. Re-deriving
     // would cut later pages on different boundaries and either duplicate or
     // skip a slice of the trace. It also saves the span round trip.
-    const bucketSeconds =
-      cursor != null
-        ? cursor.bucketSeconds
-        : resolveBucketSeconds(
-            await this.resolveTrackSpanMs(context, options),
-            clampMaxPoints(options.maxPoints),
-          );
+    //
+    // A first page instead starts by finding out what is actually IN the
+    // requested window — bbox included. That single count answers two
+    // questions at once: it IS the "N of totalFixes" the page hands back
+    // below, and it decides whether the read can stay raw (fewer fixes in
+    // view than the point budget — the case a fully zoomed-in street-level
+    // view must hit) or needs bucketing, in which case the bucket is sized off
+    // the SAME in-view window rather than the whole table. Reusing the one
+    // count for both means a raw first page (the common case once zoomed in)
+    // costs exactly one query, not the two it used to.
+    let inViewCount: number | null = null;
+    let bucketSeconds: number | null;
+
+    if (cursor != null) {
+      bucketSeconds = cursor.bucketSeconds;
+    } else {
+      inViewCount = await this.countTrackPoints(context, options);
+      bucketSeconds =
+        maxPoints <= 0 || inViewCount <= maxPoints
+          ? null
+          : resolveBucketSeconds(await this.resolveTrackSpanMs(context, options, boxes), maxPoints);
+    }
 
     const where = this.buildTrackWhere(context, options, boxes, cursor?.time);
     const params = [...where.params];
@@ -610,17 +634,19 @@ export class PositionService {
       hasNextPage,
       endCursor: points.length > 0 ? points[points.length - 1].cursor : null,
       bucketSeconds,
-      // Counted once per walk, on the first page. A COUNT(*) is a second scan of
-      // the same rows, and the answer cannot change between pages of one walk —
-      // paying for it on every page would double the cost of the whole trace.
-      totalCount: cursor == null ? await this.countTrackPoints(context, options) : null,
+      // Counted once per walk, on the first page — reusing the SAME count that
+      // decided raw-vs-bucketed above, not a second scan of the same rows. The
+      // answer cannot change between pages of one walk, so a continuation
+      // leaves this null rather than paying for it again.
+      totalCount: inViewCount,
     };
   }
 
   /**
    * Raw fixes matching a track read's filters, ignoring the downsample and the
    * page cap — so the UI can say "316 of 63,044 fixes" rather than presenting a
-   * sampled trace as the whole history.
+   * sampled trace as the whole history. `findTrack` also reuses this same
+   * count, on the first page, to decide whether the read can stay raw at all.
    */
   async countTrackPoints(context: UserServiceContext, options: TrackOptions = {}): Promise<number> {
     const where = this.buildTrackWhere(context, options, normalizeBbox(options.bbox));
@@ -634,35 +660,41 @@ export class PositionService {
   }
 
   /**
-   * The span the downsample budget is divided by.
+   * The span the downsample budget is divided by — of the window actually IN
+   * VIEW, bbox included, not the whole table.
    *
    * When the caller bounded the window (the explorer's date filters), that IS
-   * the span — no query needed. Otherwise it is the user's own first-to-last
-   * fix, read off `position_user_id_time_idx` (~30ms on the 63k-row table).
-   * Deliberately NOT narrowed by the viewport box: that would need the GiST
-   * scan, and the budget is a bound on how much we ship, not a measurement —
-   * a wrong-by-a-factor span only makes the trace coarser or finer, never wrong.
+   * the span — no query needed. Otherwise it is the min/max time among fixes
+   * matching every filter the page itself uses (`buildTrackWhere`, bbox
+   * included), so it lands on the SAME index the page and the count already
+   * pay for — `position_location_idx`'s GiST scan when there is a viewport,
+   * `position_user_id_time_idx` when there is not — rather than a second,
+   * differently-shaped one.
+   *
+   * Narrowing by the viewport is the fix for the bug this method used to have:
+   * sizing the bucket off the WHOLE table makes it the same width at every
+   * zoom level, so panning into a city that only touches three of the table's
+   * thirteen years bought nothing — the trace stayed exactly as coarse as the
+   * world view no matter how far in you zoomed. `findTrack` only calls this
+   * once it already knows (from {@link countTrackPoints}) that the in-view fix
+   * count exceeds the point budget, so this is never the wasted round trip a
+   * window small enough to serve raw would otherwise pay.
    */
-  private async resolveTrackSpanMs(context: UserServiceContext, options: TrackOptions): Promise<number> {
+  private async resolveTrackSpanMs(
+    context: UserServiceContext,
+    options: TrackOptions,
+    boxes: TrackBbox[],
+  ): Promise<number> {
     if (options.startTime && options.endTime) {
       return options.endTime.getTime() - options.startTime.getTime();
     }
 
-    const params: unknown[] = [context.userId];
-    let sql = 'SELECT min(time) AS from_time, max(time) AS to_time FROM ci.position WHERE user_id = $1';
-
-    if (options.startTime) {
-      params.push(options.startTime);
-      sql += ` AND time >= $${params.length}`;
-    }
-
-    if (options.endTime) {
-      params.push(options.endTime);
-      sql += ` AND time < $${params.length}`;
-    }
-
+    const where = this.buildTrackWhere(context, options, boxes);
     const rows: Array<{ from_time: Date | null; to_time: Date | null }> =
-      await this.positionRepository.manager.query(sql, params);
+      await this.positionRepository.manager.query(
+        `SELECT min(time) AS from_time, max(time) AS to_time FROM ci.position p WHERE ${where.sql}`,
+        where.params,
+      );
     const from = rows[0]?.from_time;
     const to = rows[0]?.to_time;
 

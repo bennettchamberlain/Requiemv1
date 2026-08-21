@@ -8,7 +8,7 @@ import { CircleMarker, Polyline, Tooltip, useMap as useLeafletMap, useMapEvents 
 
 import { gql } from '@/graphql';
 
-import { boundsToBbox } from '../bbox';
+import { boundsToBbox, clampBboxSpan } from '../bbox';
 import { useEntityService } from '../useEntityService';
 
 import { describeTrace, traceRadius, traceSegments, type TracePoint } from './trace';
@@ -47,21 +47,49 @@ const POSITION_TRACK_QUERY = gql(`
 `);
 
 /**
- * Point budget for one window, and the ceiling on how far the client will page
- * on its own.
+ * Point budget for one window, the size of one page of it, and the ceiling on
+ * how far the client will page on its own.
  *
- * The budget is what the server divides the window's span by to pick its time
- * bucket, so it — not the size of `ci.position` — decides what a world-zoom
- * request costs. 2,000 points is roughly 160KB on the wire and renders as a
- * legible trace; the auto-page ceiling exists so that raising the budget (or
- * asking for raw fixes) still cannot walk the client into a 63k-marker DOM.
+ * The budget is what the server divides the window's IN-VIEW span by to pick
+ * its time bucket (or, once the viewport is small enough that fewer real
+ * fixes are in it than the budget, drops bucketing altogether and answers raw
+ * — see `PositionService.findTrack`) — so it, not the size of `ci.position`,
+ * decides what a request costs.
+ *
+ * The budget is deliberately WIDER than one page: `hasNextPage` can only ever
+ * be true when a window's answer (bucketed or raw) is bigger than a single
+ * page, so a budget equal to the page size — the previous setting — made the
+ * keyset pager below dead code, no matter how far the user zoomed in. Keeping
+ * the two apart is what turns zooming into a dense area (a viewport with more
+ * real fixes than one page holds, even after #1's viewport-scoped bucketing)
+ * into an actually-reachable "load the rest of what's here": the first page
+ * ships immediately and the auto-page loop below fills in the remaining pages
+ * up to the SAME `TRACE_AUTO_PAGE_LIMIT` that already bounded how many
+ * markers this layer will ever put in the DOM at once.
  */
-const TRACE_MAX_POINTS = 2_000;
+const TRACE_MAX_POINTS = 10_000;
 const TRACE_PAGE_SIZE = 2_000;
 const TRACE_AUTO_PAGE_LIMIT = 10_000;
 
 /** Pad the viewport before asking, so a small pan doesn't blank the trace's edges. */
 const TRACE_VIEWPORT_PAD = 0.35;
+
+/**
+ * Ceiling on the PADDED viewport's own span, comfortably under the server's
+ * `MAX_BBOX_LON_SPAN` / `MAX_BBOX_LAT_SPAN` (120° / 60° — `positionTrack.ts`).
+ * A raw viewport does not need to be anywhere near that wide for
+ * `TRACE_VIEWPORT_PAD` to push it over: at a 0.35 pad ratio (35% added to
+ * each edge) a raw lat span past ~35° already crosses 60° once padded — a tall
+ * portrait viewport at a middling zoom level, not an edge case. The server's
+ * response to a too-wide bbox is to drop the spatial predicate ENTIRELY
+ * rather than narrow it, so an unclamped pad can silently turn a
+ * viewport-scoped request into an unscoped, whole-history one. Kept
+ * meaningfully below the server's actual ceiling (not equal to it) so this
+ * never depends on exact floating-point agreement with a comparison this
+ * client cannot see.
+ */
+const TRACE_BBOX_MAX_LON_SPAN = 115;
+const TRACE_BBOX_MAX_LAT_SPAN = 55;
 
 type TrackPage = {
   points: TracePoint[];
@@ -98,7 +126,13 @@ function usePositionTrack({ enabled }: { enabled: boolean }) {
   const syncViewport = useCallback(
     (map: L.Map) => {
       if (enabled) {
-        setBbox(boundsToBbox(map.getBounds().pad(TRACE_VIEWPORT_PAD)));
+        setBbox(
+          clampBboxSpan(
+            boundsToBbox(map.getBounds().pad(TRACE_VIEWPORT_PAD)),
+            TRACE_BBOX_MAX_LON_SPAN,
+            TRACE_BBOX_MAX_LAT_SPAN,
+          ),
+        );
       }
     },
     [enabled],

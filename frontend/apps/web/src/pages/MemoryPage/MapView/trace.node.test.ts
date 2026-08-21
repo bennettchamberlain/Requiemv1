@@ -55,6 +55,13 @@ describe('traceSegments', () => {
     // Two adjacent downsampled buckets are continuous even though their START
     // instants are a whole bucket apart. Comparing starts would shatter a
     // continuous trace into single points at any bucket wider than the gap.
+    //
+    // This bucket (2.4 days) is deliberately narrower than TRACE_GAP_MS
+    // (3 days), which means it does NOT distinguish end-to-start from
+    // start-to-start: `start(second) - start(first)` is one bucket-width, and
+    // one bucket-width already fits under the 3-day gap either way. Kept as a
+    // readable baseline case; the case below is the one that actually proves
+    // which endpoint is compared.
     const bucketMs = 2.4 * 24 * HOUR_MS;
     const first = point(
       '2024-05-01T00:00:00.000Z',
@@ -70,6 +77,34 @@ describe('traceSegments', () => {
     );
 
     expect(traceSegments([first, second])).toHaveLength(1);
+  });
+
+  it('stays continuous across a bucket WIDER than the gap threshold, which only an end-to-start comparison can tell', () => {
+    // The case above cannot actually distinguish end-to-start from
+    // start-to-start: at a 2.4-day bucket, `start(second) - start(first)`
+    // (one bucket-width) is already under the 3-day TRACE_GAP_MS, so both a
+    // correct and a buggy (start-vs-start) comparison call it continuous.
+    //
+    // Here the bucket is 4 days — WIDER than TRACE_GAP_MS. The two points are
+    // still truly adjacent (second.startTime === first.endTime, zero real
+    // gap), so the correct end-to-start comparison sees a 0ms gap and joins
+    // them. A start-to-start comparison would instead see the full 4-day
+    // bucket width, which exceeds the 3-day threshold, and shatter the trace
+    // into two single-point (undrawn) stretches — producing zero segments
+    // instead of one. That is exactly the difference this test pins.
+    const bucketMs = 4 * 24 * HOUR_MS;
+    const firstStart = '2024-05-01T00:00:00.000Z';
+    const firstEnd = new Date(Date.parse(firstStart) + bucketMs).toISOString();
+    const secondEnd = new Date(Date.parse(firstStart) + 2 * bucketMs).toISOString();
+
+    const first = point(firstStart, firstEnd, 34.0, -118.3);
+    const second = point(firstEnd, secondEnd, 34.1, -118.4);
+
+    expect(traceSegments([first, second])).toHaveLength(1);
+    expect(traceSegments([first, second])[0]).toEqual([
+      [34.0, -118.3],
+      [34.1, -118.4],
+    ]);
   });
 
   it('drops stretches of one, which draw nothing as a line', () => {
@@ -127,7 +162,7 @@ describe('describeTrace', () => {
     // 316 points standing for 63,044 fixes — the live figures. Reporting only
     // the point count would present a sampled trace as the whole history.
     expect(describeTrace({ points: 316, totalFixes: 63_044, bucketSeconds: 207_360, hasMore: false })).toBe(
-      '316 points from 63,044 fixes, averaged over 2.4 days',
+      '316 points from 63,044 fixes, sampled every 2.4 days',
     );
   });
 
@@ -148,10 +183,10 @@ describe('describeTrace', () => {
       '1 point (every fix)',
     );
     expect(describeTrace({ points: 10, totalFixes: 40, bucketSeconds: 3_600, hasMore: false })).toBe(
-      '10 points from 40 fixes, averaged over 1 hour',
+      '10 points from 40 fixes, sampled every 1 hour',
     );
     expect(describeTrace({ points: 10, totalFixes: 40, bucketSeconds: 90, hasMore: false })).toBe(
-      '10 points from 40 fixes, averaged over 1.5 minutes',
+      '10 points from 40 fixes, sampled every 1.5 minutes',
     );
   });
 
