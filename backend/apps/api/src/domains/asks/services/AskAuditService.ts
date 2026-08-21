@@ -44,6 +44,14 @@ export class AskAuditService {
       consentBasis: data.consentBasis ?? null,
       outcome: data.outcome,
       disclosedEntities: data.disclosedEntities ?? [],
+      // The magnitude, not the itemization. `disclosedEntities` is empty for
+      // every form but `retrieval`, so deriving the count from it audited a
+      // real `count`/`boolean` disclosure as "nothing was shared" — see
+      // {@link AskAuditEntity.disclosedCount}. The itemized length is the
+      // FALLBACK, not the source: it is correct for `retrieval` and for the
+      // outcomes that disclose nothing, and wrong for exactly the forms this
+      // field exists to record.
+      disclosedCount: data.disclosedCount ?? data.disclosedEntities?.length ?? 0,
       backingEntities: data.backingEntities ?? [],
     });
     const entity = await repository.save(record);

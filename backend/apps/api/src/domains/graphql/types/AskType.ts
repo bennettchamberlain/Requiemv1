@@ -100,6 +100,10 @@ export class AskType {
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
 
+  /**
+   * When the ask was last touched — REAL for the responder, pinned to
+   * `createdAt` for the asker. See {@link askerVisibleUpdatedAt}.
+   */
   @Field(() => GraphQLISODateTime)
   updatedAt!: Date;
 
@@ -124,7 +128,7 @@ export class AskType {
       status: isResponder ? (ask.status as AskStatusEnum) : askerVisibleStatus(ask.status),
       consentBasis: isResponder ? ask.consentBasis : null,
       createdAt: ask.createdAt,
-      updatedAt: ask.updatedAt,
+      updatedAt: isResponder ? ask.updatedAt : askerVisibleUpdatedAt(ask),
       expiresAt: ask.expiresAt,
     };
   }
@@ -171,6 +175,41 @@ export class AskType {
  */
 export function askerVisibleStatus(status: string): AskStatusEnum {
   return status === 'answered' ? AskStatusEnum.answered : AskStatusEnum.delivered;
+}
+
+/**
+ * What the ASKER is allowed to know about WHEN their ask was last touched:
+ * nothing past the moment they sent it.
+ *
+ * ═══ THE TIMING CHANNEL #2216 LEFT OPEN ═══
+ *
+ * Collapsing `status` closed the state oracle and left the CLOCK. `updatedAt`
+ * is an `@UpdateDateColumn` on `ci.asks`, so every responder-side write moves
+ * it: the review transition, the owner's approve, the consent-basis stamp, the
+ * decline. All three submit-time postures write at submit, so there is no
+ * differential THERE — the leak is the later mutation. An asker polling `ask(id)`
+ * watches a timestamp that only ever moves because a human on the other side
+ * did something, and the SHAPE of the movement re-derives what `status` no
+ * longer says: one move within seconds is the auto-deny, a move hours later is
+ * a person reading the inbox, no move at all is an ask nobody has touched.
+ * Bounded, like the status oracle before it, only by the rate limit.
+ *
+ * Pinning rather than nulling: `updatedAt` is non-null in the schema and the
+ * asker legitimately has a timestamp for their own ask — the one they created.
+ * A frozen `createdAt` is a truthful value that carries no responder activity,
+ * and it keeps the field non-nullable for existing clients. The one event the
+ * asker may legitimately observe, an answer arriving, still reaches them: the
+ * `answered` status survives the status collapse and `AskAnswerType.createdAt`
+ * carries its own timestamp.
+ *
+ * This applies to the OUTBOUND asker too, whose responder is a remote peer —
+ * `isResponder` is false for them, exactly as {@link askerVisibleStatus}
+ * already assumes.
+ *
+ * Pure.
+ */
+export function askerVisibleUpdatedAt(ask: Pick<Ask, 'createdAt'>): Date {
+  return ask.createdAt;
 }
 
 /** A standing consent grant (the Grant Manager matrix). */
@@ -285,6 +324,19 @@ export class AskAuditType {
   @Field(() => AskAuditOutcomeEnum)
   outcome!: AskAuditOutcomeEnum;
 
+  /**
+   * HOW MUCH crossed to the asker.
+   *
+   * The history used to be able to show only WHICH references were disclosed,
+   * and only the `retrieval` form has any — so a `count` or `existence` answer
+   * that handed over a real magnitude rendered as an empty disclosure. This is
+   * the owner's own receipt (`askDisclosureHistory` is responder-scoped), so it
+   * carries the true number, unlike {@link AskAnswerType} which narrows it for
+   * the asker.
+   */
+  @Field(() => Int)
+  disclosedCount!: number;
+
   @Field(() => GraphQLISODateTime)
   createdAt!: Date;
 
@@ -298,6 +350,7 @@ export class AskAuditType {
       query: AskQueryType.toType(audit.query),
       consentBasis: audit.consentBasis,
       outcome: audit.outcome as AskAuditOutcomeEnum,
+      disclosedCount: audit.disclosedCount,
       createdAt: audit.createdAt,
     };
   }

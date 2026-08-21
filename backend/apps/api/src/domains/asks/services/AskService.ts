@@ -251,6 +251,12 @@ export class AskService {
       const answer = await this.answerService.create({ askId: id, answer: disclosure.answer }, manager);
       const ask = await this.complete(context, id, disclosure.disclosedEntityIds, {
         backingEntityIds: disclosure.backingEntityIds,
+        // The MAGNITUDE has to travel separately from the references. Only the
+        // `retrieval` form itemizes, so `disclosedEntityIds` is empty for a
+        // `count` or `boolean` answer that nonetheless handed the asker a real
+        // number — and the audit, deriving from the ids alone, recorded that as
+        // an empty disclosure.
+        disclosedCount: disclosure.answer.disclosedCount,
         manager,
       });
 
@@ -269,12 +275,17 @@ export class AskService {
    * `options.backingEntityIds` is the owner-only record of what the answer was
    * computed over; the two are separate fields precisely so the audit stops
    * claiming the candidate set was disclosed.
+   *
+   * `options.disclosedCount` is the MAGNITUDE that crossed, which for every
+   * non-itemizing form is the only thing that did. Omitted, the audit falls
+   * back to `disclosedEntityIds.length` — right for `retrieval`, and right for
+   * the callers here that disclose nothing at all.
    */
   async complete(
     context: UserServiceContext,
     id: string,
     disclosedEntityIds: string[],
-    options: { backingEntityIds?: string[]; manager?: EntityManager } = {},
+    options: { backingEntityIds?: string[]; disclosedCount?: number; manager?: EntityManager } = {},
   ): Promise<Ask> {
     const entity = await this.responderOwned(context, id, options.manager);
 
@@ -313,6 +324,7 @@ export class AskService {
         consentBasis: saved.consentBasis,
         outcome: isAuto ? 'auto_answered' : 'answered',
         disclosedEntities: disclosedEntityIds,
+        disclosedCount: options.disclosedCount,
         backingEntities: options.backingEntityIds ?? [],
       },
       options.manager,
