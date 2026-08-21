@@ -145,7 +145,7 @@ export { StagedSourceService, UPLOAD_TTL_MS } from './services/StagedSourceServi
 export { StagedUploadPurgeCron, STAGED_UPLOAD_PURGE_CRON } from './listeners/StagedUploadPurgeCron';
 export { ImportRetentionCron, IMPORT_RETENTION_CRON } from './listeners/ImportRetentionCron';
 export { ImportRetentionService } from './services/ImportRetentionService';
-export type { RetentionSweepResult } from './services/ImportRetentionService';
+export type { DiscardedRun, RetentionSweepResult } from './services/ImportRetentionService';
 export type { RegisterUploadInput } from './services/StagedSourceService';
 
 export { ImportInboxService, MAX_INBOX_BATCH_UNITS } from './services/ImportInboxService';

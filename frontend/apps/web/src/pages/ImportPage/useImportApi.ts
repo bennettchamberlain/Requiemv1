@@ -217,6 +217,28 @@ export interface UnpushedRun extends ImportRun {
   readonly pendingEntities: number;
 }
 
+/**
+ * What a discard took, itemised — see `DELETE /import/runs/:runId`.
+ *
+ * The last three fields are the halves that were NOT taken, and they are why
+ * this is a shape rather than a boolean. `uploadsRestaged`: an archive the
+ * appliance still holds goes back to the uploads list instead of being
+ * destroyed with the parse. `mediaFilesKept` / `attachmentContentsKept`: the
+ * photos and attachments the media stage had already stored stay in the user's
+ * memory, because after the fact nothing can prove this run is the only import
+ * that put them there. Only the server knows which of these happened, so only
+ * the server can say — the UI must not guess.
+ */
+export interface DiscardedRun {
+  readonly runId: string;
+  readonly label: string | null;
+  readonly stagedRowsDeleted: number;
+  readonly sourceRowsDeleted: number;
+  readonly uploadsRestaged: number;
+  readonly mediaFilesKept: number;
+  readonly attachmentContentsKept: number;
+}
+
 /** One importable thing the inbox scan found — a file, or a whole recognized directory. */
 export interface InboxUnit {
   /** Path relative to the inbox folder — the handle importInbox takes. */
@@ -492,6 +514,20 @@ export function useImportApi() {
     [authHeaders],
   );
 
+  /**
+   * The opposite of Sync: throw the parse away instead of saving it.
+   *
+   * `confirm=discard` is the server's own gate and is spelled out here rather
+   * than defaulted, so the one call in this file that destroys data reads as
+   * destructive at the call site. There is no undo — the appliance keeps a
+   * parsed-but-unpushed run forever precisely because those staged rows are the
+   * only copy left of it.
+   */
+  const discardRun = useCallback(
+    async (runId: string) => del<DiscardedRun>(`/api/import/runs/${runId}?confirm=discard`, authHeaders()),
+    [authHeaders],
+  );
+
   /** What is waiting in the appliance's inbox folder. */
   const scanInbox = useCallback(
     async (): Promise<InboxScan | null> =>
@@ -555,6 +591,7 @@ export function useImportApi() {
       startRun,
       startPush,
       cancelRun,
+      discardRun,
       retryStage,
       retryFailedPush,
       scanInbox,
@@ -573,6 +610,7 @@ export function useImportApi() {
       startRun,
       startPush,
       cancelRun,
+      discardRun,
       retryStage,
       retryFailedPush,
       scanInbox,
@@ -852,6 +890,16 @@ export function useActiveImports(
   const refresh = useCallback(() => kick.current(), []);
 
   return { snapshot, error, refresh };
+}
+
+async function del<T>(url: string, headers: Record<string, string>): Promise<T> {
+  const response = await fetch(url, { method: 'DELETE', headers });
+
+  if (!response.ok) {
+    throw new Error(await describeFailure(response, 'Request failed'));
+  }
+
+  return (await response.json()) as T;
 }
 
 async function post<T>(url: string, headers: Record<string, string>, body: unknown): Promise<T> {

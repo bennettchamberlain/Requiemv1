@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { CronExpression } from '@nestjs/schedule';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
@@ -10,6 +9,18 @@ import { OnEvent, EventService } from '@ci/domains/events';
 import { ConnectionSyncJobExecuteEvent, ConnectionSyncJobTransformEvent } from '../events';
 import { ConnectionSyncJobService } from '../services/ConnectionSyncJobService';
 import { EndpointServiceMap } from '../services/EndpointServiceMap';
+
+// Seconds 5, 8/38 and 15, not 0. These are the appliance's heaviest recurring
+// sweeps — four unbounded `search()` calls between them — and both constants
+// they replace fire on second 0, where every schedule that never picked one
+// already lands. Cadence is unchanged: `CronExpression.EVERY_MINUTE` is
+// `*/1 * * * *`, which `cron` right-aligns to second 0 of every minute, and
+// `EVERY_30_SECONDS` is `*/30` on the seconds field — seconds 0 and 30, so an
+// offset copy needs both halves of the pair. See
+// common/schedule/__tests__/cronSecondOffsets.test.ts for who holds what.
+const ORCHESTRATE_SYNC_JOBS_CRON = '5 * * * * *';
+const EXECUTE_SYNC_JOBS_CRON = '8,38 * * * * *';
+const EXECUTE_TRANSFORM_JOBS_CRON = '15 * * * * *';
 
 @Injectable()
 export class SyncOrchestrator {
@@ -30,7 +41,7 @@ export class SyncOrchestrator {
    * For historical syncs, this is where there are no prior ones, or the last one was successful and has a nextCursor,
    * or the last one was successful and has no nextCursor but was completed more than TTL ago.
    */
-  @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.orchestrateSyncJobs' })
+  @Cron(ORCHESTRATE_SYNC_JOBS_CRON, { name: 'SyncOrchestrator.orchestrateSyncJobs' })
   async orchestrateSyncJobs(): Promise<void> {
     const activeConnections = await this.connectionService.findActiveConnections();
 
@@ -232,7 +243,7 @@ export class SyncOrchestrator {
    * It will only execute one endpoint job per connection to avoid rate limits.
    * It will also limit itself to 5 total jobs in progress to avoid overwhelming the system.
    */
-  @Cron(CronExpression.EVERY_30_SECONDS, { name: 'SyncOrchestrator.executeSyncJobs' })
+  @Cron(EXECUTE_SYNC_JOBS_CRON, { name: 'SyncOrchestrator.executeSyncJobs' })
   async executeSyncJobs(): Promise<void> {
     const pendingSyncJobs = await this.connectionSyncJobService.search(
       { userId: SYSTEM_USER },
@@ -434,7 +445,7 @@ export class SyncOrchestrator {
    * This method finds sync jobs that need to be transformed, retrieves their data, then
    * calls the appropriate transformation function based on the connection and endpoint.
    */
-  @Cron(CronExpression.EVERY_MINUTE, { name: 'SyncOrchestrator.executeTransformJobs' })
+  @Cron(EXECUTE_TRANSFORM_JOBS_CRON, { name: 'SyncOrchestrator.executeTransformJobs' })
   async executeTransformJobs(): Promise<void> {
     const syncJobsToTransform = (
       await this.connectionSyncJobService.search(

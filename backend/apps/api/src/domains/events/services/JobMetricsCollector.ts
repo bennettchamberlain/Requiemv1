@@ -19,10 +19,16 @@ import { JobMetricEntity } from '../entities/JobMetricEntity';
  */
 const SAMPLE_INTERVAL_MINUTES = 5;
 
-const SAMPLE_CRON = `0 */${SAMPLE_INTERVAL_MINUTES} * * * *`;
+// Seconds 18 and 48, not 0. Both bodies are full-table scans of `pgboss.job`
+// / `ci.job_metrics`, and second 0 is where every schedule that never picked
+// one already fires. The offset does not change the sample window: successive
+// ticks stay SAMPLE_INTERVAL_MINUTES apart, which is what `sample()` subtracts
+// from its own fire time. See
+// common/schedule/__tests__/cronSecondOffsets.test.ts for who holds what.
+const SAMPLE_CRON = `18 */${SAMPLE_INTERVAL_MINUTES} * * * *`;
 
 /** Purge daily, off the top of the hour to avoid piling onto other crons. */
-const PURGE_CRON = '0 25 4 * * *';
+const PURGE_CRON = '48 25 4 * * *';
 
 /**
  * How much history to keep. Long enough to answer "is this worse than last
