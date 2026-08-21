@@ -74,6 +74,50 @@ function participantType(participant: GVEntity): 'contact' | 'short_code' {
 export const GV_FILE_THREAD_PREFIX = 'googlevoice:file:';
 
 /**
+ * Drop the copy index a file manager appends when the SAME export file lands
+ * twice — "… (2).html", "…(1).html" — so both replicas describe one record.
+ *
+ * A Google Voice call/voicemail item carries no `item.id`, so `hashItem` keys
+ * it on `sha1(dataSource, classification, content.filename, isoTimestamp)`.
+ * The filename is therefore part of its identity, and a Drive/Takeout copy
+ * suffix makes one call hash three different ways: on the QA appliance
+ * "Chris Spagnuolo - 2013-06-14T15_07_34Z.html", "… (2).html" and "… (3).html"
+ * all describe the one 15:07:34 call and reached ci.communications as three
+ * rows the provenance arbiter could never collapse. That contradicts what
+ * `hashItem` is FOR — it already excludes `intermediateLocation` so the same
+ * record replicated into two folders collapses, and a copy index is that same
+ * replication wearing a different name.
+ *
+ * ## Why the timestamp anchor, and not a bare `\s*\(\d+\)$`
+ *
+ * Google Voice ALSO uses "(n)" to disambiguate its OWN filename collisions,
+ * and it truncates a long name before doing so. 419 staged files on the QA
+ * appliance have that shape — "Elisabeth (Lisa) Turner - Missed -
+ * 2016-01-08T17_3(1).html" beside "…T17_3(2).html" — and those are two
+ * DIFFERENT calls whose names were cut mid-timestamp and then made unique.
+ * Stripping the index there would merge two real records and delete one of
+ * them at staging.
+ *
+ * So the index comes off only when what remains still ends in a COMPLETE
+ * `T##_##_##Z` export timestamp: the shape a whole Google Voice filename has
+ * and a truncated one never does. A copy of an already-truncated name keeps
+ * its index — a missed collapse costs a duplicate, a wrong collapse costs the
+ * record.
+ *
+ * The rest of the hash input is the second guard: two items only merge when
+ * their classification and their millisecond-precision timestamp match as
+ * well, so replicas of one export merge and two genuinely different records
+ * with similar names do not.
+ *
+ * Deliberately NOT applied to MMS attachment filenames. Those name real bytes
+ * on disk that are read back and uploaded, and Google Voice's own per-message
+ * index ("… -1-1.jpg") is already load-bearing there.
+ */
+export function stripCopyIndex(basename: string): string {
+  return basename.replace(/(T\d{2}_\d{2}_\d{2}Z)\s*\(\d+\)(\.[A-Za-z0-9]+)$/, '$1$2');
+}
+
+/**
  * The per-conversation grouping key for one exported HTML file.
  *
  * Google Voice exports one file per conversation, and names most of them
@@ -99,13 +143,17 @@ export const GV_FILE_THREAD_PREFIX = 'googlevoice:file:';
  *
  * The extension is stripped so the value does not read as a filename, and the
  * `googlevoice:file:` prefix marks it as synthetic rather than a contact.
+ *
+ * The copy index goes too (see {@link stripCopyIndex}): a file the exporter
+ * replicated is not a second conversation, and without this the two copies of
+ * one "Group Conversation" file become two threads holding the same messages.
  */
 export function threadKeyFor(fpath: string, conversation: string | undefined): string {
   if (conversation) {
     return conversation;
   }
 
-  const base = path.basename(fpath);
+  const base = stripCopyIndex(path.basename(fpath));
 
   return `${GV_FILE_THREAD_PREFIX}${base.replace(/\.[^.]+$/, '')}`;
 }
@@ -367,7 +415,13 @@ export class GoogleVoiceFileImporter implements FileImporter {
     // That is where 241 Person entities named after .html files came from: a
     // filename is not a person, and the honest answer is that this file does
     // not say who the contact was.
-    const basename = path.basename(fpath);
+    //
+    // The copy index is dropped first (see stripCopyIndex). It sits at the very
+    // END of the name, after the timestamp, so it never reached `label` either
+    // way — but this same `basename` is what each message below carries as
+    // `content.filename`, which IS its identity, and there the two replicas of
+    // one conversation must agree.
+    const basename = stripCopyIndex(path.basename(fpath));
     const label = basename
       .replace(/\s*-\s*(Text|Received|Placed|Missed|Voicemail|Recorded|Group Conversation)\b[\s\S]*$/i, '')
       .trim();
@@ -461,7 +515,11 @@ export class GoogleVoiceFileImporter implements FileImporter {
           timestamp: ts && !isNaN(ts.getTime()) ? ts : undefined,
           intermediateLocation: fpath,
           content: {
-            filename: path.basename(fpath),
+            // `basename`, not `path.basename(fpath)`: the copy index is off it
+            // (see stripCopyIndex), and this value is half of the item's dedup
+            // hash. `intermediateLocation` still carries the REAL path, which
+            // hashItem excludes on purpose.
+            filename: basename,
             mediaType: 'text/plain',
             data: async () => Buffer.from(text),
           },
@@ -640,7 +698,12 @@ export class GoogleVoiceFileImporter implements FileImporter {
         timestamp: ts && !isNaN(ts.getTime()) ? ts : undefined,
         intermediateLocation: fpath,
         content: {
-          filename: path.basename(fpath),
+          // Copy index removed (see stripCopyIndex). A call log carries no
+          // `item.id`, so this filename plus the timestamp IS the item's dedup
+          // key — with the index left on, one call exported twice becomes two
+          // rows with two different provenance triples, which no unique index
+          // downstream can merge again.
+          filename: stripCopyIndex(path.basename(fpath)),
           mediaType: 'text/plain',
           data: async () => Buffer.from(transcript || contentStr),
         },

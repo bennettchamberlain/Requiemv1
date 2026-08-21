@@ -1,3 +1,5 @@
+import { INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+
 import { DOCTOR_CHECKS, DOCTOR_CHECK_IDS, findCheck } from '../checks';
 
 /**
@@ -104,6 +106,39 @@ describe('doctor check registry', () => {
       'events-timestamped-at-import',
     ]) {
       expect(DOCTOR_CHECK_IDS).toContain(id);
+    }
+  });
+
+  it('promises a re-import heal only for columns a re-ingest actually refreshes', () => {
+    // The remedy is the field an agent acts on, and for the communications
+    // checks it makes a claim the ingest contract either backs or contradicts.
+    // `comms-missing-thread-id` used to say "a re-import heals every
+    // recoverable one" while `thread_id` was NOT in
+    // INGEST_REFRESH_COLUMNS.communication — so the ON CONFLICT DO UPDATE
+    // (CommunicationService.createMany) left the stored NULL exactly as it
+    // was, and an operator who followed the advice re-ran a multi-hour import
+    // for nothing. `comms-placeholder-content` makes the same promise and is
+    // CORRECT, because `content` and `preview` are on the list.
+    //
+    // Pinned in both directions on purpose: adding thread_id to the refresh set
+    // later fails this test too, which is the moment to rewrite the remedy
+    // rather than leave two sources of truth disagreeing.
+    const columnUnderTest: Record<string, string> = {
+      'comms-missing-thread-id': 'thread_id',
+      'comms-missing-participants': 'from_entity_id',
+      'comms-placeholder-content': 'content',
+    };
+
+    for (const [id, column] of Object.entries(columnUnderTest)) {
+      const remedy = findCheck(id)?.remedy ?? '';
+      // Sentence-bounded, so "a re-import will NOT correct one" in one sentence
+      // and "heals" in another cannot read as a promise.
+      const promisesHeal = /re-import[^.]*\bheals?\b|\bheals?\b[^.]*re-import/i.test(remedy);
+
+      expect({ id, promisesHeal }).toEqual({
+        id,
+        promisesHeal: INGEST_REFRESH_COLUMNS.communication.includes(column),
+      });
     }
   });
 
