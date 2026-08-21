@@ -46,8 +46,10 @@ function makeListener(
   contentType = 'image/jpeg',
   // The length recorded at upload. Defaults to whatever the read returns, i.e.
   // "the bytes are all there"; a test passing a different number is simulating
-  // a short read.
-  recordedSize?: number,
+  // a short read. `size` is a Postgres `bigint` column with no transformer, so
+  // TypeORM hands it back as a STRING at runtime even though the entity types
+  // it `number` — a test wanting to model production must be able to pass one.
+  recordedSize?: number | string,
 ) {
   const created: unknown[] = [];
   const logger = makeLogger();
@@ -148,6 +150,41 @@ describe('FilePreviewGenerationListener', () => {
   it('retries rather than skipping when the bytes came back short', async () => {
     const truncated = Buffer.from('this is not an image at all');
     const { listener, fileService } = makeListener(truncated, 'image/jpeg', truncated.length + 4096);
+
+    await expect(
+      listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false }),
+    ).rejects.toThrow();
+
+    expect(fileService.create).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `size` is a Postgres `bigint` with no transformer, so TypeORM returns it
+   * as a STRING at runtime (`"430679"`, not `430679`) even though the entity
+   * types it `number`. `!==` never coerces, so a naive
+   * `original.length !== file.size` compares a number to a string and is
+   * ALWAYS true — every intact-but-undecodable file was misrouted into the
+   * "short read" branch and retried to exhaustion instead of skipped. This is
+   * exactly what put a real, complete Google Ultra HDR JPEG (a legitimate
+   * format this build's libvips has no loader for) into the dead-letter queue
+   * in production: `bytes: 430679` next to `expectedBytes: "430679"` in the
+   * logs, string and number, identical value.
+   */
+  it('skips (does not retry) when the bytes match a `size` recorded as a string, not a number', async () => {
+    const bytes = Buffer.from('this is not an image at all');
+    const { listener, fileService, eventService } = makeListener(bytes, 'image/jpeg', String(bytes.length));
+
+    await expect(
+      listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false }),
+    ).resolves.toBeUndefined();
+
+    expect(fileService.create).not.toHaveBeenCalled();
+    expect(eventService.send).not.toHaveBeenCalled();
+  });
+
+  it('still retries a genuine short read when `size` is recorded as a string', async () => {
+    const truncated = Buffer.from('this is not an image at all');
+    const { listener, fileService } = makeListener(truncated, 'image/jpeg', String(truncated.length + 4096));
 
     await expect(
       listener.generatePreview({ userId: 'u1', fileId: 'file-1', thingCapture: false }),
