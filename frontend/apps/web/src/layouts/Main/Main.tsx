@@ -26,7 +26,7 @@ export function Main() {
   if (isMobile) {
     return (
       <PowerRailProvider variant="overlay">
-        <div className="flex h-lvh flex-col pt-[calc(var(--safe-area-top)+0.5rem)]">
+        <div className="flex h-[var(--vv-height,100dvh)] max-h-[var(--vv-height,100dvh)] flex-col pt-[var(--safe-area-top)]">
           {/* Viewport-fixed; default 16px top sits under the status bar /
               Dynamic Island. Offset past safe-area + the phone header so the
               toast is in the content well, not the notch. */}
