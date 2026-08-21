@@ -113,8 +113,27 @@ export class OutboundAskService {
     await this.auditService.record({
       askId: ask.id,
       askerUserId: ask.askerUserId,
+      // ═══ THIS ROW IS CURRENTLY WRITE-ONLY ═══
+      //
+      // NULL is the RIGHT value — the responder is the peer, not a local user,
+      // and the column's own docstring says so. But the only reader of
+      // `ci.ask_audit` is `AskAuditService.listForResponder`, which selects
+      // `responder_user_id = <caller>`, so no outbound row can ever match: the
+      // outcome of every ask this box sends is recorded and then unreadable.
+      //
+      // The fix is a reader, not a different value here. Writing the local
+      // caller into `responderUserId` to make the row visible would claim this
+      // box answered its own outbound ask, and the disclosure history would
+      // then list asks we SENT among the ones we ANSWERED — a far worse lie
+      // than an invisible row. `listForAsker` (paired with a
+      // `myOutboundAskHistory` query) belongs in `domains/asks` /
+      // `domains/graphql`; see the PR body.
       responderUserId: null,
       peerLinkId: link.id,
+      // Denormalized at send time, exactly as the inbound path does it: the
+      // link can be revoked or re-pointed later, and a history row that can
+      // only say "link-1" is not a history of anything a person can read.
+      peerHandle: link.peerHandle,
       query: ask.query,
       consentBasis: null,
       outcome,
