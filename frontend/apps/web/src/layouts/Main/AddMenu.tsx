@@ -252,11 +252,15 @@ export function AddMenu() {
                           if (status === 'already_running') {
                             toast.info('Prediction pipeline is already running');
                           } else if (status === 'triggered') {
-                            toast.success('Prediction pipeline started');
+                            toast.success(
+                              'Prediction started — this can take about an hour. Watch Forecast for progress.',
+                            );
                           } else if (status === 'error' || !status) {
                             toast.error('Failed to trigger prediction pipeline');
                           } else {
-                            toast.success('Prediction pipeline started');
+                            toast.success(
+                              'Prediction started — this can take about an hour. Watch Forecast for progress.',
+                            );
                           }
                         }}
                         className="h-16 w-16 flex flex-col items-center justify-center cursor-pointer rounded-md p-1"

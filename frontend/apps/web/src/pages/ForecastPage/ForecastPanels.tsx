@@ -5,12 +5,21 @@ import { Card, cn } from '@ci/shadcn';
 import type { ForecastBucket } from '@/api/useForecastService';
 import { l0Background } from '@/components/ForecastStrip/ForecastStrip';
 import { normalizeClass } from '@/lib/activityPalette';
+import { placeVisible } from '@/lib/forecastDisplay';
 
+import {
+  COMMIT_MASS,
+  branchPick,
+  formatSlotClock,
+  pickOpenSlot,
+  rankSaccades,
+} from './forageModel';
 import {
   HEATMAP_COLUMNS,
   MINUTES_PER_SLOT,
   buildHeatmapRows,
   formatClock,
+  formatRowLabel,
   tallyDivergence,
   type HeatmapCell,
 } from './heatmapModel';
@@ -73,6 +82,178 @@ function baselineProbability(historyDays: HistoryDay[], bucketIndex: number, lab
   }
 
   return samples.reduce((sum, value) => sum + value, 0) / samples.length;
+}
+
+export function OccupancyHonestyPanel() {
+  return (
+    <Card data-testid="occupancy-honesty">
+      <Card.Header>
+        <Card.Title>Every label counts as one</Card.Title>
+        <Card.Description>
+          Occupancy is unweighted. A three-hour gym session and a one-minute Slack ping are the same
+          vote if each is one labeled event.
+        </Card.Description>
+      </Card.Header>
+      <Card.Content className="flex flex-col gap-3 text-sm">
+        <p className="text-muted-foreground">
+          The serializer writes one L0 token per event with <code>soft_prob = [1.0]</code>, parked in
+          the 30-minute bucket of <code>start_time</code>. Baselines add +1 per token. Duration never
+          enters. Source type never enters. Twenty emails in a half-hour outvote one long workout.
+        </p>
+        <dl className="grid gap-2 sm:grid-cols-2">
+          <div>
+            <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Counted</dt>
+            <dd>Event count per L0 class in a bucket</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Not counted</dt>
+            <dd>How long it lasted, which app it came from</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Day kernel</dt>
+            <dd>Recency × weekday × month × coverage — weights days, not labels</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Summary fill</dt>
+            <dd>Gap tokens at 0.7, only where no event already sits</dd>
+          </div>
+        </dl>
+      </Card.Content>
+    </Card>
+  );
+}
+
+export function BranchTexturePanel({
+  buckets,
+  nowMs,
+}: {
+  buckets: ForecastBucket[];
+  nowMs?: number;
+}) {
+  const slot = useMemo(() => pickOpenSlot(buckets, nowMs ?? Date.now()), [buckets, nowMs]);
+  if (!slot) {
+    return null;
+  }
+
+  const pick = branchPick(slot);
+  const clock = formatSlotClock(slot.startTime);
+
+  return (
+    <Card data-testid="branch-texture">
+      <Card.Header>
+        <Card.Title>Branches for {clock}</Card.Title>
+        <Card.Description>
+          The most unsettled upcoming half-hour. Slider 1 is L0 (the branch). Slider 2 is L1 under
+          that slot (the permutation) — Forager&apos;s who-you-meet factor, on the labels we actually
+          have. A pick commits at mass {Math.round(COMMIT_MASS * 100)}%.
+        </Card.Description>
+      </Card.Header>
+      <Card.Content className="flex flex-col gap-4">
+        <div>
+          <div className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Branch · L0
+            {pick.ready ? ` · committed ${pick.branch}` : ' · not ready'}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {pick.branches.slice(0, 5).map((row) => (
+              <div key={row.label} className="flex items-center gap-2 text-sm">
+                <span className="w-24 shrink-0 truncate font-medium">{row.label}</span>
+                <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-sm bg-muted">
+                  <div
+                    className="h-full"
+                    style={{
+                      width: `${Math.round(row.mass * 100)}%`,
+                      backgroundColor: l0Background(normalizeClass(row.label)),
+                    }}
+                  />
+                </div>
+                <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
+                  {Math.round(row.mass * 100)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {pick.permutations.length > 0 && (
+          <div>
+            <div className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+              Permutations · L1
+              {pick.texture ? ` · ${pick.texture}` : ' · still mixed'}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {pick.permutations.slice(0, 5).map((row) => (
+                <div key={row.label} className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                  <span className="tabular-nums text-muted-foreground">{Math.round(row.mass * 100)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="text-sm text-muted-foreground">
+          {pick.ready
+            ? `Branch is committed. Texture ${pick.texture ? `is ${pick.texture}` : 'has not crossed the same bar'} — more facts under this L0 would fill that slider.`
+            : `Entropy is still high. Forager would keep sampling the lake instead of calling ${clock}.`}
+        </p>
+      </Card.Content>
+    </Card>
+  );
+}
+
+export function SaccadePanel({
+  buckets,
+  historyDays = [],
+  nowMs,
+}: {
+  buckets: ForecastBucket[];
+  historyDays?: HistoryDay[];
+  nowMs?: number;
+}) {
+  const slot = useMemo(() => pickOpenSlot(buckets, nowMs ?? Date.now()), [buckets, nowMs]);
+  const ranked = useMemo(
+    () => (slot ? rankSaccades(historyDays, slot.bucketIndex, slot.l0Probs) : []),
+    [historyDays, slot],
+  );
+  if (!slot || ranked.length === 0) {
+    return null;
+  }
+
+  const clock = formatSlotClock(slot.startTime);
+
+  return (
+    <Card className="lg:col-span-2" data-testid="saccade-panel">
+      <Card.Header>
+        <Card.Title>What would collapse {clock}</Card.Title>
+        <Card.Description>
+          Discrete saccades over history days, not pixels. Ranked by how much that day&apos;s same
+          half-hour disagrees with tomorrow (KL). High disagreement is high epistemic value — reading
+          that slice would move the call. Matrices that never fill: duration, source type, L2.
+        </Card.Description>
+      </Card.Header>
+      <Card.Content className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
+          {ranked.map((row, index) => (
+            <div key={row.date} className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="w-6 shrink-0 tabular-nums text-muted-foreground">{index + 1}</span>
+              <span className="w-28 shrink-0 font-medium">{formatRowLabel(row.date)}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {row.observed
+                  ? `observed ${row.observed}`
+                  : row.predicted
+                    ? `predicted ${row.predicted}`
+                    : 'no label'}
+              </span>
+              <span className="tabular-nums text-muted-foreground">KL {row.kl.toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          This ranking is a reading of the histogram we already serve. It does not yet drive which
+          events get labeled, how long they count, or what the summary gap-fill writes.
+        </p>
+      </Card.Content>
+    </Card>
+  );
 }
 
 export function NextUpPanel({
@@ -177,11 +358,12 @@ export function MetricBandsPanel({ metrics }: { metrics: MetricForecast[] }) {
 }
 
 export function NextPlacesPanel({ places }: { places: PlaceItem[] }) {
-  if (places.length === 0) {
+  const visible = places.filter(placeVisible);
+  if (visible.length === 0) {
     return null;
   }
 
-  const backoff = places[0]?.backoffLevel;
+  const backoff = visible[0]?.backoffLevel;
 
   return (
     <Card>
@@ -193,7 +375,7 @@ export function NextPlacesPanel({ places }: { places: PlaceItem[] }) {
         </Card.Description>
       </Card.Header>
       <Card.Content className="flex flex-col gap-2 text-sm">
-        {places.map((place) => {
+        {visible.map((place) => {
           const probability = place.probability ?? place.share;
 
           return (

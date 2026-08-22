@@ -3,7 +3,12 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ForecastBucket } from '@/api/useForecastService';
 
-import { DivergenceHeatmapPanel } from './ForecastPanels';
+import {
+  BranchTexturePanel,
+  DivergenceHeatmapPanel,
+  OccupancyHonestyPanel,
+  SaccadePanel,
+} from './ForecastPanels';
 
 const ORIGINAL_TZ = process.env.TZ;
 
@@ -45,6 +50,67 @@ const forecastBuckets = [
     q90: 1,
   },
 ] as ForecastBucket[];
+
+describe('OccupancyHonestyPanel', () => {
+  it('says occupancy is unweighted', () => {
+    render(<OccupancyHonestyPanel />);
+
+    expect(screen.getByTestId('occupancy-honesty')).toHaveTextContent('Every label counts as one');
+    expect(screen.getByText(/Duration never/)).toBeInTheDocument();
+  });
+});
+
+describe('BranchTexturePanel', () => {
+  it('opens on the mixed slot and withholds the commit', () => {
+    const now = Date.parse('2026-07-15T00:00:00Z');
+    render(
+      <BranchTexturePanel
+        nowMs={now}
+        buckets={[
+          {
+            ...forecastBuckets[0],
+            bucketIndex: 0,
+            startTime: '2026-07-15T01:00:00Z',
+            l0Probs: probs(['SLEEP', 0.95], ['WORK', 0.05]),
+          },
+          {
+            ...forecastBuckets[0],
+            bucketIndex: 20,
+            startTime: '2026-07-15T10:00:00Z',
+            l0Probs: probs(['WORK', 0.5], ['LEISURE', 0.5]),
+            l1Probs: probs(['standup', 0.6], ['docs', 0.4]),
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('branch-texture')).toHaveTextContent('not ready');
+    expect(screen.getByText('standup')).toBeInTheDocument();
+  });
+});
+
+describe('SaccadePanel', () => {
+  it('ranks the disagreeing day first', () => {
+    const now = Date.parse('2026-07-15T00:00:00Z');
+    render(
+      <SaccadePanel
+        nowMs={now}
+        buckets={[
+          {
+            ...forecastBuckets[0],
+            bucketIndex: 18,
+            startTime: '2026-07-15T09:00:00Z',
+            l0Probs: probs(['WORK', 0.8], ['LEISURE', 0.2]),
+          },
+        ]}
+        historyDays={history}
+      />,
+    );
+
+    const rows = screen.getByTestId('saccade-panel').textContent ?? '';
+    expect(rows.indexOf('Tue 7/14')).toBeLessThan(rows.indexOf('Mon 7/13'));
+  });
+});
 
 describe('DivergenceHeatmapPanel', () => {
   it('rings only the half-hours the model got wrong', () => {

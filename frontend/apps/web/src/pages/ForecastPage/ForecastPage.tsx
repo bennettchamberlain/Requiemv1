@@ -6,14 +6,11 @@ import { useFeatures } from '@/common/feature';
 import { ForecastStrip } from '@/components/ForecastStrip';
 import { PageContent } from '@/components/layout';
 import { WeekAhead } from '@/components/WeekAhead';
+import { placeVisible } from '@/lib/forecastDisplay';
 
-import {
-  CalibrationPanel,
-  DivergenceHeatmapPanel,
-  MetricBandsPanel,
-  NextPlacesPanel,
-  NextUpPanel,
-} from './ForecastPanels';
+import { NextForecast } from './BranchialTree';
+import { NextPlacesPanel } from './ForecastPanels';
+import { OffScript } from './OffScript';
 import { useForecastExtras } from './useForecastExtras';
 
 export function ForecastPage() {
@@ -24,6 +21,7 @@ export function ForecastPage() {
   const [{ data: forecast, loading, error, stalled }] = useForecastService();
   const extras = useForecastExtras();
   const { week, due } = useWeekAheadService();
+  const places = extras.places.filter(placeVisible);
 
   return (
     <>
@@ -54,21 +52,17 @@ export function ForecastPage() {
                 stalled={stalled}
                 stillLearning={forecast.stillLearning}
                 modelVersion={forecast.modelVersion}
+                pipelineEtaSeconds={forecast.pipelineEtaSeconds}
+                pipelineDetail={forecast.pipelineDetail}
               />
             </div>
+            <NextForecast />
+            <OffScript
+              historyDays={extras.historyDays}
+              drift={Boolean(extras.calibration?.latest?.driftFlag)}
+            />
             <WeekAhead week={week} due={due} />
-            <div className="grid gap-4 lg:grid-cols-2">
-              {/* Full width: 48 half-hour columns are unreadable in half a card. */}
-              <DivergenceHeatmapPanel
-                historyDays={extras.historyDays}
-                buckets={forecast.systemStatus === 'READY' ? forecast.buckets : []}
-                className="lg:col-span-2"
-              />
-              <NextUpPanel buckets={forecast.buckets} historyDays={extras.historyDays} />
-              <MetricBandsPanel metrics={extras.metrics} />
-              <NextPlacesPanel places={extras.places} />
-              <CalibrationPanel calibration={extras.calibration} />
-            </div>
+            {places.length > 0 ? <NextPlacesPanel places={places} /> : null}
           </div>
         )}
       </PageContent>
