@@ -7,61 +7,92 @@ import { Badge, Button, Card } from '@ci/shadcn';
 import { PageContent } from '@/components/layout';
 import type { AnswerForm } from '@/graphql/graphql';
 
+import { AnswerPanel } from './AnswerPanel';
 import { grantLabel, knownAskerLabel, partyLabel, scopeSummary, searchBreadthNote } from './askBinding';
-import { askDecisionState, askStatusLabel, OWNER_ANSWER_FORMS, type AskStatus } from './askPresentation';
+import { AskComposer } from './AskComposer';
+import {
+  type AskAuditOutcome,
+  askDecisionState,
+  askStatusLabel,
+  type AskStatus,
+  OWNER_ANSWER_FORMS,
+  peerTrustLabel,
+} from './askPresentation';
 import { AskReviewCard } from './AskReviewCard';
 import {
   APPROVE_ASK,
+  ASK_DISCLOSURE_HISTORY,
   ASK_INBOX,
   ASK_OUTBOX,
+  CREATE_ASK,
+  CREATE_PEER_LINK,
   DECLINE_ASK,
   MY_ASK_GRANTS,
+  MY_PEER_LINKS,
   REVOKE_ASK_GRANT,
+  REVOKE_PEER_LINK,
   RUN_ASK,
+  UPDATE_ASK_GRANT,
+  UPDATE_PEER_LINK,
 } from './asksOperations';
+import { COMPOSER_SHAPES, composeRecipients, unreachablePeers } from './composeRecipients';
+import { DisclosureHistory } from './DisclosureHistory';
 import { GrantManager, type GranteeGroup } from './GrantManager';
+import { PeerManager } from './PeerManager';
 
-type Tab = 'inbox' | 'grants' | 'outbox';
+type Tab = 'inbox' | 'compose' | 'outbox' | 'grants' | 'peers' | 'history';
 
 /**
- * The asks surface — the first one a user can actually open.
+ * The asks surface.
  *
- * Four components for this feature merged with the trust-graph work and then
- * sat unreachable: no route, no container, and no GraphQL operation documents,
- * so the only place they rendered was Storybook. This page is the container.
+ * ═══ WHAT THIS PAGE USED TO NOT DO, AND WHY IT DOES IT NOW ═══
  *
- * ── What it deliberately does NOT do ────────────────────────────────────────
+ * Four components for this feature merged with the trust-graph work and sat
+ * unreachable. The container that followed made the READ-AND-REACT half work —
+ * an owner could see who was asking and approve, cap or decline — and stopped
+ * there, wiring seven of sixteen operations and none of the writes. Three of the
+ * four gaps it documented as "the API cannot supply this" were true when it was
+ * written and are not true now:
  *
- * It does not render the answer card, and it does not render a review preview
- * with items in it. Both need facts the API cannot supply yet:
+ *   - `AnswerCard` needed an `autoAnswered` discriminator. It still does not
+ *     exist on `AskAnswerType`, and the honest resolution turned out not to be
+ *     omitting the card but giving provenance a THIRD value — see
+ *     {@link AnswerPanel}. The card renders; it just does not claim a review
+ *     that nobody disclosed.
+ *   - A recipient for `createAsk` looked impossible without a user-search
+ *     endpoint. It is possible without one: the owner's own grants, inbox and
+ *     outbox already name everybody they have a relationship with. See
+ *     {@link composeRecipients}.
+ *   - Grant expiry and mode changes were called "not on the wire". Both are, and
+ *     were: `AskGrantType.expiresAt`/`active` and `updateAskGrant`. The page was
+ *     printing a false limitation, which an owner plans around — "I cannot
+ *     time-limit this, so I will remember to revoke it" is a worse plan than the
+ *     one they would have made knowing the truth.
  *
- *   - `AnswerCard` requires `autoAnswered`, and nothing on the wire
- *     distinguishes an answer a human reviewed from one a standing grant
- *     released. Its whole purpose is the provenance line — "reviewed by Sam"
- *     vs "auto-answered under your family grant" — so rendering it without
- *     that field would print a provenance claim the server never made. That is
- *     the one thing a consent UI must never do.
- *   - `AskReviewCard`'s item list is the "see what you are about to share
- *     before you approve" contract, and no query returns the candidate matches
- *     before the answer is produced. Passing an empty list is honest; passing a
- *     fabricated one is not.
- *
- * Both are tracked as follow-ups rather than faked. Everything below binds only
- * to fields that exist — see askBinding.ts for why each derived value is the
- * most that can be said truthfully.
+ * What remains genuinely absent is named where it bites: a display NAME for a
+ * local user (so every party is an opaque, visibly-truncated id), per-item
+ * LABELS on a disclosed reference, and any way to address an ask to a linked
+ * PEER from this client.
  */
 export function AsksPage() {
   usePageTitle('Asks');
 
   const [tab, setTab] = useState<Tab>('inbox');
+  const [openAnswerId, setOpenAnswerId] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
 
   const inbox = useQuery(ASK_INBOX);
   const outbox = useQuery(ASK_OUTBOX);
   const grants = useQuery(MY_ASK_GRANTS);
+  const peers = useQuery(MY_PEER_LINKS);
+  const history = useQuery(ASK_DISCLOSURE_HISTORY);
 
   const refetchAll = () => {
     void inbox.refetch();
     void grants.refetch();
+    // The owner's receipt of what left the box. Re-read after every decision,
+    // because the whole point of the history is that it is not stale.
+    void history.refetch();
   };
 
   const [approveAsk, approving] = useMutation(APPROVE_ASK, { onCompleted: refetchAll });
@@ -70,8 +101,25 @@ export function AsksPage() {
   const [revokeGrant, revoking] = useMutation(REVOKE_ASK_GRANT, {
     onCompleted: () => void grants.refetch(),
   });
+  const [updateGrant, updatingGrant] = useMutation(UPDATE_ASK_GRANT, {
+    onCompleted: () => void grants.refetch(),
+  });
+  const [createAsk, creating] = useMutation(CREATE_ASK, {
+    onCompleted: () => void outbox.refetch(),
+  });
+  const [createPeerLink, linking] = useMutation(CREATE_PEER_LINK, {
+    onCompleted: () => void peers.refetch(),
+  });
+  const [updatePeerLink, retiering] = useMutation(UPDATE_PEER_LINK, {
+    onCompleted: () => void peers.refetch(),
+  });
+  const [revokePeerLink, unlinking] = useMutation(REVOKE_PEER_LINK, {
+    onCompleted: () => void peers.refetch(),
+  });
 
   const busy = approving.loading || declining.loading || running.loading;
+  const grantBusy = revoking.loading || updatingGrant.loading;
+  const peerBusy = linking.loading || retiering.loading || unlinking.loading;
 
   /**
    * The first mutation that failed, if any.
@@ -82,8 +130,21 @@ export function AsksPage() {
    * awaits its rejection — without {@link runAction} it surfaces as an unhandled
    * rejection in a console the owner will never open, and on screen as a Decline
    * button that appeared to work.
+   *
+   * Every mutation on the page is in this chain, including the ones added since.
+   * A peer whose tier LOOKED lowered because the mutation failed silently is the
+   * same defect as an approval that did not land, pointed the other way.
    */
-  const actionError = approving.error ?? running.error ?? declining.error ?? revoking.error;
+  const actionError =
+    approving.error ??
+    running.error ??
+    declining.error ??
+    revoking.error ??
+    updatingGrant.error ??
+    creating.error ??
+    linking.error ??
+    retiering.error ??
+    unlinking.error;
 
   /**
    * Fire a mutation, and on failure re-read the server rather than guessing.
@@ -94,8 +155,8 @@ export function AsksPage() {
    * approve/answer chain, where the first mutation can land and the second fail,
    * leaving a real, changed ask behind a failed gesture.
    */
-  const runAction = (action: Promise<unknown>): void => {
-    void action.catch(() => refetchAll());
+  const runAction = (action: Promise<unknown>, onFailure: () => void = refetchAll): void => {
+    void action.catch(() => onFailure());
   };
 
   /**
@@ -127,7 +188,14 @@ export function AsksPage() {
     (ask) => ask.status === 'delivered' || ask.status === 'under_review',
   );
 
-  const grantGroups: GranteeGroup[] = groupGrants(grants.data?.myAskGrants ?? []);
+  // The peer roster is passed in, not looked up inside: a grant to a PEER is
+  // capped by that peer's trust tier on top of whatever the grant says, so a
+  // matrix that cannot see the tier shows a `full` grant as full when the peer
+  // is a `stranger` and the answer will be a yes/no.
+  const grantGroups: GranteeGroup[] = groupGrants(
+    grants.data?.myAskGrants ?? [],
+    peers.data?.myPeerLinks ?? [],
+  );
 
   let content: ReactNode;
 
@@ -174,23 +242,149 @@ export function AsksPage() {
         <EmptyState message="No one is waiting on you. Asks needing your review appear here." />
       );
     }
+  } else if (tab === 'compose') {
+    // The composer needs three queries to build its recipient list, so it waits
+    // for all three rather than offering a partial one. A picker that silently
+    // omits somebody is a picker that quietly says "you have no relationship
+    // with them", which on this page is a claim, not a loading state.
+    if (inbox.error || outbox.error || grants.error) {
+      content = <LoadFailure what="the people you can ask" onRetry={refetchAll} />;
+    } else if (inbox.loading || outbox.loading || grants.loading || peers.loading) {
+      content = <LoadingPage />;
+    } else {
+      content = (
+        <div className="flex flex-col gap-3">
+          {sent ? (
+            <Card className="flex flex-col gap-1 p-3" role="status">
+              <p className="font-medium">Sent.</p>
+              <p className="text-muted-foreground text-sm">
+                It is in “Sent” now. You will not be told whether a person reads it or a standing rule answers
+                it — only whether an answer arrives.
+              </p>
+            </Card>
+          ) : null}
+          <AskComposer
+            recipients={composeRecipients({
+              grants: grants.data?.myAskGrants ?? [],
+              inbox: inbox.data?.askInbox ?? [],
+              outbox: outbox.data?.askOutbox ?? [],
+            })}
+            unreachable={unreachablePeers(peers.data?.myPeerLinks ?? [])}
+            shapes={COMPOSER_SHAPES}
+            busy={creating.loading}
+            onSend={(ask) => {
+              // Cleared UP FRONT, before the request goes out, and that ordering
+              // is the whole control. A green "Sent." belongs to one specific
+              // ask, so the moment the owner sends another it must stop
+              // referring to the previous one — while the new request is still
+              // in flight, not once it resolves. Clearing it in the failure
+              // handler instead would leave the old confirmation standing over a
+              // send that had not landed yet, which is the same reassuring-lie
+              // shape as an error rendered as an empty state.
+              setSent(false);
+              runAction(
+                createAsk({
+                  variables: {
+                    input: {
+                      responderId: ask.responderId,
+                      query: { queryType: ask.queryType, dataClass: ask.dataClass, prompt: ask.prompt },
+                    },
+                  },
+                }).then(() => setSent(true)),
+                // Nothing to re-read on failure: no ask was created, and the
+                // confirmation was already cleared above. Overriding the default
+                // `refetchAll` keeps a failed send from firing three pointless
+                // reads of the owner's own inbox, grants and history.
+                () => undefined,
+              );
+            }}
+          />
+        </div>
+      );
+    }
   } else if (tab === 'grants') {
     if (grants.error) {
       content = <LoadFailure what="your standing grants" onRetry={() => void grants.refetch()} />;
-    } else if (grants.loading) {
+    } else if (grants.loading || peers.loading) {
+      // Waits on the PEER roster too. A peer grant rendered before its link
+      // resolves shows no ceiling, and a ceiling shown late is a ceiling the
+      // owner may have already read past.
       content = <LoadingPage />;
     } else {
       content = grantGroups.length ? (
         <GrantManager
           groups={grantGroups}
           defaultMode="review"
+          busy={grantBusy}
+          onChangeMode={(grantId, mode) =>
+            runAction(updateGrant({ variables: { id: grantId, input: { mode } } }))
+          }
+          onSetExpiry={(grantId, expiresAt) =>
+            runAction(updateGrant({ variables: { id: grantId, input: { expiresAt } } }))
+          }
           onRevoke={(grantId) => runAction(revokeGrant({ variables: { id: grantId } }))}
-          // Stated in the UI because the alternative is an owner assuming the
-          // absence of an expiry date means there is none. See MY_ASK_GRANTS.
-          caveat="When a grant lapses isn’t on the wire yet, so no expiry date is shown here."
+          onOpenHistory={() => setTab('history')}
         />
       ) : (
         <EmptyState message="No standing grants. Every ask comes to you for review." />
+      );
+    }
+  } else if (tab === 'peers') {
+    if (peers.error) {
+      content = <LoadFailure what="the people you are linked to" onRetry={() => void peers.refetch()} />;
+    } else if (peers.loading) {
+      content = <LoadingPage />;
+    } else {
+      content = (
+        <PeerManager
+          peers={peers.data?.myPeerLinks ?? []}
+          busy={peerBusy}
+          onChangeTier={(id, trustTier) =>
+            runAction(updatePeerLink({ variables: { input: { id, trustTier } } }))
+          }
+          onRevoke={(id) => runAction(revokePeerLink({ variables: { id } }))}
+          onAdd={(input) =>
+            runAction(
+              createPeerLink({
+                variables: {
+                  // No `trustTier`. The resolver defaults an omitted tier to
+                  // `stranger`, and that default is the safety property — see
+                  // CREATE_PEER_LINK.
+                  input: {
+                    peerHandle: input.peerHandle,
+                    memoryEndpoint: input.memoryEndpoint,
+                    displayName: input.displayName,
+                  },
+                },
+              }),
+            )
+          }
+        />
+      );
+    }
+  } else if (tab === 'history') {
+    if (history.error) {
+      content = <LoadFailure what="what you have shared" onRetry={() => void history.refetch()} />;
+    } else if (history.loading) {
+      content = <LoadingPage />;
+    } else {
+      const rows = history.data?.askDisclosureHistory ?? [];
+
+      content = rows.length ? (
+        <DisclosureHistory
+          rows={rows.map((row) => ({
+            id: row.id,
+            askerId: row.askerId,
+            peerHandle: row.peerHandle,
+            outcome: row.outcome as AskAuditOutcome,
+            disclosedCount: row.disclosedCount,
+            consentBasis: row.consentBasis,
+            createdAt: row.createdAt as string,
+            query: row.query,
+          }))}
+        />
+      ) : (
+        <EmptyState message="Nothing has been shared from your Companion yet." />
       );
     }
   } else if (outbox.error) {
@@ -198,17 +392,50 @@ export function AsksPage() {
   } else if (outbox.loading) {
     content = <LoadingPage />;
   } else {
-    const sent = outbox.data?.askOutbox ?? [];
+    const asked = outbox.data?.askOutbox ?? [];
 
-    content = sent.length ? (
+    content = asked.length ? (
       <div className="flex flex-col gap-2">
-        {sent.map((ask) => (
-          <Card key={ask.id} className="flex flex-wrap items-center gap-3 p-3">
-            <span className="font-medium">{partyLabel(ask.peerHandle, ask.responderId)}</span>
-            <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">{ask.query.prompt}</span>
-            <Badge variant="secondary">{askStatusLabel(ask.status as AskStatus)}</Badge>
-          </Card>
-        ))}
+        {asked.map((ask) => {
+          // `askerVisibleStatus` collapses everything the asker may not know
+          // into `delivered`, so `answered` really is "there is something to
+          // read" and nothing else on this list ever is.
+          const answered = ask.status === 'answered';
+          const open = openAnswerId === ask.id;
+
+          return (
+            <Card key={ask.id} className="flex flex-col gap-2 p-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="font-medium">{partyLabel(ask.peerHandle, ask.responderId)}</span>
+                <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
+                  {ask.query.prompt}
+                </span>
+                <Badge variant="secondary">{askStatusLabel(ask.status as AskStatus)}</Badge>
+                {answered ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-expanded={open}
+                    onClick={() => setOpenAnswerId(open ? null : ask.id)}
+                  >
+                    {open ? 'Hide answer' : 'Read answer'}
+                  </Button>
+                ) : null}
+              </div>
+
+              {answered && open ? (
+                <AnswerPanel
+                  askId={ask.id}
+                  responderName={partyLabel(ask.peerHandle, ask.responderId)}
+                  // The viewer is the ASKER on this tab, always. Their copy of
+                  // the answer is the narrowed projection, and saying so is what
+                  // stops a masked zero reading as "nothing was shared".
+                  isResponder={false}
+                />
+              ) : null}
+            </Card>
+          );
+        })}
       </div>
     ) : (
       <EmptyState message="You haven't asked anyone anything yet." />
@@ -232,8 +459,11 @@ export function AsksPage() {
           {(
             [
               ['inbox', `For you${pending.length ? ` (${pending.length})` : ''}`],
-              ['grants', 'Who can ask me what'],
+              ['compose', 'Ask someone'],
               ['outbox', 'Sent'],
+              ['grants', 'Who can ask me what'],
+              ['peers', 'People I’m linked to'],
+              ['history', 'What I’ve shared'],
             ] as const
           ).map(([key, label]) => (
             <Button
@@ -292,16 +522,22 @@ function LoadFailure({ what, onRetry }: { what: string; onRetry: () => void }) {
  * One group per grantee.
  *
  * The component's `GranteeGroup` wants a display name and a tier per grantee.
- * Neither is on the wire — `granteeId` is an opaque GlobalUID and there is no
- * user query to resolve it — so the group is named by the same opaque label
- * used everywhere else rather than by a person's name that would be invented.
+ * Neither is on the wire for a LOCAL grantee — `granteeId` is an opaque
+ * GlobalUID and there is no user query to resolve it — so the group is named by
+ * the same opaque label used everywhere else rather than by a person's name that
+ * would be invented.
  *
- * `revokedAt` is carried through rather than dropped. The server's
+ * A PEER grantee is different, and the difference is now readable: `myPeerLinks`
+ * resolves `granteePeerLinkId` to a handle and a real trust tier. That tier is
+ * the ceiling on everything the grant can ever release, so showing it beside the
+ * grant is not decoration — a `full` grant to a `stranger` peer still discloses
+ * a yes/no, and an owner reading the grant alone would not know that.
+ *
+ * `revokedAt` and `active` are carried through rather than dropped. The server's
  * `listForOwner` filters revoked and lapsed rows out today, so in practice every
  * row here is live — but "the server probably filtered it" is not something a
- * consent matrix may assume on the owner's behalf, and the field is already in
- * the selection set. Reading it costs one property; not reading it means a
- * withdrawn grant renders as current the day that filter changes.
+ * consent matrix may assume on the owner's behalf, and the fields are already in
+ * the selection set.
  */
 function groupGrants(
   rows: readonly {
@@ -312,22 +548,44 @@ function groupGrants(
     purpose?: string | null;
     granteeId?: string | null;
     granteePeerLinkId?: string | null;
-    revokedAt?: string | null;
+    revokedAt?: unknown;
+    expiresAt?: unknown;
+    active?: boolean | null;
   }[],
+  peerLinks: readonly {
+    id: string;
+    peerHandle: string;
+    displayName?: string | null;
+    trustTier: string;
+  }[] = [],
 ): GranteeGroup[] {
   const byGrantee = new Map<string, GranteeGroup>();
+  const links = new Map(peerLinks.map((link) => [link.id, link]));
 
   for (const row of rows) {
     const key = row.granteeId ?? row.granteePeerLinkId ?? 'unknown';
+    const link = row.granteePeerLinkId ? links.get(row.granteePeerLinkId) : undefined;
 
     let group = byGrantee.get(key);
 
     if (!group) {
       group = {
         id: key,
-        name: partyLabel(null, key === 'unknown' ? null : key),
-        // No tier exists on the wire. Saying so is better than picking one.
-        tier: 'tier unknown',
+        name: link ? link.displayName || link.peerHandle : partyLabel(null, key === 'unknown' ? null : key),
+        // THREE cases, not two, because "we do not have it" and "there is none"
+        // are different facts and only one of them is stable:
+        //   - a peer grantee whose link resolved has a REAL tier, and it is the
+        //     ceiling on everything that grant can release;
+        //   - a peer grantee whose link did NOT resolve (roster still loading,
+        //     or the link was hard-deleted) has a tier this page simply failed
+        //     to read — saying "unknown" there would read as "there is no
+        //     ceiling", which is the opposite of what a missing read means;
+        //   - a LOCAL grantee genuinely has no tier on the wire at all.
+        tier: link
+          ? peerTrustLabel(link.trustTier)
+          : row.granteePeerLinkId
+            ? 'tier not loaded'
+            : 'tier unknown',
         grants: [],
       };
       byGrantee.set(key, group);
@@ -338,9 +596,32 @@ function groupGrants(
       label: grantLabel(row.queryType, row.dataClass),
       mode: row.mode as GranteeGroup['grants'][number]['mode'],
       note: row.purpose ?? undefined,
-      revokedAt: row.revokedAt ?? null,
+      expiresAt: asIsoString(row.expiresAt),
+      revokedAt: asIsoString(row.revokedAt),
+      active: row.active ?? undefined,
     });
   }
 
   return [...byGrantee.values()];
+}
+
+/**
+ * A `DateTime` scalar as a string this component can render.
+ *
+ * Codegen types `DateTime` as `any`, and Apollo hands back whatever the link
+ * produced — a string over HTTP, a `Date` from a cache normalizer or a test
+ * fixture. Narrowing here rather than at each render site keeps a `Date` from
+ * reaching `formatDate` as an object and stringifying as `[object Object]` on
+ * the one row the owner most needs to read.
+ */
+function asIsoString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return null;
 }

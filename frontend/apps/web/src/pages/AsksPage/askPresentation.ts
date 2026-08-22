@@ -6,7 +6,7 @@
  * between the backend policy engine and what the owner is shown.
  */
 
-import type { AnswerForm } from '@/graphql/graphql';
+import type { AnswerForm, PeerTrustTier } from '@/graphql/graphql';
 
 /** Consent posture of a standing grant (mirrors GrantMode on the backend). */
 export type GrantMode = 'auto' | 'review' | 'block';
@@ -90,25 +90,56 @@ export function needsOwnerReview(status: AskStatus): boolean {
 }
 
 /**
+ * Whether a human looked at this answer before it left the box.
+ *
+ * THREE values, not two, and the third is the whole point. `AskAnswerType`
+ * carries no auto-vs-reviewed flag at all, and the one field that could stand
+ * in — `consentBasis` — is projected to NULL for the asker on purpose (it is
+ * the id of one of the responder's own grant rows, and handing it over turns
+ * the answer into a grant-matrix oracle). So the person who ASKED genuinely
+ * cannot be told, and a card that defaulted `autoAnswered` to `false` would
+ * print "reviewed by Sam" over an answer Sam never saw.
+ *
+ * `'undisclosed'` is what that looks like when it is said out loud. The
+ * responder's own history CAN say — `AskAuditType.outcome` separates `answered`
+ * from `auto_answered` — which is why the same card renders a real value there.
+ */
+export type AnswerReview = 'auto' | 'reviewed' | 'undisclosed';
+
+/**
  * The provenance line shown on an answer — prose, not badges.
  *
  * "Answered by X's Companion, reviewed by X, under your family grant" is the
  * single most load-bearing sentence in the feature: it is how the asker knows
  * the answer is real, who stood behind it, and on what basis. An auto-answered
- * reply must never claim a human reviewed it.
+ * reply must never claim a human reviewed it — and, just as importantly, an
+ * answer whose provenance was never disclosed must not claim either one.
  */
 export function provenanceLine(params: {
   responderName: string;
-  autoAnswered: boolean;
+  review: AnswerReview;
   consentBasis?: string | null;
 }): string {
   const who = `Answered by ${params.responderName}'s Companion`;
-  const how = params.autoAnswered
-    ? 'answered automatically under a standing grant'
-    : `reviewed by ${params.responderName}`;
+  const how = reviewClause(params.review, params.responderName);
   const basis = params.consentBasis ? ` · ${params.consentBasis}` : '';
 
   return `${who} · ${how}${basis}`;
+}
+
+function reviewClause(review: AnswerReview, responderName: string): string {
+  switch (review) {
+    case 'auto':
+      return 'answered automatically under a standing grant';
+    case 'reviewed':
+      return `reviewed by ${responderName}`;
+    case 'undisclosed':
+    default:
+      // Deliberately says that the FACT is withheld rather than hedging about
+      // the answer. "Possibly reviewed" would read as a weak yes; this reads as
+      // what it is — a question their box declined to answer.
+      return `whether ${responderName} saw this personally is not disclosed to you`;
+  }
 }
 
 /**
@@ -253,4 +284,194 @@ export function askDecisionNote(state: AskDecisionState): string {
 /** Label for the card's primary button, which is a different act per state. */
 export function askApproveLabel(state: AskDecisionState): string {
   return state === 'pre-authorized' ? 'Answer now' : 'Approve and answer';
+}
+
+/** Terminal outcomes recorded in `ci.ask_audit` (mirrors AskAuditOutcome). */
+export type AskAuditOutcome = 'answered' | 'auto_answered' | 'declined' | 'expired';
+
+/**
+ * Short badge text for a disclosure-history outcome.
+ *
+ * `answered` and `auto_answered` get DIFFERENT labels, and that separation is
+ * the reason this function exists rather than a `startCase(outcome)`. They are
+ * the same event from the asker's side and completely different events from the
+ * owner's: one is a decision they made, the other is a rule they wrote once
+ * acting on their behalf while they were not looking. Collapsing them into
+ * "Answered" would hide the only outcome in this list that an owner might want
+ * to go and stop.
+ */
+export function outcomeBadge(outcome: AskAuditOutcome): {
+  label: string;
+  variant: 'default' | 'secondary' | 'destructive' | 'outline';
+} {
+  switch (outcome) {
+    case 'auto_answered':
+      return { label: 'Answered automatically', variant: 'default' };
+    case 'answered':
+      return { label: 'You answered', variant: 'secondary' };
+    case 'declined':
+      return { label: 'Declined', variant: 'outline' };
+    case 'expired':
+    default:
+      return { label: 'Expired', variant: 'outline' };
+  }
+}
+
+/** The history row's lead sentence, in the owner's own terms. */
+export function outcomeSentence(outcome: AskAuditOutcome, askerName: string): string {
+  switch (outcome) {
+    case 'auto_answered':
+      return `A standing grant answered ${askerName} without asking you.`;
+    case 'answered':
+      return `You reviewed this and answered ${askerName}.`;
+    case 'declined':
+      return `This was declined. Nothing was shared with ${askerName}.`;
+    case 'expired':
+    default:
+      return `This expired before it was answered. Nothing was shared with ${askerName}.`;
+  }
+}
+
+/**
+ * How much crossed, said in a way a non-terminal-answered outcome cannot
+ * misread.
+ *
+ * `disclosedCount` is 0 on a declined or expired row because nothing happened,
+ * and 0 on an ANSWERED row whose form disclosed no item references — a yes/no
+ * still told the asker something. Printing "0 items shared" over both makes the
+ * second one look like the first, which on a disclosure record is the reassuring
+ * lie this whole page exists to avoid.
+ */
+export function disclosureMagnitudeNote(outcome: AskAuditOutcome, disclosedCount: number): string {
+  if (outcome === 'declined' || outcome === 'expired') {
+    return 'nothing was shared';
+  }
+
+  if (disclosedCount <= 0) {
+    return 'answered without sending any items — but an answer is still something shared';
+  }
+
+  return disclosedCount === 1 ? '1 item shared' : `${disclosedCount} items shared`;
+}
+
+/**
+ * ═══ THE PEER TRUST LADDER, WIDEST FIRST ═══
+ *
+ * A peer link's tier is not a label. `policy.ts` maps each one to a maximum
+ * disclosure rung — family `full`, trusted `redacted`, peer `summary`, stranger
+ * `boolean` — so it is the CEILING on everything that peer can ever be told, and
+ * it applies to every answer regardless of which grant authorized it.
+ *
+ * The ORDER below is what lets the UI tell a widening change from a narrowing
+ * one, which is the difference between a control that needs a confirmation and
+ * one that does not. `household` is deliberately absent: it means "shares this
+ * appliance", the DB CHECK on `ci.peer_links.trust_tier` rejects it, and it is
+ * the one tier exempt from the sensitive-class floor.
+ */
+export const PEER_TRUST_TIERS = [
+  'family',
+  'trusted',
+  'peer',
+  'stranger',
+] as const satisfies readonly PeerTrustTier[];
+
+/**
+ * Re-exported from codegen rather than re-declared.
+ *
+ * The `satisfies` above is the load-bearing half: it makes this array a subset
+ * of the generated enum, so a tier ADDED to the schema is silently absent from
+ * the dial (safe — an unknown tier renders as itself and reads as widest) while
+ * a tier REMOVED from the schema, or misspelled here, fails the build. A
+ * hand-written union would have failed neither.
+ */
+export type { PeerTrustTier };
+
+/**
+ * Whether moving from `from` to `to` lets this peer be told MORE.
+ *
+ * Index in {@link PEER_TRUST_TIERS} is the whole implementation, and the array
+ * is ordered widest-first, so a SMALLER index is more permissive.
+ *
+ * An unknown tier (a value from a newer server) is treated as the widest
+ * possible, which makes any move away from it read as narrowing and any move
+ * TOWARD it read as widening. That is the safe direction: the failure mode is
+ * an unnecessary confirmation prompt, not a silent escalation.
+ *
+ * Pure.
+ */
+export function widensPeerTrust(from: string, to: string): boolean {
+  const rank = (tier: string) => {
+    const index = (PEER_TRUST_TIERS as readonly string[]).indexOf(tier);
+
+    return index === -1 ? 0 : index;
+  };
+
+  return rank(to) < rank(from);
+}
+
+/** Owner-facing name for a tier, phrased as the ceiling it sets. */
+export function peerTrustLabel(tier: string): string {
+  switch (tier) {
+    case 'family':
+      return 'Family';
+    case 'trusted':
+      return 'Trusted';
+    case 'peer':
+      return 'Peer';
+    case 'stranger':
+      return 'Stranger';
+    default:
+      // Never invented. A tier this client does not know about is reported as
+      // itself rather than mapped onto the nearest familiar word.
+      return tier;
+  }
+}
+
+/**
+ * What a tier actually permits, in the owner's words.
+ *
+ * ═══ THIS IS THE EFFECTIVE CEILING, NOT THE TABLE ═══
+ *
+ * `TIER_CEILINGS` in policy.ts is not the answer on its own, and reading it as
+ * if it were is how these four sentences were wrong the first time. Two rules in
+ * `disclosureCeiling` run AFTER the table lookup and both of them tighten it:
+ *
+ *  - THE SENSITIVE FLOOR. `location`, `health`, `medical`, `financial`,
+ *    `finance`, `secrets` and `credentials` return `none` outright for every
+ *    tier below `family`. So `trusted`'s `location: 'summary'` row and `peer`'s
+ *    `location: 'count'` row are unreachable — those classes are not summarised
+ *    or counted for a trusted peer, they are refused. The note used to promise
+ *    the table's value, which described MORE disclosure than ever happens.
+ *  - A PER-CLASS ENTRY MAY ONLY TIGHTEN `'*'`. `peer`'s `photos: 'redacted'`
+ *    sits ABOVE its `'*': 'summary'` on the ladder, so it is clamped back down
+ *    to `summary`; naming "photos" buys a peer nothing. The old note said
+ *    photos were "redacted" for a peer, which was the pre-clamp reading of that
+ *    same row.
+ *
+ * Both corrections point the same way — less is disclosed than these sentences
+ * used to claim — which is the safe direction to have been wrong in, and still
+ * the wrong direction for a consent surface: an owner who believes a tier leaks
+ * more than it does sets it lower than they need to, and one who later learns
+ * the copy was decorative stops trusting the dial at all.
+ *
+ * The ceiling caps EVERY answer, auto and owner-reviewed alike — `runAsk`
+ * applies it after the grant and the owner's own form choice — so these read as
+ * absolutes rather than as "unless you approve it".
+ */
+export function peerTrustCeilingNote(tier: string): string {
+  switch (tier) {
+    case 'family':
+      // The only tier the sensitive floor does not apply to, which is the fact
+      // that actually distinguishes it from `trusted` — worth more than the
+      // rung name to somebody deciding whether to promote a person.
+      return 'The widest tier: an ask that names a data class can be answered with item references, and it is the only tier where health, finances and secrets are answerable at all. Your location is redacted, never exact.';
+    case 'trusted':
+      return 'Answers are redacted at most — the items you keep, never the ones you hold back. Location, health, finances and secrets are never disclosed at this tier.';
+    case 'peer':
+      return 'Answers are summaries at most — a sentence and a count, never item references, and naming “photos” does not change that. Location, health, finances and secrets are never disclosed at this tier.';
+    case 'stranger':
+      return 'Answers are yes or no at most, your location is never disclosed, and an ask that names no data class gets nothing at all.';
+    default:
+      return 'This tier is not one this page knows; treat it as unbounded until you check.';
+  }
 }

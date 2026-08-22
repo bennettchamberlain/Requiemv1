@@ -3,6 +3,7 @@ import { ShieldAlert, ShieldCheck } from '@ci/shadcn/icons';
 
 import type { AnswerForm } from '@/graphql/graphql';
 
+import { AskerQuote } from './AskerQuote';
 import { answerFormLabel, askApproveLabel, askDecisionNote, type AskDecisionState } from './askPresentation';
 
 export interface AskReviewItem {
@@ -25,7 +26,14 @@ interface Props {
    * the wire. Do not pass a tier vocabulary the API never sent.
    */
   tier: string;
-  /** The question, in the asker's own words. */
+  /**
+   * The question, in the asker's own words — RAW.
+   *
+   * Passed through unmodified on purpose: {@link AskerQuote} owns both the
+   * character-level sanitizing and the framing that keeps this text from
+   * reading as the app's own voice, and a caller that pre-cleaned it would
+   * produce a second, drifting copy of that policy.
+   */
   prompt: string;
   /** The structured ask as SENT, rendered legibly. */
   scopeSummary: string;
@@ -101,9 +109,13 @@ export function AskReviewCard({
               </Badge>
             ) : null}
           </div>
-          <p className="text-muted-foreground mt-1 text-sm">“{prompt}”</p>
         </div>
       </div>
+
+      {/* Attributed and isolated rather than wrapped in quote marks: the asker
+          controls every character here, including the ones that used to close
+          the quote and let them finish the sentence in the app's voice. */}
+      <AskerQuote prompt={prompt} attribution={`${askerName} asked:`} />
 
       {/* What was asked for, and what that actually costs. The second line is
           never omitted: a data class the responder's box does not recognise
