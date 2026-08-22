@@ -1902,10 +1902,22 @@ export const WIZARD_SOURCES: WizardSource[] = [
       'Click "Request your data"; Flickr emails a download link when ready (1–3 days for large libraries).',
       UPLOAD_STEP,
     ],
+    expectedFormat:
+      'A flat folder of Flickr’s `photo_<id>.json` sidecars (one per photo/video) alongside the media files themselves, named `<slug>_<id>_o.<ext>`.',
+    whatImported: [
+      'Photos and videos with their title, description, capture date, and license',
+      'GPS coordinates and tags from each photo’s JSON sidecar',
+      'Album membership as collection edges, and tagged people as person entities',
+    ],
+    caveats: [
+      'Only the photo/video library imports today — contacts and the CSV activity log in the export are not yet read.',
+      'A photo whose JSON sidecar has no matching media file (e.g. only the metadata archive was unzipped) is skipped rather than imported without its bytes.',
+    ],
     inboxPath: 'flickr',
-    importerReady: false,
+    importer: 'flickr',
+    importerReady: true,
     notes: [
-      'Export includes all photos with EXIF, JSON metadata files per album and contact, and CSV activity data. Backed by the Data Transfer Project.',
+      'Export includes all photos with EXIF, JSON metadata files per album and contact, and CSV activity data.',
     ],
   },
   {
