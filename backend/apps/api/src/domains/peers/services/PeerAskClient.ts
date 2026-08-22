@@ -5,7 +5,7 @@ import config from '@ci/configuration';
 
 import { type PeerLink } from '../entities/PeerLinkEntity';
 import type { AskerVisiblePeerReply, PeerAskBody, PeerAskResponse } from '../protocol';
-import { checkEgressUrl } from '../urlPolicy';
+import { EgressBlockedError, peerEgressFetch } from '../urlPolicy';
 
 /**
  * Talks to a peer Companion's `/agent/v1` — the only code in this box that
@@ -65,20 +65,22 @@ export class PeerAskClient {
   ): Promise<AskerVisiblePeerReply> {
     const url = `${peer.memoryEndpoint.replace(/\/+$/, '')}${path}`;
 
-    // SSRF guard. `memoryEndpoint` originates from a directory descriptor, so it
-    // is attacker-influenced; refuse anything pointing at private, loopback, or
-    // metadata space before this box makes the request on their behalf. Applied
-    // to the collect route as well as the ask route — a second caller that
-    // skipped it would reopen the hole for the whole domain.
-    const policy = checkEgressUrl(url);
-    if (!policy.ok) {
-      this.logger.warn(`refusing peer endpoint ${url}: ${policy.reason}`);
-
-      return { askId, status: 'delivered', reason: 'Peer endpoint not permitted' };
-    }
-
+    // ═══ SSRF GUARD — AND IT IS THE DIALER, NOT A PRECHECK ═══
+    //
+    // `memoryEndpoint` originates from a directory descriptor, so it is
+    // attacker-influenced. It used to be validated here and then handed to
+    // `fetch`, which follows redirects by DEFAULT — so a peer answering
+    // `307 Location: http://127.0.0.1:11434/api/pull` had this box make that
+    // request from inside its own network, carrying the full ask body, having
+    // passed a check that only ever saw the first URL.
+    //
+    // `peerEgressFetch` is the whole guard: policy on the URL, the resolved
+    // address pinned at connect time, and redirects refused rather than
+    // followed. Both routes below go through it — the collect route as much as
+    // the ask route, because a second caller that skipped it would reopen the
+    // hole for the whole domain.
     try {
-      const response = await fetch(url, {
+      const response = await peerEgressFetch(url, {
         method: init.method,
         headers: {
           authorization: `Bearer ${accessToken}`,
@@ -102,6 +104,15 @@ export class PeerAskClient {
 
       return normalize(askId, (await response.json()) as unknown);
     } catch (error: unknown) {
+      // "We refused to make this call" and "they did not answer" are different
+      // facts about our own request, and the owner is owed the honest one.
+      // Neither reason ever carries anything the peer supplied.
+      if (error instanceof EgressBlockedError) {
+        this.logger.warn(`refusing peer endpoint ${url}: ${error.reason}`);
+
+        return { askId, status: 'delivered', reason: 'Peer endpoint not permitted' };
+      }
+
       this.logger.warn(`peer call ${url} failed: ${String(error)}`);
 
       return { askId, status: 'delivered', reason: 'Peer unreachable' };

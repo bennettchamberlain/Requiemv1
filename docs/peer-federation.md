@@ -113,7 +113,7 @@ The route deliberately does **not** use `JwtOrApiKeyAuthGuard`: its portal path 
 | **No enumeration** | Portal search returns only opt-in `discoverable` entries; resolution requires an exact handle. |
 | **Bounded blast radius** | Every outbound call is timeout-bounded; a slow or hostile peer degrades to a non-answer rather than hanging the caller. |
 | **A non-answer says nothing about why** | The wire carries `answered` or `pending`, and one constant reason. A block grant, an ask in the owner's review inbox, an ask that expired, and an `askId` this box has never seen are the SAME reply. `declined` vs `pending_review` was a one-bit read on the grant matrix, mappable at 10 probes a minute — the same oracle #2210/#2216 closed for a local asker, which this had been cited as the precedent for. The collapse is made at the **responder**: hiding it on receipt would bind only a well-behaved asker while the word stayed on the wire. |
-| **No SSRF** | Every server-side fetch passes `checkEgressUrl()`: https only, no credentials, no non-standard ports, no private/loopback/link-local/CGNAT/metadata address — including IPv4-mapped IPv6 in **both** spellings, since `URL` normalizes `::ffff:10.0.0.1` to hex. |
+| **No SSRF** | Every server-side fetch goes through `peerEgressFetch()`, which is the only dialer in the domain. Three guards, not one: (1) `checkEgressUrl()` on the URL — https only, no credentials, no non-standard ports, no private/loopback/link-local/CGNAT/metadata/documentation address, no `.local`/`.internal`/bare-label name — including IPv4-mapped IPv6 in **both** spellings, since `URL` normalizes `::ffff:10.0.0.1` to hex, and every decimal/octal/hex/short IPv4 spelling, which `URL` folds to a dotted quad; (2) the resolved address is checked **at connect time** through the dispatcher's `lookup`, so there is no rebind window (see below); (3) **redirects are refused, not followed** — a peer answering `307 Location: http://127.0.0.1:11434/api/pull` used to have this box re-issue the POST, body intact, inside its own network. |
 | **Token can't be replayed at another box** | The peer surface verifies the token against **this box's own `peers.audience`**, not the broad first-party list. It refuses to accept anything until that is configured. |
 | **Inbound flooding is bounded** | `PeerRateLimitService` limits on the verified `(issuer, subject)` **before** the peer-link lookup, so an unknown caller is limited too. |
 | **Timezone-independent availability** | All-day events expand on **UTC** day boundaries, so two boxes in different zones compute identical busy spans. |
@@ -161,7 +161,15 @@ from a box with no peer surface at all.
   (`frontend/apps/web/src/pages/AsksPage/`: `AskComposer`, `AskReviewCard`, `GrantManager`,
   `AnswerCard`, plus stories), but nothing imports them and `App.tsx` registers no route for
   them. Driving asks today means GraphQL.
-- **DNS rebinding** is not closed. `checkEgressUrl` validates the literal host, but a hostname that resolves to a private address at connect time would still be fetched; pinning the resolved IP through the socket is not something Node's `fetch` exposes. The residual exposure is bounded by requiring https, so the target must present a valid certificate for the name.
+- ~~**DNS rebinding** is not closed…~~ **Closed.** This used to say that pinning the resolved IP
+  through the socket "is not something Node's `fetch` exposes". That was wrong, and the
+  counter-example was already in-tree: `domains/embed`'s `UnfurlFetcher` pins addresses through
+  an undici `Agent` whose `connect.lookup` refuses blocked answers. `peers/urlPolicy.ts` now uses
+  the same mechanism — a name that resolves to a private address is refused at connect time, and
+  a name that resolves to *both* a public and a private address is refused outright rather than
+  raced. One thing the connect-time guard does **not** cover: `net.connect` skips `lookup`
+  entirely for a literal IP, so `checkEgressUrl`'s literal-address checks are load-bearing, not
+  redundant (pinned by a test that measures it).
 - **Rate limits are per-process and in-memory.** Correct for a single-instance appliance; a shared store is needed before the ask path goes multi-instance.
 - **The peer access token is supplied by the caller**, not minted here, until Portal token exchange lands.
 - **Nothing in GraphQL drives the collect route.** `OutboundAskService.pollForAnswer` and
