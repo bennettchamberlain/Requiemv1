@@ -47,7 +47,7 @@ const INVISIBLE = /[\u00ad\u200b-\u200f\u2060-\u2064\u206a-\u206f\ufeff]/gu;
 const UNICODE_SPACE = /[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/gu;
 
 /**
- * The shared normalizer.
+ * The shared normalizer, CASE PRESERVED.
  *
  * ORDER MATTERS, and each step is here for a reason:
  *
@@ -57,12 +57,23 @@ const UNICODE_SPACE = /[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u300
  * 2. Strip the invisibles, so a zero-width character cannot survive as a
  *    word-splitting space in step 3.
  * 3. Collapse every flavour of space to a single ASCII one, then trim.
- * 4. Lowercase last, so it applies to whatever NFKC produced.
  *
- * An empty result is `null`, never `''`: the callers read "no class named" off
- * a nullish value, and an empty string is not a class the owner wrote down.
+ * Case folding is deliberately NOT one of the steps; {@link canonicalToken}
+ * adds it. The split exists because the ask's PROMPT needs steps 1–3 and must
+ * not have step 4: it is free text shown back to both sides and to the owner's
+ * review inbox, so lowercasing it would rewrite the asker's own words in the
+ * one place a human reads them before consenting. Everything that makes two
+ * strings compare equal — and therefore everything a block grant is keyed on —
+ * still goes through `canonicalToken`.
+ *
+ * Exported so the ask input layer strips invisibles with THIS function rather
+ * than a second copy of the character classes. A prompt normalizer that
+ * disagreed with the class/archetype normalizer about what a zero-width space
+ * is would be exactly the drift the note at the top of this file warns about.
+ *
+ * An empty result is `null`, never `''` — see {@link canonicalToken}.
  */
-function canonicalToken(value: unknown): string | null {
+export function normalizeText(value: unknown): string | null {
   // NOT `value == null`. `dataClass` and `queryType` reach here from jsonb
   // (`ask_grants.scope.dataClasses`, `asks.query`) and from service callers that
   // bypass the GraphQL/zod schemas, so the declared `string` type is a claim,
@@ -83,14 +94,21 @@ function canonicalToken(value: unknown): string | null {
     return null;
   }
 
-  const normalized = value
-    .normalize('NFKC')
-    .replace(INVISIBLE, '')
-    .replace(UNICODE_SPACE, ' ')
-    .trim()
-    .toLowerCase();
+  const normalized = value.normalize('NFKC').replace(INVISIBLE, '').replace(UNICODE_SPACE, ' ').trim();
 
   return normalized ? normalized : null;
+}
+
+/**
+ * The shared normalizer plus case folding — the COMPARISON form.
+ *
+ * Lowercasing is last, so it applies to whatever NFKC produced.
+ *
+ * An empty result is `null`, never `''`: the callers read "no class named" off
+ * a nullish value, and an empty string is not a class the owner wrote down.
+ */
+function canonicalToken(value: unknown): string | null {
+  return normalizeText(value)?.toLowerCase() ?? null;
 }
 
 /**

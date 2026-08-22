@@ -124,7 +124,10 @@ describe('AskResolver — enabled', () => {
 
     const result = await resolver.createAsk(CTX, {
       responderId: GlobalUID.encode('user', 'responder-1'),
-      query: { queryType: 'photos', dataClass: 'beach', prompt: 'beach photos?' },
+      // `queryType` is the ARCHETYPE, not the data class — `photos` was never
+      // one, and since `parseAskQueryType` closed the vocabulary it is refused.
+      // The class it was standing in for still travels, in `dataClass`.
+      query: { queryType: 'content', dataClass: 'beach', prompt: 'beach photos?' },
     });
 
     expect(rateLimitService.consume).toHaveBeenCalledWith('user-1');
@@ -132,7 +135,7 @@ describe('AskResolver — enabled', () => {
       { userId: 'user-1' },
       {
         responderUserId: 'responder-1',
-        query: { queryType: 'photos', dataClass: 'beach', prompt: 'beach photos?' },
+        query: { queryType: 'content', dataClass: 'beach', prompt: 'beach photos?' },
       },
     );
     expect(result.success).toBe(true);

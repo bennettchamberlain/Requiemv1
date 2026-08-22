@@ -24,15 +24,56 @@ export enum DisclosureRungEnum {
 
 registerEnumType(DisclosureRungEnum, { name: 'DisclosureRung' });
 
-/** The bounded, asker-supplied query. Phase 2 formalizes this as a DCQL subset. */
+/**
+ * The bounded, asker-supplied query. Phase 2 formalizes this as a DCQL subset.
+ *
+ * ═══ THE BOUNDS ARE REAL; THEY LIVE IN `asks/askInput.ts` ═══
+ *
+ * Every field here is `String`, so this declaration is where a reader looks for
+ * the limits on the two most attacker-controlled values in the whole consent
+ * surface — and would find none. `createAsk` runs `parseAskQueryInput` over
+ * this object before anything is stored, matched against a grant, or shown to a
+ * human, and that is where they are: a closed archetype vocabulary for
+ * {@link queryType}, and normalization plus a hard cap for {@link prompt} and
+ * {@link dataClass}. Off-contract input is a 400 — REJECTED, never truncated,
+ * because a silently shortened prompt is a different question from the one the
+ * asker wrote, shown to the owner as though it were theirs.
+ *
+ * WHY NOT AN ENUM AND A `@MaxLength` HERE, which would be stronger?
+ *
+ *  - the checked-in `__generated__/schema.graphql` is what the web app's
+ *    codegen reads, so turning `queryType: String` into an enum desynchronizes
+ *    a generated artifact this change does not own; and
+ *  - a schema-level constraint binds the GraphQL layer ONLY. Every caller that
+ *    reaches the resolver directly — including every unit test — would be
+ *    unprotected, which also means no test could remove the control and watch
+ *    something go red. A checked value binds all of them.
+ */
 @InputType()
 export class AskQueryInput {
+  /**
+   * The ask's ARCHETYPE — one of `ASK_ARCHETYPES`, and half the key every
+   * standing grant is matched on.
+   *
+   * Not a free label. While it was one, the key a block grant is keyed on was
+   * chosen by the ASKER: an owner who blocked one word was walked past by an
+   * asker who typed another, and the evaluation fell through to the review
+   * default. See `parseAskQueryType`.
+   */
   @Field(() => String)
   queryType!: string;
 
+  /** Coarse data class, e.g. `photos`. Normalized and length-capped on the way in. */
   @Field(() => String, { nullable: true })
   dataClass?: string;
 
+  /**
+   * The natural-language question, shown back to both sides. Never executed.
+   *
+   * Normalized with the same invisible-stripping normalizer the consent gate
+   * uses, so a prompt cannot render one way to the human reading the review
+   * inbox and compare another way to anything reading the stored jsonb.
+   */
   @Field(() => String)
   prompt!: string;
 }
@@ -88,6 +129,15 @@ export class CreateAskGrantInput {
   @Field(() => ID, { nullable: true })
   granteePeerLinkId?: string;
 
+  /**
+   * The archetype this grant covers — the SAME closed vocabulary an ask is held
+   * to, checked by `parseGrantQueryType` in the resolver.
+   *
+   * Constraining the writing end is what keeps "I blocked this" and "this is
+   * blocked" the same statement: a grant naming a word no ask can carry matches
+   * nothing, while the Grant Manager shows it back to the owner as live
+   * protection.
+   */
   @Field(() => String)
   queryType!: string;
 

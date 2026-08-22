@@ -34,4 +34,6 @@ export {
 } from './services/SearchService';
 export type { EntityTag, RemoveTagResult, Tag, TimestampedTag, UpdateTagResult };
 export { INDEXABLE_ENTITIES, TAGGABLE_ENTITIES } from './types';
-export type { EntityIdentifier, IndexableEntity, TaggableEntity } from './types';
+export type { EntityIdentifier, IndexableEntity, PromptSearchResult, TaggableEntity } from './types';
+export { buildPromptQuery } from './promptQuery';
+export type { BuildPromptQueryOptions, PromptQueryGroup } from './promptQuery';
