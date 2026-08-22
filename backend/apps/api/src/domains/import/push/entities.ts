@@ -1,6 +1,7 @@
 import { type GraphEntityInputDto, isNonNameParticipant, isPlaceholderPersonName } from '@ci/domains/graph';
 
 import type { StagedEntity } from '../entities/StagedEntityEntity';
+import { stagedNaturalKey } from '../staging/identity';
 
 /**
  * The `ci.entities.entity_type` a staged type resolves to.
@@ -72,15 +73,7 @@ export function entityTypeFor(staged: StagedEntity): string {
  * collide on a shared name.
  */
 export function naturalKeyFor(staged: StagedEntity): string | null {
-  const handle = staged.identityKey?.trim();
-
-  if (handle) {
-    return `${staged.type ?? 'entity'}:${handle}`;
-  }
-
-  const name = staged.name?.trim().toLowerCase();
-
-  return name ? `${staged.type ?? 'entity'}:${name}` : null;
+  return stagedNaturalKey(staged.type, staged.identityKey, staged.name);
 }
 
 /**
