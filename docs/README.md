@@ -93,6 +93,10 @@ ADR-0004 lives one level up as [`architecture/adr-pipeline-ledger.md`](architect
 - [peer-federation.md](peer-federation.md) — asking questions across two Companion memories:
   Portal discovery, the three ask archetypes, the consent gate, free/busy without leaking a
   calendar.
+- [asks-threat-model.md](asks-threat-model.md) — the adversaries the ask feature does and
+  does not defend against: coercion in a shared household, stalking via repeated free/busy,
+  social engineering at the consent moment, prompt injection (traced, none today),
+  cumulative disclosure, and the default tier. Read before changing a ceiling.
 
 ## Import & ETL — [`docs/import/`](import/)
 
