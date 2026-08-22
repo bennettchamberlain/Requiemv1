@@ -213,6 +213,11 @@ class LocalHubPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun getCurrentLocation(call: PluginCall) {
+        call.reject("getCurrentLocation is only available on iOS")
+    }
+
+    @PluginMethod
     fun setLocationHome(call: PluginCall) {
         call.resolve()
     }

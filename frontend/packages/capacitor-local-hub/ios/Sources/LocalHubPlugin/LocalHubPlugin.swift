@@ -31,6 +31,7 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setLocationMode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLocationStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getCurrentLocation", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setLocationHome", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise)
     ]
@@ -179,6 +180,15 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getLocationStatus(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             call.resolve(LocationTracker.shared.status())
+        }
+    }
+
+    @objc func getCurrentLocation(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            LocationTracker.shared.requestCurrentFix(
+                resolve: { payload in call.resolve(payload) },
+                reject: { message in call.reject(message) }
+            )
         }
     }
 

@@ -83,6 +83,9 @@ export function AddPlaceModal({ open, onClose, onCreated }: Props) {
       <ResponsiveDialog.Content className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
         <ResponsiveDialog.Header>
           <ResponsiveDialog.Title>Add Place</ResponsiveDialog.Title>
+          <ResponsiveDialog.Description>
+            Save a spot from where you are, or type an address.
+          </ResponsiveDialog.Description>
         </ResponsiveDialog.Header>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-col gap-4">

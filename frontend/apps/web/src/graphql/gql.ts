@@ -37,6 +37,7 @@ type Documents = {
     "\n  query GetWeekAhead {\n    weekForecast {\n      horizon\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n    dueForecast {\n      generatedAt\n      due {\n        clusterId\n        name\n        l0Class\n        lastSeen\n        daysSinceLast\n        medianIntervalDays\n        dueInDays\n        window\n        overdue\n        scheduledDate\n        confidence\n      }\n    }\n  }\n": typeof types.GetWeekAheadDocument,
     "\n  query GetTags {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n        }\n      }\n    }\n  }\n": typeof types.GetTagsDocument,
     "\n  query WhatBarEventTypes {\n    eventTypes\n  }\n": typeof types.WhatBarEventTypesDocument,
+    "\n  query ReverseGeocode($latitude: Float!, $longitude: Float!) {\n    reverseGeocode(latitude: $latitude, longitude: $longitude) {\n      status\n      placeName\n    }\n  }\n": typeof types.ReverseGeocodeDocument,
     "\n  query EventSources {\n    eventSources\n  }\n": typeof types.EventSourcesDocument,
     "\n  query EventTypes {\n    eventTypes\n  }\n": typeof types.EventTypesDocument,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": typeof types.SearchResultCommunicationDataFragmentDoc,
@@ -278,6 +279,7 @@ const documents: Documents = {
     "\n  query GetWeekAhead {\n    weekForecast {\n      horizon\n      generatedAt\n      days {\n        date\n        dow\n        clusters {\n          clusterId\n          name\n          l0Class\n          pOccur\n          scheduled\n          daypartProbs { label probability }\n        }\n      }\n    }\n    dueForecast {\n      generatedAt\n      due {\n        clusterId\n        name\n        l0Class\n        lastSeen\n        daysSinceLast\n        medianIntervalDays\n        dueInDays\n        window\n        overdue\n        scheduledDate\n        confidence\n      }\n    }\n  }\n": types.GetWeekAheadDocument,
     "\n  query GetTags {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n        }\n      }\n    }\n  }\n": types.GetTagsDocument,
     "\n  query WhatBarEventTypes {\n    eventTypes\n  }\n": types.WhatBarEventTypesDocument,
+    "\n  query ReverseGeocode($latitude: Float!, $longitude: Float!) {\n    reverseGeocode(latitude: $latitude, longitude: $longitude) {\n      status\n      placeName\n    }\n  }\n": types.ReverseGeocodeDocument,
     "\n  query EventSources {\n    eventSources\n  }\n": types.EventSourcesDocument,
     "\n  query EventTypes {\n    eventTypes\n  }\n": types.EventTypesDocument,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": types.SearchResultCommunicationDataFragmentDoc,
@@ -590,6 +592,10 @@ export function gql(source: "\n  query GetTags {\n    tags {\n      edges {\n   
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query WhatBarEventTypes {\n    eventTypes\n  }\n"): (typeof documents)["\n  query WhatBarEventTypes {\n    eventTypes\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query ReverseGeocode($latitude: Float!, $longitude: Float!) {\n    reverseGeocode(latitude: $latitude, longitude: $longitude) {\n      status\n      placeName\n    }\n  }\n"): (typeof documents)["\n  query ReverseGeocode($latitude: Float!, $longitude: Float!) {\n    reverseGeocode(latitude: $latitude, longitude: $longitude) {\n      status\n      placeName\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
