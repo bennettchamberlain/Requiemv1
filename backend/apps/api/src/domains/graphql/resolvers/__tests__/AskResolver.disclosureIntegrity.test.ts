@@ -86,6 +86,10 @@ function makeResolver(
     revoke: jest.fn(),
     listForOwner: jest.fn(),
     evaluate: jest.fn().mockResolvedValue(options.evaluation ?? { decision: 'review' }),
+    // `createAsk` now ANSWERS an ask a standing grant pre-authorized, and asks
+    // this first so a consent withdrawn since `submit` means the owner's memory
+    // is never read at all.
+    isConsentStanding: jest.fn().mockResolvedValue(true),
   };
 
   // Stands in for the real transactional service: hands back the answer it was
@@ -447,7 +451,7 @@ describe('createAsk — the responder’s policy posture is not part of the rece
 
       const result = await resolver.createAsk(asAsker, {
         responderId: GlobalUID.encode('user', RESPONDER),
-        query: { queryType: 'photos', prompt: 'photos of us?' },
+        query: { queryType: 'content', prompt: 'photos of us?' },
       });
 
       expect(result.success).toBe(true);

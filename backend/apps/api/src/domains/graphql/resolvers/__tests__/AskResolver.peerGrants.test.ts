@@ -88,7 +88,7 @@ describe('createAskGrant can address a peer link', () => {
 
     const result = await resolver.createAskGrant(CTX, {
       granteePeerLinkId: 'link-ada',
-      queryType: 'photos',
+      queryType: 'content',
       mode: 'auto',
     } as never);
 
@@ -105,7 +105,7 @@ describe('createAskGrant can address a peer link', () => {
 
     await resolver.createAskGrant(CTX, {
       granteeId: USER_GID,
-      queryType: 'photos',
+      queryType: 'content',
       mode: 'review',
     } as never);
 
@@ -122,7 +122,7 @@ describe('createAskGrant can address a peer link', () => {
 
     await resolver.createAskGrant(CTX, {
       granteePeerLinkId: 'link-ada',
-      queryType: 'photos',
+      queryType: 'content',
       dataClasses: ['beach'],
       maxDisclosure: 'count',
       mode: 'auto',

@@ -4,8 +4,10 @@ import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { Context, type RequestContext, type UserServiceContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { LoggerService } from '@ci/common/logging';
 import {
   type Ask,
+  type AskAnswer,
   AskAnswerService,
   AskAuditService,
   AskExecutorService,
@@ -19,8 +21,11 @@ import {
   isAnswerable,
   narrowerForm,
   narrowestRung,
+  parseAskQueryInput,
+  parseGrantQueryType,
   type AnswerForm,
   type AskGrantScope,
+  type DisclosedAnswer,
   type DisclosureRung,
   type GrantMode,
   type TrustTier,
@@ -52,10 +57,11 @@ import { GlobalUID } from '../types/GlobalUID';
  * as if absent (mutations return `{ success: false }`, queries return empty),
  * mirroring how the shared-search surface stays dark behind `shared.search`.
  *
- * The `answering`/answered completion of an approved or auto-authorized ask is
- * produced by the run-as-owner executor (`runAsk`, task #1719) and the
- * disclosure filter (Phase 1); this resolver drives the consent + lifecycle up
- * to that point.
+ * The `answering`/answered completion of an ask is produced HERE, by
+ * {@link disclose} — the run-as-owner executor plus the disclosure filter. Two
+ * entry points reach it and they share the one method rather than each carrying
+ * a copy: {@link runAsk}, when the owner taps "Answer now", and
+ * {@link createAsk}, when the owner's standing grants already said yes.
  */
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => AskType)
@@ -72,6 +78,62 @@ export class AskResolver {
     private readonly featureService: FeatureService,
   ) {}
 
+  /**
+   * The auto-answer path's only output, and deliberately NOT a constructor
+   * parameter.
+   *
+   * `LoggerService` is `Scope.TRANSIENT`, so injecting it would make this
+   * resolver request-scoped-adjacent and — more to the point — would add a
+   * tenth positional argument to a constructor that five test files hand-wire.
+   * A logger is not a collaborator any of them assert on, and a missing one
+   * would surface as a TypeError inside the very catch block that exists to
+   * make failures harmless. Constructed here it is always present.
+   */
+  private readonly logger = contextLogger(AskResolver.name);
+
+  /**
+   * Submit an ask, and — when a standing `auto` grant already authorized it —
+   * ANSWER it in the same call.
+   *
+   * ═══ A STANDING GRANT BOUGHT NOTHING LOCALLY ═══
+   *
+   * `submit` returns `auto` when the owner's grant matrix pre-authorized this
+   * ask; it stamps the deciding grant as the consent basis and the ceiling that
+   * grant imposed, and leaves the ask `delivered`. Nothing then produced an
+   * answer, because {@link runAsk} was the only answer-producing call site in
+   * the codebase and it is an OWNER mutation. So the pre-authorized ask landed
+   * in the owner's review inbox with an "Answer now" button beside it — exactly
+   * where an UNauthorized one lands — while the FEDERATED auto path
+   * (`PeerAskService.handle`) answered end to end. The owner's standing "yes,
+   * always" was, locally, a standing "ask me every time".
+   *
+   * ═══ THIS INCREASES DISCLOSURE, WHICH IS ITS PURPOSE, SO ═══
+   *
+   * The answer is produced by {@link disclose} — the same method `runAsk` uses,
+   * not a copy of it. The archetype clamp, the tier ceiling with its
+   * sensitive-class floor, and the narrower of the captured and live grant
+   * ceilings all apply unchanged, and `AskService.complete` still re-checks that
+   * the deciding grant is in force before it writes anything. Nothing here
+   * relaxes any of them: no disclosure is possible that an owner tapping
+   * "Answer now" on the same ask would not already have produced.
+   *
+   * WHO RUNS IT: the RESPONDER. The pipeline reads the responder's memory and
+   * every write in it is responder-scoped, so the context is built from
+   * `ask.responderUserId` and never from the caller — the caller here is the
+   * ASKER.
+   *
+   * WHAT THE ASKER LEARNS: an auto-answered ask comes back `answered` instead of
+   * `delivered`, and that IS a new signal — it is also the one signal
+   * {@link askerVisibleStatus} deliberately preserves ("there is an answer, go
+   * and read it"), and it is unavoidable: the answer exists, and `askAnswer`
+   * would hand it to them on the next round trip anyway. Everything else the
+   * asker sees is unchanged — the receipt is the same constant
+   * {@link ASK_ACCEPTED} whatever the grant said, the answer itself is NOT
+   * attached to this payload, and `updatedAt` stays pinned to `createdAt`. The
+   * federated protocol makes exactly this trade in exactly this place: an
+   * auto-answered peer ask returns `answered` synchronously while every other
+   * outcome returns `pending`.
+   */
   @Mutation(() => CreateAskPayload)
   async createAsk(
     @Context() context: RequestContext,
@@ -85,18 +147,93 @@ export class AskResolver {
     this.rateLimitService.consume(serviceContext.userId);
     const responderUserId = GlobalUID.parse('user', input.responderId);
 
-    const { ask } = await this.askService.submit(serviceContext, {
+    const { ask, decision } = await this.askService.submit(serviceContext, {
       responderUserId,
-      query: {
-        queryType: input.query.queryType,
-        dataClass: input.query.dataClass,
-        prompt: input.query.prompt,
-      },
+      // Bounded and normalized before it is stored, matched, or shown to
+      // anybody. The two fields the asker fully controls used to arrive as bare
+      // `String`s: an unbounded prompt, and a `queryType` that could be any word
+      // at all — which is the key every block grant is matched on. See
+      // `asks/askInput.ts`.
+      query: parseAskQueryInput(input.query),
     });
+
+    const answered = decision === 'auto' ? await this.autoAnswer(ask) : ask;
 
     // The grant decision is deliberately NOT returned — see {@link ASK_ACCEPTED}.
     // `submit` still needs to make it; the asker just does not get to read it.
-    return { success: true, ask: AskType.toType(ask, serviceContext.userId), decision: ASK_ACCEPTED };
+    return {
+      success: true,
+      ask: AskType.toType(answered, serviceContext.userId),
+      decision: ASK_ACCEPTED,
+    };
+  }
+
+  /**
+   * Answer a pre-authorized ask AS ITS RESPONDER, or leave it for review.
+   *
+   * Returns the answered ask on success and the UNTOUCHED one on any failure.
+   * A throw here would be wrong twice over. Functionally: the ask is already
+   * created, already carries its consent basis, and is already answerable by
+   * `runAsk`, so the owner simply answers it themselves — strictly LESS
+   * disclosure, with a human in the loop. And as a side channel: only the auto
+   * path can fail this way, so an error the ASKER can observe is a probe for
+   * "does a standing grant cover me?", which is the whole class of oracle
+   * {@link ASK_ACCEPTED} and `askerVisibleStatus` exist to close. The failure is
+   * logged where the owner's operator can see it and nowhere the asker can.
+   */
+  private async autoAnswer(ask: Ask): Promise<Ask> {
+    // An OUTBOUND ask has no local responder — it is answered by the peer's box.
+    // Belt and braces (`submit` is only reached from the local create path), but
+    // the responder context below would otherwise be built from a null.
+    if (ask.responderUserId == null) {
+      return ask;
+    }
+
+    // The RESPONDER's context, never the caller's. See {@link disclose}.
+    const responderContext: UserServiceContext = { userId: ask.responderUserId };
+
+    try {
+      // ═══ THE PULL-SIDE CONSENT CHECK RUNS BEFORE THE MEMORY READ ═══
+      //
+      // `AskService.complete` re-checks the standing grant too, and THAT check
+      // is the authoritative one — it runs inside the same transaction that
+      // writes the terminal status. But it runs after the executor has already
+      // read the owner's memory. Checking here as well is the ordering
+      // `PeerAskService` adopted for the federated path: a consent the owner
+      // withdrew between `submit` and this line means their data is never
+      // touched at all, rather than read and then discarded.
+      //
+      // Scoped to the auto path deliberately. `isConsentStanding` asks about a
+      // STANDING-GRANT pre-authorization, and an ask the owner personally
+      // approved (`answering`) has none to check — that human decision is not
+      // undone by revoking an unrelated grant (#2211), which is why `runAsk`
+      // does not take this branch.
+      if (!(await this.grantService.isConsentStanding(ask))) {
+        throw new BadRequestException(
+          `Ask ${ask.id} was pre-authorized by a grant that is no longer in force; it needs owner review`,
+        );
+      }
+
+      // Resolved AS THE RESPONDER, who owns the link on an inbound ask. A local
+      // ask carries no link, resolves to null, and takes the `household` tier.
+      const link = await this.resolvePeerLink(responderContext, ask);
+      const { ask: completed } = await this.disclose(responderContext, ask, {
+        tier: resolveTier(ask, link),
+        peerHandle: link?.peerHandle ?? null,
+      });
+
+      return completed;
+    } catch (err) {
+      this.logger.warn(
+        `Auto-answer failed for ask ${ask.id}; left for owner review: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+
+      // The ask keeps its `delivered` status and its consent basis, so the owner
+      // still sees it and `runAsk` can still answer it.
+      return ask;
+    }
   }
 
   @Mutation(() => AskPayload)
@@ -192,10 +329,104 @@ export class AskResolver {
       throw new BadRequestException(`Ask ${gid} is not ready to answer (status: ${ask.status})`);
     }
 
+    // Resolved ONCE and shared by the two things that need it — the trust tier
+    // that caps this answer, and the handle stamped into the audit row. A second
+    // lookup is a second chance for them to name different peers for the same
+    // disclosure.
+    const link = await this.resolvePeerLink(serviceContext, ask);
+
+    // Everything that makes an answer safe — the archetype clamp, the tier
+    // ceiling with its sensitive-class floor, the narrower of the captured and
+    // the live grant ceilings, the disclosed-vs-backing split, and the single
+    // transaction that makes the answer and its audit row inseparable — lives
+    // in {@link disclose}, because the AUTO path in {@link createAsk} needs
+    // exactly the same steps and a second copy of them is a second place for
+    // them to drift apart.
+    const {
+      ask: completed,
+      answer,
+      disclosed,
+    } = await this.disclose(serviceContext, ask, {
+      tier: resolveTier(ask, link),
+      peerHandle: link?.peerHandle ?? null,
+      redactItemIds,
+      disclosureForm: disclosureForm as AnswerForm | undefined,
+    });
+
+    return {
+      success: true,
+      ask: AskType.toType(completed, serviceContext.userId, link?.peerHandle ?? null),
+      // The responder just ran this — they get their own true numbers.
+      answer: AskAnswerType.toType(answer, true),
+      disclosedCount: disclosed.disclosedCount,
+      withheldCount: disclosed.withheldCount,
+    };
+  }
+
+  /**
+   * Turn an ALREADY-AUTHORIZED ask into a disclosure: run as the owner, clamp,
+   * persist. Shared by {@link runAsk} (the owner taps "Answer now") and by the
+   * standing-grant auto path in {@link createAsk}.
+   *
+   * ═══ WHY THIS IS ONE METHOD AND NOT TWO COPIES ═══
+   *
+   * There were two ways an ask could become answerable — the owner approving it
+   * (`answering`) and a standing `auto` grant pre-authorizing it (`delivered`
+   * plus a consent basis) — and exactly ONE piece of code that produced an
+   * answer, `runAsk`. So the second way did not work. Everything that makes an
+   * answer safe lives in the handful of steps between the executor and the
+   * persist, and copying them into the create path would have been a second
+   * place for them to drift out of step with this one.
+   *
+   * ═══ THE FOUR LIMITS, EACH ABLE ONLY TO REDUCE ═══
+   *
+   *   1. the ARCHETYPE's natural form, narrowed by the owner's explicit choice
+   *      ({@link narrowerForm}) — never widened by it, because the archetype is
+   *      read off the ASKER's `queryType`;
+   *   2. the TIER ceiling for the class ({@link disclosureCeiling}), which is
+   *      also where the sensitive-class floor lives: `health`, `financial`,
+   *      `location` and their siblings clamp to `none` for every tier below
+   *      `family`, and an ask naming no class at all gets the tier's floor
+   *      rather than its generous `'*'` fallback;
+   *   3. the ceiling CAPTURED on the ask when consent was given;
+   *   4. the ceiling the owner's grants impose RIGHT NOW.
+   *
+   * `context` MUST be the RESPONDER's: the query runs in their memory scope and
+   * every write below is responder-scoped (`AskService.responderOwned`). The
+   * auto path is reached from the ASKER's request, so it constructs one from
+   * `ask.responderUserId` rather than passing the caller's — this method does
+   * not decide who the caller is, so the caller must have decided already.
+   */
+  private async disclose(
+    context: UserServiceContext,
+    ask: Ask,
+    options: {
+      /**
+       * The asker's relationship tier, which sets the tier ceiling. Handed in
+       * because deriving it needs the peer link, which the caller has already
+       * resolved for the audit's peer handle.
+       */
+      tier: TrustTier;
+      peerHandle?: string | null;
+      /** The owner's "deny all but X" set — matched ids to withhold. */
+      redactItemIds?: string[];
+      /** The owner's chosen answer SHAPE. Can only narrow the archetype's. */
+      disclosureForm?: AnswerForm;
+    },
+  ): Promise<{ ask: Ask; answer: AskAnswer; disclosed: DisclosedAnswer }> {
+    // The lifecycle gate runs HERE, before any side effect. `complete()` below
+    // enforces it too, but it used to be the ONLY enforcement — and it ran after
+    // `answerService.create`, so a declined ask still persisted an answer the
+    // asker could read, with no audit row, before the throw. Checking first also
+    // means a declined or already-answered ask never runs the search at all.
+    if (!isAnswerable(ask.status, ask.consentBasis)) {
+      throw new BadRequestException(`Ask ${ask.id} is not ready to answer (status: ${ask.status})`);
+    }
+
     const identifiers = await this.executorService.execute(ask);
     const matches = identifiers.map((identifier) => ({ id: identifier.id, type: identifier.type }));
 
-    const redacted = new Set(redactItemIds ?? []);
+    const redacted = new Set(options.redactItemIds ?? []);
     // Entities the answer is COMPUTED OVER, post-redaction. Not a disclosure —
     // the ceiling below can (and usually does) reduce what actually reaches the
     // asker to a count or a yes/no. Audited under its own name; see below.
@@ -207,12 +438,12 @@ export class AskResolver {
     // sits lower on the disclosure ladder, so the owner can say "just yes or no"
     // to a retrieval ask but never the reverse.
     const inferred = inferAnswerForm(ask.query);
-    const form = disclosureForm ? narrowerForm(disclosureForm as AnswerForm, inferred) : inferred;
+    const form = options.disclosureForm ? narrowerForm(options.disclosureForm, inferred) : inferred;
 
     const built = buildDisclosedAnswer({
       form,
       matches,
-      redactedIds: redactItemIds,
+      redactedIds: options.redactItemIds,
       consentBasis: ask.consentBasis,
     });
 
@@ -232,16 +463,10 @@ export class AskResolver {
     // imposes no ceiling" and "no ceiling applies" are different statements,
     // and collapsing them is the shape of the escalation documented on
     // {@link resolveGrantCeiling}.
-    // Resolved ONCE and shared by the two things that need it — the trust tier
-    // that caps this answer, and the handle stamped into the audit row. A second
-    // lookup is a second chance for them to name different peers for the same
-    // disclosure.
-    const link = await this.resolvePeerLink(serviceContext, ask);
-    const tier = resolveTier(ask, link);
-    const tierCeiling = disclosureCeiling(tier, ask.query.dataClass);
+    const tierCeiling = disclosureCeiling(options.tier, ask.query.dataClass);
     const grantCeiling = await this.resolveGrantCeiling(ask);
     const ceiling = narrowestRung(tierCeiling, grantCeiling) ?? tierCeiling;
-    const answer = applyDisclosureCeiling(built, ceiling);
+    const disclosed = applyDisclosureCeiling(built, ceiling);
 
     // The audit records what was ACTUALLY disclosed — which for every form but
     // `retrieval` is nothing at all. Auditing `backingIds` here (as this did)
@@ -249,33 +474,22 @@ export class AskResolver {
     // the audit always claiming the larger, pre-ceiling number. The candidate
     // set is still kept, under `backingEntities`, where it does not masquerade
     // as a disclosure.
-    const disclosedIds = answer.items.map((item) => item.id);
+    const disclosedIds = disclosed.items.map((item) => item.id);
 
     // One transaction: an answer with no audit row is PERMANENT, because the
     // insert-only guard in `AskAnswerService.create` rejects the retry.
-    const { ask: completed, answer: savedAnswer } = await this.askService.completeWithAnswer(
-      serviceContext,
-      id,
-      {
-        answer,
-        disclosedEntityIds: disclosedIds,
-        backingEntityIds: backingIds,
-        // WHO this crossed to. Null for a local ask, and null for a federated one
-        // whose link has since been deleted — the audit still carries the link id
-        // off the ask row either way. Without it, the disclosure the owner
-        // personally approved was the only one their history could not attribute.
-        peerHandle: link?.peerHandle ?? null,
-      },
-    );
+    const { ask: completed, answer } = await this.askService.completeWithAnswer(context, ask.id, {
+      answer: disclosed,
+      disclosedEntityIds: disclosedIds,
+      backingEntityIds: backingIds,
+      // WHO this crossed to. Null for a local ask, and null for a federated one
+      // whose link has since been deleted — the audit still carries the link id
+      // off the ask row either way. Without it, the disclosure the owner
+      // personally approved was the only one their history could not attribute.
+      peerHandle: options.peerHandle ?? null,
+    });
 
-    return {
-      success: true,
-      ask: AskType.toType(completed, serviceContext.userId, link?.peerHandle ?? null),
-      // The responder just ran this — they get their own true numbers.
-      answer: AskAnswerType.toType(savedAnswer, true),
-      disclosedCount: answer.disclosedCount,
-      withheldCount: answer.withheldCount,
-    };
+    return { ask: completed, answer, disclosed };
   }
 
   /**
@@ -497,7 +711,12 @@ export class AskResolver {
     const grant = await this.grantService.create(serviceContext, {
       granteeUserId: input.granteeId ? GlobalUID.parse('user', input.granteeId) : null,
       granteePeerLinkId,
-      queryType: input.queryType,
+      // The SAME closed vocabulary the ask side is now held to. An owner who
+      // writes `block` on a word no ask can ever carry has written nothing, and
+      // the Grant Manager would show it back to them as live protection — so
+      // constraining only the reading end would turn "I blocked this" and "this
+      // is blocked" into two different statements. See `parseAskQueryType`.
+      queryType: parseGrantQueryType(input.queryType),
       dataClass: input.dataClass ?? null,
       // `scope` used to be hard-coded to `{ dataClasses }` or null, which is why
       // `maxDisclosure` had three readers and no writer — the owner's disclosure
@@ -726,6 +945,14 @@ function toGrantScope(input: { dataClasses?: string[]; maxDisclosure?: string })
   };
 
   return Object.keys(scope).length > 0 ? scope : undefined;
+}
+
+/** A {@link LoggerService} already tagged with its owner's name. */
+function contextLogger(context: string): LoggerService {
+  const logger = new LoggerService();
+  logger.setContext(context);
+
+  return logger;
 }
 
 /**
