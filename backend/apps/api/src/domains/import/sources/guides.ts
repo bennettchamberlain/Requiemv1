@@ -2083,7 +2083,7 @@ export const WIZARD_SOURCES: WizardSource[] = [
   {
     id: 'remember_the_milk',
     title: 'Remember the Milk',
-    blurb: 'Your tasks, lists, and notes from Remember the Milk.',
+    blurb: 'Your tasks from a Remember the Milk account export.',
     ecosystem: 'productivity',
     category: 'productivity',
     tier: 3,
@@ -2091,13 +2091,20 @@ export const WIZARD_SOURCES: WizardSource[] = [
     wait: 'minutes',
     url: 'https://www.rememberthemilk.com/app/#settings/account',
     steps: [
-      'Open Remember the Milk → Settings → Account (link below).',
-      'Look for "Export" or "Backup" under the account or data section.',
+      'Open Remember the Milk (web or desktop app) → click the Settings gear (top right).',
+      'Choose "Account settings" → "Export" in the left menu.',
+      'Click "Download Export" for the JSON format (the iCalendar link next to it is more limited — skip it).',
       UPLOAD_STEP,
     ],
+    expectedFormat:
+      'RTM\'s account "Download Export" JSON — a `{ "tasks": [ { "name", "date_completed"?, ... } ] }` file. RTM does not publish a schema for it, so only the two fields a real downloaded export was confirmed to carry (github.com/feoh/forgetthemilk) are imported.',
+    whatImported: ["Each task's title", 'Whether the task is completed'],
     inboxPath: 'remember_the_milk',
-    importerReady: false,
-    notes: ['Backed by the Data Transfer Project — RTM supports tasks export and import. No importer yet.'],
+    importer: 'remember_the_milk',
+    importerReady: true,
+    notes: [
+      "RTM's Help Center documents the export button but not the JSON layout, and RTM has not published one — so due dates, notes, tags, priority, and list names are not imported yet, only each task's title and completed/not-completed status.",
+    ],
   },
 
   // ===========================================================================
