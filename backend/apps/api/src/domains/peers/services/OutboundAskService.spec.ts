@@ -1,7 +1,23 @@
+/**
+ * `undici` is mocked for the SSRF suite at the bottom, which drives a REAL
+ * `PeerAskClient` through this service. Every other test here uses a stubbed
+ * client and never reaches the transport, so the mock is inert for them.
+ */
+jest.mock('undici', () => {
+  const actual = jest.requireActual('undici');
+
+  return { __esModule: true, ...actual, fetch: jest.fn() };
+});
+
+import { fetch as undiciFetch } from 'undici';
+
 import { type PeerLink } from '../entities/PeerLinkEntity';
 import type { AskerVisiblePeerReply } from '../protocol';
 
 import { OutboundAskService, toStoredAnswer } from './OutboundAskService';
+import { PeerAskClient } from './PeerAskClient';
+
+const mockFetch = undiciFetch as unknown as jest.Mock;
 
 const CTX = { userId: 'user-1' };
 
@@ -31,6 +47,8 @@ function makeService(
     askStatus?: string;
     correlation?: unknown;
     storedAnswer?: unknown;
+    /** Swap in a REAL PeerAskClient; the returned `client` stub stays unused. */
+    peerClient?: PeerAskClient;
   } = {},
 ) {
   const peerLinkService = {
@@ -100,7 +118,7 @@ function makeService(
     answerService as never,
     auditService as never,
     correlationService as never,
-    client as never,
+    (overrides.peerClient ?? client) as never,
     repositoryWithManager as never,
     logger as never,
   );
@@ -354,5 +372,124 @@ describe('toStoredAnswer', () => {
     // here would be that distinction, written down.
     expect(stored.consentBasis).toBeNull();
     expect(stored.disclosedCount).toBe(3);
+  });
+});
+
+/**
+ * ═══ THE SSRF GUARD, THROUGH THE SERVICE THAT CALLS IT ═══
+ *
+ * `PeerAskClient.spec.ts` proves the client refuses. This proves the REFUSAL
+ * IS FAIL-CLOSED once it reaches the caller: nothing is persisted, no audit row
+ * is written, the ask does not go terminal, and the owner is told what actually
+ * happened.
+ *
+ * That distinction has teeth here. `absorb` writes an answer, terminalizes the
+ * ask and records a disclosure in ONE transaction, and `AskAnswerService.create`
+ * is insert-only — so an outbound path that mistook a refusal for an answer
+ * would write a PERMANENT row claiming a peer answered a question this box
+ * never actually asked anyone.
+ *
+ * A real `PeerAskClient` is used, with only the socket faked, so removing the
+ * guard shows up here as a persisted answer rather than as a passing test.
+ */
+describe('OutboundAskService — a refused endpoint leaves no trace of an answer', () => {
+  function realClient(): PeerAskClient {
+    const logger = { setContext: jest.fn(), warn: jest.fn(), log: jest.fn(), error: jest.fn(), debug: jest.fn() };
+
+    return new PeerAskClient(logger as never);
+  }
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it.each([
+    ['loopback — the reproduced case', 'https://127.0.0.1:11434'],
+    ['cloud metadata', 'https://169.254.169.254/latest'],
+    ['the tailnet', 'https://100.64.3.4/agent/v1'],
+  ])('send() to %s dials nothing and persists nothing', async (_label, endpoint) => {
+    const { service, answerService, auditService, persisted } = makeService({
+      link: link({ memoryEndpoint: endpoint }),
+      peerClient: realClient(),
+    });
+
+    const result = await service.send(CTX as never, DTO, 'token');
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.response).toEqual(
+      expect.objectContaining({ status: 'delivered', reason: 'Peer endpoint not permitted' }),
+    );
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+    // Still collectable later, if the owner repoints the link at a real peer.
+    expect(persisted.status).toBe('delivered');
+  });
+
+  it('pollForAnswer() to a refused endpoint dials nothing and persists nothing', async () => {
+    const { service, answerService, auditService, persisted } = makeService({
+      link: link({ memoryEndpoint: 'https://127.0.0.1:11434' }),
+      peerClient: realClient(),
+    });
+
+    const result = await service.pollForAnswer(CTX as never, 'ask-1', 'token');
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.response).toEqual(
+      expect.objectContaining({ status: 'delivered', reason: 'Peer endpoint not permitted' }),
+    );
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+    expect(persisted.status).toBe('delivered');
+  });
+
+  it('a peer that answers the collect route with a 307 yields no stored answer', async () => {
+    // The collect route is a GET, so a followed redirect would not carry the
+    // ask body — but it would still have this box GET an internal URL of the
+    // peer's choosing, and hand whatever came back to `normalize` as if the
+    // peer had said it.
+    const { service, answerService, auditService, persisted } = makeService({
+      peerClient: realClient(),
+    });
+    mockFetch.mockResolvedValue({
+      status: 307,
+      ok: false,
+      headers: new Map<string, string>(),
+      body: { cancel: jest.fn().mockResolvedValue(undefined) },
+      json: async () => ({}),
+    });
+
+    const result = await service.pollForAnswer(CTX as never, 'ask-1', 'token');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.response.status).toBe('delivered');
+    expect(result.response.answer).toBeUndefined();
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+    expect(persisted.status).toBe('delivered');
+  });
+
+  it('CONTROL: the same path DOES persist when the peer actually answers', async () => {
+    // Without this, every assertion above would still pass if `absorb` had
+    // simply stopped working.
+    const { service, answerService, auditService, persisted } = makeService({
+      peerClient: realClient(),
+    });
+    mockFetch.mockResolvedValue({
+      status: 200,
+      ok: true,
+      headers: new Map<string, string>(),
+      body: { cancel: jest.fn().mockResolvedValue(undefined) },
+      json: async () => ({
+        status: 'answered',
+        answer: { form: 'existence', summary: '1 matching item.', disclosedCount: 1, withheldCount: 0 },
+      }),
+    });
+
+    const result = await service.pollForAnswer(CTX as never, 'ask-1', 'token');
+
+    expect(result.response.status).toBe('answered');
+    expect(answerService.create).toHaveBeenCalled();
+    expect(auditService.record).toHaveBeenCalled();
+    expect(persisted.status).toBe('answered');
   });
 });
