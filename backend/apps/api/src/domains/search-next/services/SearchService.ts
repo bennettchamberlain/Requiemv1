@@ -49,6 +49,29 @@ const MESSAGE_DISTANCE_FLOOR = 0.5;
  */
 const MESSAGE_DEFAULT_K = 10;
 
+/**
+ * Cosine-distance floor for `semanticSearch`. Rows at or beyond it are not
+ * results at any `ef_search`, so the recall probe's exact leg has to apply the
+ * same floor or it would count rows production would never return.
+ */
+export const SEMANTIC_DISTANCE_THRESHOLD = 0.5;
+
+/** Default LIMIT for `semanticSearch`, and therefore the k recall is measured at. */
+export const SEMANTIC_MAX_RESULTS = 25;
+
+/** Everything {@link SearchService.buildSemanticSearchPlan} needs besides the vector. */
+export type SemanticSearchScope = {
+  maxResults?: number;
+  includeTypes?: IndexableEntity[];
+  excludeTypes?: IndexableEntity[];
+};
+
+/** One semantic statement plus its bind parameters, ready to run on any connection. */
+export type SemanticSearchPlan = {
+  sql: string;
+  params: (number | string | string[])[];
+};
+
 type ScoredRowResult = {
   entity_id: string;
   entity_type: string;
@@ -306,17 +329,29 @@ export class SearchService {
     return fusedResults.sort((a, b) => b.score - a.score).slice(0, maxResults);
   }
 
-  private async semanticSearch(
-    context: UserServiceContext,
-    options: SearchOptions,
-  ): Promise<ScoredSearchResult[]> {
-    const { query, maxResults = 25 } = options;
+  /**
+   * The semantic statement, as data, so something other than a search can run
+   * exactly what a search runs.
+   *
+   * `RecallProbeCron` measures this query against an exact answer, and a probe
+   * that measured a COPY of the SQL would measure the copy. Building the plan
+   * here — one function, used by {@link semanticSearch} itself — is what makes
+   * "the probe ran the production query" true by construction rather than by
+   * two strings agreeing today.
+   *
+   * @param vector the query embedding, already in pgvector's text form (the
+   *   same shape `EmbeddingGenerationService.generateEmbeddingString` returns);
+   *   passed as a bind parameter exactly as production does, because the
+   *   planner's use of the HNSW index depends on that placement.
+   */
+  buildSemanticSearchPlan(
+    userId: string,
+    vector: string,
+    scope: SemanticSearchScope = {},
+  ): SemanticSearchPlan {
+    const { maxResults = SEMANTIC_MAX_RESULTS } = scope;
 
-    const vector = await this.embeddingGenerationService.generateEmbeddingString(query);
-
-    const distanceThreshold = 0.5;
-
-    const typeFilter = this.buildTypeFilter(options, 4);
+    const typeFilter = this.buildTypeFilter(scope, 4);
 
     // Cosine distance (<=>), NOT L2 (<->): embeddings are unnormalised, so the
     // L2 distance is ~22 and never < 0.5 — the threshold made semantic search
@@ -326,6 +361,11 @@ export class SearchService {
     // HNSW index serves the KNN; `embedding IS NOT NULL` matches its partial predicate.
     // Nearest-first == highest-similarity-first, so results are unchanged but the query
     // uses the index instead of a full Seq Scan + Sort at corpus scale.
+    //
+    // `user_id` and the type filter sit OUTSIDE the ordering, so the index
+    // returns its nearest neighbours across every user and type and these
+    // predicates then discard some of them — which is why a filtered query can
+    // come back short of its LIMIT, and why the recall probe exists.
     const sql = `
       SELECT
         entity_id,
@@ -341,13 +381,24 @@ export class SearchService {
       LIMIT ${maxResults}
     `;
 
-    const params: (number | string | string[])[] = [context.userId, vector, distanceThreshold];
+    const params: (number | string | string[])[] = [userId, vector, SEMANTIC_DISTANCE_THRESHOLD];
 
     if (typeFilter.param) {
       params.push(typeFilter.param);
     }
 
-    const results = await this.dataSource.query(sql, params);
+    return { sql, params };
+  }
+
+  private async semanticSearch(
+    context: UserServiceContext,
+    options: SearchOptions,
+  ): Promise<ScoredSearchResult[]> {
+    const vector = await this.embeddingGenerationService.generateEmbeddingString(options.query);
+
+    const plan = this.buildSemanticSearchPlan(context.userId, vector, options);
+
+    const results = await this.dataSource.query(plan.sql, plan.params);
 
     return results.map((row: ScoredRowResult) => ({
       id: row.entity_id,
@@ -472,7 +523,7 @@ export class SearchService {
   }
 
   private buildTypeFilter(
-    options: SearchOptions,
+    options: Pick<SemanticSearchScope, 'includeTypes' | 'excludeTypes'>,
     paramOffset: number,
     tableAlias?: string,
   ): { clause: string; param: string[] | null } {

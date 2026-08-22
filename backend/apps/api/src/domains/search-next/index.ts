@@ -26,6 +26,12 @@ import { type RemoveTagResult, TagService, type UpdateTagResult } from './servic
 export class SearchNextModule {}
 
 export { SearchService, TagService };
+export {
+  SEMANTIC_DISTANCE_THRESHOLD,
+  SEMANTIC_MAX_RESULTS,
+  type SemanticSearchPlan,
+  type SemanticSearchScope,
+} from './services/SearchService';
 export type { EntityTag, RemoveTagResult, Tag, TimestampedTag, UpdateTagResult };
 export { INDEXABLE_ENTITIES, TAGGABLE_ENTITIES } from './types';
 export type { EntityIdentifier, IndexableEntity, TaggableEntity } from './types';

@@ -357,6 +357,11 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
     STAGE_IDS.ENRICH_EVENT_PERSON_LINK,
     STAGE_IDS.ENRICH_PERSON_SELF_CLAIM,
   ],
+  // The owned-unit detector's whole candidate set is `ci.objects`, and
+  // `promote.object` is the only writer that table has. Proposing before the
+  // night's purchases have been promoted would examine a corpus its producer is
+  // about to widen, and every unit it missed would wait a full day.
+  [STAGE_IDS.CLEAN_OBJECT_DUPLICATE_DETECT]: [STAGE_IDS.PROMOTE_OBJECT],
   // The edge projections are pure consumers of the linkage columns their
   // producers fill: person-link writes communications' from/to columns; the
   // event leg additionally reads `location_entity_id`, which `promote.place`
@@ -427,9 +432,19 @@ export const isMeteredStage = scheduleIsMeteredStage;
  * timer may start is a property of the schedule, and `schedule.ts` is where it
  * is declared and boot-guarded.
  *
- * Declaration order is phase order (`STAGE_ID_LIST` is ordered `index` →
- * `enrich` → `clean` → `promote`), which is also a valid topological order, so
- * the tick's sort is stable and reads in pipeline order.
+ * The order it comes back in is `STAGE_ID_LIST` declaration order, and that is
+ * ALL it is — not phase order and not a topological order. `enrich.media_dimensions`
+ * is declared first and `index.embed` second; the `index.embed_*` / `index.vector_*`
+ * families are declared last on purpose (their note in `constants.ts` says why);
+ * and CONSUMERS ARE DECLARED AHEAD OF PRODUCERS THEY WAIT FOR — `enrich.person_link`
+ * and `enrich.event_person_link` are both declared before
+ * `clean.identifier_normalize`, one phase later.
+ *
+ * Nothing here needs it ordered: the tick dispatches through {@link orderStages},
+ * which is what puts producers first and which uses declaration order only as its
+ * TIE-BREAK — the reason those index families are declared last. Both halves are
+ * asserted in the spec, because an ordering claim nothing checks is one the next
+ * change silently breaks.
  */
 export function defaultStageSet(): StageId[] {
   return automaticStageIds();
