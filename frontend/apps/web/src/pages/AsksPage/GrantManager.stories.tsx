@@ -7,7 +7,7 @@ const meta: Meta<typeof GrantManager> = {
   title: 'Asks/Grant Manager',
   component: GrantManager,
   parameters: { layout: 'padded' },
-  args: { onChangeMode: fn(), onRevoke: fn(), onAddGrant: fn(), onOpenHistory: fn() },
+  args: { onChangeMode: fn(), onSetExpiry: fn(), onRevoke: fn(), onAddGrant: fn(), onOpenHistory: fn() },
 };
 
 export default meta;
@@ -18,32 +18,47 @@ export const Household: Story = {
     groups: [
       {
         id: 'sam',
-        name: 'Sam',
-        tier: 'family',
+        // Opaque, because a LOCAL grantee has no name on the wire — see
+        // groupGrants in AsksPage.tsx.
+        name: 'Peer …sam001',
+        tier: 'tier unknown',
         grants: [
-          { id: 'g1', label: 'Photos & albums', mode: 'auto' },
-          { id: 'g2', label: 'Calendar · busy/free', mode: 'auto' },
-          { id: 'g3', label: 'Household documents', mode: 'review' },
-          { id: 'g4', label: 'Health', mode: 'block' },
+          { id: 'g1', label: 'photos · photos', mode: 'auto', active: true },
+          { id: 'g2', label: 'availability · calendar', mode: 'auto', active: true },
+          { id: 'g3', label: 'content · documents', mode: 'review', active: true },
+          { id: 'g4', label: 'content · health', mode: 'block', active: true },
         ],
       },
       {
-        id: 'siblings',
-        name: 'Siblings',
-        tier: 'care circle',
+        id: 'peer-link-1',
+        // A PEER grantee does have one, and a real ceiling with it.
+        name: 'ada',
+        tier: 'Stranger',
         grants: [
           {
             id: 'g5',
-            label: "Dad's activity",
+            label: 'existence · all classes',
             mode: 'auto',
             note: 'digest only · no location',
-            expiresAt: 'Dec 2026',
+            expiresAt: '2026-12-01T23:59:59.999Z',
+            active: true,
           },
           {
             id: 'g6',
-            label: 'Location',
+            label: 'content · location',
             mode: 'auto',
-            revokedAt: '3 Aug 2026',
+            revokedAt: '2026-08-03T00:00:00.000Z',
+            active: false,
+          },
+          {
+            // Lapsed is its own state: nobody withdrew it, it ran out. Calling
+            // it "revoked" would credit the owner with a decision they never
+            // made.
+            id: 'g7',
+            label: 'photos · photos',
+            mode: 'auto',
+            expiresAt: '2026-07-01T23:59:59.999Z',
+            active: false,
           },
         ],
       },
@@ -52,18 +67,18 @@ export const Household: Story = {
 };
 
 /**
- * What the page actually renders today: no mode-change mutation is reachable
- * from the client, so the three mode buttons are inert and say so rather than
- * pretending to work.
+ * The fallback branch, not the normal one.
+ *
+ * `updateAskGrant` IS wired on the page now, so the inert-controls path only
+ * shows for a caller that supplies no handler — and the sentence it prints is
+ * then true. It is kept as a story because the disabled state is the thing that
+ * must never appear while the mutation is reachable, and vice versa.
  */
 export const ModeChangesUnavailable: Story = {
-  args: {
-    ...Household.args,
-    caveat: 'When a grant lapses isn’t on the wire yet, so no expiry date is shown here.',
-  },
+  args: Household.args,
   // `onChangeMode` is supplied by `meta.args`, and Storybook's arg merge treats
   // an explicit `undefined` in a story as "leave it unset", not "remove it" —
   // which would silently render the WIRED state under an unwired story name.
   // Passing it at the call site is unambiguous.
-  render: (args) => <GrantManager {...args} onChangeMode={undefined} />,
+  render: (args) => <GrantManager {...args} onChangeMode={undefined} onSetExpiry={undefined} />,
 };

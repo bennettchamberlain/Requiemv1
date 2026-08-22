@@ -20,19 +20,24 @@ const meta: Meta<typeof AnswerCard> = {
 export default meta;
 type Story = StoryObj<typeof AnswerCard>;
 
-/** Reviewed by a human, with some items held back. */
+/**
+ * The RESPONDER's own view, reviewed by hand, with some items held back.
+ *
+ * A consent basis and real magnitudes only ever appear together like this:
+ * `AskAnswerType.toType` sends both to the responder and neither to the asker.
+ */
 export const ReviewedWithWithheld: Story = {
   args: {
     responderName: 'Sam',
     summary: 'Sam shared 3 items.',
     items: [
-      { id: '1', type: 'photo', label: 'Lake, morning swim' },
-      { id: '2', type: 'photo', label: 'Dock at sunset' },
-      { id: '3', type: 'photo', label: 'Campfire' },
+      { id: '1', type: 'photo', label: 'photo …a3f2b1' },
+      { id: '2', type: 'photo', label: 'photo …7c14de' },
+      { id: '3', type: 'photo', label: 'photo …0b9e52' },
     ],
     disclosedCount: 3,
     withheldCount: 2,
-    autoAnswered: false,
+    review: 'reviewed',
     consentBasis: 'your family grant',
   },
 };
@@ -44,19 +49,27 @@ export const AutoAnswered: Story = {
     summary: 'Devon has 1 free slot Friday (longest 90 min).',
     disclosedCount: 1,
     withheldCount: 0,
-    autoAnswered: true,
+    review: 'auto',
     consentBasis: 'your calendar grant',
   },
 };
 
-/** Clamped to a summary by the disclosure ceiling — no items travel. */
-export const SummaryOnly: Story = {
+/**
+ * The ASKER's view of a non-itemizing answer — the shape the outbox renders.
+ *
+ * Everything narrowed at once, because the projection narrows it all at once:
+ * no consent basis, masked counts, and no auto/reviewed flag to read. The card
+ * must claim none of the three rather than default any of them to a friendly
+ * value.
+ */
+export const AskerViewWithheldCounts: Story = {
   args: {
     responderName: 'Sam',
-    summary: 'Sam has 4 matching items.',
-    disclosedCount: 4,
+    summary: 'Sam confirmed a match.',
+    disclosedCount: 0,
     withheldCount: 0,
-    autoAnswered: false,
-    consentBasis: 'colleague tier',
+    review: 'undisclosed',
+    countsWithheld: true,
+    consentBasis: null,
   },
 };

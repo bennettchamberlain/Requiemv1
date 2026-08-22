@@ -6,12 +6,19 @@ import {
   askDecisionNote,
   askDecisionState,
   askStatusLabel,
+  disclosureMagnitudeNote,
   grantModeBadge,
   grantModeLabel,
   needsOwnerReview,
+  outcomeBadge,
+  outcomeSentence,
   OWNER_ANSWER_FORMS,
+  PEER_TRUST_TIERS,
+  peerTrustCeilingNote,
+  peerTrustLabel,
   provenanceLine,
   rungLabel,
+  widensPeerTrust,
   withheldNote,
 } from './askPresentation';
 
@@ -48,21 +55,34 @@ describe('askStatusLabel', () => {
 
 describe('provenanceLine', () => {
   it('says a human reviewed it only when one actually did', () => {
-    const reviewed = provenanceLine({ responderName: 'Sam', autoAnswered: false });
+    const reviewed = provenanceLine({ responderName: 'Sam', review: 'reviewed' });
     expect(reviewed).toContain('reviewed by Sam');
 
-    const auto = provenanceLine({ responderName: 'Sam', autoAnswered: true });
+    const auto = provenanceLine({ responderName: 'Sam', review: 'auto' });
     expect(auto).not.toContain('reviewed by Sam');
     expect(auto).toMatch(/automatically/i);
   });
 
+  it('claims neither review nor automation when the wire did not say', () => {
+    // The asker's projection of an answer has no auto/reviewed flag and a NULL
+    // consent basis, on purpose. A card that filled the gap with either value
+    // would put a provenance claim on screen that the server never made — the
+    // one thing the provenance line exists to prevent.
+    const unknown = provenanceLine({ responderName: 'Sam', review: 'undisclosed' });
+
+    expect(unknown).not.toContain('reviewed by Sam');
+    expect(unknown).not.toMatch(/automatically/i);
+    expect(unknown).toMatch(/not disclosed to you/i);
+  });
+
   it('always attributes the answer to the responder', () => {
-    expect(provenanceLine({ responderName: 'Devon', autoAnswered: true })).toContain("Devon's Companion");
+    expect(provenanceLine({ responderName: 'Devon', review: 'auto' })).toContain("Devon's Companion");
+    expect(provenanceLine({ responderName: 'Devon', review: 'undisclosed' })).toContain("Devon's Companion");
   });
 
   it('includes the consent basis when there is one', () => {
     expect(
-      provenanceLine({ responderName: 'Sam', autoAnswered: false, consentBasis: 'family grant' }),
+      provenanceLine({ responderName: 'Sam', review: 'reviewed', consentBasis: 'family grant' }),
     ).toContain('family grant');
   });
 });
@@ -125,5 +145,112 @@ describe('owner answer-form ladder', () => {
     }
 
     expect(new Set(OWNER_ANSWER_FORMS.map(answerFormLabel)).size).toBe(OWNER_ANSWER_FORMS.length);
+  });
+});
+
+describe('disclosure-history presentation', () => {
+  it('never collapses an auto-answer into a plain "answered"', () => {
+    // These are the same event from the asker's side and completely different
+    // events from the owner's: one is a decision they made, the other is a rule
+    // they wrote once acting for them while they were not looking. Merging them
+    // hides the only outcome an owner might want to go and stop.
+    expect(outcomeBadge('auto_answered').label).not.toBe(outcomeBadge('answered').label);
+    expect(outcomeSentence('auto_answered', 'Ada')).toMatch(/without asking you/i);
+    expect(outcomeSentence('answered', 'Ada')).toMatch(/you reviewed/i);
+  });
+
+  it('states plainly that nothing crossed on a declined or expired row', () => {
+    for (const outcome of ['declined', 'expired'] as const) {
+      expect(outcomeSentence(outcome, 'Ada')).toMatch(/nothing was shared/i);
+      expect(disclosureMagnitudeNote(outcome, 0)).toMatch(/nothing was shared/i);
+    }
+  });
+
+  it('does not let a zero-item ANSWER read like a declined one', () => {
+    // A yes/no discloses no item references and still told the asker something.
+    // Printing "0 items shared" over both makes the owner's own receipt
+    // understate what left the box.
+    const answered = disclosureMagnitudeNote('answered', 0);
+
+    expect(answered).toMatch(/still something shared/i);
+    expect(answered).not.toBe(disclosureMagnitudeNote('declined', 0));
+  });
+
+  it('counts items when there were any', () => {
+    expect(disclosureMagnitudeNote('answered', 1)).toBe('1 item shared');
+    expect(disclosureMagnitudeNote('auto_answered', 4)).toBe('4 items shared');
+  });
+});
+
+describe('peer trust ladder', () => {
+  it('is ordered widest-first, which is what makes widening detectable', () => {
+    expect([...PEER_TRUST_TIERS]).toEqual(['family', 'trusted', 'peer', 'stranger']);
+  });
+
+  it('calls a move up the ladder widening and a move down not', () => {
+    // The asymmetry drives the confirmation: raising a tier retroactively
+    // enlarges every future answer, including ones a grant already authorized.
+    expect(widensPeerTrust('stranger', 'family')).toBe(true);
+    expect(widensPeerTrust('peer', 'trusted')).toBe(true);
+    expect(widensPeerTrust('family', 'stranger')).toBe(false);
+    expect(widensPeerTrust('peer', 'peer')).toBe(false);
+  });
+
+  it('treats a tier it does not know as the widest, so any move toward it confirms', () => {
+    // A value from a newer server must fail toward an unnecessary prompt, never
+    // toward a silent escalation.
+    expect(widensPeerTrust('stranger', 'household')).toBe(true);
+    expect(widensPeerTrust('household', 'stranger')).toBe(false);
+  });
+
+  it('never maps an unknown tier onto a familiar word', () => {
+    expect(peerTrustLabel('household')).toBe('household');
+    expect(peerTrustCeilingNote('household')).toMatch(/unbounded until you check/i);
+  });
+
+  it('states what each known tier actually caps, matching TIER_CEILINGS', () => {
+    // `stranger` is `{'*': 'boolean', location: 'none'}` in policy.ts, and this
+    // sentence is the owner's only sight of that table.
+    expect(peerTrustCeilingNote('stranger')).toMatch(/yes or no at most/i);
+    expect(peerTrustCeilingNote('stranger')).toMatch(/never disclosed/i);
+    expect(peerTrustCeilingNote('family')).toMatch(/location is redacted/i);
+
+    // Every known tier says something different — a shared sentence would make
+    // the dial look decorative.
+    const notes = PEER_TRUST_TIERS.map(peerTrustCeilingNote);
+
+    expect(new Set(notes).size).toBe(PEER_TRUST_TIERS.length);
+  });
+
+  it('states the EFFECTIVE ceiling, not the row in the table', () => {
+    // Two rules in `disclosureCeiling` run after the `TIER_CEILINGS` lookup and
+    // both tighten it, and reading the table alone got all three of these
+    // sentences wrong once already:
+    //
+    //   1. the sensitive floor returns `none` for location/health/finance/
+    //      secrets at every tier below `family`, so `trusted`'s
+    //      `location: 'summary'` and `peer`'s `location: 'count'` rows are
+    //      unreachable;
+    //   2. a per-class entry may only tighten `'*'`, so `peer`'s
+    //      `photos: 'redacted'` is clamped down to `summary`.
+    //
+    // Each assertion below fails if the copy drifts back to the table reading.
+    for (const tier of ['trusted', 'peer'] as const) {
+      const note = peerTrustCeilingNote(tier);
+
+      expect(note).toMatch(/location, health, finances and secrets are never disclosed/i);
+      expect(note).not.toMatch(/location is (summarised|only ever a count)/i);
+    }
+
+    // Naming a class must never buy MORE, and the peer note is where a reader
+    // would otherwise conclude it does.
+    expect(peerTrustCeilingNote('peer')).toMatch(/naming “photos” does not change that/i);
+    expect(peerTrustCeilingNote('peer')).not.toMatch(/photos are redacted/i);
+
+    // `family` is the one tier exempt from the sensitive floor — the fact that
+    // actually separates it from `trusted`, and the one an owner promoting
+    // somebody needs in front of them.
+    expect(peerTrustCeilingNote('family')).toMatch(/only tier where health, finances and secrets/i);
+    expect(peerTrustCeilingNote('trusted')).not.toMatch(/only tier/i);
   });
 });
