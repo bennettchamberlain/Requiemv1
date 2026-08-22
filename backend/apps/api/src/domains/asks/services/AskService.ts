@@ -7,6 +7,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { UserEntity } from '@ci/domains/user';
 
+import { defaultAskExpiry } from '../askDeadline';
 import { assertAskTransition } from '../askStatus';
 import { type AskAnswer } from '../entities/AskAnswerEntity';
 import { type Ask, AskEntity } from '../entities/AskEntity';
@@ -78,11 +79,13 @@ interface PeerAttribution {
  * transition is validated against the pure state machine
  * ({@link assertAskTransition}) so no illegal edge is ever persisted.
  *
- * NOTE (Phase 0 scope): the `auto` and owner-`approve` paths move an ask to
- * `answering` but do not yet PRODUCE an answer — the run-as-owner executor
- * (`runAsk`, task #1719) and the disclosure filter (Phase 1) complete them and
- * write the terminal `answered` audit. The `deny` (block) and owner-`decline`
- * paths are fully terminal here and are audited.
+ * NOTE: this service decides WHETHER an ask may be answered and records that it
+ * was; it does not PRODUCE the answer. The run-as-owner executor and the
+ * disclosure filter live in `AskResolver.disclose`, which both entry points —
+ * the owner's `runAsk` and the standing-grant auto path in `createAsk` — call
+ * before handing the finished disclosure back here through
+ * {@link completeWithAnswer}. The `deny` (block) and owner-`decline` paths are
+ * fully terminal here and are audited.
  */
 @Injectable()
 export class AskService {
@@ -141,7 +144,19 @@ export class AskService {
       query: data.query,
       status: assertAskTransition('sent', 'delivered'),
       consentBasis: null,
-      expiresAt: data.expiresAt ?? null,
+      // EVERY ask gets a deadline. `data.expiresAt ?? null` is what this used to
+      // be, and no caller anywhere passed the field — so the column was NULL on
+      // every row, the expiry sweep's `expires_at < now()` matched nothing, and
+      // an ask the owner approved but never answered stayed answerable forever
+      // (see {@link defaultAskExpiry} for why that is an authorization, not an
+      // untidy row).
+      //
+      // A nullish value takes the default rather than meaning "no deadline":
+      // the two readings are indistinguishable at this boundary — an omitted
+      // field and an explicit `null` arrive identically from GraphQL — and only
+      // one of them is safe. A caller that genuinely wants a different deadline
+      // passes a Date.
+      expiresAt: data.expiresAt ?? defaultAskExpiry(),
     });
 
     const entity = await this.askRepository.save(record);
@@ -153,7 +168,13 @@ export class AskService {
    * Create an ask and apply the standing-grant decision:
    * - `deny` (a matching `block` grant) → immediately declined + audited;
    * - `auto` (a matching `auto` grant) → left `delivered` with the grant recorded
-   *   as the consent basis, for the run-as-owner executor to answer (#1719);
+   *   as the consent basis AND the ceiling that grant imposed at that moment,
+   *   which is the shape `isAnswerable` reads as "answerable without review".
+   *   The caller answers it: `AskResolver.createAsk` runs the shared disclosure
+   *   pipeline on an `auto` decision, so the owner's standing "yes, always" is
+   *   honoured here the way it already was on the federated path. Returning the
+   *   decision is what makes that possible — it is the only thing that
+   *   distinguishes a pre-authorized ask from one waiting on a human;
    * - `review` (no matching grant, or a `review` grant) → moved to the owner's
    *   review inbox (`under_review`).
    *

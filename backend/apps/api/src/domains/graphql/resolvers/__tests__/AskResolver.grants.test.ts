@@ -81,7 +81,7 @@ describe('AskResolver grant mutations write the disclosure ceiling', () => {
 
     await resolver.createAskGrant(CTX, {
       granteeId: GlobalUID.encode('user', 'asker-1'),
-      queryType: 'photos',
+      queryType: 'content',
       dataClasses: ['beach'],
       maxDisclosure: 'summary',
       mode: 'auto',
@@ -99,7 +99,7 @@ describe('AskResolver grant mutations write the disclosure ceiling', () => {
 
     await resolver.createAskGrant(CTX, {
       granteeId: GlobalUID.encode('user', 'asker-1'),
-      queryType: 'photos',
+      queryType: 'content',
       mode: 'auto',
     } as never);
 
