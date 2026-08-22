@@ -74,3 +74,25 @@ export type SearchResult = {
   type: IndexableEntity;
   id: string;
 };
+
+/**
+ * The result of a prompt search, which reports HOW MANY matched as well as
+ * which ones came back.
+ *
+ * Every other search method returns a bare array, so a caller cannot tell a set
+ * that happens to be exactly `maxResults` long from one that was cut off there.
+ * That distinction is invisible for an owner scrolling their own results and
+ * load-bearing for an ask: the `count` disclosure rung reports a NUMBER to
+ * another person, and a silently saturated 50 is a false statement about the
+ * owner's life. `totalMatches` is the true size of the match set;
+ * `items.length` is what fit.
+ */
+export interface PromptSearchResult {
+  items: EntityIdentifier<IndexableEntity>[];
+  /** True size of the match set, before the cap. */
+  totalMatches: number;
+  /** `totalMatches > items.length` — the answer is "at least", not "exactly". */
+  truncated: boolean;
+  /** The cap that was applied, so a caller can explain the truncation. */
+  limit: number;
+}
