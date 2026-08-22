@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -29,6 +30,7 @@ import {
   type DataSourceSummary,
   type SourceCatalogEntry,
 } from '../services/DataSourceCatalogService';
+import { ImportRetentionService, type DiscardedRun } from '../services/ImportRetentionService';
 import { ImportRunService } from '../services/ImportRunService';
 
 /** A run as the progress UI reads it. */
@@ -154,6 +156,7 @@ export class ImportRunsController {
   constructor(
     private readonly runs: ImportRunService,
     private readonly catalog: DataSourceCatalogService,
+    private readonly retention: ImportRetentionService,
     private readonly users: UserService,
   ) {}
 
@@ -397,6 +400,59 @@ export class ImportRunsController {
     }
 
     return { cancelled };
+  }
+
+  /**
+   * Throw away a parse the user has decided against, and everything it staged.
+   *
+   * The counterpart to Sync, and the reason a pushable run is no longer
+   * immortal. Retention refuses by age to delete a run whose parse is still on
+   * offer — those staged rows are the only surviving copy of it — so the only
+   * thing that can end such a run is its owner saying so. Until this route
+   * existed the nightly sweep reported those runs under `push_pending` and
+   * named an action nobody could take.
+   *
+   * `?confirm=discard` is mandatory and the reply itemises the loss, because
+   * there is no undo: an abandoned 780k-item parse is ~640 MB of `staged_items`
+   * and the archive it came from was purged at 24h. A DELETE that fires on a
+   * mistyped URL is not a thing this endpoint should be.
+   *
+   * It itemises the SURVIVALS too, and the caller is expected to show them. A
+   * discard destroys the parse, not the import: an archive the appliance still
+   * holds goes back to the uploads list, and the photos the media stage already
+   * stored stay in the user's memory because nothing can prove after the fact
+   * that this run is the only thing that put them there. "Discarded" on its own
+   * would be read as "nothing left behind", which is false in both directions.
+   *
+   * Refusals are specific by design — 404 for a run that is not this user's,
+   * 409 naming which rule stopped it — since "no" without a reason on a
+   * destructive route reads as a bug. See
+   * {@link ImportRetentionService.discardRun} for what it will and will not
+   * take.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Delete('runs/:runId')
+  async discard(
+    @Context() context: RequestContext,
+    @Param('runId') runId: string,
+    @Query('confirm') confirm?: string,
+  ): Promise<DiscardedRun> {
+    const userId = requireUserId(context);
+
+    if (confirm !== 'discard') {
+      throw new BadRequestException(
+        'Discarding an import run permanently deletes the parse it staged, and there is no undo. ' +
+          'Pass ?confirm=discard to proceed.',
+      );
+    }
+
+    const discarded = await this.retention.discardRun({ userId }, runId);
+
+    if (discarded == null) {
+      throw new NotFoundException(`No import run ${runId}`);
+    }
+
+    return discarded;
   }
 
   /**

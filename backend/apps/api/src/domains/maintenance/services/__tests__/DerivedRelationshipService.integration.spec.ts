@@ -59,10 +59,13 @@ describeWithDatabase(`DerivedRelationshipService against the live schema (${avai
   let service: DerivedRelationshipService;
 
   const userId = randomUUID();
+  /** The appliance owner's own Person entity — `ci.users.entity_id`. */
+  const owner = randomUUID();
   const alice = randomUUID();
   const bob = randomUUID();
   const home = randomUUID();
   const cafe = randomUUID();
+  const gym = randomUUID();
 
   /** Every `ci.relationships` row this user owns, as a stable comparable set. */
   const relationshipRows = async (): Promise<Array<Record<string, unknown>>> =>
@@ -121,14 +124,16 @@ describeWithDatabase(`DerivedRelationshipService against the live schema (${avai
       userId,
     );
 
-    // Two people, a home and a café. Names are irrelevant to the SQL; the
-    // entity ROWS have to exist because the aggregates read entity ids that the
-    // household leg then joins back to `ci.entities`.
+    // The owner plus two people, a home, a café and a gym. Names are irrelevant
+    // to the SQL; the entity ROWS have to exist because the aggregates read
+    // entity ids that the household leg then joins back to `ci.entities`.
     for (const [entityId, entityType, name] of [
+      [owner, 'Person', 'Owner'],
       [alice, 'Person', 'Alice'],
       [bob, 'Person', 'Bob'],
       [home, 'Location', 'Home'],
       [cafe, 'Location', 'Café'],
+      [gym, 'Location', 'Gym'],
     ] as const) {
       await dataSource.query(
         `INSERT INTO ci.entities (entity_id, entity_type, name, owner_user_id, is_active)
@@ -138,18 +143,28 @@ describeWithDatabase(`DerivedRelationshipService against the live schema (${avai
       );
     }
 
+    // The account anchor every VISITED edge starts from. Without it the
+    // FREQUENTS leg has nothing to attribute the owner's position fixes to.
+    await dataSource.query(`UPDATE ci.users SET entity_id = $2::uuid WHERE id = $1::uuid`, [userId, owner]);
+
     // ── The episodic history the aggregates summarise ────────────────────
     //
-    // Three communication episodes between the same pair — three DIFFERENT
-    // types, because `relationships_unique_directed_idx` is UNIQUE on
-    // (from, to, type) WHERE is_active, so a pair cannot hold two active rows
-    // of one type. Plus three attempted VISITED rows (see the FREQUENTS note in
-    // the spec below), and the LIVES_WITH + shared LIVES_IN pair the household
-    // cluster reads.
+    // Three DISTINCT (direction, type) links between the same pair, plus two
+    // more EMAILED rows for that same pair which `relationships_unique_directed_idx`
+    // (UNIQUE on (from, to, type) WHERE is_active) silently collapses. That
+    // collapse is the point: it is why the COMMUNICATES_WITH aggregate counts
+    // link KINDS and can never count emails. Then the owner's two VISITED edges
+    // (café and gym, told apart only by the position evidence below), a
+    // repeated VISITED from a person who is NOT the owner, and the LIVES_WITH +
+    // shared LIVES_IN pair the household cluster reads.
     const episodes: Array<[string, string, string, string, string]> = [
+      [alice, bob, 'EMAILED', 'Person', 'Person'],
+      [alice, bob, 'EMAILED', 'Person', 'Person'],
       [alice, bob, 'EMAILED', 'Person', 'Person'],
       [alice, bob, 'MESSAGED', 'Person', 'Person'],
       [bob, alice, 'CALLED', 'Person', 'Person'],
+      [owner, cafe, 'VISITED', 'Person', 'Location'],
+      [owner, gym, 'VISITED', 'Person', 'Location'],
       [alice, cafe, 'VISITED', 'Person', 'Location'],
       [alice, cafe, 'VISITED', 'Person', 'Location'],
       [alice, cafe, 'VISITED', 'Person', 'Location'],
@@ -168,12 +183,40 @@ describeWithDatabase(`DerivedRelationshipService against the live schema (${avai
         [from, to, type, userId, fromType, toType],
       );
     }
+
+    // ── The telemetry the visit counts are read from ─────────────────────
+    //
+    // Café: three fixes on three separate days. Gym: FIVE fixes, all inside one
+    // afternoon — more rows than the café and still a single day, which is the
+    // difference between "goes there" and "was there once for a while".
+    const fixes: Array<[string, string]> = [
+      ['2026-03-01T09:00:00Z', cafe],
+      ['2026-03-02T09:05:00Z', cafe],
+      ['2026-03-03T09:10:00Z', cafe],
+      ['2026-03-04T17:00:00Z', gym],
+      ['2026-03-04T17:15:00Z', gym],
+      ['2026-03-04T17:30:00Z', gym],
+      ['2026-03-04T17:45:00Z', gym],
+      ['2026-03-04T18:00:00Z', gym],
+    ];
+
+    for (const [time, placeId] of fixes) {
+      await dataSource.query(
+        `INSERT INTO ci.position (time, user_id, source, location, location_entity_id)
+              VALUES ($1::timestamptz, $2::uuid, 'gps', ST_SetSRID(ST_MakePoint(0, 0), 4326), $3::uuid)`,
+        [time, userId, placeId],
+      );
+    }
   });
 
   afterAll(async () => {
     if (dataSource?.isInitialized) {
       await dataSource.query('DELETE FROM ci.graph_deltas WHERE owner_user_id = $1', [userId]);
       await dataSource.query('DELETE FROM ci.relationships WHERE owner_user_id = $1', [userId]);
+      await dataSource.query('DELETE FROM ci.position WHERE user_id = $1', [userId]);
+      // ci.users.entity_id has no ON DELETE action, so the anchor has to be
+      // released before the entity it points at can go.
+      await dataSource.query('UPDATE ci.users SET entity_id = NULL WHERE id = $1', [userId]);
       await dataSource.query('DELETE FROM ci.entities WHERE owner_user_id = $1', [userId]);
       await dataSource.query('DELETE FROM ci.users WHERE id = $1', [userId]);
       await dataSource.destroy();
@@ -192,6 +235,7 @@ describeWithDatabase(`DerivedRelationshipService against the live schema (${avai
     const result = await service.derive(userId, { reifyHouseholdGroups: false });
 
     expect(result.communicatesWith).toBe(1);
+    expect(result.frequents).toBe(1);
     expect(result.householdReification).toBe('withheld');
     expect(result.groupsReified).toBe(0);
 
@@ -205,44 +249,63 @@ describeWithDatabase(`DerivedRelationshipService against the live schema (${avai
       [userId],
     )) as Array<{ strength: number; properties: Record<string, unknown> }>;
 
-    // LEAST(1, LN(n+1)/LN(10)/2) for the three episodes of this pair.
+    // Three DISTINCT link kinds, not five rows: the two extra EMAILED inserts
+    // above collapsed on the unique index and bought this pair nothing. That is
+    // the whole content of the weight — `LEAST(1, LN(n+1)/LN(10)/2)` over a
+    // count the index bounds at 10 — and it is asserted under the name that
+    // says so, because `episode_count` read as a communication frequency it has
+    // never been able to measure.
+    expect(edge.properties.episodic_link_kinds).toBe(3);
     expect(edge.strength).toBeCloseTo(Math.log10(4) / 2, 6);
     expect(edge.properties.layer).toBe('L2');
     expect(await deltaCount('COMMUNICATES_WITH')).toBe(1);
   });
 
   /**
-   * FREQUENTS cannot fire, and the reason is structural rather than a fixture
-   * shortcoming — worth pinning here so the next reader does not spend an hour
-   * building a corpus that would satisfy it.
+   * The repeat-visit count CANNOT come from `ci.relationships`, and that is a
+   * property of the live schema this spec exists to hold onto:
+   * `relationships_unique_directed_idx` is UNIQUE on (from, to, type) WHERE
+   * is_active, so the three `alice -VISITED→ café` inserts above collapse to
+   * ONE row. An aggregate over those rows counts 1 for every pair there is —
+   * which is exactly why this leg used to be a scheduled no-op.
    *
-   * `upsertFrequents` groups ACTIVE `VISITED` rows by (from, to, from_type,
-   * to_type) and takes `HAVING COUNT(*) >= 3`. `relationships_unique_directed_idx`
-   * is UNIQUE on (from_entity_id, to_entity_id, relationship_type) WHERE
-   * is_active — so at most ONE active VISITED row can exist per person→place
-   * pair, and the count is 1 for every group the aggregate can see. Three
-   * inserts above; one row survives; zero FREQUENTS edges.
-   *
-   * That makes the leg safe to schedule (it is a no-op) but also inert. Fixing
-   * it means changing what a repeat visit IS in the schema, which is a
-   * derivation-semantics decision and not a scheduling one.
+   * It counts `ci.position` days instead: the fixes whose `location_entity_id`
+   * snapped to the place, which is the same evidence the VISITED edge itself
+   * was projected from.
    */
-  it('records no FREQUENTS: the unique index caps a person→place VISITED pair at one active row', async () => {
-    const [visits] = (await dataSource.query(
+  it('derives FREQUENTS from repeat visit DAYS in ci.position, not from duplicate VISITED rows', async () => {
+    const [visited] = (await dataSource.query(
       `SELECT COUNT(*)::int AS count FROM ci.relationships
-        WHERE owner_user_id = $1 AND relationship_type = 'VISITED' AND is_active = TRUE`,
-      [userId],
+        WHERE owner_user_id = $1 AND to_entity_id = $2 AND relationship_type = 'VISITED' AND is_active = TRUE`,
+      [userId, cafe],
     )) as Array<{ count: number }>;
 
-    expect(visits.count).toBe(1);
+    // Two: the owner's and alice's. Her three inserts are one surviving row.
+    expect(visited.count).toBe(2);
 
-    const [frequents] = (await dataSource.query(
-      `SELECT COUNT(*)::int AS count FROM ci.relationships
+    const edges = (await dataSource.query(
+      `SELECT from_entity_id, to_entity_id, strength, properties
+         FROM ci.relationships
         WHERE owner_user_id = $1 AND relationship_type = 'FREQUENTS'`,
       [userId],
-    )) as Array<{ count: number }>;
+    )) as Array<{
+      from_entity_id: string;
+      to_entity_id: string;
+      strength: number;
+      properties: Record<string, unknown>;
+    }>;
 
-    expect(frequents.count).toBe(0);
+    // The café only, from the OWNER. Alice's repeated VISITED row buys nothing:
+    // ci.position is the owner's telemetry, so it cannot evidence her visits.
+    expect(edges).toHaveLength(1);
+    expect(edges[0].from_entity_id).toBe(owner);
+    expect(edges[0].to_entity_id).toBe(cafe);
+    expect(edges[0].properties.visit_days).toBe(3);
+    expect(edges[0].strength).toBeCloseTo(Math.log10(4) / 2, 6);
+    expect(await deltaCount('FREQUENTS')).toBe(1);
+
+    // And the gym is NOT one: five fixes, all on one afternoon.
+    expect(edges.some((edge) => edge.to_entity_id === gym)).toBe(false);
   });
 
   it('is idempotent: a second pass writes nothing and leaves every row identical', async () => {

@@ -3,38 +3,67 @@ import { INDEXABLE_ENTITIES } from '@ci/domains/search-next';
 import {
   buildCoverage,
   buildIndexHealth,
+  DEFAULT_COVERAGE_BUDGET_MS,
   DEFAULT_HEALTH_SWEEP_BUDGET_MS,
   EmbedCoverageTelemetryService,
   UNDER_COVERAGE_THRESHOLD,
 } from './EmbedCoverageTelemetryService';
 
 /**
- * Build a DataSource whose `query` returns COUNT rows keyed on the type being
- * measured. `sourceCounts`/`embeddedCounts` map entity_type -> count.
+ * Build a DataSource whose pinned query runner returns COUNT rows keyed on the
+ * type being measured. `sourceCounts`/`embeddedCounts` map entity_type -> count.
  *
  * The service issues two shapes of COUNT query per type:
  *   - source total: `... FROM "<schema>"."<table>" [WHERE <disc> = $1]`
  *   - embedded:     `... FROM ci_search.embeddings WHERE entity_type = $1`
  * We disambiguate on whether the SQL targets `ci_search.embeddings`, and read
  * the type from either the (source) table name or the (embedded) bound param.
+ *
+ * `dataSource.query` throws: like the health sweep, the coverage sweep must run
+ * on its own connection rather than spreading counts across the shared pool.
  */
-function makeDataSource(sourceCounts: Record<string, number>, embeddedCounts: Record<string, number>) {
+function makeDataSource(
+  sourceCounts: Record<string, number>,
+  embeddedCounts: Record<string, number>,
+  onCount?: (sql: string) => void,
+) {
+  const statements: string[] = [];
+
   // Map each source table (+discriminator value) back to the entity_type so the
   // source-count query can be resolved. Mirrors ENTITY_SOURCE_MAP.
-  const query = jest.fn(async (sql: string, params: unknown[]) => {
-    if (sql.includes('ci_search.embeddings')) {
-      const entityType = params[0] as string;
+  const runner = {
+    connect: jest.fn(async () => undefined),
+    release: jest.fn(async () => undefined),
+    query: jest.fn(async (sql: string, params: unknown[] = []) => {
+      statements.push(sql);
 
-      return [{ count: String(embeddedCounts[entityType] ?? 0) }];
-    }
+      if (sql.startsWith('SET ') || sql.startsWith('RESET ')) {
+        return [];
+      }
 
-    // Source-total query. Identify the type from table + optional discriminator.
-    const entityType = resolveSourceType(sql, params);
+      onCount?.(sql);
 
-    return [{ count: String(sourceCounts[entityType] ?? 0) }];
-  });
+      if (sql.includes('ci_search.embeddings')) {
+        const entityType = params[0] as string;
 
-  return { query } as const;
+        return [{ count: String(embeddedCounts[entityType] ?? 0) }];
+      }
+
+      // Source-total query. Identify the type from table + optional discriminator.
+      const entityType = resolveSourceType(sql, params);
+
+      return [{ count: String(sourceCounts[entityType] ?? 0) }];
+    }),
+  };
+
+  const dataSource = {
+    createQueryRunner: jest.fn(() => runner),
+    query: jest.fn(async () => {
+      throw new Error('the coverage sweep must run on its own pinned connection');
+    }),
+  };
+
+  return { dataSource, runner, statements };
 }
 
 /** Recover the entity_type a source-count SQL string is measuring. */
@@ -95,13 +124,17 @@ function resolveSourceType(sql: string, params: unknown[]): string {
   return 'unknown';
 }
 
-function makeService(sourceCounts: Record<string, number>, embeddedCounts: Record<string, number>) {
-  const ds = makeDataSource(sourceCounts, embeddedCounts);
+function makeService(
+  sourceCounts: Record<string, number>,
+  embeddedCounts: Record<string, number>,
+  onCount?: (sql: string) => void,
+) {
+  const { dataSource, runner, statements } = makeDataSource(sourceCounts, embeddedCounts, onCount);
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const service = new EmbedCoverageTelemetryService(ds as any, logger as any);
+  const service = new EmbedCoverageTelemetryService(dataSource as any, logger as any);
 
-  return { service, ds, logger };
+  return { service, dataSource, runner, statements, logger };
 }
 
 describe('buildCoverage', () => {
@@ -236,6 +269,66 @@ describe('EmbedCoverageTelemetryService', () => {
       expect.stringContaining('Embed-coverage alarm'),
       expect.anything(),
     );
+  });
+
+  it('runs on ONE pinned connection under a statement timeout, and resets it', async () => {
+    const { service, dataSource, runner, statements } = makeService({ content: 10 }, { content: 10 });
+
+    await service.computeCoverage(['content'], { statementTimeoutMs: 5000 });
+
+    expect(dataSource.createQueryRunner).toHaveBeenCalledTimes(1);
+    expect(statements[0]).toBe('SET statement_timeout = 5000');
+    expect(statements).toContain('RESET statement_timeout');
+    expect(runner.release).toHaveBeenCalledTimes(1);
+    // Never the shared pool helper: two concurrent counts per type out of the
+    // 25-connection pool is what this endpoint used to do.
+    expect(dataSource.query).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Same reasoning as the health sweep, one degree sharper: this one answers an
+   * HTTP request, so an unbounded run holds a pooled connection on behalf of a
+   * caller who is no longer there. A single slow COUNT must not be able to take
+   * the rest of the sweep with it, and the run must abandon rather than return
+   * the types it managed — a partial snapshot reads as a coverage collapse.
+   */
+  it('abandons the sweep once the wall-clock budget is spent, mid-run', async () => {
+    const nowSpy = jest.spyOn(Date, 'now');
+
+    try {
+      let clock = 1_000_000;
+      nowSpy.mockImplementation(() => clock);
+
+      const counted: string[] = [];
+      const { service, runner, statements } = makeService(
+        { content: 10, event: 10, communication: 10 },
+        { content: 10, event: 10, communication: 10 },
+        (sql) => {
+          counted.push(sql);
+          // Each count burns 400ms of the 1000ms budget.
+          clock += 400;
+        },
+      );
+
+      await expect(
+        service.computeCoverage(['content', 'event', 'communication'], { budgetMs: 1000 }),
+      ).rejects.toThrow(/wall-clock budget spent after 1\/3 types/);
+
+      // content's two counts fit (0/400ms in) and so does event's first (800ms);
+      // event's second is refused at 1200ms rather than issued and paid for.
+      expect(counted).toHaveLength(3);
+      // The connection still goes back clean — the budget bounds the hold, it is
+      // not a way to leak one.
+      expect(statements).toContain('RESET statement_timeout');
+      expect(runner.release).toHaveBeenCalledTimes(1);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('defaults to a budget an HTTP caller could still be waiting on', () => {
+    expect(DEFAULT_COVERAGE_BUDGET_MS).toBeGreaterThan(0);
+    expect(DEFAULT_COVERAGE_BUDGET_MS).toBeLessThan(DEFAULT_HEALTH_SWEEP_BUDGET_MS);
   });
 });
 
