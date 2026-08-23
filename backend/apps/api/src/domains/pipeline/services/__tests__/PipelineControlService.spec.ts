@@ -471,6 +471,49 @@ describe('PipelineControlService', () => {
       }
     });
 
+    it('is what makes the sequence dependency-safe — DECLARATION ORDER IS NOT', () => {
+      // `defaultStageSet()` hands back `STAGE_ID_LIST` declaration order, which
+      // groups by phase name and is NOT a topological order: the two person-link
+      // legs are declared a whole phase ahead of `clean.identifier_normalize`,
+      // which they consume. `defaultStageSet`'s docblock used to claim the
+      // opposite, where nothing could catch it; this is that claim, checked. The
+      // sort is the only thing standing between declaration order and a consumer
+      // swept ahead of its producer.
+      const violations = (order: readonly StageId[]): string[] =>
+        Object.entries(STAGE_DEPENDENCIES)
+          .flatMap(([consumer, producers]) =>
+            (producers ?? []).map((producer) => [consumer as StageId, producer] as const),
+          )
+          .filter(([consumer, producer]) => order.indexOf(producer) > order.indexOf(consumer))
+          .map(([consumer, producer]) => `${consumer} before ${producer}`);
+
+      expect(violations(STAGE_ID_LIST)).toEqual(
+        expect.arrayContaining([
+          `${STAGE_IDS.ENRICH_PERSON_LINK} before ${STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE}`,
+          `${STAGE_IDS.ENRICH_EVENT_PERSON_LINK} before ${STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE}`,
+        ]),
+      );
+      expect(violations(orderStages(defaultStageSet()))).toEqual([]);
+    });
+
+    it("breaks ties by declaration order, so one tick's sequence matches the last", () => {
+      // Most stages declare no dependency at all, so "producers first" alone
+      // pins almost nothing; the tie-break is what makes two ticks comparable,
+      // and what keeps the `index.embed_*` / `index.vector_*` families declared
+      // last in `constants.ts` from taking `MAX_SWEEPS_PER_TICK` slots off the
+      // enrichment legs above them.
+      const constrained = new Set<StageId>([
+        ...(Object.keys(STAGE_DEPENDENCIES) as StageId[]),
+        ...Object.values(STAGE_DEPENDENCIES).flatMap((producers) => [...(producers ?? [])]),
+      ]);
+      const untied = (order: readonly StageId[]): StageId[] =>
+        order.filter((stageId) => !constrained.has(stageId));
+
+      const ordered = orderStages(defaultStageSet());
+
+      expect(untied(ordered)).toEqual(untied(STAGE_ID_LIST));
+    });
+
     it('drops an edge to a producer that is not in the set being ordered', () => {
       // A run that names only some stages must still be orderable. An edge to a
       // stage the run does not include is not a dependency of that run.

@@ -193,6 +193,8 @@ export type { ImportStagePayload, ImportStageRunner, StageOutcome, StageRunConte
 export { StagedWriter, DEFAULT_FLUSH_THRESHOLD } from './staging/StagedWriter';
 export type { StagedCounts } from './staging/StagedWriter';
 export {
+  CONTACT_STAGED_TYPE,
+  SHORT_CODE_STAGED_TYPE,
   entityIdentityKey,
   entityKey,
   hasContactIdentity,
@@ -201,7 +203,9 @@ export {
   mergeAccumulatedMetadata,
   normalizeHandle,
   resolveEntityType,
+  stagedNaturalKey,
 } from './staging/identity';
+export { entityTypeFor, naturalKeyFor } from './push/entities';
 
 export { ImportDoctorController } from './controllers/ImportDoctorController';
 export type { DoctorCheckSummary } from './controllers/ImportDoctorController';
