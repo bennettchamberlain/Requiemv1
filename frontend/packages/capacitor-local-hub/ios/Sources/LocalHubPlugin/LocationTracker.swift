@@ -30,6 +30,10 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     private static let homeRadiusMeters = 200.0
     private static let burstDuration: TimeInterval = 45
     private static let burstMaxFixes = 3
+    private static let oneShotTimeout: TimeInterval = 15
+    private static let recentFixMaxAge: TimeInterval = 15
+    private static let recentFixMaxAccuracy: CLLocationAccuracy = 40
+    private static let oneShotAcceptAccuracy: CLLocationAccuracy = 65
 
     private let manager = CLLocationManager()
     private let defaults = UserDefaults.standard
@@ -39,6 +43,12 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     private var mode: Mode = .off
     private var deviceKey: String = ""
     private var lastAccepted: (lat: Double, lng: Double, at: TimeInterval)?
+    private var lastKnown: CLLocation?
+    private var oneShotCompletions: [(Result<[String: Any], Error>) -> Void] = []
+    private var oneShotTimeoutWork: DispatchWorkItem?
+    private var oneShotInFlight = false
+    private var oneShotStartedUpdates = false
+    private var oneShotPreviousAccuracy: CLLocationAccuracy?
     private var burstDeadline: Date?
     private var burstCount = 0
     private var lastError: String?
@@ -106,6 +116,41 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         statusDictionary()
     }
 
+    /// One-shot high-accuracy fix for "use my location" on add-place.
+    /// Does not enqueue a tracking outbox record.
+    func requestCurrentFix(resolve: @escaping ([String: Any]) -> Void, reject: @escaping (String) -> Void) {
+        let completion: (Result<[String: Any], Error>) -> Void = { result in
+            switch result {
+            case .success(let payload):
+                resolve(payload)
+            case .failure(let error):
+                reject(error.localizedDescription)
+            }
+        }
+
+        switch manager.authorizationStatus {
+        case .denied, .restricted:
+            reject("Location permission was denied")
+            return
+        case .notDetermined:
+            lock.lock()
+            oneShotCompletions.append(completion)
+            lock.unlock()
+            manager.requestWhenInUseAuthorization()
+            return
+        default:
+            break
+        }
+
+        if let cached = freshCachedFix() {
+            resolve(fixDictionary(cached))
+            return
+        }
+
+        enqueueOneShot(completion)
+        startOneShotSampling()
+    }
+
     func setHome(latitude: Double?, longitude: Double?) {
         if let existing = manager.monitoredRegions.first(where: { $0.identifier == Self.homeRegionId }) {
             manager.stopMonitoring(for: existing)
@@ -156,6 +201,7 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         requestAuthorizationThenStart()
+        continueOneShotAfterAuthorization()
     }
 
     private func applySampling() {
@@ -220,6 +266,12 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     // MARK: - Fixes
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        if let latest = locations.last {
+            lastKnown = latest
+            if oneShotInFlight, isAcceptableOneShot(latest) {
+                finishOneShot(with: latest)
+            }
+        }
         for location in locations {
             accept(location)
         }
@@ -242,6 +294,12 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         lastError = error.localizedDescription
+        guard oneShotInFlight || hasPendingOneShot() else { return }
+        if let lastKnown, lastKnown.horizontalAccuracy > 0 {
+            finishOneShot(with: lastKnown)
+        } else {
+            failOneShot(error)
+        }
     }
 
     private func beginBurst() {
@@ -391,6 +449,131 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         if manager.authorizationStatus != .notDetermined, !pendingAlways {
             flushResolvers()
         }
+    }
+
+    private func freshCachedFix() -> CLLocation? {
+        [manager.location, lastKnown].compactMap { $0 }.first { isFreshEnough($0) }
+    }
+
+    private func isFreshEnough(_ location: CLLocation) -> Bool {
+        let age = -location.timestamp.timeIntervalSinceNow
+        return age >= 0
+            && age <= Self.recentFixMaxAge
+            && location.horizontalAccuracy > 0
+            && location.horizontalAccuracy <= Self.recentFixMaxAccuracy
+    }
+
+    private func isAcceptableOneShot(_ location: CLLocation) -> Bool {
+        location.horizontalAccuracy > 0 && location.horizontalAccuracy <= Self.oneShotAcceptAccuracy
+    }
+
+    private func enqueueOneShot(_ completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        lock.lock()
+        oneShotCompletions.append(completion)
+        lock.unlock()
+    }
+
+    private func hasPendingOneShot() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !oneShotCompletions.isEmpty
+    }
+
+    private func continueOneShotAfterAuthorization() {
+        guard hasPendingOneShot(), !oneShotInFlight else { return }
+        switch manager.authorizationStatus {
+        case .denied, .restricted:
+            failOneShot(NSError(domain: "LocationTracker", code: 5, userInfo: [
+                NSLocalizedDescriptionKey: "Location permission was denied"
+            ]))
+        case .authorizedWhenInUse, .authorizedAlways:
+            if let cached = freshCachedFix() {
+                finishOneShot(with: cached)
+            } else {
+                startOneShotSampling()
+            }
+        default:
+            break
+        }
+    }
+
+    private func startOneShotSampling() {
+        guard !oneShotInFlight else { return }
+        oneShotInFlight = true
+        oneShotPreviousAccuracy = manager.desiredAccuracy
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        if mode == .off {
+            manager.startUpdatingLocation()
+            oneShotStartedUpdates = true
+        }
+        manager.requestLocation()
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.timeoutOneShot()
+        }
+        oneShotTimeoutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.oneShotTimeout, execute: work)
+    }
+
+    private func timeoutOneShot() {
+        if let lastKnown, lastKnown.horizontalAccuracy > 0 {
+            finishOneShot(with: lastKnown)
+            return
+        }
+        failOneShot(NSError(domain: "LocationTracker", code: 4, userInfo: [
+            NSLocalizedDescriptionKey: "Timed out waiting for a location fix"
+        ]))
+    }
+
+    private func finishOneShot(with location: CLLocation) {
+        guard oneShotInFlight || hasPendingOneShot() else { return }
+        oneShotTimeoutWork?.cancel()
+        oneShotTimeoutWork = nil
+        restoreOneShotSampling()
+        oneShotInFlight = false
+
+        let payload = fixDictionary(location)
+        lock.lock()
+        let completions = oneShotCompletions
+        oneShotCompletions.removeAll()
+        lock.unlock()
+        completions.forEach { $0(.success(payload)) }
+    }
+
+    private func failOneShot(_ error: Error) {
+        guard oneShotInFlight || hasPendingOneShot() else { return }
+        oneShotTimeoutWork?.cancel()
+        oneShotTimeoutWork = nil
+        restoreOneShotSampling()
+        oneShotInFlight = false
+
+        lock.lock()
+        let completions = oneShotCompletions
+        oneShotCompletions.removeAll()
+        lock.unlock()
+        completions.forEach { $0(.failure(error)) }
+    }
+
+    private func restoreOneShotSampling() {
+        if oneShotStartedUpdates {
+            oneShotStartedUpdates = false
+            if mode == .off {
+                manager.stopUpdatingLocation()
+            } else {
+                applySampling()
+            }
+        } else if let previous = oneShotPreviousAccuracy {
+            manager.desiredAccuracy = previous
+        }
+        oneShotPreviousAccuracy = nil
+    }
+
+    private func fixDictionary(_ location: CLLocation) -> [String: Any] {
+        [
+            "latitude": location.coordinate.latitude,
+            "longitude": location.coordinate.longitude,
+            "accuracy": location.horizontalAccuracy
+        ]
     }
 
     private func flushResolvers() {

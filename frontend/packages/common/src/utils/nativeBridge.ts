@@ -52,6 +52,7 @@ interface LocalHubPlugin {
     deviceKey: string;
   }): Promise<NativeLocationStatus>;
   getLocationStatus?(): Promise<NativeLocationStatus>;
+  getCurrentLocation?(): Promise<NativeCurrentLocation>;
   setLocationHome?(options: { latitude?: number; longitude?: number } | Record<string, never>): Promise<void>;
   openAppSettings?(): Promise<void>;
 }
@@ -63,6 +64,29 @@ export type NativeLocationAuthorization =
   | 'when_in_use'
   | 'always'
   | 'unsupported';
+
+export interface NativeCurrentLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+export type DeviceLocationErrorCode = 'denied' | 'unavailable' | 'timeout';
+
+/** One-shot GPS failure from {@link getCurrentDeviceLocation}. */
+export class DeviceLocationError extends Error {
+  readonly code: DeviceLocationErrorCode;
+
+  constructor(message: string, code: DeviceLocationErrorCode) {
+    super(message);
+    this.name = 'DeviceLocationError';
+    this.code = code;
+  }
+}
+
+export function isDeviceLocationError(error: unknown): error is DeviceLocationError {
+  return error instanceof Error && error.name === 'DeviceLocationError' && 'code' in error;
+}
 
 export interface NativeLocationStatus {
   mode: LocationTrackingMode;
@@ -411,6 +435,82 @@ export async function getNativeLocationStatus(): Promise<NativeLocationStatus | 
   }
 
   return hub.getLocationStatus();
+}
+
+export async function getNativeCurrentLocation(): Promise<NativeCurrentLocation | null> {
+  const hub = plugins()?.LocalHub;
+
+  if (!isIosPlatform() || !hub?.getCurrentLocation) {
+    return null;
+  }
+
+  return hub.getCurrentLocation();
+}
+
+/**
+ * Best available device fix: iOS Core Location when the native plugin is
+ * present, otherwise the browser Geolocation API (Android / web).
+ */
+export async function getCurrentDeviceLocation(): Promise<NativeCurrentLocation> {
+  if (isIosPlatform()) {
+    try {
+      const native = await getNativeCurrentLocation();
+
+      if (native) {
+        return native;
+      }
+    } catch (error) {
+      throw toDeviceLocationError(error);
+    }
+  }
+
+  return webCurrentLocation();
+}
+
+function toDeviceLocationError(error: unknown): DeviceLocationError {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (/denied|restricted/i.test(message)) {
+    return new DeviceLocationError(message, 'denied');
+  }
+
+  if (/timed? ?out/i.test(message)) {
+    return new DeviceLocationError(message, 'timeout');
+  }
+
+  return new DeviceLocationError(message || 'Location is unavailable', 'unavailable');
+}
+
+function webCurrentLocation(): Promise<NativeCurrentLocation> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.reject(new DeviceLocationError('Geolocation is unavailable', 'unavailable'));
+  }
+
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          reject(new DeviceLocationError(error.message || 'Location permission was denied', 'denied'));
+          return;
+        }
+
+        if (error.code === error.TIMEOUT) {
+          reject(new DeviceLocationError(error.message || 'Timed out waiting for a location fix', 'timeout'));
+          return;
+        }
+
+        reject(new DeviceLocationError(error.message || 'Location is unavailable', 'unavailable'));
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 5_000 },
+    );
+  });
 }
 
 export async function setNativeLocationHome(

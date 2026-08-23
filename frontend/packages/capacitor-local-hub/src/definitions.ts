@@ -101,10 +101,23 @@ export interface LocalHubPlugin {
 
   getLocationStatus(): Promise<NativeLocationStatus>;
 
+  /**
+   * iOS only. One high-accuracy fix for placing a pin — does not write the
+   * tracking outbox. Rejects when permission is denied or a fix times out.
+   */
+  getCurrentLocation(): Promise<NativeCurrentLocation>;
+
   /** Optional home geofence. Omit lat/lng to clear. */
   setLocationHome(options: { latitude?: number; longitude?: number }): Promise<void>;
 
   openAppSettings(): Promise<void>;
+}
+
+export interface NativeCurrentLocation {
+  latitude: number;
+  longitude: number;
+  /** Horizontal accuracy in meters, when Core Location reports one. */
+  accuracy?: number;
 }
 
 export interface NativeLocationStatus {

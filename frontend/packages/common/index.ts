@@ -122,7 +122,10 @@ export {
   getLaunchUrl,
   hasNotificationPermission,
   hideSplashScreen,
+  getCurrentDeviceLocation,
+  getNativeCurrentLocation,
   getNativeLocationStatus,
+  isDeviceLocationError,
   openExternalUrl,
   openNativeAppSettings,
   requestNotificationPermission,
@@ -136,7 +139,14 @@ export {
   syncNativeIntentConfig,
   takeNativePhoto,
 } from './src/utils/nativeBridge';
-export type { LocalNotification, NativeLocationAuthorization, NativeLocationStatus } from './src/utils/nativeBridge';
+export type {
+  DeviceLocationErrorCode,
+  LocalNotification,
+  NativeCurrentLocation,
+  NativeLocationAuthorization,
+  NativeLocationStatus,
+} from './src/utils/nativeBridge';
+export { DeviceLocationError } from './src/utils/nativeBridge';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,
