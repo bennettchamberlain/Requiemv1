@@ -8,12 +8,11 @@ import { useFeatures } from '@/common/feature';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
-import { DaySchedule, type DayEvent } from './DaySchedule';
 import { DeleteTaskModal } from './DeleteTaskModal';
-import { EditEventModal } from './EditEventModal';
 import { EditTaskModal, type EditableTask } from './EditTaskModal';
 import { NewTaskForm } from './NewTaskForm';
 import { Task } from './Task';
+import { TaskBoard } from './TaskBoard';
 import { childrenOf, groupIntoSections, localDateOf, type SectionedTask } from './taskSections';
 
 const GET_TASKS = gql(`
@@ -40,20 +39,6 @@ const GET_TASKS = gql(`
       kind
       rationale
       confidence
-      status
-    }
-  }
-`);
-
-const GET_PLAN_DAY = gql(`
-  query GetPlanDay($from: DateTime!, $to: DateTime!) {
-    eventsInRange(from: $from, to: $to) {
-      id
-      title
-      startTime
-      endTime
-      eventType
-      taskId
       status
     }
   }
@@ -146,17 +131,6 @@ export function PlanPage() {
     fetchPolicy: 'cache-and-network',
   });
 
-  const now = new Date();
-  const dayStart = new Date(now);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-
-  const { data: dayData, refetch: refetchDay } = useQuery(GET_PLAN_DAY, {
-    variables: { from: dayStart.toISOString(), to: dayEnd.toISOString() },
-    fetchPolicy: 'cache-and-network',
-  });
-
   const [completeTask] = useMutation(COMPLETE_TASK);
   const [reopenTask] = useMutation(REOPEN_TASK);
   const [acceptProposed] = useMutation(ACCEPT_PROPOSED);
@@ -166,7 +140,6 @@ export function PlanPage() {
   const [scheduleTask] = useMutation(SCHEDULE_TASK);
   const [focusedTask, setFocusedTask] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<EditableTask | null>(null);
-  const [editingEvent, setEditingEvent] = useState<DayEvent | null>(null);
 
   const pendingByTask = useMemo(() => {
     const map = new Map<string, { id: string; rationale: string | null; kind: string }>();
@@ -220,7 +193,6 @@ export function PlanPage() {
 
   const refresh = () => {
     void refetch();
-    void refetchDay();
   };
 
   const handleSchedule = (id: string) => void scheduleTask({ variables: { id } }).then(refresh);
@@ -270,44 +242,29 @@ export function PlanPage() {
       />
     ) : null;
   } else {
-    content = (
-      <div className="flex flex-col gap-6">
-        {sections.map((section) => (
-          <section key={section.key} className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {section.label}
-              <span className="ml-2 font-normal">{section.tasks.length}</span>
-            </h2>
-
-            <ul className="flex flex-col gap-2">{section.tasks.map((task) => renderTree(task, 0))}</ul>
-          </section>
-        ))}
-      </div>
-    );
+    content = <TaskBoard sections={sections} renderTask={(task) => renderTree(task, 0)} />;
   }
 
   return (
     <>
       <PageContent>
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-          <NewTaskForm onCreated={() => void refetch()} />
-
-          <DaySchedule events={dayData?.eventsInRange ?? []} onEdit={setEditingEvent} />
+        <div className="flex h-full min-h-0 w-full flex-col gap-6">
+          <div className="mx-auto w-full max-w-3xl shrink-0">
+            <NewTaskForm onCreated={() => void refetch()} />
+          </div>
 
           {/* `relative` scopes the loading and empty states, both of which
               position themselves `absolute inset-0`. Without a positioned
               parent here they fill the whole column and sit on top of the form,
-              swallowing clicks on Add. */}
-          <div className="relative min-h-60 flex-1">{content}</div>
+              swallowing clicks on Add. `min-h-0` lets the board fill leftover
+              height so each column scrolls instead of the whole page. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">{content}</div>
         </div>
       </PageContent>
 
       {focusedTask && <DeleteTaskModal taskId={focusedTask} onClose={() => setFocusedTask(null)} />}
       {editingTask && (
         <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onSaved={refresh} />
-      )}
-      {editingEvent && (
-        <EditEventModal event={editingEvent} onClose={() => setEditingEvent(null)} onSaved={refresh} />
       )}
     </>
   );
