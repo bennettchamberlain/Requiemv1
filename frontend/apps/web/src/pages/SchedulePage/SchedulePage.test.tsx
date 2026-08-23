@@ -55,6 +55,12 @@ vi.mock('@/components/HorizonGrid', () => ({
   // SchedulePage mounts this above the week chrome; keep it findable so the
   // page test can assert document order against the week heading.
   TodayStoryTimeline: () => <div>today-story</div>,
+  VerticalCalendar: ({ footer }: { footer?: string }) => (
+    <div data-testid="vertical-calendar">
+      vertical-calendar
+      <p>{footer}</p>
+    </div>
+  ),
 }));
 
 vi.mock('@/components/TaskSlate', () => ({
@@ -298,7 +304,7 @@ describe('SchedulePage — week paging', () => {
 
     expect(screen.getByText('stub-drop')).toBeInTheDocument();
     expect(screen.queryByText(/Connect a calendar/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Nothing on the calendar this week/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing on the calendar this week/)).not.toBeInTheDocument();
   });
 
   it('sits the week chrome under the today story and above the week grid', () => {
@@ -352,12 +358,30 @@ describe('SchedulePage — week paging', () => {
       await waitFor(() => expect(screen.queryByText('today-story')).not.toBeInTheDocument());
       expect(screen.getByText('Afternoon review')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Show week' })).toBeInTheDocument();
-      expect(screen.getAllByRole('tab')).toHaveLength(7);
+      expect(
+        screen.getByRole('tablist', { name: 'Days this week' }).querySelectorAll('[role="tab"]'),
+      ).toHaveLength(7);
       expect(screen.getByText('stub-drop')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'Show week' }));
       expect(screen.getByRole('button', { name: 'Hide week' })).toBeInTheDocument();
-      expect(screen.queryAllByRole('tab')).toHaveLength(0);
+      expect(screen.queryByRole('tablist', { name: 'Days this week' })).not.toBeInTheDocument();
+    });
+
+    it('keeps day chips and swaps to the vertical calendar on the Calendar tab', async () => {
+      setViewport(true);
+
+      renderWithProviders(<SchedulePage />);
+
+      await waitFor(() => expect(screen.queryByText('today-story')).not.toBeInTheDocument());
+      fireEvent.click(screen.getByRole('tab', { name: 'Calendar' }));
+
+      expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
+      expect(screen.queryByText('stub-drop')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Show week' })).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('tablist', { name: 'Days this week' }).querySelectorAll('[role="tab"]'),
+      ).toHaveLength(7);
     });
   });
 
@@ -397,5 +421,33 @@ describe('SchedulePage — week paging', () => {
 
       expect(screen.getByText('stub-drop')).toBeInTheDocument();
     });
+  });
+});
+
+describe('SchedulePage — layout tabs', () => {
+  it('starts on the horizon view', () => {
+    renderWithProviders(<SchedulePage />);
+
+    expect(screen.getByRole('tab', { name: 'Horizon' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('stub-drop')).toBeInTheDocument();
+    expect(screen.getByText('today-story')).toBeInTheDocument();
+    expect(screen.queryByTestId('vertical-calendar')).not.toBeInTheDocument();
+  });
+
+  it('switches to the vertical calendar and back', () => {
+    renderWithProviders(<SchedulePage />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Calendar' }));
+
+    expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
+    expect(screen.queryByText('stub-drop')).not.toBeInTheDocument();
+    expect(screen.queryByText('today-story')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Horizon' }));
+
+    expect(screen.getByText('stub-drop')).toBeInTheDocument();
+    expect(screen.getByText('today-story')).toBeInTheDocument();
+    expect(screen.queryByTestId('vertical-calendar')).not.toBeInTheDocument();
   });
 });
