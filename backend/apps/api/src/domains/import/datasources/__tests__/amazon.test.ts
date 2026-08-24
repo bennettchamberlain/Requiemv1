@@ -508,11 +508,35 @@ describe('Amazon datasource', () => {
     expect(prime.metadata.Quantity).toBe(1); // NOT summed across components
     expect(prime.metadata.Components).toBe(2);
     expect(prime.metadata['List Price']).toBeUndefined(); // same as price
+    // The breakdown a receipt needs, read straight off the ledger's own
+    // Component Type labels rather than inferred from Total - UnitPrice.
+    expect(prime.metadata.Subtotal).toBe('139');
+    expect(prime.metadata.Tax).toBe('10.77');
 
     const sonic = items.find((i) => i.metadata.Product === 'Sonic Racing')!;
     expect(sonic.metadata.Total).toBe('0');
     expect(sonic.metadata['List Price']).toBe('1.99'); // the promo is visible
     expect(sonic.metadata.Quantity).toBe(1);
+    expect(sonic.metadata.Subtotal).toBe('0');
+    expect(sonic.metadata.Tax).toBe('0');
+  });
+
+  it('leaves Subtotal/Tax unset when a ledger carries a component type this parser has never seen', async () => {
+    // A hypothetical fourth component type (e.g. a future "Shipping" or
+    // "Promotion" row Amazon has not been observed to emit here). Total must
+    // still include it — Transaction Amount sums unconditionally — but
+    // Subtotal/Tax must NOT silently absorb it under the wrong label.
+    const csv = [
+      'ASIN,"Base Currency Code","Component Type","Order Date","Order ID","Order Status",Price,"Product Name","Quantity Ordered","Transaction Amount"',
+      '"B0UNKNOWN1","USD","Price Amount","2026-01-10","D01-9999999-0000001","SUCCESS","9.99","Mystery Item","1","9.99"',
+      '"B0UNKNOWN1","USD","Restocking Fee","2026-01-10","D01-9999999-0000001","SUCCESS","9.99","Mystery Item","1","1.50"',
+    ].join('\n');
+    const { items } = await importCsv('__ledger_unknown__', csv);
+
+    const mystery = items.find((i) => i.metadata.Product === 'Mystery Item')!;
+    expect(mystery.metadata.Total).toBe('11.49'); // 9.99 + 1.50, unconditional
+    expect(mystery.metadata.Subtotal).toBe('9.99'); // only the known Price Amount row
+    expect(mystery.metadata.Tax).toBeUndefined(); // no Tax-typed row exists
   });
 
   // Nothing in a file Amazon named "Digital" is a physical object, so the rows

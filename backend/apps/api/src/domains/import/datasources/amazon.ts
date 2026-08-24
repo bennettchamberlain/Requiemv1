@@ -621,6 +621,18 @@ function isComponentLedger(rows: Record<string, string>[]): boolean {
  * (Prime: 139.00 price + 10.77 tax = 149.77). `Price` and `List Price Amount`
  * are line-level and repeat on every row, so they are read once — keeping both
  * is what records that a $1.99 game was taken for $0.00 on a promotion.
+ *
+ * `Component Type` names what each row's `Transaction Amount` actually is — in
+ * the two shapes this corpus contains, 'Price Amount' and 'Tax' — so the
+ * breakdown a receipt needs (Subtotal/Tax) can be read directly off the
+ * ledger rather than inferred. Only these two known types are mapped; a type
+ * this file has never seen is left OUT of Subtotal/Tax on purpose — folding
+ * an unrecognized component into either would misreport what it was, and the
+ * reconciliation check downstream (subtotal+tax+shipping-discount=total)
+ * surfaces the gap instead of silently absorbing it. 'Subtotal' and 'Tax' are
+ * the literal canonical keys `push/commerceKeys.ts` resolves receipts from —
+ * datasources do not import push/, so they are spelled out here the same way
+ * this function already spells out 'Total' and 'Unit Price'.
  */
 function ledgerFields(rows: Record<string, string>[]): Record<string, string | number | undefined> {
   const primary = rows[0];
@@ -628,6 +640,12 @@ function ledgerFields(rows: Record<string, string>[]): Record<string, string | n
   const price = sumOf([primary['Price']]);
   const list = sumOf([primary['List Price Amount']]);
   const qty = sumOf([col(primary, ...QUANTITY_COLS)]);
+  const priceComponent = sumOf(
+    rows.filter((r) => r['Component Type'] === 'Price Amount').map((r) => r['Transaction Amount']),
+  );
+  const taxComponent = sumOf(
+    rows.filter((r) => r['Component Type'] === 'Tax').map((r) => r['Transaction Amount']),
+  );
 
   return {
     Quantity: qty,
@@ -638,6 +656,8 @@ function ledgerFields(rows: Record<string, string>[]): Record<string, string | n
     // Only interesting when it differs from what was charged.
     'List Price': list !== undefined && price !== undefined && list !== price ? money(list) : undefined,
     Components: rows.length,
+    Subtotal: money(priceComponent),
+    Tax: money(taxComponent),
   };
 }
 
