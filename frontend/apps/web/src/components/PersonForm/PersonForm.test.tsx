@@ -79,6 +79,6 @@ describe('PersonForm', () => {
   it('disables every field while saving', () => {
     render(<PersonForm value={emptyPersonDraft()} onChange={() => {}} disabled />);
 
-    expect(screen.getByLabelText('Name')).toBeDisabled();
+    expect(screen.getByLabelText(/Display name/)).toBeDisabled();
   });
 });

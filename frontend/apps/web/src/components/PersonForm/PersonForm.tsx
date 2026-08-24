@@ -1,7 +1,7 @@
-import { type ReactNode, useId } from 'react';
+import { type ComponentType, type ReactNode, useId } from 'react';
 
 import { Button, IconButton, Input, Label, Select, Textarea } from '@ci/shadcn';
-import { Plus, Trash2 } from '@ci/shadcn/icons';
+import { Briefcase, Contact as ContactIcon, MapPin, Plus, StickyNote, Trash2, UserRound } from '@ci/shadcn/icons';
 
 import { PersonAvatar } from '@/components/PersonAvatar';
 
@@ -28,18 +28,18 @@ const ADDRESS_LABEL_SUGGESTIONS = ['home', 'work', 'mailing', 'other'];
 
 function Section({
   title,
-  description,
+  icon: Icon,
   children,
 }: {
   title: string;
-  description?: string;
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3">
-      <div>
+    <section className="flex flex-col gap-3 border-t border-border/60 pt-5 first:border-t-0 first:pt-0">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
         <h3 className="text-sm font-semibold">{title}</h3>
-        {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
       {children}
     </section>
@@ -125,7 +125,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
   };
 
   return (
-    <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-6">
+    <fieldset disabled={disabled} className="flex min-w-0 flex-col gap-2">
       <datalist id={genderListId}>
         {GENDER_SUGGESTIONS.map((option) => (
           <option key={option} value={option} />
@@ -147,30 +147,13 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
         ))}
       </datalist>
 
-      <Section title="Identity">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${uid}-name`}>Name</Label>
-          <Input
-            id={`${uid}-name`}
-            value={value.name}
-            autoFocus
-            placeholder="Full name"
-            onChange={(event) => set('name', event.target.value)}
-          />
-          {nameError ? (
-            <p className="text-sm text-destructive">{nameError}</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Leave blank to build it from the first, middle and last name.
-            </p>
-          )}
-        </div>
-
+      <Section title="Identity" icon={UserRound}>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field
             id={`${uid}-first-name`}
             label="First name"
             value={value.firstName}
+            autoFocus
             onChange={(next) => set('firstName', next)}
           />
           <Field
@@ -187,7 +170,21 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${uid}-name`} className="text-xs text-muted-foreground">
+            Display name{' '}
+            <span className="font-normal text-muted-foreground/70">(defaults to first + last)</span>
+          </Label>
+          <Input
+            id={`${uid}-name`}
+            value={value.name}
+            placeholder="Full name"
+            onChange={(event) => set('name', event.target.value)}
+          />
+          {nameError && <p className="text-sm text-destructive">{nameError}</p>}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field
             id={`${uid}-nickname`}
             label="Nickname"
@@ -220,7 +217,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
         </div>
       </Section>
 
-      <Section title="Contact" description="The first email and the first phone are the preferred ones.">
+      <Section title="Contact" icon={ContactIcon}>
         <div className="flex flex-col gap-2">
           {value.contacts.map((contact) => (
             <div key={contact.key} className="flex items-end gap-2">
@@ -300,7 +297,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
         </div>
       </Section>
 
-      <Section title="Addresses" description="Label them home, work, or anything else that helps.">
+      <Section title="Addresses" icon={MapPin}>
         <div className="flex flex-col gap-3">
           {value.addresses.map((address, index) => (
             <div key={address.key} className="flex flex-col gap-3 rounded-md border border-border/60 p-3">
@@ -331,20 +328,22 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
                 </IconButton>
               </div>
 
-              <Field
-                id={`${uid}-${address.key}-street`}
-                label="Street"
-                value={address.streetAddress}
-                onChange={(next) => updateAddress(address.key, { streetAddress: next })}
-              />
-              <Field
-                id={`${uid}-${address.key}-street-2`}
-                label="Apt, suite, floor"
-                value={address.streetAddress2}
-                onChange={(next) => updateAddress(address.key, { streetAddress2: next })}
-              />
-
               <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  id={`${uid}-${address.key}-street`}
+                  label="Street"
+                  value={address.streetAddress}
+                  onChange={(next) => updateAddress(address.key, { streetAddress: next })}
+                />
+                <Field
+                  id={`${uid}-${address.key}-street-2`}
+                  label="Apt, suite, floor"
+                  value={address.streetAddress2}
+                  onChange={(next) => updateAddress(address.key, { streetAddress2: next })}
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Field
                   id={`${uid}-${address.key}-city`}
                   label="City"
@@ -402,8 +401,8 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
         </div>
       </Section>
 
-      <Section title="Work">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <Section title="Work" icon={Briefcase}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field
             id={`${uid}-job-title`}
             label="Job title"
@@ -433,7 +432,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
         </div>
       </Section>
 
-      <Section title="Notes">
+      <Section title="Notes" icon={StickyNote}>
         <div className="flex items-end gap-3">
           {/* Live preview: the same fallback (initials on a deterministic
               colour) or broken-link handling this URL gets everywhere else
