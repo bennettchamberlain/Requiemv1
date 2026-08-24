@@ -5,11 +5,13 @@ import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
 import { Badge, Button, Input, Select } from '@ci/shadcn';
 import { useNavigate } from 'react-router-dom';
 
+import { ChatAbout } from '@/components/ChatWithAgent';
 import { ReceiptIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { gql } from '@/graphql';
 import type { GetReceiptsQuery, ReceiptExtractionState } from '@/graphql/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 import { formatMinor } from '@/lib/money';
 import { humanizeEnum } from '@/lib/utils';
 
@@ -66,6 +68,16 @@ function ReceiptRowButton({ receipt, onOpen }: { receipt: ReceiptNode; onOpen: (
   const lineCount = receipt.lineItems.length;
 
   return (
+    <ChatAbout
+      context={namedChatContext({
+        title: receipt.merchantName,
+        body: [total, dateLabel, lineCount > 0 ? `${lineCount} ${lineCount === 1 ? 'line' : 'lines'}` : null]
+          .filter(Boolean)
+          .join(' · '),
+        sourceKind: 'ReceiptType',
+        sourceId: receipt.id,
+      })}
+    >
     <button
       type="button"
       onClick={onOpen}
@@ -95,6 +107,7 @@ function ReceiptRowButton({ receipt, onOpen }: { receipt: ReceiptNode; onOpen: (
         </div>
       </div>
     </button>
+    </ChatAbout>
   );
 }
 

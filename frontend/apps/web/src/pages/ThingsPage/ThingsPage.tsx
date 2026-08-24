@@ -6,6 +6,7 @@ import { AlertDialog, Badge, Button, Card, Input, Select, Sheet, Tabs } from '@c
 import { Filter, Merge, X } from '@ci/shadcn/icons';
 import { useNavigate } from 'react-router-dom';
 
+import { ChatAbout } from '@/components/ChatWithAgent';
 import { EntityGrid, ItemGridItem } from '@/components/entities';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -18,6 +19,7 @@ import type {
   ItemLifecycleState,
   ItemSortOrder,
 } from '@/graphql/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 import { humanizeEnum } from '@/lib/utils';
 
 import { ObservationReview } from './ObservationReview';
@@ -929,11 +931,21 @@ export function ThingsPage() {
                 <>
                   <EntityGrid>
                     {things.map((thing) => (
-                      <ItemGridItem
+                      <ChatAbout
                         key={thing.id}
-                        item={thing}
-                        onClick={() => navigate(`/items/${GlobalUID.parse('item', thing.id)}`)}
-                      />
+                        className="h-full min-w-0"
+                        context={namedChatContext({
+                          title: thing.name,
+                          body: null,
+                          sourceKind: 'ItemType',
+                          sourceId: thing.id,
+                        })}
+                      >
+                        <ItemGridItem
+                          item={thing}
+                          onClick={() => navigate(`/items/${GlobalUID.parse('item', thing.id)}`)}
+                        />
+                      </ChatAbout>
                     ))}
                   </EntityGrid>
 

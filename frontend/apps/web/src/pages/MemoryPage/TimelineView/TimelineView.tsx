@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { cn } from '@ci/shadcn';
 import { useSearchParams } from 'react-router-dom';
 
+import { MemoryChatAbout } from '@/components/ChatWithAgent';
 import { formatEnumLabel } from '@/lib/utils';
 
 import { useEntityService, type EntityItem } from '../../MemoryPage/useEntityService';
@@ -222,7 +223,9 @@ export function TimelineView({
                   : 'bg-[#58ebbf] shadow-glow-ci',
               )}
             />
-            <EntityCard entity={entity} />
+            <MemoryChatAbout entity={entity}>
+              <EntityCard entity={entity} />
+            </MemoryChatAbout>
           </div>
         );
       })}

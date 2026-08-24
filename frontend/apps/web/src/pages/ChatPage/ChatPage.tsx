@@ -10,7 +10,7 @@ import { usePersonaCompose } from '@/api/usePersonaCompose';
 import { Chat, type FormData } from '@/components/Chat';
 import { HowYoudDoItCard } from '@/components/HowYoudDoItCard';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
-import { clearAgentChatContext, readAgentChatContext } from '@/lib/agentChat';
+import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } from '@/lib/agentChat';
 
 import { ChatSidebar } from './ChatSidebar';
 import { type Message } from './types';
@@ -94,12 +94,7 @@ function ChatPageContent() {
     }
 
     clearAgentChatContext();
-
-    const draft = seed.body
-      ? `I'd like to talk about "${seed.title}":\n\n${seed.body}`
-      : `I'd like to talk about "${seed.title}".`;
-
-    setChatDraft(draft);
+    setChatDraft(formatAgentChatDraft(seed));
   }, [initialThreadId]);
 
   useEffect(() => {

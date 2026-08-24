@@ -82,10 +82,15 @@ vi.mock('./useThreadListService', () => ({
   ],
 }));
 
-vi.mock('@/lib/agentChat', () => ({
-  readAgentChatContext: () => null,
-  clearAgentChatContext: vi.fn(),
-}));
+vi.mock('@/lib/agentChat', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/agentChat')>();
+
+  return {
+    ...actual,
+    readAgentChatContext: () => null,
+    clearAgentChatContext: vi.fn(),
+  };
+});
 
 vi.mock('@/components/Chat', () => ({
   Chat: ({ onStop }: { onStop?: () => void }) => (

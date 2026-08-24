@@ -4,9 +4,11 @@ import { Tooltip } from '@ci/shadcn';
 import { FileText, Globe, Image as ImageIcon, Music, Video } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
+import { ChatAbout } from '@/components/ChatWithAgent';
 import { resolveContentTileUrl } from '@/components/entities/resolveMediaUrl';
 import { ContentIcon } from '@/components/icons';
 import { gql, type FragmentType, useFragment } from '@/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 import { RICH_MEDIA_FRAGMENT } from '@/pages/MemoryPage/Components/EntityDetails/RichMediaCard';
 
 export const ContentTileFragment = gql(`
@@ -81,6 +83,14 @@ export function ContentTile({
   const { Icon, label } = contentKindFor(content.mimetype);
 
   return (
+    <ChatAbout
+      context={namedChatContext({
+        title: name,
+        body: content.text,
+        sourceKind: 'ContentType',
+        sourceId: content.id,
+      })}
+    >
     <Tooltip delayDuration={600}>
       <Tooltip.Content>{name}</Tooltip.Content>
       <Tooltip.Trigger asChild>
@@ -130,5 +140,6 @@ export function ContentTile({
         </button>
       </Tooltip.Trigger>
     </Tooltip>
+    </ChatAbout>
   );
 }

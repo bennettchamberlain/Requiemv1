@@ -6,7 +6,9 @@ import { Button, Card } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { useNodeGraphService } from '@/api/useNodeGraphService';
+import { ChatAbout } from '@/components/ChatWithAgent';
 import { Tag } from '@/components/Tag';
+import { namedChatContext } from '@/lib/agentChat';
 
 const CARD_MIN_WIDTH = 180;
 const CARD_GAP_PX = 12;
@@ -652,32 +654,43 @@ export function EntityRelationshipCards({ entityId, onOpenRelatedEntity }: Props
             const tags = (tagsByEntityKey[lookupKey] ?? card.otherEntityTags).slice(0, 3);
             const cardClassName =
               'p-0 min-h-[96px] transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+            const chatContext = namedChatContext({
+              title: target.name,
+              body: target.description,
+              sourceKind: target.entityType,
+              sourceId: target.id,
+            });
 
             if (onOpenRelatedEntity) {
               return (
+                <ChatAbout key={card.relationshipId} context={chatContext}>
                 <button
-                  key={card.relationshipId}
                   type="button"
                   className="block w-full rounded-xl text-left"
                   onClick={() => onOpenRelatedEntity(target)}
                 >
                   <Card className={cardClassName}>{renderCardContent(card, tags)}</Card>
                 </button>
+                </ChatAbout>
               );
             }
 
             if (!detailPath) {
               return (
-                <Card key={card.relationshipId} className="p-0 min-h-[96px]">
+                <ChatAbout key={card.relationshipId} context={chatContext}>
+                <Card className="p-0 min-h-[96px]">
                   {renderCardContent(card, tags)}
                 </Card>
+                </ChatAbout>
               );
             }
 
             return (
-              <Link key={card.relationshipId} to={detailPath} className="block">
+              <ChatAbout key={card.relationshipId} context={chatContext}>
+              <Link to={detailPath} className="block">
                 <Card className={cardClassName}>{renderCardContent(card, tags)}</Card>
               </Link>
+              </ChatAbout>
             );
           })}
       </div>

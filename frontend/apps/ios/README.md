@@ -184,15 +184,16 @@ one store before the other.
 
 `App | BuildTestFlight` in App Store Connect is a **second, automatic** route to
 TestFlight. It starts from branch activity, not from a release tag, and that is
-too easy to fire by accident. **Turn it off** (or delete the workflow):
+too easy to fire by accident. **Delete the workflow**:
 
 App Store Connect → Xcode Cloud → Manage Workflows → `App | BuildTestFlight`
-→ Start Conditions → **Manual start only**, or delete the workflow.
+→ Delete Workflow.
 
-Repo-side equivalent (App Store Connect API; run once from `main`):
+Repo-side equivalent (App Store Connect API; run once from `main` after
+`APPSTORE_*` secrets are set):
 
 ```bash
-gh workflow run "Xcode Cloud — manual starts only" --ref main
+gh workflow run xcode-cloud-manual-only.yml --ref main
 ```
 
 Keep the `ci_scripts/ci_post_clone.sh` bootstrap in the repo so a future
