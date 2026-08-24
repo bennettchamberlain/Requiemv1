@@ -259,14 +259,16 @@ function AppRoutes() {
             }
           />
 
-          <Route
-            path="/forecast"
-            element={
-              <ProtectedRoute>
-                <ForecastPage />
-              </ProtectedRoute>
-            }
-          />
+          {isFeatureEnabled('forecast.page') && (
+            <Route
+              path="/forecast"
+              element={
+                <ProtectedRoute>
+                  <ForecastPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
 
           {/* Both former destinations now resolve to the page that absorbed
               them. /brief/summaries/:id is declared above and is more specific,

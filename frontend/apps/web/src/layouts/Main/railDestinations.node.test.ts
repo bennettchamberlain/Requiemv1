@@ -19,6 +19,17 @@ describe('visibleRailDestinations', () => {
     ]);
   });
 
+  it('gates Forecast on `forecast.page` — the same flag the /forecast route checks', () => {
+    const forecast = RAIL_DESTINATIONS.find((destination) => destination.id === 'forecast');
+
+    expect(forecast?.flag).toBe('forecast.page');
+    expect(forecast?.to).toBe('/forecast');
+    expect(visibleRailDestinations((flag) => flag !== 'forecast.page').map((d) => d.id)).not.toContain(
+      'forecast',
+    );
+    expect(visibleRailDestinations(() => true).map((d) => d.id)).toContain('forecast');
+  });
+
   it('gates Asks on `ask` — the flag the /asks route itself checks', () => {
     // /asks was reachable only by typing the URL. The row has to ride the same
     // flag as the route: the route is not REGISTERED when `ask` is off, so a

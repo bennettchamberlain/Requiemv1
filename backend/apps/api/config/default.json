@@ -209,6 +209,7 @@
     "planning.emptyState": false,
     "stats.page": true,
     "schedule.page": true,
+    "forecast.page": false,
     "tags.page": true,
     "hbpe": true,
     "agent.memory.compaction": false,

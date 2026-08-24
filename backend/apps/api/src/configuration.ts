@@ -653,6 +653,11 @@ export const ConfigSchema = z.object({
      * committed events, the HBPE rhythm layer, and proposed candidates. On by
      * default. */
     'schedule.page': booleanStringSchema,
+    /**
+     * Wholesale gate for the Forecast page (`/forecast` + rail entry). Off by
+     * default. Calendar's HBPE rhythm layer is `schedule.page` and is independent.
+     */
+    'forecast.page': booleanStringSchema,
     /** The standalone all-tags browse page (`/tags`). Restored — on by default —
      * after #1512 removed it and left no way to see every tag in the system.
      * Chips open the explorer filtered by the tag (`/memory?tags=<label>`). */
