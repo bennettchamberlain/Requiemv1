@@ -7,10 +7,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { useActionListService } from '@/api';
 import { useFeatures } from '@/common/feature';
+import { ChatAbout } from '@/components/ChatWithAgent';
 import { PageContent } from '@/components/layout';
 import { Markdown } from '@/components/Markdown';
 import { type FragmentType } from '@/graphql';
 import { useModalControls } from '@/hooks';
+import { namedChatContext } from '@/lib/agentChat';
 
 import { BentoCard } from '../../components/BentoCard';
 import { Carousel } from '../../components/Carousel';
@@ -339,8 +341,16 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
           onSubmit={handleQuestionSubmit}
         />
       ) : (
-        <BentoCard
+        <ChatAbout
           key={card.id}
+          context={namedChatContext({
+            title: card.action.title,
+            body: card.action.text,
+            sourceKind: 'action',
+            sourceId: card.action.id,
+          })}
+        >
+        <BentoCard
           title={card.action.title}
           description={
             <div className="prose dark:prose-invert">
@@ -354,6 +364,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
           dismissLabel={t('FEED_CARD_DISMISS_ACTION')}
           showUnseenIndicator={!card.action.seen}
         />
+        </ChatAbout>
       ),
     );
 
@@ -460,8 +471,16 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
                       className="hover:shadow-lg transition-shadow duration-200"
                     />
                   ) : (
-                    <BentoCard
+                    <ChatAbout
                       key={card.id}
+                      context={namedChatContext({
+                        title: card.action.title,
+                        body: card.action.text,
+                        sourceKind: 'action',
+                        sourceId: card.action.id,
+                      })}
+                    >
+                    <BentoCard
                       title={card.action.title}
                       description={
                         <div className="prose dark:prose-invert">
@@ -476,6 +495,7 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
                       showUnseenIndicator={!card.action.seen}
                       className="hover:shadow-lg transition-shadow duration-200"
                     />
+                    </ChatAbout>
                   ),
                 )}
               </Carousel>
