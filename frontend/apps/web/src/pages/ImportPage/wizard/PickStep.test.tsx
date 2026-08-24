@@ -298,4 +298,28 @@ describe('PickStep', () => {
     fireEvent.click(button);
     expect(onContinue).toHaveBeenCalled();
   });
+
+  it('pins Continue and scrolls the catalog by default', () => {
+    renderStep();
+
+    expect(screen.getByTestId('pick-catalog').className).toMatch(/overflow-y-auto/);
+  });
+
+  it('lets Continue sit after the catalog when the page is the scroller', () => {
+    render(
+      <PickStep
+        catalog={CATALOG}
+        picked={new Set(['spotify'])}
+        onToggle={vi.fn()}
+        onContinue={vi.fn()}
+        pinContinue={false}
+      />,
+    );
+
+    const catalog = screen.getByTestId('pick-catalog');
+    const continueButton = screen.getByRole('button', { name: /continue/i });
+
+    expect(catalog.className).not.toMatch(/overflow-y-auto/);
+    expect(catalog.compareDocumentPosition(continueButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

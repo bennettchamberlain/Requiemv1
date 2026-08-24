@@ -9,7 +9,11 @@ import { ImportSurface } from './ImportPage';
 vi.mock('@/components/ImportActivity', () => ({
   ImportActivity: ({ className }: { className?: string }) => <div className={className}>import activity</div>,
 }));
-vi.mock('./wizard/ImportWizard', () => ({ ImportWizard: () => <div>wizard surface</div> }));
+vi.mock('./wizard/ImportWizard', () => ({
+  ImportWizard: ({ scroll }: { scroll?: string }) => (
+    <div>wizard surface scroll:{scroll ?? 'contained'}</div>
+  ),
+}));
 vi.mock('./InboxPanel', () => ({ InboxPanel: () => <div>inbox surface</div> }));
 vi.mock('./HistoryTab', () => ({ HistoryTab: () => <div>history surface</div> }));
 
@@ -43,7 +47,7 @@ describe('ImportSurface', () => {
     // And ahead of the wizard in the column, so it shares the screen with the
     // step you are on instead of sitting below it.
     expect(
-      activity.compareDocumentPosition(screen.getByText('wizard surface')) & Node.DOCUMENT_POSITION_FOLLOWING,
+      activity.compareDocumentPosition(screen.getByText(/wizard surface/)) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /history/i }));
@@ -105,10 +109,19 @@ describe('ImportSurface', () => {
     expect(screen.getByText('import activity').className).toContain('sm:max-h-[8.5rem]');
   });
 
+  it('lets the onboarding host be the only scroller', () => {
+    render(<ImportSurface variant="onboarding" />);
+
+    const wizard = screen.getByText(/wizard surface/);
+    expect(wizard).toHaveTextContent('scroll:page');
+    expect(wizard.parentElement?.className).not.toMatch(/overflow-hidden/);
+    expect(screen.queryByRole('heading', { name: 'Import' })).not.toBeInTheDocument();
+  });
+
   it('opens on the wizard', () => {
     render(<ImportSurface />);
 
-    expect(screen.getByText('wizard surface')).toBeInTheDocument();
+    expect(screen.getByText(/wizard surface/)).toBeInTheDocument();
     expect(screen.queryByText('inbox surface')).not.toBeInTheDocument();
     expect(screen.queryByText('history surface')).not.toBeInTheDocument();
   });
@@ -150,7 +163,7 @@ describe('ImportSurface', () => {
     expect(screen.getByText('history surface')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Pick/ }));
-    expect(screen.getByText('wizard surface')).toBeInTheDocument();
+    expect(screen.getByText(/wizard surface/)).toBeInTheDocument();
   });
 
   it('pressing the surface you are on returns to the wizard', () => {
@@ -194,7 +207,7 @@ describe('ImportSurface', () => {
   it('keeps the wizard mounted across a trip to History', () => {
     render(<ImportSurface />);
 
-    const wizard = screen.getByText('wizard surface');
+    const wizard = screen.getByText(/wizard surface/);
 
     fireEvent.click(screen.getByRole('button', { name: /history/i }));
 
@@ -203,6 +216,6 @@ describe('ImportSurface', () => {
     expect(wizard.closest('[hidden], .hidden')).not.toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /Pick/ }));
-    expect(screen.getByText('wizard surface')).toBe(wizard);
+    expect(screen.getByText(/wizard surface/)).toBe(wizard);
   });
 });

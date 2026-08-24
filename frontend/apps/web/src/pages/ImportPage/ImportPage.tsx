@@ -60,8 +60,10 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
     [onStageChange],
   );
 
+  const pageScroll = variant === 'onboarding';
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className={cn('flex flex-col gap-4', pageScroll ? '' : 'min-h-0 flex-1')}>
       {/* Inbox and History ride the path's own heading, level with the name of
           the thing they belong to. They spent one revision at the end of the
           step row, which read as a fourth and fifth step of a sequence they are
@@ -198,11 +200,12 @@ export function ImportSurface({ variant = 'page', onStageChange }: ImportSurface
           keeps the work.
 
           overflow-hidden, not auto: the wizard scrolls itself below the row. */}
-      <div className={cn('min-h-0 flex-1 overflow-hidden', surface !== 'import' && 'hidden')}>
+      <div className={cn(pageScroll ? '' : 'min-h-0 flex-1 overflow-hidden', surface !== 'import' && 'hidden')}>
         <ImportWizard
           step={variant === 'page' ? stage : undefined}
           onStepChange={handleStage}
           onCanExportChange={setCanExport}
+          scroll={pageScroll ? 'page' : 'contained'}
         />
       </div>
 
