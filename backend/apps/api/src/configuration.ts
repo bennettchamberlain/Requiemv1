@@ -104,6 +104,13 @@ export const ConfigSchema = z.object({
        * are forwarded here. Empty = local notifications only.
        */
       pushRelayUrl: z.string().default(''),
+      // Comma-separated OAuth client ids allow-listed as service accounts (e.g.
+      // "hbpe-sidecar,summary-sidecar"). A Portal-signed token presenting one of
+      // these client ids is treated as a Portal-brokered service credential: it
+      // acts on behalf of the user named in its `sub` claim instead of being
+      // JIT-provisioned as a human login. Replaces the shared HS256 secret the
+      // sidecars used to self-sign with. See unified-identity-plan.md · B5.
+      serviceClients: z.string().default(''),
     }),
     // Traefik forward-auth identity header signed by CI-Hub. When enabled, the
     // server verifies the HMAC-SHA256 signature on X-CI-Hub-User before trusting
