@@ -485,7 +485,7 @@ function AppRoutes() {
               old bookmarks land on the right Self tab instead of falling
               through to the settings dialog's own appearance fallback. */}
           <Route path="/settings/about-you" element={<Navigate to="/self" replace />} />
-          <Route path="/settings/account" element={<Navigate to="/self/account" replace />} />
+          <Route path="/settings/account" element={<Navigate to="/self" replace />} />
 
           <Route
             path="/settings/*"
