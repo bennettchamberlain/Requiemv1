@@ -8,4 +8,5 @@ export { ModelProvider, useModel } from './useModel';
 export { useLocationTracking, isLocationTrackingEnabled } from './useLocationTracking';
 export { useNativeShell } from './useNativeShell';
 export { usePreventOverscroll } from './usePreventOverscroll';
+export { useStatusBarScrollToTop } from './useStatusBarScrollToTop';
 export { useRecentSearches } from './useRecentSearches';

@@ -60,13 +60,13 @@ function QuestionRow({
 
   if (question.options) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 py-1.5">
-        <span className="text-sm">{question.text}</span>
+      <div className="flex flex-col gap-1.5 py-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
+        <span className="text-sm sm:min-w-0 sm:flex-1">{question.text}</span>
         <ToggleGroup
           type="single"
           size="sm"
           variant="outline"
-          className="shrink-0"
+          className="w-full justify-start sm:w-auto sm:shrink-0"
           onValueChange={(value) => value && onAnswer(value)}
         >
           {question.options.map((option) => (
@@ -98,13 +98,13 @@ function QuestionRow({
   }
 
   return (
-    <div className="flex items-center gap-2 py-1.5">
-      <span className="flex-1 text-sm">{question.text}</span>
+    <div className="flex flex-col gap-1.5 py-1.5 sm:flex-row sm:items-center sm:gap-2">
+      <span className="text-sm sm:min-w-0 sm:flex-1">{question.text}</span>
       <Input
         value={draft}
         onChange={(e) => onDraftChange(e.target.value)}
         placeholder="Answer…"
-        className="h-8 w-80 text-sm"
+        className="h-8 w-full min-w-0 text-sm sm:max-w-80 sm:shrink-0"
       />
       {busy && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" strokeWidth={1.5} />}
     </div>
