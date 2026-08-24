@@ -32,6 +32,7 @@ import {
 } from '../services/DataSourceCatalogService';
 import { ImportRetentionService, type DiscardedRun } from '../services/ImportRetentionService';
 import { ImportRunService } from '../services/ImportRunService';
+import { ObjectCountService, type ObjectCountEntry } from '../services/ObjectCountService';
 
 /** A run as the progress UI reads it. */
 export interface RunSummary {
@@ -158,6 +159,7 @@ export class ImportRunsController {
     private readonly catalog: DataSourceCatalogService,
     private readonly retention: ImportRetentionService,
     private readonly users: UserService,
+    private readonly objectCounts: ObjectCountService,
   ) {}
 
   /**
@@ -184,6 +186,25 @@ export class ImportRunsController {
   @Get('sources/catalog')
   sourceCatalog(): SourceCatalogEntry[] {
     return this.catalog.catalog();
+  }
+
+  /**
+   * How much of each memory kind this user's imports have actually put in
+   * `ci.*`, per importer — what the picker's tiles show under "24K Mail",
+   * "1.2M Photos". Read from the live tables themselves, never from run
+   * history; see {@link ObjectCountService} for why that distinction matters
+   * and what it does and does not compute.
+   *
+   * Scoped to the caller by construction (every query below is `WHERE user_id
+   * = $1` / `WHERE owner_user_id = $1`) — there is no cross-user aggregate to
+   * accidentally expose.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('sources/object-counts')
+  async objectCountsForCaller(@Context() context: RequestContext): Promise<ObjectCountEntry[]> {
+    const userId = requireUserId(context);
+
+    return this.objectCounts.countsForUser(userId);
   }
 
   /**

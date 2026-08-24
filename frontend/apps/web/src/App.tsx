@@ -75,13 +75,12 @@ const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
-const StatsPage = lazy(() => import('@/pages/StatsPage'));
+const SelfPage = lazy(() => import('@/pages/SelfPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
 // Pulls SchedulePage and FeedPage in with it — neither is routed on its own.
 const TodayPage = lazy(() => import('@/pages/TodayPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
-const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 
 function RedirectInsightsSummary() {
   const { id } = useParams<{ id: string }>();
@@ -90,30 +89,23 @@ function RedirectInsightsSummary() {
 }
 
 /**
- * The brief now lives inside Today, so both of its old addresses land there.
+ * The brief now lives inside Calendar, so both of its old addresses land there.
  *
- * Aimed at /today rather than chained through /brief, which would cost a second
- * redirect on every old link. The action id is carried across because the
- * brief's cards deep-link by it — dropping it would open the page but not the
- * card someone was sent.
+ * Aimed at /calendar rather than chained through /brief, which would cost a
+ * second redirect on every old link. The action id is carried across because
+ * the brief's cards deep-link by it — dropping it would open the page but not
+ * the card someone was sent.
  */
-function RedirectToToday() {
+function RedirectToCalendar() {
   const { id } = useParams<{ id?: string }>();
 
-  return <Navigate to={id ? `/today/${id}` : '/today'} replace />;
+  return <Navigate to={id ? `/calendar/${id}` : '/calendar'} replace />;
 }
 
 function RedirectFeedSummaryToBrief() {
   const { id } = useParams<{ id: string }>();
 
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
-}
-
-/** Events explorer moved to /memory/events; keep query (view=, filters) intact. */
-function RedirectMemoryToEvents() {
-  const { search } = useLocation();
-
-  return <Navigate to={{ pathname: '/memory/events', search }} replace />;
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -251,7 +243,7 @@ function AppRoutes() {
           />
 
           <Route
-            path="/today/:id?"
+            path="/calendar/:id?"
             element={
               <ProtectedRoute>
                 <TodayPage />
@@ -259,23 +251,26 @@ function AppRoutes() {
             }
           />
 
-          <Route
-            path="/forecast"
-            element={
-              <ProtectedRoute>
-                <ForecastPage />
-              </ProtectedRoute>
-            }
-          />
+          {isFeatureEnabled('forecast.page') && (
+            <Route
+              path="/forecast"
+              element={
+                <ProtectedRoute>
+                  <ForecastPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
 
           {/* Both former destinations now resolve to the page that absorbed
               them. /brief/summaries/:id is declared above and is more specific,
               so it still reaches the summary detail page. */}
-          <Route path="/brief/:id?" element={<RedirectToToday />} />
-          <Route path="/schedule" element={<RedirectToToday />} />
+          <Route path="/brief/:id?" element={<RedirectToCalendar />} />
+          <Route path="/schedule" element={<RedirectToCalendar />} />
+          <Route path="/today/:id?" element={<RedirectToCalendar />} />
 
           <Route path="/feed/summaries/:id" element={<RedirectFeedSummaryToBrief />} />
-          <Route path="/feed/:id?" element={<RedirectToToday />} />
+          <Route path="/feed/:id?" element={<RedirectToCalendar />} />
 
           <Route
             path="/search"
@@ -286,11 +281,13 @@ function AppRoutes() {
             }
           />
 
+          {/* `/memory` is the unfiltered explorer (all kinds). `/memory/events`
+              is the same page with the Events submenu's type filter. */}
           <Route
             path="/memory"
             element={
               <ProtectedRoute>
-                <RedirectMemoryToEvents />
+                <MemoryPage />
               </ProtectedRoute>
             }
           />
@@ -362,7 +359,7 @@ function AppRoutes() {
             </>
           )}
 
-          <Route path="/insights" element={<Navigate to="/today" replace />} />
+          <Route path="/insights" element={<Navigate to="/calendar" replace />} />
           <Route
             path="/insights/:id"
             element={
@@ -372,25 +369,15 @@ function AppRoutes() {
             }
           />
 
-          {isFeatureEnabled('insights.page') && (
-            <>
-              {/*
-                "Questions" is what this page used to be called; it is
-                "Reflections" in the UI now. Both old paths stay as redirects so
-                bookmarks, docs and any link still in the wild keep working.
-              */}
-              <Route path="/prompts" element={<Navigate to="/memory/reflections" replace />} />
-              <Route path="/memory/questions" element={<Navigate to="/memory/reflections" replace />} />
-              <Route
-                path="/memory/reflections"
-                element={
-                  <ProtectedRoute>
-                    <PromptsPage />
-                  </ProtectedRoute>
-                }
-              />
-            </>
-          )}
+          {/* "Questions" is what this page used to be called; it was
+              "Reflections" under Memory, and now lives under Self. All three
+              old paths stay as redirects so bookmarks, docs and any link
+              still in the wild keep working. Ungated here — /self/reflections
+              itself is registered only when `insights.page` is on, same as
+              every other flag-gated route in this app. */}
+          <Route path="/prompts" element={<Navigate to="/self/reflections" replace />} />
+          <Route path="/memory/questions" element={<Navigate to="/self/reflections" replace />} />
+          <Route path="/memory/reflections" element={<Navigate to="/self/reflections" replace />} />
 
           {isFeatureEnabled('tags.page') && (
             <>
@@ -406,12 +393,15 @@ function AppRoutes() {
             </>
           )}
 
+          {/* /stats was its own rail tab; it's now the Stats tab inside Self. */}
+          <Route path="/stats" element={<Navigate to="/self/stats" replace />} />
+
           {isFeatureEnabled('stats.page') && (
             <Route
-              path="/stats"
+              path="/self/*"
               element={
                 <ProtectedRoute>
-                  <StatsPage />
+                  <SelfPage />
                 </ProtectedRoute>
               }
             />
@@ -487,6 +477,13 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
+
+          {/* About You and Account moved into Self. Specific paths outrank the
+              `/settings/*` wildcard below regardless of declaration order, so
+              old bookmarks land on the right Self tab instead of falling
+              through to the settings dialog's own appearance fallback. */}
+          <Route path="/settings/about-you" element={<Navigate to="/self" replace />} />
+          <Route path="/settings/account" element={<Navigate to="/self/account" replace />} />
 
           <Route
             path="/settings/*"
@@ -669,7 +666,7 @@ function AppRoutes() {
         {/*
           Fallback. The feature-gated routes above are absent from the table
           until `/api/_internal/features` answers, so on a hard load of one of
-          them (/stats, /tags, /prompts, or a settings overlay whose restored
+          them (/self, /tags, /prompts, or a settings overlay whose restored
           backgroundLocation is one of them) this is what "*" matches. Rendering
           404 there flashed a not-found page over a route that was about to
           exist; wait for the flags instead, exactly as ProtectedRoute waits for

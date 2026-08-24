@@ -6,12 +6,12 @@ import { CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from
 import { useTranslation } from 'react-i18next';
 
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
-import { type DeclineReason, useScheduleCandidates } from '@/api/useScheduleCandidates';
 import { type RhythmDay, type ScheduleEvent, useScheduleService } from '@/api/useScheduleService';
-import { HorizonGrid, TodayStoryTimeline } from '@/components/HorizonGrid';
+import { HorizonGrid, VerticalCalendar } from '@/components/HorizonGrid';
 import { TodayNowNext, WeekDayChips } from '@/components/HorizonGrid/TodayNowNext';
 import { PageContent } from '@/components/layout';
 import { TaskSlate } from '@/components/TaskSlate';
+import { usePlanTasks } from '@/pages/PlanPage/usePlanTasks';
 import {
   type ActivityClass,
   type ColorMode,
@@ -73,6 +73,13 @@ function rhythmFooter(generatedAt: string | null, coversWindow: boolean): string
 const COLOR_MODE_LABEL: Record<ColorMode, string> = {
   type: 'Activity',
   source: 'Source',
+};
+
+type ScheduleLayout = 'horizon' | 'calendar';
+
+const LAYOUT_LABEL: Record<ScheduleLayout, string> = {
+  horizon: 'Horizon',
+  calendar: 'Calendar',
 };
 
 /** One swatch + word. The word is why hue never carries identity alone. */
@@ -153,6 +160,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [weekOpen, setWeekOpen] = useState(false);
+  const [layout, setLayout] = useState<ScheduleLayout>('calendar');
 
   usePageTitle(embedded ? null : 'Schedule - Companion Intelligence');
 
@@ -171,17 +179,15 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const { events, rhythm, generatedAt, rhythmCoversWindow, loading, fetching, error, refetch } =
     useScheduleService(start, end);
 
-  // Placing a candidate mints an event, so the committed lane has to re-read.
+  // Placing a backlog task mints a planned block, so the committed lane has to re-read.
   const {
-    candidates,
-    loading: candidatesLoading,
-    error: candidatesError,
-    accept,
-    decline,
-    snooze,
-    breakDown,
-    returnEvent,
-  } = useScheduleCandidates(start, end, refetch);
+    backlog,
+    backlogCount,
+    loading: planLoading,
+    error: planError,
+    placeOnDay,
+    dismissProposed,
+  } = usePlanTasks(refetch);
 
   /**
    * Whatever a drag or a card button asked the server to do, and it refused.
@@ -198,10 +204,10 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   }, []);
 
   const handleDrop = useCallback(
-    (candidateId: string, startTime: Date) => {
-      run(accept(candidateId, startTime), 'Could not put that on the calendar. Try again shortly.');
+    (taskId: string, startTime: Date) => {
+      run(placeOnDay(taskId, startTime), 'Could not put that on the calendar. Try again shortly.');
     },
-    [accept, run],
+    [placeOnDay, run],
   );
 
   const rescheduleEvent = useRescheduleEvent(refetch);
@@ -213,25 +219,11 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
     [rescheduleEvent, run],
   );
 
-  const handleDecline = useCallback(
-    (id: string, reason: DeclineReason) => {
-      run(decline(id, reason), 'Could not dismiss that suggestion. Try again shortly.');
+  const handleDismissProposed = useCallback(
+    (id: string) => {
+      run(dismissProposed(id), 'Could not dismiss that task. Try again shortly.');
     },
-    [decline, run],
-  );
-
-  const handleSnooze = useCallback(
-    (id: string, until: Date) => {
-      run(snooze(id, until), 'Could not snooze that suggestion. Try again shortly.');
-    },
-    [snooze, run],
-  );
-
-  const handleReturnEvent = useCallback(
-    (eventId: string) => {
-      run(returnEvent(eventId), 'Could not take that off the week. Try again shortly.');
-    },
-    [returnEvent, run],
+    [dismissProposed, run],
   );
 
   const goBack = useCallback(() => setWeekOffset((offset) => offset - 1), []);
@@ -240,10 +232,10 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
   // `errorPolicy: 'all'` means an error and usable data can arrive together, so
   // the surface is gated on whether anything resolved rather than on `error`.
-  const hasAnything = events.length > 0 || rhythm.length > 0 || candidates.length > 0;
+  const hasAnything = events.length > 0 || rhythm.length > 0 || backlogCount > 0;
   const isTrulyEmpty =
-    !loading && !fetching && !hasAnything && !error && !candidatesError && weekOffset === 0;
-  const showScheduleSurface = weekOffset !== 0 || hasAnything || candidatesError || fetching;
+    !loading && !fetching && !hasAnything && !error && !planError && weekOffset === 0;
+  const showScheduleSurface = weekOffset !== 0 || hasAnything || planError || fetching;
 
   // Embedded, the host supplies the frame, so this keeps only the column gap
   // and drops the safe-area top padding, which belongs to whatever is actually
@@ -268,6 +260,35 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   // so `Frame` keeps the same element type across renders — no remounting, and
   // `weekOffset` / `selectedDay` survive the host re-rendering.
   const Frame: ElementType = embedded ? 'div' : PageContent;
+
+  const layoutToggle = (
+    <div
+      role="tablist"
+      aria-label="Schedule layout"
+      className="flex shrink-0 items-center rounded-md border border-border p-0.5"
+    >
+      {(['calendar', 'horizon'] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          role="tab"
+          aria-selected={layout === mode}
+          title={
+            mode === 'horizon' ? 'Days as rows, time across' : 'Hours down, like a typical calendar'
+          }
+          onClick={() => setLayout(mode)}
+          className={cn(
+            'rounded-[4px] px-2 py-0.5 text-[11px] leading-none transition-colors',
+            layout === mode
+              ? 'bg-accent text-accent-foreground'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {LAYOUT_LABEL[mode]}
+        </button>
+      ))}
+    </div>
+  );
 
   const colorModeToggle = (
     <div
@@ -328,6 +349,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
           so colour is free to carry category instead of certainty. */}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
         <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
+        {layoutToggle}
         {colorModeToggle}
       </div>
     </div>
@@ -364,15 +386,11 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
         {showScheduleSurface && (
           <>
-            {/* TimelineJS today strip, then week chrome, then the week, then
-                Possibilities. The chrome belongs with schedule/rhythm, not
-                above the zoomable story. On a phone the story strip is a
-                now/next list and the week starts as day chips plus one row. */}
+            {/* Week chrome, then the week, then Possibilities. On a phone the
+                horizon opens as day chips plus one row; now/next sits above. */}
             <div className={cn('flex flex-col', isMobile ? 'gap-3' : 'gap-4')}>
-              {isMobile ? (
+              {layout === 'horizon' && isMobile && (
                 <TodayNowNext events={events} day={selectedDay} onShowMore={() => setWeekOpen(true)} />
-              ) : (
-                <TodayStoryTimeline events={events} day={selectedDay} />
               )}
 
               {isMobile ? (
@@ -396,23 +414,25 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                       </Button>
                     )}
 
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto h-8 text-xs"
-                      aria-expanded={weekOpen}
-                      onClick={() => setWeekOpen((open) => !open)}
-                    >
-                      {weekOpen ? (
-                        <ChevronUp className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
-                      ) : (
-                        <ChevronDown className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
-                      )}
-                      {weekOpen ? 'Hide week' : 'Show week'}
-                    </Button>
+                    {layout === 'horizon' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto h-8 text-xs"
+                        aria-expanded={weekOpen}
+                        onClick={() => setWeekOpen((open) => !open)}
+                      >
+                        {weekOpen ? (
+                          <ChevronUp className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
+                        ) : (
+                          <ChevronDown className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
+                        )}
+                        {weekOpen ? 'Hide week' : 'Show week'}
+                      </Button>
+                    )}
                   </div>
 
-                  {!weekOpen && (
+                  {(layout === 'calendar' || !weekOpen) && (
                     <WeekDayChips
                       start={start}
                       days={DAYS_IN_VIEW}
@@ -422,7 +442,10 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                   )}
 
                   <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-                    {weekOpen && <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />}
+                    {weekOpen && layout === 'horizon' && (
+                      <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
+                    )}
+                    {layoutToggle}
                     {colorModeToggle}
                   </div>
                 </div>
@@ -430,31 +453,39 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                 weekChrome
               )}
 
-              {weekOffset !== 0 && !hasAnything && !fetching && (
-                <p className="text-sm text-muted-foreground">Nothing on the calendar this week.</p>
+              {layout === 'calendar' ? (
+                <VerticalCalendar
+                  start={isMobile ? selectedDay : start}
+                  days={isMobile ? 1 : DAYS_IN_VIEW}
+                  events={events}
+                  rhythm={rhythm}
+                  colorMode={colorMode}
+                  selectedDay={selectedDay}
+                  onSelectDay={setSelectedDay}
+                  onDropCandidate={handleDrop}
+                  onMoveEvent={handleMove}
+                  footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
+                />
+              ) : (
+                <HorizonGrid
+                  start={isMobile && !weekOpen ? selectedDay : start}
+                  days={isMobile && !weekOpen ? 1 : DAYS_IN_VIEW}
+                  events={events}
+                  rhythm={rhythm}
+                  colorMode={colorMode}
+                  selectedDay={selectedDay}
+                  onSelectDay={setSelectedDay}
+                  onDropCandidate={handleDrop}
+                  onMoveEvent={handleMove}
+                  footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
+                />
               )}
 
-              <HorizonGrid
-                start={isMobile && !weekOpen ? selectedDay : start}
-                days={isMobile && !weekOpen ? 1 : DAYS_IN_VIEW}
-                events={events}
-                rhythm={rhythm}
-                colorMode={colorMode}
-                selectedDay={selectedDay}
-                onSelectDay={setSelectedDay}
-                onDropCandidate={handleDrop}
-                onMoveEvent={handleMove}
-                footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
-              />
-
               <TaskSlate
-                candidates={candidates}
-                loading={candidatesLoading}
-                error={candidatesError}
-                onDecline={handleDecline}
-                onSnooze={handleSnooze}
-                onBreakDown={breakDown}
-                onReturnEvent={handleReturnEvent}
+                sections={backlog}
+                loading={planLoading}
+                error={planError}
+                onDismissProposed={handleDismissProposed}
               />
             </div>
           </>

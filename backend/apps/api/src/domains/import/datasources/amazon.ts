@@ -532,14 +532,54 @@ function mergeLine(rows: Record<string, string>[]): Record<string, string | numb
     };
   }
 
+  const quantity = sumOf(rows.map((r) => col(r, ...QUANTITY_COLS)));
+  const total = sumOf(rows.map((r) => col(r, ...TOTAL_COLS)));
+
   return {
-    Quantity: sumOf(rows.map((r) => col(r, ...QUANTITY_COLS))),
-    Total: money(sumOf(rows.map((r) => col(r, ...TOTAL_COLS)))),
+    Quantity: quantity,
+    Total: money(total),
     Currency: currency,
-    'Unit Price': unitPrice,
+    'Unit Price': mergedUnitPrice(rows, unitPrice, quantity, total),
     Shipments: rows.length,
     ...breakdown,
   };
+}
+
+/**
+ * A merged line's own Unit Price — `primary`'s, UNLESS these rows disagree
+ * on it, in which case that single value would misstate every one of them.
+ *
+ * The docstring above `mergeLine` describes the common case this exists for —
+ * one ASIN split across shipment rows, each carrying an identical per-unit
+ * price. A weight-priced grocery item breaks that assumption while still
+ * sharing one ASIN: real export order 113-4686340-8106606 carries TWO
+ * "PRODUCE Organic Shallots" rows, same ASIN (B000RH1NGG), priced 0.55 and
+ * 0.25 — two physically different units Amazon weighed and charged
+ * separately, not one item priced twice. `rowIdentity` groups both under
+ * that one ASIN, so without this check they collapse to quantity 2 at
+ * whichever row's price happened to sort first — silently dropping the
+ * other row's real cost from the line's own math.
+ *
+ * When prices genuinely agree (the common case — actual multi-shipment
+ * splits of one identical line), this returns exactly what primary already
+ * carried, unchanged. Only on a real disagreement does it fall back to
+ * Total ÷ Quantity — the honest AVERAGE per unit, which is what makes
+ * `quantity * unitPrice = total` hold for the line as reported, at the cost
+ * of no longer stating any one row's real per-unit price exactly.
+ */
+function mergedUnitPrice(
+  rows: Record<string, string>[],
+  primaryUnitPrice: string | undefined,
+  quantity: number | undefined,
+  total: number | undefined,
+): string | undefined {
+  const perRow = rows.map((r) => amount(col(r, ...UNIT_PRICE_COLS)));
+  const agree = perRow.every((n) => n !== undefined && n === perRow[0]);
+  if (agree || quantity === undefined || quantity === 0 || total === undefined) {
+    return primaryUnitPrice;
+  }
+
+  return money(total / quantity);
 }
 
 /**
@@ -621,6 +661,18 @@ function isComponentLedger(rows: Record<string, string>[]): boolean {
  * (Prime: 139.00 price + 10.77 tax = 149.77). `Price` and `List Price Amount`
  * are line-level and repeat on every row, so they are read once — keeping both
  * is what records that a $1.99 game was taken for $0.00 on a promotion.
+ *
+ * `Component Type` names what each row's `Transaction Amount` actually is — in
+ * the two shapes this corpus contains, 'Price Amount' and 'Tax' — so the
+ * breakdown a receipt needs (Subtotal/Tax) can be read directly off the
+ * ledger rather than inferred. Only these two known types are mapped; a type
+ * this file has never seen is left OUT of Subtotal/Tax on purpose — folding
+ * an unrecognized component into either would misreport what it was, and the
+ * reconciliation check downstream (subtotal+tax+shipping-discount=total)
+ * surfaces the gap instead of silently absorbing it. 'Subtotal' and 'Tax' are
+ * the literal canonical keys `push/commerceKeys.ts` resolves receipts from —
+ * datasources do not import push/, so they are spelled out here the same way
+ * this function already spells out 'Total' and 'Unit Price'.
  */
 function ledgerFields(rows: Record<string, string>[]): Record<string, string | number | undefined> {
   const primary = rows[0];
@@ -628,6 +680,12 @@ function ledgerFields(rows: Record<string, string>[]): Record<string, string | n
   const price = sumOf([primary['Price']]);
   const list = sumOf([primary['List Price Amount']]);
   const qty = sumOf([col(primary, ...QUANTITY_COLS)]);
+  const priceComponent = sumOf(
+    rows.filter((r) => r['Component Type'] === 'Price Amount').map((r) => r['Transaction Amount']),
+  );
+  const taxComponent = sumOf(
+    rows.filter((r) => r['Component Type'] === 'Tax').map((r) => r['Transaction Amount']),
+  );
 
   return {
     Quantity: qty,
@@ -638,6 +696,8 @@ function ledgerFields(rows: Record<string, string>[]): Record<string, string | n
     // Only interesting when it differs from what was charged.
     'List Price': list !== undefined && price !== undefined && list !== price ? money(list) : undefined,
     Components: rows.length,
+    Subtotal: money(priceComponent),
+    Tax: money(taxComponent),
   };
 }
 

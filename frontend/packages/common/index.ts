@@ -44,6 +44,7 @@ export {
   captureNote,
   createLocationSampler,
   deviceSourceKey,
+  fixFromBackgroundGeolocationLocation,
   fixFromGeolocationPosition,
   forgetQueuedNote,
   haversineMeters,
@@ -58,6 +59,7 @@ export {
   writeLocationTrackingMode,
 } from './src/utils/deviceSources';
 export type {
+  BackgroundGeolocationLocation,
   CaptureLocationOptions,
   DeviceLocationFix,
   LocationCaptureOutcome,
@@ -117,17 +119,20 @@ export {
   addAppStateListener,
   addAppUrlOpenListener,
   addBackButtonListener,
+  addBackgroundLocationWatcher,
   closeBrowser,
   exitApp,
+  getCurrentDeviceLocation,
   getLaunchUrl,
+  getNativeCurrentLocation,
   hasNotificationPermission,
   hideSplashScreen,
-  getNativeLocationStatus,
+  isDeviceLocationError,
   openExternalUrl,
   openNativeAppSettings,
+  openNativeLocationSettings,
+  removeBackgroundLocationWatcher,
   requestNotificationPermission,
-  setNativeLocationHome,
-  setNativeLocationMode,
   scheduleLocalNotification,
   secureStorageGet,
   secureStorageRemove,
@@ -136,7 +141,13 @@ export {
   syncNativeIntentConfig,
   takeNativePhoto,
 } from './src/utils/nativeBridge';
-export type { LocalNotification, NativeLocationAuthorization, NativeLocationStatus } from './src/utils/nativeBridge';
+export type {
+  BackgroundGeolocationError,
+  DeviceLocationErrorCode,
+  LocalNotification,
+  NativeCurrentLocation,
+} from './src/utils/nativeBridge';
+export { DeviceLocationError } from './src/utils/nativeBridge';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,

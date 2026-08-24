@@ -69,6 +69,7 @@ import { PipelineStateService } from './services/PipelineStateService';
 import { STAGE_REGISTRY, StageRegistry } from './services/StageRegistry';
 import { DuplicateDetectStage } from './stages/clean/DuplicateDetectStage';
 import { IdentifierNormalizeStage } from './stages/clean/IdentifierNormalizeStage';
+import { ObjectDuplicateDetectStage } from './stages/clean/ObjectDuplicateDetectStage';
 import { TemporalRepairStage } from './stages/clean/TemporalRepairStage';
 import { EstimateLocationStage } from './stages/enrich/EstimateLocationStage';
 import { EventReverseStage } from './stages/enrich/EventReverseStage';
@@ -173,6 +174,10 @@ const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_PERSON_SELF_CLAIM], useClass: PersonSelfClaimStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_TEMPORAL_REPAIR], useClass: TemporalRepairStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_DUPLICATE_DETECT], useClass: DuplicateDetectStage },
+  {
+    provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_OBJECT_DUPLICATE_DETECT],
+    useClass: ObjectDuplicateDetectStage,
+  },
   { provide: STAGE_REGISTRY[STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE], useClass: IdentifierNormalizeStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.PROMOTE_PLACE], useClass: PlacePromoteStage },
   // The same promotion over `ci.position` — a second id because a Stage has
@@ -351,3 +356,14 @@ export type {
   StageResult,
   StageSource,
 } from './types';
+
+/**
+ * The public vocabulary for "where did this record's timestamp come from" —
+ * `TemporalRepairStage`'s own constants, not a domain-boundary copy. A caller
+ * outside this domain that needs to reference or assert against them (e.g. a
+ * mirrored-constant test in another domain checking its own copy has not
+ * drifted) does so through here rather than reaching into the stage file
+ * directly, which is what `no-cross-domain-internals` exists to catch.
+ */
+export { TIME_PRECISIONS, TIME_SOURCES } from './stages/clean/TemporalRepairStage';
+export type { TimePrecision, TimeSource } from './stages/clean/TemporalRepairStage';

@@ -1,4 +1,4 @@
-import type { TimelineJsData } from './scheduleToTimeline';
+import type { TimelineJsData, TimelineSlide } from './types';
 
 export const TIMELINE_HEIGHT_PX = 360;
 
@@ -43,6 +43,20 @@ export function inertTimeline(instance: TimelineAnimators | null | undefined): v
 /** Rebuild only when the slide set actually changed, not on Apollo array identity. */
 export function timelineDeckKey(data: TimelineJsData, startAtSlide: number): string {
   return `${startAtSlide}:${data.events.map((event) => event.unique_id).join(',')}`;
+}
+
+/** Slides to add/remove so a live TimelineJS instance can keep a moving buffer. */
+export function timelineEventDiff(
+  mountedIds: readonly string[],
+  nextEvents: readonly TimelineSlide[],
+): { add: TimelineSlide[]; removeIds: string[] } {
+  const mounted = new Set(mountedIds.filter(Boolean));
+  const nextIds = new Set(nextEvents.map((event) => event.unique_id).filter(Boolean));
+
+  return {
+    add: nextEvents.filter((event) => event.unique_id && !mounted.has(event.unique_id)),
+    removeIds: mountedIds.filter((id) => id && !nextIds.has(id)),
+  };
 }
 
 export type AxisTickBox = { x: number; halfWidth: number };
@@ -124,7 +138,7 @@ export function syncTimeaxisLabelCollision(root: ParentNode): void {
 }
 
 /**
- * Construct options: keep Today on our origin, day-scale, and cheap.
+ * Construct options: day-scale, local assets, and cheap.
  *
  * `duration: 0` skips Knight Lab's 1s RAF easing. Local `language` avoids
  * cdn.knightlab.com. `font`/`theme` false skips Google Fonts CSS.
@@ -139,17 +153,19 @@ export const TIMELINE_OPTIMAL_TICK_WIDTH = 48;
 
 export function timelineJsOptions({
   width,
+  height,
   startAtSlide,
   bg,
   languageUrl,
 }: {
   width?: number;
+  height?: number;
   startAtSlide: number;
   bg: Rgb;
   languageUrl: string;
 }): Record<string, unknown> {
   return {
-    height: TIMELINE_HEIGHT_PX,
+    height: height ?? TIMELINE_HEIGHT_PX,
     width,
     timenav_height: 72,
     timenav_height_percentage: 22,
@@ -172,5 +188,5 @@ export function timelineJsOptions({
   };
 }
 
-/** @deprecated Use timelineJsOptions — kept so main's option tests keep compiling. */
+/** @deprecated Use timelineJsOptions — kept so existing option tests keep compiling. */
 export const timelineStoryOptions = timelineJsOptions;

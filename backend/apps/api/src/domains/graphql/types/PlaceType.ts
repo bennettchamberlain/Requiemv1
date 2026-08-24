@@ -71,13 +71,22 @@ export class PlaceType implements Node, Taggable {
   @Field(() => Number, { nullable: true })
   longitude!: number | null;
 
-  /** Geographic level: room|building|venue|address|neighborhood|city|region|country|continent|planet|other. */
   @Field(() => String, { nullable: true })
   placeKind!: string | null;
 
   /** Containing place (venue -> city -> region -> country chain). */
   @Field(() => ID, { nullable: true })
   parentId!: string | null;
+
+  /**
+   * First real visit inside the active search date window (an event whose
+   * location_entity_id is this place, excluding ingest wall-clock times).
+   * Null when the browse has no date filter or this place was not visited in
+   * the window. SearchResolver stamps this from the identifier's sortTime; do
+   * not add a ResolveField that overwrites it with first-ever.
+   */
+  @Field(() => Date, { nullable: true })
+  appearedAt!: Date | null;
 
   @Field(() => [EntityTagType])
   tags!: EntityTagType[];
@@ -110,6 +119,7 @@ export class PlaceType implements Node, Taggable {
       longitude: place.longitude ?? null,
       placeKind: place.placeKind ?? null,
       parentId: place.parentPlaceId ? GlobalUID.encode('place', place.parentPlaceId) : null,
+      appearedAt: place.appearedAt ?? null,
       tags: [], // Hydrated by resolver
     };
   }

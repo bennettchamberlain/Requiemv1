@@ -13,6 +13,7 @@
     "run": "cap run ios"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor-community/sqlite": "^7.0.1",
     "@capacitor/app": "^7.0.0",
     "@capacitor/browser": "^7.0.0",

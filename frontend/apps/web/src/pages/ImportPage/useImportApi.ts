@@ -74,6 +74,26 @@ export interface CatalogSource {
   readonly importerReady: boolean;
 }
 
+/**
+ * How many rows one importer has actually put in `ci.*`, for one object kind
+ * — the picker tile's "24K Mail" line. From `GET
+ * /import/sources/object-counts`, read from the live destination tables
+ * rather than import run history (see `useObjectCounts.ts`'s docblock for
+ * why, mirroring `useSourceUsage.ts`'s for the parallel "imported ✓" case).
+ *
+ * `importer` is the same string {@link CatalogSource.importer} carries, so a
+ * shared/ambiguous importer (`calendar`, `vcard`, `email`, `generic`) can
+ * appear here too — the server does not filter it out, because refusing to
+ * attribute a shared bucket to one tile is `unambiguousImporters`' job, not
+ * this endpoint's. `label` is one of `sources.tsx`'s `OBJECTS_BY_CATEGORY`
+ * labels ('Mail', 'Posts', 'Watch history', …).
+ */
+export interface ObjectCount {
+  readonly importer: string;
+  readonly label: string;
+  readonly count: number;
+}
+
 export interface ImportStage {
   readonly id: string;
   readonly seq: number;
@@ -322,6 +342,12 @@ export function useImportApi() {
   const listCatalog = useCallback(
     async (): Promise<CatalogSource[]> =>
       (await fetchJson<CatalogSource[]>('/api/import/sources/catalog', { headers: authHeaders() })) ?? [],
+    [authHeaders],
+  );
+
+  const getObjectCounts = useCallback(
+    async (): Promise<ObjectCount[]> =>
+      (await fetchJson<ObjectCount[]>('/api/import/sources/object-counts', { headers: authHeaders() })) ?? [],
     [authHeaders],
   );
 
@@ -582,6 +608,7 @@ export function useImportApi() {
       ready: Boolean(authToken),
       listSources,
       listCatalog,
+      getObjectCounts,
       listRuns,
       listUnpushed,
       getRun,
@@ -601,6 +628,7 @@ export function useImportApi() {
       authToken,
       listSources,
       listCatalog,
+      getObjectCounts,
       listRuns,
       listUnpushed,
       getRun,

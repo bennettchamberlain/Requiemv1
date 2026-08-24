@@ -5,9 +5,11 @@
 #   git tag -a android-v1.0.0 -m "Android 1.0.0" && git push origin android-v1.0.0
 #   git tag -a mobile-release-v1.0.0 -m "1.0.0" && git push origin mobile-release-v1.0.0
 #
-# Do not use Xcode Cloud for TestFlight — that workflow starts on branch activity
-# and is too automatic. Turn `App | BuildTestFlight` off (or delete it) in
-# App Store Connect → Xcode Cloud → Manage Workflows.
+# Do not use Xcode Cloud for TestFlight — `App | BuildTestFlight` is an App
+# Store Connect workflow (not this file) and its start conditions currently
+# fire on GitHub PRs. Turn those off with:
+#   gh workflow run "Xcode Cloud — manual starts only" --ref main
+# or App Store Connect → Xcode Cloud → Manage Workflows → Manual start only.
 #
 # Rehearsal (no store submit) is always a dispatch on a branch:
 #   gh workflow run mobile-release.yml --ref main -f dry_run=true -f platform=ios

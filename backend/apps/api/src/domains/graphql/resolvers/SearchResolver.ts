@@ -993,7 +993,26 @@ export class SearchResolver {
     const resolved = await this.entityResolutionService.resolve(context, identifiers);
 
     return identifiers
-      .map((identifier) => resolved.get(`${identifier.type}:${identifier.id}`) ?? null)
+      .map((identifier) => {
+        const entry = resolved.get(`${identifier.type}:${identifier.id}`) ?? null;
+        if (entry == null) {
+          return null;
+        }
+
+        // People/places date-filter by first real activity in the window. The
+        // identifier carries that instant as sortTime; copy it onto the loaded
+        // entity as appearedAt so getEntityTimestamp, the cursor, and the
+        // GraphQL field all read the same value. Do not add a ResolveField that
+        // overwrites this with first-ever — that would lose in-window time.
+        if (
+          identifier.sortTime != null &&
+          (identifier.type === 'person' || identifier.type === 'place')
+        ) {
+          (entry.entity as { appearedAt?: Date }).appearedAt = identifier.sortTime;
+        }
+
+        return entry;
+      })
       .filter((entry): entry is ResolvedEntity => entry != null);
   }
 
@@ -1054,7 +1073,27 @@ export class SearchResolver {
     }
 
     if (BROWSE_OPT_IN_TYPES.has(type)) {
-      return namedExplicitly;
+      if (namedExplicitly) {
+        return true;
+      }
+
+      // The web What picker writes an exclude-list of everything *else*, never
+      // `includeTypes`. Person / place / thing / product / receipt have to
+      // honour that remaining selection or a People-only browse is an empty
+      // page (the heatmap already converted the same URL to includes).
+      // `file-chunk` is not in the picker, so it never appears in those
+      // exclude lists and must stay include-only — otherwise a People browse
+      // would also pull every document chunk.
+      if (
+        type !== 'file-chunk' &&
+        excludeTypes != null &&
+        excludeTypes.length > 0 &&
+        !excludeTypes.includes(type)
+      ) {
+        return true;
+      }
+
+      return false;
     }
 
     return true;
@@ -1144,9 +1183,10 @@ export class SearchResolver {
     // change, not a resolver change: `ci.files.external_created_at` exists and
     // is populated on 0 of 14,194 rows.
     //
-    // Types reached by NAMING them (includeTypes) still sort by write time,
-    // which is the honest answer for a set that has no other time — a browse
-    // restricted to People is ordered by when each person was learned about.
+    // Types reached by NAMING them (includeTypes) still sort by write time
+    // when they have no other time — except people/places with a date window,
+    // which stamp `appearedAt` (first real activity in that window) so Last
+    // week groups them on the day they showed up, not the import day.
     // `purchasedAt` before `createdAt`: a receipt's purchase date is its real
     // domain time, and the browse's SQL orders by COALESCE(purchased_at,
     // created_at) — a nullish chain in the same order, so a null purchase date
@@ -1154,7 +1194,13 @@ export class SearchResolver {
     // If the two disagreed, a receipt's cursor would not match its position and
     // paging past it would skip or repeat rows.
     const value =
-      entity.time ?? entity.startTime ?? entity.purchasedAt ?? entity.createdAt ?? entity.answeredAt ?? null;
+      entity.appearedAt ??
+      entity.time ??
+      entity.startTime ??
+      entity.purchasedAt ??
+      entity.createdAt ??
+      entity.answeredAt ??
+      null;
 
     if (value instanceof Date) {
       return value;

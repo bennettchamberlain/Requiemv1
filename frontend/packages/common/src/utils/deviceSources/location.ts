@@ -45,10 +45,12 @@
  *
  * ## Foreground vs background
  *
- * This module shapes and queues a fix. It does not talk to Core Location. On iOS,
- * `LocationTracker` (capacitor-local-hub) owns sampling — including significant-change
- * wakes — and writes the same outbox envelope. The web / Android-foreground path still
- * uses `navigator.geolocation`. Android Always is out of scope this pass (Play video).
+ * This module shapes and queues a fix; it does not talk to the OS location APIs itself.
+ * On native (iOS + Android), `useLocationTracking` drives
+ * `@capacitor-community/background-geolocation` and hands each delivered fix to
+ * {@link captureLocationFix} via {@link fixFromBackgroundGeolocationLocation}. Plain web
+ * (no Capacitor) falls back to `navigator.geolocation` via {@link fixFromGeolocationPosition}
+ * instead, foreground-only.
  */
 
 import { fetchJson } from '../fetchJson';
@@ -459,5 +461,41 @@ export function fixFromGeolocationPosition(position: GeolocationPosition): Devic
     headingDegrees: heading,
     speedMetersPerSecond: speed,
     capturedAtMs: position.timestamp || Date.now(),
+  };
+}
+
+/**
+ * The location shape delivered by `@capacitor-community/background-geolocation`'s
+ * `addWatcher` callback (both iOS and Android). Declared here — not imported from the
+ * plugin package — for the same reason every other native payload shape in this module
+ * is declared locally: the web bundle must stay free of `@capacitor/*` native deps.
+ */
+export interface BackgroundGeolocationLocation {
+  latitude: number;
+  longitude: number;
+  /** Radius of horizontal uncertainty in metres, with 68% confidence. */
+  accuracy: number;
+  altitude: number | null;
+  altitudeAccuracy: number | null;
+  /** Degrees clockwise from true north. */
+  bearing: number | null;
+  speed: number | null;
+  simulated?: boolean | null;
+  /** Milliseconds since the Unix epoch. */
+  time: number;
+}
+
+/** Adapt a `@capacitor-community/background-geolocation` fix to {@link DeviceLocationFix}. */
+export function fixFromBackgroundGeolocationLocation(
+  location: BackgroundGeolocationLocation,
+): DeviceLocationFix {
+  return {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    accuracyMeters: location.accuracy,
+    altitudeMeters: location.altitude,
+    headingDegrees: location.bearing,
+    speedMetersPerSecond: location.speed,
+    capturedAtMs: location.time || Date.now(),
   };
 }

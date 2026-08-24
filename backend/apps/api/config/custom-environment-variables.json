@@ -229,6 +229,7 @@
     "planning.emptyState": "ENABLE_PLANNING_EMPTY_STATE",
     "stats.page": "ENABLE_STATS_PAGE",
     "schedule.page": "ENABLE_SCHEDULE_PAGE",
+    "forecast.page": "ENABLE_FORECAST_PAGE",
     "tags.page": "ENABLE_TAGS_PAGE",
     "hbpe": "ENABLE_HBPE",
     "agent.memory.compaction": "ENABLE_AGENT_MEMORY_COMPACTION",

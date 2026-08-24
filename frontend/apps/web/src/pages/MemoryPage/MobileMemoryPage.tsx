@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 import { Button, Tabs, Sheet } from '@ci/shadcn';
-import { ChartNetwork, Images, List, Map as MapIcon, Plus } from '@ci/shadcn/icons';
+import { ChartNetwork, GanttChart, Images, List, Map as MapIcon, Plus } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
@@ -20,6 +20,7 @@ import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { MobileMapView } from './MapView';
+import { StoryTimelineView } from './StoryTimelineView';
 
 export default function MobileMemoryPage() {
   const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
@@ -108,20 +109,24 @@ export default function MobileMemoryPage() {
 
               {/* Tab Navigation */}
               <Tabs defaultValue="list" onValueChange={setActiveTab} value={activeTab}>
-                <Tabs.List className="grid grid-cols-4 w-full">
-                  <Tabs.Trigger value="list" className="text-sm flex items-center gap-1">
+                <Tabs.List className="grid w-full grid-cols-5">
+                  <Tabs.Trigger value="list" className="flex items-center gap-1 px-1 text-[11px] sm:text-sm">
                     <List className="h-4 w-4" />
                     List
                   </Tabs.Trigger>
-                  <Tabs.Trigger value="map" className="text-sm flex items-center gap-1">
+                  <Tabs.Trigger value="map" className="flex items-center gap-1 px-1 text-[11px] sm:text-sm">
                     <MapIcon className="h-4 w-4" />
                     Map
                   </Tabs.Trigger>
-                  <Tabs.Trigger value="gallery" className="text-sm flex items-center gap-1">
+                  <Tabs.Trigger value="timeline" className="flex items-center gap-1 px-1 text-[11px] sm:text-sm">
+                    <GanttChart className="h-4 w-4" />
+                    Timeline
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="gallery" className="flex items-center gap-1 px-1 text-[11px] sm:text-sm">
                     <Images className="h-4 w-4" />
                     Gallery
                   </Tabs.Trigger>
-                  <Tabs.Trigger value="graph" className="text-sm flex items-center gap-1">
+                  <Tabs.Trigger value="graph" className="flex items-center gap-1 px-1 text-[11px] sm:text-sm">
                     <ChartNetwork className="h-4 w-4" />
                     Graph
                   </Tabs.Trigger>
@@ -134,6 +139,8 @@ export default function MobileMemoryPage() {
               {activeTab === 'list' && <ListView />}
 
               {activeTab === 'map' && <MobileMapView />}
+
+              {activeTab === 'timeline' && <StoryTimelineView />}
 
               {activeTab === 'gallery' && <GalleryView />}
 

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
 
-// Feature-gated routes (/stats, /tags, /prompts, …) are only added to the route
+// Feature-gated routes (/self, /tags, …) are only added to the route
 // table once `isFeatureEnabled` says yes, so a hard load of one of them matches
 // the "*" fallback until the flags arrive. These tests pin the fallback's
 // behaviour on both sides of that window.
@@ -97,7 +97,7 @@ vi.mock('@/api/powersync/PowerSyncProvider', () => ({
   PowerSyncProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
-const GATED_PATHS = ['/stats', '/tags', '/prompts'];
+const GATED_PATHS = ['/self', '/tags'];
 
 function renderAt(path: string, state?: unknown) {
   window.history.pushState(state ? { usr: state } : {}, '', path);
@@ -128,7 +128,7 @@ describe('App routing', () => {
   // /settings/* re-renders that background route, gated flags and all.
   it('does not flash 404 when a settings overlay is reloaded over a gated page', () => {
     const { container } = renderAt('/settings/appearance', {
-      backgroundLocation: { pathname: '/stats', search: '', hash: '', state: null, key: 'test' },
+      backgroundLocation: { pathname: '/self', search: '', hash: '', state: null, key: 'test' },
     });
 
     expect(container).not.toBeEmptyDOMElement();
@@ -193,13 +193,19 @@ describe('App routing', () => {
     });
   });
 
-  // The page the user reads as "Reflections" was called "Questions", and before
-  // that it lived at /prompts. Both older paths are in bookmarks and links, so
-  // they redirect rather than 404.
-  describe('the paths Reflections replaced', () => {
+  // /stats, /settings/about-you, /settings/account, and the three old
+  // addresses for Reflections ("Questions" at /prompts, then
+  // /memory/questions, then /memory/reflections under the Memory hub) were
+  // all folded into the Self tab. They stay as redirects so bookmarks and
+  // links keep working.
+  describe('the paths Self replaced', () => {
     it.each([
-      ['/prompts', '/memory/reflections'],
-      ['/memory/questions', '/memory/reflections'],
+      ['/stats', '/self/stats'],
+      ['/settings/about-you', '/self'],
+      ['/settings/account', '/self/account'],
+      ['/prompts', '/self/reflections'],
+      ['/memory/questions', '/self/reflections'],
+      ['/memory/reflections', '/self/reflections'],
     ])('redirects %s to %s', async (from, to) => {
       h.features = { loading: false, enabled: true };
 
@@ -207,6 +213,17 @@ describe('App routing', () => {
 
       await waitFor(() => expect(window.location.pathname).toBe(to));
       expect(notFound()).not.toBeInTheDocument();
+    });
+
+    // Unlike /self itself, /stats is registered unconditionally so an old
+    // bookmark still lands on Self even with the flag off — it just then
+    // hits Self's own fallback the same as any other gated destination.
+    it('redirects /stats to /self/stats even when the flag is off', async () => {
+      h.features = { loading: false, enabled: false };
+
+      renderAt('/stats');
+
+      await waitFor(() => expect(window.location.pathname).toBe('/self/stats'));
     });
   });
 });

@@ -85,6 +85,14 @@ export interface MapPin {
   locationName: string | null;
   latitude: number;
   longitude: number;
+  /**
+   * `EventEntity.timeSource` — `'ingest'` means `startTime` is only the import
+   * wall clock (a Google Maps saved place, an undated Reddit affiliation, …),
+   * not evidence of anything. The client needs this to caption a pin "Date
+   * unknown" instead of the fabricated moment it was parsed, the same rule
+   * {@link getEntityTimestamp} already applies on the timeline/explorer side.
+   */
+  timeSource: string | null;
 }
 
 /**
@@ -1222,6 +1230,7 @@ export class EventService {
       .addSelect('event.end_time', 'end_time')
       .addSelect('event.event_type', 'event_type')
       .addSelect('event.location_name', 'location_name')
+      .addSelect('event.time_source', 'time_source')
       .addSelect('ST_Y(event.location_coordinates::geometry)', 'latitude')
       .addSelect('ST_X(event.location_coordinates::geometry)', 'longitude')
       .where('event.user_id = :userId', { userId: context.userId })
@@ -1238,6 +1247,7 @@ export class EventService {
       end_time: Date | null;
       event_type: string | null;
       location_name: string | null;
+      time_source: string | null;
       latitude: number | string | null;
       longitude: number | string | null;
     }>();
@@ -1251,6 +1261,7 @@ export class EventService {
           endTime: row.end_time,
           eventType: row.event_type,
           locationName: row.location_name,
+          timeSource: row.time_source,
           // `Number(null)` is 0, not NaN — a null coordinate would otherwise
           // become a pin in the Gulf of Guinea instead of being dropped below.
           latitude: row.latitude == null ? Number.NaN : Number(row.latitude),

@@ -55,6 +55,7 @@ export const STAGE_REGISTRY: Record<StageId, string> = {
   [STAGE_IDS.ENRICH_PERSON_SELF_CLAIM]: 'PipelineStage:enrich.person_self_claim',
   [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 'PipelineStage:clean.temporal_repair',
   [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 'PipelineStage:clean.duplicate_detect',
+  [STAGE_IDS.CLEAN_OBJECT_DUPLICATE_DETECT]: 'PipelineStage:clean.object_duplicate_detect',
   [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 'PipelineStage:clean.identifier_normalize',
   [STAGE_IDS.PROMOTE_PLACE]: 'PipelineStage:promote.place',
   [STAGE_IDS.PROMOTE_PLACE_POSITION]: 'PipelineStage:promote.place_position',

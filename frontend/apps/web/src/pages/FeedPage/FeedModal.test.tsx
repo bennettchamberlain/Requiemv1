@@ -95,7 +95,7 @@ describe('FeedModal — mobile action chat', () => {
   });
 
   it('scrolls the page to the top, portals the dialog into view, and focuses the chat', async () => {
-    renderWithProviders(<FeedModal />, { path: '/today/:id', route: '/today/a1' });
+    renderWithProviders(<FeedModal />, { path: '/calendar/:id', route: '/calendar/a1' });
 
     const dialog = await waitFor(() => {
       const node = chrome.portal.querySelector('[role="dialog"]');

@@ -1,7 +1,6 @@
 import type { ComponentType } from 'react';
 
 import {
-  AnswerIcon,
   ContentIcon,
   EventIcon,
   ItemIcon,
@@ -29,7 +28,7 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
   {
     to: '/memory/events',
     label: 'Events',
-    match: (p) => p === '/memory/events' || p === '/memory',
+    match: (p) => p === '/memory/events',
     icon: EventIcon,
   },
   {
@@ -73,16 +72,6 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
     match: (p) => p === '/memory/tags',
     flag: 'tags.page',
     icon: TagIcon,
-  },
-  {
-    to: '/memory/reflections',
-    // Renamed from "Questions" — `/memory/questions` still resolves here via a
-    // redirect in App.tsx, so it stays in the matcher for any link still in
-    // flight when the redirect runs.
-    label: 'Reflections',
-    match: (p) => p === '/memory/reflections' || p === '/memory/questions',
-    flag: 'insights.page',
-    icon: AnswerIcon,
   },
 ];
 

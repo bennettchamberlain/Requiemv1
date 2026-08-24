@@ -79,6 +79,7 @@ import { ImportInboxService } from './services/ImportInboxService';
 import { ImportRetentionService } from './services/ImportRetentionService';
 import { ImportRunService } from './services/ImportRunService';
 import { ImportScratchService } from './services/ImportScratchService';
+import { ObjectCountService } from './services/ObjectCountService';
 import { StagedSourceService } from './services/StagedSourceService';
 import { MediaStage } from './stages/MediaStage';
 import { ParseStage } from './stages/ParseStage';
@@ -118,6 +119,7 @@ import { UnpackStage } from './stages/UnpackStage';
     ImportRetentionService,
     ImportRunService,
     ImportScratchService,
+    ObjectCountService,
     StagedSourceService,
     UnpackStage,
     ParseStage,
@@ -193,6 +195,8 @@ export type { ImportStagePayload, ImportStageRunner, StageOutcome, StageRunConte
 export { StagedWriter, DEFAULT_FLUSH_THRESHOLD } from './staging/StagedWriter';
 export type { StagedCounts } from './staging/StagedWriter';
 export {
+  CONTACT_STAGED_TYPE,
+  SHORT_CODE_STAGED_TYPE,
   entityIdentityKey,
   entityKey,
   hasContactIdentity,
@@ -201,7 +205,9 @@ export {
   mergeAccumulatedMetadata,
   normalizeHandle,
   resolveEntityType,
+  stagedNaturalKey,
 } from './staging/identity';
+export { entityTypeFor, naturalKeyFor } from './push/entities';
 
 export { ImportDoctorController } from './controllers/ImportDoctorController';
 export type { DoctorCheckSummary } from './controllers/ImportDoctorController';
@@ -222,6 +228,8 @@ export type {
 } from './controllers/ImportRunsController';
 export { DataSourceCatalogService } from './services/DataSourceCatalogService';
 export type { DataSourceSummary, SourceCatalogEntry } from './services/DataSourceCatalogService';
+export { ObjectCountService, assembleObjectCounts } from './services/ObjectCountService';
+export type { ObjectCountEntry, RawObjectCountData } from './services/ObjectCountService';
 export { ImportUploadsController } from './controllers/ImportUploadsController';
 export type { DropSummary } from './controllers/ImportUploadsController';
 

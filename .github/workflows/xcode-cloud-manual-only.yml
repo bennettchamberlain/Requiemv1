@@ -1,0 +1,50 @@
+name: Xcode Cloud — manual starts only
+
+# Xcode Cloud (`App | BuildTestFlight`) is NOT a GitHub Actions workflow. It is
+# an App Store Connect workflow whose start conditions currently fire on GitHub
+# pull requests and branch activity, which is why every PR grows a red
+# "App | BuildTestFlight | Build - iOS" check and burns an Xcode Cloud mac.
+#
+# GitHub Actions already never does that: `mobile-release.yml` is the only
+# TestFlight lane, and it is workflow_dispatch + `ios-v*` / `mobile-release-v*`
+# tags. This workflow exists to push that same policy into App Store Connect:
+# strip automatic start conditions so Xcode Cloud only runs when someone clicks
+# Start Build (or we delete the workflow).
+#
+# Run once after merge (secrets live on the default branch):
+#   gh workflow run "Xcode Cloud — manual starts only" --ref main
+#
+# Safe to re-run; already-manual workflows are left alone.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disable-auto-starts:
+    name: Strip Xcode Cloud PR/branch starts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require App Store Connect API key
+        id: secrets
+        env:
+          ISSUER: ${{ secrets.APPSTORE_ISSUER_ID }}
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$ISSUER" ] || [ -z "$KEY_ID" ] || [ -z "$PRIVATE_KEY" ]; then
+            echo "::error::APPSTORE_ISSUER_ID / APPSTORE_KEY_ID / APPSTORE_PRIVATE_KEY are not set. Set them, or turn App | BuildTestFlight to Manual start only in App Store Connect → Xcode Cloud → Manage Workflows."
+            exit 1
+          fi
+
+      - name: Disable automatic Xcode Cloud starts
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: node .github/scripts/xcode-cloud-disable-auto-starts.mjs

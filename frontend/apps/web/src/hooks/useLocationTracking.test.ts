@@ -9,12 +9,12 @@ const h = vi.hoisted(() => ({
   authToken: null as string | null,
   authenticated: false,
   isNativePlatform: vi.fn(() => false),
-  isIosPlatform: vi.fn(() => false),
   captureLocationFix: vi.fn(),
   createLocationSampler: vi.fn(),
-  setNativeLocationMode: vi.fn(),
-  getNativeLocationStatus: vi.fn(),
-  setNativeLocationHome: vi.fn(),
+  addBackgroundLocationWatcher: vi.fn(),
+  removeBackgroundLocationWatcher: vi.fn(),
+  addAppStateListener: vi.fn(),
+  requestNotificationPermission: vi.fn(),
 }));
 
 vi.mock('./useAuth', () => ({
@@ -22,9 +22,9 @@ vi.mock('./useAuth', () => ({
 }));
 
 // The @ci/common seams useLocationTracking pulls on, overridden over the real module so
-// nothing rendered here loses an unrelated export. `fixFromGeolocationPosition` is given a
-// small real-ish implementation (rather than a bare mock) so the fix objects reaching
-// `captureLocationFix` reflect the position passed to the geolocation callback — that's the
+// nothing rendered here loses an unrelated export. `fixFrom*` adapters are given small
+// real-ish implementations (rather than bare mocks) so the fix objects reaching
+// `captureLocationFix` reflect the position/location passed to the callback — that's the
 // seam this hook actually owns.
 vi.mock('@ci/common', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@ci/common')>()),
@@ -35,11 +35,20 @@ vi.mock('@ci/common', async (importOriginal) => ({
     longitude: position.coords.longitude,
     capturedAtMs: position.timestamp,
   }),
+  fixFromBackgroundGeolocationLocation: (location: {
+    latitude: number;
+    longitude: number;
+    time: number;
+  }) => ({
+    latitude: location.latitude,
+    longitude: location.longitude,
+    capturedAtMs: location.time,
+  }),
   isNativePlatform: h.isNativePlatform,
-  isIosPlatform: h.isIosPlatform,
-  setNativeLocationMode: h.setNativeLocationMode,
-  getNativeLocationStatus: h.getNativeLocationStatus,
-  setNativeLocationHome: h.setNativeLocationHome,
+  addBackgroundLocationWatcher: h.addBackgroundLocationWatcher,
+  removeBackgroundLocationWatcher: h.removeBackgroundLocationWatcher,
+  addAppStateListener: h.addAppStateListener,
+  requestNotificationPermission: h.requestNotificationPermission,
 }));
 
 interface FakeSampler {
@@ -66,6 +75,19 @@ function fakePosition(): GeolocationPosition {
     },
     timestamp: 1_723_500_000_000,
   } as unknown as GeolocationPosition;
+}
+
+function fakeBackgroundLocation() {
+  return {
+    latitude: 37.7749,
+    longitude: -122.4194,
+    accuracy: 10,
+    altitude: null,
+    altitudeAccuracy: null,
+    bearing: null,
+    speed: null,
+    time: 1_723_500_000_000,
+  };
 }
 
 type GeoSuccess = (position: GeolocationPosition) => void;
@@ -98,22 +120,18 @@ beforeEach(() => {
   h.authenticated = false;
   h.isNativePlatform.mockReset();
   h.isNativePlatform.mockReturnValue(false);
-  h.isIosPlatform.mockReset();
-  h.isIosPlatform.mockReturnValue(false);
-  h.setNativeLocationMode.mockReset();
-  h.setNativeLocationMode.mockResolvedValue({
-    mode: 'off',
-    authorization: 'not_determined',
-    pendingAlways: false,
-  });
-  h.getNativeLocationStatus.mockReset();
-  h.getNativeLocationStatus.mockResolvedValue(null);
-  h.setNativeLocationHome.mockReset();
-  h.setNativeLocationHome.mockResolvedValue(undefined);
   h.captureLocationFix.mockReset();
   h.captureLocationFix.mockResolvedValue({ status: 'queued', record: {}, id: 'row-1' });
   h.createLocationSampler.mockReset();
   h.createLocationSampler.mockImplementation(newSampler);
+  h.addBackgroundLocationWatcher.mockReset();
+  h.addBackgroundLocationWatcher.mockResolvedValue('watcher-1');
+  h.removeBackgroundLocationWatcher.mockReset();
+  h.removeBackgroundLocationWatcher.mockResolvedValue(undefined);
+  h.addAppStateListener.mockReset();
+  h.addAppStateListener.mockResolvedValue(() => {});
+  h.requestNotificationPermission.mockReset();
+  h.requestNotificationPermission.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -167,8 +185,8 @@ describe('useLocationTracking — the enable/disable consent toggle', () => {
     expect(result.current.mode).toBe('when_in_use');
   });
 
-  it('downgrades always to when_in_use off iPhone', () => {
-    h.isIosPlatform.mockReturnValue(false);
+  it('downgrades always to when_in_use on web', () => {
+    h.isNativePlatform.mockReturnValue(false);
     const { result } = renderHook(() => useLocationTracking({ watch: false }));
 
     act(() => result.current.setMode('always'));
@@ -176,8 +194,8 @@ describe('useLocationTracking — the enable/disable consent toggle', () => {
     expect(result.current.mode).toBe('when_in_use');
   });
 
-  it('keeps always on iPhone', () => {
-    h.isIosPlatform.mockReturnValue(true);
+  it('keeps always on native (iOS or Android)', () => {
+    h.isNativePlatform.mockReturnValue(true);
     const { result } = renderHook(() => useLocationTracking({ watch: false }));
 
     act(() => result.current.setMode('always'));
@@ -257,7 +275,7 @@ describe('useLocationTracking — watch gating', () => {
   });
 });
 
-describe('useLocationTracking — recording a fix', () => {
+describe('useLocationTracking — recording a fix (web)', () => {
   it('captures the immediate fix as a browser-provided position and surfaces the outcome', async () => {
     localStorage.setItem(STORAGE_KEY, 'true');
     const { getCurrentPosition } = installGeolocation();
@@ -283,22 +301,6 @@ describe('useLocationTracking — recording a fix', () => {
     await waitFor(() =>
       expect(result.current.lastOutcome).toEqual({ status: 'queued', record: {}, id: 'row-1' }),
     );
-  });
-
-  it('tags fixes taken on the native shell as companion-mobile rather than browser', async () => {
-    localStorage.setItem(STORAGE_KEY, 'true');
-    const { getCurrentPosition } = installGeolocation();
-    h.authenticated = true;
-    h.isNativePlatform.mockReturnValue(true);
-
-    renderHook(() => useLocationTracking());
-
-    await act(async () => {
-      successCallbackOf(getCurrentPosition)(fakePosition());
-    });
-
-    const calls = h.captureLocationFix.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>;
-    expect(calls[0][1]).toMatchObject({ provider: 'companion-mobile' });
   });
 
   it('does not surface a throttled outcome as the last outcome', async () => {
@@ -354,7 +356,7 @@ describe('useLocationTracking — the cancelled-effect race guard', () => {
   });
 });
 
-describe('useLocationTracking — cleanup', () => {
+describe('useLocationTracking — cleanup (web)', () => {
   it('clears the platform watch and resets the sampler gate when tracking is turned off', () => {
     localStorage.setItem(STORAGE_KEY, 'true');
     const { watchPosition, clearWatch } = installGeolocation();
@@ -375,24 +377,108 @@ describe('useLocationTracking — cleanup', () => {
   });
 });
 
-describe('useLocationTracking — iOS native is the only writer', () => {
-  it('does not start navigator.geolocation on iPhone; it hands the mode to native', async () => {
+describe('useLocationTracking — native watcher is the only writer', () => {
+  it('does not start navigator.geolocation on native; it starts the background watcher instead', async () => {
     localStorage.setItem(STORAGE_KEY, 'true');
     const { getCurrentPosition, watchPosition } = installGeolocation();
     h.authenticated = true;
-    h.isIosPlatform.mockReturnValue(true);
-    h.setNativeLocationMode.mockResolvedValue({
-      mode: 'when_in_use',
-      authorization: 'when_in_use',
-      pendingAlways: false,
+    h.isNativePlatform.mockReturnValue(true);
+
+    renderHook(() => useLocationTracking());
+
+    await waitFor(() => expect(h.addBackgroundLocationWatcher).toHaveBeenCalled());
+
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(watchPosition).not.toHaveBeenCalled();
+    expect(h.addBackgroundLocationWatcher.mock.calls[0][0]).toMatchObject({ background: false });
+  });
+
+  it('starts a background watcher and requests notification permission for Always', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+    h.authenticated = true;
+    h.isNativePlatform.mockReturnValue(true);
+
+    const { result } = renderHook(() => useLocationTracking());
+
+    act(() => result.current.setMode('always'));
+
+    await waitFor(() =>
+      expect(h.addBackgroundLocationWatcher).toHaveBeenLastCalledWith(
+        expect.objectContaining({ background: true }),
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    expect(h.requestNotificationPermission).toHaveBeenCalled();
+  });
+
+  it('feeds a delivered location into captureLocationFix tagged as companion-mobile', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+    h.authenticated = true;
+    h.isNativePlatform.mockReturnValue(true);
+
+    let deliver: ((location: ReturnType<typeof fakeBackgroundLocation>) => void) | undefined;
+
+    h.addBackgroundLocationWatcher.mockImplementation(async (_options, onLocation) => {
+      deliver = onLocation;
+
+      return 'watcher-1';
     });
 
     renderHook(() => useLocationTracking());
 
-    await waitFor(() => expect(h.setNativeLocationMode).toHaveBeenCalled());
+    await waitFor(() => expect(h.addBackgroundLocationWatcher).toHaveBeenCalled());
 
-    expect(getCurrentPosition).not.toHaveBeenCalled();
-    expect(watchPosition).not.toHaveBeenCalled();
-    expect(h.setNativeLocationMode.mock.calls[0][0]).toMatchObject({ mode: 'when_in_use' });
+    await act(async () => {
+      deliver?.(fakeBackgroundLocation());
+    });
+
+    expect(h.captureLocationFix).toHaveBeenCalledTimes(1);
+    const calls = h.captureLocationFix.mock.calls as unknown as Array<
+      [{ latitude: number; longitude: number }, Record<string, unknown>]
+    >;
+    const [fix, options] = calls[0];
+
+    expect(fix).toMatchObject({ latitude: 37.7749, longitude: -122.4194 });
+    expect(options).toMatchObject({ provider: 'companion-mobile' });
+  });
+
+  it('removes the watcher on unmount', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+    h.authenticated = true;
+    h.isNativePlatform.mockReturnValue(true);
+    h.addBackgroundLocationWatcher.mockResolvedValue('watcher-xyz');
+
+    const { unmount } = renderHook(() => useLocationTracking());
+
+    await waitFor(() => expect(h.addBackgroundLocationWatcher).toHaveBeenCalled());
+
+    unmount();
+
+    await waitFor(() => expect(h.removeBackgroundLocationWatcher).toHaveBeenCalledWith('watcher-xyz'));
+  });
+
+  it('sets needsSettingsUpgrade when the watcher reports NOT_AUTHORIZED', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+    h.authenticated = true;
+    h.isNativePlatform.mockReturnValue(true);
+
+    let deliverError: ((error: { code: string; message: string }) => void) | undefined;
+
+    h.addBackgroundLocationWatcher.mockImplementation(async (_options, _onLocation, onError) => {
+      deliverError = onError;
+
+      return 'watcher-1';
+    });
+
+    const { result } = renderHook(() => useLocationTracking());
+
+    await waitFor(() => expect(h.addBackgroundLocationWatcher).toHaveBeenCalled());
+
+    await act(async () => {
+      deliverError?.({ code: 'NOT_AUTHORIZED', message: 'denied' });
+    });
+
+    expect(result.current.needsSettingsUpgrade).toBe(true);
   });
 });

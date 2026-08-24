@@ -64,7 +64,7 @@ export function formatDateTime(dateStr: string, timeStr?: string): string {
  * all. `dateBucket.test.ts` pins this string against a fixture built from the
  * same shape push/inputs.ts stamps, so the copy cannot drift silently.
  */
-const INGEST_TIME_SOURCE = 'ingest';
+export const INGEST_TIME_SOURCE = 'ingest';
 
 /**
  * The canonical timestamp for an entity, matching the server's ordering logic
@@ -72,7 +72,9 @@ const INGEST_TIME_SOURCE = 'ingest';
  * Keeping the same field priority here ensures the date-group headers we render
  * line up with the chronological order the API already returned. Entities with
  * no domain timestamp (people, places, concepts, …) return null and fall into
- * the trailing "No date" bucket.
+ * the trailing "No date" bucket — unless a People/Places date filter stamped
+ * `bucketAppearedAt` (the first real activity in that window), in which case
+ * they group on the day they showed up, not the day the row was imported.
  *
  * An `EventType` whose `timeSource` is `'ingest'` gets the same treatment: the
  * value in `startTime` is not a real date — it is the moment the import ran,
@@ -102,6 +104,10 @@ export function getEntityTimestamp(entity: EntityItem): Date | null {
       }
 
       raw = entity.bucketStartTime;
+      break;
+    case 'PersonType':
+    case 'PlaceType':
+      raw = entity.bucketAppearedAt;
       break;
     default:
       return null;

@@ -91,26 +91,17 @@ export interface LocalHubPlugin {
   openUrl(options: { url: string }): Promise<void>;
 
   /**
-   * iOS only. Starts or stops the native location sampler. `always` uses
-   * significant-change + a short burst; it does not stream GPS.
+   * iOS only. One high-accuracy fix for placing a pin — does not write the
+   * tracking outbox. Rejects when permission is denied or a fix times out.
    */
-  setLocationMode(options: {
-    mode: 'off' | 'when_in_use' | 'always';
-    deviceKey: string;
-  }): Promise<NativeLocationStatus>;
-
-  getLocationStatus(): Promise<NativeLocationStatus>;
-
-  /** Optional home geofence. Omit lat/lng to clear. */
-  setLocationHome(options: { latitude?: number; longitude?: number }): Promise<void>;
+  getCurrentLocation(): Promise<NativeCurrentLocation>;
 
   openAppSettings(): Promise<void>;
 }
 
-export interface NativeLocationStatus {
-  mode: 'off' | 'when_in_use' | 'always';
-  authorization: 'not_determined' | 'denied' | 'restricted' | 'when_in_use' | 'always' | 'unsupported';
-  pendingAlways?: boolean;
-  lastFixAt?: string | null;
-  lastError?: string | null;
+export interface NativeCurrentLocation {
+  latitude: number;
+  longitude: number;
+  /** Horizontal accuracy in meters, when Core Location reports one. */
+  accuracy?: number;
 }

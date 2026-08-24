@@ -4,7 +4,7 @@ import {
   Brain,
   Cable,
   CalendarRange,
-  ChartColumn,
+  CircleUserRound,
   CloudSun,
   FolderSearch2,
   LifeBuoy,
@@ -35,9 +35,9 @@ export interface RailDestination {
 
 export const RAIL_DESTINATIONS: readonly RailDestination[] = [
   { id: 'plan', to: '/plan', label: 'Plan', icon: ListTodo, flag: 'planning.page' },
-  { id: 'today', to: '/today', label: 'Today', icon: CalendarRange, badge: 'feed' },
-  { id: 'forecast', to: '/forecast', label: 'Forecast', icon: CloudSun },
-  { id: 'memory', to: '/memory/events', label: 'Memory', icon: Brain, match: isMemoryHubPath },
+  { id: 'calendar', to: '/calendar', label: 'Calendar', icon: CalendarRange, badge: 'feed', end: false },
+  { id: 'forecast', to: '/forecast', label: 'Forecast', icon: CloudSun, flag: 'forecast.page' },
+  { id: 'memory', to: '/memory', label: 'Memory', icon: Brain, match: isMemoryHubPath },
   { id: 'saved-searches', to: '/saved-searches', label: 'Saved Searches', icon: FolderSearch2 },
   { id: 'chat', to: '/chat', label: 'Chat', icon: MessagesSquare, flag: 'chat.page' },
   // `ask`, not `asks.page`: this is the SAME flag the /asks route and every ask
@@ -46,7 +46,11 @@ export const RAIL_DESTINATIONS: readonly RailDestination[] = [
   { id: 'asks', to: '/asks', label: 'Asks', icon: MessageCircleQuestion, flag: 'ask' },
   { id: 'sources', to: '/sources', label: 'Sources', icon: Cable, end: false },
   { id: 'jobs', to: '/jobs', label: 'Jobs', icon: Workflow, flag: 'jobs.page' },
-  { id: 'stats', to: '/stats', label: 'Stats', icon: ChartColumn, flag: 'stats.page' },
+  // Combines the former About You / Account settings and the Stats page —
+  // one destination for "who I am to the system". Still gated on `stats.page`
+  // (unchanged) so no config/env rename is needed for what was already a
+  // purely cosmetic flag name.
+  { id: 'self', to: '/self', label: 'Self', icon: CircleUserRound, flag: 'stats.page', end: false },
 ];
 
 export const HELP_LINKS = [

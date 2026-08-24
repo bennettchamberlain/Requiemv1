@@ -142,12 +142,23 @@ function makeController(
     ),
   };
 
+  const objectCounts = {
+    countsForUser: jest.fn(async () => [{ importer: 'gmail', label: 'Mail', count: 42 }]),
+  };
+
   return {
-    controller: new ImportRunsController(runs as never, catalog as never, retention as never, users as never),
+    controller: new ImportRunsController(
+      runs as never,
+      catalog as never,
+      retention as never,
+      users as never,
+      objectCounts as never,
+    ),
     runs,
     catalog,
     retention,
     users,
+    objectCounts,
   };
 }
 
@@ -354,6 +365,33 @@ describe('ImportRunsController.sourceCatalog', () => {
     const { controller, catalog } = makeController();
 
     expect(controller.sourceCatalog()).toBe(catalog.catalog.mock.results[0].value);
+  });
+});
+
+describe('ImportRunsController.objectCountsForCaller', () => {
+  it('asks the service for the CALLER only, never a bare list-everything', () => {
+    const { controller, objectCounts } = makeController();
+
+    void controller.objectCountsForCaller(ctx);
+
+    expect(objectCounts.countsForUser).toHaveBeenCalledWith('user-1');
+  });
+
+  it('serves the service result verbatim', async () => {
+    const { controller } = makeController();
+
+    await expect(controller.objectCountsForCaller(ctx)).resolves.toEqual([
+      { importer: 'gmail', label: 'Mail', count: 42 },
+    ]);
+  });
+
+  it('refuses an unauthenticated caller before touching the database', async () => {
+    const { controller, objectCounts } = makeController();
+
+    await expect(controller.objectCountsForCaller({} as RequestContext)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(objectCounts.countsForUser).not.toHaveBeenCalled();
   });
 });
 

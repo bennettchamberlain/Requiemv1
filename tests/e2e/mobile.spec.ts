@@ -5,12 +5,12 @@ import { expect, test } from '@playwright/test';
 // stable signals (URL, view tabs, container) and each test saves a screenshot
 // artifact (uploaded by .github/workflows/e2e.yml).
 
-test('brief redirects to today on mobile', async ({ page }) => {
-  // The brief now lives inside Today (App.tsx's RedirectToToday) — /brief is a
-  // legacy address that lands on /today, not a page of its own.
+test('brief redirects to calendar on mobile', async ({ page }) => {
+  // The brief now lives inside Calendar (App.tsx's RedirectToCalendar) — /brief
+  // is a legacy address that lands on /calendar, not a page of its own.
   await page.goto('/brief');
 
-  await expect(page).toHaveURL(/\/today/);
+  await expect(page).toHaveURL(/\/calendar/);
   await page.screenshot({ path: 'test-results/screenshots/brief-mobile.png', fullPage: true });
 });
 

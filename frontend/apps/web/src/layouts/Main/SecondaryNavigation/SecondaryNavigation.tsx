@@ -14,6 +14,7 @@ import { RailEdgeToggle } from '../RailEdgeToggle';
 
 import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
+import { SelfSubmenu } from './SelfSubmenu';
 import { useFeedBadgeCount } from './useFeedBadgeCount';
 
 interface ExternalNavLinkProps {
@@ -211,6 +212,10 @@ export function SecondaryNavigation() {
       {destinations.map((destination) => {
         if (destination.id === 'memory') {
           return <MemorySubmenu key={destination.id} />;
+        }
+
+        if (destination.id === 'self') {
+          return <SelfSubmenu key={destination.id} />;
         }
 
         const Icon = destination.icon;
