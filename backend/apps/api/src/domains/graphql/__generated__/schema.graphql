@@ -263,6 +263,43 @@ type BoundingBoxType {
   y: Float!
 }
 
+"""One competing future at a clock step"""
+type BranchialBranchType {
+  id: String!
+
+  """Parent L0 class (WORK, LEISURE, ...)"""
+  l0: String!
+  mass: Float!
+  permutations: [BranchialPermutationType!]!
+  title: String!
+  why: String!
+}
+
+"""Who or what under a named future (slider 2, laid out in time)"""
+type BranchialPermutationType {
+  id: String!
+  mass: Float!
+  title: String!
+}
+
+"""A remaining daypart or week-ahead day"""
+type BranchialStepType {
+  branches: [BranchialBranchType!]!
+  id: String!
+  label: String!
+  startTime: String!
+}
+
+"""
+Branchial-time tree: occupancy spine from the histogram/week forecast, optionally named by an LLM guess from memory
+"""
+type BranchialTreeType {
+  """True when branch titles came from the memory guess, not raw L0 labels"""
+  guessed: Boolean!
+  question: String!
+  steps: [BranchialStepType!]!
+}
+
 type BrowserActivityConnection implements Connection {
   edges: [BrowserActivityEdge!]!
   pageInfo: PageInfo!
@@ -1159,6 +1196,75 @@ type FileType implements Node & Taggable {
   updatedAt: DateTime!
 }
 
+"""One Saturday hypothesis in the forage joint"""
+type ForageBranchType {
+  id: String!
+  mass: Float!
+  past: Boolean!
+  pinned: Boolean!
+  ready: Boolean!
+  topTexture: String
+}
+
+"""Activities that hang off (branch, who)"""
+type ForageInterestType {
+  activities: [String!]!
+  person: String!
+}
+
+"""A lake item scored as a saccade (expected free energy G)"""
+type ForageItemType {
+  ambiguity: Float!
+  epistemic: Float!
+  g: Float!
+  gaze: Int!
+  id: String!
+  label: String!
+  read: Boolean!
+  risk: Float!
+
+  """Index the fact came from: person, place, event, search, graph, derived"""
+  source: String
+}
+
+"""A named probability mass (branch, person, or delta)"""
+type ForageMassType {
+  label: String!
+  mass: Float!
+}
+
+"""One fact the eye already read"""
+type ForageReadType {
+  branchDelta: [ForageMassType!]!
+  cue: String!
+  epistemic: Float!
+  g: Float!
+  itemId: String!
+}
+
+"""
+CI Forager trial: discrete active inference over a memory lake. Not the occupancy histogram.
+"""
+type ForageTrialType {
+  attention: [ForageItemType!]!
+  branches: [ForageBranchType!]!
+  horizon: String!
+  interests: [ForageInterestType!]!
+
+  """demo or memory"""
+  kind: String
+  permutationBranch: String!
+  permutations: [ForageMassType!]!
+  pick: String
+  pin: String
+  question: String!
+  reads: [ForageReadType!]!
+  ready: Boolean!
+  resolved: Boolean!
+  texture: String
+  textureMass: Float
+}
+
 """One 30-minute forecast bucket from the HBPE histogram"""
 type ForecastBucketType {
   bucketIndex: Int!
@@ -1204,6 +1310,12 @@ type ForecastType {
 
   """Served histogram model: hmt, b1, or b2 (D3 gate)."""
   modelVersion: String
+
+  """Live progress inside the active step, e.g. "1200 of 8400"."""
+  pipelineDetail: String
+
+  """Estimated seconds remaining in the active Predict/nightly step."""
+  pipelineEtaSeconds: Int
 
   """True when the histogram is a cold-start baseline, not a trained HMT."""
   stillLearning: Boolean!
@@ -1792,6 +1904,22 @@ type Mutation {
   deleteSavedSearch(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteTag(input: DeleteByIdInput!): DeleteByIdPayload!
   deleteTask(input: DeleteByIdInput!): DeleteByIdPayload!
+
+  """Pin a branch so the eye hunts inside it"""
+  foragePin(branch: String!): ForageTrialType
+
+  """Rebuild the memory lake from people, places, events, and indexes"""
+  forageReset: ForageTrialType
+
+  """
+  Read the next lake item by expected free energy; may query indexes when the lake runs thin
+  """
+  forageSample: ForageTrialType
+
+  """
+  Name occupancy branches from memory via the LLM; falls back to occupancy labels on failure
+  """
+  guessBranchialForecast: BranchialTreeType
   ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
   linkItemToProduct(input: LinkItemToProductInput!): UpdateItemPayload!
 
@@ -2499,6 +2627,11 @@ type Query {
   askGrant(id: ID!): AskGrantType
   askInbox: [AskType!]!
   askOutbox: [AskType!]!
+
+  """
+  Occupancy spine: remaining dayparts and week-ahead days as a walkable tree
+  """
+  branchialForecast: BranchialTreeType
   browserActivities(after: String, before: String, first: Int, last: Int): BrowserActivityConnection!
   browserActivity(id: ID!): BrowserActivityType
 
@@ -2558,6 +2691,11 @@ type Query {
   feedActions(limit: Int! = 5): [ActionType!]!
   file(id: ID!): FileType
   files(after: String, before: String, first: Int, last: Int): FileConnection!
+
+  """
+  CI Forager over the user memory lake: people, places, events, search indexes, and derived forecasts
+  """
+  forage: ForageTrialType
 
   """Fetch the HBPE day-ahead forecast histogram"""
   forecast(horizon: String = "24h"): ForecastType

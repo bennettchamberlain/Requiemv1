@@ -72,19 +72,42 @@ class CronRunStoreImpl {
       return new Map();
     }
 
-    const rows = await dataSource.query<
-      { name: string; last_run_at: Date | string; last_success_at: Date | string | null }[]
-    >(`SELECT name, last_run_at, last_success_at FROM ci.cron_runs`);
+    try {
+      const rows = await dataSource.query<
+        { name: string; last_run_at: Date | string; last_success_at?: Date | string | null }[]
+      >(`SELECT name, last_run_at, last_success_at FROM ci.cron_runs`);
 
-    const map = new Map<string, CronRunRecord>();
-    for (const row of rows) {
-      map.set(row.name, {
-        lastRunAt: toDate(row.last_run_at),
-        lastSuccessAt: row.last_success_at == null ? null : toDate(row.last_success_at),
-      });
+      return mapCronRows(rows);
+    } catch (err: unknown) {
+      // A Hub DB that has not yet applied `cron_runs_last_success` must not
+      // 500 the Jobs dashboard. last_run_at still exists; success is unknown.
+      if (isUndefinedColumn(err, 'last_success_at')) {
+        this.logger.warn(
+          'ci.cron_runs.last_success_at is missing — serving last_run_at only until that migration is applied',
+        );
+        try {
+          const rows = await dataSource.query<
+            { name: string; last_run_at: Date | string }[]
+          >(`SELECT name, last_run_at FROM ci.cron_runs`);
+
+          return mapCronRows(rows);
+        } catch (fallbackErr: unknown) {
+          this.logger.warn(
+            'Failed to read ci.cron_runs',
+            fallbackErr instanceof Error ? fallbackErr.stack : String(fallbackErr),
+          );
+
+          return new Map();
+        }
+      }
+
+      this.logger.warn(
+        'Failed to read ci.cron_runs',
+        err instanceof Error ? err.stack : String(err),
+      );
+
+      return new Map();
     }
-
-    return map;
   }
 
   private upsert(name: string, sql: string, at: Date, column: string): void {
@@ -100,6 +123,33 @@ class CronRunStoreImpl {
       );
     });
   }
+}
+
+function mapCronRows(
+  rows: { name: string; last_run_at: Date | string; last_success_at?: Date | string | null }[],
+): Map<string, CronRunRecord> {
+  const map = new Map<string, CronRunRecord>();
+  for (const row of rows) {
+    map.set(row.name, {
+      lastRunAt: toDate(row.last_run_at),
+      lastSuccessAt: row.last_success_at == null ? null : toDate(row.last_success_at),
+    });
+  }
+
+  return map;
+}
+
+function isUndefinedColumn(err: unknown, column: string): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  if (!message.includes(column) || !message.includes('does not exist')) {
+    return false;
+  }
+
+  const code =
+    (err as { driverError?: { code?: string }; code?: string }).driverError?.code ??
+    (err as { code?: string }).code;
+
+  return code === '42703' || code == null;
 }
 
 function toDate(value: Date | string): Date {

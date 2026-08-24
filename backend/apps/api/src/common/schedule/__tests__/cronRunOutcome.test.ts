@@ -115,4 +115,34 @@ describe('Cron run outcome', () => {
     expect(run?.lastSuccessAt).toBeInstanceOf(Date);
     expect(run?.lastRunAt.getTime()).toBeGreaterThanOrEqual(succeededAt?.getTime() ?? 0);
   });
+
+  it('serves last_run_at when last_success_at is not on the table', async () => {
+    const at = new Date('2026-08-22T00:00:00.000Z');
+    let fullSelects = 0;
+    const dataSource = {
+      query: (sql: string) => {
+        if (sql.includes('SELECT') && sql.includes('last_success_at')) {
+          fullSelects += 1;
+          const err = Object.assign(new Error('column "last_success_at" does not exist'), {
+            code: '42703',
+          });
+
+          return Promise.reject(err);
+        }
+
+        if (sql.includes('SELECT name, last_run_at FROM ci.cron_runs')) {
+          return Promise.resolve([{ name: 'Probe.old', last_run_at: at }]);
+        }
+
+        throw new Error(`Unexpected query: ${sql}`);
+      },
+    };
+
+    CronRunStore.configure(dataSource as never);
+
+    await expect(CronRunStore.runsByName()).resolves.toEqual(
+      new Map([['Probe.old', { lastRunAt: at, lastSuccessAt: null }]]),
+    );
+    expect(fullSelects).toBe(1);
+  });
 });

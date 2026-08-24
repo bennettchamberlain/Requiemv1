@@ -1224,6 +1224,10 @@ export type ForecastType = {
   horizon: Scalars['String']['output'];
   /** Served histogram model: hmt, b1, or b2 (D3 gate). */
   modelVersion?: Maybe<Scalars['String']['output']>;
+  /** Live progress inside the active step, e.g. "1200 of 8400". */
+  pipelineDetail?: Maybe<Scalars['String']['output']>;
+  /** Estimated seconds remaining in the active Predict/nightly step. */
+  pipelineEtaSeconds?: Maybe<Scalars['Int']['output']>;
   /** True when the histogram is a cold-start baseline, not a trained HMT. */
   stillLearning: Scalars['Boolean']['output'];
   /** System status of the HBPE engine (COLD_START, TRAINING, READY) */

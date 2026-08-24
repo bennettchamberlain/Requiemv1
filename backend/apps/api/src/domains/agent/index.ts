@@ -31,12 +31,15 @@ import { MemoryModule } from '@ci/domains/memory';
 import { PredictionsModule } from '@ci/domains/predictions';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { ToolsModule } from '@ci/domains/tools';
+import { UserModule } from '@ci/domains/user';
 
 import { IntentsController } from './controllers/IntentsController';
 import { MemoryController } from './controllers/MemoryController';
 import { MemoryCompactionCron } from './cron/MemoryCompactionCron';
 import { AgentMemoryEntity } from './entities/AgentMemoryEntity';
 import { AgentMemoryService } from './services/AgentMemoryService';
+import { BranchialForecastService } from './services/BranchialForecastService';
+import { ForageCorpusService } from './services/ForageCorpusService';
 import { ForecastContextService } from './services/ForecastContextService';
 import { MemoryCompactionService } from './services/MemoryCompactionService';
 import { RecallService } from './services/RecallService';
@@ -54,10 +57,19 @@ import { SerializerService } from './services/SerializerService';
     SearchNextModule,
     // Provides IntentCatalogService, which the IntentsController publishes.
     ToolsModule,
+    UserModule,
   ],
-  exports: [SerializerService, ForecastContextService, RecallService],
+  exports: [
+    SerializerService,
+    ForecastContextService,
+    RecallService,
+    BranchialForecastService,
+    ForageCorpusService,
+  ],
   providers: [
     AgentMemoryService,
+    BranchialForecastService,
+    ForageCorpusService,
     ForecastContextService,
     MemoryCompactionCron,
     MemoryCompactionService,
@@ -68,4 +80,10 @@ import { SerializerService } from './services/SerializerService';
 })
 export class AgentModule {}
 
-export { ForecastContextService, RecallService };
+export { BranchialForecastService, ForageCorpusService, ForecastContextService, RecallService };
+export type {
+  BranchialBranch,
+  BranchialPermutation,
+  BranchialStep,
+  BranchialTree,
+} from './services/branchialOccupancy';

@@ -179,6 +179,26 @@ describe('JobMonitorService.getDashboard', () => {
     await expect(service.getDashboard({})).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('still returns the queue summary when ci.cron_runs.last_success_at is missing', async () => {
+    const spy = jest
+      .spyOn(CronRunStore, 'runsByName')
+      .mockRejectedValueOnce(
+        Object.assign(new Error('column "last_success_at" does not exist'), { code: '42703' }),
+      );
+
+    try {
+      const { service } = makeService({
+        jobStateRows: [{ state: 'active', count: 2, deadLettered: 0 }],
+      });
+      const dash = await service.getDashboard(context);
+
+      expect(dash.summary.active).toBe(2);
+      expect(dash.crons).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   /**
    * The defect this pins: pg-boss inserts a dead-lettered job into the
    * `dead-letter` queue in state `created` — byte-identical, by state, to work

@@ -1,4 +1,4 @@
-import { Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, Optional, UnauthorizedException } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -227,6 +227,8 @@ export class JobMonitorService {
     @Optional() private readonly schedulerRegistry?: SchedulerRegistry,
   ) {}
 
+  private readonly logger = new Logger(JobMonitorService.name);
+
   async getDashboard(context: RequestContext): Promise<JobDashboardDto> {
     if (!context.userId) {
       throw new UnauthorizedException('A user context is required.');
@@ -259,7 +261,13 @@ export class JobMonitorService {
       this.getActiveDistribution(),
       this.getQueueDistribution(),
       this.getSmartRotationDistribution(),
-      this.getCronSchedules(),
+      this.getCronSchedules().catch((err: unknown) => {
+        this.logger.warn(
+          `Cron schedule panel unavailable: ${err instanceof Error ? err.message : String(err)}`,
+        );
+
+        return [];
+      }),
     ]);
 
     return {

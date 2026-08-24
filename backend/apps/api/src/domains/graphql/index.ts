@@ -6,6 +6,7 @@ import { GraphQLModule as NestGraphQLModule } from '@nestjs/graphql';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ActivityModule } from '@ci/domains/activity';
+import { AgentModule } from '@ci/domains/agent';
 import { AsksModule } from '@ci/domains/asks';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
@@ -67,6 +68,7 @@ import { ActionResolver } from './resolvers/ActionResolver';
 import { ActivityResolver } from './resolvers/ActivityResolver';
 import { AnswerResolver } from './resolvers/AnswerResolver';
 import { AskResolver } from './resolvers/AskResolver';
+import { BranchialResolver } from './resolvers/BranchialResolver';
 import { BrowserActivityResolver } from './resolvers/BrowserActivityResolver';
 import { CommunicationResolver } from './resolvers/CommunicationResolver';
 import { ConceptResolver } from './resolvers/ConceptResolver';
@@ -76,6 +78,7 @@ import { ContentResolver } from './resolvers/ContentResolver';
 import { DailyMetricsResolver } from './resolvers/DailyMetricsResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
+import { ForageResolver } from './resolvers/ForageResolver';
 import { ForecastResolver } from './resolvers/ForecastResolver';
 import { GeocodeResolver } from './resolvers/GeocodeResolver';
 import { GraphIngestResolver } from './resolvers/GraphIngestResolver';
@@ -132,6 +135,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
       graphiql: false,
     }),
     AsksModule,
+    AgentModule,
     PeersModule,
     ActivityModule,
     BrowserActivityModule,
@@ -164,6 +168,8 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ActionResolver,
     ActivityResolver,
     AskResolver,
+    BranchialResolver,
+    ForageResolver,
     ForecastResolver,
     GeocodeResolver,
     ScheduleCandidateResolver,
