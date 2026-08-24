@@ -152,17 +152,32 @@ from a box with no peer surface at all.
 
 ## Known limitations
 
-- **There is no way to create a peer link except by hand.** Both directions hard-require an
-  existing `ci.peer_links` row — inbound refuses with "No peer link", outbound with "No
-  active peer link for that handle" — but `PeerLinkService.upsert` has no caller anywhere
-  outside its tests, and no REST route or GraphQL mutation writes the table. Today a link
-  is an `INSERT` an operator runs. The three live call sites are all reads: `findById`
-  (AskResolver), `findByHandle` (OutboundAskService) and `findActiveByPeerIdentity`
-  (PeerAskService).
-- **The ask surface is not reachable in the shipped web app.** The components exist
-  (`frontend/apps/web/src/pages/AsksPage/`: `AskComposer`, `AskReviewCard`, `GrantManager`,
-  `AnswerCard`, plus stories), but nothing imports them and `App.tsx` registers no route for
-  them. Driving asks today means GraphQL.
+> **Δ 2026-08-23 — two entries below were stale and are corrected in place.** Peer links and
+> peer grants both have write paths now, and the ask surface has a route. Verified against
+> `origin/main` at `8cd68dbe6`. The full, current gap list — including three ways peer-link
+> revocation is still incomplete — is [`asks-system-guide.md` §9](asks-system-guide.md).
+
+- ~~**There is no way to create a peer link except by hand.**~~ **Fixed.** `PeerLinkResolver`
+  ships `myPeerLinks` / `peerLink` / `createPeerLink` / `updatePeerLink` / `revokePeerLink`,
+  and the `/asks` page's **People I'm linked to** tab drives all of them —
+  linking a peer and setting a trust tier is the one journey that completes end to end
+  through the UI. `createAskGrant` likewise accepts `granteePeerLinkId` now (resolved
+  through an owner-scoped read before it is stored), so a **peer grant** is no longer
+  SQL-only either. What is NOT fixed: `updatePeerLink` goes through
+  `PeerLinkService.upsert`, which sets `revokedAt: null` unconditionally — so editing a link
+  erases its revocation timestamp — a revoked link still supplies its original trust tier to
+  asks already in the inbox, and `PeerLinkResolver` is not gated by the `ask` feature flag
+  while all sixteen `AskResolver` operations are.
+- ~~**The ask surface is not reachable in the shipped web app.**~~ **Fixed.** `App.tsx`
+  registers `/asks` behind `isFeatureEnabled('ask')` — flag-gated routes here are never
+  registered rather than blocked, because with the flag off every ask mutation returns
+  `success: false` and the route would be a page of dead buttons. The page has six tabs
+  (For you · Ask someone · Sent · Who can ask me what · People I'm linked to · What I've
+  shared) and is screenshotted in [`asks-system-guide.md` §8](asks-system-guide.md). Two
+  things on it still do not work: **no UI calls `createAskGrant`**, so an owner cannot create
+  a standing grant through the product, and the composer cannot send **across boxes** — it
+  says so itself, because `sendPeerAsk` needs a Portal-minted access token this box cannot
+  issue.
 - ~~**DNS rebinding** is not closed…~~ **Closed.** This used to say that pinning the resolved IP
   through the socket "is not something Node's `fetch` exposes". That was wrong, and the
   counter-example was already in-tree: `domains/embed`'s `UnfurlFetcher` pins addresses through
@@ -202,9 +217,13 @@ An unknown handle and a revoked link are refused **identically**, so a caller ca
 
 ## Status
 
-**Both directions work, including the return trip — given a link and a token.** A box can receive, gate, and answer a federated ask; can compose and send one; and can now collect an answer its peer's owner approved after the fact. Still open: peer-link *management* of any kind (there is no write path for `ci.peer_links` at all, not just no UI — see Known limitations), a `pollPeerAsk` mutation so a person can press the collect button, the ask UI's route, an MCP tool so assistants can drive asks directly, and Portal token exchange so the access token is minted rather than passed in.
+**Both directions work, including the return trip — given a link and a token.** A box can receive, gate, and answer a federated ask; can compose and send one; and can now collect an answer its peer's owner approved after the fact. Peer-link management and the ask UI's route both landed (see the Δ note under Known limitations). Still open: a `pollPeerAsk` mutation so a person can press the collect button, a UI entry point for `createAskGrant`, an MCP tool so assistants can drive asks directly, and Portal token exchange so the access token is minted rather than passed in — the last of which is what stops the composer sending an ask across boxes at all.
 
 ## See also
+
+- **The reference document:** [`asks-system-guide.md`](asks-system-guide.md) — the consent
+  model in full, the ask lifecycle with the tables written at each step, the deliberate
+  privacy properties and their reasoning, how to run everything, and the current gap list.
 
 - Design: [`CI-Engineering/projects/decentralized-trust-graphs/`](https://github.com/companionintelligence/CI-Engineering/tree/main/projects/decentralized-trust-graphs) (PRD · ARCHITECTURE · ROADMAP · USE-CASES · UX)
 - The intra-box ask this inverts: [`saved-search-sharing.md`](saved-search-sharing.md)

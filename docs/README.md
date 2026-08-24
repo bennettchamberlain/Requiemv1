@@ -90,13 +90,23 @@ ADR-0004 lives one level up as [`architecture/adr-pipeline-ledger.md`](architect
 
 - [saved-search-sharing.md](saved-search-sharing.md) — saved searches: full-filter capture,
   capability-link sharing, the read-only shared viewer.
+- [asks-system-guide.md](asks-system-guide.md) — **the reference document for the Asks
+  feature; read it before changing anything on the consent path.** Grants, modes, the
+  disclosure ladder and the four ceilings that combine into one; the capture-at-consent-time
+  rule and the revocation-widens-disclosure bug it exists to prevent; the ask lifecycle local
+  and federated, with the tables written at each step; the privacy properties that are
+  deliberately counter-intuitive, each with its reasoning; how to run the `/asks` page, the
+  two-box federation harness and the consent-path CI gate; screenshots of every surface; and
+  the nine known gaps — two of them blockers — stated unsoftened.
 - [peer-federation.md](peer-federation.md) — asking questions across two Companion memories:
   Portal discovery, the three ask archetypes, the consent gate, free/busy without leaking a
   calendar.
 - [asks-threat-model.md](asks-threat-model.md) — the adversaries the ask feature does and
   does not defend against: coercion in a shared household, stalking via repeated free/busy,
   social engineering at the consent moment, prompt injection (traced, none today),
-  cumulative disclosure, and the default tier. Read before changing a ceiling.
+  cumulative disclosure, and the default tier. Read before changing a ceiling. Companion to
+  [asks-system-guide.md](asks-system-guide.md): that one is how the feature works, this one
+  is what it does not defend.
 
 ## Import & ETL — [`docs/import/`](import/)
 
