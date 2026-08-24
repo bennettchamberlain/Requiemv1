@@ -110,6 +110,29 @@ describe('PlanPage', () => {
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   });
 
+  it('lists overdue after upcoming instead of pinning it to the column foot', async () => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([
+          node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() }),
+          node({ id: 'b', title: 'Upcoming thing', dueAt: tomorrow.toISOString() }),
+        ]),
+      ],
+    });
+
+    const upcoming = await screen.findByRole('heading', { name: /^upcoming/i });
+    const overdue = screen.getByRole('heading', { name: /^overdue/i });
+
+    expect(upcoming.compareDocumentPosition(overdue) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(overdue.parentElement).not.toHaveClass('mt-auto');
+  });
+
   it('renders a completed task as checked and struck through', async () => {
     renderWithProviders(<PlanPage />, {
       mocks: [tasksMock([node({ title: 'Finished thing', status: 'done' })])],

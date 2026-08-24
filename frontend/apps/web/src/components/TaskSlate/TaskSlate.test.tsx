@@ -120,6 +120,26 @@ describe('TaskSlate — Plan backlog', () => {
     expect(onDismissProposed).toHaveBeenCalledWith('p1');
     expect(screen.queryByLabelText('Dismiss Call Mum')).not.toBeInTheDocument();
   });
+
+  it('lists overdue after upcoming instead of pinning it to the column foot', async () => {
+    renderWithProviders(
+      <TaskSlate
+        sections={backlog([
+          task({ id: 'u1', title: 'Call Mum', dueAt: '2026-08-25T17:00:00.000Z' }),
+          task({ id: 'o1', title: 'Pay the bill', dueAt: '2026-08-20T17:00:00.000Z' }),
+        ])}
+        {...NOOP}
+      />,
+    );
+
+    const upcoming = await screen.findByRole('heading', { name: /^upcoming/i });
+    const overdue = screen.getByRole('heading', { name: /^overdue/i });
+
+    expect(upcoming.compareDocumentPosition(overdue) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(overdue.parentElement).not.toHaveClass('mt-auto');
+  });
 });
 
 describe('TaskSlate — the header hint', () => {

@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { useDeviceLayout } from '@ci/common';
 import { Tabs, cn } from '@ci/shadcn';
 
-import { BOTTOM_LANES, type Section, type SectionedTask } from './taskSections';
+import { type Section, type SectionedTask } from './taskSections';
 
 function overdueCount<T extends SectionedTask>(section: Section<T>): number {
   return section.lanes.find((lane) => lane.key === 'overdue')?.tasks.length ?? 0;
@@ -50,10 +50,7 @@ function TaskColumn<T extends SectionedTask>({
       )}
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
         {section.lanes.map((lane) => (
-          <div
-            key={lane.key}
-            className={cn('flex flex-col gap-2', BOTTOM_LANES.has(lane.key) && 'mt-auto')}
-          >
+          <div key={lane.key} className="flex flex-col gap-2">
             {lane.label ? (
               <h3
                 className={cn(

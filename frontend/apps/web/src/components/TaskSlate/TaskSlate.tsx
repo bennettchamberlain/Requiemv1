@@ -5,7 +5,7 @@ import { Button, cn, Tabs, Tooltip } from '@ci/shadcn';
 import { GripVertical, X } from '@ci/shadcn/icons';
 
 import { CANDIDATE_DRAG_TYPE } from '@/lib/scheduleDrag';
-import { BOTTOM_LANES, type Section, type SectionedTask } from '@/pages/PlanPage/taskSections';
+import { type Section, type SectionedTask } from '@/pages/PlanPage/taskSections';
 import type { PlanTask } from '@/pages/PlanPage/usePlanTasks';
 
 export { CANDIDATE_DRAG_TYPE };
@@ -125,10 +125,7 @@ function BacklogColumn({
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
         {section.lanes.map((lane) => (
-          <div
-            key={lane.key}
-            className={cn('flex flex-col gap-2', BOTTOM_LANES.has(lane.key) && section.lanes.length > 1 && 'mt-auto')}
-          >
+          <div key={lane.key} className="flex flex-col gap-2">
             {lane.label ? (
               <h5
                 className={cn(
