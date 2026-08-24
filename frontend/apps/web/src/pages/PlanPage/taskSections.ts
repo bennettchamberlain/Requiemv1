@@ -209,6 +209,21 @@ export function groupIntoSections<T extends SectionedTask>(
   });
 }
 
+/** Plan's four columns, with empty buckets kept so the tabs never disappear. */
+export function withAllColumns<T extends SectionedTask>(sections: readonly Section<T>[]): Section<T>[] {
+  const byKey = new Map(sections.map((section) => [section.key, section]));
+
+  return COLUMN_ORDER.map(
+    (key) =>
+      byKey.get(key) ?? {
+        key,
+        label: COLUMN_LABELS[key],
+        lanes: [],
+        tasks: [],
+      },
+  );
+}
+
 /** Direct children of `parentId`, sorted like section rows. */
 export function childrenOf<T extends SectionedTask>(tasks: readonly T[], parentId: string): T[] {
   return tasks.filter((task) => task.parentId === parentId).sort(compareTasks);
