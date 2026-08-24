@@ -18,6 +18,10 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: true,
+    // Required by @capacitor-community/background-geolocation: without it, location
+    // updates delivered through the legacy Capacitor bridge stop after ~5 minutes in
+    // the background. See https://github.com/capacitor-community/background-geolocation/issues/89.
+    useLegacyBridge: true,
   },
   plugins: {
     SplashScreen: {

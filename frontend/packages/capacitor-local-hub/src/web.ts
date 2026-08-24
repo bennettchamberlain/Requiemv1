@@ -5,7 +5,6 @@ import type {
   LocalHubSecureGetResult,
   LocalHubStartResult,
   LocalHubStatusResult,
-  NativeLocationStatus,
 } from './definitions';
 
 /**
@@ -49,21 +48,5 @@ export class LocalHubWeb extends WebPlugin implements LocalHubPlugin {
 
   async openUrl(): Promise<void> {
     throw this.unavailable('LocalHub openUrl is only available in the native app.');
-  }
-
-  async setLocationMode(): Promise<NativeLocationStatus> {
-    throw this.unavailable('Location tracking mode is only available in the iOS app.');
-  }
-
-  async getLocationStatus(): Promise<NativeLocationStatus> {
-    return { mode: 'off', authorization: 'unsupported' };
-  }
-
-  async setLocationHome(): Promise<void> {
-    // Web has no geofence.
-  }
-
-  async openAppSettings(): Promise<void> {
-    throw this.unavailable('App Settings is only available in the native app.');
   }
 }

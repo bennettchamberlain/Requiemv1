@@ -89,28 +89,4 @@ export interface LocalHubPlugin {
    * Used for Portal PKCE so the custom-scheme redirect can bounce back into the app.
    */
   openUrl(options: { url: string }): Promise<void>;
-
-  /**
-   * iOS only. Starts or stops the native location sampler. `always` uses
-   * significant-change + a short burst; it does not stream GPS.
-   */
-  setLocationMode(options: {
-    mode: 'off' | 'when_in_use' | 'always';
-    deviceKey: string;
-  }): Promise<NativeLocationStatus>;
-
-  getLocationStatus(): Promise<NativeLocationStatus>;
-
-  /** Optional home geofence. Omit lat/lng to clear. */
-  setLocationHome(options: { latitude?: number; longitude?: number }): Promise<void>;
-
-  openAppSettings(): Promise<void>;
-}
-
-export interface NativeLocationStatus {
-  mode: 'off' | 'when_in_use' | 'always';
-  authorization: 'not_determined' | 'denied' | 'restricted' | 'when_in_use' | 'always' | 'unsupported';
-  pendingAlways?: boolean;
-  lastFixAt?: string | null;
-  lastError?: string | null;
 }

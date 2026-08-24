@@ -7,9 +7,9 @@ const h = vi.hoisted(() => ({
   mode: 'off' as 'off' | 'when_in_use' | 'always',
   setMode: vi.fn(),
   needsSettingsUpgrade: false,
-  isIosPlatform: vi.fn(() => false),
+  isNativePlatform: vi.fn(() => false),
   fetchJson: vi.fn(),
-  openNativeAppSettings: vi.fn(),
+  openNativeLocationSettings: vi.fn(),
 }));
 
 vi.mock('@/hooks', () => ({
@@ -24,19 +24,19 @@ vi.mock('@/hooks', () => ({
 vi.mock('@ci/common', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@ci/common')>()),
   fetchJson: h.fetchJson,
-  isIosPlatform: h.isIosPlatform,
-  openNativeAppSettings: h.openNativeAppSettings,
+  isNativePlatform: h.isNativePlatform,
+  openNativeLocationSettings: h.openNativeLocationSettings,
 }));
 
 beforeEach(() => {
   h.mode = 'off';
   h.needsSettingsUpgrade = false;
   h.setMode.mockReset();
-  h.isIosPlatform.mockReset();
-  h.isIosPlatform.mockReturnValue(false);
+  h.isNativePlatform.mockReset();
+  h.isNativePlatform.mockReturnValue(false);
   h.fetchJson.mockReset();
   h.fetchJson.mockResolvedValue({ total: 0, byProvider: {}, lastFixAt: null });
-  h.openNativeAppSettings.mockReset();
+  h.openNativeLocationSettings.mockReset();
 });
 
 describe('LocationSection', () => {
@@ -47,16 +47,16 @@ describe('LocationSection', () => {
     expect(screen.getByRole('radio', { name: 'Off' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'While using' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Always' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Background location is on the iPhone app/)).toBeInTheDocument();
+    expect(screen.getByText(/Background location is on the mobile app/)).toBeInTheDocument();
   });
 
-  it('offers Always on iPhone', async () => {
-    h.isIosPlatform.mockReturnValue(true);
+  it('offers Always on native (iOS or Android)', async () => {
+    h.isNativePlatform.mockReturnValue(true);
     render(<LocationSection />);
     await waitFor(() => expect(h.fetchJson).toHaveBeenCalled());
 
     expect(screen.getByRole('radio', { name: 'Always' })).toBeInTheDocument();
-    expect(screen.queryByText(/Background location is on the iPhone app/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Background location is on the mobile app/)).not.toBeInTheDocument();
   });
 
   it('shows the While using disclosure with Agree before enabling', async () => {
@@ -74,8 +74,8 @@ describe('LocationSection', () => {
     expect(h.setMode).toHaveBeenCalledWith('when_in_use');
   });
 
-  it('shows the Always disclosure on iPhone and requires Agree', async () => {
-    h.isIosPlatform.mockReturnValue(true);
+  it('shows the Always disclosure on native and requires Agree', async () => {
+    h.isNativePlatform.mockReturnValue(true);
     render(<LocationSection />);
     await waitFor(() => expect(h.fetchJson).toHaveBeenCalled());
 
@@ -100,15 +100,15 @@ describe('LocationSection', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
-  it('offers Open iOS Settings when Always was requested but the OS stayed on While Using', async () => {
-    h.isIosPlatform.mockReturnValue(true);
+  it('offers Open Settings when Always was requested but the OS did not grant background access', async () => {
+    h.isNativePlatform.mockReturnValue(true);
     h.mode = 'when_in_use';
     h.needsSettingsUpgrade = true;
     render(<LocationSection />);
     await waitFor(() => expect(h.fetchJson).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open iOS Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
 
-    expect(h.openNativeAppSettings).toHaveBeenCalledTimes(1);
+    expect(h.openNativeLocationSettings).toHaveBeenCalledTimes(1);
   });
 });

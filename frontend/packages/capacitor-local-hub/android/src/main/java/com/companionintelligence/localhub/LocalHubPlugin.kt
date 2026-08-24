@@ -198,45 +198,6 @@ class LocalHubPlugin : Plugin() {
         }
     }
 
-    /**
-     * iOS-only background sampler. Android stays on `navigator.geolocation` while
-     * the app is open — Play background location is a later pass.
-     */
-    @PluginMethod
-    fun setLocationMode(call: PluginCall) {
-        call.resolve(unsupportedLocationStatus())
-    }
-
-    @PluginMethod
-    fun getLocationStatus(call: PluginCall) {
-        call.resolve(unsupportedLocationStatus())
-    }
-
-    @PluginMethod
-    fun setLocationHome(call: PluginCall) {
-        call.resolve()
-    }
-
-    @PluginMethod
-    fun openAppSettings(call: PluginCall) {
-        try {
-            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            intent.data = Uri.fromParts("package", context.packageName, null)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            call.resolve()
-        } catch (e: Exception) {
-            call.reject(e.message ?: "Could not open app settings", e)
-        }
-    }
-
-    private fun unsupportedLocationStatus(): JSObject {
-        val ret = JSObject()
-        ret.put("mode", "off")
-        ret.put("authorization", "unsupported")
-        ret.put("pendingAlways", false)
-        return ret
-    }
 
     /**
      * Lazy, not a field initializer: a `Plugin` is constructed before Capacitor attaches its

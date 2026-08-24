@@ -28,11 +28,7 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "secureGet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secureSet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secureRemove", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setLocationMode", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getLocationStatus", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setLocationHome", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise)
     ]
 
     private let server = LocalHubServer()
@@ -48,8 +44,6 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
     /// see `LocalHubServer.warmUpOnMainThread`.
     override public func load() {
         LocalHubServer.warmUpOnMainThread()
-        LocationTracker.shared.attach(server: server)
-        LocationTracker.shared.restoreIfNeeded()
     }
 
     /// Starts the embedded loopback HTTP server if it isn't already running and
@@ -160,50 +154,4 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func setLocationMode(_ call: CAPPluginCall) {
-        guard let mode = call.getString("mode"), !mode.isEmpty else {
-            call.reject("A 'mode' of off, when_in_use, or always is required")
-            return
-        }
-        guard let deviceKey = call.getString("deviceKey"), !deviceKey.isEmpty else {
-            call.reject("A non-empty 'deviceKey' is required")
-            return
-        }
-        DispatchQueue.main.async {
-            LocationTracker.shared.setMode(mode, deviceKey: deviceKey) { status in
-                call.resolve(status)
-            }
-        }
-    }
-
-    @objc func getLocationStatus(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
-            call.resolve(LocationTracker.shared.status())
-        }
-    }
-
-    @objc func setLocationHome(_ call: CAPPluginCall) {
-        let latitude = call.getDouble("latitude")
-        let longitude = call.getDouble("longitude")
-        DispatchQueue.main.async {
-            LocationTracker.shared.setHome(latitude: latitude, longitude: longitude)
-            call.resolve()
-        }
-    }
-
-    @objc func openAppSettings(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
-            guard let url = URL(string: UIApplication.openSettingsURLString) else {
-                call.reject("Could not open iOS Settings")
-                return
-            }
-            UIApplication.shared.open(url, options: [:]) { success in
-                if success {
-                    call.resolve()
-                } else {
-                    call.reject("Could not open iOS Settings")
-                }
-            }
-        }
-    }
 }
