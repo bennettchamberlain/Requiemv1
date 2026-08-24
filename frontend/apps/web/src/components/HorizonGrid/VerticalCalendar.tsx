@@ -662,51 +662,54 @@ export function VerticalCalendar({
       data-testid="vertical-calendar"
       className={cn('flex flex-col overflow-hidden rounded-xl border border-border bg-card', className)}
     >
-      <div className="flex min-w-0 border-b border-border">
-        <div className="w-14 shrink-0" />
-        {dayStarts.map((dayStart) => {
-          const isToday = sameLocalDay(dayStart, today);
-          const isSelected = sameLocalDay(dayStart, selectedDay ?? today);
-          const dayLabel = dayStart.toLocaleDateString([], {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-          });
+      {/* One-column views (phone Calendar) already name the day in WeekDayChips. */}
+      {days > 1 ? (
+        <div className="flex min-w-0 border-b border-border">
+          <div className="w-14 shrink-0" />
+          {dayStarts.map((dayStart) => {
+            const isToday = sameLocalDay(dayStart, today);
+            const isSelected = sameLocalDay(dayStart, selectedDay ?? today);
+            const dayLabel = dayStart.toLocaleDateString([], {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            });
 
-          return (
-            <button
-              key={dayStart.toISOString()}
-              type="button"
-              className={cn(
-                'flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1.5',
-                'outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring',
-                isSelected && 'bg-accent/20',
-              )}
-              aria-pressed={isSelected}
-              aria-label={`Show ${dayLabel}`}
-              onClick={() => onSelectDay?.(dayStart)}
-            >
-              <span
+            return (
+              <button
+                key={dayStart.toISOString()}
+                type="button"
                 className={cn(
-                  'text-[10px] font-medium uppercase tracking-wide',
-                  isSelected || isToday ? 'text-foreground' : 'text-muted-foreground',
+                  'flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1.5',
+                  'outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring',
+                  isSelected && 'bg-accent/20',
                 )}
+                aria-pressed={isSelected}
+                aria-label={`Show ${dayLabel}`}
+                onClick={() => onSelectDay?.(dayStart)}
               >
-                {dayStart.toLocaleDateString([], { weekday: 'short' })}
-              </span>
-              <span
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums',
-                  isToday && 'bg-primary text-primary-foreground',
-                  isSelected && !isToday && 'bg-accent text-accent-foreground',
-                )}
-              >
-                {dayStart.getDate()}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <span
+                  className={cn(
+                    'text-[10px] font-medium uppercase tracking-wide',
+                    isSelected || isToday ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {dayStart.toLocaleDateString([], { weekday: 'short' })}
+                </span>
+                <span
+                  className={cn(
+                    'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums',
+                    isToday && 'bg-primary text-primary-foreground',
+                    isSelected && !isToday && 'bg-accent text-accent-foreground',
+                  )}
+                >
+                  {dayStart.getDate()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="flex min-w-0 border-b border-border">
         <div className="flex w-14 shrink-0 items-start justify-end pr-1.5 pt-1.5">

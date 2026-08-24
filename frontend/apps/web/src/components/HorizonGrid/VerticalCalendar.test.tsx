@@ -115,6 +115,15 @@ describe('VerticalCalendar', () => {
 
     expect(screen.getByRole('group', { name: 'Calendar' })).toBeInTheDocument();
     expect(screen.getAllByRole('listitem', { name: /August/ })).toHaveLength(7);
+    expect(screen.getAllByRole('button', { name: /^Show / })).toHaveLength(7);
+  });
+
+  it('omits the weekday header when the grid is a single day', () => {
+    render(<VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={[]} />);
+
+    expect(screen.queryByRole('button', { name: /^Show / })).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: /All day on / })).toBeInTheDocument();
+    expect(screen.getByRole('listitem', { name: /August/ })).toBeInTheDocument();
   });
 });
 
