@@ -396,7 +396,7 @@ and the [bulk load runbook](../../backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK
 
 | Surface | Path | Notes |
 |---|---|---|
-| Web SPA | `frontend/apps/web` | React 19 + Vite + Apollo + `react-router-dom` 7; 3D force-graph, Leaflet maps, ShadCN UI. Memory browsing lives under a `/memory/*` hub (Events, People, Places, Things, Receipts, Content, Tags, Reflections) |
+| Web SPA | `frontend/apps/web` | React 19 + Vite + Apollo + `react-router-dom` 7; 3D force-graph, Leaflet maps, ShadCN UI. Memory browsing lives under a `/memory/*` hub — **seven** sections (Events, People, Places, Things, Receipts, Content, Tags). *Reflections* left the hub on 2026-08-23 for the new Self hub at `/self/reflections`; `/memory/reflections` still redirects |
 | Capture lib | `frontend/packages/capture` | Camera capture primitives, shared by the web SPA and the native shells that wrap it |
 | Editor lib | `frontend/packages/editor` | Rich-text / note editor |
 | Common lib | `frontend/packages/common` | Shared hooks, types, GraphQL fragments |

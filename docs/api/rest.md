@@ -1,6 +1,6 @@
 # CI-Server — Non-GraphQL HTTP (REST) API Reference
 
-Reference for every NestJS REST controller in CI-Server (`backend/apps/api/src`) — **49 controllers** at the time of writing. The GraphQL surface (`POST /graphql`) is documented in [graphql.md](graphql.md); auth, the MCP JSON-RPC surface, and cross-cutting conventions are in [auth-and-conventions.md](auth-and-conventions.md).
+Reference for every NestJS REST controller in CI-Server (`backend/apps/api/src`) — **52 controllers** as of 2026-08-23 (`grep -c '^@Controller(' -r backend/apps/api/src` excluding `__tests__`). The GraphQL surface (`POST /graphql`) is documented in [graphql.md](graphql.md); auth, the MCP JSON-RPC surface, and cross-cutting conventions are in [auth-and-conventions.md](auth-and-conventions.md).
 
 Grounded in source; every route cites `file:line`.
 
@@ -13,7 +13,21 @@ Grounded in source; every route cites `file:line`.
   - **Dev (`make dev`)** — Caddy strips `/api` and forwards to the API.
   - **Vite standalone** (`frontend/apps/web/vite.config.ts:149-157`) — `proxy['/api']` rewrites `^/api` → `''`, target `API_PROXY_TARGET`, `xfwd: true`.
   - So browser `/api/graph/stats` → server `/graph/stats`. A raw API client calls `/graph/stats` with **no** `/api`.
-- **Three controllers bake `api/` into the path**: `MaintenanceController` (`@Controller('api/maintenance')`, `MaintenanceController.ts:415`), `PipelineController` (`@Controller('api/pipeline')`, `PipelineController.ts:183`) and `IntentsController` (`@Controller(['api/intents', 'api/agent/intents'])`, `IntentsController.ts:44`). These mount at server paths `/api/maintenance/*`, `/api/pipeline/*`, `/api/intents/*` and `/api/agent/intents/*`. Reached through the proxy the browser path is `/api/api/maintenance/*`; reached **directly** on the API host it is `/api/maintenance/*`. Everywhere below, **Path = the literal server-mounted path**.
+- **Four controllers bake `api/` into the path** — verified 2026-08-23:
+  `MaintenanceController` (`@Controller('api/maintenance')`, `MaintenanceController.ts:416`),
+  `IntentsController` (`@Controller(['api/intents', 'api/agent/intents'])`, `IntentsController.ts:44`),
+  `ModelRoutingController` (`@Controller('api/model-routing')`, `ModelRoutingController.ts:27`) and
+  `PrivacyController` (`@Controller('api/users/me')`, `PrivacyController.ts:31`).
+  These mount at server paths `/api/maintenance/*`, `/api/intents/*`, `/api/agent/intents/*`,
+  `/api/model-routing/*` and `/api/users/me/*`. Reached through the proxy the browser path is
+  `/api/api/maintenance/*`; reached **directly** on the API host it is `/api/maintenance/*`.
+  Everywhere below, **Path = the literal server-mounted path**.
+
+  > **`PipelineController` used to be on this list and no longer is.**
+  > `243b15945 refactor(pipeline): update API routes to remove '/api' prefix` changed it to
+  > `@Controller('pipeline')` (`PipelineController.ts:186`), so it is now the ordinary case:
+  > browser `/api/pipeline/*` → server `/pipeline/*`. A direct `curl` at the API host must
+  > drop the `/api`, and any runbook that still says otherwise 404s.
 - **Object-store media is NOT served by a Nest controller.** File downloads/thumbnails are presigned MinIO URLs the frontend fetches via a separate same-origin `/static/*` proxy (Vite `proxy['/static']`, target `:9000`, rewrites `^/static`→`''`, forces the signing `Host`; `vite.config.ts:170-180`). `FilesController` has **no** `download`/`thumbnail` route — only `upload` and `PATCH :id`.
 - **CORS is enabled, narrowly** (`main.ts:53-60`): the native Capacitor webview origins (`capacitor://localhost`, `ionic://localhost`, `http(s)://localhost`) plus whatever `CORS_ALLOWED_ORIGINS` adds. The web app is same-origin and needs none of it.
 
@@ -343,7 +357,7 @@ Per-method `JwtOrApiKeyAuthGuard`. Standard user-scoped CRUD (`answers`, `questi
 | GET | `/questions/catalogue` | `findCatalogue` (`:84`) | The browsable, paged catalogue, each row carrying the caller's answer when it has one — `GET /questions` returns every active row at once, which is unusable at catalogue size. Query (`domains/intelligence/types.ts:135-143`): `search?`, `category?`, `answerTier?`, `status`(`active`\|`inactive`\|`all`, def `active`), `answered`(`answered`\|`unanswered`\|`all`, def `all`), `limit`(1–100, def 25), `offset`(def 0). |
 | GET | `/questions/unanswered` | `findOneUnanswered` (`:95`) | First unanswered question; **204** if none. |
 
-> **Naming.** The web UI renamed this surface **Questions → Reflections** (route `/memory/reflections`), but the API did **not**: the controller is still `@Controller('questions')`, the GraphQL type is still `QuestionType`, and the table is still `ci.questions`. Keep saying "questions" in API docs and "Reflections" in UI docs. Retired catalogue rows are deactivated (`is_active = false`), never deleted, because `ci.answers` and `ci.feed_queue` cascade off them.
+> **Naming.** The web UI renamed this surface **Questions → Reflections** (route `/self/reflections` since 2026-08-23; `/memory/reflections` and `/prompts` still redirect there), but the API did **not**: the controller is still `@Controller('questions')`, the GraphQL type is still `QuestionType`, and the table is still `ci.questions`. Keep saying "questions" in API docs and "Reflections" in UI docs. Retired catalogue rows are deactivated (`is_active = false`), never deleted, because `ci.answers` and `ci.feed_queue` cascade off them.
 
 ### `DeviceController` — `devices`  ·  `domains/devices/controllers/DeviceController.ts:25`
 
@@ -387,7 +401,31 @@ Class-level `JwtOrApiKeyAuthGuard` (`:42`) + `@RequireScopes('intents')` (`:43`)
 
 **Intent names are dotted, not camelCase.** The pre-window camelCase tool names are gone with no aliases — use `memory.recall`, `memory.remember`, `memory.forget`, `knowledge.search`, `knowledge.preferences`, `people.relationships`, `media.entertainmentPreferences`, `media.streamingAvailability` (advertised to models and MCP in the underscored executable form `memory_recall`, …). Execution emits `tool.invoked` on the telemetry queue; there is no `intent.invoked` event and no `IntentDonationService`.
 
-> There is **no** model-tier router and no `POST /api/model-routing/plan` — that prototype was removed. Appliance-vs-device placement is decided by the intent dispatch policy.
+> **Δ 2026-08-23 — this paragraph used to say the opposite, and was wrong.** It read
+> "There is **no** model-tier router and no `POST /api/model-routing/plan` — that
+> prototype was removed." A model-tier router landed on `main` in
+> [#2267](https://github.com/companionintelligence/CI-Server/pull/2267)
+> (`2a7b85930`) and is documented in its own section below.
+
+---
+
+## Model tier routing — `api/model-routing` · `domains/model-routing/controllers/ModelRoutingController.ts:27`
+
+Class-level `JwtOrApiKeyAuthGuard`. Answers "which tier should I run this task
+on?" — **on-device** or **private cloud** — so an agent (CI-Hermes, CI-OpenClaw,
+a client) can ask before the call instead of unconditionally escalating to a
+third-party API. It **decides**, it does not execute: nothing here runs a model.
+
+| Verb | Path | Handler | Purpose |
+|------|------|---------|---------|
+| GET | `/api/model-routing/tiers` | `getTiers` (`:32`) | The static `TierProfile[]` (on-device vs private-cloud). |
+| POST | `/api/model-routing/plan` | `plan` (`:38`) | Body is zod-validated and **stripped** of unknown keys: `estimatedInputTokens`, `reasoningLevel` (`light`/`moderate`/`deep`), `toolDepth`, `requiresLargeContext`, `localOnly`, `cloudAvailable`, `forceTier` (`on_device`/`private_cloud`) — all optional. Returns a `RoutingDecision`. Invalid body → **400** with the joined zod messages. |
+
+## Account deletion (privacy) — `api/users/me` · `domains/privacy/controllers/PrivacyController.ts:31`
+
+| Verb | Path | Handler | Purpose |
+|------|------|---------|---------|
+| POST | `/api/users/me/delete` | `deleteMe` (`:41`, per-method `JwtOrApiKeyAuthGuard`) | CASA-V8 user-data deletion plus OAuth-token revocation. Distinct from `DELETE /account` — see [`architecture/account-deletion.md`](../architecture/account-deletion.md). |
 
 ---
 

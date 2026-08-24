@@ -198,4 +198,7 @@ piecemeal buys indirection without ever making the app translatable.
 
 When a second locale lands, add `i18next-http-backend` with
 `partialBundledLanguages: true` and serve the JSON from the API, matching
-[Hub's provider](../../../CI-Hub/packages/frontend/src/components/providers/i18n/i18n-provider.tsx).
+Hub's provider — `CI-Hub` (separate repo),
+`packages/frontend/src/components/providers/i18n/i18n-provider.tsx`. Written as a
+path rather than a link on purpose: a `../../../CI-Hub/…` relative link only
+resolves for someone whose clone sits beside a CI-Hub clone, and is dead on GitHub.

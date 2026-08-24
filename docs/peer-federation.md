@@ -153,9 +153,14 @@ from a box with no peer surface at all.
 ## Known limitations
 
 > **Δ 2026-08-23 — two entries below were stale and are corrected in place.** Peer links and
-> peer grants both have write paths now, and the ask surface has a route. Verified against
-> `origin/main` at `8cd68dbe6`. The full, current gap list — including three ways peer-link
-> revocation is still incomplete — is [`asks-system-guide.md` §9](asks-system-guide.md).
+> peer grants both have write paths now, and the ask surface has a route. **Re-verified
+> later the same day against `origin/main` at `b82014a1b`** (the earlier note cited
+> `8cd68dbe6`, since superseded by the nav restructure): every correction below still
+> holds, and Asks additionally gained a **Power Rail entry of its own** — gated on `ask`,
+> deliberately the same flag as the route and the resolvers, so the rail row and the page
+> it points at can never disagree (`layouts/Main/railDestinations.ts`). The full, current
+> gap list — including three ways peer-link revocation is still incomplete — is
+> [`asks-system-guide.md` §9](asks-system-guide.md).
 
 - ~~**There is no way to create a peer link except by hand.**~~ **Fixed.** `PeerLinkResolver`
   ships `myPeerLinks` / `peerLink` / `createPeerLink` / `updatePeerLink` / `revokePeerLink`,

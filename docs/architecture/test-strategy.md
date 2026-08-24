@@ -3,25 +3,73 @@
 > Status: **active — seed.** Foundation for ratcheting coverage toward the `planning.md` → CI-Server target of **>70% line coverage**.
 > Owner: CI-Server.
 
-## 1. Today (re-surveyed 2026-08-19)
+## 1. Today (re-surveyed 2026-08-23)
 
 | Layer | Tooling | What exists |
 |---|---|---|
-| Unit / controller | Jest + `@nestjs/testing` + `supertest` (`backend/apps/api/jest.config.mjs`, swc transform) | **597 spec/test files** colocated with source — 203 `*.spec.ts` plus 394 `*.test.ts` (392 of them under `__tests__/`) — auth, memory bulk-ingest services, maintenance backfills, saved-search sharing, persistence helpers, graphql resolvers, the pipeline stages, the import domain, and more. `yarn workspace @ci/be-api test`. |
-| Integration | Jest (same runner), Docker-backed Postgres + Minio via `make dev`. | Used by the `Routes.e2e.test.ts` patterns in `auth/` and `files/`, and by DB-gated suites that skip loudly without a connection string (`AccountPurgeService.integration.spec.ts` needs `DATABASE_ADMIN_PASSWORD`; `TaskService.tenancy.integration.test.ts` needs `PLANNING_TEST_DATABASE_URL`). |
-| Browser / E2E | Playwright — `tests/BetaOneLoginFlow.spec.ts` plus 13 specs in `tests/e2e/` (auth, chat, import, mcp-api-key, memory views / search+filter+detail / map-bbox / people, mobile, onboarding, settings-persistence, stats, things). | The frontend additionally has its own vitest + Playwright harness under `frontend/apps/web/src/test/` — 247 `*.test.ts(x)` files under `frontend/apps/web/src`. |
+| Unit / controller | Jest + `@nestjs/testing` + `supertest` (`backend/apps/api/jest.config.mjs`, swc transform) | **735 spec/test files** colocated with source — 260 `*.spec.ts` plus 475 `*.test.ts` (473 of them under `__tests__/`) — auth, memory bulk-ingest services, maintenance backfills, saved-search sharing, persistence helpers, graphql resolvers, the pipeline stages, the import domain, and more. `yarn workspace @ci/be-api test`. |
+| Integration | Jest (same runner), Docker-backed Postgres + Minio via `make dev`. | Used by the `Routes.e2e.test.ts` patterns in `auth/` and `files/`, and by **DB-gated suites** — see §3.1. `AccountPurgeService.integration.spec.ts` additionally needs `DATABASE_ADMIN_PASSWORD`. |
+| Browser / E2E | Playwright — `tests/BetaOneLoginFlow.spec.ts` plus 13 specs in `tests/e2e/` (auth, chat, import, mcp-api-key, memory views / search+filter+detail / map-bbox / people, mobile, onboarding, settings-persistence, stats, things). | The frontend additionally has its own vitest + Playwright harness under `frontend/apps/web/src/test/` — 281 `*.test.ts(x)` files under `frontend/apps/web/src`. |
 | Coverage gate | Jest `coverageThreshold` | **Set, but scoped — not global.** `jest.config.mjs` carries one entry, `./src/domains/planning/` at 88 statements / 76 branches / 76 functions / 90 lines. §4 explains why it is scoped. |
 
-> Known flake: `SessionController` logout (204→404) under parallel jest
-> (`domains/auth/__tests__/SessionController.test.ts`) — re-run or `--runInBand`;
-> it is not your change.
+### Which runner, per workspace — the flag that wastes ten minutes
 
-> **CI is manual.** All seven workflows under `.github/workflows/` are
-> `workflow_dispatch`-only as of 2026-08-17 — nothing runs on push, pull request,
-> tag or schedule. An absent or green check means **nobody dispatched it**, not
-> that the suite passed. Run one deliberately with
-> `gh workflow run <file> --ref <branch>`. That makes §5's enforcement question
-> more urgent, not less.
+The two workspaces do **not** share a test runner, and the CLIs reject each
+other's flags:
+
+| Workspace | `yarn … test` runs | Filter by path | Do **not** pass |
+|---|---|---|---|
+| `@ci/be-api` | `DOTENV_CONFIG_PATH=../../../.env jest` | `yarn workspace @ci/be-api test src/domains/asks` | `--run` — jest dies with `Unrecognized option "run". Did you mean "u"?` and exits non-zero, which reads like a broken suite |
+| `@ci/fe-web` | `vitest run` | `yarn workspace @ci/fe-web test src/pages/AsksPage` | nothing; `--run` is accepted but redundant, the script already says `run` |
+
+A consent-path or nav change usually touches both. Verified by running each on
+2026-08-23.
+
+### The current baseline: two things are red before you start
+
+> **Known flake (backend):** `SessionController` logout (204→404) under parallel
+> jest (`domains/auth/__tests__/SessionController.test.ts`) — re-run or
+> `--runInBand`; it is not your change.
+
+> **Known failure (frontend), and this one is not a flake.** On `origin/main` at
+> `b82014a1b`, `yarn workspace @ci/fe-web test` is **1 failed | 283 passed
+> (284 files)** — `src/test/nativeAppConfig.node.test.ts` §"does not request iOS
+> Screen Time or full-library photo access" asserts
+> `expect(plist).not.toContain('NSPhotoLibraryUsageDescription')`, and
+> `frontend/apps/ios/ios/App/App/Info.plist:59` declares exactly that key
+> (added by `3634ced8f chore(ios): update Info.plist and documentation for photo
+> library usage`, while the test forbidding it was left in place). Two committed
+> decisions contradict each other; the suite is reporting that honestly. Someone
+> has to pick — either the app really needs full-library read access and the
+> assertion is obsolete, or the key should be dropped for
+> `NSPhotoLibraryAddUsageDescription` alone. Until then, **assume this one red
+> file is not yours**, and do not "fix" it by deleting the assertion without
+> settling the App Store data-safety answer it encodes.
+
+> **CI is mostly manual — but no longer entirely.** There are **ten** workflows
+> under `.github/workflows/` (verified 2026-08-23), and **eight** are
+> `workflow_dispatch`-only: `ci.yml`, `consent-path-gate.yml`, `e2e.yml`,
+> `migration-integrity-check.yml`, `mobile-build.yml`, `publish.yml`,
+> `style-canon-lint.yml`, `xcode-cloud-manual-only.yml`. For those, an absent or
+> green check means **nobody dispatched it**, not that the suite passed — run one
+> deliberately with `gh workflow run <file> --ref <branch>`.
+>
+> Two are **not** dispatch-only, and any doc claiming "nothing runs on push" is
+> now wrong:
+>
+> - **`codeql.yml`** — `push`/`pull_request` on `main` plus a Monday cron. Added
+>   2026-08-23 in [#2261](https://github.com/companionintelligence/CI-Server/pull/2261).
+>   **It fails on every run**, and not because of your code: the analysis itself
+>   completes, then the SARIF upload is rejected with `Code Security must be
+>   enabled for this repository to use code scanning`. Until someone enables
+>   GitHub Code Security on this private repo, a red **Analyze
+>   (javascript-typescript)** / **Analyze (python)** is the baseline, exactly like
+>   the Xcode Cloud build.
+> - **`mobile-release.yml`** — `push` on `ios-v*` / `android-v*` /
+>   `mobile-release-v*` tags (plus dispatch). It never runs on a PR.
+>
+> That makes §5's enforcement question more urgent, not less: what runs
+> automatically today is a scanner that cannot report, and neither test job.
 
 ## 2. Where to invest, in order
 
@@ -69,6 +117,40 @@ This is the priority queue. Each item should land its own ratcheted coverage flo
 - **Network calls**: forbidden in unit tests. Use `nock` for HTTP mocking when needed.
 - **Time**: `jest.useFakeTimers()` for any controller that touches `Date.now()` or schedules.
 - **Coverage exclusions**: `index.ts`, `main.ts`, `bootstrap.ts`, type-only files, and `__tests__/` are excluded in `jest.config.mjs`.
+
+### DB-backed suites — the two ways this misleads you
+
+A suite that needs Postgres resolves its connection through
+`domains/__tests__/support/databaseConnection.ts`, in this precedence:
+
+1. **the suite's own** `<DOMAIN>_TEST_DATABASE_URL`,
+2. then `DATABASE_URL`,
+3. then the discrete `DATABASE_HOST/PORT/USERNAME/DATABASE/PASSWORD`.
+
+There are **sixteen** per-suite variables, not the two this document used to
+name: `ASKS_`, `BROWSER_ACTIVITY_`, `CONNECTIONS_`, `EVENTS_`, `IMPORT_`,
+`MEMORY_`, `NOTES_`, `PEERS_`, `PERSISTENCE_`, `PERSONALIZATION_`, `PIPELINE_`,
+`PLANNING_`, `PORTABILITY_`, `SCHEDULE_`, `SEARCH_INGRESS_`, `SEARCH_NEXT_`
+(each `…_TEST_DATABASE_URL`). Naming one per suite is what lets you point a
+single domain at a scratch database without moving the whole app.
+
+**Trap 1 — a skip is not a pass.** The probe answers *"is a port open"*. With no
+database the suites `describe.skip` and **jest exits 0**. That is deliberate (a
+laptop with no stack must not fail), but it means a green local run, or a green
+`ci.yml` run, can have executed none of the DB-backed coverage. `ci.yml`'s
+backend job has no `services: postgres`, so this is its normal state — the point
+`consent-path-gate.yml` was built to fix for the consent path, by failing if any
+suite in scope skips.
+
+**Trap 2 — a database without the migrations FAILS, and looks like your bug.**
+"Port open" and "schema correct" are different questions, and only the first is
+probed. Point any of those variables at a Postgres that has not been migrated to
+this checkout's head and you get a pile of `relation "ci.peer_links" does not
+exist`, which reads exactly like a code defect in your change. `.env` hard-codes
+`DATABASE_PORT=5432`, so on a machine running several worktree stacks the suites
+land on whichever one holds host 5432 — usually a schema no branch describes.
+Details and the consent-path recipe:
+[`asks-system-guide.md` §7.4](../asks-system-guide.md).
 
 ## 4. Coverage ratchet
 

@@ -686,10 +686,15 @@ returns 503, indistinguishable from a box with no peer surface at all.
 
 ### 7.1 The `/asks` page
 
-`make dev`, then `https://<project>.localhost/asks`. The route is registered only
-when the `ask` flag is on — flag-gated routes in this app are never registered
-rather than blocked, because with the flag off every ask mutation returns
-`success: false` and a registered route would be a page of dead buttons.
+`make dev`, then `https://<project>.localhost/asks`, or click **Asks** in the
+Power Rail. The route is registered only when the `ask` flag is on — flag-gated
+routes in this app are never registered rather than blocked, because with the
+flag off every ask mutation returns `success: false` and a registered route
+would be a page of dead buttons. The rail entry is gated on **the same `ask`
+flag**, not a cosmetic `asks.page` of its own
+(`layouts/Main/railDestinations.ts`), so the row and the page it points at
+cannot disagree; a rail entry on a different flag is a link to a 404.
+`ask` ships **`true`** in `backend/apps/api/config/default.json`.
 
 Six tabs: **For you** · **Ask someone** · **Sent** · **Who can ask me what** ·
 **People I'm linked to** · **What I've shared**.
@@ -745,11 +750,24 @@ DATABASE_URL="postgres://companion:${PW}@localhost:15432/companion" \
 `.github/workflows/consent-path-gate.yml`, plus
 `.github/scripts/assert-consent-suites-ran.mjs`.
 
-It exists because **nothing gates a merge on this repository** — all workflows
-are `workflow_dispatch`-only, `main` has no `required_status_checks` block, and
-the only check that reports on a PR is a red-by-baseline Xcode Cloud iOS build.
-Nine PRs of security-critical consent changes merged with zero automated
-verification.
+It exists because **nothing gates a merge on this repository**. `main`'s branch
+protection still carries **no `required_status_checks` block at all** and
+`required_approving_review_count: 0` (re-checked via
+`gh api repos/companionintelligence/CI-Server/branches/main/protection` on
+2026-08-23). Nine PRs of security-critical consent changes merged with zero
+automated verification.
+
+> **Δ 2026-08-23 — one clause here was stale within two days of being written.**
+> It said "all workflows are `workflow_dispatch`-only, and the only check that
+> reports on a PR is a red-by-baseline Xcode Cloud iOS build". Eight of the ten
+> workflows are dispatch-only; `codeql.yml` (added the same day in
+> [#2261](https://github.com/companionintelligence/CI-Server/pull/2261)) runs on
+> `push` and `pull_request` against `main`, and `mobile-release.yml` runs on
+> release tags. **This does not change the conclusion.** CodeQL is not a gate
+> either: it is not in `required_status_checks`, and it fails on every run at the
+> SARIF upload — `Code Security must be enabled for this repository to use code
+> scanning` — so it is a *second* red-by-baseline check rather than a first real
+> one. Xcode Cloud is still red on every PR (verified on #2263 and #2265).
 
 Turning `ci.yml` back on would have made it *worse*, not better: its backend job
 runs the suite with **no database**, every DB-backed suite is
