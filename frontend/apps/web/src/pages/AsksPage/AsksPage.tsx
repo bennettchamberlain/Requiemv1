@@ -5,10 +5,19 @@ import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
 import { Badge, Button, Card } from '@ci/shadcn';
 
 import { PageContent } from '@/components/layout';
+import { PersonAvatar } from '@/components/PersonAvatar';
 import type { AnswerForm } from '@/graphql/graphql';
 
 import { AnswerPanel } from './AnswerPanel';
-import { grantLabel, knownAskerLabel, partyLabel, scopeSummary, searchBreadthNote } from './askBinding';
+import {
+  grantLabel,
+  knownAskerLabel,
+  partyAvatar,
+  partyLabel,
+  peerLinksByHandle,
+  scopeSummary,
+  searchBreadthNote,
+} from './askBinding';
 import { AskComposer } from './AskComposer';
 import {
   type AskAuditOutcome,
@@ -188,6 +197,10 @@ export function AsksPage() {
     (ask) => ask.status === 'delivered' || ask.status === 'under_review',
   );
 
+  // Every counterparty avatar on this page joins against this one map — built
+  // once per render rather than per row. See `partyAvatar` in askBinding.ts.
+  const peerLinks = peerLinksByHandle(peers.data?.myPeerLinks ?? []);
+
   // The peer roster is passed in, not looked up inside: a grant to a PEER is
   // capped by that peer's trust tier on top of whatever the grant says, so a
   // matrix that cannot see the tier shows a `full` grant as full when the peer
@@ -219,11 +232,13 @@ export function AsksPage() {
         <div className="flex flex-col gap-3">
           {pending.map((ask) => {
             const decision = askDecisionState(ask.status as AskStatus, ask.consentBasis);
+            const asker = partyAvatar(ask.peerHandle, ask.askerId, peerLinks);
 
             return (
               <AskReviewCard
                 key={ask.id}
-                askerName={partyLabel(ask.peerHandle, ask.askerId)}
+                askerName={asker.name}
+                askerAvatarUrl={asker.avatarUrl}
                 tier={knownAskerLabel(ask.consentBasis)}
                 decision={decision}
                 prompt={ask.query.prompt}
@@ -372,16 +387,20 @@ export function AsksPage() {
 
       content = rows.length ? (
         <DisclosureHistory
-          rows={rows.map((row) => ({
-            id: row.id,
-            askerId: row.askerId,
-            peerHandle: row.peerHandle,
-            outcome: row.outcome as AskAuditOutcome,
-            disclosedCount: row.disclosedCount,
-            consentBasis: row.consentBasis,
-            createdAt: row.createdAt as string,
-            query: row.query,
-          }))}
+          rows={rows.map((row) => {
+            const asker = partyAvatar(row.peerHandle, row.askerId, peerLinks);
+
+            return {
+              id: row.id,
+              askerName: asker.name,
+              askerAvatarUrl: asker.avatarUrl,
+              outcome: row.outcome as AskAuditOutcome,
+              disclosedCount: row.disclosedCount,
+              consentBasis: row.consentBasis,
+              createdAt: row.createdAt as string,
+              query: row.query,
+            };
+          })}
         />
       ) : (
         <EmptyState message="Nothing has been shared from your Companion yet." />
@@ -402,11 +421,13 @@ export function AsksPage() {
           // read" and nothing else on this list ever is.
           const answered = ask.status === 'answered';
           const open = openAnswerId === ask.id;
+          const responder = partyAvatar(ask.peerHandle, ask.responderId, peerLinks);
 
           return (
             <Card key={ask.id} className="flex flex-col gap-2 p-3">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="font-medium">{partyLabel(ask.peerHandle, ask.responderId)}</span>
+                <PersonAvatar name={responder.name} avatarUrl={responder.avatarUrl} size="xs" />
+                <span className="font-medium">{responder.name}</span>
                 <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
                   {ask.query.prompt}
                 </span>
@@ -426,7 +447,7 @@ export function AsksPage() {
               {answered && open ? (
                 <AnswerPanel
                   askId={ask.id}
-                  responderName={partyLabel(ask.peerHandle, ask.responderId)}
+                  responderName={responder.name}
                   // The viewer is the ASKER on this tab, always. Their copy of
                   // the answer is the narrowed projection, and saying so is what
                   // stops a masked zero reading as "nothing was shared".
@@ -556,6 +577,7 @@ function groupGrants(
     id: string;
     peerHandle: string;
     displayName?: string | null;
+    avatarUrl?: string | null;
     trustTier: string;
   }[] = [],
 ): GranteeGroup[] {
@@ -572,6 +594,10 @@ function groupGrants(
       group = {
         id: key,
         name: link ? link.displayName || link.peerHandle : partyLabel(null, key === 'unknown' ? null : key),
+        // A local grantee has no photo on the wire at all — same reasoning as
+        // the tier below, just with no "not loaded" middle state to report,
+        // since a local id was never going to resolve one.
+        avatarUrl: link?.avatarUrl ?? null,
         // THREE cases, not two, because "we do not have it" and "there is none"
         // are different facts and only one of them is stable:
         //   - a peer grantee whose link resolved has a REAL tier, and it is the

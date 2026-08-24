@@ -1,6 +1,7 @@
 import { Badge, Button, Card } from '@ci/shadcn';
 import { ShieldAlert, ShieldCheck } from '@ci/shadcn/icons';
 
+import { PersonAvatar } from '@/components/PersonAvatar';
 import type { AnswerForm } from '@/graphql/graphql';
 
 import { AskerQuote } from './AskerQuote';
@@ -17,6 +18,8 @@ export interface AskReviewItem {
 
 interface Props {
   askerName: string;
+  /** The asker's photo, when known — see `partyAvatar` in askBinding.ts. Null renders initials. */
+  askerAvatarUrl?: string | null;
   /**
    * What the container can truthfully say about the asker, in its own words.
    *
@@ -74,6 +77,7 @@ interface Props {
  */
 export function AskReviewCard({
   askerName,
+  askerAvatarUrl,
   tier,
   prompt,
   scopeSummary,
@@ -93,23 +97,33 @@ export function AskReviewCard({
 
   return (
     <Card className="flex flex-col gap-3 p-4">
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{askerName}</span>
-            <Badge variant={decision === 'unreviewed' ? 'outline' : 'secondary'} className="text-xs">
-              {tier}
+      {/* Avatar + name + tier/status + primary action, one line: a real photo
+          (or a legible, deterministically-coloured initial) now anchors the
+          row, so the decision the owner is looking at reads at a glance
+          instead of as a stacked block. Decline stays below, beside the
+          share-with-less options it belongs with — it is the alternative to
+          the primary action, not a second one competing with it here. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <PersonAvatar name={askerName} avatarUrl={askerAvatarUrl} size="sm" />
+
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <span className="font-medium truncate">{askerName}</span>
+          <Badge variant={decision === 'unreviewed' ? 'outline' : 'secondary'} className="text-xs">
+            {tier}
+          </Badge>
+          {/* The decision state is its own badge because the tier badge beside
+              it answers a different question — "do I know them", not "is this
+              still mine to decide". */}
+          {preAuthorized ? (
+            <Badge variant="secondary" className="text-xs">
+              Already authorized
             </Badge>
-            {/* The decision state is its own badge because the tier badge beside
-                it answers a different question — "do I know them", not "is this
-                still mine to decide". */}
-            {preAuthorized ? (
-              <Badge variant="secondary" className="text-xs">
-                Already authorized
-              </Badge>
-            ) : null}
-          </div>
+          ) : null}
         </div>
+
+        <Button size="sm" onClick={onApprove} disabled={busy}>
+          {shareLabel}
+        </Button>
       </div>
 
       {/* Attributed and isolated rather than wrapped in quote marks: the asker
@@ -183,9 +197,6 @@ export function AskReviewCard({
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={onApprove} disabled={busy}>
-          {shareLabel}
-        </Button>
         <Button variant="ghost" onClick={onDecline} disabled={busy}>
           Decline
         </Button>

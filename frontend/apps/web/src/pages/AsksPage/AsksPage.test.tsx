@@ -77,6 +77,7 @@ function peerRow(overrides: Record<string, unknown> = {}) {
     displayName: null,
     memoryEndpoint: 'https://ada.example/api/peer',
     personEntityId: null,
+    avatarUrl: null,
     trustTier: 'stranger',
     status: 'active',
     revokedAt: null,
@@ -179,6 +180,35 @@ describe('AsksPage', () => {
     // Twice, not once: the card names the asker AND the quote is attributed to
     // them, which is the whole point of AskerQuote.
     expect(screen.getAllByText(/Peer …abc123/).length).toBeGreaterThan(0);
+  });
+
+  it('shows a real photo for an asker resolved via myPeerLinks, and initials for one that is not', async () => {
+    renderPage([
+      ...repeated(
+        inboxOk([
+          askRow({ id: 'ask-peer', peerHandle: 'ada', askerId: null }),
+          askRow({ id: 'ask-local', peerHandle: null, askerId: 'globaluid-abc123' }),
+        ]),
+      ),
+      ...repeated(outboxOk),
+      ...repeated(grantsOk([])),
+      ...repeated(peersOk([peerRow({ peerHandle: 'ada', avatarUrl: '/avatars/ada.png' })])),
+      ...repeated(historyOk([])),
+    ]);
+
+    await screen.findByText('For you (2)');
+
+    // The peer-handled ask joins against myPeerLinks and gets a real photo.
+    const photo = screen.getByRole('img', { name: 'ada' });
+    expect(photo.tagName).toBe('IMG');
+    expect(photo).toHaveAttribute('src', '/static/avatars/ada.png');
+
+    // The local, opaque-id ask has nothing to resolve a photo from — it still
+    // renders a real avatar (initials on a deterministic colour), not a
+    // broken image and not the bare truncated-id text alone.
+    const initials = screen.getByRole('img', { name: 'Peer …abc123' });
+    expect(initials.tagName).not.toBe('IMG');
+    expect(initials).toHaveTextContent('PA');
   });
 
   it('shows the structured scope, which is all that is on the wire', async () => {
@@ -1015,6 +1045,7 @@ describe('AsksPage', () => {
       peerHandle: 'ada',
       displayName: null,
       memoryEndpoint: 'https://ada.example/api/peer',
+      avatarUrl: null,
       trustTier: tier,
       status: 'active',
       revokedAt: null,
@@ -1087,6 +1118,7 @@ describe('AsksPage', () => {
                   peerHandle: 'ada',
                   displayName: null,
                   memoryEndpoint: 'https://ada.example/api/peer',
+                  avatarUrl: null,
                   trustTier: 'family',
                   status: 'active',
                   revokedAt: null,
@@ -1141,6 +1173,7 @@ describe('AsksPage', () => {
                   peerHandle: 'bo',
                   displayName: null,
                   memoryEndpoint: 'https://bo.example/api/peer',
+                  avatarUrl: null,
                   trustTier: 'stranger',
                   status: 'active',
                   revokedAt: null,

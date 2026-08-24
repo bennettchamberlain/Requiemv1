@@ -2,6 +2,8 @@ import { useState } from 'react';
 
 import { Badge, Button, Card, Input } from '@ci/shadcn';
 
+import { PersonAvatar } from '@/components/PersonAvatar';
+
 import {
   PEER_TRUST_TIERS,
   peerTrustCeilingNote,
@@ -14,6 +16,8 @@ export interface PeerRow {
   id: string;
   peerHandle: string;
   displayName?: string | null;
+  /** The linked Person's photo, when set. Null renders initials. */
+  avatarUrl?: string | null;
   memoryEndpoint: string;
   trustTier: string;
   status: string;
@@ -83,6 +87,7 @@ export function PeerManager({ peers, busy = false, onChangeTier, onRevoke, onAdd
         return (
           <Card key={peer.id} className="flex flex-col gap-2 p-4">
             <div className="flex flex-wrap items-center gap-2">
+              <PersonAvatar name={peer.displayName || peer.peerHandle} avatarUrl={peer.avatarUrl} size="xs" />
               <span className="font-medium">{peer.displayName || peer.peerHandle}</span>
               <span className="text-muted-foreground text-xs">{peer.peerHandle}</span>
               <Badge variant={revoked ? 'outline' : 'secondary'} className="text-xs">

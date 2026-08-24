@@ -4,7 +4,9 @@ import {
   grantLabel,
   itemLabel,
   knownAskerLabel,
+  partyAvatar,
   partyLabel,
+  peerLinksByHandle,
   scopeSummary,
   searchBreadthNote,
 } from './askBinding';
@@ -57,6 +59,40 @@ describe('opaque id presentation', () => {
   it('prefers a real handle, and admits when there is nothing at all', () => {
     expect(partyLabel('maya@example.social', 'globaluid-abc123')).toBe('maya@example.social');
     expect(partyLabel(null, null)).toBe('Unknown');
+  });
+});
+
+describe('partyAvatar', () => {
+  it('resolves a peer-handled row against myPeerLinks: real display name and photo', () => {
+    const links = peerLinksByHandle([
+      { peerHandle: 'ada', displayName: 'Ada L.', avatarUrl: '/avatars/ada.png' },
+    ]);
+
+    expect(partyAvatar('ada', 'globaluid-abc123', links)).toEqual({
+      name: 'Ada L.',
+      avatarUrl: '/avatars/ada.png',
+    });
+  });
+
+  it('falls back to the handle itself when the link has no display name', () => {
+    const links = peerLinksByHandle([{ peerHandle: 'ada', displayName: null, avatarUrl: null }]);
+
+    expect(partyAvatar('ada', null, links)).toEqual({ name: 'ada', avatarUrl: null });
+  });
+
+  it('falls back to partyLabel, with no photo, for a handle the roster has not resolved', () => {
+    const links = peerLinksByHandle([]);
+
+    expect(partyAvatar('ada', null, links)).toEqual({ name: 'ada', avatarUrl: null });
+  });
+
+  it('falls back to the opaque id fragment for a local counterparty — never invents a name', () => {
+    const links = peerLinksByHandle([{ peerHandle: 'ada', displayName: 'Ada L.', avatarUrl: '/a.png' }]);
+
+    expect(partyAvatar(null, 'globaluid-abc123', links)).toEqual({
+      name: 'Peer …abc123',
+      avatarUrl: null,
+    });
   });
 });
 

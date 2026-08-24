@@ -60,6 +60,63 @@ export function partyLabel(handle: string | null | undefined, id: string | null 
 }
 
 /**
+ * The slice of `myPeerLinks` a party join needs — just enough to name a
+ * counterparty and show their photo, not the whole `PeerRow` shape.
+ */
+export interface PeerLinkLookup {
+  peerHandle: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}
+
+/**
+ * Index `myPeerLinks` by handle, once per render, so every row on the page
+ * can join against it in O(1) instead of each doing its own `.find()`.
+ *
+ * This is the SAME pattern `composeRecipients`/`unreachablePeers` already use
+ * the peer roster for (reading it as a lookup keyed by an id it already has,
+ * rather than adding a second query) — a party row already carries the
+ * `peerHandle` a federated ask was addressed with or from, exactly the way a
+ * composer row already carries the ids it renders against.
+ */
+export function peerLinksByHandle(links: readonly PeerLinkLookup[]): ReadonlyMap<string, PeerLinkLookup> {
+  return new Map(links.map((link) => [link.peerHandle, link]));
+}
+
+/** What a party avatar needs: a name to show and initial from, and a photo if there is one. */
+export interface PartyAvatar {
+  name: string;
+  avatarUrl: string | null;
+}
+
+/**
+ * Name and photo for a party, joining a known peer link by handle when there
+ * is one.
+ *
+ * A row carrying a `peerHandle` that resolves against `myPeerLinks` gets that
+ * link's `displayName` (falling back to the handle itself, same as
+ * {@link partyLabel}) and its `avatarUrl`. Everything else — a local
+ * relationship id, or a handle the roster has not resolved (still loading, or
+ * the link was since revoked) — falls back to {@link partyLabel}'s opaque,
+ * never-invented text and no photo. `PersonAvatar` turns that text into
+ * initials on its own, so an unresolved party still renders as a real avatar,
+ * just without a photo.
+ */
+export function partyAvatar(
+  handle: string | null | undefined,
+  id: string | null | undefined,
+  links: ReadonlyMap<string, PeerLinkLookup>,
+): PartyAvatar {
+  const link = handle ? links.get(handle) : undefined;
+
+  if (link) {
+    return { name: link.displayName || link.peerHandle, avatarUrl: link.avatarUrl ?? null };
+  }
+
+  return { name: partyLabel(handle, id), avatarUrl: null };
+}
+
+/**
  * The only trust signal the API actually supports today.
  *
  * `consentBasis` is set when a standing grant matched the ask, so its presence

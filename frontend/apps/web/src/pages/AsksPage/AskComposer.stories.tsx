@@ -64,6 +64,7 @@ export const LinkedPeerCannotBeAsked: Story = {
       {
         id: 'peer-link-1',
         name: 'ada',
+        avatarUrl: 'https://i.pravatar.cc/64?img=12',
         tier: 'Stranger',
         reason:
           'asking across boxes needs an access token from the Portal that your Companion cannot issue from this page yet',

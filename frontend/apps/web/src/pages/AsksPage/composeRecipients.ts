@@ -125,6 +125,12 @@ export function composeRecipients(sources: RecipientSources): ComposerRecipient[
       // Never invented — `partyLabel` shortens an opaque id and marks it as a
       // truncation rather than dressing it up as somebody's name.
       name: partyLabel(null, candidate.id),
+      // No photo either, for the same reason: every id here is a LOCAL
+      // relationship (see the exclusion above), and nothing on this schema
+      // resolves one to a Person's avatar. `PersonAvatar` still renders a real
+      // avatar for these — initials on a deterministic colour, seeded from the
+      // same opaque label — rather than leaving the picker's rows as bare text.
+      avatarUrl: null,
       // The composer's badge asserts whatever it is handed, so it is handed the
       // one thing that is true of everybody in this list.
       tier: 'on this Companion',
@@ -148,6 +154,7 @@ export function unreachablePeers(
     id: string;
     peerHandle: string;
     displayName?: string | null;
+    avatarUrl?: string | null;
     trustTier: string;
     status?: string | null;
     revokedAt?: string | null;
@@ -158,6 +165,7 @@ export function unreachablePeers(
     .map((link) => ({
       id: link.id,
       name: link.displayName || link.peerHandle,
+      avatarUrl: link.avatarUrl ?? null,
       tier: peerTrustLabel(link.trustTier),
       reason:
         'asking across boxes needs an access token from the Portal that your Companion cannot issue from this page yet',

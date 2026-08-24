@@ -24,6 +24,10 @@ type Story = StoryObj<typeof AskReviewCard>;
 export const HouseholdPhotos: Story = {
   args: {
     askerName: 'Maya',
+    // Exercises the photo path — every other story leaves this unset, so
+    // between them the file demonstrates both PersonAvatar branches: a real
+    // photo here, deterministic initials everywhere else.
+    askerAvatarUrl: 'https://i.pravatar.cc/64?img=47',
     tier: 'family',
     decision: 'covered-review',
     prompt: 'Do you have photos of us from the lake trip?',

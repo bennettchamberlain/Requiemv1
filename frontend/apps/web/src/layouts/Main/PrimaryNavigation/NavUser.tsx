@@ -1,9 +1,10 @@
 import { useMemo, type ReactNode } from 'react';
 
-import { Avatar, Collapsible, Popover, Tooltip, cn } from '@ci/shadcn';
+import { Collapsible, Popover, Tooltip, cn } from '@ci/shadcn';
 import { ChevronRight, LogOut, Palette, Settings2 } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
+import { PersonAvatar } from '@/components/PersonAvatar';
 import { ColorPicker, useTheme } from '@/components/ThemePicker';
 import { useAuth, useCurrentUser } from '@/hooks';
 
@@ -64,25 +65,14 @@ export function NavUser() {
     () => ({
       name: user?.name || user?.email || 'User',
       email: user?.email || '',
-      avatar: '/avatars/shadcn.jpg',
+      avatarUrl: user?.avatarUrl,
     }),
     [user],
   );
 
-  const initials = useMemo(() => {
-    const parts = currentUser.name.trim().split(/\s+/);
-    const first = parts[0]?.[0] ?? '';
-    const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-
-    return (first + last).toUpperCase();
-  }, [currentUser]);
-
-  const avatar = (
-    <Avatar className="h-8 w-8 shrink-0 rounded-full">
-      <Avatar.Image src={currentUser.avatar} alt="" />
-      <Avatar.Fallback className="text-xs">{initials}</Avatar.Fallback>
-    </Avatar>
-  );
+  // size="sm" is 32px — the exact h-8 w-8 this rendered before PersonAvatar
+  // existed, so this is a no-op for anyone who already has a photo.
+  const avatar = <PersonAvatar name={currentUser.name} avatarUrl={currentUser.avatarUrl} size="sm" />;
 
   // Collapsed, the account is the avatar and one destination: Settings. The
   // rest is reachable the moment the drawer opens, and a 56px rail is no place

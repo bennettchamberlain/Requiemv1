@@ -295,6 +295,7 @@ export const MY_PEER_LINKS = gql(`
       displayName
       memoryEndpoint
       personEntityId
+      avatarUrl
       trustTier
       status
       revokedAt
@@ -321,6 +322,7 @@ export const CREATE_PEER_LINK = gql(`
         peerHandle
         displayName
         memoryEndpoint
+        avatarUrl
         trustTier
         status
         revokedAt
@@ -338,6 +340,7 @@ export const UPDATE_PEER_LINK = gql(`
         peerHandle
         displayName
         memoryEndpoint
+        avatarUrl
         trustTier
         status
         revokedAt
@@ -353,6 +356,7 @@ export const REVOKE_PEER_LINK = gql(`
       peerLink {
         id
         peerHandle
+        avatarUrl
         trustTier
         status
         revokedAt

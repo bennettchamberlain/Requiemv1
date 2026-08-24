@@ -1,6 +1,8 @@
 import { Badge, Card } from '@ci/shadcn';
 
-import { partyLabel, scopeSummary } from './askBinding';
+import { PersonAvatar } from '@/components/PersonAvatar';
+
+import { scopeSummary } from './askBinding';
 import { AskerQuote } from './AskerQuote';
 import {
   type AskAuditOutcome,
@@ -11,8 +13,10 @@ import {
 
 export interface DisclosureRow {
   id: string;
-  askerId?: string | null;
-  peerHandle?: string | null;
+  /** Resolved by the container — see `partyAvatar` in askBinding.ts. Opaque and never invented. */
+  askerName: string;
+  /** The asker's photo, when a peer link resolved one. Null renders initials. */
+  askerAvatarUrl: string | null;
   outcome: AskAuditOutcome;
   disclosedCount: number;
   consentBasis?: string | null;
@@ -60,13 +64,16 @@ export function DisclosureHistory({ rows }: Props) {
   return (
     <ul className="flex flex-col gap-3">
       {rows.map((row) => {
-        const who = partyLabel(row.peerHandle, row.askerId);
+        const who = row.askerName;
         const badge = outcomeBadge(row.outcome);
 
         return (
           <li key={row.id}>
             <Card className="flex flex-col gap-2 p-4">
+              {/* Avatar + name + outcome, one line — the row's identity now
+                  reads at a glance instead of as bare, possibly-truncated text. */}
               <div className="flex flex-wrap items-center gap-2">
+                <PersonAvatar name={who} avatarUrl={row.askerAvatarUrl} size="xs" />
                 <span className="font-medium">{who}</span>
                 {/* Text, never colour alone (WCAG 1.4.1). */}
                 <Badge variant={badge.variant} className="text-xs">
