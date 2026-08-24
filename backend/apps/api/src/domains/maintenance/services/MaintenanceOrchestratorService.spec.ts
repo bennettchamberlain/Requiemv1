@@ -158,6 +158,23 @@ function makeService() {
       return { examined: 0, placed: 0, skipped: 0, status: 'noop' };
     }),
   };
+  const summaryBackfill = {
+    backfill: jest.fn(async () => {
+      callOrder.push('backfill_summaries');
+
+      return {
+        range: null,
+        daysWithActivity: 0,
+        daysAlreadySummarized: 0,
+        daysWithoutLandedHourly: [],
+        truncated: false,
+        hourly: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+        daily: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+        weekly: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+        monthly: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+      };
+    }),
+  };
 
   const service = new MaintenanceOrchestratorService(
     dataSource as never,
@@ -175,6 +192,7 @@ function makeService() {
     locationEstimate as never,
     searchIndex as never,
     objectReverse as never,
+    summaryBackfill as never,
   );
 
   // Kill the progress throttle by default so forwarding tests see every line;
@@ -195,6 +213,7 @@ function makeService() {
     graphEnrich,
     locationEstimate,
     searchIndex,
+    summaryBackfill,
   };
 }
 
