@@ -6,12 +6,12 @@ import { CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from
 import { useTranslation } from 'react-i18next';
 
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
-import { type DeclineReason, useScheduleCandidates } from '@/api/useScheduleCandidates';
 import { type RhythmDay, type ScheduleEvent, useScheduleService } from '@/api/useScheduleService';
 import { HorizonGrid, TodayStoryTimeline, VerticalCalendar } from '@/components/HorizonGrid';
 import { TodayNowNext, WeekDayChips } from '@/components/HorizonGrid/TodayNowNext';
 import { PageContent } from '@/components/layout';
 import { TaskSlate } from '@/components/TaskSlate';
+import { usePlanTasks } from '@/pages/PlanPage/usePlanTasks';
 import {
   type ActivityClass,
   type ColorMode,
@@ -160,7 +160,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [weekOpen, setWeekOpen] = useState(false);
-  const [layout, setLayout] = useState<ScheduleLayout>('horizon');
+  const [layout, setLayout] = useState<ScheduleLayout>('calendar');
 
   usePageTitle(embedded ? null : 'Schedule - Companion Intelligence');
 
@@ -179,17 +179,15 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const { events, rhythm, generatedAt, rhythmCoversWindow, loading, fetching, error, refetch } =
     useScheduleService(start, end);
 
-  // Placing a candidate mints an event, so the committed lane has to re-read.
+  // Placing a backlog task mints a planned block, so the committed lane has to re-read.
   const {
-    candidates,
-    loading: candidatesLoading,
-    error: candidatesError,
-    accept,
-    decline,
-    snooze,
-    breakDown,
-    returnEvent,
-  } = useScheduleCandidates(start, end, refetch);
+    backlog,
+    backlogCount,
+    loading: planLoading,
+    error: planError,
+    placeOnDay,
+    dismissProposed,
+  } = usePlanTasks(refetch);
 
   /**
    * Whatever a drag or a card button asked the server to do, and it refused.
@@ -206,10 +204,10 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   }, []);
 
   const handleDrop = useCallback(
-    (candidateId: string, startTime: Date) => {
-      run(accept(candidateId, startTime), 'Could not put that on the calendar. Try again shortly.');
+    (taskId: string, startTime: Date) => {
+      run(placeOnDay(taskId, startTime), 'Could not put that on the calendar. Try again shortly.');
     },
-    [accept, run],
+    [placeOnDay, run],
   );
 
   const rescheduleEvent = useRescheduleEvent(refetch);
@@ -221,25 +219,11 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
     [rescheduleEvent, run],
   );
 
-  const handleDecline = useCallback(
-    (id: string, reason: DeclineReason) => {
-      run(decline(id, reason), 'Could not dismiss that suggestion. Try again shortly.');
+  const handleDismissProposed = useCallback(
+    (id: string) => {
+      run(dismissProposed(id), 'Could not dismiss that task. Try again shortly.');
     },
-    [decline, run],
-  );
-
-  const handleSnooze = useCallback(
-    (id: string, until: Date) => {
-      run(snooze(id, until), 'Could not snooze that suggestion. Try again shortly.');
-    },
-    [snooze, run],
-  );
-
-  const handleReturnEvent = useCallback(
-    (eventId: string) => {
-      run(returnEvent(eventId), 'Could not take that off the week. Try again shortly.');
-    },
-    [returnEvent, run],
+    [dismissProposed, run],
   );
 
   const goBack = useCallback(() => setWeekOffset((offset) => offset - 1), []);
@@ -248,10 +232,10 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
   // `errorPolicy: 'all'` means an error and usable data can arrive together, so
   // the surface is gated on whether anything resolved rather than on `error`.
-  const hasAnything = events.length > 0 || rhythm.length > 0 || candidates.length > 0;
+  const hasAnything = events.length > 0 || rhythm.length > 0 || backlogCount > 0;
   const isTrulyEmpty =
-    !loading && !fetching && !hasAnything && !error && !candidatesError && weekOffset === 0;
-  const showScheduleSurface = weekOffset !== 0 || hasAnything || candidatesError || fetching;
+    !loading && !fetching && !hasAnything && !error && !planError && weekOffset === 0;
+  const showScheduleSurface = weekOffset !== 0 || hasAnything || planError || fetching;
 
   // Embedded, the host supplies the frame, so this keeps only the column gap
   // and drops the safe-area top padding, which belongs to whatever is actually
@@ -283,7 +267,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
       aria-label="Schedule layout"
       className="flex shrink-0 items-center rounded-md border border-border p-0.5"
     >
-      {(['horizon', 'calendar'] as const).map((mode) => (
+      {(['calendar', 'horizon'] as const).map((mode) => (
         <button
           key={mode}
           type="button"
@@ -503,13 +487,10 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
               )}
 
               <TaskSlate
-                candidates={candidates}
-                loading={candidatesLoading}
-                error={candidatesError}
-                onDecline={handleDecline}
-                onSnooze={handleSnooze}
-                onBreakDown={breakDown}
-                onReturnEvent={handleReturnEvent}
+                sections={backlog}
+                loading={planLoading}
+                error={planError}
+                onDismissProposed={handleDismissProposed}
               />
             </div>
           </>

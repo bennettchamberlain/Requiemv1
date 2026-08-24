@@ -5,6 +5,7 @@ import { gql } from '@/graphql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { PlanPage } from './PlanPage';
+import { GET_TASKS } from './usePlanTasks';
 
 const featureState = vi.hoisted(() => ({ emptyState: false }));
 
@@ -13,36 +14,6 @@ vi.mock('@/common/feature', () => ({
     isFeatureEnabled: (name: string) => (name === 'planning.emptyState' ? featureState.emptyState : false),
   }),
 }));
-
-// Must match PlanPage.tsx GetTasks document exactly (codegen uniqueness).
-const GET_TASKS = gql(`
-  query GetTasks($first: Int, $after: String) {
-    tasks(first: $first, after: $after) {
-      edges {
-        node {
-          id
-          status
-          priority
-          parentId
-          dueAt
-          scheduledFor
-          deferUntil
-          title
-          ...TaskRowFragment
-        }
-      }
-      totalCount
-    }
-    taskPendingChanges {
-      id
-      taskId
-      kind
-      rationale
-      confidence
-      status
-    }
-  }
-`);
 
 const COMPLETE_TASK = gql(`
   mutation CompleteTask($id: ID!) {

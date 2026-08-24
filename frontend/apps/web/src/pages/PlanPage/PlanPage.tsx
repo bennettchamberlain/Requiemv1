@@ -1,6 +1,6 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import { useMutation, useQuery } from '@apollo/client';
+import { useMutation } from '@apollo/client';
 import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
 import { ListTodo } from '@ci/shadcn/icons';
 
@@ -13,36 +13,8 @@ import { EditTaskModal, type EditableTask } from './EditTaskModal';
 import { NewTaskForm } from './NewTaskForm';
 import { Task } from './Task';
 import { TaskBoard } from './TaskBoard';
-import { childrenOf, groupIntoSections, localDateOf, type SectionedTask } from './taskSections';
-
-const GET_TASKS = gql(`
-  query GetTasks($first: Int, $after: String) {
-    tasks(first: $first, after: $after) {
-      edges {
-        node {
-          id
-          status
-          priority
-          parentId
-          dueAt
-          scheduledFor
-          deferUntil
-          title
-          ...TaskRowFragment
-        }
-      }
-      totalCount
-    }
-    taskPendingChanges {
-      id
-      taskId
-      kind
-      rationale
-      confidence
-      status
-    }
-  }
-`);
+import { childrenOf, type SectionedTask } from './taskSections';
+import { ACCEPT_PROPOSED, DECLINE_PROPOSED, SCHEDULE_TASK, usePlanTasks } from './usePlanTasks';
 
 const COMPLETE_TASK = gql(`
   mutation CompleteTask($id: ID!) {
@@ -60,24 +32,6 @@ const REOPEN_TASK = gql(`
       id
       status
       completedAt
-    }
-  }
-`);
-
-const ACCEPT_PROPOSED = gql(`
-  mutation AcceptProposedTask($id: ID!) {
-    acceptProposedTask(id: $id) {
-      id
-      status
-    }
-  }
-`);
-
-const DECLINE_PROPOSED = gql(`
-  mutation DeclineProposedTask($id: ID!) {
-    declineProposedTask(id: $id) {
-      id
-      status
     }
   }
 `);
@@ -105,31 +59,12 @@ const DECLINE_PENDING = gql(`
   }
 `);
 
-const SCHEDULE_TASK = gql(`
-  mutation ScheduleTask($id: ID!) {
-    scheduleTask(id: $id) {
-      success
-      status
-      task {
-        id
-        scheduledFor
-        estimatedMinutes
-      }
-    }
-  }
-`);
-
 export function PlanPage() {
   usePageTitle('Plan - Companion Intelligence');
   const { isFeatureEnabled } = useFeatures();
   const showEmptyState = isFeatureEnabled('planning.emptyState');
 
-  const { data, loading, refetch } = useQuery(GET_TASKS, {
-    variables: { first: 200 },
-    // No subscriptions exist in this app, so a background refresh on revisit is
-    // the closest thing to live data.
-    fetchPolicy: 'cache-and-network',
-  });
+  const { nodes, sections, pendingByTask, loading, refetch } = usePlanTasks();
 
   const [completeTask] = useMutation(COMPLETE_TASK);
   const [reopenTask] = useMutation(REOPEN_TASK);
@@ -140,38 +75,6 @@ export function PlanPage() {
   const [scheduleTask] = useMutation(SCHEDULE_TASK);
   const [focusedTask, setFocusedTask] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<EditableTask | null>(null);
-
-  const pendingByTask = useMemo(() => {
-    const map = new Map<string, { id: string; rationale: string | null; kind: string }>();
-
-    for (const change of data?.taskPendingChanges ?? []) {
-      if (!map.has(change.taskId)) {
-        map.set(change.taskId, {
-          id: change.id,
-          rationale: change.rationale ?? null,
-          kind: change.kind,
-        });
-      }
-    }
-
-    return map;
-  }, [data]);
-
-  const nodes = useMemo(() => {
-    const edges = data?.tasks.edges.map((edge) => edge.node) ?? [];
-
-    return edges.map((node) => ({
-      ...node,
-      hasPendingChange: pendingByTask.has(node.id),
-    }));
-  }, [data, pendingByTask]);
-
-  // "Today" is the viewer's local day, not the server's. Recomputed per render
-  // rather than memoised on [] so an open tab rolls over at local midnight.
-  const sections = useMemo(
-    () => groupIntoSections(nodes as unknown as SectionedTask[], localDateOf(new Date())),
-    [nodes],
-  );
 
   const handleToggle = (id: string, done: boolean) => {
     void (done ? completeTask({ variables: { id } }) : reopenTask({ variables: { id } }));
