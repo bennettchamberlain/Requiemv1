@@ -216,6 +216,7 @@ describe('SecondaryNavigation', () => {
   it('shows Memory hub sections when expanded, and keeps them open on a hub route', () => {
     renderRail('/memory/people', { expanded: true });
 
+    expect(screen.getByRole('link', { name: 'Memory' })).toHaveAttribute('href', '/memory');
     expect(screen.getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/memory/events');
     expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('href', '/memory/people');
     expect(screen.getByRole('link', { name: 'Places' })).toHaveAttribute('href', '/memory/places');
@@ -224,6 +225,14 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Tags' })).toHaveAttribute('href', '/memory/tags');
     expect(screen.getByRole('link', { name: 'Reflections' })).toHaveAttribute('href', '/memory/reflections');
     expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Memory' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('selects Memory itself on the unfiltered explorer, not the Events submenu', () => {
+    renderRail('/memory', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Memory' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Events' })).not.toHaveAttribute('aria-current');
   });
 
   it('opens Memory sections on hover when expanded, and closes after leave when not sticky', () => {
@@ -264,8 +273,8 @@ describe('SecondaryNavigation', () => {
 
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/calendar'));
     expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/forecast'));
-    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory/events'));
-    expect(hrefs.indexOf('/memory/events')).toBeLessThan(hrefs.indexOf('/saved-searches'));
+    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory'));
+    expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
     expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
     expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
     expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));

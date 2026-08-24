@@ -29,7 +29,7 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
   {
     to: '/memory/events',
     label: 'Events',
-    match: (p) => p === '/memory/events' || p === '/memory',
+    match: (p) => p === '/memory/events',
     icon: EventIcon,
   },
   {

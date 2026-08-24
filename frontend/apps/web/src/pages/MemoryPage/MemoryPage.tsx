@@ -1,7 +1,7 @@
 import { lazy } from 'react';
 
 import { usePageTitle } from '@ci/common';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
 
 import { ResponsiveLoader } from '@/components/ResponsiveLoader';
 
@@ -14,22 +14,25 @@ const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
 const MobilePage = lazy(() => import('./MobileMemoryPage'));
 
 /**
- * What a BARE `/memory/events` means: the list view, events only.
+ * What a BARE `/memory` means: the list view, every entity kind. The Power
+ * Rail's Memory row itself opens here — no type chip, same as clearing filters.
  *
- * Without a type filter the explorer returns every entity kind, and the
+ * What a BARE `/memory/events` means: the list view, events only. The Events
+ * submenu still wants a happening-shaped browse: without a type filter the
  * newest-first list led with whatever imported last — including undated
  * Content rows, which aren't memories of anything happening. The default is
  * expressed as an ordinary URL rather than hidden query plumbing, so the
  * toolbar shows the Event filter as an applied, removable chip and widening
  * the view is the same gesture as any other filter change.
  *
- * ONLY the fully-bare URL gets it. A deep link that carries any param keeps
- * its exact meaning: `?search=` (the global search box) and `?tags=` must
- * search everything, `?view=graph` (`/memory/knowledge`) already narrows
+ * ONLY the fully-bare URL gets a default. A deep link that carries any param
+ * keeps its exact meaning: `?search=` (the global search box) and `?tags=`
+ * must search everything, `?view=graph` (`/memory/knowledge`) already narrows
  * nothing — forcing Event onto those would silently shrink their results.
  * In-page filter changes never re-trigger it either, because the toolbar
  * always keeps `view` while clearing filters.
  */
+export const DEFAULT_MEMORY_SEARCH = 'view=list';
 export const DEFAULT_MEMORY_EVENTS_SEARCH = 'view=list&includedEntityTypes=Event,Communication';
 
 /**
@@ -49,11 +52,15 @@ export const DEFAULT_MEMORY_EVENTS_SEARCH = 'view=list&includedEntityTypes=Event
  */
 export function MemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
+  const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
 
-  // Before the provider mounts, so the unfiltered everything-query never fires.
+  // Before the provider mounts, so `/memory/events` never fires the unfiltered
+  // everything-query. `/memory` is that unfiltered browse on purpose.
   if ([...searchParams.keys()].length === 0) {
-    return <Navigate to={{ search: DEFAULT_MEMORY_EVENTS_SEARCH }} replace />;
+    const search = pathname === '/memory/events' ? DEFAULT_MEMORY_EVENTS_SEARCH : DEFAULT_MEMORY_SEARCH;
+
+    return <Navigate to={{ search }} replace />;
   }
 
   const typeFilters = explorerSearchTypeFilters(searchParams);

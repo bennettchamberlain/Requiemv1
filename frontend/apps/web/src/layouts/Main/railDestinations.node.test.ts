@@ -47,6 +47,8 @@ describe('isRailDestinationActive', () => {
   const byId = Object.fromEntries(RAIL_DESTINATIONS.map((destination) => [destination.id, destination]));
 
   it('treats Memory hub and legacy people routes as Memory', () => {
+    expect(byId.memory.to).toBe('/memory');
+    expect(isRailDestinationActive(byId.memory, '/memory')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/memory/people')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/people/abc')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/calendar')).toBe(false);

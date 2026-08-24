@@ -25,6 +25,7 @@ export function MemorySubmenu() {
   const [dismissed, setDismissed] = useState(false);
 
   const routeOpen = isMemoryHubPath(pathname);
+  const memoryRootActive = pathname === '/memory';
   const open = dismissed ? false : stickyOpen || routeOpen || hoverOpen;
 
   const visible = MEMORY_HUB_SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
@@ -37,7 +38,7 @@ export function MemorySubmenu() {
   if (!expanded) {
     const collapsed = (
       <Link
-        to="/memory/events"
+        to="/memory"
         aria-label="Memory"
         className={cn(
           'relative rounded-md border-l-2 border-transparent p-2 transition hover:bg-accent hover:text-accent-foreground',
@@ -80,15 +81,24 @@ export function MemorySubmenu() {
         className="min-w-0 w-full"
       >
         {/* One row: Memory + chevron share the same box (same geometry as NavLink). */}
-        <div className="flex min-w-0 w-full items-center rounded-md border-l-2 border-transparent">
+        <div
+          className={cn(
+            'flex min-w-0 w-full items-center rounded-md border-l-2 border-transparent',
+            memoryRootActive && 'border-l-primary text-primary',
+          )}
+        >
           <Link
-            to="/memory/events"
+            to="/memory"
             aria-label="Memory"
+            aria-current={memoryRootActive ? 'page' : undefined}
             onClick={() => {
               setStickyOpen(true);
               setDismissed(false);
             }}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-l-md px-2 py-2 transition hover:bg-accent hover:text-accent-foreground"
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-3 rounded-l-md px-2 py-2 transition hover:bg-accent hover:text-accent-foreground',
+              memoryRootActive && 'text-primary hover:text-primary',
+            )}
           >
             <Brain className="h-6 w-6 shrink-0" strokeWidth={1.25} />
             <span className="truncate text-sm">Memory</span>

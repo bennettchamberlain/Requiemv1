@@ -109,13 +109,6 @@ function RedirectFeedSummaryToBrief() {
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
 }
 
-/** Events explorer moved to /memory/events; keep query (view=, filters) intact. */
-function RedirectMemoryToEvents() {
-  const { search } = useLocation();
-
-  return <Navigate to={{ pathname: '/memory/events', search }} replace />;
-}
-
 function Providers({ children }: { children: ReactNode }) {
   return (
     <Router>
@@ -289,11 +282,13 @@ function AppRoutes() {
             }
           />
 
+          {/* `/memory` is the unfiltered explorer (all kinds). `/memory/events`
+              is the same page with the Events submenu's type filter. */}
           <Route
             path="/memory"
             element={
               <ProtectedRoute>
-                <RedirectMemoryToEvents />
+                <MemoryPage />
               </ProtectedRoute>
             }
           />
