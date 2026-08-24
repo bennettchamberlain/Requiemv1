@@ -283,13 +283,11 @@ interface SetupProviderState {
 
 interface ServiceIntegrationsSectionProps {
   variant?: 'page' | 'onboarding';
-  disabledWhenConnected?: boolean;
   onProviderSelect?: (rawProviderId: string) => void;
 }
 
 export function ServiceIntegrationsSection({
   variant = 'page',
-  disabledWhenConnected = false,
   onProviderSelect,
 }: ServiceIntegrationsSectionProps) {
   const navigate = useNavigate();
@@ -355,12 +353,6 @@ export function ServiceIntegrationsSection({
 
   function handleProviderClick(rawId: string) {
     const provider = providerMap[rawId];
-    const connectedCount = connectionsCount[rawId] ?? 0;
-
-    if (disabledWhenConnected && connectedCount > 0) {
-      return;
-    }
-
     const isLocalOnlyWithoutKeys = provider?.localOnly && !provider?.providerKeys;
 
     if (isLocalOnlyWithoutKeys) {
@@ -406,11 +398,10 @@ export function ServiceIntegrationsSection({
               count={count}
               lastActivityAt={lastSyncByProvider[config.rawId] ?? null}
               activityVerb="synced"
-              // `disabled` is "not implemented yet"; `disabledWhenConnected` is
-              // onboarding asking for one account per service. Same inert card,
-              // different reason — so they read differently to the user.
+              // `disabled` is "not implemented yet". Connected cards stay
+              // clickable so a second account of the same service can be added,
+              // matching /sources/connect.
               comingSoon={Boolean(config.disabled)}
-              locked={disabledWhenConnected && count > 0}
               onSelect={() => handleProviderClick(config.rawId)}
             />
           );

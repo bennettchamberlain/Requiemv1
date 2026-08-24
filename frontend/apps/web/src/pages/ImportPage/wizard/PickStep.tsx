@@ -15,6 +15,8 @@ export interface PickStepProps {
   picked: ReadonlySet<string>;
   onToggle: (key: string) => void;
   onContinue: () => void;
+  /** When true (default), Continue stays pinned and only the catalog scrolls. */
+  pinContinue?: boolean;
 }
 
 /**
@@ -26,7 +28,7 @@ export interface PickStepProps {
  * "we know this service and haven't finished it" is a materially different
  * answer from silence, which reads as unsupported.
  */
-export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProps) {
+export function PickStep({ catalog, picked, onToggle, onContinue, pinContinue = true }: PickStepProps) {
   const [logoFailed, setLogoFailed] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState('');
   const lastImportedAt = useSourceUsage();
@@ -61,7 +63,7 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
     // grid scrolls. The filter is what CAUSES the content swaps, so it must
     // not live in the region whose scrollbar those swaps toggle — and losing
     // it off the top of a 100-service list would be no better.
-    <div className="flex h-full min-h-0 flex-col gap-5">
+    <div className={cn('flex flex-col gap-5', pinContinue && 'h-full min-h-0')}>
       <div className="relative">
         <Search
           aria-hidden
@@ -76,7 +78,10 @@ export function PickStep({ catalog, picked, onToggle, onContinue }: PickStepProp
         />
       </div>
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto">
+      <div
+        data-testid="pick-catalog"
+        className={cn('space-y-5', pinContinue && 'min-h-0 flex-1 overflow-y-auto')}
+      >
         {visible.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No services match “{query.trim()}”. Anything can still be imported from the Upload tab —

@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { AppWindow, History, Smartphone } from '@ci/shadcn/icons';
 
+import { ConnectedAccountsSection } from '@/components/connect/ConnectedAccountsSection';
 import { ProviderConnectDialog } from '@/components/connect/ProviderConnectDialog';
 import { ServiceIntegrationsSection } from '@/components/connect/ServiceIntegrationsSection';
 import { SourceCard } from '@/components/connect/SourceCard';
@@ -22,37 +23,6 @@ export function ConnectSourceStep() {
   return (
     <div className="space-y-6 w-full mx-auto">
       <StepHeader title="Connect a source" description="Pull your email and calendar in automatically." />
-
-      <ServiceIntegrationsSection
-        variant="onboarding"
-        disabledWhenConnected
-        onProviderSelect={(rawId) => setDialogProviderId(rawId)}
-      />
-
-      <div className="space-y-4 max-w-5xl mx-auto w-full">
-        <p className="text-lg sm:text-xl leading-snug text-muted-foreground text-center px-2">
-          Want your memory to include desktop or mobile browser history? Get the browser extension.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-          <SourceCard
-            logo="/branding/chrome/logo.svg"
-            name="Chrome"
-            tracks={BROWSER_TRACKS}
-            onSelect={() => window.open(CHROME_EXTENSION_URL, '_blank', 'noopener,noreferrer')}
-          />
-          <SourceCard logo="/branding/firefox/logo.svg" name="Firefox" tracks={BROWSER_TRACKS} comingSoon />
-          <SourceCard
-            logo="/branding/ios/logo.svg"
-            name="iPhone & iPad"
-            tracks={[
-              { icon: Smartphone, label: 'Mobile browsing' },
-              { icon: AppWindow, label: 'App usage' },
-              { icon: History, label: 'Screen time' },
-            ]}
-            onSelect={openDownload}
-          />
-        </div>
-      </div>
 
       <div className="space-y-4 max-w-5xl mx-auto w-full">
         <p className="text-lg sm:text-xl leading-snug text-muted-foreground text-center px-2">
@@ -80,6 +50,38 @@ export function ConnectSourceStep() {
           />
         </div>
       </div>
+
+      <div className="space-y-4 max-w-5xl mx-auto w-full">
+        <p className="text-lg sm:text-xl leading-snug text-muted-foreground text-center px-2">
+          Want your memory to include desktop or mobile browser history? Get the browser extension.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+          <SourceCard
+            logo="/branding/chrome/logo.svg"
+            name="Chrome"
+            tracks={BROWSER_TRACKS}
+            onSelect={() => window.open(CHROME_EXTENSION_URL, '_blank', 'noopener,noreferrer')}
+          />
+          <SourceCard logo="/branding/firefox/logo.svg" name="Firefox" tracks={BROWSER_TRACKS} comingSoon />
+          <SourceCard
+            logo="/branding/ios/logo.svg"
+            name="iPhone & iPad"
+            tracks={[
+              { icon: Smartphone, label: 'Mobile browsing' },
+              { icon: AppWindow, label: 'App usage' },
+              { icon: History, label: 'Screen time' },
+            ]}
+            onSelect={openDownload}
+          />
+        </div>
+      </div>
+
+      <ConnectedAccountsSection />
+
+      <ServiceIntegrationsSection
+        variant="onboarding"
+        onProviderSelect={(rawId) => setDialogProviderId(rawId)}
+      />
 
       <ProviderConnectDialog
         rawProviderId={dialogProviderId}
