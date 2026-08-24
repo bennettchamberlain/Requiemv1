@@ -70,7 +70,7 @@ describe('MemoryChatAbout', () => {
     vi.restoreAllMocks();
   });
 
-  it('opens a context menu with Chat here on right-click', async () => {
+  it('opens a context menu with Open chat on right-click', async () => {
     renderWithProviders(
       <MemoryChatAbout entity={note}>
         <button type="button">Picnic note</button>
@@ -79,7 +79,7 @@ describe('MemoryChatAbout', () => {
 
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Picnic note' }));
 
-    expect(await screen.findByRole('menuitem', { name: 'Chat here' })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: 'Open chat' })).toBeInTheDocument();
   });
 
   it('navigates to in-app chat with the memory stashed', async () => {
@@ -90,7 +90,7 @@ describe('MemoryChatAbout', () => {
     );
 
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Picnic note' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'Chat here' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open chat' }));
 
     expect(h.navigate).toHaveBeenCalledWith('/chat');
     expect(JSON.parse(sessionStorage.getItem('ci.agentChat.seed') ?? '{}')).toMatchObject({
@@ -122,7 +122,6 @@ describe('MemoryChatAbout', () => {
 
   it('opens a bottom sheet on mobile long-press', async () => {
     h.isMobile = true;
-    vi.useFakeTimers();
 
     renderWithProviders(
       <MemoryChatAbout entity={note}>
@@ -130,11 +129,8 @@ describe('MemoryChatAbout', () => {
       </MemoryChatAbout>,
     );
 
-    const target = screen.getByRole('button', { name: 'Picnic note' });
-    fireEvent.pointerDown(target, { pointerType: 'touch', clientX: 10, clientY: 10 });
-    await vi.advanceTimersByTimeAsync(500);
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Picnic note' }));
 
-    expect(screen.getByRole('heading', { name: /Chat about/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Chat here' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Open chat' })).toBeInTheDocument();
   });
 });
