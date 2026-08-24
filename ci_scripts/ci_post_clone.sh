@@ -54,8 +54,8 @@ set -eu
 
 # Xcode Cloud is not our TestFlight lane. `mobile-release.yml` is (dispatch or
 # an `ios-v*` / `mobile-release-v*` tag). Automatic PR / GitHub-branch starts
-# still reach this script until App Store Connect start conditions are stripped
-# (`gh workflow run "Xcode Cloud — manual starts only"`). Fail in a second
+# still reach this script until the Xcode Cloud workflow is deleted
+# (`gh workflow run xcode-cloud-manual-only.yml`). Fail in a second
 # rather than archive-and-upload from a PR.
 is_github_pr() { [ -n "${CI_PULL_REQUEST_NUMBER:-}" ]; }
 is_main_without_tag() {
@@ -74,9 +74,9 @@ if is_github_pr || is_main_without_tag; then
   Intentional TestFlight:
     gh workflow run mobile-release.yml --ref <branch> -f dry_run=true -f platform=ios
 
-  To stop these checks appearing on PRs at all, run once (needs App Store Connect API secrets):
-    gh workflow run "Xcode Cloud — manual starts only" --ref main
-  or App Store Connect → Xcode Cloud → App | BuildTestFlight → Start Conditions → Manual start only.
+  To stop these checks appearing on PRs at all, delete App | BuildTestFlight
+  in App Store Connect, or once APPSTORE_* secrets exist:
+    gh workflow run xcode-cloud-manual-only.yml --ref main
 MSG
   exit 1
 fi

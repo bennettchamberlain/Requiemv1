@@ -22,23 +22,23 @@ that directory to `PATH`.
 
 ---
 
-## Not covered by the generated list below (hand-maintained, verified 2026-08-23)
+## Not covered by the generated list below (hand-maintained)
 
 The generated section lists five of this repo's **ten** workflows. The other
-five, and the two places where "pushing does not start a GitHub-hosted run" is
-no longer true:
+five:
 
 | Workflow | Trigger | Note |
 |---|---|---|
-| `codeql.yml` | **`push` + `pull_request` on `main`, plus a Monday cron** | NOT gated. Added 2026-08-23 in [#2261](https://github.com/companionintelligence/CI-Server/pull/2261). **Fails on every run**: the analysis completes, then the upload is rejected with `Code Security must be enabled for this repository to use code scanning`. Red is the baseline here until Code Security is enabled on the repo. |
+| `codeql.yml` | `workflow_dispatch` | Gated. Added in [#2261](https://github.com/companionintelligence/CI-Server/pull/2261) as push/PR/cron; that failed every run because this private repo has no GitHub Code Security (`SARIF` upload 403). Dispatch with `gh workflow run codeql.yml --ref <branch>`. Restore PR/push only after Code Security is enabled. |
 | `mobile-release.yml` | **`push` on `ios-v*` / `android-v*` / `mobile-release-v*` tags**, plus dispatch | NOT gated for tags. Never runs on a PR. |
 | `consent-path-gate.yml` | `workflow_dispatch` | The merge gate for the federated-ask consent path. `gh workflow run "Consent path gate" --ref <branch>`. Ships dispatch-only on purpose - see [`asks-system-guide.md` §7.3](asks-system-guide.md). |
 | `mobile-build.yml` | `workflow_dispatch` | Debug APK + iOS Simulator `.app`. |
-| `xcode-cloud-manual-only.yml` | `workflow_dispatch` | One-shot: strips App Store Connect's automatic start conditions so `App \| BuildTestFlight` stops firing on every PR. Needs the `APPSTORE_*` secrets. Until someone dispatches it, that check is still red on every PR. |
+| `xcode-cloud-manual-only.yml` | `workflow_dispatch` | One-shot: **deletes** App Store Connect Xcode Cloud workflows so `App \| BuildTestFlight` stops firing on every PR. Needs the `APPSTORE_*` secrets (not currently set). Until they are, delete `App \| BuildTestFlight` in App Store Connect → Xcode Cloud → Manage Workflows. |
 
 **Xcode Cloud is not a GitHub Actions workflow** and so is not gated by any of
-the above. `App | BuildTestFlight` reports on PRs from App Store Connect and is
-failing - baseline, not your change.
+the above. `App | BuildTestFlight` reports on PRs from App Store Connect. Delete
+that workflow in App Store Connect (or dispatch `xcode-cloud-manual-only.yml`
+once `APPSTORE_*` secrets exist) so it stops.
 
 ---
 

@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /**
- * Strip automatic start conditions from every Xcode Cloud workflow for the
- * Companion iOS app.
+ * Delete every Xcode Cloud workflow for the Companion iOS app.
  *
  * GitHub Actions never starts TestFlight on a PR — `mobile-release.yml` is
  * workflow_dispatch + `ios-v*` tags. The checks on PRs (`App | BuildTestFlight`)
  * come from Xcode Cloud, whose start conditions live in App Store Connect, not
- * in this repo. This script is the repo-side way to set those conditions to
- * "manual only" via the App Store Connect API.
+ * in this repo. This script is the repo-side way to remove those workflows via
+ * the App Store Connect API so they stop firing on every GitHub PR.
  *
  *   gh workflow run xcode-cloud-manual-only.yml --ref main
  *
  * Requires APPSTORE_ISSUER_ID, APPSTORE_KEY_ID, APPSTORE_PRIVATE_KEY.
+ *
+ * Deleting a workflow also deletes its build history. That is the point: we do
+ * not want a second TestFlight path. GitHub Actions `mobile-release.yml` is the
+ * remaining lane.
  */
 
 import crypto from 'node:crypto';
@@ -71,21 +74,6 @@ async function asc(token, method, path, body) {
   return json;
 }
 
-function startConditionSummary(attributes) {
-  return {
-    branch: attributes.branchStartCondition ?? null,
-    pullRequest: attributes.pullRequestStartCondition ?? null,
-    tag: attributes.tagStartCondition ?? null,
-    scheduled: attributes.scheduledStartCondition ?? null,
-  };
-}
-
-function hasAutoStart(attributes) {
-  const summary = startConditionSummary(attributes);
-
-  return Boolean(summary.branch || summary.pullRequest || summary.tag || summary.scheduled);
-}
-
 async function main() {
   const token = appleJwt();
   const apps = await asc(token, 'GET', `/v1/apps?filter[bundleId]=${encodeURIComponent(BUNDLE_ID)}&limit=1`);
@@ -99,7 +87,9 @@ async function main() {
   const productId = product.data?.id;
 
   if (!productId) {
-    throw new Error(`App ${BUNDLE_ID} (${app.id}) has no Xcode Cloud product — nothing to disable.`);
+    console.log(`App ${BUNDLE_ID} (${app.id}) has no Xcode Cloud product — nothing to delete.`);
+
+    return;
   }
 
   const workflows = await asc(token, 'GET', `/v1/ciProducts/${productId}/workflows?limit=50`);
@@ -113,29 +103,9 @@ async function main() {
 
   for (const workflow of list) {
     const name = workflow.attributes?.name ?? workflow.id;
-    const before = startConditionSummary(workflow.attributes ?? {});
-    console.log(`▸ ${name} (${workflow.id}) start conditions: ${JSON.stringify(before)}`);
-
-    if (!hasAutoStart(workflow.attributes ?? {})) {
-      console.log(`  already manual-only — leaving it.`);
-      continue;
-    }
-
-    await asc(token, 'PATCH', `/v1/ciWorkflows/${workflow.id}`, {
-      data: {
-        type: 'ciWorkflows',
-        id: workflow.id,
-        attributes: {
-          branchStartCondition: null,
-          pullRequestStartCondition: null,
-          tagStartCondition: null,
-          scheduledStartCondition: null,
-        },
-      },
-    });
-    console.log(
-      `  stripped branch / pull-request / tag / schedule starts. Manual Start Build in App Store Connect still works; GitHub PRs will not.`,
-    );
+    console.log(`▸ deleting ${name} (${workflow.id})`);
+    await asc(token, 'DELETE', `/v1/ciWorkflows/${workflow.id}`);
+    console.log(`  deleted. GitHub PRs will no longer get App | BuildTestFlight checks from this workflow.`);
   }
 }
 
