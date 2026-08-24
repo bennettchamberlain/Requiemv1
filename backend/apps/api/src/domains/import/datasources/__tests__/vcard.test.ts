@@ -625,3 +625,113 @@ describe('a card with no phone or email is still a contact', () => {
     expect(stagedNaturalKey(built.entity)).toBe('contact:5551110000');
   });
 });
+
+describe('avatar_url from PHOTO', () => {
+  // A real, minimal, decodable PNG (a 1x1 transparent pixel) — not a real
+  // contact's face, but real image bytes, so the base64-join/decode path is
+  // exercised against something an <img> would actually render, not an opaque
+  // string. Folded across two lines to also exercise unfoldContentLines'
+  // continuation handling for the general (non-PHOTO) case this suite already
+  // covers, and extractCardPhotos' matching fold for PHOTO specifically.
+  const PNG_B64_LINE1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk';
+  const PNG_B64_LINE2 = '+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const PNG_B64 = PNG_B64_LINE1 + PNG_B64_LINE2;
+
+  it('decodes a folded base64 PHOTO into a data: URI on properties.avatar_url', async () => {
+    const raw =
+      'BEGIN:VCARD\n' +
+      'FN:Priya Kapoor\n' +
+      'TEL:+15559990000\n' +
+      `PHOTO;ENCODING=b;TYPE=JPEG:${PNG_B64_LINE1}\n` +
+      ` ${PNG_B64_LINE2}\n` +
+      'END:VCARD\n';
+
+    const { pipeline } = await importRaw(raw);
+    const [entity] = contactEntities(pipeline);
+
+    expect(entity!.metadata?.avatar_url).toBe(`data:image/jpeg;base64,${PNG_B64}`);
+  });
+
+  it('maps TYPE=PNG to image/png rather than defaulting to jpeg', async () => {
+    const raw = `BEGIN:VCARD\nFN:Owen Cho\nTEL:+15559990001\nPHOTO;ENCODING=b;TYPE=PNG:${PNG_B64}\nEND:VCARD\n`;
+
+    const { pipeline } = await importRaw(raw);
+    const [entity] = contactEntities(pipeline);
+
+    expect(entity!.metadata?.avatar_url).toBe(`data:image/png;base64,${PNG_B64}`);
+  });
+
+  it('defaults to image/jpeg when PHOTO carries no TYPE param', async () => {
+    const raw = `BEGIN:VCARD\nFN:Dana Fitch\nTEL:+15559990002\nPHOTO;ENCODING=b:${PNG_B64}\nEND:VCARD\n`;
+
+    const { pipeline } = await importRaw(raw);
+    const [entity] = contactEntities(pipeline);
+
+    expect(entity!.metadata?.avatar_url).toBe(`data:image/jpeg;base64,${PNG_B64}`);
+  });
+
+  it('keeps a PHOTO;VALUE=URI as a plain URL, never inventing a data: URI for it', async () => {
+    const raw =
+      'BEGIN:VCARD\nFN:Marco Ruiz\nTEL:+15559990003\nPHOTO;VALUE=URI:https://example.invalid/marco.jpg\nEND:VCARD\n';
+
+    const { pipeline } = await importRaw(raw);
+    const [entity] = contactEntities(pipeline);
+
+    expect(entity!.metadata?.avatar_url).toBe('https://example.invalid/marco.jpg');
+  });
+
+  it('a card with no PHOTO carries no avatar_url, and does not crash', async () => {
+    const raw = 'BEGIN:VCARD\nFN:No Photo Here\nTEL:+15559990004\nEND:VCARD\n';
+
+    const { pipeline } = await importRaw(raw);
+    const [entity] = contactEntities(pipeline);
+
+    expect(entity!.metadata?.avatar_url).toBeUndefined();
+  });
+
+  it('drops a photo larger than the size cap rather than storing a huge data: URI', async () => {
+    // Past MAX_PHOTO_BASE64_CHARS (2,000,000) — one absurdly long folded value.
+    const hugeB64 = 'A'.repeat(2_000_100);
+    const foldedLines = hugeB64.match(/.{1,72}/g)!.map((chunk) => ` ${chunk}`);
+    const raw = `BEGIN:VCARD\nFN:Huge Photo\nTEL:+15559990005\nPHOTO;ENCODING=b:\n${foldedLines.join('\n')}\nEND:VCARD\n`;
+
+    const { pipeline } = await importRaw(raw);
+    const [entity] = contactEntities(pipeline);
+
+    expect(entity!.metadata?.avatar_url).toBeUndefined();
+  });
+
+  it('aligns each card to its OWN photo across a multi-card file, not an off-by-one neighbor', async () => {
+    // The regression this guards: extractCardPhotos and the main BEGIN/END loop
+    // walk the file independently and must agree on where card N starts and
+    // ends, including for a card with no PHOTO at all in between two that have
+    // one — the exact shape that would surface an index drifting by one.
+    const raw =
+      `BEGIN:VCARD\nFN:First Card\nTEL:+15551000001\nPHOTO;ENCODING=b:${PNG_B64}\nEND:VCARD\n` +
+      'BEGIN:VCARD\nFN:Second Card No Photo\nTEL:+15551000002\nEND:VCARD\n' +
+      `BEGIN:VCARD\nFN:Third Card\nTEL:+15551000003\nPHOTO;ENCODING=b;TYPE=PNG:${PNG_B64}\nEND:VCARD\n`;
+
+    const { pipeline } = await importRaw(raw);
+    const entities = contactEntities(pipeline);
+    const byName = new Map(entities.map((e) => [e!.name, e]));
+
+    expect(byName.get('First Card')?.metadata?.avatar_url).toBe(`data:image/jpeg;base64,${PNG_B64}`);
+    expect(byName.get('Second Card No Photo')?.metadata?.avatar_url).toBeUndefined();
+    expect(byName.get('Third Card')?.metadata?.avatar_url).toBe(`data:image/png;base64,${PNG_B64}`);
+  });
+
+  it('a truncated card (second BEGIN before an END) does not shift a later photo onto the wrong card', async () => {
+    const raw =
+      // Truncated: BEGIN with no END before the next BEGIN.
+      'BEGIN:VCARD\nFN:Truncated Card\nTEL:+15551000004\n' +
+      `BEGIN:VCARD\nFN:Real Card\nTEL:+15551000005\nPHOTO;ENCODING=b:${PNG_B64}\nEND:VCARD\n`;
+
+    const { pipeline, drops } = await importRaw(raw);
+    const entities = contactEntities(pipeline);
+
+    expect(drops.no_end_marker).toBe(1);
+    expect(entities).toHaveLength(1);
+    expect(entities[0]!.name).toBe('Real Card');
+    expect(entities[0]!.metadata?.avatar_url).toBe(`data:image/jpeg;base64,${PNG_B64}`);
+  });
+});
