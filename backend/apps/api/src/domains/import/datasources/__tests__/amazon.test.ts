@@ -508,11 +508,35 @@ describe('Amazon datasource', () => {
     expect(prime.metadata.Quantity).toBe(1); // NOT summed across components
     expect(prime.metadata.Components).toBe(2);
     expect(prime.metadata['List Price']).toBeUndefined(); // same as price
+    // The breakdown a receipt needs, read straight off the ledger's own
+    // Component Type labels rather than inferred from Total - UnitPrice.
+    expect(prime.metadata.Subtotal).toBe('139');
+    expect(prime.metadata.Tax).toBe('10.77');
 
     const sonic = items.find((i) => i.metadata.Product === 'Sonic Racing')!;
     expect(sonic.metadata.Total).toBe('0');
     expect(sonic.metadata['List Price']).toBe('1.99'); // the promo is visible
     expect(sonic.metadata.Quantity).toBe(1);
+    expect(sonic.metadata.Subtotal).toBe('0');
+    expect(sonic.metadata.Tax).toBe('0');
+  });
+
+  it('leaves Subtotal/Tax unset when a ledger carries a component type this parser has never seen', async () => {
+    // A hypothetical fourth component type (e.g. a future "Shipping" or
+    // "Promotion" row Amazon has not been observed to emit here). Total must
+    // still include it — Transaction Amount sums unconditionally — but
+    // Subtotal/Tax must NOT silently absorb it under the wrong label.
+    const csv = [
+      'ASIN,"Base Currency Code","Component Type","Order Date","Order ID","Order Status",Price,"Product Name","Quantity Ordered","Transaction Amount"',
+      '"B0UNKNOWN1","USD","Price Amount","2026-01-10","D01-9999999-0000001","SUCCESS","9.99","Mystery Item","1","9.99"',
+      '"B0UNKNOWN1","USD","Restocking Fee","2026-01-10","D01-9999999-0000001","SUCCESS","9.99","Mystery Item","1","1.50"',
+    ].join('\n');
+    const { items } = await importCsv('__ledger_unknown__', csv);
+
+    const mystery = items.find((i) => i.metadata.Product === 'Mystery Item')!;
+    expect(mystery.metadata.Total).toBe('11.49'); // 9.99 + 1.50, unconditional
+    expect(mystery.metadata.Subtotal).toBe('9.99'); // only the known Price Amount row
+    expect(mystery.metadata.Tax).toBeUndefined(); // no Tax-typed row exists
   });
 
   // Nothing in a file Amazon named "Digital" is a physical object, so the rows
@@ -864,11 +888,12 @@ describe('Amazon datasource', () => {
 /*
  * The money breakdown, against the REAL "Your Orders" export header.
  *
- * `fixtures/amazon-your-orders/Order History.csv` is nine rows lifted verbatim
- * out of a live 2,064-row export — all 28 columns in Amazon's own order, every
- * amount, quantity, ASIN and product name untouched (only the address and
- * cardholder columns are replaced, and nothing reads those). The rows were
- * chosen because each one pins a different way the breakdown went wrong:
+ * `fixtures/amazon-your-orders/Order History.csv` is thirteen rows lifted
+ * verbatim out of a live 2,064-row export — all 28 columns in Amazon's own
+ * order, every amount, quantity, ASIN and product name untouched (only the
+ * address and cardholder columns are replaced, and nothing reads those). The
+ * rows were chosen because each one pins a different way the breakdown went
+ * wrong:
  *
  *   111-1329443-6205810  the reported defect: 71.85 + 5.57 tax = 77.42 charged,
  *                        stored as a LINE total of 77.42
@@ -880,6 +905,12 @@ describe('Amazon datasource', () => {
  *   112-1742533-6120260  "11,437.78" — a thousands separator inside the cell
  *   112-0129751-0345803  an order that genuinely does NOT reconcile ($7.00
  *                        unexplained by any column — a state recycling fee)
+ *   113-4686340-8106606  two rows, same ASIN, same product name — a
+ *                        weight-priced grocery item Amazon split into two
+ *                        differently-priced physical units (0.55 and 0.25)
+ *   114-6974509-5422626  two rows, same ASIN, SAME price (16.99) — the
+ *                        ordinary multi-shipment split (qty 2 then 3) that
+ *                        113-4686340-8106606 above is the exception to
  */
 describe('Amazon money breakdown (real "Your Orders" export header)', () => {
   const ROOT = path.join(FIXTURES_DIR, 'amazon-your-orders');
@@ -962,6 +993,37 @@ describe('Amazon money breakdown (real "Your Orders" export header)', () => {
     expect(order.metadata.Subtotal).toBe('412');
     expect(order.metadata.Shipping).toBe('6.99');
     expect(order.metadata.Total).toBe('418.99');
+  });
+
+  it('averages the unit price when a merged line disagrees with itself, rather than dropping a row', async () => {
+    const { pipeline } = await runFixture();
+    const [line] = linesOf(orderFor(pipeline, '113-4686340-8106606'));
+
+    // Two real "PRODUCE Organic Shallots" rows, same ASIN, priced 0.55 and
+    // 0.25 — two separately-weighed units, not one item counted twice.
+    // Quantity sums to 2 (correct); a naive "first row's price" would report
+    // Unit Price 0.55 and silently lose the second unit's real 0.25 cost.
+    // 0.80 / 2 = 0.40 is the honest average, and it is what makes the line's
+    // own arithmetic (quantity * unitPrice = total) hold.
+    expect(line.Quantity).toBe(2);
+    expect(line.Total).toBe('0.80');
+    expect(line['Unit Price']).toBe('0.40');
+  });
+
+  it('leaves a single-priced merged line untouched — the common multi-shipment case', async () => {
+    const { pipeline } = await runFixture();
+    // 114-6974509-5422626: one ASIN, one real order, split across TWO
+    // shipments (qty 2 then qty 3) — Amazon's ordinary multi-shipment case,
+    // and both rows genuinely agree on Unit Price (16.99). mergedUnitPrice
+    // must return primary's raw string here, not a derived average that
+    // happens to land on the same number — the two are only guaranteed to
+    // coincide because this particular order has no tax-rounding remainder.
+    const [line] = linesOf(orderFor(pipeline, '114-6974509-5422626'));
+
+    expect(line.Quantity).toBe(5); // 2 + 3
+    expect(line['Unit Price']).toBe('16.99');
+    // 5 * 16.99 = 84.95 — primary's raw price, not an average, still reconciles.
+    expect(line.Subtotal).toBe('84.95');
   });
 
   it("reads Amazon's Excel-quoted negative discount as a positive magnitude", async () => {
