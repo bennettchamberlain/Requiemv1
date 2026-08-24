@@ -11,7 +11,7 @@ import { expect, test } from '@playwright/test';
 //   2. Land on /onboarding and skip through the wizard (every step but the
 //      last has a Skip button — OnboardingPage.tsx / constants.ts).
 //   3. Finish on the last step and assert the redirect to the onboarded home
-//      (appHomePath: /plan when planning.page is on, else /today).
+//      (appHomePath: /plan when planning.page is on, else /calendar).
 //
 // A unique email per run (timestamp + random suffix) is the "per-run signup
 // helper" the old stub said did not exist yet — email/password are simple
@@ -60,6 +60,6 @@ test('completes onboarding for a new user', async ({ page }) => {
   await finishButton.click();
 
   // onboard() flips user.onboarded, and OnboardingPage redirects away once it
-  // does — to /plan (planning.page on) or /today (off).
-  await expect(page).toHaveURL(/\/(plan|today)/, { timeout: 20_000 });
+  // does — to /plan (planning.page on) or /calendar (off).
+  await expect(page).toHaveURL(/\/(plan|calendar)/, { timeout: 20_000 });
 });

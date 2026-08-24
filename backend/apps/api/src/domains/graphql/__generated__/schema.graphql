@@ -2181,6 +2181,7 @@ type PersonInteractionStatsType {
 type PersonType implements Node & Taggable {
   address: String
   addresses: [PersonAddressType!]!
+  appearedAt: DateTime
   avatarUrl: String
   birthDate: String
   city: String
@@ -2278,6 +2279,7 @@ type PlaceNearType {
 }
 
 type PlaceType implements Node & Taggable {
+  appearedAt: DateTime
   boundary: JSON
   description: String
   entityType: String!

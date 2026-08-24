@@ -14,6 +14,15 @@ import { PlaceEntity, type Place, type PlaceKind } from '../entities/PlaceEntity
 import { PlaceCreatedEvent, PlaceUpdatedEvent, PlaceRemovedEvent } from '../events';
 import type { CreatePlaceDto, UpdatePlaceDto } from '../types';
 
+import {
+  appearanceParams,
+  appearanceWindowParams,
+  hasDateWindow,
+  mapAppearanceRows,
+  ownerUserId,
+  placeAppearanceCountSql,
+  placeAppearanceListSql,
+} from './appearanceBrowse';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 /** One Google-style address component ({long_name, short_name, types[]}). */
@@ -844,6 +853,10 @@ export class PlaceService {
    * Lightweight identifiers for the most-recent places, for the unified
    * search/explorer feed. Returns only `{ id, type }`; full entities are
    * batch-resolved downstream by EntityResolutionService.
+   *
+   * With no date window this is the unique places list, ordered by row-write
+   * time. With a date window the list is places that were actually visited in
+   * that window, ordered by first real visit in it — not `created_at`.
    */
   async getEntitiesForPlaces(
     context: ServiceContext,
@@ -856,19 +869,15 @@ export class PlaceService {
       order?: 'ASC' | 'DESC';
     } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    if (hasDateWindow(options)) {
+      return this.listPlacesByAppearance(context, options);
+    }
+
     let query = this.placeRepository
       .createQueryBuilder('place')
       .select('place.id', 'id')
       .where('place.entity_type = :entityType', { entityType: 'Location' })
       .andWhere('place.owner_user_id = :userId', { userId: context.userId });
-
-    if (options.startTime) {
-      query = query.andWhere('place.created_at >= :startTime', { startTime: options.startTime });
-    }
-
-    if (options.endTime) {
-      query = query.andWhere('place.created_at <= :endTime', { endTime: options.endTime });
-    }
 
     // Composite keyset: page strictly past (afterTime, afterId) in
     // (created_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
@@ -892,6 +901,36 @@ export class PlaceService {
   }
 
   /**
+   * Date-windowed Places browse: one row per place, timestamped at MIN(event
+   * start_time in the window) where this place is `location_entity_id`. Ingest
+   * wall-clock events are excluded. Places with no real visit in the window
+   * drop out. See appearanceBrowse.ts.
+   */
+  private async listPlacesByAppearance(
+    context: ServiceContext,
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    },
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    const userId = ownerUserId(context.userId);
+    if (userId == null) {
+      return [];
+    }
+
+    const rows = await this.placeRepository.manager.query<Array<{ id: string; appearedAt: Date | string }>>(
+      placeAppearanceListSql(options.order ?? 'DESC'),
+      appearanceParams(userId, options),
+    );
+
+    return mapAppearanceRows(rows, 'place');
+  }
+
+  /**
    * True total of places matching the same filters {@link getEntitiesForPlaces} applies (minus
    * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
    * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
@@ -900,6 +939,20 @@ export class PlaceService {
     context: ServiceContext,
     options: { startTime?: Date; endTime?: Date },
   ): Promise<number> {
+    if (hasDateWindow(options)) {
+      const userId = ownerUserId(context.userId);
+      if (userId == null) {
+        return 0;
+      }
+
+      const rows = await this.placeRepository.manager.query<Array<{ n: number }>>(
+        placeAppearanceCountSql(),
+        appearanceWindowParams(userId, options),
+      );
+
+      return Number(rows[0]?.n ?? 0);
+    }
+
     let query = this.placeRepository
       .createQueryBuilder('place')
       .where('place.entity_type = :entityType', { entityType: 'Location' })

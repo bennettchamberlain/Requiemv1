@@ -163,7 +163,12 @@ const SEARCH_QUERY = gql(`
             galleryLocationName: locationName
           }
 
+          ... on PersonType {
+            bucketAppearedAt: appearedAt
+          }
+
           ... on PlaceType {
+            bucketAppearedAt: appearedAt
             mapProperties: properties
           }
 

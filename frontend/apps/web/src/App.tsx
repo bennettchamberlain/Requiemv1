@@ -89,30 +89,23 @@ function RedirectInsightsSummary() {
 }
 
 /**
- * The brief now lives inside Today, so both of its old addresses land there.
+ * The brief now lives inside Calendar, so both of its old addresses land there.
  *
- * Aimed at /today rather than chained through /brief, which would cost a second
- * redirect on every old link. The action id is carried across because the
- * brief's cards deep-link by it — dropping it would open the page but not the
- * card someone was sent.
+ * Aimed at /calendar rather than chained through /brief, which would cost a
+ * second redirect on every old link. The action id is carried across because
+ * the brief's cards deep-link by it — dropping it would open the page but not
+ * the card someone was sent.
  */
-function RedirectToToday() {
+function RedirectToCalendar() {
   const { id } = useParams<{ id?: string }>();
 
-  return <Navigate to={id ? `/today/${id}` : '/today'} replace />;
+  return <Navigate to={id ? `/calendar/${id}` : '/calendar'} replace />;
 }
 
 function RedirectFeedSummaryToBrief() {
   const { id } = useParams<{ id: string }>();
 
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
-}
-
-/** Events explorer moved to /memory/events; keep query (view=, filters) intact. */
-function RedirectMemoryToEvents() {
-  const { search } = useLocation();
-
-  return <Navigate to={{ pathname: '/memory/events', search }} replace />;
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -250,7 +243,7 @@ function AppRoutes() {
           />
 
           <Route
-            path="/today/:id?"
+            path="/calendar/:id?"
             element={
               <ProtectedRoute>
                 <TodayPage />
@@ -258,23 +251,26 @@ function AppRoutes() {
             }
           />
 
-          <Route
-            path="/forecast"
-            element={
-              <ProtectedRoute>
-                <ForecastPage />
-              </ProtectedRoute>
-            }
-          />
+          {isFeatureEnabled('forecast.page') && (
+            <Route
+              path="/forecast"
+              element={
+                <ProtectedRoute>
+                  <ForecastPage />
+                </ProtectedRoute>
+              }
+            />
+          )}
 
           {/* Both former destinations now resolve to the page that absorbed
               them. /brief/summaries/:id is declared above and is more specific,
               so it still reaches the summary detail page. */}
-          <Route path="/brief/:id?" element={<RedirectToToday />} />
-          <Route path="/schedule" element={<RedirectToToday />} />
+          <Route path="/brief/:id?" element={<RedirectToCalendar />} />
+          <Route path="/schedule" element={<RedirectToCalendar />} />
+          <Route path="/today/:id?" element={<RedirectToCalendar />} />
 
           <Route path="/feed/summaries/:id" element={<RedirectFeedSummaryToBrief />} />
-          <Route path="/feed/:id?" element={<RedirectToToday />} />
+          <Route path="/feed/:id?" element={<RedirectToCalendar />} />
 
           <Route
             path="/search"
@@ -285,11 +281,13 @@ function AppRoutes() {
             }
           />
 
+          {/* `/memory` is the unfiltered explorer (all kinds). `/memory/events`
+              is the same page with the Events submenu's type filter. */}
           <Route
             path="/memory"
             element={
               <ProtectedRoute>
-                <RedirectMemoryToEvents />
+                <MemoryPage />
               </ProtectedRoute>
             }
           />
@@ -361,7 +359,7 @@ function AppRoutes() {
             </>
           )}
 
-          <Route path="/insights" element={<Navigate to="/today" replace />} />
+          <Route path="/insights" element={<Navigate to="/calendar" replace />} />
           <Route
             path="/insights/:id"
             element={

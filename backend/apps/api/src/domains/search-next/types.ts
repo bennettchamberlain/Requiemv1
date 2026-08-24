@@ -49,6 +49,13 @@ export type TaggableEntity = (typeof TAGGABLE_ENTITIES)[number];
 export interface EntityIdentifier<T> {
   type: T;
   id: string;
+  /**
+   * Optional sort key the browse used for this identifier. People/places
+   * date-filter by first real activity in the window (`appeared_at`), not
+   * `created_at`. SearchResolver stamps it onto the resolved entity as
+   * `appearedAt` so the cursor and GraphQL field match the SQL order.
+   */
+  sortTime?: Date;
 }
 
 export interface CreateTagDto {

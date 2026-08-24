@@ -8,7 +8,7 @@ describe('visibleRailDestinations', () => {
 
     expect(visible.map((destination) => destination.id)).toEqual([
       'plan',
-      'today',
+      'calendar',
       'forecast',
       'memory',
       'saved-searches',
@@ -17,6 +17,17 @@ describe('visibleRailDestinations', () => {
       'jobs',
       'self',
     ]);
+  });
+
+  it('gates Forecast on `forecast.page` — the same flag the /forecast route checks', () => {
+    const forecast = RAIL_DESTINATIONS.find((destination) => destination.id === 'forecast');
+
+    expect(forecast?.flag).toBe('forecast.page');
+    expect(forecast?.to).toBe('/forecast');
+    expect(visibleRailDestinations((flag) => flag !== 'forecast.page').map((d) => d.id)).not.toContain(
+      'forecast',
+    );
+    expect(visibleRailDestinations(() => true).map((d) => d.id)).toContain('forecast');
   });
 
   it('gates Asks on `ask` — the flag the /asks route itself checks', () => {
@@ -36,9 +47,17 @@ describe('isRailDestinationActive', () => {
   const byId = Object.fromEntries(RAIL_DESTINATIONS.map((destination) => [destination.id, destination]));
 
   it('treats Memory hub and legacy people routes as Memory', () => {
+    expect(byId.memory.to).toBe('/memory');
+    expect(isRailDestinationActive(byId.memory, '/memory')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/memory/people')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/people/abc')).toBe(true);
-    expect(isRailDestinationActive(byId.memory, '/today')).toBe(false);
+    expect(isRailDestinationActive(byId.memory, '/calendar')).toBe(false);
+  });
+
+  it('treats Calendar card deep-links as Calendar', () => {
+    expect(isRailDestinationActive(byId.calendar, '/calendar')).toBe(true);
+    expect(isRailDestinationActive(byId.calendar, '/calendar/a1')).toBe(true);
+    expect(isRailDestinationActive(byId.calendar, '/forecast')).toBe(false);
   });
 
   it('treats Sources children as Sources', () => {

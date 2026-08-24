@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { TimelineJsData } from './scheduleToTimeline';
 import {
   TIMELINE_INITIAL_SCALE_FACTOR,
   TIMELINE_INITIAL_ZOOM_INDEX,
@@ -11,8 +10,10 @@ import {
   inertTimeline,
   minorLabelsToHide,
   timelineDeckKey,
+  timelineEventDiff,
   timelineJsOptions,
 } from './timelineRuntime';
+import type { TimelineJsData } from './types';
 
 function deck(ids: string[]): TimelineJsData {
   return {
@@ -138,5 +139,15 @@ describe('inertTimeline', () => {
     expect(instance.config).toBeNull();
     expect(stopSlider).toHaveBeenCalledTimes(1);
     expect(stopMenu).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('timelineEventDiff', () => {
+  it('adds newly appeared slides and removes ones that left the window', () => {
+    const next = deck(['b', 'c', 'd']);
+    const { add, removeIds } = timelineEventDiff(['a', 'b', 'c'], next.events);
+
+    expect(add.map((event) => event.unique_id)).toEqual(['d']);
+    expect(removeIds).toEqual(['a']);
   });
 });

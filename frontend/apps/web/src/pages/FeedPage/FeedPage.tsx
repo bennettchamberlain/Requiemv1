@@ -30,7 +30,7 @@ const MAX_INSIGHT_SUMMARY_CARDS = 20;
 
 export interface FeedPageProps {
   /**
-   * Rendered inside a host page (Today) that already owns the document title
+   * Rendered inside a host page (Calendar) that already owns the document title
    * and the page frame. PageContent is the page's scroll container
    * (`w-full h-full overflow-auto`), so nesting a second one gives the screen
    * two scrollbars and two sets of padding.
@@ -53,10 +53,10 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
    * Where this brief lives, so its own links stay inside it.
    *
    * The cards deep-link by action id and the modal writes that id into the URL.
-   * Embedded in Today those have to address /today, or opening a card would
-   * navigate you off the page you opened it from.
+   * Embedded in Calendar those have to address /calendar, or opening a card
+   * would navigate you off the page you opened it from.
    */
-  const basePath = embedded ? '/today' : '/brief';
+  const basePath = embedded ? '/calendar' : '/brief';
 
   // Embedded, the host owns the frame; this keeps the column gap PageContent
   // would have supplied, and none of its padding, height or scrolling. No

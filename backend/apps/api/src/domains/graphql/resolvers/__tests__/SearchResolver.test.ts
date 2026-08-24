@@ -340,6 +340,60 @@ describe('SearchResolver.search — undated types stay out of the unfiltered bro
     expect(placeService.getEntitiesForPlaces).toHaveBeenCalledTimes(1);
   });
 
+  it('stamps appearedAt from person sortTime so date buckets use appearance, not import time', async () => {
+    const { resolver, personService, entityResolutionService } = makeResolver();
+    const appearedAt = new Date('2024-03-04T12:00:00.000Z');
+    personService.getEntitiesForPeople.mockResolvedValue([
+      { type: 'person', id: 'p1', sortTime: appearedAt },
+    ]);
+    entityResolutionService.resolve.mockResolvedValue(
+      resolveMap([
+        {
+          type: 'person',
+          id: 'p1',
+          entity: { id: 'p1', name: 'Ada', createdAt: new Date('2026-08-01T00:00:00.000Z') },
+        },
+      ]),
+    );
+
+    await resolver.search(ctx, {
+      includeTypes: ['person'],
+      startTime: '2024-03-01T00:00:00.000Z',
+      endTime: '2024-03-31T23:59:59.000Z',
+    } as SearchInput);
+
+    const toSearchResult = (
+      resolver as unknown as { toSearchResult: { mock: { calls: Array<[Entry]> } } }
+    ).toSearchResult;
+    expect(toSearchResult.mock.calls[0][0].entity).toEqual(expect.objectContaining({ appearedAt }));
+  });
+
+  it('fetches a gated type the What picker kept by excluding everything else', async () => {
+    const { resolver, personService, fileChunkService, eventService } = makeResolver();
+
+    await resolver.search(ctx, {
+      excludeTypes: [
+        'browser-activity',
+        'communication',
+        'content',
+        'event',
+        'file',
+        'note',
+        'place',
+        'product',
+        'receipt',
+        'item',
+        'answer',
+        'concept',
+      ],
+    } as SearchInput);
+
+    expect(personService.getEntitiesForPeople).toHaveBeenCalledTimes(1);
+    expect(eventService.getEntitiesForEvents).not.toHaveBeenCalled();
+    // file-chunk is not in the picker, so an exclude-list must not opt it in.
+    expect(fileChunkService.getEntitiesForFileChunks).not.toHaveBeenCalled();
+  });
+
   // The gate must not leak into search: a user looking for a person by name
   // must still find them.
   it('leaves the query path alone — a gated type is still searchable', async () => {

@@ -66,7 +66,7 @@ vi.mock('@/components/ConnectionModeIndicator', () => ({
   OutboxQueueIndicator: () => null,
 }));
 
-function renderMobileNav(route = '/today') {
+function renderMobileNav(route = '/calendar') {
   return renderWithProviders(
     <PowerRailProvider variant="overlay">
       <MobileTopBar />
@@ -127,7 +127,7 @@ describe('MobileNavigation', () => {
     fireEvent.touchEnd(document, { changedTouches: [{ clientX: 80, clientY: 240 }] });
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'Today' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Calendar' })).toBeInTheDocument();
     });
   });
 });
