@@ -49,6 +49,7 @@ interface GraphCanvas3DProps {
   selectedNodeId?: string | null;
   selectedLinkId?: string | null;
   onNodeSelect?: (nodeId: string) => void;
+  onNodeContextMenu?: (nodeId: string) => void;
   onLinkSelect?: (linkId: string) => void;
   onBackgroundClick?: () => void;
   focusHops?: number;
@@ -193,6 +194,7 @@ function GraphScene({
   selectedNodeId,
   selectedLinkId,
   onNodeSelect,
+  onNodeContextMenu,
   onLinkSelect,
 }: {
   sceneNodes: SceneNode[];
@@ -203,11 +205,13 @@ function GraphScene({
   selectedNodeId?: string | null;
   selectedLinkId?: string | null;
   onNodeSelect?: (nodeId: string) => void;
+  onNodeContextMenu?: (nodeId: string) => void;
   onLinkSelect?: (linkId: string) => void;
 }) {
   const fgRef = useRef<GraphMethods<SceneNode, SceneLink>>(undefined);
   const controlsRef = useRef<OrbitControls | null>(null);
   const flyTargetRef = useRef<Vector3>(new Vector3());
+  const hoveredNodeIdRef = useRef<string | null>(null);
   const { camera, gl } = useThree();
 
   const graphData = useMemo(() => ({ nodes: sceneNodes, links: sceneLinks }), [sceneNodes, sceneLinks]);
@@ -252,6 +256,25 @@ function GraphScene({
 
     fg.d3ReheatSimulation();
   }, [graphData]);
+
+  // r3f-forcegraph has no onNodeRightClick; reuse its hover pick and listen on the canvas.
+  useEffect(() => {
+    const canvas = gl.domElement;
+
+    const handleContextMenu = (event: MouseEvent) => {
+      const nodeId = hoveredNodeIdRef.current;
+      if (!nodeId) {
+        return;
+      }
+
+      event.preventDefault();
+      onNodeContextMenu?.(nodeId);
+    };
+
+    canvas.addEventListener('contextmenu', handleContextMenu);
+
+    return () => canvas.removeEventListener('contextmenu', handleContextMenu);
+  }, [gl, onNodeContextMenu]);
 
   useFrame(() => {
     fgRef.current?.tickFrame();
@@ -381,6 +404,7 @@ function GraphScene({
         }
       }}
       onNodeHover={(node) => {
+        hoveredNodeIdRef.current = node?.id ? String(node.id) : null;
         gl.domElement.style.cursor = node ? 'pointer' : '';
       }}
       onLinkHover={(link) => {
@@ -401,6 +425,7 @@ export default function GraphCanvas3D({
   selectedNodeId,
   selectedLinkId,
   onNodeSelect,
+  onNodeContextMenu,
   onLinkSelect,
   onBackgroundClick,
   focusHops,
@@ -500,6 +525,7 @@ export default function GraphCanvas3D({
           selectedNodeId={selectedNodeId}
           selectedLinkId={selectedLinkId}
           onNodeSelect={onNodeSelect}
+          onNodeContextMenu={onNodeContextMenu}
           onLinkSelect={onLinkSelect}
         />
       </Canvas>
