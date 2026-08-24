@@ -93,6 +93,17 @@ export class PeerLinkType {
   revokedAt!: Date | null;
 
   /**
+   * The avatar of the Person in the OWNER's own memory this peer is linked
+   * to — not anything the peer supplies about themselves. Resolved by
+   * `PeerLinkResolver.avatarUrl` from the (already-on-the-wire) `personEntityId`
+   * above; null when that is unset (most links today) or the linked Person has
+   * no avatar. Only the avatar crosses — the rest of the linked Person's
+   * `properties` jsonb does not.
+   */
+  @Field(() => String, { nullable: true })
+  avatarUrl?: string | null;
+
+  /**
    * `peerIssuer` and `peerSubject` are NOT exposed.
    *
    * They are the `(iss, sub)` pair an inbound token is matched against — the

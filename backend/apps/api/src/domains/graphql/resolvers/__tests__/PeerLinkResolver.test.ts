@@ -1,9 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
 
+import type { Person } from '@ci/domains/memory';
 import type { PeerLink } from '@ci/domains/peers';
 
 import { GlobalUID } from '../../types/GlobalUID';
-import { PeerTrustTierEnum } from '../../types/PeerLinkType';
+import { PeerLinkType, PeerTrustTierEnum } from '../../types/PeerLinkType';
 import { PeerLinkResolver } from '../PeerLinkResolver';
 
 /**
@@ -41,7 +42,16 @@ function makeLink(overrides: Partial<PeerLink> = {}): PeerLink {
   } as PeerLink;
 }
 
-function build(overrides: Record<string, unknown> = {}) {
+function makePerson(overrides: Partial<Person> = {}): Person {
+  return {
+    id: 'person-ada',
+    name: 'Ada',
+    properties: {},
+    ...overrides,
+  } as unknown as Person;
+}
+
+function build(overrides: Record<string, unknown> = {}, personOverrides: Record<string, unknown> = {}) {
   const service = {
     findAll: jest.fn().mockResolvedValue([makeLink()]),
     findById: jest.fn().mockResolvedValue(makeLink()),
@@ -50,10 +60,18 @@ function build(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 
-  const resolver = new PeerLinkResolver(service as never);
+  // Unrelated to `PeerLinkService` above — `avatarUrl` reads through
+  // `PersonService.findById` instead. Defaults to "nothing found", same as a
+  // real owner-scoped miss.
+  const personService = {
+    findById: jest.fn().mockResolvedValue(null),
+    ...personOverrides,
+  };
+
+  const resolver = new PeerLinkResolver(service as never, personService as never);
   const context = { userId: OWNER } as never;
 
-  return { resolver, service, context };
+  return { resolver, service, personService, context };
 }
 
 describe('PeerLinkResolver', () => {
@@ -176,6 +194,108 @@ describe('PeerLinkResolver', () => {
 
       expect(link.id).toBe(GlobalUID.encode('peer-link', '01a0-link'));
       expect(link.id).not.toBe('01a0-link');
+    });
+  });
+
+  /**
+   * `avatarUrl` — the avatar of the Person in the OWNER's own memory this peer
+   * is linked to, not anything the peer claims about themselves.
+   */
+  describe('avatarUrl', () => {
+    it("returns the linked Person's avatarUrl when personEntityId is set", async () => {
+      const link = PeerLinkType.toType(makeLink({ personEntityId: 'person-ada' }));
+      const { resolver, personService, context } = build(
+        {},
+        {
+          findById: jest
+            .fn()
+            .mockResolvedValue(makePerson({ properties: { avatar_url: 'https://x/ada.png' } })),
+        },
+      );
+
+      const result = await resolver.avatarUrl(context, link);
+
+      expect(result).toBe('https://x/ada.png');
+      // The decoded raw id, not the global id on the wire — and the caller's
+      // own scope, not the link's `ownerUserId` — is what goes into the lookup.
+      expect(personService.findById).toHaveBeenCalledWith({ userId: OWNER }, 'person-ada');
+    });
+
+    it('returns null when personEntityId is not set, without querying PersonService', async () => {
+      const link = PeerLinkType.toType(makeLink({ personEntityId: null }));
+      const { resolver, personService, context } = build();
+
+      const result = await resolver.avatarUrl(context, link);
+
+      expect(result).toBeNull();
+      expect(personService.findById).not.toHaveBeenCalled();
+    });
+
+    it('returns null cleanly when the linked Person has no avatar', async () => {
+      const link = PeerLinkType.toType(makeLink({ personEntityId: 'person-ada' }));
+      const { resolver, context } = build(
+        {},
+        { findById: jest.fn().mockResolvedValue(makePerson({ properties: {} })) },
+      );
+
+      const result = await resolver.avatarUrl(context, link);
+
+      expect(result).toBeNull();
+    });
+
+    it('SECURITY: a peer link naming a Person owned by someone else never leaks that avatar', async () => {
+      // Faithful to `PersonService.findById` (`EntityService.findById`), which
+      // is OWNER-SCOPED — the where clause is `{ id, userId }`, not `{ id }`.
+      // A mock that ignored the owner would hide the one case this field has
+      // to fail closed on: `personEntityId` decoding to a real Person id that
+      // does not belong to the CALLING owner.
+      const MALLORYS_PERSON_ID = 'person-mallory';
+      const link = PeerLinkType.toType(makeLink({ personEntityId: MALLORYS_PERSON_ID }));
+      const { resolver, context } = build(
+        {},
+        {
+          findById: jest.fn(async (ctx: { userId: string }, id: string) =>
+            id === MALLORYS_PERSON_ID && ctx.userId === 'someone-else'
+              ? makePerson({ id, properties: { avatar_url: 'https://x/mallory.png' } })
+              : null,
+          ),
+        },
+      );
+
+      // `context` carries OWNER, not 'someone-else' — this is the caller the
+      // link's `personEntityId` does not actually belong to.
+      const result = await resolver.avatarUrl(context, link);
+
+      expect(result).toBeNull();
+    });
+
+    it("does not leak the rest of the linked Person's properties — only avatarUrl crosses", async () => {
+      const link = PeerLinkType.toType(makeLink({ personEntityId: 'person-ada' }));
+      const { resolver, context } = build(
+        {},
+        {
+          findById: jest.fn().mockResolvedValue(
+            makePerson({
+              properties: {
+                avatar_url: 'https://x/ada.png',
+                vendor_notes: 'ada@example.com',
+                ssn: 'do-not-leak',
+              },
+            }),
+          ),
+        },
+      );
+
+      const result = await resolver.avatarUrl(context, link);
+
+      expect(result).toBe('https://x/ada.png');
+      // The PeerLinkType object itself never picked up the Person's jsonb bag —
+      // `avatarUrl` is a string return value, not a field stamped onto `link`.
+      expect(link).not.toHaveProperty('properties');
+      expect(link).not.toHaveProperty('vendor_notes');
+      expect(JSON.stringify(link)).not.toContain('ssn');
+      expect(JSON.stringify(link)).not.toContain('do-not-leak');
+      expect(JSON.stringify(result)).not.toContain('do-not-leak');
     });
   });
 });
