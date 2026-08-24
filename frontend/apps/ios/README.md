@@ -189,6 +189,12 @@ too easy to fire by accident. **Turn it off** (or delete the workflow):
 App Store Connect → Xcode Cloud → Manage Workflows → `App | BuildTestFlight`
 → Start Conditions → **Manual start only**, or delete the workflow.
 
+Repo-side equivalent (App Store Connect API; run once from `main`):
+
+```bash
+gh workflow run "Xcode Cloud — manual starts only" --ref main
+```
+
 Keep the `ci_scripts/ci_post_clone.sh` bootstrap in the repo so a future
 intentional Xcode Cloud run still works. It is not a trigger.
 
