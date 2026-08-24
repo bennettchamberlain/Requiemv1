@@ -181,6 +181,34 @@ export class UserContextService {
   }
 
   /**
+   * Raw `schedule`/`planner` onboarding wrote onto the self Person entity
+   * (`OnboardingService.onboard`), read straight off `properties` rather than
+   * through {@link pickImportantProperties} — that allowlist curates what
+   * reaches an LLM prompt and has no reason to grow just to feed a UI read.
+   */
+  async getSelfPlannerContext(
+    userId: string,
+  ): Promise<{ schedule: Record<string, unknown> | null; trustMode: string | null } | null> {
+    const entity = await this.resolveUserEntity(userId);
+    if (!entity) {
+      return null;
+    }
+
+    const props = (entity.properties ?? {}) as Record<string, unknown>;
+    const schedule =
+      typeof props['schedule'] === 'object' && props['schedule'] !== null
+        ? (props['schedule'] as Record<string, unknown>)
+        : null;
+    const planner =
+      typeof props['planner'] === 'object' && props['planner'] !== null
+        ? (props['planner'] as Record<string, unknown>)
+        : null;
+    const trustMode = typeof planner?.['trust_mode'] === 'string' ? (planner['trust_mode'] as string) : null;
+
+    return { schedule, trustMode };
+  }
+
+  /**
    * Format user context as markdown for system prompt
    */
   formatContextForSystemPrompt(context: UserContext): string {

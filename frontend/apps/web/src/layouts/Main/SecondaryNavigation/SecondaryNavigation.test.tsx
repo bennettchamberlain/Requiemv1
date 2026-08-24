@@ -222,8 +222,50 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Things' })).toHaveAttribute('href', '/memory/things');
     expect(screen.getByRole('link', { name: 'Content' })).toHaveAttribute('href', '/memory/content');
     expect(screen.getByRole('link', { name: 'Tags' })).toHaveAttribute('href', '/memory/tags');
-    expect(screen.getByRole('link', { name: 'Reflections' })).toHaveAttribute('href', '/memory/reflections');
     expect(screen.getByRole('link', { name: 'People' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  // Reflections moved from Memory into Self — one sub-section list, same
+  // collapsible pattern, driven by SELF_SECTIONS instead of MEMORY_HUB_SECTIONS.
+  it('shows Self sections when expanded, and keeps them open on a self route', () => {
+    renderRail('/self/account', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/self');
+    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/self/account');
+    expect(screen.getByRole('link', { name: 'Stats' })).toHaveAttribute('href', '/self/stats');
+    expect(screen.getByRole('link', { name: 'Reflections' })).toHaveAttribute('href', '/self/reflections');
+    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens Self sections on hover when expanded, and closes after leave when not sticky', () => {
+    renderRail('/plan', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
+
+    const submenu = screen.getByTestId('self-submenu');
+    fireEvent.mouseEnter(submenu);
+    expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
+
+    fireEvent.mouseLeave(submenu);
+    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Self sections open after a sticky chevron open even off self routes', () => {
+    renderRail('/plan', { expanded: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
+    expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
+  });
+
+  it('closes Self sections when the chevron is clicked, even while hovered', () => {
+    renderRail('/plan', { expanded: true });
+
+    const submenu = screen.getByTestId('self-submenu');
+    fireEvent.mouseEnter(submenu);
+    expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Self sections' }));
+    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
   });
 
   it('opens Memory sections on hover when expanded, and closes after leave when not sticky', () => {
@@ -269,7 +311,7 @@ describe('SecondaryNavigation', () => {
     expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
     expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
     expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));
-    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/stats'));
+    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/self'));
   });
 });
 

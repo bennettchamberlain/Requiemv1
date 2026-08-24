@@ -35,4 +35,9 @@ describe('SETTINGS_SECTIONS', () => {
     isIosPlatform.mockReturnValue(true);
     expect(visibleSettingsSections().some((section) => section.id === 'safari')).toBe(true);
   });
+
+  it('no longer lists about-you or account — they moved to the Self page', () => {
+    expect(visibleSettingsSections().some((section) => section.id === 'about-you')).toBe(false);
+    expect(visibleSettingsSections().some((section) => section.id === 'account')).toBe(false);
+  });
 });

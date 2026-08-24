@@ -15,7 +15,7 @@ describe('visibleRailDestinations', () => {
       'asks',
       'sources',
       'jobs',
-      'stats',
+      'self',
     ]);
   });
 

@@ -75,13 +75,12 @@ const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
-const StatsPage = lazy(() => import('@/pages/StatsPage'));
+const SelfPage = lazy(() => import('@/pages/SelfPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
 // Pulls SchedulePage and FeedPage in with it — neither is routed on its own.
 const TodayPage = lazy(() => import('@/pages/TodayPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
-const PromptsPage = lazy(() => import('@/pages/PromptsPage'));
 
 function RedirectInsightsSummary() {
   const { id } = useParams<{ id: string }>();
@@ -372,25 +371,15 @@ function AppRoutes() {
             }
           />
 
-          {isFeatureEnabled('insights.page') && (
-            <>
-              {/*
-                "Questions" is what this page used to be called; it is
-                "Reflections" in the UI now. Both old paths stay as redirects so
-                bookmarks, docs and any link still in the wild keep working.
-              */}
-              <Route path="/prompts" element={<Navigate to="/memory/reflections" replace />} />
-              <Route path="/memory/questions" element={<Navigate to="/memory/reflections" replace />} />
-              <Route
-                path="/memory/reflections"
-                element={
-                  <ProtectedRoute>
-                    <PromptsPage />
-                  </ProtectedRoute>
-                }
-              />
-            </>
-          )}
+          {/* "Questions" is what this page used to be called; it was
+              "Reflections" under Memory, and now lives under Self. All three
+              old paths stay as redirects so bookmarks, docs and any link
+              still in the wild keep working. Ungated here — /self/reflections
+              itself is registered only when `insights.page` is on, same as
+              every other flag-gated route in this app. */}
+          <Route path="/prompts" element={<Navigate to="/self/reflections" replace />} />
+          <Route path="/memory/questions" element={<Navigate to="/self/reflections" replace />} />
+          <Route path="/memory/reflections" element={<Navigate to="/self/reflections" replace />} />
 
           {isFeatureEnabled('tags.page') && (
             <>
@@ -406,12 +395,15 @@ function AppRoutes() {
             </>
           )}
 
+          {/* /stats was its own rail tab; it's now the Stats tab inside Self. */}
+          <Route path="/stats" element={<Navigate to="/self/stats" replace />} />
+
           {isFeatureEnabled('stats.page') && (
             <Route
-              path="/stats"
+              path="/self/*"
               element={
                 <ProtectedRoute>
-                  <StatsPage />
+                  <SelfPage />
                 </ProtectedRoute>
               }
             />
@@ -487,6 +479,13 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           />
+
+          {/* About You and Account moved into Self. Specific paths outrank the
+              `/settings/*` wildcard below regardless of declaration order, so
+              old bookmarks land on the right Self tab instead of falling
+              through to the settings dialog's own appearance fallback. */}
+          <Route path="/settings/about-you" element={<Navigate to="/self" replace />} />
+          <Route path="/settings/account" element={<Navigate to="/self/account" replace />} />
 
           <Route
             path="/settings/*"
@@ -669,7 +668,7 @@ function AppRoutes() {
         {/*
           Fallback. The feature-gated routes above are absent from the table
           until `/api/_internal/features` answers, so on a hard load of one of
-          them (/stats, /tags, /prompts, or a settings overlay whose restored
+          them (/self, /tags, /prompts, or a settings overlay whose restored
           backgroundLocation is one of them) this is what "*" matches. Rendering
           404 there flashed a not-found page over a route that was about to
           exist; wait for the flags instead, exactly as ProtectedRoute waits for

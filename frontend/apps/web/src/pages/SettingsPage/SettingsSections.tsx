@@ -12,9 +12,6 @@ const PreferencesSection = lazy(() =>
 const AutonomySection = lazy(() =>
   import('./sections/AutonomySection').then((m) => ({ default: m.AutonomySection })),
 );
-const AboutYouSection = lazy(() =>
-  import('./sections/AboutYouSection').then((m) => ({ default: m.AboutYouSection })),
-);
 const ModelSection = lazy(() => import('./sections/ModelSection').then((m) => ({ default: m.ModelSection })));
 const LocationSection = lazy(() =>
   import('./sections/LocationSection').then((m) => ({ default: m.LocationSection })),
@@ -26,9 +23,6 @@ const ApiKeysSection = lazy(() =>
   import('./sections/ApiKeysSection').then((m) => ({ default: m.ApiKeysSection })),
 );
 const OAuthSection = lazy(() => import('./sections/OAuthSection').then((m) => ({ default: m.OAuthSection })));
-const AccountSection = lazy(() =>
-  import('./sections/AccountSection').then((m) => ({ default: m.AccountSection })),
-);
 const DataPortabilitySection = lazy(() =>
   import('./sections/DataPortabilitySection').then((m) => ({ default: m.DataPortabilitySection })),
 );
@@ -41,8 +35,6 @@ function sectionElement(section: string): ReactNode {
       return <PreferencesSection />;
     case 'autonomy':
       return <AutonomySection />;
-    case 'about-you':
-      return <AboutYouSection />;
     case 'model':
       return <ModelSection />;
     case 'location':
@@ -53,8 +45,6 @@ function sectionElement(section: string): ReactNode {
       return <ApiKeysSection />;
     case 'oauth':
       return <OAuthSection />;
-    case 'account':
-      return <AccountSection />;
     case 'data':
       return <DataPortabilitySection />;
     default:

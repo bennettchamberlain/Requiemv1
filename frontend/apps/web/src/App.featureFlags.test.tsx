@@ -135,7 +135,7 @@ function notFound() {
 
 beforeEach(() => {
   h.notFoundRenders = 0;
-  window.history.pushState({}, '', '/stats');
+  window.history.pushState({}, '', '/self');
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -146,13 +146,13 @@ describe('App feature-gated routes, end to end', () => {
 
     render(<App />);
 
-    // In flight: /stats is not in the route table yet, so "*" is what matches.
+    // In flight: /self is not in the route table yet, so "*" is what matches.
     expect(notFound()).not.toBeInTheDocument();
 
     releaseFlags();
 
     // Landed: the route exists and the layout mounts...
-    expect(await screen.findByLabelText('Stats')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Self')).toBeInTheDocument();
 
     // ...and 404 was never rendered on the way there, not at any commit.
     expect(h.notFoundRenders).toBe(0);
