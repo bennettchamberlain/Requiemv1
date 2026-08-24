@@ -7,9 +7,12 @@ import L, { type LatLngExpression } from 'leaflet';
 import { Marker as LeafletMarker, Popup, useMap as useLeafletMap, useMapEvents } from 'react-leaflet';
 import { useSearchParams } from 'react-router-dom';
 
+import { ChatAbout, ChatAboutSheet } from '@/components/ChatWithAgent';
 import { Map } from '@/components/Map';
 import { type MarkerVariant } from '@/components/Map/Marker';
 import { gql, useFragment } from '@/graphql';
+import { namedChatContext, type AgentChatContext } from '@/lib/agentChat';
+import { entityToAgentChatContext } from '@/lib/entityToAgentChatContext';
 
 import { useEntityService, type EntityItem } from '../../MemoryPage/useEntityService';
 import { boundsToBbox, bboxCenter, formatBbox, parseBbox } from '../bbox';
@@ -125,6 +128,19 @@ type Pin = {
   variant: MarkerVariant;
   entity: EntityItem | null;
 };
+
+function pinChatContext(pin: Pin): AgentChatContext {
+  if (pin.entity) {
+    return entityToAgentChatContext(pin.entity);
+  }
+
+  return namedChatContext({
+    title: pin.title,
+    body: pin.timeLabel,
+    sourceKind: 'EventType',
+    sourceId: pin.id,
+  });
+}
 
 /**
  * Resolve a marker position for any entity in the explorer result set. Events
@@ -430,8 +446,8 @@ function ClusterPopupContent({
     <div className="w-72 overflow-hidden text-card-foreground" onClick={(event) => event.stopPropagation()}>
       <div className="max-h-72 overflow-y-auto py-2">
         {cluster.items.map((pin) => (
+          <ChatAbout key={pin.id} context={pinChatContext(pin)}>
           <button
-            key={pin.id}
             type="button"
             className="flex w-full items-start gap-2 px-3 py-2 text-left text-card-foreground transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onClick={() => onSelect(pin)}
@@ -447,6 +463,7 @@ function ClusterPopupContent({
               )}
             </span>
           </button>
+          </ChatAbout>
         ))}
       </div>
 
@@ -543,6 +560,7 @@ function ClusteredMarkers({
   onHoverPin?: (pin: Pin | null) => void;
 }) {
   const map = useLeafletMap();
+  const [chatPin, setChatPin] = useState<Pin | null>(null);
   // One state for both, because clustering depends on both: zoom decides the
   // projection, the viewport decides which pins are candidates at all.
   const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
@@ -609,6 +627,7 @@ function ClusteredMarkers({
               position={[pin.coords.lat, pin.coords.lng]}
               variant={pin.variant}
               onClick={() => onSelect(pin)}
+              onContextMenu={() => setChatPin(pin)}
               onMouseEnter={() => onHoverPin?.(pin)}
               onMouseLeave={() => onHoverPin?.(null)}
             />
@@ -626,6 +645,15 @@ function ClusteredMarkers({
           />
         );
       })}
+      <ChatAboutSheet
+        open={chatPin != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setChatPin(null);
+          }
+        }}
+        context={chatPin ? pinChatContext(chatPin) : { title: 'This memory' }}
+      />
     </>
   );
 }
