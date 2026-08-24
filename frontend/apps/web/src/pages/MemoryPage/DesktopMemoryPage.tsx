@@ -4,7 +4,7 @@ import { useQuery } from '@apollo/client';
 import { GlobalUID, Portal } from '@ci/common';
 import { ENTITY_TYPE_REVERSE_MAP } from '@ci/common/src/constants';
 import { Button, Sheet, Tooltip } from '@ci/shadcn';
-import { ChartNetwork, Images, List, Map as MapIcon, Plus, type LucideIcon } from '@ci/shadcn/icons';
+import { ChartNetwork, GanttChart, Images, List, Map as MapIcon, Plus, type LucideIcon } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -31,6 +31,7 @@ import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
 import { DesktopMapView } from './MapView';
+import { StoryTimelineView } from './StoryTimelineView';
 
 const GET_SAVED_SEARCH = gql(`
   query GetSavedSearch($id: ID!) {
@@ -66,6 +67,7 @@ const VIEW_TABS: Array<{
 }> = [
   { value: 'map', label: 'Map', titleKey: 'MEMORY_VIEW_MAP', Icon: MapIcon },
   { value: 'list', label: 'List', titleKey: 'MEMORY_VIEW_LIST', Icon: List },
+  { value: 'timeline', label: 'Timeline', titleKey: 'MEMORY_VIEW_TIMELINE', Icon: GanttChart },
   { value: 'gallery', label: 'Gallery', titleKey: 'MEMORY_VIEW_GALLERY', Icon: Images },
   { value: 'graph', label: 'Graph', titleKey: 'MEMORY_VIEW_GRAPH', Icon: ChartNetwork },
 ];
@@ -278,7 +280,7 @@ export default function DesktopMemoryPage() {
 
   return (
     <>
-      {/* View tabs (list / map / gallery / graph) live in the header nav-views portal. */}
+      {/* View tabs (list / map / timeline / gallery / graph) live in the header nav-views portal. */}
       <Portal.Slot id="nav-views">
         <div className="flex flex-wrap items-center gap-1">
           {VIEW_TABS.map(({ value, label, titleKey, Icon }) => {
@@ -331,6 +333,7 @@ export default function DesktopMemoryPage() {
               </div>
             )}
             {activeTab === 'map' && <DesktopMapView />}
+            {activeTab === 'timeline' && <StoryTimelineView />}
             {activeTab === 'gallery' && <GalleryView />}
             {activeTab === 'graph' && <GraphView variant="desktop" />}
           </div>

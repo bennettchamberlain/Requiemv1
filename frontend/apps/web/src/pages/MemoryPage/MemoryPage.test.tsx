@@ -65,4 +65,10 @@ describe('MemoryPage default filters', () => {
 
     expect(screen.getByTestId('location')).toHaveTextContent('/memory/events?view=graph');
   });
+
+  it('leaves the TimelineJS view choice alone', () => {
+    renderAt('/memory/events?view=timeline');
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/memory/events?view=timeline');
+  });
 });

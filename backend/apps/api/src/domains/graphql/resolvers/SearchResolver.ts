@@ -1054,7 +1054,27 @@ export class SearchResolver {
     }
 
     if (BROWSE_OPT_IN_TYPES.has(type)) {
-      return namedExplicitly;
+      if (namedExplicitly) {
+        return true;
+      }
+
+      // The web What picker writes an exclude-list of everything *else*, never
+      // `includeTypes`. Person / place / thing / product / receipt have to
+      // honour that remaining selection or a People-only browse is an empty
+      // page (the heatmap already converted the same URL to includes).
+      // `file-chunk` is not in the picker, so it never appears in those
+      // exclude lists and must stay include-only — otherwise a People browse
+      // would also pull every document chunk.
+      if (
+        type !== 'file-chunk' &&
+        excludeTypes != null &&
+        excludeTypes.length > 0 &&
+        !excludeTypes.includes(type)
+      ) {
+        return true;
+      }
+
+      return false;
     }
 
     return true;

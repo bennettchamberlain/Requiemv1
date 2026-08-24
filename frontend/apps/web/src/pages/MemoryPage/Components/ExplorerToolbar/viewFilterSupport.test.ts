@@ -25,8 +25,8 @@ describe('readMemoryView', () => {
 });
 
 describe('unsupportedReason', () => {
-  it('reports every filter as honoured in the three search-backed views', () => {
-    for (const view of ['list', 'gallery', 'map'] as const) {
+  it('reports every filter as honoured in the search-backed views', () => {
+    for (const view of ['list', 'gallery', 'map', 'timeline'] as const) {
       expect(unsupportedDimensions(view)).toEqual([]);
     }
   });
@@ -79,6 +79,7 @@ describe('droppedFilters', () => {
     expect(droppedFilters('list', params)).toEqual([]);
     expect(droppedFilters('gallery', params)).toEqual([]);
     expect(droppedFilters('map', params)).toEqual([]);
+    expect(droppedFilters('timeline', params)).toEqual([]);
   });
 
   it('ignores unsupported dimensions the user has not set', () => {
@@ -103,7 +104,7 @@ describe('applyViewFilterDefaults', () => {
   });
 
   it('adds nothing for the other views', () => {
-    for (const view of ['list', 'gallery', 'graph'] as const) {
+    for (const view of ['list', 'gallery', 'graph', 'timeline'] as const) {
       expect(applyViewFilterDefaults(new URLSearchParams(''), view).toString()).toBe('');
     }
   });

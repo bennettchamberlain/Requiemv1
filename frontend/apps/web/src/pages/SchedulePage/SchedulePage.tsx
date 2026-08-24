@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
 import { type RhythmDay, type ScheduleEvent, useScheduleService } from '@/api/useScheduleService';
-import { HorizonGrid, TodayStoryTimeline, VerticalCalendar } from '@/components/HorizonGrid';
+import { HorizonGrid, VerticalCalendar } from '@/components/HorizonGrid';
 import { TodayNowNext, WeekDayChips } from '@/components/HorizonGrid/TodayNowNext';
 import { PageContent } from '@/components/layout';
 import { TaskSlate } from '@/components/TaskSlate';
@@ -386,17 +386,12 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
         {showScheduleSurface && (
           <>
-            {/* TimelineJS today strip, then week chrome, then the week, then
-                Possibilities. The chrome belongs with schedule/rhythm, not
-                above the zoomable story. On a phone the story strip is a
-                now/next list and the week starts as day chips plus one row. */}
+            {/* Week chrome, then the week, then Possibilities. On a phone the
+                horizon opens as day chips plus one row; now/next sits above. */}
             <div className={cn('flex flex-col', isMobile ? 'gap-3' : 'gap-4')}>
-              {layout === 'horizon' &&
-                (isMobile ? (
-                  <TodayNowNext events={events} day={selectedDay} onShowMore={() => setWeekOpen(true)} />
-                ) : (
-                  <TodayStoryTimeline events={events} day={selectedDay} />
-                ))}
+              {layout === 'horizon' && isMobile && (
+                <TodayNowNext events={events} day={selectedDay} onShowMore={() => setWeekOpen(true)} />
+              )}
 
               {isMobile ? (
                 <div className="flex flex-col gap-2">

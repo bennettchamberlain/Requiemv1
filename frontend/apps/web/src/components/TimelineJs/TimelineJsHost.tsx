@@ -1,38 +1,72 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import { cn } from '@ci/shadcn';
 import timelineCssUrl from '@knight-lab/timelinejs/dist/css/timeline.css?url';
 import timelineLocaleUrl from '@knight-lab/timelinejs/dist/js/locale/en.json?url';
 import timelineJsUrl from '@knight-lab/timelinejs/dist/js/timeline.js?url';
 
-import type { ScheduleEvent } from '@/api/useScheduleService';
-
-import { buildTimelineData, eventFallsOnDay } from './scheduleToTimeline';
 import {
   TIMELINE_HEIGHT_PX,
   inertTimeline,
   syncTimeaxisLabelCollision,
   timelineDeckKey,
+  timelineEventDiff,
   timelineJsOptions,
 } from './timelineRuntime';
+import type { TimelineJsData, TimelineSlide } from './types';
 import './timelineTheme.css';
 
-interface TodayStoryTimelineProps {
-  events: readonly ScheduleEvent[];
-  day: Date;
+interface TimelineJsHostProps {
+  data: TimelineJsData;
+  startAtSlide: number;
+  className?: string;
+  /** Used when the host has no layout box yet (flex child before first paint). */
+  fallbackHeightPx?: number;
+  /**
+   * When set, the instance remounts only if this identity changes. New slides
+   * are added in place so an unfiltered buffer can grow without a flash.
+   */
+  sessionKey?: string;
+  onSlideChange?: (uniqueId: string) => void;
 }
+
+type TimelineInstance = {
+  ready?: boolean;
+  current_id?: string;
+  config?: { events?: Array<{ unique_id?: string }> } | null;
+  animator_storyslider?: { stop?: () => void };
+  animator_menubar?: { stop?: () => void };
+  destroy?: () => void;
+  on?: (event: string, callback: (payload?: { unique_id?: string }) => void) => void;
+  add?: (data: unknown) => void;
+  removeId?: (id: string) => void;
+};
 
 type TimelineCtor = new (
   elem: HTMLElement,
   data: unknown,
   options?: Record<string, unknown>,
-) => {
-  ready?: boolean;
-  config?: unknown | null;
-  animator_storyslider?: { stop?: () => void };
-  animator_menubar?: { stop?: () => void };
-  destroy?: () => void;
-  on?: (event: string, callback: () => void) => void;
-};
+) => TimelineInstance;
+
+function mountedEventIds(instance: TimelineInstance): string[] {
+  return (instance.config?.events ?? [])
+    .map((event) => event.unique_id)
+    .filter((id): id is string => Boolean(id));
+}
+
+function syncTimelineEvents(instance: TimelineInstance, events: readonly TimelineSlide[]): void {
+  const { add, removeIds } = timelineEventDiff(mountedEventIds(instance), events);
+
+  for (const event of add) {
+    instance.add?.(event);
+  }
+
+  for (const id of [...removeIds].reverse()) {
+    if (id !== instance.current_id) {
+      instance.removeId?.(id);
+    }
+  }
+}
 
 type Rgb = { r: number; g: number; b: number };
 
@@ -65,9 +99,9 @@ function ensureTimelineCss(): Promise<void> {
  *
  * The dist file is a UMD IIFE that assigns `window.TL`. Vite's ESM transform of
  * that file keeps `TL` module-local, so `globalThis.TL` stays undefined and the
- * story strip mounts empty — which is exactly the blank panel we hit.
+ * story mounts empty.
  *
- * CSS is injected here too, instead of a static import, so the rest of Today
+ * CSS is injected here too, instead of a static import, so the rest of Memory
  * does not wait on Knight Lab's 96kb stylesheet.
  */
 function loadTimelineCtor(): Promise<TimelineCtor> {
@@ -147,47 +181,50 @@ function timelineBgFromTheme(): Rgb {
 }
 
 /**
- * TimelineJS3 storytelling strip — sits above the week grid.
+ * TimelineJS3 host — mounts Knight Lab against a JSON deck.
  *
- * Hidden when the focused day has nothing on it. Uses the week already loaded
- * for the grid — a second 35-day query was rebuilding a wide time-nav canvas
- * on every cache-and-network pass.
+ * Remounts when {@link TimelineJsHostProps.sessionKey} (or the slide ids, when
+ * no session is given) changes. Hidden chrome and CDN extras stay off; see
+ * {@link timelineJsOptions}.
  */
-export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
+export function TimelineJsHost({
+  data,
+  startAtSlide,
+  className,
+  fallbackHeightPx = TIMELINE_HEIGHT_PX,
+  sessionKey,
+  onSlideChange,
+}: TimelineJsHostProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const sectionRef = useRef<HTMLElement>(null);
-  const instanceRef = useRef<InstanceType<TimelineCtor> | null>(null);
-  const dayHasEvents = useMemo(() => events.some((event) => eventFallsOnDay(event, day)), [events, day]);
-  const { data, startAtSlide } = useMemo(() => buildTimelineData(events, day), [events, day]);
-  const deckKey = useMemo(() => timelineDeckKey(data, startAtSlide), [data, startAtSlide]);
-  const payloadRef = useRef({ data, startAtSlide });
-  payloadRef.current = { data, startAtSlide };
+  const instanceRef = useRef<TimelineInstance | null>(null);
+  const onSlideChangeRef = useRef(onSlideChange);
+  onSlideChangeRef.current = onSlideChange;
+  const deckKey = timelineDeckKey(data, startAtSlide);
+  const mountKey = sessionKey ?? deckKey;
+  const payloadRef = useRef({ data, startAtSlide, fallbackHeightPx });
+  payloadRef.current = { data, startAtSlide, fallbackHeightPx };
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [shouldMount, setShouldMount] = useState(false);
-  const [inView, setInView] = useState(false);
-  const inViewRef = useRef(false);
+  const [inView, setInView] = useState(true);
+  const inViewRef = useRef(true);
   inViewRef.current = inView;
 
   useEffect(() => {
-    const section = sectionRef.current;
-    if (!section) {
+    const host = hostRef.current;
+    if (!host) {
       return;
     }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         setInView(entry.isIntersecting);
-        if (entry.isIntersecting) {
-          setShouldMount(true);
-        }
       },
       { rootMargin: '80px', threshold: 0 },
     );
-    observer.observe(section);
+    observer.observe(host);
 
     return () => observer.disconnect();
-  }, [dayHasEvents, data.events.length]);
+  }, [mountKey]);
 
   useEffect(() => {
     const instance = instanceRef.current;
@@ -200,8 +237,8 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
 
   useEffect(() => {
     const host = hostRef.current;
-    const { data: deck, startAtSlide: landing } = payloadRef.current;
-    if (!shouldMount || !host || deck.events.length === 0) {
+    const { data: deck, startAtSlide: landing, fallbackHeightPx: minHeight } = payloadRef.current;
+    if (!host || deck.events.length === 0) {
       return;
     }
 
@@ -213,7 +250,7 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
     host.replaceChildren();
     const mount = document.createElement('div');
     mount.style.width = '100%';
-    mount.style.height = `${TIMELINE_HEIGHT_PX}px`;
+    mount.style.height = '100%';
     host.appendChild(mount);
 
     const onVisibility = () => {
@@ -241,11 +278,14 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
           }
 
           try {
+            const height = Math.max(mount.clientHeight || host.clientHeight || 0, minHeight);
+            mount.style.height = `${height}px`;
             const instance = new Timeline(
               mount,
               deck,
               timelineJsOptions({
                 width: mount.clientWidth || host.clientWidth || undefined,
+                height,
                 startAtSlide: landing,
                 bg: timelineBgFromTheme(),
                 languageUrl: timelineLocaleUrl,
@@ -256,6 +296,12 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
             const syncAxis = () => syncTimeaxisLabelCollision(mount);
             instance.on?.('zoom_in', syncAxis);
             instance.on?.('zoom_out', syncAxis);
+            instance.on?.('change', (payload) => {
+              const id = payload?.unique_id;
+              if (id) {
+                onSlideChangeRef.current?.(id);
+              }
+            });
             mount.addEventListener('click', (event) => {
               if (event.target instanceof Element && event.target.closest('.tl-menubar-button')) {
                 requestAnimationFrame(syncAxis);
@@ -281,43 +327,37 @@ export function TodayStoryTimeline({ events, day }: TodayStoryTimelineProps) {
       instanceRef.current = null;
       host.replaceChildren();
     };
-    // inView is read at construct and via visibilitychange; remounting on scroll would be worse.
-    // (react-hooks/exhaustive-deps isn't registered in this repo's eslint config, so the disable
-    // comment that used to sit here was dead weight — flat-config eslint errors on a disable
-    // directive for an unknown rule. The intent it documented still holds: shouldMount + deckKey
-    // are deliberately the only two dependencies.)
-  }, [deckKey, shouldMount]);
+  }, [mountKey]);
 
-  if (!dayHasEvents || data.events.length === 0) {
-    return null;
+  useEffect(() => {
+    if (!sessionKey || !ready) {
+      return;
+    }
+
+    const instance = instanceRef.current;
+    if (!instance) {
+      return;
+    }
+
+    syncTimelineEvents(instance, data.events);
+  }, [data.events, ready, sessionKey]);
+
+  if (error) {
+    return (
+      <p role="alert" className="px-3 py-6 text-sm text-muted-foreground">
+        Could not open the timeline ({error}).
+      </p>
+    );
   }
 
-  const heading = day.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-
   return (
-    <section
-      ref={sectionRef}
-      aria-label={`${heading} as a story`}
-      className="schedule-today-timeline overflow-hidden rounded-lg border border-border/80 bg-card/40 shadow-sm"
-    >
-      <div className="flex items-baseline justify-between gap-3 border-b border-border/60 px-3 py-2">
-        <h3 className="text-sm font-semibold text-foreground">{heading}</h3>
-        <span className="text-[11px] tabular-nums text-foreground/80">{data.events.length} slides</span>
-      </div>
-      {error ? (
-        <p role="alert" className="px-3 py-6 text-sm text-muted-foreground">
-          Could not open the story view ({error}). The week grid below still works.
+    <div className={cn('ci-timeline-js relative h-full w-full', className)}>
+      {!ready && (
+        <p className="absolute inset-0 z-10 flex items-center justify-center text-xs text-muted-foreground">
+          Loading timeline…
         </p>
-      ) : (
-        <div className="relative h-[360px] w-full">
-          {!ready && (
-            <p className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-              Loading story…
-            </p>
-          )}
-          <div ref={hostRef} className="h-full w-full [&_.tl-timeline]:h-full" />
-        </div>
       )}
-    </section>
+      <div ref={hostRef} className="h-full w-full [&_.tl-timeline]:h-full" />
+    </div>
   );
 }

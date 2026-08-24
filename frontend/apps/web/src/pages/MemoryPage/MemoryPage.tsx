@@ -8,6 +8,7 @@ import { ResponsiveLoader } from '@/components/ResponsiveLoader';
 import { EntityServiceProvider } from '../MemoryPage/useEntityService';
 
 import { parseBbox } from './bbox';
+import { explorerSearchTypeFilters } from './Components/ExplorerToolbar/filterParams';
 
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
 const MobilePage = lazy(() => import('./MobileMemoryPage'));
@@ -33,8 +34,8 @@ export const DEFAULT_MEMORY_EVENTS_SEARCH = 'view=list&includedEntityTypes=Event
 
 /**
  * The explorer's query comes from the URL and nothing else. Every view — List,
- * Gallery, Map, Graph — reads this one filter set, so the same link means the
- * same thing wherever it opens.
+ * Gallery, Map, Graph, Timeline — reads this one filter set, so the same link
+ * means the same thing wherever it opens.
  *
  * Two filters used to be derived from `?view=` here instead: the gallery forced
  * `includeFiles` on and the map forced `hasLocation` on. Switching views
@@ -55,13 +56,15 @@ export function MemoryPage() {
     return <Navigate to={{ search: DEFAULT_MEMORY_EVENTS_SEARCH }} replace />;
   }
 
+  const typeFilters = explorerSearchTypeFilters(searchParams);
+
   return (
     <EntityServiceProvider
       args={[
         {
           searchQuery: searchParams.get('search') || '',
-          includeTypes: searchParams.get('includedEntityTypes')?.split(',').filter(Boolean) || undefined,
-          excludeTypes: searchParams.get('excludedEntityTypes')?.split(',').filter(Boolean) || undefined,
+          includeTypes: typeFilters.includeTypes,
+          excludeTypes: typeFilters.excludeTypes,
           eventTypes: searchParams.get('eventTypes')?.split(',').filter(Boolean) || undefined,
           tags: searchParams.get('tags')?.split(',').filter(Boolean) || undefined,
           startTime: searchParams.get('from') || undefined,

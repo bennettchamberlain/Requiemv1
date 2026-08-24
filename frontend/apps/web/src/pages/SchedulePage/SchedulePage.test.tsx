@@ -52,9 +52,6 @@ vi.mock('@/components/HorizonGrid', () => ({
       <p>{footer}</p>
     </div>
   ),
-  // SchedulePage mounts this above the week chrome; keep it findable so the
-  // page test can assert document order against the week heading.
-  TodayStoryTimeline: () => <div>today-story</div>,
   VerticalCalendar: ({
     footer,
     onDropCandidate,
@@ -322,19 +319,6 @@ describe('SchedulePage — week paging', () => {
     const grid = screen.getByTestId('vertical-calendar');
 
     expect(heading.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByText('today-story')).not.toBeInTheDocument();
-  });
-
-  it('puts the today story above the week chrome on the horizon view', () => {
-    renderWithProviders(<SchedulePage />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Horizon' }));
-
-    const story = screen.getByText('today-story');
-    const heading = screen.getByRole('heading', { level: 2 });
-    const grid = screen.getByText('stub-drop');
-
-    expect(story.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(heading.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   describe('phone layout', () => {
@@ -353,7 +337,7 @@ describe('SchedulePage — week paging', () => {
 
     afterEach(() => setViewport(false));
 
-    it('replaces the story strip with now and next on the Horizon tab, and keeps a tappable week', async () => {
+    it('replaces the week with now and next on the Horizon tab, and keeps a tappable week', async () => {
       setViewport(true);
 
       const startOfToday = new Date();
@@ -374,7 +358,6 @@ describe('SchedulePage — week paging', () => {
 
       renderWithProviders(<SchedulePage />);
 
-      await waitFor(() => expect(screen.queryByText('today-story')).not.toBeInTheDocument());
       fireEvent.click(screen.getByRole('tab', { name: 'Horizon' }));
 
       expect(screen.getByText('Afternoon review')).toBeInTheDocument();
@@ -393,8 +376,6 @@ describe('SchedulePage — week paging', () => {
       setViewport(true);
 
       renderWithProviders(<SchedulePage />);
-
-      await waitFor(() => expect(screen.queryByText('today-story')).not.toBeInTheDocument());
 
       expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute('aria-selected', 'true');
       expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
@@ -452,7 +433,6 @@ describe('SchedulePage — layout tabs', () => {
     expect([...tabs].map((tab) => tab.textContent)).toEqual(['Calendar', 'Horizon']);
     expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
-    expect(screen.queryByText('today-story')).not.toBeInTheDocument();
   });
 
   it('switches to the horizon view and back', () => {
@@ -461,12 +441,11 @@ describe('SchedulePage — layout tabs', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Horizon' }));
 
     expect(screen.getByRole('tab', { name: 'Horizon' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('today-story')).toBeInTheDocument();
+    expect(screen.getByText('stub-drop')).toBeInTheDocument();
     expect(screen.queryByTestId('vertical-calendar')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Calendar' }));
 
     expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
-    expect(screen.queryByText('today-story')).not.toBeInTheDocument();
   });
 });
