@@ -1,36 +1,47 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
-import { ChevronRight, CircleUserRound } from '@ci/shadcn/icons';
+import { ChevronRight } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
+import { PersonAvatar } from '@/components/PersonAvatar';
+import { useCurrentUser } from '@/hooks';
 
+import { NavUserMenu } from '../PrimaryNavigation/NavUser';
 import { usePowerRail } from '../PowerRailContext';
 
 import { SELF_SECTIONS, isSelfPath } from './selfSections';
 
 /**
- * Power Rail Self entry with sub-section children — a structural copy of
- * {@link MemorySubmenu}: open = sticky click, self route, or hover, unless
- * the user explicitly closed it (chevron), which suppresses hover/route until
- * they leave or reopen.
+ * Self is the user-info tile — avatar, name, email — not a "Self" label.
+ * Same open rules as {@link MemorySubmenu}: sticky click, self route, or
+ * hover, unless the user closed it (chevron).
  */
 export function SelfSubmenu() {
   const { expanded } = usePowerRail();
   const { pathname } = useLocation();
   const { isFeatureEnabled } = useFeatures();
+  const { user } = useCurrentUser();
   const [stickyOpen, setStickyOpen] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
-  /** User closed via chevron — ignore hover/route until mouse leave or reopen. */
+  /** User closed via chevron — stay closed until they reopen, even on a Self route. */
   const [dismissed, setDismissed] = useState(false);
+
+  const currentUser = useMemo(
+    () => ({
+      name: user?.name || user?.email || 'User',
+      email: user?.email || '',
+      avatarUrl: user?.avatarUrl,
+    }),
+    [user],
+  );
 
   const routeOpen = isSelfPath(pathname);
   const open = dismissed ? false : stickyOpen || routeOpen || hoverOpen;
-
   const visible = SELF_SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
+  const avatar = <PersonAvatar name={currentUser.name} avatarUrl={currentUser.avatarUrl} size="sm" />;
 
-  // New self route → allow auto-open again.
   useEffect(() => {
     setDismissed(false);
   }, [pathname]);
@@ -39,20 +50,20 @@ export function SelfSubmenu() {
     const collapsed = (
       <Link
         to="/self"
-        aria-label="Self"
+        aria-label={currentUser.name}
         className={cn(
-          'relative rounded-md border-l-2 border-transparent p-2 transition hover:bg-accent hover:text-accent-foreground',
+          'relative flex items-center justify-center rounded-md border-l-2 border-transparent p-1 transition hover:bg-accent',
           routeOpen && 'border-l-primary text-primary hover:text-primary',
         )}
       >
-        <CircleUserRound className="h-6 w-6 shrink-0" strokeWidth={1.25} />
+        {avatar}
       </Link>
     );
 
     return (
-      <Tooltip>
+      <Tooltip delayDuration={600}>
         <Tooltip.Trigger asChild>{collapsed}</Tooltip.Trigger>
-        <Tooltip.Content side="right">Self</Tooltip.Content>
+        <Tooltip.Content side="right">{currentUser.name}</Tooltip.Content>
       </Tooltip>
     );
   }
@@ -64,7 +75,6 @@ export function SelfSubmenu() {
       onMouseEnter={() => setHoverOpen(true)}
       onMouseLeave={() => {
         setHoverOpen(false);
-        setDismissed(false);
       }}
     >
       <Collapsible
@@ -80,19 +90,27 @@ export function SelfSubmenu() {
         }}
         className="min-w-0 w-full"
       >
-        {/* One row: Self + chevron share the same box (same geometry as NavLink). */}
-        <div className="flex min-w-0 w-full items-center rounded-md border-l-2 border-transparent">
+        <div
+          className={cn(
+            'flex min-w-0 w-full items-center rounded-md border-l-2 border-transparent',
+            routeOpen && pathname === '/self' && 'border-l-primary',
+          )}
+        >
           <Link
             to="/self"
-            aria-label="Self"
+            aria-label={currentUser.name}
+            aria-current={pathname === '/self' ? 'page' : undefined}
             onClick={() => {
               setStickyOpen(true);
               setDismissed(false);
             }}
-            className="flex min-w-0 flex-1 items-center gap-3 rounded-l-md px-2 py-2 transition hover:bg-accent hover:text-accent-foreground"
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-l-md px-2 py-1.5 transition hover:bg-accent hover:text-accent-foreground"
           >
-            <CircleUserRound className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-            <span className="truncate text-sm">Self</span>
+            {avatar}
+            <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+              <span className="truncate font-medium">{currentUser.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{currentUser.email}</span>
+            </span>
           </Link>
           <Collapsible.Trigger
             className="flex shrink-0 items-center self-stretch rounded-r-md px-2 transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg]:rotate-90"
@@ -126,6 +144,8 @@ export function SelfSubmenu() {
                 </Link>
               );
             })}
+
+            <NavUserMenu />
           </div>
         </Collapsible.Content>
       </Collapsible>

@@ -1,7 +1,8 @@
-import { createEvent, fireEvent, screen } from '@testing-library/react';
+import { act, createEvent, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CANDIDATE_DRAG_TYPE } from '@/lib/scheduleDrag';
+import { HOLD_MS, cancelSchedulePointerDrag, getSchedulePointerDrag } from '@/lib/schedulePointerDrag';
 import { groupIntoSections } from '@/pages/PlanPage/taskSections';
 import type { PlanTask } from '@/pages/PlanPage/usePlanTasks';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -120,6 +121,26 @@ describe('TaskSlate — Plan backlog', () => {
     expect(onDismissProposed).toHaveBeenCalledWith('p1');
     expect(screen.queryByLabelText('Dismiss Call Mum')).not.toBeInTheDocument();
   });
+
+  it('lists overdue after upcoming instead of pinning it to the column foot', async () => {
+    renderWithProviders(
+      <TaskSlate
+        sections={backlog([
+          task({ id: 'u1', title: 'Call Mum', dueAt: '2026-08-25T17:00:00.000Z' }),
+          task({ id: 'o1', title: 'Pay the bill', dueAt: '2026-08-20T17:00:00.000Z' }),
+        ])}
+        {...NOOP}
+      />,
+    );
+
+    const upcoming = await screen.findByRole('heading', { name: /^upcoming/i });
+    const overdue = screen.getByRole('heading', { name: /^overdue/i });
+
+    expect(upcoming.compareDocumentPosition(overdue) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(overdue.parentElement).not.toHaveClass('mt-auto');
+  });
 });
 
 describe('TaskSlate — the header hint', () => {
@@ -158,7 +179,11 @@ describe('TaskSlate — failed and loading fetches', () => {
 });
 
 describe('TaskSlate — phone tabs', () => {
-  afterEach(() => setViewport(false));
+  afterEach(() => {
+    setViewport(false);
+    cancelSchedulePointerDrag();
+    vi.useRealTimers();
+  });
 
   it('shows one Plan column at a time behind a tablist', async () => {
     setViewport(true);
@@ -182,5 +207,48 @@ describe('TaskSlate — phone tabs', () => {
 
     expect(await screen.findByText('Call Mum')).toBeInTheDocument();
     expect(screen.queryByText('Try this')).not.toBeInTheDocument();
+  });
+
+  it('tells a phone to hold a card rather than drag it', async () => {
+    setViewport(true);
+
+    renderWithProviders(
+      <TaskSlate sections={backlog([task({ status: 'proposed' })])} {...NOOP} />,
+    );
+
+    expect(await screen.findByText('hold a card, then drop it on a day above')).toBeInTheDocument();
+  });
+
+  it('picks a card up after a touch hold so it can be dropped on the calendar', async () => {
+    setViewport(true);
+    vi.useFakeTimers();
+
+    renderWithProviders(
+      <TaskSlate sections={backlog([task({ id: 'task-9', title: 'Call Mum', status: 'proposed' })])} {...NOOP} />,
+    );
+
+    const card = screen.getByText('Call Mum').closest('li') as HTMLElement;
+    fireEvent.pointerDown(card, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 10,
+      button: 0,
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS);
+    });
+
+    expect(getSchedulePointerDrag()?.payload).toEqual({
+      kind: 'candidate',
+      id: 'task-9',
+      title: 'Call Mum',
+    });
+
+    fireEvent.pointerUp(window, { pointerId: 1, pointerType: 'touch', clientX: 10, clientY: 10 });
+    expect(getSchedulePointerDrag()).toBeNull();
+
+    vi.useRealTimers();
   });
 });

@@ -99,25 +99,27 @@ describe('MobileNavigation', () => {
 
     expect(await screen.findByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
     expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
+    expect(screen.queryByRole('link', { name: 'System' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Close menu' }).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('puts the account in the header, left of the close chevron, linking to profile', async () => {
+  it('puts Capture first in the drawer and the user tile at the foot, linking to Self', async () => {
     renderMobileNav();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
 
     const nav = await screen.findByRole('navigation');
-    const account = screen.getByRole('link', { name: 'Test User' });
     const close = nav.querySelector('[aria-label="Close menu"]');
+    const capture = screen.getByRole('button', { name: 'Capture' });
     const plan = screen.getByRole('link', { name: 'Plan' });
+    const account = screen.getByRole('link', { name: 'Test User' });
 
-    expect(account).toHaveAttribute('href', '/profile');
+    expect(account).toHaveAttribute('href', '/self');
     expect(screen.queryByRole('button', { name: 'Help' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument();
     expect(close).toBeTruthy();
-    expect(account.compareDocumentPosition(close as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect((close as Node).compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect((close as Node).compareDocumentPosition(capture) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(capture.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plan.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('opens on a right swipe from the left edge', async () => {

@@ -21,6 +21,7 @@ import {
   EVENT_EXTERNAL_DRAG_TYPE,
   parseEventDrag,
 } from '@/lib/scheduleDrag';
+import { subscribeSchedulePointerMove } from '@/lib/schedulePointerDrag';
 
 import {
   DAY_LANES_EXPANDED_MAX_HEIGHT_PX,
@@ -35,6 +36,7 @@ import {
   type EventSpan,
   type PackedItem,
 } from './scheduleClusters';
+import { useScheduleDropTarget } from './useScheduleDropTarget';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -580,6 +582,27 @@ const DayRow = memo(function DayRow({
   const isDropTarget = dropPct !== null;
   const acceptsDrops = Boolean(onDropCandidate ?? onMoveEvent);
 
+  const handlePointerCandidate = useCallback(
+    (id: string, ratio: number) => {
+      onDropCandidate?.(id, dropInstant(dayStart, ratio));
+    },
+    [dayStart, onDropCandidate],
+  );
+
+  const handlePointerEvent = useCallback(
+    (id: string, ratio: number, grabOffsetMs: number) => {
+      onMoveEvent?.(id, movedStart(dayStart, ratio, grabOffsetMs));
+    },
+    [dayStart, onMoveEvent],
+  );
+
+  const { dropRef, dropAxis } = useScheduleDropTarget({
+    axis: 'x',
+    onDropCandidate: onDropCandidate ? handlePointerCandidate : undefined,
+    onMoveEvent: onMoveEvent ? handlePointerEvent : undefined,
+    onHoverPct: setDropPct,
+  });
+
   const openDayStory = () => {
     if (dayEvents.length > 0) {
       onSelectDay?.(dayStart);
@@ -648,6 +671,8 @@ const DayRow = memo(function DayRow({
       </button>
 
       <div
+        ref={dropRef}
+        {...dropAxis}
         className="relative min-w-0 flex-1"
         onDragOver={
           acceptsDrops
@@ -1080,10 +1105,15 @@ function VirtualDayList({
     document.addEventListener('dragend', unpin);
     document.addEventListener('drop', unpin);
 
+    const unpinPointer = subscribeSchedulePointerMove((next) => {
+      setDragActive(Boolean(next));
+    });
+
     return () => {
       document.removeEventListener('dragstart', pin);
       document.removeEventListener('dragend', unpin);
       document.removeEventListener('drop', unpin);
+      unpinPointer();
     };
   }, []);
 
@@ -1140,6 +1170,7 @@ function VirtualDayList({
         'flex flex-col gap-0.5',
         virtualize && 'max-h-[min(70vh,calc(100vh-12rem))] overflow-y-auto',
       )}
+      {...(virtualize ? { 'data-schedule-scroll': '' } : {})}
       onScroll={virtualize ? (event) => setScrollTop(event.currentTarget.scrollTop) : undefined}
     >
       {paddingTop > 0 && <div aria-hidden style={{ height: paddingTop }} />}

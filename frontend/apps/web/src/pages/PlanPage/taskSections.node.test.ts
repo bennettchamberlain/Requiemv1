@@ -6,6 +6,7 @@ import {
   localDateOf,
   openCount,
   sectionFor,
+  withAllColumns,
   type SectionedTask,
 } from './taskSections';
 
@@ -232,6 +233,17 @@ describe('groupIntoSections', () => {
     expect(sections).toHaveLength(1);
     expect(sections[0].key).toBe('unscheduled');
     expect(sections[0].lanes.map((l) => l.key)).toEqual(['upcoming']);
+  });
+
+  it('fills missing Plan columns so empty category tabs still render', () => {
+    const sections = withAllColumns(groupIntoSections([task({ dueAt: '2026-01-15T12:00:00Z' })], TODAY, 'UTC'));
+
+    expect(sections.map((section) => [section.key, section.tasks.length])).toEqual([
+      ['proposed', 0],
+      ['unscheduled', 1],
+      ['scheduled', 0],
+      ['done', 0],
+    ]);
   });
 
   it('returns nothing for an empty list', () => {

@@ -1,12 +1,12 @@
-import { useMemo, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 
-import { Collapsible, Popover, Tooltip, cn } from '@ci/shadcn';
+import { useDeviceLayout } from '@ci/common';
+import { Collapsible, Popover, cn } from '@ci/shadcn';
 import { ChevronRight, LogOut, Palette, Settings2 } from '@ci/shadcn/icons';
 import { Link, useLocation } from 'react-router-dom';
 
-import { PersonAvatar } from '@/components/PersonAvatar';
 import { ColorPicker, useTheme } from '@/components/ThemePicker';
-import { useAuth, useCurrentUser } from '@/hooks';
+import { useAuth } from '@/hooks';
 
 import { usePowerRail } from '../PowerRailContext';
 
@@ -17,32 +17,23 @@ const THEME_MODES = [
 ] as const;
 
 /**
- * You, and everything that belongs to you, under one entry.
+ * Settings, theme, and log out — nested under the Self user tile.
  *
- * This was a dropdown behind an avatar, then briefly five flat rows at the
- * bottom of the drawer — which traded a hidden menu for a permanent wall of
- * settings sitting level with the places you actually work. It is one row that
- * opens now: your name, and under it the things that are yours.
- *
- * Theme and colours live inside Settings rather than beside it, because that is
- * what they are — settings — and the drawer should not spend three of its rows
- * on appearance.
+ * Desktop Settings stays an overlay over the page you were on. The phone
+ * walks to `/self/settings`, the same hub `/profile` used to be.
  */
-
-/** Settings, theme, and log out — the body of the account entry. */
 export function NavUserMenu() {
   const [, { logout }] = useAuth();
   const location = useLocation();
+  const { isMobile } = useDeviceLayout();
 
   return (
     <div className="flex flex-col gap-1 pt-1">
-      {/* `backgroundLocation` keeps Settings an overlay over the page you were
-          on, which is what it has always been. */}
       <SubRow
         icon={<Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
         label="Settings"
-        to="/settings/appearance"
-        state={{ backgroundLocation: location }}
+        to={isMobile ? '/self/settings' : '/settings/appearance'}
+        state={isMobile ? undefined : { backgroundLocation: location }}
       />
 
       <ThemeSubmenu />
@@ -53,69 +44,6 @@ export function NavUserMenu() {
         onClick={logout}
       />
     </div>
-  );
-}
-
-export function NavUser() {
-  const { expanded } = usePowerRail();
-  const { user } = useCurrentUser();
-  const location = useLocation();
-
-  const currentUser = useMemo(
-    () => ({
-      name: user?.name || user?.email || 'User',
-      email: user?.email || '',
-      avatarUrl: user?.avatarUrl,
-    }),
-    [user],
-  );
-
-  // size="sm" is 32px — the exact h-8 w-8 this rendered before PersonAvatar
-  // existed, so this is a no-op for anyone who already has a photo.
-  const avatar = <PersonAvatar name={currentUser.name} avatarUrl={currentUser.avatarUrl} size="sm" />;
-
-  // Collapsed, the account is the avatar and one destination: Settings. The
-  // rest is reachable the moment the drawer opens, and a 56px rail is no place
-  // for a nested accordion.
-  if (!expanded) {
-    return (
-      <Tooltip delayDuration={600}>
-        <Tooltip.Trigger asChild>
-          <Link
-            to="/settings/appearance"
-            state={{ backgroundLocation: location }}
-            aria-label={currentUser.name}
-            className="flex items-center justify-center rounded-md p-1 transition hover:bg-accent"
-          >
-            {avatar}
-          </Link>
-        </Tooltip.Trigger>
-        <Tooltip.Content side="right">{currentUser.name}</Tooltip.Content>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Collapsible>
-      <Collapsible.Trigger className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-accent hover:text-accent-foreground [&[data-state=open]>svg:last-child]:rotate-90">
-        {/* size-8 matches Help's leading cell, so this name and "Help" share
-            one left edge rather than padding off different icon widths. */}
-        {avatar}
-        <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-          <span className="truncate font-medium">{currentUser.name}</span>
-          <span className="truncate text-xs text-muted-foreground">{currentUser.email}</span>
-        </span>
-        <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
-      </Collapsible.Trigger>
-
-      {/*
-        No pl-6 — submenu icons share the avatar's size-8 column. Height
-        animates with Radix's --radix-collapsible-content-height.
-      */}
-      <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-        <NavUserMenu />
-      </Collapsible.Content>
-    </Collapsible>
   );
 }
 

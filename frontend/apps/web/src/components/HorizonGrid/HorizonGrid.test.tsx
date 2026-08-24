@@ -1,7 +1,8 @@
-import { createEvent, fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, createEvent, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
+import { cancelSchedulePointerDrag, endSchedulePointerDrag, startSchedulePointerDrag } from '@/lib/schedulePointerDrag';
 
 import {
   HorizonGrid,
@@ -929,5 +930,33 @@ describe('HorizonGrid — dropping a slate candidate', () => {
 
     // No handler is attached, so this must not throw.
     expect(() => dropAt(lanes(container)[0], 500, 'cand-1')).not.toThrow();
+  });
+});
+
+describe('HorizonGrid — pointer drop from Possibilities', () => {
+  afterEach(() => cancelSchedulePointerDrag());
+
+  it('places a held card at the time under the finger', () => {
+    const onDrop = vi.fn();
+    const { container } = render(
+      <HorizonGrid start={MONDAY} days={7} events={[]} rhythm={[]} onDropCandidate={onDrop} />,
+    );
+
+    const lanes = [...container.querySelectorAll('[data-schedule-drop-axis="x"]')] as HTMLElement[];
+    const wednesday = lanes[2];
+    wednesday.getBoundingClientRect = () =>
+      ({ width: 1000, left: 0, right: 1000, height: 80, top: 0, bottom: 80, x: 0, y: 0, toJSON: () => {} }) as DOMRect;
+    document.elementFromPoint = () => wednesday;
+
+    act(() => {
+      startSchedulePointerDrag({ kind: 'candidate', id: 'cand-7', title: 'Call Mum' }, 500, 40);
+      endSchedulePointerDrag(500, 40);
+    });
+
+    expect(onDrop).toHaveBeenCalledTimes(1);
+    const [id, at] = onDrop.mock.calls[0];
+    expect(id).toBe('cand-7');
+    expect(at.getDate()).toBe(addDays(MONDAY, 2).getDate());
+    expect(at.getHours()).toBe(12);
   });
 });

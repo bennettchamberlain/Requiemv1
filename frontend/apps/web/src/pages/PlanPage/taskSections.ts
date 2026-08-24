@@ -64,15 +64,13 @@ const LANE_LABELS: Record<LaneKey, string | null> = {
 
 const COLUMN_ORDER: ColumnKey[] = ['proposed', 'unscheduled', 'scheduled', 'done'];
 
-/** Inbox and Upcoming sit at the top; Proposed upcoming / Overdue stick to the bottom. */
+/** Inbox and Upcoming first; Proposed upcoming / Overdue follow in list order. */
 const LANE_ORDER: Record<ColumnKey, LaneKey[]> = {
   proposed: ['inbox', 'proposed_upcoming'],
   unscheduled: ['upcoming', 'overdue'],
   scheduled: ['upcoming', 'overdue'],
   done: ['inbox'],
 };
-
-export const BOTTOM_LANES: ReadonlySet<LaneKey> = new Set(['proposed_upcoming', 'overdue']);
 
 /**
  * The user-local calendar date (`YYYY-MM-DD`) of an instant.
@@ -209,6 +207,21 @@ export function groupIntoSections<T extends SectionedTask>(
       },
     ];
   });
+}
+
+/** Plan's four columns, with empty buckets kept so the tabs never disappear. */
+export function withAllColumns<T extends SectionedTask>(sections: readonly Section<T>[]): Section<T>[] {
+  const byKey = new Map(sections.map((section) => [section.key, section]));
+
+  return COLUMN_ORDER.map(
+    (key) =>
+      byKey.get(key) ?? {
+        key,
+        label: COLUMN_LABELS[key],
+        lanes: [],
+        tasks: [],
+      },
+  );
 }
 
 /** Direct children of `parentId`, sorted like section rows. */

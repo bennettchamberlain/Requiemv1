@@ -5,8 +5,11 @@ import { Button, cn, Tabs, Tooltip } from '@ci/shadcn';
 import { GripVertical, X } from '@ci/shadcn/icons';
 
 import { CANDIDATE_DRAG_TYPE } from '@/lib/scheduleDrag';
-import { BOTTOM_LANES, type Section, type SectionedTask } from '@/pages/PlanPage/taskSections';
+import { type Section, type SectionedTask } from '@/pages/PlanPage/taskSections';
 import type { PlanTask } from '@/pages/PlanPage/usePlanTasks';
+
+import { ScheduleDragGhost } from './ScheduleDragGhost';
+import { useCandidatePointerDrag } from './useCandidatePointerDrag';
 
 export { CANDIDATE_DRAG_TYPE };
 
@@ -22,22 +25,32 @@ interface CardProps {
   task: PlanTask;
   /** Proposed inbox items can be declined; unscheduled work is only placed. */
   onDismiss?: (id: string) => void;
+  /** Hold-to-drag on touch; desktop keeps HTML5. */
+  touchDrag?: boolean;
 }
 
-function BacklogCard({ task, onDismiss }: CardProps) {
+function BacklogCard({ task, onDismiss, touchDrag = false }: CardProps) {
   const proposed = task.status === 'proposed' || Boolean(task.hasPendingChange);
+  const { onPointerDown, onContextMenu } = useCandidatePointerDrag(task, touchDrag);
 
   return (
     <li
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData(CANDIDATE_DRAG_TYPE, task.id);
-        event.dataTransfer.setData('text/plain', task.title);
-        event.dataTransfer.effectAllowed = 'move';
-      }}
+      draggable={!touchDrag}
+      onDragStart={
+        touchDrag
+          ? undefined
+          : (event) => {
+              event.dataTransfer.setData(CANDIDATE_DRAG_TYPE, task.id);
+              event.dataTransfer.setData('text/plain', task.title);
+              event.dataTransfer.effectAllowed = 'move';
+            }
+      }
+      onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
       className={cn(
         'group relative flex flex-col rounded-lg border border-border bg-background',
         'cursor-grab p-2.5 pl-7 transition-colors hover:border-primary/50 active:cursor-grabbing',
+        touchDrag && 'select-none touch-pan-y [-webkit-touch-callout:none]',
       )}
     >
       <GripVertical
@@ -99,10 +112,12 @@ function BacklogColumn({
   section,
   onDismiss,
   showHeading = true,
+  touchDrag = false,
 }: {
   section: Section<PlanTask>;
   onDismiss?: (id: string) => void;
   showHeading?: boolean;
+  touchDrag?: boolean;
 }) {
   const overdue = overdueCount(section);
   const dismiss = section.key === 'proposed' ? onDismiss : undefined;
@@ -125,10 +140,7 @@ function BacklogColumn({
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
         {section.lanes.map((lane) => (
-          <div
-            key={lane.key}
-            className={cn('flex flex-col gap-2', BOTTOM_LANES.has(lane.key) && section.lanes.length > 1 && 'mt-auto')}
-          >
+          <div key={lane.key} className="flex flex-col gap-2">
             {lane.label ? (
               <h5
                 className={cn(
@@ -142,7 +154,7 @@ function BacklogColumn({
             ) : null}
             <ul className="flex flex-col gap-2">
               {lane.tasks.map((task) => (
-                <BacklogCard key={task.id} task={task} onDismiss={dismiss} />
+                <BacklogCard key={task.id} task={task} onDismiss={dismiss} touchDrag={touchDrag} />
               ))}
             </ul>
           </div>
@@ -190,7 +202,7 @@ export function TaskSlate({
       <div className="mb-2.5 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-medium text-foreground">Possibilities</h3>
         <span className="text-[11px] text-muted-foreground">
-          {hasCards ? 'drag one onto a day above' : null}
+          {hasCards ? (isMobile ? 'hold a card, then drop it on a day above' : 'drag one onto a day above') : null}
         </span>
       </div>
 
@@ -227,7 +239,12 @@ export function TaskSlate({
 
           {sections.map((section) => (
             <Tabs.Content key={section.key} value={section.key} className="max-h-72 overflow-hidden">
-              <BacklogColumn section={section} onDismiss={onDismissProposed} showHeading={false} />
+              <BacklogColumn
+                section={section}
+                onDismiss={onDismissProposed}
+                showHeading={false}
+                touchDrag
+              />
             </Tabs.Content>
           ))}
         </Tabs>
@@ -245,6 +262,8 @@ export function TaskSlate({
           ))}
         </div>
       ) : null}
+
+      <ScheduleDragGhost />
     </div>
   );
 }

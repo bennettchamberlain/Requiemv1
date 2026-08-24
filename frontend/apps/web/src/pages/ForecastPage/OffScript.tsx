@@ -1,4 +1,4 @@
-import { offScriptFromHistory } from './offScript';
+import { offScriptFromHistory } from './offScriptLine';
 import type { HistoryDayLike } from './heatmapModel';
 
 export function OffScript({

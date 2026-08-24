@@ -11,10 +11,10 @@ export interface SettingsSection {
 }
 
 /**
- * Shared settings destinations — desktop dialog nav and the mobile profile
- * page. `about-you` and `account` moved to the bottom of the Self page's
- * Profile tab (`/self`) and are deliberately absent here now — see App.tsx
- * for the redirects that keep old `/settings/about-you` and
+ * Shared settings destinations — desktop dialog nav and the mobile Self
+ * settings hub. `about-you` and `account` moved to the bottom of the Self
+ * page's Profile tab (`/self`) and are deliberately absent here now — see
+ * App.tsx for the redirects that keep old `/settings/about-you` and
  * `/settings/account` links working.
  */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -36,5 +36,5 @@ export function visibleSettingsSections(): SettingsSection[] {
 export function settingsPathToProfile(pathname: string): string {
   const rest = pathname.replace(/^\/settings\/?/, '');
 
-  return rest ? `/profile/${rest}` : '/profile';
+  return rest ? `/self/settings/${rest}` : '/self/settings';
 }

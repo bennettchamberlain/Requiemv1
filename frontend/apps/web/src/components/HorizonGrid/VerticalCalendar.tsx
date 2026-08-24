@@ -18,6 +18,7 @@ import {
   EVENT_EXTERNAL_DRAG_TYPE,
   parseEventDrag,
 } from '@/lib/scheduleDrag';
+import { SCHEDULE_SCROLL_ATTR } from '@/lib/schedulePointerDrag';
 
 import {
   addDays,
@@ -31,6 +32,7 @@ import {
 } from './HorizonGrid';
 import { formatClock, sameLocalDay } from './nowNext';
 import { foldMicroClusters, packItemLanes, type PackedItem } from './scheduleClusters';
+import { useScheduleDropTarget } from './useScheduleDropTarget';
 
 const MINUTES_PER_DAY = 24 * 60;
 const HOURS_PER_DAY = 24;
@@ -401,6 +403,27 @@ const DayLane = memo(function DayLane({
   const dayLabel = dayStart.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   const acceptsDrops = Boolean(onDropCandidate ?? onMoveEvent);
 
+  const handlePointerCandidate = useCallback(
+    (id: string, ratio: number) => {
+      onDropCandidate?.(id, dropInstant(dayStart, ratio));
+    },
+    [dayStart, onDropCandidate],
+  );
+
+  const handlePointerEvent = useCallback(
+    (id: string, ratio: number, grabOffsetMs: number) => {
+      onMoveEvent?.(id, movedStart(dayStart, ratio, grabOffsetMs));
+    },
+    [dayStart, onMoveEvent],
+  );
+
+  const { dropRef, dropAxis } = useScheduleDropTarget({
+    axis: 'y',
+    onDropCandidate: onDropCandidate ? handlePointerCandidate : undefined,
+    onMoveEvent: onMoveEvent ? handlePointerEvent : undefined,
+    onHoverPct: setDropPct,
+  });
+
   const draggedKind = (types: readonly string[]): 'candidate' | 'event' | null => {
     if (onDropCandidate && types.includes(CANDIDATE_DRAG_TYPE)) {
       return 'candidate';
@@ -415,6 +438,8 @@ const DayLane = memo(function DayLane({
 
   return (
     <div
+      ref={dropRef}
+      {...dropAxis}
       role="listitem"
       aria-label={dayLabel}
       data-testid="vertical-day-lane"
@@ -662,51 +687,54 @@ export function VerticalCalendar({
       data-testid="vertical-calendar"
       className={cn('flex flex-col overflow-hidden rounded-xl border border-border bg-card', className)}
     >
-      <div className="flex min-w-0 border-b border-border">
-        <div className="w-14 shrink-0" />
-        {dayStarts.map((dayStart) => {
-          const isToday = sameLocalDay(dayStart, today);
-          const isSelected = sameLocalDay(dayStart, selectedDay ?? today);
-          const dayLabel = dayStart.toLocaleDateString([], {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-          });
+      {/* One-column views (phone Calendar) already name the day in WeekDayChips. */}
+      {days > 1 ? (
+        <div className="flex min-w-0 border-b border-border">
+          <div className="w-14 shrink-0" />
+          {dayStarts.map((dayStart) => {
+            const isToday = sameLocalDay(dayStart, today);
+            const isSelected = sameLocalDay(dayStart, selectedDay ?? today);
+            const dayLabel = dayStart.toLocaleDateString([], {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            });
 
-          return (
-            <button
-              key={dayStart.toISOString()}
-              type="button"
-              className={cn(
-                'flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1.5',
-                'outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring',
-                isSelected && 'bg-accent/20',
-              )}
-              aria-pressed={isSelected}
-              aria-label={`Show ${dayLabel}`}
-              onClick={() => onSelectDay?.(dayStart)}
-            >
-              <span
+            return (
+              <button
+                key={dayStart.toISOString()}
+                type="button"
                 className={cn(
-                  'text-[10px] font-medium uppercase tracking-wide',
-                  isSelected || isToday ? 'text-foreground' : 'text-muted-foreground',
+                  'flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1.5',
+                  'outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring',
+                  isSelected && 'bg-accent/20',
                 )}
+                aria-pressed={isSelected}
+                aria-label={`Show ${dayLabel}`}
+                onClick={() => onSelectDay?.(dayStart)}
               >
-                {dayStart.toLocaleDateString([], { weekday: 'short' })}
-              </span>
-              <span
-                className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums',
-                  isToday && 'bg-primary text-primary-foreground',
-                  isSelected && !isToday && 'bg-accent text-accent-foreground',
-                )}
-              >
-                {dayStart.getDate()}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                <span
+                  className={cn(
+                    'text-[10px] font-medium uppercase tracking-wide',
+                    isSelected || isToday ? 'text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {dayStart.toLocaleDateString([], { weekday: 'short' })}
+                </span>
+                <span
+                  className={cn(
+                    'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold tabular-nums',
+                    isToday && 'bg-primary text-primary-foreground',
+                    isSelected && !isToday && 'bg-accent text-accent-foreground',
+                  )}
+                >
+                  {dayStart.getDate()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="flex min-w-0 border-b border-border">
         <div className="flex w-14 shrink-0 items-start justify-end pr-1.5 pt-1.5">
@@ -736,6 +764,7 @@ export function VerticalCalendar({
         ref={scrollRef}
         className="max-h-[min(70vh,calc(100vh-12rem))] overflow-auto"
         data-testid="vertical-calendar-scroll"
+        {...{ [SCHEDULE_SCROLL_ATTR]: '' }}
       >
         <div className="flex min-w-0">
           <div className="sticky left-0 z-10 w-14 shrink-0 bg-card">

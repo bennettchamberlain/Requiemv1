@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { offScriptFromHistory, offScriptLine } from './offScript';
+import { offScriptFromHistory, offScriptLine } from './offScriptLine';
 
 describe('offScriptLine', () => {
   it('stays quiet until miss rate or drift is real', () => {

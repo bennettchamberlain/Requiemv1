@@ -104,10 +104,34 @@ describe('PlanPage', () => {
     expect(screen.getByRole('heading', { name: /^proposed \d/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /proposed upcoming/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^done/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^scheduled on calendar/i })).toBeInTheDocument();
     expect(screen.getByText('Someday thing')).toBeInTheDocument();
     expect(screen.getByText('Finished thing')).toBeInTheDocument();
     expect(screen.getByText('1 overdue')).toBeInTheDocument();
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
+
+  it('lists overdue after upcoming instead of pinning it to the column foot', async () => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([
+          node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() }),
+          node({ id: 'b', title: 'Upcoming thing', dueAt: tomorrow.toISOString() }),
+        ]),
+      ],
+    });
+
+    const upcoming = await screen.findByRole('heading', { name: /^upcoming/i });
+    const overdue = screen.getByRole('heading', { name: /^overdue/i });
+
+    expect(upcoming.compareDocumentPosition(overdue) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(overdue.parentElement).not.toHaveClass('mt-auto');
   });
 
   it('renders a completed task as checked and struck through', async () => {
@@ -180,7 +204,7 @@ describe('PlanPage', () => {
     expect(schedule).toBeInTheDocument();
     expect(schedule).toHaveClass('ci-primary-surface');
     expect(screen.getByRole('button', { name: /edit write the migration/i })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /on the calendar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^scheduled on calendar 0$/i })).toBeInTheDocument();
   });
 });
 
@@ -205,11 +229,18 @@ describe('PlanPage mobile tabs', () => {
 
     const today = new Date();
     const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayDay = yesterday.toISOString().slice(0, 10);
 
     renderWithProviders(<PlanPage />, {
       mocks: [
         tasksMock([
           node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() }),
+          node({
+            id: 'd',
+            title: 'Missed block',
+            dueAt: yesterday.toISOString(),
+            scheduledFor: yesterdayDay,
+          }),
           node({ id: 'b', title: 'Someday thing' }),
           node({ id: 'c', title: 'Finished thing', status: 'done' }),
         ]),
@@ -218,6 +249,9 @@ describe('PlanPage mobile tabs', () => {
 
     expect(await screen.findByRole('tablist')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^proposed/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /unscheduled/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /scheduled on calendar/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^done/i })).toBeInTheDocument();
     expect(screen.getByText('Someday thing')).toBeInTheDocument();
     expect(screen.queryByText('Overdue thing')).not.toBeInTheDocument();
     expect(screen.queryByText('Finished thing')).not.toBeInTheDocument();
@@ -229,6 +263,29 @@ describe('PlanPage mobile tabs', () => {
     expect(screen.queryByText('Someday thing')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /unscheduled/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('heading', { name: /^overdue/i })).toBeInTheDocument();
-    expect(screen.getAllByText('1 overdue').length).toBeGreaterThan(0);
+    expect(screen.getByText('1 overdue')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /unscheduled/i })).not.toHaveTextContent(/overdue/i);
+    expect(screen.getByRole('tab', { name: /scheduled on calendar/i })).not.toHaveTextContent(/overdue/i);
+  });
+
+  it('keeps every category tab even when some columns are empty', async () => {
+    setViewport(true);
+
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [tasksMock([node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() })])],
+    });
+
+    expect(await screen.findByRole('tab', { name: /unscheduled/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /^proposed 0$/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /scheduled on calendar 0/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^done 0$/i })).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /^proposed 0$/i }), { button: 0 });
+
+    expect(await screen.findByRole('tab', { name: /^proposed 0$/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('Overdue thing')).not.toBeInTheDocument();
   });
 });

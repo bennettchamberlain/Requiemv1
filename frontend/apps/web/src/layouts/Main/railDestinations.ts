@@ -47,9 +47,9 @@ export const RAIL_DESTINATIONS: readonly RailDestination[] = [
   { id: 'sources', to: '/sources', label: 'Sources', icon: Cable, end: false },
   { id: 'jobs', to: '/jobs', label: 'Jobs', icon: Workflow, flag: 'jobs.page' },
   // Combines the former About You / Account settings and the Stats page —
-  // one destination for "who I am to the system". Still gated on `stats.page`
-  // (unchanged) so no config/env rename is needed for what was already a
-  // purely cosmetic flag name.
+  // one destination for "who I am to the system", rendered as the user tile
+  // at the foot of the rail rather than in the destination list. Still gated
+  // on `stats.page` so no config/env rename is needed.
   { id: 'self', to: '/self', label: 'Self', icon: CircleUserRound, flag: 'stats.page', end: false },
 ];
 

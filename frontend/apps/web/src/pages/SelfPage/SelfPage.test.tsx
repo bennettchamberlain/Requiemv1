@@ -15,6 +15,9 @@ import { SelfPage } from './SelfPage';
 vi.mock('./SelfProfileTab', () => ({
   SelfProfileTab: () => <div>profile-tab-body</div>,
 }));
+vi.mock('@/pages/ProfilePage/ProfilePage', () => ({
+  ProfilePage: () => <div>settings-hub-body</div>,
+}));
 vi.mock('@/pages/StatsPage/StatsPage', () => ({
   StatsPage: () => <div>stats-tab-body</div>,
 }));
@@ -46,6 +49,12 @@ describe('SelfPage', () => {
     renderAt('/self/reflections');
 
     expect(screen.getByText('reflections-tab-body')).toBeInTheDocument();
+  });
+
+  it('shows the settings hub at /self/settings', () => {
+    renderAt('/self/settings');
+
+    expect(screen.getByText('settings-hub-body')).toBeInTheDocument();
   });
 
   // Account was its own destination before it was folded into the bottom of

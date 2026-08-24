@@ -1,20 +1,17 @@
 import { useState, useEffect } from 'react';
 
-import { Button, Tabs, Sheet } from '@ci/shadcn';
-import { ChartNetwork, GanttChart, Images, List, Map as MapIcon, Plus } from '@ci/shadcn/icons';
+import { Tabs, Sheet } from '@ci/shadcn';
+import { ChartNetwork, GanttChart, Images, List, Map as MapIcon } from '@ci/shadcn/icons';
 import { useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
-import { AddEventModal } from '@/components/modals/AddItemModal';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
-import { useModalControls } from '@/hooks';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components';
-import { ExplorerToolbar, MemorySearchField } from './Components/ExplorerToolbar/ExplorerToolbar';
-import { countActiveFilters } from './Components/ExplorerToolbar/filterParams';
+import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { applyViewFilterDefaults, readMemoryView } from './Components/ExplorerToolbar/viewFilterSupport';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
@@ -23,9 +20,7 @@ import { MobileMapView } from './MapView';
 import { StoryTimelineView } from './StoryTimelineView';
 
 export default function MobileMemoryPage() {
-  const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
-
-  const [{ isOpen: isAddEventOpen }, { open: openAddEvent, close: closeAddEvent }] = useModalControls();
+  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
 
   // Document chunks open in their own dialog; every other entity uses the
   // details sheet (EntityDetails has no FileChunkType branch).
@@ -48,7 +43,6 @@ export default function MobileMemoryPage() {
       return applyViewFilterDefaults(nextParams, readMemoryView(next));
     });
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const activeFilterCount = countActiveFilters(searchParams);
 
   // Reflect the default view in the URL so the query is shareable/restorable.
   // Events is a What-bar filter, not a top-level view — rewrite legacy ?view=events. The view it
@@ -82,28 +76,10 @@ export default function MobileMemoryPage() {
     <>
       <PageContent className="gap-2 p-0">
         <div className="flex min-h-0 flex-1 flex-col gap-2 px-2">
-          {/* The global header search isn't shown on mobile — keep it first, like
-              the desktop header, above entity-type nav and filters. */}
-          <div className="flex items-center gap-2">
-            <div className="flex-1">
-              <MemorySearchField />
-            </div>
-            {activeFilterCount > 0 && (
-              <span className="whitespace-nowrap text-xs text-muted-foreground">
-                {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'}
-              </span>
-            )}
-          </div>
-
-          <MemoryHubShell
-            actions={
-              <Button size="sm" onClick={openAddEvent}>
-                <Plus className="h-4 w-4" />
-                <span className="sr-only sm:not-sr-only">New event</span>
-              </Button>
-            }
-            fillHeight
-          >
+          {/* Search and Add live in MobileTopBar — same unified header as
+              desktop, so this page does not render a second search box or
+              a type-specific create button. */}
+          <MemoryHubShell fillHeight>
             <div className="space-y-2">
               <ExplorerToolbar open />
 
@@ -156,10 +132,6 @@ export default function MobileMemoryPage() {
       )}
 
       <FileChunkModal entity={activeChunkEntity} onClose={() => setActiveEntity(null)} />
-
-      {/* Same as desktop: the browse is a server-composed `search` connection,
-          so a new event arrives via refetch rather than a cache write. */}
-      <AddEventModal open={isAddEventOpen} onClose={closeAddEvent} onCreated={refetch} />
     </>
   );
 }
