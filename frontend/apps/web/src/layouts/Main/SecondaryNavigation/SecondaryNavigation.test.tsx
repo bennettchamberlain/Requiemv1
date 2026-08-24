@@ -5,14 +5,14 @@
  * account cluster itself. These assertions pin that — present in the rail,
  * not in the account menu — and that expanding the rail reveals labels.
  */
+import { DeviceLayoutProvider } from '@ci/common';
 import { Tooltip } from '@ci/shadcn';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PowerRailProvider } from '../PowerRailContext';
 import { PowerRailToggle } from '../PowerRailToggle';
-import { NavUser } from '../PrimaryNavigation/NavUser';
 
 import { SecondaryNavigation } from './SecondaryNavigation';
 
@@ -33,8 +33,13 @@ vi.mock('@/hooks', async () => {
     ...actual,
     useAuth: () => [{ isAuthenticated: true, authToken: 'token' }, { logout: vi.fn() }],
     useCurrentUser: () => ({ user: { name: 'Test User', email: 'test@example.com', onboarded: true } }),
+    useCaptureModal: () => [{ isOpen: false }, { open: vi.fn(), close: vi.fn() }],
   };
 });
+
+vi.mock('@/components/modals/CaptureModal', () => ({
+  CaptureModal: () => <div data-testid="capture-modal" />,
+}));
 
 vi.mock('@/components/ThemePicker', () => ({
   useTheme: () => ({ themeState: { mode: 'light' }, setTheme: vi.fn() }),
@@ -52,11 +57,13 @@ function renderRail(route = '/plan', { expanded = false }: { expanded?: boolean 
 
   return render(
     <MemoryRouter initialEntries={[route]}>
-      <PowerRailProvider>
-        <Tooltip.Provider>
-          <SecondaryNavigation />
-        </Tooltip.Provider>
-      </PowerRailProvider>
+      <DeviceLayoutProvider args={[]}>
+        <PowerRailProvider>
+          <Tooltip.Provider>
+            <SecondaryNavigation />
+          </Tooltip.Provider>
+        </PowerRailProvider>
+      </DeviceLayoutProvider>
     </MemoryRouter>,
   );
 }
@@ -64,12 +71,14 @@ function renderRail(route = '/plan', { expanded = false }: { expanded?: boolean 
 function renderToggleAndRail(route = '/plan') {
   return render(
     <MemoryRouter initialEntries={[route]}>
-      <PowerRailProvider>
-        <Tooltip.Provider>
-          <PowerRailToggle />
-          <SecondaryNavigation />
-        </Tooltip.Provider>
-      </PowerRailProvider>
+      <DeviceLayoutProvider args={[]}>
+        <PowerRailProvider>
+          <Tooltip.Provider>
+            <PowerRailToggle />
+            <SecondaryNavigation />
+          </Tooltip.Provider>
+        </PowerRailProvider>
+      </DeviceLayoutProvider>
     </MemoryRouter>,
   );
 }
@@ -117,17 +126,17 @@ describe('SecondaryNavigation', () => {
 
   // One row that opens, not five flat ones. A wall of settings sitting level
   // with the places you actually work is the thing this replaced.
-  it('keeps the account to one entry that opens', () => {
+  it('keeps the account to one user tile that opens', () => {
     renderRail('/feed', { expanded: true });
 
-    const account = screen.getByRole('button', { name: /Test User/ });
+    const account = screen.getByRole('link', { name: 'Test User' });
 
-    expect(account).toBeInTheDocument();
+    expect(account).toHaveAttribute('href', '/self');
     expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
 
-    fireEvent.click(account);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
 
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/appearance');
     expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
   });
 
@@ -135,7 +144,7 @@ describe('SecondaryNavigation', () => {
   it('nests theme and colours inside the account, not in the drawer', () => {
     renderRail('/feed', { expanded: true });
 
-    fireEvent.click(screen.getByRole('button', { name: /Test User/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
     fireEvent.click(screen.getByRole('button', { name: 'Theme' }));
 
     expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeInTheDocument();
@@ -144,10 +153,10 @@ describe('SecondaryNavigation', () => {
 
   // Collapsed, the account is the avatar and one destination — a 56px rail is
   // no place for a nested accordion.
-  it('collapses the account to a single link', () => {
+  it('collapses the account to a single link to Self', () => {
     renderRail();
 
-    expect(screen.getByRole('link', { name: /Test User/ })).toHaveAttribute('href', '/settings/appearance');
+    expect(screen.getByRole('link', { name: /Test User/ })).toHaveAttribute('href', '/self');
   });
 
   // Support and Docs were two permanent rows for one question.
@@ -307,11 +316,14 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
   });
 
-  it('lists the spine then More in time-and-tool order', () => {
+  it('lists Capture first, then the spine, with Self as the user tile at the foot', () => {
     renderRail();
 
+    const capture = screen.getByRole('button', { name: 'Capture' });
+    const plan = screen.getByRole('link', { name: 'Plan' });
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
+    expect(capture.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/calendar'));
     expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/forecast'));
     expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory'));
@@ -350,34 +362,21 @@ describe('PowerRailToggle', () => {
   });
 });
 
-describe('NavUser', () => {
-  it('no longer hides Connections in the account menu', async () => {
-    render(
-      <MemoryRouter>
-        <PowerRailProvider>
-          <Tooltip.Provider>
-            <NavUser />
-          </Tooltip.Provider>
-        </PowerRailProvider>
-      </MemoryRouter>,
-    );
+describe('Self user tile', () => {
+  it('no longer hides Connections in the account menu', () => {
+    renderRail('/plan', { expanded: true });
 
-    // The menu is closed, but the assertion that matters is that no link to
-    // the old route survives anywhere in this component.
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
+
     expect(screen.queryByRole('link', { name: /Connections/i })).not.toBeInTheDocument();
   });
 
-  it('no longer hides Jobs in the account menu', () => {
-    render(
-      <MemoryRouter>
-        <PowerRailProvider>
-          <Tooltip.Provider>
-            <NavUser />
-          </Tooltip.Provider>
-        </PowerRailProvider>
-      </MemoryRouter>,
-    );
+  it('keeps Jobs in the rail, not inside the user tile', () => {
+    renderRail('/plan', { expanded: true });
 
-    expect(screen.queryByRole('link', { name: 'Jobs' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
+
+    expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+    expect(within(screen.getByTestId('self-submenu')).queryByRole('link', { name: 'Jobs' })).not.toBeInTheDocument();
   });
 });

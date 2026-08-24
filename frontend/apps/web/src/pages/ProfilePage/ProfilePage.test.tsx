@@ -32,6 +32,7 @@ vi.mock('@/hooks', async () => {
 
 vi.mock('@/components/ThemePicker', () => ({
   useTheme: () => ({ themeState: { mode: 'light' }, setTheme: vi.fn() }),
+  useBackground: () => ({ glowEnabled: true, setGlowEnabled: vi.fn() }),
   ColorPicker: () => <div>color picker</div>,
   TexturePicker: () => <div>texture picker</div>,
 }));
@@ -47,12 +48,12 @@ describe('ProfilePage', () => {
   });
 
   it('lists settings, help, and log out on the phone hub', async () => {
-    renderWithProviders(<ProfilePage />, { route: '/profile', path: '/profile/*' });
+    renderWithProviders(<ProfilePage />, { route: '/self/settings', path: '/self/settings/*' });
 
     expect(await screen.findByRole('heading', { name: 'Test User' })).toBeInTheDocument();
     expect(screen.getByText('test@example.com')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Appearance' })).toHaveAttribute('href', '/profile/appearance');
-    expect(screen.getByRole('link', { name: 'Your data' })).toHaveAttribute('href', '/profile/data');
+    expect(screen.getByRole('link', { name: 'Appearance' })).toHaveAttribute('href', '/self/settings/appearance');
+    expect(screen.getByRole('link', { name: 'Your data' })).toHaveAttribute('href', '/self/settings/data');
     // About you and Account moved to the Self tab — reached from the rail, not this hub.
     expect(screen.queryByRole('link', { name: 'About you' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
@@ -67,16 +68,16 @@ describe('ProfilePage', () => {
   });
 
   it('opens a settings section as a page with a back link', async () => {
-    renderWithProviders(<ProfilePage />, { route: '/profile/appearance', path: '/profile/*' });
+    renderWithProviders(<ProfilePage />, { route: '/self/settings/appearance', path: '/self/settings/*' });
 
-    expect(await screen.findByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile');
+    expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/self/settings');
     expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeInTheDocument();
   });
 
   it('sends desktop visitors to the settings dialog', async () => {
     setViewport(false);
-    renderWithProviders(<ProfilePage />, { route: '/profile', path: '/profile/*' });
+    renderWithProviders(<ProfilePage />, { route: '/self/settings', path: '/self/settings/*' });
 
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'Test User' })).not.toBeInTheDocument();

@@ -206,6 +206,8 @@ describe('App routing', () => {
       ['/prompts', '/self/reflections'],
       ['/memory/questions', '/self/reflections'],
       ['/memory/reflections', '/self/reflections'],
+      ['/profile', '/self/settings'],
+      ['/profile/appearance', '/self/settings/appearance'],
     ])('redirects %s to %s', async (from, to) => {
       h.features = { loading: false, enabled: true };
 

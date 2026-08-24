@@ -10,12 +10,14 @@ import { HELP_LINKS } from '@/layouts/Main/railDestinations';
 import { visibleSettingsSections } from '@/pages/SettingsPage/settingsNav';
 import { SettingsSectionBody } from '@/pages/SettingsPage/SettingsSections';
 
+const SETTINGS_HUB = '/self/settings';
+
 /**
- * Phone-only account page. Desktop settings stay a dialog; this is the same
- * section bodies plus Help and Log out, as a real page.
+ * Phone-only settings hub, now under Self. Desktop settings stay a dialog;
+ * this is the same section bodies plus Help and Log out, as a real page.
  */
 export function ProfilePage() {
-  usePageTitle('Profile - Companion Intelligence');
+  usePageTitle('Settings - Companion Intelligence');
 
   const { isMobile } = useDeviceLayout();
 
@@ -65,7 +67,7 @@ function ProfileHub() {
             return (
               <Link
                 key={section.id}
-                to={`/profile/${section.id}`}
+                to={`${SETTINGS_HUB}/${section.id}`}
                 className="flex items-center gap-3 rounded-md px-3 py-3 text-sm transition-colors hover:bg-accent"
               >
                 <Icon className="h-4 w-4 shrink-0" />
@@ -112,13 +114,13 @@ function ProfileSection() {
     <PageContent>
       <div className="mx-auto flex w-full max-w-lg flex-col gap-4">
         <Link
-          to="/profile"
+          to={SETTINGS_HUB}
           className="inline-flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground"
         >
           <ChevronLeft className="h-4 w-4" />
-          Profile
+          Settings
         </Link>
-        <SettingsSectionBody section={section ?? ''} fallbackTo="/profile" />
+        <SettingsSectionBody section={section ?? ''} fallbackTo={SETTINGS_HUB} />
       </div>
     </PageContent>
   );

@@ -10,14 +10,14 @@ vi.mock('@ci/common', async (importOriginal) => ({
 }));
 
 describe('settingsPathToProfile', () => {
-  it('sends the settings root to the profile hub', () => {
-    expect(settingsPathToProfile('/settings')).toBe('/profile');
-    expect(settingsPathToProfile('/settings/')).toBe('/profile');
+  it('sends the settings root to the Self settings hub', () => {
+    expect(settingsPathToProfile('/settings')).toBe('/self/settings');
+    expect(settingsPathToProfile('/settings/')).toBe('/self/settings');
   });
 
-  it('keeps the section on the profile page', () => {
-    expect(settingsPathToProfile('/settings/appearance')).toBe('/profile/appearance');
-    expect(settingsPathToProfile('/settings/account')).toBe('/profile/account');
+  it('keeps the section on the Self settings page', () => {
+    expect(settingsPathToProfile('/settings/appearance')).toBe('/self/settings/appearance');
+    expect(settingsPathToProfile('/settings/account')).toBe('/self/settings/account');
   });
 });
 

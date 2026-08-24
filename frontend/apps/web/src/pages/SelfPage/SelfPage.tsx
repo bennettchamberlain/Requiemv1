@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
+import { ProfilePage } from '@/pages/ProfilePage/ProfilePage';
 import { PromptsPage } from '@/pages/PromptsPage/PromptsPage';
 import { StatsPage } from '@/pages/StatsPage/StatsPage';
 
@@ -11,9 +12,9 @@ import { SelfProfileTab } from './SelfProfileTab';
  * Person editor used elsewhere in the graph, pointed at your own entity),
  * what Companion has learned about you, account deletion, life stats, and
  * reflections. Folds together the former `/settings/about-you`,
- * `/settings/account`, `/stats`, and `/memory/reflections`, which now
- * redirect here (see App.tsx). Navigated entirely from the Power Rail's Self
- * submenu — no in-page tab bar of its own.
+ * `/settings/account`, `/stats`, `/memory/reflections`, and the phone
+ * `/profile` settings hub (`/self/settings`). Navigated entirely from the
+ * Power Rail's Self user tile — no in-page tab bar of its own.
  */
 export function SelfPage() {
   const { isFeatureEnabled } = useFeatures();
@@ -24,6 +25,7 @@ export function SelfPage() {
         <Route index element={<SelfProfileTab />} />
         <Route path="stats" element={<StatsPage />} />
         {isFeatureEnabled('insights.page') && <Route path="reflections" element={<PromptsPage />} />}
+        <Route path="settings/*" element={<ProfilePage />} />
         <Route path="*" element={<Navigate to="/self" replace />} />
       </Routes>
     </div>

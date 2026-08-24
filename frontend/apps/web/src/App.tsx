@@ -74,7 +74,6 @@ const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
 const DeviceConnectPage = lazy(() => import('@/pages/DeviceConnectPage'));
 const SharedSearchPage = lazy(() => import('@/pages/SharedSearchPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
-const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
 const SelfPage = lazy(() => import('@/pages/SelfPage'));
 const TagsPage = lazy(() => import('@/pages/TagsPage'));
 // Pulls SchedulePage and FeedPage in with it — neither is routed on its own.
@@ -105,6 +104,12 @@ function RedirectFeedSummaryToBrief() {
   const { id } = useParams<{ id: string }>();
 
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+function RedirectProfileToSelfSettings() {
+  const rest = useParams()['*'];
+
+  return <Navigate to={rest ? `/self/settings/${rest}` : '/self/settings'} replace />;
 }
 
 function Providers({ children }: { children: ReactNode }) {
@@ -493,14 +498,7 @@ function AppRoutes() {
             }
           />
 
-          <Route
-            path="/profile/*"
-            element={
-              <ProtectedRoute>
-                <ProfilePage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/profile/*" element={<RedirectProfileToSelfSettings />} />
 
           <Route
             path="/system"
