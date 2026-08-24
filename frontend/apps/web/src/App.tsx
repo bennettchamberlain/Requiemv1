@@ -8,6 +8,7 @@ import {
   isIosPlatform,
   isNativePlatform,
   needsNativeCloudConnect,
+  useDeviceLayout,
 } from '@ci/common';
 import {
   BrowserRouter as Router,
@@ -35,6 +36,7 @@ import {
   useLocationTracking,
   useNativeShell,
   usePreventOverscroll,
+  useStatusBarScrollToTop,
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import LoginPage from '@/pages/LoginPage';
@@ -150,6 +152,12 @@ function AppRoutes() {
 
   // Native shell wiring (splash dismiss, Android back button). Inert on web.
   useNativeShell();
+
+  // Phone: tap the top safe area (status bar / notch) to jump the frontmost
+  // list back to the top — iOS convention, implemented in JS because pages
+  // scroll inner overflow containers rather than the webview itself.
+  const { isMobile } = useDeviceLayout();
+  useStatusBarScrollToTop(isMobile === true);
 
   // Browser location tracking (issue #1811): records ci.position fixes while
   // the user has enabled it in Settings -> Location. Inert when disabled.

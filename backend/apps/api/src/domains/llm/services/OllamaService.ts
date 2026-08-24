@@ -32,7 +32,10 @@ const DEMO_VISION_MODEL = 'gemma3:27b';
 const DEMO_TEXT_MODEL = 'qwen3:14b';
 const INTERNAL_MODELS = new Set(['nomic-embed-text', 'nomic-embed-text-v2-moe']);
 
-const OPENAI_MODE_CAPABILITIES = ['completion', 'tools'];
+// vLLM / Qwen honor `chat_template_kwargs.enable_thinking`; tool-call parsers
+// cover structured tools plus the `<toolcall>` salvage path. Advertise both so
+// Chat and Settings can toggle them the same way they do for Ollama.
+const OPENAI_MODE_CAPABILITIES = ['completion', 'tools', 'thinking'];
 
 /** How long the boot-time model check waits on the inference backend. */
 const PREFLIGHT_TIMEOUT_MS = 5_000;
@@ -355,7 +358,7 @@ export class OllamaService implements OnModuleInit {
           capabilities: OPENAI_MODE_CAPABILITIES,
           vision: false,
           tools: true,
-          thinking: false,
+          thinking: true,
         }));
     }
 

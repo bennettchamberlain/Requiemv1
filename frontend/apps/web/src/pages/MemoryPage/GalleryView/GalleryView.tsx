@@ -99,7 +99,7 @@ export function GalleryView() {
 
   if (loading && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <EntityGrid>
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="h-full w-full animate-pulse rounded-lg border bg-card" />
@@ -113,7 +113,7 @@ export function GalleryView() {
   // query failure read as "No results found".
   if (error && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <ErrorState onRetry={refetch} />
       </div>
     );
@@ -121,7 +121,7 @@ export function GalleryView() {
 
   if (data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <MemoryEmptyState filtered={filteredBrowse} />
       </div>
     );
@@ -129,7 +129,7 @@ export function GalleryView() {
 
   return (
     <>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <EntityGrid>
           {ordered.map((item) => {
             // Media-bearing entities (image/video) render as real thumbnails and

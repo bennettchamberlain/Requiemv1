@@ -103,7 +103,11 @@ describe('LifeDetailsSection', () => {
     render(<LifeDetailsSection />);
 
     const row = (await screen.findByText('What is your blood type?')).closest('div')!;
-    fireEvent.change(within(row).getByPlaceholderText('Answer…'), { target: { value: 'O negative' } });
+    const input = within(row).getByPlaceholderText('Answer…');
+    fireEvent.change(input, { target: { value: 'O negative' } });
+
+    expect(input).toHaveClass('w-full');
+    expect(input).not.toHaveClass('w-80');
 
     await waitFor(
       () => {

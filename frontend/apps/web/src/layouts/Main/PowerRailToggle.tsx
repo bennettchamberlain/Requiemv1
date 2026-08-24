@@ -40,7 +40,7 @@ export function PowerRailToggle() {
           >
             {/* Full-size mark on a white disc. `max-w-none` defeats Tailwind
               preflight `img { max-width: 100% }` so it stays round. */}
-            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white -translate-y-[2px]">
+            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white -translate-x-px -translate-y-px">
               <img src={logo} alt="" className="size-8 max-w-none rounded-full" />
             </span>
             {/* PINNED, not merely expanded. This button sits in the same `auto`
@@ -50,7 +50,7 @@ export function PowerRailToggle() {
               one case where a reflow is intended, and permanent. */}
             <span
               aria-hidden={!pinned}
-              className="-translate-y-[2px] overflow-hidden whitespace-nowrap text-left text-sm font-semibold leading-tight"
+              className="-translate-y-px overflow-hidden whitespace-nowrap text-left text-sm font-semibold leading-tight"
             >
               Companion Memory
             </span>

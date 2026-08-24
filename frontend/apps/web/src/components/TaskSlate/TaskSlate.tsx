@@ -138,7 +138,7 @@ function BacklogColumn({
         <p className="px-1 pb-2 text-xs text-destructive">{overdue} overdue</p>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto" data-list-scroll="">
         {section.lanes.map((lane) => (
           <div key={lane.key} className="flex flex-col gap-2">
             {lane.label ? (
