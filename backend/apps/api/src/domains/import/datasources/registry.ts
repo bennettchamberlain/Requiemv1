@@ -46,6 +46,18 @@ export interface DataSourceRecognition {
    * staging folder still imports from the folder that really contains it).
    */
   matchedPath?: string;
+  /**
+   * Subtrees a specialised match has already claimed, set by
+   * `ParseStage.dropGenericWhenSpecialised` on the SURVIVING `generic` match
+   * only (see that function). Every other match's `excludePaths` stays unset —
+   * a specialised parser only ever reads what it recognized at `matchedPath`,
+   * so it has nothing else to be told to skip. `generic`'s walker (see
+   * `datasources/generic.ts`) prunes any entry nested under, or equal to, one
+   * of these before it stages anything — that is what lets a bare loose file
+   * elsewhere in the same drop still reach `generic` without re-staging what a
+   * specialised parser already consumed.
+   */
+  excludePaths?: readonly string[];
 }
 
 // Parameters for recognition (reserved for future use)
@@ -302,6 +314,26 @@ async function isDirectorySafe(p: string): Promise<boolean> {
 }
 
 /**
+ * Is `child` equal to `parent`, or nested somewhere inside it? Pure
+ * containment in ONE direction, with no "missing path means nested" fallback
+ * — that conservative default belongs to callers that need it (see
+ * {@link isAncestorPath} below), not to this primitive.
+ *
+ * Exported for `ParseStage.dropGenericWhenSpecialised` and `generic.ts`'s file
+ * walker, which both need the same "is this path inside a claimed subtree"
+ * check this module already proved out here.
+ */
+export function isPathWithinOrEqual(parent: string, child: string): boolean {
+  if (parent === child) {
+    return true;
+  }
+
+  const rel = path.relative(parent, child);
+
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/**
  * Is `a` an ancestor of `b`, `b` an ancestor of `a`, or the same path — i.e.
  * are the two "nested" relative to each other, in either direction? Two
  * SIBLINGS (`.../Bookmarks` and `.../History`, both direct children of the
@@ -315,17 +347,11 @@ async function isDirectorySafe(p: string): Promise<boolean> {
  * before this distinction existed.
  */
 function isAncestorPath(a: string | undefined, b: string | undefined): boolean {
-  if (a == null || b == null || a === b) {
+  if (a == null || b == null) {
     return true;
   }
 
-  const isInside = (parent: string, child: string): boolean => {
-    const rel = path.relative(parent, child);
-
-    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-  };
-
-  return isInside(a, b) || isInside(b, a);
+  return isPathWithinOrEqual(a, b) || isPathWithinOrEqual(b, a);
 }
 
 /**

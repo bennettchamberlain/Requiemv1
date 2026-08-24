@@ -322,6 +322,19 @@ export interface ImportParams {
    * fall back to the OS temp dir.
    */
   mediaStoreDir?: string;
+  /**
+   * Subtrees a specialised recognizer already claimed inside this same run,
+   * absolute paths. Threaded through from the surviving `generic` match's
+   * `DataSourceRecognition.excludePaths` (see `registry.ts` and
+   * `ParseStage.dropGenericWhenSpecialised`) so `generic`'s own walker can skip
+   * them rather than re-stage what another importer already read.
+   *
+   * Every OTHER importer ignores this field — it only means something to a
+   * directory walk with no other notion of "already consumed," which today is
+   * `generic` alone. Unset for a run with no specialised claims to skip, and
+   * always unset for every non-generic importer's call.
+   */
+  excludePaths?: readonly string[];
 }
 
 export interface Timeframe {
