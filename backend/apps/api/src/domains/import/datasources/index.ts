@@ -22,6 +22,7 @@ import './evernote';
 import './facebook';
 import './firefox';
 import './fitbit';
+import './flickr';
 import './flighty';
 import './garmin';
 import './gemini';
