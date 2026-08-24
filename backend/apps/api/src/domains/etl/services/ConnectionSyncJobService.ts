@@ -498,6 +498,18 @@ export class ConnectionSyncJobService {
       });
     }
 
+    // Mirrors claimTransform's own condition, staleness window included. The
+    // sweep that feeds it re-selects every minute, so without this a transform
+    // still running is re-sent once a minute for its whole duration and the
+    // claim discards each one. Excluding merely `transform_claimed_at IS NOT
+    // NULL` would be wrong in the other direction: a worker killed mid-transform
+    // would never be picked up again.
+    if (query.transformClaimable === true) {
+      executable = executable.andWhere(
+        `(transform_claimed_at IS NULL OR transform_claimed_at < now() - interval '1 hour')`,
+      );
+    }
+
     let ordered = false;
 
     if (query.orderBy != null) {

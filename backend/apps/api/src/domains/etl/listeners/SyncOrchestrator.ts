@@ -562,6 +562,11 @@ export class SyncOrchestrator {
       {
         status: 'success',
         lastTransformed: null,
+        // A transform in flight is not work this tick can start. The claim
+        // below already refuses the duplicate, but without this the sweep
+        // spends both of its two slots re-sending the same long transform
+        // every minute until it finishes, starving the queue behind it.
+        transformClaimable: true,
         orderBy: 'updated_at:DESC',
         limit: MAX_TRANSFORM_JOBS_PER_TICK,
       },
