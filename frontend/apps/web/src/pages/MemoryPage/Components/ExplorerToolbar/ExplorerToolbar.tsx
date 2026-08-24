@@ -28,7 +28,6 @@ import {
   MapPin,
   Save,
   Scan,
-  Search,
   Shapes,
   Share2,
   Sparkles,
@@ -1350,64 +1349,10 @@ export function AdvancedSearchToggle({
 }
 
 /**
- * Debounced free-text search bound to the `?search` URL param. Used on mobile,
- * where the unified header search bar isn't shown; desktop uses the header
- * GlobalSearchBox instead.
- */
-export function MemorySearchField() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const urlValue = searchParams.get('search') ?? '';
-  const [value, setValue] = useState(urlValue);
-
-  // Keep the input in sync when the URL changes externally (clear, saved search).
-  useEffect(() => {
-    setValue(urlValue);
-  }, [urlValue]);
-
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (value === urlValue) {
-        return;
-      }
-
-      setSearchParams(
-        (params) => {
-          if (value) {
-            params.set('search', value);
-          } else {
-            params.delete('search');
-          }
-
-          return params;
-        },
-        { replace: true },
-      );
-    }, 350);
-
-    return () => clearTimeout(handle);
-  }, [value, urlValue, setSearchParams]);
-
-  return (
-    <div className="relative w-full">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        type="search"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Search your memory…"
-        className="pl-8"
-      />
-    </div>
-  );
-}
-
-/**
- * The explorer toolbar body that sits under the unified header bar (mobile):
+ * The explorer toolbar body that sits under the unified header search:
  * the advanced-search drawer — the drag-and-drop filter area, then What /
  * When / How + located-only, semantic, sort, and save. `open` is controlled
- * by the page — the AdvancedSearchToggle that flips it lives beside the
- * search field, and the caller surfaces the active-filter count while the
- * drawer is closed. Wrapped in DropdownProvider so the useDropdown URL-param
+ * by the page. Wrapped in DropdownProvider so the useDropdown URL-param
  * setters work.
  */
 export function ExplorerToolbar({ open }: { open: boolean }) {
