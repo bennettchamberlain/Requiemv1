@@ -18,8 +18,10 @@ import { Check, CloudOff, TriangleAlert } from '@ci/shadcn/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import TimeAgo from 'react-timeago';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 
 import { useEntityReference } from './useEntityReference';
 
@@ -376,6 +378,7 @@ export function NotePage() {
       >
         <div className="flex h-full flex-col overflow-hidden">
           <Editor.Menu>
+            <div className="flex w-full items-center justify-between gap-2">
             <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
               {saveError ? (
                 <>
@@ -411,6 +414,20 @@ export function NotePage() {
                   <TimeAgo date={note.updatedAt} minPeriod={5} formatter={shortFormatter} />
                 </>
               ) : null}
+            </div>
+            {note ? (
+              <ChatWithAgentMenu
+                context={namedChatContext({
+                  title: note.title,
+                  body: note.content
+                    ? note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                    : null,
+                  sourceKind: 'NoteType',
+                  sourceId: note.id,
+                })}
+                size="sm"
+              />
+            ) : null}
             </div>
           </Editor.Menu>
 

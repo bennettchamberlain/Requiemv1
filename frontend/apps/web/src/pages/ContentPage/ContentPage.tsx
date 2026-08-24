@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@apollo/client';
 import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
 import { useParams } from 'react-router-dom';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityFieldsCard } from '@/components/EntityFields';
 import { EntityGraph } from '@/components/EntityGraph';
@@ -12,6 +13,7 @@ import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/Entity
 import { ContentIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 import {
   EntityMedia,
   resolveStaticUrl,
@@ -92,7 +94,17 @@ export function ContentPage() {
             <ContentIcon />
             <h1 className="text-2xl font-bold">{contentItem.title}</h1>
           </div>
-          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
+          <div className="flex items-center gap-2">
+            <ChatWithAgentMenu
+              context={namedChatContext({
+                title: contentItem.title,
+                body: contentItem.text,
+                sourceKind: 'ContentType',
+                sourceId: contentItem.id,
+              })}
+            />
+            <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

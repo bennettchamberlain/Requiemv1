@@ -5,6 +5,7 @@ import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
 import { Badge, Button, Card } from '@ci/shadcn';
 import { useParams } from 'react-router-dom';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { ObjectIdentifierList, ObservationStrip, ProductModelCard } from '@/components/entities';
 import { GET_ITEM } from '@/components/entities/itemDocuments';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
@@ -15,6 +16,7 @@ import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/Entity
 import { ItemIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 import { humanizeEnum } from '@/lib/utils';
 
 import { AcquisitionCard } from './AcquisitionCard';
@@ -114,7 +116,17 @@ export function ItemPage() {
               </span>
             )}
           </div>
-          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
+          <div className="flex items-center gap-2">
+            <ChatWithAgentMenu
+              context={namedChatContext({
+                title: item.name,
+                body: [item.description, item.brand, item.model, item.category].filter(Boolean).join(' · ') || null,
+                sourceKind: 'ItemType',
+                sourceId: item.id,
+              })}
+            />
+            <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

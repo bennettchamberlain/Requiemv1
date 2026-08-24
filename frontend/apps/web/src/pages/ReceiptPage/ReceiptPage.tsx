@@ -5,10 +5,12 @@ import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
 import { Badge, Card, Table } from '@ci/shadcn';
 import { Link, useParams } from 'react-router-dom';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { resolveMediaUrl } from '@/components/entities/resolveMediaUrl';
 import { ReceiptIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 import { formatMinor } from '@/lib/money';
 import { humanizeEnum } from '@/lib/utils';
 
@@ -200,6 +202,20 @@ export function ReceiptPage() {
           {receipt.extractionState !== 'EXTRACTED' && (
             <Badge variant="secondary">{humanizeEnum(receipt.extractionState)}</Badge>
           )}
+          <ChatWithAgentMenu
+            context={namedChatContext({
+              title: receipt.merchantName,
+              body: [
+                formatMinor(receipt.totalMinor, receipt.currency),
+                dateLabel,
+                receipt.orderNumber ? `#${receipt.orderNumber}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · '),
+              sourceKind: 'ReceiptType',
+              sourceId: receipt.id,
+            })}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

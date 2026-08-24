@@ -5,6 +5,7 @@ import { GlobalUID, LoadingPage, usePageTitle, EmptyState } from '@ci/common';
 import { Card, Label } from '@ci/shadcn';
 import { useParams } from 'react-router-dom';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityGraph } from '@/components/EntityGraph';
 import { EntityRelationshipCards } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
@@ -14,6 +15,7 @@ import { InlineEditableField } from '@/components/InlineEditableField';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
 import { gql } from '@/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 
 const GET_PLACE = gql(`
   query GetPlace($id: ID!) {
@@ -104,9 +106,19 @@ export function PlacePage() {
 
     content = (
       <PageContent>
-        <div className="flex items-center gap-2">
-          <PlaceIcon />
-          <h1 className="text-2xl font-bold">{place.name || 'Unnamed place'}</h1>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <PlaceIcon />
+            <h1 className="text-2xl font-bold">{place.name || 'Unnamed place'}</h1>
+          </div>
+          <ChatWithAgentMenu
+            context={namedChatContext({
+              title: place.name,
+              body: place.description,
+              sourceKind: 'PlaceType',
+              sourceId: place.id,
+            })}
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

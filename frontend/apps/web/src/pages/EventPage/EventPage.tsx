@@ -6,6 +6,7 @@ import { Card, Label } from '@ci/shadcn';
 import { User } from '@ci/shadcn/icons';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import { EntityEvolutionPanel } from '@/components/EntityEvolution/EntityEvolutionPanel';
 import { EntityFieldsCard, formatEntityLabel, formatEntityTimestamp } from '@/components/EntityFields';
 import { EntityEditToggle, EntityTagsDescriptionCard } from '@/components/EntityTagsDescriptionCard';
@@ -14,6 +15,7 @@ import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
 import { Tag } from '@/components/Tag';
 import { gql } from '@/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 import {
   EntityMedia,
   resolveStaticUrl,
@@ -124,7 +126,17 @@ export function EventPage() {
             <EventIcon />
             <h1 className="text-2xl font-bold">{event.title}</h1>
           </div>
-          <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
+          <div className="flex items-center gap-2">
+            <ChatWithAgentMenu
+              context={namedChatContext({
+                title: event.title,
+                body: [event.description, event.eventType, event.sourceSystem].filter(Boolean).join(' · ') || null,
+                sourceKind: 'EventType',
+                sourceId: event.id,
+              })}
+            />
+            <EntityEditToggle pressed={editMode} onPressedChange={setEditMode} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
