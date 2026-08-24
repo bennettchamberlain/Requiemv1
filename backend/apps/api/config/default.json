@@ -81,7 +81,8 @@
       "issuer": "https://hub.ci.computer",
       "jwksUri": "https://hub.ci.computer/api/auth/jwks",
       "audience": "ci-server,ci-hub,ci-import-tools,ci-browser-extension,ci-even,ci-applet",
-      "pushRelayUrl": ""
+      "pushRelayUrl": "",
+      "serviceClients": "hbpe-sidecar,summary-sidecar"
     },
     "hubForwardAuth": {
       "enabled": false,

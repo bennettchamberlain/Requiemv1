@@ -6,7 +6,9 @@
 Live sketches (click, drag, type) for prompting a person one decision at a time — Today /
 Reflections / Onboarding / Memory confirmations — instead of open chat walls. (The two
 surfaces were called Feed and Prompts when this was written; Feed is now embedded in
-**Today** at `/today`, and Prompts is **Reflections** at `/memory/reflections`.)
+**Calendar** at `/calendar`, and Prompts is **Reflections** at `/self/reflections`.
+Both moved again after this doc was written — `/today` and `/memory/reflections`
+still work, as redirects.)
 
 ## Categories in the catalog
 

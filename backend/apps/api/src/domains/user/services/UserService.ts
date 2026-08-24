@@ -191,6 +191,44 @@ export class UserService {
     return UserEntity.toEgressType(result);
   }
 
+  /**
+   * Change the authenticated user's own email. Callers must have already
+   * verified `checkEmailAvailability` and, for non-federated accounts,
+   * re-authenticated with the current password — this method just writes.
+   */
+  async changeEmail(context: ServiceContext, id: string, newEmail: string): Promise<User | null> {
+    if (context.userId !== SYSTEM_USER && context.userId !== id) {
+      throw new UnauthorizedException();
+    }
+
+    await this.userRepository.update(id, { email: newEmail });
+
+    await this.eventService.send(UserUpdatedEvent, {
+      userId: id,
+    });
+
+    return this.findById(context, id);
+  }
+
+  /**
+   * Change the authenticated user's own password. Unlike {@link update}, this
+   * hashes the plaintext before writing — `update()` persists `password`
+   * verbatim, so passing a raw password through it would store it unhashed.
+   */
+  async changePassword(context: ServiceContext, id: string, newPassword: string): Promise<void> {
+    if (context.userId !== SYSTEM_USER && context.userId !== id) {
+      throw new UnauthorizedException();
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, config.auth.local.saltRounds);
+
+    await this.userRepository.update(id, { password: hashedPassword });
+
+    await this.eventService.send(UserUpdatedEvent, {
+      userId: id,
+    });
+  }
+
   async checkEmailAvailability(email: string): Promise<boolean> {
     const result = await this.userRepository.findOne({
       where: {

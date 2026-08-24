@@ -137,6 +137,7 @@ describeWithDatabase(
         status?: string;
         updatedAt?: Date;
         lastTransformed?: Date | null;
+        transformClaimedAt?: Date | null;
         userId?: string;
       } = {},
     ): Promise<string> {
@@ -146,8 +147,8 @@ describeWithDatabase(
 
       await scratch.dataSource.query(
         `INSERT INTO ci_etl.connection_sync_jobs
-         (id, user_id, connection_id, endpoint_name, status, type, updated_at, last_transformed)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::ci_etl.job_status, 'incremental', $6, $7)`,
+         (id, user_id, connection_id, endpoint_name, status, type, updated_at, last_transformed, transform_claimed_at)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::ci_etl.job_status, 'incremental', $6, $7, $8)`,
         [
           id,
           overrides.userId ?? userId,
@@ -156,6 +157,7 @@ describeWithDatabase(
           overrides.status ?? 'pending',
           overrides.updatedAt ?? new Date(),
           overrides.lastTransformed ?? null,
+          overrides.transformClaimedAt ?? null,
         ],
       );
 
@@ -335,6 +337,37 @@ describeWithDatabase(
         await seedSyncJob({ connectionId: randomUUID() });
 
         await expect(service.findDispatchablePending(SYSTEM_CONTEXT, 0)).resolves.toEqual([]);
+      });
+
+      it('skips a transform already in flight, which the claim would only discard', async () => {
+        const free = await seedSyncJob({ status: 'success', updatedAt: minutesAgo(1) });
+        await seedSyncJob({
+          status: 'success',
+          updatedAt: minutesAgo(2),
+          transformClaimedAt: minutesAgo(5),
+        });
+
+        const claimable = await service.search(SYSTEM_CONTEXT, {
+          ...transformQuery,
+          transformClaimable: true,
+        });
+
+        expect(claimable.map((row) => row.id)).toEqual([free]);
+      });
+
+      it('still offers a claim gone stale, so a killed worker is retried not stranded', async () => {
+        const stale = await seedSyncJob({
+          status: 'success',
+          updatedAt: minutesAgo(90),
+          transformClaimedAt: minutesAgo(90),
+        });
+
+        const claimable = await service.search(SYSTEM_CONTEXT, {
+          ...transformQuery,
+          transformClaimable: true,
+        });
+
+        expect(claimable.map((row) => row.id)).toContain(stale);
       });
 
       it('returns only the caller-owned jobs when the context is user-scoped', async () => {

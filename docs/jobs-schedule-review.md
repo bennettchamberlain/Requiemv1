@@ -1,12 +1,40 @@
 # Jobs schedule review
 
+> ## ⚠️ Status: point-in-time review — **the whole "Fix these first" list has landed**
+>
+> **Δ 2026-08-23.** This document was a review snapshot taken at commit
+> `dbf3a8a2a`. Read below it for the *analysis*; do **not** read the fix table as
+> outstanding work. All ten items were re-checked against `origin/main` at
+> `b82014a1b` and every one of them is done:
+>
+> | # | Was | Now |
+> |---|---|---|
+> | 1 | `AccountPurgeCron` had no `name` | `@Cron(ACCOUNT_PURGE_CRON, { name: 'AccountPurgeCron.purgeDueAccounts' })` — `domains/user/cron/AccountPurgeCron.ts:31` |
+> | 2 | `CLASS_CATEGORY` missing three rows | `/^PlanningJobs/`, `/^ImportStage/` and `AccountPurge` are all present — `JobsPage/cronDescriptor.ts:19-35`; a `MINTED_KEY` regex now flags a UUID registry key as the backend bug it is |
+> | 3 | Two timers drove one `tick()` | The `@Cron` on `PipelineControlService.tickOnSchedule` is gone; `PipelineTickCron` is the sole timer, and its docstring now says "every five minutes" instead of "every 30 s" |
+> | 4 | 10 crons imported `Cron` from `@nestjs/schedule` | No non-test file imports the `Cron` **symbol** from `@nestjs/schedule` any more; `McpController` imports only `CronExpression` and decorates with the wrapper |
+> | 5 | `DailyMetricsCron` bootstrap fired in both roles | `if (!serves('web')) return;` — `domains/daily-metrics/cron/DailyMetricsCron.ts:64` |
+> | 6 | `SyncOrchestrator`: index, guard, LIMIT, predicate | `20260821064528_add_connection_sync_jobs_query_indexes.sql` adds the indexes; the running guard is at `:58`, the cap is a SQL `limit: MAX_TRANSFORM_JOBS_PER_TICK` at `:571` ("`limit`, not a `.slice()` on the result"), and the healthy-running-sync arm is inverted at `:161-165` |
+> | 7 | `EntityPromotionCron` should be deleted | The file is gone from `domains/smart-rotation/cron/` |
+> | 8 | `scheduled.connection.sync` was read nowhere | Read in four places now — `SyncOrchestrator.ts:81,359,553` and `SyncNowService.ts:38` |
+> | 9 | `PipelineTickCron`'s superseded doc block | Rewritten; the cadence comment matches the expression |
+> | 10 | `PlanningJobsCron.fanOut` used unfiltered `findAll()` | No `findAll()` call remains in `PlanningJobsCron` or `DailyMetricsCron` |
+>
+> **The counts in the scope line and in "41 vs 43" are also stale.** There are
+> now **48** non-test `@Cron` methods, and **8** of them carry `role: 'worker'`
+> (not 2), so the web process registers **40**. The reconciliation *argument*
+> below still holds; the arithmetic in it does not.
+>
+> For the pg-boss half of the jobs system — queues, the worker loop, dead
+> letters — see [`runbooks/jobs-system-review-2026-08.md`](runbooks/jobs-system-review-2026-08.md).
+
 Scope: the 41 rows in the Jobs dashboard "Schedules" card, the 43 `@Cron` methods behind them, and what it takes to run all of it against a full personal corpus.
 
 All paths are repo-relative. Everything cited was read at the cited line at commit `dbf3a8a2a`. Where a number could not be established from the code, it says so.
 
 ---
 
-## Fix these first
+## Fix these first — ✅ all landed, see the status box above
 
 Ordered by (confirmed defect) × (effort to fix). Items 1–5 are single-digit line changes.
 

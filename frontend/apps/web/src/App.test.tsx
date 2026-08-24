@@ -202,7 +202,7 @@ describe('App routing', () => {
     it.each([
       ['/stats', '/self/stats'],
       ['/settings/about-you', '/self'],
-      ['/settings/account', '/self/account'],
+      ['/settings/account', '/self'],
       ['/prompts', '/self/reflections'],
       ['/memory/questions', '/self/reflections'],
       ['/memory/reflections', '/self/reflections'],

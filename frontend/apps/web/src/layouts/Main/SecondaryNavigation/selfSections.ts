@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 
-import { ChartColumn, NotebookPen, User, UserRound } from '@ci/shadcn/icons';
+import { ChartColumn, NotebookPen, UserRound } from '@ci/shadcn/icons';
 
 export type SelfSectionIcon = ComponentType<{ className?: string; strokeWidth?: number }>;
 
@@ -13,14 +13,12 @@ export type SelfSection = {
 };
 
 /**
- * Self destinations — shared by the in-page tab bar and the Power Rail Self
- * submenu, same reason `MEMORY_HUB_SECTIONS` is shared between `MemoryHubNav`
- * and `MemorySubmenu`: one source of truth so labels, routes, matchers, and
- * flags can't drift between the two renderings.
+ * Self destinations — the Power Rail Self submenu's sub-items. Account
+ * deletion/credentials live at the bottom of Profile rather than as their own
+ * destination — one identity surface, not two.
  */
 export const SELF_SECTIONS: SelfSection[] = [
   { to: '/self', label: 'Profile', match: (p) => p === '/self', icon: UserRound },
-  { to: '/self/account', label: 'Account', match: (p) => p === '/self/account', icon: User },
   { to: '/self/stats', label: 'Stats', match: (p) => p === '/self/stats', icon: ChartColumn },
   {
     to: '/self/reflections',

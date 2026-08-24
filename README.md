@@ -30,6 +30,8 @@ Full index: [`docs/README.md`](docs/README.md)
 - **Runbooks:** [bulk load](backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md) · [ingest reset](backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md).
 - **Import & ETL:** [`docs/import/etl-agent-guide.md`](docs/import/etl-agent-guide.md) (how a personal archive becomes rows in `ci.*`, and how to fix an import bug) and [`docs/cli/ci-import.md`](docs/cli/ci-import.md) (the `ci-import` command line). Import is a domain inside this repo — `backend/apps/api/src/domains/import/` — not a separate service.
 - **Features:** [`docs/saved-search-sharing.md`](docs/saved-search-sharing.md) (sharing + filter capture + read-only viewer) · [`docs/peer-federation.md`](docs/peer-federation.md) (asking questions across two Companion memories — Portal discovery, the three ask archetypes, free/busy without leaking a calendar).
+- **The consent path (`/asks`):** [`docs/asks-system-guide.md`](docs/asks-system-guide.md) is the reference document — **read it before changing anything on the consent path**: grants, the disclosure ladder and its four ceilings, the capture-at-consent-time rule, the ask lifecycle local and federated, how to run the `/asks` page and the two-box federation harness, and the current gap list. Its companion [`docs/asks-threat-model.md`](docs/asks-threat-model.md) states what the feature does *not* defend against. Neither was linked from here before 2026-08-23.
+- **Screenshots & the nav map:** [`docs/screenshots.md`](docs/screenshots.md) — the Power Rail, the Memory and Self hubs, every route that is now a redirect, and how the committed shots were captured and compressed.
 - **User-facing:** the [Companion Memory page on docs.ci.computer](https://docs.ci.computer/docs/apps-available/first-party-apps/companion-memory-server) (in [CI-Docs](https://github.com/companionintelligence/CI-Docs)) covers the Explorer, search & filters, saved searches, and sharing — with screenshots.
 
 This is a Yarn workspace monorepo, with a uv-managed Python workspace alongside it
@@ -546,10 +548,14 @@ docker compose exec hbpe-service python -c \
 `.github/workflows/publish.yml` builds every `companion/*` image natively per architecture, merges
 the legs into a multi-arch manifest list, and registers the result with CI-Portal.
 
-**Image publish is not triggered by pushing a tag.** Check workflows are
-`workflow_dispatch`-only — an absent or green check means nobody dispatched it, not
-that anything passed. The exception is `mobile-release.yml` (`ios-v*` / `android-v*` /
-`mobile-release-v*`), which uploads to TestFlight / Play. Cut a container release by
+**Image publish is not triggered by pushing a tag.** The *check* workflows —
+`ci.yml`, `e2e.yml`, `migration-integrity-check.yml`, `style-canon-lint.yml`,
+`consent-path-gate.yml` — are `workflow_dispatch`-only, so an absent or green
+check means nobody dispatched it, not that anything passed. Two workflows do run
+on their own (verified 2026-08-23): `mobile-release.yml` on `ios-v*` /
+`android-v*` / `mobile-release-v*` tags, which uploads to TestFlight / Play; and
+`codeql.yml` on push/PR to `main` plus a weekly cron, which is **red on every run
+by baseline** — see [`docs/CI.md`](docs/CI.md). Cut a container release by
 tagging and then dispatching **on that tag**, since `VERSION` is parsed from the ref:
 
 ```bash

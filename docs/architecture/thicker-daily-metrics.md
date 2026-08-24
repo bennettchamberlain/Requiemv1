@@ -54,7 +54,9 @@ Three ask surfaces, one writer:
    Persist via `write_known_place`.
 2. **Q&A** — seeded `ci.questions` row "Which of these places is home?"
    Answering it calls the same writer. (The *product surface* was renamed to
-   **Reflections** on 2026-08-18 and now lives at `/memory/reflections`; the
+   **Reflections** on 2026-08-18, and moved again into the Self hub on
+   2026-08-23 — it now lives at `/self/reflections`, with `/memory/reflections`
+   and `/prompts` kept as redirects; the
    table, the service and the REST routes are still `questions`. That release's
    catalogue migration retires abstract questions by setting `is_active = false`
    on `created_by_llm AND NOT is_seed_question` rows only, so this seeded row
