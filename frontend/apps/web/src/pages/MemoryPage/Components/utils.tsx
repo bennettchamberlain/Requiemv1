@@ -64,7 +64,7 @@ export function formatDateTime(dateStr: string, timeStr?: string): string {
  * all. `dateBucket.test.ts` pins this string against a fixture built from the
  * same shape push/inputs.ts stamps, so the copy cannot drift silently.
  */
-const INGEST_TIME_SOURCE = 'ingest';
+export const INGEST_TIME_SOURCE = 'ingest';
 
 /**
  * The canonical timestamp for an entity, matching the server's ordering logic
