@@ -1,8 +1,9 @@
 import { NotFoundException, UseGuards } from '@nestjs/common';
-import { Args, ID, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { PersonService } from '@ci/domains/memory';
 import { PeerLinkService } from '@ci/domains/peers';
 
 import { GlobalUID } from '../types/GlobalUID';
@@ -46,7 +47,10 @@ import {
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Resolver(() => PeerLinkType)
 export class PeerLinkResolver {
-  constructor(private readonly peerLinkService: PeerLinkService) {}
+  constructor(
+    private readonly peerLinkService: PeerLinkService,
+    private readonly personService: PersonService,
+  ) {}
 
   /**
    * Every peer this box knows, revoked ones included.
@@ -154,5 +158,36 @@ export class PeerLinkResolver {
     const link = await this.peerLinkService.revoke(serviceContext, existing.peerHandle);
 
     return { success: true, peerLink: PeerLinkType.toType(link) };
+  }
+
+  /**
+   * The avatar of the Person in the OWNER's own memory this peer is linked
+   * to (the owner's local judgement of who the peer is — never the peer's
+   * own claim). `personEntityId` is already a global id on the wire, so it is
+   * decoded and re-scoped through `PersonService.findById` here rather than
+   * carried in some side channel; that finder is owner-scoped exactly like
+   * `PeerLinkService.findById` above, which is what keeps a peer link that
+   * somehow named another owner's Person from leaking that Person's avatar —
+   * the lookup fails closed to null instead.
+   *
+   * Only `avatarUrl` crosses. The rest of the linked Person's `properties`
+   * jsonb is never touched here.
+   */
+  @ResolveField(() => String, { nullable: true })
+  async avatarUrl(
+    @Context() context: RequestContext,
+    @Parent() parent: PeerLinkType,
+  ): Promise<string | null> {
+    if (parent.personEntityId == null) {
+      return null;
+    }
+
+    const serviceContext = toServiceContext(context);
+    const person = await this.personService.findById(
+      serviceContext,
+      GlobalUID.parse('person', parent.personEntityId),
+    );
+
+    return (person?.properties?.avatar_url as string) ?? null;
   }
 }
