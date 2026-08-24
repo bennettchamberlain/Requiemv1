@@ -64,6 +64,10 @@ export interface AboutYouView {
     answer: string;
     answeredAt: string;
   }>;
+  /** Wake/sleep/work hours captured during onboarding, when set. */
+  schedule: Record<string, unknown> | null;
+  /** The autonomy dial ('cautious' | 'balanced' | 'hands_off') from onboarding. */
+  trustMode: string | null;
   hasSignal: boolean;
 }
 

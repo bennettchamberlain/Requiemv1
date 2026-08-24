@@ -6,6 +6,20 @@ import { Loader2, UserRound } from '@ci/shadcn/icons';
 import { fetchAboutYou, submitAboutYouCorrection, type AboutYouView } from '@/api/usePersonaCompose';
 import { useAuth } from '@/hooks';
 
+/** Keys onboarding's TimeAndPlaceStep writes onto `properties.schedule`. */
+const SCHEDULE_FIELDS: Array<[string, string]> = [
+  ['wake_time', 'Wakes at'],
+  ['sleep_time', 'Sleeps at'],
+  ['work_start', 'Work starts'],
+  ['work_end', 'Work ends'],
+];
+
+const TRUST_MODE_LABELS: Record<string, string> = {
+  cautious: 'Cautious — asks before acting',
+  balanced: 'Balanced',
+  hands_off: 'Hands-off — acts on its own',
+};
+
 export function AboutYouSection() {
   const [{ authToken }] = useAuth();
   const [view, setView] = useState<AboutYouView | null>(null);
@@ -132,6 +146,33 @@ export function AboutYouSection() {
                   <li key={p.entityId}>{p.name}</li>
                 ))}
               </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      {(view?.schedule || view?.trustMode) && (
+        <section className="mb-6 grid gap-4 sm:grid-cols-2">
+          {view.schedule && (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Schedule</h3>
+              <ul className="space-y-1 text-sm text-muted-foreground">
+                {SCHEDULE_FIELDS.filter(([key]) => typeof view.schedule?.[key] === 'string').map(
+                  ([key, label]) => (
+                    <li key={key}>
+                      {label}: {view.schedule?.[key] as string}
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+          )}
+          {view.trustMode && (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Autonomy</h3>
+              <p className="text-sm text-muted-foreground">
+                {TRUST_MODE_LABELS[view.trustMode] ?? view.trustMode}
+              </p>
             </div>
           )}
         </section>

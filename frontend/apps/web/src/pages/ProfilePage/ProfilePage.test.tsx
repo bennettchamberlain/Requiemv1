@@ -52,7 +52,10 @@ describe('ProfilePage', () => {
     expect(await screen.findByRole('heading', { name: 'Test User' })).toBeInTheDocument();
     expect(screen.getByText('test@example.com')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Appearance' })).toHaveAttribute('href', '/profile/appearance');
-    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/profile/account');
+    expect(screen.getByRole('link', { name: 'Your data' })).toHaveAttribute('href', '/profile/data');
+    // About you and Account moved to the Self tab — reached from the rail, not this hub.
+    expect(screen.queryByRole('link', { name: 'About you' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Support' })).toHaveAttribute(
       'href',
       'https://ci.computer/support',
