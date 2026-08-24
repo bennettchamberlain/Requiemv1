@@ -9,12 +9,13 @@ import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { type User, UserService } from '@ci/domains/user';
 
-import { FederatedIdentityService } from './FederatedIdentityService';
 import {
   parseAllowedServiceClients,
   resolveServiceAccount,
   type ServiceAccountClaims,
 } from '../utils/serviceAccountToken';
+
+import { FederatedIdentityService } from './FederatedIdentityService';
 
 /**
  * Validates CI-Portal-issued OIDC tokens and maps them to a CI-Server user.
