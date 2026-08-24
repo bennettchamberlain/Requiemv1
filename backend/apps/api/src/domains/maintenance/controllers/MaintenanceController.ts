@@ -5,6 +5,8 @@ import {
   Controller,
   Get,
   Headers,
+  NotFoundException,
+  Param,
   Post,
   Query,
   Req,
@@ -59,6 +61,7 @@ import {
   type ExternalIdKindIntegrityReport,
   ExternalIdKindIntegrityService,
 } from '../services/ExternalIdKindIntegrityService';
+import { GraphEnrichmentReviewService } from '../services/GraphEnrichmentReviewService';
 import {
   type GraphEnrichmentProgressCounts,
   type GraphEnrichmentResult,
@@ -93,6 +96,11 @@ import {
   type SearchIndexBackfillResult,
   SearchIndexBackfillService,
 } from '../services/SearchIndexBackfillService';
+import {
+  type SummaryBackfillProgressEvent,
+  type SummaryBackfillResult,
+  SummaryBackfillService,
+} from '../services/SummaryBackfillService';
 
 // Body for POST /api/maintenance/indexes/recreate: the `dropped` array returned
 // verbatim by the matching /drop call (each carries its exact CREATE statement).
@@ -178,6 +186,29 @@ const searchIndexBackfillSchema = z.object({
 });
 
 type SearchIndexBackfillRequest = z.infer<typeof searchIndexBackfillSchema>;
+
+// Body for POST /api/maintenance/backfill-summaries. All optional: with no
+// range the service derives [start, end) from the user's own activity
+// MIN/MAX(time), capped at `maxDays` (default 400) so an option-less call has
+// a bounded blast radius — see SummaryBackfillService for why re-running is
+// the intended way to cover a wider range.
+const backfillSummariesSchema = z.object({
+  /** Lower bound (inclusive). Defaults to the earliest activity on record. */
+  startTime: z.coerce.date().optional(),
+  /** Upper bound (exclusive). Defaults to the latest activity, capped at the current UTC hour. */
+  endTime: z.coerce.date().optional(),
+  /** Hard cap on the [start, end) span this call acts on (default 400 days). */
+  maxDays: z.coerce.number().int().min(1).max(3650).optional(),
+  /** Per-phase (hourly/daily/weekly/monthly) drain timeout in ms (default 20 minutes). */
+  drainTimeoutMs: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(6 * 60 * 60 * 1000)
+    .optional(),
+});
+
+type BackfillSummariesRequest = z.infer<typeof backfillSummariesSchema>;
 
 // Body for POST /api/maintenance/backfill-media-dimensions. All optional: caps
 // how many ORIGINAL image/video files this batch records width/height for.
@@ -332,6 +363,16 @@ const healSelfCollationSchema = z.object({
 
 type HealSelfCollationRequest = z.infer<typeof healSelfCollationSchema>;
 
+// Query for GET /api/maintenance/graph-enrichment-proposals.
+const graphEnrichmentProposalsQuerySchema = z.object({
+  status: z.enum(['pending', 'accepted', 'rejected']).optional(),
+  category: z.enum(['preference', 'family_relation', 'general_relation']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  after: z.string().optional(),
+});
+
+type GraphEnrichmentProposalsQuery = z.infer<typeof graphEnrichmentProposalsQuerySchema>;
+
 // Body for POST /api/maintenance/extract-graph. All optional: caps how much of
 // the user's own data the LLM extraction samples per run. Re-runnable.
 const extractGraphSchema = z.object({
@@ -365,6 +406,7 @@ const orchestrateSchema = z.object({
       estimateLocations: estimateLocationsSchema.optional(),
       mediaDimensions: backfillMediaDimensionsSchema.optional(),
       searchIndex: searchIndexBackfillSchema.optional(),
+      backfillSummaries: backfillSummariesSchema.optional(),
     })
     .optional(),
   /** Stop the chain on the first leg error (default false: fail-soft, continue). */
@@ -429,7 +471,9 @@ export class MaintenanceController {
     private readonly derivedRelationshipService: DerivedRelationshipService,
     private readonly noteContentFoldService: NoteContentFoldService,
     private readonly graphEnrichmentService: GraphEnrichmentService,
+    private readonly graphEnrichmentReviewService: GraphEnrichmentReviewService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
+    private readonly summaryBackfillService: SummaryBackfillService,
     private readonly embedCoverageTelemetryService: EmbedCoverageTelemetryService,
     private readonly externalIdKindIntegrityService: ExternalIdKindIntegrityService,
     private readonly locationEstimateService: LocationEstimateService,
@@ -1057,6 +1101,59 @@ export class MaintenanceController {
   }
 
   /**
+   * The review queue `extract-graph` files a batch to instead of discarding it
+   * when `PersonalizationService.decideAction` returns `'review'` (hands_off
+   * below its auto-promote threshold, or balanced/cautious on any graph
+   * connection). Defaults to `status=pending`. `entities`/`relationships` on
+   * each row are the exact `bulkIngestGraph` batch the accept endpoint below
+   * would replay.
+   */
+  @Get('graph-enrichment-proposals')
+  async listGraphEnrichmentProposals(
+    @Context() context: RequestContext,
+    @Query(new ValidationPipe(graphEnrichmentProposalsQuerySchema)) query: GraphEnrichmentProposalsQuery,
+  ) {
+    return this.graphEnrichmentReviewService.findProposals(toServiceContext(context), {
+      status: query.status,
+      category: query.category,
+      limit: query.limit,
+      after: query.after,
+    });
+  }
+
+  /**
+   * Accept one pending proposal: replays its `entities`/`relationships` batch
+   * through the same `GraphIngestService.ingest` path the auto-apply branch of
+   * `extract-graph` uses, then marks it `accepted`. 404s for a proposal that
+   * doesn't exist, isn't this user's, or was already resolved.
+   */
+  @Post('graph-enrichment-proposals/:id/accept')
+  async acceptGraphEnrichmentProposal(@Context() context: RequestContext, @Param('id') id: string) {
+    const result = await this.graphEnrichmentReviewService.accept(toServiceContext(context), id);
+
+    if (!result) {
+      throw new NotFoundException('Graph enrichment proposal not found or already resolved');
+    }
+
+    return result;
+  }
+
+  /**
+   * Reject one pending proposal. Nothing is written to the graph. 404s for a
+   * proposal that doesn't exist, isn't this user's, or was already resolved.
+   */
+  @Post('graph-enrichment-proposals/:id/reject')
+  async rejectGraphEnrichmentProposal(@Context() context: RequestContext, @Param('id') id: string) {
+    const proposal = await this.graphEnrichmentReviewService.reject(toServiceContext(context), id);
+
+    if (!proposal) {
+      throw new NotFoundException('Graph enrichment proposal not found or already resolved');
+    }
+
+    return proposal;
+  }
+
+  /**
    * One-shot enrichment orchestrator. Runs the requested maintenance legs (all
    * ten by default) back-to-back in canonical order — extract_people →
    * link_communications → link_events → materialize_edges → extract_graph →
@@ -1185,6 +1282,71 @@ export class MaintenanceController {
       entityTypes: body.entityTypes,
       batchSize: body.batchSize,
       limitPerType: body.limitPerType,
+    });
+  }
+
+  /**
+   * Historical summary backfill. `ci.summary`'s hourly/daily/weekly/monthly
+   * functions only ever run against "now" (see PythonFunctionCrons), so
+   * bulk-imported content dated before a user's onboarding never gets a
+   * summary — this dispatches one summary job per missing UTC hour/day/week/
+   * month in range, draining each level before cascading to the next (a
+   * rollup needs its children to already exist). Re-runnable and idempotent;
+   * see SummaryBackfillService for why it deliberately does not touch the
+   * dossier. With no range given it derives one from the user's own activity,
+   * capped at `maxDays` (default 400) — call again with `startTime` advanced
+   * to cover a wider span. Can run for a long time on a wide range; opt into
+   * `?stream=1` (or Accept: application/x-ndjson) for per-phase progress.
+   */
+  @Post('backfill-summaries')
+  async backfillSummaries(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(backfillSummariesSchema)) body: BackfillSummariesRequest,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('stream') stream?: string,
+    @Headers('accept') accept?: string,
+  ): Promise<SummaryBackfillResult | void> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    const empty: SummaryBackfillResult = {
+      range: null,
+      daysWithActivity: 0,
+      daysAlreadySummarized: 0,
+      daysWithoutLandedHourly: [],
+      truncated: false,
+      hourly: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+      daily: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+      weekly: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+      monthly: { enqueued: 0, deduped: 0, landed: 0, expected: 0, drained: true },
+    };
+
+    if (wantsStream(stream, accept)) {
+      return this.streamNdjson<SummaryBackfillResult>(req, res, async (emit) => {
+        if (typeof userId !== 'string') {
+          return empty;
+        }
+
+        return this.summaryBackfillService.backfill(userId, {
+          startTime: body.startTime,
+          endTime: body.endTime,
+          maxDays: body.maxDays,
+          drainTimeoutMs: body.drainTimeoutMs,
+          onProgress: (partial: SummaryBackfillProgressEvent) => emit({ type: 'progress', ...partial }),
+        });
+      });
+    }
+
+    if (typeof userId !== 'string') {
+      return empty;
+    }
+
+    return this.summaryBackfillService.backfill(userId, {
+      startTime: body.startTime,
+      endTime: body.endTime,
+      maxDays: body.maxDays,
+      drainTimeoutMs: body.drainTimeoutMs,
     });
   }
 

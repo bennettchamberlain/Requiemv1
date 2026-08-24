@@ -16,6 +16,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { EventEntity, MemoryModule } from '@ci/domains/memory';
 import { PersonalizationModule } from '@ci/domains/personalization';
+import { PythonFunctionsModule } from '@ci/domains/python-functions';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
 import { SearchNextModule } from '@ci/domains/search-next';
 
@@ -26,6 +27,7 @@ import { OrphanCleanupCron } from './cron/OrphanCleanupCron';
 import { RecallProbeCron } from './cron/RecallProbeCron';
 import { RetrievalHealthCron } from './cron/RetrievalHealthCron';
 import { EntityTypeProposalEntity } from './entities/EntityTypeProposalEntity';
+import { GraphEnrichmentProposalEntity } from './entities/GraphEnrichmentProposalEntity';
 import { RecallProbeResultEntity } from './entities/RecallProbeResultEntity';
 import { RetrievalHealthSnapshotEntity } from './entities/RetrievalHealthSnapshotEntity';
 import { CommunicationParticipantLinkListener } from './listeners/CommunicationParticipantLinkListener';
@@ -38,6 +40,7 @@ import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetry
 import { EntityTypeAuditService } from './services/EntityTypeAuditService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { ExternalIdKindIntegrityService } from './services/ExternalIdKindIntegrityService';
+import { GraphEnrichmentReviewService } from './services/GraphEnrichmentReviewService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { HealSelfCollationService } from './services/HealSelfCollationService';
 import { IndexDeferralService } from './services/IndexDeferralService';
@@ -51,6 +54,7 @@ import { RecallProbeService } from './services/RecallProbeService';
 import { RelationshipNormalizeService } from './services/RelationshipNormalizeService';
 import { RetrievalHealthService } from './services/RetrievalHealthService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
+import { SummaryBackfillService } from './services/SummaryBackfillService';
 
 /**
  * @internal
@@ -60,6 +64,7 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     TypeOrmModule.forFeature([
       EventEntity,
       EntityTypeProposalEntity,
+      GraphEnrichmentProposalEntity,
       RecallProbeResultEntity,
       RetrievalHealthSnapshotEntity,
     ]),
@@ -83,6 +88,9 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     LLMModule,
     MemoryModule,
     PersonalizationModule,
+    // SummaryBackfillService dispatches through PythonFunctionService, the
+    // sanctioned way to run summary-sidecar work (see PythonFunctionsModule).
+    PythonFunctionsModule,
   ],
   controllers: [MaintenanceController],
   providers: [
@@ -97,8 +105,10 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    GraphEnrichmentReviewService,
     HealSelfCollationService,
     SearchIndexBackfillService,
+    SummaryBackfillService,
     EmbedCoverageTelemetryService,
     RetrievalHealthService,
     RetrievalHealthCron,
@@ -126,8 +136,10 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    GraphEnrichmentReviewService,
     HealSelfCollationService,
     SearchIndexBackfillService,
+    SummaryBackfillService,
     EmbedCoverageTelemetryService,
     RetrievalHealthService,
     RecallProbeService,
@@ -148,6 +160,16 @@ export {
   type OrchestrateSummary,
 } from './services/MaintenanceOrchestratorService';
 export { GraphEnrichmentService, type GraphEnrichmentOptions } from './services/GraphEnrichmentService';
+export {
+  GraphEnrichmentReviewService,
+  type GraphEnrichmentProposalPage,
+  type RecordProposalInput,
+} from './services/GraphEnrichmentReviewService';
+export { GraphEnrichmentProposalEntity } from './entities/GraphEnrichmentProposalEntity';
+export type {
+  GraphEnrichmentProposalCategory,
+  GraphEnrichmentProposalStatus,
+} from './entities/GraphEnrichmentProposalEntity';
 export {
   DeterministicEdgeBackfillService,
   type DeterministicEdgeBackfillOptions,
@@ -180,6 +202,12 @@ export {
   type BackfillableEntity,
   type SearchIndexBackfillResult,
 } from './services/SearchIndexBackfillService';
+export {
+  SummaryBackfillService,
+  type SummaryBackfillOptions,
+  type SummaryBackfillProgressEvent,
+  type SummaryBackfillResult,
+} from './services/SummaryBackfillService';
 export { RetrievalHealthSnapshotEntity } from './entities/RetrievalHealthSnapshotEntity';
 export {
   RetrievalHealthService,
