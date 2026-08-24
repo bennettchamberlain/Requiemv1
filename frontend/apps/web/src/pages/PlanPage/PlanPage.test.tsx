@@ -228,11 +228,18 @@ describe('PlanPage mobile tabs', () => {
 
     const today = new Date();
     const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayDay = yesterday.toISOString().slice(0, 10);
 
     renderWithProviders(<PlanPage />, {
       mocks: [
         tasksMock([
           node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() }),
+          node({
+            id: 'd',
+            title: 'Missed block',
+            dueAt: yesterday.toISOString(),
+            scheduledFor: yesterdayDay,
+          }),
           node({ id: 'b', title: 'Someday thing' }),
           node({ id: 'c', title: 'Finished thing', status: 'done' }),
         ]),
@@ -252,6 +259,8 @@ describe('PlanPage mobile tabs', () => {
     expect(screen.queryByText('Someday thing')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /unscheduled/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('heading', { name: /^overdue/i })).toBeInTheDocument();
-    expect(screen.getAllByText('1 overdue').length).toBeGreaterThan(0);
+    expect(screen.getByText('1 overdue')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /unscheduled/i })).not.toHaveTextContent(/overdue/i);
+    expect(screen.getByRole('tab', { name: /scheduled on calendar/i })).not.toHaveTextContent(/overdue/i);
   });
 });

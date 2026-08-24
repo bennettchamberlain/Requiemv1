@@ -100,7 +100,6 @@ export function TaskBoard<T extends SectionedTask>({ sections, renderTask }: Pro
             <Tabs.Trigger key={section.key} value={section.key} className="shrink-0">
               {section.label}
               <span className="ml-2 font-normal">{section.tasks.length}</span>
-              <OverdueHint count={overdueCount(section)} className="ml-2" />
             </Tabs.Trigger>
           ))}
         </Tabs.List>
