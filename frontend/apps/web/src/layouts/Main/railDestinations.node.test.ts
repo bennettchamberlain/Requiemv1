@@ -8,7 +8,7 @@ describe('visibleRailDestinations', () => {
 
     expect(visible.map((destination) => destination.id)).toEqual([
       'plan',
-      'today',
+      'calendar',
       'forecast',
       'memory',
       'saved-searches',
@@ -38,7 +38,13 @@ describe('isRailDestinationActive', () => {
   it('treats Memory hub and legacy people routes as Memory', () => {
     expect(isRailDestinationActive(byId.memory, '/memory/people')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/people/abc')).toBe(true);
-    expect(isRailDestinationActive(byId.memory, '/today')).toBe(false);
+    expect(isRailDestinationActive(byId.memory, '/calendar')).toBe(false);
+  });
+
+  it('treats Calendar card deep-links as Calendar', () => {
+    expect(isRailDestinationActive(byId.calendar, '/calendar')).toBe(true);
+    expect(isRailDestinationActive(byId.calendar, '/calendar/a1')).toBe(true);
+    expect(isRailDestinationActive(byId.calendar, '/forecast')).toBe(false);
   });
 
   it('treats Sources children as Sources', () => {

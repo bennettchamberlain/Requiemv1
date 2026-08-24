@@ -35,7 +35,7 @@ export interface RailDestination {
 
 export const RAIL_DESTINATIONS: readonly RailDestination[] = [
   { id: 'plan', to: '/plan', label: 'Plan', icon: ListTodo, flag: 'planning.page' },
-  { id: 'today', to: '/today', label: 'Today', icon: CalendarRange, badge: 'feed' },
+  { id: 'calendar', to: '/calendar', label: 'Calendar', icon: CalendarRange, badge: 'feed', end: false },
   { id: 'forecast', to: '/forecast', label: 'Forecast', icon: CloudSun },
   { id: 'memory', to: '/memory/events', label: 'Memory', icon: Brain, match: isMemoryHubPath },
   { id: 'saved-searches', to: '/saved-searches', label: 'Saved Searches', icon: FolderSearch2 },

@@ -99,14 +99,14 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
   });
 
-  it('carries Forecast and Today in the primary rail', () => {
+  it('carries Forecast and Calendar in the primary rail', () => {
     renderRail();
 
     expect(screen.getByRole('link', { name: 'Forecast' })).toHaveAttribute('href', '/forecast');
-    expect(screen.getByRole('link', { name: 'Today' })).toHaveAttribute('href', '/today');
+    expect(screen.getByRole('link', { name: 'Calendar' })).toHaveAttribute('href', '/calendar');
   });
 
-  // Schedule and Brief were folded into Today, so the rail must not offer a
+  // Schedule and Brief were folded into Calendar, so the rail must not offer a
   // second way to reach either — that was the point of combining them.
   it('no longer offers Schedule or Brief as their own destinations', () => {
     renderRail();
@@ -262,8 +262,8 @@ describe('SecondaryNavigation', () => {
 
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
-    expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/today'));
-    expect(hrefs.indexOf('/today')).toBeLessThan(hrefs.indexOf('/forecast'));
+    expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/calendar'));
+    expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/forecast'));
     expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory/events'));
     expect(hrefs.indexOf('/memory/events')).toBeLessThan(hrefs.indexOf('/saved-searches'));
     expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
