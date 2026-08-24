@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addLocalDays,
   compareTasks,
+  dueAtFromLocalDate,
   groupIntoSections,
+  isOverdue,
   localDateOf,
   openCount,
   sectionFor,
@@ -147,6 +150,29 @@ describe('sectionFor', () => {
       column: 'unscheduled',
       lane: 'upcoming',
     });
+  });
+});
+
+describe('isOverdue', () => {
+  it('matches the overdue lane and ignores deferred work', () => {
+    expect(isOverdue(task({ dueAt: '2026-01-14T12:00:00Z' }), TODAY, 'UTC')).toBe(true);
+    expect(isOverdue(task({ dueAt: '2026-01-16T12:00:00Z' }), TODAY, 'UTC')).toBe(false);
+    expect(
+      isOverdue(task({ dueAt: '2026-01-01T12:00:00Z', deferUntil: '2026-02-01' }), TODAY, 'UTC'),
+    ).toBe(false);
+  });
+});
+
+describe('addLocalDays / dueAtFromLocalDate', () => {
+  it('shifts a calendar date without UTC drift', () => {
+    expect(addLocalDays('2026-01-15', 1)).toBe('2026-01-16');
+    expect(addLocalDays('2026-01-31', 1)).toBe('2026-02-01');
+  });
+
+  it('places dueAt at local noon so the date survives the timezone', () => {
+    const due = dueAtFromLocalDate('2026-01-15');
+
+    expect(localDateOf(new Date(due))).toBe('2026-01-15');
   });
 });
 

@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { gql } from '@/graphql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
+import { UPDATE_TASK } from './EditTaskModal';
 import { PlanPage } from './PlanPage';
-import { GET_TASKS } from './usePlanTasks';
+import { addLocalDays, dueAtFromLocalDate, localDateOf } from './taskSections';
+import { GET_TASKS, SCHEDULE_TASK } from './usePlanTasks';
 
 const featureState = vi.hoisted(() => ({ emptyState: false }));
 
@@ -205,6 +207,106 @@ describe('PlanPage', () => {
     expect(schedule).toHaveClass('ci-primary-surface');
     expect(screen.getByRole('button', { name: /edit write the migration/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^scheduled on calendar 0$/i })).toBeInTheDocument();
+  });
+
+  it('offers Reschedule on overdue work instead of a date-less Schedule', async () => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const todayDate = localDateOf(today);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() })]),
+        {
+          request: {
+            query: UPDATE_TASK,
+            variables: { input: { id: 'a', dueAt: dueAtFromLocalDate(todayDate) } },
+          },
+          result: {
+            data: {
+              updateTask: {
+                __typename: 'UpdateTaskPayload',
+                success: true,
+                task: node({
+                  id: 'a',
+                  title: 'Overdue thing',
+                  dueAt: dueAtFromLocalDate(todayDate),
+                  scheduledFor: todayDate,
+                }),
+              },
+            },
+          },
+        },
+        {
+          request: { query: SCHEDULE_TASK, variables: { id: 'a', date: todayDate } },
+          result: {
+            data: {
+              scheduleTask: {
+                __typename: 'ScheduleTaskPayload',
+                success: true,
+                status: 'placed',
+                task: node({
+                  id: 'a',
+                  title: 'Overdue thing',
+                  dueAt: dueAtFromLocalDate(todayDate),
+                  scheduledFor: todayDate,
+                }),
+              },
+            },
+          },
+          maxUsageCount: Number.POSITIVE_INFINITY,
+        },
+        tasksMock([
+          node({
+            id: 'a',
+            title: 'Overdue thing',
+            dueAt: dueAtFromLocalDate(todayDate),
+            scheduledFor: todayDate,
+          }),
+        ]),
+      ],
+    });
+
+    const reschedule = await screen.findByRole('button', { name: /reschedule overdue thing/i });
+
+    expect(reschedule).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^schedule$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(reschedule);
+
+    expect(screen.getByRole('group', { name: /reschedule to/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^today$/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: /^overdue/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it('lets an overdue missed block be moved with the same when chips', async () => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const tomorrow = addLocalDays(localDateOf(today), 1);
+    const yesterdayDay = localDateOf(yesterday);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([
+          node({
+            id: 'd',
+            title: 'Missed block',
+            dueAt: yesterday.toISOString(),
+            scheduledFor: yesterdayDay,
+          }),
+        ]),
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /reschedule missed block/i }));
+
+    expect(screen.getByRole('button', { name: /^tomorrow$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^next week$/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/pick a day/i)).toHaveAttribute('min', localDateOf(today));
+    expect(tomorrow).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
 

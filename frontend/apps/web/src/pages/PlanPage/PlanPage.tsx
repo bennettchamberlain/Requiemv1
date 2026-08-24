@@ -9,11 +9,11 @@ import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
 import { DeleteTaskModal } from './DeleteTaskModal';
-import { EditTaskModal, type EditableTask } from './EditTaskModal';
+import { EditTaskModal, UPDATE_TASK, type EditableTask } from './EditTaskModal';
 import { NewTaskForm } from './NewTaskForm';
 import { Task } from './Task';
 import { TaskBoard } from './TaskBoard';
-import { childrenOf, type SectionedTask } from './taskSections';
+import { childrenOf, dueAtFromLocalDate, type SectionedTask } from './taskSections';
 import { ACCEPT_PROPOSED, DECLINE_PROPOSED, SCHEDULE_TASK, usePlanTasks } from './usePlanTasks';
 
 const COMPLETE_TASK = gql(`
@@ -73,6 +73,7 @@ export function PlanPage() {
   const [acceptPending] = useMutation(ACCEPT_PENDING);
   const [declinePending] = useMutation(DECLINE_PENDING);
   const [scheduleTask] = useMutation(SCHEDULE_TASK);
+  const [updateTask] = useMutation(UPDATE_TASK);
   const [focusedTask, setFocusedTask] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<EditableTask | null>(null);
 
@@ -100,6 +101,18 @@ export function PlanPage() {
 
   const handleSchedule = (id: string) => void scheduleTask({ variables: { id } }).then(refresh);
 
+  const handleReschedule = (id: string, date: string) => {
+    void (async () => {
+      await updateTask({
+        variables: {
+          input: { id, dueAt: dueAtFromLocalDate(date) },
+        },
+      });
+      await scheduleTask({ variables: { id, date } });
+      refresh();
+    })();
+  };
+
   const handleAcceptAndSchedule = (id: string) => {
     void acceptProposed({ variables: { id } }).then(() => scheduleTask({ variables: { id } }).then(refresh));
   };
@@ -120,6 +133,7 @@ export function PlanPage() {
         onDeclineProposed={(id) => void declineProposed({ variables: { id } }).then(refresh)}
         onAcceptAndSchedule={handleAcceptAndSchedule}
         onSchedule={handleSchedule}
+        onReschedule={handleReschedule}
         pendingChangeId={pending?.id}
         pendingRationale={pending?.rationale}
         pendingKind={pending?.kind}
