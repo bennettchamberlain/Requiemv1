@@ -201,7 +201,7 @@ export function ReceiptsPage() {
       <PageContent ref={scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
           <div className="flex flex-col gap-4 px-4 pb-4">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Input
                 placeholder="Search by merchant..."
                 value={merchantQuery}
@@ -209,7 +209,10 @@ export function ReceiptsPage() {
                   setMerchantQuery(e.target.value);
                   setLoadMoreError(null);
                 }}
-                className="max-w-xl flex-1"
+                // Three items (search, extraction-state select, count) never all fit
+                // one row at phone widths — full-width below `sm` lets each wrap to
+                // its own line instead of squeezing into an illegible sliver.
+                className="max-w-xl w-full flex-1 sm:w-auto"
               />
 
               <Select
@@ -219,7 +222,7 @@ export function ReceiptsPage() {
                   setLoadMoreError(null);
                 }}
               >
-                <Select.Trigger className="w-48" aria-label="Extraction state">
+                <Select.Trigger className="w-full sm:w-48" aria-label="Extraction state">
                   <Select.Value placeholder="Any extraction state" />
                 </Select.Trigger>
                 <Select.Content>

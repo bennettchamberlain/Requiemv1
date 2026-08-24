@@ -207,7 +207,11 @@ async def forecast(
 
         return {
             "horizon": horizon,
-            "generated_at": now.isoformat() + "Z",
+            # `now` is timezone-aware (tz is always a real ZoneInfo/UTC), so
+            # isoformat() already appends the correct offset — a literal "Z"
+            # here would double up (e.g. `...+00:00Z`), which JS's Date()
+            # rejects as invalid.
+            "generated_at": now.isoformat(),
             "days": days,
         }
     except Exception as exc:

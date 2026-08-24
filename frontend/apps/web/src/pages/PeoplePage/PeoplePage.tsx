@@ -655,7 +655,7 @@ export function PeoplePage() {
       <PageContent ref={scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
           <div className="flex flex-col gap-4 px-4 pb-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
               <Input
                 placeholder="Search people and communications..."
                 value={searchQuery}
@@ -664,7 +664,11 @@ export function PeoplePage() {
                   // New query, new cursor space — a stale failure must not gate it.
                   setLoadMoreError(null);
                 }}
-                className="max-w-xl flex-1"
+                // A long placeholder next to the count on one row always has SOME
+                // width where it clips mid-word — a min-width guess just moves the
+                // threshold. Full-width below `sm` sidesteps that: the count drops
+                // to its own line instead of fighting the input for space.
+                className="max-w-xl w-full flex-1 sm:w-auto"
               />
               <div className="text-sm text-muted-foreground">{totalCount} people</div>
             </div>

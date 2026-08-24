@@ -781,16 +781,21 @@ export function ThingsPage() {
             </Tabs.List>
 
             <Tabs.Content value="things" className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                 <Input
-                  placeholder="Search things by name, brand, model or category..."
+                  // The full phrase doesn't fit on one line at phone widths — inputs
+                  // can't wrap a placeholder, so it would just clip mid-word instead.
+                  placeholder={isMobile ? 'Search things...' : 'Search things by name, brand, model or category...'}
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
                     // New query, new cursor space — a stale failure must not gate it.
                     setLoadMoreError(null);
                   }}
-                  className="max-w-xl min-w-0 flex-1"
+                  // Any min-width guess still clips this placeholder at SOME width —
+                  // full-width below `sm` sidesteps that: count + Filters drop to
+                  // their own line instead of squeezing the input for space.
+                  className="max-w-xl w-full flex-1 sm:w-auto"
                 />
                 <div className="text-sm text-muted-foreground">{totalCount} things</div>
                 {isMobile ? (
