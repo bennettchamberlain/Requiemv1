@@ -12,6 +12,7 @@ import { useDeviceLayout } from '@ci/common';
 import { Button, ContextMenu, Sheet, cn } from '@ci/shadcn';
 import { useTranslation } from 'react-i18next';
 
+import type { AgentChatContext } from '@/lib/agentChat';
 import { entityToAgentChatContext } from '@/lib/entityToAgentChatContext';
 import type { MemoryEntity } from '@/pages/MemoryPage/useEntityService';
 
@@ -20,22 +21,27 @@ import { useChatAboutActions } from './useChatAboutActions';
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD_PX = 8;
 
+interface ChatAboutProps {
+  context: AgentChatContext;
+  children: ReactNode;
+  className?: string;
+}
+
 interface MemoryChatAboutProps {
   entity: MemoryEntity;
   children: ReactNode;
   className?: string;
 }
 
-export function MemoryChatAbout({ entity, children, className }: MemoryChatAboutProps) {
+/** Right-click (desktop) or long-press (mobile) to chat about `context`. */
+export function ChatAbout({ context, children, className }: ChatAboutProps) {
   const { isMobile } = useDeviceLayout();
-  const context = useMemo(() => entityToAgentChatContext(entity), [entity]);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   if (isMobile) {
     return (
       <MobileChatAbout
-        contextTitle={context.title}
-        entity={entity}
+        context={context}
         className={className}
         sheetOpen={sheetOpen}
         onSheetOpenChange={setSheetOpen}
@@ -51,25 +57,62 @@ export function MemoryChatAbout({ entity, children, className }: MemoryChatAbout
         <div className={className}>{children}</div>
       </ContextMenu.Trigger>
       <ContextMenu.Content className="z-[1100]">
-        <ChatAboutContextItems entity={entity} />
+        <ChatAboutContextItems context={context} />
       </ContextMenu.Content>
     </ContextMenu>
   );
 }
 
+/** Memory explorer items: convert the entity, then reuse {@link ChatAbout}. */
+export function MemoryChatAbout({ entity, children, className }: MemoryChatAboutProps) {
+  const context = useMemo(() => entityToAgentChatContext(entity), [entity]);
+
+  return (
+    <ChatAbout context={context} className={className}>
+      {children}
+    </ChatAbout>
+  );
+}
+
+/** Controlled sheet used by surfaces that are not DOM (graph canvas, map pins). */
+export function ChatAboutSheet({
+  context,
+  open,
+  onOpenChange,
+}: {
+  context: AgentChatContext;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet.Content side="bottom" className="z-[1100] rounded-t-xl pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <Sheet.Header>
+          <Sheet.Title>{t('CHAT_WITH_AGENT_ABOUT', { title: context.title })}</Sheet.Title>
+          <Sheet.Description className="sr-only">{t('CHAT_WITH_AGENT_OPEN_MENU')}</Sheet.Description>
+        </Sheet.Header>
+        {open ? (
+          <div className="flex flex-col gap-1 px-4 pb-4">
+            <ChatAboutSheetItems context={context} onAction={() => onOpenChange(false)} />
+          </div>
+        ) : null}
+      </Sheet.Content>
+    </Sheet>
+  );
+}
+
 function MobileChatAbout({
-  entity,
+  context,
   children,
   className,
   sheetOpen,
   onSheetOpenChange,
-  contextTitle,
-}: MemoryChatAboutProps & {
+}: ChatAboutProps & {
   sheetOpen: boolean;
   onSheetOpenChange: (open: boolean) => void;
-  contextTitle: string;
 }) {
-  const { t } = useTranslation();
   const longPress = useLongPress(() => onSheetOpenChange(true));
 
   return (
@@ -88,26 +131,13 @@ function MobileChatAbout({
       >
         {children}
       </div>
-      <Sheet open={sheetOpen} onOpenChange={onSheetOpenChange}>
-        <Sheet.Content side="bottom" className="z-[1100] rounded-t-xl pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Sheet.Header>
-            <Sheet.Title>{t('CHAT_WITH_AGENT_ABOUT', { title: contextTitle })}</Sheet.Title>
-            <Sheet.Description className="sr-only">{t('CHAT_WITH_AGENT_OPEN_MENU')}</Sheet.Description>
-          </Sheet.Header>
-          {sheetOpen ? (
-            <div className="flex flex-col gap-1 px-4 pb-4">
-              <ChatAboutSheetItems entity={entity} onAction={() => onSheetOpenChange(false)} />
-            </div>
-          ) : null}
-        </Sheet.Content>
-      </Sheet>
+      <ChatAboutSheet context={context} open={sheetOpen} onOpenChange={onSheetOpenChange} />
     </>
   );
 }
 
-function ChatAboutContextItems({ entity }: { entity: MemoryEntity }) {
+function ChatAboutContextItems({ context }: { context: AgentChatContext }) {
   const { t } = useTranslation();
-  const context = useMemo(() => entityToAgentChatContext(entity), [entity]);
   const { chatHere, chatableHarnesses, openHarness } = useChatAboutActions(context);
 
   return (
@@ -122,9 +152,8 @@ function ChatAboutContextItems({ entity }: { entity: MemoryEntity }) {
   );
 }
 
-function ChatAboutSheetItems({ entity, onAction }: { entity: MemoryEntity; onAction: () => void }) {
+function ChatAboutSheetItems({ context, onAction }: { context: AgentChatContext; onAction: () => void }) {
   const { t } = useTranslation();
-  const context = useMemo(() => entityToAgentChatContext(entity), [entity]);
   const { chatHere, chatableHarnesses, openHarness } = useChatAboutActions(context);
 
   return (

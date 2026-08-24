@@ -2,12 +2,59 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   formatAgentChatDraft,
+  graphNodeChatContext,
+  namedChatContext,
   openAgentHarness,
   stashAgentChatContext,
   readAgentChatContext,
   clearAgentChatContext,
   type AgentChatContext,
 } from './agentChat';
+
+describe('namedChatContext', () => {
+  it('trims fields and falls back when the title is blank', () => {
+    expect(
+      namedChatContext({
+        title: '  Sam  ',
+        body: '  friend  ',
+        sourceKind: 'PersonType',
+        sourceId: 'p1',
+      }),
+    ).toEqual({
+      title: 'Sam',
+      body: 'friend',
+      sourceKind: 'PersonType',
+      sourceId: 'p1',
+    });
+
+    expect(namedChatContext({ title: '   ', sourceKind: 'PlaceType', sourceId: 'pl1' })).toEqual({
+      title: 'This memory',
+      body: null,
+      sourceKind: 'PlaceType',
+      sourceId: 'pl1',
+    });
+  });
+});
+
+describe('graphNodeChatContext', () => {
+  it('packs kind, event, and description', () => {
+    expect(
+      graphNodeChatContext({
+        id: 'n1',
+        entity_id: 'e1',
+        entity_type: 'event',
+        name: 'Dinner',
+        description: 'Tacos',
+        event_type: 'visited',
+      }),
+    ).toEqual({
+      title: 'Dinner',
+      body: 'Kind: event\nEvent: visited\nTacos',
+      sourceKind: 'event',
+      sourceId: 'e1',
+    });
+  });
+});
 
 describe('formatAgentChatDraft', () => {
   it('includes the title and body when both are present', () => {
