@@ -13,7 +13,7 @@ import { gql, useFragment } from '@/graphql';
 
 import { useEntityService, type EntityItem } from '../../MemoryPage/useEntityService';
 import { boundsToBbox, bboxCenter, formatBbox, parseBbox } from '../bbox';
-import { Empty, ErrorState, formatEventTimeRange } from '../Components';
+import { Empty, ErrorState, formatEventTimeRange, INGEST_TIME_SOURCE } from '../Components';
 import { EVENT_FRAGMENT } from '../Components/EntityCard/EventCard';
 import { countActiveFilters } from '../Components/ExplorerToolbar/filterParams';
 import {
@@ -82,6 +82,7 @@ const MAP_PINS_QUERY = gql(`
         endTime
         eventType
         locationName
+        timeSource
       }
     }
   }
@@ -220,15 +221,24 @@ function useMapPins({ skip }: { skip: boolean }) {
     const rows = data?.mapPins?.pins ?? [];
 
     return rows
-      .map((pin) => ({
-        id: pin.id,
-        coords: { lat: pin.latitude, lng: pin.longitude },
-        title: pin.title || 'Untitled event',
-        timeLabel: pin.startTime ? formatEventTimeRange(pin.startTime, pin.endTime) : null,
-        sortTime: pin.startTime ? new Date(pin.startTime).getTime() : 0,
-        variant: 'event' as MarkerVariant,
-        entity: null,
-      }))
+      .map((pin) => {
+        // `timeSource === 'ingest'` means `startTime` is only the import wall
+        // clock (a Google Maps saved place, an undated Reddit affiliation, …),
+        // not a real moment — same rule getEntityTimestamp applies on the
+        // timeline/explorer side. Without this a saved place captioned itself
+        // "Yesterday 9:56 PM" using the instant the import happened to run.
+        const dated = pin.startTime && pin.timeSource !== INGEST_TIME_SOURCE;
+
+        return {
+          id: pin.id,
+          coords: { lat: pin.latitude, lng: pin.longitude },
+          title: pin.title || 'Untitled event',
+          timeLabel: dated ? formatEventTimeRange(pin.startTime, pin.endTime) : null,
+          sortTime: dated ? new Date(pin.startTime as string).getTime() : 0,
+          variant: 'event' as MarkerVariant,
+          entity: null,
+        };
+      })
       .sort((a, b) => a.sortTime - b.sortTime);
   }, [data]);
 
