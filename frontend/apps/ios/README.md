@@ -93,13 +93,15 @@ VITE_DISABLE_PWA=true yarn workspace @ci/fe-web build
 yarn cap sync ios && cd ios/App
 SIM=$(xcrun simctl list devices available | grep -m1 'iPhone' | grep -oE '[0-9A-F-]{36}')
 xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug \
-  -destination "id=$SIM" -derivedDataPath ./DerivedData CODE_SIGNING_ALLOWED=NO build
+  -destination "id=$SIM" -derivedDataPath ./DerivedData build
 xcrun simctl install $SIM ./DerivedData/Build/Products/Debug-iphonesimulator/App.app
 xcrun simctl launch  $SIM com.companionintelligence.app
 ```
 
-(Simulator builds need **no code signing**. List sims with
-`xcrun simctl list devices available`.)
+Simulator ad-hoc signing has no Keychain entitlement, so the native store
+keeps `ci.apiKey` in the app container on Simulator only. Device and store
+builds still use the Keychain. `CODE_SIGNING_ALLOWED=NO` remains CI-only.
+List sims with `xcrun simctl list devices available`.
 
 ## CI builds (GitHub Actions)
 
