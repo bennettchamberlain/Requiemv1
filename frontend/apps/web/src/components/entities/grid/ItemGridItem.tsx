@@ -1,9 +1,7 @@
 import { type MouseEvent, useMemo } from 'react';
 
-import { ChatAbout } from '@/components/ChatWithAgent';
 import { ItemIcon } from '@/components/icons';
 import { gql, useFragment, type FragmentType } from '@/graphql';
-import { namedChatContext } from '@/lib/agentChat';
 import { formatAmount } from '@/lib/money';
 import { humanizeEnum } from '@/lib/utils';
 
@@ -77,15 +75,6 @@ export function ItemGridItem({ item, onClick, onSelectThing }: Props) {
   const value = formatAmount(data.currentValue, data.currency);
 
   return (
-    <ChatAbout
-      className="h-full min-w-0"
-      context={namedChatContext({
-        title: data.name,
-        body: [data.description, provenance, lastSeenLabel].filter(Boolean).join('\n') || null,
-        sourceKind: 'ItemType',
-        sourceId: data.id,
-      })}
-    >
     <EntityGridItem
       onClick={(e) => {
         onSelectThing?.({
@@ -147,6 +136,5 @@ export function ItemGridItem({ item, onClick, onSelectThing }: Props) {
         <div className="text-sm text-muted-foreground">Thing</div>
       </EntityGridItem.Footer>
     </EntityGridItem>
-    </ChatAbout>
   );
 }

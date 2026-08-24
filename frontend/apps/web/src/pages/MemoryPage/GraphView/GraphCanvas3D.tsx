@@ -2,16 +2,20 @@ import { useEffect, useMemo, useRef } from 'react';
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import R3fForceGraph, { type GraphMethods } from 'r3f-forcegraph';
+import type {
+  Object3D} from 'three';
 import {
   CanvasTexture,
   Group,
   LineBasicMaterial,
   Mesh,
   MeshLambertMaterial,
+  Raycaster,
   SphereGeometry,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
+  Vector2,
   Vector3,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -92,6 +96,40 @@ const WORLD_RADIUS_SCALE = 0.55;
 const LABEL_FONT_PX = 30;
 /** World units per label-canvas pixel. */
 const LABEL_WORLD_PER_PX = 0.16;
+
+function nodeIdFromObject(start: Object3D | null): string | null {
+  let obj: Object3D | null = start;
+
+  while (obj) {
+    const tagged = obj.userData.nodeId;
+    if (typeof tagged === 'string' && tagged.length > 0) {
+      return tagged;
+    }
+
+    const graphObj = obj as Object3D & {
+      __graphObjType?: string;
+      __data?: { id?: string | number };
+    };
+    if (graphObj.__graphObjType === 'node' && graphObj.__data?.id != null) {
+      return String(graphObj.__data.id);
+    }
+
+    obj = obj.parent;
+  }
+
+  return null;
+}
+
+function nodeIdFromIntersection(hits: Array<{ object: Object3D }>): string | null {
+  for (const hit of hits) {
+    const nodeId = nodeIdFromObject(hit.object);
+    if (nodeId) {
+      return nodeId;
+    }
+  }
+
+  return null;
+}
 
 /** Effective theme: the explicit root class when present, the system preference otherwise. */
 function isDarkTheme(): boolean {
@@ -211,8 +249,7 @@ function GraphScene({
   const fgRef = useRef<GraphMethods<SceneNode, SceneLink>>(undefined);
   const controlsRef = useRef<OrbitControls | null>(null);
   const flyTargetRef = useRef<Vector3>(new Vector3());
-  const hoveredNodeIdRef = useRef<string | null>(null);
-  const { camera, gl } = useThree();
+  const { camera, gl, scene } = useThree();
 
   const graphData = useMemo(() => ({ nodes: sceneNodes, links: sceneLinks }), [sceneNodes, sceneLinks]);
 
@@ -257,12 +294,25 @@ function GraphScene({
     fg.d3ReheatSimulation();
   }, [graphData]);
 
-  // r3f-forcegraph has no onNodeRightClick; reuse its hover pick and listen on the canvas.
+  // r3f-forcegraph has no onNodeRightClick; pick the node under the pointer.
   useEffect(() => {
     const canvas = gl.domElement;
+    const raycaster = new Raycaster();
+    const pointer = new Vector2();
 
     const handleContextMenu = (event: MouseEvent) => {
-      const nodeId = hoveredNodeIdRef.current;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        return;
+      }
+
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointer, camera);
+
+      const nodeId = nodeIdFromIntersection(raycaster.intersectObjects(scene.children, true));
       if (!nodeId) {
         return;
       }
@@ -274,7 +324,7 @@ function GraphScene({
     canvas.addEventListener('contextmenu', handleContextMenu);
 
     return () => canvas.removeEventListener('contextmenu', handleContextMenu);
-  }, [gl, onNodeContextMenu]);
+  }, [camera, gl, scene, onNodeContextMenu]);
 
   useFrame(() => {
     fgRef.current?.tickFrame();
@@ -331,6 +381,7 @@ function GraphScene({
       );
 
       const group = new Group();
+      group.userData.nodeId = node.id;
       group.add(sphere);
 
       if (node.labelled && !node.context && !dimmedByThread) {
@@ -404,7 +455,6 @@ function GraphScene({
         }
       }}
       onNodeHover={(node) => {
-        hoveredNodeIdRef.current = node?.id ? String(node.id) : null;
         gl.domElement.style.cursor = node ? 'pointer' : '';
       }}
       onLinkHover={(link) => {
