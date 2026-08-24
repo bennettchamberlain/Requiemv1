@@ -32,11 +32,28 @@ import type {
  *   tool_choice=auto on Qwen2.5-Coder). We salvage that markup into the same
  *   Ollama tool_calls the rest of the stack already executes.
  */
+
+/** vLLM/Qwen thinks unless this is in the JSON body; openai-node may strip unknown fields. */
+export function vllmThinkingExtraBody(enableThinking?: boolean): {
+  chat_template_kwargs: { enable_thinking: boolean };
+} {
+  return {
+    chat_template_kwargs: { enable_thinking: enableThinking === true },
+  };
+}
+
 export class OpenAiCompatChatDriver {
   private readonly client: OpenAI;
 
   constructor(baseURL: string, apiKey: string) {
-    this.client = new OpenAI({ baseURL, apiKey });
+    this.client = new OpenAI({
+      baseURL,
+      apiKey,
+      // Default is 10 minutes with retries. Background accoutrements then occupy
+      // vLLM's `--max-num-seqs` slots until the GPU is unreachable for chat.
+      timeout: 180_000,
+      maxRetries: 0,
+    });
   }
 
   /** Model ids served by the backend (`GET /v1/models`). */
@@ -53,14 +70,18 @@ export class OpenAiCompatChatDriver {
     format?: string;
     enableThinking?: boolean;
   }): Promise<ChatResponse> {
-    const response = await this.client.chat.completions.create({
-      model: request.model,
-      messages: toOpenAiMessages(request.messages),
-      ...(request.tools && request.tools.length > 0 && { tools: toOpenAiTools(request.tools) }),
-      // Ollama's `format: 'json'` maps onto the OpenAI json_object response format.
-      ...(request.format === 'json' && { response_format: { type: 'json_object' as const } }),
-      ...thinkingTemplateKwargs(request.enableThinking),
-    });
+    const extraBody = vllmThinkingExtraBody(request.enableThinking);
+    const response = await this.client.chat.completions.create(
+      {
+        model: request.model,
+        messages: toOpenAiMessages(request.messages),
+        ...(request.tools && request.tools.length > 0 && { tools: toOpenAiTools(request.tools) }),
+        // Ollama's `format: 'json'` maps onto the OpenAI json_object response format.
+        ...(request.format === 'json' && { response_format: { type: 'json_object' as const } }),
+        ...extraBody,
+      },
+      { timeout: 180_000, maxRetries: 0 },
+    );
 
     const choice = response.choices[0];
     const structured = (choice?.message?.tool_calls ?? [])
@@ -101,15 +122,16 @@ export class OpenAiCompatChatDriver {
     enableThinking?: boolean;
     salvageTools?: boolean;
   }): AsyncGenerator<ChatResponse> {
+    const extraBody = vllmThinkingExtraBody(request.enableThinking);
     const stream = await this.client.chat.completions.create(
       {
         model: request.model,
         messages: toOpenAiMessages(request.messages),
         stream: true,
         ...(request.tools && request.tools.length > 0 && { tools: toOpenAiTools(request.tools) }),
-        ...thinkingTemplateKwargs(request.enableThinking),
+        ...extraBody,
       },
-      { signal: request.signal },
+      { signal: request.signal, timeout: 180_000, maxRetries: 0 },
     );
 
     // Streamed tool calls arrive fragmented: an entry with id+name at some
@@ -319,15 +341,6 @@ function hoistSystemMessages(messages: ChatCompletionMessageParam[]): ChatComple
   return [{ role: 'system', content: systemParts.join('\n\n') }, ...rest];
 }
 
-/**
- * Qwen3.6 thinks by default. The OpenAI-compat path must pass this explicitly
- * or a "thinking off" UI still waits minutes for a reasoning trace.
- */
-function thinkingTemplateKwargs(enableThinking?: boolean): Record<string, unknown> {
-  return {
-    chat_template_kwargs: { enable_thinking: enableThinking === true },
-  };
-}
 
 /**
  * Lift Qwen/vLLM tool markup out of assistant text. Ollama already returns
