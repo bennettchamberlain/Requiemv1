@@ -27,6 +27,8 @@
   "CHAT_THREAD_NEW": "New thread",
   "CHAT_WITH_AGENT_ABOUT": "Chat about “{{title}}”",
   "CHAT_WITH_AGENT_OPEN_MENU": "Chat with an agent",
+  "CHAT_WITH_AGENT_HERE": "Chat here",
+  "CHAT_WITH_AGENT_OPEN_IN": "Open in {{name}}",
   "ENTITY_EDIT_TOGGLE": "Edit description and tags",
   "ENTITY_DETAILS_EDIT": "Edit details",
   "FEED_CARD_DISMISS": "Dismiss card",

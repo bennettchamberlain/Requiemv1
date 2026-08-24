@@ -7,6 +7,10 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { EntityDrawerHostProvider } from './drawerHost';
 import { GET_DRAWER_NODE, ResolvedGenericDetails } from './ResolvedGenericDetails';
 
+vi.mock('@/components/ChatWithAgent', () => ({
+  ChatWithAgentMenu: () => null,
+}));
+
 // The relationship cards need the auth context for the REST graph endpoints; the drawer body is what's under test.
 vi.mock('@/components/EntityRelationshipCards/EntityRelationshipCards', async (importOriginal) => {
   const actual =

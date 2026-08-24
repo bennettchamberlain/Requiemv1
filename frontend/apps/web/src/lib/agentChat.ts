@@ -38,14 +38,31 @@ export function openInAppChat(navigate: NavigateFunction, context: AgentChatCont
   navigate('/chat');
 }
 
+/** Composer seed used by in-app Chat and as the `prompt` query param for harnesses. */
+export function formatAgentChatDraft(context: AgentChatContext): string {
+  return context.body
+    ? `I'd like to talk about "${context.title}":\n\n${context.body}`
+    : `I'd like to talk about "${context.title}".`;
+}
+
 /** Open a Hub-managed agent harness in a new tab with optional context query params. */
 export function openAgentHarness(openUrl: string, context: AgentChatContext): void {
   const url = new URL(openUrl);
+  const draft = formatAgentChatDraft(context);
 
   url.searchParams.set('title', context.title);
+  url.searchParams.set('prompt', draft.slice(0, 4000));
 
   if (context.body) {
     url.searchParams.set('context', context.body.slice(0, 2000));
+  }
+
+  if (context.sourceId) {
+    url.searchParams.set('memoryId', context.sourceId);
+  }
+
+  if (context.sourceKind) {
+    url.searchParams.set('memoryKind', context.sourceKind);
   }
 
   window.open(url.toString(), '_blank', 'noopener,noreferrer');
@@ -55,6 +72,7 @@ export function openAgentHarness(openUrl: string, context: AgentChatContext): vo
 export function openAgentApp(app: 'openclaw' | 'hermes', context: AgentChatContext): void {
   const params = new URLSearchParams({
     title: context.title,
+    prompt: formatAgentChatDraft(context).slice(0, 4000),
     ...(context.body ? { context: context.body.slice(0, 2000) } : {}),
   });
 

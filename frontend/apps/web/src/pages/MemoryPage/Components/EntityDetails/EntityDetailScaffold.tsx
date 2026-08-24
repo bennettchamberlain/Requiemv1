@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
 import {
   EntityFields,
   EntityMetaList,
@@ -22,6 +23,7 @@ import {
   type RelatedEntityOpenTarget,
 } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
 import { TagInput } from '@/components/TagInput';
+import { entityToAgentChatContext } from '@/lib/entityToAgentChatContext';
 
 import type { GenericEntity, MemoryEntity } from '../../../MemoryPage/useEntityService';
 
@@ -447,6 +449,7 @@ export function EntityDetailScaffold({
   };
 
   const detailPath = ref.resourceType && ref.rawId ? getEntityDetailPath(ref.resourceType, ref.rawId) : null;
+  const chatContext = useMemo(() => entityToAgentChatContext(entity), [entity]);
 
   const visibleMeta = (metaItems ?? []).filter(
     (item) => item.value !== null && item.value !== undefined && item.value !== '',
@@ -458,6 +461,9 @@ export function EntityDetailScaffold({
         <div className="flex items-start justify-between gap-2">
           <Sheet.Title className="text-xl leading-tight tracking-tight">{title}</Sheet.Title>
           <div className="flex shrink-0 items-center gap-1">
+            {!readOnly && (
+              <ChatWithAgentMenu context={chatContext} className="-mt-1 size-8 shrink-0" />
+            )}
             {canEnterEditMode && !editing && (
               <IconButton
                 variant="ghost"
