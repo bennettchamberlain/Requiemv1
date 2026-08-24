@@ -5,8 +5,18 @@
 >
 > **Scope:** the interpersonal ask feature — `backend/apps/api/src/domains/asks`,
 > `backend/apps/api/src/domains/peers`, `AskResolver`, and `frontend/apps/web/src/pages/AsksPage`.
-> Sibling docs: [`peer-federation.md`](peer-federation.md) (how it works),
-> [`saved-search-sharing.md`](saved-search-sharing.md) (the surface it inverts).
+> Sibling docs: [`asks-system-guide.md`](asks-system-guide.md) (the reference document — how
+> the feature works, and its current gap list), [`peer-federation.md`](peer-federation.md)
+> (the cross-box design), [`saved-search-sharing.md`](saved-search-sharing.md) (the surface it
+> inverts).
+>
+> **Δ 2026-08-23 — some "unreachable from the UI" observations below have moved on.**
+> `updateAskGrant`, the `/asks` route, `askDisclosureHistory` and peer-link management have all
+> since been wired; `createAskGrant` still has no caller. The document says so itself where it
+> matters and asks you to re-check — do that against
+> [`asks-system-guide.md` §9](asks-system-guide.md), which is verified at `8cd68dbe6`. **The
+> threat analysis itself is unaffected:** every ceiling, tier, exemption and default it argues
+> about is unchanged.
 >
 > **This document is not reassuring, and that is the point.** A threat model whose conclusion
 > is "we are fine" has not been written, it has been performed. What follows names the

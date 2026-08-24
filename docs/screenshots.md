@@ -95,6 +95,7 @@ all of the ones listed default to `true` in
 | Memory · Reflections | `/memory/reflections` | `reflections.png` | Reflection catalogue (formerly "Questions"; flag `insights.page`) |
 | Saved searches | `/saved-searches` | `saved-searches.png` | Saved-search rows with the Shared badge and the active filter dimensions |
 | Shared search viewer | `/shared/:token` | `shared-search.png` | Read-only shared explorer (see [saved-search-sharing.md](saved-search-sharing.md)) |
+| Asks | `/asks` | `images/asks/*.png` ✅ | **Captured** — all six tabs plus a light-theme shot, wired into [asks-system-guide.md](asks-system-guide.md) §8. Kept in their own `images/asks/` folder because it is a set, not one screen, and captured in **dark** theme (the surface's own default) rather than the light default this guide otherwise asks for (flag `ask`) |
 | Search | `/search` | `search.png` | Standalone query box with ranked results |
 | Chat / Ask | `/chat` | `chat.png` | "Ask my memory" conversation surface (flag `chat.page`) |
 | Sources · Connect | `/sources/connect` | `sources-connect.png` | Connected accounts above the 17-service catalogue (Google, Microsoft, Meta, Spotify, Steam, GitHub, …; 8 of the 17 render as "coming soon") |
