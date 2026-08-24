@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { useQuery } from '@apollo/client';
+import { usePageTitle } from '@ci/common';
 
 import { PageContent } from '@/components/layout';
 import { EditPersonModal, PERSON_EDITOR_FIELDS } from '@/components/modals/AddItemModal/EditPersonModal';
@@ -8,6 +9,7 @@ import { PersonProfileCard } from '@/components/PersonForm';
 import { gql, useFragment } from '@/graphql';
 import { useCurrentUser } from '@/hooks';
 import { AboutYouSection } from '@/pages/SettingsPage/sections/AboutYouSection';
+import { AccountSection } from '@/pages/SettingsPage/sections/AccountSection';
 
 const GET_SELF_PROFILE = gql(`
   query GetSelfProfile($id: ID!) {
@@ -24,6 +26,8 @@ const GET_SELF_PROFILE = gql(`
  * entity avoids a second, parallel set of profile fields on the User itself.
  */
 export function SelfProfileTab() {
+  usePageTitle('Self - Companion Intelligence');
+
   const { user } = useCurrentUser();
   const [editOpen, setEditOpen] = useState(false);
   const entityId = user?.entity?.id ?? null;
@@ -49,6 +53,8 @@ export function SelfProfileTab() {
         {profile && <PersonProfileCard person={profile} onEdit={() => setEditOpen(true)} />}
 
         <AboutYouSection />
+
+        <AccountSection />
       </div>
 
       {entityId && <EditPersonModal personId={entityId} open={editOpen} onClose={() => setEditOpen(false)} />}

@@ -12,10 +12,10 @@ export interface SettingsSection {
 
 /**
  * Shared settings destinations — desktop dialog nav and the mobile profile
- * page. `about-you` and `account` moved to the Self page (`/self`,
- * `/self/account`) and are deliberately absent here now — see App.tsx for
- * the redirects that keep old `/settings/about-you` and `/settings/account`
- * links working.
+ * page. `about-you` and `account` moved to the bottom of the Self page's
+ * Profile tab (`/self`) and are deliberately absent here now — see App.tsx
+ * for the redirects that keep old `/settings/about-you` and
+ * `/settings/account` links working.
  */
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette },

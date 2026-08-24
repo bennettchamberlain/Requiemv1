@@ -237,33 +237,32 @@ describe('SecondaryNavigation', () => {
   // Reflections moved from Memory into Self — one sub-section list, same
   // collapsible pattern, driven by SELF_SECTIONS instead of MEMORY_HUB_SECTIONS.
   it('shows Self sections when expanded, and keeps them open on a self route', () => {
-    renderRail('/self/account', { expanded: true });
+    renderRail('/self/stats', { expanded: true });
 
     expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/self');
-    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('href', '/self/account');
     expect(screen.getByRole('link', { name: 'Stats' })).toHaveAttribute('href', '/self/stats');
     expect(screen.getByRole('link', { name: 'Reflections' })).toHaveAttribute('href', '/self/reflections');
-    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Stats' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('opens Self sections on hover when expanded, and closes after leave when not sticky', () => {
     renderRail('/plan', { expanded: true });
 
-    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
 
     const submenu = screen.getByTestId('self-submenu');
     fireEvent.mouseEnter(submenu);
-    expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Stats' })).toBeInTheDocument();
 
     fireEvent.mouseLeave(submenu);
-    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
   });
 
   it('keeps Self sections open after a sticky chevron open even off self routes', () => {
     renderRail('/plan', { expanded: true });
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
-    expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Stats' })).toBeInTheDocument();
   });
 
   it('closes Self sections when the chevron is clicked, even while hovered', () => {
@@ -271,10 +270,10 @@ describe('SecondaryNavigation', () => {
 
     const submenu = screen.getByTestId('self-submenu');
     fireEvent.mouseEnter(submenu);
-    expect(screen.getByRole('link', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Stats' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse Self sections' }));
-    expect(screen.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
   });
 
   it('opens Memory sections on hover when expanded, and closes after leave when not sticky', () => {
