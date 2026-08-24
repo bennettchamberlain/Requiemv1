@@ -20,19 +20,21 @@ function LocationProbe() {
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 }
 
-function renderAt(url: string) {
-  const explorer = (
+function ExplorerRoute() {
+  return (
     <>
       <MemoryPage />
       <LocationProbe />
     </>
   );
+}
 
+function renderAt(url: string) {
   return render(
     <MemoryRouter initialEntries={[url]}>
       <Routes>
-        <Route path="/memory" element={explorer} />
-        <Route path="/memory/events" element={explorer} />
+        <Route path="/memory" element={<ExplorerRoute />} />
+        <Route path="/memory/events" element={<ExplorerRoute />} />
       </Routes>
     </MemoryRouter>,
   );

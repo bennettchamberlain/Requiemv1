@@ -2180,6 +2180,7 @@ type PersonInteractionStatsType {
 type PersonType implements Node & Taggable {
   address: String
   addresses: [PersonAddressType!]!
+  appearedAt: DateTime
   avatarUrl: String
   birthDate: String
   city: String
@@ -2277,6 +2278,7 @@ type PlaceNearType {
 }
 
 type PlaceType implements Node & Taggable {
+  appearedAt: DateTime
   boundary: JSON
   description: String
   entityType: String!
@@ -2673,8 +2675,6 @@ type Query {
   receipts(after: String, extractionState: ReceiptExtractionState, first: Int, merchantName: String, purchasedFrom: DateTime, purchasedTo: DateTime): ReceiptConnection!
   relationship(id: ID!): RelationshipType
   relationships(after: String, before: String, first: Int, last: Int): RelationshipConnection!
-
-  """Turn a GPS coordinate into a readable address for add-place."""
   reverseGeocode(latitude: Float!, longitude: Float!): ReverseGeocodeResultType!
   savedSearch(id: ID!): SavedSearchType
   savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!

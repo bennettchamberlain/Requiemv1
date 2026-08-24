@@ -13,6 +13,15 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 import { CreatePersonDto, NORMALIZED_PERSON_FIELDS, UpdatePersonDto } from '../types';
 
+import {
+  appearanceParams,
+  appearanceWindowParams,
+  hasDateWindow,
+  mapAppearanceRows,
+  ownerUserId,
+  personAppearanceCountSql,
+  personAppearanceListSql,
+} from './appearanceBrowse';
 import { EntityService } from './EntityService';
 
 /** Map properties JSONB identity keys onto the typed Person columns. */
@@ -379,6 +388,11 @@ export class PersonService extends EntityService<PersonEntity, Person> {
   /**
    * Lightweight identifiers for the most-recent people, for the unified
    * search/explorer feed. Full entities are batch-resolved downstream.
+   *
+   * With no date window this is the unique people list, ordered by row-write
+   * time (the frontend puts undated people in "No date"). With a date window
+   * the list is people who actually appeared in that window, ordered by first
+   * real activity in it — not `created_at`, which is usually the import day.
    */
   async getEntitiesForPeople(
     context: ServiceContext,
@@ -391,6 +405,10 @@ export class PersonService extends EntityService<PersonEntity, Person> {
       order?: 'ASC' | 'DESC';
     } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    if (hasDateWindow(options)) {
+      return this.listPeopleByAppearance(context, options);
+    }
+
     let query = this.repository
       .createQueryBuilder('person')
       .select('person.id', 'id')
@@ -398,14 +416,6 @@ export class PersonService extends EntityService<PersonEntity, Person> {
       .where('person.owner_user_id = :userId', { userId: context.userId })
       .andWhere('person.is_active IS DISTINCT FROM FALSE')
       .andWhere('person.merged_into_entity_id IS NULL');
-
-    if (options.startTime) {
-      query = query.andWhere('person.created_at >= :startTime', { startTime: options.startTime });
-    }
-
-    if (options.endTime) {
-      query = query.andWhere('person.created_at <= :endTime', { endTime: options.endTime });
-    }
 
     // Composite keyset: page strictly past (afterTime, afterId) in
     // (created_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
@@ -431,6 +441,36 @@ export class PersonService extends EntityService<PersonEntity, Person> {
   }
 
   /**
+   * Date-windowed People browse: one row per person, timestamped at MIN(real
+   * activity in the window) — events as organizer/participant (excluding ingest
+   * wall-clock times) and communications as from/to. People with no activity in
+   * the window drop out. See appearanceBrowse.ts.
+   */
+  private async listPeopleByAppearance(
+    context: ServiceContext,
+    options: {
+      limit?: number;
+      startTime?: Date;
+      endTime?: Date;
+      afterTime?: Date;
+      afterId?: string;
+      order?: 'ASC' | 'DESC';
+    },
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    const userId = ownerUserId(context.userId);
+    if (userId == null) {
+      return [];
+    }
+
+    const rows = await this.repository.manager.query<Array<{ id: string; appearedAt: Date | string }>>(
+      personAppearanceListSql(options.order ?? 'DESC'),
+      appearanceParams(userId, options),
+    );
+
+    return mapAppearanceRows(rows, 'person');
+  }
+
+  /**
    * True total of people matching the same filters {@link getEntitiesForPeople} applies (minus
    * the pagination-only `limit`/`order`/`afterTime`/`afterId`) — a real `COUNT(*)`, not the
    * length of one `limit`-bounded page of identifiers. See EventService.countEntitiesForEvents.
@@ -439,6 +479,20 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     context: ServiceContext,
     options: { startTime?: Date; endTime?: Date },
   ): Promise<number> {
+    if (hasDateWindow(options)) {
+      const userId = ownerUserId(context.userId);
+      if (userId == null) {
+        return 0;
+      }
+
+      const rows = await this.repository.manager.query<Array<{ n: number }>>(
+        personAppearanceCountSql(),
+        appearanceWindowParams(userId, options),
+      );
+
+      return Number(rows[0]?.n ?? 0);
+    }
+
     let query = this.repository
       .createQueryBuilder('person')
       .where('person.owner_user_id = :userId', { userId: context.userId })

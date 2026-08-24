@@ -86,6 +86,15 @@ describe('getEntityTimestamp', () => {
     expect(getEntityTimestamp(entity({ __typename: 'PersonType' }))).toBeNull();
   });
 
+  it('reads bucketAppearedAt for people and places when a date window stamped an appearance', () => {
+    const date = new Date('2024-03-04T12:00:00Z');
+
+    expect(
+      getEntityTimestamp(entity({ __typename: 'PersonType', bucketAppearedAt: date.toISOString() })),
+    ).toEqual(date);
+    expect(getEntityTimestamp(entity({ __typename: 'PlaceType', bucketAppearedAt: date }))).toEqual(date);
+  });
+
   it('treats an ingest-sourced event as undated rather than sorting by the import instant', () => {
     // The motivating bug: a Google Maps saved place ("Home") carries a real
     // (non-null) startTime — the moment the import ran, because ci.events.
@@ -142,6 +151,16 @@ describe('groupEntitiesByBucket', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].label).toBe('No date');
     expect(groups[0].bucket).toBe('undated');
+  });
+
+  it('groups a person with bucketAppearedAt on the day they showed up', () => {
+    const groups = groupEntitiesByBucket(
+      [entity({ __typename: 'PersonType', bucketAppearedAt: new Date(2026, 0, 14, 18, 0, 0) })],
+      NOW,
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe('Yesterday');
   });
 
   // The server orders undated types by row-write time, so a bulk import
