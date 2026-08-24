@@ -1,6 +1,7 @@
 # Shared Time selectors — takeoff plan
 
-> Status: **plan.** Takeoff is the Plan overdue-reschedule PR (`feat/plan-overdue-reschedule`).
+> Status: **plan.** Takeoff PR: [#2291](https://github.com/companionintelligence/CI-Server/pull/2291)
+> (`feat/plan-overdue-reschedule`). Issue: [#2292](https://github.com/companionintelligence/CI-Server/issues/2292).
 > That PR ships a working Plan UI and Plan-shaped iOS types. This document is where the
 > shared Time vocabulary starts — not a rewrite of that PR.
 >
