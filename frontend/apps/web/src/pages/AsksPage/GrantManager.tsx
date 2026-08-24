@@ -2,6 +2,8 @@ import { useState } from 'react';
 
 import { Badge, Button, Card, Input } from '@ci/shadcn';
 
+import { PersonAvatar } from '@/components/PersonAvatar';
+
 import { type GrantMode, grantModeBadge, grantModeLabel } from './askPresentation';
 
 export interface GrantRow {
@@ -34,6 +36,8 @@ export interface GrantRow {
 export interface GranteeGroup {
   id: string;
   name: string;
+  /** The grantee's photo, when it's a peer whose link resolved one. Null renders initials. */
+  avatarUrl?: string | null;
   tier: string;
   grants: GrantRow[];
 }
@@ -140,6 +144,7 @@ export function GrantManager({
       {groups.map((group) => (
         <Card key={group.id} className="flex flex-col gap-2 p-4">
           <div className="flex flex-wrap items-center gap-2">
+            <PersonAvatar name={group.name} avatarUrl={group.avatarUrl} size="xs" />
             <span className="font-medium">{group.name}</span>
             <Badge variant="secondary" className="text-xs">
               {group.tier}

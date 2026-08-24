@@ -1,10 +1,11 @@
-import { useMemo, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 
-import { Avatar, Collapsible, Tooltip, cn } from '@ci/shadcn';
+import { Collapsible, Tooltip, cn } from '@ci/shadcn';
 import { Camera, ChevronRight, CircleHelp, MonitorCog } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { CaptureModal } from '@/components/modals/CaptureModal';
+import { PersonAvatar } from '@/components/PersonAvatar';
 import { useCaptureModal, useCurrentUser } from '@/hooks';
 
 import { usePowerRail } from '../PowerRailContext';
@@ -120,14 +121,6 @@ function OverlayRailHeader({ closeOverlay }: { closeOverlay: () => void }) {
 
   const name = user?.name || user?.email || 'User';
 
-  const initials = useMemo(() => {
-    const parts = name.trim().split(/\s+/);
-    const first = parts[0]?.[0] ?? '';
-    const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-
-    return (first + last).toUpperCase();
-  }, [name]);
-
   return (
     <div className="flex items-center gap-1 pt-2 pb-1.5">
       <Link
@@ -135,9 +128,9 @@ function OverlayRailHeader({ closeOverlay }: { closeOverlay: () => void }) {
         aria-label={name}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-accent hover:text-accent-foreground"
       >
-        <Avatar className="h-8 w-8 shrink-0 rounded-full">
-          <Avatar.Fallback className="text-xs">{initials}</Avatar.Fallback>
-        </Avatar>
+        {/* size="sm" is 32px — the exact h-8 w-8 this rendered before
+            PersonAvatar existed. */}
+        <PersonAvatar name={name} avatarUrl={user?.avatarUrl} size="sm" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
       </Link>
       <RailEdgeToggle open onClick={closeOverlay} className="shrink-0" />

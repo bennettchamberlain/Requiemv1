@@ -1,11 +1,10 @@
-import { useMemo } from 'react';
-
 import { useDeviceLayout, usePageTitle } from '@ci/common';
-import { Avatar, Button } from '@ci/shadcn';
+import { Button } from '@ci/shadcn';
 import { ChevronLeft, ChevronRight, LogOut } from '@ci/shadcn/icons';
 import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
+import { PersonAvatar } from '@/components/PersonAvatar';
 import { useAuth, useCurrentUser } from '@/hooks';
 import { HELP_LINKS } from '@/layouts/Main/railDestinations';
 import { visibleSettingsSections } from '@/pages/SettingsPage/settingsNav';
@@ -43,21 +42,13 @@ function ProfileHub() {
   const name = user?.name || user?.email || 'User';
   const email = user?.email || '';
 
-  const initials = useMemo(() => {
-    const parts = name.trim().split(/\s+/);
-    const first = parts[0]?.[0] ?? '';
-    const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-
-    return (first + last).toUpperCase();
-  }, [name]);
-
   return (
     <PageContent className="pb-8">
       <div className="mx-auto flex w-full max-w-lg flex-col gap-6 pb-4">
         <div className="flex items-center gap-3 px-1">
-          <Avatar className="h-12 w-12 rounded-full">
-            <Avatar.Fallback>{initials}</Avatar.Fallback>
-          </Avatar>
+          {/* size="lg" is 48px — the exact h-12 w-12 this rendered before
+              PersonAvatar existed. */}
+          <PersonAvatar name={name} avatarUrl={user?.avatarUrl} size="lg" />
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold">{name}</h1>
             {email ? <p className="truncate text-sm text-muted-foreground">{email}</p> : null}

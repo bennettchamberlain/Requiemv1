@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Badge, Button, Card, Input } from '@ci/shadcn';
 import { Zap } from '@ci/shadcn/icons';
 
+import { PersonAvatar } from '@/components/PersonAvatar';
+
 /**
  * The longest prompt this composer will send.
  *
@@ -19,6 +21,8 @@ export interface ComposerRecipient {
   /** The opaque user id `createAsk` is addressed to. */
   id: string;
   name: string;
+  /** A photo, when one is known. Null (the common case here) renders initials. */
+  avatarUrl?: string | null;
   /** What can truthfully be said about them, in the container's words. */
   tier: string;
   /** Why they are offered here at all — see AsksPage's recipient derivation. */
@@ -30,6 +34,7 @@ export interface ComposerRecipient {
 export interface UnreachableRecipient {
   id: string;
   name: string;
+  avatarUrl?: string | null;
   tier: string;
   /** Plain-language reason this person cannot be asked from here yet. */
   reason: string;
@@ -135,7 +140,14 @@ export function AskComposer({ recipients, unreachable = [], shapes, onSend, busy
               aria-checked={candidate.id === recipientId}
               disabled={busy}
               onClick={() => setRecipientId(candidate.id)}
+              // A little left padding on top of the button's own inset, so the
+              // avatar doesn't sit flush against the pill's edge.
+              className="gap-1.5 pl-1.5"
             >
+              {/* Pairing even an opaque, truncated-id label with a real avatar
+                  is what stops it reading as corrupted text — see
+                  composeRecipients.ts. */}
+              <PersonAvatar name={candidate.name} avatarUrl={candidate.avatarUrl} size="xs" />
               {candidate.name}
             </Button>
           ))}
@@ -145,6 +157,7 @@ export function AskComposer({ recipients, unreachable = [], shapes, onSend, busy
       {recipient ? (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-muted-foreground text-sm">To</span>
+          <PersonAvatar name={recipient.name} avatarUrl={recipient.avatarUrl} size="xs" />
           <span className="font-medium">{recipient.name}</span>
           <Badge variant="secondary" className="text-xs">
             {recipient.tier}
@@ -163,8 +176,12 @@ export function AskComposer({ recipients, unreachable = [], shapes, onSend, busy
         <Card className="flex flex-col gap-1 p-3 text-xs">
           <p className="font-medium">People you are linked to but cannot ask from here</p>
           {unreachable.map((peer) => (
-            <p key={peer.id} className="text-muted-foreground">
-              <span className="text-foreground">{peer.name}</span> ({peer.tier}) — {peer.reason}
+            <p key={peer.id} className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+              <PersonAvatar name={peer.name} avatarUrl={peer.avatarUrl} size="xs" />
+              <span className="text-foreground">{peer.name}</span>
+              <span>
+                ({peer.tier}) — {peer.reason}
+              </span>
             </p>
           ))}
         </Card>

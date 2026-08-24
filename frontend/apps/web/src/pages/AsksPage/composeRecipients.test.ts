@@ -77,6 +77,10 @@ describe('composeRecipients', () => {
     // must read as a truncation of an id, which is all it is.
     expect(recipient?.name).toBe('Peer …abc123');
     expect(recipient?.tier).toBe('on this Companion');
+    // No photo either — nothing on this schema resolves a local relationship
+    // id to a Person's avatar. PersonAvatar still renders a real avatar for
+    // this (initials on a deterministic colour), just with no image.
+    expect(recipient?.avatarUrl).toBeNull();
   });
 });
 
@@ -96,6 +100,14 @@ describe('unreachablePeers', () => {
 
     expect(peer).toMatchObject({ name: 'ada', tier: 'Stranger' });
     expect(peer?.reason).toMatch(/access token/i);
+  });
+
+  it('carries the linked Person’s avatar through, when the link resolved one', () => {
+    const [withPhoto] = unreachablePeers([link({ avatarUrl: '/avatars/ada.png' })]);
+    const [withoutPhoto] = unreachablePeers([link()]);
+
+    expect(withPhoto?.avatarUrl).toBe('/avatars/ada.png');
+    expect(withoutPhoto?.avatarUrl).toBeNull();
   });
 
   it('drops an ended relationship rather than explaining its unavailability', () => {

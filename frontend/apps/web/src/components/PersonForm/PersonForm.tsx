@@ -3,11 +3,14 @@ import { type ReactNode, useId } from 'react';
 import { Button, IconButton, Input, Label, Select, Textarea } from '@ci/shadcn';
 import { Plus, Trash2 } from '@ci/shadcn/icons';
 
+import { PersonAvatar } from '@/components/PersonAvatar';
+
 import {
   type PersonAddressDraft,
   type PersonContactDraft,
   type PersonContactKind,
   type PersonDraft,
+  composedName,
   emptyAddress,
   emptyContact,
 } from './personDraft';
@@ -431,14 +434,23 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
       </Section>
 
       <Section title="Notes">
-        <Field
-          id={`${uid}-avatar-url`}
-          label="Avatar URL"
-          type="url"
-          value={value.avatarUrl}
-          placeholder="https://"
-          onChange={(next) => set('avatarUrl', next)}
-        />
+        <div className="flex items-end gap-3">
+          {/* Live preview: the same fallback (initials on a deterministic
+              colour) or broken-link handling this URL gets everywhere else
+              it is rendered, shown as it is typed rather than only after
+              saving. */}
+          <PersonAvatar name={composedName(value)} avatarUrl={value.avatarUrl} size="lg" className="mb-1.5" />
+          <div className="min-w-0 flex-1">
+            <Field
+              id={`${uid}-avatar-url`}
+              label="Avatar URL"
+              type="url"
+              value={value.avatarUrl}
+              placeholder="https://"
+              onChange={(next) => set('avatarUrl', next)}
+            />
+          </div>
+        </div>
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`${uid}-description`} className="text-xs text-muted-foreground">

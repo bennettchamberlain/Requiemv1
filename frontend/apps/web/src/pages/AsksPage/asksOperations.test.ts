@@ -135,4 +135,12 @@ describe('peer link documents', () => {
       expect.arrayContaining(['trustTier', 'status', 'revokedAt']),
     );
   });
+
+  it('selects avatarUrl on the roster, so a peer counterparty can show a real photo', () => {
+    // Without this, `partyAvatar`'s join against `myPeerLinks` (askBinding.ts)
+    // can resolve a display name but never a photo, and every peer-handled row
+    // on the Asks page would silently fall back to initials even when the
+    // linked Person has one set.
+    expect(selectedFields(MY_PEER_LINKS)).toContain('avatarUrl');
+  });
 });

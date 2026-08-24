@@ -13,6 +13,7 @@ const USER_DATA_QUERY = gql(`
       onboarded
       needsIdentityStep
       timezone
+      avatarUrl
 
       entity {
         id

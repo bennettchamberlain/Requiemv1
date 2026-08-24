@@ -2,13 +2,14 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import { useApolloClient, useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
-import { AlertDialog, Avatar, Badge, Button, Card, Input } from '@ci/shadcn';
+import { AlertDialog, Badge, Button, Card, Input } from '@ci/shadcn';
 import { Merge } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { ChatAbout } from '@/components/ChatWithAgent';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { PersonAvatar } from '@/components/PersonAvatar';
 import { gql } from '@/graphql';
 import type { GetMergeCandidatesQuery, GetPeopleQuery } from '@/graphql/graphql';
 import { namedChatContext } from '@/lib/agentChat';
@@ -162,28 +163,6 @@ type MergablePerson = MergeCandidate['people'][number];
 /** Candidates per page — "load more"-able. */
 export const CANDIDATE_PAGE_SIZE = 20;
 
-function resolveAvatarUrl(avatarUrl: string | null | undefined): string | undefined {
-  if (!avatarUrl) {
-    return undefined;
-  }
-
-  return /^https?:\/\//.test(avatarUrl) ? avatarUrl : `/static${avatarUrl}`;
-}
-
-function initialsFor(name: string | null | undefined): string {
-  const trimmed = name?.trim();
-  if (!trimmed) {
-    return '?';
-  }
-
-  const parts = trimmed.split(/\s+/);
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
-}
-
 function formatLastInteraction(value: string | Date | null | undefined): string | null {
   if (value == null) {
     return null;
@@ -220,10 +199,9 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
       onClick={onOpen}
       className="flex w-full items-center gap-3 rounded-md border bg-card p-3 text-left transition hover:bg-accent"
     >
-      <Avatar className="h-10 w-10 shrink-0">
-        <Avatar.Image src={resolveAvatarUrl(person.avatarUrl)} alt={person.name ?? ''} />
-        <Avatar.Fallback>{initialsFor(person.name)}</Avatar.Fallback>
-      </Avatar>
+      {/* size="md" is 40px — the exact h-10 w-10 this rendered before
+          PersonAvatar existed. */}
+      <PersonAvatar name={person.name} avatarUrl={person.avatarUrl} size="md" />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -327,10 +305,9 @@ function MergeSuggestionCard({
       <div className="flex flex-col gap-2">
         {orderedPeople.map((person) => (
           <div key={person.id} className="flex items-center gap-3">
-            <Avatar className="h-8 w-8 shrink-0">
-              <Avatar.Image src={resolveAvatarUrl(person.avatarUrl)} alt={person.name ?? ''} />
-              <Avatar.Fallback>{initialsFor(person.name)}</Avatar.Fallback>
-            </Avatar>
+            {/* size="sm" is 32px — the exact h-8 w-8 this rendered before
+                PersonAvatar existed. */}
+            <PersonAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
 
             <div className="min-w-0 flex-1">
               <Link

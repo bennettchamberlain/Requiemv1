@@ -31,8 +31,10 @@ export const Household: Story = {
       },
       {
         id: 'peer-link-1',
-        // A PEER grantee does have one, and a real ceiling with it.
+        // A PEER grantee does have one, and a real ceiling with it — and,
+        // when the link resolved a photo, an avatar rather than initials.
         name: 'ada',
+        avatarUrl: 'https://i.pravatar.cc/64?img=12',
         tier: 'Stranger',
         grants: [
           {
