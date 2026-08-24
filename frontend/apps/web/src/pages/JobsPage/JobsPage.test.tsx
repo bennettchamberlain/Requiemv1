@@ -384,6 +384,8 @@ describe('JobsPage schedules', () => {
             running: true,
             nextRunAt: '2026-08-17T01:00:00.000Z',
             lastRunAt: null,
+            lastSuccessAt: null,
+            overdue: false,
           },
         ],
       }),
@@ -418,6 +420,8 @@ describe('JobsPage schedules', () => {
             running: true,
             nextRunAt: null,
             lastRunAt: null,
+            lastSuccessAt: null,
+            overdue: false,
           },
         ],
       }),
@@ -440,8 +444,21 @@ describe('JobsPage schedules', () => {
     return row;
   }
 
-  function cron(name: string, expression = '0 0 * * * *'): JobsDashboardResponse['crons'][number] {
-    return { name, cron: expression, timezone: null, running: true, nextRunAt: null, lastRunAt: null };
+  function cron(
+    name: string,
+    overrides: Partial<JobsDashboardResponse['crons'][number]> = {},
+  ): JobsDashboardResponse['crons'][number] {
+    return {
+      name,
+      cron: '0 0 * * * *',
+      timezone: null,
+      running: true,
+      nextRunAt: null,
+      lastRunAt: null,
+      lastSuccessAt: null,
+      overdue: false,
+      ...overrides,
+    };
   }
 
   it('files the planning schedules under Planning, not Maintenance', () => {
@@ -489,6 +506,76 @@ describe('JobsPage schedules', () => {
     render({ dashboard: dashboard({ crons: [cron('PipelineTickCron.runOnSchedule')] }) });
 
     expect(screen.queryByText('needs a name')).not.toBeInTheDocument();
+  });
+
+  it('calls a schedule overdue instead of reporting it as scheduled', () => {
+    render({
+      dashboard: dashboard({
+        crons: [
+          cron('DerivationCron.deriveNightly', {
+            lastRunAt: '2026-08-14T00:00:00.000Z',
+            lastSuccessAt: '2026-08-14T00:00:00.000Z',
+            overdue: true,
+          }),
+          cron('PipelineTickCron.runOnSchedule'),
+        ],
+      }),
+    });
+
+    // `running` is what this column used to read, and it stays true for a
+    // schedule that has missed every fire for days — the @Cron wrapper catches
+    // and returns — so "scheduled" was the one thing it could never stop saying.
+    const late = scheduleRow('DerivationCron.deriveNightly');
+
+    expect(within(late).getByText('overdue')).toBeInTheDocument();
+    expect(within(late).queryByText('scheduled')).not.toBeInTheDocument();
+
+    const healthy = scheduleRow('PipelineTickCron.runOnSchedule');
+
+    expect(within(healthy).getByText('scheduled')).toBeInTheDocument();
+    expect(within(healthy).queryByText('overdue')).not.toBeInTheDocument();
+  });
+
+  it('shows when a schedule last succeeded, not only when it last fired', () => {
+    const attemptedAt = new Date('2026-08-17T00:04:00.000Z');
+    const succeededAt = new Date('2026-08-16T02:00:00.000Z');
+
+    render({
+      dashboard: dashboard({
+        crons: [
+          cron('OrphanCleanupCron.sweepOnSchedule', {
+            lastRunAt: attemptedAt.toISOString(),
+            lastSuccessAt: succeededAt.toISOString(),
+          }),
+        ],
+      }),
+    });
+
+    // The attempt stamp lands BEFORE the body, so "last run four minutes ago" is
+    // equally true of a job that has completed nothing since yesterday. Only the
+    // second cell separates the two.
+    const row = scheduleRow('OrphanCleanupCron.sweepOnSchedule');
+
+    expect(within(row).getByText(attemptedAt.toLocaleTimeString())).toBeInTheDocument();
+    expect(within(row).getByText(succeededAt.toLocaleTimeString())).toBeInTheDocument();
+  });
+
+  it('separates a schedule that has never completed a tick from one that never ran', () => {
+    render({
+      dashboard: dashboard({
+        crons: [
+          cron('FeedQueueCron.topUpFeedQueue', { lastRunAt: '2026-08-17T00:04:00.000Z' }),
+          cron('AskExpiryCron.expireOverdueAsks'),
+        ],
+      }),
+    });
+
+    // Firing on time and failing every time is the state both "scheduled" and
+    // "last run" report as healthy, so it gets a word rather than a dash.
+    expect(within(scheduleRow('FeedQueueCron.topUpFeedQueue')).getByText('never')).toBeInTheDocument();
+    expect(
+      within(scheduleRow('AskExpiryCron.expireOverdueAsks')).queryByText('never'),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -689,6 +776,8 @@ describe('JobsPage phone layout', () => {
             running: true,
             nextRunAt: null,
             lastRunAt: null,
+            lastSuccessAt: null,
+            overdue: false,
           },
         ],
       }),
@@ -704,5 +793,36 @@ describe('JobsPage phone layout', () => {
     fireEvent.click(screen.getByRole('button', { name: /Unclassified/ }));
 
     expect(screen.getByText('needs a name')).toBeInTheDocument();
+  });
+
+  it('carries overdue and last-succeeded into the phone list', async () => {
+    setViewport(true);
+    render({
+      dashboard: dashboard({
+        crons: [
+          {
+            name: 'FeedQueueCron.topUpFeedQueue',
+            cron: '0 0 * * * *',
+            timezone: null,
+            running: true,
+            nextRunAt: null,
+            lastRunAt: '2026-08-14T00:00:00.000Z',
+            lastSuccessAt: null,
+            overdue: true,
+          },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('columnheader', { name: 'Duration' })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Schedules/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Maintenance/ }));
+
+    expect(screen.getByText('overdue')).toBeInTheDocument();
+    expect(screen.queryByText('scheduled')).not.toBeInTheDocument();
+    expect(screen.getByText(/succeeded never/)).toBeInTheDocument();
   });
 });

@@ -257,6 +257,23 @@ export const STAGE_IDS = {
   CLEAN_DUPLICATE_DETECT: 'clean.duplicate_detect',
 
   /**
+   * The same proposal, over OWNED UNITS (`ci.objects`) instead of people.
+   *
+   * A SECOND id rather than a second entity type on `clean.duplicate_detect`,
+   * for the reason `enrich.event_person_link` is one: a `Stage` declares
+   * exactly one `source`, and this is a different table with a different
+   * primary key. The evidence is different too — a shared barcode, catalogue
+   * product or brand+model+day, not a shared mailbox — and the two therefore
+   * have to be able to improve, and re-sweep, independently.
+   *
+   * Reuses `ObjectDuplicateService.findDuplicateGroups`, until now reachable
+   * only from a GraphQL read that recomputed the whole corpus per request and
+   * wrote nothing. Same standing decision as its sibling: CLEAN proposes, a
+   * human disposes, and this stage has no merge path at all.
+   */
+  CLEAN_OBJECT_DUPLICATE_DETECT: 'clean.object_duplicate_detect',
+
+  /**
    * Canonicalise identifiers already stored — emails, phones to E.164, handles —
    * so identity work runs over a consistent corpus. Writes `value_e164` BESIDE
    * `value` rather than over it: `value` is a join key existing rows point at.

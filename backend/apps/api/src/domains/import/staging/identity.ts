@@ -96,6 +96,49 @@ export function isShortCode(value: unknown): boolean {
 }
 
 /**
+ * The staged `type` a datasource declares for a handle that IS a reachable
+ * line, and the one it declares for a value {@link isShortCode} recognises.
+ *
+ * Named here rather than repeated as literals because the two of them are the
+ * two ends of one decision, and because the pair is now read from outside
+ * staging: `EntityTypeAuditCron` re-runs {@link isShortCode} over rows already
+ * in `ci.entities` and has to reconstruct the key each type would have produced
+ * — see {@link stagedNaturalKey}.
+ */
+export const CONTACT_STAGED_TYPE = 'contact';
+export const SHORT_CODE_STAGED_TYPE = 'short_code';
+
+/**
+ * The natural key a staged entity resolves under: its type, then the handle it
+ * keys on, or its trimmed lower-cased name when it has none.
+ *
+ * `push/entities.ts naturalKeyFor` is the caller that has a staged ROW; this is
+ * the same string built from the three fields it reads, split out because the
+ * type audit has a `ci.entities` row instead and must be able to compute the
+ * coordinate a DIFFERENT staged type would have produced without fabricating a
+ * staged row to ask with.
+ *
+ * The type is part of the key, and that is the whole reason retyping is not a
+ * one-column UPDATE: change the type and the key moves, so the next import
+ * resolves nothing and mints a duplicate.
+ */
+export function stagedNaturalKey(
+  stagedType: string | null | undefined,
+  handle: string | null | undefined,
+  name: string | null | undefined,
+): string | null {
+  const trimmedHandle = handle?.trim();
+
+  if (trimmedHandle) {
+    return `${stagedType ?? 'entity'}:${trimmedHandle}`;
+  }
+
+  const trimmedName = name?.trim().toLowerCase();
+
+  return trimmedName ? `${stagedType ?? 'entity'}:${trimmedName}` : null;
+}
+
+/**
  * The normalized identity handles an entity carries — drawn from exactly the
  * attributes {@link hasContactIdentity} treats as a contact signal. Kept in
  * lockstep with it so every entity that resolves to 'contact' via an identity

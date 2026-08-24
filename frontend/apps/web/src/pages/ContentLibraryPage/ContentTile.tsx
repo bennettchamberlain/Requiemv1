@@ -7,8 +7,9 @@ import { useTranslation } from 'react-i18next';
 import { resolveContentTileUrl } from '@/components/entities/resolveMediaUrl';
 import { ContentIcon } from '@/components/icons';
 import { gql, type FragmentType, useFragment } from '@/graphql';
+import { RICH_MEDIA_FRAGMENT } from '@/pages/MemoryPage/Components/EntityDetails/RichMediaCard';
 
-const ContentTileFragment = gql(`
+export const ContentTileFragment = gql(`
   fragment ContentTileFragment on ContentType {
     id
     title
@@ -18,6 +19,7 @@ const ContentTileFragment = gql(`
     sourceUrl
     previewUrl
     mediaUrl
+    ...RichMediaData
   }
 `);
 
@@ -63,10 +65,19 @@ export function ContentTile({
 }) {
   const { t } = useTranslation();
   const content = useFragment(ContentTileFragment, contentMasked);
+  const richMedia = useFragment(RICH_MEDIA_FRAGMENT, content);
 
   // Title and text are user data and go in verbatim; only the fallback is copy.
   const name = content.title?.trim() || t('CONTENT_UNTITLED');
-  const imageUrl = useMemo(() => resolveContentTileUrl(content), [content]);
+  const imageUrl = useMemo(
+    () =>
+      resolveContentTileUrl({
+        ...content,
+        unfurlThumbnailUrl: richMedia.unfurl?.status === 'ok' ? richMedia.unfurl.thumbnailUrl : null,
+        playerPosterUrl: richMedia.player?.posterUrl,
+      }),
+    [content, richMedia],
+  );
   const { Icon, label } = contentKindFor(content.mimetype);
 
   return (

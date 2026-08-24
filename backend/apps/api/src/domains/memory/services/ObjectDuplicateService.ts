@@ -44,11 +44,57 @@ export interface ObjectDuplicatePage {
  * import artifacts permanently out of reach of the merge UI. The group is
  * returned truncated, carrying `totalItems` so the UI can say "showing 6 of
  * 900". Same reasoning, same number, as `PersonDuplicateService`.
+ *
+ * WHICH members survive the cut is not arbitrary when the caller passed
+ * `objectIds`: see that parameter on {@link ObjectDuplicateService.findDuplicateGroups}.
  */
 const MAX_GROUP_SIZE = 6;
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+
+/**
+ * Which `identifier_codes` bag keys count as an IDENTIFIER of the thing itself.
+ *
+ * The bag is a grab-bag: the importer also drops `order_id` and `quantity` in
+ * it (`import/push/inputs.ts`) as the human-facing copy of the purchase. An
+ * order id belongs to the ORDER, not to any one thing in it, so grouping on it
+ * proposes every line of a multi-item order — jeans, shorts, pajama pants — as
+ * one duplicate. Hence an allow-list rather than a deny-list: a key a future
+ * importer invents is ignored here until someone decides it identifies a unit
+ * or a model. Mirrors `ReceiptService.CODE_KEY_NAMESPACES`, aliases included.
+ */
+const IDENTIFIER_BAG_KEYS: readonly string[] = [
+  'gtin',
+  'upc',
+  'ean',
+  'isbn',
+  'asin',
+  'mpn',
+  'sku',
+  'serial',
+  'imei',
+  'vin',
+];
+
+/**
+ * The `ci.object_identifiers` namespaces that identify a thing or its model.
+ * `order_id` is a namespace there too (datasources may state it in
+ * `metadata.Identifiers`), and is excluded for the reason above; `custom` is
+ * excluded because nothing guarantees two custom codes mean the same thing.
+ */
+const IDENTIFIER_CLAIM_NAMESPACES: readonly string[] = [
+  'gtin',
+  'isbn',
+  'asin',
+  'mpn',
+  'sku',
+  'serial',
+  'imei',
+  'vin',
+  'rfid',
+  'qr',
+];
 
 /**
  * Shortest identifier worth grouping on, after normalization.
@@ -134,15 +180,37 @@ export class ObjectDuplicateService {
     this.logger.setContext(ObjectDuplicateService.name);
   }
 
+  /**
+   * @param options.objectIds Restrict the answer to groups that CONTAIN at
+   * least one of these units. Membership is still resolved corpus-wide — the
+   * unit a slice's duplicate pairs with is usually not in the same slice — so
+   * this narrows WHICH groups come back and never which units may join one.
+   * Added for `clean.object_duplicate_detect`, which sweeps `ci.objects` a
+   * ledger slice at a time and would otherwise have to page the whole corpus to
+   * find the handful of groups its 200 ids are in. Absent (or empty) means the
+   * whole corpus, which is what the review UI asks for.
+   *
+   * A group returned for a slice always CONTAINS at least one of these units:
+   * {@link MAX_GROUP_SIZE} truncation orders them first, so a unit cannot both
+   * select a group and be cut out of the membership that comes back — the
+   * sweep would otherwise record it as examined with no duplicate, and the
+   * ledger would not ask again until a version bump.
+   */
   async findDuplicateGroups(
     context: UserServiceContext,
-    options: { limit?: number; offset?: number; reasons?: ObjectDuplicateReason[] } = {},
+    options: {
+      limit?: number;
+      offset?: number;
+      reasons?: ObjectDuplicateReason[];
+      objectIds?: string[];
+    } = {},
   ): Promise<ObjectDuplicatePage> {
     const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const offset = Math.max(options.offset ?? 0, 0);
     // An empty (or absent) filter means every reason; the SQL takes NULL for it
     // so one statement serves both.
     const reasons = options.reasons?.length ? [...new Set(options.reasons)] : null;
+    const objectIds = options.objectIds?.length ? [...new Set(options.objectIds)] : null;
 
     const rows: Array<{
       kind: ObjectDuplicateReason;
@@ -176,7 +244,8 @@ export class ObjectDuplicateService {
                   LATERAL jsonb_each_text(
                     CASE WHEN jsonb_typeof(u.identifier_codes) = 'object'
                          THEN u.identifier_codes ELSE '{}'::jsonb END) AS code(key, value)
-            WHERE length(regexp_replace(code.value, '[^0-9A-Za-z]', '', 'g')) >= $6
+            WHERE lower(btrim(code.key)) = ANY($7::text[])
+              AND length(regexp_replace(code.value, '[^0-9A-Za-z]', '', 'g')) >= $6
            UNION ALL
            -- ...and from the claim table, so a unit that WON a claim but never
            -- kept the raw code in its bag is still in the group.
@@ -186,6 +255,7 @@ export class ObjectDuplicateService {
              JOIN units u ON u.object_id = oi.subject_id
             WHERE oi.owner_user_id = $1::uuid
               AND oi.subject_type = 'object_instance'
+              AND oi.namespace = ANY($8::text[])
               AND length(regexp_replace(oi.value_normalized, '[^0-9A-Za-z]', '', 'g')) >= $6
            UNION ALL
            -- (b) Same catalog model AND same name: two rows claiming to be the
@@ -209,14 +279,35 @@ export class ObjectDuplicateService {
               AND u.model IS NOT NULL AND btrim(u.model) <> ''
               AND u.acquired_at IS NOT NULL
          ),
-         grouped AS (
-           SELECT kind, val,
-                  (array_agg(DISTINCT object_id))[1:$3] AS object_ids,
-                  COUNT(DISTINCT object_id) AS n
+         members AS (
+           -- One row per (group, unit). Deduplicated HERE rather than by
+           -- array_agg(DISTINCT ...) below, because an aggregate carrying
+           -- DISTINCT may only be ordered by its own argument and the
+           -- truncation below has to be ordered by the slice predicate.
+           SELECT DISTINCT kind, val, object_id
              FROM keys
             WHERE $4::text[] IS NULL OR kind = ANY($4::text[])
+         ),
+         grouped AS (
+           SELECT kind, val,
+                  -- The slice's own units aggregate FIRST, so the truncation
+                  -- can never cut away the unit the group was selected for —
+                  -- which would hand the caller a group that does not contain
+                  -- what it asked about. With no slice the predicate is NULL
+                  -- for every row and the order falls back to object_id, as it
+                  -- did when this was array_agg(DISTINCT ...).
+                  (array_agg(object_id
+                             ORDER BY (object_id = ANY($9::uuid[])) DESC NULLS LAST,
+                                      object_id))[1:$3] AS object_ids,
+                  COUNT(*) AS n
+             FROM members
             GROUP BY kind, val
-           HAVING COUNT(DISTINCT object_id) > 1
+           HAVING COUNT(*) > 1
+              -- The slice filter, applied AFTER the group is formed. Filtering
+              -- the units CTE instead would ask a different question: whether
+              -- the slice's units duplicate EACH OTHER, which for a 200-row
+              -- slice of a 30,000-row corpus is almost never where it is.
+              AND ($9::uuid[] IS NULL OR bool_or(object_id = ANY($9::uuid[])))
          )
          SELECT kind, val, object_ids, n, COUNT(*) OVER () AS total
            FROM grouped
@@ -224,7 +315,17 @@ export class ObjectDuplicateService {
                    n DESC,
                    val ASC
           LIMIT $2 OFFSET $5`,
-      [context.userId, limit + 1, MAX_GROUP_SIZE, reasons, offset, MIN_IDENTIFIER_LENGTH],
+      [
+        context.userId,
+        limit + 1,
+        MAX_GROUP_SIZE,
+        reasons,
+        offset,
+        MIN_IDENTIFIER_LENGTH,
+        IDENTIFIER_BAG_KEYS,
+        IDENTIFIER_CLAIM_NAMESPACES,
+        objectIds,
+      ],
     );
 
     if (rows.length === 0) {

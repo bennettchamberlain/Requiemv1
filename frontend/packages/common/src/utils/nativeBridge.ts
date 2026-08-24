@@ -11,7 +11,7 @@
  */
 
 import { apiKeyHeaders } from './apiAuth';
-import { buildApiUrl, isNativePlatform } from './apiBase';
+import { buildApiUrl, isIosPlatform, isNativePlatform } from './apiBase';
 import type { BackgroundGeolocationLocation } from './deviceSources/location';
 
 /**
@@ -47,6 +47,12 @@ interface LocalHubPlugin {
   secureSet(options: { key: string; value: string }): Promise<void>;
   secureRemove(options: { key: string }): Promise<void>;
   openUrl(options: { url: string }): Promise<void>;
+  /**
+   * iOS only. One high-accuracy fix for placing a pin — does not write the
+   * tracking outbox. Rejects when permission is denied or a fix times out.
+   */
+  getCurrentLocation?(): Promise<NativeCurrentLocation>;
+  openAppSettings?(): Promise<void>;
 }
 
 export interface BackgroundGeolocationError {
@@ -78,6 +84,30 @@ interface BackgroundGeolocationPlugin {
   ): Promise<string>;
   removeWatcher(options: { id: string }): Promise<void>;
   openSettings(): Promise<void>;
+}
+
+/** One-shot fix from {@link getCurrentDeviceLocation} — placing a pin, not tracking. */
+export interface NativeCurrentLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+export type DeviceLocationErrorCode = 'denied' | 'unavailable' | 'timeout';
+
+/** One-shot GPS failure from {@link getCurrentDeviceLocation}. */
+export class DeviceLocationError extends Error {
+  readonly code: DeviceLocationErrorCode;
+
+  constructor(message: string, code: DeviceLocationErrorCode) {
+    super(message);
+    this.name = 'DeviceLocationError';
+    this.code = code;
+  }
+}
+
+export function isDeviceLocationError(error: unknown): error is DeviceLocationError {
+  return error instanceof Error && error.name === 'DeviceLocationError' && 'code' in error;
 }
 
 interface BrowserPlugin {
@@ -456,7 +486,11 @@ export async function removeBackgroundLocationWatcher(id: string): Promise<void>
   }
 }
 
-/** Opens the OS location settings screen. No-op on web. */
+/**
+ * Opens the OS location settings screen for the continuous background-tracking
+ * permission (Settings → Location, via the background-geolocation plugin). No-op on web.
+ * For the one-shot "use my location" denied case, see {@link openNativeAppSettings} instead.
+ */
 export async function openNativeLocationSettings(): Promise<void> {
   const plugin = plugins()?.BackgroundGeolocation;
 
@@ -468,6 +502,102 @@ export async function openNativeLocationSettings(): Promise<void> {
     await plugin.openSettings();
   } catch {
     // Best-effort — nothing to recover into if the OS refuses.
+  }
+}
+
+/**
+ * iOS-only one-shot high-accuracy fix — e.g. "use my current location" when placing a
+ * pin. Does not enqueue a tracking outbox record. `null` on other platforms/web, where
+ * {@link getCurrentDeviceLocation} falls back to the browser Geolocation API instead.
+ */
+export async function getNativeCurrentLocation(): Promise<NativeCurrentLocation | null> {
+  const hub = plugins()?.LocalHub;
+
+  if (!isIosPlatform() || !hub?.getCurrentLocation) {
+    return null;
+  }
+
+  return hub.getCurrentLocation();
+}
+
+/**
+ * Best available device fix: iOS Core Location when the native plugin is
+ * present, otherwise the browser Geolocation API (Android / web).
+ */
+export async function getCurrentDeviceLocation(): Promise<NativeCurrentLocation> {
+  if (isIosPlatform()) {
+    try {
+      const native = await getNativeCurrentLocation();
+
+      if (native) {
+        return native;
+      }
+    } catch (error) {
+      throw toDeviceLocationError(error);
+    }
+  }
+
+  return webCurrentLocation();
+}
+
+function toDeviceLocationError(error: unknown): DeviceLocationError {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (/denied|restricted/i.test(message)) {
+    return new DeviceLocationError(message, 'denied');
+  }
+
+  if (/timed? ?out/i.test(message)) {
+    return new DeviceLocationError(message, 'timeout');
+  }
+
+  return new DeviceLocationError(message || 'Location is unavailable', 'unavailable');
+}
+
+function webCurrentLocation(): Promise<NativeCurrentLocation> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.reject(new DeviceLocationError('Geolocation is unavailable', 'unavailable'));
+  }
+
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          reject(new DeviceLocationError(error.message || 'Location permission was denied', 'denied'));
+
+          return;
+        }
+
+        if (error.code === error.TIMEOUT) {
+          reject(new DeviceLocationError(error.message || 'Timed out waiting for a location fix', 'timeout'));
+
+          return;
+        }
+
+        reject(new DeviceLocationError(error.message || 'Location is unavailable', 'unavailable'));
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 5_000 },
+    );
+  });
+}
+
+/**
+ * Opens the OS settings screen for the one-shot "use my current location" permission
+ * (`CurrentLocationField`). iOS-only — Android/web show an inline message instead. For
+ * the continuous background-tracking permission, see {@link openNativeLocationSettings}.
+ */
+export async function openNativeAppSettings(): Promise<void> {
+  const hub = plugins()?.LocalHub;
+
+  if (isIosPlatform() && hub?.openAppSettings) {
+    await hub.openAppSettings();
   }
 }
 

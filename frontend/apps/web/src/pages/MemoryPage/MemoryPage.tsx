@@ -29,7 +29,7 @@ const MobilePage = lazy(() => import('./MobileMemoryPage'));
  * In-page filter changes never re-trigger it either, because the toolbar
  * always keeps `view` while clearing filters.
  */
-export const DEFAULT_MEMORY_EVENTS_SEARCH = 'view=list&includedEntityTypes=Event';
+export const DEFAULT_MEMORY_EVENTS_SEARCH = 'view=list&includedEntityTypes=Event,Communication';
 
 /**
  * The explorer's query comes from the URL and nothing else. Every view — List,

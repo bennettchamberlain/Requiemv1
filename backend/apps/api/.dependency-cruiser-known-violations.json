@@ -89,6 +89,24 @@
   },
   {
     "type": "dependency",
+    "from": "src/domains/import/push/__tests__/commercePlane.test.ts",
+    "to": "src/domains/memory/types.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/import/push/__tests__/undatedRecords.test.ts",
+    "to": "src/domains/pipeline/stages/clean/TemporalRepairStage.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/domains/llm/listeners/__tests__/llmQueuePolicy.test.ts",
     "to": "src/domains/smart-rotation/listeners/AnswerInferenceListener.ts",
     "rule": {
@@ -127,6 +145,15 @@
     "type": "dependency",
     "from": "src/domains/memory/index.ts",
     "to": "src/domains/graph/services/ObjectIdentifierService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/memory/services/KnownPlacesService.ts",
+    "to": "src/domains/daily-metrics/places/transitionMath.ts",
     "rule": {
       "severity": "error",
       "name": "no-cross-domain-internals"

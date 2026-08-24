@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { resolveContentTileUrl } from '@/components/entities/resolveMediaUrl';
 import { ContentIcon } from '@/components/icons';
 import { gql, type FragmentType, useFragment } from '@/graphql';
+import { RICH_MEDIA_FRAGMENT } from '@/pages/MemoryPage/Components/EntityDetails/RichMediaCard';
 
 export const EVENT_CONTENT_TILE = gql(`
   fragment EventContentTile on ContentType {
@@ -15,12 +16,18 @@ export const EVENT_CONTENT_TILE = gql(`
     sourceUrl
     previewUrl
     mediaUrl
+    ...RichMediaData
   }
 `);
 
 function Tile({ content: masked }: { content: FragmentType<typeof EVENT_CONTENT_TILE> }) {
   const content = useFragment(EVENT_CONTENT_TILE, masked);
-  const imageUrl = resolveContentTileUrl(content);
+  const richMedia = useFragment(RICH_MEDIA_FRAGMENT, content);
+  const imageUrl = resolveContentTileUrl({
+    ...content,
+    unfurlThumbnailUrl: richMedia.unfurl?.status === 'ok' ? richMedia.unfurl.thumbnailUrl : null,
+    playerPosterUrl: richMedia.player?.posterUrl,
+  });
   const name = content.title?.trim() || 'Untitled';
 
   return (

@@ -609,8 +609,10 @@ function AppRoutes() {
           />
 
           <Route path="/places" element={<Navigate to="/memory/places" replace />} />
+          {/* The optional :placeId gives a place row a shareable URL and makes
+              Back close its drawer — same shape as /memory/content/:contentId. */}
           <Route
-            path="/memory/places"
+            path="/memory/places/:placeId?"
             element={
               <ProtectedRoute>
                 <PlacesPage />

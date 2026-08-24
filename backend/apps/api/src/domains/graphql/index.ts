@@ -16,6 +16,7 @@ import { EmbedModule } from '@ci/domains/embed';
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { EtlModule } from '@ci/domains/etl';
 import { FilesModule } from '@ci/domains/files';
+import { GeocodeModule } from '@ci/domains/geocode';
 import { GraphModule } from '@ci/domains/graph';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { MemoryModule, ObjectObservationEntity, ReceiptLineItemEntity } from '@ci/domains/memory';
@@ -75,6 +76,7 @@ import { DailyMetricsResolver } from './resolvers/DailyMetricsResolver';
 import { EventResolver } from './resolvers/EventResolver';
 import { FileResolver } from './resolvers/FileResolver';
 import { ForecastResolver } from './resolvers/ForecastResolver';
+import { GeocodeResolver } from './resolvers/GeocodeResolver';
 import { GraphIngestResolver } from './resolvers/GraphIngestResolver';
 import { GraphResolver } from './resolvers/GraphResolver';
 import { ItemRelationshipResolver } from './resolvers/ItemRelationshipResolver';
@@ -83,6 +85,7 @@ import { KnownPlacesResolver } from './resolvers/KnownPlacesResolver';
 import { NodeResolver } from './resolvers/NodeResolver';
 import { NoteResolver } from './resolvers/NoteResolver';
 import { ObjectObservationResolver } from './resolvers/ObjectObservationResolver';
+import { PeerLinkResolver } from './resolvers/PeerLinkResolver';
 import { PersonResolver } from './resolvers/PersonResolver';
 import { PlaceResolver } from './resolvers/PlaceResolver';
 import { PositionResolver } from './resolvers/PositionResolver';
@@ -140,6 +143,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     EntityResolutionModule,
     EtlModule,
     FilesModule,
+    GeocodeModule,
     EmbedModule,
     GraphModule,
     IntelligenceModule,
@@ -159,6 +163,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     ActivityResolver,
     AskResolver,
     ForecastResolver,
+    GeocodeResolver,
     ScheduleCandidateResolver,
     BrowserActivityResolver,
     CommunicationResolver,
@@ -196,6 +201,7 @@ import { UserSnapshotResolver } from './resolvers/UserSnapshotResolver';
     PersonIdentifiersLoader,
     PersonInteractionStatsLoader,
     PersonLoader,
+    PeerLinkResolver,
     PersonResolver,
     PlaceLoader,
     PlaceVisitStatsLoader,

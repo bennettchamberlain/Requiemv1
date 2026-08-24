@@ -122,10 +122,14 @@ export {
   addBackgroundLocationWatcher,
   closeBrowser,
   exitApp,
+  getCurrentDeviceLocation,
   getLaunchUrl,
+  getNativeCurrentLocation,
   hasNotificationPermission,
   hideSplashScreen,
+  isDeviceLocationError,
   openExternalUrl,
+  openNativeAppSettings,
   openNativeLocationSettings,
   removeBackgroundLocationWatcher,
   requestNotificationPermission,
@@ -137,7 +141,13 @@ export {
   syncNativeIntentConfig,
   takeNativePhoto,
 } from './src/utils/nativeBridge';
-export type { BackgroundGeolocationError, LocalNotification } from './src/utils/nativeBridge';
+export type {
+  BackgroundGeolocationError,
+  DeviceLocationErrorCode,
+  LocalNotification,
+  NativeCurrentLocation,
+} from './src/utils/nativeBridge';
+export { DeviceLocationError } from './src/utils/nativeBridge';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,

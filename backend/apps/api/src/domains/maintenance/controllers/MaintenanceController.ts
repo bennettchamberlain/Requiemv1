@@ -20,6 +20,7 @@ import { Context, type RequestContext, toServiceContext } from '@ci/common/conte
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
+import { UNFURL_SWEEP_QUEUE, UnfurlSweepRequestEvent } from '@ci/domains/embed/events';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { MediaDimensionsBackfillRequestEvent, MEDIA_DIMENSIONS_QUEUE } from '@ci/domains/files';
 import { EventEntity } from '@ci/domains/memory';
@@ -537,6 +538,41 @@ export class MaintenanceController {
       estimatedEventCount,
       status: jobIds.length > 0 ? 'enqueued' : 'noop',
     };
+  }
+
+  /**
+   * On-demand `enrich.unfurl` sweep: link previews (title, poster, duration)
+   * for Spotify/YouTube/Netflix/etc. content, via oEmbed, Wikidata/Wikipedia
+   * and OpenGraph. The stage itself runs automatically — daily, metered, capped
+   * per run (`STAGE_SCHEDULES[STAGE_IDS.ENRICH_UNFURL]`) — but a large existing
+   * corpus (tens of thousands of plays) takes several days to fully cover at
+   * that cap, and this endpoint requests an EXTRA sweep right now rather than
+   * waiting for the next scheduled tick.
+   *
+   * Fire-and-forget, same shape as the importer's own post-push kick
+   * (`PushStage.kickUnfurlSweep`): it emits {@link UnfurlSweepRequestEvent},
+   * which `UnfurlSweepRequestListener` turns into a
+   * `PipelineDispatchService.startSweep` call. No count is estimated up front
+   * — the ledger decides what is stale when the sweep actually runs — and a
+   * sweep requested while one is already queued collapses onto it
+   * (`singletonKey`), so calling this repeatedly is harmless.
+   */
+  @Post('unfurl-sweep')
+  async unfurlSweep(@Context() context: RequestContext): Promise<{ status: 'enqueued' | 'noop' }> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { status: 'noop' };
+    }
+
+    await this.signallingEventService.send(
+      UnfurlSweepRequestEvent,
+      { userId, requestedBy: 'maintenance-api' },
+      { queue: UNFURL_SWEEP_QUEUE, singletonKey: `unfurl-sweep:${userId}` },
+    );
+
+    return { status: 'enqueued' };
   }
 
   /**

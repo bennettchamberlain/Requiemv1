@@ -153,8 +153,25 @@ describe('metered stages', () => {
       expect(schedule.window).toBe('enrichment');
       expect(schedule.perRunCap).toBeGreaterThan(0);
       // Weekly at least. The user asked for geocoding at a slower cadence, and
-      // "slower" is the number this line pins.
-      expect(schedule.minInterval).toBeGreaterThanOrEqual(7 * 24 * 60 * 60);
+      // "slower" is the number this line pins. `enrich.unfurl` is the one
+      // exception — daily, so a large existing corpus backfills over days
+      // rather than months at the same per-run cap.
+      const minFloor = stageId === STAGE_IDS.ENRICH_UNFURL ? 24 * 60 * 60 : 7 * 24 * 60 * 60;
+      expect(schedule.minInterval).toBeGreaterThanOrEqual(minFloor);
+    }
+  });
+
+  it('runs enrich.unfurl daily, not weekly like the other metered stages', () => {
+    // A personal library backlog (tens of thousands of Spotify/YouTube keys)
+    // reaches full coverage in days at the per-run cap instead of months.
+    expect(stageSchedule(STAGE_IDS.ENRICH_UNFURL).minInterval).toBe(24 * 60 * 60);
+
+    for (const stageId of meteredStageIds()) {
+      if (stageId === STAGE_IDS.ENRICH_UNFURL) {
+        continue;
+      }
+
+      expect(stageSchedule(stageId).minInterval).toBe(7 * 24 * 60 * 60);
     }
   });
 
@@ -279,7 +296,11 @@ describe('the declared cadences', () => {
     const weekly = STAGE_ID_LIST.filter((stageId) => stageSchedule(stageId).minInterval === 7 * 24 * 60 * 60);
 
     expect(hourly.length + nightly.length + weekly.length).toBe(STAGE_ID_LIST.length);
-    expect(weekly).toEqual(meteredStageIds());
+    // `enrich.unfurl` shares the nightly bucket's interval (daily) without
+    // sharing the edge legs' cost profile — it is the one metered stage NOT
+    // weekly, backfilling a large corpus faster than a weekly cadence would.
+    expect(weekly).toEqual(meteredStageIds().filter((id) => id !== STAGE_IDS.ENRICH_UNFURL));
+    expect(nightly).toContain(STAGE_IDS.ENRICH_UNFURL);
   });
 
   it('caps the reverse geocoder, because the cap matters more than the interval', () => {

@@ -18,6 +18,7 @@ type ResourceType =
   | 'message'
   | 'note'
   | 'observation'
+  | 'peer-link'
   | 'person'
   | 'place'
   | 'product'

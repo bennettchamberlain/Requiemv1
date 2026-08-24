@@ -17,11 +17,16 @@ import { LLMModule } from '@ci/domains/llm';
 import { EventEntity, MemoryModule } from '@ci/domains/memory';
 import { PersonalizationModule } from '@ci/domains/personalization';
 import { SearchIngressModule } from '@ci/domains/search-ingress';
+import { SearchNextModule } from '@ci/domains/search-next';
 
 import { MaintenanceController } from './controllers/MaintenanceController';
 import { DerivationCron } from './cron/DerivationCron';
+import { EntityTypeAuditCron } from './cron/EntityTypeAuditCron';
 import { OrphanCleanupCron } from './cron/OrphanCleanupCron';
+import { RecallProbeCron } from './cron/RecallProbeCron';
 import { RetrievalHealthCron } from './cron/RetrievalHealthCron';
+import { EntityTypeProposalEntity } from './entities/EntityTypeProposalEntity';
+import { RecallProbeResultEntity } from './entities/RecallProbeResultEntity';
 import { RetrievalHealthSnapshotEntity } from './entities/RetrievalHealthSnapshotEntity';
 import { CommunicationParticipantLinkListener } from './listeners/CommunicationParticipantLinkListener';
 import { DerivationRunListener } from './listeners/DerivationRunListener';
@@ -30,6 +35,7 @@ import { CommunicationLinkBackfillService } from './services/CommunicationLinkBa
 import { DerivedRelationshipService } from './services/DerivedRelationshipService';
 import { DeterministicEdgeBackfillService } from './services/DeterministicEdgeBackfillService';
 import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetryService';
+import { EntityTypeAuditService } from './services/EntityTypeAuditService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { ExternalIdKindIntegrityService } from './services/ExternalIdKindIntegrityService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
@@ -41,6 +47,7 @@ import { MaintenanceOrchestratorService } from './services/MaintenanceOrchestrat
 import { NoteContentFoldService } from './services/NoteContentFoldService';
 import { ObjectReverseService } from './services/ObjectReverseService';
 import { PersonStubBackfillService } from './services/PersonStubBackfillService';
+import { RecallProbeService } from './services/RecallProbeService';
 import { RelationshipNormalizeService } from './services/RelationshipNormalizeService';
 import { RetrievalHealthService } from './services/RetrievalHealthService';
 import { SearchIndexBackfillService } from './services/SearchIndexBackfillService';
@@ -50,13 +57,26 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([EventEntity, RetrievalHealthSnapshotEntity]),
+    TypeOrmModule.forFeature([
+      EventEntity,
+      EntityTypeProposalEntity,
+      RecallProbeResultEntity,
+      RetrievalHealthSnapshotEntity,
+    ]),
     EventsModule,
     SearchIngressModule,
+    // RecallProbeService measures the statement SearchService itself builds,
+    // rather than a copy of it — see buildSemanticSearchPlan.
+    SearchNextModule,
     GraphModule,
     GeocodeModule,
-    // RetrievalHealthCron raises its alerts as ci.actions rows (ActionService),
-    // gated by the trust dial (PersonalizationModule, already imported below).
+    // RetrievalHealthCron raises its alerts as ci.actions rows (ActionService).
+    // Not through the trust dial: an index COUNT is a fact about the appliance,
+    // not an inference about the user, so there is no confidence to rate. The
+    // dial still decides placement one hop downstream, in personalization's
+    // FeedQueuePopulationListener. PersonalizationModule below is imported for
+    // the providers here that DO inject PersonalizationService (GraphEnrichment,
+    // PersonStubBackfill, HealSelfCollation and the two listeners).
     IntelligenceModule,
     // GraphEnrichmentService needs the local Ollama client (LLMModule) and the
     // Person-resolution read path (GraphQueryService, exported by MemoryModule).
@@ -82,6 +102,10 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     EmbedCoverageTelemetryService,
     RetrievalHealthService,
     RetrievalHealthCron,
+    RecallProbeService,
+    RecallProbeCron,
+    EntityTypeAuditService,
+    EntityTypeAuditCron,
     LocationEstimateService,
     MaintenanceOrchestratorService,
     ObjectReverseService,
@@ -106,6 +130,8 @@ import { SearchIndexBackfillService } from './services/SearchIndexBackfillServic
     SearchIndexBackfillService,
     EmbedCoverageTelemetryService,
     RetrievalHealthService,
+    RecallProbeService,
+    EntityTypeAuditService,
     LocationEstimateService,
     MaintenanceOrchestratorService,
     ObjectReverseService,
@@ -170,6 +196,51 @@ export {
   type RetrievalHealthRun,
 } from './services/RetrievalHealthService';
 export { RetrievalHealthCron, RETRIEVAL_HEALTH_CRON, ALERT_REPEAT_DAYS } from './cron/RetrievalHealthCron';
+export { EntityTypeProposalEntity } from './entities/EntityTypeProposalEntity';
+export type {
+  ProposalAutonomy,
+  ProposalStatus,
+  SearchIndexAction,
+} from './entities/EntityTypeProposalEntity';
+export {
+  EntityTypeAuditService,
+  classifyShortCodePerson,
+  withCoordinateConflict,
+  AUDITED_ENTITY_TYPE,
+  AUDIT_WINDOW_SIZE,
+  ENTITY_TYPE_AUDIT_DETECTOR,
+  ENTITY_TYPE_AUDIT_GENERATION,
+  KEYED_AS_CONTACT_SCORE,
+  PHONE_SHAPED_SQL,
+  UNPROVEN_KEY_SCORE,
+  type EntityTypeAuditCandidate,
+  type EntityTypeAuditResult,
+  type EntityTypeFinding,
+  type EntityTypeProposalRecord,
+} from './services/EntityTypeAuditService';
+export { EntityTypeAuditCron, ENTITY_TYPE_AUDIT_CRON } from './cron/EntityTypeAuditCron';
+export { RecallProbeResultEntity } from './entities/RecallProbeResultEntity';
+export {
+  RecallProbeService,
+  recallAt,
+  selectProbeTypes,
+  summarizeLeg,
+  pickProbeUser,
+  weekIndex,
+  EF_SEARCH_VARIANTS,
+  MAX_RUN_MS,
+  MIN_POPULATION,
+  PROBE_K,
+  PROBED_TYPES,
+  RETENTION_DAYS as RECALL_PROBE_RETENTION_DAYS,
+  SAMPLES_PER_TYPE,
+  TYPES_PER_RUN,
+  type LegSample,
+  type LegSummary,
+  type RecallProbeRun,
+  type TypePopulation,
+} from './services/RecallProbeService';
+export { RecallProbeCron, RECALL_PROBE_CRON } from './cron/RecallProbeCron';
 export {
   SearchIndexBackfillRequestEvent,
   SEARCH_INDEX_BACKFILL_QUEUE,

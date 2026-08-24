@@ -28,7 +28,9 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "secureGet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secureSet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secureRemove", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getCurrentLocation", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise)
     ]
 
     private let server = LocalHubServer()
@@ -154,4 +156,31 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// One-shot high-accuracy fix for "use my location" (e.g. adding a Place). Does not
+    /// touch the tracking outbox -- continuous background tracking is owned entirely by
+    /// `@capacitor-community/background-geolocation` now, not this plugin.
+    @objc func getCurrentLocation(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            LocationTracker.shared.requestCurrentFix(
+                resolve: { payload in call.resolve(payload) },
+                reject: { message in call.reject(message) }
+            )
+        }
+    }
+
+    @objc func openAppSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                call.reject("Could not open iOS Settings")
+                return
+            }
+            UIApplication.shared.open(url, options: [:]) { success in
+                if success {
+                    call.resolve()
+                } else {
+                    call.reject("Could not open iOS Settings")
+                }
+            }
+        }
+    }
 }

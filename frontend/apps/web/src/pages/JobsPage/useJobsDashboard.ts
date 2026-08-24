@@ -83,9 +83,25 @@ export interface CronSchedule {
   readonly name: string;
   readonly cron: string;
   readonly timezone?: string | null;
+  /**
+   * Whether the scheduler has this job started — not whether it works. The
+   * `@Cron` wrapper catches, logs and returns, so a schedule whose body throws
+   * on every tick stays started forever. Read with `lastSuccessAt` and
+   * `overdue`, never alone.
+   */
   readonly running: boolean;
   readonly nextRunAt: string | null;
+  /** Last *attempt*: stamped before the body, so a tick that threw still counts. */
   readonly lastRunAt: string | null;
+  /** Last tick whose body returned without throwing. Null until one does. */
+  readonly lastSuccessAt: string | null;
+  /**
+   * The schedule's own expression says it should have fired by now and no
+   * attempt was recorded for that fire. Computed server-side, where the cron
+   * expression can actually be evaluated; false while nothing has ever run, so
+   * a fresh appliance does not light up every row.
+   */
+  readonly overdue: boolean;
 }
 
 export interface JobsDashboardResponse {

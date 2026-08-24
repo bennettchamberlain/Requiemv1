@@ -4,7 +4,7 @@ import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 
 import type { PeerDescriptor } from '../protocol';
-import { checkEgressUrl } from '../urlPolicy';
+import { EgressBlockedError, peerEgressFetch } from '../urlPolicy';
 
 interface PortalPeerRow {
   handle?: unknown;
@@ -70,18 +70,15 @@ export class PeerDirectoryService {
 
   private async fetchJson(url: string, accessToken: string): Promise<unknown | null> {
     // SSRF guard. `directoryUrl` is operator-supplied config rather than peer
-    // data, but it is still a server-side fetch target — validating it here
-    // means a mis-set env var cannot turn discovery into an internal port
-    // scanner, and keeps one policy for every outbound call this domain makes.
-    const policy = checkEgressUrl(url);
-    if (!policy.ok) {
-      this.logger.warn(`refusing directory URL ${url}: ${policy.reason}`);
-
-      return null;
-    }
-
+    // data, but it is still a server-side fetch target — going through the same
+    // guarded dialer means a mis-set env var cannot turn discovery into an
+    // internal port scanner, and keeps ONE policy for every outbound call this
+    // domain makes. Crucially that includes redirects: a directory that answers
+    // 302 must not be able to steer this box at its own network either, and a
+    // plain `fetch` would have followed.
     try {
-      const response = await fetch(url, {
+      const response = await peerEgressFetch(url, {
+        method: 'GET',
         headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
         signal: AbortSignal.timeout(config.peers.timeoutMs ?? 10_000),
       });
@@ -94,6 +91,12 @@ export class PeerDirectoryService {
 
       return (await response.json()) as unknown;
     } catch (error: unknown) {
+      if (error instanceof EgressBlockedError) {
+        this.logger.warn(`refusing directory URL ${url}: ${error.reason}`);
+
+        return null;
+      }
+
       // Discovery is best-effort: a directory outage must not break local asks.
       this.logger.warn(`directory ${url} failed: ${String(error)}`);
 

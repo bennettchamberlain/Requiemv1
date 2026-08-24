@@ -102,7 +102,7 @@ const DAYS = 24 * HOURS;
  *    column is not a slow graph, it is an empty one; see the block above
  *    `PROMOTE_EDGE_COMMUNICATION`.
  *  - **NIGHTLY, windowed** (the rest of the local work: the media probe, both
- *    person-link legs, all three `clean.*`, `promote.place` / `promote.object` /
+ *    person-link legs, all four `clean.*`, `promote.place` / `promote.object` /
  *    `promote.observation`, and `enrich.estimate_location`). None of it is
  *    user-visible within a day and none of it costs money, so it goes where it
  *    disturbs nobody.
@@ -297,18 +297,21 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
    * Every key is a request to someone else's server, so this is metered even
    * though nobody bills for it: provider oEmbed endpoints and Wikimedia both
    * rate-limit, and a full-corpus first pass (tens of thousands of YouTube and
-   * Spotify keys) is hours of polite 2/s traffic. Weekly, like every metered
-   * stage; the per-run cap is sized to what 2/s fits in one enrichment window
-   * (rows, not requests — rows sharing a key cost one request). The cache
-   * row's expiry, not the schedule, decides when a key is asked again. A
-   * first pass over a large corpus is best started by hand:
-   * `POST /pipeline/sweeps { stage: 'enrich.unfurl' }`.
+   * Spotify keys) is hours of polite 2/s traffic. Every OTHER metered stage
+   * stays weekly; this one runs daily so a large existing corpus (a personal
+   * library is tens of thousands of plays) backfills over days rather than
+   * months at the same per-run cap — 7x the weekly throughput, still metered,
+   * still `perRunCap`-bounded per run. The per-run cap is sized to what 2/s
+   * fits in one enrichment window (rows, not requests — rows sharing a key
+   * cost one request). The cache row's expiry, not the schedule, decides when
+   * a key is asked again. A first pass over a large corpus is still faster
+   * started by hand: `POST /pipeline/sweeps { stage: 'enrich.unfurl' }`.
    */
   [STAGE_IDS.ENRICH_UNFURL]: {
     trigger: 'scheduled',
     cost: 'metered',
     window: 'enrichment',
-    minInterval: 7 * DAYS,
+    minInterval: 1 * DAYS,
     maxStaleness: 30 * DAYS,
     perRunCap: 20_000,
   },
@@ -394,6 +397,30 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
    * faster than the people who read it.
    */
   [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'enrichment',
+    minInterval: 1 * DAYS,
+    maxStaleness: 3 * DAYS,
+  },
+
+  /**
+   * NIGHTLY. The same proposal over owned units; a human disposes.
+   *
+   * Consumes `ci.objects`, which `promote.object` writes, so it sits on the
+   * same nightly tier for the same producer/consumer reason as its sibling —
+   * and it is genuinely cheaper to run late: the detector groups on
+   * identifiers, catalogue product and brand+model+day, and every unit an
+   * import has landed since the last pass is one more member a group can
+   * collapse onto.
+   *
+   * `cost: 'local'` is exact: one grouping query per page plus one upsert per
+   * slice, no provider and no Ollama. Not `onArrival` — a proposal nobody can
+   * act on until they open the review queue buys nothing by being an hour
+   * fresher, and arrival-triggering a corpus-wide group-by at import rate is
+   * the shape `STAGE_SCHEDULES` exists to refuse.
+   */
+  [STAGE_IDS.CLEAN_OBJECT_DUPLICATE_DETECT]: {
     trigger: 'scheduled',
     cost: 'local',
     window: 'enrichment',

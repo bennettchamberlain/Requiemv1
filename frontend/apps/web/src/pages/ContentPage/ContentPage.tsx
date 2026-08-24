@@ -16,6 +16,7 @@ import {
   EntityMedia,
   resolveStaticUrl,
 } from '@/pages/MemoryPage/Components/EntityDetails/EntityDetailScaffold';
+import { hasRichMedia, RichMediaCard } from '@/pages/MemoryPage/Components/EntityDetails/RichMediaCard';
 
 const GET_CONTENT = gql(`
   query GetContent($id: ID!) {
@@ -32,6 +33,10 @@ const GET_CONTENT = gql(`
       # by the browser when used as one.
       mediaUrl
       previewUrl
+      # Poster + click-to-play for a link with rich media (Spotify, YouTube,
+      # Netflix/Prime, …) — see RichMediaCard, the same fragment the memory
+      # drawer's ContentDetails spreads.
+      ...RichMediaData
       tags {
         id
         label
@@ -111,16 +116,27 @@ export function ContentPage() {
                 }
               }}
             >
-              {contentItem.mimetype?.startsWith('image/') && (
-                <EntityMedia
-                  src={resolveStaticUrl(
-                    contentItem.mediaUrl ?? contentItem.contentUrl ?? contentItem.sourceUrl,
-                  )}
-                  previewSrc={resolveStaticUrl(contentItem.previewUrl)}
-                  contentType={contentItem.mimetype}
-                  alt={contentItem.title ?? ''}
-                  fallbackHref={contentItem.contentUrl ?? contentItem.sourceUrl}
+              {/* A link with a resolved preview or a provider player shows THAT — the
+                  poster, the facts, click-to-play — same as the memory drawer;
+                  otherwise the linked image renders as before. */}
+              {hasRichMedia(contentItem) ? (
+                <RichMediaCard
+                  content={contentItem}
+                  title={contentItem.title}
+                  url={contentItem.contentUrl ?? contentItem.sourceUrl}
                 />
+              ) : (
+                contentItem.mimetype?.startsWith('image/') && (
+                  <EntityMedia
+                    src={resolveStaticUrl(
+                      contentItem.mediaUrl ?? contentItem.contentUrl ?? contentItem.sourceUrl,
+                    )}
+                    previewSrc={resolveStaticUrl(contentItem.previewUrl)}
+                    contentType={contentItem.mimetype}
+                    alt={contentItem.title ?? ''}
+                    fallbackHref={contentItem.contentUrl ?? contentItem.sourceUrl}
+                  />
+                )
               )}
             </EntityFieldsCard>
 

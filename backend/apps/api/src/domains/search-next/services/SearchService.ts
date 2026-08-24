@@ -5,7 +5,8 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
 
-import type { EntityIdentifier, IndexableEntity } from '../types';
+import { buildPromptQuery, type BuildPromptQueryOptions } from '../promptQuery';
+import type { EntityIdentifier, IndexableEntity, PromptSearchResult } from '../types';
 
 /**
  * PostgreSQL ts_rank weight multipliers for weighted tsvectors.
@@ -49,6 +50,29 @@ const MESSAGE_DISTANCE_FLOOR = 0.5;
  */
 const MESSAGE_DEFAULT_K = 10;
 
+/**
+ * Cosine-distance floor for `semanticSearch`. Rows at or beyond it are not
+ * results at any `ef_search`, so the recall probe's exact leg has to apply the
+ * same floor or it would count rows production would never return.
+ */
+export const SEMANTIC_DISTANCE_THRESHOLD = 0.5;
+
+/** Default LIMIT for `semanticSearch`, and therefore the k recall is measured at. */
+export const SEMANTIC_MAX_RESULTS = 25;
+
+/** Everything {@link SearchService.buildSemanticSearchPlan} needs besides the vector. */
+export type SemanticSearchScope = {
+  maxResults?: number;
+  includeTypes?: IndexableEntity[];
+  excludeTypes?: IndexableEntity[];
+};
+
+/** One semantic statement plus its bind parameters, ready to run on any connection. */
+export type SemanticSearchPlan = {
+  sql: string;
+  params: (number | string | string[])[];
+};
+
 type ScoredRowResult = {
   entity_id: string;
   entity_type: string;
@@ -77,6 +101,18 @@ type SearchOptions =
   | (BaseSearchOptions & { includeTypes: IndexableEntity[]; excludeTypes?: never })
   | (BaseSearchOptions & { excludeTypes: IndexableEntity[]; includeTypes?: never })
   | (BaseSearchOptions & { includeTypes?: never; excludeTypes?: never });
+
+/**
+ * A prompt search names its input `prompt` rather than `query`, because it is
+ * NOT a query: it is a sentence someone else wrote, and {@link buildPromptQuery}
+ * decides what part of it may constrain the owner's memory.
+ */
+type PromptSearchOptions = BuildPromptQueryOptions & {
+  prompt: string;
+  maxResults?: number;
+  includeTypes?: IndexableEntity[];
+  excludeTypes?: IndexableEntity[];
+};
 
 @Injectable()
 export class SearchService {
@@ -122,6 +158,133 @@ export class SearchService {
       id: result.id,
       type: result.type,
     }));
+  }
+
+  /**
+   * Keyword search for an ASKER-SUPPLIED question, with precision the owner's
+   * own searches do not need.
+   *
+   * `search({ mode: 'keyword' })` OR-joins every token with no floor, so a row
+   * matching one common word is indistinguishable from a row that answers the
+   * question. That is a recall win when the owner is searching their own memory
+   * and a fabrication risk when another person is asking: see
+   * {@link buildPromptQuery} for the measured cases ("Have you seen <invented
+   * name>?" → 297 matches, all on 'seen'). This method is a SEPARATE entry point
+   * rather than a change to `keywordSearch`, because the tools, activity and
+   * planning domains all depend on the loose behaviour and none of them is
+   * disclosing anything to a third party.
+   *
+   * The rebuilt query is `AND(required phrases) & OR(alternative terms)`:
+   * anything the asker NAMED has to be there, anything they merely mentioned is
+   * an alternative. A prompt that yields no groups at all matches NOTHING —
+   * failing closed is the whole point, because the caller of an ask executor
+   * turns an empty result into "no" and a non-empty one into "yes".
+   *
+   * Unlike the other search methods this one reports {@link
+   * PromptSearchResult.totalMatches}, so a saturated result set is
+   * distinguishable from an exact one. A count answer that silently stops at the
+   * cap states a number that is not true.
+   */
+  async searchPrompt(context: UserServiceContext, options: PromptSearchOptions): Promise<PromptSearchResult> {
+    const { prompt, maxResults = 25 } = options;
+    const groups = buildPromptQuery(prompt, { subjectIsName: options.subjectIsName });
+    const limit = Math.max(1, Math.trunc(maxResults));
+
+    // No groups means the prompt named nothing. Short-circuit rather than send a
+    // query with an empty tsquery: `vector @@ ''::tsquery` is a NULL comparison
+    // that already returns no rows, but relying on that makes "asked nothing"
+    // and "asked for everything" one code path, and only one of them is safe.
+    if (groups.length === 0) {
+      return { items: [], totalMatches: 0, truncated: false, limit };
+    }
+
+    const resolvedOptions = this.applyDefaultTypeExclusions({
+      query: prompt,
+      ...(options.includeTypes ? { includeTypes: options.includeTypes } : {}),
+      ...(options.excludeTypes ? { excludeTypes: options.excludeTypes } : {}),
+    } as SearchOptions);
+
+    const typeFilter = this.buildTypeFilter(resolvedOptions, 4, 'v');
+
+    // Each group's text crosses as a PARAMETER and is turned into a tsquery by
+    // Postgres (`phraseto_tsquery` / `plainto_tsquery`), never by concatenating
+    // asker text into SQL. The later `string_agg(tq::text, ...)` re-parses only
+    // Postgres's OWN canonical tsquery output, which round-trips exactly — so
+    // hostile punctuation in the prompt can reach the parser but never the
+    // statement. `phraseto_tsquery` is what makes a name a name: it emits
+    // `'david' <-> 'miller'`, exact adjacency, so a corpus holding Steve Miller
+    // does not answer a question about David Miller.
+    const sql = `
+      WITH parts AS (
+        SELECT
+          s.kind,
+          CASE
+            WHEN s.kind = 'phrase' THEN phraseto_tsquery('english', s.txt)
+            ELSE plainto_tsquery('english', s.txt)
+          END AS tq
+        FROM unnest($2::text[], $3::text[]) AS s(txt, kind)
+      ),
+      kept AS (
+        SELECT kind, tq FROM parts WHERE tq <> ''::tsquery
+      ),
+      grouped AS (
+        SELECT
+          (SELECT string_agg(tq::text, ' & ') FROM kept WHERE kind = 'phrase') AS phrases,
+          (SELECT string_agg(tq::text, ' | ') FROM kept WHERE kind = 'term') AS terms
+      ),
+      q AS (
+        SELECT (
+          CASE
+            WHEN phrases IS NOT NULL AND terms IS NOT NULL
+              THEN '(' || phrases || ') & (' || terms || ')'
+            WHEN phrases IS NOT NULL THEN phrases
+            ELSE terms
+          END
+        )::tsquery AS tq
+        FROM grouped
+      )
+      SELECT
+        v.entity_id,
+        v.entity_type,
+        ts_rank('${TS_RANK_WEIGHTS}', v.vector, q.tq) AS score,
+        count(*) OVER () AS total_matches
+      FROM
+        ci_search.vectors v
+        CROSS JOIN q
+      WHERE v.user_id = $1
+        AND q.tq IS NOT NULL
+        AND v.vector @@ q.tq
+        ${typeFilter.clause}
+      ORDER BY score DESC
+      LIMIT ${limit}
+    `;
+
+    const params: (string | string[])[] = [
+      context.userId,
+      groups.map((group) => group.text),
+      groups.map((group) => group.kind),
+    ];
+
+    if (typeFilter.param) {
+      params.push(typeFilter.param);
+    }
+
+    const rows: (ScoredRowResult & { total_matches: string })[] = await this.dataSource.query(sql, params);
+
+    // `count(*) OVER ()` is evaluated after WHERE and before LIMIT, so it is the
+    // TRUE size of the match set, not the truncated page. Every row carries the
+    // same value; zero rows means zero matches.
+    const totalMatches = rows.length > 0 ? Number(rows[0].total_matches) : 0;
+
+    return {
+      items: rows.map((row) => ({
+        id: row.entity_id,
+        type: row.entity_type as IndexableEntity,
+      })),
+      totalMatches,
+      truncated: totalMatches > rows.length,
+      limit,
+    };
   }
 
   /**
@@ -306,17 +469,29 @@ export class SearchService {
     return fusedResults.sort((a, b) => b.score - a.score).slice(0, maxResults);
   }
 
-  private async semanticSearch(
-    context: UserServiceContext,
-    options: SearchOptions,
-  ): Promise<ScoredSearchResult[]> {
-    const { query, maxResults = 25 } = options;
+  /**
+   * The semantic statement, as data, so something other than a search can run
+   * exactly what a search runs.
+   *
+   * `RecallProbeCron` measures this query against an exact answer, and a probe
+   * that measured a COPY of the SQL would measure the copy. Building the plan
+   * here — one function, used by {@link semanticSearch} itself — is what makes
+   * "the probe ran the production query" true by construction rather than by
+   * two strings agreeing today.
+   *
+   * @param vector the query embedding, already in pgvector's text form (the
+   *   same shape `EmbeddingGenerationService.generateEmbeddingString` returns);
+   *   passed as a bind parameter exactly as production does, because the
+   *   planner's use of the HNSW index depends on that placement.
+   */
+  buildSemanticSearchPlan(
+    userId: string,
+    vector: string,
+    scope: SemanticSearchScope = {},
+  ): SemanticSearchPlan {
+    const { maxResults = SEMANTIC_MAX_RESULTS } = scope;
 
-    const vector = await this.embeddingGenerationService.generateEmbeddingString(query);
-
-    const distanceThreshold = 0.5;
-
-    const typeFilter = this.buildTypeFilter(options, 4);
+    const typeFilter = this.buildTypeFilter(scope, 4);
 
     // Cosine distance (<=>), NOT L2 (<->): embeddings are unnormalised, so the
     // L2 distance is ~22 and never < 0.5 — the threshold made semantic search
@@ -326,6 +501,11 @@ export class SearchService {
     // HNSW index serves the KNN; `embedding IS NOT NULL` matches its partial predicate.
     // Nearest-first == highest-similarity-first, so results are unchanged but the query
     // uses the index instead of a full Seq Scan + Sort at corpus scale.
+    //
+    // `user_id` and the type filter sit OUTSIDE the ordering, so the index
+    // returns its nearest neighbours across every user and type and these
+    // predicates then discard some of them — which is why a filtered query can
+    // come back short of its LIMIT, and why the recall probe exists.
     const sql = `
       SELECT
         entity_id,
@@ -341,13 +521,24 @@ export class SearchService {
       LIMIT ${maxResults}
     `;
 
-    const params: (number | string | string[])[] = [context.userId, vector, distanceThreshold];
+    const params: (number | string | string[])[] = [userId, vector, SEMANTIC_DISTANCE_THRESHOLD];
 
     if (typeFilter.param) {
       params.push(typeFilter.param);
     }
 
-    const results = await this.dataSource.query(sql, params);
+    return { sql, params };
+  }
+
+  private async semanticSearch(
+    context: UserServiceContext,
+    options: SearchOptions,
+  ): Promise<ScoredSearchResult[]> {
+    const vector = await this.embeddingGenerationService.generateEmbeddingString(options.query);
+
+    const plan = this.buildSemanticSearchPlan(context.userId, vector, options);
+
+    const results = await this.dataSource.query(plan.sql, plan.params);
 
     return results.map((row: ScoredRowResult) => ({
       id: row.entity_id,
@@ -472,7 +663,7 @@ export class SearchService {
   }
 
   private buildTypeFilter(
-    options: SearchOptions,
+    options: Pick<SemanticSearchScope, 'includeTypes' | 'excludeTypes'>,
     paramOffset: number,
     tableAlias?: string,
   ): { clause: string; param: string[] | null } {
