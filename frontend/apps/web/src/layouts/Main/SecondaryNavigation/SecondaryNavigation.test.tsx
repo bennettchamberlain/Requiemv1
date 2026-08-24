@@ -285,6 +285,22 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
   });
 
+  it('stays closed after a chevron close even on a Self route', () => {
+    renderRail('/self/stats', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Stats' })).toBeInTheDocument();
+
+    const submenu = screen.getByTestId('self-submenu');
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Self sections' }));
+    expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
+
+    fireEvent.mouseLeave(submenu);
+    expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(submenu);
+    expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
+  });
+
   it('opens Memory sections on hover when expanded, and closes after leave when not sticky', () => {
     renderRail('/plan', { expanded: true });
 

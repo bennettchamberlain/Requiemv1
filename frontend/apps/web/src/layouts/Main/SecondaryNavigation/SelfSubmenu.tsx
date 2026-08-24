@@ -25,7 +25,7 @@ export function SelfSubmenu() {
   const { user } = useCurrentUser();
   const [stickyOpen, setStickyOpen] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
-  /** User closed via chevron — ignore hover/route until mouse leave or reopen. */
+  /** User closed via chevron — stay closed until they reopen, even on a Self route. */
   const [dismissed, setDismissed] = useState(false);
 
   const currentUser = useMemo(
@@ -75,7 +75,6 @@ export function SelfSubmenu() {
       onMouseEnter={() => setHoverOpen(true)}
       onMouseLeave={() => {
         setHoverOpen(false);
-        setDismissed(false);
       }}
     >
       <Collapsible
