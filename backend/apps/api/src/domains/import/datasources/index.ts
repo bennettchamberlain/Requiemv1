@@ -61,6 +61,7 @@ import './oura';
 import './paypal';
 import './prime_video';
 import './reddit';
+import './remember_the_milk';
 import './robinhood';
 import './roblox';
 import './sms_backup_restore';
