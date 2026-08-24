@@ -6,10 +6,12 @@ import { AlertDialog, Avatar, Badge, Button, Card, Input } from '@ci/shadcn';
 import { Merge } from '@ci/shadcn/icons';
 import { Link, useNavigate } from 'react-router-dom';
 
+import { ChatAbout } from '@/components/ChatWithAgent';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { gql } from '@/graphql';
 import type { GetMergeCandidatesQuery, GetPeopleQuery } from '@/graphql/graphql';
+import { namedChatContext } from '@/lib/agentChat';
 
 // Matches MemoryPage's PAGE_SIZE. Keeping it small also keeps the batch handed
 // to PersonInteractionStatsLoader small — that resolver aggregates over the
@@ -205,6 +207,14 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
   const lastSeen = formatLastInteraction(person.interactionStats.lastInteractionAt);
 
   return (
+    <ChatAbout
+      context={namedChatContext({
+        title: person.name,
+        body: person.description,
+        sourceKind: 'PersonType',
+        sourceId: person.id,
+      })}
+    >
     <button
       type="button"
       onClick={onOpen}
@@ -233,6 +243,7 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
         {lastSeen && <div>Last seen {lastSeen}</div>}
       </div>
     </button>
+    </ChatAbout>
   );
 }
 

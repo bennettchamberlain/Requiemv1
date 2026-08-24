@@ -7,6 +7,7 @@ import { LocateFixed, MapPin, Plus } from '@ci/shadcn/icons';
 import { Tooltip, useMap as useLeafletMap } from 'react-leaflet';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { ChatAbout } from '@/components/ChatWithAgent';
 import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
@@ -17,6 +18,7 @@ import { gql } from '@/graphql';
 import type { GetKnownPlacesQuery, GetPlacesQuery } from '@/graphql/graphql';
 import { useModalControls } from '@/hooks';
 import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
+import { namedChatContext } from '@/lib/agentChat';
 
 import { PlaceDuplicatesCard } from './PlaceDuplicatesCard';
 import { PlaceSheet } from './PlaceSheet';
@@ -121,6 +123,14 @@ function PlaceRow({ place, onOpen }: { place: PlaceNode; onOpen: () => void }) {
   const lastVisit = formatDate(place.visitStats.lastVisitAt);
 
   return (
+    <ChatAbout
+      context={namedChatContext({
+        title: place.name,
+        body: [place.parent?.name, place.description, place.placeKind].filter(Boolean).join(' · ') || null,
+        sourceKind: 'PlaceType',
+        sourceId: place.id,
+      })}
+    >
     <button
       type="button"
       onClick={onOpen}
@@ -155,6 +165,7 @@ function PlaceRow({ place, onOpen }: { place: PlaceNode; onOpen: () => void }) {
         {lastVisit && <div>Last {lastVisit}</div>}
       </div>
     </button>
+    </ChatAbout>
   );
 }
 
