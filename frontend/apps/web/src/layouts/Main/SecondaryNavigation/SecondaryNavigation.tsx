@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 
 import { Collapsible, Tooltip, cn } from '@ci/shadcn';
-import { Camera, ChevronRight, CircleHelp, MonitorCog } from '@ci/shadcn/icons';
+import { Camera, ChevronRight, CircleHelp } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -183,9 +183,6 @@ function OverlayRail({
                 <Camera className="h-6 w-6 shrink-0" strokeWidth={1.25} />
                 <span className="truncate text-sm">Capture</span>
               </button>
-              <NavLink to="/system" label="System">
-                <MonitorCog className="h-6 w-6 shrink-0" strokeWidth={1.25} />
-              </NavLink>
             </div>
           </div>
         </Tooltip.Provider>

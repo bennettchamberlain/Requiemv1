@@ -99,6 +99,7 @@ describe('MobileNavigation', () => {
 
     expect(await screen.findByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
     expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
+    expect(screen.queryByRole('link', { name: 'System' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Close menu' }).length).toBeGreaterThanOrEqual(1);
   });
 

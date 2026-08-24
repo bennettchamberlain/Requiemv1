@@ -80,7 +80,6 @@ const TagsPage = lazy(() => import('@/pages/TagsPage'));
 // Pulls SchedulePage and FeedPage in with it — neither is routed on its own.
 const TodayPage = lazy(() => import('@/pages/TodayPage'));
 const SummaryDetailPage = lazy(() => import('@/pages/SummaryDetailPage'));
-const SystemPage = lazy(() => import('@/pages/SystemPage'));
 
 function RedirectInsightsSummary() {
   const { id } = useParams<{ id: string }>();
@@ -507,7 +506,7 @@ function AppRoutes() {
             path="/system"
             element={
               <ProtectedRoute>
-                <SystemPage />
+                <Navigate to="/self" replace />
               </ProtectedRoute>
             }
           />
