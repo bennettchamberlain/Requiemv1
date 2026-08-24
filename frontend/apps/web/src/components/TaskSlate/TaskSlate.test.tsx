@@ -1,7 +1,8 @@
-import { createEvent, fireEvent, screen } from '@testing-library/react';
+import { act, createEvent, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CANDIDATE_DRAG_TYPE } from '@/lib/scheduleDrag';
+import { HOLD_MS, cancelSchedulePointerDrag, getSchedulePointerDrag } from '@/lib/schedulePointerDrag';
 import { groupIntoSections } from '@/pages/PlanPage/taskSections';
 import type { PlanTask } from '@/pages/PlanPage/usePlanTasks';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -178,7 +179,11 @@ describe('TaskSlate — failed and loading fetches', () => {
 });
 
 describe('TaskSlate — phone tabs', () => {
-  afterEach(() => setViewport(false));
+  afterEach(() => {
+    setViewport(false);
+    cancelSchedulePointerDrag();
+    vi.useRealTimers();
+  });
 
   it('shows one Plan column at a time behind a tablist', async () => {
     setViewport(true);
@@ -202,5 +207,48 @@ describe('TaskSlate — phone tabs', () => {
 
     expect(await screen.findByText('Call Mum')).toBeInTheDocument();
     expect(screen.queryByText('Try this')).not.toBeInTheDocument();
+  });
+
+  it('tells a phone to hold a card rather than drag it', async () => {
+    setViewport(true);
+
+    renderWithProviders(
+      <TaskSlate sections={backlog([task({ status: 'proposed' })])} {...NOOP} />,
+    );
+
+    expect(await screen.findByText('hold a card, then drop it on a day above')).toBeInTheDocument();
+  });
+
+  it('picks a card up after a touch hold so it can be dropped on the calendar', async () => {
+    setViewport(true);
+    vi.useFakeTimers();
+
+    renderWithProviders(
+      <TaskSlate sections={backlog([task({ id: 'task-9', title: 'Call Mum', status: 'proposed' })])} {...NOOP} />,
+    );
+
+    const card = screen.getByText('Call Mum').closest('li') as HTMLElement;
+    fireEvent.pointerDown(card, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 10,
+      button: 0,
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS);
+    });
+
+    expect(getSchedulePointerDrag()?.payload).toEqual({
+      kind: 'candidate',
+      id: 'task-9',
+      title: 'Call Mum',
+    });
+
+    fireEvent.pointerUp(window, { pointerId: 1, pointerType: 'touch', clientX: 10, clientY: 10 });
+    expect(getSchedulePointerDrag()).toBeNull();
+
+    vi.useRealTimers();
   });
 });

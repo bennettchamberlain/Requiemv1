@@ -18,6 +18,7 @@ import {
   EVENT_EXTERNAL_DRAG_TYPE,
   parseEventDrag,
 } from '@/lib/scheduleDrag';
+import { SCHEDULE_SCROLL_ATTR } from '@/lib/schedulePointerDrag';
 
 import {
   addDays,
@@ -31,6 +32,7 @@ import {
 } from './HorizonGrid';
 import { formatClock, sameLocalDay } from './nowNext';
 import { foldMicroClusters, packItemLanes, type PackedItem } from './scheduleClusters';
+import { useScheduleDropTarget } from './useScheduleDropTarget';
 
 const MINUTES_PER_DAY = 24 * 60;
 const HOURS_PER_DAY = 24;
@@ -401,6 +403,27 @@ const DayLane = memo(function DayLane({
   const dayLabel = dayStart.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   const acceptsDrops = Boolean(onDropCandidate ?? onMoveEvent);
 
+  const handlePointerCandidate = useCallback(
+    (id: string, ratio: number) => {
+      onDropCandidate?.(id, dropInstant(dayStart, ratio));
+    },
+    [dayStart, onDropCandidate],
+  );
+
+  const handlePointerEvent = useCallback(
+    (id: string, ratio: number, grabOffsetMs: number) => {
+      onMoveEvent?.(id, movedStart(dayStart, ratio, grabOffsetMs));
+    },
+    [dayStart, onMoveEvent],
+  );
+
+  const { dropRef, dropAxis } = useScheduleDropTarget({
+    axis: 'y',
+    onDropCandidate: onDropCandidate ? handlePointerCandidate : undefined,
+    onMoveEvent: onMoveEvent ? handlePointerEvent : undefined,
+    onHoverPct: setDropPct,
+  });
+
   const draggedKind = (types: readonly string[]): 'candidate' | 'event' | null => {
     if (onDropCandidate && types.includes(CANDIDATE_DRAG_TYPE)) {
       return 'candidate';
@@ -415,6 +438,8 @@ const DayLane = memo(function DayLane({
 
   return (
     <div
+      ref={dropRef}
+      {...dropAxis}
       role="listitem"
       aria-label={dayLabel}
       data-testid="vertical-day-lane"
@@ -739,6 +764,7 @@ export function VerticalCalendar({
         ref={scrollRef}
         className="max-h-[min(70vh,calc(100vh-12rem))] overflow-auto"
         data-testid="vertical-calendar-scroll"
+        {...{ [SCHEDULE_SCROLL_ATTR]: '' }}
       >
         <div className="flex min-w-0">
           <div className="sticky left-0 z-10 w-14 shrink-0 bg-card">

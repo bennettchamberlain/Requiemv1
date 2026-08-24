@@ -1,7 +1,8 @@
-import { createEvent, fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, createEvent, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ScheduleEvent } from '@/api/useScheduleService';
+import { cancelSchedulePointerDrag, endSchedulePointerDrag, startSchedulePointerDrag } from '@/lib/schedulePointerDrag';
 
 import { addDays, startOfLocalDay } from './HorizonGrid';
 import { VerticalCalendar } from './VerticalCalendar';
@@ -228,5 +229,31 @@ describe('VerticalCalendar — dropping a slate candidate', () => {
     stubLaneHeights(container);
 
     expect(() => dropAt(lanes(container)[0], 720, 'cand-1')).not.toThrow();
+  });
+});
+
+describe('VerticalCalendar — pointer drop from Possibilities', () => {
+  afterEach(() => cancelSchedulePointerDrag());
+
+  it('places a held card at the time under the finger', () => {
+    const onDrop = vi.fn();
+    const { container } = render(
+      <VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={[]} onDropCandidate={onDrop} />,
+    );
+
+    const lane = container.querySelector('[data-schedule-drop-axis="y"]') as HTMLElement;
+    lane.getBoundingClientRect = () =>
+      ({ height: 1440, top: 0, bottom: 1440, width: 100, left: 0, right: 100, x: 0, y: 0, toJSON: () => {} }) as DOMRect;
+    document.elementFromPoint = () => lane;
+
+    act(() => {
+      startSchedulePointerDrag({ kind: 'candidate', id: 'cand-1', title: 'Call Mum' }, 50, 720);
+      endSchedulePointerDrag(50, 720);
+    });
+
+    expect(onDrop).toHaveBeenCalledTimes(1);
+    const [id, at] = onDrop.mock.calls[0];
+    expect(id).toBe('cand-1');
+    expect(at.getHours()).toBe(12);
   });
 });
