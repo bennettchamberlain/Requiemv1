@@ -2089,6 +2089,7 @@ enum PeerLinkStatus {
 }
 
 type PeerLinkType {
+  avatarUrl: String
   createdAt: DateTime!
   displayName: String
   id: ID!
@@ -3632,6 +3633,7 @@ type UpdateTaskPayload {
 }
 
 type UserType implements Node {
+  avatarUrl: String
   email: String!
   entity: PersonType
   id: ID!

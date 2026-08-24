@@ -386,6 +386,32 @@ export class PersonService extends EntityService<PersonEntity, Person> {
   }
 
   /**
+   * The calling owner's own Person entity — the single row per owner where
+   * `is_self` is true (set at onboarding; see
+   * `OnboardingService.createPersonForUser`). This is a fresh lookup on
+   * `is_self` rather than a cached pointer such as `users.entity_id`, because
+   * a merge can move `is_self` onto a different row (`PersonMergeService`)
+   * without anything updating that pointer to follow it.
+   *
+   * Excludes merge tombstones the same way `findAll` does. Returns null —
+   * never throws — when the owner has no `is_self` Person yet.
+   */
+  async findSelf(context: ServiceContext): Promise<Person | null> {
+    let qb = this.repository
+      .createQueryBuilder('person')
+      .where('person.is_self IS TRUE')
+      .andWhere('person.merged_into_entity_id IS NULL');
+
+    if (context.userId !== SYSTEM_USER) {
+      qb = qb.andWhere('person.owner_user_id = :userId', { userId: context.userId });
+    }
+
+    const entity = await qb.getOne();
+
+    return entity ? PersonEntity.toEgressType(entity) : null;
+  }
+
+  /**
    * Lightweight identifiers for the most-recent people, for the unified
    * search/explorer feed. Full entities are batch-resolved downstream.
    *
