@@ -237,6 +237,7 @@ type Documents = {
     "\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n": typeof types.GetSavedSearchesDocument,
     "\n  mutation SetSavedSearchSharing($input: SetSavedSearchSharingInput!) {\n    setSavedSearchSharing(input: $input) {\n      success\n      savedSearch {\n        id\n        # Spread keeps the grid card's cache entry in sync (the \"Shared\" badge);\n        # the top-level isPublic/shareToken are unmasked so this modal can show\n        # the freshly minted link without reopening (useFragment is not reactive).\n        isPublic\n        shareToken\n        ...SavedSearchGridItemFragment\n      }\n    }\n  }\n": typeof types.SetSavedSearchSharingDocument,
     "\n  query GetSelfProfile($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n": typeof types.GetSelfProfileDocument,
+    "\n  query GetHomePlace {\n    knownPlaces(kind: \"home\") {\n      id\n      locationId\n      label\n    }\n  }\n": typeof types.GetHomePlaceDocument,
     "\n  query GetProviders {\n    providers {\n      edges {\n        cursor\n        node {\n          id\n          name\n          description\n          logoUrl\n          localOnly\n          appSetupUrl\n          authType\n          scopes\n          providerKeys {\n            id\n            clientId\n            clientSecret\n          }\n        }\n      }\n    }\n  }\n": typeof types.GetProvidersDocument,
     "\n  mutation CreateProviderKey($input: CreateProviderKeyInput!) {\n    createProviderKey(input: $input) {\n      id\n      providerId\n      clientId\n      clientSecret\n      userId\n    }\n  }\n": typeof types.CreateProviderKeyDocument,
     "\n  mutation UpdateProviderKey($id: ID!, $input: UpdateProviderKeyInput!) {\n    updateProviderKey(id: $id, input: $input) {\n      id\n      clientId\n      clientSecret\n    }\n  }\n": typeof types.UpdateProviderKeyDocument,
@@ -479,6 +480,7 @@ const documents: Documents = {
     "\n  query GetSavedSearches($first: Int, $after: String) {\n    savedSearches(first: $first, after: $after) {\n      edges {\n        node {\n          id\n          ...SavedSearchGridItemFragment\n        }\n      }\n    }\n  }\n": types.GetSavedSearchesDocument,
     "\n  mutation SetSavedSearchSharing($input: SetSavedSearchSharingInput!) {\n    setSavedSearchSharing(input: $input) {\n      success\n      savedSearch {\n        id\n        # Spread keeps the grid card's cache entry in sync (the \"Shared\" badge);\n        # the top-level isPublic/shareToken are unmasked so this modal can show\n        # the freshly minted link without reopening (useFragment is not reactive).\n        isPublic\n        shareToken\n        ...SavedSearchGridItemFragment\n      }\n    }\n  }\n": types.SetSavedSearchSharingDocument,
     "\n  query GetSelfProfile($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n": types.GetSelfProfileDocument,
+    "\n  query GetHomePlace {\n    knownPlaces(kind: \"home\") {\n      id\n      locationId\n      label\n    }\n  }\n": types.GetHomePlaceDocument,
     "\n  query GetProviders {\n    providers {\n      edges {\n        cursor\n        node {\n          id\n          name\n          description\n          logoUrl\n          localOnly\n          appSetupUrl\n          authType\n          scopes\n          providerKeys {\n            id\n            clientId\n            clientSecret\n          }\n        }\n      }\n    }\n  }\n": types.GetProvidersDocument,
     "\n  mutation CreateProviderKey($input: CreateProviderKeyInput!) {\n    createProviderKey(input: $input) {\n      id\n      providerId\n      clientId\n      clientSecret\n      userId\n    }\n  }\n": types.CreateProviderKeyDocument,
     "\n  mutation UpdateProviderKey($id: ID!, $input: UpdateProviderKeyInput!) {\n    updateProviderKey(id: $id, input: $input) {\n      id\n      clientId\n      clientSecret\n    }\n  }\n": types.UpdateProviderKeyDocument,
@@ -1392,6 +1394,10 @@ export function gql(source: "\n  mutation SetSavedSearchSharing($input: SetSaved
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query GetSelfProfile($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n"): (typeof documents)["\n  query GetSelfProfile($id: ID!) {\n    person(id: $id) {\n      ...PersonEditorFields\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetHomePlace {\n    knownPlaces(kind: \"home\") {\n      id\n      locationId\n      label\n    }\n  }\n"): (typeof documents)["\n  query GetHomePlace {\n    knownPlaces(kind: \"home\") {\n      id\n      locationId\n      label\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

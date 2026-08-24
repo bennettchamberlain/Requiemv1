@@ -65,7 +65,8 @@ const GET_PERSON_FOR_EDIT = gql(`
   }
 `);
 
-const UPDATE_PERSON = gql(`
+/** Exported so other person-editing surfaces (e.g. Self, which embeds the form inline rather than behind this modal) can reuse the exact same mutation. */
+export const UPDATE_PERSON = gql(`
   mutation UpdatePersonProfile($input: UpdatePersonInput!) {
     updatePerson(input: $input) {
       success

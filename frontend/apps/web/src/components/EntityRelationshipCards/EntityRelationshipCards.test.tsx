@@ -132,4 +132,70 @@ describe('EntityRelationshipCards', () => {
     await waitFor(() => expect(screen.getByText('Mystery Thread')).toBeInTheDocument());
     expect(screen.getByText('Mystery Thread').closest('a')).toBeNull();
   });
+
+  it('filters cards down to the given relationship types', () => {
+    useNodeGraphServiceMock.mockReturnValue({
+      data: {
+        nodes: SUBGRAPH.nodes,
+        links: [
+          SUBGRAPH.links[0], // KNOWS
+          { id: 'rel-3', relationship_id: 'rel-3', source: FOCUS_ID, target: 'friend-1', relationship_type: 'SPOUSE', strength: 0.9, properties: {} },
+        ],
+      },
+      loading: false,
+      error: null,
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route
+          path="/"
+          element={<EntityRelationshipCards entityId={FOCUS_ID} relationshipTypes={['KNOWS']} />}
+        />
+      </Routes>,
+    );
+
+    // Both edges point at the same neighbor, so a card per surviving edge is
+    // the only way to tell "filtered" from "coincidentally deduped" apart —
+    // one card means SPOUSE was dropped, not that it rendered and got merged.
+    expect(screen.getAllByText('Frida Friend')).toHaveLength(1);
+  });
+
+  it('filters cards down to the given neighbor entity types', () => {
+    useNodeGraphServiceMock.mockReturnValue({
+      data: {
+        nodes: [
+          SUBGRAPH.nodes[0],
+          SUBGRAPH.nodes[1],
+          { id: 'place-1', entity_id: 'place-1', entity_type: 'place', name: 'Home', description: null, properties: {} },
+        ],
+        links: [
+          SUBGRAPH.links[0],
+          { id: 'rel-4', relationship_id: 'rel-4', source: FOCUS_ID, target: 'place-1', relationship_type: 'LIVES_IN', strength: 1, properties: {} },
+        ],
+      },
+      loading: false,
+      error: null,
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/" element={<EntityRelationshipCards entityId={FOCUS_ID} entityTypes={['person']} />} />
+      </Routes>,
+    );
+
+    expect(screen.getByText('Frida Friend')).toBeInTheDocument();
+    expect(screen.queryByText('Home')).not.toBeInTheDocument();
+  });
+
+  it('uses a custom heading when given one', () => {
+    renderWithProviders(
+      <Routes>
+        <Route path="/" element={<EntityRelationshipCards entityId={FOCUS_ID} heading="Friends & Connections" />} />
+      </Routes>,
+    );
+
+    expect(screen.getByText('Friends & Connections')).toBeInTheDocument();
+    expect(screen.queryByText('Relationship Cards')).not.toBeInTheDocument();
+  });
 });

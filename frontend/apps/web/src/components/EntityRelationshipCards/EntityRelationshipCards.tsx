@@ -54,6 +54,12 @@ interface Props {
    * this and keep the default `<Link>` behavior.
    */
   onOpenRelatedEntity?: (target: RelatedEntityOpenTarget) => void;
+  /** Restrict to these relationship types (e.g. excluding ones another section on the same page already shows). */
+  relationshipTypes?: string[];
+  /** Restrict to neighbors of these entity types. */
+  entityTypes?: string[];
+  /** Overrides the default "Relationship Cards" heading. */
+  heading?: string;
 }
 
 type GlobalResourceType =
@@ -401,7 +407,13 @@ function getEntityLookupKey(entityType: string, entityId: string): string {
   return `${normalizeGraphEntityType(entityType)}:${entityId}`;
 }
 
-export function EntityRelationshipCards({ entityId, onOpenRelatedEntity }: Props) {
+export function EntityRelationshipCards({
+  entityId,
+  onOpenRelatedEntity,
+  relationshipTypes,
+  entityTypes,
+  heading = 'Relationship Cards',
+}: Props) {
   const apolloClient = useApolloClient();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [visibleCardCount, setVisibleCardCount] = useState(DEFAULT_VISIBLE_CARDS);
@@ -439,9 +451,12 @@ export function EntityRelationshipCards({ entityId, onOpenRelatedEntity }: Props
     }
 
     const nodeById = new Map(data.nodes.map((node) => [node.id, node]));
+    const typeAllowlist = relationshipTypes ? new Set(relationshipTypes) : null;
+    const entityAllowlist = entityTypes ? new Set(entityTypes.map((type) => normalizeGraphEntityType(type))) : null;
 
     return data.links
       .filter((link) => link.source === entityId || link.target === entityId)
+      .filter((link) => !typeAllowlist || typeAllowlist.has(link.relationship_type))
       .map((link) => {
         const otherEntityId = link.source === entityId ? link.target : link.source;
         const otherNode = nodeById.get(otherEntityId);
@@ -461,8 +476,9 @@ export function EntityRelationshipCards({ entityId, onOpenRelatedEntity }: Props
           // Stash raw link props for communication id recovery in the click handler.
           relationshipProperties: link.properties ?? {},
         };
-      });
-  }, [data, entityId]);
+      })
+      .filter((card) => !entityAllowlist || entityAllowlist.has(normalizeGraphEntityType(card.otherEntityType)));
+  }, [data, entityId, relationshipTypes, entityTypes]);
 
   // Deterministic ordering: strongest first, then most recent, then a stable
   // id tiebreak — so the same relationships always surface (no random subset).
@@ -606,9 +622,7 @@ export function EntityRelationshipCards({ entityId, onOpenRelatedEntity }: Props
   return (
     <div ref={containerRef} className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Relationship Cards
-        </h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{heading}</h2>
         {!loading && sortedCards.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">

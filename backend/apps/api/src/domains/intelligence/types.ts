@@ -140,6 +140,17 @@ export const questionCatalogueQuerySchema = z.object({
   answered: z.enum(['answered', 'unanswered', 'all']).default('all'),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   offset: z.coerce.number().int().min(0).default(0),
+  // Comma-separated question ids — an explicit allow-list layered on top of
+  // the other filters. Lets a caller with a fixed, known set of ids (the Self
+  // page's curated Life Details list) fetch exactly those rows plus their
+  // answer status in one call, instead of one call per id or over-fetching a
+  // whole category.
+  ids: z
+    .string()
+    .trim()
+    .optional()
+    .transform((val) => (val ? val.split(',').map((s) => s.trim()).filter(Boolean) : undefined))
+    .pipe(z.array(z.string().uuid()).max(100).optional()),
 });
 
 export type QuestionCatalogueQueryDto = z.infer<typeof questionCatalogueQuerySchema>;

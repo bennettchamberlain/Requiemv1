@@ -958,4 +958,26 @@ describe('QuestionService.findCatalogue', () => {
     expect(page.totalCount).toBe(0);
     expect(calls).toHaveLength(2);
   });
+
+  it('filters the page query to an explicit id allow-list, appended as its own trailing param', async () => {
+    const ids = ['11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'];
+    const { service, calls } = makeCatalogueService([[catalogueRow()], []]);
+
+    await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, ids });
+
+    expect(calls[0].sql).toContain('AND q.question_id = ANY($9::uuid[])');
+    expect(calls[0].params[8]).toEqual(ids);
+  });
+
+  it('leaves the query text and facet params untouched when no ids are given', async () => {
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
+
+    expect(calls[0].sql).not.toContain('question_id = ANY');
+    expect(calls[0].params).toHaveLength(8);
+    // The facet query only ever sees $1..$3 — an ids filter must not leak in,
+    // the same lockstep guarantee CATALOGUE_FULL_WHERE_SQL already gives $4..$6.
+    expect(calls[1].params).toHaveLength(3);
+  });
 });

@@ -450,7 +450,7 @@ export class QuestionService {
 
     // Positions are shared between the page query and the facet query, so the
     // two predicates stay in lockstep. $4..$6 are page-only.
-    const params = [
+    const params: unknown[] = [
       userId,
       status,
       search,
@@ -460,6 +460,17 @@ export class QuestionService {
       limit,
       offset,
     ];
+
+    // Appended after the fact rather than folded into CATALOGUE_FULL_WHERE_SQL:
+    // that constant is shared by the facet query (params.slice(0, 3)) and the
+    // total-count fallback below (params.slice(0, 6)), and node-postgres
+    // rejects a query text that references a param index the caller didn't
+    // pass. Keeping `ids` out of the shared constant means those two queries
+    // can never desync from it.
+    const idsClause = query.ids?.length ? `AND q.question_id = ANY($${params.length + 1}::uuid[])` : '';
+    if (query.ids?.length) {
+      params.push(query.ids);
+    }
 
     const rows = (await this.dataSource.query(
       `
@@ -489,6 +500,7 @@ export class QuestionService {
       FROM ci.questions q
       ${CATALOGUE_ANSWER_LATERAL_SQL}
       WHERE ${CATALOGUE_FULL_WHERE_SQL}
+      ${idsClause}
       ORDER BY
         q.question_category ASC NULLS LAST,
         ${TIER_RANK_SQL} ASC,
