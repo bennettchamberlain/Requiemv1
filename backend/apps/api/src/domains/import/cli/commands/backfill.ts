@@ -34,6 +34,8 @@ const STAGE_HELP: Record<OrchestrateStage, string> = {
   estimate_locations: 'Estimate coordinates for events from surrounding located ones',
   media_dimensions: 'Backfill width, height and duration for stored media',
   search_index: 'Embed everything the search index has not embedded yet',
+  backfill_summaries:
+    'Generate hourly/daily/weekly/monthly summaries for historical (bulk-imported) activity',
 };
 
 export const BACKFILL_STAGES = Object.keys(STAGE_HELP) as OrchestrateStage[];

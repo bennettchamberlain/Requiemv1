@@ -38,6 +38,7 @@ import { ObjectReverseService } from './ObjectReverseService';
 import { type PersonStubBackfillOptions, PersonStubBackfillService } from './PersonStubBackfillService';
 import { RelationshipNormalizeService } from './RelationshipNormalizeService';
 import { type SearchIndexBackfillOptions, SearchIndexBackfillService } from './SearchIndexBackfillService';
+import { type SummaryBackfillOptions, SummaryBackfillService } from './SummaryBackfillService';
 
 /**
  * The canonical execution order of the orchestrated enrichment legs. A request
@@ -65,6 +66,7 @@ export const ORCHESTRATE_STAGES = [
   'estimate_locations',
   'media_dimensions',
   'search_index',
+  'backfill_summaries',
 ] as const;
 
 export type OrchestrateStage = (typeof ORCHESTRATE_STAGES)[number];
@@ -95,6 +97,7 @@ export interface OrchestrateLegOptions {
   };
   mediaDimensions?: { limit?: number };
   searchIndex?: SearchIndexBackfillOptions;
+  backfillSummaries?: Omit<SummaryBackfillOptions, 'onProgress'>;
 }
 
 export interface OrchestrateBody {
@@ -205,6 +208,7 @@ export class MaintenanceOrchestratorService {
     private readonly locationEstimateService: LocationEstimateService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
     private readonly objectReverseService: ObjectReverseService,
+    private readonly summaryBackfillService: SummaryBackfillService,
   ) {
     this.logger.setContext(MaintenanceOrchestratorService.name);
   }
@@ -398,6 +402,12 @@ export class MaintenanceOrchestratorService {
 
       case 'search_index':
         return this.runSearchIndexLeg(body, progress);
+
+      case 'backfill_summaries':
+        return this.summaryBackfillService.backfill(userId, {
+          ...options.backfillSummaries,
+          onProgress: (partial) => progress({ ...partial }),
+        });
     }
   }
 
