@@ -40,9 +40,50 @@ describe('entityToAgentChatContext', () => {
     );
 
     expect(context.title).toBe('Dinner with Sam');
-    expect(context.body).toBe('Tacos on the pier');
+    expect(context.body).toContain('When:');
+    expect(context.body).toContain('Where: Malibu');
+    expect(context.body).toContain('Tacos on the pier');
     expect(context.sourceKind).toBe('EventType');
     expect(context.sourceId).toBe('e1');
+  });
+
+  it('fills When/Where/Kind/Tags from list-view aliases when description is masked', () => {
+    const context = entityToAgentChatContext(
+      asEntity({
+        __typename: 'EventType',
+        id: 'e2',
+        galleryTitle: 'Walk in the park',
+        galleryLocationName: 'Golden Gate Park',
+        bucketStartTime: '2026-06-09T18:30:00Z',
+        eventType: 'visited',
+        sourceSystem: 'google_maps',
+        tags: [{ label: 'walk' }, { label: 'sf' }],
+      }),
+    );
+
+    expect(context.title).toBe('Walk in the park');
+    expect(context.body).toContain('When:');
+    expect(context.body).toContain('Where: Golden Gate Park');
+    expect(context.body).toContain('Kind: visited');
+    expect(context.body).toContain('Source: google maps');
+    expect(context.body).toContain('Tags: walk, sf');
+    expect(context.body).not.toContain('Tacos');
+  });
+
+  it('omits When when the timestamp is only the import wall clock', () => {
+    const context = entityToAgentChatContext(
+      asEntity({
+        __typename: 'EventType',
+        id: 'e3',
+        galleryTitle: 'Saved place',
+        bucketStartTime: '2026-06-09T18:30:00Z',
+        bucketTimeSource: 'ingest',
+        galleryLocationName: 'Home',
+      }),
+    );
+
+    expect(context.body).not.toMatch(/^When:/m);
+    expect(context.body).toContain('Where: Home');
   });
 
   it('prefers communication subject and keeps the preview as the body', () => {
@@ -113,5 +154,21 @@ describe('entityToAgentChatContext', () => {
       sourceKind: 'GenericEntity',
       sourceId: 'g1',
     });
+  });
+
+  it('puts a browser URL in the draft when that is the data we have', () => {
+    const context = entityToAgentChatContext(
+      asEntity({
+        __typename: 'BrowserActivityType',
+        id: 'b1',
+        title: 'Tide chart',
+        url: 'https://example.com/tides',
+        time: '2026-06-09T18:30:00Z',
+      }),
+    );
+
+    expect(context.title).toBe('Tide chart');
+    expect(context.body).toContain('URL: https://example.com/tides');
+    expect(context.body).toContain('When:');
   });
 });
