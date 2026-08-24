@@ -27,6 +27,7 @@ import { OrphanCleanupCron } from './cron/OrphanCleanupCron';
 import { RecallProbeCron } from './cron/RecallProbeCron';
 import { RetrievalHealthCron } from './cron/RetrievalHealthCron';
 import { EntityTypeProposalEntity } from './entities/EntityTypeProposalEntity';
+import { GraphEnrichmentProposalEntity } from './entities/GraphEnrichmentProposalEntity';
 import { RecallProbeResultEntity } from './entities/RecallProbeResultEntity';
 import { RetrievalHealthSnapshotEntity } from './entities/RetrievalHealthSnapshotEntity';
 import { CommunicationParticipantLinkListener } from './listeners/CommunicationParticipantLinkListener';
@@ -39,6 +40,7 @@ import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetry
 import { EntityTypeAuditService } from './services/EntityTypeAuditService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { ExternalIdKindIntegrityService } from './services/ExternalIdKindIntegrityService';
+import { GraphEnrichmentReviewService } from './services/GraphEnrichmentReviewService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { HealSelfCollationService } from './services/HealSelfCollationService';
 import { IndexDeferralService } from './services/IndexDeferralService';
@@ -62,6 +64,7 @@ import { SummaryBackfillService } from './services/SummaryBackfillService';
     TypeOrmModule.forFeature([
       EventEntity,
       EntityTypeProposalEntity,
+      GraphEnrichmentProposalEntity,
       RecallProbeResultEntity,
       RetrievalHealthSnapshotEntity,
     ]),
@@ -102,6 +105,7 @@ import { SummaryBackfillService } from './services/SummaryBackfillService';
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    GraphEnrichmentReviewService,
     HealSelfCollationService,
     SearchIndexBackfillService,
     SummaryBackfillService,
@@ -132,6 +136,7 @@ import { SummaryBackfillService } from './services/SummaryBackfillService';
     DerivedRelationshipService,
     NoteContentFoldService,
     GraphEnrichmentService,
+    GraphEnrichmentReviewService,
     HealSelfCollationService,
     SearchIndexBackfillService,
     SummaryBackfillService,
@@ -155,6 +160,16 @@ export {
   type OrchestrateSummary,
 } from './services/MaintenanceOrchestratorService';
 export { GraphEnrichmentService, type GraphEnrichmentOptions } from './services/GraphEnrichmentService';
+export {
+  GraphEnrichmentReviewService,
+  type GraphEnrichmentProposalPage,
+  type RecordProposalInput,
+} from './services/GraphEnrichmentReviewService';
+export { GraphEnrichmentProposalEntity } from './entities/GraphEnrichmentProposalEntity';
+export type {
+  GraphEnrichmentProposalCategory,
+  GraphEnrichmentProposalStatus,
+} from './entities/GraphEnrichmentProposalEntity';
 export {
   DeterministicEdgeBackfillService,
   type DeterministicEdgeBackfillOptions,

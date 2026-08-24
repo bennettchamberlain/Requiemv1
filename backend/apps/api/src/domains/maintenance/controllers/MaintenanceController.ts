@@ -5,6 +5,8 @@ import {
   Controller,
   Get,
   Headers,
+  NotFoundException,
+  Param,
   Post,
   Query,
   Req,
@@ -59,6 +61,7 @@ import {
   type ExternalIdKindIntegrityReport,
   ExternalIdKindIntegrityService,
 } from '../services/ExternalIdKindIntegrityService';
+import { GraphEnrichmentReviewService } from '../services/GraphEnrichmentReviewService';
 import {
   type GraphEnrichmentProgressCounts,
   type GraphEnrichmentResult,
@@ -360,6 +363,16 @@ const healSelfCollationSchema = z.object({
 
 type HealSelfCollationRequest = z.infer<typeof healSelfCollationSchema>;
 
+// Query for GET /api/maintenance/graph-enrichment-proposals.
+const graphEnrichmentProposalsQuerySchema = z.object({
+  status: z.enum(['pending', 'accepted', 'rejected']).optional(),
+  category: z.enum(['preference', 'family_relation', 'general_relation']).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  after: z.string().optional(),
+});
+
+type GraphEnrichmentProposalsQuery = z.infer<typeof graphEnrichmentProposalsQuerySchema>;
+
 // Body for POST /api/maintenance/extract-graph. All optional: caps how much of
 // the user's own data the LLM extraction samples per run. Re-runnable.
 const extractGraphSchema = z.object({
@@ -458,6 +471,7 @@ export class MaintenanceController {
     private readonly derivedRelationshipService: DerivedRelationshipService,
     private readonly noteContentFoldService: NoteContentFoldService,
     private readonly graphEnrichmentService: GraphEnrichmentService,
+    private readonly graphEnrichmentReviewService: GraphEnrichmentReviewService,
     private readonly searchIndexBackfillService: SearchIndexBackfillService,
     private readonly summaryBackfillService: SummaryBackfillService,
     private readonly embedCoverageTelemetryService: EmbedCoverageTelemetryService,
@@ -1084,6 +1098,59 @@ export class MaintenanceController {
       maxEvents: body.maxEvents,
       model: body.model,
     });
+  }
+
+  /**
+   * The review queue `extract-graph` files a batch to instead of discarding it
+   * when `PersonalizationService.decideAction` returns `'review'` (hands_off
+   * below its auto-promote threshold, or balanced/cautious on any graph
+   * connection). Defaults to `status=pending`. `entities`/`relationships` on
+   * each row are the exact `bulkIngestGraph` batch the accept endpoint below
+   * would replay.
+   */
+  @Get('graph-enrichment-proposals')
+  async listGraphEnrichmentProposals(
+    @Context() context: RequestContext,
+    @Query(new ValidationPipe(graphEnrichmentProposalsQuerySchema)) query: GraphEnrichmentProposalsQuery,
+  ) {
+    return this.graphEnrichmentReviewService.findProposals(toServiceContext(context), {
+      status: query.status,
+      category: query.category,
+      limit: query.limit,
+      after: query.after,
+    });
+  }
+
+  /**
+   * Accept one pending proposal: replays its `entities`/`relationships` batch
+   * through the same `GraphIngestService.ingest` path the auto-apply branch of
+   * `extract-graph` uses, then marks it `accepted`. 404s for a proposal that
+   * doesn't exist, isn't this user's, or was already resolved.
+   */
+  @Post('graph-enrichment-proposals/:id/accept')
+  async acceptGraphEnrichmentProposal(@Context() context: RequestContext, @Param('id') id: string) {
+    const result = await this.graphEnrichmentReviewService.accept(toServiceContext(context), id);
+
+    if (!result) {
+      throw new NotFoundException('Graph enrichment proposal not found or already resolved');
+    }
+
+    return result;
+  }
+
+  /**
+   * Reject one pending proposal. Nothing is written to the graph. 404s for a
+   * proposal that doesn't exist, isn't this user's, or was already resolved.
+   */
+  @Post('graph-enrichment-proposals/:id/reject')
+  async rejectGraphEnrichmentProposal(@Context() context: RequestContext, @Param('id') id: string) {
+    const proposal = await this.graphEnrichmentReviewService.reject(toServiceContext(context), id);
+
+    if (!proposal) {
+      throw new NotFoundException('Graph enrichment proposal not found or already resolved');
+    }
+
+    return proposal;
   }
 
   /**
