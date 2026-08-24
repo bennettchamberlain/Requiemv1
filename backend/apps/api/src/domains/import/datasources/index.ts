@@ -60,6 +60,7 @@ import './oura';
 import './paypal';
 import './prime_video';
 import './reddit';
+import './robinhood';
 import './roblox';
 import './sms_backup_restore';
 import './snapchat';

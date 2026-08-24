@@ -2389,23 +2389,41 @@ export const WIZARD_SOURCES: WizardSource[] = [
   {
     id: 'robinhood',
     title: 'Robinhood',
-    blurb: 'Account activity, orders, and holdings from Robinhood.',
+    blurb: 'Brokerage/retirement transaction history — trades, dividends, and transfers.',
     ecosystem: 'finance',
     category: 'finance',
     tier: 3,
     acquisition: 'web-export',
-    wait: 'days',
-    url: 'https://robinhood.com/account/settings',
+    wait: 'hours',
+    url: 'https://robinhood.com/account/reports-statements/activity-reports',
     steps: [
-      'Open Robinhood → Account → Settings → look for a "Privacy" or "Data Request" section.',
-      'Submit a CCPA/GDPR access request.',
-      'Wait for the email with a download link (a few days).',
+      'Open Robinhood → Account → Reports and Statements → "Generate a New Report" (or go straight to the URL above).',
+      'Pick a date range and generate the report; download it as a CSV once it finishes (usually minutes, but can take up to 24 hours at peak times).',
       UPLOAD_STEP,
     ],
+    altPath: {
+      title:
+        'Full CCPA/GDPR data request (slower, broader — a different export this importer does not parse)',
+      url: 'https://robinhood.com/account/settings',
+      steps: [
+        'Open Robinhood → Account → Settings → look for a "Privacy" or "Data Request" section.',
+        'Submit a CCPA/GDPR access request and wait for the emailed download link (a few days).',
+      ],
+    },
+    expectedFormat:
+      'A Robinhood transaction-history CSV ("Activity Date"/"Trans Code"/"Instrument" columns) from Reports and Statements → "Generate a New Report". Recognizes buys/sells, cash dividends, interest, ACH transfers, the Gold fee, and stock-split/option-lifecycle rows; any other Trans Code is skipped rather than guessed.',
+    whatImported: [
+      'Buys and sells, with the security, quantity, and price',
+      'Cash dividends, interest, and ACH bank transfers',
+      'Stock splits and other corporate-action / option-lifecycle rows the report itself records',
+    ],
     inboxPath: 'robinhood',
-    importerReady: false,
-    notes: [
-      'Account → Reports & Statements also offers per-statement CSVs for a quicker (but partial) history.',
+    signature: ['*.csv'],
+    importer: 'robinhood',
+    importerReady: true,
+    caveats: [
+      'Futures, crypto, and the spending account are excluded from this export by Robinhood itself, not just this importer.',
+      'The CCPA/GDPR data request is a separate bundle and is not recognized by this importer — use the CSV activity report above.',
     ],
   },
 
