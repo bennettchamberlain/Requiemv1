@@ -532,14 +532,54 @@ function mergeLine(rows: Record<string, string>[]): Record<string, string | numb
     };
   }
 
+  const quantity = sumOf(rows.map((r) => col(r, ...QUANTITY_COLS)));
+  const total = sumOf(rows.map((r) => col(r, ...TOTAL_COLS)));
+
   return {
-    Quantity: sumOf(rows.map((r) => col(r, ...QUANTITY_COLS))),
-    Total: money(sumOf(rows.map((r) => col(r, ...TOTAL_COLS)))),
+    Quantity: quantity,
+    Total: money(total),
     Currency: currency,
-    'Unit Price': unitPrice,
+    'Unit Price': mergedUnitPrice(rows, unitPrice, quantity, total),
     Shipments: rows.length,
     ...breakdown,
   };
+}
+
+/**
+ * A merged line's own Unit Price — `primary`'s, UNLESS these rows disagree
+ * on it, in which case that single value would misstate every one of them.
+ *
+ * The docstring above `mergeLine` describes the common case this exists for —
+ * one ASIN split across shipment rows, each carrying an identical per-unit
+ * price. A weight-priced grocery item breaks that assumption while still
+ * sharing one ASIN: real export order 113-4686340-8106606 carries TWO
+ * "PRODUCE Organic Shallots" rows, same ASIN (B000RH1NGG), priced 0.55 and
+ * 0.25 — two physically different units Amazon weighed and charged
+ * separately, not one item priced twice. `rowIdentity` groups both under
+ * that one ASIN, so without this check they collapse to quantity 2 at
+ * whichever row's price happened to sort first — silently dropping the
+ * other row's real cost from the line's own math.
+ *
+ * When prices genuinely agree (the common case — actual multi-shipment
+ * splits of one identical line), this returns exactly what primary already
+ * carried, unchanged. Only on a real disagreement does it fall back to
+ * Total ÷ Quantity — the honest AVERAGE per unit, which is what makes
+ * `quantity * unitPrice = total` hold for the line as reported, at the cost
+ * of no longer stating any one row's real per-unit price exactly.
+ */
+function mergedUnitPrice(
+  rows: Record<string, string>[],
+  primaryUnitPrice: string | undefined,
+  quantity: number | undefined,
+  total: number | undefined,
+): string | undefined {
+  const perRow = rows.map((r) => amount(col(r, ...UNIT_PRICE_COLS)));
+  const agree = perRow.every((n) => n !== undefined && n === perRow[0]);
+  if (agree || quantity === undefined || quantity === 0 || total === undefined) {
+    return primaryUnitPrice;
+  }
+
+  return money(total / quantity);
 }
 
 /**
