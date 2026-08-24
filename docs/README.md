@@ -6,9 +6,11 @@ Map of everything documented in this repo, plus where the cross-repo docs live.
 Orientation and quickstart are in the [root README](../README.md); the backend
 developer guide is [`backend/apps/api/README.md`](../backend/apps/api/README.md).
 
-> Index re-checked against `git ls-files docs` on **2026-08-19**. Every file tracked
-> under `docs/` is listed below (images and the style-audit screenshot aside). The
-> per-doc **status** column is the document's own claim, not a re-verification of it.
+> Index re-checked against `git ls-files docs` on **2026-08-23**. Every file tracked
+> under `docs/` is listed below (images and the style-audit screenshot aside);
+> `jobs-schedule-review.md` had been missing from it. The per-doc **status**
+> column is the document's own claim, not a re-verification of it — except where
+> a row says otherwise.
 
 ## API reference — [`docs/api/`](api/README.md)
 
@@ -46,7 +48,7 @@ codegen): [graphql-api.md](graphql-api.md).
 | [architecture/adr-pipeline-ledger.md](architecture/adr-pipeline-ledger.md) | **ADR-0004:** `ci.pipeline_state` as a versioned ledger replacing "is the column I write still NULL?" as the completion test (filed alongside, not inside, `adr/`) | accepted 2026-08-09 |
 | [architecture/event-ingest-spec.md](architecture/event-ingest-spec.md) | Unified capture-event ingest (`/v1/events`) spec | partially implemented — see status header |
 | [architecture/hub-inference-integration.md](architecture/hub-inference-integration.md) | Getting LLM + embedding config from CI-Hub's inference proxy | design/proposal |
-| [architecture/test-strategy.md](architecture/test-strategy.md) | Test layers, priorities, conventions, coverage ratchet | active |
+| [architecture/test-strategy.md](architecture/test-strategy.md) | Test layers, priorities, conventions, coverage ratchet — **plus which runner each workspace uses, the sixteen `*_TEST_DATABASE_URL` variables, and the two suites that are red on `main` before you touch anything** | active; §1 re-surveyed 2026-08-23 |
 
 ### Architecture decision records — [`docs/architecture/adr/`](architecture/adr/)
 
@@ -124,7 +126,9 @@ How a personal archive becomes rows in `ci.*`, and how to work on that safely.
   `Tooltip` contract for icon-only controls, and the i18next setup shared with CI-Hub
   (flat `SCREAMING_SNAKE` keys, `en.json` as the Crowdin source).
 - [screenshots.md](screenshots.md) — the UI screenshots the docs want, the routes to capture
-  them from, and the naming/committing conventions (`docs/images/`).
+  them from, and the naming/committing conventions (`docs/images/`). Carries the current
+  **nav map** — the Power Rail, the Memory hub and the Self hub, with captures of the
+  first two — and the full redirect table for the addresses that moved.
 
 ## Jobs & background work
 
@@ -132,6 +136,11 @@ How a personal archive becomes rows in `ci.*`, and how to work on that safely.
   behind the jobs/data-processing rebuild. Written before the CI-Import-Tools retirement
   (flagged in its own header) and before Temporal was removed, so read it as the plan, not
   as the current system.
+- [jobs-schedule-review.md](jobs-schedule-review.md) — the **`@Cron` half**: the Jobs
+  dashboard "Schedules" card, the cron methods behind it, and what it costs to run against
+  a full corpus. **Point-in-time review; its whole "Fix these first" list has since landed**
+  and the doc now carries a status box saying so per item. Read it for the analysis, not as
+  a work list. (This file was absent from this index until 2026-08-23.)
 - [runbooks/jobs-system-review-2026-08.md](runbooks/jobs-system-review-2026-08.md) — how
   pg-boss actually behaves here, verified against the pg-boss source and a live appliance
   database on 2026-08-17, and the Jobs-dashboard changes that came out of it.

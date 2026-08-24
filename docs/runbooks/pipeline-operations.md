@@ -8,9 +8,11 @@
 > For bulk imports see the [bulk load runbook](../../backend/apps/api/db/postgres/BULK_LOAD_RUNBOOK.md);
 > to wipe and start over, the [ingest reset runbook](../../backend/apps/api/db/postgres/INGEST_RESET_RUNBOOK.md).
 
-**The `/api/pipeline/*` endpoints exist** (`PipelineController`, registered in
+**The pipeline endpoints exist** (`PipelineController`, registered in
 `PipelineModule`): `state`, `runs`, `runs/:id`, `runs/:id/{pause,resume,cancel}`,
-`dead-letters` and both replay routes, plus `quarantine/release`. There is still
+`dead-letters` and both replay routes, plus `quarantine/release`. A **browser**
+reaches them at `/api/pipeline/*`; the **API server** mounts them at
+`/pipeline/*` — see the prefix note in [§4b](#4b-replay-a-dead-letter). There is still
 no dedicated pipeline page — the operator surface is the Jobs page (`/jobs`).
 Most of this runbook stays on `psql`, because it answers questions the endpoints
 do not. See [§10](#10-what-does-not-exist-yet) for what genuinely is still
@@ -383,29 +385,38 @@ SELECT jsonb_pretty(payload), error FROM ci.pipeline_dead_letters WHERE id = '<l
 > exposes it as a card that groups the un-replayed letters by cause:
 >
 > ```bash
-> # One letter. $API is the API host:port directly — see the prefix note below.
+> # One letter. $API is the API host:port DIRECTLY — no /api — see the note below.
 > curl -XPOST -H "Authorization: Bearer $TOKEN" \
->   $API/api/pipeline/dead-letters/<letter-id>/replay
+>   $API/pipeline/dead-letters/<letter-id>/replay
 >
 > # A whole failure class. A selector is REQUIRED — there is no "replay
 > # everything", because most of a backlog is one config error and re-emitting
 > # it just re-fails and writes a fresh letter per attempt.
 > curl -XPOST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 >   -d '{"eventName":"file.uploaded","failedAfter":"2026-08-18T00:00:00Z"}' \
->   $API/api/pipeline/dead-letters/replay
+>   $API/pipeline/dead-letters/replay
 > ```
 >
 > **The `/api` prefix, once, because it bites here.** `main.ts` sets no global
 > prefix, so a `@Controller('x')` mounts at `/x` and the edge proxy (Caddy in
-> dev, nginx in staging/production) is what strips a browser's `/api`. Two
-> controllers bake the prefix into their own path —
-> `@Controller('api/pipeline')` and `@Controller('api/maintenance')` — so they
-> mount at `/api/pipeline/*` and `/api/maintenance/*` **on the API itself**.
-> Point `curl` straight at the API host (`$API`, e.g. `http://localhost:3030` or
-> this worktree's assigned port) and the paths in this runbook are literal.
-> Through the proxy host they are not: the proxy would strip the prefix you just
-> typed. Every other controller — `/jobs/*` included — is the ordinary case and
-> is reached as `https://<host>/api/jobs/...` through the proxy.
+> dev, nginx in staging/production) is what strips a browser's `/api`.
+>
+> **Δ 2026-08-23 — the pipeline half of this note was wrong and the curl commands
+> above were 404ing.** This used to say `@Controller('api/pipeline')`, so the
+> replay examples were written as `$API/api/pipeline/...` against the API host
+> directly. `243b15945 refactor(pipeline): update API routes to remove '/api'
+> prefix` changed it to `@Controller('pipeline')`
+> (`domains/pipeline/controllers/PipelineController.ts:186`, verified on
+> `origin/main` at `b82014a1b`).
+>
+> So **`/pipeline/*` is now the ordinary case**, like `/jobs/*`: browser
+> `https://<host>/api/pipeline/...` through the proxy, `curl $API/pipeline/...`
+> straight at the API host (`$API`, e.g. `http://localhost:3030` or this
+> worktree's assigned port). `@Controller('api/maintenance')` is unchanged and
+> is still one of the four that bake the prefix in — for those, and only those,
+> `curl $API/api/maintenance/...` is literal and the proxy path is
+> `/api/api/maintenance/...`. The current list is in
+> [`docs/api/rest.md` § Global routing](../api/rest.md#global-routing--prefix-behavior).
 >
 > Both claim `replayed_at` BEFORE emitting, with `replayed_at IS NULL` in the
 > predicate, so a double submit re-emits nothing. The bulk form returns 200 with

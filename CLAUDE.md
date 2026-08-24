@@ -57,12 +57,24 @@ make build
 `packageManager`, `uv` present — any mismatch exits 1), then hard-fails unless `overmind`,
 `caddy` (admin API live on `:2019`) and `ollama` (on `:11434`) are present.
 
-**CI is `workflow_dispatch`-only, except mobile store uploads.** Check workflows
-do not run on push, pull request, tag or schedule — an absent check means nobody
-dispatched it, not that anything passed. **`mobile-release.yml` is the exception:**
-push `ios-v*`, `android-v*`, or `mobile-release-v*` to upload to TestFlight / Play
-internal. Everything else: `gh workflow run <file> --ref <branch-or-tag>`;
-see `docs/CI.md`.
+**CI is `workflow_dispatch`-only, with two exceptions.** Eight of the ten
+workflows do not run on push, pull request, tag or schedule — for those, an
+absent check means nobody dispatched it, not that anything passed. Start one
+with `gh workflow run <file> --ref <branch-or-tag>`; see `docs/CI.md` for the
+full table. The exceptions (verified 2026-08-23):
+
+- **`mobile-release.yml`** — push `ios-v*`, `android-v*`, or
+  `mobile-release-v*` to upload to TestFlight / Play internal.
+- **`codeql.yml`** — runs on push and pull_request against `main`, plus a weekly
+  cron. **It fails on every run** and not because of your change: the scan
+  completes, then the upload is rejected with `Code Security must be enabled for
+  this repository to use code scanning`. Red is the baseline until Code Security
+  is turned on for the repo — as is the App Store Connect `App | BuildTestFlight`
+  check, which is Xcode Cloud rather than GitHub Actions.
+
+**Nothing gates a merge.** `main`'s branch protection has no
+`required_status_checks` block and `required_approving_review_count: 0`, so
+neither red check blocks anything either.
 
 See `README.md` for the full prerequisite setup and the complete `make` command reference.
 

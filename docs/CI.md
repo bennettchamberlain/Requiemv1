@@ -12,7 +12,33 @@ access. `--ref` matters - the workflow file is read from that branch, so a
 workflow that only exists on your feature branch must be dispatched against it.
 
 Full cross-repo runbook: `CI-Local-CICD/RUNBOOK.md` (regenerate with
-`ci-local docs`). This file is generated - do not hand-edit.
+`ci-local docs`). Everything above and below the two rules is generated - do not
+hand-edit it; the block between them is maintained by hand and a regeneration
+will drop it.
+
+`ci-local` is not on `PATH` by default. It is the script at
+`CI-Local-CICD/ci-local` in the sibling clone - invoke it by full path, or add
+that directory to `PATH`.
+
+---
+
+## Not covered by the generated list below (hand-maintained, verified 2026-08-23)
+
+The generated section lists five of this repo's **ten** workflows. The other
+five, and the two places where "pushing does not start a GitHub-hosted run" is
+no longer true:
+
+| Workflow | Trigger | Note |
+|---|---|---|
+| `codeql.yml` | **`push` + `pull_request` on `main`, plus a Monday cron** | NOT gated. Added 2026-08-23 in [#2261](https://github.com/companionintelligence/CI-Server/pull/2261). **Fails on every run**: the analysis completes, then the upload is rejected with `Code Security must be enabled for this repository to use code scanning`. Red is the baseline here until Code Security is enabled on the repo. |
+| `mobile-release.yml` | **`push` on `ios-v*` / `android-v*` / `mobile-release-v*` tags**, plus dispatch | NOT gated for tags. Never runs on a PR. |
+| `consent-path-gate.yml` | `workflow_dispatch` | The merge gate for the federated-ask consent path. `gh workflow run "Consent path gate" --ref <branch>`. Ships dispatch-only on purpose - see [`asks-system-guide.md` §7.3](asks-system-guide.md). |
+| `mobile-build.yml` | `workflow_dispatch` | Debug APK + iOS Simulator `.app`. |
+| `xcode-cloud-manual-only.yml` | `workflow_dispatch` | One-shot: strips App Store Connect's automatic start conditions so `App \| BuildTestFlight` stops firing on every PR. Needs the `APPSTORE_*` secrets. Until someone dispatches it, that check is still red on every PR. |
+
+**Xcode Cloud is not a GitHub Actions workflow** and so is not gated by any of
+the above. `App | BuildTestFlight` reports on PRs from App Store Connect and is
+failing - baseline, not your change.
 
 ---
 
