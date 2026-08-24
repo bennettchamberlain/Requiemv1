@@ -12,7 +12,7 @@
 
 import { apiKeyHeaders } from './apiAuth';
 import { buildApiUrl, isIosPlatform, isNativePlatform } from './apiBase';
-import type { LocationTrackingMode } from './deviceSources/locationMode';
+import type { BackgroundGeolocationLocation } from './deviceSources/location';
 
 /**
  * `capacitor-secure-storage-plugin`. **Legacy — read-only, for migration.** It used to hold
@@ -47,24 +47,46 @@ interface LocalHubPlugin {
   secureSet(options: { key: string; value: string }): Promise<void>;
   secureRemove(options: { key: string }): Promise<void>;
   openUrl(options: { url: string }): Promise<void>;
-  setLocationMode?(options: {
-    mode: LocationTrackingMode;
-    deviceKey: string;
-  }): Promise<NativeLocationStatus>;
-  getLocationStatus?(): Promise<NativeLocationStatus>;
+  /**
+   * iOS only. One high-accuracy fix for placing a pin — does not write the
+   * tracking outbox. Rejects when permission is denied or a fix times out.
+   */
   getCurrentLocation?(): Promise<NativeCurrentLocation>;
-  setLocationHome?(options: { latitude?: number; longitude?: number } | Record<string, never>): Promise<void>;
   openAppSettings?(): Promise<void>;
 }
 
-export type NativeLocationAuthorization =
-  | 'not_determined'
-  | 'denied'
-  | 'restricted'
-  | 'when_in_use'
-  | 'always'
-  | 'unsupported';
+export interface BackgroundGeolocationError {
+  code: string;
+  message: string;
+}
 
+/**
+ * `@capacitor-community/background-geolocation`. Declared locally, not imported from the
+ * plugin package, for the same reason every other plugin interface here is: it keeps the
+ * web bundle free of `@capacitor/*` native deps. One writer only — a second `addWatcher`
+ * call replaces rather than adds a session on both platforms, so callers must
+ * `removeWatcher` their previous id before starting a new one.
+ */
+interface BackgroundGeolocationPlugin {
+  addWatcher(
+    options: {
+      /** Set to keep sampling once the app leaves the foreground; omit for foreground-only. */
+      backgroundMessage?: string;
+      backgroundTitle?: string;
+      requestPermissions?: boolean;
+      stale?: boolean;
+      distanceFilter?: number;
+    },
+    callback: (
+      location: BackgroundGeolocationLocation | undefined,
+      error?: BackgroundGeolocationError,
+    ) => void,
+  ): Promise<string>;
+  removeWatcher(options: { id: string }): Promise<void>;
+  openSettings(): Promise<void>;
+}
+
+/** One-shot fix from {@link getCurrentDeviceLocation} — placing a pin, not tracking. */
 export interface NativeCurrentLocation {
   latitude: number;
   longitude: number;
@@ -86,15 +108,6 @@ export class DeviceLocationError extends Error {
 
 export function isDeviceLocationError(error: unknown): error is DeviceLocationError {
   return error instanceof Error && error.name === 'DeviceLocationError' && 'code' in error;
-}
-
-export interface NativeLocationStatus {
-  mode: LocationTrackingMode;
-  authorization: NativeLocationAuthorization;
-  /** True while iOS is still showing the Always upgrade prompt. Do not snap back yet. */
-  pendingAlways?: boolean;
-  lastFixAt?: string | null;
-  lastError?: string | null;
 }
 
 interface BrowserPlugin {
@@ -180,6 +193,7 @@ interface CameraPlugin {
 interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
   LocalHub?: LocalHubPlugin;
+  BackgroundGeolocation?: BackgroundGeolocationPlugin;
   Browser?: BrowserPlugin;
   App?: AppPlugin;
   SplashScreen?: SplashScreenPlugin;
@@ -411,32 +425,91 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 /**
- * iOS Core Location mode. No-op on web / Android — those keep using
- * `navigator.geolocation` while the app is open.
+ * Starts a `@capacitor-community/background-geolocation` watcher — the one writer for
+ * both iOS and Android native location. No-op (`null`) on web, which keeps using
+ * `navigator.geolocation` instead.
+ *
+ * `options.background`, when true, keeps sampling after the app leaves the foreground
+ * (Android shows a persistent notification while this is active; iOS shows the blue
+ * status-bar indicator). When false, updates are only guaranteed in the foreground on
+ * both platforms. Returns the watcher id `removeBackgroundLocationWatcher` needs, or
+ * `null` if no watcher was started.
  */
-export async function setNativeLocationMode(options: {
-  mode: LocationTrackingMode;
-  deviceKey: string;
-}): Promise<NativeLocationStatus | null> {
-  const hub = plugins()?.LocalHub;
+export async function addBackgroundLocationWatcher(
+  options: { background: boolean; distanceFilter?: number },
+  onLocation: (location: BackgroundGeolocationLocation) => void,
+  onError: (error: BackgroundGeolocationError) => void,
+): Promise<string | null> {
+  const plugin = plugins()?.BackgroundGeolocation;
 
-  if (!isIosPlatform() || !hub?.setLocationMode) {
+  if (!isNativePlatform() || !plugin) {
     return null;
   }
 
-  return hub.setLocationMode(options);
+  return plugin.addWatcher(
+    {
+      requestPermissions: true,
+      distanceFilter: options.distanceFilter,
+      ...(options.background
+        ? {
+            backgroundTitle: 'Recording location',
+            backgroundMessage: 'Companion is recording your location so it can place memories on the map.',
+          }
+        : {}),
+    },
+    (location, error) => {
+      if (error) {
+        onError(error);
+
+        return;
+      }
+
+      if (location) {
+        onLocation(location);
+      }
+    },
+  );
 }
 
-export async function getNativeLocationStatus(): Promise<NativeLocationStatus | null> {
-  const hub = plugins()?.LocalHub;
+/** Stops a watcher started by {@link addBackgroundLocationWatcher}. No-op on web. */
+export async function removeBackgroundLocationWatcher(id: string): Promise<void> {
+  const plugin = plugins()?.BackgroundGeolocation;
 
-  if (!isIosPlatform() || !hub?.getLocationStatus) {
-    return null;
+  if (!isNativePlatform() || !plugin) {
+    return;
   }
 
-  return hub.getLocationStatus();
+  try {
+    await plugin.removeWatcher({ id });
+  } catch {
+    // Already removed, or the plugin is mid-teardown — nothing further to recover.
+  }
 }
 
+/**
+ * Opens the OS location settings screen for the continuous background-tracking
+ * permission (Settings → Location, via the background-geolocation plugin). No-op on web.
+ * For the one-shot "use my location" denied case, see {@link openNativeAppSettings} instead.
+ */
+export async function openNativeLocationSettings(): Promise<void> {
+  const plugin = plugins()?.BackgroundGeolocation;
+
+  if (!isNativePlatform() || !plugin) {
+    return;
+  }
+
+  try {
+    await plugin.openSettings();
+  } catch {
+    // Best-effort — nothing to recover into if the OS refuses.
+  }
+}
+
+/**
+ * iOS-only one-shot high-accuracy fix — e.g. "use my current location" when placing a
+ * pin. Does not enqueue a tracking outbox record. `null` on other platforms/web, where
+ * {@link getCurrentDeviceLocation} falls back to the browser Geolocation API instead.
+ */
 export async function getNativeCurrentLocation(): Promise<NativeCurrentLocation | null> {
   const hub = plugins()?.LocalHub;
 
@@ -498,11 +571,13 @@ function webCurrentLocation(): Promise<NativeCurrentLocation> {
       (error) => {
         if (error.code === error.PERMISSION_DENIED) {
           reject(new DeviceLocationError(error.message || 'Location permission was denied', 'denied'));
+
           return;
         }
 
         if (error.code === error.TIMEOUT) {
           reject(new DeviceLocationError(error.message || 'Timed out waiting for a location fix', 'timeout'));
+
           return;
         }
 
@@ -513,24 +588,11 @@ function webCurrentLocation(): Promise<NativeCurrentLocation> {
   });
 }
 
-export async function setNativeLocationHome(
-  home: { latitude: number; longitude: number } | null,
-): Promise<void> {
-  const hub = plugins()?.LocalHub;
-
-  if (!isIosPlatform() || !hub?.setLocationHome) {
-    return;
-  }
-
-  if (home) {
-    await hub.setLocationHome({ latitude: home.latitude, longitude: home.longitude });
-
-    return;
-  }
-
-  await hub.setLocationHome({});
-}
-
+/**
+ * Opens the OS settings screen for the one-shot "use my current location" permission
+ * (`CurrentLocationField`). iOS-only — Android/web show an inline message instead. For
+ * the continuous background-tracking permission, see {@link openNativeLocationSettings}.
+ */
 export async function openNativeAppSettings(): Promise<void> {
   const hub = plugins()?.LocalHub;
 

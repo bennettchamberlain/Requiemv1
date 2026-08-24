@@ -199,27 +199,13 @@ class LocalHubPlugin : Plugin() {
     }
 
     /**
-     * iOS-only background sampler. Android stays on `navigator.geolocation` while
-     * the app is open — Play background location is a later pass.
+     * One-shot high-accuracy fix ("use my location") is iOS-only for now -- see
+     * `LocationTracker.swift`. Continuous background tracking on Android is owned
+     * entirely by `@capacitor-community/background-geolocation`, not this plugin.
      */
-    @PluginMethod
-    fun setLocationMode(call: PluginCall) {
-        call.resolve(unsupportedLocationStatus())
-    }
-
-    @PluginMethod
-    fun getLocationStatus(call: PluginCall) {
-        call.resolve(unsupportedLocationStatus())
-    }
-
     @PluginMethod
     fun getCurrentLocation(call: PluginCall) {
         call.reject("getCurrentLocation is only available on iOS")
-    }
-
-    @PluginMethod
-    fun setLocationHome(call: PluginCall) {
-        call.resolve()
     }
 
     @PluginMethod
@@ -233,14 +219,6 @@ class LocalHubPlugin : Plugin() {
         } catch (e: Exception) {
             call.reject(e.message ?: "Could not open app settings", e)
         }
-    }
-
-    private fun unsupportedLocationStatus(): JSObject {
-        val ret = JSObject()
-        ret.put("mode", "off")
-        ret.put("authorization", "unsupported")
-        ret.put("pendingAlways", false)
-        return ret
     }
 
     /**

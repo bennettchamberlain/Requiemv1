@@ -29,10 +29,7 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "secureSet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "secureRemove", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openUrl", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setLocationMode", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getLocationStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getCurrentLocation", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setLocationHome", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise)
     ]
 
@@ -49,8 +46,6 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
     /// see `LocalHubServer.warmUpOnMainThread`.
     override public func load() {
         LocalHubServer.warmUpOnMainThread()
-        LocationTracker.shared.attach(server: server)
-        LocationTracker.shared.restoreIfNeeded()
     }
 
     /// Starts the embedded loopback HTTP server if it isn't already running and
@@ -161,43 +156,15 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func setLocationMode(_ call: CAPPluginCall) {
-        guard let mode = call.getString("mode"), !mode.isEmpty else {
-            call.reject("A 'mode' of off, when_in_use, or always is required")
-            return
-        }
-        guard let deviceKey = call.getString("deviceKey"), !deviceKey.isEmpty else {
-            call.reject("A non-empty 'deviceKey' is required")
-            return
-        }
-        DispatchQueue.main.async {
-            LocationTracker.shared.setMode(mode, deviceKey: deviceKey) { status in
-                call.resolve(status)
-            }
-        }
-    }
-
-    @objc func getLocationStatus(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
-            call.resolve(LocationTracker.shared.status())
-        }
-    }
-
+    /// One-shot high-accuracy fix for "use my location" (e.g. adding a Place). Does not
+    /// touch the tracking outbox -- continuous background tracking is owned entirely by
+    /// `@capacitor-community/background-geolocation` now, not this plugin.
     @objc func getCurrentLocation(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             LocationTracker.shared.requestCurrentFix(
                 resolve: { payload in call.resolve(payload) },
                 reject: { message in call.reject(message) }
             )
-        }
-    }
-
-    @objc func setLocationHome(_ call: CAPPluginCall) {
-        let latitude = call.getDouble("latitude")
-        let longitude = call.getDouble("longitude")
-        DispatchQueue.main.async {
-            LocationTracker.shared.setHome(latitude: latitude, longitude: longitude)
-            call.resolve()
         }
     }
 

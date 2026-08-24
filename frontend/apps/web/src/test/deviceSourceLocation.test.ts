@@ -6,7 +6,9 @@ import {
   buildPositionRecord,
   captureLocationFix,
   createLocationSampler,
+  fixFromBackgroundGeolocationLocation,
   fixFromGeolocationPosition,
+  type BackgroundGeolocationLocation,
   haversineMeters,
   positionSourceId,
   type DeviceLocationFix,
@@ -768,6 +770,62 @@ describe('fixFromGeolocationPosition', () => {
   it('passes through null optional fields rather than coercing them to 0', () => {
     const fix = fixFromGeolocationPosition(
       geolocationPosition({ altitude: null, heading: null, speed: null }),
+    );
+
+    expect(fix.altitudeMeters).toBeNull();
+    expect(fix.headingDegrees).toBeNull();
+    expect(fix.speedMetersPerSecond).toBeNull();
+  });
+});
+
+/**
+ * The `@capacitor-community/background-geolocation` counterpart to
+ * `fixFromGeolocationPosition` — same adapter contract, different field names
+ * (`bearing`/`time` rather than `heading`/`timestamp`).
+ */
+describe('fixFromBackgroundGeolocationLocation', () => {
+  function backgroundLocation(
+    overrides: Partial<BackgroundGeolocationLocation> = {},
+  ): BackgroundGeolocationLocation {
+    return {
+      latitude: SF_LAT,
+      longitude: SF_LNG,
+      accuracy: 12,
+      altitude: 15,
+      altitudeAccuracy: 5,
+      bearing: 270,
+      speed: 3.5,
+      time: CAPTURED_AT,
+      ...overrides,
+    };
+  }
+
+  it('carries every field across, renamed to the DeviceLocationFix contract', () => {
+    const fix = fixFromBackgroundGeolocationLocation(backgroundLocation());
+
+    expect(fix).toEqual({
+      latitude: SF_LAT,
+      longitude: SF_LNG,
+      accuracyMeters: 12,
+      altitudeMeters: 15,
+      headingDegrees: 270,
+      speedMetersPerSecond: 3.5,
+      capturedAtMs: CAPTURED_AT,
+    });
+  });
+
+  it('falls back to the current time only when the plugin reports no timestamp at all', () => {
+    const before = Date.now();
+    const fix = fixFromBackgroundGeolocationLocation(backgroundLocation({ time: 0 }));
+    const after = Date.now();
+
+    expect(fix.capturedAtMs).toBeGreaterThanOrEqual(before);
+    expect(fix.capturedAtMs).toBeLessThanOrEqual(after);
+  });
+
+  it('passes through null optional fields rather than coercing them to 0', () => {
+    const fix = fixFromBackgroundGeolocationLocation(
+      backgroundLocation({ altitude: null, bearing: null, speed: null }),
     );
 
     expect(fix.altitudeMeters).toBeNull();
