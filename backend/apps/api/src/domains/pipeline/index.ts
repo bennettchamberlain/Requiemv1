@@ -356,3 +356,14 @@ export type {
   StageResult,
   StageSource,
 } from './types';
+
+/**
+ * The public vocabulary for "where did this record's timestamp come from" —
+ * `TemporalRepairStage`'s own constants, not a domain-boundary copy. A caller
+ * outside this domain that needs to reference or assert against them (e.g. a
+ * mirrored-constant test in another domain checking its own copy has not
+ * drifted) does so through here rather than reaching into the stage file
+ * directly, which is what `no-cross-domain-internals` exists to catch.
+ */
+export { TIME_PRECISIONS, TIME_SOURCES } from './stages/clean/TemporalRepairStage';
+export type { TimePrecision, TimeSource } from './stages/clean/TemporalRepairStage';
