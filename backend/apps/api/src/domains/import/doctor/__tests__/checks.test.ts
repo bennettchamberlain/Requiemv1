@@ -161,12 +161,25 @@ describe('position-not-a-place-name must not drift from the guard it mirrors', (
    * is what matters: a check missing an arm is silently, permanently blind, and
    * nothing else in the tree notices.
    */
-  const sql = () => findCheck('position-not-a-place-name')?.sql ?? '';
+  /**
+   * Comments stripped before asserting. The check SQL is a String.raw template
+   * carrying `--` comment lines — this PR added twelve of them directly above
+   * the arms below — so a plain substring assertion cannot tell live predicate
+   * text from an arm someone commented out. Stripping them means these
+   * assertions can only be satisfied by SQL that actually runs.
+   */
+  const sql = () => (findCheck('position-not-a-place-name')?.sql ?? '').replace(/^\s*--.*$/gm, '');
 
   it('carries the coordinate, URI, media-filename and UUID arms', () => {
     expect(sql()).toContain(String.raw`\.(jpe?g|png|heic`);
     expect(sql()).toContain('[a-z][a-z0-9+.-]*://');
     expect(sql()).toContain('[0-9a-f]{8}-[0-9a-f]{4}');
+    // The coordinate arm — this check's largest population by far (its own
+    // remedy cites 64,917 rows, and migration 20260818212254 exists solely for
+    // bare coordinate pairs). It was named in this test's title and asserted
+    // nowhere: deleting the whole arm left every assertion green. Mirrors
+    // PositionPlacePromoteStage.spec.ts, which pins it the same way.
+    expect(sql()).toMatch(/waypoint/i);
   });
 
   it('carries the title arm too — the one that drifted', () => {
