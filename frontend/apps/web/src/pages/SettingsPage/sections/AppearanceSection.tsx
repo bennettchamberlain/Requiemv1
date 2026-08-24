@@ -1,6 +1,7 @@
-import { Card, cn } from '@ci/shadcn';
+import { useDeviceLayout } from '@ci/common';
+import { Card, cn, Label, Switch } from '@ci/shadcn';
 
-import { ColorPicker, TexturePicker, useTheme } from '@/components/ThemePicker';
+import { ColorPicker, TexturePicker, useBackground, useTheme } from '@/components/ThemePicker';
 
 const THEME_MODES = [
   { value: 'light', label: 'Light' },
@@ -10,6 +11,8 @@ const THEME_MODES = [
 
 export function AppearanceSection() {
   const { themeState, setTheme } = useTheme();
+  const { glowEnabled, setGlowEnabled } = useBackground();
+  const { isMobile } = useDeviceLayout();
 
   return (
     <>
@@ -42,6 +45,25 @@ export function AppearanceSection() {
               ))}
             </div>
           </div>
+
+          {isMobile === false ? (
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <Label htmlFor="pointer-glow" className="text-sm font-medium">
+                  Pointer glow
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  A soft light that follows the cursor. Desktop only.
+                </p>
+              </div>
+              <Switch
+                id="pointer-glow"
+                checked={glowEnabled}
+                onCheckedChange={setGlowEnabled}
+                aria-label="Pointer glow"
+              />
+            </div>
+          ) : null}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <div>

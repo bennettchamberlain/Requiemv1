@@ -5,7 +5,7 @@ import { Toaster } from '@ci/shadcn';
 import { Outlet } from 'react-router-dom';
 
 import { AnimatedBackground } from '@/components/AnimatedBackground';
-import { useTheme } from '@/components/ThemePicker';
+import { useBackground, useTheme } from '@/components/ThemePicker';
 import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
@@ -18,6 +18,7 @@ import { SecondaryNavigation } from './SecondaryNavigation';
 export function Main() {
   const { isMobile } = useDeviceLayout();
   const { themeState } = useTheme();
+  const { glowEnabled } = useBackground();
 
   // Every authenticated page passes through this layout, which makes it the
   // one place a page-load check reaches "across all pages".
@@ -55,7 +56,7 @@ export function Main() {
       {/* Scenery, behind everything. `relative z-10` on the shell is what keeps
           it there: the background is `fixed` at z-index 0, and a positioned
           sibling later in the DOM would otherwise paint over the whole app. */}
-      <AnimatedBackground />
+      {glowEnabled ? <AnimatedBackground /> : null}
       <div className="relative z-10 grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
         {/* Left-aligned so the mark stays put when the rail widens. Centering
             it here walks the logo to the middle of the expanded column. */}
