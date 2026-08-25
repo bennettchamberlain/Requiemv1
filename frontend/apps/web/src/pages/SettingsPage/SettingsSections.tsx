@@ -19,6 +19,10 @@ const LocationSection = lazy(() =>
 const SafariExtensionSection = lazy(() =>
   import('./sections/SafariExtensionSection').then((m) => ({ default: m.SafariExtensionSection })),
 );
+const BlueBubblesSection = lazy(() =>
+  import('./sections/BlueBubblesSection').then((m) => ({ default: m.BlueBubblesSection })),
+);
+const McpSection = lazy(() => import('./sections/McpSection').then((m) => ({ default: m.McpSection })));
 const ApiKeysSection = lazy(() =>
   import('./sections/ApiKeysSection').then((m) => ({ default: m.ApiKeysSection })),
 );
@@ -41,6 +45,10 @@ function sectionElement(section: string): ReactNode {
       return <LocationSection />;
     case 'safari':
       return <SafariExtensionSection />;
+    case 'bluebubbles':
+      return <BlueBubblesSection />;
+    case 'mcp':
+      return <McpSection />;
     case 'api-keys':
       return <ApiKeysSection />;
     case 'oauth':
