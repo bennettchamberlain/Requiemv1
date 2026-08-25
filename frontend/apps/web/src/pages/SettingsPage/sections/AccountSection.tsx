@@ -167,8 +167,8 @@ export function AccountSection() {
         </p>
       </div>
 
-      <Card className="mb-4">
-        <Card.Content className="pt-6">
+      <Card className="py-0">
+        <Card.Content>
           <form className="space-y-4" onSubmit={handleChangeEmail}>
             <div className="space-y-1">
               <h3 className="text-sm font-medium">Change email</h3>
@@ -212,8 +212,8 @@ export function AccountSection() {
         </Card.Content>
       </Card>
 
-      <Card className="mb-4">
-        <Card.Content className="pt-6">
+      <Card className="py-0">
+        <Card.Content>
           <form className="space-y-4" onSubmit={handleChangePassword}>
             <div className="space-y-1">
               <h3 className="text-sm font-medium">
@@ -279,8 +279,8 @@ export function AccountSection() {
         </Card.Content>
       </Card>
 
-      <Card className="border-destructive/40">
-        <Card.Content className="space-y-4 pt-6">
+      <Card className="border-destructive/40 py-0">
+        <Card.Content className="space-y-4">
           <div className="flex items-start gap-3">
             <TriangleAlert className="h-5 w-5 shrink-0 text-destructive" strokeWidth={1.5} />
             <div className="space-y-1">
