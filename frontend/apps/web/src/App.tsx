@@ -381,16 +381,6 @@ function AppRoutes() {
             }
           />
 
-          {/* "Questions" is what this page used to be called; it was
-              "Reflections" under Memory, and now lives under Self. All three
-              old paths stay as redirects so bookmarks, docs and any link
-              still in the wild keep working. Ungated here — /self/reflections
-              itself is registered only when `insights.page` is on, same as
-              every other flag-gated route in this app. */}
-          <Route path="/prompts" element={<Navigate to="/self/reflections" replace />} />
-          <Route path="/memory/questions" element={<Navigate to="/self/reflections" replace />} />
-          <Route path="/memory/reflections" element={<Navigate to="/self/reflections" replace />} />
-
           {isFeatureEnabled('tags.page') && (
             <>
               <Route path="/tags" element={<Navigate to="/memory/tags" replace />} />
@@ -409,14 +399,38 @@ function AppRoutes() {
           <Route path="/stats" element={<Navigate to="/self/stats" replace />} />
 
           {isFeatureEnabled('stats.page') && (
-            <Route
-              path="/self/*"
-              element={
-                <ProtectedRoute>
-                  <SelfPage />
-                </ProtectedRoute>
-              }
-            />
+            <>
+              <Route
+                path="/self/*"
+                element={
+                  <ProtectedRoute>
+                    <SelfPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* "Questions" is what this page used to be called; it was
+                  "Reflections" under Memory, and now lives under Self. All
+                  three old paths stay as redirects so bookmarks, docs and any
+                  link still in the wild keep working.
+
+                  Declared inside the gate alongside their destination, the way
+                  /tags and /files are. A gated route in this app is never
+                  registered rather than blocked, so a redirect that outlived
+                  its target would send an old bookmark to a URL the table does
+                  not contain and 404 it there instead — under a path the user
+                  never typed. Absent from the table, these fall through to "*",
+                  which holds the loading page until the flags settle and only
+                  then decides: redirect if Self exists, 404 at the address
+                  actually asked for if it does not.
+
+                  The Reflections tab behind them is separately gated on
+                  `insights.page` inside SelfPage, which sends its own misses
+                  back to /self rather than 404ing. */}
+              <Route path="/prompts" element={<Navigate to="/self/reflections" replace />} />
+              <Route path="/memory/questions" element={<Navigate to="/self/reflections" replace />} />
+              <Route path="/memory/reflections" element={<Navigate to="/self/reflections" replace />} />
+            </>
           )}
 
           <Route path="/memory/knowledge" element={<Navigate to="/memory/events?view=graph" replace />} />
