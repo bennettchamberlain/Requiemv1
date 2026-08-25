@@ -288,10 +288,24 @@ describe('LifeDetailsSection', () => {
 
     render(<LifeDetailsSection />);
 
-    const badge = await screen.findByText('Inferred · good confidence');
+    // The inferred row shows the bare band word; the exact score stays in the
+    // tooltip. The hand-written row carries the dot and its screen-reader text
+    // only — no visible word.
+    const badge = await screen.findByText('good');
     expect(rowFor(BLOOD_TYPE_KEY)).toContainElement(badge);
-    expect(badge).toHaveAttribute('title', expect.stringContaining('0.72'));
-    expect(within(rowFor(HOBBY_KEY)).getByText('Manual')).toBeInTheDocument();
+    expect(badge.closest('[title]')).toHaveAttribute('title', expect.stringContaining('0.72'));
+    expect(within(rowFor(HOBBY_KEY)).getByText('Answered by you')).toBeInTheDocument();
+  });
+
+  it('marks a question with no answer yet with the red status dot', async () => {
+    fetchJson.mockResolvedValue(fullCataloguePage());
+
+    render(<LifeDetailsSection />);
+
+    await screen.findByText('What is your blood type?');
+    const row = rowFor(BLOOD_TYPE_KEY);
+    expect(within(row).getByText('No answer yet')).toBeInTheDocument();
+    expect(row.querySelector('span.rounded-full')).toHaveClass('bg-red-500');
   });
 
   it('edits an existing answer with a PATCH carrying text alone, so the API re-stamps it as user-authored', async () => {

@@ -975,6 +975,12 @@ export class QuestionService {
         FROM ci.questions q
         CROSS JOIN (SELECT DISTINCT id AS user_id FROM ci.users WHERE id IS NOT NULL) u
         WHERE q.is_active = TRUE
+          -- Never spend an inference slot on a question the corpus cannot
+          -- ground (body measurements, medical facts, the make of the boiler).
+          -- The model would return a refusal, and because the NOT EXISTS below
+          -- counts any non-empty answer as answered, that refusal would then
+          -- occupy the slot for good. See 20260825074747_add_question_evidence_class.
+          AND q.evidence_class <> 'hand_entry'
           AND (q.is_private_to IS NULL OR q.is_private_to = u.user_id)
           ${excludeForkedOriginsSql('q', 'u.user_id')}
           AND NOT EXISTS (

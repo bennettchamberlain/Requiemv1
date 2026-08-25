@@ -106,7 +106,8 @@ describe('ReflectionCatalogue', () => {
 
     expect(await screen.findByText('Shellfish.')).toBeInTheDocument();
     // AnswerProvenance: an inferred answer must never read like one the user wrote.
-    expect(screen.getByText('Inferred · high confidence')).toBeInTheDocument();
+    expect(screen.getByText('high')).toBeInTheDocument();
+    expect(screen.getByText('Inferred, high confidence')).toHaveClass('sr-only');
   });
 
   it('reports how much of the catalogue is answered', async () => {

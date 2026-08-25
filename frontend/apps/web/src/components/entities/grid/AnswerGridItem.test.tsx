@@ -26,7 +26,7 @@ describe('AnswerGridItem', () => {
     expect(screen.getByText('Because it terminates at the base case.')).toBeInTheDocument();
   });
 
-  it('marks an inferred answer as inferred, with its confidence band', () => {
+  it('marks an inferred answer with the amber dot and its confidence band', () => {
     renderWithProviders(
       <AnswerGridItem
         answer={makeAnswer({
@@ -37,13 +37,16 @@ describe('AnswerGridItem', () => {
       />,
     );
 
-    expect(screen.getByText('Inferred · high confidence')).toBeInTheDocument();
+    // Compact form: the bare band word is visible, the full wording is the
+    // accessible name (see AnswerProvenance).
+    expect(screen.getByText('high')).toBeInTheDocument();
+    expect(screen.getByText('Inferred, high confidence')).toHaveClass('sr-only');
   });
 
-  it('marks a user-authored answer as Manual', () => {
+  it('marks a user-authored answer with the green dot', () => {
     renderWithProviders(<AnswerGridItem answer={makeAnswer({ answerSource: 'user_input' })} />);
 
-    expect(screen.getByText('Manual')).toBeInTheDocument();
+    expect(screen.getByText('Answered by you')).toHaveClass('sr-only');
   });
 
   it('fires onClick', () => {
