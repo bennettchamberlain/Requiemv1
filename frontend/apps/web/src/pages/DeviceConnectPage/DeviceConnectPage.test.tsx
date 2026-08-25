@@ -16,10 +16,19 @@ const h = vi.hoisted(() => ({
   signInToPortal: vi.fn(),
   listMemoryServers: vi.fn(),
   loginWithPortalOidc: vi.fn(),
-  resumePendingOidcLogin: vi.fn(async () => null),
+  resumePendingOidcLogin: vi.fn(
+    async (): Promise<{
+      accessToken: string;
+      idToken: string | null;
+      tokenType: string;
+      expiresIn: number;
+    } | null> => null,
+  ),
   completePortalMemoryConnect: vi.fn(async () => false),
   completeMemoryPasswordConnect: vi.fn(async () => false),
   authenticated: false,
+  profileUser: undefined as { id: string; onboarded: boolean } | null | undefined,
+  profileError: null as Error | null,
 }));
 
 // Spread the real module rather than allow-listing exports: this page also reaches
@@ -41,9 +50,9 @@ vi.mock('@/hooks', () => ({
     },
   ],
   useCurrentUser: () => ({
-    user: h.authenticated ? { id: 'u1', onboarded: true } : null,
+    user: h.profileUser !== undefined ? h.profileUser : h.authenticated ? { id: 'u1', onboarded: true } : null,
     loading: false,
-    error: null,
+    error: h.profileError,
   }),
 }));
 
@@ -80,6 +89,8 @@ beforeEach(() => {
   h.completeMemoryPasswordConnect.mockReset();
   h.completeMemoryPasswordConnect.mockResolvedValue(false);
   h.authenticated = false;
+  h.profileUser = undefined;
+  h.profileError = null;
   sessionStorage.clear();
 });
 
@@ -165,6 +176,32 @@ describe('DeviceConnectPage', () => {
       expect(navigate).toHaveBeenCalledWith('/', { replace: true });
     });
     expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true });
+  });
+
+  it('does not surface a leftover GraphQL error while a mint is still in flight', async () => {
+    h.authenticated = true;
+    h.profileUser = null;
+    h.profileError = new Error(
+      'Native HTTP needs an absolute http(s) URL (got "/api/graphql"). Pick a Memory Server again.',
+    );
+    h.resumePendingOidcLogin.mockResolvedValue({
+      accessToken: 'oidc-at',
+      idToken: 'oidc-id',
+      tokenType: 'Bearer',
+      expiresIn: 3600,
+    });
+    h.listMemoryServers.mockResolvedValue([
+      { id: 'home', name: 'Home', status: 'active', memoryUrl: 'https://memory.example.com/app' },
+    ]);
+    h.completePortalMemoryConnect.mockImplementation(() => new Promise(() => {}));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
+
+    render(<DeviceConnectPage />);
+    expect(await screen.findByText('Home')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('memory-row-home'));
+
+    expect(await screen.findByText('Connecting…')).toBeInTheDocument();
+    expect(screen.queryByText(/Native HTTP needs an absolute/i)).not.toBeInTheDocument();
   });
 
   it('stays on the picker and shows the mint error instead of dumping to /login', async () => {

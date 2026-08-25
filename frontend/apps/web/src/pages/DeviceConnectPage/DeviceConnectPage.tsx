@@ -83,6 +83,7 @@ export function DeviceConnectPage() {
   const [memoryLoginOrigin, setMemoryLoginOrigin] = useState<string | null>(null);
   const [memoryEmail, setMemoryEmail] = useState('');
   const [memoryPassword, setMemoryPassword] = useState('');
+  const [awaitingProfile, setAwaitingProfile] = useState(false);
 
   useEffect(() => {
     if (!initializing && authenticated && user) {
@@ -91,7 +92,7 @@ export function DeviceConnectPage() {
   }, [authenticated, initializing, navigate, user]);
 
   useEffect(() => {
-    if (connectingId == null || initializing || userLoading || !authenticated || user) {
+    if (!awaitingProfile || connectingId == null || initializing || userLoading || !authenticated || user) {
       return;
     }
 
@@ -101,7 +102,8 @@ export function DeviceConnectPage() {
         : 'Signed in but could not load your profile from this Memory Server.',
     );
     setConnectingId(null);
-  }, [authenticated, connectingId, initializing, user, userError, userLoading]);
+    setAwaitingProfile(false);
+  }, [authenticated, awaitingProfile, connectingId, initializing, user, userError, userLoading]);
 
   // Safari → "Open with Companion" often cold-starts the app. PKCE state lives in
   // localStorage; Capacitor stashed the callback URL. Finish the exchange on mount
@@ -283,16 +285,16 @@ export function DeviceConnectPage() {
         return;
       }
 
-      // Mint against the Portal URL directly. Persisting first used to leave a
-      // leftover origin that sent Safari returns to /login; persisting only on
-      // success also avoids /api/keys going out as a relative path (iOS
-      // "unsupported URL" through CapacitorHttp).
+      // Mint against the picked Memory origin. Apply it in memory first so
+      // CapacitorHttp never sees a relative `/api/graphql`. Persist on success
+      // only — a leftover origin with no key used to skip cloud-connect.
       let lastError: unknown;
 
       for (const bearer of bearers) {
         try {
           await completePortalMemoryConnect(bearer, origin);
           persistApiBaseUrl(origin);
+          setAwaitingProfile(true);
 
           return;
         } catch (err) {
@@ -342,6 +344,7 @@ export function DeviceConnectPage() {
 
     try {
       await completeMemoryPasswordConnect(memoryEmail, memoryPassword, memoryLoginOrigin);
+      setAwaitingProfile(true);
     } catch (err) {
       setSignInError(
         err instanceof Error ? err.message : 'Could not sign in to this Memory Server with that password.',

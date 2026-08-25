@@ -7,6 +7,8 @@ import {
   FetchJsonError,
   getApiBaseUrl,
   persistApiBaseUrl,
+  setApiBaseUrl,
+  syncNativeIntentConfig,
   getLaunchUrl,
   isIosPlatform,
   isNativePlatform,
@@ -371,15 +373,36 @@ function useAuth(): ReturnValue {
 
   const completePortalMemoryConnect = useCallback(
     async (portalBearer: string, memoryOrigin?: string): Promise<boolean> => {
-      const key = await mintAndStoreApiKey(portalBearer, memoryOrigin);
+      // CapacitorHttp cannot follow relative `/api/...` paths. Point the
+      // in-memory origin at the picked server *before* minting so the `me`
+      // query and feature flags that fire on `setNativeApiKey` have an
+      // absolute URL. Persist only after a key comes back — a leftover origin
+      // with no key used to skip cloud-connect and dump Safari returns on /login.
+      const previousOrigin = getApiBaseUrl();
 
-      if (!key) {
-        throw new Error('Memory Server did not return an API key.');
+      if (memoryOrigin) {
+        setApiBaseUrl(memoryOrigin);
       }
 
-      setNativeApiKey(key);
+      try {
+        const key = await mintAndStoreApiKey(portalBearer, memoryOrigin);
 
-      return true;
+        if (!key) {
+          throw new Error('Memory Server did not return an API key.');
+        }
+
+        if (memoryOrigin) {
+          persistApiBaseUrl(memoryOrigin);
+          void syncNativeIntentConfig();
+        }
+
+        setNativeApiKey(key);
+
+        return true;
+      } catch (err) {
+        setApiBaseUrl(previousOrigin);
+        throw err;
+      }
     },
     [],
   );
@@ -517,9 +540,15 @@ function useAuth(): ReturnValue {
     (async () => {
       try {
         if (isNativePlatform()) {
-          // Native restore: load the stored API key. There is no cookie session to
-          // refresh, so returning here is what keeps a native user signed in across
-          // launches — falling through to refreshSession would log them out.
+          // Native restore: origin first, then the API key. A key without an
+          // origin makes every `/api/...` call relative, which CapacitorHttp
+          // rejects — the cloud-connect picker then looks like a failed mint.
+          const storedOrigin = await secureStorageGet('ci.apiBaseUrl');
+
+          if (storedOrigin) {
+            persistApiBaseUrl(storedOrigin);
+          }
+
           const storedKey = await secureStorageGet(API_KEY_STORAGE);
 
           if (storedKey) {
