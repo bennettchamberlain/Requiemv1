@@ -38,6 +38,14 @@ export interface CatalogueAnswer {
 
 export interface CatalogueEntry {
   id: string;
+  /**
+   * `ci.questions.question_key` — the stable slug a curated question is known
+   * by, seeded by the migration that creates it, null for the ~1.3k rows
+   * nobody addresses by name. Anything that hardcodes a fixed set of questions
+   * names them by this and not by `id`: ids are minted per appliance, so a
+   * hardcoded one matches nothing on anybody else's machine.
+   */
+  key: string | null;
   text: string;
   category: string | null;
   answerTier: string | null;

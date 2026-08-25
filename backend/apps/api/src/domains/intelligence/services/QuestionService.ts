@@ -143,6 +143,13 @@ export interface QuestionCatalogueAnswer {
 
 export interface QuestionCatalogueEntry {
   id: string;
+  /**
+   * `ci.questions.question_key` — the stable slug a curated question is known
+   * by, or null for the ~1.3k rows nobody addresses by name. Callers that
+   * asked with `keys` key their results off this, not off `id`: the id is
+   * minted per appliance and means nothing to them.
+   */
+  key: string | null;
   text: string;
   category: string | null;
   answerTier: string | null;
@@ -194,6 +201,7 @@ function escapeLikeTerm(term: string): string {
 
 type CatalogueRow = {
   id: string;
+  question_key: string | null;
   text: string;
   category: string | null;
   answer_tier: string | null;
@@ -465,17 +473,27 @@ export class QuestionService {
     // that constant is shared by the facet query (params.slice(0, 3)) and the
     // total-count fallback below (params.slice(0, 6)), and node-postgres
     // rejects a query text that references a param index the caller didn't
-    // pass. Keeping `ids` out of the shared constant means those two queries
-    // can never desync from it.
-    const idsClause = query.ids?.length ? `AND q.question_id = ANY($${params.length + 1}::uuid[])` : '';
+    // pass. Keeping the allow-lists out of the shared constant means those two
+    // queries can never desync from it.
+    //
+    // Positions are taken in the order the clauses are built, so neither
+    // allow-list has to know whether the other one was sent.
+    let allowListClause = '';
     if (query.ids?.length) {
       params.push(query.ids);
+      allowListClause += `AND q.question_id = ANY($${params.length}::uuid[])`;
+    }
+
+    if (query.keys?.length) {
+      params.push(query.keys);
+      allowListClause += `\n      AND q.question_key = ANY($${params.length}::text[])`;
     }
 
     const rows = (await this.dataSource.query(
       `
       SELECT
         q.question_id AS id,
+        q.question_key,
         q.question_text AS text,
         q.question_category AS category,
         q.answer_tier,
@@ -500,7 +518,7 @@ export class QuestionService {
       FROM ci.questions q
       ${CATALOGUE_ANSWER_LATERAL_SQL}
       WHERE ${CATALOGUE_FULL_WHERE_SQL}
-      ${idsClause}
+      ${allowListClause}
       ORDER BY
         q.question_category ASC NULLS LAST,
         ${TIER_RANK_SQL} ASC,
@@ -579,6 +597,7 @@ export class QuestionService {
     return {
       data: rows.map((row) => ({
         id: row.id,
+        key: row.question_key,
         text: row.text,
         category: row.category,
         answerTier: row.answer_tier,
@@ -801,6 +820,13 @@ export class QuestionService {
     const fork = this.questionRepository.create({
       id: uuidv7(),
       text: origin.text,
+      // The key comes across deliberately. A curated surface asks for its
+      // questions by key, and the origin is hidden from whoever forked it — so
+      // a keyless copy would blank that question for the one user who cared
+      // enough to edit it. questions_question_key_owner_uniq is scoped to
+      // (question_key, is_private_to), which is what lets the copy hold the
+      // same key as the shared row it replaces.
+      key: origin.key ?? null,
       category: origin.category,
       answerTier: origin.answerTier ?? null,
       contextTags: origin.contextTags,

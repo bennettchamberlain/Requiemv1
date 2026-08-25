@@ -7,7 +7,13 @@ import { Loader2, NotebookPen } from '@ci/shadcn/icons';
 import { useAuth } from '@/hooks';
 import type { CataloguePage } from '@/pages/PromptsPage/catalogue';
 
-import { curatedCatalogueUrl, LIFE_DETAIL_THEMES, type CuratedAnswers, type CuratedQuestion } from './lifeDetails';
+import {
+  curatedCatalogueUrl,
+  indexCuratedAnswers,
+  LIFE_DETAIL_THEMES,
+  type CuratedAnswers,
+  type CuratedQuestion,
+} from './lifeDetails';
 
 /** Debounce between the last keystroke and a question row autosaving. */
 const ANSWER_AUTOSAVE_DEBOUNCE_MS = 900;
@@ -114,11 +120,11 @@ function QuestionRow({
 /** A fixed, hand-curated slice of your Reflections answers — see lifeDetails.ts for why these questions and not a generic category browse. */
 export function LifeDetailsSection() {
   const [{ authToken }] = useAuth();
-  const [answers, setAnswers] = useState<CuratedAnswers>({});
+  const [rows, setRows] = useState<CuratedAnswers>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
 
   const loadAnswers = useCallback(async () => {
     setLoading(true);
@@ -126,12 +132,20 @@ export function LifeDetailsSection() {
       const page = await fetchJson<CataloguePage>(curatedCatalogueUrl(), {
         headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
       });
-      const byId: CuratedAnswers = {};
-      for (const entry of page?.data ?? []) {
-        byId[entry.id] = entry.answer;
+      const { byKey, missingKeys } = indexCuratedAnswers(page?.data ?? []);
+
+      // Loud, because the silent version of this is what shipped: a curated
+      // key the catalogue has never heard of used to render a perfectly
+      // normal-looking input that threw away whatever was typed into it.
+      // Rows without a question to answer are not rendered at all (below).
+      if (missingKeys.length > 0) {
+        console.error(
+          `Life details: ${missingKeys.length} curated question(s) are missing from the catalogue — ` +
+            `their seed migration has not run, or they were added to lifeDetails.ts without one: ${missingKeys.join(', ')}`,
+        );
       }
 
-      setAnswers(byId);
+      setRows(byKey);
       setError(false);
     } catch {
       setError(true);
@@ -144,13 +158,16 @@ export function LifeDetailsSection() {
     void loadAnswers();
   }, [loadAnswers]);
 
-  const handleAnswer = async (questionId: string, text: string) => {
+  // The question_id comes from the catalogue response, never from this file:
+  // it is minted per appliance, which is the whole reason the curated list is
+  // keyed by slug.
+  const handleAnswer = async (questionKey: string, questionId: string, text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || submittingId) {
+    if (!trimmed || submittingKey) {
       return;
     }
 
-    setSubmittingId(questionId);
+    setSubmittingKey(questionKey);
     try {
       await fetchJson('/api/answers', {
         method: 'POST',
@@ -160,12 +177,12 @@ export function LifeDetailsSection() {
         },
         body: JSON.stringify({ text: trimmed, question: { id: questionId } }),
       });
-      setDrafts((prev) => ({ ...prev, [questionId]: '' }));
+      setDrafts((prev) => ({ ...prev, [questionKey]: '' }));
       await loadAnswers();
     } catch {
       // Draft (if any) survives on failure so the user doesn't retype it.
     } finally {
-      setSubmittingId(null);
+      setSubmittingKey(null);
     }
   };
 
@@ -181,24 +198,40 @@ export function LifeDetailsSection() {
 
       {!loading && !error && (
         <div className="flex flex-col gap-4">
-          {LIFE_DETAIL_THEMES.map((theme) => (
-            <div key={theme.key}>
-              <h3 className="mb-1 text-sm font-medium">{theme.label}</h3>
-              <div className="divide-y divide-border/60">
-                {theme.questions.map((question) => (
-                  <QuestionRow
-                    key={question.id}
-                    question={question}
-                    answer={answers[question.id]?.text ?? null}
-                    draft={drafts[question.id] ?? ''}
-                    busy={submittingId === question.id}
-                    onDraftChange={(value) => setDrafts((prev) => ({ ...prev, [question.id]: value }))}
-                    onAnswer={(text) => void handleAnswer(question.id, text)}
-                  />
-                ))}
+          {LIFE_DETAIL_THEMES.map((theme) => {
+            // Only questions the catalogue actually returned a row for. An
+            // input with no question behind it cannot save, so rendering one
+            // would just be a prettier way of losing the answer; a theme left
+            // with nothing drops its heading too rather than sitting empty.
+            const askable = theme.questions.flatMap((question) => {
+              const row = rows[question.key];
+
+              return row ? [{ question, row }] : [];
+            });
+
+            if (askable.length === 0) {
+              return null;
+            }
+
+            return (
+              <div key={theme.key}>
+                <h3 className="mb-1 text-sm font-medium">{theme.label}</h3>
+                <div className="divide-y divide-border/60">
+                  {askable.map(({ question, row }) => (
+                    <QuestionRow
+                      key={question.key}
+                      question={question}
+                      answer={row.answer?.text ?? null}
+                      draft={drafts[question.key] ?? ''}
+                      busy={submittingKey === question.key}
+                      onDraftChange={(value) => setDrafts((prev) => ({ ...prev, [question.key]: value }))}
+                      onAnswer={(text) => void handleAnswer(question.key, row.id, text)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

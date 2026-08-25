@@ -449,6 +449,23 @@ describe('QuestionService privacy scoping (is_private_to)', () => {
       expect(theirs.map((q) => q.id)).toEqual(['seed-1']);
     });
 
+    it("carries the origin's stable key onto the copy, so a curated surface keeps the question", async () => {
+      // A curated surface (the Self page's "Life details" grid) fetches by
+      // question_key, and the shared origin is hidden from whoever forked it.
+      // A keyless copy would therefore blank that question for exactly the one
+      // user who cared enough to edit it. questions_question_key_owner_uniq is
+      // scoped to (question_key, is_private_to) so both rows can hold the key.
+      const seed = makeSeedQuestion('seed-1');
+      seed.key = 'blood_type';
+      const { service } = makeScopedService([seed]);
+
+      const result = await service.update(CONTEXT, 'seed-1', { text: 'my wording' });
+
+      expect(result?.key).toBe('blood_type');
+      expect(result?.id).not.toBe('seed-1');
+      expect(seed.key).toBe('blood_type');
+    });
+
     it('marks the copy as neither seed content nor LLM-written, whatever the origin was', async () => {
       const { service } = makeScopedService([makeSeedQuestion('seed-1')]);
 
@@ -804,6 +821,7 @@ describe('QuestionService.findCatalogue', () => {
   function catalogueRow(overrides: Record<string, unknown> = {}) {
     return {
       id: 'q1',
+      question_key: null,
       text: 'What foods are you allergic to?',
       category: 'Health & Body',
       answer_tier: 'factual',
@@ -969,15 +987,62 @@ describe('QuestionService.findCatalogue', () => {
     expect(calls[0].params[8]).toEqual(ids);
   });
 
-  it('leaves the query text and facet params untouched when no ids are given', async () => {
+  it('leaves the query text and facet params untouched when no allow-list is given', async () => {
     const { service, calls } = makeCatalogueService([[], []]);
 
     await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
 
     expect(calls[0].sql).not.toContain('question_id = ANY');
+    expect(calls[0].sql).not.toContain('question_key = ANY');
     expect(calls[0].params).toHaveLength(8);
-    // The facet query only ever sees $1..$3 — an ids filter must not leak in,
+    // The facet query only ever sees $1..$3 — an allow-list must not leak in,
     // the same lockstep guarantee CATALOGUE_FULL_WHERE_SQL already gives $4..$6.
     expect(calls[1].params).toHaveLength(3);
+  });
+
+  // `keys` is what a fixed, curated surface addresses the catalogue by. Ids are
+  // minted per appliance (`gen_uuid_v7()`), so client code that hardcoded them
+  // matched nothing on any other database and silently rendered a dead section;
+  // a key is written by the seed migration and means the same thing everywhere.
+  it('filters the page query to an explicit key allow-list, appended as its own trailing param', async () => {
+    const keys = ['blood_type', 'food_allergies'];
+    const { service, calls } = makeCatalogueService([[catalogueRow()], []]);
+
+    await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, keys });
+
+    expect(calls[0].sql).toContain('AND q.question_key = ANY($9::text[])');
+    expect(calls[0].params[8]).toEqual(keys);
+    expect(calls[1].params).toHaveLength(3);
+  });
+
+  it('takes the next free position for each allow-list when both are sent', async () => {
+    const ids = ['11111111-1111-1111-1111-111111111111'];
+    const keys = ['blood_type'];
+    const { service, calls } = makeCatalogueService([[], []]);
+
+    await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, ids, keys });
+
+    // Neither clause may assume it is the only one appended: a fixed $9 for
+    // `keys` would read the ids array as a text[] and match nothing.
+    expect(calls[0].sql).toContain('AND q.question_id = ANY($9::uuid[])');
+    expect(calls[0].sql).toContain('AND q.question_key = ANY($10::text[])');
+    expect(calls[0].params[8]).toEqual(ids);
+    expect(calls[0].params[9]).toEqual(keys);
+  });
+
+  it('reports each row\'s stable key so a caller that asked by key can index by it', async () => {
+    const { service } = makeCatalogueService([[catalogueRow({ question_key: 'food_allergies' })], []]);
+
+    const page = await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, keys: ['food_allergies'] });
+
+    expect(page.data[0].key).toBe('food_allergies');
+  });
+
+  it('reports a null key for the catalogue rows nobody addresses by name', async () => {
+    const { service } = makeCatalogueService([[catalogueRow()], []]);
+
+    const page = await service.findCatalogue(CONTEXT, CATALOGUE_QUERY);
+
+    expect(page.data[0].key).toBeNull();
   });
 });

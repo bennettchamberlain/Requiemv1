@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { curatedQuestionIds } from './lifeDetails';
+import { curatedQuestionKeys, curatedQuestions, type CuratedQuestion } from './lifeDetails';
 import { LifeDetailsSection } from './LifeDetailsSection';
 
 const h = vi.hoisted(() => ({ authToken: 'jwt-abc' as string | null }));
@@ -21,22 +21,37 @@ interface FetchCallInit {
   body?: string;
 }
 
-// A curated yes_no question ("Do you volunteer for any organization?") and a
-// curated narrative open_ended one ("Which hobby have you kept the longest,
-// and for how many years?") — real ids from lifeDetails.ts, exercised end to
-// end so the test proves the real curated list renders each control type.
-const VOLUNTEER_ID = 'e9afce2b-acb7-4a73-a1c0-3394add95b52';
-const HOBBY_ID = '8ac610c9-27aa-4505-b79f-bc89c4f50dca';
-const BLOOD_TYPE_ID = 'e87d2be3-28f3-4916-ab12-fda1931c2479';
+// Curated keys, not ids: `question_id` is minted per appliance, so a test that
+// hardcoded one would be asserting the very coupling this list exists to avoid.
+// A yes_no question, a narrative open_ended one, and a compact open_ended one,
+// so each control type is exercised against the real curated list.
+const VOLUNTEER_KEY = 'volunteering';
+const HOBBY_KEY = 'longest_hobby';
+const BLOOD_TYPE_KEY = 'blood_type';
 
-function catalogueEntry(id: string, text: string, answerText: string | null = null) {
+/**
+ * The uuid the catalogue reports for a curated key on THIS database. Derived
+ * from the key so the test never has to invent an id/key pairing by hand, and
+ * deliberately unlike anything in lifeDetails.ts — an assertion that passes
+ * only because the component read the id off the response.
+ */
+function serverIdFor(key: string): string {
+  const index = curatedQuestionKeys().indexOf(key);
+
+  return `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+}
+
+function catalogueEntry(question: CuratedQuestion, answerText: string | null = null) {
+  const id = serverIdFor(question.key);
+
   return {
     id,
-    text,
-    category: 'Health & Body',
-    answerTier: 'factual',
-    questionType: 'open_ended',
-    frequencyRecommendation: 'monthly',
+    key: question.key,
+    text: question.text,
+    category: question.category,
+    answerTier: question.tier,
+    questionType: question.questionType,
+    frequencyRecommendation: 'annually',
     isActive: true,
     isSeedQuestion: true,
     createdByLlm: false,
@@ -69,6 +84,19 @@ function cataloguePage(data: ReturnType<typeof catalogueEntry>[]) {
   };
 }
 
+/** What a correctly-seeded appliance returns: a row for every curated key. */
+function fullCataloguePage(answers: Record<string, string> = {}) {
+  return cataloguePage(
+    curatedQuestions().map((question) => catalogueEntry(question, answers[question.key] ?? null)),
+  );
+}
+
+function postCall() {
+  return (fetchJson.mock.calls as Array<[string, FetchCallInit?]>).find(
+    ([, init]) => init?.method === 'POST',
+  );
+}
+
 beforeEach(() => {
   h.authToken = 'jwt-abc';
 });
@@ -78,10 +106,8 @@ afterEach(() => {
 });
 
 describe('LifeDetailsSection', () => {
-  it('fetches every curated id in a single call and renders an answered row compactly', async () => {
-    fetchJson.mockResolvedValue(
-      cataloguePage([catalogueEntry(BLOOD_TYPE_ID, 'What is your blood type?', 'O negative')]),
-    );
+  it('fetches every curated key in a single call and renders an answered row compactly', async () => {
+    fetchJson.mockResolvedValue(fullCataloguePage({ [BLOOD_TYPE_KEY]: 'O negative' }));
 
     render(<LifeDetailsSection />);
 
@@ -89,16 +115,18 @@ describe('LifeDetailsSection', () => {
 
     expect(fetchJson).toHaveBeenCalledTimes(1);
     const [url] = fetchJson.mock.calls[0] as [string];
-    expect(url).toContain('/api/questions/catalogue?ids=');
-    // Every curated id rides in the one call — spot-check a few, not the whole list.
-    expect(url).toContain(BLOOD_TYPE_ID);
-    expect(url).toContain(VOLUNTEER_ID);
-    const idsParam = new URL(url, 'http://localhost').searchParams.get('ids');
-    expect(idsParam?.split(',')).toHaveLength(curatedQuestionIds().length);
+    expect(url).toContain('/api/questions/catalogue?keys=');
+    // No uuid rides in the request — that is the regression this section had.
+    expect(url).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+    // Every curated key rides in the one call — spot-check a few, not the whole list.
+    expect(url).toContain(BLOOD_TYPE_KEY);
+    expect(url).toContain(VOLUNTEER_KEY);
+    const keysParam = new URL(url, 'http://localhost').searchParams.get('keys');
+    expect(keysParam?.split(',')).toEqual(curatedQuestionKeys());
   });
 
   it('autosaves a compact open-ended answer typed into its Input, after a debounced pause', async () => {
-    fetchJson.mockResolvedValue(cataloguePage([]));
+    fetchJson.mockResolvedValue(fullCataloguePage());
 
     render(<LifeDetailsSection />);
 
@@ -107,18 +135,19 @@ describe('LifeDetailsSection', () => {
 
     await waitFor(
       () => {
-        const postCall = (fetchJson.mock.calls as Array<[string, FetchCallInit?]>).find(
-          ([, init]) => init?.method === 'POST',
-        );
-        expect(postCall).toBeDefined();
-        expect(JSON.parse(postCall![1]!.body!)).toEqual({ text: 'O negative', question: { id: BLOOD_TYPE_ID } });
+        expect(postCall()).toBeDefined();
+        expect(JSON.parse(postCall()![1]!.body!)).toEqual({
+          text: 'O negative',
+          // The id the catalogue reported, not one this list carries.
+          question: { id: serverIdFor(BLOOD_TYPE_KEY) },
+        });
       },
       { timeout: 3000 },
     );
   });
 
   it('renders a yes_no question as two buttons, not a text field, and submits the clicked label', async () => {
-    fetchJson.mockResolvedValue(cataloguePage([]));
+    fetchJson.mockResolvedValue(fullCataloguePage());
 
     render(<LifeDetailsSection />);
 
@@ -132,12 +161,12 @@ describe('LifeDetailsSection', () => {
     fireEvent.click(yesButton);
 
     await waitFor(() => {
-      const postCall = (fetchJson.mock.calls as Array<[string, FetchCallInit?]>).find(
-        ([, init]) => init?.method === 'POST',
-      );
-      expect(postCall).toBeDefined();
-      expect(postCall?.[0]).toBe('/api/answers');
-      expect(JSON.parse(postCall![1]!.body!)).toEqual({ text: 'Yes', question: { id: VOLUNTEER_ID } });
+      expect(postCall()).toBeDefined();
+      expect(postCall()?.[0]).toBe('/api/answers');
+      expect(JSON.parse(postCall()![1]!.body!)).toEqual({
+        text: 'Yes',
+        question: { id: serverIdFor(VOLUNTEER_KEY) },
+      });
     });
 
     // GET refires after the POST — once on mount, once on refetch.
@@ -145,7 +174,7 @@ describe('LifeDetailsSection', () => {
   });
 
   it('autosaves a narrative open-ended answer typed into its Textarea, after a debounced pause', async () => {
-    fetchJson.mockResolvedValue(cataloguePage([]));
+    fetchJson.mockResolvedValue(fullCataloguePage());
 
     render(<LifeDetailsSection />);
 
@@ -160,17 +189,64 @@ describe('LifeDetailsSection', () => {
 
     await waitFor(
       () => {
-        const postCall = (fetchJson.mock.calls as Array<[string, FetchCallInit?]>).find(
-          ([, init]) => init?.method === 'POST',
-        );
-        expect(postCall).toBeDefined();
-        expect(JSON.parse(postCall![1]!.body!)).toEqual({
+        expect(postCall()).toBeDefined();
+        expect(JSON.parse(postCall()![1]!.body!)).toEqual({
           text: 'Photography, going on 8 years now.',
-          question: { id: HOBBY_ID },
+          question: { id: serverIdFor(HOBBY_KEY) },
         });
       },
       { timeout: 3000 },
     );
+  });
+
+  it('keys rows off question_key, so the same answers survive a different set of server ids', async () => {
+    // The same appliance-independent list, re-seeded: every uuid is new, every
+    // key is the same. Nothing about what the user sees may change.
+    const page = fullCataloguePage({ [BLOOD_TYPE_KEY]: 'O negative' });
+    for (const entry of page.data) {
+      entry.id = `ffffffff-0000-4000-8000-${entry.id.slice(-12)}`;
+    }
+
+    fetchJson.mockResolvedValue(page);
+
+    render(<LifeDetailsSection />);
+
+    expect(await screen.findByText(/O negative/)).toBeInTheDocument();
+    expect(screen.getByText('Do you volunteer for any organization?')).toBeInTheDocument();
+  });
+
+  it('renders no input for a curated question the catalogue has no row for, and says so loudly', async () => {
+    // The failure mode this section shipped with: a curated question the
+    // database has never heard of. It must not render a control that quietly
+    // discards whatever is typed into it.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchJson.mockResolvedValue(
+      cataloguePage(
+        curatedQuestions()
+          .filter((question) => question.key !== BLOOD_TYPE_KEY)
+          .map((question) => catalogueEntry(question)),
+      ),
+    );
+
+    render(<LifeDetailsSection />);
+
+    expect(await screen.findByText('What foods are you allergic to?')).toBeInTheDocument();
+    expect(screen.queryByText('What is your blood type?')).not.toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(BLOOD_TYPE_KEY));
+  });
+
+  it('renders nothing at all, rather than dead inputs, when the catalogue knows none of the keys', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fetchJson.mockResolvedValue(cataloguePage([]));
+
+    render(<LifeDetailsSection />);
+
+    // The heading stays; every question, and every theme heading, is gone.
+    expect(await screen.findByText('Life details')).toBeInTheDocument();
+    expect(screen.queryByText('What is your blood type?')).not.toBeInTheDocument();
+    expect(screen.queryByText('Health')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Answer…')).not.toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('29 curated question(s) are missing'));
   });
 
   it('shows one error for the whole section when the fetch fails, with no question text rendered', async () => {

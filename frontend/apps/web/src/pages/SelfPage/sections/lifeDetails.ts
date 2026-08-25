@@ -5,10 +5,28 @@
  * surfaced low-value trivia ("Are you colorblind?", "Are you registered as an
  * organ donor?") ahead of anything worth having on a profile.
  *
+ * Questions are named by `ci.questions.question_key`, NOT by question_id.
+ * That is not a style preference — ids here were a bug. `question_id`
+ * defaults to `gen_uuid_v7()`, so the seed migration mints a different uuid
+ * on every appliance it runs on; a list of ids captured from the machine
+ * this feature was built on matched nothing anywhere else, and because the
+ * questions themselves are hardcoded below, the grid rendered them anyway
+ * while every answer read and write resolved to no row. The section looked
+ * permanently blank, with no error, on every install but one. A key is
+ * written by the migration that seeds the question and means the same thing
+ * on every database.
+ *
+ * Each key here MUST be seeded by
+ * backend/apps/api/db/postgres/migrations/20260824234643_seed_life_details_question_keys.sql.
+ * `lifeDetails.catalogue.node.test.ts` parses that migration and fails if
+ * this file names a key it does not seed, or disagrees with it about a
+ * question's text, category, type or tier — so a curated question added on
+ * one side and forgotten on the other is a red test, not a blank section.
+ *
  * `text`/`category`/`questionType`/`tier` are baked in here rather than
- * re-fetched — the only thing that can change server-side for a fixed id is
- * whether it's been answered, so the one network call this module builds
- * asks for exactly that (see `curatedCatalogueUrl`). Trade-off, stated
+ * re-fetched — the only thing that can change server-side for a fixed
+ * question is whether it's been answered, so the one network call this module
+ * builds asks for exactly that (see `curatedCatalogueUrl`). Trade-off, stated
  * plainly: if a question's phrasing is edited server-side, this list shows
  * the old wording until someone updates it here — acceptable for a fixed,
  * hand-picked list that isn't expected to drift, same as any other
@@ -17,13 +35,17 @@
  * Kept apart from the component so the curated list and query-building stay
  * unit-testable without a renderer.
  */
-import type { CatalogueAnswer } from '@/pages/PromptsPage/catalogue';
+import type { CatalogueAnswer, CatalogueEntry } from '@/pages/PromptsPage/catalogue';
 
 export type LifeDetailQuestionType = 'open_ended' | 'yes_no' | 'multiple_choice';
 export type LifeDetailAnswerTier = 'factual' | 'preference' | 'narrative';
 
 export interface CuratedQuestion {
-  id: string;
+  /**
+   * `ci.questions.question_key`. Stable across appliances, unlike the row's
+   * uuid — see the module comment for what using the uuid cost.
+   */
+  key: string;
   text: string;
   /** `ci.questions.question_category` — provenance only, not used to fetch. */
   category: string;
@@ -45,6 +67,7 @@ export interface CuratedQuestion {
 }
 
 export interface LifeDetailTheme {
+  /** This grid's own grouping id — unrelated to `CuratedQuestion.key`, which is a database column. */
   key: string;
   label: string;
   questions: CuratedQuestion[];
@@ -56,42 +79,42 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
     label: 'Health',
     questions: [
       {
-        id: 'e87d2be3-28f3-4916-ab12-fda1931c2479',
+        key: 'blood_type',
         text: 'What is your blood type?',
         category: 'Health & Body',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: '19643a63-47e5-4963-8222-c734fba9d6d8',
+        key: 'food_allergies',
         text: 'What foods are you allergic to?',
         category: 'Health & Body',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'de991610-d97b-48ee-9e71-e717afac8b7a',
+        key: 'medication_allergies',
         text: 'Are you allergic to any medications?',
         category: 'Health & Body',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'b61394b3-69d6-45d6-bf92-5418789839f0',
+        key: 'chronic_conditions',
         text: 'What chronic conditions have you been diagnosed with?',
         category: 'Health & Body',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'c133b0cf-097b-440d-82d8-737115cca9db',
+        key: 'regular_medications',
         text: 'What medications do you take regularly?',
         category: 'Health & Body',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'e87ffe6e-bd18-4297-8da3-6d7c9c187759',
+        key: 'family_health_conditions',
         text: 'Which health conditions run in your immediate family?',
         category: 'Health & Body',
         questionType: 'open_ended',
@@ -104,14 +127,14 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
     label: 'Body',
     questions: [
       {
-        id: '1aa9360b-dcdc-4616-b7d7-22f7770619eb',
+        key: 'height',
         text: 'How tall are you?',
         category: 'Health & Body',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: '1656186e-c210-42a0-bd7b-9407c408a125',
+        key: 'weight',
         text: 'What is your current weight?',
         category: 'Health & Body',
         questionType: 'open_ended',
@@ -126,42 +149,42 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
     // orientation, not the reverse.
     questions: [
       {
-        id: '4a1e9f9c-6aed-426d-9f3b-76b2cd22154f',
+        key: 'pronouns',
         text: 'What pronouns do you use?',
         category: 'Identity & Background',
         questionType: 'multiple_choice',
         tier: 'factual',
       },
       {
-        id: 'bacfc834-bf94-4d64-8808-2f3dd0bd861e',
+        key: 'spoken_languages',
         text: 'What languages do you speak?',
         category: 'Identity & Background',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'cc0cb904-0de6-42c5-b10e-02600c35d87f',
+        key: 'cultural_background',
         text: 'What cultural or ethnic background does your family identify with?',
         category: 'Identity & Background',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'e71b34e7-ea4d-49bb-89f3-f526a86c2519',
+        key: 'religion_or_spiritual_practice',
         text: 'What is your religion or spiritual practice now, if any?',
         category: 'Identity & Background',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: '814650fc-d5b7-4d21-8a0b-1882726458c4',
+        key: 'relationship_status',
         text: 'What is your relationship status?',
         category: 'Identity & Background',
         questionType: 'multiple_choice',
         tier: 'factual',
       },
       {
-        id: '5a498ece-079d-4da6-a28b-f9182f0495e1',
+        key: 'sexual_orientation',
         text: 'How would you describe your sexual orientation?',
         category: 'Identity & Background',
         questionType: 'open_ended',
@@ -174,7 +197,7 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
     label: 'Preferences',
     questions: [
       {
-        id: 'bf834f6c-0b59-4fab-8960-503e1b94694a',
+        key: 'morning_person_or_night_owl',
         text: 'Are you a morning person or a night owl?',
         category: 'Preferences & Favorites',
         questionType: 'multiple_choice',
@@ -182,7 +205,7 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
         options: ['Morning person', 'Night owl'],
       },
       {
-        id: 'e4ec3776-fb7d-498f-b48f-d26f0df269f0',
+        key: 'favorite_season',
         text: 'What is your favorite season?',
         category: 'Preferences & Favorites',
         questionType: 'multiple_choice',
@@ -190,7 +213,7 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
         options: ['Spring', 'Summer', 'Fall', 'Winter'],
       },
       {
-        id: '4136554c-6be1-4c21-8dd4-ea462cd76117',
+        key: 'cat_or_dog_person',
         text: 'Are you more of a cat person or a dog person?',
         category: 'Preferences & Favorites',
         questionType: 'multiple_choice',
@@ -198,7 +221,7 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
         options: ['Cat person', 'Dog person'],
       },
       {
-        id: '8ad777b3-580a-4850-90d0-5b553ba3d1d4',
+        key: 'beach_or_mountains',
         text: 'Do you prefer the beach or the mountains?',
         category: 'Preferences & Favorites',
         questionType: 'multiple_choice',
@@ -206,7 +229,7 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
         options: ['Beach', 'Mountains'],
       },
       {
-        id: 'a57a5f8a-4f28-401b-b798-1b39bc897cab',
+        key: 'cook_or_order_in',
         text: 'Do you prefer to cook or to order in?',
         category: 'Preferences & Favorites',
         questionType: 'multiple_choice',
@@ -214,14 +237,14 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
         options: ['Cook', 'Order in'],
       },
       {
-        id: '1e00a3c2-e071-4360-8a9a-e020baeace00',
+        key: 'favorite_cuisine',
         text: 'What is your favorite cuisine?',
         category: 'Preferences & Favorites',
         questionType: 'open_ended',
         tier: 'preference',
       },
       {
-        id: '94ffe494-a094-4d6d-bc3c-69672d3373b0',
+        key: 'food_never_eaten',
         text: 'What food will you not eat under any circumstances?',
         category: 'Preferences & Favorites',
         questionType: 'open_ended',
@@ -236,21 +259,21 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
     // the same thing from slightly different angles.
     questions: [
       {
-        id: '8ac610c9-27aa-4505-b79f-bc89c4f50dca',
+        key: 'longest_hobby',
         text: 'Which hobby have you kept the longest, and for how many years?',
         category: 'Interests & Culture',
         questionType: 'open_ended',
         tier: 'narrative',
       },
       {
-        id: 'a8b97245-cac2-4771-949f-6a4bb1ea2f28',
+        key: 'skill_in_progress',
         text: 'What skill are you trying to get better at this year?',
         category: 'Interests & Culture',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'e9afce2b-acb7-4a73-a1c0-3394add95b52',
+        key: 'volunteering',
         text: 'Do you volunteer for any organization?',
         category: 'Interests & Culture',
         questionType: 'yes_no',
@@ -258,14 +281,14 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
         options: ['Yes', 'No'],
       },
       {
-        id: '6ea30fa3-b3d5-4bee-b920-87863627f4b1',
+        key: 'languages_learning',
         text: 'Which languages are you learning, if any?',
         category: 'Interests & Culture',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'a11f73d3-a7cb-4170-890e-4ec44d295f0f',
+        key: 'sports_followed',
         text: 'What sports do you follow?',
         category: 'Interests & Culture',
         questionType: 'open_ended',
@@ -281,21 +304,21 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
     // fish at "tell me about growing up" from slightly different angles.
     questions: [
       {
-        id: '8565f9fa-965a-49c4-81fb-6ab8b3a4ee70',
+        key: 'birth_city',
         text: 'What city were you born in?',
         category: 'Places & Travel',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: 'd5e6e582-c0e3-40c5-aa2c-5e100c7c384d',
+        key: 'childhood_city',
         text: 'In which city did you spend most of your childhood?',
         category: 'Places & Travel',
         questionType: 'open_ended',
         tier: 'factual',
       },
       {
-        id: '99c65199-4185-4e38-ae96-69e542b2531f',
+        key: 'childhood_home_memory',
         text: 'What do you remember most about the home you grew up in?',
         category: 'Home & Daily Life',
         questionType: 'open_ended',
@@ -305,26 +328,67 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
   },
 ];
 
-/** Every curated id across every theme, in a fixed flat order. */
-export function curatedQuestionIds(): string[] {
-  return LIFE_DETAIL_THEMES.flatMap((theme) => theme.questions.map((q) => q.id));
+/** Every curated question across every theme, in a fixed flat order. */
+export function curatedQuestions(): CuratedQuestion[] {
+  return LIFE_DETAIL_THEMES.flatMap((theme) => theme.questions);
+}
+
+/** Every curated key across every theme, in a fixed flat order. */
+export function curatedQuestionKeys(): string[] {
+  return curatedQuestions().map((question) => question.key);
 }
 
 /**
- * One combined fetch for the whole section: every curated id's current
- * answer, in a single round trip. `limit` is set to the id count explicitly —
+ * One combined fetch for the whole section: every curated question's current
+ * answer, in a single round trip. `limit` is set to the key count explicitly —
  * the endpoint's default (25) would silently truncate this set.
  */
 export function curatedCatalogueUrl(): string {
-  const ids = curatedQuestionIds();
+  const keys = curatedQuestionKeys();
   const params = new URLSearchParams({
-    ids: ids.join(','),
+    keys: keys.join(','),
     status: 'active',
     answered: 'all',
-    limit: String(ids.length),
+    limit: String(keys.length),
   });
 
   return `/api/questions/catalogue?${params.toString()}`;
 }
 
-export type CuratedAnswers = Record<string, CatalogueAnswer | null>;
+/**
+ * What the catalogue returned for one curated key: the question_id to answer
+ * against (minted per appliance, so it is only ever read from the response,
+ * never hardcoded) and the current answer, if any.
+ */
+export interface CuratedCatalogueRow {
+  id: string;
+  answer: CatalogueAnswer | null;
+}
+
+/** Keyed by `question_key`, for the curated keys the catalogue actually knows. */
+export type CuratedAnswers = Record<string, CuratedCatalogueRow>;
+
+/**
+ * Index a catalogue page by curated key, and report which curated keys the
+ * catalogue had nothing for.
+ *
+ * A missing key means the seed migration never ran, or a question was added to
+ * the list above without one — the exact condition that used to blank this
+ * section in silence. It is returned rather than swallowed so the caller can
+ * say so out loud and refuse to render an input that would discard what gets
+ * typed into it.
+ */
+export function indexCuratedAnswers(entries: readonly CatalogueEntry[]): {
+  byKey: CuratedAnswers;
+  missingKeys: string[];
+} {
+  const byKey: CuratedAnswers = {};
+
+  for (const entry of entries) {
+    if (entry.key) {
+      byKey[entry.key] = { id: entry.id, answer: entry.answer };
+    }
+  }
+
+  return { byKey, missingKeys: curatedQuestionKeys().filter((key) => !(key in byKey)) };
+}
