@@ -151,8 +151,14 @@ describe('App feature-gated routes, end to end', () => {
 
     releaseFlags();
 
-    // Landed: the route exists and the layout mounts...
-    expect(await screen.findByLabelText('Self')).toBeInTheDocument();
+    // Landed: the route exists and the page under it mounts. `Life details` is
+    // the landmark because `LifeDetailsSection` renders that heading
+    // unconditionally — its loading and error states sit *below* it — and it
+    // reads over REST, so neither the never-resolving Apollo link above nor the
+    // empty `fetch` stub can keep it out of the DOM. (Don't reach for the rail's
+    // Self entry: it renders as the user tile, labelled with the user's name
+    // rather than 'Self', and it would still be there on a 404 anyway.)
+    expect(await screen.findByRole('heading', { name: 'Life details' })).toBeInTheDocument();
 
     // ...and 404 was never rendered on the way there, not at any commit.
     expect(h.notFoundRenders).toBe(0);
