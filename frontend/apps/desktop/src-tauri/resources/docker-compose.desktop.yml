@@ -1,0 +1,44 @@
+# Desktop-only overlay, applied as the LAST -f file (after docker-compose.yml
+# and docker-compose.production.yml). Rewrites every service's local `ci/<name>`
+# image (built by `make build`, never published anywhere a downloaded binary
+# can reach) to what CI-Server actually publishes — see
+# scripts/publish/images.sh at the repo root (ci/<name> -> companion/<name>
+# under ghcr.io/companionintelligence).
+#
+# CI_SERVER_IMAGE_TAG is NOT defaulted to ":latest" here — publish.sh's own
+# comments record that a stale companion/*:latest tag previously orphaned
+# (amd64-only, pointing at no real release). stack_manager.rs always writes a
+# concrete value for CI_SERVER_IMAGE_TAG into the generated .env (resolved at
+# build time by scripts/sync-compose-resources.cjs, or overridden by an
+# operator), so this file relies on that variable always being set rather
+# than supplying its own fallback.
+#
+# hbpe-service also resets devices/group_add to empty. Compose merges
+# list-valued keys across -f files by CONCATENATION, so a plain override
+# cannot remove docker-compose.production.yml's ROCm device passthrough
+# (/dev/kfd, /dev/dri, group_add: [video]) — only the Compose Specification's
+# `!reset` tag (Docker Compose CLI >= 2.24) actually clears a list. Without
+# this, `docker compose up` hard-fails ("no such device") on every desktop
+# that isn't an AMD ROCm box. GPU-variant image selection is out of scope for
+# v1 — this always runs the cpu-capable image with no GPU device passthrough.
+services:
+  api:
+    image: ghcr.io/companionintelligence/companion/api:${CI_SERVER_IMAGE_TAG}
+  migrate-database:
+    image: ghcr.io/companionintelligence/companion/api:${CI_SERVER_IMAGE_TAG}
+  database:
+    image: ghcr.io/companionintelligence/companion/database:${CI_SERVER_IMAGE_TAG}
+  gateway:
+    image: ghcr.io/companionintelligence/companion/gateway:${CI_SERVER_IMAGE_TAG}
+  object-store:
+    image: ghcr.io/companionintelligence/companion/object-store:${CI_SERVER_IMAGE_TAG}
+  summary-service:
+    image: ghcr.io/companionintelligence/companion/summary-service:${CI_SERVER_IMAGE_TAG}
+  setup-database:
+    image: ghcr.io/companionintelligence/companion/setup-database:${CI_SERVER_IMAGE_TAG}
+  generate-secrets:
+    image: ghcr.io/companionintelligence/companion/setup-secrets:${CI_SERVER_IMAGE_TAG}
+  hbpe-service:
+    image: ghcr.io/companionintelligence/companion/hbpe-service:${CI_SERVER_IMAGE_TAG}
+    devices: !reset []
+    group_add: !reset []
