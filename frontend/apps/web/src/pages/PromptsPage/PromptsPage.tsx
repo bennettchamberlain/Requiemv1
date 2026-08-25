@@ -8,8 +8,6 @@ import {
   Grid3X3,
   List,
   Edit,
-  ThumbsUp,
-  ThumbsDown,
   ChevronDown,
   ChevronUp,
 } from '@ci/shadcn/icons';
@@ -445,23 +443,21 @@ export function PromptsPage() {
                                       </Button>
                                     </>
                                   ) : isLLMAnswered(answer) ? (
-                                    <>
-                                      <Button variant="ghost" size="sm" className="h-8 px-2">
-                                        <ThumbsUp className="h-3 w-3 mr-1" />
-                                      </Button>
-                                      <Button variant="ghost" size="sm" className="h-8 px-2">
-                                        <ThumbsDown className="h-3 w-3 mr-1" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-8 px-2"
-                                        onClick={() => handleEditClick(answer)}
-                                      >
-                                        <Edit className="h-3 w-3 mr-1" />
-                                        Edit
-                                      </Button>
-                                    </>
+                                    // Thumbs up/down used to render here with no
+                                    // onClick and no backend confirm/reject
+                                    // endpoint on ci.answers — pressing either did
+                                    // nothing, on exactly the gesture that reads as
+                                    // "this is wrong about me". Edit is the one
+                                    // correction path that actually works.
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 px-2"
+                                      onClick={() => handleEditClick(answer)}
+                                    >
+                                      <Edit className="h-3 w-3 mr-1" />
+                                      Edit
+                                    </Button>
                                   ) : null}
                                 </div>
                               </div>
@@ -547,23 +543,15 @@ export function PromptsPage() {
                                           </Button>
                                         </>
                                       ) : isLLMAnswered(answer) ? (
-                                        <>
-                                          <Button variant="ghost" size="sm" className="h-8 px-2">
-                                            <ThumbsUp className="h-3 w-3 mr-1" />
-                                          </Button>
-                                          <Button variant="ghost" size="sm" className="h-8 px-2">
-                                            <ThumbsDown className="h-3 w-3 mr-1" />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 px-2"
-                                            onClick={() => handleEditClick(answer)}
-                                          >
-                                            <Edit className="h-3 w-3 mr-1" />
-                                            Edit
-                                          </Button>
-                                        </>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 px-2"
+                                          onClick={() => handleEditClick(answer)}
+                                        >
+                                          <Edit className="h-3 w-3 mr-1" />
+                                          Edit
+                                        </Button>
                                       ) : null}
                                     </div>
                                   </Table.Cell>

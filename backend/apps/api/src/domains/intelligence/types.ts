@@ -102,6 +102,10 @@ const questionCategorySchema = z
   .min(1, 'Category is required')
   .max(120, 'Category must be 120 characters or less');
 
+export const skipFeedQuestionSchema = z.object({
+  presentationId: z.string().min(1),
+});
+
 export const createQuestionSchema = z.object({
   text: questionTextSchema,
   // `subcategory` predates `category` on this endpoint and was the ONLY field
