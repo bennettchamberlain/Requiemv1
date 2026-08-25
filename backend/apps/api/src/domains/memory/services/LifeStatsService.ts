@@ -34,6 +34,16 @@ const SPEND_LIMIT = 40;
 const CONVERSATION_LIMIT = 12;
 const CHANNEL_LIMIT = 8;
 
+/**
+ * How many conversation rows to ask SQL for before the owner-name backstop runs.
+ *
+ * `topConversations` drops any row whose display name resolves to the appliance
+ * owner (see {@link LifeStatsService.resolveIsSelf}), which happens in JS after
+ * the SQL `LIMIT`. Overfetching means a handful of surviving owner aliases costs
+ * chart rows nobody sees rather than rows the chart needed.
+ */
+const CONVERSATION_FETCH_LIMIT = CONVERSATION_LIMIT * 2;
+
 const TIMED_EVENT_TYPES = [
   ...CALENDAR_EVENT_TYPES,
   ...MEDIA_EVENT_TYPES,
@@ -53,6 +63,25 @@ export interface LifeStatsRange {
  * service only builds spend / time / conversation / social series so the
  * browser never pages those tables.
  */
+/**
+ * Fold a display name for owner comparison: lowercase, strip diacritics and
+ * punctuation, collapse whitespace. Mirrors the rule `ci.entity_identifiers` is
+ * keyed on, so a name that matches here matches people-linking too.
+ */
+function foldOwnerName(raw: string | null | undefined): string {
+  if (!raw) {
+    return '';
+  }
+
+  return raw
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 @Injectable()
 export class LifeStatsService {
   constructor(
@@ -92,8 +121,34 @@ export class LifeStatsService {
   }
 
   /**
-   * Outgoing commerce events (parsed `metadata.Amount`) union receipts with a
-   * first-class total, grouped by merchant / counterparty.
+   * Outgoing spend by merchant / counterparty, from the two places a purchase
+   * can land: a `ci.receipts` row with a first-class `total_minor`, and a
+   * `ci.events` row whose free-text `metadata.Amount` we parse.
+   *
+   * ONE PURCHASE, ONE ROW. An importer that produces both writes them with the
+   * same natural key (`source_system` + `source_id`, e.g.
+   * `amazon:order:102-7054694-8596925`), and `ci.receipts.event_id` links them
+   * outright when the extractor had the event to hand. A plain `UNION ALL` over
+   * the two tables therefore counted such a purchase twice — on the owner's
+   * corpus that turned 505 Amazon orders / $80,093.67 into "999 payments,
+   * $125,950.46", and fed the same inflated pair to the "Largest outgoing
+   * merchant" insight.
+   *
+   * THE RECEIPT LEG WINS, and the event is dropped when a receipt already
+   * claims it:
+   *   - `receipts.total_minor` is a typed bigint in minor units with its own
+   *     `currency` column; the event leg regex-scrapes a display string and
+   *     hardcodes `'USD'`.
+   *   - Where both legs carry an amount they agree exactly (494/494 Amazon
+   *     orders), so preferring receipts loses nothing.
+   *   - Receipts cover purchases the event leg cannot parse — 11 more Amazon
+   *     orders worth $34,236.88, invisible if the event leg won instead.
+   * The event leg still stands alone for spend that has no receipt at all
+   * (Venmo, PayPal, bank transactions), which is why both legs remain.
+   *
+   * The anti-join sees only receipts THIS query counts — same user, same range,
+   * usable total — so a purchase whose receipt falls outside the window is still
+   * counted from its event rather than silently dropped by both legs.
    */
   async spendByMerchant(userId: string, range: LifeStatsRange): Promise<SpendRow[]> {
     const rows: Array<{
@@ -104,7 +159,21 @@ export class LifeStatsService {
       currency: string | null;
       sources: string[] | null;
     }> = await this.eventRepository.manager.query(
-      `SELECT merchant,
+      `WITH counted_receipts AS (
+         SELECT r.event_id,
+                r.source_system,
+                r.source_id,
+                COALESCE(NULLIF(r.merchant_name, ''), 'Unknown merchant') AS merchant,
+                r.total_minor,
+                COALESCE(r.currency, 'USD') AS currency
+           FROM ci.receipts r
+          WHERE r.user_id = $1
+            AND r.total_minor IS NOT NULL
+            AND r.total_minor > 0
+            AND ($2::timestamptz IS NULL OR r.purchased_at >= $2)
+            AND ($3::timestamptz IS NULL OR r.purchased_at < $3)
+       )
+       SELECT merchant,
               COUNT(*)::text AS n,
               SUM(amount_minor)::text AS total_minor,
               ROUND(AVG(amount_minor))::text AS avg_minor,
@@ -136,17 +205,26 @@ export class LifeStatsService {
                       AND ${amountToMinorSql('e.metadata')} < 0
                     )
                   )
+              -- Same purchase, already counted from its receipt: explicit link…
+              AND NOT EXISTS (
+                    SELECT 1
+                      FROM counted_receipts cr
+                     WHERE cr.event_id = e.event_id
+                  )
+              -- …or the shared importer natural key.
+              AND NOT EXISTS (
+                    SELECT 1
+                      FROM counted_receipts cr
+                     WHERE e.source_id IS NOT NULL
+                       AND cr.source_id = e.source_id
+                       AND COALESCE(cr.source_system, '') = COALESCE(e.source_system, '')
+                  )
            UNION ALL
-           SELECT COALESCE(NULLIF(r.merchant_name, ''), 'Unknown merchant') AS merchant,
-                  r.total_minor AS amount_minor,
-                  COALESCE(r.source_system, 'unknown') AS source_system,
-                  COALESCE(r.currency, 'USD') AS currency
-             FROM ci.receipts r
-            WHERE r.user_id = $1
-              AND r.total_minor IS NOT NULL
-              AND r.total_minor > 0
-              AND ($2::timestamptz IS NULL OR r.purchased_at >= $2)
-              AND ($3::timestamptz IS NULL OR r.purchased_at < $3)
+           SELECT cr.merchant,
+                  cr.total_minor AS amount_minor,
+                  COALESCE(cr.source_system, 'unknown') AS source_system,
+                  cr.currency
+             FROM counted_receipts cr
          ) spend
         GROUP BY merchant
         ORDER BY SUM(amount_minor) DESC
@@ -246,55 +324,185 @@ export class LifeStatsService {
     };
   }
 
+  /**
+   * The people the owner messages most — COUNTERPARTIES ONLY.
+   *
+   * "Most messaged people" that opens with your own name is not an answer. The
+   * old query credited every participant of every message, so the owner's own
+   * Person rows collected one hit per message they sent AND one per message
+   * addressed to them: on this corpus rows 1, 2 and 10 were all the owner
+   * ("Liam (William) David Collins-Broza" 137,920, "Me" 133,342, "Liam Broza"
+   * 5,576) — ~85% of 325,153 communications, crowding out the actual people.
+   *
+   * Two independent defences, because either alone leaves residue:
+   *
+   * 1. STRUCTURAL — take the OTHER end of each message. `direction` is NOT NULL
+   *    on every row, and the owner is by construction the sender of every
+   *    outbound message and a recipient of every inbound one. So an inbound
+   *    message credits its sender and an outbound one credits its recipients,
+   *    and the owner is never their own counterparty. This needs no idea of who
+   *    the owner IS, so it holds on corpora where self was never resolved — and
+   *    it fixes the `inbound`/`outbound` split as a side effect: they now mean
+   *    "they wrote me" / "I wrote them" rather than counting co-recipients.
+   *
+   * 2. IDENTITY — drop entities the appliance declares to be the owner:
+   *    `ci.entities.is_self` (typed column or the pre-migration `properties`
+   *    key), `ci.users.entity_id`, and — recursively — anything merged into one
+   *    of those, since a merge tombstone still carries the owner's messages.
+   *    This catches self-addressed mail and mislabelled directions, which rule 1
+   *    legitimately keeps.
+   *
+   * A third pass runs in JS: {@link resolveIsSelf} folds the owner's names the
+   * same way people-linking does, so an owner alias that no row has ever
+   * declared ("Me") is still recognised by name rather than by a hardcoded
+   * string. See {@link resolveIsSelf} for why that predicate lives here.
+   */
   async topConversations(userId: string, range: LifeStatsRange): Promise<ConversationRow[]> {
-    const rows: Array<{
-      pid: string;
-      name: string | null;
-      n: string;
-      inbound: string;
-      outbound: string;
-      last_at: Date | null;
-    }> = await this.eventRepository.manager.query(
-      `SELECT m.pid,
-              e.name,
-              COUNT(DISTINCT m.id)::text AS n,
-              COUNT(DISTINCT m.id) FILTER (WHERE m.direction = 'inbound')::text AS inbound,
-              COUNT(DISTINCT m.id) FILTER (WHERE m.direction = 'outbound')::text AS outbound,
-              MAX(m.time) AS last_at
-         FROM (
+    const [rows, isSelf] = await Promise.all([
+      this.eventRepository.manager.query<
+        Array<{
+          pid: string;
+          name: string | null;
+          n: string;
+          inbound: string;
+          outbound: string;
+          last_at: Date | null;
+        }>
+      >(
+        `WITH RECURSIVE self_seed AS (
+           SELECT e.entity_id
+             FROM ci.entities e
+            WHERE e.owner_user_id = $1::uuid
+              AND (e.is_self IS TRUE OR e.properties ->> 'is_self' = 'true')
+           UNION
+           SELECT u.entity_id
+             FROM ci.users u
+            WHERE u.id = $1::uuid
+              AND u.entity_id IS NOT NULL
+         ),
+         self_entities AS (
+           SELECT entity_id FROM self_seed
+           UNION
+           SELECT e.entity_id
+             FROM ci.entities e
+             JOIN self_entities s ON e.merged_into_entity_id = s.entity_id
+         ),
+         counterparty AS (
+           -- They wrote to me: the sender is the other end.
            SELECT c.from_entity_id AS pid, c.id, c.time, c.direction
              FROM ci.communications c
             WHERE c.user_id = $1
+              AND c.direction = 'inbound'
               AND c.from_entity_id IS NOT NULL
               AND ($2::timestamptz IS NULL OR c.time >= $2)
               AND ($3::timestamptz IS NULL OR c.time < $3)
            UNION ALL
+           -- I wrote to them: the recipients are the other end.
            SELECT p.pid, c.id, c.time, c.direction
              FROM ci.communications c
              CROSS JOIN LATERAL unnest(c.to_entity_ids) AS p(pid)
             WHERE c.user_id = $1
+              AND c.direction = 'outbound'
               AND c.to_entity_ids IS NOT NULL
               AND ($2::timestamptz IS NULL OR c.time >= $2)
               AND ($3::timestamptz IS NULL OR c.time < $3)
-         ) m
-         JOIN ci.entities e ON e.entity_id = m.pid
-        WHERE e.entity_type = 'Person'
-          AND COALESCE(e.is_self, false) = false
-          AND e.merged_into_entity_id IS NULL
-        GROUP BY m.pid, e.name
-        ORDER BY COUNT(DISTINCT m.id) DESC
-        LIMIT $4`,
-      [userId, ...this.bounds(range), CONVERSATION_LIMIT],
-    );
+         )
+         SELECT m.pid,
+                e.name,
+                COUNT(DISTINCT m.id)::text AS n,
+                COUNT(DISTINCT m.id) FILTER (WHERE m.direction = 'inbound')::text AS inbound,
+                COUNT(DISTINCT m.id) FILTER (WHERE m.direction = 'outbound')::text AS outbound,
+                MAX(m.time) AS last_at
+           FROM counterparty m
+           JOIN ci.entities e ON e.entity_id = m.pid
+          WHERE e.entity_type = 'Person'
+            AND COALESCE(e.is_self, false) = false
+            AND e.merged_into_entity_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM self_entities s WHERE s.entity_id = m.pid)
+          GROUP BY m.pid, e.name
+          ORDER BY COUNT(DISTINCT m.id) DESC
+          LIMIT $4`,
+        [userId, ...this.bounds(range), CONVERSATION_FETCH_LIMIT],
+      ),
+      this.resolveIsSelf(userId),
+    ]);
 
-    return rows.map((row) => ({
-      personId: row.pid,
-      name: row.name?.trim() || 'Unknown person',
-      count: Number(row.n),
-      inbound: Number(row.inbound),
-      outbound: Number(row.outbound),
-      lastAt: row.last_at ? new Date(row.last_at).toISOString() : null,
-    }));
+    return rows
+      .filter((row) => !(row.name != null && isSelf(row.name)))
+      .slice(0, CONVERSATION_LIMIT)
+      .map((row) => ({
+        personId: row.pid,
+        name: row.name?.trim() || 'Unknown person',
+        count: Number(row.n),
+        inbound: Number(row.inbound),
+        outbound: Number(row.outbound),
+        lastAt: row.last_at ? new Date(row.last_at).toISOString() : null,
+      }));
+  }
+
+  /**
+   * The owner-name predicate.
+   *
+   * Deliberately implemented HERE rather than reusing
+   * `domains/import/push/self.ts`, which does the same folding for the import
+   * push. Importing it pulls the memory domain into the import domain's public
+   * surface, and that barrel re-exports through `@ci/domains/graph`, which
+   * itself reaches back into `@ci/domains/memory` — a require cycle that
+   * evaluates to `undefined` at import time. Reaching past the barrel to the
+   * leaf module dodges the cycle but violates `no-cross-domain-internals`, so
+   * neither route is available. The duplicated logic is ~15 lines of string
+   * folding against a rule that has not changed; the coupling would be
+   * permanent.
+   *
+   * This is only the THIRD pass. The authoritative exclusion is the SQL above
+   * (`is_self`, `ci.users.entity_id`, merge tombstones); this catches an alias
+   * no row ever declared, like "Me". A failure to read is therefore not a
+   * reason to fail the stats page — it degrades to "nobody is the owner" and
+   * lets the structural rules stand on their own.
+   */
+  private async resolveIsSelf(userId: string): Promise<(name: string) => boolean> {
+    const nobody = () => false;
+
+    try {
+      const rows = await this.eventRepository.manager.query<Array<{ name: string | null }>>(
+        `SELECT u.name AS name FROM ci.users u WHERE u.id = $1::uuid
+          UNION ALL
+         SELECT u.email AS name FROM ci.users u WHERE u.id = $1::uuid
+          UNION ALL
+         SELECT e.name AS name
+           FROM ci.entities e
+          WHERE e.owner_user_id = $1::uuid
+            AND e.entity_type = 'Person'
+            AND e.merged_into_entity_id IS NULL
+            AND (e.is_self IS TRUE OR e.properties ->> 'is_self' = 'true')`,
+        [userId],
+      );
+
+      const targets = new Set<string>();
+      for (const row of rows) {
+        // An email's local part is a name in disguise on most accounts, and on
+        // an account created without a display name it is the only signal left.
+        const raw = row.name?.includes('@') ? row.name.split('@')[0].replace(/[._+-]/g, ' ') : row.name;
+        const folded = foldOwnerName(raw);
+        if (folded) {
+          targets.add(folded);
+        }
+      }
+
+      if (targets.size === 0) {
+        return nobody;
+      }
+
+      return (name: string) => {
+        const candidate = foldOwnerName(name);
+
+        return candidate.length > 0 && targets.has(candidate);
+      };
+    } catch (error) {
+      this.logger.warn(`topConversations: could not resolve owner identity: ${String(error)}`);
+
+      return nobody;
+    }
   }
 
   async socialOverTime(

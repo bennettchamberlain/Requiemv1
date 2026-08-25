@@ -15,6 +15,7 @@ import {
 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
+import type { AnswerEvidenceWire } from '@/components/AnswerDetails';
 import { AnswerProvenance, isInferred } from '@/components/AnswerProvenance';
 import { PageContent } from '@/components/layout';
 import { useAuth } from '@/hooks';
@@ -33,6 +34,14 @@ interface Answer {
   answerConfidence?: number | null;
   /** The model's one line on what evidence produced an inferred answer. */
   answerRationale?: string | null;
+  /**
+   * The rows behind that sentence, as `AnswerEntity.toEgressType` sends them —
+   * note the entity's own column name here, where the catalogue payload calls
+   * the same wrapper `evidence`. Null for anything a person typed and for
+   * inferred rows written before the column existed. Declared so this object
+   * stays safe to hand to the provenance drawer whole.
+   */
+  answerEvidence?: AnswerEvidenceWire | null;
   user?: { id: string };
   question?: {
     id: string;
@@ -386,6 +395,12 @@ export function PromptsPage() {
                                       source={answer.answerSource}
                                       confidence={answer.answerConfidence}
                                       rationale={answer.answerRationale}
+                                      details={{
+                                        question: answer.question?.text ?? '',
+                                        answerText: answer.answer,
+                                        record: answer,
+                                        onEdit: () => handleEditClick(answer),
+                                      }}
                                     />
                                   </div>
                                   <h3 className="font-semibold text-sm leading-tight">
@@ -509,6 +524,12 @@ export function PromptsPage() {
                                           source={answer.answerSource}
                                           confidence={answer.answerConfidence}
                                           rationale={answer.answerRationale}
+                                          details={{
+                                            question: answer.question?.text ?? '',
+                                            answerText: answer.answer,
+                                            record: answer,
+                                            onEdit: () => handleEditClick(answer),
+                                          }}
                                         />
                                       </div>
                                       <ExpandableText

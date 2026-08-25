@@ -82,6 +82,7 @@ export class AgentModule {}
 
 export { BranchialForecastService, ForageCorpusService, ForecastContextService, RecallService };
 export type { RecallOptions } from './services/RecallService';
+export type { EvidenceVoice, RecallLine, RecallObjectRef, RecallObjectType, RecallResult } from './types';
 export type {
   BranchialBranch,
   BranchialPermutation,

@@ -129,6 +129,96 @@ export function supportConfidenceCeiling(support: AnswerSupport | undefined): nu
 }
 
 /**
+ * The ceiling an answer carries when nothing THIS PERSON said or did supports it.
+ *
+ * Same number as {@link CONFIDENCE_OFF_QUESTION}, and for the same reason: an
+ * answer with no first-person support is not a weak answer, it is somebody
+ * else's sentence with this person's name on it. Measured on the reference
+ * corpus, "Are you more of a cat person or a dog person?" came back "I am
+ * definitely a cat person, and I have cats." at 0.95, off three INBOUND lines —
+ * three other people telling this person about THEIR cats. The owner's only
+ * outbound line about a pet is "My dog needs to be put down today :(".
+ */
+export const CONFIDENCE_UNATTRIBUTED = CONFIDENCE_OFF_QUESTION;
+
+/**
+ * Pull evidence line numbers out of whatever the model put in
+ * `first_person_evidence`.
+ *
+ * Lenient for the same reason {@link normalizeAnswerSupport} is: a malformed
+ * citation is an ABSENT citation, and an absent citation is already the
+ * strictest outcome the gate has (the answer is discarded). Failing the whole
+ * parse would only lose the diagnostic. Accepts `[2, 7]`, `["2","7"]`,
+ * `["E2","line 7"]` and the bare string `"2, 7"`.
+ */
+export function normalizeEvidenceRefs(value: unknown): number[] {
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  const refs: number[] = [];
+
+  for (const entry of raw) {
+    if (typeof entry === 'number' && Number.isInteger(entry)) {
+      refs.push(entry);
+      continue;
+    }
+
+    if (typeof entry !== 'string') {
+      continue;
+    }
+
+    for (const match of entry.matchAll(/\d+/g)) {
+      refs.push(Number.parseInt(match[0], 10));
+    }
+  }
+
+  return [...new Set(refs)];
+}
+
+/**
+ * ═══ THE SPEAKER GATE ═══
+ *
+ * A first-person claim about this person must rest on something THIS PERSON
+ * said or did. Inbound messages are evidence about a CONVERSATION; they are not
+ * statements about the account holder, and just over half of a real archive is
+ * other people talking.
+ *
+ * The model is asked which of its own-record lines carry the claim
+ * (`first_person_evidence`, emitted BEFORE the answer — see
+ * {@link INFERRED_ANSWER_JSON_SCHEMA}'s property order). This function is what
+ * makes the question load-bearing rather than decorative: a citation only counts
+ * if the number resolves to a line THIS side tagged as the owner's own. Cite
+ * nothing, cite an inbound line, cite a number that is not in the block — all
+ * three are the same answer, and it is "no".
+ *
+ * The consequence is a downgrade to `topical`, not a lower score, because
+ * `topical` is already the level every caller discards ({@link
+ * answersTheQuestion}) and the confidence floor it would otherwise fall to is
+ * owner-configurable down to zero.
+ *
+ * `ownLineNumbers` empty means the retrieval returned no first-person evidence
+ * at all, which is the same verdict arrived at one step earlier.
+ */
+export function enforceFirstPersonEvidence(
+  inferred: InferredAnswer,
+  ownLineNumbers: ReadonlySet<number>,
+): { inferred: InferredAnswer; grounded: boolean; citedOwn: number[] } {
+  const citedOwn = (inferred.firstPersonEvidence ?? []).filter((ref) => ownLineNumbers.has(ref));
+
+  if (citedOwn.length > 0) {
+    return { inferred, grounded: true, citedOwn };
+  }
+
+  return {
+    inferred: {
+      ...inferred,
+      support: 'topical',
+      confidence: round2(Math.min(inferred.confidence, CONFIDENCE_UNATTRIBUTED)),
+    },
+    grounded: false,
+    citedOwn: [],
+  };
+}
+
+/**
  * Floor used when nothing overrides it. Below this the appliance declines to
  * answer at all rather than write a guess into the user's memory — see
  * `config.reflection.minAnswerConfidence`, which is what production reads.
@@ -239,6 +329,10 @@ export function confidenceLabel(confidence: number): 'high' | 'moderate' | 'low'
 export const inferredAnswerSchema = z.object({
   asked_for: z.string().optional(),
   support: z.string().optional(),
+  // `unknown` rather than `z.array(z.number())` for the same reason `support` is
+  // a plain string: a citation the model formatted oddly must not fail the whole
+  // parse. {@link normalizeEvidenceRefs} does the coercing.
+  first_person_evidence: z.unknown().optional(),
   answer: z.string(),
   confidence: z.number(),
   rationale: z.string().optional(),
@@ -252,6 +346,12 @@ export type InferredAnswer = {
   askedFor?: string;
   /** See {@link ANSWER_SUPPORT_LEVELS}. Absent when the model gave no judgement. */
   support?: AnswerSupport;
+  /**
+   * Evidence line numbers the model says are THIS PERSON's own words or actions.
+   * Checked against the caller's own tagging by
+   * {@link enforceFirstPersonEvidence} — never trusted as reported.
+   */
+  firstPersonEvidence?: number[];
 };
 
 /**
@@ -275,11 +375,12 @@ export const INFERRED_ANSWER_JSON_SCHEMA: Record<string, unknown> = {
   properties: {
     asked_for: { type: 'string' },
     support: { type: 'string', enum: [...ANSWER_SUPPORT_LEVELS] },
+    first_person_evidence: { type: 'array', items: { type: 'integer' } },
     answer: { type: 'string' },
     confidence: { type: 'number' },
     rationale: { type: 'string' },
   },
-  required: ['asked_for', 'support', 'answer', 'confidence', 'rationale'],
+  required: ['asked_for', 'support', 'first_person_evidence', 'answer', 'confidence', 'rationale'],
 };
 
 /**
@@ -287,9 +388,9 @@ export const INFERRED_ANSWER_JSON_SCHEMA: Record<string, unknown> = {
  * above can never drift apart silently.
  */
 export const INFERRED_ANSWER_PROMPT_RULES = `Return STRICT JSON only — no prose, no markdown fence:
-{"asked_for":"...","support":"stated|implied|topical|none","answer":"...","confidence":0.0,"rationale":"..."}
+{"asked_for":"...","support":"stated|implied|topical|none","first_person_evidence":[2,7],"answer":"...","confidence":0.0,"rationale":"..."}
 
-Fill the fields IN THAT ORDER. \`asked_for\` and \`support\` are settled BEFORE you write a word of the answer, because together they decide whether there is an answer to write at all.
+Fill the fields IN THAT ORDER. \`asked_for\`, \`support\` and \`first_person_evidence\` are settled BEFORE you write a word of the answer, because together they decide whether there is an answer to write at all.
 
 - asked_for: the exact thing this question demands, in a few words. Not its topic — the THING. "Which health conditions run in your immediate family?" demands NAMED MEDICAL CONDITIONS occurring in blood relatives; it does not demand facts about family, and it does not demand doctors. "What languages do you speak?" demands languages this person can already SPEAK. "Which languages are you learning?" demands languages they are STUDYING NOW. Two questions about one topic are still two different questions with two different answers.
 - support: how the evidence stands to the thing \`asked_for\` names — NOT to the topic:
@@ -298,6 +399,7 @@ Fill the fields IN THAT ORDER. \`asked_for\` and \`support\` are settled BEFORE 
     topical  — the lines are ABOUT the topic and never supply the thing. Doctors in the family are not health conditions. Messages containing the word "skill" do not name a skill being practised this year.
     none     — the evidence does not touch the question at all
   \`topical\` and \`none\` are near misses, and a near miss is not an answer: both are DISCARDED on arrival whatever score you attach, so report them honestly instead of reaching. Having a great deal to say about the topic is not the same as answering the question.
+- first_person_evidence: the NUMBERS of the evidence lines that carry the claim AND are this person's own — the lines filed under MY OWN RECORDS, where this person is the one speaking or acting. Nothing else counts: a number from WHAT OTHER PEOPLE SAID TO ME counts as nothing, a number that is not in the block counts as nothing, and an empty list is the honest answer whenever this person's own records do not carry the claim. It is checked against the block, so a number put there to fill the field is the same as no number at all. If the list would be empty, set \`support\` to \`topical\` — the answer is then discarded, which is the correct outcome for a question this person's own records cannot answer.
 - answer: the answer itself and nothing else. ONE short first-person sentence at most, and where the question is factual just the bare fact — "O positive", "Night owl", "Spanish and English", "Chicago". No preamble, no restating the question, no "honestly", no complimenting the question, no closing offer to elaborate.
 - confidence: how completely the evidence supplies THE THING \`asked_for\` NAMES. It is not how much evidence came back, not how on-topic the lines felt, not how fluent your sentence reads. Twenty lines that circle the topic without ever naming the thing are \`topical\` and score below ${CONFIDENCE_INDIRECT}; one line that states the thing outright is ${CONFIDENCE_STATED}. The scale:
     >= ${CONFIDENCE_STATED}          the evidence states the asked_for thing outright
@@ -334,6 +436,14 @@ Doctors are not conditions. A bout of flu is not a condition that RUNS in a fami
 {"asked_for":"named medical conditions occurring in my blood relatives","support":"topical","answer":"None that I know of.","confidence":0.1,"rationale":"Nothing here names a condition — the lines match on 'family' and 'immediate' only, and doctors in the family are not a diagnosis."}
 A medical question answered out of adjacent material is the most damaging thing this system can produce. Wrong at ${CONFIDENCE_STATED} is far worse than absent.
 
+OTHER PEOPLE'S WORDS ARE NOT THIS PERSON'S WORDS. Just over half of this archive is somebody else talking, so every evidence line is filed under one of two headings, and the heading is the whole point:
+    MY OWN RECORDS               — this person wrote it or did it. Messages they SENT, places they went, pages they opened, things they bought, events they attended.
+    WHAT OTHER PEOPLE SAID TO ME — somebody else wrote it and it arrived in this person's archive. It is evidence about a CONVERSATION. It is NOT a statement about this person.
+An incoming "I do have cats and definitely a cat person :)" means SOMEONE ELSE has cats. Answering "I am definitely a cat person" off three lines like it is not a low-confidence answer — it is a FALSE one, published on this person's own profile as though they had said it, while the only pet they ever mentioned themselves was a dog. Measured live, in exactly those words. The same trap: an incoming "I always wanted a tree house" is the other person's childhood, not this person's.
+Incoming lines are still worth reading. They can CORROBORATE — "Happy birthday!" arriving on March 3 really is evidence about a birthday, and the question someone asked is what this person's own reply is answering. What they can never do is ESTABLISH. The claim itself has to rest on at least one MY OWN RECORDS line, and \`first_person_evidence\` is where you show which one. No own line, no answer.
+
+WORKED EXAMPLES ARE METHOD, NOT CONTENT. Every example below is about an invented person and exists to show you HOW to weigh evidence. Never carry an example's answer, an example's subject or an example's number into your own answer: if your sentence could have been written before you read the EVIDENCE block, it is a fabrication no matter how well it reads.
+
 EVIDENCE DOES NOT TRANSFER BETWEEN QUESTIONS. The same retrieved lines will be handed to you for several neighbouring questions, and answering all of them the same way makes every one but the closest a fabrication. Speaking a language is not learning one: a Duolingo install and "I studying for English and Sign Language" say what is being LEARNED and say nothing about what this person can already speak. A skill practised in 2019 is not "the skill I am working on this year" unless the evidence carries this year. Where the evidence answers the neighbouring question and only brushes yours, yours is \`topical\`.
 Prior answers to OTHER questions are context, never source material. An answer already given elsewhere may not be restated as this question's answer and may not raise \`confidence\` by a single point — if the only thing supporting your sentence is that a nearby question was answered that way, \`support\` is \`topical\`.
 
@@ -342,10 +452,10 @@ NEVER hedge in the answer field. "I'm not sure", "I haven't really thought about
 A NON-ANSWER MUST SCORE LOW. If the answer text is any form of "I don't know", "I do not have this information recorded", "no information", "not recorded", "unknown" or "there is nothing in the evidence", then \`confidence\` MUST be at most ${CONFIDENCE_NON_ANSWER} — well below ${CONFIDENCE_INDIRECT}. \`confidence\` is how sure you are OF AN ANSWER, and a refusal is not one; it is not how sure you are that you don't know. Scoring a refusal 0.7 is always wrong, and it is clamped on arrival regardless, so the only thing a high score on a non-answer buys you is a discarded generation.
 
 SPEAK AS THE PERSON, NEVER ABOUT THEIR RECORDS. The answer field is what they would say out loud to someone who asked them — it is published on their own profile beside answers they typed themselves. So never narrate the corpus: no "My record shows", "in this record", "based on the evidence", "the data suggests", "the records indicate", "listing locations like", and never refer to yourself in the third person as "the user" or "this person". Naming the evidence is the job of \`rationale\`, and ONLY of \`rationale\`; an answer that mentions the record at all has been written in the wrong voice.
-WRONG: {"answer":"My record shows a long-standing general interest in hobbies and supplies.","confidence":0.4}
-RIGHT: {"answer":"Woodworking — about fifteen years now.","confidence":0.4}
+WRONG: {"answer":"My record shows a long-standing general interest in stringed instruments.","confidence":0.4}
+RIGHT: {"answer":"Upright bass.","confidence":0.4}
 
-ANSWER EVERY PART THE QUESTION ACTUALLY ASKS. "Which hobby have you kept the longest, and for how many years?" asks for a hobby AND a number of years; an answer naming neither is not a low-confidence answer, it is a non-answer wearing a sentence. Name the specific thing the question asked for — the hobby, the city, the language, the number. Restating the question's own category back at it ("hobbies and related intellectual topics", "various sports", "many different languages", "a strong interest in the subject") is vacuous and is worth nothing to this person: pick the single most likely SPECIFIC answer and score it honestly, or score below ${CONFIDENCE_INDIRECT} and let it be discarded.
+ANSWER EVERY PART THE QUESTION ACTUALLY ASKS. "Which instrument have you played the longest, and for how many years?" asks for an instrument AND a number of years; an answer naming neither is not a low-confidence answer, it is a non-answer wearing a sentence. Name the specific thing the question asked for — the instrument, the city, the language, the number. Restating the question's own category back at it ("hobbies and related intellectual topics", "various sports", "many different languages", "a strong interest in the subject") is vacuous and is worth nothing to this person: pick the single most likely SPECIFIC answer and score it honestly, or score below ${CONFIDENCE_INDIRECT} and let it be discarded.
 
 Never state a fact the evidence does not touch at all — but a consistent pattern across several lines IS the evidence touching it. Do not raise your confidence to make the answer look better, and do not lower it to avoid committing: an honest score is the point of this field.`;
 
@@ -644,6 +754,7 @@ export function parseInferredAnswer(content: string): InferredAnswer | null {
 
   const rationale = parsed.rationale?.trim();
   const askedFor = parsed.asked_for?.trim();
+  const firstPersonEvidence = normalizeEvidenceRefs(parsed.first_person_evidence);
 
   return {
     answer,
@@ -651,6 +762,7 @@ export function parseInferredAnswer(content: string): InferredAnswer | null {
     ...(rationale ? { rationale } : {}),
     ...(askedFor ? { askedFor } : {}),
     ...(support ? { support } : {}),
+    ...(firstPersonEvidence.length > 0 ? { firstPersonEvidence } : {}),
   };
 }
 

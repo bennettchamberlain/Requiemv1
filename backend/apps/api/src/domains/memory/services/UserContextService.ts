@@ -308,22 +308,49 @@ export class UserContextService {
       }
     }
 
-    // Fall back to linked entities
-    const nodes = await this.graphQuery.getNodes(userId, { entityType: 'Person', limit: 1 });
+    // Fall back ONLY to an entity that is actually verified to be this user.
+    //
+    // This used to be `getNodes(userId, { entityType: 'Person', limit: 1 })` —
+    // the FIRST Person in the graph, with no identity check — and it PERSISTED
+    // that guess to ci.users.entity_id. On any appliance that has imported a
+    // contact list the first Person is a stranger, and the guess is sticky: the
+    // branch above then short-circuits forever. Observed twice on real data,
+    // pointing the owner's dossier at an imported vCard contact both times
+    // ("Zhen Cao", then "Elena Miskova"), which every consumer of
+    // `getUserContextForLLM` read as the owner.
+    //
+    // `is_self` is the only claim of identity the graph makes. Nothing else here
+    // is evidence, so there is no fallback below it: returning null costs a
+    // thinner dossier, while returning a stranger puts another person's life on
+    // this user's profile.
+    const [selfRow]: Array<{ entity_id: string }> = await this.dataSource.query(
+      `SELECT entity_id
+         FROM ci.entities
+        WHERE owner_user_id = $1::uuid
+          AND entity_type = 'Person'
+          AND merged_into_entity_id IS NULL
+          AND is_active IS DISTINCT FROM FALSE
+          AND (is_self IS TRUE OR properties ->> 'is_self' = 'true')
+        ORDER BY created_at ASC
+        LIMIT 1`,
+      [userId],
+    );
 
-    if (nodes.length > 0) {
-      const [node] = nodes;
-      if (userResult.length > 0 && !userResult[0].entity_id) {
-        await this.dataSource.query(`UPDATE ci.users SET entity_id = $2 WHERE id = $1`, [
-          userId,
-          node.entity_id,
-        ]);
-      }
-
-      return node;
+    if (!selfRow?.entity_id) {
+      return null;
     }
 
-    return null;
+    // Safe to cache: an is_self row is an identity claim, not a guess. Still
+    // only written when the pointer is empty, so a deliberate reassignment is
+    // never overwritten.
+    if (userResult.length > 0 && !userResult[0].entity_id) {
+      await this.dataSource.query(`UPDATE ci.users SET entity_id = $2 WHERE id = $1`, [
+        userId,
+        selfRow.entity_id,
+      ]);
+    }
+
+    return this.graphQuery.getNode(userId, selfRow.entity_id);
   }
 
   /**
