@@ -1,6 +1,6 @@
 import { type ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { cn, Tooltip } from '@ci/shadcn';
+import { cn } from '@ci/shadcn';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import {
@@ -20,6 +20,7 @@ import {
 } from '@/lib/scheduleDrag';
 import { SCHEDULE_SCROLL_ATTR } from '@/lib/schedulePointerDrag';
 
+import { EventPeek } from './EventPeek';
 import {
   addDays,
   describes,
@@ -157,34 +158,10 @@ function ClusterBlock({
   const label = `${count} overlapping activities`;
 
   return (
-    <Tooltip>
-      <Tooltip.Trigger asChild>
-        <div
-          role="listitem"
-          data-schedule-chip
-          tabIndex={0}
-          aria-label={label}
-          title={label}
-          className={cn(
-            'absolute z-[5] cursor-pointer overflow-hidden rounded-md border text-[11px] leading-5',
-            'text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            'hover:z-30 focus-within:z-30 hover:brightness-110',
-          )}
-          style={{
-            top: `${item.leftPct}%`,
-            height: `${Math.max(item.widthPct, (18 / GRID_HEIGHT_PX) * 100)}%`,
-            left: `calc(${(lane / laneCount) * 100}% + 2px)`,
-            width: `calc(${(1 / laneCount) * 100}% - 4px)`,
-            backgroundColor: color,
-            borderColor: chipBorder(color),
-            borderLeftWidth: '3px',
-            borderLeftColor: color,
-          }}
-        >
-          <span className="px-1.5 font-semibold tabular-nums text-background mix-blend-difference">{count}</span>
-        </div>
-      </Tooltip.Trigger>
-      <Tooltip.Content side="right">
+    <EventPeek
+      label={label}
+      side="right"
+      content={
         <div className="max-w-64 space-y-1 text-left">
           <p className="text-xs font-medium">{label}</p>
           <ul className="space-y-0.5">
@@ -198,8 +175,33 @@ function ClusterBlock({
             ))}
           </ul>
         </div>
-      </Tooltip.Content>
-    </Tooltip>
+      }
+    >
+      <div
+        role="listitem"
+        data-schedule-chip
+        tabIndex={0}
+        aria-label={label}
+        title={label}
+        className={cn(
+          'absolute z-[5] cursor-pointer overflow-hidden rounded-md border text-[11px] leading-5',
+          'text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'hover:z-30 focus-within:z-30 hover:brightness-110',
+        )}
+        style={{
+          top: `${item.leftPct}%`,
+          height: `${Math.max(item.widthPct, (18 / GRID_HEIGHT_PX) * 100)}%`,
+          left: `calc(${(lane / laneCount) * 100}% + 2px)`,
+          width: `calc(${(1 / laneCount) * 100}% - 4px)`,
+          backgroundColor: color,
+          borderColor: chipBorder(color),
+          borderLeftWidth: '3px',
+          borderLeftColor: color,
+        }}
+      >
+        <span className="px-1.5 font-semibold tabular-nums text-background mix-blend-difference">{count}</span>
+      </div>
+    </EventPeek>
   );
 }
 
@@ -223,145 +225,145 @@ function TimedBlock({
   const url = eventUrl(event);
   const movable = Boolean(onMoveEvent);
   const short = widthPct < (45 / MINUTES_PER_DAY) * 100;
+  const label = blockLabel(event, colorMode);
 
   return (
-    <Tooltip>
-      <Tooltip.Trigger asChild>
-        <div
-          role="listitem"
-          data-schedule-chip
-          tabIndex={0}
-          aria-label={blockLabel(event, colorMode)}
-          draggable={movable}
-          onDragStart={
-            movable
-              ? (e) => {
-                  if ((e.target as Element | null)?.closest?.('a')) {
-                    e.preventDefault();
+    <EventPeek
+      label={label}
+      side="right"
+      content={<EventTooltipBody event={event} color={color} colorMode={colorMode} movable={movable} />}
+    >
+      <div
+        role="listitem"
+        data-schedule-chip
+        tabIndex={0}
+        aria-label={label}
+        draggable={movable}
+        onDragStart={
+          movable
+            ? (e) => {
+                if ((e.target as Element | null)?.closest?.('a')) {
+                  e.preventDefault();
 
-                    return;
-                  }
-
-                  const box = e.currentTarget.getBoundingClientRect();
-                  const withinChip = box.height > 0 ? (e.clientY - box.top) / box.height : 0;
-                  const grabDayRatio = (leftPct + Math.max(0, Math.min(1, withinChip)) * widthPct) / 100;
-                  const grabbedAt = atLocalMinutes(dayStart, grabDayRatio * MINUTES_PER_DAY);
-                  const grabOffsetMs = event.isAllDay
-                    ? 0
-                    : grabbedAt.getTime() - new Date(event.startTime).getTime();
-                  const external = isExternallyOwned(event);
-
-                  e.dataTransfer.setData(
-                    EVENT_DRAG_TYPE,
-                    JSON.stringify({
-                      id: event.id,
-                      grabOffsetMs,
-                      externallyOwned: external,
-                    }),
-                  );
-
-                  if (external) {
-                    e.dataTransfer.setData(EVENT_EXTERNAL_DRAG_TYPE, '1');
-                  }
-
-                  e.dataTransfer.setData('text/plain', event.title);
-                  e.dataTransfer.effectAllowed = 'move';
+                  return;
                 }
-              : undefined
-          }
-          className={cn(
-            'absolute z-[5] overflow-hidden border text-[11px] leading-4',
-            'text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            'hover:z-30 focus-within:z-30',
-            movable && 'cursor-grab active:cursor-grabbing hover:brightness-110',
-            short ? 'px-1 py-0.5' : 'px-1.5 py-1',
-            event.status === 'tentative' && 'border-dashed text-muted-foreground',
-            continuesFrom ? 'rounded-t-none border-t-0' : 'rounded-t-md',
-            continuesTo ? 'rounded-b-none border-b-0' : 'rounded-b-md',
-          )}
-          style={{
-            top: `${leftPct}%`,
-            height: `${widthPct}%`,
-            left: `calc(${(lane / laneCount) * 100}% + 2px)`,
-            width: `calc(${(1 / laneCount) * 100}% - 4px)`,
-            backgroundColor: chipFill(color),
-            borderColor: chipBorder(color),
-            ...(continuesFrom ? {} : { borderLeftWidth: '3px', borderLeftColor: color }),
-          }}
-        >
-          {url ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              draggable={false}
-              className="block truncate font-medium text-foreground underline-offset-2 hover:underline"
-              onClick={(clickEvent) => clickEvent.stopPropagation()}
-              onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
-            >
-              {event.title}
-            </a>
-          ) : (
-            <span className="block truncate font-medium">{event.title}</span>
-          )}
-          {!short && (
-            <span className="block truncate text-[10px] tabular-nums text-muted-foreground">
-              {formatClock(new Date(event.startTime))}
-              {event.endTime ? ` – ${formatClock(new Date(event.endTime))}` : ''}
-            </span>
-          )}
-        </div>
-      </Tooltip.Trigger>
-      <Tooltip.Content side="right">
-        <EventTooltipBody event={event} color={color} colorMode={colorMode} movable={movable} />
-      </Tooltip.Content>
-    </Tooltip>
+
+                const box = e.currentTarget.getBoundingClientRect();
+                const withinChip = box.height > 0 ? (e.clientY - box.top) / box.height : 0;
+                const grabDayRatio = (leftPct + Math.max(0, Math.min(1, withinChip)) * widthPct) / 100;
+                const grabbedAt = atLocalMinutes(dayStart, grabDayRatio * MINUTES_PER_DAY);
+                const grabOffsetMs = event.isAllDay
+                  ? 0
+                  : grabbedAt.getTime() - new Date(event.startTime).getTime();
+                const external = isExternallyOwned(event);
+
+                e.dataTransfer.setData(
+                  EVENT_DRAG_TYPE,
+                  JSON.stringify({
+                    id: event.id,
+                    grabOffsetMs,
+                    externallyOwned: external,
+                  }),
+                );
+
+                if (external) {
+                  e.dataTransfer.setData(EVENT_EXTERNAL_DRAG_TYPE, '1');
+                }
+
+                e.dataTransfer.setData('text/plain', event.title);
+                e.dataTransfer.effectAllowed = 'move';
+              }
+            : undefined
+        }
+        className={cn(
+          'absolute z-[5] overflow-hidden border text-[11px] leading-4',
+          'text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'hover:z-30 focus-within:z-30',
+          movable && 'cursor-grab active:cursor-grabbing hover:brightness-110',
+          short ? 'px-1 py-0.5' : 'px-1.5 py-1',
+          event.status === 'tentative' && 'border-dashed text-muted-foreground',
+          continuesFrom ? 'rounded-t-none border-t-0' : 'rounded-t-md',
+          continuesTo ? 'rounded-b-none border-b-0' : 'rounded-b-md',
+        )}
+        style={{
+          top: `${leftPct}%`,
+          height: `${widthPct}%`,
+          left: `calc(${(lane / laneCount) * 100}% + 2px)`,
+          width: `calc(${(1 / laneCount) * 100}% - 4px)`,
+          backgroundColor: chipFill(color),
+          borderColor: chipBorder(color),
+          ...(continuesFrom ? {} : { borderLeftWidth: '3px', borderLeftColor: color }),
+        }}
+      >
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            draggable={false}
+            className="block truncate font-medium text-foreground underline-offset-2 hover:underline"
+            onClick={(clickEvent) => clickEvent.stopPropagation()}
+            onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+          >
+            {event.title}
+          </a>
+        ) : (
+          <span className="block truncate font-medium">{event.title}</span>
+        )}
+        {!short && (
+          <span className="block truncate text-[10px] tabular-nums text-muted-foreground">
+            {formatClock(new Date(event.startTime))}
+            {event.endTime ? ` – ${formatClock(new Date(event.endTime))}` : ''}
+          </span>
+        )}
+      </div>
+    </EventPeek>
   );
 }
 
 function AllDayChip({ event, colorMode }: { event: ScheduleEvent; colorMode: ColorMode }) {
   const color = eventColor(event, colorMode);
   const url = eventUrl(event);
+  const label = blockLabel(event, colorMode);
 
   return (
-    <Tooltip>
-      <Tooltip.Trigger asChild>
-        <div
-          role="listitem"
-          data-schedule-chip
-          tabIndex={0}
-          aria-label={blockLabel(event, colorMode)}
-          className={cn(
-            'truncate rounded-md border px-1.5 py-0.5 text-[11px] leading-5',
-            'outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            event.status === 'tentative' && 'border-dashed text-muted-foreground',
-          )}
-          style={{
-            backgroundColor: chipFill(color),
-            borderColor: chipBorder(color),
-            borderLeftWidth: '3px',
-            borderLeftColor: color,
-          }}
-        >
-          {url ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium underline-offset-2 hover:underline"
-              onClick={(clickEvent) => clickEvent.stopPropagation()}
-            >
-              {event.title}
-            </a>
-          ) : (
-            <span className="font-medium">{event.title}</span>
-          )}
-        </div>
-      </Tooltip.Trigger>
-      <Tooltip.Content side="bottom">
-        <EventTooltipBody event={event} color={color} colorMode={colorMode} movable={false} />
-      </Tooltip.Content>
-    </Tooltip>
+    <EventPeek
+      label={label}
+      side="bottom"
+      content={<EventTooltipBody event={event} color={color} colorMode={colorMode} movable={false} />}
+    >
+      <div
+        role="listitem"
+        data-schedule-chip
+        tabIndex={0}
+        aria-label={label}
+        className={cn(
+          'truncate rounded-md border px-1.5 py-0.5 text-[11px] leading-5',
+          'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          event.status === 'tentative' && 'border-dashed text-muted-foreground',
+        )}
+        style={{
+          backgroundColor: chipFill(color),
+          borderColor: chipBorder(color),
+          borderLeftWidth: '3px',
+          borderLeftColor: color,
+        }}
+      >
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium underline-offset-2 hover:underline"
+            onClick={(clickEvent) => clickEvent.stopPropagation()}
+          >
+            {event.title}
+          </a>
+        ) : (
+          <span className="font-medium">{event.title}</span>
+        )}
+      </div>
+    </EventPeek>
   );
 }
 
