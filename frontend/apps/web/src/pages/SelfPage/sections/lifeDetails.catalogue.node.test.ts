@@ -20,7 +20,12 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { curatedQuestionKeys, curatedQuestions, HOME_TOWN_CITY_QUESTION_KEYS, LIFE_DETAIL_THEMES } from './lifeDetails';
+import {
+  curatedQuestionKeys,
+  curatedQuestions,
+  HOME_TOWN_CITY_QUESTION_KEYS,
+  LIFE_DETAIL_THEMES,
+} from './lifeDetails';
 
 const MIGRATION_FILE =
   'backend/apps/api/db/postgres/migrations/20260824234643_seed_life_details_question_keys.sql';

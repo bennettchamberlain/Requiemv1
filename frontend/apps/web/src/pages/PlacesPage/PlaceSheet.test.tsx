@@ -5,6 +5,10 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { GET_PLACE_SHEET, PlaceSheet } from './PlaceSheet';
 
+vi.mock('@/components/ChatWithAgent', () => ({
+  ChatWithAgentMenu: () => null,
+}));
+
 // The relationship cards need the auth context for the REST graph endpoints;
 // the drawer body is what's under test.
 vi.mock('@/components/EntityRelationshipCards/EntityRelationshipCards', async (importOriginal) => {
@@ -35,16 +39,18 @@ const placeMock = {
 };
 
 describe('PlaceSheet', () => {
-  it('opens the shared details drawer for the routed place, with a link to its full page', async () => {
+  it('opens the shared details drawer for the routed place', async () => {
     renderWithProviders(<PlaceSheet placeId={PLACE_GLOBAL_ID} onClose={vi.fn()} onChanged={vi.fn()} />, {
       mocks: [placeMock],
     });
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Bletchley Park' })).toBeInTheDocument();
+    expect(screen.getByText('Where the codebreakers worked')).toBeInTheDocument();
 
-    const fullPage = screen.getByRole('link', { name: /open full page/i });
-    expect(fullPage).toHaveAttribute('href', `/places/${PLACE_UUID}`);
+    // The drawer holds the object outright — there is no full-page escape hatch
+    // to send iOS out to Safari. See EntityDetailScaffold.
+    expect(screen.queryByRole('link', { name: /open full page/i })).not.toBeInTheDocument();
   });
 
   it('renders nothing when no place is routed', () => {

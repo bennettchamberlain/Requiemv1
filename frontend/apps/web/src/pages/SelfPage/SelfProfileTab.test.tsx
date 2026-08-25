@@ -100,6 +100,15 @@ describe('SelfProfileTab — the inline person editor', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  // The modal call sites focus First name on open; this one must not. It is
+  // just part of the page, and grabbing focus on mount scrolled the phone past
+  // the heading into the middle of the form with the keyboard over it.
+  it('does not steal focus into the form when the page opens', async () => {
+    await renderTab();
+
+    expect(screen.getByLabelText('First name')).not.toHaveFocus();
+  });
+
   it('renders the other Self sections around the inline form', async () => {
     await renderTab();
 

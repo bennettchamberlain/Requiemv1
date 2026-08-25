@@ -64,7 +64,6 @@ export function StoryTimelineView() {
       }
 
       loadMore();
-
       return;
     }
 

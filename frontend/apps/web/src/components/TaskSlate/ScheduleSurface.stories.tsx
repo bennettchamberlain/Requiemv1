@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
-import { HorizonGrid } from '@/components/HorizonGrid';
+import { VerticalCalendar } from '@/components/HorizonGrid';
 import type { ColorMode } from '@/lib/activityPalette';
 import { groupIntoSections, localDateOf } from '@/pages/PlanPage/taskSections';
 import type { PlanTask } from '@/pages/PlanPage/usePlanTasks';
@@ -140,7 +140,7 @@ function Surface({ colorMode = 'type' }: { colorMode?: ColorMode }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <HorizonGrid
+      <VerticalCalendar
         start={START}
         days={7}
         events={events}

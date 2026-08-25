@@ -55,7 +55,6 @@ function emitMove() {
 function tickAutoScroll() {
   if (!drag) {
     scrollRaf = 0;
-
     return;
   }
 

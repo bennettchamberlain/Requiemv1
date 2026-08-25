@@ -64,7 +64,6 @@ export function DeleteTaskModal({ taskIds, onClose }: Props) {
       for (const id of taskIds) {
         await deleteTask({ variables: { input: { id } } });
       }
-
       onClose();
     } catch {
       // Leave the dialog open on failure — closing it here would read as a

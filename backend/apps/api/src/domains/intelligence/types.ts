@@ -149,7 +149,14 @@ export const questionCatalogueQuerySchema = z.object({
     .string()
     .trim()
     .optional()
-    .transform((val) => (val ? val.split(',').map((s) => s.trim()).filter(Boolean) : undefined))
+    .transform((val) =>
+      val
+        ? val
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined,
+    )
     .pipe(z.array(z.string().uuid()).max(100).optional()),
   // Comma-separated `ci.questions.question_key` slugs — the same allow-list as
   // `ids`, addressed by a name that survives leaving this database. A uuid
@@ -162,7 +169,14 @@ export const questionCatalogueQuerySchema = z.object({
     .string()
     .trim()
     .optional()
-    .transform((val) => (val ? val.split(',').map((s) => s.trim()).filter(Boolean) : undefined))
+    .transform((val) =>
+      val
+        ? val
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined,
+    )
     .pipe(z.array(z.string().max(120)).max(100).optional()),
 });
 

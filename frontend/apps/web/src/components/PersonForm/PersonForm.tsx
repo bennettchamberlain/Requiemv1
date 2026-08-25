@@ -89,6 +89,15 @@ interface Props {
   /** Shown under the name field; set when the caller rejected an empty name. */
   nameError?: string | null;
   disabled?: boolean;
+  /**
+   * Focus "First name" on mount. Right for the modals — the dialog opened
+   * *because* the user is about to type. Wrong for a form that is simply part
+   * of a page: mounting it there scrolls the viewport to this field and, on a
+   * phone, opens the keyboard over the page the user was trying to read.
+   * Defaults on so the modal call sites keep the behaviour they were written
+   * against.
+   */
+  autoFocusName?: boolean;
 }
 
 /**
@@ -99,7 +108,7 @@ interface Props {
  * single field each: a person has a home address *and* a work one, a personal
  * email *and* a work email, and collapsing them loses which is which.
  */
-export function PersonForm({ value, onChange, nameError, disabled }: Props) {
+export function PersonForm({ value, onChange, nameError, disabled, autoFocusName = true }: Props) {
   const uid = useId();
   const genderListId = `${uid}-genders`;
   const pronounListId = `${uid}-pronouns`;
@@ -153,7 +162,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
             id={`${uid}-first-name`}
             label="First name"
             value={value.firstName}
-            autoFocus
+            autoFocus={autoFocusName}
             onChange={(next) => set('firstName', next)}
           />
           <Field
@@ -219,9 +228,15 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
 
       <Section title="Contact" icon={ContactIcon}>
         <div className="flex flex-col gap-2">
+          {/* Two lines on a phone, one from `sm` up. The fixed columns here
+              (type 6rem + label 7rem + remove 2.25rem + gaps) add up to
+              ~17rem, which on a 390px phone left the email/phone input — the
+              only field that actually matters — about three characters wide.
+              `order-*` puts the value under the other three rather than
+              between them once the row wraps. */}
           {value.contacts.map((contact) => (
-            <div key={contact.key} className="flex items-end gap-2">
-              <div className="flex w-24 shrink-0 flex-col gap-1.5">
+            <div key={contact.key} className="flex flex-wrap items-end gap-2">
+              <div className="order-1 flex w-24 shrink-0 flex-col gap-1.5">
                 <Label className="text-xs text-muted-foreground">Type</Label>
                 <Select
                   value={contact.kind}
@@ -237,7 +252,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
                 </Select>
               </div>
 
-              <div className="min-w-0 flex-1">
+              <div className="order-4 w-full min-w-0 sm:order-2 sm:w-auto sm:flex-1">
                 <Field
                   id={`${uid}-${contact.key}-value`}
                   label={contact.kind === 'email' ? 'Email address' : 'Phone number'}
@@ -248,7 +263,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
                 />
               </div>
 
-              <div className="w-28 shrink-0">
+              <div className="order-2 min-w-0 flex-1 sm:order-3 sm:w-28 sm:flex-none">
                 <Field
                   id={`${uid}-${contact.key}-label`}
                   label="Label"
@@ -262,7 +277,7 @@ export function PersonForm({ value, onChange, nameError, disabled }: Props) {
               <IconButton
                 type="button"
                 variant="ghost"
-                className="mb-0.5 size-9 shrink-0"
+                className="order-3 mb-0.5 size-9 shrink-0 sm:order-4"
                 label={`Remove ${contact.kind}`}
                 onClick={() =>
                   set(

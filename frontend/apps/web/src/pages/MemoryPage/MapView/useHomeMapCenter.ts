@@ -39,7 +39,10 @@ function normalizeName(value: string): string {
  * Childhood city first, then birth city. Empty / missing answers are skipped.
  */
 export function pickHomeCity(
-  page: { data?: Array<{ key?: string | null; answer?: { text?: string | null } | null }> } | null | undefined,
+  page:
+    | { data?: Array<{ key?: string | null; answer?: { text?: string | null } | null }> }
+    | null
+    | undefined,
 ): string | null {
   // Keyed by `question_key`, not `id`: the id is minted per appliance, so
   // indexing by it finds nothing on any database but the one the ids were

@@ -91,7 +91,6 @@ export function useCandidatePointerDrag(task: { id: string; title: string }, ena
 
         if (upEvent.type === 'pointercancel') {
           cancelSchedulePointerDrag();
-
           return;
         }
 

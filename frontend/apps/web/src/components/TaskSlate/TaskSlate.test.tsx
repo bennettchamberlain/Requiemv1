@@ -7,7 +7,7 @@ import { groupIntoSections } from '@/pages/PlanPage/taskSections';
 import type { PlanTask } from '@/pages/PlanPage/usePlanTasks';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
-import { TaskSlate } from './TaskSlate';
+import { TaskSlate, TaskSlateDrawer } from './TaskSlate';
 
 const TODAY = '2026-08-23';
 
@@ -276,5 +276,79 @@ describe('TaskSlate — phone tabs', () => {
 
     fireEvent.pointerUp(window, { pointerId: 1, pointerType: 'touch', clientX: 40, clientY: 80 });
     expect(getSchedulePointerDrag()).toBeNull();
+  });
+});
+
+/**
+ * On a phone the backlog moves off the calendar board entirely. It is reachable
+ * — that is the point of the drawer — but it is not a second place to schedule
+ * work, because the drawer covers the only day column the phone has.
+ */
+describe('TaskSlateDrawer — the phone drawer', () => {
+  afterEach(() => setViewport(false));
+
+  it('stays shut until it is asked for', () => {
+    renderWithProviders(
+      <TaskSlateDrawer
+        open={false}
+        onOpenChange={() => {}}
+        sections={backlog([task({ status: 'proposed' })])}
+        {...NOOP}
+      />,
+    );
+
+    expect(screen.queryByText('Book the dentist')).not.toBeInTheDocument();
+  });
+
+  it('lists the backlog without offering a drag onto a calendar it covers', async () => {
+    renderWithProviders(
+      <TaskSlateDrawer
+        open
+        onOpenChange={() => {}}
+        sections={backlog([task({ id: 'p1', title: 'Try this', status: 'proposed' })])}
+        {...NOOP}
+      />,
+    );
+
+    const card = (await screen.findByText('Try this')).closest('li') as HTMLElement;
+
+    expect(card).toHaveAttribute('draggable', 'false');
+    expect(
+      screen.queryByRole('button', { name: /drag try this onto the calendar/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Schedule it on the Plan page/)).toBeInTheDocument();
+  });
+
+  it('still lets a proposed card be declined', async () => {
+    const onDismissProposed = vi.fn();
+
+    renderWithProviders(
+      <TaskSlateDrawer
+        open
+        onOpenChange={() => {}}
+        sections={backlog([task({ id: 'p1', title: 'Try this', status: 'proposed' })])}
+        {...NOOP}
+        onDismissProposed={onDismissProposed}
+      />,
+    );
+
+    fireEvent.click(await screen.findByLabelText('Dismiss Try this'));
+    expect(onDismissProposed).toHaveBeenCalledWith('p1');
+  });
+
+  it('says the plan failed rather than that there is nothing waiting', async () => {
+    renderWithProviders(
+      <TaskSlateDrawer open onOpenChange={() => {}} sections={[]} loading={false} error />,
+    );
+
+    expect(await screen.findByText(/Could not load your plan/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing in Proposed or Unscheduled/)).not.toBeInTheDocument();
+  });
+
+  it('does not tell an empty drawer to drop anything on a day', async () => {
+    renderWithProviders(<TaskSlateDrawer open onOpenChange={() => {}} sections={[]} {...NOOP} />);
+
+    expect(await screen.findByText(/Nothing in Proposed or Unscheduled/)).toBeInTheDocument();
+    expect(screen.queryByText(/drop onto a day/)).not.toBeInTheDocument();
   });
 });

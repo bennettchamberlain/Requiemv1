@@ -296,7 +296,10 @@ function AnswerPrompt({
         maxLength={ANSWER_MAX_LENGTH}
         placeholder="Answer…"
         aria-label={`Your answer to “${question.text}”`}
-        className="h-8 w-full min-w-0 text-sm"
+        // Full control height on a phone — `h-8` is 32px, under the 44px
+        // Apple asks for, and these sit in a dense divided list where a
+        // mistap lands on the neighbouring question.
+        className="h-9 w-full min-w-0 text-sm sm:h-8 sm:max-w-80 sm:shrink-0"
       />
       {busy && (
         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" strokeWidth={1.5} />
@@ -517,7 +520,9 @@ export function LifeDetailsSection() {
                             question={question}
                             draft={drafts[question.key] ?? ''}
                             busy={busy}
-                            onDraftChange={(value) => setDrafts((prev) => ({ ...prev, [question.key]: value }))}
+                            onDraftChange={(value) =>
+                              setDrafts((prev) => ({ ...prev, [question.key]: value }))
+                            }
                             onAnswer={(text) => void handleAnswer(question.key, row.id, text)}
                           />
                         )}

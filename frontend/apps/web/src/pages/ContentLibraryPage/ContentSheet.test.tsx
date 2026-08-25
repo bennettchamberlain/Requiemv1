@@ -6,6 +6,10 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { ContentSheet } from './ContentSheet';
 
+vi.mock('@/components/ChatWithAgent', () => ({
+  ChatWithAgentMenu: () => null,
+}));
+
 // The relationship cards need the auth context for the REST graph endpoints; the drawer body is what's under test.
 vi.mock('@/components/EntityRelationshipCards/EntityRelationshipCards', async (importOriginal) => {
   const actual =
@@ -59,7 +63,7 @@ describe('ContentSheet', () => {
    * context and threw outside it, so clicking a tile routed to
    * /memory/content/:id and nothing opened.
    */
-  it('opens the details drawer for the routed content row, with a link to its full page', async () => {
+  it('opens the details drawer for the routed content row', async () => {
     renderWithProviders(
       <ContentSheet contentId={CONTENT_GLOBAL_ID} onClose={vi.fn()} onChanged={vi.fn()} />,
       {
@@ -69,11 +73,12 @@ describe('ContentSheet', () => {
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Holiday photo' })).toBeInTheDocument();
-    const fullPage = screen.getByRole('link', { name: /open full page/i });
 
-    expect(fullPage).toHaveAttribute('href', `/content/${CONTENT_UUID}`);
-    expect(fullPage).toHaveAttribute('target', '_blank');
+    // The drawer holds the object outright — there is no full-page escape hatch
+    // to send iOS out to Safari. See EntityDetailScaffold.
+    expect(screen.queryByRole('link', { name: /open full page/i })).not.toBeInTheDocument();
 
+    // The content's own web URL is genuinely external, so it still opens out.
     const external = screen.getByRole('link', { name: 'https://example.test/pier' });
 
     expect(external).toHaveAttribute('href', 'https://example.test/pier');

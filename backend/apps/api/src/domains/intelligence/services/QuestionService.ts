@@ -469,25 +469,40 @@ export class QuestionService {
       offset,
     ];
 
-    // Appended after the fact rather than folded into CATALOGUE_FULL_WHERE_SQL:
-    // that constant is shared by the facet query (params.slice(0, 3)) and the
-    // total-count fallback below (params.slice(0, 6)), and node-postgres
-    // rejects a query text that references a param index the caller didn't
-    // pass. Keeping the allow-lists out of the shared constant means those two
-    // queries can never desync from it.
+    // The allow-list stays out of CATALOGUE_FULL_WHERE_SQL because that
+    // constant is shared by three queries that bind different numbers of
+    // params, and node-postgres rejects a query text referencing a param index
+    // the caller did not pass.
     //
-    // Positions are taken in the order the clauses are built, so neither
-    // allow-list has to know whether the other one was sent.
-    let allowListClause = '';
-    if (query.ids?.length) {
-      params.push(query.ids);
-      allowListClause += `AND q.question_id = ANY($${params.length}::uuid[])`;
-    }
+    // But it has to reach ALL THREE, not just the page query. It previously
+    // reached only that one, so an `ids`-filtered request reported a
+    // `totalCount` and facet buckets for the entire catalogue — the pager
+    // offering pages that cannot exist, and the facet counts describing a set
+    // the caller did not ask for.
+    //
+    // Positioned per query, since each binds a different prefix of `params`.
+    // `ids` and `keys` are ANDed and take positions in the order they are
+    // pushed, so neither has to know whether the other was sent.
+    const allowListFor = (base: number): { sql: string; values: unknown[] } => {
+      const clauses: string[] = [];
+      const values: unknown[] = [];
 
-    if (query.keys?.length) {
-      params.push(query.keys);
-      allowListClause += `\n      AND q.question_key = ANY($${params.length}::text[])`;
-    }
+      if (query.ids?.length) {
+        values.push(query.ids);
+        clauses.push(`AND q.question_id = ANY($${base + values.length}::uuid[])`);
+      }
+
+      if (query.keys?.length) {
+        values.push(query.keys);
+        clauses.push(`AND q.question_key = ANY($${base + values.length}::text[])`);
+      }
+
+      return { sql: clauses.join('\n      '), values };
+    };
+
+    const pageAllowList = allowListFor(params.length);
+    params.push(...pageAllowList.values);
+    const pageAllowListSql = pageAllowList.sql;
 
     const rows = (await this.dataSource.query(
       `
@@ -518,7 +533,7 @@ export class QuestionService {
       FROM ci.questions q
       ${CATALOGUE_ANSWER_LATERAL_SQL}
       WHERE ${CATALOGUE_FULL_WHERE_SQL}
-      ${allowListClause}
+      ${pageAllowListSql}
       ORDER BY
         q.question_category ASC NULLS LAST,
         ${TIER_RANK_SQL} ASC,
@@ -531,7 +546,9 @@ export class QuestionService {
 
     // The facet query ignores $4..$6 but is handed the same array: node-postgres
     // tolerates unreferenced trailing params only when they are not passed, so
-    // slice down to what the statement actually uses.
+    // slice down to what the statement actually uses — then re-append the
+    // allow-list at the position this shorter statement gives it.
+    const facetAllowList = allowListFor(3);
     const facetRows = (await this.dataSource.query(
       `
       SELECT
@@ -542,9 +559,10 @@ export class QuestionService {
       FROM ci.questions q
       ${CATALOGUE_ANSWER_LATERAL_SQL}
       WHERE ${CATALOGUE_BASE_WHERE_SQL}
+      ${facetAllowList.sql}
       GROUP BY 1, 2;
       `,
-      params.slice(0, 3),
+      [...params.slice(0, 3), ...facetAllowList.values],
     )) satisfies Array<CatalogueFacetRow>;
 
     const categories = new Map<string | null, number>();
@@ -562,6 +580,8 @@ export class QuestionService {
       unansweredCount += count - answeredInBucket;
     }
 
+    const countAllowList = allowListFor(6);
+
     // The window count rides on the rows, so an empty page carries none. That is
     // usually because nothing matched — but it is also what a page past the end
     // looks like (deactivate the last row on the last page and you are there),
@@ -578,9 +598,10 @@ export class QuestionService {
                   SELECT COUNT(*)::int AS total_count
                   FROM ci.questions q
                   ${CATALOGUE_ANSWER_LATERAL_SQL}
-                  WHERE ${CATALOGUE_FULL_WHERE_SQL};
+                  WHERE ${CATALOGUE_FULL_WHERE_SQL}
+                  ${countAllowList.sql};
                   `,
-                  params.slice(0, 6),
+                  [...params.slice(0, 6), ...countAllowList.values],
                 )) satisfies Array<{ total_count: number }>
               )[0]?.total_count ?? 0,
             );

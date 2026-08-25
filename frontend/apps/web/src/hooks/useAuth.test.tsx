@@ -1,11 +1,11 @@
 import { type ReactNode } from 'react';
 
-import { setApiBaseUrl } from '@ci/common';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { jwtDecode } from 'jwt-decode';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setApiBaseUrl } from '@ci/common';
 
 import { AuthProvider, useAuth } from './useAuth';
 

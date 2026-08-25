@@ -328,7 +328,6 @@ export function DeviceConnectPage() {
         setMemoryLoginOrigin(origin);
         setMemoryEmail(emailFromIdToken(auth?.idToken) ?? '');
       }
-
       setConnectingId(null);
     }
   };

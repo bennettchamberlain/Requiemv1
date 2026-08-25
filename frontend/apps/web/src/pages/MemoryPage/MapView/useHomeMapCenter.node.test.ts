@@ -69,7 +69,10 @@ describe('pickHomePlace', () => {
 
   it('matches a city that includes the place name (San Francisco, CA)', () => {
     expect(
-      pickHomePlace([{ node: { name: 'San Francisco', latitude: 37.77, longitude: -122.42 } }], 'San Francisco, CA'),
+      pickHomePlace(
+        [{ node: { name: 'San Francisco', latitude: 37.77, longitude: -122.42 } }],
+        'San Francisco, CA',
+      ),
     ).toEqual({ latitude: 37.77, longitude: -122.42 });
   });
 

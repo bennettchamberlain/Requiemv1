@@ -1,10 +1,18 @@
 import { screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { mockQuery } from '@/test/gql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { GET_RECEIPT, ReceiptPage } from './ReceiptPage';
+
+// `ChatWithAgentMenu` reaches for the agent-harness hook context, which this
+// page's providers do not supply — it threw during render and took the whole
+// page down with it, so every assertion below failed on a page that never
+// mounted. The menu is not what these tests are about.
+vi.mock('@/components/ChatWithAgent', () => ({
+  ChatWithAgentMenu: () => null,
+}));
 
 const RAW_ID = 'r-1';
 // GlobalUID.encode('receipt', 'r-1') — the page encodes the route param itself.
