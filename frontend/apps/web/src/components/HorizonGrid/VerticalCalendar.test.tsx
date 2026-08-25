@@ -1,7 +1,7 @@
 import { act, createEvent, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ScheduleEvent } from '@/api/useScheduleService';
+import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import { cancelSchedulePointerDrag, endSchedulePointerDrag, startSchedulePointerDrag } from '@/lib/schedulePointerDrag';
 
 import { addDays, startOfLocalDay } from './HorizonGrid';
@@ -22,6 +22,37 @@ function event(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
     locationName: null,
     ...overrides,
   };
+}
+
+/**
+ * A forecast that claims every hour of one local day.
+ *
+ * Days are keyed by UTC date and a local day straddles two of them, so both
+ * are seeded — otherwise the fixture only lights up in whichever timezone the
+ * test happens to run in.
+ */
+function rhythmFor(day: Date, name = 'Morning gym'): RhythmDay[] {
+  const clusters = [
+    {
+      clusterId: 'c1',
+      name,
+      l0Class: 'EXERCISE',
+      pOccur: 0.9,
+      scheduled: false,
+      daypartProbs: [
+        { label: 'night', probability: 0.9 },
+        { label: 'morning', probability: 0.9 },
+        { label: 'afternoon', probability: 0.9 },
+        { label: 'evening', probability: 0.9 },
+      ],
+    },
+  ];
+
+  return [0, 1].map((offset) => ({
+    date: new Date(day.getTime() + offset * 86_400_000).toISOString().slice(0, 10),
+    dow: 'Mon',
+    clusters,
+  }));
 }
 
 describe('VerticalCalendar', () => {
@@ -159,6 +190,60 @@ describe('VerticalCalendar', () => {
     expect(screen.queryByRole('button', { name: /^Show / })).not.toBeInTheDocument();
     expect(screen.getByRole('list', { name: /All day on / })).toBeInTheDocument();
     expect(screen.getByRole('listitem', { name: /August/ })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Pattern rhythm used to be a wash painted behind the day column, where it read
+ * as a highlight on whatever chip sat over it and had no name at all. It is now
+ * a strip on the time axis: same reading, somewhere it can be read.
+ */
+describe('VerticalCalendar — the rhythm strip', () => {
+  it('sits left of the hours instead of behind the day', () => {
+    render(<VerticalCalendar start={MONDAY} days={1} events={[event()]} rhythm={rhythmFor(MONDAY)} />);
+
+    const strip = screen.getByTestId('vertical-rhythm-strip');
+    const lane = screen.getByTestId('vertical-day-lane');
+
+    expect(strip.compareDocumentPosition(lane) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Nothing paints the forecast inside the column any more.
+    expect(lane.querySelector('[style*="--primary"]')).toBeNull();
+  });
+
+  it('names what the day usually holds, so the cells are not the only telling', () => {
+    render(<VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={rhythmFor(MONDAY)} />);
+
+    expect(screen.getByRole('img', { name: /Morning gym/ })).toBeInTheDocument();
+  });
+
+  it('claims nothing when there is no established pattern', () => {
+    render(<VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={[]} />);
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByTestId('vertical-rhythm-strip')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('reads the selected day, since one strip serves the whole week', () => {
+    const thursday = addDays(MONDAY, 3);
+
+    const { unmount } = render(
+      <VerticalCalendar start={MONDAY} days={7} events={[]} rhythm={rhythmFor(thursday)} />,
+    );
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <VerticalCalendar
+        start={MONDAY}
+        days={7}
+        events={[]}
+        rhythm={rhythmFor(thursday)}
+        selectedDay={thursday}
+      />,
+    );
+
+    expect(screen.getByRole('img', { name: /Morning gym/ })).toBeInTheDocument();
   });
 });
 

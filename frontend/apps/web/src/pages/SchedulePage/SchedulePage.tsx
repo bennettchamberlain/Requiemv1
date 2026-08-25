@@ -2,16 +2,15 @@ import { useCallback, useEffect, useMemo, useState, type ElementType } from 'rea
 
 import { EmptyState, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Button, IconButton, cn } from '@ci/shadcn';
-import { CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from '@ci/shadcn/icons';
+import { CalendarRange, ChevronLeft, ChevronRight, Inbox } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
 import { type RhythmDay, type ScheduleEvent, useScheduleService } from '@/api/useScheduleService';
-import { HorizonGrid, VerticalCalendar } from '@/components/HorizonGrid';
+import { VerticalCalendar } from '@/components/HorizonGrid';
 import { TodayNowNext, WeekDayChips } from '@/components/HorizonGrid/TodayNowNext';
 import { PageContent } from '@/components/layout';
-import { TaskSlate } from '@/components/TaskSlate';
-import { usePlanTasks } from '@/pages/PlanPage/usePlanTasks';
+import { TaskSlate, TaskSlateDrawer } from '@/components/TaskSlate';
 import {
   type ActivityClass,
   type ColorMode,
@@ -24,6 +23,7 @@ import {
   sourceLabel,
   sourceOf,
 } from '@/lib/activityPalette';
+import { usePlanTasks } from '@/pages/PlanPage/usePlanTasks';
 
 const DAYS_IN_VIEW = 7;
 
@@ -75,12 +75,39 @@ const COLOR_MODE_LABEL: Record<ColorMode, string> = {
   source: 'Source',
 };
 
-type ScheduleLayout = 'horizon' | 'calendar';
+/**
+ * The activity classes and sources the visible window actually contains.
+ *
+ * Both lanes contribute a class: one the rhythm predicts but you have not
+ * committed to is exactly the kind of thing this page exists to show.
+ */
+function windowVocabulary(events: ScheduleEvent[], rhythm: RhythmDay[]) {
+  const classes = new Set<ActivityClass>(events.map(classifyEvent));
 
-const LAYOUT_LABEL: Record<ScheduleLayout, string> = {
-  horizon: 'Horizon',
-  calendar: 'Calendar',
-};
+  for (const day of rhythm) {
+    for (const cluster of day.clusters) {
+      classes.add(normalizeClass(cluster.l0Class));
+    }
+  }
+
+  return { classes, sources: new Set(events.map(sourceOf)) };
+}
+
+/**
+ * Whether hue is carrying information this week.
+ *
+ * Activity / Source is a choice between two readings of the same marks, and
+ * both collapse to one colour when the window holds a single class and a single
+ * source — at which point the control and its legend are chrome that answers a
+ * question nothing on screen is asking. An empty week is the extreme case of
+ * that, not a special case, so this is derived from what loaded rather than
+ * from the viewport.
+ */
+function colorSaysSomething(events: ScheduleEvent[], rhythm: RhythmDay[]): boolean {
+  const { classes, sources } = windowVocabulary(events, rhythm);
+
+  return classes.size > 1 || sources.size > 1;
+}
 
 /** One swatch + word. The word is why hue never carries identity alone. */
 function LegendKey({ color, label }: { color: string; label: string }) {
@@ -108,27 +135,17 @@ function ScheduleLegend({
   rhythm: RhythmDay[];
 }) {
   const keys = useMemo(() => {
-    if (mode === 'source') {
-      const sources = [...new Set(events.map(sourceOf))].sort();
+    const { classes, sources } = windowVocabulary(events, rhythm);
 
-      return sources.map((source) => ({
+    if (mode === 'source') {
+      return [...sources].sort().map((source) => ({
         key: source,
         color: sourceColor(source),
         label: sourceLabel(source),
       }));
     }
 
-    // Both lanes contribute: a class the rhythm predicts but you have not
-    // committed to is exactly the kind of thing this page exists to show.
-    const present = new Set<ActivityClass>(events.map(classifyEvent));
-
-    for (const day of rhythm) {
-      for (const cluster of day.clusters) {
-        present.add(normalizeClass(cluster.l0Class));
-      }
-    }
-
-    return ACTIVITY_CLASSES.filter((cls) => present.has(cls)).map((cls) => ({
+    return ACTIVITY_CLASSES.filter((cls) => classes.has(cls)).map((cls) => ({
       key: cls,
       color: classColor(cls),
       label: CLASS_LABEL[cls],
@@ -159,8 +176,8 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const { isMobile } = useDeviceLayout();
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
-  const [weekOpen, setWeekOpen] = useState(false);
-  const [layout, setLayout] = useState<ScheduleLayout>('calendar');
+  /** Phone only: Possibilities lives behind a drawer rather than under the day. */
+  const [slateOpen, setSlateOpen] = useState(false);
 
   usePageTitle(embedded ? null : 'Schedule - Companion Intelligence');
 
@@ -261,34 +278,8 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   // `weekOffset` / `selectedDay` survive the host re-rendering.
   const Frame: ElementType = embedded ? 'div' : PageContent;
 
-  const layoutToggle = (
-    <div
-      role="tablist"
-      aria-label="Schedule layout"
-      className="flex shrink-0 items-center rounded-md border border-border p-0.5"
-    >
-      {(['calendar', 'horizon'] as const).map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          role="tab"
-          aria-selected={layout === mode}
-          title={
-            mode === 'horizon' ? 'Days as rows, time across' : 'Hours down, like a typical calendar'
-          }
-          onClick={() => setLayout(mode)}
-          className={cn(
-            'rounded-[4px] px-2 py-0.5 text-[11px] leading-none transition-colors',
-            layout === mode
-              ? 'bg-accent text-accent-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {LAYOUT_LABEL[mode]}
-        </button>
-      ))}
-    </div>
-  );
+  // Shown only once hue has more than one thing to say — see `colorSaysSomething`.
+  const colorKey = useMemo(() => colorSaysSomething(events, rhythm), [events, rhythm]);
 
   const colorModeToggle = (
     <div
@@ -321,6 +312,17 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
     </div>
   );
 
+  // Hue answers one question at a time; this picks which one. Committed time
+  // and rhythm stay told apart by their lanes and by fill weight, so colour is
+  // free to carry category instead of certainty — but only while the week holds
+  // more than one category to tell apart.
+  const colorChrome = colorKey ? (
+    <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+      <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
+      {colorModeToggle}
+    </div>
+  ) : null;
+
   // Week chrome: range, legend, activity/source. Lives under the TimelineJS
   // today strip and immediately above the week so it sits next to schedule /
   // rhythm instead of floating above the zoomable story.
@@ -344,14 +346,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
         </Button>
       )}
 
-      {/* Hue answers one question at a time; this picks which one. Committed
-          time and rhythm stay told apart by their lanes and by fill weight,
-          so colour is free to carry category instead of certainty. */}
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-        <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
-        {layoutToggle}
-        {colorModeToggle}
-      </div>
+      {colorChrome && <div className="ml-auto">{colorChrome}</div>}
     </div>
   );
 
@@ -386,13 +381,10 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
         {showScheduleSurface && (
           <>
-            {/* Week chrome, then the week, then Possibilities. On a phone the
-                horizon opens as day chips plus one row; now/next sits above. */}
+            {/* One schedule, one geometry. Week chrome, then the week — where
+                what a day usually holds rides in beside the hours rather than
+                as a second tab of the same seven days. */}
             <div className={cn('flex flex-col', isMobile ? 'gap-3' : 'gap-4')}>
-              {layout === 'horizon' && isMobile && (
-                <TodayNowNext events={events} day={selectedDay} onShowMore={() => setWeekOpen(true)} />
-              )}
-
               {isMobile ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -414,79 +406,70 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                       </Button>
                     )}
 
-                    {layout === 'horizon' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="ml-auto h-8 text-xs"
-                        aria-expanded={weekOpen}
-                        onClick={() => setWeekOpen((open) => !open)}
-                      >
-                        {weekOpen ? (
-                          <ChevronUp className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
-                        ) : (
-                          <ChevronDown className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
-                        )}
-                        {weekOpen ? 'Hide week' : 'Show week'}
-                      </Button>
-                    )}
+                    {/* Possibilities is a drawer here, not a board under the
+                        day — see TaskSlateDrawer. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto h-8 text-xs"
+                      aria-expanded={slateOpen}
+                      onClick={() => setSlateOpen(true)}
+                    >
+                      <Inbox className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
+                      Possibilities
+                      {backlogCount > 0 && <span className="ml-1 tabular-nums">{backlogCount}</span>}
+                    </Button>
                   </div>
 
-                  {(layout === 'calendar' || !weekOpen) && (
-                    <WeekDayChips
-                      start={start}
-                      days={DAYS_IN_VIEW}
-                      selectedDay={selectedDay}
-                      onSelectDay={setSelectedDay}
-                    />
-                  )}
+                  <WeekDayChips
+                    start={start}
+                    days={DAYS_IN_VIEW}
+                    selectedDay={selectedDay}
+                    onSelectDay={setSelectedDay}
+                  />
 
-                  <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-                    {weekOpen && layout === 'horizon' && (
-                      <ScheduleLegend mode={colorMode} events={events} rhythm={rhythm} />
-                    )}
-                    {layoutToggle}
-                    {colorModeToggle}
-                  </div>
+                  {colorChrome}
                 </div>
               ) : (
                 weekChrome
               )}
 
-              {layout === 'calendar' ? (
-                <VerticalCalendar
-                  start={isMobile ? selectedDay : start}
-                  days={isMobile ? 1 : DAYS_IN_VIEW}
-                  events={events}
-                  rhythm={rhythm}
-                  colorMode={colorMode}
-                  selectedDay={selectedDay}
-                  onSelectDay={setSelectedDay}
-                  onDropCandidate={handleDrop}
-                  onMoveEvent={handleMove}
-                  footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
+              {isMobile && <TodayNowNext events={events} day={selectedDay} />}
+
+              <VerticalCalendar
+                start={isMobile ? selectedDay : start}
+                days={isMobile ? 1 : DAYS_IN_VIEW}
+                events={events}
+                rhythm={rhythm}
+                colorMode={colorMode}
+                selectedDay={selectedDay}
+                onSelectDay={setSelectedDay}
+                onDropCandidate={handleDrop}
+                onMoveEvent={handleMove}
+                footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
+              />
+
+              {/* `=== false` rather than a plain ternary: `isMobile` is
+                  undefined until the media query resolves, and defaulting to
+                  the closed drawer means a phone never flashes the inline board
+                  this change exists to take off the calendar. */}
+              {isMobile === false ? (
+                <TaskSlate
+                  sections={backlog}
+                  loading={planLoading}
+                  error={planError}
+                  onDismissProposed={handleDismissProposed}
                 />
               ) : (
-                <HorizonGrid
-                  start={isMobile && !weekOpen ? selectedDay : start}
-                  days={isMobile && !weekOpen ? 1 : DAYS_IN_VIEW}
-                  events={events}
-                  rhythm={rhythm}
-                  colorMode={colorMode}
-                  selectedDay={selectedDay}
-                  onSelectDay={setSelectedDay}
-                  onDropCandidate={handleDrop}
-                  onMoveEvent={handleMove}
-                  footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
+                <TaskSlateDrawer
+                  open={slateOpen}
+                  onOpenChange={setSlateOpen}
+                  sections={backlog}
+                  loading={planLoading}
+                  error={planError}
+                  onDismissProposed={handleDismissProposed}
                 />
               )}
-
-              <TaskSlate
-                sections={backlog}
-                loading={planLoading}
-                error={planError}
-                onDismissProposed={handleDismissProposed}
-              />
             </div>
           </>
         )}

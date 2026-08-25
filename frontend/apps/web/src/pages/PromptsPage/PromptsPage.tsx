@@ -251,8 +251,13 @@ export function PromptsPage() {
 
   return (
     <>
-      <PageContent className="gap-4 p-0">
-        <div className="flex flex-col gap-4 px-4 pb-4">
+      {/* `p-0` here used to cancel PageContent's own responsive padding and
+          hand it back as a flat `px-4 pb-4` — no top padding at all, so on the
+          phone the first card sat flush against the top bar, and on desktop
+          the safe-area top inset PageContent applies was dropped too. Let
+          PageContent own its spacing, same as every other page. */}
+      <PageContent className="gap-4">
+        <div className="flex flex-col gap-4">
           <AnswerQuestionPrompt onAnswerSubmitted={fetchAnswers} />
 
           <h1 className="text-2xl font-bold">Reflections</h1>
@@ -356,9 +361,14 @@ export function PromptsPage() {
                       <div
                         className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
                       >
+                        {/* `px-0` on the three slots: they each default to
+                            `px-6`, which stacks on top of the card's own `p-4`
+                            for 40px of padding a side. On a 390px phone that
+                            is a fifth of the screen spent on nothing, and the
+                            question text wrapped every three or four words. */}
                         {answers.map((answer) => (
                           <Card key={answer.id} className="p-4">
-                            <Card.Header className="pb-3">
+                            <Card.Header className="px-0 pb-3">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2 mb-2">
@@ -378,7 +388,7 @@ export function PromptsPage() {
                                 </div>
                               </div>
                             </Card.Header>
-                            <Card.Content className="space-y-3">
+                            <Card.Content className="space-y-3 px-0">
                               <div>
                                 <h4 className="text-xs font-medium text-muted-foreground mb-1">Answer</h4>
                                 <ExpandableText
@@ -409,7 +419,7 @@ export function PromptsPage() {
                                 </div>
                               )}
                             </Card.Content>
-                            <Card.Footer className="pt-3">
+                            <Card.Footer className="px-0 pt-3">
                               <div className="flex items-center justify-between w-full">
                                 <div className="flex items-center gap-1">
                                   {isManuallyAnswered(answer) ? (

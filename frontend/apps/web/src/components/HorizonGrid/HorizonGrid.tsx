@@ -1343,10 +1343,18 @@ export {
   describes,
   eventUrl,
   rhythmCells,
+  rhythmClaims,
+  rhythmLabel,
+  topClusters,
+  cellOpacity,
+  utcDateKey,
   dropInstant,
   movedStart,
   startOfLocalDay,
   addDays,
+  RHYTHM_NOISE_FLOOR,
   VIRTUALIZE_DAYS_AFTER,
   ESTIMATED_DAY_ROW_PX,
 };
+
+export type { RhythmClaim, RhythmCluster };

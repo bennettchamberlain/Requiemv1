@@ -2,17 +2,17 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Button, Card } from '@ci/shadcn';
-import { Loader2, RefreshCw, Send, Sparkles, X } from '@ci/shadcn/icons';
+import { RefreshCw, Send, Sparkles, X } from '@ci/shadcn/icons';
 import { useNavigate, useParams } from 'react-router-dom';
+import { v7 as uuid7 } from 'uuid';
 
 import { useThreadService } from '@/api';
-import { usePersonaCompose } from '@/api/usePersonaCompose';
 import { Chat, type FormData } from '@/components/Chat';
-import { HowYoudDoItCard } from '@/components/HowYoudDoItCard';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
 import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } from '@/lib/agentChat';
 
 import { ChatSidebar } from './ChatSidebar';
+import { STARTER_PROMPTS } from './starterPrompts';
 import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
 
@@ -28,11 +28,6 @@ function ChatPageContent() {
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [chatDraft, setChatDraft] = useState('');
   const [{ selectedModel }] = useModel();
-  const [personaTask, setPersonaTask] = useState('');
-  const [applyingPersona, setApplyingPersona] = useState(false);
-  const [applyNote, setApplyNote] = useState<string | null>(null);
-  const [{ loading: personaLoading, error: personaError, result: personaResult }, { compose, apply, clear }] =
-    usePersonaCompose();
 
   const [
     { threads, loading: threadsLoading, error: threadsError },
@@ -174,44 +169,35 @@ function ChatPageContent() {
     [refetchThreads],
   );
 
-  const handlePersonaCompose = useCallback(async () => {
-    const trimmed = personaTask.trim();
-    if (!trimmed || personaLoading) {
-      return;
-    }
+  /**
+   * Tapping a starter ask has to *send* it, not just prefill the composer. The
+   * composer's own submit path lives inside `Chat` and is not reachable from
+   * here, so we echo the user turn into `messages` ourselves — that both shows
+   * the bubble and flips `Chat` out of its empty state — and then fire the same
+   * request the composer would have.
+   */
+  const handleStarterPrompt = useCallback(
+    (prompt: string) => {
+      if (selectedModel == null || chatRequestLoading) {
+        return;
+      }
 
-    setApplyNote(null);
-    try {
-      await compose(trimmed);
-    } catch {
-      // error surfaced via personaError
-    }
-  }, [compose, personaLoading, personaTask]);
+      setInitialMessages((prev) => [
+        ...prev,
+        {
+          id: uuid7(),
+          model: selectedModel,
+          role: 'user',
+          content: prompt,
+          mimetype: null,
+          toolCalls: null,
+          canceled: false,
+        },
+      ]);
 
-  const handlePersonaApply = useCallback(async () => {
-    if (!personaResult || applyingPersona) {
-      return;
-    }
-
-    setApplyingPersona(true);
-    setApplyNote(null);
-    try {
-      const { added } = await apply(personaResult);
-      setApplyNote(
-        added > 0 ? `Added ${added} ${added === 1 ? 'card' : 'cards'} to Possibilities.` : 'Nothing to add.',
-      );
-    } catch {
-      setApplyNote('Could not add to Possibilities.');
-    } finally {
-      setApplyingPersona(false);
-    }
-  }, [apply, applyingPersona, personaResult]);
-
-  const handlePersonaFollowUp = useCallback(
-    (question: string) => {
-      void submitChatRequest({ message: question });
+      void submitChatRequest({ message: prompt });
     },
-    [submitChatRequest],
+    [chatRequestLoading, selectedModel, submitChatRequest],
   );
 
   const loading = threadsLoading || threadLoading || chatRequestLoading;
@@ -250,62 +236,33 @@ function ChatPageContent() {
     );
   } else if (resolvedThreadId.current == null) {
     emptyState = (
-      <div className="flex w-full max-w-xl flex-col items-center px-4 text-gray-500">
-        <div className="mb-4 mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-stone-100">
+      // The ten starters overflow a phone viewport, so this column scrolls on
+      // its own rather than pushing the composer off screen. `min-h-0` lets it
+      // shrink below its content height inside Chat's centred flex column.
+      <div className="flex min-h-0 w-full max-w-xl flex-col items-center overflow-y-auto px-2 text-gray-500">
+        <div className="mb-4 mx-auto flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-stone-100">
           <Send className="relative -left-0.5 top-0.5 h-8 w-8 text-zinc-400" />
         </div>
         <p className="mb-1 text-sm">Start a conversation with your Companion</p>
-        <p className="mb-6 text-xs text-gray-400">
+        <p className="mb-4 text-xs text-gray-400">
           Ask about Memory, Plan to-dos, Forecast, or Brief — or attach a file
         </p>
 
-        <div className="w-full rounded-xl border border-border bg-background p-3 text-left">
-          <p className="mb-2 text-xs font-medium text-foreground">How you’d do it</p>
-          <p className="mb-2 text-[11px] text-muted-foreground">
-            Paste a task — Companion synthesizes who you are, then suggests your approach.
-          </p>
-          <textarea
-            value={personaTask}
-            onChange={(e) => setPersonaTask(e.target.value)}
-            rows={2}
-            disabled={personaLoading}
-            aria-label="Task to personalize"
-            placeholder="e.g. Plan a calm dinner for friends this week…"
-            className="mb-2 w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary/60 focus:outline-none disabled:opacity-60"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              className="h-7 text-xs"
-              disabled={personaLoading || personaTask.trim().length === 0}
-              onClick={() => void handlePersonaCompose()}
-            >
-              {personaLoading ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
-              ) : (
-                <Sparkles className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
-              )}
-              {personaLoading ? 'Personalizing…' : 'How I’d do this'}
-            </Button>
-            {personaResult && (
-              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={clear}>
-                Clear
-              </Button>
-            )}
-            {personaError && <span className="text-[11px] text-destructive">{personaError}</span>}
-          </div>
-        </div>
-
-        {personaResult && (
-          <HowYoudDoItCard
-            className="mt-4"
-            result={personaResult}
-            applying={applyingPersona}
-            applyNote={applyNote}
-            onApply={() => void handlePersonaApply()}
-            onFollowUp={handlePersonaFollowUp}
-          />
-        )}
+        <ul aria-label="Suggested asks" className="w-full space-y-1.5 pb-1 text-left">
+          {STARTER_PROMPTS.map((prompt) => (
+            <li key={prompt}>
+              <button
+                type="button"
+                disabled={isSubmitDisabled}
+                onClick={() => handleStarterPrompt(prompt)}
+                className="flex w-full items-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-left text-[13px] text-foreground hover:border-primary/50 hover:bg-muted/50 disabled:opacity-60"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                <span className="min-w-0 flex-1">{prompt}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
     );
   }

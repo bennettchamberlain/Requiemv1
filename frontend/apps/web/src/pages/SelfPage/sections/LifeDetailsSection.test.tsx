@@ -177,6 +177,23 @@ describe('LifeDetailsSection', () => {
     );
   });
 
+  // `truncate` was unconditional, so a ~340px-wide phone clipped the row at
+  // the question and showed an ellipsis where the answer should be — every
+  // answered row in the section read as blank. It stays a single line from
+  // `sm` up, where the row is wide enough for it.
+  it('wraps an answered row on a phone rather than clipping the answer away', async () => {
+    fetchJson.mockResolvedValue(
+      cataloguePage([catalogueEntry(BLOOD_TYPE_ID, 'What is your blood type?', 'O negative')]),
+    );
+
+    render(<LifeDetailsSection />);
+
+    const row = (await screen.findByText(/O negative/)).closest('p')!;
+    expect(row).not.toHaveClass('truncate');
+    expect(row).toHaveClass('break-words');
+    expect(row).toHaveClass('sm:truncate');
+  });
+
   it('shows one error for the whole section when the fetch fails, with no question text rendered', async () => {
     fetchJson.mockRejectedValue(new Error('network error'));
 

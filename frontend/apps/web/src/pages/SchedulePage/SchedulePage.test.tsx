@@ -29,29 +29,10 @@ vi.mock('@/api/useRescheduleEvent', () => ({
  *
  * The page's job here is wiring — which footer copy it chooses, and what it
  * does with a rejected drop — and driving those through real HTML5 drag events
- * would test HorizonGrid instead. The stub exposes the two callbacks as
+ * would test VerticalCalendar instead. The stub exposes the two callbacks as
  * buttons and renders the footer verbatim.
  */
 vi.mock('@/components/HorizonGrid', () => ({
-  HorizonGrid: ({
-    footer,
-    onDropCandidate,
-    onMoveEvent,
-  }: {
-    footer?: string;
-    onDropCandidate: (id: string, at: Date) => void;
-    onMoveEvent: (id: string, at: Date) => void;
-  }) => (
-    <div>
-      <button type="button" onClick={() => onDropCandidate('c1', new Date())}>
-        stub-drop
-      </button>
-      <button type="button" onClick={() => onMoveEvent('e1', new Date())}>
-        stub-move
-      </button>
-      <p>{footer}</p>
-    </div>
-  ),
   VerticalCalendar: ({
     footer,
     onDropCandidate,
@@ -73,16 +54,14 @@ vi.mock('@/components/HorizonGrid', () => ({
   ),
 }));
 
-vi.mock('@/components/TaskSlate', () => ({
-  TaskSlate: ({
-    sections,
-    onDismissProposed,
-    error,
-  }: {
+vi.mock('@/components/TaskSlate', () => {
+  type SlateProps = {
     sections: { key: string; tasks: { id: string; title: string }[] }[];
     onDismissProposed: (id: string) => void;
     error?: boolean;
-  }) => (
+  };
+
+  const Slate = ({ sections, onDismissProposed, error }: SlateProps) => (
     <>
       {error && <p>Could not load your plan. Try again shortly.</p>}
       {sections.flatMap((section) =>
@@ -96,8 +75,20 @@ vi.mock('@/components/TaskSlate', () => ({
         )),
       )}
     </>
-  ),
-}));
+  );
+
+  return {
+    TaskSlate: Slate,
+    // The real drawer is a Sheet; what the page owns is whether it is open, so
+    // the stub renders nothing until it is.
+    TaskSlateDrawer: ({ open, ...rest }: SlateProps & { open: boolean }) =>
+      open ? (
+        <div data-testid="slate-drawer">
+          <Slate {...rest} />
+        </div>
+      ) : null,
+  };
+});
 
 const event = (overrides: Partial<ScheduleEvent> = {}): ScheduleEvent => ({
   id: 'e1',
@@ -337,7 +328,21 @@ describe('SchedulePage — week paging', () => {
 
     afterEach(() => setViewport(false));
 
-    it('replaces the week with now and next on the Horizon tab, and keeps a tappable week', async () => {
+    it('offers one day behind day chips, with no Calendar / Horizon pair to choose from', () => {
+      setViewport(true);
+
+      renderWithProviders(<SchedulePage />);
+
+      expect(screen.queryByRole('tablist', { name: 'Schedule layout' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('tab', { name: 'Horizon' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Show week' })).not.toBeInTheDocument();
+      expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
+      expect(
+        screen.getByRole('tablist', { name: 'Days this week' }).querySelectorAll('[role="tab"]'),
+      ).toHaveLength(7);
+    });
+
+    it('keeps now and next above the day rather than behind a second view', () => {
       setViewport(true);
 
       const startOfToday = new Date();
@@ -358,31 +363,43 @@ describe('SchedulePage — week paging', () => {
 
       renderWithProviders(<SchedulePage />);
 
-      fireEvent.click(screen.getByRole('tab', { name: 'Horizon' }));
-
       expect(screen.getByText('Afternoon review')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Show week' })).toBeInTheDocument();
-      expect(
-        screen.getByRole('tablist', { name: 'Days this week' }).querySelectorAll('[role="tab"]'),
-      ).toHaveLength(7);
       expect(screen.getByText('stub-drop')).toBeInTheDocument();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Show week' }));
-      expect(screen.getByRole('button', { name: 'Hide week' })).toBeInTheDocument();
-      expect(screen.queryByRole('tablist', { name: 'Days this week' })).not.toBeInTheDocument();
     });
 
-    it('keeps day chips on the Calendar tab and hides the horizon week toggle', async () => {
+    /**
+     * The regression the walkthrough hit: Possibilities was stacked under the
+     * one column the phone came for, advertising a drag onto a day that is
+     * never on screen at the same time as the card.
+     */
+    it('puts Possibilities behind a drawer instead of under the calendar', () => {
       setViewport(true);
+      setPlan({
+        backlog: [{ key: 'unscheduled', tasks: [{ id: 't1', title: 'Call the dentist' }] }],
+        backlogCount: 1,
+      });
 
       renderWithProviders(<SchedulePage />);
 
-      expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute('aria-selected', 'true');
-      expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Show week' })).not.toBeInTheDocument();
-      expect(
-        screen.getByRole('tablist', { name: 'Days this week' }).querySelectorAll('[role="tab"]'),
-      ).toHaveLength(7);
+      expect(screen.queryByTestId('slate-drawer')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Dismiss Call the dentist')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Possibilities/ }));
+
+      expect(screen.getByTestId('slate-drawer')).toBeInTheDocument();
+      expect(screen.getByLabelText('Dismiss Call the dentist')).toBeInTheDocument();
+    });
+
+    it('leaves the slate inline on a desktop, where the drag it offers is real', () => {
+      setPlan({
+        backlog: [{ key: 'unscheduled', tasks: [{ id: 't1', title: 'Call the dentist' }] }],
+        backlogCount: 1,
+      });
+
+      renderWithProviders(<SchedulePage />);
+
+      expect(screen.queryByRole('button', { name: /Possibilities/ })).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Dismiss Call the dentist')).toBeInTheDocument();
     });
   });
 
@@ -425,27 +442,76 @@ describe('SchedulePage — week paging', () => {
   });
 });
 
-describe('SchedulePage — layout tabs', () => {
-  it('starts on the calendar view', () => {
+describe('SchedulePage — one schedule, not two views of it', () => {
+  it('draws the calendar with no layout to pick', () => {
     renderWithProviders(<SchedulePage />);
 
-    const tabs = screen.getByRole('tablist', { name: 'Schedule layout' }).querySelectorAll('[role="tab"]');
-    expect([...tabs].map((tab) => tab.textContent)).toEqual(['Calendar', 'Horizon']);
-    expect(screen.getByRole('tab', { name: 'Calendar' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
+    expect(screen.queryByRole('tablist', { name: 'Schedule layout' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Calendar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Horizon' })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Activity / Source is two readings of the same marks. With one class and one
+ * source on screen both readings are the same picture, so the control and its
+ * legend are chrome for a question nothing is asking — which is what an empty
+ * week showed a legend for.
+ */
+describe('SchedulePage — colour mode only once colour means something', () => {
+  it('says nothing about colour on an empty week', () => {
+    setSchedule({ events: [], rhythm: [] });
+
+    renderWithProviders(<SchedulePage />);
+
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(screen.queryByText('Activity')).not.toBeInTheDocument();
+    expect(screen.queryByText('Source')).not.toBeInTheDocument();
   });
 
-  it('switches to the horizon view and back', () => {
+  it('stays quiet when the week holds a single kind of thing', () => {
+    setSchedule({ events: [event({ title: 'Standup' })] });
+
     renderWithProviders(<SchedulePage />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Horizon' }));
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+  });
 
-    expect(screen.getByRole('tab', { name: 'Horizon' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('stub-drop')).toBeInTheDocument();
-    expect(screen.queryByTestId('vertical-calendar')).not.toBeInTheDocument();
+  it('offers the toggle, with a key, once there is more than one', () => {
+    setSchedule({ events: [event({ title: 'Standup' }), event({ id: 'e2', title: 'Gym session' })] });
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Calendar' }));
+    renderWithProviders(<SchedulePage />);
 
-    expect(screen.getByTestId('vertical-calendar')).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Activity' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('work')).toBeInTheDocument();
+    expect(screen.getByText('exercise')).toBeInTheDocument();
+  });
+
+  it('counts what the rhythm predicts, not only what is committed', () => {
+    setSchedule({
+      events: [event({ title: 'Standup' })],
+      rhythm: [
+        {
+          date: '2026-08-05',
+          dow: 'Wed',
+          clusters: [
+            {
+              clusterId: 'c1',
+              name: 'Morning gym',
+              l0Class: 'EXERCISE',
+              pOccur: 0.9,
+              scheduled: false,
+              daypartProbs: [{ label: 'morning', probability: 0.8 }],
+            },
+          ],
+        },
+      ],
+    });
+
+    renderWithProviders(<SchedulePage />);
+
+    expect(screen.getByRole('radiogroup')).toBeInTheDocument();
   });
 });

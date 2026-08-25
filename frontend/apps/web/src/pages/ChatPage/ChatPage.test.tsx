@@ -1,10 +1,13 @@
+import type { ReactNode } from 'react';
+
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import ChatPage from './ChatPage';
-import type { Thread } from './types';
+import { STARTER_PROMPTS } from './starterPrompts';
+import type { Message, Thread } from './types';
 
 const navigate = vi.fn();
 
@@ -68,13 +71,6 @@ vi.mock('@/api', async (importOriginal) => {
   };
 });
 
-vi.mock('@/api/usePersonaCompose', () => ({
-  usePersonaCompose: () => [
-    { loading: false, error: null, result: null },
-    { compose: vi.fn(), apply: vi.fn(), clear: vi.fn() },
-  ],
-}));
-
 vi.mock('./useThreadListService', () => ({
   useThreadListService: () => [
     { threads: h.threads, loading: false, error: null },
@@ -92,17 +88,37 @@ vi.mock('@/lib/agentChat', async (importOriginal) => {
   };
 });
 
+// Stands in for the real composer: renders whatever ChatPage passes as the
+// empty state and echoes `messages` so we can assert what a starter tap put
+// into the thread.
 vi.mock('@/components/Chat', () => ({
-  Chat: ({ onStop }: { onStop?: () => void }) => (
-    <button type="button" onClick={() => onStop?.()}>
-      Stop
-    </button>
+  Chat: ({
+    onStop,
+    emptyState,
+    messages,
+  }: {
+    onStop?: () => void;
+    emptyState?: ReactNode;
+    messages?: Message[];
+  }) => (
+    <>
+      <button type="button" onClick={() => onStop?.()}>
+        Stop
+      </button>
+      <ul data-testid="thread-messages">
+        {messages?.map((message) => (
+          <li key={message.id}>{`${message.role}: ${message.content}`}</li>
+        ))}
+      </ul>
+      {emptyState}
+    </>
   ),
 }));
 
 describe('ChatPage', () => {
   beforeEach(() => {
     navigate.mockClear();
+    h.submit.mockClear();
     h.stop.mockClear();
     h.detach.mockClear();
     h.attach.mockClear();
@@ -206,5 +222,61 @@ describe('ChatPage', () => {
     expect(h.cancel).toHaveBeenCalledWith('t2');
     expect(h.deleteThread).toHaveBeenCalledWith('t2');
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The empty state only renders on `/chat` — with an `:id` in the route
+   * ChatPage is showing a thread, not the starting screen.
+   */
+  describe('empty state', () => {
+    const renderEmpty = () => renderWithProviders(<ChatPage />, { route: '/chat', path: '/chat' });
+
+    /** Chat is the outer chat — it must not embed a second composer. */
+    it('no longer embeds the How you’d do it composer', () => {
+      renderEmpty();
+
+      expect(screen.queryByLabelText('Task to personalize')).toBeNull();
+      expect(screen.queryByText('How you’d do it')).toBeNull();
+      expect(screen.queryByText('How I’d do this')).toBeNull();
+    });
+
+    it('offers about ten starter asks', () => {
+      renderEmpty();
+
+      expect(STARTER_PROMPTS.length).toBeGreaterThanOrEqual(9);
+      expect(STARTER_PROMPTS.length).toBeLessThanOrEqual(12);
+
+      for (const prompt of STARTER_PROMPTS) {
+        expect(screen.getByRole('button', { name: prompt })).toBeInTheDocument();
+      }
+    });
+
+    /**
+     * Every starter is quoted verbatim from a backend intent's `phrases`, and
+     * those are only sendable when they carry no `$slot` placeholder.
+     */
+    it('only offers starters that can be sent as-is', () => {
+      for (const prompt of STARTER_PROMPTS) {
+        expect(prompt).not.toMatch(/\$/);
+      }
+    });
+
+    /** A tap has to send the ask, not just drop it in a box. */
+    it('submits the ask when a starter is tapped', () => {
+      renderEmpty();
+
+      fireEvent.click(screen.getByRole('button', { name: STARTER_PROMPTS[0] }));
+
+      expect(h.submit).toHaveBeenCalledWith({ message: STARTER_PROMPTS[0] });
+    });
+
+    /** …and the ask shows up as the user's turn, so the reply has context. */
+    it('echoes the tapped ask into the thread as a user message', () => {
+      renderEmpty();
+
+      fireEvent.click(screen.getByRole('button', { name: STARTER_PROMPTS[1] }));
+
+      expect(screen.getByText(`user: ${STARTER_PROMPTS[1]}`)).toBeInTheDocument();
+    });
   });
 });

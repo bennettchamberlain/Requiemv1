@@ -5,7 +5,6 @@ import { GlobalUID } from '@ci/common';
 import { Button, Card, IconButton, Label, Sheet, cn, useToast } from '@ci/shadcn';
 import { ImageOff, Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
 import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
@@ -18,7 +17,6 @@ import {
 } from '@/components/EntityFields';
 import {
   EntityRelationshipCards,
-  getEntityDetailPath,
   toGlobalResourceType,
   type RelatedEntityOpenTarget,
 } from '@/components/EntityRelationshipCards/EntityRelationshipCards';
@@ -448,7 +446,6 @@ export function EntityDetailScaffold({
     setEditing(false);
   };
 
-  const detailPath = ref.resourceType && ref.rawId ? getEntityDetailPath(ref.resourceType, ref.rawId) : null;
   const chatContext = useMemo(() => entityToAgentChatContext(entity), [entity]);
 
   const visibleMeta = (metaItems ?? []).filter(
@@ -558,9 +555,9 @@ export function EntityDetailScaffold({
           </div>
         )}
 
-        {/* Relationship cards + the "Open full page" link both navigate to the
-            owner's per-entity routes (which resolve under the VIEWER's scope and
-            fall outside the shared search). Hide both in read-only mode. */}
+        {/* Relationship cards navigate to the owner's per-entity routes (which
+            resolve under the VIEWER's scope and fall outside the shared
+            search), so they stay hidden in read-only mode. */}
         {!readOnly && ref.rawId && (
           <EntityRelationshipCards
             key={ref.rawId}
@@ -571,16 +568,12 @@ export function EntityDetailScaffold({
 
         {rawData != null && <RawDataDetails data={rawData} />}
 
-        {!readOnly && detailPath && (
-          <Link
-            to={detailPath}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-          >
-            Open full page <span aria-hidden>↗</span>
-          </Link>
-        )}
+        {/* There is deliberately no "Open full page" escape hatch here. The
+            drawer IS the object: it carries the media, the editable fields, the
+            metadata, the tags and the relationships. The old control was a
+            `target="_blank"` Link, which on the Capacitor build (WKWebView)
+            left the app for the system browser instead of routing in-app —
+            see issue #2311. Anything the user needs belongs in this body. */}
       </div>
 
       {editing && (

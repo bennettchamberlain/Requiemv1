@@ -114,6 +114,10 @@ export function Task({
   const priorityLabel = PRIORITY_LABELS[task.priority];
   const phone = isMobile === true;
   const canSelect = phone && Boolean(onLongPressSelect || onSelectToggle);
+  // Accepting a pending `schedule` and scheduling outright are the same
+  // one-word action, so never offer Schedule twice on one card.
+  const pendingSchedule =
+    Boolean(pendingChangeId && onAcceptPending && onDeclinePending) && pendingKind === 'schedule';
 
   const editPayload: EditableTaskFields = {
     id: task.id,
@@ -126,11 +130,13 @@ export function Task({
   const activateBody = () => {
     if (suppressTap.current) {
       suppressTap.current = false;
+
       return;
     }
 
     if (selecting && onSelectToggle) {
       onSelectToggle(task.id);
+
       return;
     }
 
@@ -220,11 +226,17 @@ export function Task({
         'flex flex-col gap-2 rounded-lg border bg-card p-3 text-card-foreground shadow-sm transition-shadow hover:shadow-md',
         selected ? 'border-primary ring-2 ring-primary/40' : 'border-border',
       )}
-      style={{ marginLeft: depth > 0 ? `${depth * 1.25}rem` : undefined }}
+      style={{
+        // A phone indents less per level: 1.25rem a level leaves a grandchild
+        // card too narrow for its own action row.
+        marginLeft: depth > 0 ? `${depth * (phone ? 0.75 : 1.25)}rem` : undefined,
+      }}
       aria-selected={selecting ? selected : undefined}
       data-testid="plan-task"
     >
-      <div className="flex items-start gap-3">
+      {/* A phone card has ~360px to spend: the tighter gap buys the action row
+          the width it needs to stay on one line. */}
+      <div className={cn('flex items-start', phone ? 'gap-2' : 'gap-3')}>
         {!selecting && !proposed ? (
           <Checkbox
             className="mt-1"
@@ -309,7 +321,7 @@ export function Task({
                   onAcceptProposed(task.id);
                 }}
               >
-                Add to plan
+                Plan
               </Button>
               {onAcceptAndSchedule ? (
                 <Button
@@ -320,7 +332,7 @@ export function Task({
                     onAcceptAndSchedule(task.id);
                   }}
                 >
-                  Add and schedule
+                  Schedule
                 </Button>
               ) : null}
               <Button
@@ -363,7 +375,7 @@ export function Task({
             )
           ) : null}
 
-          {!proposed && !done && !overdue && !task.scheduledFor && onSchedule ? (
+          {!proposed && !done && !overdue && !task.scheduledFor && !pendingSchedule && onSchedule ? (
             <div className="mt-1 flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -389,7 +401,7 @@ export function Task({
                   onAcceptPending(pendingChangeId);
                 }}
               >
-                {pendingKind === 'schedule' ? 'Place on calendar' : 'Confirm'}
+                {pendingKind === 'schedule' ? 'Schedule' : 'Confirm'}
               </Button>
               <Button
                 size="sm"

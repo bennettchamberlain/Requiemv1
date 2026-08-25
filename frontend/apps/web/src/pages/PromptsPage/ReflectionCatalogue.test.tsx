@@ -209,6 +209,28 @@ describe('ReflectionCatalogue', () => {
     expect(within(dialog).queryByRole('button', { name: /delete/i })).toBeNull();
   });
 
+  // The four filter triggers carried hard pixel widths (190/150/170/180) with
+  // no responsive variant, so on a phone they wrapped into ragged rows and the
+  // widest overflowed the content column. They fill their cell below `sm` and
+  // keep the fixed widths above it.
+  it('lets the filter controls fill the width on a phone instead of holding a fixed one', async () => {
+    setFetch(() => ok(pageOf([entry()])));
+
+    render(<ReflectionCatalogue />);
+    await screen.findByText('What foods are you allergic to?');
+
+    for (const label of [
+      'Filter by category',
+      'Filter by answer type',
+      'Filter by answered state',
+      'Filter by status',
+    ]) {
+      const trigger = screen.getByLabelText(label);
+      expect(trigger).toHaveClass('w-full');
+      expect(trigger.className).toMatch(/sm:w-\[\d+px]/);
+    }
+  });
+
   it('says so when a filter combination matches nothing', async () => {
     setFetch(() => ok(pageOf([])));
 

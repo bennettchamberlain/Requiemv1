@@ -131,8 +131,8 @@ export function ItemPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="flex flex-col gap-4 md:col-span-2">
-            {/* The drawer's field set, so "Open full page" does not silently drop
-                the name, category, brand, model and value editors. */}
+            {/* The drawer's field set, so reaching this route directly does not
+                silently drop the name, category, brand, model and value editors. */}
             <EntityFieldsCard
               title="Thing"
               resetKey={item.id}

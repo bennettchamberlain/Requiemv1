@@ -18,6 +18,28 @@ function scrollerFrom(target: EventTarget | null): HTMLElement | null {
 }
 
 /**
+ * True when the touch began inside a nested box that is scrolled off its top.
+ *
+ * The marked scroller can be at zero while the thing under the finger is not:
+ * Jobs pins a live-import card in its own `max-h` / `overflow-y-auto` region.
+ * Reading a drag inside that card as a pull would both refresh the page and —
+ * because the pull `preventDefault()`s — swallow the scroll actually asked for.
+ */
+function insideScrolledRegion(target: EventTarget | null, scroller: HTMLElement): boolean {
+  let node = target instanceof Element ? target : null;
+
+  while (node && node !== scroller) {
+    if (node instanceof HTMLElement && node.scrollTop > 0) {
+      return true;
+    }
+
+    node = node.parentElement;
+  }
+
+  return false;
+}
+
+/**
  * Phone-only: pull down at the top of a Memory list to refetch that view.
  *
  * Listens on the nearest `data-page-scroll` / `data-list-scroll` ancestor of
@@ -37,6 +59,26 @@ export function PullToRefresh({
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
+  /**
+   * The gesture reads its callback and its busy flag through refs so the
+   * listeners below can be registered ONCE per mount.
+   *
+   * They used to be dependencies of the effect, which meant a host whose
+   * `onRefresh` identity changed between renders re-registered the
+   * `{ passive: false }` `touchmove` — Jobs rebuilds its `refreshAll` on every
+   * poll tick, so that happened every few seconds, including mid-gesture.
+   * WKWebView decides whether a touch sequence is allowed to cancel scrolling
+   * when the sequence BEGINS: a non-passive listener attached after that point
+   * receives `cancelable: false` events, `preventDefault()` is skipped, and the
+   * webview rubber-bands while the pull indicator never moves.
+   */
+  const onRefreshRef = useRef(onRefresh);
+  const refreshingRef = useRef(false);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+
   useEffect(() => {
     const root = rootRef.current;
 
@@ -45,7 +87,7 @@ export function PullToRefresh({
     }
 
     const onStart = (event: TouchEvent) => {
-      if (refreshing || event.touches.length !== 1) {
+      if (refreshingRef.current || event.touches.length !== 1) {
         startY.current = null;
 
         return;
@@ -53,7 +95,7 @@ export function PullToRefresh({
 
       const scroller = scrollerFrom(event.target);
 
-      if (!scroller || scroller.scrollTop > 0) {
+      if (!scroller || scroller.scrollTop > 0 || insideScrolledRegion(event.target, scroller)) {
         startY.current = null;
 
         return;
@@ -63,7 +105,7 @@ export function PullToRefresh({
     };
 
     const onMove = (event: TouchEvent) => {
-      if (startY.current == null || refreshing) {
+      if (startY.current == null || refreshingRef.current) {
         return;
       }
 
@@ -95,12 +137,16 @@ export function PullToRefresh({
       pullRef.current = 0;
       setPull(0);
 
-      if (released < PULL_THRESHOLD_PX || refreshing) {
+      if (released < PULL_THRESHOLD_PX || refreshingRef.current) {
         return;
       }
 
+      refreshingRef.current = true;
       setRefreshing(true);
-      void Promise.resolve(onRefresh()).finally(() => setRefreshing(false));
+      void Promise.resolve(onRefreshRef.current()).finally(() => {
+        refreshingRef.current = false;
+        setRefreshing(false);
+      });
     };
 
     root.addEventListener('touchstart', onStart, { passive: true });
@@ -114,7 +160,7 @@ export function PullToRefresh({
       root.removeEventListener('touchend', finish);
       root.removeEventListener('touchcancel', finish);
     };
-  }, [isMobile, onRefresh, refreshing]);
+  }, [isMobile]);
 
   if (!isMobile) {
     return children;

@@ -50,8 +50,12 @@ function QuestionRow({
   }, [draft]);
 
   if (answer) {
+    // Wraps on a phone, single ellipsised line from `sm` up. `truncate`
+    // unconditionally meant a ~340px-wide phone showed the question and an
+    // ellipsis where the answer should be — every answered row in the section
+    // read as blank.
     return (
-      <p className="truncate py-1.5 text-sm">
+      <p className="py-1.5 text-sm break-words sm:truncate">
         <span className="text-muted-foreground">{question.text}:</span>{' '}
         <span className="text-foreground/90">{answer}</span>
       </p>
@@ -104,7 +108,10 @@ function QuestionRow({
         value={draft}
         onChange={(e) => onDraftChange(e.target.value)}
         placeholder="Answer…"
-        className="h-8 w-full min-w-0 text-sm sm:max-w-80 sm:shrink-0"
+        // Full control height on a phone — `h-8` is 32px, under the 44px
+        // Apple asks for, and these sit in a dense divided list where a
+        // mistap lands on the neighbouring question.
+        className="h-9 w-full min-w-0 text-sm sm:h-8 sm:max-w-80 sm:shrink-0"
       />
       {busy && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" strokeWidth={1.5} />}
     </div>
