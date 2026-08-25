@@ -7,12 +7,14 @@ import { RecallService } from '@ci/domains/agent';
 import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 import { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import {
+  answersTheQuestion,
   calibrateInferredConfidence,
   confidenceLabel,
   estimateInferredAnswerConfidence,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
   type InferredAnswer,
+  isNarratedVoice,
   isNonAnswer,
   LLM_QUEUE,
   LLM_QUEUE_OPTIONS,
@@ -104,7 +106,9 @@ export class AnswerInferenceListener {
     const systemParts = [
       `You impersonate the user and infer a first-person answer to a question they have not answered yet.
 
-Ground the answer in the EVIDENCE, dossier and related Q&A below, and score how well grounded it actually is. INFER — the evidence is a record of what this person did, not a list of what they believe, so the answer will almost never be written out anywhere in it. Reading the pattern is the job.
+Ground the answer in the EVIDENCE and dossier below, and score how well grounded it actually is. INFER — the evidence is a record of what this person did, not a list of what they believe, so the answer will almost never be written out anywhere in it. Reading the pattern is the job.
+
+Read the question first and the evidence second. The retrieval that produced the EVIDENCE block matched on words and nearness, not on whether anything in it answers what was asked, so some of it is about the question's topic without bearing on the question. Deciding which is which is the first half of the job, and is what \`asked_for\` and \`support\` are for.
 
 ${INFERRED_ANSWER_PROMPT_RULES}`,
       // Evidence first: it is the only section drawn from the user's own records
@@ -116,8 +120,15 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
 ${memoryEvidence.block}`
         : 'No memory evidence was retrieved for this question — say so in the rationale and score accordingly.',
       dossierBlock ? `User dossier and graph context:\n${dossierBlock}` : null,
+      // Last, and framed as background rather than as source material. Measured
+      // failure: handed its own prior answer to "Which languages are you
+      // learning?", the model returned that sentence verbatim for "What
+      // languages do you speak?" and scored it 0.9, with the rationale "The
+      // answer is explicitly provided in the 'Related questions the user already
+      // answered' section". Speaking a language and studying one are different
+      // facts; the block was read as a lookup table.
       resolvedAnswers.length > 0
-        ? `Related questions the user already answered:\n\n${resolvedAnswers
+        ? `Answers this person gave to OTHER questions, in their own words. Background only — not evidence for this question. An answer to a different question is never this question's answer: do not restate one, and do not let one raise your confidence.\n\n${resolvedAnswers
             .map(
               (answer) => `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
             )
@@ -168,12 +179,46 @@ ${memoryEvidence.block}`
     // set low enough to let one through, and "I do not have this information
     // recorded" written into ci.answers is indistinguishable at a glance from
     // the user having said it. Refuse the write itself, not just the score.
-    if (isNonAnswer(inferred.answer)) {
+    // Same reasoning for the voice: parseInferredAnswer has already stripped the
+    // narrator framing it can strip ("My record shows I …" → "I …"), so anything
+    // still narrating here has the corpus woven into the claim itself — "The
+    // user prefers mornings", "a strong interest, per my records". That is not
+    // the user speaking, and it is published on their profile as if it were.
+    if (isNonAnswer(inferred.answer) || isNarratedVoice(inferred.answer)) {
       this.logger.log('Inferred answer discarded — model returned a non-answer', {
         userId: ownerId,
         questionId: payload.questionId,
         question: question.text,
         memoryEvidence: memoryEvidence.resultCount,
+        response: inferred.answer,
+        rationale: inferred.rationale,
+      });
+
+      return;
+    }
+
+    // An answer to a NEARBY question is not an answer to this one, and it is the
+    // most damaging thing this path can write: unlike a refusal it reads as a
+    // fact, so nothing about it looks wrong on the profile. Measured live —
+    // "Which health conditions run in your immediate family?" answered "There are
+    // doctors in my family." at 0.90, off evidence that matched on 'family' and
+    // 'immediate' and named no condition at all.
+    //
+    // A gate rather than a low score, for the same reason the refusal above is a
+    // gate: `config.reflection.minAnswerConfidence` is owner-configurable and is
+    // 0 on at least one real appliance, so the floor cannot be relied on to stop
+    // anything. `support` is the model's own judgement, so this catches only what
+    // the model itself recognised as a near miss — but it is the judgement it
+    // makes BEFORE writing the answer (see INFERRED_ANSWER_JSON_SCHEMA's property
+    // order), which is the one worth trusting.
+    if (!answersTheQuestion(inferred.support)) {
+      this.logger.log('Inferred answer discarded — evidence does not answer the question asked', {
+        userId: ownerId,
+        questionId: payload.questionId,
+        question: question.text,
+        memoryEvidence: memoryEvidence.resultCount,
+        askedFor: inferred.askedFor,
+        support: inferred.support,
         response: inferred.answer,
         rationale: inferred.rationale,
       });
@@ -198,6 +243,8 @@ ${memoryEvidence.block}`
       relatedAnswers: resolvedAnswers.length,
       memoryEvidence: memoryEvidence.resultCount,
       response: inferred.answer,
+      askedFor: inferred.askedFor,
+      support: inferred.support,
       modelConfidence: inferred.confidence,
       evidenceCeiling,
       confidence,
@@ -340,6 +387,31 @@ ${memoryEvidence.block}`
     return { block: '', resultCount: 0 };
   }
 
+  /**
+   * Prior answers worth putting in front of the model — the user's OWN, only.
+   *
+   * ═══ WHY MACHINE-INFERRED ROWS ARE EXCLUDED ═══
+   *
+   * Every row this listener writes carries `answerSource: 'inferred'`, and on
+   * the reference corpus that is 21 rows out of 21. Handing them back as
+   * "questions the user already answered" presents this path's own guesses to
+   * itself as though the person had said them, and the model — correctly, given
+   * that framing — treats a sentence sitting under a neighbouring question as
+   * the best evidence in the prompt.
+   *
+   * Measured: asked "What languages do you speak?", the model returned its own
+   * earlier answer to "Which languages are you learning, if any?" verbatim and
+   * scored it 0.9, rationale "The answer is explicitly provided in the 'Related
+   * questions the user already answered' section". One retrieval, three
+   * questions, two fabrications — speaking a language and studying one are not
+   * the same fact, and "what skill are you working on this year" is not either.
+   *
+   * This is the same decision {@link findMemoryEvidence} already makes when it
+   * passes `excludeTypes: ['answer']`, for the same reason, one prompt section
+   * over. Answers the user typed (`answerSource` anything else — 'user_input',
+   * an about-you correction, an import) are real statements by the person and
+   * stay: those are the rows this block was always meant to carry.
+   */
   private async findRelatedAnswers(
     context: UserServiceContext,
     questionText: string,
@@ -347,6 +419,7 @@ ${memoryEvidence.block}`
   ): Promise<Answer[]> {
     const seen = new Set<string>();
     const resolved: Answer[] = [];
+    const isMachineInferred = (answer: Answer) => answer.answerSource === 'inferred';
 
     try {
       const hits = await this.searchService.search(context, {
@@ -372,7 +445,7 @@ ${memoryEvidence.block}`
           // write are still in ci.answers, and the prompt block presents them as
           // "questions the user already answered" — so the model reads a wall of
           // its own refusals as evidence that refusing is what this user does.
-          if (isNonAnswer(answer.answer)) {
+          if (isNonAnswer(answer.answer) || isMachineInferred(answer)) {
             continue;
           }
 
@@ -394,7 +467,10 @@ ${memoryEvidence.block}`
     const sorted = [...recent]
       .filter(
         (answer) =>
-          answer.question?.id !== excludeQuestionId && !seen.has(answer.id) && !isNonAnswer(answer.answer),
+          answer.question?.id !== excludeQuestionId &&
+          !seen.has(answer.id) &&
+          !isNonAnswer(answer.answer) &&
+          !isMachineInferred(answer),
       )
       .sort((a, b) => new Date(b.answeredAt).getTime() - new Date(a.answeredAt).getTime())
       .slice(0, RECENT_ANSWER_FALLBACK);
