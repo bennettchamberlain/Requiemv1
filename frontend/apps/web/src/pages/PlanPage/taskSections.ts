@@ -138,6 +138,28 @@ export function sectionFor(task: SectionedTask, today: string, timeZone?: string
   return { column, lane };
 }
 
+/** True when the task would render in an Overdue lane for `today`. */
+export function isOverdue(task: SectionedTask, today: string, timeZone?: string): boolean {
+  return sectionFor(task, today, timeZone).lane === 'overdue';
+}
+
+/** Shift a user-local `YYYY-MM-DD` by a number of calendar days. */
+export function addLocalDays(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+
+  date.setDate(date.getDate() + days);
+
+  return localDateOf(date);
+}
+
+/** Noon on a user-local calendar date, as an instant — matches the edit-due control. */
+export function dueAtFromLocalDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number);
+
+  return new Date(year, month - 1, day, 12).toISOString();
+}
+
 /** Ascending by due date (undated last), then by priority, then by title. */
 export function compareTasks(a: SectionedTask, b: SectionedTask): number {
   const aDue = a.dueAt ? new Date(a.dueAt).getTime() : Number.POSITIVE_INFINITY;

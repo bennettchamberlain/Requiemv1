@@ -1,9 +1,14 @@
+import { useState } from 'react';
+
 import { Button, Checkbox, IconButton } from '@ci/shadcn';
 import { CalendarRange, Pencil, Trash } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
 import { gql } from '@/graphql';
 import { type FragmentType, useFragment } from '@/graphql/fragment-masking';
+
+import { isOverdue, localDateOf } from './taskSections';
+import { WhenSelector } from './WhenSelector';
 
 interface Props {
   task: FragmentType<typeof TaskRowFragment>;
@@ -24,6 +29,8 @@ interface Props {
   onDeclineProposed?: (id: string) => void;
   onAcceptAndSchedule?: (id: string) => void;
   onSchedule?: (id: string) => void;
+  /** Move an overdue task onto a user-local `YYYY-MM-DD`. */
+  onReschedule?: (id: string, date: string) => void;
   pendingChangeId?: string | null;
   pendingRationale?: string | null;
   pendingKind?: string | null;
@@ -71,6 +78,7 @@ export function Task({
   onDeclineProposed,
   onAcceptAndSchedule,
   onSchedule,
+  onReschedule,
   pendingChangeId,
   pendingRationale,
   pendingKind,
@@ -82,6 +90,8 @@ export function Task({
   const task = useFragment(TaskRowFragment, taskMasked);
   const done = task.status === 'done';
   const proposed = task.status === 'proposed';
+  const overdue = isOverdue(task, localDateOf(new Date()));
+  const [pickingWhen, setPickingWhen] = useState(false);
   const priorityLabel = PRIORITY_LABELS[task.priority];
 
   return (
@@ -138,7 +148,31 @@ export function Task({
             </div>
           ) : null}
 
-          {!proposed && !done && !task.scheduledFor && onSchedule ? (
+          {!proposed && !done && overdue && onReschedule ? (
+            pickingWhen ? (
+              <WhenSelector
+                onPick={(date) => {
+                  setPickingWhen(false);
+                  onReschedule(task.id, date);
+                }}
+                onCancel={() => setPickingWhen(false)}
+              />
+            ) : (
+              <div className="mt-1 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setPickingWhen(true)}
+                  aria-label={`Reschedule ${task.title}`}
+                >
+                  <CalendarRange className="h-4 w-4" />
+                  Reschedule
+                </Button>
+              </div>
+            )
+          ) : null}
+
+          {!proposed && !done && !overdue && !task.scheduledFor && onSchedule ? (
             <div className="mt-1 flex flex-wrap gap-2">
               <Button type="button" size="sm" onClick={() => onSchedule(task.id)}>
                 <CalendarRange className="h-4 w-4" />
