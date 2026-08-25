@@ -156,6 +156,7 @@
     "roots": [],
     "uploadsDir": "/var/lib/ci-import/uploads",
     "inboxDir": "/var/lib/ci-import/inbox",
+    "inboxHostDir": "",
     "maxArchiveEntries": 2000000,
     "maxArchiveBytes": 107374182400,
     "databaseDataDir": "",

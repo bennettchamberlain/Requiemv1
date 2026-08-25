@@ -176,6 +176,7 @@ export {
   configuredImportRoots,
   resolveWithinImportRoots,
   uploadsRoot,
+  userInboxDisplayDir,
   PathOutsideImportRootsError,
 } from './sources/importRoots';
 // Re-exported for the import tools, which live in the tools domain (that is

@@ -164,6 +164,9 @@ The inbox is namespaced per user: `CI_IMPORT_INBOX_DIR` is a root, and each
 account owns one subtree under it, named by lowercasing the account's email and
 replacing every character outside `[A-Za-z0-9._-]` with `_`. So
 `test@example.com` reads and writes `<root>/test_example.com/` and nothing else.
+The folder the command **prints** is that subtree as the host sees it when the
+appliance runs in a container with `CI_IMPORT_INBOX_HOST_DIR` set (the scan's
+`displayDir`); without it, the API's own path (`inboxDir`).
 Inside it, the scan creates a drop
 folder per service (`amazon/`, `google-takeout/`, …); a unit dropped in one
 declares that service as the run's `declared_sources`. A path in the old flat
