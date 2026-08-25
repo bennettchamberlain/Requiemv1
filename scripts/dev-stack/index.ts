@@ -239,8 +239,12 @@ const PLAYER_FRAME_SRC = [
 
 function buildRoute(key: string, p: { apiPort: number; webPort: number; objPort: number }) {
   const host = `${key}.localhost`;
+  // script-src 'wasm-unsafe-eval': PowerSync's SQLite engine (wa-sqlite) is
+  // WebAssembly compiled inside the DB web worker, and CSP counts compiling wasm
+  // as eval — without it the worker's init throws and anything awaiting the local
+  // database (logout's disconnectAndClear()) hangs. Mirrors nginx.conf.
   const csp =
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' " +
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' " +
     "https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src * data: blob:; " +
     `media-src 'self' blob:; connect-src 'self' ws://${host} wss://${host}; worker-src 'self'; ` +
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; " +
