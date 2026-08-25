@@ -86,6 +86,7 @@
   "NOTES_DELETE": "Delete note",
   "PLAN_TASK_DELETE": "Delete {{title}}",
   "PLAN_TASK_EDIT": "Edit {{title}}",
+  "PLAN_TASK_MORE": "More actions for {{title}}",
   "PLAN_EVENT_EDIT": "Edit {{title}}",
   "SEARCH_CLEAR": "Clear search and filters",
   "SEARCH_FILTERS_SHOW": "Show filters",

@@ -267,7 +267,14 @@ describe('VerticalCalendar — dropping a slate candidate', () => {
 });
 
 describe('VerticalCalendar — pointer drop from Possibilities', () => {
-  afterEach(() => cancelSchedulePointerDrag());
+  const originalFromPoint = document.elementFromPoint;
+  const originalFromPoints = document.elementsFromPoint;
+
+  afterEach(() => {
+    cancelSchedulePointerDrag();
+    document.elementFromPoint = originalFromPoint;
+    document.elementsFromPoint = originalFromPoints;
+  });
 
   it('places a held card at the time under the finger', () => {
     const onDrop = vi.fn();
@@ -289,5 +296,35 @@ describe('VerticalCalendar — pointer drop from Possibilities', () => {
     const [id, at] = onDrop.mock.calls[0];
     expect(id).toBe('cand-1');
     expect(at.getHours()).toBe(12);
+  });
+
+  it('still places the card when the finger is over an event chip or a covering ghost', () => {
+    const onDrop = vi.fn();
+    const { container } = render(
+      <VerticalCalendar
+        start={MONDAY}
+        days={1}
+        events={[event()]}
+        rhythm={[]}
+        onDropCandidate={onDrop}
+      />,
+    );
+
+    const lane = container.querySelector('[data-schedule-drop-axis="y"]') as HTMLElement;
+    const chip = container.querySelector('[data-schedule-chip]') as HTMLElement;
+    const ghost = document.createElement('div');
+    lane.getBoundingClientRect = () =>
+      ({ height: 1440, top: 0, bottom: 1440, width: 100, left: 0, right: 100, x: 0, y: 0, toJSON: () => {} }) as DOMRect;
+    document.elementsFromPoint = () => [ghost, chip];
+    document.elementFromPoint = () => ghost;
+
+    act(() => {
+      startSchedulePointerDrag({ kind: 'candidate', id: 'cand-1', title: 'Call Mum' }, 50, 720);
+      endSchedulePointerDrag(50, 720);
+    });
+
+    expect(onDrop).toHaveBeenCalledTimes(1);
+    expect(onDrop.mock.calls[0][0]).toBe('cand-1');
+    expect(onDrop.mock.calls[0][1].getHours()).toBe(12);
   });
 });
