@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import { cancelSchedulePointerDrag, endSchedulePointerDrag, startSchedulePointerDrag } from '@/lib/schedulePointerDrag';
 
-import { addDays, startOfLocalDay } from './HorizonGrid';
+import { addDays, startOfLocalDay } from './nowNext';
 import { VerticalCalendar } from './VerticalCalendar';
 
 const MONDAY = startOfLocalDay(new Date(2026, 7, 3));
