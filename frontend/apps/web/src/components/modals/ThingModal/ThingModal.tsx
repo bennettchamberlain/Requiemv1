@@ -492,13 +492,16 @@ export function ThingModal({ open, onClose, item, create = false, detailPagePath
       <ResponsiveDialog.Content className="overflow-hidden sm:max-w-[900px]">
         <div
           className={cn(
-            'flex flex-col md:flex-row',
-            isMobile ? 'min-h-0 flex-1 overflow-y-auto' : 'h-[80vh] md:h-[640px]',
+            // `device:`, not `md:`: ResponsiveDialog is already a bottom sheet
+            // below 896px, and on `md:` the 768–896 band split the sheet into
+            // image | form columns.
+            'flex flex-col device:flex-row',
+            isMobile ? 'min-h-0 flex-1 overflow-y-auto' : 'h-[80vh] device:h-[640px]',
           )}
         >
           {/* Image Section */}
           {!create && (
-            <div className="w-full md:w-2/5 bg-stone-100 dark:bg-zinc-900 flex items-center justify-center overflow-hidden">
+            <div className="w-full device:w-2/5 bg-stone-100 dark:bg-zinc-900 flex items-center justify-center overflow-hidden">
               {imageUrl ? (
                 <img src={imageUrl} alt={item!.name} className="w-full h-full object-contain" />
               ) : (
@@ -508,7 +511,7 @@ export function ThingModal({ open, onClose, item, create = false, detailPagePath
           )}
 
           {/* Form Section */}
-          <div className={cn('w-full p-6 flex flex-col gap-4 overflow-y-auto', !create && 'md:w-3/5')}>
+          <div className={cn('w-full p-6 flex flex-col gap-4 overflow-y-auto', !create && 'device:w-3/5')}>
             <ResponsiveDialog.Header>
               <ResponsiveDialog.Title>{create ? 'Create item' : 'Item details'}</ResponsiveDialog.Title>
             </ResponsiveDialog.Header>

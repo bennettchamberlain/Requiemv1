@@ -268,22 +268,26 @@ export function PromptsPage() {
             </Tabs.List>
 
             <Tabs.Content value="answers" className="flex flex-col gap-4">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              {/* `device:` (896px), not `lg:` — this chrome has to switch on the same
+                  width useDeviceLayout calls the phone/desktop line. On `lg:` the
+                  896–1024 band showed the mobile refresh button AND hid the view
+                  toggle while the rest of the app had already gone desktop. */}
+              <div className="flex flex-col device:flex-row device:items-center device:justify-between gap-4">
                 {/* Mobile: refresh button */}
-                <div className="flex items-center justify-between lg:justify-start">
+                <div className="flex items-center justify-between device:justify-start">
                   <IconButton
                     variant="outline"
                     onClick={fetchAnswers}
                     disabled={loading}
                     label={t('PROMPTS_REFRESH_ANSWERS')}
-                    className="lg:hidden"
+                    className="device:hidden"
                   >
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                   </IconButton>
                 </div>
 
                 {/* Desktop: Toggle and refresh button */}
-                <div className="hidden lg:flex items-center gap-2">
+                <div className="hidden device:flex items-center gap-2">
                   <ToggleGroup
                     type="single"
                     value={viewMode}
@@ -352,9 +356,11 @@ export function PromptsPage() {
                     <div className="text-center py-8 text-muted-foreground">No reflections yet</div>
                   ) : (
                     <>
-                      {/* Card View - Always shown on mobile, toggleable on desktop */}
+                      {/* Card View - Always shown on mobile, toggleable on desktop.
+                          `device:hidden` gates it (the toggle only exists on desktop
+                          chrome); `lg:grid-cols-3` stays a plain reflow decision. */}
                       <div
-                        className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'lg:hidden' : ''}`}
+                        className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${viewMode === 'table' ? 'device:hidden' : ''}`}
                       >
                         {answers.map((answer) => (
                           <Card key={answer.id} className="p-4">
@@ -452,7 +458,7 @@ export function PromptsPage() {
 
                       {/* Table View - Only shown on desktop when table mode is selected */}
                       {viewMode === 'table' && (
-                        <div className="hidden lg:block relative overflow-auto">
+                        <div className="hidden device:block relative overflow-auto">
                           {/* Fixed Header */}
                           <div className="sticky top-0 z-50 bg-background border-b shadow-sm">
                             <div className="overflow-x-auto">
