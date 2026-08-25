@@ -236,4 +236,13 @@ describe('PlaybackBar', () => {
 
     expect(await screen.findByText(/No location trace in this range/)).toBeInTheDocument();
   });
+
+  it('clears the home-indicator inset so the transport is not flush with the screen bottom', async () => {
+    renderBar();
+    await transport();
+
+    expect(screen.getByRole('group', { name: 'Playback' })).toHaveClass(
+      'bottom-[calc(0.75rem+var(--safe-area-bottom))]',
+    );
+  });
 });

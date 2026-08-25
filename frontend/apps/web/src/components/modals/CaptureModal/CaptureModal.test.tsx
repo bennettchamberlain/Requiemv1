@@ -110,4 +110,13 @@ describe('CaptureModal', () => {
     );
     expect(screen.queryByPlaceholderText('Ask about this content...')).not.toBeInTheDocument();
   });
+
+  it('sits the background-upload hint above the home-indicator inset', async () => {
+    renderCapture();
+
+    const hint = await screen.findByTestId('capture-background-hint');
+
+    expect(hint).toHaveTextContent('Uploads continue in the background if you leave this screen.');
+    expect(hint.parentElement).toHaveClass('pb-[max(1.5rem,var(--safe-area-bottom))]');
+  });
 });

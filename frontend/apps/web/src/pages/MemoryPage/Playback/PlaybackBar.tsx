@@ -107,7 +107,8 @@ export function PlaybackBar({ className }: { className?: string } = {}) {
       role="group"
       aria-label="Playback"
       className={cn(
-        'pointer-events-auto absolute inset-x-3 bottom-3 z-400 rounded-lg border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur',
+        'pointer-events-auto absolute inset-x-3 z-400 rounded-lg border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur',
+        'bottom-[calc(0.75rem+var(--safe-area-bottom))]',
         className,
       )}
     >
