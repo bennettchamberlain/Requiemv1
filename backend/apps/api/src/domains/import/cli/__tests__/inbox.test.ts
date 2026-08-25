@@ -20,6 +20,7 @@ const unit = (overrides: Partial<InboxUnit> = {}): InboxUnit => ({
 const scan = (units: InboxUnit[]) => ({
   available: true as const,
   inboxDir: '/var/lib/ci-import/inbox',
+  displayDir: '/var/lib/ci-import/inbox',
   units,
   skippedSymlinks: 0,
   truncated: false,
@@ -84,6 +85,7 @@ describe('ci-import inbox', () => {
         available: false as const,
         reason: 'The inbox directory is not readable: ENOENT',
         inboxDir: '/var/lib/ci-import/inbox',
+        displayDir: '/var/lib/ci-import/inbox',
         units: [],
         skippedSymlinks: 0,
         truncated: false,
