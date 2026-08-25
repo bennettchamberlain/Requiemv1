@@ -125,6 +125,17 @@ export class SavedSearchService {
   }
 
   async update(context: ServiceContext, id: string, data: UpdateSavedSearchDto): Promise<SavedSearch | null> {
+    // ═══ AN ABSENT `tags` MEANS "LEAVE IT ALONE", NOT "CLEAR IT" ═══
+    //
+    // `assembleTags` was called unconditionally with `data.tags || []`, so a
+    // caller that updates only `name` — the edit dialog's own request, before
+    // it selected `tags` at all — silently wrote `[]` (or whatever hashtags
+    // happened to be in `data.query`, if that was also part of the payload)
+    // over the row's actual tags. Renaming a search deleted its tag filter.
+    // `UpdateSavedSearchInput` makes every field optional at the schema level,
+    // so this protects every current and future caller, not just the one that
+    // exposed it — `assembleTags` is only reached, and the column only
+    // touched, when the caller actually named `tags` on this request.
     const result = await this.savedSearchRepository.update(
       {
         id,
@@ -134,7 +145,7 @@ export class SavedSearchService {
       },
       {
         ...data,
-        tags: this.assembleTags(data),
+        ...(data.tags !== undefined && { tags: this.assembleTags(data) }),
       },
     );
 
