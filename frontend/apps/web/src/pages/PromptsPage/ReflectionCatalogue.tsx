@@ -162,8 +162,10 @@ export function ReflectionCatalogue() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative flex-1 lg:max-w-sm">
+      {/* Same switch as the Answers tab's toolbar — on `lg:` the two tabs of this
+          one page reflowed at different widths. */}
+      <div className="flex flex-col gap-3 device:flex-row device:items-center device:justify-between">
+        <div className="relative flex-1 device:max-w-sm">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchInput}

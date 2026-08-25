@@ -81,6 +81,7 @@ import { SerializerService } from './services/SerializerService';
 export class AgentModule {}
 
 export { BranchialForecastService, ForageCorpusService, ForecastContextService, RecallService };
+export type { RecallOptions } from './services/RecallService';
 export type {
   BranchialBranch,
   BranchialPermutation,

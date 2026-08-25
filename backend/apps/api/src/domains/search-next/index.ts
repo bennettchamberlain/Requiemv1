@@ -27,6 +27,7 @@ export class SearchNextModule {}
 
 export { SearchService, TagService };
 export {
+  type AnchoredSearchOptions,
   SEMANTIC_DISTANCE_THRESHOLD,
   SEMANTIC_MAX_RESULTS,
   type SemanticSearchPlan,

@@ -211,6 +211,22 @@
     "minAnswerConfidence": {
       "__name": "CI_REFLECTION_MIN_ANSWER_CONFIDENCE",
       "__format": "json"
+    },
+    "autoPromoteThresholdCautious": {
+      "__name": "CI_REFLECTION_AUTO_PROMOTE_THRESHOLD_CAUTIOUS",
+      "__format": "json"
+    },
+    "autoPromoteThresholdBalanced": {
+      "__name": "CI_REFLECTION_AUTO_PROMOTE_THRESHOLD_BALANCED",
+      "__format": "json"
+    },
+    "autoPromoteThresholdHandsOff": {
+      "__name": "CI_REFLECTION_AUTO_PROMOTE_THRESHOLD_HANDS_OFF",
+      "__format": "json"
+    },
+    "alwaysReviewBelowConfidence": {
+      "__name": "CI_REFLECTION_ALWAYS_REVIEW_BELOW_CONFIDENCE",
+      "__format": "json"
     }
   },
   "features": {

@@ -154,8 +154,8 @@ export function SelfProfileTab() {
     <PageContent>
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
         {entityId && (
-          <Card>
-            <Card.Content className="p-4">
+          <Card className="py-0">
+            <Card.Content className="px-4">
               <div className="flex flex-col gap-3">
                 {saveState !== 'idle' && (
                   <span className="self-end text-xs text-muted-foreground" aria-live="polite">

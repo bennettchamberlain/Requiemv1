@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { LoggingModule } from '@ci/common/logging';
+import { AgentModule } from '@ci/domains/agent';
 import { EventsModule } from '@ci/domains/events';
 import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
@@ -33,6 +34,11 @@ import { SmartRotationService } from './services/SmartRotationService';
 
 @Module({
   imports: [
+    // Provides RecallService — the retrieval pipeline AnswerInferenceListener
+    // grounds inferred answers in. Not a cycle: nothing in the Agent graph
+    // imports SmartRotationModule (only application.ts does), which is the same
+    // reason ScheduleModule can import AgentModule for the same service.
+    AgentModule,
     EventsModule,
     IntelligenceModule,
     LLMModule,

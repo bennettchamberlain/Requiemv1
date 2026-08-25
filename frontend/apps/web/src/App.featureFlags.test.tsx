@@ -151,10 +151,40 @@ describe('App feature-gated routes, end to end', () => {
 
     releaseFlags();
 
-    // Landed: the route exists and the layout mounts...
-    expect(await screen.findByLabelText('Self')).toBeInTheDocument();
+    // Landed: the route exists and the page under it mounts. `Life details` is
+    // the landmark because `LifeDetailsSection` renders that heading
+    // unconditionally — its loading and error states sit *below* it — and it
+    // reads over REST, so neither the never-resolving Apollo link above nor the
+    // empty `fetch` stub can keep it out of the DOM. (Don't reach for the rail's
+    // Self entry: it renders as the user tile, labelled with the user's name
+    // rather than 'Self', and it would still be there on a 404 anyway.)
+    expect(await screen.findByRole('heading', { name: 'Life details' })).toBeInTheDocument();
 
     // ...and 404 was never rendered on the way there, not at any commit.
+    expect(h.notFoundRenders).toBe(0);
+  });
+
+  // Same handover, seen from a legacy redirect rather than the destination.
+  // /prompts is registered inside the `stats.page` gate with /self/*, so while
+  // the flags are in flight it is "*" that matches — a bookmark waits on the
+  // loading page instead of being committed to /self/reflections before the
+  // route behind it is known to exist.
+  it('lands an old /prompts bookmark on Self without ever rendering 404', async () => {
+    window.history.pushState({}, '', '/prompts');
+
+    const releaseFlags = deferredFlags();
+
+    render(<App />);
+
+    // In flight: no 404, and no redirect decided on incomplete information.
+    expect(notFound()).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/prompts');
+
+    releaseFlags();
+
+    // Landed. `insights.page` is absent from these flags, so SelfPage sends
+    // the missing Reflections tab back to its index — Self, not a 404.
+    await waitFor(() => expect(window.location.pathname).toBe('/self'));
     expect(h.notFoundRenders).toBe(0);
   });
 
