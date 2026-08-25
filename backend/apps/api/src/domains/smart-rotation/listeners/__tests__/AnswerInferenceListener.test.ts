@@ -3,7 +3,7 @@ import config from '@ci/configuration';
 import type { RecallService } from '@ci/domains/agent';
 import type { EventPayloads, Events } from '@ci/domains/events';
 import type { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
-import type { OllamaService } from '@ci/domains/llm';
+import { CONFIDENCE_IMPLIED_CEILING, type OllamaService } from '@ci/domains/llm';
 import type { UserContextService } from '@ci/domains/memory';
 import type { PersonalizationService } from '@ci/domains/personalization';
 import type { SearchService } from '@ci/domains/search-next';
@@ -19,7 +19,13 @@ type Payload = EventPayloads[Events.INFER_QUESTION_ANSWER];
  * calibrated one rather than whatever the model claimed.
  */
 function structuredResponse(
-  overrides: { answer?: string; confidence?: number; rationale?: string } = {},
+  overrides: {
+    answer?: string;
+    confidence?: number;
+    rationale?: string;
+    asked_for?: string;
+    support?: string;
+  } = {},
 ): string {
   return JSON.stringify({
     answer: 'Blue, definitely blue.',
@@ -55,10 +61,12 @@ function makeAnswer(
     answer: 'previous answer',
     answeredAt: new Date('2026-01-01T00:00:00Z'),
     question: { id: 'other-question' },
-    // Defaults to a prior write from THIS listener, since most callers just need
-    // "some existing answer" for unrelated assertions (related-answers context,
-    // etc). Tests of the overwrite gate itself override this explicitly.
-    answerSource: 'inferred',
+    // Defaults to an answer the USER typed, since most callers just need "some
+    // existing answer" for unrelated assertions — and the related-answers block
+    // now carries only the user's own answers, machine-inferred rows being the
+    // measured source of cross-question bleed. Tests of the overwrite gate and
+    // of the inferred-row filter override this explicitly.
+    answerSource: 'user_input',
     ...overrides,
   } as unknown as Answer;
 }
@@ -265,7 +273,9 @@ describe('AnswerInferenceListener.inferQuestionAnswer — confidence floor', () 
       unknown,
       { format?: Record<string, unknown> },
     ];
-    expect(options.format).toMatchObject({ required: ['answer', 'confidence', 'rationale'] });
+    expect(options.format).toMatchObject({
+      required: ['asked_for', 'support', 'answer', 'confidence', 'rationale'],
+    });
   });
 
   it('states the confidence scale to the model in the system prompt', async () => {
@@ -403,6 +413,91 @@ describe('AnswerInferenceListener.inferQuestionAnswer — refusals are never wri
         answerConfidence: 0.55,
       }),
     );
+  });
+});
+
+describe('AnswerInferenceListener.inferQuestionAnswer — the answer is written in the user’s voice', () => {
+  it('writes the fact without the narrator framing wrapped around it', async () => {
+    // Measured live: "My record shows I have maintained a strong, ongoing
+    // general interest in hobbies…" was written to the owner's profile, where it
+    // reads as them describing their own database. The fact is worth keeping;
+    // the narration is stripped on the way in.
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              answer: 'My record shows I have kept up with woodworking for fifteen years.',
+              confidence: 0.8,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({
+        text: 'I have kept up with woodworking for fifteen years.',
+        answerConfidence: BARE_CONTEXT_CONFIDENCE,
+      }),
+    );
+  });
+
+  it.each([
+    // Narration that cannot be unpicked from the claim. Written to ci.answers it
+    // would sit on the profile beside sentences the user typed themselves.
+    'The user prefers mornings, based on the data.',
+    'This person tends to message their sister most.',
+    // The live pronouns row: a report on the record's silence, which no "I don't
+    // know" pattern matched and which was therefore persisted at 0.1.
+    'I have not explicitly stated my pronouns in this record.',
+  ])('writes nothing for the narrated answer %p', async (answer) => {
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ answer, confidence: 0.95 }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('drops the narrated answer even with the confidence floor set to zero', async () => {
+    // This appliance ships with CI_REFLECTION_MIN_ANSWER_CONFIDENCE=0, so the
+    // floor catches nothing and this gate is the only thing standing between the
+    // model's narration and the user's profile.
+    const reflection = config.reflection as { minAnswerConfidence: number };
+    const originalFloor = reflection.minAnswerConfidence;
+    reflection.minAnswerConfidence = 0;
+
+    try {
+      const { listener, answerService } = buildListener({
+        ollamaService: {
+          chat: jest.fn().mockResolvedValue({
+            message: {
+              content: structuredResponse({
+                answer: 'I have not explicitly stated my pronouns in this record.',
+                confidence: 0.1,
+              }),
+            },
+          }),
+        },
+      });
+
+      await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+      expect(answerService.create).not.toHaveBeenCalled();
+      expect(answerService.update).not.toHaveBeenCalled();
+    } finally {
+      reflection.minAnswerConfidence = originalFloor;
+    }
   });
 });
 
@@ -797,7 +892,7 @@ describe('AnswerInferenceListener — the related-answers block', () => {
       Array<{ content: string }>,
     ];
     const system = ragThread[0].content;
-    const start = system.indexOf('Related questions the user already answered');
+    const start = system.indexOf('Answers this person gave to OTHER questions');
 
     return start === -1
       ? system.slice(system.indexOf('No related prior answers were found'))
@@ -834,5 +929,235 @@ describe('AnswerInferenceListener — the related-answers block', () => {
     await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
 
     expect(relatedSectionOf(ollamaService)).toContain('No related prior answers were found');
+  });
+});
+
+describe('AnswerInferenceListener — the off-question gate', () => {
+  /**
+   * The measured live failure, reduced: "Which health conditions run in your
+   * immediate family?" retrieved eighteen lines that matched on "family" and
+   * "immediate", one of which was "doctors in my family." The model answered
+   * that line rather than the question and scored it 0.90 — well-supported on
+   * the topic, and about something else entirely.
+   */
+  const healthQuestion = {
+    questionService: {
+      findById: jest
+        .fn()
+        .mockResolvedValue(makeQuestion('q-1', 'Which health conditions run in your immediate family?')),
+    },
+  };
+
+  it('writes NOTHING when the model reports the evidence is only topical', async () => {
+    const { listener, answerService } = buildListener({
+      ...healthQuestion,
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              asked_for: 'named medical conditions occurring in my blood relatives',
+              support: 'topical',
+              answer: 'There are doctors in my family.',
+              confidence: 0.9,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('writes NOTHING when the evidence does not touch the question at all', async () => {
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ support: 'none', confidence: 0.95 }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a near miss even with the confidence floor set to zero', async () => {
+    // The gate has to be the load-bearing part, not the score: this appliance
+    // ships with CI_REFLECTION_MIN_ANSWER_CONFIDENCE=0 on at least one real box,
+    // so nothing downstream of the clamp stops an off-question answer.
+    const reflection = config.reflection as { minAnswerConfidence: number };
+    const originalFloor = reflection.minAnswerConfidence;
+    reflection.minAnswerConfidence = 0;
+
+    try {
+      const { listener, answerService } = buildListener({
+        ...healthQuestion,
+        ollamaService: {
+          chat: jest.fn().mockResolvedValue({
+            message: {
+              content: structuredResponse({
+                support: 'topical',
+                answer: 'There are doctors in my family.',
+                confidence: 0.9,
+              }),
+            },
+          }),
+        },
+      });
+
+      await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+      expect(answerService.create).not.toHaveBeenCalled();
+      expect(answerService.update).not.toHaveBeenCalled();
+    } finally {
+      reflection.minAnswerConfidence = originalFloor;
+    }
+  });
+
+  it('still writes when the evidence genuinely answers the question', async () => {
+    // The gate must cost nothing on the questions the corpus does answer — the
+    // four that work today all come back `stated`.
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({ support: 'stated', answer: 'Night owl.', confidence: 0.9 }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ text: 'Night owl.' }),
+    );
+  });
+
+  it('writes an inference the evidence only implies, capped below the stated band', async () => {
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue({
+          block: '## Relevant context\nline',
+          resultCount: 10,
+        }),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'implied',
+              answer: 'Japanese, Mexican and Thai.',
+              confidence: 0.95,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({
+        text: 'Japanese, Mexican and Thai.',
+        answerConfidence: CONFIDENCE_IMPLIED_CEILING,
+      }),
+    );
+  });
+
+  it('leaves a model that gave no judgement exactly where it was', async () => {
+    // Every pre-existing test in this file builds a response with no `support`
+    // field. The gate is a constraint on a new judgement, never a new way to
+    // lose an answer that predates it.
+    const { listener, answerService } = buildListener({});
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalled();
+  });
+});
+
+describe('AnswerInferenceListener — cross-question bleed', () => {
+  /**
+   * Measured: asked "What languages do you speak?", the model returned its own
+   * earlier answer to "Which languages are you learning, if any?" verbatim and
+   * scored it 0.9, with the rationale "The answer is explicitly provided in the
+   * 'Related questions the user already answered' section". Every one of the 21
+   * rows in ci.answers on the reference corpus was written by this listener, so
+   * that block was this path reading back its own guesses as though the person
+   * had said them.
+   */
+  function relatedBlockOf(ollamaService: OllamaService) {
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    const system = ragThread[0].content;
+    const start = system.indexOf('Answers this person gave to OTHER questions');
+
+    // Section only. The prompt RULES quote the languages bleed as the worked
+    // example of what NOT to do, so a whole-prompt substring check cannot tell
+    // "the block leaked a prior inference" from "the rules named one".
+    return start === -1
+      ? system.slice(system.indexOf('No related prior answers were found'))
+      : system.slice(start);
+  }
+
+  it('keeps this listener’s own prior inferences out of the prompt', async () => {
+    const own = makeAnswer({
+      id: 'a-inferred',
+      answer: "I've been studying English, Sign Language, and German.",
+      question: { id: 'q-learning' },
+      answerSource: 'inferred',
+    });
+    const typed = makeAnswer({
+      id: 'a-typed',
+      answer: 'I picked green myself.',
+      question: { id: 'q-colour' },
+      answerSource: 'user_input',
+    });
+
+    const { listener, ollamaService } = buildListener({
+      searchService: { search: jest.fn().mockResolvedValue([{ id: 'a-inferred' }, { id: 'a-typed' }]) },
+      answerService: {
+        findByQuestionId: jest.fn().mockResolvedValue(null),
+        findByIds: jest.fn().mockResolvedValue([own, typed]),
+        findAll: jest.fn().mockResolvedValue([own, typed]),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const prompt = relatedBlockOf(ollamaService);
+
+    expect(prompt).not.toContain('Sign Language');
+    expect(prompt).toContain('I picked green myself.');
+  });
+
+  it('tells the model a prior answer is background, never this question’s answer', async () => {
+    const typed = makeAnswer({ id: 'a-typed', answer: 'Toki Pona', answerSource: 'user_input' });
+
+    const { listener, ollamaService } = buildListener({
+      searchService: { search: jest.fn().mockResolvedValue([{ id: 'a-typed' }]) },
+      answerService: {
+        findByQuestionId: jest.fn().mockResolvedValue(null),
+        findByIds: jest.fn().mockResolvedValue([typed]),
+        findAll: jest.fn().mockResolvedValue([typed]),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const prompt = relatedBlockOf(ollamaService);
+
+    expect(prompt).toContain('Answers this person gave to OTHER questions');
+    expect(prompt).toContain("never this question's answer");
   });
 });
