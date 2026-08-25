@@ -80,10 +80,20 @@ function ReflectionRow({
               </Badge>
             ) : null}
             {entry.answer ? (
+              // No `onEdit`: this row's Edit button rewrites the QUESTION
+              // (EditReflectionDialog), not the answer, and there is no
+              // answer-edit path on this surface. The drawer hides the
+              // affordance rather than offering a second way to write.
               <AnswerProvenance
                 source={entry.answer.source}
                 confidence={entry.answer.confidence}
                 rationale={entry.answer.rationale}
+                details={{
+                  question: entry.text,
+                  answerText: entry.answer.text,
+                  answeredAt: entry.answer.answeredAt,
+                  record: entry.answer,
+                }}
               />
             ) : (
               <Badge variant="outline" className="text-xs text-muted-foreground">

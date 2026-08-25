@@ -95,6 +95,7 @@ describe('ReflectionCatalogue', () => {
               source: 'inferred',
               confidence: 0.93,
               rationale: 'Two prior answers mention an allergy.',
+              evidence: null,
               answeredAt: '2026-02-01T00:00:00.000Z',
             },
           }),

@@ -237,6 +237,21 @@ function makeInferredAnswer(id: string, userId: string): AnswerEntity {
     answerMethod: 'inferred',
     answerConfidence: 0.72,
     answerRationale: 'You mentioned tea twice.',
+    answerEvidence: {
+      citations: [
+        {
+          line: 1,
+          type: 'communication',
+          id: 'comm-9',
+          at: '2016-05-20T00:00:00.000Z',
+          voice: 'own',
+          snippet: '[I wrote, May 20, 2016] "tea, always"',
+        },
+      ],
+      linesShown: 4,
+      linesOwn: 1,
+      model: 'test-model',
+    },
   });
 }
 
@@ -255,6 +270,10 @@ describe('AnswerService.update — user correction of an inferred answer', () =>
     expect(result?.answerMethod).toBe('user');
     expect(result?.answerConfidence).toBeNull();
     expect(result?.answerRationale).toBeNull();
+    // And the citations, for a stronger reason than the score: they point at real
+    // rows, so leaving them behind would offer the user's own messages as the
+    // provenance of a sentence they just replaced — a lie with receipts attached.
+    expect(result?.answerEvidence).toBeNull();
   });
 
   it('leaves the inference writer alone when it names the source explicitly', async () => {
@@ -274,6 +293,9 @@ describe('AnswerService.update — user correction of an inferred answer', () =>
     expect(result?.answerSource).toBe('inferred');
     expect(result?.answerConfidence).toBe(0.81);
     expect(result?.answerRationale).toBe('Three prior answers mention tea.');
+    // Not cleared: the re-inference names the source explicitly, so this is the
+    // writer refreshing its own row, not a person overwriting it.
+    expect(result?.answerEvidence).not.toBeNull();
   });
 
   it('does not touch provenance when the update carries no new text', async () => {
@@ -306,6 +328,40 @@ describe('AnswerService.create — inferred provenance', () => {
     const [saved] = save.mock.calls[0] as [AnswerEntity];
     expect(saved.answerConfidence).toBe(0.72);
     expect(saved.answerRationale).toBe('You mentioned tea twice.');
+  });
+
+  it('persists the cited rows, so the rationale can be checked and not just read', async () => {
+    const { service, save } = makeService();
+
+    const evidence = {
+      citations: [
+        {
+          line: 2,
+          type: 'communication',
+          id: 'comm-9',
+          at: '2016-05-20T00:00:00.000Z',
+          voice: 'own' as const,
+          snippet: '[I wrote, May 20, 2016] "tea, always"',
+        },
+      ],
+      linesShown: 6,
+      linesOwn: 2,
+      model: 'test-model',
+    };
+
+    await service.create(CONTEXT, {
+      id: 'a1',
+      text: 'Tea.',
+      question: { id: 'q1' },
+      answerSource: 'inferred',
+      answerMethod: 'inferred',
+      answerConfidence: 0.72,
+      answerRationale: 'You mentioned tea twice.',
+      answerEvidence: evidence,
+    });
+
+    const [saved] = save.mock.calls[0] as [AnswerEntity];
+    expect(saved.answerEvidence).toEqual(evidence);
   });
 });
 

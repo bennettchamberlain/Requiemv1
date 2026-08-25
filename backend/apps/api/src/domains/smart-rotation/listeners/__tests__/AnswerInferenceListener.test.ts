@@ -3,8 +3,7 @@ import config from '@ci/configuration';
 import type { RecallService } from '@ci/domains/agent';
 import type { EventPayloads, Events } from '@ci/domains/events';
 import type { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
-import { CONFIDENCE_IMPLIED_CEILING, type OllamaService } from '@ci/domains/llm';
-import type { UserContextService } from '@ci/domains/memory';
+import { CONFIDENCE_IMPLIED_CEILING, type OllamaService, PROMPT_MODEL } from '@ci/domains/llm';
 import type { PersonalizationService } from '@ci/domains/personalization';
 import type { SearchService } from '@ci/domains/search-next';
 
@@ -25,23 +24,103 @@ function structuredResponse(
     rationale?: string;
     asked_for?: string;
     support?: string;
+    first_person_evidence?: unknown;
   } = {},
 ): string {
   return JSON.stringify({
     answer: 'Blue, definitely blue.',
     confidence: 0.9,
     rationale: 'You named blue in two prior answers.',
+    // Line 1 of the default recall result below, which is one of the user's OWN
+    // records. Every write in this file goes through the speaker gate, so the
+    // default has to cite something that clears it.
+    first_person_evidence: [1],
     ...overrides,
   });
 }
 
+type Voice = 'own' | 'other';
+
 /**
- * The evidence ceiling for a listener built with no dossier, no related answers
- * and no retrieved memory — {@link estimateInferredAnswerConfidence}(0, false, 0).
+ * A recall result shaped like the real one: the block, plus the per-line speaker
+ * tag RecallService now attaches after entity resolution.
+ */
+function recallResult(texts: string[], voice: Voice = 'own') {
+  return mixedRecallResult(voice === 'own' ? texts : [], voice === 'own' ? [] : texts);
+}
+
+/**
+ * The database row a fake recall line stands for.
+ *
+ * Every real recall line now carries one, and it is what the listener records as
+ * the answer's evidence — so a helper that omitted it would let the citation lane
+ * be tested against a shape production never produces. `own-2` is the second own
+ * line, `other-1` the first inbound one, so an assertion can name the row it
+ * expects to see cited without counting through the block.
+ */
+function refFor(text: string, voice: Voice, index: number) {
+  return {
+    type: 'communication',
+    id: `${voice}-${index + 1}`,
+    at: `2024-03-0${Math.min(index + 1, 9)}T00:00:00.000Z`,
+  };
+}
+
+/** Own lines first, then other people's — the order the prompt numbers them in. */
+function mixedRecallResult(own: string[], other: string[]) {
+  const lines = [
+    ...own.map((text, index) => ({ text, voice: 'own' as Voice, ref: refFor(text, 'own', index) })),
+    ...other.map((text, index) => ({
+      text,
+      voice: 'other' as Voice,
+      ref: refFor(text, 'other', index),
+    })),
+  ];
+
+  return {
+    block: `## Relevant context\n${lines.map((line) => line.text).join('\n')}`,
+    resultCount: lines.length,
+    lines,
+  };
+}
+
+/** The one own-record line every default build is grounded in. */
+const DEFAULT_EVIDENCE_LINE = '[I wrote, Mar 3, 2024] "repainted the study a deep blue"';
+
+/**
+ * What a default build stores as the answer's provenance: the single own-record
+ * line the default `first_person_evidence: [1]` cites, named by the row it came
+ * out of rather than only by its text.
+ */
+const DEFAULT_STORED_EVIDENCE = {
+  citations: [
+    {
+      line: 1,
+      type: 'communication',
+      id: 'own-1',
+      at: '2024-03-01T00:00:00.000Z',
+      voice: 'own',
+      snippet: DEFAULT_EVIDENCE_LINE,
+    },
+  ],
+  // The default build retrieves exactly one line and cites it, so there is
+  // nothing left over. Empty rather than absent, and that is the point: it says
+  // the model named everything it was shown, where an absent key would say the
+  // unused lines were never kept at all.
+  uncited: [],
+  linesShown: 1,
+  linesOwn: 1,
+  model: PROMPT_MODEL,
+};
+
+/**
+ * The evidence ceiling for a default build: no related answers, no dossier (the
+ * listener no longer sends one) and the single retrieved own-record line above —
+ * {@link estimateInferredAnswerConfidence}(0, false, 1) === 0.45 + 0.05.
  * Every default build in this file hits it, so it is the confidence the writes
  * carry.
  */
-const BARE_CONTEXT_CONFIDENCE = 0.45;
+const DEFAULT_EVIDENCE_CONFIDENCE = 0.5;
 
 function makeQuestion(id: string, text: string) {
   return { id, text } as Awaited<ReturnType<QuestionService['findById']>>;
@@ -76,7 +155,6 @@ function buildListener(overrides: {
   questionService?: Partial<QuestionService>;
   searchService?: Partial<SearchService>;
   recallService?: Partial<RecallService>;
-  userContextService?: Partial<UserContextService>;
   personalizationService?: Partial<PersonalizationService>;
   ollamaService?: Partial<OllamaService>;
 }) {
@@ -99,18 +177,15 @@ function buildListener(overrides: {
     ...overrides.searchService,
   } as unknown as SearchService;
 
-  // Defaults to "the corpus had nothing for this question", which is the bare
-  // case every pre-existing test in this file was written against.
+  // Defaults to one line of the user's OWN record. It used to default to "the
+  // corpus had nothing", but an empty block now means there is no first-person
+  // line for `first_person_evidence` to cite and every answer is discarded — so
+  // the bare default would have asserted the speaker gate over and over instead
+  // of whatever each test is actually about.
   const recallService = {
-    recall: jest.fn().mockResolvedValue({ block: '', resultCount: 0 }),
+    recall: jest.fn().mockResolvedValue(recallResult([DEFAULT_EVIDENCE_LINE])),
     ...overrides.recallService,
   } as unknown as RecallService;
-
-  const userContextService = {
-    getUserContextForLLM: jest.fn().mockResolvedValue(null),
-    formatContextForSystemPrompt: jest.fn().mockReturnValue(''),
-    ...overrides.userContextService,
-  } as unknown as UserContextService;
 
   const personalizationService = {
     decideAction: jest.fn().mockResolvedValue('auto'),
@@ -129,7 +204,6 @@ function buildListener(overrides: {
     questionService,
     searchService,
     recallService,
-    userContextService,
     personalizationService,
     ollamaService,
     logger,
@@ -141,7 +215,6 @@ function buildListener(overrides: {
     questionService,
     searchService,
     recallService,
-    userContextService,
     personalizationService,
     ollamaService,
   };
@@ -179,17 +252,23 @@ describe('AnswerInferenceListener.inferQuestionAnswer — early exits', () => {
     expect(answerService.update).not.toHaveBeenCalled();
   });
 
-  it('continues (with an empty dossier) when the dossier fetch throws', async () => {
-    const { listener, ollamaService } = buildListener({
-      userContextService: {
-        getUserContextForLLM: jest.fn().mockRejectedValue(new Error('dossier fetch failed')),
-      },
-    });
+  it('never puts the user dossier in the prompt — nothing in it is citable evidence', async () => {
+    // The measured fabrication: "Which hobby have you kept the longest, and for
+    // how many years?" answered "Woodworking — about fifteen years now." at
+    // 0.90, rationale "The User Context section explicitly states …". The
+    // dossier has no line numbers, no dates and no speaker, so it can never
+    // satisfy `first_person_evidence` — and on the reference appliance the self
+    // entity resolves to an imported vCard contact, so it describes a stranger.
+    const { listener, ollamaService } = buildListener({});
 
-    await expect(
-      listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload),
-    ).resolves.not.toThrow();
-    expect(ollamaService.chat).toHaveBeenCalled();
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    expect(ragThread[0].content).not.toContain('User Context');
+    expect(ragThread[0].content).not.toContain('User dossier');
   });
 });
 
@@ -244,7 +323,7 @@ describe('AnswerInferenceListener.inferQuestionAnswer — confidence floor', () 
 
     expect(answerService.create).toHaveBeenCalledWith(
       { userId: 'user-1' },
-      expect.objectContaining({ answerConfidence: BARE_CONTEXT_CONFIDENCE }),
+      expect.objectContaining({ answerConfidence: DEFAULT_EVIDENCE_CONFIDENCE }),
     );
   });
 
@@ -274,7 +353,7 @@ describe('AnswerInferenceListener.inferQuestionAnswer — confidence floor', () 
       { format?: Record<string, unknown> },
     ];
     expect(options.format).toMatchObject({
-      required: ['asked_for', 'support', 'answer', 'confidence', 'rationale'],
+      required: ['asked_for', 'support', 'first_person_evidence', 'answer', 'confidence', 'rationale'],
     });
   });
 
@@ -300,10 +379,11 @@ describe('AnswerInferenceListener.inferQuestionAnswer — refusals are never wri
     // would sit in ci.answers looking exactly like something the user typed.
     const { listener, answerService, personalizationService } = buildListener({
       recallService: {
-        recall: jest.fn().mockResolvedValue({
-          block: '## Relevant context\n[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA',
-          resultCount: 6,
-        }),
+        recall: jest
+          .fn()
+          .mockResolvedValue(
+            recallResult(['[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA']),
+          ),
       },
       ollamaService: {
         chat: jest.fn().mockResolvedValue({
@@ -386,10 +466,15 @@ describe('AnswerInferenceListener.inferQuestionAnswer — refusals are never wri
     // answer and must survive every gate.
     const { listener, answerService } = buildListener({
       recallService: {
-        recall: jest.fn().mockResolvedValue({
-          block: '## Relevant context\n[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA',
-          resultCount: 6,
-        }),
+        recall: jest
+          .fn()
+          .mockResolvedValue(
+            recallResult([
+              '[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA',
+              '[Browser] Directions to El Patroncito Mexican Cuisine, Los Angeles, CA',
+              '[Browser] Directions to Pailin Thai Cuisine, Hollywood Blvd, Los Angeles',
+            ]),
+          ),
       },
       ollamaService: {
         chat: jest.fn().mockResolvedValue({
@@ -397,6 +482,7 @@ describe('AnswerInferenceListener.inferQuestionAnswer — refusals are never wri
             content: structuredResponse({
               answer: 'Japanese, Mexican and Thai — I eat across all three.',
               confidence: 0.55,
+              first_person_evidence: [1, 2, 3],
               rationale: 'Three restaurants looked up in browser history.',
             }),
           },
@@ -441,7 +527,7 @@ describe('AnswerInferenceListener.inferQuestionAnswer — the answer is written 
       { userId: 'user-1' },
       expect.objectContaining({
         text: 'I have kept up with woodworking for fifteen years.',
-        answerConfidence: BARE_CONTEXT_CONFIDENCE,
+        answerConfidence: DEFAULT_EVIDENCE_CONFIDENCE,
       }),
     );
   });
@@ -540,8 +626,9 @@ describe('AnswerInferenceListener.inferQuestionAnswer — update vs create', () 
         question: { id: 'q-1' },
         answerMethod: 'inferred',
         answerSource: 'inferred',
-        answerConfidence: BARE_CONTEXT_CONFIDENCE,
+        answerConfidence: DEFAULT_EVIDENCE_CONFIDENCE,
         answerRationale: 'You named blue in two prior answers.',
+        answerEvidence: DEFAULT_STORED_EVIDENCE,
       },
     );
     expect(answerService.update).not.toHaveBeenCalled();
@@ -561,8 +648,9 @@ describe('AnswerInferenceListener.inferQuestionAnswer — update vs create', () 
       text: 'Blue, definitely blue.',
       answerMethod: 'inferred',
       answerSource: 'inferred',
-      answerConfidence: BARE_CONTEXT_CONFIDENCE,
+      answerConfidence: DEFAULT_EVIDENCE_CONFIDENCE,
       answerRationale: 'You named blue in two prior answers.',
+      answerEvidence: DEFAULT_STORED_EVIDENCE,
     });
     expect(answerService.create).not.toHaveBeenCalled();
   });
@@ -714,9 +802,7 @@ describe('AnswerInferenceListener.findRelatedAnswers (via inferQuestionAnswer)',
 
 describe('AnswerInferenceListener — grounding in the user’s own memory', () => {
   /** A recall block shaped like the real one: labelled, dated, one line each. */
-  function recallBlock(lines: string[]) {
-    return { block: `## Relevant context\n${lines.join('\n')}`, resultCount: lines.length };
-  }
+  const recallBlock = recallResult;
 
   it('retrieves against the whole indexed corpus, not just prior answers', async () => {
     // The bug this feature exists to fix: the only retrieval the listener did
@@ -769,7 +855,7 @@ describe('AnswerInferenceListener — grounding in the user’s own memory', () 
         recall: jest
           .fn()
           .mockResolvedValue(
-            recallBlock(['[outbound, Mar 3, 2024] "repainted the study a deep blue"', 'Blue paint order']),
+            recallBlock(['[I wrote, Mar 3, 2024] "repainted the study a deep blue"', 'Blue paint order']),
           ),
       },
     });
@@ -784,7 +870,9 @@ describe('AnswerInferenceListener — grounding in the user’s own memory', () 
     expect(systemPrompt).toContain('EVIDENCE');
     // Provenance survives into the prompt, so the model can name it in the
     // rationale rather than gesturing at "your history".
-    expect(systemPrompt).toContain('[outbound, Mar 3, 2024] "repainted the study a deep blue"');
+    expect(systemPrompt).toContain('[I wrote, Mar 3, 2024] "repainted the study a deep blue"');
+    // Numbered, so `first_person_evidence` has something to point at.
+    expect(systemPrompt).toContain('1. [I wrote, Mar 3, 2024] "repainted the study a deep blue"');
   });
 
   it('raises the evidence ceiling, so a grounded answer is not capped like an ungrounded one', async () => {
@@ -810,7 +898,7 @@ describe('AnswerInferenceListener — grounding in the user’s own memory', () 
 
   it('tells the model when the corpus returned nothing, instead of staying silent about it', async () => {
     const { listener, ollamaService } = buildListener({
-      recallService: { recall: jest.fn().mockResolvedValue({ block: '', resultCount: 0 }) },
+      recallService: { recall: jest.fn().mockResolvedValue({ block: '', resultCount: 0, lines: [] }) },
     });
 
     await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
@@ -847,7 +935,12 @@ describe('AnswerInferenceListener — grounding in the user’s own memory', () 
     expect(systemPrompt).toMatch(/indirect evidence is still evidence/i);
   });
 
-  it('still infers (ungrounded, at the bare ceiling) when recall throws', async () => {
+  it('writes NOTHING when recall throws — an answer with no evidence is invented', async () => {
+    // This used to write at the bare ceiling (0.45), one notch above the 0.4
+    // floor: a first-person claim about the user with not one line of their
+    // record behind it. With no evidence there is no own-record line to cite, so
+    // the speaker gate discards it. Failing soft still means not throwing — the
+    // question simply comes back unanswered.
     const { listener, answerService, ollamaService } = buildListener({
       recallService: { recall: jest.fn().mockRejectedValue(new Error('search index down')) },
     });
@@ -857,10 +950,8 @@ describe('AnswerInferenceListener — grounding in the user’s own memory', () 
     ).resolves.not.toThrow();
 
     expect(ollamaService.chat).toHaveBeenCalled();
-    expect(answerService.create).toHaveBeenCalledWith(
-      { userId: 'user-1' },
-      expect.objectContaining({ answerConfidence: BARE_CONTEXT_CONFIDENCE }),
-    );
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
   });
 });
 
@@ -1043,10 +1134,9 @@ describe('AnswerInferenceListener — the off-question gate', () => {
   it('writes an inference the evidence only implies, capped below the stated band', async () => {
     const { listener, answerService } = buildListener({
       recallService: {
-        recall: jest.fn().mockResolvedValue({
-          block: '## Relevant context\nline',
-          resultCount: 10,
-        }),
+        recall: jest
+          .fn()
+          .mockResolvedValue(recallResult(['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9', 'l10'])),
       },
       ollamaService: {
         chat: jest.fn().mockResolvedValue({
@@ -1159,5 +1249,505 @@ describe('AnswerInferenceListener — cross-question bleed', () => {
 
     expect(prompt).toContain('Answers this person gave to OTHER questions');
     expect(prompt).toContain("never this question's answer");
+  });
+});
+
+describe('AnswerInferenceListener — the speaker gate', () => {
+  /**
+   * The measured corpus shape: 168,385 inbound rows against 156,768 outbound, so
+   * just over half of every retrieval is somebody else talking. Eight of the
+   * thirteen answers stored before this gate rested on inbound citations.
+   */
+  function withInboundOnly() {
+    return buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(
+            mixedRecallResult(
+              [],
+              [
+                '[someone else wrote to me, Feb 2, 2015] "I do have cats and definitely a cat person. :)"',
+                '[someone else wrote to me, Apr 8, 2015] "I do have a cat."',
+                '[someone else wrote to me, Feb 26, 2017] "And I have a cat"',
+              ],
+            ),
+          ),
+      },
+    });
+  }
+
+  it('writes NOTHING when every retrieved line is somebody else talking', async () => {
+    // "Are you more of a cat person or a dog person?" → "I am definitely a cat
+    // person, and I have cats." at 0.95, off three other people's messages about
+    // THEIR cats. The owner's only outbound pet line is
+    // "My dog needs to be put down today :(".
+    const { listener, answerService } = withInboundOnly();
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing even when the model calls inbound-only evidence "stated" at 0.99', async () => {
+    // The gate is deterministic on this side, so the model's own judgement
+    // cannot buy its way past it — which is the whole difference between this
+    // and a prompt rule.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(
+            mixedRecallResult(
+              [],
+              ['[someone else wrote to me, Aug 11, 2014] "I always wanted a tree house"'],
+            ),
+          ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              confidence: 0.99,
+              answer: 'I always wanted a tree house.',
+              first_person_evidence: [1],
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the model cites an inbound line number from a mixed block', async () => {
+    // Own line is 1, the inbound lines are 2 and 3. Citing 3 is citing nothing.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(
+            mixedRecallResult(
+              ['[I wrote, Jun 28, 2010] "My dog needs to be put down today :("'],
+              [
+                '[someone else wrote to me, Feb 2, 2015] "definitely a cat person"',
+                '[someone else wrote to me, Apr 8, 2015] "I do have a cat."',
+              ],
+            ),
+          ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              answer: 'I am definitely a cat person.',
+              first_person_evidence: [3],
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+  });
+
+  it('still writes when the claim rests on the owner’s OWN line in the same mixed block', async () => {
+    // Inbound context is kept, not filtered — an incoming "happy birthday!" is
+    // real evidence about a birthday. The gate is about what CARRIES the claim.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(
+            mixedRecallResult(
+              ['[I wrote, Jun 25, 2010] "Really. I am a night owl."'],
+              ['[someone else wrote to me, May 3, 2016] "I\'m a night owl..."'],
+            ),
+          ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              answer: 'Night owl.',
+              confidence: 0.9,
+              first_person_evidence: [1],
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ text: 'Night owl.' }),
+    );
+  });
+
+  it('files the evidence under two headings so the model can tell the voices apart', async () => {
+    const { listener, ollamaService } = withInboundOnly();
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    const prompt = ragThread[0].content;
+
+    expect(prompt).toContain('WHAT OTHER PEOPLE SAID TO ME');
+    expect(prompt).toContain('nothing this person wrote or did came back for this question');
+    // Numbered across both sections, so a citation names exactly one line.
+    expect(prompt).toContain('1. [someone else wrote to me, Feb 2, 2015]');
+  });
+
+  it('caps how much of the block other people are allowed to fill', async () => {
+    // 52% of the corpus is inbound; uncapped, it crowds out the handful of lines
+    // that can actually carry the answer.
+    const { listener, ollamaService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(
+          mixedRecallResult(
+            ['mine'],
+            Array.from({ length: 20 }, (_unused, index) => `theirs-${index}`),
+          ),
+        ),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    const prompt = ragThread[0].content;
+
+    expect(prompt).toContain('theirs-5');
+    expect(prompt).not.toContain('theirs-6');
+  });
+
+  it('ceilings the confidence on the FIRST-PERSON line count, not the total', async () => {
+    // Ten lines of other people talking are worth the same ceiling as none:
+    // estimateInferredAnswerConfidence(0, false, 1) === 0.5.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(
+          mixedRecallResult(
+            ['mine'],
+            Array.from({ length: 6 }, (_unused, index) => `theirs-${index}`),
+          ),
+        ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({ message: { content: structuredResponse({ confidence: 0.95 }) } }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ answerConfidence: DEFAULT_EVIDENCE_CONFIDENCE }),
+    );
+  });
+});
+
+describe('AnswerInferenceListener — the citations written onto the answer', () => {
+  /**
+   * The point of this whole lane: `answer_rationale` is the model's SENTENCE
+   * about its evidence, and until now that sentence was the only provenance the
+   * owner got. A sentence naming records is unfalsifiable — the measured failure
+   * this codebase already carries is a rationale citing a "User Context section"
+   * that "explicitly states" a fact appearing nowhere in the corpus. Storing the
+   * rows makes the claim checkable.
+   */
+  it('records the ROW behind each cited line, not just its text', async () => {
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(mixedRecallResult(['I wrote this', 'and this too'], [])),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ first_person_evidence: [2] }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    // Line 2, not line 1: the citation has to follow the number the model gave,
+    // or the drawer shows the owner a record the answer does not rest on.
+    expect(written.answerEvidence.citations).toEqual([
+      {
+        line: 2,
+        type: 'communication',
+        id: 'own-2',
+        at: '2024-03-02T00:00:00.000Z',
+        voice: 'own',
+        snippet: 'and this too',
+      },
+    ]);
+  });
+
+  it('cites in the model’s own order, not in retrieval order', async () => {
+    // The first number the model named is the line it leant on hardest. Sorting
+    // them back into block order would throw that away for nothing.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(mixedRecallResult(['first', 'second', 'third'], [])),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ first_person_evidence: [3, 1] }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(written.answerEvidence.citations.map((citation: { id: string }) => citation.id)).toEqual([
+      'own-3',
+      'own-1',
+    ]);
+  });
+
+  it('stores only what the SPEAKER GATE let through — an inbound citation is not provenance', async () => {
+    // The gate already refuses to let an inbound line carry the claim. The
+    // citation lane must not quietly re-admit it as "evidence" in the drawer:
+    // a line saying "I have a cat" under WHAT OTHER PEOPLE SAID TO ME means
+    // SOMEONE ELSE has a cat, and showing it as the answer's grounding would
+    // undo the gate in the one surface the owner actually reads.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(mixedRecallResult(['my own line'], ['their line'])),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ first_person_evidence: [1, 2] }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(written.answerEvidence.citations).toHaveLength(1);
+    expect(written.answerEvidence.citations[0]).toMatchObject({ id: 'own-1', voice: 'own' });
+  });
+
+  it('reports how much was read, not only what was cited', async () => {
+    // "Cited 1 of 9 lines read, 3 of them mine" is a different and more honest
+    // statement than "cited 1 line", and the counts are only knowable here.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(mixedRecallResult(['a', 'b', 'c'], ['x', 'y', 'z', 'w', 'v', 'u'])),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(written.answerEvidence).toMatchObject({ linesShown: 9, linesOwn: 3, model: PROMPT_MODEL });
+  });
+
+  it('caps the stored citations so the browse payload cannot blow up', async () => {
+    // `answer_evidence` rides along on every row of GET /api/questions/catalogue,
+    // which pages 50 questions at a time. A pathological generation citing every
+    // line must not make that payload a function of how talkative the model felt.
+    const own = Array.from({ length: 12 }, (_unused, index) => `own line ${index + 1}`);
+    const { listener, answerService } = buildListener({
+      recallService: { recall: jest.fn().mockResolvedValue(mixedRecallResult(own, [])) },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              first_person_evidence: Array.from({ length: 12 }, (_unused, index) => index + 1),
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(written.answerEvidence.citations).toHaveLength(8);
+    // The cut takes the tail, so the lines the model named first survive.
+    expect(written.answerEvidence.citations[0].line).toBe(1);
+  });
+
+  it('truncates a long line rather than storing the whole thing', async () => {
+    const long = `[I wrote, Mar 3, 2024] "${'x'.repeat(500)}"`;
+    const { listener, answerService } = buildListener({
+      recallService: { recall: jest.fn().mockResolvedValue(mixedRecallResult([long], [])) },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(written.answerEvidence.citations[0].snippet).toHaveLength(280);
+    // Verbatim as far as it goes: showing the owner something other than what
+    // the model read would defeat the point of showing them anything.
+    expect(long.startsWith(written.answerEvidence.citations[0].snippet)).toBe(true);
+  });
+
+  it('stores the lines the model was shown and did NOT cite, so the count has a list', async () => {
+    // THE BUG. The drawer said "20 records were put in front of the model, 14 of
+    // them your own" and then listed two, and the owner read the other eighteen
+    // as withheld. They were not withheld — they were never kept. `linesShown`
+    // was an integer with nothing behind it; this is what puts the rows there.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(mixedRecallResult(['cited line', 'passed over'], ['their line'])),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ first_person_evidence: [1] }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(written.answerEvidence.citations).toHaveLength(1);
+    // Block order, and the SAME shape as a citation — the frontend renders both
+    // groups through one reader, so a structural difference here would be a
+    // second reader on the other side.
+    expect(written.answerEvidence.uncited).toEqual([
+      {
+        line: 2,
+        type: 'communication',
+        id: 'own-2',
+        at: '2024-03-02T00:00:00.000Z',
+        voice: 'own',
+        snippet: 'passed over',
+      },
+      {
+        line: 3,
+        type: 'communication',
+        id: 'other-1',
+        at: '2024-03-01T00:00:00.000Z',
+        voice: 'other',
+        snippet: 'their line',
+      },
+    ]);
+  });
+
+  it('keeps the inbound voice on an uncited line rather than flattening it', async () => {
+    // The single most informative row in the group: a line that came back from
+    // retrieval and was correctly NOT used is the speaker gate visibly working,
+    // which is exactly what an owner auditing a wrong answer needs to see. Drop
+    // the voice and it reads as a record the appliance simply ignored.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(mixedRecallResult(['mine'], ['theirs', 'also theirs'])),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(
+      written.answerEvidence.uncited.map((line: { voice: string; id: string }) => [line.id, line.voice]),
+    ).toEqual([
+      ['other-1', 'other'],
+      ['other-2', 'other'],
+    ]);
+  });
+
+  it('never lists a line the model cited among the ones it passed over', async () => {
+    // The two groups make opposite claims about the same answer. A line in both
+    // would tell the owner a record supported the answer and was rejected by it.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue(mixedRecallResult(['a', 'b', 'c', 'd'], [])),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ first_person_evidence: [3, 1] }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+    const cited = written.answerEvidence.citations.map((line: { line: number }) => line.line);
+    const uncited = written.answerEvidence.uncited.map((line: { line: number }) => line.line);
+
+    expect(cited).toEqual([3, 1]);
+    // Block order for the leftovers, whatever order the citations came in.
+    expect(uncited).toEqual([2, 4]);
+    expect(uncited.filter((line: number) => cited.includes(line))).toEqual([]);
+  });
+
+  it('caps the stored uncited lines, and truncates them harder than a citation', async () => {
+    // Same reasoning as the citation cap, with more force: this array is an
+    // order of magnitude longer and rides the same 25-row browse page. A
+    // citation is QUOTED as what the answer rests on and gets 280 characters; an
+    // uncited line only has to be RECOGNISABLE, and gets 200.
+    const long = `[I wrote, Mar 3, 2024] "${'x'.repeat(500)}"`;
+    const own = ['cited', ...Array.from({ length: 40 }, () => long)];
+    const { listener, answerService } = buildListener({
+      recallService: { recall: jest.fn().mockResolvedValue(mixedRecallResult(own, [])) },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ first_person_evidence: [1] }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const written = (answerService.create as jest.Mock).mock.calls[0][1];
+
+    expect(written.answerEvidence.uncited).toHaveLength(24);
+    expect(written.answerEvidence.uncited[0].snippet).toHaveLength(200);
+    expect(long.startsWith(written.answerEvidence.uncited[0].snippet)).toBe(true);
+    // The total is still the truth, so the drawer can admit the shortfall rather
+    // than let the reader subtract and come out wrong.
+    expect(written.answerEvidence.linesShown).toBe(41);
+  });
+
+  it('writes no evidence at all when the answer is discarded', async () => {
+    // A discarded answer has no row to hang provenance off. Asserted because the
+    // opposite — evidence persisted for an answer that was never written — would
+    // be invisible until somebody opened a drawer on a question with no answer.
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ first_person_evidence: [] }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
   });
 });

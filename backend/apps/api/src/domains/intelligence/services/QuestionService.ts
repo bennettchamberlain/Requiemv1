@@ -14,7 +14,12 @@ import {
 
 import { Question, QuestionEntity } from '../entities/QuestionEntity';
 import { excludeForkedOriginsSql } from '../questionScope';
-import type { CreateQuestionDto, QuestionCatalogueQueryDto, UpdateQuestionDto } from '../types';
+import type {
+  AnswerEvidence,
+  CreateQuestionDto,
+  QuestionCatalogueQueryDto,
+  UpdateQuestionDto,
+} from '../types';
 
 const FEED_QUESTION_QUEUE_LIMIT = 3;
 /** Unanswered front-of-queue questions rotate after this long on the feed. */
@@ -100,6 +105,7 @@ const CATALOGUE_ANSWER_LATERAL_SQL = `
       a.answer_source,
       a.answer_confidence,
       a.answer_rationale,
+      a.answer_evidence,
       a.answered_at
     FROM ci.answers a
     WHERE a.question_id = q.question_id
@@ -138,6 +144,24 @@ export interface QuestionCatalogueAnswer {
   source: string | null;
   confidence: number | null;
   rationale: string | null;
+  /**
+   * The database rows an inferred answer was actually read out of — both the
+   * ones the model cited and the ones it was shown and passed over. See
+   * `ci.answers.answer_evidence`. Null for every answer the user typed, and for
+   * inferred rows written before the column existed.
+   *
+   * Inlined on the browse payload rather than fetched per-answer because the
+   * drawer opens off a row that is already on screen: a second round trip to
+   * show the provenance of something already rendered is a spinner for no
+   * reason. Kept affordable at the write end instead — AnswerInferenceListener
+   * caps both arrays and both snippet lengths before the row is stored, which is
+   * what makes the browse payload a function of the caps and not of how
+   * connected the retrieval happened to be.
+   *
+   * Passed through as the whole jsonb wrapper (`row.answer_evidence`), so a
+   * field added at the write end reaches the drawer without a change here.
+   */
+  evidence: AnswerEvidence | null;
   answeredAt: Date;
 }
 
@@ -221,6 +245,7 @@ type CatalogueRow = {
   answer_source: string | null;
   answer_confidence: number | null;
   answer_rationale: string | null;
+  answer_evidence: AnswerEvidence | null;
   answered_at: Date | null;
   total_count: number;
 };
@@ -528,6 +553,7 @@ export class QuestionService {
         a.answer_source,
         a.answer_confidence,
         a.answer_rationale,
+        a.answer_evidence,
         a.answered_at,
         COUNT(*) OVER ()::int AS total_count
       FROM ci.questions q
@@ -641,6 +667,7 @@ export class QuestionService {
                 source: row.answer_source,
                 confidence: row.answer_confidence,
                 rationale: row.answer_rationale,
+                evidence: row.answer_evidence,
                 answeredAt: row.answered_at as Date,
               }
             : null,
