@@ -20,7 +20,8 @@
     "frontend/apps/*",
     "frontend/packages/*",
     "!frontend/apps/ios",
-    "!frontend/apps/android"
+    "!frontend/apps/android",
+    "!frontend/apps/desktop"
   ],
   "resolutions": {
     "@protobufjs/utf8": "^1.1.1",

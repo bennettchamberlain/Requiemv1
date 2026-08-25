@@ -1,3 +1,5 @@
+import globals from 'globals';
+
 import eslintShared from './eslint.shared.mjs';
 
 export default [
@@ -48,6 +50,33 @@ export default [
   },
 
   ...eslintShared,
+
+  {
+    // The Tauri bootstrap splash (frontend/apps/desktop/bootstrap) runs directly
+    // in the webview, not under Node — it needs `window`/`document` etc. rather
+    // than the Node globals eslint.shared.mjs applies to every other **/*.js.
+    files: ['frontend/apps/desktop/bootstrap/**/*.js'],
+
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+
+  {
+    // eslint.shared.mjs's `**/*.js` glob doesn't match `.cjs`, so this plain
+    // CommonJS build script (deliberately dependency-free, same reasoning as
+    // bin/check-migration-versions.js) gets neither Node globals nor an
+    // exemption from the ESM-authoring `no-require-imports` rule.
+    files: ['frontend/apps/desktop/scripts/*.cjs'],
+
+    languageOptions: {
+      globals: globals.node,
+    },
+
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 
   {
     // `@ci/common/schedule` wraps Nest's `Cron` with the three things the Jobs
