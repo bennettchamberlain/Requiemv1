@@ -91,6 +91,40 @@ describe('VerticalCalendar', () => {
     expect(chip.getAttribute('aria-label')).toMatch(/\d/);
   });
 
+  it('opens the event tooltip in a dialog on tap when hover is unavailable', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('hover: none') || query.includes('pointer: coarse'),
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+
+    try {
+      render(<VerticalCalendar start={MONDAY} days={1} events={[event()]} rhythm={[]} />);
+
+      fireEvent.click(screen.getByLabelText(/^Standup,/));
+
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent('Standup');
+      expect(dialog).toHaveTextContent('work');
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it('does not open a dialog on a pointer that can hover', () => {
+    render(<VerticalCalendar start={MONDAY} days={1} events={[event()]} rhythm={[]} />);
+
+    fireEvent.click(screen.getByLabelText(/^Standup,/));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('names an all-day event as such rather than inventing a time', () => {
     render(
       <VerticalCalendar
