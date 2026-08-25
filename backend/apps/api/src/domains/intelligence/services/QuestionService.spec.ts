@@ -976,8 +976,37 @@ describe('QuestionService.findCatalogue', () => {
 
     expect(calls[0].sql).not.toContain('question_id = ANY');
     expect(calls[0].params).toHaveLength(8);
-    // The facet query only ever sees $1..$3 — an ids filter must not leak in,
-    // the same lockstep guarantee CATALOGUE_FULL_WHERE_SQL already gives $4..$6.
+    // No allow-list means the facet query still sees exactly $1..$3.
     expect(calls[1].params).toHaveLength(3);
+  });
+
+  it('applies the id allow-list to the facet query too, not just the page', async () => {
+    // Facets used to be computed over the whole catalogue regardless, so an
+    // ids-filtered request described a set the caller had not asked for.
+    const ids = ['11111111-1111-1111-1111-111111111111'];
+    const { service, calls } = makeCatalogueService([[catalogueRow()], []]);
+
+    await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, ids });
+
+    // $4 here, not $9: the facet statement binds only $1..$3, so the allow-list
+    // takes the next free position in THAT query rather than the page query's.
+    expect(calls[1].sql).toContain('AND q.question_id = ANY($4::uuid[])');
+    expect(calls[1].params).toHaveLength(4);
+    expect(calls[1].params[3]).toEqual(ids);
+  });
+
+  it('applies the id allow-list to the past-the-end count fallback', async () => {
+    // The fallback exists so a page past the end can still tell the pager how
+    // far back to go. Counting the unfiltered catalogue there offered pages
+    // that cannot exist.
+    const ids = ['11111111-1111-1111-1111-111111111111'];
+    const { service, calls } = makeCatalogueService([[], [], [{ total_count: 1 }]]);
+
+    await service.findCatalogue(CONTEXT, { ...CATALOGUE_QUERY, ids, offset: 25 });
+
+    const countCall = calls[calls.length - 1];
+    expect(countCall.sql).toContain('AND q.question_id = ANY($7::uuid[])');
+    expect(countCall.params).toHaveLength(7);
+    expect(countCall.params[6]).toEqual(ids);
   });
 });
