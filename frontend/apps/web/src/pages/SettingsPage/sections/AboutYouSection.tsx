@@ -102,8 +102,8 @@ export function AboutYouSection() {
       </div>
 
       {!view?.hasSignal && (
-        <Card className="mb-4 border-dashed">
-          <Card.Content className="p-4 text-sm text-muted-foreground">
+        <Card className="border-dashed py-0">
+          <Card.Content className="px-4 text-sm text-muted-foreground">
             Still thin — answer questions on the Feed, or add a correction below so Companion has something to
             work with.
           </Card.Content>
