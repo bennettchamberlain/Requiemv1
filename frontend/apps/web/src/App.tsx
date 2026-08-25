@@ -395,11 +395,25 @@ function AppRoutes() {
             </>
           )}
 
-          {/* /stats was its own rail tab; it's now the Stats tab inside Self. */}
-          <Route path="/stats" element={<Navigate to="/self/stats" replace />} />
-
-          {isFeatureEnabled('stats.page') && (
+          {isFeatureEnabled('self.page') && (
             <>
+              {/* Legacy addresses, INSIDE the gate that registers their target.
+                  These three sat outside it, violating the rule the comment
+                  below states: with the flag off they bounced an old bookmark
+                  to /self/stats or /self/settings and 404'd it there, at a URL
+                  the user never typed. Absent from the table they fall through
+                  to "*", which waits for the flags and only then decides. */}
+              <Route path="/stats" element={<Navigate to="/self/stats" replace />} />
+              <Route path="/profile/*" element={<RedirectProfileToSelfSettings />} />
+              <Route path="/system" element={<Navigate to="/self" replace />} />
+
+              {/* About You and Account moved into Self. Specific paths outrank
+                  the `/settings/*` wildcard regardless of declaration order, so
+                  old bookmarks land on the right Self tab instead of falling
+                  through to the settings dialog's appearance fallback. */}
+              <Route path="/settings/about-you" element={<Navigate to="/self" replace />} />
+              <Route path="/settings/account" element={<Navigate to="/self" replace />} />
+
               <Route
                 path="/self/*"
                 element={
@@ -504,29 +518,13 @@ function AppRoutes() {
             }
           />
 
-          {/* About You and Account moved into Self. Specific paths outrank the
-              `/settings/*` wildcard below regardless of declaration order, so
-              old bookmarks land on the right Self tab instead of falling
-              through to the settings dialog's own appearance fallback. */}
-          <Route path="/settings/about-you" element={<Navigate to="/self" replace />} />
-          <Route path="/settings/account" element={<Navigate to="/self" replace />} />
-
+          {/* The Self-bound redirects for these paths are declared inside the
+              `self.page` gate above, alongside the route they point at. */}
           <Route
             path="/settings/*"
             element={
               <ProtectedRoute>
                 <SettingsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route path="/profile/*" element={<RedirectProfileToSelfSettings />} />
-
-          <Route
-            path="/system"
-            element={
-              <ProtectedRoute>
-                <Navigate to="/self" replace />
               </ProtectedRoute>
             }
           />
@@ -579,7 +577,7 @@ function AppRoutes() {
           />
 
           <Route
-            path="/saved-searches?"
+            path="/saved-searches"
             element={
               <ProtectedRoute>
                 <SavedSearchesPage />

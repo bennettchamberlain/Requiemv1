@@ -61,14 +61,47 @@ export function DeleteTaskModal({ taskIds, onClose }: Props) {
     setError(null);
 
     try {
+      // ═══ A REFUSED DELETE DOES NOT THROW ═══
+      //
+      // `TaskResolver.deleteTask` returns `{ success: false }` — no error —
+      // when the row is missing or not the caller's, and the cache `update`
+      // above bails on the absent `deletedId`. So the old loop awaited each
+      // mutation, ignored every payload, and called `onClose()` regardless:
+      // the dialog shut as though the work were done, the task reappeared on
+      // the next refetch, and in a bulk delete a partial failure was invisible.
+      // `NewTaskForm` and `EditTaskModal` both check this payload; this one did
+      // not.
+      const failed: string[] = [];
+
       for (const id of taskIds) {
-        await deleteTask({ variables: { input: { id } } });
+        const { data } = await deleteTask({ variables: { input: { id } } });
+
+        if (!data?.deleteTask?.success) {
+          failed.push(id);
+        }
       }
+
+      if (failed.length > 0) {
+        // Named counts, because a partial failure is the case the user cannot
+        // otherwise see: some rows left the list and some did not.
+        setError(
+          failed.length === taskIds.length
+            ? many
+              ? 'Could not delete these tasks. Please try again.'
+              : 'Could not delete this task. Please try again.'
+            : `Deleted ${taskIds.length - failed.length} of ${taskIds.length}. The rest could not be deleted — please try again.`,
+        );
+
+        return;
+      }
+
       onClose();
     } catch {
       // Leave the dialog open on failure — closing it here would read as a
       // successful delete even though the task is still there.
-      setError(many ? 'Could not delete these tasks. Please try again.' : 'Could not delete this task. Please try again.');
+      setError(
+        many ? 'Could not delete these tasks. Please try again.' : 'Could not delete this task. Please try again.',
+      );
     }
   };
 

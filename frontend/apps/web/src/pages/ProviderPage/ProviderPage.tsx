@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import logo from '@/assets/logo.png';
+import { ErrorState } from '@/components/ErrorState';
 import { InlineModal } from '@/components/InlineModal';
 import { ThemeToggle } from '@/components/ThemePicker';
 import { gql } from '@/graphql';
@@ -64,7 +65,7 @@ export function ProviderPage() {
   const { toast } = useToast();
   const { t } = useTranslation();
 
-  const { data, loading: queryLoading } = useQuery(GET_PROVIDER, {
+  const { data, loading: queryLoading, error: queryError, refetch } = useQuery(GET_PROVIDER, {
     variables: {
       id: GlobalUID.encode('provider', id!),
     },
@@ -148,8 +149,32 @@ export function ProviderPage() {
     return {};
   }, [provider?.theme?.borderColor]);
 
-  if (queryLoading || !provider) {
+  if (queryLoading) {
     return <LoadingPage />;
+  }
+
+  // Not-loading-and-no-provider used to share the branch above and spin
+  // forever: a failed query or an id naming no provider left `queryLoading`
+  // false and `provider` undefined, and this page is registered OUTSIDE
+  // MainLayout (App.tsx), so there was no rail and no in-app control on screen
+  // — browser Back was the only way out of a full-screen spinner.
+  if (!provider) {
+    return (
+      <ErrorState
+        className="min-h-dvh"
+        title={queryError ? 'Could not load this service' : 'No such service'}
+        description={
+          queryError
+            ? 'This device could not reach it just now.'
+            : 'That link does not point at a service this Companion knows about.'
+        }
+        onRetry={queryError ? () => void refetch() : undefined}
+      >
+        <Button variant="outline" size="sm" onClick={() => navigate('/sources/connect')}>
+          Back to Sources
+        </Button>
+      </ErrorState>
+    );
   }
 
   return (

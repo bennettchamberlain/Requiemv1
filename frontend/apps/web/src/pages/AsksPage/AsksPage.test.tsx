@@ -1,5 +1,5 @@
 import type { MockedResponse } from '@apollo/client/testing';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -11,6 +11,7 @@ import {
   ASK_INBOX,
   ASK_OUTBOX,
   CREATE_ASK,
+  CREATE_ASK_GRANT,
   CREATE_PEER_LINK,
   MY_ASK_GRANTS,
   MY_PEER_LINKS,
@@ -20,6 +21,7 @@ import {
   UPDATE_PEER_LINK,
 } from './asksOperations';
 import { AsksPage } from './AsksPage';
+import { COMPOSER_SHAPES } from './composeRecipients';
 
 vi.mock('@ci/common', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@ci/common');
@@ -738,7 +740,7 @@ describe('AsksPage', () => {
                   peerHandle: null,
                   query: {
                     __typename: 'AskQueryType',
-                    queryType: 'photos',
+                    queryType: 'content',
                     dataClass: 'photos',
                     prompt: 'Do you have the lake photos?',
                   },
@@ -753,24 +755,131 @@ describe('AsksPage', () => {
     await screen.findByText(/No one is waiting on you/i);
     openTab('Ask someone');
 
-    fireEvent.click(await screen.findByRole('radio', { name: /Can I see your photos of…\?/ }));
+    fireEvent.click(await screen.findByRole('radio', { name: /Do you have photos of…\?/ }));
     fireEvent.change(screen.getByPlaceholderText(/lake trip/i), {
       target: { value: 'Do you have the lake photos?' },
     });
 
-    // `photos` is the ONE shape carrying a dataClass, so it is the only one that
-    // can catch a composer that previews a class and then sends none (or, worse,
-    // sends one it never showed). The preview names it twice — once as the
-    // queryType, once as the dataClass — which is exactly the pair
-    // `AskQueryInput` puts on the wire.
-    expect(screen.getAllByText('photos')).toHaveLength(2);
+    // This shape is the ONE carrying a dataClass, so it is the only one that can
+    // catch a composer that previews a class and then sends none (or, worse,
+    // sends one it never showed). The preview names the pair `AskQueryInput`
+    // puts on the wire: archetype, then class.
+    //
+    // The two used to be the same word. `queryType: 'photos'` was NOT an
+    // archetype, and `parseAskQueryType` rejects anything outside
+    // {relationship, content, availability, attribute, identity} with a 400 —
+    // so this shape's Send button always failed against a real server, and this
+    // test asserted the failing value. It passed only because CREATE_ASK is
+    // mocked here and never reaches the resolver. The archetype is `content`;
+    // `photos` is the class narrowed within it.
+    expect(screen.getByText('content')).toBeInTheDocument();
+    expect(screen.getByText('photos')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Send ask' }));
 
     await waitFor(() => expect(created).toHaveLength(1));
     expect(created[0]).toMatchObject({
-      input: { query: { queryType: 'photos', dataClass: 'photos' } },
+      input: { query: { queryType: 'content', dataClass: 'photos' } },
     });
+  });
+
+  // ═══ THE GRANTS TAB USED TO BE PERMANENTLY READ-ONLY ═══
+  //
+  // `GrantManager` carries the "New grant" button and renders it only when an
+  // `onAddGrant` handler is passed; the page never passed one, and no
+  // CREATE_ASK_GRANT document existed on the client at all. So the Grants tab
+  // could revoke and re-mode existing grants and never write one — and because
+  // `composeRecipients` is built from grants + inbox + outbox with no directory
+  // behind it, a box where nobody had ever asked anybody anything had no way
+  // out of "There is nobody to ask yet." at all.
+  it('offers a way to write the first grant from the empty state, not just the populated one', async () => {
+    renderPage([
+      ...repeated(inboxOk([])),
+      ...repeated(outboxOk),
+      ...repeated(grantsOk([])),
+      ...repeated(peersOk([])),
+      ...repeated(historyOk([])),
+    ]);
+
+    await screen.findByText(/No one is waiting on you/i);
+    openTab('Who can ask me what');
+
+    // The empty state is the one screen a new owner actually sees, so it is the
+    // one that most needs the control.
+    expect(await screen.findByText(/No standing grants/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New grant' }));
+
+    expect(await screen.findByText(/Let someone ask you/i)).toBeInTheDocument();
+  });
+
+  it('writes a grant naming an archetype the server accepts, defaulting to review', async () => {
+    const created: Record<string, unknown>[] = [];
+
+    renderPage([
+      ...repeated(inboxOk([])),
+      ...repeated(outboxOk),
+      ...repeated(grantsOk([])),
+      ...repeated(peersOk([])),
+      ...repeated(historyOk([])),
+      {
+        request: { query: CREATE_ASK_GRANT },
+        variableMatcher: () => true,
+        result: (variables: Record<string, unknown>) => {
+          created.push(variables);
+
+          return {
+            data: {
+              createAskGrant: {
+                __typename: 'AskGrantPayload',
+                success: true,
+                grant: grantRow({ id: 'grant-new', mode: 'review', queryType: 'relationship' }),
+              },
+            },
+          };
+        },
+      },
+    ]);
+
+    await screen.findByText(/No one is waiting on you/i);
+    openTab('Who can ask me what');
+    fireEvent.click(await screen.findByRole('button', { name: 'New grant' }));
+
+    fireEvent.change(screen.getByPlaceholderText(/address they gave you/i), {
+      target: { value: 'globaluid-sam001' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create grant' }));
+
+    await waitFor(() => expect(created).toHaveLength(1));
+
+    // `review` — not `auto` — is the default. `auto` is the one setting on this
+    // page that discloses without the owner present, so arriving at it must take
+    // a deliberate tap rather than an unread default.
+    expect(created[0]).toMatchObject({
+      input: { granteeId: 'globaluid-sam001', queryType: 'relationship', mode: 'review' },
+    });
+  });
+
+  // The grant form and the composer are matched on (grantee, queryType), so a
+  // grant that names a kind of question the composer cannot send matches
+  // nothing — the owner would be reading live protection off a dead row.
+  it('offers the same question shapes for a grant as for an ask', async () => {
+    renderPage([
+      ...repeated(inboxOk([])),
+      ...repeated(outboxOk),
+      ...repeated(grantsOk([])),
+      ...repeated(peersOk([])),
+      ...repeated(historyOk([])),
+    ]);
+
+    await screen.findByText(/No one is waiting on you/i);
+    openTab('Who can ask me what');
+    fireEvent.click(await screen.findByRole('button', { name: 'New grant' }));
+
+    const shapes = screen.getByRole('radiogroup', { name: 'What may they ask about' });
+
+    for (const shape of COMPOSER_SHAPES) {
+      expect(within(shapes).getByRole('radio', { name: shape.label })).toBeInTheDocument();
+    }
   });
 
   it('says a linked peer cannot be asked from here rather than omitting them', async () => {

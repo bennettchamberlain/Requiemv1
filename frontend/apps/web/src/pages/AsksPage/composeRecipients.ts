@@ -147,6 +147,15 @@ export function composeRecipients(sources: RecipientSources): ComposerRecipient[
  * tier is the ceiling on what that peer could ever be told and it is the fact
  * the owner came to this page holding.
  *
+ * ═══ THE REASON NAMES THE WAY OUT, NOT JUST THE WALL ═══
+ *
+ * `sendPeerAsk` takes a `peerAccessToken` that nothing on this page can mint,
+ * so a linked peer genuinely is un-askable from here. But an owner reading only
+ * that concluded the whole feature was inert, which is not true: an account on
+ * THIS appliance is askable today, and the grant they need to make that work is
+ * one tab away. Saying so is the difference between "this is broken" and "you
+ * are on the federated path, and the local one works".
+ *
  * Pure.
  */
 export function unreachablePeers(
@@ -168,26 +177,57 @@ export function unreachablePeers(
       avatarUrl: link.avatarUrl ?? null,
       tier: peerTrustLabel(link.trustTier),
       reason:
-        'asking across boxes needs an access token from the Portal that your Companion cannot issue from this page yet',
+        'asking across boxes needs an access token from the Portal that your Companion cannot issue from this page yet — someone with an account on this Companion can be asked once you grant them under “Who can ask me what”',
     }));
 }
 
 /**
+ * The archetype vocabulary the server accepts, mirrored from
+ * `backend/apps/api/src/domains/asks/askGrammar.ts`.
+ *
+ * Duplicated rather than imported because the web app cannot import from the
+ * API package, and left as a named export so `composeRecipients.test.ts` can
+ * assert every shape below names one. That assertion is the whole point of the
+ * constant — see the block comment on {@link COMPOSER_SHAPES}.
+ */
+export const ASK_ARCHETYPES = [
+  'relationship',
+  'content',
+  'availability',
+  'attribute',
+  'identity',
+] as const;
+
+export type AskArchetype = (typeof ASK_ARCHETYPES)[number];
+
+/**
  * The kinds of question the composer offers, and the wire values behind each.
  *
- * ═══ WHY FOUR, AND WHY THESE ═══
+ * ═══ TWO OF THESE USED TO BE REJECTED OUTRIGHT ═══
  *
- * `inferAnswerForm` on the backend reads the asker's `queryType` and decides the
- * SHAPE of the answer from it: `relationship` yields a yes/no, `existence` a
- * count, `attribute` a summary, and anything it does not recognise falls through
- * to `retrieval`, which is the only form that returns item references at all.
- * That fall-through is why the list is closed rather than a free-text field: a
- * typo in a `queryType` box does not produce a narrower ask, it produces the
- * WIDEST one, silently.
+ * `queryType` is not free text on the server any more. `parseAskQueryType`
+ * closes it to {@link ASK_ARCHETYPES} and THROWS a 400 on anything else, and
+ * `createAsk` runs every ask through it. This list still carried the pre-closure
+ * vocabulary: `existence` and `photos` are not archetypes, so two of the four
+ * question shapes the composer offered failed with
+ * "queryType must be one of: relationship, content, availability, attribute,
+ * identity" the moment Send was pressed. Nothing caught it, because every test
+ * on this page mocks the mutation and never reaches the resolver.
  *
- * Each entry states its ceiling in the owner's words. `dataClass` is carried on
- * exactly one of them, and the copy on that one is careful not to promise it
- * narrows the search — `searchBreadthNote` explains at length why a class the
+ * The mapping back is not a rename — the old list confused the answer FORM with
+ * the archetype that produces it:
+ *
+ *   existence (a form) -> content     (the archetype whose form IS existence)
+ *   photos (a data class) -> content  + dataClass: 'photos'
+ *
+ * `relationship` and `attribute` were already archetypes and are unchanged.
+ *
+ * Each entry states its ceiling in the owner's words, and those words are now
+ * true of what the server will actually do: `formForArchetype` is consulted
+ * FIRST by `inferAnswerForm`, so a `content` ask is capped at a count. Note the
+ * photos entry no longer promises item references — it cannot deliver them.
+ * `dataClass` is carried on exactly one shape, and its copy is careful not to
+ * claim it narrows the search; `searchBreadthNote` explains why a class the
  * responder's box does not recognise searches everything.
  */
 export const COMPOSER_SHAPES: readonly ComposerShape[] = [
@@ -200,7 +240,7 @@ export const COMPOSER_SHAPES: readonly ComposerShape[] = [
   {
     id: 'existence',
     label: 'Do you have any…?',
-    queryType: 'existence',
+    queryType: 'content',
     ceiling: 'They can answer at most how many — never which ones.',
   },
   {
@@ -210,11 +250,17 @@ export const COMPOSER_SHAPES: readonly ComposerShape[] = [
     ceiling: 'They can answer at most with a summary.',
   },
   {
+    id: 'availability',
+    label: 'Are you free…?',
+    queryType: 'availability',
+    ceiling: 'They can answer at most with a summary — never your calendar.',
+  },
+  {
     id: 'photos',
-    label: 'Can I see your photos of…?',
-    queryType: 'photos',
+    label: 'Do you have photos of…?',
+    queryType: 'content',
     dataClass: 'photos',
     ceiling:
-      'This is the widest kind: they can send references to matching items. Naming “photos” does not narrow what their Companion searches.',
+      'They can answer at most how many — never which ones. Naming “photos” does not narrow what their Companion searches.',
   },
 ];

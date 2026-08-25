@@ -4,6 +4,7 @@ import { useQuery } from '@apollo/client';
 import { GlobalUID, usePageTitle } from '@ci/common';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { ErrorState } from '@/components/ErrorState';
 import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -51,7 +52,7 @@ export function ContentLibraryPage() {
   // `id` is the base64 global id, so each direction converts explicitly.
   const { contentId } = useParams<{ contentId: string }>();
 
-  const { data, loading, fetchMore, refetch } = useQuery(GET_CONTENTS, {
+  const { data, loading, error, fetchMore, refetch } = useQuery(GET_CONTENTS, {
     variables: { first: PAGE_SIZE },
     fetchPolicy: 'cache-and-network',
     notifyOnNetworkStatusChange: true,
@@ -113,6 +114,23 @@ export function ContentLibraryPage() {
         <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
           {loading && contents.length === 0 ? (
             <p className="text-sm text-muted-foreground">Loading content…</p>
+          ) : error && contents.length === 0 ? (
+            // `error` was not destructured, so a failed query rendered the
+            // branch below with an empty array: a blank tile area under an
+            // InfiniteListFooter reading "0 of 0 loaded · end". That footer is
+            // the worst part — it is a positive statement that the library has
+            // been fully enumerated and holds nothing.
+            <ErrorState
+              title="Could not load your content"
+              description="Your files are still here — this device could not reach them just now."
+              onRetry={() => void refetch()}
+            />
+          ) : contents.length === 0 ? (
+            // There was no empty state at ALL, even for a genuinely empty
+            // library — the grid simply rendered nothing.
+            <p className="text-sm text-muted-foreground">
+              Nothing here yet. Content appears as your sources sync and files finish parsing.
+            </p>
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">

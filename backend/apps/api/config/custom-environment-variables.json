@@ -245,6 +245,7 @@
     "planning.enabled": "ENABLE_PLANNING",
     "planning.page": "ENABLE_PLANNING_PAGE",
     "planning.emptyState": "ENABLE_PLANNING_EMPTY_STATE",
+    "self.page": "ENABLE_SELF_PAGE",
     "stats.page": "ENABLE_STATS_PAGE",
     "schedule.page": "ENABLE_SCHEDULE_PAGE",
     "forecast.page": "ENABLE_FORECAST_PAGE",

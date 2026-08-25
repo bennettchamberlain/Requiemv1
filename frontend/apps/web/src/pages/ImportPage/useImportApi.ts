@@ -317,7 +317,7 @@ export function isRunFinished(run: Pick<ImportRun, 'status'> | null | undefined)
  * generate itself.
  */
 export function useImportApi() {
-  const [{ authToken }] = useAuth();
+  const [{ authToken, authenticated }] = useAuth();
 
   /**
    * The CURRENT token, readable from long-lived closures.
@@ -337,7 +337,27 @@ export function useImportApi() {
     tokenRef.current = authToken;
   }, [authToken]);
 
-  const authHeaders = useCallback(() => ({ Authorization: `Bearer ${tokenRef.current ?? ''}` }), []);
+  /**
+   * The bearer, ONLY when there is one.
+   *
+   * This used to send `Bearer ` with an empty string on native, where
+   * `authToken` is null — the phone's durable credential is a keystore API key
+   * that `fetchJson` attaches as `x-api-key` by itself. An empty bearer is not
+   * merely useless: it is a malformed Authorization header on a request that
+   * would otherwise have authenticated fine. Built rather than ternaried for
+   * the reason `useJobsAuth` documents — the conditional form infers
+   * `{ Authorization?: undefined }`, which `exactOptionalPropertyTypes` refuses
+   * to widen.
+   */
+  const authHeaders = useCallback((): Record<string, string> => {
+    const headers: Record<string, string> = {};
+
+    if (tokenRef.current) {
+      headers.Authorization = `Bearer ${tokenRef.current}`;
+    }
+
+    return headers;
+  }, []);
 
   const listSources = useCallback(
     async (): Promise<ImportSource[]> =>
@@ -611,7 +631,16 @@ export function useImportApi() {
   // responses came back.
   return useMemo(
     () => ({
-      ready: Boolean(authToken),
+      // `authenticated`, NOT `authToken`. `authToken` is the web JWT and is
+      // null inside the Capacitor app, so every import request returned before
+      // it was made: /sources/import showed "Loading services…" forever, the
+      // drop zone stayed disabled, Inbox never scanned, History was empty and
+      // the live-import card never appeared — on a phone that was otherwise
+      // signed in. `ImportController` guards with `JwtOrApiKeyAuthGuard`, so
+      // the keystore key is a credential the server already accepts. This is
+      // the same bug `useJobsAuth` documents as fixed for Jobs; the fix was
+      // never ported here.
+      ready: Boolean(authenticated),
       listSources,
       listCatalog,
       getObjectCounts,
@@ -631,7 +660,10 @@ export function useImportApi() {
       importInbox,
     }),
     [
-      authToken,
+      // `ready` is derived from `authenticated` now, so that is what this memo
+      // has to track — keeping `authToken` here would leave `ready` stale on
+      // native, where the token never changes because there never is one.
+      authenticated,
       listSources,
       listCatalog,
       getObjectCounts,

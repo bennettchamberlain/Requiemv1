@@ -193,4 +193,46 @@ describe('DeleteTaskModal', () => {
     await waitFor(() => expect(screen.queryByText('Write the migration')).not.toBeInTheDocument());
     expect(screen.queryByText('Review the PR')).not.toBeInTheDocument();
   });
+
+  // ═══ A REFUSED DELETE DOES NOT THROW ═══
+  //
+  // `TaskResolver.deleteTask` returns `{ success: false }` with no error when
+  // the row is missing or not the caller's. The dialog used to ignore every
+  // payload and close regardless, so a refusal looked exactly like a delete —
+  // and the task came back on the next refetch with nothing said.
+  it('stays open and says so when the server refuses the delete', async () => {
+    const onClose = vi.fn();
+
+    renderWithProviders(<ListAndModal taskId="t1" onClose={onClose} />, {
+      mocks: [listMock([{ id: 't1', title: 'Write the migration' }]), deleteMock('t1', null)],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
+
+    expect(await screen.findByText(/could not delete this task/i)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    // And the row it refused to delete is still on screen.
+    expect(screen.getByText('Write the migration')).toBeInTheDocument();
+  });
+
+  // The case a bulk delete makes invisible: some rows went, some did not.
+  it('names how many survived a partial bulk failure', async () => {
+    const onClose = vi.fn();
+
+    renderWithProviders(<ListAndModal taskId="t1" onClose={onClose} extraIds={['t2']} />, {
+      mocks: [
+        listMock([
+          { id: 't1', title: 'Write the migration' },
+          { id: 't2', title: 'Review the PR' },
+        ]),
+        deleteMock('t1'),
+        deleteMock('t2', null),
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^delete$/i }));
+
+    expect(await screen.findByText(/deleted 1 of 2/i)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

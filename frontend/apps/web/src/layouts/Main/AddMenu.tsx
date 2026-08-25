@@ -251,6 +251,15 @@ export function AddMenu() {
                           const status = await trigger();
                           if (status === 'already_running') {
                             toast.info('Prediction pipeline is already running');
+                          } else if (status === 'disabled') {
+                            // `ForecastResolver.triggerHbpe` returns this literal
+                            // when the `hbpe` flag is off. It used to fall into
+                            // the unconditional `else` below and report success,
+                            // so on an appliance with HBPE turned off this told
+                            // the owner a one-hour pipeline was running and to
+                            // watch Forecast. Nothing was enqueued, Forecast
+                            // never changes, and they wait an hour to find out.
+                            toast.info('Prediction is turned off on this Companion.');
                           } else if (status === 'triggered') {
                             toast.success(
                               'Prediction started — this can take about an hour. Watch Forecast for progress.',
@@ -286,13 +295,22 @@ export function AddMenu() {
         onSubmit={handleUpload}
       />
 
-      <CaptureModal
-        open={isCaptureModalOpen}
-        onClose={() => {
-          resetUploader();
-          closeCaptureModal();
-        }}
-      />
+      {/* Rendered conditionally, not merely `open={false}`. `open` guards the
+          modal's OUTPUT, not its hooks: DesktopCaptureModal mounts
+          `useChatRequester` and runs a vision-capability effect that fetches
+          /api/llm/models/capabilities as soon as it exists. AddMenu is in the
+          desktop header AND the phone top bar, so every authenticated page load
+          was paying for a dialog nobody opened — and repeating it whenever the
+          selected model changed. SecondaryNavigation already does it this way. */}
+      {isCaptureModalOpen && (
+        <CaptureModal
+          open
+          onClose={() => {
+            resetUploader();
+            closeCaptureModal();
+          }}
+        />
+      )}
 
       <AddPersonModal open={isAddPersonModalOpen} onClose={closeAddPersonModal} />
 

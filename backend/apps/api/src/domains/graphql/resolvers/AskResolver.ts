@@ -53,9 +53,16 @@ import { GlobalUID } from '../types/GlobalUID';
 /**
  * GraphQL surface for the interpersonal ask feature (epic #1712, Phase 0). Every
  * operation is signed-in-only ({@link JwtOrApiKeyAuthGuard}) and gated by the
- * `ask` feature flag (default off) — while the flag is off the surface behaves
- * as if absent (mutations return `{ success: false }`, queries return empty),
- * mirroring how the shared-search surface stays dark behind `shared.search`.
+ * `ask` feature flag — while the flag is off the surface behaves as if absent
+ * (mutations return `{ success: false }`, queries return empty), mirroring how
+ * the shared-search surface stays dark behind `shared.search`.
+ *
+ * The flag ships ON (`config/default.json`). This comment used to say "default
+ * off", which had been false since the flag was set and is the more dangerous
+ * direction for a consent surface to be wrong in: an operator reading it would
+ * believe the ask endpoints were dark on a box where every one of them answers.
+ * If the default changes, change it here too — a gate whose documentation
+ * disagrees with its configuration is a gate nobody can reason about.
  *
  * The `answering`/answered completion of an ask is produced HERE, by
  * {@link disclose} — the run-as-owner executor plus the disclosure filter. Two

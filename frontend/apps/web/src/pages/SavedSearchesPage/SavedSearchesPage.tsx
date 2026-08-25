@@ -6,6 +6,7 @@ import { Button } from '@ci/shadcn';
 import { Plus, Search } from '@ci/shadcn/icons';
 import { Link } from 'react-router-dom';
 
+import { ErrorState } from '@/components/ErrorState';
 import { SavedSearchIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { DropdownProvider } from '@/components/SearchBox/useDropdown';
@@ -34,7 +35,7 @@ const GET_SAVED_SEARCHES = gql(`
 export function SavedSearchesPage() {
   usePageTitle('Saved Searches - Companion Intelligence');
 
-  const { data, loading } = useQuery(GET_SAVED_SEARCHES, {
+  const { data, loading, error, refetch } = useQuery(GET_SAVED_SEARCHES, {
     variables: { first: 300 },
   });
 
@@ -83,6 +84,19 @@ export function SavedSearchesPage() {
 
   if (loading) {
     content = <LoadingPage />;
+  } else if (error && savedSearches.length === 0) {
+    // `error` was never destructured, so a failed query fell through to the
+    // empty state below — a rail destination positively telling the owner they
+    // have saved nothing, and inviting them to recreate work that still exists.
+    // The empty state is a CLAIM about their data; only make it when the data
+    // actually arrived.
+    content = (
+      <ErrorState
+        title="Could not load your saved searches"
+        description="They are still saved — this device could not reach them just now."
+        onRetry={() => void refetch()}
+      />
+    );
   } else if (savedSearches.length === 0) {
     content = (
       <EmptyState
