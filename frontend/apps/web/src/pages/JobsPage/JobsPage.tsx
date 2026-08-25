@@ -5,6 +5,7 @@ import { Accordion, Badge, Button, Card, Skeleton, cn } from '@ci/shadcn';
 import { AlertTriangle, RefreshCcw } from '@ci/shadcn/icons';
 
 import { PageContent } from '@/components/layout';
+import { PullToRefresh } from '@/components/PullToRefresh';
 
 import { describeCron } from './cronDescriptor';
 import { describeCronExpression } from './cronSchedule';
@@ -47,6 +48,7 @@ export function JobsPage() {
 
   const [filters, setFilters] = useState<JobFilters>(DEFAULT_JOB_FILTERS);
   const [windowHours, setWindowHours] = useState(24);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Phone pages of 50 cards are unreadable; desktop stays at 50. The limit is
   // a server page size, so it has to live on the filters the list hook sends.
@@ -66,12 +68,29 @@ export function JobsPage() {
     setFilters((current) => ({ ...current, ...next }));
   }, []);
 
+  /**
+   * Refetch every card, and RESOLVE when they have all answered.
+   *
+   * Returning the promise is what makes the swipe-down gesture legible:
+   * `PullToRefresh` holds its spinner until this settles, and a version that
+   * returned `void` would flash it away on the next frame — indistinguishable,
+   * on a phone, from the gesture not being wired at all.
+   *
+   * Depends on the four `refresh` callbacks rather than the hook results, which
+   * are fresh objects on every poll tick. A `refreshAll` that changed identity
+   * every few seconds would keep re-registering the gesture's touch listeners
+   * underneath the finger.
+   */
   const refreshAll = useCallback(() => {
-    void dashboard.refresh();
-    void list.refresh();
-    void history.refresh();
-    void deadLetters.refresh();
-  }, [dashboard, list, history, deadLetters]);
+    setRefreshing(true);
+
+    return Promise.all([
+      dashboard.refresh(),
+      list.refresh(),
+      history.refresh(),
+      deadLetters.refresh(),
+    ]).finally(() => setRefreshing(false));
+  }, [dashboard.refresh, list.refresh, history.refresh, deadLetters.refresh]);
 
   const jobsTable = (
     <JobsTable
@@ -108,8 +127,11 @@ export function JobsPage() {
   );
 
   return (
-    <>
-      <PageContent>
+    // Swipe-down refetches the whole page, the way People, Places and the
+    // Memory list already do. `overscroll-y-contain` keeps the drag inside this
+    // scroller so WKWebView bounces nothing behind it while the pull is held.
+    <PullToRefresh onRefresh={refreshAll}>
+      <PageContent className="overscroll-y-contain">
         <div className="flex flex-col gap-3">
           {/* Above Queue Activity, because it outranks it while it exists.
 
@@ -131,6 +153,7 @@ export function JobsPage() {
           <SummaryCard
             summary={dashboard.data?.summary}
             loading={dashboard.loading}
+            refreshing={refreshing || dashboard.refreshing}
             error={dashboard.error}
             staleSince={dashboard.staleSince}
             updatedAt={dashboard.updatedAt}
@@ -158,13 +181,15 @@ export function JobsPage() {
           )}
         </div>
       </PageContent>
-    </>
+    </PullToRefresh>
   );
 }
 
 type SummaryCardProps = {
   summary?: JobsDashboardResponse['summary'];
   loading: boolean;
+  /** A refetch is running over figures that are still on screen. */
+  refreshing: boolean;
   error: string | null;
   staleSince: Date | null;
   updatedAt: Date | null;
@@ -175,6 +200,7 @@ type SummaryCardProps = {
 function SummaryCard({
   summary,
   loading,
+  refreshing,
   error,
   staleSince,
   updatedAt,
@@ -220,14 +246,26 @@ function SummaryCard({
               : 'Current job workload'}
           </Card.Description>
         </div>
+        {/* Spins in place. The figures below it stay exactly where they are —
+            a refresh that blanked the card is what sent an operator to a page
+            with nothing on it every time they asked it a question. */}
         <Button
           variant="outline"
           size="sm"
           onClick={onRefresh}
+          aria-busy={refreshing || undefined}
           className={phone ? 'shrink-0' : 'w-full md:w-auto'}
         >
-          <RefreshCcw className={phone ? 'h-4 w-4' : 'mr-2 h-4 w-4'} />
-          {phone ? <span className="sr-only">Refresh</span> : 'Refresh'}
+          <RefreshCcw
+            className={cn(phone ? 'h-4 w-4' : 'mr-2 h-4 w-4', refreshing && 'animate-spin')}
+          />
+          {phone ? (
+            <span className="sr-only">{refreshing ? 'Refreshing' : 'Refresh'}</span>
+          ) : refreshing ? (
+            'Refreshing'
+          ) : (
+            'Refresh'
+          )}
         </Button>
       </Card.Header>
       <Card.Content className={cn('space-y-3', cardPad(phone))}>

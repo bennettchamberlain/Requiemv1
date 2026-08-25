@@ -2,8 +2,9 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Button, Card } from '@ci/shadcn';
-import { RefreshCw, Send, X } from '@ci/shadcn/icons';
+import { RefreshCw, Send, Sparkles, X } from '@ci/shadcn/icons';
 import { useNavigate, useParams } from 'react-router-dom';
+import { v7 as uuid7 } from 'uuid';
 
 import { useThreadService } from '@/api';
 import { Chat, type FormData } from '@/components/Chat';
@@ -11,6 +12,7 @@ import { useChatRequester, useCounter, useModel } from '@/hooks';
 import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } from '@/lib/agentChat';
 
 import { ChatSidebar } from './ChatSidebar';
+import { STARTER_PROMPTS } from './starterPrompts';
 import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
 
@@ -167,6 +169,37 @@ function ChatPageContent() {
     [refetchThreads],
   );
 
+  /**
+   * Tapping a starter ask has to *send* it, not just prefill the composer. The
+   * composer's own submit path lives inside `Chat` and is not reachable from
+   * here, so we echo the user turn into `messages` ourselves — that both shows
+   * the bubble and flips `Chat` out of its empty state — and then fire the same
+   * request the composer would have.
+   */
+  const handleStarterPrompt = useCallback(
+    (prompt: string) => {
+      if (selectedModel == null || chatRequestLoading) {
+        return;
+      }
+
+      setInitialMessages((prev) => [
+        ...prev,
+        {
+          id: uuid7(),
+          model: selectedModel,
+          role: 'user',
+          content: prompt,
+          mimetype: null,
+          toolCalls: null,
+          canceled: false,
+        },
+      ]);
+
+      void submitChatRequest({ message: prompt });
+    },
+    [chatRequestLoading, selectedModel, submitChatRequest],
+  );
+
   const loading = threadsLoading || threadLoading || chatRequestLoading;
   const isSubmitDisabled = selectedModel == null;
   const inputPlaceholder =
@@ -203,14 +236,33 @@ function ChatPageContent() {
     );
   } else if (resolvedThreadId.current == null) {
     emptyState = (
-      <div className="flex w-full max-w-xl flex-col items-center px-4 text-gray-500">
-        <div className="mb-4 mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-stone-100">
+      // The ten starters overflow a phone viewport, so this column scrolls on
+      // its own rather than pushing the composer off screen. `min-h-0` lets it
+      // shrink below its content height inside Chat's centred flex column.
+      <div className="flex min-h-0 w-full max-w-xl flex-col items-center overflow-y-auto px-2 text-gray-500">
+        <div className="mb-4 mx-auto flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-stone-100">
           <Send className="relative -left-0.5 top-0.5 h-8 w-8 text-zinc-400" />
         </div>
         <p className="mb-1 text-sm">Start a conversation with your Companion</p>
-        <p className="text-xs text-gray-400">
+        <p className="mb-4 text-xs text-gray-400">
           Ask about Memory, Plan to-dos, Forecast, or Brief — or attach a file
         </p>
+
+        <ul aria-label="Suggested asks" className="w-full space-y-1.5 pb-1 text-left">
+          {STARTER_PROMPTS.map((prompt) => (
+            <li key={prompt}>
+              <button
+                type="button"
+                disabled={isSubmitDisabled}
+                onClick={() => handleStarterPrompt(prompt)}
+                className="flex w-full items-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-left text-[13px] text-foreground hover:border-primary/50 hover:bg-muted/50 disabled:opacity-60"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+                <span className="min-w-0 flex-1">{prompt}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
     );
   }

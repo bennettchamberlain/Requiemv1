@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Camera } from '@ci/capture';
-import { FetchJsonError, fetchJson, useDeviceLayout } from '@ci/common';
+import { FetchJsonError, fetchJson, isNativePlatform, useDeviceLayout } from '@ci/common';
 import { Button, Dialog, cn, IconButton, Popover, useToast } from '@ci/shadcn';
 import {
   Camera as CameraIcon,
@@ -23,7 +23,7 @@ import { Chat, type FormData } from '@/components/Chat';
 import { InlineModal } from '@/components/InlineModal';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useAuth, useChatRequester, useModel } from '@/hooks';
-import { capturePhoto, captureVideo, chooseFiles, chooseFromLibrary } from '@/lib/captureMedia';
+import { captureFromCamera, chooseFiles, chooseFromLibrary, type CameraMode } from '@/lib/captureMedia';
 import { enqueueMemoryUpload } from '@/lib/memoryUploadQueue';
 import { pickFromUserDevice, pickPhotosFromLibrary } from '@/lib/pickPhotosFromLibrary';
 import { canRecordAudio, startAudioRecording, type AudioRecordingSession } from '@/lib/recordAudio';
@@ -35,6 +35,16 @@ interface Props {
 }
 
 type CaptureMode = 'photo' | 'video' | 'thing';
+
+/** Phone Capture: one native camera (photo/video) plus the non-camera sources. */
+type CaptureSheetMode = 'photo' | 'video' | 'audio' | 'files';
+
+const CAPTURE_SHEET_MODES: { mode: CaptureSheetMode; icon: typeof CameraIcon; labelKey: string }[] = [
+  { mode: 'photo', icon: CameraIcon, labelKey: 'CAPTURE_PHOTO' },
+  { mode: 'video', icon: Video, labelKey: 'CAPTURE_VIDEO' },
+  { mode: 'audio', icon: Mic, labelKey: 'CAPTURE_AUDIO' },
+  { mode: 'files', icon: FileUp, labelKey: 'CAPTURE_FILES' },
+];
 
 interface ModelCapabilitiesResponse {
   vision: boolean;
@@ -533,6 +543,8 @@ function MobileMemoryCapture({ open = false, onClose }: Props) {
   const [{ selectedVisionModel: selectedModel }] = useModel();
   const { toast } = useToast();
   const [recording, setRecording] = useState(false);
+  const [mode, setMode] = useState<CaptureSheetMode>('photo');
+  const cameraOpenedRef = useRef(false);
 
   const ingest = useCallback(
     (files: File[], extra?: { inventoryCapture?: boolean }) => {
@@ -560,21 +572,16 @@ function MobileMemoryCapture({ open = false, onClose }: Props) {
     [authToken, selectedModel, t, toast],
   );
 
-  const handlePhoto = useCallback(async () => {
-    const file = await capturePhoto();
+  const handleCamera = useCallback(
+    async (cameraMode?: CameraMode) => {
+      const file = await captureFromCamera(cameraMode);
 
-    if (file) {
-      ingest([file]);
-    }
-  }, [ingest]);
-
-  const handleVideo = useCallback(async () => {
-    const file = await captureVideo();
-
-    if (file) {
-      ingest([file]);
-    }
-  }, [ingest]);
+      if (file) {
+        ingest([file]);
+      }
+    },
+    [ingest],
+  );
 
   const handleLibrary = useCallback(async () => {
     ingest(await chooseFromLibrary());
@@ -598,11 +605,50 @@ function MobileMemoryCapture({ open = false, onClose }: Props) {
     void handleAudioFiles();
   }, [handleAudioFiles]);
 
+  // The mode bar both selects and runs: a phone tap should not cost two taps to
+  // reach the same place the old tiles reached in one.
+  const handleMode = useCallback(
+    (next: CaptureSheetMode) => {
+      setMode(next);
+
+      switch (next) {
+        case 'photo':
+        case 'video':
+          void handleCamera(next);
+
+          return;
+        case 'audio':
+          handleStartAudio();
+
+          return;
+        case 'files':
+          void handleFiles();
+      }
+    },
+    [handleCamera, handleFiles, handleStartAudio],
+  );
+
   useEffect(() => {
     if (!open) {
       setRecording(false);
+      setMode('photo');
+      cameraOpenedRef.current = false;
+
+      return;
     }
-  }, [open]);
+
+    // Capture is a camera first: on the phone it opens the system camera itself
+    // (no mode, so that camera keeps its own Photo/Video toggle) and the mode bar
+    // is what you come back to. Browsers block unprompted file dialogs, so the
+    // web path waits for a tap instead.
+    if (cameraOpenedRef.current || !isNativePlatform()) {
+      return;
+    }
+
+    cameraOpenedRef.current = true;
+
+    void handleCamera();
+  }, [handleCamera, open]);
 
   return (
     <InlineCaptureShell open={open} onClose={onClose} title={t('CAPTURE_TITLE')}>
@@ -615,13 +661,7 @@ function MobileMemoryCapture({ open = false, onClose }: Props) {
           onCancel={() => setRecording(false)}
         />
       ) : (
-        <CaptureActions
-          onPhoto={() => void handlePhoto()}
-          onVideo={() => void handleVideo()}
-          onLibrary={() => void handleLibrary()}
-          onFiles={() => void handleFiles()}
-          onAudio={handleStartAudio}
-        />
+        <CaptureActions mode={mode} onMode={handleMode} onLibrary={() => void handleLibrary()} />
       )}
     </InlineCaptureShell>
   );
@@ -645,8 +685,8 @@ function InlineCaptureShell({
   }
 
   return createPortal(
-    <div data-testid="capture-shell" className="fixed inset-0 z-[100] bg-zinc-950 text-white">
-      <div className="flex items-center justify-between px-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
+    <div data-testid="capture-shell" className="fixed inset-0 z-[100] flex flex-col bg-zinc-950 text-white">
+      <div className="flex shrink-0 items-center justify-between px-2 pt-[max(0.75rem,var(--safe-area-top))]">
         <h1 className="px-3 text-lg font-semibold">{title}</h1>
         <IconButton
           label={t('COMMON_CLOSE')}
@@ -658,72 +698,80 @@ function InlineCaptureShell({
           <X />
         </IconButton>
       </div>
-      {children}
+      {/* Children own the leftover height, so the sheet has no dead chrome under them. */}
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </div>,
     document.body,
   );
 }
 
 function CaptureActions({
-  onPhoto,
-  onVideo,
+  mode,
+  onMode,
   onLibrary,
-  onFiles,
-  onAudio,
 }: {
-  onPhoto: () => void;
-  onVideo: () => void;
+  mode: CaptureSheetMode;
+  onMode: (mode: CaptureSheetMode) => void;
   onLibrary: () => void;
-  onFiles: () => void;
-  onAudio: () => void;
 }) {
   const { t } = useTranslation();
 
-  return (
-    <div className="flex flex-col h-[calc(100%-3rem)] px-5 pb-[max(1.5rem,var(--safe-area-bottom))]">
-      <p className="text-sm text-zinc-400 px-1 mb-6">{t('CAPTURE_SUBTITLE')}</p>
+  const active = CAPTURE_SHEET_MODES.find((entry) => entry.mode === mode) ?? CAPTURE_SHEET_MODES[0];
+  const ActiveIcon = active.icon;
 
-      <div className="grid grid-cols-2 gap-3">
-        <ActionTile icon={CameraIcon} label={t('CAPTURE_PHOTO')} onClick={onPhoto} />
-        <ActionTile icon={Video} label={t('CAPTURE_VIDEO')} onClick={onVideo} />
-        <ActionTile icon={Mic} label={t('CAPTURE_AUDIO')} onClick={onAudio} />
-        <ActionTile icon={FileUp} label={t('CAPTURE_FILES')} onClick={onFiles} />
+  return (
+    <div className="flex flex-col h-full px-5 pb-[max(1.5rem,var(--safe-area-bottom))]">
+      <p className="text-sm text-zinc-400 px-1 mb-4">{t('CAPTURE_SUBTITLE')}</p>
+
+      <div
+        role="group"
+        aria-label={t('CAPTURE_TITLE')}
+        data-testid="capture-mode-bar"
+        className="flex shrink-0 items-center gap-1 rounded-2xl bg-white/10 p-1"
+      >
+        {CAPTURE_SHEET_MODES.map(({ mode: value, icon: Icon, labelKey }) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={value === mode}
+            onClick={() => onMode(value)}
+            className={cn(
+              'flex flex-1 flex-col items-center gap-1 rounded-xl py-2 text-xs font-medium transition-colors',
+              value === mode ? 'bg-white text-zinc-900' : 'text-zinc-300 active:bg-white/10',
+            )}
+          >
+            <Icon className="h-5 w-5" strokeWidth={1.5} />
+            {t(labelKey)}
+          </button>
+        ))}
       </div>
+
+      {/* The active mode takes the leftover height, so Capture fills the sheet
+          instead of stacking a short block of tiles over empty chrome. */}
+      <button
+        type="button"
+        data-testid="capture-stage"
+        onClick={() => onMode(mode)}
+        className="mt-3 flex flex-1 min-h-32 flex-col items-center justify-center gap-3 rounded-3xl bg-white/10 hover:bg-white/15 active:scale-[0.99] transition-transform text-white"
+      >
+        <ActiveIcon className="h-12 w-12" strokeWidth={1.25} />
+        <span className="text-lg font-semibold">{t('CAPTURE_OPEN')}</span>
+        <span className="text-sm text-zinc-400">{t(active.labelKey)}</span>
+      </button>
 
       <Button
         variant="secondary"
-        className="mt-4 w-full h-12 rounded-2xl bg-white/10 text-white hover:bg-white/15 border-0"
+        className="mt-3 w-full h-12 rounded-2xl bg-white/10 text-white hover:bg-white/15 border-0"
         onClick={onLibrary}
       >
         <Images className="h-4 w-4" />
         {t('CAPTURE_LIBRARY')}
       </Button>
 
-      <p className="mt-auto pt-6 text-center text-xs text-zinc-500" data-testid="capture-background-hint">
+      <p className="pt-4 text-center text-xs text-zinc-500" data-testid="capture-background-hint">
         {t('CAPTURE_BACKGROUND_HINT')}
       </p>
     </div>
-  );
-}
-
-function ActionTile({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: typeof CameraIcon;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex flex-col items-center justify-center gap-3 h-32 rounded-2xl bg-white/10 hover:bg-white/15 active:scale-[0.98] transition-transform text-white"
-    >
-      <Icon className="h-8 w-8" strokeWidth={1.5} />
-      <span className="text-sm font-medium">{label}</span>
-    </button>
   );
 }
 

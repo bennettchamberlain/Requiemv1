@@ -1,5 +1,5 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
 
@@ -22,6 +22,7 @@ import type { JobListItem, JobListResponse } from './useJobsList';
 const dashboardState = {
   data: null as JobsDashboardResponse | null,
   loading: false,
+  refreshing: false,
   error: null as string | null,
   staleSince: null as Date | null,
   updatedAt: null as Date | null,
@@ -214,6 +215,7 @@ function render(
   Object.assign(dashboardState, {
     data: options.dashboard ?? dashboard(),
     loading: false,
+    refreshing: false,
     error: options.error ?? null,
     staleSince: options.staleSince ?? null,
     updatedAt: new Date('2026-08-17T00:05:00.000Z'),
@@ -634,6 +636,138 @@ describe('JobsPage dead letters', () => {
     fireEvent.click(screen.getByRole('button', { name: /Refresh/ }));
 
     expect(deadLetterState.refresh).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Refreshing, by gesture and by button.
+ *
+ * The page had no swipe-down at all while People, Places and the Memory list
+ * all had one, and its Refresh button gave back nothing to look at — on a
+ * dashboard whose slowest card is the whole reason someone reached for it.
+ */
+describe('JobsPage refresh', () => {
+  beforeEach(() => {
+    for (const state of [dashboardState, listState, historyState, deadLetterState]) {
+      state.refresh.mockReset();
+    }
+  });
+
+  afterEach(() => {
+    setViewport(false);
+    Object.assign(dashboardState, { refreshing: false });
+  });
+
+  it('refreshes every card on a swipe down', async () => {
+    setViewport(true);
+    render();
+
+    await screen.findByTestId('pull-to-refresh');
+
+    const scroller = document.querySelector('[data-page-scroll]');
+
+    if (!(scroller instanceof HTMLElement)) {
+      throw new Error('Jobs has no page scroller for the gesture to hang off');
+    }
+
+    fireEvent.touchStart(scroller, { touches: [{ identifier: 0, clientY: 10 }] });
+    fireEvent.touchMove(scroller, { touches: [{ identifier: 0, clientY: 160 }] });
+    fireEvent.touchEnd(scroller);
+
+    await waitFor(() => expect(dashboardState.refresh).toHaveBeenCalled());
+    expect(listState.refresh).toHaveBeenCalled();
+    expect(historyState.refresh).toHaveBeenCalled();
+    expect(deadLetterState.refresh).toHaveBeenCalled();
+  });
+
+  it('holds the gesture spinner until every card has answered', async () => {
+    setViewport(true);
+
+    let settle = () => {};
+
+    dashboardState.refresh.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+
+    render();
+
+    await screen.findByTestId('pull-to-refresh');
+
+    const scroller = document.querySelector('[data-page-scroll]') as HTMLElement;
+
+    fireEvent.touchStart(scroller, { touches: [{ identifier: 0, clientY: 10 }] });
+    fireEvent.touchMove(scroller, { touches: [{ identifier: 0, clientY: 160 }] });
+    fireEvent.touchEnd(scroller);
+
+    // A `refreshAll` that returned void — which is what it did — flashed this
+    // away on the next frame, which on a phone is indistinguishable from a
+    // gesture that was never wired up.
+    await waitFor(() =>
+      expect(screen.getByTestId('pull-to-refresh')).toHaveAttribute('aria-busy', 'true'),
+    );
+
+    await act(async () => {
+      settle();
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('pull-to-refresh')).not.toHaveAttribute('aria-busy'),
+    );
+  });
+
+  it('spins the button while a refresh runs and leaves the figures up', async () => {
+    let settle = () => {};
+
+    dashboardState.refresh.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+
+    render();
+
+    fireEvent.click(screen.getByRole('button', { name: /Refresh/ }));
+
+    const button = screen.getByRole('button', { name: /Refresh/ });
+
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    // The whole point of #2320: the previous snapshot never leaves the screen.
+    expect(screen.getAllByText('12,716').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    await act(async () => {
+      settle();
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Refresh/ })).not.toHaveAttribute('aria-busy'),
+    );
+  });
+
+  it('reports the mount refetch behind a restored snapshot as a spinner, not a skeleton', () => {
+    // What a revisit looks like: cached figures already on screen, and a fetch
+    // in flight underneath them. `loading` — which draws the skeleton — is
+    // false precisely because there is something to show.
+    Object.assign(dashboardState, {
+      data: dashboard(),
+      loading: false,
+      refreshing: true,
+      error: null,
+      staleSince: null,
+      updatedAt: new Date('2026-08-17T00:05:00.000Z'),
+    });
+    Object.assign(listState, { data: list(), loading: false, error: null });
+    Object.assign(historyState, { data: null, loading: false, error: null });
+    Object.assign(deadLetterState, { groups: [], total: 0, loading: false, error: null });
+
+    renderWithProviders(<JobsPage />);
+
+    expect(screen.getByRole('button', { name: /Refresh/ })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getAllByText('12,716').length).toBeGreaterThan(0);
   });
 });
 

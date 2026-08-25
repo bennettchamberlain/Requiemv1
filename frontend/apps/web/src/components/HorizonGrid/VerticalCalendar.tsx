@@ -8,8 +8,10 @@ import {
   CLASS_LABEL,
   chipBorder,
   chipFill,
+  classColor,
   classifyEvent,
   eventColor,
+  normalizeClass,
   sourceOf,
 } from '@/lib/activityPalette';
 import {
@@ -21,18 +23,21 @@ import {
 import { SCHEDULE_SCROLL_ATTR } from '@/lib/schedulePointerDrag';
 
 import { EventPeek } from './EventPeek';
+import { addDays, formatClock, sameLocalDay, startOfLocalDay } from './nowNext';
+import { foldMicroClusters, packItemLanes, type PackedItem } from './scheduleClusters';
 import {
-  addDays,
+  RHYTHM_NOISE_FLOOR,
+  cellOpacity,
   describes,
   dropInstant,
   eventUrl,
   movedStart,
-  rhythmCells,
+  rhythmClaims,
+  rhythmLabel,
   spanForDay,
-  startOfLocalDay,
-} from './HorizonGrid';
-import { formatClock, sameLocalDay } from './nowNext';
-import { foldMicroClusters, packItemLanes, type PackedItem } from './scheduleClusters';
+  topClusters,
+  utcDateKey,
+} from './scheduleGeometry';
 import { useScheduleDropTarget } from './useScheduleDropTarget';
 
 const MINUTES_PER_DAY = 24 * 60;
@@ -40,7 +45,9 @@ const HOURS_PER_DAY = 24;
 const HOUR_HEIGHT_PX = 52;
 const GRID_HEIGHT_PX = HOUR_HEIGHT_PX * HOURS_PER_DAY;
 const AXIS_HOURS = Array.from({ length: HOURS_PER_DAY }, (_, hour) => hour);
-const RHYTHM_NOISE_FLOOR = 0.05;
+
+/** Gap between rhythm cells, in px — the thing that makes them read as texture. */
+const RHYTHM_CELL_GAP_PX = 2;
 
 function formatHour(hour: number): string {
   return new Date(2000, 0, 1, hour).toLocaleTimeString([], { hour: 'numeric' });
@@ -77,10 +84,6 @@ function blockLabel(event: ScheduleEvent, colorMode: ColorMode): string {
   }
 
   return parts.join(', ');
-}
-
-function cellOpacity(intensity: number): number {
-  return 0.08 + 0.22 * Math.min(intensity, 1);
 }
 
 /** Ratio down a day column for a pointer event, from the column's own box. */
@@ -367,10 +370,108 @@ function AllDayChip({ event, colorMode }: { event: ScheduleEvent; colorMode: Col
   );
 }
 
+interface RhythmStripProps {
+  dayStart: Date;
+  lookup: (utcDate: string) => RhythmDay | undefined;
+  colorMode: ColorMode;
+}
+
+/**
+ * Pattern rhythm (HBPE) for one day, stood on end beside the hours.
+ *
+ * The same reading the horizon draws as a lane, rotated to match this geometry:
+ * one cell per local hour, the colour of the behaviour that claims it, the
+ * weight in the ink. It sits immediately LEFT of the time labels rather than
+ * behind the day column for two reasons — a wash under committed time is read
+ * as a highlight on the chips sitting over it, and a rhythm cell only says
+ * something once you can see which o'clock it belongs to.
+ *
+ * Cells are positioned rather than flexed so every one lands exactly on the
+ * hour rule it describes; a gapped flex column drifts by a cell over 24 hours.
+ */
+function RhythmStrip({ dayStart, lookup, colorMode }: RhythmStripProps) {
+  const claims = useMemo(() => rhythmClaims(dayStart, lookup), [dayStart, lookup]);
+  const clusters = useMemo(() => topClusters(lookup(utcDateKey(dayStart))), [dayStart, lookup]);
+  const hasRhythm = claims.some((claim) => claim.weight >= RHYTHM_NOISE_FLOOR);
+  const label = rhythmLabel(dayStart, clusters);
+
+  const strip = (
+    <div
+      data-testid="vertical-rhythm-strip"
+      className="relative w-2 shrink-0 rounded-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={{ height: GRID_HEIGHT_PX }}
+      // The cells carry no text, so collapsing them to one named image loses
+      // nothing and gains a name. A strip with no signal is decoration.
+      {...(hasRhythm ? { role: 'img', 'aria-label': label, tabIndex: 0 } : { 'aria-hidden': true })}
+    >
+      {claims.map((claim, hour) => {
+        const lit = claim.weight >= RHYTHM_NOISE_FLOOR;
+
+        return (
+          <div
+            key={hour}
+            className={cn('absolute inset-x-0 rounded-[2px]', !lit && 'bg-foreground/[0.06]')}
+            style={{
+              top: `${(hour / HOURS_PER_DAY) * 100}%`,
+              height: `calc(${100 / HOURS_PER_DAY}% - ${RHYTHM_CELL_GAP_PX}px)`,
+              ...(lit
+                ? {
+                    // Type mode lets the cell wear the class of the behaviour
+                    // that claims it. Source mode has nothing to say about a
+                    // prediction — it came from no calendar — so it stays on
+                    // the theme colour rather than inventing an answer.
+                    backgroundColor: colorMode === 'type' ? classColor(claim.l0Class) : 'var(--primary)',
+                    opacity: cellOpacity(claim.weight),
+                  }
+                : {}),
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+
+  if (!hasRhythm) {
+    return strip;
+  }
+
+  return (
+    <EventPeek
+      label={label}
+      side="right"
+      content={
+        <div className="w-52 space-y-1 text-left">
+          <p className="text-xs font-medium">
+            {dayStart.toLocaleDateString([], { weekday: 'long' })} — usually
+          </p>
+          {clusters.map((cluster) => (
+            <div key={cluster.clusterId} className="flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5">
+                {colorMode === 'type' && (
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 shrink-0 rounded-[2px]"
+                    style={{ backgroundColor: classColor(normalizeClass(cluster.l0Class)) }}
+                  />
+                )}
+                <span className="truncate text-[10px] opacity-75">{cluster.name}</span>
+              </span>
+              <span className="shrink-0 text-[10px] tabular-nums opacity-60">
+                {Math.round(cluster.pOccur * 100)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      }
+    >
+      {strip}
+    </EventPeek>
+  );
+}
+
 interface DayLaneProps {
   dayStart: Date;
   dayEvents: ScheduleEvent[];
-  lookup: (utcDate: string) => RhythmDay | undefined;
   isToday: boolean;
   nowPct: number | null;
   colorMode: ColorMode;
@@ -381,7 +482,6 @@ interface DayLaneProps {
 const DayLane = memo(function DayLane({
   dayStart,
   dayEvents,
-  lookup,
   isToday,
   nowPct,
   colorMode,
@@ -401,7 +501,6 @@ const DayLane = memo(function DayLane({
   const packed = useMemo(() => foldMicroClusters(timedSpans), [timedSpans]);
   const lanes = useMemo(() => packItemLanes(packed), [packed]);
   const laneCount = Math.max(1, ...lanes.map((lane) => lane + 1));
-  const intensities = useMemo(() => rhythmCells(dayStart, lookup), [dayStart, lookup]);
   const dayLabel = dayStart.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   const acceptsDrops = Boolean(onDropCandidate ?? onMoveEvent);
 
@@ -494,22 +593,6 @@ const DayLane = memo(function DayLane({
           : undefined
       }
     >
-      {intensities.map((weight, hour) =>
-        weight >= RHYTHM_NOISE_FLOOR ? (
-          <div
-            key={hour}
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0"
-            style={{
-              top: `${(hour / HOURS_PER_DAY) * 100}%`,
-              height: `${100 / HOURS_PER_DAY}%`,
-              backgroundColor: 'var(--primary)',
-              opacity: cellOpacity(weight),
-            }}
-          />
-        ) : null,
-      )}
-
       {AXIS_HOURS.map((hour) => (
         <div
           key={hour}
@@ -596,9 +679,11 @@ interface VerticalCalendarProps {
  * The week (or a single day), as hours-down / days-across.
  *
  * This is the conventional calendar geometry — Google Calendar, Apple Calendar,
- * Outlook — complementary to {@link HorizonGrid}'s days-down / time-across.
- * Timed blocks sit on a 24-hour column; all-day rows sit above it, outside the
- * scroll, so a busy all-day lane cannot shove one day's hours out of line.
+ * Outlook. Timed blocks sit on a 24-hour column; all-day rows sit above it,
+ * outside the scroll, so a busy all-day lane cannot shove one day's hours out
+ * of line. This is the one schedule surface on the page: what the day is
+ * predicted to hold rides in as a {@link RhythmStrip} beside the time axis
+ * rather than as a second view of the same week.
  */
 export function VerticalCalendar({
   start,
@@ -682,6 +767,11 @@ export function VerticalCalendar({
     [onMoveEvent],
   );
 
+  // One rhythm strip serves the whole gutter, so it has to name a day: the one
+  // the header is already highlighting. On a phone that is the only column
+  // there is; on a week, tapping a weekday moves both the highlight and this.
+  const focusDay = dayStarts.find((day) => sameLocalDay(day, selectedDay ?? today)) ?? dayStarts[0];
+
   return (
     <div
       role="group"
@@ -692,7 +782,7 @@ export function VerticalCalendar({
       {/* One-column views (phone Calendar) already name the day in WeekDayChips. */}
       {days > 1 ? (
         <div className="flex min-w-0 border-b border-border">
-          <div className="w-14 shrink-0" />
+          <div className="w-16 shrink-0" />
           {dayStarts.map((dayStart) => {
             const isToday = sameLocalDay(dayStart, today);
             const isSelected = sameLocalDay(dayStart, selectedDay ?? today);
@@ -739,7 +829,7 @@ export function VerticalCalendar({
       ) : null}
 
       <div className="flex min-w-0 border-b border-border">
-        <div className="flex w-14 shrink-0 items-start justify-end pr-1.5 pt-1.5">
+        <div className="flex w-16 shrink-0 items-start justify-end pr-1.5 pt-1.5">
           <span className="text-[10px] leading-5 text-muted-foreground">All day</span>
         </div>
         {dayStarts.map((dayStart) => {
@@ -769,8 +859,12 @@ export function VerticalCalendar({
         {...{ [SCHEDULE_SCROLL_ATTR]: '' }}
       >
         <div className="flex min-w-0">
-          <div className="sticky left-0 z-10 w-14 shrink-0 bg-card">
-            <div className="relative" style={{ height: GRID_HEIGHT_PX }}>
+          {/* Rhythm, then the hours it describes, then the days. Reading order
+              is the argument for the order on screen: what you usually do,
+              what time it is, what you actually committed to. */}
+          <div className="sticky left-0 z-10 flex w-16 shrink-0 gap-1 bg-card pl-1.5">
+            <RhythmStrip dayStart={focusDay} lookup={lookup} colorMode={colorMode} />
+            <div className="relative flex-1" style={{ height: GRID_HEIGHT_PX }}>
               {AXIS_HOURS.map((hour) => (
                 <span
                   key={hour}
@@ -793,7 +887,6 @@ export function VerticalCalendar({
                   key={key}
                   dayStart={dayStart}
                   dayEvents={eventsByDayKey.get(key) ?? []}
-                  lookup={lookup}
                   isToday={isToday}
                   nowPct={isToday ? nowPct : null}
                   colorMode={colorMode}

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -18,6 +18,24 @@ vi.mock('@/common/feature', async () => {
 });
 
 vi.mock('../SecondaryNavigation/useFeedBadgeCount', () => ({ useFeedBadgeCount: () => 0 }));
+
+const recentThreads = vi.hoisted(() => ({ current: [] as { id: string; name: string | null }[] }));
+
+vi.mock('@/pages/ChatPage/useRecentThreads', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/pages/ChatPage/useRecentThreads')>(
+      '@/pages/ChatPage/useRecentThreads',
+    );
+
+  return {
+    ...actual,
+    useRecentThreads: ({ enabled }: { enabled: boolean }) => ({
+      threads: enabled ? recentThreads.current : [],
+      loading: false,
+      error: null,
+    }),
+  };
+});
 
 vi.mock('@/components/modals/CaptureModal', () => ({
   CaptureModal: () => <div data-testid="capture-modal" />,
@@ -79,6 +97,7 @@ function renderMobileNav(route = '/calendar') {
 describe('MobileNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    recentThreads.current = [];
   });
 
   it('starts closed, with chevron, search, and Add in the top row', () => {
@@ -89,7 +108,9 @@ describe('MobileNavigation', () => {
     expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Plan' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
-    expect(document.querySelector('img[src*="logo"]')).toBeNull();
+    // The wordmark belongs to the drawer, which is off-canvas until opened —
+    // the top bar itself stays chevron, search, chips, Add.
+    expect(screen.getByRole('banner').querySelector('img[src*="logo"]')).toBeNull();
   });
 
   it('opens the glass rail with the same destinations as the desktop list', async () => {
@@ -101,6 +122,62 @@ describe('MobileNavigation', () => {
     expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
     expect(screen.queryByRole('link', { name: 'System' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Close menu' }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  // The drawer never said which app it belonged to. Desktop only reveals the
+  // name when the rail is pinned, and the phone has no pinning at all.
+  it('names the app in the open drawer, logo and wordmark together', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    const nav = await screen.findByRole('navigation');
+    const wordmark = within(nav).getByTestId('power-rail-wordmark');
+
+    expect(within(wordmark).getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'false');
+    expect(wordmark.querySelector('img[src*="logo"]')).not.toBeNull();
+  });
+
+  // The wordmark is a statement, not a second close button: the chevron beside
+  // it already owns that, and two controls with one accessible name is one too
+  // many for a thumb.
+  it('leaves the drawer with a single close control', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    const nav = await screen.findByRole('navigation');
+
+    expect(within(nav).getAllByRole('button', { name: 'Close menu' })).toHaveLength(1);
+  });
+
+  // ChatSidebar is portaled to `tertiary-navigation`, which the phone layout
+  // never renders — without this submenu there is no way to change thread.
+  it('switches among recent threads from the drawer', async () => {
+    recentThreads.current = [
+      { id: 't1', name: 'Dinner plans' },
+      { id: 't2', name: null },
+    ];
+
+    renderMobileNav('/chat');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    expect(await screen.findByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/chat/t1');
+    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/chat/t2');
+  });
+
+  it('carries Asks inside the drawer Chat group, not as its own row', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    await screen.findByRole('link', { name: 'Chat' });
+    expect(screen.queryByRole('link', { name: 'Asks' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Chat sections' }));
+
+    expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('href', '/asks');
   });
 
   it('puts Capture first in the drawer and the user tile at the foot, linking to Self', async () => {

@@ -1,3 +1,4 @@
+import { LoadingPage } from '@ci/common';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
@@ -17,7 +18,7 @@ import { SelfProfileTab } from './SelfProfileTab';
  * Power Rail's Self user tile — no in-page tab bar of its own.
  */
 export function SelfPage() {
-  const { isFeatureEnabled } = useFeatures();
+  const { isFeatureEnabled, loading: featuresLoading } = useFeatures();
 
   return (
     <div className="h-full min-h-0">
@@ -26,7 +27,18 @@ export function SelfPage() {
         <Route path="stats" element={<StatsPage />} />
         {isFeatureEnabled('insights.page') && <Route path="reflections" element={<PromptsPage />} />}
         <Route path="settings/*" element={<ProfilePage />} />
-        <Route path="*" element={<Navigate to="/self" replace />} />
+        {/* `isFeatureEnabled` reports every flag as off until both flag sets
+            have settled, so `reflections` is genuinely absent from the table
+            for the first frames after this mounts. Redirecting on that would
+            bounce anyone opening /self/reflections — a cold start, a deep
+            link, or the phone restoring its last route — back to /self with
+            `replace`, losing the destination before the flags ever arrive.
+            Same wait App's own catch-all does, and the reason `loading`
+            exists (see useFeatures). */}
+        <Route
+          path="*"
+          element={featuresLoading ? <LoadingPage /> : <Navigate to="/self" replace />}
+        />
       </Routes>
     </div>
   );

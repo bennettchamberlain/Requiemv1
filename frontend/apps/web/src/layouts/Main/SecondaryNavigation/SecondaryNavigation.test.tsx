@@ -26,6 +26,24 @@ vi.mock('@/common/feature', async () => {
 
 vi.mock('./useFeedBadgeCount', () => ({ useFeedBadgeCount: () => 0 }));
 
+const recentThreads = vi.hoisted(() => ({ current: [] as { id: string; name: string | null }[] }));
+
+vi.mock('@/pages/ChatPage/useRecentThreads', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/pages/ChatPage/useRecentThreads')>(
+      '@/pages/ChatPage/useRecentThreads',
+    );
+
+  return {
+    ...actual,
+    useRecentThreads: ({ enabled }: { enabled: boolean }) => ({
+      threads: enabled ? recentThreads.current : [],
+      loading: false,
+      error: null,
+    }),
+  };
+});
+
 vi.mock('@/hooks', async () => {
   const actual = await vi.importActual<typeof import('@/hooks')>('@/hooks');
 
@@ -48,6 +66,7 @@ vi.mock('@/components/ThemePicker', () => ({
 
 beforeEach(() => {
   localStorage.removeItem(STORAGE_KEY);
+  recentThreads.current = [];
 });
 
 function renderRail(route = '/plan', { expanded = false }: { expanded?: boolean } = {}) {
@@ -330,6 +349,67 @@ describe('SecondaryNavigation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse Memory sections' }));
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
+  });
+
+  // Chat and Asks are one conversation surface. Two peer rows read as two
+  // unrelated places, which is what the compacting was meant to fix.
+  it('folds Asks into the Chat group instead of a peer row', () => {
+    renderRail('/plan', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: 'Asks' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Chat sections' }));
+
+    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
+    expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('href', '/asks');
+  });
+
+  it('keeps Chat a single icon in the collapsed rail, with no separate Asks row', () => {
+    renderRail();
+
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+
+    expect(hrefs).toContain('/chat');
+    expect(hrefs).not.toContain('/asks');
+  });
+
+  // The point of the submenu: pick a conversation from the menu, not from a
+  // second chat UI nested in it.
+  it('lists recent threads as links under Chat', () => {
+    recentThreads.current = [
+      { id: 't1', name: 'Dinner plans' },
+      { id: 't2', name: null },
+    ];
+
+    renderRail('/chat', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/chat/t1');
+    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/chat/t2');
+  });
+
+  it('opens the Chat group on a thread deep-link and marks the thread current', () => {
+    recentThreads.current = [{ id: 't1', name: 'Dinner plans' }];
+
+    renderRail('/chat/t1', { expanded: true });
+
+    const thread = screen.getByRole('link', { name: 'Dinner plans' });
+
+    expect(thread).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Chat' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('opens the Chat group on an Asks route', () => {
+    renderRail('/asks', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('does not fetch threads while the Chat group is closed', () => {
+    recentThreads.current = [{ id: 't1', name: 'Dinner plans' }];
+
+    renderRail('/plan', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: 'Dinner plans' })).not.toBeInTheDocument();
   });
 
   it('lists Capture first, then the spine, with Self as the user tile at the foot', () => {

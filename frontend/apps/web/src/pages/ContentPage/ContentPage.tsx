@@ -109,8 +109,8 @@ export function ContentPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="flex flex-col gap-4 md:col-span-2">
-            {/* The drawer's field set and its media, so "Open full page" does not
-                silently drop the title editor and the image. */}
+            {/* The drawer's field set and its media, so reaching this route directly
+                does not silently drop the title editor and the image. */}
             <EntityFieldsCard
               title="Content"
               resetKey={contentItem.id}

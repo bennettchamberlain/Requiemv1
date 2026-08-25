@@ -7,10 +7,12 @@ import { CaptureModal } from '@/components/modals/CaptureModal';
 import { useCaptureModal } from '@/hooks';
 
 import { usePowerRail } from '../PowerRailContext';
+import { PowerRailWordmark } from '../PowerRailToggle';
 import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
 import { RailEdgeToggle } from '../RailEdgeToggle';
 
 import { CaptureRailButton } from './CaptureRailButton';
+import { ChatSubmenu } from './ChatSubmenu';
 import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
 import { SelfSubmenu } from './SelfSubmenu';
@@ -109,10 +111,20 @@ function HelpSubmenu() {
   );
 }
 
+/**
+ * The drawer says which app you are in.
+ *
+ * Desktop earns the wordmark by pinning, because a name appearing on hover
+ * widens the rail's grid column and shoves the page. The phone has neither a
+ * hover state nor that column: opening the drawer is deliberate and it floats
+ * over the content, so the mark costs nothing and answers the question the
+ * bare chevron left open.
+ */
 function OverlayRailHeader({ closeOverlay }: { closeOverlay: () => void }) {
   return (
-    <div className="flex items-center justify-end pt-2 pb-1.5">
-      <RailEdgeToggle open onClick={closeOverlay} className="shrink-0" />
+    <div className="flex min-w-0 items-center gap-2 pt-2 pb-1.5">
+      <PowerRailWordmark />
+      <RailEdgeToggle open onClick={closeOverlay} className="ml-auto shrink-0" />
     </div>
   );
 }
@@ -177,6 +189,14 @@ export function SecondaryNavigation() {
 
         if (destination.id === 'memory') {
           return <MemorySubmenu key={destination.id} />;
+        }
+
+        // Chat is a group: Asks rides under it, and so do the recent threads.
+        // When `chat.page` is off the group never reaches here — Asks is
+        // promoted to a plain row by `visibleRailDestinations` and falls
+        // through to the NavLink below.
+        if (destination.id === 'chat') {
+          return <ChatSubmenu key={destination.id} destination={destination} />;
         }
 
         const Icon = destination.icon;

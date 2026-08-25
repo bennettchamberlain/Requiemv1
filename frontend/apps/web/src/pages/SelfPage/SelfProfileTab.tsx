@@ -163,7 +163,16 @@ export function SelfProfileTab() {
                   </span>
                 )}
 
-                <PersonForm value={draft} onChange={setDraft} nameError={nameError} />
+                {/* No autofocus: unlike the modal call sites, this form is
+                    just part of the page. Grabbing focus on mount scrolled
+                    the phone past the heading into the middle of the form
+                    and opened the keyboard over it. */}
+                <PersonForm
+                  value={draft}
+                  onChange={setDraft}
+                  nameError={nameError}
+                  autoFocusName={false}
+                />
 
                 {submitError && (
                   <p role="alert" className="text-sm text-destructive">
