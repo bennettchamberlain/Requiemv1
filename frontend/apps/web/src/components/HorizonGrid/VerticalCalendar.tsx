@@ -23,9 +23,10 @@ import {
 import { SCHEDULE_SCROLL_ATTR } from '@/lib/schedulePointerDrag';
 
 import { EventPeek } from './EventPeek';
+import { addDays, formatClock, sameLocalDay, startOfLocalDay } from './nowNext';
+import { foldMicroClusters, packItemLanes, type PackedItem } from './scheduleClusters';
 import {
   RHYTHM_NOISE_FLOOR,
-  addDays,
   cellOpacity,
   describes,
   dropInstant,
@@ -34,12 +35,9 @@ import {
   rhythmClaims,
   rhythmLabel,
   spanForDay,
-  startOfLocalDay,
   topClusters,
   utcDateKey,
-} from './HorizonGrid';
-import { formatClock, sameLocalDay } from './nowNext';
-import { foldMicroClusters, packItemLanes, type PackedItem } from './scheduleClusters';
+} from './scheduleGeometry';
 import { useScheduleDropTarget } from './useScheduleDropTarget';
 
 const MINUTES_PER_DAY = 24 * 60;
