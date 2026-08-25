@@ -9,6 +9,7 @@ import {
   persistApiBaseUrl,
   resolveHttpOrigin,
   setApiBaseUrl,
+  subscribeApiBaseUrl,
 } from '@ci/common/src/utils/apiBase';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -145,6 +146,19 @@ describe('apiBase — native detection + persistence', () => {
 
     expect(getApiBaseUrl()).toBe('https://new.example.com');
     expect(store.get('ci.apiBaseUrl')).toBe('https://new.example.com');
+  });
+
+  it('subscribeApiBaseUrl() notifies when the origin changes', () => {
+    const seen: string[] = [];
+    const stop = subscribeApiBaseUrl(() => seen.push(getApiBaseUrl()));
+
+    setApiBaseUrl('https://memory.example.com');
+    setApiBaseUrl('https://memory.example.com');
+    setApiBaseUrl('https://other.example.com');
+    stop();
+    setApiBaseUrl('https://ignored.example.com');
+
+    expect(seen).toEqual(['https://memory.example.com', 'https://other.example.com']);
   });
 
   it('resolveHttpOrigin() prefixes a bare hostname so iOS never sees a relative URL', () => {

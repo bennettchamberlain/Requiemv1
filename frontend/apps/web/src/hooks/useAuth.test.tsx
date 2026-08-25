@@ -233,6 +233,36 @@ describe('useAuth', () => {
     expect(ok).toBe(true);
     expect(result.current[0].authenticated).toBe(true);
     expect(secureStore.get('ci.apiKey')).toBe('portal-minted-key');
+    expect(localStorage.getItem('ci.apiBaseUrl')).toBe('https://memory.example.com');
+  });
+
+  it('completePortalMemoryConnect does not persist a Memory origin when minting fails', async () => {
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        SecureStoragePlugin: {
+          get: vi.fn(async () => {
+            throw new Error('not found');
+          }),
+          set: vi.fn(async () => ({ value: true })),
+          remove: vi.fn(async () => ({ value: true })),
+        },
+      },
+    };
+
+    setFetch(() => emptyResponse(false, 401));
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+
+    await act(async () => {
+      await expect(
+        result.current[1].completePortalMemoryConnect('portal-id-token', 'https://memory.example.com'),
+      ).rejects.toThrow();
+    });
+
+    expect(localStorage.getItem('ci.apiBaseUrl')).toBeNull();
+    expect(result.current[0].authenticated).toBe(false);
   });
 
   it('completeMemoryPasswordConnect signs in to the picked Memory origin and mints a key', async () => {
@@ -297,6 +327,7 @@ describe('useAuth', () => {
     expect(ok).toBe(true);
     expect(result.current[0].authenticated).toBe(true);
     expect(secureStore.get('ci.apiKey')).toBe('password-minted-key');
+    expect(localStorage.getItem('ci.apiBaseUrl')).toBe('https://memory.example.com');
   });
 
   it('captures the error when login fails', async () => {

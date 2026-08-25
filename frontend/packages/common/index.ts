@@ -16,6 +16,7 @@ export {
   persistApiBaseUrl,
   resolveHttpOrigin,
   setApiBaseUrl,
+  subscribeApiBaseUrl,
 } from './src/utils/apiBase';
 export {
   CONNECTION_REPROBE_INTERVAL_MS,
