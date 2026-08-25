@@ -2,13 +2,11 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 
 import { Portal, usePageTitle } from '@ci/common';
 import { Button, Card } from '@ci/shadcn';
-import { Loader2, RefreshCw, Send, Sparkles, X } from '@ci/shadcn/icons';
+import { RefreshCw, Send, X } from '@ci/shadcn/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { useThreadService } from '@/api';
-import { usePersonaCompose } from '@/api/usePersonaCompose';
 import { Chat, type FormData } from '@/components/Chat';
-import { HowYoudDoItCard } from '@/components/HowYoudDoItCard';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
 import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } from '@/lib/agentChat';
 
@@ -28,11 +26,6 @@ function ChatPageContent() {
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [chatDraft, setChatDraft] = useState('');
   const [{ selectedModel }] = useModel();
-  const [personaTask, setPersonaTask] = useState('');
-  const [applyingPersona, setApplyingPersona] = useState(false);
-  const [applyNote, setApplyNote] = useState<string | null>(null);
-  const [{ loading: personaLoading, error: personaError, result: personaResult }, { compose, apply, clear }] =
-    usePersonaCompose();
 
   const [
     { threads, loading: threadsLoading, error: threadsError },
@@ -174,46 +167,6 @@ function ChatPageContent() {
     [refetchThreads],
   );
 
-  const handlePersonaCompose = useCallback(async () => {
-    const trimmed = personaTask.trim();
-    if (!trimmed || personaLoading) {
-      return;
-    }
-
-    setApplyNote(null);
-    try {
-      await compose(trimmed);
-    } catch {
-      // error surfaced via personaError
-    }
-  }, [compose, personaLoading, personaTask]);
-
-  const handlePersonaApply = useCallback(async () => {
-    if (!personaResult || applyingPersona) {
-      return;
-    }
-
-    setApplyingPersona(true);
-    setApplyNote(null);
-    try {
-      const { added } = await apply(personaResult);
-      setApplyNote(
-        added > 0 ? `Added ${added} ${added === 1 ? 'card' : 'cards'} to Possibilities.` : 'Nothing to add.',
-      );
-    } catch {
-      setApplyNote('Could not add to Possibilities.');
-    } finally {
-      setApplyingPersona(false);
-    }
-  }, [apply, applyingPersona, personaResult]);
-
-  const handlePersonaFollowUp = useCallback(
-    (question: string) => {
-      void submitChatRequest({ message: question });
-    },
-    [submitChatRequest],
-  );
-
   const loading = threadsLoading || threadLoading || chatRequestLoading;
   const isSubmitDisabled = selectedModel == null;
   const inputPlaceholder =
@@ -255,57 +208,9 @@ function ChatPageContent() {
           <Send className="relative -left-0.5 top-0.5 h-8 w-8 text-zinc-400" />
         </div>
         <p className="mb-1 text-sm">Start a conversation with your Companion</p>
-        <p className="mb-6 text-xs text-gray-400">
+        <p className="text-xs text-gray-400">
           Ask about Memory, Plan to-dos, Forecast, or Brief — or attach a file
         </p>
-
-        <div className="w-full rounded-xl border border-border bg-background p-3 text-left">
-          <p className="mb-2 text-xs font-medium text-foreground">How you’d do it</p>
-          <p className="mb-2 text-[11px] text-muted-foreground">
-            Paste a task — Companion synthesizes who you are, then suggests your approach.
-          </p>
-          <textarea
-            value={personaTask}
-            onChange={(e) => setPersonaTask(e.target.value)}
-            rows={2}
-            disabled={personaLoading}
-            aria-label="Task to personalize"
-            placeholder="e.g. Plan a calm dinner for friends this week…"
-            className="mb-2 w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/70 focus:border-primary/60 focus:outline-none disabled:opacity-60"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              className="h-7 text-xs"
-              disabled={personaLoading || personaTask.trim().length === 0}
-              onClick={() => void handlePersonaCompose()}
-            >
-              {personaLoading ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
-              ) : (
-                <Sparkles className="mr-1 h-3.5 w-3.5" strokeWidth={1.5} />
-              )}
-              {personaLoading ? 'Personalizing…' : 'How I’d do this'}
-            </Button>
-            {personaResult && (
-              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={clear}>
-                Clear
-              </Button>
-            )}
-            {personaError && <span className="text-[11px] text-destructive">{personaError}</span>}
-          </div>
-        </div>
-
-        {personaResult && (
-          <HowYoudDoItCard
-            className="mt-4"
-            result={personaResult}
-            applying={applyingPersona}
-            applyNote={applyNote}
-            onApply={() => void handlePersonaApply()}
-            onFollowUp={handlePersonaFollowUp}
-          />
-        )}
       </div>
     );
   }

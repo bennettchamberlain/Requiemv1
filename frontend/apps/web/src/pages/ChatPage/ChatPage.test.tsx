@@ -68,13 +68,6 @@ vi.mock('@/api', async (importOriginal) => {
   };
 });
 
-vi.mock('@/api/usePersonaCompose', () => ({
-  usePersonaCompose: () => [
-    { loading: false, error: null, result: null },
-    { compose: vi.fn(), apply: vi.fn(), clear: vi.fn() },
-  ],
-}));
-
 vi.mock('./useThreadListService', () => ({
   useThreadListService: () => [
     { threads: h.threads, loading: false, error: null },
