@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 
 import { useMutation } from '@apollo/client';
 import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
+import { Button } from '@ci/shadcn';
 import { ListTodo } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
@@ -74,25 +75,30 @@ export function PlanPage() {
   const [declinePending] = useMutation(DECLINE_PENDING);
   const [scheduleTask] = useMutation(SCHEDULE_TASK);
   const [updateTask] = useMutation(UPDATE_TASK);
-  const [focusedTask, setFocusedTask] = useState<string | null>(null);
+  const [focusedTasks, setFocusedTasks] = useState<string[] | null>(null);
   const [editingTask, setEditingTask] = useState<EditableTask | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const handleToggle = (id: string, done: boolean) => {
     void (done ? completeTask({ variables: { id } }) : reopenTask({ variables: { id } }));
   };
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    setFocusedTask(id);
+  const handleDelete = (id: string) => {
+    setFocusedTasks([id]);
   };
 
-  const handleEdit = (e: React.MouseEvent, task: EditableTask) => {
-    e.preventDefault();
-    e.stopPropagation();
-
+  const handleEdit = (task: EditableTask) => {
     setEditingTask(task);
+  };
+
+  const handleLongPressSelect = (id: string) => {
+    setSelectedIds((current) => (current.includes(id) ? current : [...current, id]));
+  };
+
+  const handleSelectToggle = (id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
   };
 
   const refresh = () => {
@@ -129,6 +135,10 @@ export function PlanPage() {
         onToggle={handleToggle}
         onDelete={handleDelete}
         onEdit={handleEdit}
+        selecting={selectedIds.length > 0}
+        selected={selectedIds.includes(task.id)}
+        onSelectToggle={handleSelectToggle}
+        onLongPressSelect={handleLongPressSelect}
         onAcceptProposed={(id) => void acceptProposed({ variables: { id } }).then(refresh)}
         onDeclineProposed={(id) => void declineProposed({ variables: { id } }).then(refresh)}
         onAcceptAndSchedule={handleAcceptAndSchedule}
@@ -170,6 +180,28 @@ export function PlanPage() {
             <NewTaskForm onCreated={() => void refetch()} />
           </div>
 
+          {selectedIds.length > 0 ? (
+            <div
+              className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2"
+              data-testid="plan-selection-bar"
+            >
+              <span className="text-sm font-medium">{selectedIds.length} selected</span>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedIds([])}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setFocusedTasks(selectedIds)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {/* `relative` scopes the loading and empty states, both of which
               position themselves `absolute inset-0`. Without a positioned
               parent here they fill the whole column and sit on top of the form,
@@ -179,7 +211,15 @@ export function PlanPage() {
         </div>
       </PageContent>
 
-      {focusedTask && <DeleteTaskModal taskId={focusedTask} onClose={() => setFocusedTask(null)} />}
+      {focusedTasks && focusedTasks.length > 0 ? (
+        <DeleteTaskModal
+          taskIds={focusedTasks}
+          onClose={() => {
+            setFocusedTasks(null);
+            setSelectedIds([]);
+          }}
+        />
+      ) : null}
       {editingTask && (
         <EditTaskModal task={editingTask} onClose={() => setEditingTask(null)} onSaved={refresh} />
       )}

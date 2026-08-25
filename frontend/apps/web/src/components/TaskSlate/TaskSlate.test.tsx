@@ -209,14 +209,14 @@ describe('TaskSlate — phone tabs', () => {
     expect(screen.queryByText('Try this')).not.toBeInTheDocument();
   });
 
-  it('tells a phone to hold a card rather than drag it', async () => {
+  it('tells a phone to drag the handle rather than hold the card', async () => {
     setViewport(true);
 
     renderWithProviders(
       <TaskSlate sections={backlog([task({ status: 'proposed' })])} {...NOOP} />,
     );
 
-    expect(await screen.findByText('hold a card, then drop it on a day above')).toBeInTheDocument();
+    expect(await screen.findByText('drag the handle onto the day above')).toBeInTheDocument();
   });
 
   it('picks a card up after a touch hold so it can be dropped on the calendar', async () => {
@@ -250,5 +250,31 @@ describe('TaskSlate — phone tabs', () => {
     expect(getSchedulePointerDrag()).toBeNull();
 
     vi.useRealTimers();
+  });
+
+  it('starts a drag from the six-dot handle without waiting for a hold', async () => {
+    setViewport(true);
+
+    renderWithProviders(
+      <TaskSlate sections={backlog([task({ id: 'task-9', title: 'Call Mum', status: 'proposed' })])} {...NOOP} />,
+    );
+
+    const handle = await screen.findByRole('button', { name: /drag call mum onto the calendar/i });
+    fireEvent.pointerDown(handle, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 10,
+      button: 0,
+    });
+
+    expect(getSchedulePointerDrag()?.payload).toEqual({
+      kind: 'candidate',
+      id: 'task-9',
+      title: 'Call Mum',
+    });
+
+    fireEvent.pointerUp(window, { pointerId: 1, pointerType: 'touch', clientX: 40, clientY: 80 });
+    expect(getSchedulePointerDrag()).toBeNull();
   });
 });
