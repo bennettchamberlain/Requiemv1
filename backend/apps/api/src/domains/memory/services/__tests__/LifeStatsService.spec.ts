@@ -1,4 +1,4 @@
-import { OUTGOING_EVENT_TYPES, SIGNED_TRANSACTION_TYPE, SOCIAL_EVENT_TYPES } from '../lifeStats';
+import { OUTGOING_EVENT_TYPES, SIGNED_EVENT_TYPES, SOCIAL_EVENT_TYPES } from '../lifeStats';
 import { LifeStatsService } from '../LifeStatsService';
 
 describe('LifeStatsService SQL contracts', () => {
@@ -37,9 +37,9 @@ describe('LifeStatsService SQL contracts', () => {
     expect(params[1]).toEqual(range.from);
     expect(params[2]).toEqual(range.to);
     expect(params[3]).toEqual([...OUTGOING_EVENT_TYPES]);
-    expect(params[4]).toBe(SIGNED_TRANSACTION_TYPE);
+    expect(params[4]).toEqual([...SIGNED_EVENT_TYPES]);
     expect(normalized).toContain('e.event_type = ANY($4::text[])');
-    expect(normalized).toContain('e.event_type = $5');
+    expect(normalized).toContain('e.event_type = ANY($5::text[])');
     expect(normalized).toContain('FROM ci.receipts r');
     expect(normalized).toContain("e.metadata->>'Amount'");
     expect(normalized).not.toContain('credit');
