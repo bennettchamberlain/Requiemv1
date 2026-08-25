@@ -46,7 +46,11 @@ export function PromptsPage() {
   const { t } = useTranslation();
   const [{ authToken }] = useAuth();
 
-  const [tab, setTab] = useState('answers');
+  // Defaults to the full browsable catalogue (~1.3k questions) rather than
+  // "Your answers" — the answers tab is naturally near-empty for anyone who
+  // hasn't gone through it yet, which reads as "there's nothing here" even
+  // though the catalogue tab (added alongside this page) has plenty to answer.
+  const [tab, setTab] = useState('catalogue');
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

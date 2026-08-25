@@ -1,4 +1,6 @@
 import type { LoggerService } from '@ci/common/logging';
+import config from '@ci/configuration';
+import type { RecallService } from '@ci/domains/agent';
 import type { EventPayloads, Events } from '@ci/domains/events';
 import type { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import type { OllamaService } from '@ci/domains/llm';
@@ -28,9 +30,10 @@ function structuredResponse(
 }
 
 /**
- * The evidence ceiling for a listener built with no dossier and no related
- * answers — {@link estimateInferredAnswerConfidence}(0, false). Every default
- * build in this file hits it, so it is the confidence the writes carry.
+ * The evidence ceiling for a listener built with no dossier, no related answers
+ * and no retrieved memory — {@link estimateInferredAnswerConfidence}(0, false, 0).
+ * Every default build in this file hits it, so it is the confidence the writes
+ * carry.
  */
 const BARE_CONTEXT_CONFIDENCE = 0.45;
 
@@ -64,6 +67,7 @@ function buildListener(overrides: {
   answerService?: Partial<AnswerService>;
   questionService?: Partial<QuestionService>;
   searchService?: Partial<SearchService>;
+  recallService?: Partial<RecallService>;
   userContextService?: Partial<UserContextService>;
   personalizationService?: Partial<PersonalizationService>;
   ollamaService?: Partial<OllamaService>;
@@ -87,6 +91,13 @@ function buildListener(overrides: {
     ...overrides.searchService,
   } as unknown as SearchService;
 
+  // Defaults to "the corpus had nothing for this question", which is the bare
+  // case every pre-existing test in this file was written against.
+  const recallService = {
+    recall: jest.fn().mockResolvedValue({ block: '', resultCount: 0 }),
+    ...overrides.recallService,
+  } as unknown as RecallService;
+
   const userContextService = {
     getUserContextForLLM: jest.fn().mockResolvedValue(null),
     formatContextForSystemPrompt: jest.fn().mockReturnValue(''),
@@ -109,6 +120,7 @@ function buildListener(overrides: {
     answerService,
     questionService,
     searchService,
+    recallService,
     userContextService,
     personalizationService,
     ollamaService,
@@ -120,6 +132,7 @@ function buildListener(overrides: {
     answerService,
     questionService,
     searchService,
+    recallService,
     userContextService,
     personalizationService,
     ollamaService,
@@ -266,6 +279,130 @@ describe('AnswerInferenceListener.inferQuestionAnswer — confidence floor', () 
     ];
     expect(ragThread[0].content).toContain('confidence');
     expect(ragThread[0].content).toContain('rationale');
+  });
+});
+
+describe('AnswerInferenceListener.inferQuestionAnswer — refusals are never written', () => {
+  it('writes nothing when the model refuses, however confident it says it is', async () => {
+    // The measured failure, end to end: three restaurant visits retrieved, the
+    // model answers "I do not have this information recorded." and scores that
+    // refusal 0.7 — above the 0.4 floor meant to filter it out. Persisted, it
+    // would sit in ci.answers looking exactly like something the user typed.
+    const { listener, answerService, personalizationService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue({
+          block: '## Relevant context\n[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA',
+          resultCount: 6,
+        }),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              answer: 'I do not have this information recorded.',
+              confidence: 0.7,
+              rationale: 'No line states a favorite cuisine.',
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+    // Dropped outright, not queued for a human to look at — there is nothing
+    // here for a reviewer to approve.
+    expect(personalizationService.decideAction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "I don't know.",
+    'Unknown',
+    'No information available.',
+    'The evidence does not mention any cuisine.',
+  ])('writes nothing for the refusal %p', async (answer) => {
+    const { listener, answerService } = buildListener({
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: { content: structuredResponse({ answer, confidence: 0.95 }) },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a refusal when the owner has lowered the confidence floor beneath the clamp', async () => {
+    // Isolates the listener's own gate from the parser's clamp. The clamp puts a
+    // refusal at CONFIDENCE_NON_ANSWER (0.1), which the default 0.4 floor throws
+    // out — but `reflection.minAnswerConfidence` is owner-configurable, and an
+    // owner who set it to 0 would otherwise get "I don't know." written into
+    // ci.answers as though they had said it.
+    const reflection = config.reflection as { minAnswerConfidence: number };
+    const originalFloor = reflection.minAnswerConfidence;
+    reflection.minAnswerConfidence = 0;
+
+    try {
+      const { listener, answerService } = buildListener({
+        ollamaService: {
+          chat: jest.fn().mockResolvedValue({
+            message: {
+              content: structuredResponse({
+                answer: 'I do not have this information recorded.',
+                confidence: 0.7,
+              }),
+            },
+          }),
+        },
+      });
+
+      await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+      expect(answerService.create).not.toHaveBeenCalled();
+      expect(answerService.update).not.toHaveBeenCalled();
+    } finally {
+      reflection.minAnswerConfidence = originalFloor;
+    }
+  });
+
+  it('DOES write the synthesized answer the same evidence should have produced', async () => {
+    // The other half of the fix, and the half a refusal-blocker alone would not
+    // give you: naming what three restaurant visits actually show is a real
+    // answer and must survive every gate.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest.fn().mockResolvedValue({
+          block: '## Relevant context\n[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA',
+          resultCount: 6,
+        }),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              answer: 'Japanese, Mexican and Thai — I eat across all three.',
+              confidence: 0.55,
+              rationale: 'Three restaurants looked up in browser history.',
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({
+        text: 'Japanese, Mexican and Thai — I eat across all three.',
+        answerConfidence: 0.55,
+      }),
+    );
   });
 });
 
@@ -477,5 +614,225 @@ describe('AnswerInferenceListener.findRelatedAnswers (via inferQuestionAnswer)',
     await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
 
     expect(answerService.findAll).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnswerInferenceListener — grounding in the user’s own memory', () => {
+  /** A recall block shaped like the real one: labelled, dated, one line each. */
+  function recallBlock(lines: string[]) {
+    return { block: `## Relevant context\n${lines.join('\n')}`, resultCount: lines.length };
+  }
+
+  it('retrieves against the whole indexed corpus, not just prior answers', async () => {
+    // The bug this feature exists to fix: the only retrieval the listener did
+    // was scoped `includeTypes: ['answer']`, i.e. a few dozen rows out of the
+    // ~900k the user has indexed. The corpus leg must be its own call.
+    const { listener, recallService } = buildListener({});
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(recallService.recall).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ query: 'What is your favorite color?' }),
+      expect.anything(),
+    );
+  });
+
+  it('retrieves with the precision-first strategy, not the agent-lookup default', async () => {
+    // The default strategy seeds with an OR-joined keyword search, which on a
+    // question answers "What city do you live in?" with song titles carrying the
+    // word City. Evidence for an inferred answer has to clear a higher bar than
+    // an agent looking something up, so this call site asks for 'grounded'.
+    const { listener, recallService } = buildListener({});
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(recallService.recall).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ strategy: 'grounded' }),
+    );
+  });
+
+  it('keeps ci.answers out of the evidence, so its own past output is not evidence', async () => {
+    // Every row in ci.answers was written by THIS listener. Retrieving them as
+    // "evidence from the user's own imported memory" feeds the model its own
+    // prior output — and most of those rows say "I do not have this information
+    // recorded", which is the refusal this path exists to avoid re-learning.
+    const { listener, recallService } = buildListener({});
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const options = (recallService.recall as jest.Mock).mock.calls[0][2];
+
+    expect(options.excludeTypes).toContain('answer');
+  });
+
+  it('injects the retrieved lines into the system prompt as labelled EVIDENCE', async () => {
+    const { listener, ollamaService } = buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(
+            recallBlock(['[outbound, Mar 3, 2024] "repainted the study a deep blue"', 'Blue paint order']),
+          ),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    const systemPrompt = ragThread[0].content;
+    expect(systemPrompt).toContain('EVIDENCE');
+    // Provenance survives into the prompt, so the model can name it in the
+    // rationale rather than gesturing at "your history".
+    expect(systemPrompt).toContain('[outbound, Mar 3, 2024] "repainted the study a deep blue"');
+  });
+
+  it('raises the evidence ceiling, so a grounded answer is not capped like an ungrounded one', async () => {
+    // Without this, widening retrieval changes nothing that reaches the
+    // database: every answer, grounded or not, would still be pinned to the
+    // bare-context ceiling and land one notch above the discard floor.
+    const lines = ['l1', 'l2', 'l3', 'l4', 'l5', 'l6'];
+    const { listener, answerService } = buildListener({
+      recallService: { recall: jest.fn().mockResolvedValue(recallBlock(lines)) },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({ message: { content: structuredResponse({ confidence: 0.9 }) } }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    // estimateInferredAnswerConfidence(0, false, 6) === 0.45 + 6 * 0.05.
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ answerConfidence: 0.75 }),
+    );
+  });
+
+  it('tells the model when the corpus returned nothing, instead of staying silent about it', async () => {
+    const { listener, ollamaService } = buildListener({
+      recallService: { recall: jest.fn().mockResolvedValue({ block: '', resultCount: 0 }) },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    expect(ragThread[0].content).toContain('No memory evidence was retrieved');
+  });
+
+  it('frames the evidence as a record of what the user DID, to be inferred from', async () => {
+    // The measured failure was not retrieval: the corpus returned three
+    // restaurant visits across three cuisines and the model still answered "I do
+    // not have this information recorded." The prompt has to say that no line
+    // will state the answer outright and that reading the pattern is the job.
+    const { listener, ollamaService } = buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(recallBlock(['[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA'])),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    const systemPrompt = ragThread[0].content;
+    expect(systemPrompt).toContain('SYNTHESIS, NOT LOOKUP');
+    expect(systemPrompt).toContain('do not require one of them to state it');
+    expect(systemPrompt).toMatch(/indirect evidence is still evidence/i);
+  });
+
+  it('still infers (ungrounded, at the bare ceiling) when recall throws', async () => {
+    const { listener, answerService, ollamaService } = buildListener({
+      recallService: { recall: jest.fn().mockRejectedValue(new Error('search index down')) },
+    });
+
+    await expect(
+      listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload),
+    ).resolves.not.toThrow();
+
+    expect(ollamaService.chat).toHaveBeenCalled();
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ answerConfidence: BARE_CONTEXT_CONFIDENCE }),
+    );
+  });
+});
+
+describe('AnswerInferenceListener — the related-answers block', () => {
+  /** Both search paths into ci.answers return the same rows. */
+  function withRelatedAnswers(answers: Answer[]) {
+    return buildListener({
+      searchService: {
+        search: jest.fn().mockResolvedValue(answers.map((answer) => ({ type: 'answer', id: answer.id }))),
+      },
+      answerService: {
+        findByIds: jest.fn().mockResolvedValue(answers),
+        findAll: jest.fn().mockResolvedValue(answers),
+        findByQuestionId: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(makeAnswer()),
+        update: jest.fn().mockResolvedValue(makeAnswer()),
+      },
+    });
+  }
+
+  /**
+   * Just the related-answers section. The prompt RULES quote refusal wording as
+   * the thing to score low, so a whole-prompt substring check cannot tell "the
+   * block leaked a refusal" from "the rules named one".
+   */
+  function relatedSectionOf(ollamaService: OllamaService) {
+    const [, ragThread] = (ollamaService.chat as jest.Mock).mock.calls[0] as [
+      unknown,
+      Array<{ content: string }>,
+    ];
+    const system = ragThread[0].content;
+    const start = system.indexOf('Related questions the user already answered');
+
+    return start === -1
+      ? system.slice(system.indexOf('No related prior answers were found'))
+      : system.slice(start);
+  }
+
+  it('drops this listener’s own refusals, which are the absence of an answer', async () => {
+    // 20 of the 23 rows in ci.answers on the reference corpus say exactly this,
+    // and every one of them was written by this listener. Presented to the model
+    // as "questions the user already answered", they read as evidence that
+    // refusing is what this user does — the loop this filter breaks.
+    const { listener, ollamaService } = withRelatedAnswers([
+      makeAnswer({ id: 'a-1', answer: 'I do not have this information recorded.' }),
+      makeAnswer({ id: 'a-2', answer: 'Toki Pona' }),
+    ]);
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    const related = relatedSectionOf(ollamaService);
+
+    expect(related).toContain('Toki Pona');
+    expect(related).not.toContain('I do not have this information recorded.');
+  });
+
+  it('says no related answers were found when refusals were all there was', async () => {
+    // The refusals must not merely be hidden from the block — with nothing real
+    // left, the prompt has to say so, or the model is told a section exists and
+    // then handed an empty one.
+    const { listener, ollamaService } = withRelatedAnswers([
+      makeAnswer({ id: 'a-1', answer: 'I do not have this information recorded.' }),
+      makeAnswer({ id: 'a-2', answer: "I don't have that information recorded." }),
+    ]);
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(relatedSectionOf(ollamaService)).toContain('No related prior answers were found');
   });
 });

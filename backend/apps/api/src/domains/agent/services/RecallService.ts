@@ -4,7 +4,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EntityResolutionService } from '@ci/domains/entity-resolution';
 import { GraphExpansionService } from '@ci/domains/graph';
-import { SearchService } from '@ci/domains/search-next';
+import { type IndexableEntity, SearchService } from '@ci/domains/search-next';
 
 import type { RecallDto, RecallResult } from '../types';
 
@@ -36,6 +36,77 @@ const MESSAGE_DISTANCE_FLOOR: number | undefined = undefined;
 const SEED_MODE = 'boosted' as const;
 
 /**
+ * Cosine-similarity floor for the 'grounded' strategy's semantic channel.
+ *
+ * `semanticSearch`'s own default (0.5) is a "not obviously unrelated" bar, which
+ * is the right bar when the caller is a person scrolling results and the wrong
+ * one when the caller is a model being told these lines are EVIDENCE. Measured
+ * over the answer-inference question set on the reference corpus, 0.7 is where
+ * the two populations separate:
+ *
+ *   kept    "What's your favorite food?" 0.901 · "Where do you live?" 0.889
+ *           "…what languages are you using?" 0.810 · "What are you learning?" 0.822
+ *   dropped "Excellent!  Following." 0.652 · "Much more to follow." 0.600
+ *           "Yup. Following $$$$." 0.598
+ *
+ * The dropped rows are the whole semantic result for "What sports do you
+ * follow?" — every one of them a match on the word 'follow' and none of them
+ * about sport. A model handed those infers from noise; handed nothing, it says
+ * so, and the anchored channel (which returns real sporting-goods trips) carries
+ * the question instead.
+ */
+const GROUNDED_SIMILARITY_FLOOR = 0.7;
+
+/**
+ * How much deeper the 'grounded' strategy cuts its anchored channel than its
+ * semantic one.
+ *
+ * The two channels' precision decays at very different rates. The semantic
+ * channel is at its floor by rank 8 — rank 1 scores ~0.90 and rank 8 ~0.75, and
+ * one more rank is one step closer to the noise the floor exists to exclude. The
+ * anchored channel does not decay that way: every row in it carries the
+ * question's selective term by construction, so rank 20 is still on-topic.
+ * Measured, ranks 9–20 for "What is your favorite cuisine?": Haveli, Pailin
+ * Thai, Choya Japanese, Akbar, Ashoka, Tara's Himalayan — all restaurants; and
+ * for "What sports do you follow?": "There are a few sports bars around me",
+ * "Enjoying the weekend and watching sports", Nintendo Switch Sports, EA Sports.
+ *
+ * So the anchored channel is allowed a deeper cut, which is also what keeps the
+ * behavioural evidence broad enough to answer a question the conversational
+ * channel cannot: one restaurant trip is an anecdote, twelve are a preference.
+ * Depth costs nothing — {@link SearchService.searchAnchored}'s match set is
+ * capped at the anchor's document frequency, so rank 16 and rank 8 read the same
+ * rows.
+ *
+ * 2× rather than something smaller because the row that answers a question
+ * outright can sit well down the list: "Toki Pona: The Language You Can Learn in
+ * a Day" — the record behind this user's actual answer to "Which languages are
+ * you learning?" — is rank 14.
+ */
+const ANCHORED_DEPTH_MULTIPLIER = 2;
+
+export interface RecallOptions {
+  /**
+   * How the seed channel is built.
+   *
+   * - `seed-then-fallback` (default) — today's behaviour, unchanged: one
+   *   {@link SEED_MODE} search, falling back to semantic only when it is empty.
+   *   Tuned for entity-centric agent queries, where a keyword anchor is usually
+   *   present and recall beats precision.
+   * - `grounded` — precision-first, for callers that put the result in front of
+   *   a model AS EVIDENCE and need every line to be defensible: a
+   *   high-similarity semantic channel unioned with
+   *   {@link SearchService.searchAnchored}'s selectivity-gated lexical channel.
+   */
+  strategy?: 'seed-then-fallback' | 'grounded';
+  /**
+   * Entity types kept out of the seed channels, on top of the always-excluded
+   * 'message' (which has its own channel).
+   */
+  excludeTypes?: IndexableEntity[];
+}
+
+/**
  * L1 — per-turn keyword/semantic search against the knowledge graph.
  *
  * Runs SearchService in 'auto' mode (keyword for short queries, boosted for
@@ -58,7 +129,11 @@ export class RecallService {
     this.logger.setContext(RecallService.name);
   }
 
-  async recall(context: UserServiceContext, dto: RecallDto): Promise<RecallResult> {
+  async recall(
+    context: UserServiceContext,
+    dto: RecallDto,
+    options: RecallOptions = {},
+  ): Promise<RecallResult> {
     const maxResults = dto.maxResults ?? DEFAULT_MAX_RESULTS;
     const query = this.sanitizeQuery(dto.query);
 
@@ -67,27 +142,10 @@ export class RecallService {
     }
 
     try {
-      // 'boosted' (keyword match + embedding boost, OR-joined) is the most
-      // reliable seed finder for entity-centric KG queries — short or long.
-      // 'auto' routes 8+ word questions ("What does Jordan's brother do for
-      // work?") to pure semantic search, which frequently returns nothing and
-      // leaves graph expansion with no seed to expand from. Fall back to
-      // semantic only when boosted is empty (genuinely paraphrased queries).
-      let results = await this.searchService.search(context, {
-        query,
-        mode: SEED_MODE,
-        maxResults,
-        excludeTypes: ['message'],
-      });
-
-      if (results.length === 0) {
-        results = await this.searchService.search(context, {
-          query,
-          mode: 'semantic',
-          maxResults,
-          excludeTypes: ['message'],
-        });
-      }
+      const results =
+        options.strategy === 'grounded'
+          ? await this.groundedSeeds(context, dto.query, maxResults, options.excludeTypes)
+          : await this.seedThenFallback(context, query, maxResults, options.excludeTypes);
 
       if (results.length === 0) {
         return { block: '', resultCount: 0 };
@@ -97,6 +155,13 @@ export class RecallService {
 
       const lines: string[] = [];
       const includedIds = new Set<string>();
+
+      // Identical text from distinct rows is one piece of evidence, not six —
+      // six separate plays of "I Follow Rivers" or six different people asking
+      // "Where do you live?" spend the whole block saying one thing. Only the
+      // 'grounded' strategy collapses them: the existing callers' prompts are
+      // built around the seed count they get today.
+      const seenLines = options.strategy === 'grounded' ? new Set<string>() : null;
 
       // Preserve the original search-score ordering.
       for (const { type, id } of results) {
@@ -108,10 +173,13 @@ export class RecallService {
 
         const line = this.serializer.serialize(hit);
 
-        if (line) {
-          lines.push(line);
-          includedIds.add(id);
+        if (!line || seenLines?.has(line)) {
+          continue;
         }
+
+        lines.push(line);
+        includedIds.add(id);
+        seenLines?.add(line);
       }
 
       if (lines.length === 0) {
@@ -183,6 +251,114 @@ export class RecallService {
 
       return { block: '', resultCount: 0 };
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Seed strategies
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The original seed channel, unchanged.
+   *
+   * 'boosted' (keyword match + embedding boost, OR-joined) is the most reliable
+   * seed finder for entity-centric KG queries — short or long. 'auto' routes 8+
+   * word questions ("What does Jordan's brother do for work?") to pure semantic
+   * search, which frequently returns nothing and leaves graph expansion with no
+   * seed to expand from. Fall back to semantic only when boosted is empty
+   * (genuinely paraphrased queries).
+   */
+  private async seedThenFallback(
+    context: UserServiceContext,
+    query: string,
+    maxResults: number,
+    excludeTypes: IndexableEntity[] = [],
+  ) {
+    const exclude: IndexableEntity[] = ['message', ...excludeTypes];
+
+    const seeded = await this.searchService.search(context, {
+      query,
+      mode: SEED_MODE,
+      maxResults,
+      excludeTypes: exclude,
+    });
+
+    if (seeded.length > 0) {
+      return seeded;
+    }
+
+    return this.searchService.search(context, {
+      query,
+      mode: 'semantic',
+      maxResults,
+      excludeTypes: exclude,
+    });
+  }
+
+  /**
+   * Precision-first seeds for a caller that will label the result EVIDENCE.
+   *
+   * Two channels, unioned, each with its own budget of `maxResults`, because
+   * they answer different halves of a question about a person:
+   *
+   *   1. SEMANTIC, at {@link GROUNDED_SIMILARITY_FLOOR} rather than the looser
+   *      search default — what the user and others have SAID. This is the
+   *      channel that finds "Favorite food? Hard to choose… Mexican and Indian
+   *      cuisine is my usual go to."
+   *   2. ANCHORED LEXICAL — what the user has DONE. Records of behaviour rarely
+   *      paraphrase the question, so they sit below any useful semantic floor
+   *      (the restaurant trips answering "favorite cuisine" score 0.43–0.48);
+   *      they are reachable only by the word that makes the question specific.
+   *      {@link SearchService.searchAnchored} is what makes that word-match safe.
+   *
+   * The lexical channel goes FIRST. It is the higher-precision of the two by
+   * construction — every row carries a selective term — and on a question the
+   * semantic channel can only answer with other people's questions ("Where do
+   * you live?"), the behavioural rows are the only lines with an answer in them.
+   *
+   * If BOTH come back empty the caller gets nothing rather than a loosened
+   * retry: the floors are the point, and a question this corpus cannot support
+   * should read as unsupported.
+   */
+  private async groundedSeeds(
+    context: UserServiceContext,
+    rawQuery: string,
+    maxResults: number,
+    excludeTypes: IndexableEntity[] = [],
+  ) {
+    const exclude: IndexableEntity[] = ['message', ...excludeTypes];
+
+    const [anchored, semantic] = await Promise.all([
+      // The RAW question, not the sanitised one: `searchAnchored` needs the
+      // sentence both to pick lexemes from and to embed, and natural language
+      // embeds better than a punctuation-stripped bag of words.
+      this.searchService.searchAnchored(context, rawQuery, {
+        maxResults: Math.round(maxResults * ANCHORED_DEPTH_MULTIPLIER),
+        excludeTypes: exclude,
+      }),
+      this.searchService.search(context, {
+        query: rawQuery,
+        mode: 'semantic',
+        maxResults,
+        excludeTypes: exclude,
+        distanceThreshold: 1 - GROUNDED_SIMILARITY_FLOOR,
+      }),
+    ]);
+
+    const seen = new Set<string>();
+    const merged: typeof anchored = [];
+
+    for (const hit of [...anchored, ...semantic]) {
+      const key = `${hit.type}:${hit.id}`;
+
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      merged.push(hit);
+    }
+
+    return merged;
   }
 
   // ---------------------------------------------------------------------------

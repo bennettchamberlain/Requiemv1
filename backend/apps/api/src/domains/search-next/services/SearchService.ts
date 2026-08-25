@@ -60,9 +60,51 @@ export const SEMANTIC_DISTANCE_THRESHOLD = 0.5;
 /** Default LIMIT for `semanticSearch`, and therefore the k recall is measured at. */
 export const SEMANTIC_MAX_RESULTS = 25;
 
+/**
+ * Default ceiling on how many rows a lexeme may match and still be allowed to
+ * anchor {@link SearchService.searchAnchored}.
+ *
+ * Measured on the reference 907k-row corpus, over the questions the answer
+ * inference asks. Document frequency is what separates a word that NAMES
+ * something in the archive from a word the archive is simply full of:
+ *
+ *   cuisine 58 · favorite 426 · sports 265 · languages 267
+ *   speak 903 | follow 1,175 · learning 1,648 · food 2,022 · city 3,848 · live 8,302
+ *
+ * Everything left of the bar is a usable anchor; everything right of it is a
+ * lexical collision waiting to happen — "What city do you live in?" anchored on
+ * `city` returns Suffragette City and Midnight City, because in a corpus with
+ * 3,848 rows carrying the word, matching it says nothing. A question whose every
+ * term lands right of the bar gets NO lexical channel at all, which is the
+ * correct answer: there is no keyword in it worth searching on.
+ *
+ * The ceiling is absolute rather than a fraction of the corpus so it needs no
+ * `count(*)` over ci_search.vectors (which has no user_id index) to evaluate,
+ * and so the bounded count below is O(ceiling) instead of O(corpus). On a much
+ * smaller archive it is proportionally permissive, which is the right direction
+ * to be wrong in: with little indexed, recall matters more than precision.
+ */
+const ANCHOR_MAX_MATCHES = 1000;
+
 /** Everything {@link SearchService.buildSemanticSearchPlan} needs besides the vector. */
 export type SemanticSearchScope = {
   maxResults?: number;
+  includeTypes?: IndexableEntity[];
+  excludeTypes?: IndexableEntity[];
+  /**
+   * Cosine-distance floor, overriding {@link SEMANTIC_DISTANCE_THRESHOLD}.
+   * Smaller = stricter. Callers that need a tighter relevance bar than plain
+   * search (evidence retrieval, where a merely-word-adjacent row is worse than
+   * no row) pass one; everyone else inherits the default and is unaffected.
+   */
+  distanceThreshold?: number;
+};
+
+/** Options for {@link SearchService.searchAnchored}. */
+export type AnchoredSearchOptions = {
+  maxResults?: number;
+  /** See {@link ANCHOR_MAX_MATCHES}. */
+  maxAnchorMatches?: number;
   includeTypes?: IndexableEntity[];
   excludeTypes?: IndexableEntity[];
 };
@@ -95,6 +137,8 @@ type BaseSearchOptions = {
    */
   mode?: 'semantic' | 'keyword' | 'boosted' | 'hybrid' | 'auto';
   maxResults?: number;
+  /** Semantic modes only. See {@link SemanticSearchScope.distanceThreshold}. */
+  distanceThreshold?: number;
 };
 
 type SearchOptions =
@@ -340,6 +384,152 @@ export class SearchService {
     }));
   }
 
+  /**
+   * Lexical retrieval for a natural-language QUESTION, anchored on the one word
+   * in it that is actually selective against this user's corpus, and ordered by
+   * how close each match is to the question as a whole.
+   *
+   * ═══ WHY NOT `mode: 'boosted'` ═══
+   *
+   * `boostedKeywordSearch` OR-joins every term in the question and ranks by
+   * `ts_rank`, with the embedding only as a ≤1.5× multiplier. Both halves of
+   * that fail on a question:
+   *
+   *   1. OR with nothing that has to be true. "What city do you live in?" becomes
+   *      `citi | live`, and a corpus holding 3,848 rows with 'city' and 8,302
+   *      with 'live' answers it with Suffragette City, Midnight City and
+   *      "Tessellate — Live from Spotify Sessions, New York City". Measured, on
+   *      the reference corpus: the entire top-8 was song titles.
+   *   2. `ts_rank` with no length normalisation rewards REPETITION. A 6,000-char
+   *      browser row whose AI-overview body says "follow" nine times outranks a
+   *      title that says "Sports" once at weight A — which is how "What sports do
+   *      you follow?" retrieved a git-login page, an Ubuntu upgrade guide and RC
+   *      monster-truck shopping.
+   *
+   * This method fixes both. It picks a single ANCHOR — the lowest-document-
+   * frequency lexeme in the question, and only if it clears
+   * {@link ANCHOR_MAX_MATCHES} — so a row must carry the word that makes the
+   * question specific ('cuisin', 'sport', 'languag') rather than the words the
+   * archive is full of. Then it orders the (by construction small) match set by
+   * embedding distance to the WHOLE question, so length bias cannot rank a
+   * body-text mention over a title.
+   *
+   * A question with no selective term returns NOTHING, deliberately. "What city
+   * do you live in?" has no keyword worth searching this corpus on, and an empty
+   * lexical channel is the honest result — the caller's semantic channel is what
+   * should answer it.
+   *
+   * Rows with no embedding sort last rather than being dropped: they still
+   * matched the anchor, so they are worse evidence than a scored row, not
+   * non-evidence.
+   */
+  async searchAnchored(
+    context: UserServiceContext,
+    question: string,
+    options: AnchoredSearchOptions = {},
+  ): Promise<EntityIdentifier<IndexableEntity>[]> {
+    const { maxResults = 25, maxAnchorMatches = ANCHOR_MAX_MATCHES } = options;
+    const limit = Math.max(1, Math.trunc(maxResults));
+
+    const anchor = await this.findAnchorLexeme(context, question, maxAnchorMatches);
+
+    if (!anchor) {
+      return [];
+    }
+
+    const vector = await this.embeddingGenerationService.generateEmbeddingString(question);
+    const typeFilter = this.buildTypeFilter(options, 4, 'v');
+
+    // `plainto_tsquery('simple', $2)` — 'simple', not 'english', because $2 is
+    // already a lexeme that Postgres's english stemmer produced ('cuisin', not
+    // 'cuisine'), and re-stemming a stem is not guaranteed to be a fixed point.
+    // Passing it as a BIND PARAMETER and letting Postgres build the tsquery is
+    // also what keeps this injection-free: no lexeme text is ever concatenated
+    // into the statement.
+    const sql = `
+      WITH q AS (
+        SELECT plainto_tsquery('simple', $2) AS tq
+      )
+      SELECT
+        v.entity_id,
+        v.entity_type
+      FROM
+        ci_search.vectors v
+        CROSS JOIN q
+      LEFT JOIN ci_search.embeddings e
+        ON e.entity_type = v.entity_type
+        AND e.entity_id = v.entity_id
+        AND e.user_id = $1
+        AND e.embedding IS NOT NULL
+      WHERE v.user_id = $1
+        AND q.tq <> ''::tsquery
+        AND v.vector @@ q.tq
+        ${typeFilter.clause}
+      ORDER BY (e.embedding <=> $3::vector) ASC NULLS LAST
+      LIMIT ${limit}
+    `;
+
+    const params: (string | string[])[] = [context.userId, anchor, vector];
+
+    if (typeFilter.param) {
+      params.push(typeFilter.param);
+    }
+
+    const rows: Omit<ScoredRowResult, 'score'>[] = await this.dataSource.query(sql, params);
+
+    return rows.map((row) => ({
+      id: row.entity_id,
+      type: row.entity_type as IndexableEntity,
+    }));
+  }
+
+  /**
+   * The rarest word in `question` that still clears `maxMatches`, or null.
+   *
+   * The count is BOUNDED — `LIMIT maxMatches` inside the subquery — so this
+   * costs O(maxMatches) index probes per term regardless of how many rows
+   * actually carry the word. A true `count(*)` for 'live' would walk 8,302 rows
+   * to learn something the first 1,001 already settled.
+   */
+  private async findAnchorLexeme(
+    context: UserServiceContext,
+    question: string,
+    maxMatches: number,
+  ): Promise<string | null> {
+    const cap = Math.max(1, Math.trunc(maxMatches)) + 1;
+
+    const rows: { lexeme: string; df: string }[] = await this.dataSource.query(
+      `
+        WITH lexemes AS (
+          SELECT DISTINCT l AS lexeme
+          FROM unnest(tsvector_to_array(to_tsvector('english', $2))) AS l
+        )
+        SELECT
+          lx.lexeme,
+          (
+            SELECT count(*) FROM (
+              SELECT 1
+              FROM ci_search.vectors v
+              WHERE v.user_id = $1
+                AND v.vector @@ plainto_tsquery('simple', lx.lexeme)
+              LIMIT $3
+            ) capped
+          ) AS df
+        FROM lexemes lx
+      `,
+      [context.userId, question, cap],
+    );
+
+    const eligible = rows
+      .map((row) => ({ lexeme: row.lexeme, df: Number(row.df) }))
+      // df === 0 means the word is nowhere in the corpus: anchoring on it
+      // returns nothing, so it is not an anchor, it is a dead end.
+      .filter((row) => row.df > 0 && row.df <= maxMatches)
+      .sort((a, b) => a.df - b.df);
+
+    return eligible[0]?.lexeme ?? null;
+  }
+
   private applyDefaultTypeExclusions(options: SearchOptions): SearchOptions {
     if (options.includeTypes || options.excludeTypes) {
       return options;
@@ -489,7 +679,7 @@ export class SearchService {
     vector: string,
     scope: SemanticSearchScope = {},
   ): SemanticSearchPlan {
-    const { maxResults = SEMANTIC_MAX_RESULTS } = scope;
+    const { maxResults = SEMANTIC_MAX_RESULTS, distanceThreshold = SEMANTIC_DISTANCE_THRESHOLD } = scope;
 
     const typeFilter = this.buildTypeFilter(scope, 4);
 
@@ -521,7 +711,7 @@ export class SearchService {
       LIMIT ${maxResults}
     `;
 
-    const params: (number | string | string[])[] = [userId, vector, SEMANTIC_DISTANCE_THRESHOLD];
+    const params: (number | string | string[])[] = [userId, vector, distanceThreshold];
 
     if (typeFilter.param) {
       params.push(typeFilter.param);

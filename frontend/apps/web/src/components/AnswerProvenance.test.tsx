@@ -34,6 +34,21 @@ describe('AnswerProvenance', () => {
     expect(badge).toHaveAttribute('title', expect.stringContaining('Two prior answers mention tea.'));
   });
 
+  it('carries a status dot beside the word, never instead of it', () => {
+    const { rerender } = render(<AnswerProvenance source="inferred" confidence={0.93} />);
+
+    // Amber says "a model wrote this, take a look"; the word says the same
+    // thing to anyone the colour never reaches.
+    const inferredBadge = screen.getByText('Inferred · high confidence');
+    expect(inferredBadge.querySelector('.bg-amber-500')).toBeInTheDocument();
+    expect(inferredBadge.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
+
+    rerender(<AnswerProvenance source="user_input" />);
+    const manualBadge = screen.getByText('Manual');
+    expect(manualBadge.querySelector('.bg-amber-500')).not.toBeInTheDocument();
+    expect(manualBadge.querySelector('span[aria-hidden="true"]')).toBeInTheDocument();
+  });
+
   it('still says Inferred when no confidence was ever recorded', () => {
     // Rows written before confidence capture, and the context-prompt writer,
     // leave the score NULL. Unknown must not read as certain.
