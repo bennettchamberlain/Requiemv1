@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
+import { RecallService } from '@ci/domains/agent';
 import { Events, type EventPayloads, OnEvent } from '@ci/domains/events';
 import { Answer, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import {
@@ -12,6 +13,7 @@ import {
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
   type InferredAnswer,
+  isNonAnswer,
   LLM_QUEUE,
   LLM_QUEUE_OPTIONS,
   OllamaService,
@@ -25,12 +27,24 @@ import { SearchService } from '@ci/domains/search-next';
 const RELATED_ANSWER_LIMIT = 10;
 const RECENT_ANSWER_FALLBACK = 5;
 
+/**
+ * Seed hits to pull from the user's OWN indexed memory for the question.
+ *
+ * Deliberately small. This is the whole corpus — communications, events,
+ * content, browser activity, people, files — so recall is not the constraint;
+ * prompt discipline is. RecallService unions one hop of query-relevant graph
+ * expansion on top of these seeds, so the block that reaches the model is
+ * usually a little longer than this number.
+ */
+const MEMORY_EVIDENCE_SEEDS = 8;
+
 @Injectable()
 export class AnswerInferenceListener {
   constructor(
     private readonly answerService: AnswerService,
     private readonly questionService: QuestionService,
     private readonly searchService: SearchService,
+    private readonly recallService: RecallService,
     private readonly userContextService: UserContextService,
     private readonly personalizationService: PersonalizationService,
     private readonly ollamaService: OllamaService,
@@ -65,6 +79,15 @@ export class AnswerInferenceListener {
 
     const resolvedAnswers = await this.findRelatedAnswers(serviceContext, question.text, payload.questionId);
 
+    // The actual RAG leg. findRelatedAnswers above only ever sees ci.answers —
+    // sixteen rows against the ~900k the user has indexed — which is why this
+    // listener used to answer "I'm not sure, I haven't really thought about it"
+    // to questions the corpus answers outright. RecallService is the retrieval
+    // pipeline the rest of the appliance already uses (boosted seed → semantic
+    // fallback → entity resolution → one hop of query-relevant graph expansion),
+    // so the evidence here is the same evidence the agent surfaces elsewhere.
+    const memoryEvidence = await this.findMemoryEvidence(serviceContext, question.text);
+
     let dossierBlock = '';
     try {
       const userCtx = await this.userContextService.getUserContextForLLM(ownerId);
@@ -81,9 +104,17 @@ export class AnswerInferenceListener {
     const systemParts = [
       `You impersonate the user and infer a first-person answer to a question they have not answered yet.
 
-Ground the answer in the dossier and related Q&A below, and score how well grounded it actually is.
+Ground the answer in the EVIDENCE, dossier and related Q&A below, and score how well grounded it actually is. INFER — the evidence is a record of what this person did, not a list of what they believe, so the answer will almost never be written out anywhere in it. Reading the pattern is the job.
 
 ${INFERRED_ANSWER_PROMPT_RULES}`,
+      // Evidence first: it is the only section drawn from the user's own records
+      // rather than from prose about them, so it should be what the model reads
+      // while the instructions are still in view.
+      memoryEvidence.block
+        ? `EVIDENCE — retrieved from the user's own imported memory. Each line carries its source label and, where the record has one, its date. These are things the user actually did: places they went, messages they sent, pages they opened, things they bought. Draw the answer OUT of them — do not require one of them to state it. Cite the lines you used in your rationale.
+
+${memoryEvidence.block}`
+        : 'No memory evidence was retrieved for this question — say so in the rationale and score accordingly.',
       dossierBlock ? `User dossier and graph context:\n${dossierBlock}` : null,
       resolvedAnswers.length > 0
         ? `Related questions the user already answered:\n\n${resolvedAnswers
@@ -91,7 +122,7 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
               (answer) => `Question: ${answer.question?.text ?? '(unspecified)'}\nAnswer: ${answer.answer}`,
             )
             .join('\n\n')}`
-        : 'No related prior answers were found — rely on the dossier only.',
+        : 'No related prior answers were found — rely on the evidence and dossier only.',
     ].filter((part): part is string => part != null);
 
     const ragThread = [
@@ -131,10 +162,33 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
       return;
     }
 
+    // A refusal is not an answer, whatever score came back with it. The floor
+    // below would already catch it — parseInferredAnswer clamps a non-answer to
+    // CONFIDENCE_NON_ANSWER — but the floor is owner-configurable and could be
+    // set low enough to let one through, and "I do not have this information
+    // recorded" written into ci.answers is indistinguishable at a glance from
+    // the user having said it. Refuse the write itself, not just the score.
+    if (isNonAnswer(inferred.answer)) {
+      this.logger.log('Inferred answer discarded — model returned a non-answer', {
+        userId: ownerId,
+        questionId: payload.questionId,
+        question: question.text,
+        memoryEvidence: memoryEvidence.resultCount,
+        response: inferred.answer,
+        rationale: inferred.rationale,
+      });
+
+      return;
+    }
+
     // The model's own score, capped by how much evidence the prompt actually
     // carried — a model handed nothing still claims certainty, and only this
     // side of the call knows how thin the context was.
-    const evidenceCeiling = estimateInferredAnswerConfidence(resolvedAnswers.length, dossierBlock.length > 0);
+    const evidenceCeiling = estimateInferredAnswerConfidence(
+      resolvedAnswers.length,
+      dossierBlock.length > 0,
+      memoryEvidence.resultCount,
+    );
     const confidence = calibrateInferredConfidence(inferred.confidence, evidenceCeiling);
 
     this.logger.log('Inferred answer to question', {
@@ -142,6 +196,7 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
       questionId: payload.questionId,
       question: question.text,
       relatedAnswers: resolvedAnswers.length,
+      memoryEvidence: memoryEvidence.resultCount,
       response: inferred.answer,
       modelConfidence: inferred.confidence,
       evidenceCeiling,
@@ -228,6 +283,63 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
     }
   }
 
+  /**
+   * Retrieve the question's supporting evidence from the user's own indexed
+   * memory, as a prompt-ready block plus the number of lines in it.
+   *
+   * RecallService already fails soft (it returns an empty block rather than
+   * throwing), so this wrapper exists for the case it cannot cover — the call
+   * itself blowing up — and to keep "no evidence" a normal, loggable outcome
+   * rather than a lost inference. An answer grounded only in the dossier is
+   * worse than one grounded in records, but it is still better than none.
+   *
+   * ═══ WHY 'grounded', AND WHY NOT 'answer' ═══
+   *
+   * The default recall strategy is tuned for an agent looking something up, where
+   * a near-miss costs a wasted line. Here a near-miss costs a FABRICATION, or —
+   * measured on the reference corpus — a refusal in spite of good evidence,
+   * because the good evidence arrived buried in lexical noise. What the default
+   * seed returned for these questions: song titles containing "City" for "What
+   * city do you live in?", RC monster-truck shopping for "What sports do you
+   * follow?", a 3D-digital-human article for "What languages do you speak?".
+   * `strategy: 'grounded'` is the precision-first path built for exactly this.
+   *
+   * 'answer' is excluded because this listener WRITES ci.answers, and every row
+   * in it was written by this listener. Retrieving them as "evidence retrieved
+   * from the user's own imported memory" hands the model its own previous output
+   * relabelled as a record of the user's life — and 20 of the 23 rows on the
+   * reference corpus say "I do not have this information recorded", which
+   * retrieved at cosine 0.891 as the third-best evidence for the very question
+   * that produced it. Prior answers still reach the prompt, through
+   * {@link findRelatedAnswers}, in the section that says what they are.
+   */
+  private async findMemoryEvidence(
+    context: UserServiceContext,
+    questionText: string,
+  ): Promise<{ block: string; resultCount: number }> {
+    try {
+      const recall = await this.recallService.recall(
+        context,
+        {
+          query: questionText,
+          maxResults: MEMORY_EVIDENCE_SEEDS,
+        },
+        { strategy: 'grounded', excludeTypes: ['answer'] },
+      );
+
+      if (recall.block.trim() && recall.resultCount > 0) {
+        return recall;
+      }
+    } catch (err) {
+      this.logger.warn('Answer inference memory recall failed', {
+        userId: context.userId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return { block: '', resultCount: 0 };
+  }
+
   private async findRelatedAnswers(
     context: UserServiceContext,
     questionText: string,
@@ -255,6 +367,15 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
             continue;
           }
 
+          // "I do not have this information recorded." is not a related answer,
+          // it is the absence of one. Rows written before isNonAnswer gated the
+          // write are still in ci.answers, and the prompt block presents them as
+          // "questions the user already answered" — so the model reads a wall of
+          // its own refusals as evidence that refusing is what this user does.
+          if (isNonAnswer(answer.answer)) {
+            continue;
+          }
+
           seen.add(answer.id);
           resolved.push(answer);
         }
@@ -271,7 +392,10 @@ ${INFERRED_ANSWER_PROMPT_RULES}`,
 
     const recent = await this.answerService.findAll(context);
     const sorted = [...recent]
-      .filter((answer) => answer.question?.id !== excludeQuestionId && !seen.has(answer.id))
+      .filter(
+        (answer) =>
+          answer.question?.id !== excludeQuestionId && !seen.has(answer.id) && !isNonAnswer(answer.answer),
+      )
       .sort((a, b) => new Date(b.answeredAt).getTime() - new Date(a.answeredAt).getTime())
       .slice(0, RECENT_ANSWER_FALLBACK);
 

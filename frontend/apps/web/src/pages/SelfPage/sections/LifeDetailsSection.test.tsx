@@ -21,15 +21,38 @@ interface FetchCallInit {
   body?: string;
 }
 
-// A curated yes_no question ("Do you volunteer for any organization?") and a
+type FetchCalls = Array<[string, FetchCallInit?]>;
+
+function callsWithMethod(method: string): FetchCalls {
+  return (fetchJson.mock.calls as FetchCalls).filter(([, init]) => init?.method === method);
+}
+
+// A curated yes_no question ("Do you volunteer for any organization?"), a
 // curated narrative open_ended one ("Which hobby have you kept the longest,
-// and for how many years?") — real ids from lifeDetails.ts, exercised end to
-// end so the test proves the real curated list renders each control type.
+// and for how many years?") and a curated multiple_choice one with options —
+// real ids from lifeDetails.ts, exercised end to end so the test proves the
+// real curated list renders each control type.
 const VOLUNTEER_ID = 'e9afce2b-acb7-4a73-a1c0-3394add95b52';
 const HOBBY_ID = '8ac610c9-27aa-4505-b79f-bc89c4f50dca';
 const BLOOD_TYPE_ID = 'e87d2be3-28f3-4916-ab12-fda1931c2479';
+const MORNING_PERSON_ID = 'bf834f6c-0b59-4fab-8960-503e1b94694a';
 
-function catalogueEntry(id: string, text: string, answerText: string | null = null) {
+/** The row's own DOM subtree — both grid cells — for scoping a query. */
+function rowFor(questionId: string): HTMLElement {
+  const row = document.querySelector<HTMLElement>(`[data-question-id="${questionId}"]`);
+  if (!row) {
+    throw new Error(`no row rendered for question ${questionId}`);
+  }
+
+  return row;
+}
+
+function catalogueEntry(
+  id: string,
+  text: string,
+  answerText: string | null = null,
+  answerOverrides: { source?: string; confidence?: number | null; rationale?: string | null } = {},
+) {
   return {
     id,
     text,
@@ -54,6 +77,7 @@ function catalogueEntry(id: string, text: string, answerText: string | null = nu
           confidence: null,
           rationale: null,
           answeredAt: '2026-01-01T00:00:00.000Z',
+          ...answerOverrides,
         }
       : null,
   };
@@ -78,14 +102,22 @@ afterEach(() => {
 });
 
 describe('LifeDetailsSection', () => {
-  it('fetches every curated id in a single call and renders an answered row compactly', async () => {
+  it('fetches every curated id in a single call and renders the answer in full', async () => {
+    // A long answer, because the bug this replaced rendered the row as one
+    // truncated line with the question and answer run together.
+    const long =
+      'O negative, which I only found out when I tried to donate blood in 2019 and they told me at the desk.';
     fetchJson.mockResolvedValue(
-      cataloguePage([catalogueEntry(BLOOD_TYPE_ID, 'What is your blood type?', 'O negative')]),
+      cataloguePage([catalogueEntry(BLOOD_TYPE_ID, 'What is your blood type?', long)]),
     );
 
     render(<LifeDetailsSection />);
 
-    expect(await screen.findByText(/O negative/)).toBeInTheDocument();
+    expect(await screen.findByText(long)).toBeInTheDocument();
+
+    // Question and answer are separate cells, not one run-together sentence.
+    const row = rowFor(BLOOD_TYPE_ID);
+    expect(within(row).getByText('What is your blood type?')).not.toContainElement(screen.getByText(long));
 
     expect(fetchJson).toHaveBeenCalledTimes(1);
     const [url] = fetchJson.mock.calls[0] as [string];
@@ -102,20 +134,26 @@ describe('LifeDetailsSection', () => {
 
     render(<LifeDetailsSection />);
 
-    const row = (await screen.findByText('What is your blood type?')).closest('div')!;
-    const input = within(row).getByPlaceholderText('Answer…');
+    await screen.findByText('What is your blood type?');
+    // Located by `rowFor`, not `.closest('div')`: the question and its answer
+    // are now sibling grid cells, so there is no single ancestor <div> wrapping
+    // just this row.
+    const input = within(rowFor(BLOOD_TYPE_ID)).getByPlaceholderText('Answer…');
     fireEvent.change(input, { target: { value: 'O negative' } });
 
+    // Kept from the row-layout tests: the input fills its cell rather than
+    // sitting at a fixed 20rem.
     expect(input).toHaveClass('w-full');
     expect(input).not.toHaveClass('w-80');
 
     await waitFor(
       () => {
-        const postCall = (fetchJson.mock.calls as Array<[string, FetchCallInit?]>).find(
-          ([, init]) => init?.method === 'POST',
-        );
+        const [postCall] = callsWithMethod('POST');
         expect(postCall).toBeDefined();
-        expect(JSON.parse(postCall![1]!.body!)).toEqual({ text: 'O negative', question: { id: BLOOD_TYPE_ID } });
+        expect(JSON.parse(postCall![1]!.body!)).toEqual({
+          text: 'O negative',
+          question: { id: BLOOD_TYPE_ID },
+        });
       },
       { timeout: 3000 },
     );
@@ -128,7 +166,8 @@ describe('LifeDetailsSection', () => {
 
     // Scoped to this question's own row — "Answer…" repeats across the many
     // other curated questions on the page.
-    const row = (await screen.findByText('Do you volunteer for any organization?')).closest('div')!;
+    await screen.findByText('Do you volunteer for any organization?');
+    const row = rowFor(VOLUNTEER_ID);
     const yesButton = within(row).getByRole('radio', { name: 'Yes' });
     expect(within(row).getByRole('radio', { name: 'No' })).toBeInTheDocument();
     expect(within(row).queryByPlaceholderText('Answer…')).not.toBeInTheDocument();
@@ -136,9 +175,7 @@ describe('LifeDetailsSection', () => {
     fireEvent.click(yesButton);
 
     await waitFor(() => {
-      const postCall = (fetchJson.mock.calls as Array<[string, FetchCallInit?]>).find(
-        ([, init]) => init?.method === 'POST',
-      );
+      const [postCall] = callsWithMethod('POST');
       expect(postCall).toBeDefined();
       expect(postCall?.[0]).toBe('/api/answers');
       expect(JSON.parse(postCall![1]!.body!)).toEqual({ text: 'Yes', question: { id: VOLUNTEER_ID } });
@@ -155,18 +192,14 @@ describe('LifeDetailsSection', () => {
 
     // Scoped to this question's own row — the "Your answer…" Textarea
     // repeats across the other narrative-tier questions.
-    const row = (
-      await screen.findByText('Which hobby have you kept the longest, and for how many years?')
-    ).closest('div')!;
-    fireEvent.change(within(row).getByPlaceholderText('Your answer…'), {
+    await screen.findByText('Which hobby have you kept the longest, and for how many years?');
+    fireEvent.change(within(rowFor(HOBBY_ID)).getByPlaceholderText('Your answer…'), {
       target: { value: 'Photography, going on 8 years now.' },
     });
 
     await waitFor(
       () => {
-        const postCall = (fetchJson.mock.calls as Array<[string, FetchCallInit?]>).find(
-          ([, init]) => init?.method === 'POST',
-        );
+        const [postCall] = callsWithMethod('POST');
         expect(postCall).toBeDefined();
         expect(JSON.parse(postCall![1]!.body!)).toEqual({
           text: 'Photography, going on 8 years now.',
@@ -184,5 +217,108 @@ describe('LifeDetailsSection', () => {
 
     expect(await screen.findByText("Couldn't load this section.")).toBeInTheDocument();
     expect(screen.queryByText('What is your blood type?')).not.toBeInTheDocument();
+  });
+
+  it('labels an inferred answer with its confidence band, and a hand-written one as Manual', async () => {
+    fetchJson.mockResolvedValue(
+      cataloguePage([
+        catalogueEntry(BLOOD_TYPE_ID, 'What is your blood type?', 'O negative', {
+          source: 'inferred',
+          confidence: 0.72,
+          rationale: 'A 2019 donation reminder names it.',
+        }),
+        catalogueEntry(
+          HOBBY_ID,
+          'Which hobby have you kept the longest, and for how many years?',
+          'Photography',
+        ),
+      ]),
+    );
+
+    render(<LifeDetailsSection />);
+
+    const badge = await screen.findByText('Inferred · good confidence');
+    expect(rowFor(BLOOD_TYPE_ID)).toContainElement(badge);
+    expect(badge).toHaveAttribute('title', expect.stringContaining('0.72'));
+    expect(within(rowFor(HOBBY_ID)).getByText('Manual')).toBeInTheDocument();
+  });
+
+  it('edits an existing answer with a PATCH carrying text alone, so the API re-stamps it as user-authored', async () => {
+    fetchJson.mockResolvedValue(
+      cataloguePage([
+        catalogueEntry(BLOOD_TYPE_ID, 'What is your blood type?', 'AB positive, I think?', {
+          source: 'inferred',
+          confidence: 0.41,
+        }),
+      ]),
+    );
+
+    render(<LifeDetailsSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit your answer to/ }));
+
+    const editor = within(rowFor(BLOOD_TYPE_ID)).getByRole('textbox');
+    expect(editor).toHaveValue('AB positive, I think?');
+
+    fireEvent.change(editor, { target: { value: 'O negative' } });
+    fireEvent.click(within(rowFor(BLOOD_TYPE_ID)).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      const [patchCall] = callsWithMethod('PATCH');
+      expect(patchCall).toBeDefined();
+      expect(patchCall?.[0]).toBe(`/api/answers/${BLOOD_TYPE_ID}-answer`);
+      // Text ONLY: naming a source here would opt out of the API's
+      // user-correction flip, leaving the row badged as a machine inference.
+      expect(JSON.parse(patchCall![1]!.body!)).toEqual({ text: 'O negative' });
+    });
+
+    // Never a second POST — editing must not pile up a duplicate answer row.
+    expect(callsWithMethod('POST')).toHaveLength(0);
+  });
+
+  it('cancels an edit back to the answer without writing anything', async () => {
+    fetchJson.mockResolvedValue(
+      cataloguePage([catalogueEntry(BLOOD_TYPE_ID, 'What is your blood type?', 'O negative')]),
+    );
+
+    render(<LifeDetailsSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit your answer to/ }));
+
+    const row = rowFor(BLOOD_TYPE_ID);
+    fireEvent.change(within(row).getByRole('textbox'), { target: { value: 'something else entirely' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Cancel' }));
+
+    expect(within(rowFor(BLOOD_TYPE_ID)).getByText('O negative')).toBeInTheDocument();
+    expect(callsWithMethod('PATCH')).toHaveLength(0);
+    expect(callsWithMethod('POST')).toHaveLength(0);
+  });
+
+  it('re-picks an answered options question from its buttons rather than a text box', async () => {
+    fetchJson.mockResolvedValue(
+      cataloguePage([
+        catalogueEntry(
+          MORNING_PERSON_ID,
+          'Are you a morning person or a night owl?',
+          "I'm not sure, I haven't really thought about it.",
+          { source: 'inferred', confidence: 0.44 },
+        ),
+      ]),
+    );
+
+    render(<LifeDetailsSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit your answer to/ }));
+
+    const row = rowFor(MORNING_PERSON_ID);
+    expect(within(row).queryByRole('textbox')).not.toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('radio', { name: 'Night owl' }));
+
+    await waitFor(() => {
+      const [patchCall] = callsWithMethod('PATCH');
+      expect(patchCall).toBeDefined();
+      expect(patchCall?.[0]).toBe(`/api/answers/${MORNING_PERSON_ID}-answer`);
+      expect(JSON.parse(patchCall![1]!.body!)).toEqual({ text: 'Night owl' });
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { type UserServiceContext } from '@ci/common/context';
+import config from '@ci/configuration';
 import { PersonService, UserContextService } from '@ci/domains/memory';
 
 import {
@@ -13,8 +14,12 @@ import {
 
 const DEFAULT_TRUST_MODE: TrustMode = 'balanced';
 
-/** Below this confidence, always ask the user before applying (all trust modes). */
-export const ALWAYS_REVIEW_BELOW_CONFIDENCE = 0.7;
+/**
+ * Below this confidence, always ask the user before applying (all trust
+ * modes) — env-configurable, see `config.reflection.alwaysReviewBelowConfidence`
+ * (`CI_REFLECTION_ALWAYS_REVIEW_BELOW_CONFIDENCE`).
+ */
+export const ALWAYS_REVIEW_BELOW_CONFIDENCE = config.reflection.alwaysReviewBelowConfidence;
 
 const GRAPH_CONNECTION_KINDS = new Set<PersonalizationActionKind>([
   'graph_edge',
@@ -111,7 +116,7 @@ export class PersonalizationService {
       case 'cautious':
         return {
           trustMode,
-          autoPromoteThreshold: 1,
+          autoPromoteThreshold: config.reflection.autoPromoteThresholdCautious,
           autoSchedule: false,
           requireReviewForUserInput: true,
           feedActionLimit: 50,
@@ -120,7 +125,7 @@ export class PersonalizationService {
       case 'hands_off':
         return {
           trustMode,
-          autoPromoteThreshold: 0.7,
+          autoPromoteThreshold: config.reflection.autoPromoteThresholdHandsOff,
           autoSchedule: true,
           requireReviewForUserInput: false,
           feedActionLimit: 10,
@@ -130,7 +135,7 @@ export class PersonalizationService {
       default:
         return {
           trustMode,
-          autoPromoteThreshold: 0.85,
+          autoPromoteThreshold: config.reflection.autoPromoteThresholdBalanced,
           autoSchedule: false,
           requireReviewForUserInput: false,
           feedActionLimit: 25,

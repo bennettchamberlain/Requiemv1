@@ -614,6 +614,27 @@ export const ConfigSchema = z.object({
        * fabricated one costs the user's trust in every other answer on the page.
        */
       minAnswerConfidence: z.coerce.number().min(0).max(1).default(0.4),
+      /**
+       * Confidence at/above which an inference writes to `ci.answers` (or
+       * applies a graph/planning action) without a review step, per trust
+       * mode (see `PersonalizationService.profileForTrustMode`). Below it the
+       * action is held for review — see `PersonalizationService.decide`.
+       *
+       * Defaults match this repo's original hardcoded values. Set any of
+       * these to 0 to auto-apply everything that clears `minAnswerConfidence`
+       * above, which is useful for local testing but not recommended on a
+       * real appliance for the same reason `minAnswerConfidence` warns against
+       * 0: nothing then distinguishes a well-evidenced inference from a guess.
+       */
+      autoPromoteThresholdCautious: z.coerce.number().min(0).max(1).default(1),
+      autoPromoteThresholdBalanced: z.coerce.number().min(0).max(1).default(0.85),
+      autoPromoteThresholdHandsOff: z.coerce.number().min(0).max(1).default(0.7),
+      /**
+       * Below this, `PersonalizationService.decide` always returns 'review'
+       * regardless of trust mode or action kind — the floor beneath every
+       * `autoPromoteThreshold*` above.
+       */
+      alwaysReviewBelowConfidence: z.coerce.number().min(0).max(1).default(0.7),
     })
     .default({}),
   features: z.object({
