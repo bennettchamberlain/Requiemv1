@@ -7,13 +7,17 @@ import { LoggerService } from '@ci/common/logging';
 import { EventEntity } from '../entities/EventEntity';
 
 import {
+  ALL_DAY_METADATA_KEY,
   amountToMinorSql,
   CALENDAR_EVENT_TYPES,
+  currencySql,
   MEDIA_EVENT_TYPES,
   OUTGOING_EVENT_TYPES,
   PLACE_EVENT_TYPES,
-  SIGNED_TRANSACTION_TYPE,
+  SIGNED_EVENT_TYPES,
   SOCIAL_EVENT_TYPES,
+  SOCIAL_KIND_PREFIX,
+  SPAN_MINUTES,
   TIME_BUCKET_LABELS,
   resolveTimeMode,
   TRAVEL_EVENT_TYPES,
@@ -56,6 +60,58 @@ export interface LifeStatsRange {
   from: Date | null;
   to: Date | null;
 }
+
+/**
+ * The receipts this stats query counts, and the event rows it must therefore
+ * NOT count again. Shared verbatim by {@link LifeStatsService.spendByMerchant}
+ * and its duplicate detector so the detector can never drift from the query it
+ * is checking. Both bind the same $1 user / $2 from / $3 to / $4 outgoing
+ * types / $5 signed types.
+ */
+const COUNTED_RECEIPTS_CTE = `counted_receipts AS (
+         SELECT r.event_id,
+                r.source_system,
+                r.source_id,
+                r.purchased_at,
+                COALESCE(NULLIF(r.merchant_name, ''), 'Unknown merchant') AS merchant,
+                r.total_minor,
+                COALESCE(NULLIF(r.currency, ''), 'USD') AS currency
+           FROM ci.receipts r
+          WHERE r.user_id = $1
+            AND r.total_minor IS NOT NULL
+            AND r.total_minor > 0
+            AND ($2::timestamptz IS NULL OR r.purchased_at >= $2)
+            AND ($3::timestamptz IS NULL OR r.purchased_at < $3)
+       )`;
+
+/** Event rows that are outgoing spend and are not already claimed by a receipt. */
+const UNCLAIMED_SPEND_EVENTS_WHERE = `e.user_id = $1
+              AND e.is_deleted = false
+              AND ($2::timestamptz IS NULL OR e.start_time >= $2)
+              AND ($3::timestamptz IS NULL OR e.start_time < $3)
+              AND ${amountToMinorSql('e.metadata')} IS NOT NULL
+              AND ${amountToMinorSql('e.metadata')} <> 0
+              AND (
+                    e.event_type = ANY($4::text[])
+                    OR (
+                      e.event_type = ANY($5::text[])
+                      AND ${amountToMinorSql('e.metadata')} < 0
+                    )
+                  )
+              -- Same purchase, already counted from its receipt: explicit link…
+              AND NOT EXISTS (
+                    SELECT 1
+                      FROM counted_receipts cr
+                     WHERE cr.event_id = e.event_id
+                  )
+              -- …or the shared importer natural key.
+              AND NOT EXISTS (
+                    SELECT 1
+                      FROM counted_receipts cr
+                     WHERE e.source_id IS NOT NULL
+                       AND cr.source_id = e.source_id
+                       AND COALESCE(cr.source_system, '') = COALESCE(e.source_system, '')
+                  )`;
 
 /**
  * Server-side aggregates for the stats page life charts. Thing totals stay
@@ -137,8 +193,7 @@ export class LifeStatsService {
    * THE RECEIPT LEG WINS, and the event is dropped when a receipt already
    * claims it:
    *   - `receipts.total_minor` is a typed bigint in minor units with its own
-   *     `currency` column; the event leg regex-scrapes a display string and
-   *     hardcodes `'USD'`.
+   *     `currency` column, where the event leg regex-scrapes a display string.
    *   - Where both legs carry an amount they agree exactly (494/494 Amazon
    *     orders), so preferring receipts loses nothing.
    *   - Receipts cover purchases the event leg cannot parse — 11 more Amazon
@@ -149,35 +204,43 @@ export class LifeStatsService {
    * The anti-join sees only receipts THIS query counts — same user, same range,
    * usable total — so a purchase whose receipt falls outside the window is still
    * counted from its event rather than silently dropped by both legs.
+   *
+   * ONE LEG DOES ALL THE WORK, AND IT IS NOT THE OBVIOUS ONE. `ci.receipts`
+   * has an `event_id` column and nothing writes it: it is NULL on all 635 rows
+   * of the reference corpus, so every one of the 505 suppressions runs through
+   * the `source_id` anti-join alone. That leaves the whole guarantee resting on
+   * importers agreeing to share a natural key, and an importer that does not
+   * would double-count in silence — which is the bug this method exists to fix,
+   * arriving through a different door. The `event_id` leg stays (it is free and
+   * becomes load-bearing the moment an extractor populates it), and
+   * {@link LifeStatsService.warnOnUnclaimedReceiptTwins} watches for the silence.
+   *
+   * GROUPED BY (merchant, currency), not merchant. `total_minor` is a bare
+   * integer of minor units; grouping on merchant alone and taking
+   * `MAX(currency)` summed €-cents into $-cents whenever one merchant billed in
+   * two currencies, then labelled the total with whichever code sorted highest.
+   * Two currencies now make two rows, each honestly labelled.
    */
   async spendByMerchant(userId: string, range: LifeStatsRange): Promise<SpendRow[]> {
-    const rows: Array<{
-      merchant: string;
-      n: string;
-      total_minor: string;
-      avg_minor: string;
-      currency: string | null;
-      sources: string[] | null;
-    }> = await this.eventRepository.manager.query(
-      `WITH counted_receipts AS (
-         SELECT r.event_id,
-                r.source_system,
-                r.source_id,
-                COALESCE(NULLIF(r.merchant_name, ''), 'Unknown merchant') AS merchant,
-                r.total_minor,
-                COALESCE(r.currency, 'USD') AS currency
-           FROM ci.receipts r
-          WHERE r.user_id = $1
-            AND r.total_minor IS NOT NULL
-            AND r.total_minor > 0
-            AND ($2::timestamptz IS NULL OR r.purchased_at >= $2)
-            AND ($3::timestamptz IS NULL OR r.purchased_at < $3)
-       )
+    // The duplicate check rides along instead of after: it re-runs the event
+    // leg, and overlapping the two round-trips keeps that off the page's clock.
+    const [rows] = await Promise.all([
+      this.eventRepository.manager.query<
+        Array<{
+          merchant: string;
+          n: string;
+          total_minor: string;
+          avg_minor: string;
+          currency: string | null;
+          sources: string[] | null;
+        }>
+      >(
+        `WITH ${COUNTED_RECEIPTS_CTE}
        SELECT merchant,
+              currency,
               COUNT(*)::text AS n,
               SUM(amount_minor)::text AS total_minor,
               ROUND(AVG(amount_minor))::text AS avg_minor,
-              COALESCE(MAX(currency), 'USD') AS currency,
               ARRAY_AGG(DISTINCT source_system) AS sources
          FROM (
            SELECT COALESCE(
@@ -189,36 +252,10 @@ export class LifeStatsService {
                   ) AS merchant,
                   ABS(${amountToMinorSql('e.metadata')}) AS amount_minor,
                   COALESCE(e.source_system, 'unknown') AS source_system,
-                  'USD' AS currency
+                  ${currencySql('e.metadata')} AS currency
              FROM ci.events e
              LEFT JOIN ci.entities b ON b.entity_id = e.event_id
-            WHERE e.user_id = $1
-              AND e.is_deleted = false
-              AND ($2::timestamptz IS NULL OR e.start_time >= $2)
-              AND ($3::timestamptz IS NULL OR e.start_time < $3)
-              AND ${amountToMinorSql('e.metadata')} IS NOT NULL
-              AND ${amountToMinorSql('e.metadata')} <> 0
-              AND (
-                    e.event_type = ANY($4::text[])
-                    OR (
-                      e.event_type = $5
-                      AND ${amountToMinorSql('e.metadata')} < 0
-                    )
-                  )
-              -- Same purchase, already counted from its receipt: explicit link…
-              AND NOT EXISTS (
-                    SELECT 1
-                      FROM counted_receipts cr
-                     WHERE cr.event_id = e.event_id
-                  )
-              -- …or the shared importer natural key.
-              AND NOT EXISTS (
-                    SELECT 1
-                      FROM counted_receipts cr
-                     WHERE e.source_id IS NOT NULL
-                       AND cr.source_id = e.source_id
-                       AND COALESCE(cr.source_system, '') = COALESCE(e.source_system, '')
-                  )
+            WHERE ${UNCLAIMED_SPEND_EVENTS_WHERE}
            UNION ALL
            SELECT cr.merchant,
                   cr.total_minor AS amount_minor,
@@ -226,11 +263,13 @@ export class LifeStatsService {
                   cr.currency
              FROM counted_receipts cr
          ) spend
-        GROUP BY merchant
+        GROUP BY merchant, currency
         ORDER BY SUM(amount_minor) DESC
         LIMIT $6`,
-      [userId, ...this.bounds(range), [...OUTGOING_EVENT_TYPES], SIGNED_TRANSACTION_TYPE, SPEND_LIMIT],
-    );
+        [userId, ...this.bounds(range), [...OUTGOING_EVENT_TYPES], [...SIGNED_EVENT_TYPES], SPEND_LIMIT],
+      ),
+      this.warnOnUnclaimedReceiptTwins(userId, range),
+    ]);
 
     return rows.map((row) => ({
       merchant: row.merchant,
@@ -242,23 +281,119 @@ export class LifeStatsService {
     }));
   }
 
+  /**
+   * Watch the anti-join that carries the whole no-double-count guarantee.
+   *
+   * The suppression above only fires when a receipt and its event share
+   * `event_id` or (`source_system`, `source_id`). Nothing writes `event_id`, so
+   * in practice it is the natural key or nothing — and "nothing" is invisible:
+   * the merchant's total simply doubles and the chart still looks plausible.
+   *
+   * So look for the shape that failure makes. A receipt this query counted, and
+   * an event this query ALSO counted, from the same source system, for the same
+   * amount, on the same day, is a purchase reported twice under two keys. That
+   * is not proof — a genuine pair of identical same-day purchases from one
+   * source would match too — which is exactly why it warns rather than
+   * suppressing. A recurring warning means an importer needs a shared natural
+   * key (or `receipts.event_id` populated), not that the numbers should be
+   * quietly adjusted.
+   *
+   * Fails open, like {@link resolveIsSelf}: a diagnostic that cannot run must
+   * never take the stats page down with it.
+   */
+  private async warnOnUnclaimedReceiptTwins(userId: string, range: LifeStatsRange): Promise<void> {
+    try {
+      const rows: Array<{ source_system: string; n: string; total_minor: string }> =
+        await this.eventRepository.manager.query(
+          `WITH ${COUNTED_RECEIPTS_CTE},
+                unclaimed AS (
+                  SELECT COALESCE(e.source_system, 'unknown') AS source_system,
+                         ABS(${amountToMinorSql('e.metadata')}) AS amount_minor,
+                         e.start_time::date AS day
+                    FROM ci.events e
+                   WHERE ${UNCLAIMED_SPEND_EVENTS_WHERE}
+                )
+           SELECT u.source_system,
+                  COUNT(*)::text AS n,
+                  SUM(u.amount_minor)::text AS total_minor
+             FROM unclaimed u
+             JOIN counted_receipts cr
+               ON COALESCE(cr.source_system, 'unknown') = u.source_system
+              AND cr.total_minor = u.amount_minor
+              AND cr.purchased_at::date = u.day
+            GROUP BY 1
+            ORDER BY COUNT(*) DESC`,
+          [userId, ...this.bounds(range), [...OUTGOING_EVENT_TYPES], [...SIGNED_EVENT_TYPES]],
+        );
+
+      if (rows.length === 0) {
+        return;
+      }
+
+      const detail = rows
+        .map((row) => `${row.source_system}: ${row.n} event(s), ${row.total_minor} minor units`)
+        .join('; ');
+
+      this.logger.warn(
+        `spendByMerchant: receipt/event pairs share no natural key, so spend may be double-counted — ${detail}. ` +
+          'Fix the importer to write ci.receipts.event_id or a shared source_system+source_id.',
+      );
+    } catch (error) {
+      this.logger.warn(`spendByMerchant: duplicate-spend check could not run: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Where time goes, in hours — with all-day and multi-day entries kept OUT of
+   * the hours and reported beside them in days.
+   *
+   * A duration is not automatically time spent. A calendar writes an all-day
+   * entry as 1,440 minutes and a multi-day one as a multiple of that, but
+   * neither is a claim about attendance: a 21-day "Time Off" block is one
+   * decision, not 504 waking hours. Summing them anyway is what produced "Most
+   * hours: Calendar (14,526h)" — 246 span rows contributing 670,170 of 871,556
+   * calendar minutes, 77% of the bar, and enough to beat every bucket that
+   * measures real hours.
+   *
+   * SO: hours mean hours, days mean days, and both are reported.
+   *  - A span contributes NO minutes, but is still counted in `count`, so no
+   *    row vanishes from the event total.
+   *  - Its days land in `spanDays`, so 246 multi-day commitments are still
+   *    visible as 464 days rather than deleted.
+   *
+   * The alternatives were worse. Capping a span at some hours-per-day invents a
+   * number the calendar never wrote — a 16-day block "capped" at 8h/day is
+   * still a fabricated 128 hours. Dropping spans outright loses the fact that
+   * the commitments exist. Only reporting both keeps every true statement and
+   * makes none up.
+   *
+   * A span is recognised by the importer's own `metadata.isAllDay` first, and
+   * failing that by a duration of a full day or more — which is what catches
+   * multi-day conferences written as timed events (19 rows here) and the
+   * 64-hour "workout" that is simply a bad row.
+   */
   async timeBreakdown(userId: string, range: LifeStatsRange): Promise<TimeSeries> {
     const eventRows: Array<{
       bucket: TimeBucket;
       event_count: string;
       timed_count: string;
       minutes: string;
+      span_count: string;
+      span_days: string;
     }> = await this.eventRepository.manager.query(
-      `SELECT CASE
+      `WITH considered AS (
+         SELECT CASE
                   WHEN e.event_type = ANY($4::text[]) THEN 'calendar'
                   WHEN e.event_type = ANY($5::text[]) THEN 'media'
                   WHEN e.event_type = ANY($6::text[]) THEN 'places'
                   WHEN e.event_type = ANY($7::text[]) THEN 'travel'
                   ELSE 'other'
                 END AS bucket,
-                COUNT(*)::text AS event_count,
-                COUNT(e.duration_minutes)::text AS timed_count,
-                COALESCE(SUM(e.duration_minutes), 0)::text AS minutes
+                e.duration_minutes AS minutes,
+                (
+                  COALESCE(e.metadata->>'${ALL_DAY_METADATA_KEY}', '') = 'true'
+                  OR COALESCE(e.duration_minutes, 0) >= $9
+                ) AS is_span
            FROM ci.events e
           WHERE e.user_id = $1
             AND e.is_deleted = false
@@ -268,7 +403,18 @@ export class LifeStatsService {
                   e.event_type = ANY($8::text[])
                   OR e.duration_minutes IS NOT NULL
                 )
-          GROUP BY 1`,
+       )
+       SELECT bucket,
+              COUNT(*)::text AS event_count,
+              COUNT(minutes) FILTER (WHERE NOT is_span)::text AS timed_count,
+              COALESCE(SUM(minutes) FILTER (WHERE NOT is_span), 0)::text AS minutes,
+              COUNT(*) FILTER (WHERE is_span)::text AS span_count,
+              COALESCE(
+                SUM(GREATEST(1, ROUND(COALESCE(minutes, 0)::numeric / $9))) FILTER (WHERE is_span),
+                0
+              )::text AS span_days
+         FROM considered
+        GROUP BY 1`,
       [
         userId,
         ...this.bounds(range),
@@ -277,42 +423,60 @@ export class LifeStatsService {
         [...PLACE_EVENT_TYPES],
         [...TRAVEL_EVENT_TYPES],
         [...TIMED_EVENT_TYPES],
+        SPAN_MINUTES,
       ],
     );
 
-    const callRows: Array<{ seconds: string; n: string }> = await this.eventRepository.manager.query(
-      `SELECT COALESCE(SUM(c.duration_seconds), 0)::text AS seconds,
-              COUNT(*)::text AS n
-         FROM ci.communications c
-        WHERE c.user_id = $1
-          AND c.duration_seconds IS NOT NULL
-          AND c.duration_seconds > 0
-          AND ($2::timestamptz IS NULL OR c.time >= $2)
-          AND ($3::timestamptz IS NULL OR c.time < $3)`,
-      [userId, ...this.bounds(range)],
-    );
+    // Calls get the same rule. Nothing in the reference corpus comes close to a
+    // day-long call, which is exactly why a row that claims one is a bad row
+    // rather than a marathon, and must not be allowed to own the chart.
+    const callRows: Array<{ seconds: string; n: string; span_n: string; span_days: string }> =
+      await this.eventRepository.manager.query(
+        `SELECT COALESCE(SUM(c.duration_seconds) FILTER (WHERE c.duration_seconds < $4 * 60), 0)::text AS seconds,
+                COUNT(*) FILTER (WHERE c.duration_seconds < $4 * 60)::text AS n,
+                COUNT(*) FILTER (WHERE c.duration_seconds >= $4 * 60)::text AS span_n,
+                COALESCE(
+                  SUM(GREATEST(1, ROUND(c.duration_seconds::numeric / 60 / $4)))
+                    FILTER (WHERE c.duration_seconds >= $4 * 60),
+                  0
+                )::text AS span_days
+           FROM ci.communications c
+          WHERE c.user_id = $1
+            AND c.duration_seconds IS NOT NULL
+            AND c.duration_seconds > 0
+            AND ($2::timestamptz IS NULL OR c.time >= $2)
+            AND ($3::timestamptz IS NULL OR c.time < $3)`,
+        [userId, ...this.bounds(range), SPAN_MINUTES],
+      );
 
     const rows: TimeRow[] = eventRows.map((row) => ({
       bucket: row.bucket,
       label: TIME_BUCKET_LABELS[row.bucket],
       minutes: Number(row.minutes),
       count: Number(row.event_count),
+      spanCount: Number(row.span_count),
+      spanDays: Number(row.span_days),
     }));
 
     const callSeconds = Number(callRows[0]?.seconds ?? 0);
     const callCount = Number(callRows[0]?.n ?? 0);
-    if (callCount > 0) {
+    const callSpanCount = Number(callRows[0]?.span_n ?? 0);
+    const callSpanDays = Number(callRows[0]?.span_days ?? 0);
+    if (callCount > 0 || callSpanCount > 0) {
       rows.push({
         bucket: 'calls',
         label: TIME_BUCKET_LABELS.calls,
         minutes: Math.round(callSeconds / 60),
-        count: callCount,
+        count: callCount + callSpanCount,
+        spanCount: callSpanCount,
+        spanDays: callSpanDays,
       });
     }
 
     const consideredEvents = rows.reduce((sum, row) => sum + row.count, 0);
-    const timedEvents =
-      eventRows.reduce((sum, row) => sum + Number(row.timed_count), 0) + (callCount > 0 ? callCount : 0);
+    // Coverage asks "how much of this window is measured in hours", so a span
+    // is not a timed event here — it has a duration, just not an hours one.
+    const timedEvents = eventRows.reduce((sum, row) => sum + Number(row.timed_count), 0) + callCount;
     const totalMinutes = rows.reduce((sum, row) => sum + row.minutes, 0);
     const mode = resolveTimeMode(timedEvents, consideredEvents, totalMinutes);
     const ordered = rows.sort((a, b) => (mode === 'hours' ? b.minutes - a.minutes : b.count - a.count));
@@ -505,6 +669,27 @@ export class LifeStatsService {
     }
   }
 
+  /**
+   * Social activity over time, by platform.
+   *
+   * WHAT WENT WRONG: the allowlist was `like | post | comment`, and the
+   * importers that actually ship write `event_type = 'social'`. On the
+   * reference corpus that matched 22 rows — every one an Instagram like — while
+   * 2,737 LinkedIn / X / Facebook / Reddit rows sat unread beside them. The
+   * chart drew four points and read as "you are barely online".
+   *
+   * TWO LEGS, because neither alone is enough:
+   *  1. {@link SOCIAL_EVENT_TYPES} — `social` for the current importers, plus
+   *     the per-action types older and third-party ones emit.
+   *  2. `metadata.kind LIKE 'social.%'` — the importer's own namespace, which
+   *     catches social rows filed under an unrelated event_type. It is the only
+   *     reason `social.bookmark` (`event_type = 'interaction'`) is counted, and
+   *     it will pick up the next `social.*` action without a code change.
+   *
+   * `kind` is reported as the namespace suffix (`social.like` -> `like`), not
+   * the event_type: a series that is social by construction learns nothing from
+   * 2,737 rows all labelled "social".
+   */
   async socialOverTime(
     userId: string,
     range: LifeStatsRange,
@@ -514,12 +699,19 @@ export class LifeStatsService {
       await this.eventRepository.manager.query(
         `SELECT date_trunc($4, e.start_time) AS bucket,
                 COALESCE(NULLIF(e.source_system, ''), 'unknown') AS source_system,
-                e.event_type AS kind,
+                COALESCE(
+                  NULLIF(regexp_replace(e.metadata->>'kind', '^${SOCIAL_KIND_PREFIX}', ''), ''),
+                  e.event_type
+                ) AS kind,
                 COUNT(*)::text AS n
            FROM ci.events e
           WHERE e.user_id = $1
             AND e.is_deleted = false
-            AND e.event_type = ANY($5::text[])
+            AND (
+                  e.event_type = ANY($5::text[])
+                  OR e.metadata->>'kind' LIKE '${SOCIAL_KIND_PREFIX}%'
+                )
+            AND e.start_time IS NOT NULL
             AND ($2::timestamptz IS NULL OR e.start_time >= $2)
             AND ($3::timestamptz IS NULL OR e.start_time < $3)
           GROUP BY 1, 2, 3
