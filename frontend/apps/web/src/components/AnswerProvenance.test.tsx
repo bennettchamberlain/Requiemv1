@@ -3,68 +3,89 @@ import { describe, expect, it } from 'vitest';
 
 import { AnswerProvenance, confidenceLabel, isInferred } from './AnswerProvenance';
 
+/** The dot is aria-hidden, so it is found by class rather than by role. */
+function dot(): HTMLElement {
+  const el = document.querySelector<HTMLElement>('span.rounded-full');
+  if (!el) {
+    throw new Error('no provenance dot rendered');
+  }
+
+  return el;
+}
+
 describe('AnswerProvenance', () => {
-  it('reads as Manual for a user-authored answer', () => {
+  it('shows a green dot and no visible word for a user-authored answer', () => {
     render(<AnswerProvenance source="user_input" />);
 
-    expect(screen.getByText('Manual')).toBeInTheDocument();
+    expect(dot()).toHaveClass('bg-emerald-500');
+    // The badge face is the dot alone — the words moved to the accessible name.
+    expect(screen.getByText('Answered by you')).toHaveClass('sr-only');
+    expect(screen.getByTitle('You wrote this answer')).toBeInTheDocument();
   });
 
-  it('reads as Manual for imported and observed answers — only "inferred" is a guess', () => {
-    const { rerender } = render(<AnswerProvenance source="imported" />);
-    expect(screen.getByText('Manual')).toBeInTheDocument();
-
-    rerender(<AnswerProvenance source="observed" />);
-    expect(screen.getByText('Manual')).toBeInTheDocument();
+  it('treats imported and observed answers as manual — only "inferred" is a guess', () => {
+    for (const source of ['imported', 'observed', null, undefined]) {
+      const { unmount } = render(<AnswerProvenance source={source} />);
+      expect(dot()).toHaveClass('bg-emerald-500');
+      unmount();
+    }
   });
 
-  it('names an inferred answer AND its confidence band in words, not colour alone', () => {
-    render(<AnswerProvenance source="inferred" confidence={0.93} />);
+  it('shows an amber dot and the bare confidence band for an inferred answer', () => {
+    render(<AnswerProvenance source="inferred" confidence={0.82} />);
 
-    expect(screen.getByText('Inferred · high confidence')).toBeInTheDocument();
+    expect(dot()).toHaveClass('bg-amber-500');
+    // The band word alone on the visible face — "confidence" is implicit
+    // there, and spelled out only in the sr-only text and the tooltip.
+    const visible = screen.getByText('good');
+    expect(visible).toHaveAttribute('aria-hidden', 'true');
+    expect(visible).toHaveTextContent(/^good$/);
   });
 
-  it('keeps the exact number and the rationale in the tooltip rather than on the card', () => {
+  it('shows a red dot and no band when the question has no answer yet', () => {
+    render(<AnswerProvenance answered={false} />);
+
+    expect(dot()).toHaveClass('bg-red-500');
+    expect(screen.getByText('No answer yet')).toHaveClass('sr-only');
+  });
+
+  it('keeps the distinction in words for a screen reader, not colour alone', () => {
+    // The compact face is a dot plus one ambiguous word ("good"), so the full
+    // meaning has to survive in the accessible name.
+    render(<AnswerProvenance source="inferred" confidence={0.95} />);
+
+    expect(screen.getByText('Inferred, high confidence')).toHaveClass('sr-only');
+  });
+
+  it('keeps the exact number and the rationale in the tooltip rather than on the badge', () => {
     render(
-      <AnswerProvenance source="inferred" confidence={0.55} rationale="Two prior answers mention tea." />,
+      <AnswerProvenance source="inferred" confidence={0.42} rationale="Three restaurant visits." />,
     );
 
-    const badge = screen.getByText('Inferred · low confidence');
-    expect(badge).toHaveAttribute('title', expect.stringContaining('0.55'));
-    expect(badge).toHaveAttribute('title', expect.stringContaining('Two prior answers mention tea.'));
+    const badge = screen.getByText('low').closest('[title]');
+    expect(badge).toHaveAttribute('title', expect.stringContaining('0.42'));
+    expect(badge).toHaveAttribute('title', expect.stringContaining('Three restaurant visits.'));
+    expect(screen.queryByText('0.42')).not.toBeInTheDocument();
   });
 
-  it('carries a status dot beside the word, never instead of it', () => {
-    const { rerender } = render(<AnswerProvenance source="inferred" confidence={0.93} />);
-
-    // Amber says "a model wrote this, take a look"; the word says the same
-    // thing to anyone the colour never reaches.
-    const inferredBadge = screen.getByText('Inferred · high confidence');
-    expect(inferredBadge.querySelector('.bg-amber-500')).toBeInTheDocument();
-    expect(inferredBadge.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
-
-    rerender(<AnswerProvenance source="user_input" />);
-    const manualBadge = screen.getByText('Manual');
-    expect(manualBadge.querySelector('.bg-amber-500')).not.toBeInTheDocument();
-    expect(manualBadge.querySelector('span[aria-hidden="true"]')).toBeInTheDocument();
-  });
-
-  it('still says Inferred when no confidence was ever recorded', () => {
-    // Rows written before confidence capture, and the context-prompt writer,
-    // leave the score NULL. Unknown must not read as certain.
+  it('still marks an inferred answer when no confidence was ever recorded', () => {
     render(<AnswerProvenance source="inferred" confidence={null} />);
 
-    expect(screen.getByText('Inferred')).toBeInTheDocument();
+    expect(dot()).toHaveClass('bg-amber-500');
+    expect(screen.getByText('Inferred, confidence not recorded')).toHaveClass('sr-only');
   });
 });
 
 describe('confidenceLabel', () => {
   it('bands the score the same way the backend prompt describes it', () => {
-    expect(confidenceLabel(0.95)).toBe('high confidence');
-    expect(confidenceLabel(0.9)).toBe('high confidence');
-    expect(confidenceLabel(0.7)).toBe('good confidence');
-    expect(confidenceLabel(0.4)).toBe('low confidence');
-    expect(confidenceLabel(0.2)).toBe('very low confidence');
+    expect(confidenceLabel(1)).toBe('high');
+    expect(confidenceLabel(0.9)).toBe('high');
+    expect(confidenceLabel(0.89)).toBe('good');
+    expect(confidenceLabel(0.7)).toBe('good');
+    expect(confidenceLabel(0.69)).toBe('low');
+    expect(confidenceLabel(0.4)).toBe('low');
+    expect(confidenceLabel(0.39)).toBe('very low');
+    expect(confidenceLabel(0)).toBe('very low');
   });
 });
 

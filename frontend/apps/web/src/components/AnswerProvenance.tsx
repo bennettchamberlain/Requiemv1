@@ -1,4 +1,4 @@
-import { Badge, cn } from '@ci/shadcn';
+import { cn } from '@ci/shadcn';
 
 interface Props {
   /** `answerSource` as returned by the API. Undefined on rows that predate it. */
@@ -7,6 +7,11 @@ interface Props {
   confidence?: number | null;
   /** `answerRationale` — the model's one line on the evidence it used. */
   rationale?: string | null;
+  /**
+   * False when the question has no answer at all. Defaults to true so the many
+   * call sites that only ever render alongside an answer stay unchanged.
+   */
+  answered?: boolean;
   className?: string;
 }
 
@@ -20,45 +25,49 @@ interface Props {
  *   0.4-0.7  inferred from indirect or partial evidence
  *   < 0.4    a guess — the backend refuses to write these, so this band is
  *            reachable only for rows written before the floor existed
+ *
+ * The bare band word is what the badge shows; "confidence" is left implicit
+ * there and spelled out in the tooltip and the screen-reader text.
  */
 export function confidenceLabel(confidence: number): string {
   if (confidence >= 0.9) {
-    return 'high confidence';
+    return 'high';
   }
 
   if (confidence >= 0.7) {
-    return 'good confidence';
+    return 'good';
   }
 
   if (confidence >= 0.4) {
-    return 'low confidence';
+    return 'low';
   }
 
-  return 'very low confidence';
+  return 'very low';
 }
 
 export function isInferred(source?: string | null): boolean {
   return source === 'inferred';
 }
 
+/** Who supplied an answer, or that nobody has. */
+type ProvenanceState = 'unanswered' | 'inferred' | 'manual';
+
 /**
- * The status light. Amber for an inference — the appliance guessed this and
- * would like you to look at it — and a flat neutral for anything the person or
- * their own data supplied, which needs no attention.
+ * The status light, on a traffic-light mapping the user asked for: red nothing
+ * here yet, amber the appliance guessed, green a person confirmed it.
  *
- * Amber, not red: an inferred answer is unverified, not wrong. The colours are
- * the same functional (rather than intent) mapping `ConnectionModeIndicator`
- * uses, and are deliberately *not* graded by confidence band — the dot answers
- * "did a model write this?", and the words beside it answer "how sure was it?".
- * The dot is `aria-hidden` because it carries nothing the label does not.
+ * The dot is NOT graded by confidence band — it answers "where did this come
+ * from?", and the word beside it answers "how sure was it?". `aria-hidden`
+ * because the badge's screen-reader text already says both in words.
  */
-function ProvenanceDot({ inferred }: { inferred: boolean }) {
+function ProvenanceDot({ state }: { state: ProvenanceState }) {
   return (
     <span
-      className={cn(
-        'inline-block size-1.5 shrink-0 rounded-full',
-        inferred ? 'bg-amber-500' : 'bg-muted-foreground/50',
-      )}
+      className={cn('inline-block size-1.5 shrink-0 rounded-full', {
+        'bg-red-500': state === 'unanswered',
+        'bg-amber-500': state === 'inferred',
+        'bg-emerald-500': state === 'manual',
+      })}
       aria-hidden="true"
     />
   );
@@ -67,33 +76,46 @@ function ProvenanceDot({ inferred }: { inferred: boolean }) {
 /**
  * Says who wrote an answer, and — when the appliance wrote it — how sure it was.
  *
- * The point of the component is that "the system guessed this on your behalf"
- * and "you said this" must never look alike. Before it, every row on the
- * Questions page rendered the same "Manual" badge regardless of provenance,
- * because the page inferred authorship from the presence of a `user` relation —
- * which every row has, since answers are user-scoped.
+ * Deliberately terse: a dot and, for an inference, one band word ("high",
+ * "very low"). A manual answer and an empty row carry the dot alone, because
+ * naming them adds nothing a reader scanning a column of answers does not
+ * already see. The exact score and the model's rationale live in the `title`
+ * tooltip so an answer can still be audited.
  *
- * Deliberately quiet: a word, not a percentage bar. The exact number lives in
- * the `title` tooltip alongside the model's rationale, so a reader who wants to
- * audit an answer can, and one who is just reading their reflections is not
- * asked to interpret two decimal places. Colour is never the only signal — the
- * badge always carries the words "Inferred" or "Manual" — so the distinction
- * survives greyscale and colour-blindness.
+ * No badge chrome: a bordered pill around a 6px dot reads as a control rather
+ * than a status, and one per unanswered row turned the column into a grid of
+ * empty outlines. It is also ~40 fewer components on this page, which the
+ * route-level render budget noticed.
+ *
+ * Colour is not the only signal, but it IS the only *visible* one at this size:
+ * every badge carries visually-hidden text ("Inferred, high confidence") so the
+ * distinction survives greyscale, colour-blindness and a screen reader. That is
+ * the trade for the compact form — the words moved from the badge face into the
+ * accessible name and the tooltip rather than being dropped.
  */
-export function AnswerProvenance({ source, confidence, rationale, className }: Props) {
-  const inferred = isInferred(source);
+export function AnswerProvenance({ source, confidence, rationale, answered = true, className }: Props) {
+  const base = 'inline-flex items-center gap-1.5 text-xs text-muted-foreground';
 
-  if (!inferred) {
+  if (!answered) {
     return (
-      <Badge variant="secondary" className={cn('gap-1.5 text-xs', className)} title="You wrote this answer">
-        <ProvenanceDot inferred={false} />
-        Manual
-      </Badge>
+      <span className={cn(base, className)} title="No answer yet">
+        <ProvenanceDot state="unanswered" />
+        <span className="sr-only">No answer yet</span>
+      </span>
+    );
+  }
+
+  if (!isInferred(source)) {
+    return (
+      <span className={cn(base, className)} title="You wrote this answer">
+        <ProvenanceDot state="manual" />
+        <span className="sr-only">Answered by you</span>
+      </span>
     );
   }
 
   const scored = typeof confidence === 'number' && Number.isFinite(confidence);
-  const label = scored ? `Inferred · ${confidenceLabel(confidence)}` : 'Inferred';
+  const band = scored ? confidenceLabel(confidence) : null;
 
   const title = [
     scored
@@ -106,9 +128,12 @@ export function AnswerProvenance({ source, confidence, rationale, className }: P
     .join('\n');
 
   return (
-    <Badge variant="outline" className={cn('gap-1.5 text-xs', className)} title={title}>
-      <ProvenanceDot inferred />
-      {label}
-    </Badge>
+    <span className={cn(base, className)} title={title}>
+      <ProvenanceDot state="inferred" />
+      <span className="sr-only">
+        {band ? `Inferred, ${band} confidence` : 'Inferred, confidence not recorded'}
+      </span>
+      {band && <span aria-hidden="true">{band}</span>}
+    </span>
   );
 }

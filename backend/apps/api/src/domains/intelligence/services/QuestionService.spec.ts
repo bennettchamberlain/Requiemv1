@@ -777,6 +777,18 @@ describe('QuestionService asks the functional questions first', () => {
     expect(sql).toMatch(/ELSE 3\s*\n?\s*END/);
   });
 
+  it('never offers a hand-entry question to the inference job', async () => {
+    const service = makeService();
+    const [sql] = await capturedSql(service, () => service.findUnansweredByUserId());
+
+    // Body measurements, medical facts and household config cannot be grounded
+    // in an email/browser/receipt corpus. Without this filter the model returns
+    // a refusal, and the NOT EXISTS guard below then counts that refusal as an
+    // answer — permanently occupying the slot. See migration
+    // 20260825074747_add_question_evidence_class.
+    expect(sql).toMatch(/q\.evidence_class\s*<>\s*'hand_entry'/);
+  });
+
   it('sorts by tier before it sorts by age', async () => {
     const service = makeService();
     const [sql] = await capturedSql(service, () => service.findUnansweredByUserId());

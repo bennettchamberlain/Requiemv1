@@ -516,15 +516,24 @@ export function LifeDetailsSection() {
                             onEdit={() => startEdit(question.key)}
                           />
                         ) : (
-                          <AnswerPrompt
-                            question={question}
-                            draft={drafts[question.key] ?? ''}
-                            busy={busy}
-                            onDraftChange={(value) =>
-                              setDrafts((prev) => ({ ...prev, [question.key]: value }))
-                            }
-                            onAnswer={(text) => void handleAnswer(question.key, row.id, text)}
-                          />
+                          // Same two-part shape as AnswerDisplay so the status
+                          // dots form one column down the section whether a row
+                          // is answered or not.
+                          <div className="flex flex-col items-start gap-1 sm:flex-row sm:gap-2">
+                            <div className="w-full min-w-0 sm:flex-1">
+                              <AnswerPrompt
+                                question={question}
+                                draft={drafts[question.key] ?? ''}
+                                busy={busy}
+                                onDraftChange={(value) =>
+                                  setDrafts((prev) => ({ ...prev, [question.key]: value }))
+                                }
+                                onAnswer={(text) => void handleAnswer(question.key, row.id, text)}
+                              />
+                            </div>
+
+                            <AnswerProvenance answered={false} className="shrink-0 sm:mt-px" />
+                          </div>
                         )}
                       </Row>
                     );
