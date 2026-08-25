@@ -271,7 +271,7 @@ struct CompanionShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         // Ask/Search/Remember stay parameter-free in phrases: Siri cannot interpolate a
         // free-text String. Plan intents use AppEntity (`PlanTaskEntity`) and AppEnum
-        // (`PlanWhen`) so phrases can name the task and the day.
+        // (`PlanWhen`); each phrase may name only one of those besides applicationName.
         AppShortcut(
             intent: AskCompanionIntent(),
             phrases: [
@@ -317,8 +317,10 @@ struct CompanionShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: ReschedulePlanTaskIntent(),
             phrases: [
+                // One interpolated token besides applicationName — Xcode 17
+                // rejects `$task` and `$when` in the same utterance.
                 "Reschedule \(\.$task) in \(.applicationName)",
-                "Move \(\.$task) to \(\.$when) in \(.applicationName)",
+                "Reschedule a plan task \(\.$when) in \(.applicationName)",
             ],
             shortTitle: "Reschedule",
             systemImageName: "calendar.badge.clock"
