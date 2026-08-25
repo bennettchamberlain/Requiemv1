@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
-import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
+import { EmptyState, GlobalUID, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
 import { Badge, Button, Card, Input } from '@ci/shadcn';
 import { LocateFixed, MapPin, Plus } from '@ci/shadcn/icons';
 import { Tooltip, useMap as useLeafletMap } from 'react-leaflet';
@@ -14,6 +14,7 @@ import { Map } from '@/components/Map';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { AddPlaceModal } from '@/components/modals/AddItemModal';
 import { PLACE_KIND_LABELS } from '@/components/PlaceForm';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
 import type { GetKnownPlacesQuery, GetPlacesQuery } from '@/graphql/graphql';
 import { useModalControls } from '@/hooks';
@@ -456,6 +457,7 @@ function KnownPlacesCard({
 export function PlacesPage() {
   usePageTitle('Places - Companion Intelligence');
 
+  const { isMobile } = useDeviceLayout();
   const navigate = useNavigate();
   const { placeId } = useParams<{ placeId: string }>();
   const [searchQuery, setSearchQuery] = useState('');
@@ -553,16 +555,19 @@ export function PlacesPage() {
     content = <EmptyState message={`Couldn't load places: ${error.message}`} />;
   } else {
     content = (
+      <PullToRefresh onRefresh={refetch}>
       <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
         <MemoryHubShell
           actions={
-            <Button size="sm" onClick={openAddPlace}>
-              <Plus className="h-4 w-4" />
-              New place
-            </Button>
+            isMobile ? undefined : (
+              <Button size="sm" onClick={openAddPlace}>
+                <Plus className="h-4 w-4" />
+                New place
+              </Button>
+            )
           }
         >
-          <div className="flex flex-col gap-4 px-4 pb-4">
+          <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
             <div className="flex items-center gap-2">
               <Input
                 placeholder="Search places by name..."
@@ -635,6 +640,7 @@ export function PlacesPage() {
           </div>
         </MemoryHubShell>
       </PageContent>
+      </PullToRefresh>
     );
   }
 

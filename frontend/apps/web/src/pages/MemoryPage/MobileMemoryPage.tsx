@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { FileChunkModal } from '@/components/modals/FileChunkModal/FileChunkModal';
+import { PullToRefresh } from '@/components/PullToRefresh';
 
 import { useEntityService } from '../MemoryPage/useEntityService';
 
@@ -20,7 +21,7 @@ import { MobileMapView } from './MapView';
 import { StoryTimelineView } from './StoryTimelineView';
 
 export default function MobileMemoryPage() {
-  const [{ activeEntity }, { setActiveEntity }] = useEntityService();
+  const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
 
   // Document chunks open in their own dialog; every other entity uses the
   // details sheet (EntityDetails has no FileChunkType branch).
@@ -74,6 +75,7 @@ export default function MobileMemoryPage() {
 
   return (
     <>
+      <PullToRefresh onRefresh={refetch}>
       <PageContent className="gap-2 p-0">
         <div className="flex min-h-0 flex-1 flex-col gap-2 px-2">
           {/* Search and Add live in MobileTopBar — same unified header as
@@ -125,6 +127,7 @@ export default function MobileMemoryPage() {
           </MemoryHubShell>
         </div>
       </PageContent>
+      </PullToRefresh>
       {activeSheetEntity && (
         <Sheet open={detailsOpen} onOpenChange={toggleactiveEntity}>
           <EntityDetails entity={activeSheetEntity} />
