@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
 import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
 
@@ -106,9 +107,10 @@ export function ContentLibraryPage() {
   const handleChanged = useCallback(() => void refetch(), [refetch]);
 
   return (
+    <PullToRefresh onRefresh={refetch}>
     <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
       <MemoryHubShell>
-        <div className="flex flex-col gap-4 px-4 pb-4">
+        <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
           {loading && contents.length === 0 ? (
             <p className="text-sm text-muted-foreground">Loading content…</p>
           ) : (
@@ -127,5 +129,6 @@ export function ContentLibraryPage() {
         </div>
       </MemoryHubShell>
     </PageContent>
+    </PullToRefresh>
   );
 }

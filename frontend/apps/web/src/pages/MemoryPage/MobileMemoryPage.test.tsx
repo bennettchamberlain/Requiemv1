@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 vi.mock('../MemoryPage/useEntityService', () => ({
-  useEntityService: () => [{ activeEntity: null }, { setActiveEntity: vi.fn() }],
+  useEntityService: () => [{ activeEntity: null, refetch: vi.fn() }, { setActiveEntity: vi.fn() }],
 }));
 
 vi.mock('@/components/MemoryHub', () => ({

@@ -39,7 +39,7 @@ describe('MemoryHubNav', () => {
     expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
   });
 
-  it('hides the section menu on mobile and keeps page actions', async () => {
+  it('hides the section menu and page actions on mobile', async () => {
     stubViewport(true);
 
     renderWithProviders(<MemoryHubNav actions={<button type="button">New thing</button>} />, {
@@ -50,6 +50,6 @@ describe('MemoryHubNav', () => {
       expect(screen.queryByRole('navigation', { name: 'Memory sections' })).not.toBeInTheDocument();
     });
     expect(screen.queryByRole('link', { name: 'Things' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'New thing' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New thing' })).not.toBeInTheDocument();
   });
 });

@@ -9,6 +9,7 @@ import { ChatAbout } from '@/components/ChatWithAgent';
 import { ReceiptIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
 import type { GetReceiptsQuery, ReceiptExtractionState } from '@/graphql/graphql';
 import { namedChatContext } from '@/lib/agentChat';
@@ -130,7 +131,7 @@ export function ReceiptsPage() {
     [extractionState, merchantQuery],
   );
 
-  const { data, previousData, loading, error, fetchMore } = useQuery(GET_RECEIPTS, {
+  const { data, previousData, loading, error, fetchMore, refetch } = useQuery(GET_RECEIPTS, {
     variables,
     notifyOnNetworkStatusChange: true,
   });
@@ -211,9 +212,10 @@ export function ReceiptsPage() {
     content = <EmptyState message={`Couldn't load receipts: ${error.message}`} />;
   } else {
     content = (
+      <PullToRefresh onRefresh={refetch}>
       <PageContent ref={scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
-          <div className="flex flex-col gap-4 px-4 pb-4">
+          <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
             <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Input
                 placeholder="Search by merchant..."
@@ -287,6 +289,7 @@ export function ReceiptsPage() {
           </div>
         </MemoryHubShell>
       </PageContent>
+      </PullToRefresh>
     );
   }
 
