@@ -10,8 +10,10 @@ import type { CatalogueAnswer, CataloguePage } from '@/pages/PromptsPage/catalog
 
 import {
   curatedCatalogueUrl,
+  indexCuratedAnswers,
   LIFE_DETAIL_THEMES,
   type CuratedAnswers,
+  type CuratedCatalogueRow,
   type CuratedQuestion,
 } from './lifeDetails';
 
@@ -25,7 +27,7 @@ const ANSWER_MAX_LENGTH = 5000;
  * Both cells of one row, side by side in the theme's shared grid.
  *
  * The wrapper is `display: contents` on purpose: the row needs to exist in the
- * DOM (to key, to scope a test, to carry `data-question-id`) but must NOT be a
+ * DOM (to key, to scope a test, to carry `data-question-key`) but must NOT be a
  * grid item, or every row would become its own two-column grid and the columns
  * would re-measure per row instead of lining up down the section. With
  * `contents` the two cells are promoted into the theme grid, so one column
@@ -39,7 +41,7 @@ const ANSWER_MAX_LENGTH = 5000;
  */
 function Row({ question, children }: { question: CuratedQuestion; children: React.ReactNode }) {
   return (
-    <div className="contents" data-question-id={question.id}>
+    <div className="contents" data-question-key={question.key}>
       <div className="pt-2.5 text-sm text-muted-foreground sm:border-b sm:border-border/60 sm:pb-2.5 sm:pr-6">
         {question.text}
       </div>
@@ -309,14 +311,14 @@ function AnswerPrompt({
 /** A fixed, hand-curated slice of your Reflections answers — see lifeDetails.ts for why these questions and not a generic category browse. */
 export function LifeDetailsSection() {
   const [{ authToken }] = useAuth();
-  const [answers, setAnswers] = useState<CuratedAnswers>({});
+  const [rows, setRows] = useState<CuratedAnswers>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
   // One row edits at a time, so the in-flight text and its error are single
   // values rather than another map keyed by question.
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -334,12 +336,20 @@ export function LifeDetailsSection() {
       const page = await fetchJson<CataloguePage>(curatedCatalogueUrl(), {
         headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
       });
-      const byId: CuratedAnswers = {};
-      for (const entry of page?.data ?? []) {
-        byId[entry.id] = entry.answer;
+      const { byKey, missingKeys } = indexCuratedAnswers(page?.data ?? []);
+
+      // Loud, because the silent version of this is what shipped: a curated
+      // key the catalogue has never heard of used to render a perfectly
+      // normal-looking input that threw away whatever was typed into it.
+      // Rows without a question to answer are not rendered at all (below).
+      if (missingKeys.length > 0) {
+        console.error(
+          `Life details: ${missingKeys.length} curated question(s) are missing from the catalogue — ` +
+            `their seed migration has not run, or they were added to lifeDetails.ts without one: ${missingKeys.join(', ')}`,
+        );
       }
 
-      setAnswers(byId);
+      setRows(byKey);
       setError(false);
     } catch {
       setError(true);
@@ -352,36 +362,39 @@ export function LifeDetailsSection() {
     void loadAnswers();
   }, [loadAnswers]);
 
-  const handleAnswer = async (questionId: string, text: string) => {
+  // Keyed by `question_key` throughout; the question_id in the body is the one
+  // the catalogue just reported, never one this list carries. Ids are minted
+  // per appliance, which is the whole reason the curated list is keyed by slug.
+  const handleAnswer = async (questionKey: string, questionId: string, text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || submittingId) {
+    if (!trimmed || submittingKey) {
       return;
     }
 
-    setSubmittingId(questionId);
+    setSubmittingKey(questionKey);
     try {
       await fetchJson('/api/answers', {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ text: trimmed, question: { id: questionId } }),
       });
-      setDrafts((prev) => ({ ...prev, [questionId]: '' }));
+      setDrafts((prev) => ({ ...prev, [questionKey]: '' }));
       await loadAnswers();
     } catch {
       // Draft (if any) survives on failure so the user doesn't retype it.
     } finally {
-      setSubmittingId(null);
+      setSubmittingKey(null);
     }
   };
 
-  const startEdit = (questionId: string) => {
-    setEditingId(questionId);
-    setEditDraft(answers[questionId]?.text ?? '');
+  const startEdit = (questionKey: string) => {
+    setEditingKey(questionKey);
+    setEditDraft(rows[questionKey]?.answer?.text ?? '');
     setEditError(null);
   };
 
   const cancelEdit = () => {
-    setEditingId(null);
+    setEditingKey(null);
     setEditDraft('');
     setEditError(null);
   };
@@ -399,9 +412,9 @@ export function LifeDetailsSection() {
    * badge and a score for text the model no longer wrote. Passing any explicit
    * source here would opt out of that, so we deliberately send `text` alone.
    */
-  const handleUpdate = async (questionId: string, text: string) => {
+  const handleUpdate = async (questionKey: string, row: CuratedCatalogueRow, text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || submittingId) {
+    if (!trimmed || submittingKey) {
       return;
     }
 
@@ -411,17 +424,17 @@ export function LifeDetailsSection() {
       return;
     }
 
-    const answerId = answers[questionId]?.id;
+    const answerId = row.answer?.id;
     if (!answerId) {
       // No row to rewrite (the refetch that would have supplied the id failed,
       // or the answer was removed elsewhere) — write a fresh one instead.
       cancelEdit();
-      await handleAnswer(questionId, trimmed);
+      await handleAnswer(questionKey, row.id, trimmed);
 
       return;
     }
 
-    setSubmittingId(questionId);
+    setSubmittingKey(questionKey);
     setEditError(null);
     try {
       await fetchJson(`/api/answers/${answerId}`, {
@@ -429,14 +442,14 @@ export function LifeDetailsSection() {
         headers: authHeaders(),
         body: JSON.stringify({ text: trimmed }),
       });
-      setEditingId(null);
+      setEditingKey(null);
       setEditDraft('');
       await loadAnswers();
     } catch {
       // Stay in the editor with the typed text intact so it can be retried.
       setEditError("Couldn't save that. Try again.");
     } finally {
-      setSubmittingId(null);
+      setSubmittingKey(null);
     }
   };
 
@@ -452,56 +465,74 @@ export function LifeDetailsSection() {
 
       {!loading && !error && (
         <div className="flex flex-col gap-4">
-          {LIFE_DETAIL_THEMES.map((theme) => (
-            <div key={theme.key}>
-              <h3 className="mb-1 text-sm font-medium">{theme.label}</h3>
+          {LIFE_DETAIL_THEMES.map((theme) => {
+            // Only questions the catalogue actually returned a row for. An
+            // input with no question behind it cannot save, so rendering one
+            // would just be a prettier way of losing the answer; a theme left
+            // with nothing drops its heading too rather than sitting empty.
+            const askable = theme.questions.flatMap((question) => {
+              const row = rows[question.key];
 
-              {/* One grid per theme, two tracks: the question column is capped
-                  so long questions wrap instead of squeezing the answers, and
-                  collapses to a single stacked column below `sm`. */}
-              <div
-                className={cn(
-                  'grid grid-cols-1 items-start',
-                  'sm:grid-cols-[minmax(0,18rem)_minmax(0,1fr)] sm:items-stretch',
-                )}
-              >
-                {theme.questions.map((question) => {
-                  const answer = answers[question.id] ?? null;
-                  const busy = submittingId === question.id;
+              return row ? [{ question, row }] : [];
+            });
 
-                  return (
-                    <Row key={question.id} question={question}>
-                      {answer && editingId === question.id ? (
-                        <AnswerEditor
-                          question={question}
-                          draft={editDraft}
-                          busy={busy}
-                          error={editError}
-                          onDraftChange={setEditDraft}
-                          onSave={(text) => void handleUpdate(question.id, text)}
-                          onCancel={cancelEdit}
-                        />
-                      ) : answer ? (
-                        <AnswerDisplay
-                          question={question}
-                          answer={answer}
-                          onEdit={() => startEdit(question.id)}
-                        />
-                      ) : (
-                        <AnswerPrompt
-                          question={question}
-                          draft={drafts[question.id] ?? ''}
-                          busy={busy}
-                          onDraftChange={(value) => setDrafts((prev) => ({ ...prev, [question.id]: value }))}
-                          onAnswer={(text) => void handleAnswer(question.id, text)}
-                        />
-                      )}
-                    </Row>
-                  );
-                })}
+            if (askable.length === 0) {
+              return null;
+            }
+
+            return (
+              <div key={theme.key}>
+                <h3 className="mb-1 text-sm font-medium">{theme.label}</h3>
+
+                {/* One grid per theme, two tracks: the question column is capped
+                    so long questions wrap instead of squeezing the answers, and
+                    collapses to a single stacked column below `sm`. */}
+                <div
+                  className={cn(
+                    'grid grid-cols-1 items-start',
+                    'sm:grid-cols-[minmax(0,18rem)_minmax(0,1fr)] sm:items-stretch',
+                  )}
+                >
+                  {askable.map(({ question, row }) => {
+                    const answer = row.answer;
+                    const busy = submittingKey === question.key;
+
+                    return (
+                      <Row key={question.key} question={question}>
+                        {answer && editingKey === question.key ? (
+                          <AnswerEditor
+                            question={question}
+                            draft={editDraft}
+                            busy={busy}
+                            error={editError}
+                            onDraftChange={setEditDraft}
+                            onSave={(text) => void handleUpdate(question.key, row, text)}
+                            onCancel={cancelEdit}
+                          />
+                        ) : answer ? (
+                          <AnswerDisplay
+                            question={question}
+                            answer={answer}
+                            onEdit={() => startEdit(question.key)}
+                          />
+                        ) : (
+                          <AnswerPrompt
+                            question={question}
+                            draft={drafts[question.key] ?? ''}
+                            busy={busy}
+                            onDraftChange={(value) =>
+                              setDrafts((prev) => ({ ...prev, [question.key]: value }))
+                            }
+                            onAnswer={(text) => void handleAnswer(question.key, row.id, text)}
+                          />
+                        )}
+                      </Row>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

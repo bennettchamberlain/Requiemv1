@@ -5,7 +5,7 @@ import { fetchJson } from '@ci/common';
 
 import { useAuth } from '@/hooks';
 import type { CataloguePage } from '@/pages/PromptsPage/catalogue';
-import { HOME_TOWN_CITY_QUESTION_IDS, homeTownCatalogueUrl } from '@/pages/SelfPage/sections/lifeDetails';
+import { HOME_TOWN_CITY_QUESTION_KEYS, homeTownCatalogueUrl } from '@/pages/SelfPage/sections/lifeDetails';
 
 /** City-scale zoom — same as the Map default, without fitting the whole pin set. */
 export const HOME_MAP_ZOOM = 13;
@@ -39,14 +39,22 @@ function normalizeName(value: string): string {
  * Childhood city first, then birth city. Empty / missing answers are skipped.
  */
 export function pickHomeCity(
-  page: { data?: Array<{ id: string; answer?: { text?: string | null } | null }> } | null | undefined,
+  page:
+    | { data?: Array<{ key?: string | null; answer?: { text?: string | null } | null }> }
+    | null
+    | undefined,
 ): string | null {
-  const byId = new Map(
-    (page?.data ?? []).map((entry) => [entry.id, entry.answer?.text?.trim() ?? ''] as const),
+  // Keyed by `question_key`, not `id`: the id is minted per appliance, so
+  // indexing by it finds nothing on any database but the one the ids were
+  // copied from — see lifeDetails.ts.
+  const byKey = new Map(
+    (page?.data ?? []).flatMap((entry) =>
+      entry.key ? [[entry.key, entry.answer?.text?.trim() ?? ''] as const] : [],
+    ),
   );
 
-  for (const id of HOME_TOWN_CITY_QUESTION_IDS) {
-    const text = byId.get(id);
+  for (const key of HOME_TOWN_CITY_QUESTION_KEYS) {
+    const text = byKey.get(key);
     if (text) {
       return text;
     }
