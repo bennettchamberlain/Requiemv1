@@ -305,6 +305,29 @@ export const LIFE_DETAIL_THEMES: LifeDetailTheme[] = [
   },
 ];
 
+/**
+ * Factual Home Town answers used as a Map starting point. Childhood city first
+ * — that is closer to "home" than birth city when they differ. The narrative
+ * prompt is not a place name.
+ */
+export const HOME_TOWN_CITY_QUESTION_IDS = [
+  'd5e6e582-c0e3-40c5-aa2c-5e100c7c384d',
+  '8565f9fa-965a-49c4-81fb-6ab8b3a4ee70',
+] as const;
+
+/** Childhood + birth city only — the Map home camera does not need the rest of Self. */
+export function homeTownCatalogueUrl(): string {
+  const ids = [...HOME_TOWN_CITY_QUESTION_IDS];
+  const params = new URLSearchParams({
+    ids: ids.join(','),
+    status: 'active',
+    answered: 'all',
+    limit: String(ids.length),
+  });
+
+  return `/api/questions/catalogue?${params.toString()}`;
+}
+
 /** Every curated id across every theme, in a fixed flat order. */
 export function curatedQuestionIds(): string[] {
   return LIFE_DETAIL_THEMES.flatMap((theme) => theme.questions.map((q) => q.id));

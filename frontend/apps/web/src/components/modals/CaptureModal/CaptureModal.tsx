@@ -680,7 +680,7 @@ function CaptureActions({
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col h-[calc(100%-3rem)] px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+    <div className="flex flex-col h-[calc(100%-3rem)] px-5 pb-[max(1.5rem,var(--safe-area-bottom))]">
       <p className="text-sm text-zinc-400 px-1 mb-6">{t('CAPTURE_SUBTITLE')}</p>
 
       <div className="grid grid-cols-2 gap-3">
@@ -699,7 +699,9 @@ function CaptureActions({
         {t('CAPTURE_LIBRARY')}
       </Button>
 
-      <p className="mt-auto pt-6 text-center text-xs text-zinc-500">{t('CAPTURE_BACKGROUND_HINT')}</p>
+      <p className="mt-auto pt-6 text-center text-xs text-zinc-500" data-testid="capture-background-hint">
+        {t('CAPTURE_BACKGROUND_HINT')}
+      </p>
     </div>
   );
 }
