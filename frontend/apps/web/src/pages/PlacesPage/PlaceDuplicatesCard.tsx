@@ -149,7 +149,10 @@ function PlaceDuplicateGroupRow({
 
       <div className="flex flex-col gap-2">
         {group.places.map((place) => (
-          <div key={place.id} className="flex items-center gap-3">
+          <div
+            key={place.id}
+            className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3"
+          >
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{place.name || 'Unnamed place'}</div>
               <div className="truncate text-sm text-muted-foreground">{describePlace(place)}</div>
@@ -158,6 +161,7 @@ function PlaceDuplicateGroupRow({
             <Button
               size="sm"
               variant="ghost"
+              className="self-start sm:self-auto shrink-0"
               disabled={loading}
               onClick={() => {
                 setMergeError(null);

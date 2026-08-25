@@ -27,9 +27,29 @@ function readBuildDefault(): string {
 
 let apiBaseUrl = normalize(readBuildDefault());
 
+type ApiBaseListener = () => void;
+const apiBaseListeners = new Set<ApiBaseListener>();
+
 function normalize(url: string | null | undefined): string {
   // Drop trailing slashes so `buildApiUrl('/api/x')` never produces a `//`.
   return (url ?? '').replace(/\/+$/, '');
+}
+
+/**
+ * Subscribe to Memory origin changes. Native GraphQL/feature fetches must not
+ * start until this is an absolute http(s) origin — CapacitorHttp rejects
+ * relative `/api/...` paths.
+ */
+export function subscribeApiBaseUrl(listener: ApiBaseListener): () => void {
+  apiBaseListeners.add(listener);
+
+  return () => {
+    apiBaseListeners.delete(listener);
+  };
+}
+
+function notifyApiBaseListeners(): void {
+  apiBaseListeners.forEach((listener) => listener());
 }
 
 /**
@@ -38,7 +58,14 @@ function normalize(url: string | null | undefined): string {
  * user changes it. Passing an empty value resets to same-origin (web behavior).
  */
 export function setApiBaseUrl(url: string | null | undefined): void {
-  apiBaseUrl = normalize(url);
+  const next = normalize(url);
+
+  if (next === apiBaseUrl) {
+    return;
+  }
+
+  apiBaseUrl = next;
+  notifyApiBaseListeners();
 }
 
 /** The current API origin: `''` on web (same-origin), a full origin on native. */

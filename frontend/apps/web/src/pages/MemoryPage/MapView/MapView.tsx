@@ -36,6 +36,7 @@ import { clusterDiameterPx, mergeCollidingClusters, type PixelCluster } from './
 import { readCoordinates, readGeoJsonPoint } from './mapCoordinates';
 import { fitSignature, pinsInBounds, routePoints } from './pinSet';
 import { PositionTraceLayer, TraceToggleControl } from './TraceLayer';
+import { HOME_MAP_ZOOM, useHomeMapCenter } from './useHomeMapCenter';
 import './memory-map.css';
 
 // Colour/icon-code each marker by what it represents, like the old LifeScope map.
@@ -903,13 +904,13 @@ function MapStatusOverlay({
  * when filters do, and a filter the user just applied should be what the
  * viewport shows. Panning inside an unchanged set is never overridden.
  */
-function FitBoundsToPins({ pins }: { pins: Pin[] }) {
+function FitBoundsToPins({ pins, skip = false }: { pins: Pin[]; skip?: boolean }) {
   const map = useLeafletMap();
   const fittedSignature = useRef<string | null>(null);
   const signature = fitSignature(pins);
 
   useEffect(() => {
-    if (signature === '' || fittedSignature.current === signature) {
+    if (skip || signature === '' || fittedSignature.current === signature) {
       return;
     }
 
@@ -917,7 +918,24 @@ function FitBoundsToPins({ pins }: { pins: Pin[] }) {
 
     map.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 13 });
     fittedSignature.current = signature;
-  }, [signature, pins, map]);
+  }, [skip, signature, pins, map]);
+
+  return null;
+}
+
+/** Apply Self home as the camera once, after the async lookup. MapContainer only honours its initial center. */
+function HomeCamera({ center }: { center: [number, number] | null }) {
+  const map = useLeafletMap();
+  const applied = useRef(false);
+
+  useEffect(() => {
+    if (!center || applied.current) {
+      return;
+    }
+
+    applied.current = true;
+    map.setView(center, HOME_MAP_ZOOM);
+  }, [center, map]);
 
   return null;
 }
@@ -1310,9 +1328,11 @@ function MobileMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapVi
   const { status: playbackStatus } = usePlaybackControls();
   const revealedPins = useRevealedPins(pins);
   const playing = playbackStatus === 'playing';
+  // Owner map only: the shared viewer must not aim someone else's pins at the viewer's home.
+  const { center: homeCenter, resolved: homeResolved } = useHomeMapCenter(!readOnly);
 
   return (
-    <Map center={[37.7749, -122.4194]}>
+    <Map center={homeCenter ?? [37.7749, -122.4194]} zoom={homeCenter ? HOME_MAP_ZOOM : 13}>
       <Map.Controls position="top-right" />
       {!readOnly && <SearchAreaControl />}
       {!readOnly && (
@@ -1336,7 +1356,8 @@ function MobileMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapVi
       <Map.RouteLayer locations={routeLocations} />
       <PlaybackTrackLayer />
       <ClusteredMarkers pins={revealedPins} onSelect={selectPin} />
-      <FitBoundsToPins pins={pins} />
+      <FitBoundsToPins pins={pins} skip={!homeResolved || homeCenter != null} />
+      <HomeCamera center={homeCenter} />
       <MapStatusOverlay loading={loading} error={error} empty={empty} filtered={filtered} onRetry={refetch} />
       <PlaybackBar />
     </Map>

@@ -10,6 +10,7 @@ import { ChatAbout } from '@/components/ChatWithAgent';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { PersonAvatar } from '@/components/PersonAvatar';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
 import type { GetMergeCandidatesQuery, GetPeopleQuery } from '@/graphql/graphql';
 import { namedChatContext } from '@/lib/agentChat';
@@ -304,32 +305,39 @@ function MergeSuggestionCard({
 
       <div className="flex flex-col gap-2">
         {orderedPeople.map((person) => (
-          <div key={person.id} className="flex items-center gap-3">
+          <div
+            key={person.id}
+            className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3"
+          >
             {/* size="sm" is 32px — the exact h-8 w-8 this rendered before
-                PersonAvatar existed. */}
-            <PersonAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
+                PersonAvatar existed. Identity sits above the keep-action on
+                phones so the two don't overlap. */}
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <PersonAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
 
-            <div className="min-w-0 flex-1">
-              <Link
-                to={`/people/${GlobalUID.parse('person', person.id)}`}
-                className="truncate font-medium hover:underline"
-              >
-                {person.name || 'Unnamed'}
-              </Link>
-              {person.isSelf && (
-                <Badge variant="secondary" className="ml-2">
-                  You
-                </Badge>
-              )}
-              {person.description && (
-                <div className="truncate text-sm text-muted-foreground">{person.description}</div>
-              )}
+              <div className="min-w-0 flex-1">
+                <Link
+                  to={`/people/${GlobalUID.parse('person', person.id)}`}
+                  className="truncate font-medium hover:underline"
+                >
+                  {person.name || 'Unnamed'}
+                </Link>
+                {person.isSelf && (
+                  <Badge variant="secondary" className="ml-2">
+                    You
+                  </Badge>
+                )}
+                {person.description && (
+                  <div className="truncate text-sm text-muted-foreground">{person.description}</div>
+                )}
+              </div>
             </div>
 
             {(!hasSelf || person.isSelf) && (
               <Button
                 size="sm"
                 variant="ghost"
+                className="self-start sm:self-auto shrink-0"
                 disabled={loading}
                 onClick={() => {
                   openMerge(person.id);
@@ -445,7 +453,7 @@ export function PeoplePage() {
     [searchQuery],
   );
 
-  const { data, previousData, loading, error, fetchMore } = useQuery(GET_PEOPLE, {
+  const { data, previousData, loading, error, fetchMore, refetch } = useQuery(GET_PEOPLE, {
     variables: peopleVariables,
     notifyOnNetworkStatusChange: true,
   });
@@ -507,6 +515,11 @@ export function PeoplePage() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const refreshPeople = useCallback(async () => {
+    setLoadMoreError(null);
+    await Promise.all([refetch(), refetchCandidates()]);
+  }, [refetch, refetchCandidates]);
 
   const pageInfo = view?.people.pageInfo;
   const hasNextPage = pageInfo?.hasNextPage ?? false;
@@ -640,9 +653,10 @@ export function PeoplePage() {
     content = <EmptyState message={`Couldn't load people: ${error.message}`} />;
   } else {
     content = (
+      <PullToRefresh onRefresh={refreshPeople}>
       <PageContent ref={scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
-          <div className="flex flex-col gap-4 px-4 pb-4">
+          <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
             <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
               <Input
                 placeholder="Search people and communications..."
@@ -736,6 +750,7 @@ export function PeoplePage() {
           </div>
         </MemoryHubShell>
       </PageContent>
+      </PullToRefresh>
     );
   }
 

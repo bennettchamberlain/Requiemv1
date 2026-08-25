@@ -35,6 +35,7 @@ function TaskColumn<T extends SectionedTask>({
   showHeading = true,
   className,
 }: ColumnProps<T>) {
+  const { isMobile } = useDeviceLayout();
   const overdue = overdueCount(section);
 
   return (
@@ -48,7 +49,15 @@ function TaskColumn<T extends SectionedTask>({
       ) : (
         <OverdueHint count={overdue} className="px-1 pb-2 text-xs" />
       )}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto',
+          // Phone: space after the last card so the list end is obvious and
+          // the home indicator does not cover it.
+          isMobile && 'pb-[calc(1.5rem+var(--safe-area-bottom))]',
+        )}
+        data-list-scroll=""
+      >
         {section.lanes.map((lane) => (
           <div key={lane.key} className="flex flex-col gap-2">
             {lane.label ? (

@@ -55,6 +55,7 @@ function emitMove() {
 function tickAutoScroll() {
   if (!drag) {
     scrollRaf = 0;
+
     return;
   }
 
@@ -168,15 +169,26 @@ export function cancelSchedulePointerDrag(): void {
 }
 
 export function dropElementAt(x: number, y: number): HTMLElement | null {
-  const node = document.elementFromPoint(x, y);
+  // Walk the hit stack so a Possibilities drop still lands when the finger is
+  // over an event chip, a drag ghost, or anything else sitting on the day.
+  const stack =
+    typeof document.elementsFromPoint === 'function'
+      ? document.elementsFromPoint(x, y)
+      : [document.elementFromPoint(x, y)];
 
-  if (!(node instanceof Element)) {
-    return null;
+  for (const node of stack) {
+    if (!(node instanceof Element)) {
+      continue;
+    }
+
+    const hit = node.closest(SCHEDULE_DROP_SELECTOR);
+
+    if (hit instanceof HTMLElement) {
+      return hit;
+    }
   }
 
-  const hit = node.closest(SCHEDULE_DROP_SELECTOR);
-
-  return hit instanceof HTMLElement ? hit : null;
+  return null;
 }
 
 export function ratioOnAxis(el: HTMLElement, axis: ScheduleDropAxis, x: number, y: number): number {

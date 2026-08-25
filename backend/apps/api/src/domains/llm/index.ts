@@ -68,11 +68,13 @@ export { LLM_QUEUE, LLM_QUEUE_OPTIONS } from './constants';
 export {
   calibrateInferredConfidence,
   confidenceLabel,
+  CONFIDENCE_NON_ANSWER,
   DEFAULT_MIN_ANSWER_CONFIDENCE,
   estimateInferredAnswerConfidence,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
   type InferredAnswer,
+  isNonAnswer,
   parseInferredAnswer,
 } from './inferredAnswerConfidence';
 export { CV_DETECTION_LINKED_TABLE } from './listeners/CvDetectionsListener';

@@ -2,7 +2,7 @@ export { EmptyState } from './src/components/EmptyState';
 export { ErrorPage } from './src/components/error-page';
 export { LoadingPage } from './src/components/loading-page';
 export { Portal } from './src/components/portal';
-export { DeviceLayoutProvider, useDeviceLayout, usePageTitle } from './src/hooks';
+export { MOBILE_BREAKPOINT, DeviceLayoutProvider, useDeviceLayout, usePageTitle } from './src/hooks';
 export { GlobalUID } from './src/utils/GlobalUID';
 export { apiKeyHeaders, getApiKey, setApiKey } from './src/utils/apiAuth';
 export {
@@ -16,6 +16,7 @@ export {
   persistApiBaseUrl,
   resolveHttpOrigin,
   setApiBaseUrl,
+  subscribeApiBaseUrl,
 } from './src/utils/apiBase';
 export {
   CONNECTION_REPROBE_INTERVAL_MS,

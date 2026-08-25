@@ -31,7 +31,7 @@ interface CardProps {
 
 function BacklogCard({ task, onDismiss, touchDrag = false }: CardProps) {
   const proposed = task.status === 'proposed' || Boolean(task.hasPendingChange);
-  const { onPointerDown, onContextMenu } = useCandidatePointerDrag(task, touchDrag);
+  const { onPointerDown, onHandlePointerDown, onContextMenu } = useCandidatePointerDrag(task, touchDrag);
 
   return (
     <li
@@ -53,11 +53,23 @@ function BacklogCard({ task, onDismiss, touchDrag = false }: CardProps) {
         touchDrag && 'select-none touch-pan-y [-webkit-touch-callout:none]',
       )}
     >
-      <GripVertical
-        className="absolute left-1.5 top-3 h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground pointer-coarse:text-muted-foreground/70"
-        strokeWidth={1.5}
-        aria-hidden
-      />
+      {touchDrag ? (
+        <button
+          type="button"
+          aria-label={`Drag ${task.title} onto the calendar`}
+          className="absolute left-0 top-1 z-10 flex h-11 w-8 touch-none items-start justify-center pt-2 text-muted-foreground"
+          onPointerDown={onHandlePointerDown}
+          onContextMenu={onContextMenu}
+        >
+          <GripVertical className="h-4 w-4" strokeWidth={1.5} aria-hidden />
+        </button>
+      ) : (
+        <GripVertical
+          className="absolute left-1.5 top-3 h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground pointer-coarse:text-muted-foreground/70"
+          strokeWidth={1.5}
+          aria-hidden
+        />
+      )}
 
       <p className="text-[13px] leading-snug text-foreground">{task.title}</p>
 
@@ -138,7 +150,7 @@ function BacklogColumn({
         <p className="px-1 pb-2 text-xs text-destructive">{overdue} overdue</p>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto" data-list-scroll="">
         {section.lanes.map((lane) => (
           <div key={lane.key} className="flex flex-col gap-2">
             {lane.label ? (
@@ -202,7 +214,11 @@ export function TaskSlate({
       <div className="mb-2.5 flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-medium text-foreground">Possibilities</h3>
         <span className="text-[11px] text-muted-foreground">
-          {hasCards ? (isMobile ? 'hold a card, then drop it on a day above' : 'drag one onto a day above') : null}
+          {hasCards
+            ? isMobile
+              ? 'drag the handle onto the day above'
+              : 'drag one onto a day above'
+            : null}
         </span>
       </div>
 

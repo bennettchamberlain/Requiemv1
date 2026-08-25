@@ -1,11 +1,14 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { gql } from '@/graphql';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
+import { UPDATE_TASK } from './EditTaskModal';
 import { PlanPage } from './PlanPage';
-import { GET_TASKS } from './usePlanTasks';
+import { SELECT_HOLD_MS } from './Task';
+import { addLocalDays, dueAtFromLocalDate, localDateOf } from './taskSections';
+import { GET_TASKS, SCHEDULE_TASK } from './usePlanTasks';
 
 const featureState = vi.hoisted(() => ({ emptyState: false }));
 
@@ -206,6 +209,106 @@ describe('PlanPage', () => {
     expect(screen.getByRole('button', { name: /edit write the migration/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^scheduled on calendar 0$/i })).toBeInTheDocument();
   });
+
+  it('offers Reschedule on overdue work instead of a date-less Schedule', async () => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const todayDate = localDateOf(today);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([node({ id: 'a', title: 'Overdue thing', dueAt: yesterday.toISOString() })]),
+        {
+          request: {
+            query: UPDATE_TASK,
+            variables: { input: { id: 'a', dueAt: dueAtFromLocalDate(todayDate) } },
+          },
+          result: {
+            data: {
+              updateTask: {
+                __typename: 'UpdateTaskPayload',
+                success: true,
+                task: node({
+                  id: 'a',
+                  title: 'Overdue thing',
+                  dueAt: dueAtFromLocalDate(todayDate),
+                  scheduledFor: todayDate,
+                }),
+              },
+            },
+          },
+        },
+        {
+          request: { query: SCHEDULE_TASK, variables: { id: 'a', date: todayDate } },
+          result: {
+            data: {
+              scheduleTask: {
+                __typename: 'ScheduleTaskPayload',
+                success: true,
+                status: 'placed',
+                task: node({
+                  id: 'a',
+                  title: 'Overdue thing',
+                  dueAt: dueAtFromLocalDate(todayDate),
+                  scheduledFor: todayDate,
+                }),
+              },
+            },
+          },
+          maxUsageCount: Number.POSITIVE_INFINITY,
+        },
+        tasksMock([
+          node({
+            id: 'a',
+            title: 'Overdue thing',
+            dueAt: dueAtFromLocalDate(todayDate),
+            scheduledFor: todayDate,
+          }),
+        ]),
+      ],
+    });
+
+    const reschedule = await screen.findByRole('button', { name: /reschedule overdue thing/i });
+
+    expect(reschedule).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^schedule$/i })).not.toBeInTheDocument();
+
+    fireEvent.click(reschedule);
+
+    expect(screen.getByRole('group', { name: /reschedule to/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^today$/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: /^overdue/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it('lets an overdue missed block be moved with the same when chips', async () => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    const tomorrow = addLocalDays(localDateOf(today), 1);
+    const yesterdayDay = localDateOf(yesterday);
+
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([
+          node({
+            id: 'd',
+            title: 'Missed block',
+            dueAt: yesterday.toISOString(),
+            scheduledFor: yesterdayDay,
+          }),
+        ]),
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /reschedule missed block/i }));
+
+    expect(screen.getByRole('button', { name: /^tomorrow$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^next week$/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/pick a day/i)).toHaveAttribute('min', localDateOf(today));
+    expect(tomorrow).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
 });
 
 function setViewport(mobile: boolean) {
@@ -287,5 +390,73 @@ describe('PlanPage mobile tabs', () => {
 
     expect(await screen.findByRole('tab', { name: /^proposed 0$/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByText('Overdue thing')).not.toBeInTheDocument();
+  });
+
+  it('keeps edit and delete off the title row, and opens edit from the card body', async () => {
+    setViewport(true);
+
+    renderWithProviders(
+      <PlanPage />,
+      {
+        mocks: [
+          tasksMock([
+            node({
+              title: 'Write the migration',
+              description: 'A long note that should not open edit by itself.',
+            }),
+          ]),
+        ],
+      },
+    );
+
+    expect(await screen.findByRole('button', { name: /more actions for write the migration/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit write the migration/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete write the migration/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/a long note/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /show description for write the migration/i }));
+    expect(screen.getByText(/a long note/i)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /edit task/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^write the migration$/i }));
+    expect(await screen.findByRole('dialog', { name: /edit task/i })).toBeInTheDocument();
+  });
+
+  it('enters selection on a long-press and bulk-deletes with confirmation', async () => {
+    setViewport(true);
+
+    renderWithProviders(
+      <PlanPage />,
+      {
+        mocks: [
+          tasksMock([
+            node({ id: 'a', title: 'First thing' }),
+            node({ id: 'b', title: 'Second thing' }),
+          ]),
+        ],
+      },
+    );
+
+    const first = await screen.findByRole('button', { name: /^first thing$/i });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(first, {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: 10,
+      clientY: 10,
+      button: 0,
+    });
+    act(() => {
+      vi.advanceTimersByTime(SELECT_HOLD_MS);
+    });
+    vi.useRealTimers();
+
+    expect(await screen.findByTestId('plan-selection-bar')).toHaveTextContent('1 selected');
+
+    fireEvent.click(screen.getByRole('button', { name: /^second thing$/i }));
+    expect(screen.getByTestId('plan-selection-bar')).toHaveTextContent('2 selected');
+
+    fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+    expect(await screen.findByText('Delete 2 tasks')).toBeInTheDocument();
   });
 });

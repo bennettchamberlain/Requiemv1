@@ -20,7 +20,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { curatedQuestions, LIFE_DETAIL_THEMES } from './lifeDetails';
+import { curatedQuestionKeys, curatedQuestions, HOME_TOWN_CITY_QUESTION_KEYS, LIFE_DETAIL_THEMES } from './lifeDetails';
 
 const MIGRATION_FILE =
   'backend/apps/api/db/postgres/migrations/20260824234643_seed_life_details_question_keys.sql';
@@ -240,5 +240,15 @@ describe('the curated Life details list', () => {
 
   it('gives every theme at least one question', () => {
     expect(LIFE_DETAIL_THEMES.filter((theme) => theme.questions.length === 0)).toEqual([]);
+  });
+
+  it('lets other surfaces name curated keys, but only ones this list actually has', () => {
+    // The Map's home camera (useHomeMapCenter) picks two questions out of this
+    // list by key. Nothing else ties the two files together, so a key renamed
+    // here — or a home-town key that was never curated — would leave the Map
+    // silently unable to find a home city, the same failure by another route.
+    const unknown = HOME_TOWN_CITY_QUESTION_KEYS.filter((key) => !curatedQuestionKeys().includes(key));
+
+    expect(unknown).toEqual([]);
   });
 });

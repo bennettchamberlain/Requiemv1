@@ -16,13 +16,10 @@ export function MemoryHubNav({ actions }: { actions?: ReactNode }) {
   const visible = MEMORY_HUB_SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
 
   // Phone: the Power Rail Memory submenu already lists these destinations.
-  // Create lives in the top-bar Add menu, so page actions are omitted.
+  // Create lives in the top-bar Add menu, so page actions are omitted too —
+  // rendering them here duplicated "New place" / "New thing" under the header.
   if (isMobile) {
-    if (!actions) {
-      return null;
-    }
-
-    return <div className="flex shrink-0 justify-end px-4 pt-2">{actions}</div>;
+    return null;
   }
 
   return (

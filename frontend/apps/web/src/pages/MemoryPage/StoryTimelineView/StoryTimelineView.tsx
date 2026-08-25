@@ -64,6 +64,7 @@ export function StoryTimelineView() {
       }
 
       loadMore();
+
       return;
     }
 
@@ -148,7 +149,7 @@ export function StoryTimelineView() {
 
   if (filling) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <TimelineSkeleton count={5} />
       </div>
     );
@@ -156,7 +157,7 @@ export function StoryTimelineView() {
 
   if (error && data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <ErrorState onRetry={refetch} />
       </div>
     );
@@ -164,7 +165,7 @@ export function StoryTimelineView() {
 
   if (data.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <MemoryEmptyState filtered={filteredBrowse} />
       </div>
     );
@@ -172,7 +173,7 @@ export function StoryTimelineView() {
 
   if (deck.events.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-list-scroll="">
         <Empty
           title="No dated memories match this search"
           description="These results aren't time-based. Switch to List to see them."

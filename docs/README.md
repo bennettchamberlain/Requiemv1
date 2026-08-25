@@ -37,6 +37,7 @@ codegen): [graphql-api.md](graphql-api.md).
 | [architecture/agent-harness-and-cold-start.md](architecture/agent-harness-and-cold-start.md) | **Agent harness (#59) + cold-start (#63):** REST intent execute on `/api/intents` and `/api/agent/intents`, `places.next`, 14-day copy floors, Brief producer cap, flags default on | implemented |
 | [architecture/hbpe-landing.md](architecture/hbpe-landing.md) | **HBPE landing:** paper as contract (L0/L1/L2, kernel, local-first); appliance as product (live scoring, HMM, daily_metrics lifts, B0/B1/B2 gate). L2 head skipped until tokens exist. Plan snapshot: [architecture/hbpe-landing.plan.md](architecture/hbpe-landing.plan.md) | landed on `feat/hbpe-landing` |
 | [architecture/planning-roadmap.md](architecture/planning-roadmap.md) | **Planning:** why CI-Planning's object model moved in-repo; `ci.tasks` + `ci.task_pending_changes`, the trust dial and `proposed` triage inbox, the `/plan` page, the planning feature flags | M0–M1 landed; M3/M5 partial; M2/M4 not started |
+| [architecture/shared-time-selectors.plan.md](architecture/shared-time-selectors.plan.md) | **Shared Time selectors:** takeoff from Plan overdue-reschedule toward one `RelativeDay` / `TimeScope` / `Cadence` vocabulary for web chips, Siri App Intents, and context prompts | plan |
 | [architecture/Database.md](architecture/Database.md) | **The database**: engine/extensions, schemas (`ci`, `ci_search`, `ci_import`, `ci_derived`, `ci_etl`, `hbpe`, `pgboss`, plus vestigial `ci_core`), tables by domain, class-table inheritance, idempotency/dedup design, indexing (HNSW/GIN/GIST), hypertables, migration workflow | verified 2026-08-19 |
 | [architecture/life-graph-matrix.md](architecture/life-graph-matrix.md) | **Life graph under CTI** (#1945–#1947): ontology, L0/L1/L2 layers, deterministic edge matrix, job path, code map, PR #1943 delivery notes | living doc |
 | [architecture/entity-merge.md](architecture/entity-merge.md) | **Entity identity & merge:** what the merge primitive does today (tombstones, `ci.entity_merges`, blocks, scored `ci.merge_candidates`) and the design for the parts still unbuilt, per entity type | survey + design |
@@ -72,7 +73,7 @@ ADR-0004 lives one level up as [`architecture/adr-pipeline-ledger.md`](architect
 
 ## Design explorations — [`docs/design/`](design/)
 
-- [design/selectors.md](design/selectors.md) — catalog of one-decision feed / onboarding selectors
+- [design/selectors.md](design/selectors.md) — catalog of one-decision feed / onboarding selectors. Time takeoff: [architecture/shared-time-selectors.plan.md](architecture/shared-time-selectors.plan.md)
 - [design/selectors-catalog.html](design/selectors-catalog.html) — interactive HTML mocks
 - [design/sources-ia.md](design/sources-ia.md) — why `/connections`, `/connect` and `/import`
   became one **Sources** surface (`/sources/:half?`), and what each old route redirects to

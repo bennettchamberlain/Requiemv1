@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { Tag } from '@/components/Tag';
 import { gql } from '@/graphql';
 
@@ -53,9 +54,10 @@ export function TagsPage() {
 
   return (
     <>
+      <PullToRefresh onRefresh={refetch}>
       <PageContent className="gap-4 p-0">
         <MemoryHubShell>
-          <div className="flex flex-col gap-4 px-4 pb-4">
+          <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
             <Input
               placeholder="Filter tags..."
               value={searchQuery}
@@ -106,6 +108,7 @@ export function TagsPage() {
           </div>
         </MemoryHubShell>
       </PageContent>
+      </PullToRefresh>
 
       {tagToEdit ? (
         <RenameTagModal

@@ -191,7 +191,11 @@
     }
   },
   "reflection": {
-    "minAnswerConfidence": 0.4
+    "minAnswerConfidence": 0.4,
+    "autoPromoteThresholdCautious": 1,
+    "autoPromoteThresholdBalanced": 0.85,
+    "autoPromoteThresholdHandsOff": 0.7,
+    "alwaysReviewBelowConfidence": 0.7
   },
   "features": {
     "scheduled.answer.inferencing": true,

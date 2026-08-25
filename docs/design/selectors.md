@@ -26,6 +26,8 @@ still work, as redirects.)
 | 10 | Data | Chart point, memory snippet, forecast slot, diff |
 | 11 | Compound packs | Identify→relate→when, binary→open, conflict triad |
 
+Time is the first catalog category with a code takeoff: Plan overdue reschedule shipped Plan-shaped copies (`WhenSelector`, iOS `PlanWhen`). Shared types (`RelativeDay`, `TimeScope`, `Cadence`) and what not to App-Intent are in [shared-time-selectors.plan.md](../architecture/shared-time-selectors.plan.md).
+
 ## View the page
 
 ```bash

@@ -11,6 +11,7 @@ import { EntityGrid, ItemGridItem } from '@/components/entities';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { ThingModal } from '@/components/modals/ThingModal';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
 import type {
   GetItemDuplicatesQuery,
@@ -766,6 +767,7 @@ export function ThingsPage() {
     content = <EmptyState message={`Couldn't load things: ${error.message}`} />;
   } else {
     content = (
+      <PullToRefresh onRefresh={refetch}>
       <PageContent ref={scrollRef} className="gap-4 p-0">
         <MemoryHubShell
           actions={
@@ -776,7 +778,7 @@ export function ThingsPage() {
             )
           }
         >
-          <Tabs defaultValue="things" className="flex flex-col gap-4 px-4 pb-4">
+          <Tabs defaultValue="things" className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
             <Tabs.List className="self-start">
               <Tabs.Trigger value="things">Things</Tabs.Trigger>
               <Tabs.Trigger value="review">Review sightings</Tabs.Trigger>
@@ -984,6 +986,7 @@ export function ThingsPage() {
           onSaved={() => refetch()}
         />
       </PageContent>
+      </PullToRefresh>
     );
   }
 

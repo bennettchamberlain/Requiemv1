@@ -42,6 +42,29 @@ export function isInferred(source?: string | null): boolean {
 }
 
 /**
+ * The status light. Amber for an inference — the appliance guessed this and
+ * would like you to look at it — and a flat neutral for anything the person or
+ * their own data supplied, which needs no attention.
+ *
+ * Amber, not red: an inferred answer is unverified, not wrong. The colours are
+ * the same functional (rather than intent) mapping `ConnectionModeIndicator`
+ * uses, and are deliberately *not* graded by confidence band — the dot answers
+ * "did a model write this?", and the words beside it answer "how sure was it?".
+ * The dot is `aria-hidden` because it carries nothing the label does not.
+ */
+function ProvenanceDot({ inferred }: { inferred: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-block size-1.5 shrink-0 rounded-full',
+        inferred ? 'bg-amber-500' : 'bg-muted-foreground/50',
+      )}
+      aria-hidden="true"
+    />
+  );
+}
+
+/**
  * Says who wrote an answer, and — when the appliance wrote it — how sure it was.
  *
  * The point of the component is that "the system guessed this on your behalf"
@@ -62,7 +85,8 @@ export function AnswerProvenance({ source, confidence, rationale, className }: P
 
   if (!inferred) {
     return (
-      <Badge variant="secondary" className={cn('text-xs', className)} title="You wrote this answer">
+      <Badge variant="secondary" className={cn('gap-1.5 text-xs', className)} title="You wrote this answer">
+        <ProvenanceDot inferred={false} />
         Manual
       </Badge>
     );
@@ -82,7 +106,8 @@ export function AnswerProvenance({ source, confidence, rationale, className }: P
     .join('\n');
 
   return (
-    <Badge variant="outline" className={cn('text-xs', className)} title={title}>
+    <Badge variant="outline" className={cn('gap-1.5 text-xs', className)} title={title}>
+      <ProvenanceDot inferred />
       {label}
     </Badge>
   );

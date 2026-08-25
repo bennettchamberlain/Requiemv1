@@ -339,6 +339,31 @@ export function curatedQuestionKeys(): string[] {
 }
 
 /**
+ * Factual Home Town answers used as a Map starting point. Childhood city first
+ * — that is closer to "home" than birth city when they differ. The narrative
+ * prompt is not a place name.
+ *
+ * Keys, for the reason in the module comment: these arrived on `main` as the
+ * two matching uuids, which name nothing on any appliance but the one they
+ * were copied from — the Map would simply never find a home city anywhere
+ * else, as silently as the grid rendered blank.
+ */
+export const HOME_TOWN_CITY_QUESTION_KEYS = ['childhood_city', 'birth_city'] as const;
+
+/** Childhood + birth city only — the Map home camera does not need the rest of Self. */
+export function homeTownCatalogueUrl(): string {
+  const keys = [...HOME_TOWN_CITY_QUESTION_KEYS];
+  const params = new URLSearchParams({
+    keys: keys.join(','),
+    status: 'active',
+    answered: 'all',
+    limit: String(keys.length),
+  });
+
+  return `/api/questions/catalogue?${params.toString()}`;
+}
+
+/**
  * One combined fetch for the whole section: every curated question's current
  * answer, in a single round trip. `limit` is set to the key count explicitly —
  * the endpoint's default (25) would silently truncate this set.
