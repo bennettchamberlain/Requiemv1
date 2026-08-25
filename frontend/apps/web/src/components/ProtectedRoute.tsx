@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { isIosPlatform, LoadingPage } from '@ci/common';
+import { isNativePlatform, LoadingPage } from '@ci/common';
 import { Navigate, useLocation } from 'react-router-dom';
 
 import { useAuth, useCurrentUser } from '@/hooks';
@@ -17,7 +17,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (expired || !user) {
     return (
       <Navigate
-        to={isIosPlatform() ? '/device-connect' : '/login'}
+        to={isNativePlatform() ? '/device-connect' : '/login'}
         state={{ from: location.pathname + location.search }}
         replace
       />
