@@ -1993,8 +1993,18 @@ type Mutation {
   scheduleTask(
     """Owner-local YYYY-MM-DD to prefer."""
     date: String
+
+    """
+    Paired with `startTime`. Omit to keep the task’s own estimate (or the existing block’s duration, if moving one).
+    """
+    endTime: DateTime
     estimatedMinutes: Int
     id: ID!
+
+    """
+    An exact instant to place at — a calendar drop, not a "put this somewhere" click. When given, the gap solver is bypassed entirely and `date` is ignored.
+    """
+    startTime: DateTime
   ): ScheduleTaskPayload!
   sendPeerAsk(input: SendPeerAskInput!): SendPeerAskPayload!
   setSavedSearchSharing(input: SetSavedSearchSharingInput!): UpdateSavedSearchPayload!

@@ -11,6 +11,17 @@ import { addLocalDays, dueAtFromLocalDate, localDateOf } from './taskSections';
 import { GET_TASKS, SCHEDULE_TASK } from './usePlanTasks';
 
 const featureState = vi.hoisted(() => ({ emptyState: false }));
+const toastError = vi.hoisted(() => vi.fn());
+
+// Sonner's `toast.error(...)` only renders into the DOM behind a mounted
+// `<Toaster>`, which this page does not own — mocking the hook directly is
+// what the rest of this codebase does to assert a toast fired without
+// fighting portal/animation timing (see AsksPage's equivalent).
+vi.mock('@ci/shadcn', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+
+  return { ...actual, useToast: () => ({ toast: { error: toastError, success: vi.fn(), info: vi.fn() } }) };
+});
 
 vi.mock('@/common/feature', () => ({
   useFeatures: () => ({
@@ -68,6 +79,7 @@ function tasksMock(nodes: ReturnType<typeof node>[]) {
 describe('PlanPage', () => {
   beforeEach(() => {
     featureState.emptyState = false;
+    toastError.mockClear();
   });
 
   it('invites the user to add something when there is nothing planned and the empty state is enabled', async () => {
@@ -244,6 +256,61 @@ describe('PlanPage', () => {
     expect(schedule).toHaveClass('ci-primary-surface');
     expect(screen.getByRole('button', { name: /edit write the migration/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^scheduled on calendar 0$/i })).toBeInTheDocument();
+  });
+
+  // ═══ THE PAYLOAD USED TO BE DISCARDED HERE ═══
+  //
+  // `scheduleTask` can legitimately return `success: false` with a real
+  // `status` — `no_gap` when the flex window is fully booked, `skipped` when
+  // the task can no longer be scheduled — and the button used to `.then(refresh)`
+  // regardless, which re-renders the identical board and says nothing. On the
+  // week most likely to hit this (a genuinely full one) the button read as dead.
+  it('tells the user why Schedule did nothing, instead of silently re-rendering', async () => {
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([node()]),
+        {
+          request: { query: SCHEDULE_TASK, variables: { id: 'dGFzazoxMTE=' } },
+          result: {
+            data: { scheduleTask: { __typename: 'ScheduleTaskPayload', success: false, status: 'no_gap', task: null } },
+          },
+        },
+        tasksMock([node()]),
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^schedule$/i }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/no free slot/i)),
+    );
+  });
+
+  it('says nothing when Schedule actually succeeds', async () => {
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        tasksMock([node()]),
+        {
+          request: { query: SCHEDULE_TASK, variables: { id: 'dGFzazoxMTE=' } },
+          result: {
+            data: {
+              scheduleTask: {
+                __typename: 'ScheduleTaskPayload',
+                success: true,
+                status: 'placed',
+                task: node({ scheduledFor: localDateOf(new Date()) }),
+              },
+            },
+          },
+        },
+        tasksMock([node({ scheduledFor: localDateOf(new Date()) })]),
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^schedule$/i }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^schedule$/i })).not.toBeInTheDocument());
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it('offers Reschedule on overdue work instead of a date-less Schedule', async () => {

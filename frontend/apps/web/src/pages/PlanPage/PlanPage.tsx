@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 
 import { useMutation } from '@apollo/client';
 import { EmptyState, LoadingPage, usePageTitle } from '@ci/common';
-import { Button } from '@ci/shadcn';
+import { Button, useToast } from '@ci/shadcn';
 import { ListTodo } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
@@ -65,6 +65,7 @@ export function PlanPage() {
   usePageTitle('Plan - Companion Intelligence');
   const { isFeatureEnabled } = useFeatures();
   const showEmptyState = isFeatureEnabled('planning.emptyState');
+  const { toast } = useToast();
 
   const { nodes, sections, pendingByTask, loading, error, refetch } = usePlanTasks();
 
@@ -106,7 +107,35 @@ export function PlanPage() {
     void refetch();
   };
 
-  const handleSchedule = (id: string) => void scheduleTask({ variables: { id } }).then(refresh);
+  /**
+   * ═══ THE PAYLOAD USED TO BE DISCARDED HERE ═══
+   *
+   * `scheduleTask` can legitimately return `success: false` with a `status` of
+   * `no_gap` (the 7-day flex window is fully booked within working hours) or
+   * `skipped` (the task is done/archived/skipped, or lost a race) — neither is
+   * a thrown error, so `.then(refresh)` alone re-renders the identical board
+   * and says nothing. The button read as dead on a full week, which is
+   * silently the MOST likely week to hit it on.
+   */
+  const scheduleStatusMessage: Record<string, string> = {
+    no_gap: 'No free slot in your working hours over the next week — try a specific day, or shorten the estimate.',
+    skipped: 'That task can no longer be scheduled — it may already be done or removed.',
+  };
+
+  const reportScheduleOutcome = (status: string | null | undefined) => {
+    if (!status || status === 'placed' || status === 'already_placed') {
+      return;
+    }
+
+    toast.error(scheduleStatusMessage[status] ?? 'Could not schedule that task. Try again shortly.');
+  };
+
+  const handleSchedule = (id: string) => {
+    void scheduleTask({ variables: { id } }).then((result) => {
+      reportScheduleOutcome(result.data?.scheduleTask.status);
+      refresh();
+    });
+  };
 
   const handleReschedule = (id: string, date: string) => {
     void (async () => {
@@ -115,13 +144,21 @@ export function PlanPage() {
           input: { id, dueAt: dueAtFromLocalDate(date) },
         },
       });
-      await scheduleTask({ variables: { id, date } });
+
+      const result = await scheduleTask({ variables: { id, date } });
+
+      reportScheduleOutcome(result.data?.scheduleTask.status);
       refresh();
     })();
   };
 
   const handleAcceptAndSchedule = (id: string) => {
-    void acceptProposed({ variables: { id } }).then(() => scheduleTask({ variables: { id } }).then(refresh));
+    void acceptProposed({ variables: { id } }).then(() =>
+      scheduleTask({ variables: { id } }).then((result) => {
+        reportScheduleOutcome(result.data?.scheduleTask.status);
+        refresh();
+      }),
+    );
   };
 
   const renderTree = (task: SectionedTask, depth: number): ReactNode => {
