@@ -10,7 +10,6 @@ import {
   setApiBaseUrl,
   syncNativeIntentConfig,
   getLaunchUrl,
-  isIosPlatform,
   isNativePlatform,
   claimNativeOidcCode,
   parseOidcCallbackUrl,
@@ -641,7 +640,7 @@ function useAuth(): ReturnValue {
 
       unsubscribe = cleanup;
 
-      if (isIosPlatform()) {
+      if (isNativePlatform()) {
         const launched = await getLaunchUrl();
 
         if (!cancelled && launched) {

@@ -328,6 +328,7 @@ export function DeviceConnectPage() {
         setMemoryLoginOrigin(origin);
         setMemoryEmail(emailFromIdToken(auth?.idToken) ?? '');
       }
+
       setConnectingId(null);
     }
   };
@@ -387,7 +388,7 @@ export function DeviceConnectPage() {
 
               {oidcController ? (
                 <div className="bg-muted/40 flex flex-col items-center gap-2 rounded-md p-3 text-center text-xs text-muted-foreground">
-                  <span>Finish signing in in your browser, then come back to the app.</span>
+                  <span>Finish signing in in your browser, then return to this app.</span>
                   <Button
                     type="button"
                     variant="ghost"

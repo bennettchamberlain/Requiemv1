@@ -5,7 +5,6 @@ import {
   DeviceLayoutProvider,
   LoadingPage,
   OutboxQueueProvider,
-  isIosPlatform,
   isNativePlatform,
   needsNativeCloudConnect,
   useDeviceLayout,
@@ -213,9 +212,10 @@ function AppRoutes() {
           <Route
             path="/login"
             element={
-              // iOS always cloud-connects. Safari restores the last SPA path
-              // (`/login` from an earlier hop), which dropped Portal PKCE.
-              isIosPlatform() ? (
+              // Native shells always cloud-connect. Restoring `/login` from an
+              // earlier hop (or an Android deep-link cold start) used to drop
+              // Portal PKCE that only DeviceConnectPage resumes.
+              isNativePlatform() ? (
                 <Navigate to="/device-connect" replace />
               ) : (
                 <RedirectKnownUser>
