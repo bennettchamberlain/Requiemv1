@@ -75,6 +75,60 @@ describe('SavedSearchService.update', () => {
     expect(predicate).toEqual({ id: 'id1', userId: 'owner-1' });
     expect(payload.filters).toEqual(filters);
   });
+
+  // ═══ AN ABSENT `tags` MEANS "LEAVE IT ALONE", NOT "CLEAR IT" ═══
+  //
+  // `UpdateSavedSearchInput` makes every field optional, and the edit dialog
+  // used to update `name`/`description`/`filters` without ever selecting
+  // `tags` on its mutation — `assembleTags(data)` was called unconditionally
+  // with `data.tags || []`, so the update wrote an EMPTY array over whatever
+  // tags the row actually had. Renaming a search deleted its tag filter.
+  it('does not touch the tags column when the caller never named tags', async () => {
+    const repo = makeRepo();
+    repo.update.mockResolvedValue({ affected: 1 });
+    const { service } = makeService(repo);
+
+    await service.update(ownerCtx, 'id1', { name: 'renamed' });
+
+    const [, payload] = repo.update.mock.calls[0];
+    expect(payload).not.toHaveProperty('tags');
+  });
+
+  it('does not touch tags even when the query text changes and could carry hashtags', async () => {
+    const repo = makeRepo();
+    repo.update.mockResolvedValue({ affected: 1 });
+    const { service } = makeService(repo);
+
+    // A #hashtag here would previously have been scraped into a rebuilt
+    // (and otherwise emptied) tags array, discarding any non-hashtag tags
+    // the row already had.
+    await service.update(ownerCtx, 'id1', { query: 'lake trip #vacation' });
+
+    const [, payload] = repo.update.mock.calls[0];
+    expect(payload).not.toHaveProperty('tags');
+  });
+
+  it('still writes tags when the caller explicitly names them, hashtags included', async () => {
+    const repo = makeRepo();
+    repo.update.mockResolvedValue({ affected: 1 });
+    const { service } = makeService(repo);
+
+    await service.update(ownerCtx, 'id1', { query: 'lake trip #vacation', tags: ['work'] });
+
+    const [, payload] = repo.update.mock.calls[0];
+    expect(payload.tags).toEqual(expect.arrayContaining(['work', 'vacation']));
+  });
+
+  it('accepts an explicit empty array as "clear the tags", distinct from omitting the field', async () => {
+    const repo = makeRepo();
+    repo.update.mockResolvedValue({ affected: 1 });
+    const { service } = makeService(repo);
+
+    await service.update(ownerCtx, 'id1', { tags: [] });
+
+    const [, payload] = repo.update.mock.calls[0];
+    expect(payload).toHaveProperty('tags', []);
+  });
 });
 
 describe('SavedSearchService.setSharing', () => {

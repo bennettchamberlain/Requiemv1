@@ -67,6 +67,37 @@ export const SCHEDULE_TASK = gql(`
   }
 `);
 
+/**
+ * The calendar-drop variant of {@link SCHEDULE_TASK} — an explicit instant,
+ * not a preferred date.
+ *
+ * A calendar drop computes a 15-minute-snapped instant and paints it live
+ * under the cursor while dragging (`VerticalCalendar`'s `dropInstant`), but
+ * `placeOnDay` used to collapse it to a bare `YYYY-MM-DD` via `localDateOf`
+ * and send THAT — the gap solver then re-derived its own time within the day,
+ * so a drop at 3:15pm could land at 9:00am, and dropping on a past day
+ * silently re-placed on today. `startTime` bypasses the gap solver server-side
+ * entirely: the instant given is the instant placed at.
+ */
+export const SCHEDULE_TASK_AT = gql(`
+  mutation ScheduleTaskAt($id: ID!, $startTime: DateTime!) {
+    scheduleTask(id: $id, startTime: $startTime) {
+      success
+      status
+      task {
+        id
+        scheduledFor
+        estimatedMinutes
+      }
+      event {
+        id
+        startTime
+        endTime
+      }
+    }
+  }
+`);
+
 export type PlanTask = SectionedTask & {
   description?: string | null;
   estimatedMinutes?: number | null;
@@ -92,7 +123,7 @@ export function usePlanTasks(onPlaced?: () => void) {
 
   const [acceptProposed] = useMutation(ACCEPT_PROPOSED);
   const [declineProposed] = useMutation(DECLINE_PROPOSED);
-  const [scheduleTask] = useMutation(SCHEDULE_TASK);
+  const [scheduleTaskAt] = useMutation(SCHEDULE_TASK_AT);
 
   const pendingByTask = useMemo(() => {
     const map = new Map<string, PendingChange>();
@@ -147,7 +178,10 @@ export function usePlanTasks(onPlaced?: () => void) {
         await acceptProposed({ variables: { id } });
       }
 
-      const result = await scheduleTask({ variables: { id, date: localDateOf(at) } });
+      // The exact dropped instant, not the date it falls on — see
+      // SCHEDULE_TASK_AT. `at` already carries the 15-minute-snapped time of
+      // day the calendar painted under the cursor.
+      const result = await scheduleTaskAt({ variables: { id, startTime: at.toISOString() } });
 
       if (!result.data?.scheduleTask.success) {
         throw new Error(result.data?.scheduleTask.status ?? 'not placed');
@@ -156,7 +190,7 @@ export function usePlanTasks(onPlaced?: () => void) {
       await refetch();
       onPlaced?.();
     },
-    [acceptProposed, onPlaced, refetch, scheduleTask],
+    [acceptProposed, onPlaced, refetch, scheduleTaskAt],
   );
 
   const dismissProposed = useCallback(
