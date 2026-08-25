@@ -158,6 +158,30 @@ describe('App feature-gated routes, end to end', () => {
     expect(h.notFoundRenders).toBe(0);
   });
 
+  // Same handover, seen from a legacy redirect rather than the destination.
+  // /prompts is registered inside the `stats.page` gate with /self/*, so while
+  // the flags are in flight it is "*" that matches — a bookmark waits on the
+  // loading page instead of being committed to /self/reflections before the
+  // route behind it is known to exist.
+  it('lands an old /prompts bookmark on Self without ever rendering 404', async () => {
+    window.history.pushState({}, '', '/prompts');
+
+    const releaseFlags = deferredFlags();
+
+    render(<App />);
+
+    // In flight: no 404, and no redirect decided on incomplete information.
+    expect(notFound()).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/prompts');
+
+    releaseFlags();
+
+    // Landed. `insights.page` is absent from these flags, so SelfPage sends
+    // the missing Reflections tab back to its index — Self, not a 404.
+    await waitFor(() => expect(window.location.pathname).toBe('/self'));
+    expect(h.notFoundRenders).toBe(0);
+  });
+
   it('renders 404 once the flags answer without the flag', async () => {
     vi.stubGlobal(
       'fetch',
