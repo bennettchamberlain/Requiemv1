@@ -77,11 +77,47 @@ describe('PlanPage', () => {
     expect(await screen.findByText(/nothing planned yet/i)).toBeInTheDocument();
   });
 
-  it('does not show the empty state when the feature flag is off', async () => {
+  it('does not show the empty state message when the feature flag is off', async () => {
     renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
 
     await screen.findByLabelText(/new task title/i);
     expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument();
+  });
+
+  // The COLUMNS are not the empty-state message and are not behind its flag.
+  // With no tasks the board used to render nothing at all: a first-time user
+  // saw an add-task box over blank space, with no hint that Proposed /
+  // Unscheduled / Scheduled / Done exist or that the system proposes into them.
+  // `withAllColumns` was written to keep empty columns and was never reached on
+  // this path. The columns ARE the explanation of what this page does.
+  it('shows the four columns even with nothing planned', async () => {
+    renderWithProviders(<PlanPage />, { mocks: [tasksMock([])] });
+
+    for (const column of ['Proposed', 'Unscheduled', 'Scheduled on calendar', 'Done']) {
+      expect(await screen.findByText(column)).toBeInTheDocument();
+    }
+  });
+
+  // A failed query used to render NOTHING — it fell through to the zero-task
+  // branch, whose message is flag-gated off by default, so `content` was null.
+  // Someone with forty tasks saw the same screen as someone with none, with no
+  // spinner, message or retry, and the reasonable conclusion is that their plan
+  // was wiped. `usePlanTasks` always returned this flag; nothing read it.
+  it('says the plan could not be loaded rather than rendering a blank page', async () => {
+    renderWithProviders(<PlanPage />, {
+      mocks: [
+        {
+          request: { query: GET_TASKS, variables: { first: 200 } },
+          error: new Error('offline'),
+          maxUsageCount: Number.POSITIVE_INFINITY,
+        },
+      ],
+    });
+
+    expect(await screen.findByText(/could not load your plan/i)).toBeInTheDocument();
+    // And it must not claim the tasks are gone.
+    expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
   it('groups tasks under Kanban columns and lane headings', async () => {

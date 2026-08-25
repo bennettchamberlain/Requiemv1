@@ -6,6 +6,7 @@ import { Button } from '@ci/shadcn';
 import { ListTodo } from '@ci/shadcn/icons';
 
 import { useFeatures } from '@/common/feature';
+import { ErrorState } from '@/components/ErrorState';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
 
@@ -65,7 +66,7 @@ export function PlanPage() {
   const { isFeatureEnabled } = useFeatures();
   const showEmptyState = isFeatureEnabled('planning.emptyState');
 
-  const { nodes, sections, pendingByTask, loading, refetch } = usePlanTasks();
+  const { nodes, sections, pendingByTask, loading, error, refetch } = usePlanTasks();
 
   const [completeTask] = useMutation(COMPLETE_TASK);
   const [reopenTask] = useMutation(REOPEN_TASK);
@@ -161,13 +162,39 @@ export function PlanPage() {
   // spinner when there is genuinely nothing to render yet.
   if (loading && nodes.length === 0) {
     content = <LoadingPage />;
-  } else if (nodes.length === 0) {
-    content = showEmptyState ? (
-      <EmptyState
-        icon={<ListTodo size={48} />}
-        message={<div>Nothing planned yet. Add your first task above.</div>}
+  } else if (error && nodes.length === 0) {
+    // A failed query used to fall through to the branch below and render
+    // NOTHING — the flag-gated empty state is off by default, so `content` was
+    // set to null and the page was the add-task form over blank space. A person
+    // with forty tasks was shown the same screen as a person with none, with no
+    // spinner, no message and no retry, and the reasonable conclusion is that
+    // their plan was wiped. `usePlanTasks` has always returned this flag;
+    // nothing read it. `TaskSlate`, fed by the same hook, gets it right.
+    content = (
+      <ErrorState
+        title="Could not load your plan"
+        description="Your tasks are still here — this device could not reach them just now."
+        onRetry={() => void refetch()}
       />
-    ) : null;
+    );
+  } else if (nodes.length === 0) {
+    // The board renders even with nothing in it. `withAllColumns` exists
+    // precisely to keep the four columns present when their buckets are empty,
+    // and it was never reached on this path: a first-time user saw an add-task
+    // box over blank space, with no hint that Proposed / Unscheduled /
+    // Scheduled / Done exist or that the system will propose things into them.
+    // The columns ARE the explanation of what this page does.
+    content = (
+      <>
+        <TaskBoard sections={[]} renderTask={(task) => renderTree(task, 0)} />
+        {showEmptyState ? (
+          <EmptyState
+            icon={<ListTodo size={48} />}
+            message={<div>Nothing planned yet. Add your first task above.</div>}
+          />
+        ) : null}
+      </>
+    );
   } else {
     content = <TaskBoard sections={sections} renderTask={(task) => renderTree(task, 0)} />;
   }

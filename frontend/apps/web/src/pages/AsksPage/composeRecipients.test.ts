@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { COMPOSER_SHAPES, composeRecipients, unreachablePeers } from './composeRecipients';
+import {
+  ASK_ARCHETYPES,
+  COMPOSER_SHAPES,
+  composeRecipients,
+  unreachablePeers,
+} from './composeRecipients';
 
 const EMPTY = { grants: [], inbox: [], outbox: [] };
 
@@ -117,16 +122,27 @@ describe('unreachablePeers', () => {
 });
 
 describe('COMPOSER_SHAPES', () => {
-  it('is a CLOSED list, because an unrecognised queryType widens rather than narrows', () => {
-    // `inferAnswerForm` falls through to `retrieval` — the only form that
-    // returns item references — for anything it does not recognise. A free-text
-    // queryType box would turn a typo into the widest possible ask, silently.
-    expect(COMPOSER_SHAPES.map((shape) => shape.queryType)).toEqual([
-      'relationship',
-      'existence',
-      'attribute',
-      'photos',
-    ]);
+  // THE assertion on this list. `parseAskQueryType` throws a 400 for anything
+  // outside the archetype vocabulary and `createAsk` runs every ask through it,
+  // so a shape naming a non-archetype is not a wide ask — it is a Send button
+  // that always fails. Two of the four shipped shapes ('existence', 'photos')
+  // were exactly that, and the previous version of this test asserted the
+  // broken values literally, which is why nothing caught it: every other test
+  // on this page mocks the mutation and never reaches the resolver.
+  //
+  // Written as a membership check rather than a literal list on purpose. A
+  // literal list re-pins whatever is currently there; this one fails for any
+  // future shape that leaves the vocabulary, which is the actual invariant.
+  it('names only query types the server will accept', () => {
+    for (const shape of COMPOSER_SHAPES) {
+      expect(ASK_ARCHETYPES).toContain(shape.queryType);
+    }
+  });
+
+  it('offers a distinct question shape per entry', () => {
+    const ids = COMPOSER_SHAPES.map((shape) => shape.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('states a ceiling on every shape, and never promises a class narrows the search', () => {
@@ -135,10 +151,23 @@ describe('COMPOSER_SHAPES', () => {
     }
 
     // `photos` resolves to the whole `file` entity type, and an unrecognised
-    // class resolves to no filter at all — so the widest shape must not read as
-    // if naming a class confined anything.
+    // class resolves to no filter at all — so a shape carrying a class must not
+    // read as if naming one confined anything.
     const photos = COMPOSER_SHAPES.find((shape) => shape.dataClass === 'photos');
 
     expect(photos?.ceiling).toMatch(/does not narrow/i);
+  });
+
+  // The photos shape rides the `content` archetype, whose declared form is
+  // `existence` — a count. It used to ride the unrecognised `photos`, which
+  // fell through to `retrieval` and really could return item references, so the
+  // old copy promised them. Now it cannot deliver that, and copy that promises
+  // more disclosure than the server permits is the same defect as copy that
+  // promises less: the owner consents against a description of what happens.
+  it('does not promise item references the content archetype cannot return', () => {
+    const photos = COMPOSER_SHAPES.find((shape) => shape.dataClass === 'photos');
+
+    expect(photos?.queryType).toBe('content');
+    expect(photos?.ceiling).not.toMatch(/references/i);
   });
 });

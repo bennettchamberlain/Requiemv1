@@ -98,6 +98,8 @@ type Documents = {
     "\n  mutation ApproveAsk($id: ID!) {\n    approveAsk(id: $id) {\n      success\n    }\n  }\n": typeof types.ApproveAskDocument,
     "\n  mutation DeclineAsk($id: ID!) {\n    declineAsk(id: $id) {\n      success\n    }\n  }\n": typeof types.DeclineAskDocument,
     "\n  mutation RunAsk($id: ID!, $redactItemIds: [String!], $disclosureForm: AnswerForm) {\n    runAsk(id: $id, redactItemIds: $redactItemIds, disclosureForm: $disclosureForm) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n": typeof types.RunAskDocument,
+    "\n  query MyAskAddress {\n    me {\n      id\n    }\n  }\n": typeof types.MyAskAddressDocument,
+    "\n  mutation CreateAskGrant($input: CreateAskGrantInput!) {\n    createAskGrant(input: $input) {\n      success\n      grant {\n        id\n        mode\n        queryType\n        dataClass\n        purpose\n        granteeId\n        granteePeerLinkId\n        revokedAt\n        expiresAt\n        active\n        createdAt\n      }\n    }\n  }\n": typeof types.CreateAskGrantDocument,
     "\n  mutation RevokeAskGrant($id: ID!) {\n    revokeAskGrant(id: $id) {\n      success\n    }\n  }\n": typeof types.RevokeAskGrantDocument,
     "\n  mutation UpdateAskGrant($id: ID!, $input: UpdateAskGrantInput!) {\n    updateAskGrant(id: $id, input: $input) {\n      success\n      grant {\n        id\n        mode\n        expiresAt\n        active\n        revokedAt\n        supersedesGrantId\n      }\n    }\n  }\n": typeof types.UpdateAskGrantDocument,
     "\n  query AskDisclosureHistory {\n    askDisclosureHistory {\n      id\n      askId\n      askerId\n      peerHandle\n      responderId\n      consentBasis\n      outcome\n      disclosedCount\n      createdAt\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n": typeof types.AskDisclosureHistoryDocument,
@@ -343,6 +345,8 @@ const documents: Documents = {
     "\n  mutation ApproveAsk($id: ID!) {\n    approveAsk(id: $id) {\n      success\n    }\n  }\n": types.ApproveAskDocument,
     "\n  mutation DeclineAsk($id: ID!) {\n    declineAsk(id: $id) {\n      success\n    }\n  }\n": types.DeclineAskDocument,
     "\n  mutation RunAsk($id: ID!, $redactItemIds: [String!], $disclosureForm: AnswerForm) {\n    runAsk(id: $id, redactItemIds: $redactItemIds, disclosureForm: $disclosureForm) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n": types.RunAskDocument,
+    "\n  query MyAskAddress {\n    me {\n      id\n    }\n  }\n": types.MyAskAddressDocument,
+    "\n  mutation CreateAskGrant($input: CreateAskGrantInput!) {\n    createAskGrant(input: $input) {\n      success\n      grant {\n        id\n        mode\n        queryType\n        dataClass\n        purpose\n        granteeId\n        granteePeerLinkId\n        revokedAt\n        expiresAt\n        active\n        createdAt\n      }\n    }\n  }\n": types.CreateAskGrantDocument,
     "\n  mutation RevokeAskGrant($id: ID!) {\n    revokeAskGrant(id: $id) {\n      success\n    }\n  }\n": types.RevokeAskGrantDocument,
     "\n  mutation UpdateAskGrant($id: ID!, $input: UpdateAskGrantInput!) {\n    updateAskGrant(id: $id, input: $input) {\n      success\n      grant {\n        id\n        mode\n        expiresAt\n        active\n        revokedAt\n        supersedesGrantId\n      }\n    }\n  }\n": types.UpdateAskGrantDocument,
     "\n  query AskDisclosureHistory {\n    askDisclosureHistory {\n      id\n      askId\n      askerId\n      peerHandle\n      responderId\n      consentBasis\n      outcome\n      disclosedCount\n      createdAt\n      query {\n        queryType\n        dataClass\n        prompt\n      }\n    }\n  }\n": types.AskDisclosureHistoryDocument,
@@ -842,6 +846,14 @@ export function gql(source: "\n  mutation DeclineAsk($id: ID!) {\n    declineAsk
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  mutation RunAsk($id: ID!, $redactItemIds: [String!], $disclosureForm: AnswerForm) {\n    runAsk(id: $id, redactItemIds: $redactItemIds, disclosureForm: $disclosureForm) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n"): (typeof documents)["\n  mutation RunAsk($id: ID!, $redactItemIds: [String!], $disclosureForm: AnswerForm) {\n    runAsk(id: $id, redactItemIds: $redactItemIds, disclosureForm: $disclosureForm) {\n      success\n      disclosedCount\n      withheldCount\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query MyAskAddress {\n    me {\n      id\n    }\n  }\n"): (typeof documents)["\n  query MyAskAddress {\n    me {\n      id\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation CreateAskGrant($input: CreateAskGrantInput!) {\n    createAskGrant(input: $input) {\n      success\n      grant {\n        id\n        mode\n        queryType\n        dataClass\n        purpose\n        granteeId\n        granteePeerLinkId\n        revokedAt\n        expiresAt\n        active\n        createdAt\n      }\n    }\n  }\n"): (typeof documents)["\n  mutation CreateAskGrant($input: CreateAskGrantInput!) {\n    createAskGrant(input: $input) {\n      success\n      grant {\n        id\n        mode\n        queryType\n        dataClass\n        purpose\n        granteeId\n        granteePeerLinkId\n        revokedAt\n        expiresAt\n        active\n        createdAt\n      }\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

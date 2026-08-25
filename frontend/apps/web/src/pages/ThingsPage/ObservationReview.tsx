@@ -159,7 +159,7 @@ export function ObservationReview({ onResolved }: { onResolved?: () => Promise<u
   const [pending, setPending] = useState<{ id: string; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { data, loading, refetch } = useQuery(GET_UNRESOLVED_OBSERVATIONS, {
+  const { data, loading, error: loadError, refetch } = useQuery(GET_UNRESOLVED_OBSERVATIONS, {
     variables: { limit: REVIEW_PAGE_SIZE, offset: page * REVIEW_PAGE_SIZE },
     notifyOnNetworkStatusChange: true,
   });
@@ -210,6 +210,19 @@ export function ObservationReview({ onResolved }: { onResolved?: () => Promise<u
       <Card.Content className="flex flex-col gap-3">
         {loading && observations.length === 0 ? (
           <div className="py-2 text-sm text-muted-foreground">Loading sightings…</div>
+        ) : loadError && observations.length === 0 ? (
+          // A failed query used to fall through to the strip with an empty list
+          // and print "Nothing is waiting for review." — the one message that
+          // tells the owner everything is fine and there is nothing to come
+          // back for, on the surface whose whole job is to collect detections a
+          // human still has to resolve. The mutations below were already
+          // guarded; only the read was not.
+          <div className="flex flex-col items-start gap-2 py-2">
+            <span className="text-sm text-destructive">Could not load sightings.</span>
+            <Button size="sm" variant="outline" onClick={() => void refetch()}>
+              Try again
+            </Button>
+          </div>
         ) : (
           <ObservationStrip
             wrap

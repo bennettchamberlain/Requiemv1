@@ -8,6 +8,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import { useThreadService } from '@/api';
 import { Chat, type FormData } from '@/components/Chat';
+import { ErrorState } from '@/components/ErrorState';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
 import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } from '@/lib/agentChat';
 
@@ -34,9 +35,8 @@ function ChatPageContent() {
     { refetch: refetchThreads, delete: deleteThread },
   ] = useThreadListService();
 
-  const [{ thread, loading: threadLoading }, { refetch: refetchThread }] = useThreadService(
-    resolvedThreadId.current,
-  );
+  const [{ thread, loading: threadLoading, error: threadError }, { refetch: refetchThread }] =
+    useThreadService(resolvedThreadId.current);
 
   const [{ count: newThreadCount }, { increment: incrementNewThreadCount }] = useCounter();
 
@@ -209,7 +209,22 @@ function ChatPageContent() {
 
   let emptyState: ReactNode;
 
-  if (threadsError) {
+  if (threadError && initialMessages.length === 0) {
+    // A specific thread that failed to LOAD used to satisfy neither branch
+    // below — `threadsError` is the thread LIST's error, and
+    // `resolvedThreadId.current` is set — so `emptyState` stayed undefined and
+    // the page rendered an open conversation with no messages. Deep-linking to
+    // /chat/:id while the API is failing therefore looked exactly like a thread
+    // whose history had been deleted, and typing into it would start appending
+    // to a conversation whose real contents were never shown.
+    emptyState = (
+      <ErrorState
+        title="Could not load this conversation"
+        description="Your messages are still here — this device could not reach them just now."
+        onRetry={() => void refetchThread()}
+      />
+    );
+  } else if (threadsError) {
     emptyState = (
       <Card className="border-destructive/20 bg-destructive/5">
         <Card.Content className="p-6">

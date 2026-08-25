@@ -19,7 +19,15 @@ export type SelfSection = {
  */
 export const SELF_SECTIONS: SelfSection[] = [
   { to: '/self', label: 'Profile', match: (p) => p === '/self', icon: UserRound },
-  { to: '/self/stats', label: 'Stats', match: (p) => p === '/self/stats', icon: ChartColumn },
+  {
+    to: '/self/stats',
+    label: 'Stats',
+    match: (p) => p === '/self/stats',
+    // What `stats.page` was always named for. It used to gate the whole Self
+    // tile instead, which took Settings and Log out with it.
+    flag: 'stats.page',
+    icon: ChartColumn,
+  },
   {
     to: '/self/reflections',
     label: 'Reflections',

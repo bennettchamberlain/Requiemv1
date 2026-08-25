@@ -674,8 +674,18 @@ export const ConfigSchema = z.object({
     'planning.page': booleanStringSchema,
     /** Shows the "Nothing planned yet" empty state on the Plan page when there are no tasks. */
     'planning.emptyState': booleanStringSchema,
-    /** Enables the memory stats page (`/stats`): timeline totals plus entity
-     * breakdowns by data source and by tag. */
+    /**
+     * Wholesale gate for the Self surface (`/self/*` + the Power Rail user
+     * tile): identity, life details, account, Stats and Reflections.
+     *
+     * Its own flag because the tile is the ONLY mount point for the account
+     * menu — Settings, Theme and Log out. It used to ride `stats.page`, so
+     * turning off a flag named for a statistics page removed every way to open
+     * Settings or sign out.
+     */
+    'self.page': booleanStringSchema,
+    /** Enables the memory stats page (now the Stats tab inside Self): timeline
+     * totals plus entity breakdowns by data source and by tag. */
     'stats.page': booleanStringSchema,
     /** Wholesale gate for the Schedule surface (`/schedule` + nav entry point):
      * committed events, the HBPE rhythm layer, and proposed candidates. On by

@@ -34,8 +34,10 @@ import {
   ASK_INBOX,
   ASK_OUTBOX,
   CREATE_ASK,
+  CREATE_ASK_GRANT,
   CREATE_PEER_LINK,
   DECLINE_ASK,
+  MY_ASK_ADDRESS,
   MY_ASK_GRANTS,
   MY_PEER_LINKS,
   REVOKE_ASK_GRANT,
@@ -47,6 +49,7 @@ import {
 import { COMPOSER_SHAPES, composeRecipients, unreachablePeers } from './composeRecipients';
 import { DisclosureHistory } from './DisclosureHistory';
 import { GrantManager, type GranteeGroup } from './GrantManager';
+import { NewGrantForm } from './NewGrantForm';
 import { PeerManager } from './PeerManager';
 
 type Tab = 'inbox' | 'compose' | 'outbox' | 'grants' | 'peers' | 'history';
@@ -87,6 +90,15 @@ export function AsksPage() {
   usePageTitle('Asks');
 
   const [tab, setTab] = useState<Tab>('inbox');
+  /** Whether the Grants tab is showing the write form rather than the matrix. */
+  const [addingGrant, setAddingGrant] = useState(false);
+  // The owner's own ask address, so the form can offer it for copying. There is
+  // no directory on this box — an address is handed over out of band — and the
+  // only address anyone can read is their own, which is what keeps that true.
+  // Failure is not surfaced: the address is a convenience on one form, and an
+  // error banner over the whole Asks page for it would be louder than the thing
+  // it reports. The form simply omits the block when there is nothing to show.
+  const myAddress = useQuery(MY_ASK_ADDRESS).data?.me?.id ?? null;
   const [openAnswerId, setOpenAnswerId] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
@@ -113,6 +125,16 @@ export function AsksPage() {
   const [updateGrant, updatingGrant] = useMutation(UPDATE_ASK_GRANT, {
     onCompleted: () => void grants.refetch(),
   });
+  // Re-reads the INBOX as well as the grants. A new grant changes who may ask,
+  // and `composeRecipients` is built from grants + inbox + outbox — so without
+  // this the row the owner just wrote would not appear in the composer until a
+  // reload, which is the exact bootstrap this control exists to provide.
+  const [createGrant, creatingGrant] = useMutation(CREATE_ASK_GRANT, {
+    onCompleted: () => {
+      void grants.refetch();
+      void inbox.refetch();
+    },
+  });
   const [createAsk, creating] = useMutation(CREATE_ASK, {
     onCompleted: () => void outbox.refetch(),
   });
@@ -127,7 +149,7 @@ export function AsksPage() {
   });
 
   const busy = approving.loading || declining.loading || running.loading;
-  const grantBusy = revoking.loading || updatingGrant.loading;
+  const grantBusy = revoking.loading || updatingGrant.loading || creatingGrant.loading;
   const peerBusy = linking.loading || retiering.loading || unlinking.loading;
 
   /**
@@ -326,22 +348,64 @@ export function AsksPage() {
       // owner may have already read past.
       content = <LoadingPage />;
     } else {
-      content = grantGroups.length ? (
-        <GrantManager
-          groups={grantGroups}
-          defaultMode="review"
+      const newGrantForm = (
+        <NewGrantForm
+          myAddress={myAddress}
           busy={grantBusy}
-          onChangeMode={(grantId, mode) =>
-            runAction(updateGrant({ variables: { id: grantId, input: { mode } } }))
-          }
-          onSetExpiry={(grantId, expiresAt) =>
-            runAction(updateGrant({ variables: { id: grantId, input: { expiresAt } } }))
-          }
-          onRevoke={(grantId) => runAction(revokeGrant({ variables: { id: grantId } }))}
-          onOpenHistory={() => setTab('history')}
+          onCancel={() => setAddingGrant(false)}
+          onCreate={(grant) => {
+            setAddingGrant(false);
+            runAction(
+              createGrant({
+                variables: {
+                  input: {
+                    granteeId: grant.granteeId,
+                    queryType: grant.queryType,
+                    dataClass: grant.dataClass,
+                    mode: grant.mode,
+                  },
+                },
+              }),
+              // Nothing to re-read on failure — no grant was written, and the
+              // form has already closed. The default `refetchAll` would fire
+              // three pointless reads of the owner's own surfaces.
+              () => undefined,
+            );
+          }}
         />
+      );
+
+      // The empty state gets the SAME affordance as the populated one. It used
+      // to be a bare sentence, which is how the Grants tab ended up permanently
+      // read-only: `GrantManager` carries the "New grant" button, and
+      // `GrantManager` is only rendered once at least one grant exists — so the
+      // one screen a new owner actually sees was the one screen with no way to
+      // write the first grant.
+      content = grantGroups.length ? (
+        <div className="flex flex-col gap-4">
+          {addingGrant ? newGrantForm : null}
+          <GrantManager
+            groups={grantGroups}
+            defaultMode="review"
+            busy={grantBusy}
+            onChangeMode={(grantId, mode) =>
+              runAction(updateGrant({ variables: { id: grantId, input: { mode } } }))
+            }
+            onSetExpiry={(grantId, expiresAt) =>
+              runAction(updateGrant({ variables: { id: grantId, input: { expiresAt } } }))
+            }
+            onRevoke={(grantId) => runAction(revokeGrant({ variables: { id: grantId } }))}
+            onAddGrant={addingGrant ? undefined : () => setAddingGrant(true)}
+            onOpenHistory={() => setTab('history')}
+          />
+        </div>
+      ) : addingGrant ? (
+        newGrantForm
       ) : (
-        <EmptyState message="No standing grants. Every ask comes to you for review." />
+        <div className="flex flex-col items-center gap-4">
+          <EmptyState message="No standing grants. Every ask comes to you for review." />
+          <Button onClick={() => setAddingGrant(true)}>New grant</Button>
+        </div>
       );
     }
   } else if (tab === 'peers') {

@@ -127,6 +127,78 @@ export const RUN_ASK = gql(`
   }
 `);
 
+/**
+ * WRITE a standing grant — the control this page has never had.
+ *
+ * `createAskGrant` has been on the schema and complete in the resolver for the
+ * whole life of this feature; nothing on the client selected it. `GrantManager`
+ * even declares an `onAddGrant` prop and renders a "New grant" button for it,
+ * and the page simply never passed one, so the button never rendered and the
+ * Grants tab was permanently read-only: it printed "No standing grants. Every
+ * ask comes to you for review." and offered no way to write one.
+ *
+ * That is worse than a missing feature on THIS surface, because the recipient
+ * picker is bootstrapped from grants. `composeRecipients` builds its list from
+ * (grants I have given, asks sent to me, asks I have sent) and nothing else —
+ * there is deliberately no user-search endpoint — so on a box where nobody has
+ * ever asked anybody anything, all three sources are empty and the composer
+ * says "There is nobody to ask yet." A grant is the ONLY way to seed that list,
+ * which made standing consent both the missing control and the missing
+ * bootstrap.
+ *
+ * `granteeId` rather than `granteePeerLinkId`: this page writes grants for
+ * people with accounts on THIS appliance. The peer path exists in the input and
+ * is left to the federated flow, which needs a Portal access token this page
+ * cannot mint (see `unreachablePeers`).
+ *
+ * The selection mirrors MY_ASK_GRANTS so the new row lands in the cache with
+ * every field the matrix reads — `active` in particular is the server's own
+ * liveness verdict and must not be re-derived here.
+ */
+/**
+ * The owner's OWN ask address, and nobody else's.
+ *
+ * A grant names its grantee by opaque user id, and there is no directory on
+ * this box to look one up in — `composeRecipients` documents at length why a
+ * user-search endpoint is not on the table. So an address is handed over out of
+ * band, which only works if a person can read their own. This query is that,
+ * and its scope is the safety property: `me` is the session's own user, so no
+ * amount of calling it enumerates anybody else.
+ *
+ * A separate document rather than `useCurrentUser` on purpose. That hook reads
+ * auth context, and this page's tests deliberately mount without an
+ * AuthProvider (see `renderWithProviders`) — a page that cannot render without
+ * one is a page whose consent logic stops being testable.
+ */
+export const MY_ASK_ADDRESS = gql(`
+  query MyAskAddress {
+    me {
+      id
+    }
+  }
+`);
+
+export const CREATE_ASK_GRANT = gql(`
+  mutation CreateAskGrant($input: CreateAskGrantInput!) {
+    createAskGrant(input: $input) {
+      success
+      grant {
+        id
+        mode
+        queryType
+        dataClass
+        purpose
+        granteeId
+        granteePeerLinkId
+        revokedAt
+        expiresAt
+        active
+        createdAt
+      }
+    }
+  }
+`);
+
 export const REVOKE_ASK_GRANT = gql(`
   mutation RevokeAskGrant($id: ID!) {
     revokeAskGrant(id: $id) {

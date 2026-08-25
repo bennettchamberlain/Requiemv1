@@ -72,9 +72,21 @@ export const RAIL_DESTINATIONS: readonly RailDestination[] = [
   { id: 'jobs', to: '/jobs', label: 'Jobs', icon: Workflow, flag: 'jobs.page' },
   // Combines the former About You / Account settings and the Stats page —
   // one destination for "who I am to the system", rendered as the user tile
-  // at the foot of the rail rather than in the destination list. Still gated
-  // on `stats.page` so no config/env rename is needed.
-  { id: 'self', to: '/self', label: 'Self', icon: CircleUserRound, flag: 'stats.page', end: false },
+  // at the foot of the rail rather than in the destination list.
+  //
+  // ═══ THIS USED TO RIDE `stats.page`, AND THAT REMOVED LOG OUT ═══
+  //
+  // The tile is the only mount point for `NavUserMenu` (SelfSubmenu renders it;
+  // nothing else does), and `NavUserMenu` is the only Settings / Theme / Log out
+  // cluster in the shell. The other two logout call sites both live inside the
+  // `/self/*` subtree, which was gated on the same flag. So turning off a flag
+  // named for a STATISTICS PAGE removed the user's avatar, their whole identity
+  // surface, the theme switcher, Settings, and every way to sign out — leaving
+  // no route back except clearing storage.
+  //
+  // `self.page` is its own flag now, and `stats.page` gates only the Stats entry
+  // inside the tile (see selfSections.ts), which is what its name always claimed.
+  { id: 'self', to: '/self', label: 'Self', icon: CircleUserRound, flag: 'self.page', end: false },
 ];
 
 export const HELP_LINKS = [

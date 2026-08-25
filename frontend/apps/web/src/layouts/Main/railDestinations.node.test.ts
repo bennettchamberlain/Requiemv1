@@ -24,6 +24,26 @@ describe('visibleRailDestinations', () => {
     ]);
   });
 
+  // ═══ THE ACCOUNT TILE IS NOT A STATISTICS PAGE ═══
+  //
+  // Self used to be gated on `stats.page`, and the tile is the ONLY mount point
+  // for `NavUserMenu` — the only Settings / Theme / Log out cluster in the app.
+  // Turning off a flag named for a statistics page therefore removed the user's
+  // avatar, their whole identity surface, the theme switcher, Settings, and
+  // every way to sign out. Both directions are asserted, because it is the
+  // second one that was the bug.
+  it('keeps the account tile when only the stats page is turned off', () => {
+    const visible = visibleRailDestinations((flag) => flag !== 'stats.page');
+
+    expect(visible.map((destination) => destination.id)).toContain('self');
+  });
+
+  it('drops the account tile only for its own flag', () => {
+    const visible = visibleRailDestinations((flag) => flag !== 'self.page');
+
+    expect(visible.map((destination) => destination.id)).not.toContain('self');
+  });
+
   // Two peer rows for "talk to it" and "what it asked back" read as two
   // unrelated places. One group, one row.
   it('carries Asks inside the Chat group rather than as a peer row', () => {

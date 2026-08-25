@@ -234,6 +234,12 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
   }, [question, visibleActions]);
   const isActionsRowEmpty = actionCards.length === 0;
   const isInsightsRowEmpty = mixedInsightSummaryCards.length === 0;
+  // Suppressed on error ON PURPOSE: "You've seen everything for now" is a claim
+  // about the owner's data, and a failed query is not evidence for it. The
+  // banner above the row carries the reason instead — which is why that banner
+  // had to stop promising preview cards that `useSummariesService` never
+  // returns (it is `|| []`, with no fallback of any kind), since between the
+  // two the region said "placeholders are shown" over nothing at all.
   const showInsightsRowEmptyState = isInsightsRowEmpty && !summariesLoading && !summariesError;
   const showMobileEmptyState = isActionsRowEmpty && showInsightsRowEmptyState;
 
@@ -410,8 +416,9 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
               <section className="flex flex-col gap-2">
                 <h2 className="text-lg font-semibold tracking-tight text-foreground">Insights & Summaries</h2>
                 {summariesError && (
-                  <p className="text-sm text-muted-foreground">
-                    We could not load live insights. Preview cards are shown until the service recovers.
+                  <p className="text-sm text-destructive" role="alert">
+                    Insights could not be loaded just now — this is a connection problem, not an empty
+                    Companion.
                   </p>
                 )}
                 {showInsightsRowEmptyState ? (
@@ -507,8 +514,8 @@ export function FeedPage({ embedded = false }: FeedPageProps = {}) {
 
         <div className="space-y-2">
           {summariesError && (
-            <div className="text-sm text-destructive">
-              We could not load live insights. Preview cards are shown until the service recovers.
+            <div className="text-sm text-destructive" role="alert">
+              Insights could not be loaded just now — this is a connection problem, not an empty Companion.
             </div>
           )}
 
