@@ -1136,6 +1136,14 @@ export class QuestionService {
       return false;
     }
 
+    await this.rotateFeedQueueRow(front.feed_queue_id);
+    await this.enqueueNextFeedQueueQuestion(userId, FEED_QUESTION_QUEUE_LIMIT);
+
+    return true;
+  }
+
+  /** Push one feed-queue row to the back of the FIFO. Shared by staleness rotation and an explicit user skip. */
+  private async rotateFeedQueueRow(feedQueueId: string): Promise<void> {
     await this.dataSource.query(
       `
       UPDATE ci.feed_queue
@@ -1144,9 +1152,40 @@ export class QuestionService {
         metadata = (COALESCE(metadata, '{}'::jsonb) - 'lastPresentedAt') || jsonb_build_object('rotatedAt', to_jsonb(NOW()::text))
       WHERE feed_queue_id = $1;
       `,
-      [front.feed_queue_id],
+      [feedQueueId],
     );
+  }
 
+  /**
+   * Move the front-of-queue question to the back on the owner's own say-so —
+   * "Skip" on the reflection prompt.
+   *
+   * `findOneUnanswered` always returns the SAME front-of-queue row
+   * deterministically (`ORDER BY enqueued_at ASC ... LIMIT 1`), and only
+   * `rotateStaleFeedQuestions` ever moves it — gated on 30 minutes of
+   * inactivity. Calling `findOneUnanswered` again right after a user-pressed
+   * Skip therefore returned the identical question: the frontend's "Skip"
+   * used to hide the card locally instead, which meant the same question
+   * reappeared on the next reload with no memory of having been skipped.
+   * An explicit skip is a stronger, more deliberate signal than mere
+   * staleness, so it bypasses the 30-minute gate entirely — reusing the exact
+   * rotation `rotateStaleFeedQuestions` performs rather than a second copy of
+   * the "move to back" SQL.
+   *
+   * A no-op (not an error) when the front row has moved on since the caller
+   * fetched it, or the queue is empty — either way there is nothing to skip.
+   */
+  async skipFrontFeedQuestion(userId: string, presentationId: string): Promise<boolean> {
+    const rows = (await this.dataSource.query(
+      `SELECT feed_queue_id FROM ci.feed_queue WHERE feed_queue_id = $1 AND user_id = $2;`,
+      [presentationId, userId],
+    )) satisfies Array<{ feed_queue_id: string }>;
+
+    if (rows.length === 0) {
+      return false;
+    }
+
+    await this.rotateFeedQueueRow(presentationId);
     await this.enqueueNextFeedQueueQuestion(userId, FEED_QUESTION_QUEUE_LIMIT);
 
     return true;
