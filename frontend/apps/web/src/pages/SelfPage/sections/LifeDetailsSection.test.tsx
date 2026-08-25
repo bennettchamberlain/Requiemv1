@@ -221,10 +221,15 @@ describe('LifeDetailsSection', () => {
 
     render(<LifeDetailsSection />);
 
-    const row = (await screen.findByText(/O negative/)).closest('p')!;
-    expect(row).not.toHaveClass('truncate');
-    expect(row).toHaveClass('break-words');
-    expect(row).toHaveClass('sm:truncate');
+    // The bug this guards: a `truncate` answer showed the question and an
+    // ellipsis on a ~340px phone, so every answered row read as blank. The
+    // question now lives in the row's own grid cell and the answer wraps in
+    // its own element, so assert the wrapping where the answer actually is
+    // rather than on a shared paragraph that no longer exists.
+    const answer = await screen.findByText('O negative');
+    expect(answer).toHaveClass('break-words');
+    expect(answer).toHaveClass('whitespace-pre-wrap');
+    expect(answer).not.toHaveClass('truncate');
   });
 
   it('shows one error for the whole section when the fetch fails, with no question text rendered', async () => {
