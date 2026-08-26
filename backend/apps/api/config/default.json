@@ -198,6 +198,15 @@
     "autoPromoteThresholdHandsOff": 0.7,
     "alwaysReviewBelowConfidence": 0.55
   },
+  "agent": {
+    "memoryRetention": {
+      "enabled": true,
+      "processedDays": 365,
+      "stuckAfterDays": 7,
+      "stuckAlertRepeatDays": 7,
+      "deleteBatchSize": 500
+    }
+  },
   "features": {
     "scheduled.answer.inferencing": true,
     "scheduled.connection.sync": true,
