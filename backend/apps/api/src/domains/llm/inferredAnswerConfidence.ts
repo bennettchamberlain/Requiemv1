@@ -487,6 +487,15 @@ Prior answers to OTHER questions are context, never source material. An answer a
 
 NEVER hedge in the answer field. "I'm not sure", "I haven't really thought about it", "it depends", "I don't have a strong preference" and anything like them are not answers — if the evidence does not support one, still give the single most likely short answer and put your uncertainty in \`confidence\` by scoring below ${CONFIDENCE_INDIRECT}. A low score is the honest signal and gets the answer discarded cleanly; a waffling sentence gets written into the user's memory as if they had said it.
 
+A FORCED CHOICE IS NOT ANSWERED BY ORBITING THE CHOICE. When a question names its own two or three specific alternatives ("Do you prefer camping in a tent or in a hammock?"), an answer that never names either one is not a low-confidence answer, it is a non-answer that borrowed the question's own words. "It really depends on where I'm camping." sounds considered and commits to nothing: "where I'm camping" IS the choice being asked about, restated rather than resolved, and the sentence would read exactly the same whichever this person actually prefers. That sameness is the tell — if your answer would not change depending on which alternative were true, you have not picked one.
+
+Worked example — question: "Do you prefer camping in a tent or in a hammock?", evidence: several camping trips, none saying which:
+WRONG: {"asked_for":"tent or hammock when camping","support":"stated","answer":"It really depends on where I'm camping.","confidence":0.75,"rationale":"the trips show a strong pattern of camping"}
+CORRECT, when nothing favours either:
+{"asked_for":"tent or hammock when camping","support":"topical","answer":"Tent.","confidence":0.15,"rationale":"Several camping trips, none saying which — this names neither, so it is a guess and scored accordingly."}
+
+AN "IT DEPENDS" CAN BE A REAL ANSWER — WHEN THE CONDITION IS ACTUALLY NEW. "It depends on the weather." for a yes/no question like "Do you keep the car windows down on the highway?" is genuinely informative: weather is a condition the question never named, and naming it is new information. The same three words stop being an answer the instant the condition is just the question's own subject handed back — "It depends on how I'm camping" for the tent-or-hammock question above names nothing new, because "how I'm camping" is not a condition on the choice, it IS the choice. The test is not whether you hedged; it is whether the qualifier could be swapped in as a rewording of the question itself.
+
 A NON-ANSWER MUST SCORE LOW. If the answer text is any form of "I don't know", "I do not have this information recorded", "no information", "not recorded", "unknown" or "there is nothing in the evidence", then \`confidence\` MUST be at most ${CONFIDENCE_NON_ANSWER} — well below ${CONFIDENCE_INDIRECT}. \`confidence\` is how sure you are OF AN ANSWER, and a refusal is not one; it is not how sure you are that you don't know. Scoring a refusal 0.7 is always wrong, and it is clamped on arrival regardless, so the only thing a high score on a non-answer buys you is a discarded generation.
 
 SPEAK AS THE PERSON, NEVER ABOUT THEIR RECORDS. The answer field is what they would say out loud to someone who asked them — it is published on their own profile beside answers they typed themselves. So never narrate the corpus: no "My record shows", "in this record", "based on the evidence", "the data suggests", "the records indicate", "listing locations like", and never refer to yourself in the third person as "the user" or "this person". Naming the evidence is the job of \`rationale\`, and ONLY of \`rationale\`; an answer that mentions the record at all has been written in the wrong voice.
@@ -1040,6 +1049,537 @@ export function enforceEvidenceIsAboutThePerson(
       confidence: round2(Math.min(inferred.confidence, CONFIDENCE_OFF_QUESTION)),
     },
     aboutThePerson: false,
+  };
+}
+
+/**
+ * ═══ THE FORCED-CHOICE COMMITMENT GATE ═══
+ *
+ * A `multiple_choice` question names its own answer space. "Do you prefer
+ * small gatherings or large parties?" is not asking for an essay about
+ * parties — it is asking which of exactly two things this person would
+ * choose, and a sentence that touches the topic without picking a side is not
+ * a weak answer to it, it is a non-answer wearing a fluent sentence. Measured
+ * live: "It depends on the parties I go to." — self-scored 0.75, `support`
+ * unset — which is circular rather than uncertain: "the parties I go to" is
+ * the question's own axis (party size) handed back, not a fact this side
+ * didn't already know.
+ *
+ * The wrong fix, already tried and rejected once this session, is banning
+ * hedge language. "Do you prefer the beach or the mountains?" has a CORRECT
+ * promoted answer — "I'm not sure, but I prefer the beach and nature areas."
+ * — that hedges AND commits; a phrase-ban would have discarded a good answer
+ * along with a bad one. The signal this gate keys on is narrower and the
+ * right one: does the answer name EXACTLY ONE alternative, by the word itself
+ * or an unmistakable paraphrase? "I'm not sure, but I prefer the beach…"
+ * names "the beach" and only "the beach"; "It depends on the parties I go to"
+ * names neither "small" nor "large".
+ *
+ * EXACTLY one, not "at least one" — a second measured live failure on the
+ * same question names BOTH sides and still is not an answer: "I am somewhere
+ * between cat and dog, though I currently take care of my neighbor's dogs."
+ * for "Are you more of a cat person or a dog person?" contains the literal
+ * words "cat" AND "dog", so a check for either word alone would wave it
+ * through. The prompt already states the general form of this — "An A-or-B
+ * question is answered by A or by B, never by a thing that is part A and part
+ * B" — for the case where the sentence has no person in it at all; this is
+ * the same shape spoken in the first person, which the existing aboutness
+ * gate does not cover because a first-person sentence is exactly what it is
+ * built to let through.
+ *
+ * Deliberately narrow in what it will act on. {@link extractForcedChoiceAlternatives}
+ * only ever returns a verdict for a question that cleanly names two or a
+ * short few alternatives — most of the real catalogue does ("Do you prefer
+ * X or Y?"), but a real minority is open-domain ("What time of day do you
+ * prefer to exercise?") or asks for a quantity dressed as a list ("How often
+ * do you have therapy or counseling appointments?" is a frequency question,
+ * not a choice between "therapy" and "counseling appointments"). Extraction
+ * returns `null` for both, and `null` is a no-op here — this gate does not
+ * invent alternatives the question did not actually name, and existing
+ * behaviour is untouched on every question it cannot parse this way.
+ */
+export function enforceForcedChoiceCommitment(
+  inferred: InferredAnswer,
+  question: ForcedChoiceQuestion,
+): { inferred: InferredAnswer; committed: boolean; alternatives: readonly string[] | null } {
+  if (question.questionType !== 'multiple_choice') {
+    return { inferred, committed: true, alternatives: null };
+  }
+
+  const alternatives = extractForcedChoiceAlternatives(question.text);
+
+  if (!alternatives) {
+    return { inferred, committed: true, alternatives: null };
+  }
+
+  const answerWords = wordSetOf(inferred.answer);
+  const namedCount = alternatives.filter((alternative) => namesAlternative(answerWords, alternative)).length;
+  const committed = namedCount === 1;
+
+  if (committed) {
+    return { inferred, committed: true, alternatives: alternatives.map((alternative) => alternative.phrase) };
+  }
+
+  return {
+    inferred: {
+      ...inferred,
+      support: 'topical',
+      confidence: round2(Math.min(inferred.confidence, CONFIDENCE_OFF_QUESTION)),
+    },
+    committed: false,
+    alternatives: alternatives.map((alternative) => alternative.phrase),
+  };
+}
+
+/** What {@link enforceForcedChoiceCommitment} and {@link enforceYesNoQualifierIsInformative} need of a question — the same two fields {@link Question} already carries. */
+export interface ForcedChoiceQuestion {
+  readonly text: string;
+  readonly questionType?: string | null;
+}
+
+/** One named alternative extracted from a `multiple_choice` question's own text. */
+export interface ForcedChoiceAlternative {
+  /** The phrase as it appeared in the question — diagnostic only. */
+  readonly phrase: string;
+  /** The content words that distinguish this alternative from its sibling(s), with words shared by every alternative already removed. */
+  readonly tokens: readonly string[];
+}
+
+const MIN_FORCED_CHOICE_ALTERNATIVES = 2;
+
+/**
+ * A guard against a pathological generation more than a real ceiling — the
+ * corpus tops out at three named alternatives ("silent, vibrate, or
+ * ringer"), and a split that produces more than four is not a short
+ * enumeration any more.
+ */
+const MAX_FORCED_CHOICE_ALTERNATIVES = 4;
+
+/**
+ * Questions that ask for a MAGNITUDE, not a pick between named things — "How
+ * often do you have therapy or counseling appointments?" splits cleanly on
+ * " or " and is still not a forced choice between "therapy" and "counseling
+ * appointments": the question wants a frequency, and "therapy" and
+ * "counseling appointments" are the same category said two ways, not two
+ * things to choose between. Excluded up front, before extraction is even
+ * attempted, because no amount of phrase-splitting turns a frequency question
+ * into one.
+ */
+const QUANTITY_OR_TIME_QUESTION =
+  /^(?:how\s+(?:often|much|many|long|far|old|tall|big|small|frequently|early|late)|what\s+time)\b/i;
+
+/**
+ * Words dropped before comparing a question's alternatives to each other or
+ * to an answer: determiners, prepositions, pronouns, the question's own
+ * auxiliary verbs, and the couple of verbs ("prefer", "rather") that
+ * introduce a choice without being part of either side of it.
+ *
+ * A separate set from {@link PREDICATE_FILLER} on purpose — that one is tuned
+ * for comparing two ANSWER sentences to each other and already drops words
+ * ("my", "their") this gate needs to keep meaningful ("Do you use YOUR legal
+ * name…" — "your" here is boilerplate, but the two sets serve different
+ * comparisons and conflating them risks silently changing the other gate's
+ * measured behaviour for a change this one does not need.
+ */
+const FORCED_CHOICE_STOPWORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'to',
+  'of',
+  'in',
+  'on',
+  'at',
+  'with',
+  'for',
+  'as',
+  'from',
+  'into',
+  'near',
+  'about',
+  'over',
+  'under',
+  'by',
+  'out',
+  'you',
+  'your',
+  'yours',
+  'i',
+  'we',
+  'us',
+  'our',
+  'ours',
+  'it',
+  'its',
+  'me',
+  'my',
+  'mine',
+  'do',
+  'does',
+  'did',
+  'am',
+  'are',
+  'is',
+  'was',
+  'were',
+  'be',
+  'been',
+  'being',
+  'would',
+  'will',
+  'can',
+  'could',
+  'should',
+  'shall',
+  'must',
+  'might',
+  'may',
+  'have',
+  'has',
+  'had',
+  'prefer',
+  'rather',
+  'usually',
+  'generally',
+  'typically',
+  'normally',
+  'more',
+  'most',
+  'also',
+  'either',
+  'when',
+  'if',
+  'whether',
+  'and',
+  'or',
+]);
+
+function isForcedChoiceStopword(word: string): boolean {
+  return FORCED_CHOICE_STOPWORDS.has(word);
+}
+
+/**
+ * The lowercased words of a chunk of text, split the same way
+ * {@link normalizeAnswerText} already splits an answer — so a hyphenated
+ * question fragment ("lived-in") and a hyphenated answer word land on the
+ * same tokens without a second normalization rule to keep in sync.
+ */
+function wordsOf(text: string): string[] {
+  return normalizeAnswerText(text)
+    .split(' ')
+    .filter((word) => word.length > 0);
+}
+
+/**
+ * The trailing run of content words in `words` — everything after the LAST
+ * stopword, or all of `words` if none is one.
+ *
+ * This is what turns "Do you prefer small gatherings" into just
+ * `["small", "gatherings"]`: scanning from the end, "prefer" is a stopword and
+ * stops the run before it, so the question's own boilerplate never enters the
+ * alternative. Used for the FIRST chunk of a split question text, which is
+ * the only one still carrying the question's lead-in.
+ */
+function trailingContentRun(words: readonly string[]): string[] {
+  const result: string[] = [];
+
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (isForcedChoiceStopword(words[i])) {
+      break;
+    }
+
+    result.unshift(words[i]);
+  }
+
+  return result;
+}
+
+/**
+ * The leading run of content words in `words`, after first skipping any
+ * leading stopwords.
+ *
+ * Mirrors {@link trailingContentRun} for every chunk AFTER the first, which
+ * carries no lead-in and instead opens with its own determiner or preposition
+ * ("the mountains", "with music") — skipped, not treated as the stop
+ * boundary, because unlike the first chunk there is no boilerplate on the far
+ * side of it to protect against.
+ */
+function leadingContentRun(words: readonly string[]): string[] {
+  let start = 0;
+
+  while (start < words.length && isForcedChoiceStopword(words[start])) {
+    start++;
+  }
+
+  const result: string[] = [];
+
+  for (let i = start; i < words.length; i++) {
+    if (isForcedChoiceStopword(words[i])) {
+      break;
+    }
+
+    result.push(words[i]);
+  }
+
+  return result;
+}
+
+/**
+ * Split a `multiple_choice` question's own text into the alternatives it
+ * names, or `null` when it does not cleanly name a short, closed set.
+ *
+ * Splits on " or " and on a comma optionally followed by "or " in the same
+ * pass, so both "Do you rent or own your home?" and "Do you keep your phone
+ * on silent, vibrate, or ringer?" go through one rule rather than two. The
+ * FIRST chunk is trimmed from its end (it alone carries the question's own
+ * lead-in); every later chunk is trimmed from its start.
+ *
+ * Returns `null` — no verdict, not a guess — whenever the split does not
+ * clearly produce a short list of DIFFERENT named things: fewer than two
+ * survive, more than four survive, two reduce to the same words, or trimming
+ * strips one down to nothing. A first chunk trimmed to nothing is different
+ * from these: it means the split boundary fell exactly at the end of the
+ * question's lead-in (see the worked case below) and is simply dropped rather
+ * than counted as an empty alternative.
+ *
+ * Worked case: "What kind of stove do you cook on, gas, electric, or
+ * induction?" splits into four chunks. The first, "What kind of stove do you
+ * cook on", trims to nothing — its last word, "on", is a stopword, so the
+ * trailing run stops before it ever reaches "cook" — and is dropped rather
+ * than kept as a fourth, nonsensical alternative. The three real ones,
+ * "gas" / "electric" / "induction", are untouched by the trim rule because
+ * they are not the first chunk.
+ */
+export function extractForcedChoiceAlternatives(questionText: string): ForcedChoiceAlternative[] | null {
+  const stripped = (questionText ?? '').trim().replace(/[?.!]+\s*$/, '');
+
+  if (stripped.length === 0 || QUANTITY_OR_TIME_QUESTION.test(stripped)) {
+    return null;
+  }
+
+  const rawChunks = stripped
+    .split(/\s*,\s*(?:or\s+)?|\s+or\s+/i)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0);
+
+  if (rawChunks.length < MIN_FORCED_CHOICE_ALTERNATIVES) {
+    return null;
+  }
+
+  const alternatives: ForcedChoiceAlternative[] = [];
+
+  for (const [index, chunk] of rawChunks.entries()) {
+    const words = wordsOf(chunk);
+    const tokens = index === 0 ? trailingContentRun(words) : leadingContentRun(words);
+
+    if (tokens.length === 0) {
+      // A first chunk that trims to nothing is pure lead-in, not a fourth
+      // alternative — see the stove example above. The same emptiness on any
+      // later chunk means the split landed somewhere that names nothing, and
+      // the whole question is untrusted rather than guessed at.
+      if (index === 0) {
+        continue;
+      }
+
+      return null;
+    }
+
+    alternatives.push({ phrase: chunk, tokens });
+  }
+
+  if (
+    alternatives.length < MIN_FORCED_CHOICE_ALTERNATIVES ||
+    alternatives.length > MAX_FORCED_CHOICE_ALTERNATIVES
+  ) {
+    return null;
+  }
+
+  // Two alternatives that reduce to the same bag of words did not actually
+  // split into two different things.
+  const seen = new Set<string>();
+
+  for (const alternative of alternatives) {
+    const key = [...alternative.tokens].sort().join(' ');
+
+    if (seen.has(key)) {
+      return null;
+    }
+
+    seen.add(key);
+  }
+
+  // Drop words every alternative shares — "person" in "a cat person" / "a dog
+  // person" is the topic the question is about, not what distinguishes either
+  // side of it, and a paraphrase that reuses only the shared word ("I have
+  // cared for many kinds of pets") must not be able to pass by accident.
+  const shared = alternatives[0].tokens.filter((token) =>
+    alternatives.every((alternative) => alternative.tokens.includes(token)),
+  );
+
+  if (shared.length === 0) {
+    return alternatives;
+  }
+
+  const distinguished = alternatives.map((alternative) => ({
+    phrase: alternative.phrase,
+    tokens: alternative.tokens.filter((token) => !shared.includes(token)),
+  }));
+
+  // Removing the shared words may leave an alternative with nothing left of
+  // its own — two alternatives that differ ONLY in a word every other
+  // alternative also uses did not really name two different things.
+  return distinguished.some((alternative) => alternative.tokens.length === 0) ? null : distinguished;
+}
+
+/**
+ * A light, deliberately crude stemmer — just enough to match "cats" against
+ * "cat", "parties" against "party", and "traveling" against "travel" without
+ * a real morphological analyzer. Applied to both sides of every comparison
+ * this gate makes, so a mismatch it introduces is symmetric rather than a
+ * one-sided false negative.
+ *
+ * The `-ing` rule exists for a measured near miss on real, already-good
+ * evidence: "Do you check a bag or travel carry-on only?" answered "I prefer
+ * traveling with a carry-on." — a real commitment to the second alternative
+ * that a plural-only stemmer does not connect to the question's own "travel",
+ * discarding a good answer over an inflection.
+ */
+function stemForComparison(word: string): string {
+  if (word.length > 5 && word.endsWith('ing')) {
+    return word.slice(0, -3);
+  }
+
+  if (word.length > 4 && /(?:sses|ches|shes|xes|zes)$/.test(word)) {
+    return word.slice(0, -2);
+  }
+
+  if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) {
+    return word.slice(0, -1);
+  }
+
+  if (word.length > 4 && word.endsWith('ed') && !word.endsWith('eed')) {
+    return word.slice(0, -2);
+  }
+
+  return word;
+}
+
+function wordSetOf(text: string): Set<string> {
+  return new Set(wordsOf(text).map(stemForComparison));
+}
+
+/**
+ * Does `answerWords` name this alternative?
+ *
+ * Requires EVERY one of the alternative's own distinguishing words, not just
+ * one — the measured bug survives a single-word check. "large parties" and
+ * "small gatherings" share no word, so on their own either single word would
+ * be enough; the failure mode is a shared HEAD noun the split did not catch
+ * because the two alternatives spell it differently ("gatherings" vs.
+ * "parties"), and "It depends on the parties I go to" contains "parties" —
+ * one of "large parties"'s two words — without ever saying "large". A
+ * same-length requirement is what a one-word answer like "Beach." or "Night
+ * owl." still clears effortlessly: {@link extractForcedChoiceAlternatives}
+ * reduces most real alternatives to one or two words in the first place.
+ */
+function namesAlternative(answerWords: ReadonlySet<string>, alternative: ForcedChoiceAlternative): boolean {
+  return (
+    alternative.tokens.length > 0 &&
+    alternative.tokens.every((token) => answerWords.has(stemForComparison(token)))
+  );
+}
+
+/**
+ * ═══ THE YES/NO QUALIFIED-ANSWER GATE ═══
+ *
+ * `yes_no` has no text to extract alternatives from — its two poles are
+ * always yes and no — so {@link enforceForcedChoiceCommitment}'s approach does
+ * not apply, and the failure this gate exists for is not "names neither side"
+ * but a narrower thing: an "it depends on X" answer where X is not really a
+ * condition at all.
+ *
+ * Point 2 of the design this gate implements: "It depends on the price." for
+ * "Do you buy the extended warranty when it is offered?" is a GOOD, genuinely
+ * conditional answer — price is a real variable the question never named, and
+ * naming it is new information. What makes "It depends on the parties I go
+ * to" a bad answer to a DIFFERENT question is not the shape "it depends", it
+ * is that "the parties I go to" is not a condition on the choice — it IS the
+ * choice ("small gatherings or large parties") restated. So the test this
+ * gate runs is not "does the answer hedge", it is "does the qualifier
+ * introduce a word the question did not already use" — a real external
+ * condition almost never shares vocabulary with the question it conditions;
+ * a circular restatement can never avoid it, because it has nothing else to
+ * say.
+ *
+ * A bare "It depends." with no stated condition at all is the same failure by
+ * a shorter road — nothing follows "on", so there is no new information
+ * either way — and a small set of placeholder qualifiers ("the situation",
+ * "the circumstances") are treated the same way: naming a hollow category is
+ * not naming a condition.
+ */
+/** Matches an "it depends" answer, with or without a stated condition. */
+const DEPENDS_PHRASE = /\bit\s+(?:really\s+|kind\s+of\s+|sort\s+of\s+|honestly\s+)?depends?\b/i;
+
+/** The same answer, capturing the condition after "on" when there is one. */
+const DEPENDS_CLAUSE =
+  /\bit\s+(?:really\s+|kind\s+of\s+|sort\s+of\s+|honestly\s+)?depends?\s+(?:(?:entirely|largely|mostly|mainly)\s+)?on\s+([^,.;!?]+)/i;
+
+/**
+ * Qualifiers that name a hollow category rather than an actual condition —
+ * "it depends on the situation" answers nothing that "it depends" alone did
+ * not already fail to answer.
+ */
+const VAGUE_QUALIFIER_WORDS = new Set([
+  'situation',
+  'circumstances',
+  'circumstance',
+  'context',
+  'case',
+  'mood',
+  'thing',
+  'things',
+  'stuff',
+  'factors',
+  'factor',
+  'variables',
+  'variable',
+]);
+
+export function enforceYesNoQualifierIsInformative(
+  inferred: InferredAnswer,
+  question: ForcedChoiceQuestion,
+): { inferred: InferredAnswer; informative: boolean } {
+  if (question.questionType !== 'yes_no' || !DEPENDS_PHRASE.test(inferred.answer)) {
+    return { inferred, informative: true };
+  }
+
+  const clauseMatch = inferred.answer.match(DEPENDS_CLAUSE);
+  const qualifierTokens = clauseMatch
+    ? wordsOf(clauseMatch[1]).filter((word) => !isForcedChoiceStopword(word))
+    : [];
+
+  // `.every()` on an empty array is already `true`, so an empty qualifier
+  // (no clause matched, or the clause was all stopwords) is vacuous for free.
+  const isVacuous = qualifierTokens.every((word) => VAGUE_QUALIFIER_WORDS.has(word));
+
+  const questionTokens = new Set(
+    wordsOf(question.text)
+      .filter((word) => !isForcedChoiceStopword(word))
+      .map(stemForComparison),
+  );
+  const isCircular = qualifierTokens.some((word) => questionTokens.has(stemForComparison(word)));
+
+  if (!isVacuous && !isCircular) {
+    return { inferred, informative: true };
+  }
+
+  return {
+    inferred: {
+      ...inferred,
+      support: 'topical',
+      confidence: round2(Math.min(inferred.confidence, CONFIDENCE_OFF_QUESTION)),
+    },
+    informative: false,
   };
 }
 

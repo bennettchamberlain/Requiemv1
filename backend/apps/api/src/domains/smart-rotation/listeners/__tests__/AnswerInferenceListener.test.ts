@@ -122,8 +122,8 @@ const DEFAULT_STORED_EVIDENCE = {
  */
 const DEFAULT_EVIDENCE_CONFIDENCE = 0.5;
 
-function makeQuestion(id: string, text: string) {
-  return { id, text } as Awaited<ReturnType<QuestionService['findById']>>;
+function makeQuestion(id: string, text: string, questionType?: string) {
+  return { id, text, questionType } as Awaited<ReturnType<QuestionService['findById']>>;
 }
 
 function makeAnswer(
@@ -1878,5 +1878,221 @@ describe('AnswerInferenceListener.inferQuestionAnswer — the answer has to be A
     } finally {
       reflection.minAnswerConfidence = originalFloor;
     }
+  });
+});
+
+describe('AnswerInferenceListener.inferQuestionAnswer — the forced-choice commitment gate', () => {
+  const forcedChoiceQuestion = {
+    questionService: {
+      findById: jest
+        .fn()
+        .mockResolvedValue(
+          makeQuestion('q-1', 'Do you prefer small gatherings or large parties?', 'multiple_choice'),
+        ),
+    },
+  };
+
+  it('writes NOTHING for the measured live hedge — it names neither alternative', async () => {
+    const { listener, answerService } = buildListener({
+      ...forcedChoiceQuestion,
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              answer: 'It depends on the parties I go to.',
+              confidence: 0.75,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses the hedge even with the confidence floor set to zero', async () => {
+    const reflection = config.reflection as { minAnswerConfidence: number };
+    const originalFloor = reflection.minAnswerConfidence;
+    reflection.minAnswerConfidence = 0;
+
+    try {
+      const { listener, answerService } = buildListener({
+        ...forcedChoiceQuestion,
+        ollamaService: {
+          chat: jest.fn().mockResolvedValue({
+            message: {
+              content: structuredResponse({
+                support: 'stated',
+                answer: 'It depends on the parties I go to.',
+                confidence: 0.75,
+              }),
+            },
+          }),
+        },
+      });
+
+      await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+      expect(answerService.create).not.toHaveBeenCalled();
+    } finally {
+      reflection.minAnswerConfidence = originalFloor;
+    }
+  });
+
+  it('writes nothing when the answer names BOTH alternatives instead of choosing one', async () => {
+    // Measured live on the neighbouring cat-or-dog question: a hedge can name
+    // every option in the list and still not be a choice between them.
+    const { listener, answerService } = buildListener({
+      questionService: {
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeQuestion('q-1', 'Are you more of a cat person or a dog person?', 'multiple_choice'),
+          ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              answer: "I am somewhere between cat and dog, though I currently take care of my neighbor's dogs.",
+              confidence: 0.8,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+  });
+
+  it('still writes when the answer commits to one alternative, hedge and all', async () => {
+    const { listener, answerService } = buildListener({
+      questionService: {
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeQuestion('q-1', 'Do you prefer the beach or the mountains?', 'multiple_choice')),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              answer: "I'm not sure, but I prefer the beach and nature areas.",
+              confidence: 0.6,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ text: "I'm not sure, but I prefer the beach and nature areas." }),
+    );
+  });
+
+  it('does not touch a multiple_choice question that names no closed set of alternatives', async () => {
+    const { listener, answerService } = buildListener({
+      questionService: {
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeQuestion('q-1', 'What time of day do you prefer to exercise?', 'multiple_choice'),
+          ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({ support: 'stated', answer: 'Early morning.', confidence: 0.8 }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ text: 'Early morning.' }),
+    );
+  });
+
+  it('leaves a question with no recorded type exactly where it was — no gate to apply', async () => {
+    // Every pre-existing test in this file builds a question with no
+    // `questionType` at all. This gate must be a constraint on a new field,
+    // never a new way for those callers to lose an answer.
+    const { listener, answerService } = buildListener({});
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalled();
+  });
+});
+
+describe('AnswerInferenceListener.inferQuestionAnswer — the yes/no qualified-answer gate', () => {
+  it('writes nothing when "it depends" restates the question instead of adding a condition', async () => {
+    const { listener, answerService } = buildListener({
+      questionService: {
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeQuestion('q-1', 'Do you prefer camping in a tent or staying in a hotel?', 'yes_no'),
+          ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              answer: 'It depends on how I am camping that trip.',
+              confidence: 0.7,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+  });
+
+  it('still writes a GENUINELY conditional yes/no answer — the false-positive case this gate must not create', async () => {
+    const { listener, answerService } = buildListener({
+      questionService: {
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeQuestion('q-1', 'Do you buy the extended warranty when it is offered?', 'yes_no'),
+          ),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              support: 'stated',
+              answer: 'It depends on the price.',
+              confidence: 0.65,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ text: 'It depends on the price.' }),
+    );
   });
 });
