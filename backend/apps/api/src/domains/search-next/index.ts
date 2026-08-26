@@ -9,6 +9,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EmbeddingModule } from '@ci/common/embeddings';
+import { RetrievalPolicyModule } from '@ci/domains/retrieval-policy';
 
 import { type EntityTag, EntityTagEntity } from './entities/EntityTagEntity';
 import { type Tag, type TimestampedTag, TagEntity } from './entities/TagEntity';
@@ -19,7 +20,7 @@ import { type RemoveTagResult, TagService, type UpdateTagResult } from './servic
  * @internal
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([EntityTagEntity, TagEntity]), EmbeddingModule],
+  imports: [TypeOrmModule.forFeature([EntityTagEntity, TagEntity]), EmbeddingModule, RetrievalPolicyModule],
   providers: [SearchService, TagService],
   exports: [SearchService, TagService],
 })

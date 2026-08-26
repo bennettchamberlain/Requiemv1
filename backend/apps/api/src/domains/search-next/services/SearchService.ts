@@ -4,29 +4,39 @@ import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { EmbeddingGenerationService } from '@ci/common/embeddings';
+import {
+  RETRIEVAL_POLICY_DEFAULTS,
+  RetrievalPolicyService,
+  sqlNumberLiteral,
+  tsRankWeightsLiteral,
+} from '@ci/domains/retrieval-policy';
 
 import { buildPromptQuery, type BuildPromptQueryOptions } from '../promptQuery';
 import type { EntityIdentifier, IndexableEntity, PromptSearchResult } from '../types';
 
 /**
- * PostgreSQL ts_rank weight multipliers for weighted tsvectors.
- * Format: {D, C, B, A} - D is lowest priority, A is highest.
- * These weights determine how much each category contributes to the final score.
+ * ═══ Where the retrieval knobs live now ═══
  *
- * Current configuration:
- * - A (weight 10+ at ingestion): 1.0 multiplier - names, titles, primary identifiers
- * - B (weight 4-7 at ingestion): 0.4 multiplier - descriptions, summaries
- * - C (weight 2-3 at ingestion): 0.2 multiplier - categories, types, URLs
- * - D (weight <2 at ingestion): 0.1 multiplier - properties, bulk content
+ * `TS_RANK_WEIGHTS` and `EMBEDDING_BOOST_FACTOR` used to be module-level
+ * literals here. They are fields of the appliance's versioned retrieval policy
+ * (`ci.retrieval_policy`, read through {@link RetrievalPolicyService}), so a
+ * measured tuning result can be promoted without an edit-rebuild-redeploy.
+ *
+ * The baseline is unchanged and still stated in code, as
+ * `RETRIEVAL_POLICY_DEFAULTS` in `domains/retrieval-policy/constants.ts`:
+ *
+ * - ts_rank weights `{D, C, B, A}` = `{0.1, 0.2, 0.4, 1.0}` — D lowest priority,
+ *   A highest. A (ingestion weight 10+) is names/titles/primary identifiers, B
+ *   (4-7) descriptions and summaries, C (2-3) categories/types/URLs, D (<2)
+ *   properties and bulk content.
+ * - embedding boost 0.5 — the keyword score is multiplied by
+ *   `(1 + boost * similarity)`, so with similarity in [0,1] a score can rise by
+ *   up to 50%.
+ *
+ * Version 1 of the table is seeded with exactly those numbers and the service
+ * falls back to them when the table is empty or unreachable, so behaviour is
+ * identical until somebody promotes a v2.
  */
-const TS_RANK_WEIGHTS = '{0.1, 0.2, 0.4, 1.0}';
-
-/**
- * Embedding similarity boost factor.
- * The keyword score is multiplied by (1 + EMBEDDING_BOOST * similarity).
- * With similarity in [0,1] and boost of 0.5, scores can increase by up to 50%.
- */
-const EMBEDDING_BOOST_FACTOR = 0.5;
 
 /**
  * Default cosine-distance floor for `searchMessages` (naive-RAG message channel).
@@ -51,14 +61,22 @@ const MESSAGE_DISTANCE_FLOOR = 0.5;
 const MESSAGE_DEFAULT_K = 10;
 
 /**
- * Cosine-distance floor for `semanticSearch`. Rows at or beyond it are not
- * results at any `ef_search`, so the recall probe's exact leg has to apply the
- * same floor or it would count rows production would never return.
+ * BASELINE cosine-distance floor for `semanticSearch`. Rows at or beyond it are
+ * not results at any `ef_search`, so the recall probe's exact leg has to apply
+ * the same floor or it would count rows production would never return.
+ *
+ * The live value is `retrievalPolicy.semanticDistanceThreshold`; this is the
+ * value it falls back to, re-exported from `RETRIEVAL_POLICY_DEFAULTS` so there
+ * is one literal rather than two that agree today. Callers that need the number
+ * without a policy read (`RecallProbeService`) keep using this.
  */
-export const SEMANTIC_DISTANCE_THRESHOLD = 0.5;
+export const SEMANTIC_DISTANCE_THRESHOLD = RETRIEVAL_POLICY_DEFAULTS.semanticDistanceThreshold;
 
-/** Default LIMIT for `semanticSearch`, and therefore the k recall is measured at. */
-export const SEMANTIC_MAX_RESULTS = 25;
+/**
+ * BASELINE LIMIT for `semanticSearch`, and therefore the k recall is measured
+ * at. Live value: `retrievalPolicy.semanticMaxResults`.
+ */
+export const SEMANTIC_MAX_RESULTS = RETRIEVAL_POLICY_DEFAULTS.semanticMaxResults;
 
 /**
  * Default ceiling on how many rows a lexeme may match and still be allowed to
@@ -164,7 +182,37 @@ export class SearchService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly embeddingGenerationService: EmbeddingGenerationService,
+    private readonly retrievalPolicy: RetrievalPolicyService,
   ) {}
+
+  /**
+   * The ts_rank weight literal and embedding boost currently in force, ready to
+   * interpolate.
+   *
+   * Both are written into the statement TEXT rather than bound as parameters —
+   * `ts_rank`'s first argument is an array literal and the boost sits inside an
+   * arithmetic expression — so the values are formatted by
+   * {@link tsRankWeightsLiteral} / {@link sqlNumberLiteral}, which refuse
+   * anything that is not a plain bounded number. `RetrievalPolicyService`
+   * already validates the row; this is the second gate, and if it ever fires we
+   * fall back to the compiled-in baseline rather than build a statement out of
+   * whatever the row held.
+   */
+  private async rankingLiterals(): Promise<{ weights: string; boost: string }> {
+    const policy = await this.retrievalPolicy.get();
+
+    try {
+      return {
+        weights: tsRankWeightsLiteral(policy.tsRankWeights),
+        boost: sqlNumberLiteral(policy.embeddingBoostFactor, 'embeddingBoostFactor'),
+      };
+    } catch {
+      return {
+        weights: tsRankWeightsLiteral(RETRIEVAL_POLICY_DEFAULTS.tsRankWeights),
+        boost: sqlNumberLiteral(RETRIEVAL_POLICY_DEFAULTS.embeddingBoostFactor, 'embeddingBoostFactor'),
+      };
+    }
+  }
 
   async search(
     context: UserServiceContext,
@@ -249,6 +297,7 @@ export class SearchService {
     } as SearchOptions);
 
     const typeFilter = this.buildTypeFilter(resolvedOptions, 4, 'v');
+    const { weights } = await this.rankingLiterals();
 
     // Each group's text crosses as a PARAMETER and is turned into a tsquery by
     // Postgres (`phraseto_tsquery` / `plainto_tsquery`), never by concatenating
@@ -290,7 +339,7 @@ export class SearchService {
       SELECT
         v.entity_id,
         v.entity_type,
-        ts_rank('${TS_RANK_WEIGHTS}', v.vector, q.tq) AS score,
+        ts_rank('${weights}', v.vector, q.tq) AS score,
         count(*) OVER () AS total_matches
       FROM
         ci_search.vectors v
@@ -669,6 +718,14 @@ export class SearchService {
    * "the probe ran the production query" true by construction rather than by
    * two strings agreeing today.
    *
+   * Deliberately SYNCHRONOUS, and therefore policy-free: `semanticSearch`
+   * resolves `ci.retrieval_policy` and passes the resulting `maxResults` /
+   * `distanceThreshold` in through `scope`. The fallbacks below are the
+   * compiled-in baseline, which is what a caller supplying its own scope (the
+   * recall probe, which fixes k at `PROBE_K`) gets — see the follow-up note in
+   * the PR: if a v2 changes `semanticMaxResults`, the probe still measures at
+   * the baseline k until it is taught to read the policy too.
+   *
    * @param vector the query embedding, already in pgvector's text form (the
    *   same shape `EmbeddingGenerationService.generateEmbeddingString` returns);
    *   passed as a bind parameter exactly as production does, because the
@@ -725,8 +782,18 @@ export class SearchService {
     options: SearchOptions,
   ): Promise<ScoredSearchResult[]> {
     const vector = await this.embeddingGenerationService.generateEmbeddingString(options.query);
+    const policy = await this.retrievalPolicy.get();
 
-    const plan = this.buildSemanticSearchPlan(context.userId, vector, options);
+    // An explicit caller scope still wins — `groundedSeeds` passes a tighter
+    // distance threshold on purpose, and the policy is the DEFAULT, not a cap.
+    // Resolving the defaults here rather than inside `buildSemanticSearchPlan`
+    // keeps that method synchronous, which is what lets `RecallProbeService`
+    // measure the production statement without a policy read of its own.
+    const plan = this.buildSemanticSearchPlan(context.userId, vector, {
+      ...options,
+      maxResults: options.maxResults ?? policy.semanticMaxResults,
+      distanceThreshold: options.distanceThreshold ?? policy.semanticDistanceThreshold,
+    });
 
     const results = await this.dataSource.query(plan.sql, plan.params);
 
@@ -744,6 +811,7 @@ export class SearchService {
     const { query, maxResults = 25 } = options;
 
     const typeFilter = this.buildTypeFilter(options, 3);
+    const { weights } = await this.rankingLiterals();
 
     // Same OR-rewriting as boostedKeywordSearch: turn the AND-joined tsquery
     // from websearch_to_tsquery into an OR-joined one so a 2-3 word query like
@@ -758,7 +826,7 @@ export class SearchService {
       SELECT
         entity_id,
         entity_type,
-        ts_rank('${TS_RANK_WEIGHTS}', vector, q.tq) as score
+        ts_rank('${weights}', vector, q.tq) as score
       FROM
         ci_search.vectors
         CROSS JOIN q
@@ -790,7 +858,8 @@ export class SearchService {
    * Requires keyword match (precision) but uses embedding similarity to boost relevance.
    * This combines the best of both worlds in a single query.
    *
-   * Score formula: keyword_score * (1 + EMBEDDING_BOOST_FACTOR * embedding_similarity)
+   * Score formula: keyword_score * (1 + embeddingBoostFactor * embedding_similarity),
+   * where the boost comes from the retrieval policy (baseline 0.5).
    */
   private async boostedKeywordSearch(
     context: UserServiceContext,
@@ -803,6 +872,7 @@ export class SearchService {
 
     // Use 'v' table alias since we're joining vectors and embeddings
     const typeFilter = this.buildTypeFilter(options, 4, 'v');
+    const { weights, boost } = await this.rankingLiterals();
 
     // The natural-language questions we get from clients ("Where does Jordan
     // live?") are routed here, but `websearch_to_tsquery` builds an AND-joined
@@ -820,8 +890,8 @@ export class SearchService {
       SELECT
         v.entity_id,
         v.entity_type,
-        ts_rank('${TS_RANK_WEIGHTS}', v.vector, q.tq)
-          * (1 + ${EMBEDDING_BOOST_FACTOR} * COALESCE(1 - (e.embedding <=> $3::vector), 0)) as score
+        ts_rank('${weights}', v.vector, q.tq)
+          * (1 + ${boost} * COALESCE(1 - (e.embedding <=> $3::vector), 0)) as score
       FROM
         ci_search.vectors v
         CROSS JOIN q

@@ -2,6 +2,7 @@ import type { UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
 import type { EntityResolutionService } from '@ci/domains/entity-resolution';
 import type { GraphExpansionService } from '@ci/domains/graph';
+import { RETRIEVAL_POLICY_DEFAULTS, type RetrievalPolicyService } from '@ci/domains/retrieval-policy';
 import type { SearchService } from '@ci/domains/search-next';
 
 import type { AgentMemoryService } from '../AgentMemoryService';
@@ -66,6 +67,13 @@ function build(
   } as unknown as AgentMemoryService;
   const logger = { setContext() {}, warn() {}, log() {} } as unknown as LoggerService;
 
+  // The compiled-in baseline — the same object `RetrievalPolicyService` returns
+  // when `ci.retrieval_policy` is empty or unreachable, so every assertion here
+  // is about TODAY's behaviour.
+  const retrievalPolicy = {
+    get: jest.fn().mockResolvedValue(RETRIEVAL_POLICY_DEFAULTS),
+  } as unknown as RetrievalPolicyService;
+
   const service = new RecallService(
     searchService,
     entityResolution,
@@ -73,6 +81,7 @@ function build(
     graphExpansion,
     agentMemory,
     logger,
+    retrievalPolicy,
   );
 
   return { service, search, searchAnchored };

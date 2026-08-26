@@ -29,6 +29,7 @@ import { GraphModule } from '@ci/domains/graph';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 import { PredictionsModule } from '@ci/domains/predictions';
+import { RetrievalPolicyModule } from '@ci/domains/retrieval-policy';
 import { SearchNextModule } from '@ci/domains/search-next';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
@@ -54,6 +55,8 @@ import { SerializerService } from './services/SerializerService';
     LLMModule,
     MemoryModule,
     PredictionsModule,
+    // RecallService's five retrieval knobs come from ci.retrieval_policy.
+    RetrievalPolicyModule,
     SearchNextModule,
     // Provides IntentCatalogService, which the IntentsController publishes.
     ToolsModule,
