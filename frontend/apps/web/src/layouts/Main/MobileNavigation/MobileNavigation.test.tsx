@@ -200,7 +200,7 @@ describe('MobileNavigation', () => {
     expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('href', '/asks');
   });
 
-  it('puts Capture first in the drawer and the user tile at the foot, linking to Self', async () => {
+  it('puts Capture first in the drawer and Help, the user tile, and Settings at the foot', async () => {
     renderMobileNav();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
@@ -209,14 +209,29 @@ describe('MobileNavigation', () => {
     const close = nav.querySelector('[aria-label="Close menu"]');
     const capture = screen.getByRole('button', { name: 'Capture' });
     const plan = screen.getByRole('link', { name: 'Plan' });
+    const help = await screen.findByRole('button', { name: 'Help' });
     const account = screen.getByRole('link', { name: 'Test User' });
 
     expect(account).toHaveAttribute('href', '/self');
-    expect(screen.queryByRole('button', { name: 'Help' })).not.toBeInTheDocument();
     expect(close).toBeTruthy();
     expect((close as Node).compareDocumentPosition(capture) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(capture.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(plan.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plan.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(help.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // D13: the phone drawer used to have no route to support or docs at all.
+  it('opens Support and Docs from the drawer footer', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Help' }));
+
+    expect(screen.getByRole('link', { name: 'Support' })).toHaveAttribute(
+      'href',
+      'https://ci.computer/support',
+    );
+    expect(screen.getByRole('link', { name: 'Docs' })).toBeInTheDocument();
   });
 
   it('opens on a right swipe from the left edge', async () => {

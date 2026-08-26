@@ -165,6 +165,7 @@ function OverlayRail({
           {destinationsList}
         </div>
         <div className="mt-auto flex flex-col gap-1 pb-2">
+          <HelpSubmenu />
           {showSelf ? <SelfSubmenu /> : null}
           <SettingsRailButton />
         </div>

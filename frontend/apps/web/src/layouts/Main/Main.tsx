@@ -10,6 +10,7 @@ import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsync
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
 import { MobileTopBar } from './MobileNavigation/MobileTopBar';
+import { PhoneTabBar } from './MobileNavigation/PhoneTabBar';
 import { PowerRailProvider } from './PowerRailContext';
 import { PowerRailToggle } from './PowerRailToggle';
 import { PrimaryNavigation } from './PrimaryNavigation';
@@ -45,6 +46,7 @@ export function Main() {
               <Portal id="content-modal" className="absolute inset-0 empty:hidden" />
             </Suspense>
           </main>
+          <PhoneTabBar />
           <MobileNavigation />
           <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
         </div>
