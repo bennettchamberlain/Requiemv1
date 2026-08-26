@@ -55,7 +55,8 @@ export type IntentDomainKey =
   | 'brief'
   | 'insights'
   | 'anomalies'
-  | 'suggestions';
+  | 'suggestions'
+  | 'mcp';
 
 /** What an intent does to the user's data. Drives confirmation/guardrails. */
 export type IntentAccess = 'read' | 'write' | 'delete';

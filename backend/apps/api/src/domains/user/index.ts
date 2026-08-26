@@ -64,6 +64,6 @@ export { buildPurgePlan } from './purge/purgePlan';
 export type { PurgePlan, PurgeStep } from './purge/types';
 
 // Types
-export type { User, OnboardingProgress } from './entities/UserEntity';
+export type { User, OnboardingProgress, UserRole } from './entities/UserEntity';
 export type { CreateUserDto, UpdateUserDto } from './types';
 export { UserCreatedEvent, type UserCreatedPayload } from './events';

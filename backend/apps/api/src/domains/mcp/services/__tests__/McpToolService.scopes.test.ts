@@ -55,6 +55,10 @@ describe('McpToolService — scope-limited callers', () => {
 
     const registry = {
       getAgentFacingTools: () => [nativeIntent, nativeWriteIntent],
+      // registerNativeTools() reads the outbound-catalog list (excludes MCP-client-sourced
+      // tools); both native intents here belong to the always-included `native` provider, so the
+      // fixture is the same list either way.
+      getOutboundCatalogTools: () => [nativeIntent, nativeWriteIntent],
       getRegisteredToolNames: () => [nativeIntent.name, nativeWriteIntent.name],
       executeTool: jest.fn().mockResolvedValue({ success: true, data: { ok: true } }),
     };
