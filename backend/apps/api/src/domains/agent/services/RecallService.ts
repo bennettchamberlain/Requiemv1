@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { fenceUntrusted, untrustedBlock } from '@ci/common/prompt/untrustedBlock';
 import { EntityResolutionService, type ResolvedEntity } from '@ci/domains/entity-resolution';
 import { GraphExpansionService } from '@ci/domains/graph';
 import { type RetrievalPolicy, RetrievalPolicyService } from '@ci/domains/retrieval-policy';
@@ -292,7 +293,15 @@ export class RecallService {
         });
       }
 
-      const block = `## Relevant context\n${lines.map((line) => line.text).join('\n')}`;
+      // The rendered block is fenced; `lines` is NOT. Every line here is a clip
+      // of somebody else's email, SMS or web page, so it goes into the prompt
+      // as marked data. It stays byte-exact on `lines`, because the
+      // answer-inference citation numbering and the stored snippets key off
+      // those bytes and a `\n` swallowed by fencing would move a citation.
+      const block = untrustedBlock(
+        lines.map((line) => fenceUntrusted(line.text)).join('\n'),
+        '## Relevant context',
+      );
 
       return { block, resultCount: lines.length, lines };
     } catch (err) {

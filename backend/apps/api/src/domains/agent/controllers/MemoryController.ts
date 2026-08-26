@@ -13,6 +13,7 @@ import {
 import { ApiKeyGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
+import { untrustedBlock } from '@ci/common/prompt/untrustedBlock';
 import { CommunicationService, CommunicationType, UserContextService } from '@ci/domains/memory';
 
 import { AgentMemoryService } from '../services/AgentMemoryService';
@@ -92,7 +93,11 @@ export class MemoryController {
         blocks.push(forecastBlock);
       }
 
-      return { block: blocks.join('\n\n') };
+      // The guard is emitted HERE, server-side, not left to the harness. The
+      // caller of this route is an out-of-process agent holding an API key that
+      // also carries WRITE capability, and a harness author who never read the
+      // docs is exactly the threat model — the boundary cannot be opt-in.
+      return { block: untrustedBlock(blocks.join('\n\n')) };
     } catch (err) {
       this.logger.warn(`L0 context failed for user ${context.userId}: ${err}`);
 
