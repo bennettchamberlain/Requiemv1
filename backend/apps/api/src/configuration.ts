@@ -652,6 +652,68 @@ export const ConfigSchema = z.object({
       alwaysReviewBelowConfidence: z.coerce.number().min(0).max(1).default(0.55),
     })
     .default({}),
+  agent: z
+    .object({
+      // Retention for `ci.agent_memories` — the raw fragments the agent writes
+      // through `POST /memory/write`, which `MemoryCompactionService` promotes
+      // into the knowledge graph and `RecallService` re-reads verbatim as its
+      // naive-RAG channel. See AgentMemoryRetentionService for why the two
+      // lifecycle halves are given very different treatment.
+      memoryRetention: z
+        .object({
+          /**
+           * Off keeps every fragment forever, which is the behaviour that
+           * shipped before this sweep existed. It exists so an operator can
+           * stop an irreversible job without editing code, not because keeping
+           * everything is a defensible steady state.
+           */
+          enabled: booleanStringSchema.default(true),
+          /**
+           * Days a PROCESSED fragment is kept after `processed_at` is stamped.
+           *
+           * The house convention (365) rather than something shorter, because
+           * on this table the raw text is not dead weight after compaction:
+           * `RecallService`'s message channel vector-searches these fragments
+           * and unions their text in precisely because the graph
+           * serialisation the compactor produces is lossy ("Priya Sharma —
+           * lives in Phoenix" versus the sentence that also said she moved
+           * from Eugene last spring). Shortening this trades recall detail for
+           * disk, and the disk is not the constraint: a fragment is a few
+           * hundred bytes of text plus one dense embedding, so even a chatty
+           * producer costs low hundreds of MB a year.
+           *
+           * Shorten it on an appliance whose owner would rather the raw
+           * conversational text not outlive its distillation — that is the
+           * reason to move this number, not space.
+           */
+          processedDays: z.coerce.number().int().positive().default(365),
+          /**
+           * Age at which an UNPROCESSED fragment is reported as a stuck
+           * pipeline. Never a deletion trigger: an unprocessed fragment is the
+           * only copy of text nothing has promoted anywhere, so age alone can
+           * never be grounds for destroying it. A week is long enough that a
+           * paused compaction cron or an Ollama outage has visibly failed to
+           * clear rather than merely fallen behind — the compactor takes 100
+           * fragments every five minutes when it is healthy.
+           */
+          stuckAfterDays: z.coerce.number().int().positive().default(7),
+          /** Days a raised stuck-pipeline card suppresses its own repeat. */
+          stuckAlertRepeatDays: z.coerce.number().int().positive().default(7),
+          /**
+           * Fragments deleted per nightly sweep.
+           *
+           * Deliberately small. Each deletion goes through
+           * `AgentMemoryService.remove`, which also emits the event that reaps
+           * the fragment's `ci_search.embeddings` row — correctness the sweep
+           * cannot get from a bulk `DELETE` — so this bounds a per-row path,
+           * not one statement. A backlog drains across nights and is logged
+           * while it lasts.
+           */
+          deleteBatchSize: z.coerce.number().int().positive().default(500),
+        })
+        .default({}),
+    })
+    .default({}),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     /**

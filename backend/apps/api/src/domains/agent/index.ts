@@ -26,6 +26,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EntityResolutionModule } from '@ci/domains/entity-resolution';
 import { EventsModule } from '@ci/domains/events';
 import { GraphModule } from '@ci/domains/graph';
+import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MemoryModule } from '@ci/domains/memory';
 import { PredictionsModule } from '@ci/domains/predictions';
@@ -35,8 +36,10 @@ import { UserModule } from '@ci/domains/user';
 
 import { IntentsController } from './controllers/IntentsController';
 import { MemoryController } from './controllers/MemoryController';
+import { AgentMemoryRetentionCron } from './cron/AgentMemoryRetentionCron';
 import { MemoryCompactionCron } from './cron/MemoryCompactionCron';
 import { AgentMemoryEntity } from './entities/AgentMemoryEntity';
+import { AgentMemoryRetentionService } from './services/AgentMemoryRetentionService';
 import { AgentMemoryService } from './services/AgentMemoryService';
 import { BranchialForecastService } from './services/BranchialForecastService';
 import { ForageCorpusService } from './services/ForageCorpusService';
@@ -51,6 +54,9 @@ import { SerializerService } from './services/SerializerService';
     EntityResolutionModule,
     EventsModule,
     GraphModule,
+    // ActionService, for the retention sweep's stuck-pipeline card. IntelligenceModule
+    // imports only TypeOrmModule + EventsModule, so this adds no cycle back here.
+    IntelligenceModule,
     LLMModule,
     MemoryModule,
     PredictionsModule,
@@ -67,6 +73,8 @@ import { SerializerService } from './services/SerializerService';
     ForageCorpusService,
   ],
   providers: [
+    AgentMemoryRetentionCron,
+    AgentMemoryRetentionService,
     AgentMemoryService,
     BranchialForecastService,
     ForageCorpusService,
