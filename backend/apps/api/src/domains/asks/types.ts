@@ -152,6 +152,22 @@ export interface GrantEvaluation {
 /** Whether an ask is local to this box, sent to a peer, or received from one. */
 export type AskDirection = 'local' | 'outbound' | 'inbound';
 
+/**
+ * How an ask arrived, when it arrived signed.
+ *
+ * All three fields travel together or none do — a thumbprint with no timestamp
+ * claims a verification that never happened, and a timestamp with no thumbprint
+ * claims one by nobody (`asks_channel_paired_chk`).
+ */
+export interface AskChannelProvenance {
+  /** RFC 7638 thumbprint of the key that signed the request, as of arrival. */
+  keyThumbprint: string;
+  /** When this box verified it. */
+  verifiedAt: Date;
+  /** The signature base's covered components, as actually presented. */
+  covered: string[];
+}
+
 export interface CreateAskDto {
   id?: string;
   /** NULL for an OUTBOUND ask — the responder is the peer named by `peerLinkId`. */
@@ -164,6 +180,12 @@ export interface CreateAskDto {
    */
   peerLinkId?: string | null;
   direction?: AskDirection;
+  /**
+   * Set when the request that produced this ask carried a verified RFC 9421
+   * signature. Omitted means it did not — an unsigned channel, which the ask
+   * surfaces state plainly rather than hiding.
+   */
+  channel?: AskChannelProvenance | null;
 }
 
 export interface CreateAskGrantDto {

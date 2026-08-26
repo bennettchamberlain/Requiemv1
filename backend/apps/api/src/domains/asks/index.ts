@@ -149,6 +149,7 @@ export type {
   AskGrantScope,
   GrantEvaluation,
   CreateAskDto,
+  AskChannelProvenance,
   CreateAskGrantDto,
   UpdateAskGrantDto,
   RecordAskAuditDto,

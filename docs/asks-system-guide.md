@@ -873,6 +873,25 @@ stated in the owner's language rather than in ladder vocabulary — *"Answers ar
 redacted at most — the items you keep, never the ones you hold back. Location,
 health, finances and secrets are never disclosed at this tier."*
 
+### The consent lock and signature detail
+
+Every review card and every disclosure row carries a **lock**, and it is a button: `ConsentLock.tsx` renders one of four states — `sealed` (consent *and* a verified RFC 9421 signature), `consented` (consent, unsigned channel), `pending` (undecided), `open` (no basis recorded) — and opens `ConsentDetailModal.tsx`.
+
+The modal separates what the lock compresses:
+
+| Section | Answers |
+|---|---|
+| What authorized this | standing grant vs your own decision; the grant's posture; the ceiling that applied |
+| How it reached you | signed or not; the key thumbprint; when *this box* verified it; each covered component beside what it protects |
+| When and how it was collected | arrival time, path (local / inbound / outbound), who asked |
+
+Two invariants live in `consentProvenance.ts` and are pinned by `consentProvenance.test.ts`:
+
+- **Weakest wins** — `consentLockState` returns `pending` for an undecided ask *even when the signature verified*. A signature proves who asked, not that they were allowed to.
+- **Unrecorded ≠ unsigned** — `ci.ask_audit` has no channel columns, so `DisclosureHistory` passes `channelRecorded: false` and the modal says so. Rendering a null as "arrived unsigned" would assert a fact nobody checked.
+
+Protocol reference: [`SIGNATURES.md`](https://github.com/companionintelligence/CI-Engineering/blob/main/projects/decentralized-trust-graphs/SIGNATURES.md) in CI-Engineering.
+
 ### The disclosure history — **What I've shared**
 
 ![The disclosure history](images/asks/07-what-i-ve-shared.png)

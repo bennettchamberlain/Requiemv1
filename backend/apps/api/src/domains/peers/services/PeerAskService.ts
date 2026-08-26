@@ -21,6 +21,7 @@ import {
   type AskQuery,
   type DisclosedAnswer,
   type DisclosureRung,
+  type AskChannelProvenance,
 } from '@ci/domains/asks';
 import { EventEntity } from '@ci/domains/memory';
 
@@ -73,6 +74,11 @@ export class PeerAskService {
   async handle(
     peerIdentity: { issuer: string; subject: string },
     body: PeerAskBody,
+    /**
+     * How the request arrived, when it arrived signed. Null means an unsigned
+     * channel — a fact the owner's surfaces state plainly, not an absence.
+     */
+    channel: AskChannelProvenance | null = null,
   ): Promise<PeerAskResponse> {
     const link = await this.resolveLink(peerIdentity);
     const context: UserServiceContext = { userId: link.ownerUserId };
@@ -115,6 +121,7 @@ export class PeerAskService {
       query,
       peerLinkId: link.id,
       direction: 'inbound',
+      channel,
     });
 
     // Recorded BEFORE the ask is evaluated, so an ask that reaches the owner's

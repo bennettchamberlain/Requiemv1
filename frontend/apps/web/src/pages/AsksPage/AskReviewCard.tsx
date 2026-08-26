@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { Badge, Button, Card } from '@ci/shadcn';
 import { ShieldAlert, ShieldCheck } from '@ci/shadcn/icons';
 
@@ -6,6 +8,9 @@ import type { AnswerForm } from '@/graphql/graphql';
 
 import { AskerQuote } from './AskerQuote';
 import { answerFormLabel, askApproveLabel, askDecisionNote, type AskDecisionState } from './askPresentation';
+import { ConsentDetailModal, type ConsentRecord } from './ConsentDetailModal';
+import { ConsentLock } from './ConsentLock';
+import { consentLockState } from './consentProvenance';
 
 export interface AskReviewItem {
   id: string;
@@ -52,6 +57,14 @@ interface Props {
   decision: AskDecisionState;
   /** Answer forms the owner can cap this ask at instead of declining. */
   downgrades?: AnswerForm[];
+  /**
+   * What protected this request, for the lock and the signature modal.
+   *
+   * Optional because a container that cannot answer it must not guess: the lock
+   * is a claim about what was checked, and rendering one from invented facts is
+   * worse than rendering none. Omitted, no lock appears.
+   */
+  consent?: ConsentRecord;
   onToggleItem?: (id: string) => void;
   onApprove: () => void;
   onDowngrade?: (form: AnswerForm) => void;
@@ -85,12 +98,14 @@ export function AskReviewCard({
   items = [],
   decision,
   downgrades = [],
+  consent,
   onToggleItem,
   onApprove,
   onDowngrade,
   onDecline,
   busy = false,
 }: Props) {
+  const [showConsent, setShowConsent] = useState(false);
   const kept = items.filter((item) => !item.withheld);
   const shareLabel = items.length > 0 ? `Share ${kept.length} of ${items.length}` : askApproveLabel(decision);
   const preAuthorized = decision === 'pre-authorized';
@@ -118,6 +133,15 @@ export function AskReviewCard({
             <Badge variant="secondary" className="text-xs">
               Already authorized
             </Badge>
+          ) : null}
+          {/* The lock answers "should I trust this request?", which is a
+              different question from "do I want to answer it?" — and it is the
+              one the owner has no other way to ask. */}
+          {consent ? (
+            <ConsentLock
+              state={consentLockState({ consent: consent.consent, channel: consent.channel })}
+              onOpen={() => setShowConsent(true)}
+            />
           ) : null}
         </div>
 
@@ -201,6 +225,10 @@ export function AskReviewCard({
           Decline
         </Button>
       </div>
+
+      {showConsent && consent ? (
+        <ConsentDetailModal record={consent} onClose={() => setShowConsent(false)} />
+      ) : null}
     </Card>
   );
 }

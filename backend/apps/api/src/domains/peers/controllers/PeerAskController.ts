@@ -17,7 +17,7 @@ import { PORTAL_TOKEN_VERIFIER, type PortalTokenVerifier } from '@ci/common/guar
 import { LoggerService } from '@ci/common/logging';
 import type { RawBodyRequest } from '@ci/common/middleware/BodyParserMiddleware';
 import config from '@ci/configuration';
-
+import type { AskChannelProvenance } from '@ci/domains/asks';
 
 import { SignatureFormatError, parseSignatureHeaders } from '../httpSignature';
 import { PEER_ASK_ID_PATTERN, peerAskBodySchema, type PeerAskResponse } from '../protocol';
@@ -64,7 +64,7 @@ export class PeerAskController {
     @Body() body: unknown,
   ): Promise<PeerAskResponse> {
     const identity = await this.authenticate(authorization);
-    await this.assertSignature(request, identity, request.rawBody);
+    const channel = await this.assertSignature(request, identity, request.rawBody);
 
     // Rate-limit on the verified peer identity, BEFORE the peer-link lookup, so
     // an unlinked caller cannot hammer the endpoint for free.
@@ -76,7 +76,7 @@ export class PeerAskController {
       throw new BadRequestException('Malformed ask');
     }
 
-    return this.peerAskService.handle(identity, parsed.data);
+    return this.peerAskService.handle(identity, parsed.data, channel);
   }
 
   /**
@@ -117,6 +117,9 @@ export class PeerAskController {
     @Param('correlation') askId: string,
   ): Promise<PeerAskResponse> {
     const identity = await this.authenticate(authorization);
+    // The collect route creates nothing, so its channel facts have nowhere to
+    // be recorded — but it is still verified, because a route with a weaker
+    // gate is how the poll endpoint would have become the way in.
     await this.assertSignature(request, identity, undefined);
 
     this.rateLimitService.consumePoll(identity);
@@ -208,13 +211,13 @@ export class PeerAskController {
     request: RawBodyRequest,
     identity: { issuer: string; subject: string },
     rawBody: string | undefined,
-  ): Promise<void> {
+  ): Promise<AskChannelProvenance | null> {
     const hasSignatureHeaders = request.headers['signature-input'] != null;
 
     // Not required and not offered: nothing to check. A box that has not yet
     // turned the requirement on must keep talking to peers that do not sign.
     if (!this.signatureService.required && !hasSignatureHeaders) {
-      return;
+      return null;
     }
 
     if (!hasSignatureHeaders) {
@@ -233,9 +236,14 @@ export class PeerAskController {
     }
 
     let keyid: string;
+    let coveredComponents: string[];
     try {
-      keyid = parseSignatureHeaders(header(request, 'signature-input'), header(request, 'signature')).params
-        .keyid;
+      const { params } = parseSignatureHeaders(
+        header(request, 'signature-input'),
+        header(request, 'signature'),
+      );
+      keyid = params.keyid;
+      coveredComponents = params.components;
     } catch (error) {
       if (!(error instanceof SignatureFormatError)) {
         throw error;
@@ -274,6 +282,20 @@ export class PeerAskController {
       this.logger.warn(`peer ask refused: signature ${verification.reason} (${link.peerHandle})`);
       throw new UnauthorizedException(SIGNATURE_REFUSED);
     }
+
+    // Returned rather than merely logged: whether an ask was signed is the
+    // difference between "someone holding a token that names this peer asked
+    // me this" and "this peer's own key signed this exact question, once" —
+    // and the owner is the person who has to tell those apart. `AskService`
+    // stamps it on the row and the ask surfaces render it.
+    return {
+      keyThumbprint: verification.keyThumbprint,
+      // The verifier's own clock reading, not `created` from the signature:
+      // `created` is the SENDER's claim about when they signed, and the audit
+      // records when THIS box accepted it.
+      verifiedAt: new Date(),
+      covered: coveredComponents,
+    };
   }
 }
 

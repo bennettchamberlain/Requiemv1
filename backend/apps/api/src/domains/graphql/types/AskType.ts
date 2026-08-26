@@ -52,6 +52,44 @@ export class AskQueryType {
 }
 
 /** An interpersonal ask directed at another user's memory. */
+/**
+ * HOW an ask arrived — the channel facts, beside the consent facts.
+ *
+ * Present only when the request carried a verified RFC 9421 signature. Its
+ * ABSENCE is the answer for every other ask: an unsigned channel, which the
+ * surfaces state plainly rather than leaving blank. An owner who cannot tell
+ * "unsigned" from "not recorded" cannot use the distinction at all.
+ */
+@ObjectType()
+export class AskChannelType {
+  /** RFC 7638 thumbprint of the key that signed the request, as of arrival. */
+  @Field(() => String)
+  keyThumbprint!: string;
+
+  /**
+   * When THIS box verified the signature — not the sender's `created`, which is
+   * their claim about when they signed it.
+   */
+  @Field(() => GraphQLISODateTime)
+  verifiedAt!: Date;
+
+  /** The signature base's covered components, as actually presented. */
+  @Field(() => [String])
+  covered!: string[];
+
+  static toType(ask: Ask): AskChannelType | null {
+    if (ask.channelKeyThumbprint == null || ask.channelVerifiedAt == null) {
+      return null;
+    }
+
+    return {
+      keyThumbprint: ask.channelKeyThumbprint,
+      verifiedAt: ask.channelVerifiedAt,
+      covered: ask.channelCovered ?? [],
+    };
+  }
+}
+
 @ObjectType()
 export class AskType {
   @Field(() => ID)
@@ -118,6 +156,17 @@ export class AskType {
   expiresAt!: Date | null;
 
   /**
+   * How this ask arrived. RESPONDER-ONLY, for the same reason
+   * {@link consentBasis} is: it describes what the RESPONDER's box checked and
+   * accepted, and the asker — who signed the request themselves and already
+   * knows — gains nothing from it but a probe into the responder's
+   * configuration (is `requireHttpSignature` on? which of my keys does this box
+   * hold?). Null means an unsigned channel.
+   */
+  @Field(() => AskChannelType, { nullable: true })
+  channel!: AskChannelType | null;
+
+  /**
    * `viewerUserId` decides whether the responder's private reasoning is
    * included. Callers that omit it get the safe projection — an omitted argument
    * must never be the disclosing case.
@@ -147,6 +196,7 @@ export class AskType {
       createdAt: ask.createdAt,
       updatedAt: isResponder ? ask.updatedAt : askerVisibleUpdatedAt(ask),
       expiresAt: ask.expiresAt,
+      channel: isResponder ? AskChannelType.toType(ask) : null,
     };
   }
 }

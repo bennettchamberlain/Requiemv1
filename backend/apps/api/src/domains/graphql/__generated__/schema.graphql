@@ -193,6 +193,12 @@ type AskAuditType {
   responderId: ID
 }
 
+type AskChannelType {
+  covered: [String!]!
+  keyThumbprint: String!
+  verifiedAt: DateTime!
+}
+
 type AskGrantPayload {
   grant: AskGrantType
   success: Boolean!
@@ -245,6 +251,7 @@ enum AskStatus {
 
 type AskType {
   askerId: ID
+  channel: AskChannelType
   consentBasis: String
   createdAt: DateTime!
   direction: String!

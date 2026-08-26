@@ -253,6 +253,25 @@ node -e "const {generateKeyPairSync}=require('node:crypto');console.log(JSON.str
 
 The peer records the **public** half on its `ci.peer_links` row (`peer_key_jwk` + `peer_key_thumbprint`); `publicKeyFromJwk` refuses a JWK carrying `d`, so a private key cannot be stored there and then used to "verify" its own signatures.
 
+### What the owner sees
+
+Verification outcomes are **persisted, not merely logged** — `ci.asks` gains `channel_key_thumbprint`, `channel_verified_at` and `channel_covered`, stamped as of arrival so a later key rotation cannot rewrite what signed a past request. `AskType.channel` exposes them, responder-only for the same reason `consentBasis` is: they describe what the *responder's* box checked, and handing them to the asker is a probe into this box's configuration.
+
+The surfaces are a **lock** on every ask and disclosure row, opening a **signature detail modal**:
+
+- `frontend/apps/web/src/pages/AsksPage/ConsentLock.tsx` — four states (`sealed` / `consented` / `pending` / `open`), each carried in text beside the icon.
+- `.../ConsentDetailModal.tsx` — consent, channel and collection as three separate sections, with each covered component rendered beside *the thing it protects*.
+- `.../consentProvenance.ts` — the pure vocabulary, unit-tested.
+
+Two rules the components are built around, both in `consentProvenance.ts`:
+
+- **Weakest wins.** A signature proves who asked, not that they were allowed to, so an undecided ask reads *Awaiting you* even when it arrived signed. The lock never rounds up.
+- **The common case is not a warning.** Signing ships off and a local ask never crosses a network, so *Consented* is the honest reading of most disclosures and is rendered as a plain badge. A UI that painted the ordinary case as a problem would teach people to ignore it.
+
+`ci.ask_audit` does **not** carry channel provenance, so a Disclosure History row says the channel was *not recorded* rather than rendering a null as "unsigned" — asserting a fact nobody checked. Carrying it into the audit is the follow-up.
+
+Full protocol reference, with the verification-order chart and the threat table: [`CI-Engineering/projects/decentralized-trust-graphs/SIGNATURES.md`](https://github.com/companionintelligence/CI-Engineering/blob/main/projects/decentralized-trust-graphs/SIGNATURES.md). User-facing guide: [Asking Other Companions](https://docs.ci.computer/docs/companion-memory/asking-other-companions).
+
 **Not yet:** the key is a *second factor*, not the identity. Downstream routing still resolves a link by `(issuer, subject)`. Making the thumbprint primary and the Portal token an optional attestation — UMA's `FLOW.md` result, that the owner's policy is identical under every identity regime — needs the thumbprint threaded through `PeerAskService`, and is the follow-up. Our consent code already agrees with that direction: nothing in `grantMatch.ts` or `policy.ts` mentions an issuer.
 
 ### The token
