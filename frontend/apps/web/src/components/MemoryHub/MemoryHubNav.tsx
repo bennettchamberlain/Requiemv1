@@ -46,9 +46,9 @@ export function MemoryHubNav({ actions }: { actions?: ReactNode }) {
       {/* Create lives in the top-bar Add menu on a phone, so page actions
           (a "New place" / "New thing" button) are omitted there — rendering
           them here would duplicate it. The scrolling section strip above
-          stays: it's the only way to reach People/Places/Things/etc. that
-          isn't three taps into the drawer, now that the tab bar's own Memory
-          tab is flat (see D10/PhoneTabBar). */}
+          stays: the phone's only nav surface is the left drawer, and its own
+          Memory row doesn't expose People/Places/Things individually unless
+          its chevron is opened, so this strip is the fast path to them. */}
       {actions && !isMobile && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </nav>
   );
