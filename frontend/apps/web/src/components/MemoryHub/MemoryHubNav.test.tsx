@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -39,17 +39,20 @@ describe('MemoryHubNav', () => {
     expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
   });
 
-  it('hides the section menu and page actions on mobile', async () => {
+  // D8: the section strip used to disappear entirely on a phone, though its
+  // own markup is a scrolling row built for exactly that width — the only
+  // way to reach People/Places/Things/etc. that isn't three taps into the
+  // drawer. Only page actions ("New thing" — Create lives in the top-bar Add
+  // menu on a phone) still hide, to avoid a duplicate control.
+  it('keeps the section menu but hides page actions on mobile', async () => {
     stubViewport(true);
 
     renderWithProviders(<MemoryHubNav actions={<button type="button">New thing</button>} />, {
       route: '/memory/things',
     });
 
-    await waitFor(() => {
-      expect(screen.queryByRole('navigation', { name: 'Memory sections' })).not.toBeInTheDocument();
-    });
-    expect(screen.queryByRole('link', { name: 'Things' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('navigation', { name: 'Memory sections' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Things' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New thing' })).not.toBeInTheDocument();
   });
 });
