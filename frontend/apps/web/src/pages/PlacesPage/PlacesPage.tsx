@@ -8,6 +8,7 @@ import { Tooltip, useMap as useLeafletMap } from 'react-leaflet';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { ChatAbout } from '@/components/ChatWithAgent';
+import { ErrorState } from '@/components/ErrorState';
 import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { Map } from '@/components/Map';
@@ -552,7 +553,16 @@ export function PlacesPage() {
   if (loading && view == null) {
     content = <LoadingPage />;
   } else if (error && view == null) {
-    content = <EmptyState message={`Couldn't load places: ${error.message}`} />;
+    // Was the same confident EmptyState the genuine "No places found" branch
+    // below uses — a fetch failure read identically to "you have none", with
+    // no retry. ErrorState is the shared alternative (see its docblock).
+    content = (
+      <ErrorState
+        title="Could not load places"
+        description="Your places are still here — this device could not reach them just now."
+        onRetry={() => void refetch()}
+      />
+    );
   } else {
     content = (
       <PullToRefresh onRefresh={refetch}>

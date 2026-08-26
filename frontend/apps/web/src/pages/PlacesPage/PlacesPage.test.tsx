@@ -371,6 +371,38 @@ describe('PlacesPage', () => {
     }
   });
 
+  /**
+   * The error branch used to reuse the same confident EmptyState the genuine
+   * "No places found" branch renders — a fetch failure read identically to
+   * "you have none", with no way to retry. It must render the shared
+   * ErrorState instead, with a Try again button that actually refetches.
+   */
+  it('shows the shared ErrorState with a working retry when the query fails, not a silent empty state', async () => {
+    renderWithProviders(<PlacesPage />, {
+      mocks: [
+        {
+          request: { query: GET_PLACES, variables: { query: null, first: PAGE_SIZE } },
+          error: new Error('network down'),
+        },
+        // Consumed only after a successful retry remounts the rest of the page.
+        knownPlacesMock(),
+        noDuplicatesMock(),
+        placesMock(),
+      ],
+    });
+
+    expect(await screen.findByText('Could not load places')).toBeInTheDocument();
+    expect(
+      screen.getByText('Your places are still here — this device could not reach them just now.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn.t load places:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('No places found')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Bletchley Park')).toBeInTheDocument();
+  });
+
   describe('KnownPlacesCard', () => {
     /**
      * Every candidate defaults to "Unknown place", kind "other", when
