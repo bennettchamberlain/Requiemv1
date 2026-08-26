@@ -8,10 +8,13 @@ import {
   CONFIDENCE_OFF_QUESTION,
   CONFIDENCE_UNATTRIBUTED,
   DEFAULT_MIN_ANSWER_CONFIDENCE,
+  enforceEvidenceIsAboutThePerson,
   enforceFirstPersonEvidence,
   estimateInferredAnswerConfidence,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
+  type InferredAnswer,
+  isAboutSomethingElse,
   isNarratedVoice,
   isNonAnswer,
   normalizeAnswerSupport,
@@ -764,5 +767,299 @@ describe('the prompt contract — speaker attribution', () => {
       'Which hobby have you kept the longest, and for how many years?',
     );
     expect(INFERRED_ANSWER_PROMPT_RULES).toContain('WORKED EXAMPLES ARE METHOD, NOT CONTENT');
+  });
+});
+
+describe('isAboutSomethingElse — the aboutness gate', () => {
+  it.each([
+    // Both measured live on the reference corpus, both self-reported `stated`
+    // at 0.80, both written by the owner about an OBJECT.
+    ['a measurement of a thing offered as a body measurement', "It'll be like a foot tall."],
+    ['a description of an animal offered as a preference', "It's like a mix between a dog and a cat."],
+    ['the same sentence uncontracted', 'It is apparently like the halfway between a dog and cat.'],
+    ['a demonstrative subject', 'That was about six inches across.'],
+    ['a softened one', "Honestly, it's about a foot tall."],
+    ['a curly apostrophe', 'It’ll be like a foot tall.'],
+  ])('catches %s', (_case, answer) => {
+    expect(isAboutSomethingElse(answer)).toBe(true);
+  });
+
+  it.each([
+    // The eight answers that are correct on the reference corpus today. Losing
+    // any of them to this gate would be a worse bug than the one it fixes.
+    ['I sit on the board of an education charity called TAG and volunteer as much as I can.'],
+    ["I'm a night owl."],
+    ['Camarillo'],
+    ['Mexican and Indian cuisine are my usual favorites, but I also adore a variety of Asian dishes.'],
+    ['I grew up all over, including San Diego, Yorba Linda, Seattle, and Anchorage; I was a military brat.'],
+    ['I sometimes watch hockey with friends.'],
+    ['I prefer the beach and nature areas.'],
+    ['I am currently exploring spirituality through resources like Spiritualize and Spiritual Path.'],
+  ])('leaves the answer %s alone', (answer) => {
+    expect(isAboutSomethingElse(answer)).toBe(false);
+  });
+
+  it('spares a sentence that opens impersonally and then says something about the person', () => {
+    // The second clause is what makes it an answer, and it is the reason the
+    // gate requires BOTH halves rather than matching on the opening alone.
+    expect(isAboutSomethingElse("It's the house I grew up in.")).toBe(false);
+    expect(isAboutSomethingElse('That was my first job.')).toBe(false);
+  });
+
+  it('spares a demonstrative that is a determiner rather than a subject', () => {
+    // "This year" opens a real answer to a question about this year. Matching on
+    // the bare word would throw it away.
+    expect(isAboutSomethingElse('This year, mostly bouldering.')).toBe(false);
+    expect(isAboutSomethingElse('That house in Camarillo.')).toBe(false);
+  });
+
+  it('is empty-safe', () => {
+    expect(isAboutSomethingElse('')).toBe(false);
+    expect(isAboutSomethingElse('   ')).toBe(false);
+  });
+});
+
+describe('parseInferredAnswer — the aboutness clamp', () => {
+  it('clamps an answer about an object however confidently the model argued for it', () => {
+    // Verbatim from the live profile: the rationale asserts the line is a
+    // height measurement, and the subject of the cited sentence is "It".
+    const parsed = parseInferredAnswer(
+      JSON.stringify({
+        asked_for: 'my height',
+        support: 'stated',
+        first_person_evidence: [3],
+        answer: "It'll be like a foot tall.",
+        confidence: 0.8,
+        rationale: 'The user stated a measurement of their height in their own records.',
+      }),
+    );
+
+    expect(parsed?.answer).toBe("It'll be like a foot tall.");
+    expect(parsed?.confidence).toBe(CONFIDENCE_OFF_QUESTION);
+  });
+
+  it('clamps the A-or-B answer that describes a thing that is part A and part B', () => {
+    expect(
+      parseInferredAnswer(
+        JSON.stringify({
+          support: 'stated',
+          answer: "It's like a mix between a dog and a cat.",
+          confidence: 0.8,
+          rationale: 'which is a direct answer to the question',
+        }),
+      )?.confidence,
+    ).toBe(CONFIDENCE_OFF_QUESTION);
+  });
+
+  it('leaves an answer about the person at the model’s own score', () => {
+    expect(
+      parseInferredAnswer(
+        '{"support":"stated","answer":"I am six foot two.","confidence":0.9,"rationale":"x"}',
+      )?.confidence,
+    ).toBe(0.9);
+  });
+});
+
+describe('the prompt contract — aboutness', () => {
+  it('tells the model that writing a line is not the same as being what it is about', () => {
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain(
+      'WRITTEN BY THIS PERSON IS NOT THE SAME AS ABOUT THIS PERSON',
+    );
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('WHOSE PROPERTY IT NAMES');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('WHAT IT SUPPLIES');
+  });
+
+  it('scopes the rule to object-properties, so a line without the word "I" still counts', () => {
+    // The measured cost of the first wording, which said the person had to be
+    // the sentence's grammatical subject: "Do you prefer the beach or the
+    // mountains?" — answered correctly for months off "Cuz the beach and nature
+    // are here." — came back `topical`, rationale "this statement describes the
+    // location's features rather than expressing a preference". A line is about
+    // this person whenever their life is what is speaking.
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('This is NOT a demand that the word "I" appear');
+    // And the illustration is invented, not the anchor's own evidence line —
+    // an example naming the very record a catalogue question is scored on
+    // would be teaching to the test.
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('Cuz the beach and nature are here');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('their life, their doing, their choice or their opinion');
+  });
+
+  it('carries both measured failures as worked WRONG cases with their correction', () => {
+    // The teaching, not the incident: each WRONG line is paired with the
+    // `topical` classification it should have carried.
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('How long is your beard?');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('Would you rather ride a kayak or a canoe?');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain(
+      'An A-or-B question is answered by A or by B, never by a thing that is part A and part B',
+    );
+  });
+
+  it('forbids the laundering move the model reached for next', () => {
+    // Measured immediately after the answer-side gate closed the plain version:
+    // the model rewrote the object's sentence in the first person and shipped
+    // the same claim.
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain(
+      'do NOT repair a sentence about a thing by changing its subject to "I"',
+    );
+  });
+
+  it('illustrates them with subjects that are NOT in the question catalogue', () => {
+    // The precedent: an earlier example used a real catalogue question's exact
+    // text and the model returned the example's answer verbatim as a
+    // fabrication. Both failures behind this section are catalogue questions —
+    // `height` and `cat_or_dog_person` — so neither may appear here in the
+    // words the model will be asked, nor may the answers they produced.
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('How tall are you?');
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('Are you more of a cat person or a dog person?');
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('a foot tall');
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('between a dog and a cat');
+  });
+});
+
+describe('enforceEvidenceIsAboutThePerson — the evidence-side aboutness gate', () => {
+  function answer(overrides: Partial<InferredAnswer> = {}): InferredAnswer {
+    return {
+      answer: 'About a foot tall.',
+      confidence: 0.9,
+      support: 'stated',
+      firstPersonEvidence: [1],
+      ...overrides,
+    };
+  }
+
+  it('refuses a claim resting on a line whose SECOND sentence is the thing-sentence', () => {
+    // "Sorry no.  It is apparently like the halfway between a dog and cat." —
+    // the measured line behind the cat-or-dog answer, and the reason the line
+    // test is per sentence: anchored at the line's start it reads as beginning
+    // "no" and passes.
+    const result = enforceEvidenceIsAboutThePerson(
+      {
+        answer: "I'm apparently somewhere between a dog person and a cat person.",
+        confidence: 0.9,
+        support: 'stated',
+      },
+      ['[I wrote, Dec 10, 2012] "Sorry no.  It is apparently like the halfway between a dog and cat."'],
+    );
+
+    expect(result.aboutThePerson).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+  });
+
+  it('leaves a multi-sentence line in which the person says something about themselves', () => {
+    expect(
+      enforceEvidenceIsAboutThePerson(
+        { answer: 'I am more of a dog person.', confidence: 0.9, support: 'stated' },
+        ['[I wrote, May 3, 2016] "It was a rough week. I used to have pets. Dogs, cats, birds."'],
+      ).aboutThePerson,
+    ).toBe(true);
+  });
+
+  it('refuses a claim whose every cited line is a sentence about a thing', () => {
+    // The line is the constant across runs — one run of "How tall are you?"
+    // answered "It'll be like a foot tall." and the next "About a foot tall.",
+    // both citing this one line and nothing else.
+    const result = enforceEvidenceIsAboutThePerson(answer(), [
+      '[I wrote, Nov 14, 2017] "It\'ll be like a foot tall."',
+    ]);
+
+    expect(result.aboutThePerson).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+    expect(answersTheQuestion(result.inferred.support)).toBe(false);
+    expect(result.inferred.confidence).toBeLessThanOrEqual(CONFIDENCE_OFF_QUESTION);
+  });
+
+  it('accepts the claim when ANY cited line is about the person', () => {
+    const result = enforceEvidenceIsAboutThePerson(answer(), [
+      '[I wrote, Nov 14, 2017] "It\'ll be like a foot tall."',
+      '[I wrote, Jan 2, 2018] "I am six foot two."',
+    ]);
+
+    expect(result.aboutThePerson).toBe(true);
+    expect(result.inferred.support).toBe('stated');
+    expect(result.inferred.confidence).toBe(0.9);
+  });
+
+  it.each([
+    // Real citations behind answers that are CORRECT on the reference corpus.
+    ['[I wrote, Aug 2, 2017] "Cuz the beach and nature are here."'],
+    ['[I wrote, Jul 18, 2018] "lol, same. Night owl."'],
+    ['Spiritualize — Lotus [2022-11-24T23:45:39.946Z]'],
+    ['[Browser] Directions to Choya Japanese Cuisine, Dana Point, CA'],
+  ])('leaves an activity record or a subject-less line alone: %s', (line) => {
+    expect(enforceEvidenceIsAboutThePerson(answer(), [line]).aboutThePerson).toBe(true);
+  });
+
+  it('says nothing when there is nothing cited — that is the speaker gate’s verdict', () => {
+    // `enforceFirstPersonEvidence` has already refused an uncited claim, and a
+    // second refusal here would only mislabel WHY it was refused.
+    const result = enforceEvidenceIsAboutThePerson(answer(), []);
+
+    expect(result.aboutThePerson).toBe(true);
+    expect(result.inferred.support).toBe('stated');
+  });
+
+  it('never RAISES a confidence, only caps it', () => {
+    const result = enforceEvidenceIsAboutThePerson(answer({ confidence: 0.03 }), [
+      '[I wrote, Nov 14, 2017] "It\'ll be like a foot tall."',
+    ]);
+
+    expect(result.inferred.confidence).toBe(0.03);
+  });
+});
+
+describe('enforceEvidenceIsAboutThePerson — the subject-swap laundering shape', () => {
+  /** The owner's real line: an animal somebody was describing to them. */
+  const HYBRID_LINE =
+    '[I wrote, Dec 10, 2012] "Sorry no.  It is apparently like the halfway between a dog and cat."';
+  /** A second citation that IS about the person, so the all-lines test cannot fire. */
+  const PERSONAL_LINE = '[I wrote, May 3, 2016] "I used to have pets. Dogs, cats, birds, fish."';
+
+  function swapped(answer: string) {
+    return enforceEvidenceIsAboutThePerson(
+      { answer, confidence: 0.8, support: 'implied', firstPersonEvidence: [1, 2] },
+      [HYBRID_LINE, PERSONAL_LINE],
+    );
+  }
+
+  it('refuses the thing-sentence rewritten in the first person', () => {
+    // Measured on the first run after the answer-side gate closed the plain
+    // version: "I am apparently like the halfway between a dog and a cat." at
+    // `implied` 0.80, off a citation set that is two-thirds legitimate.
+    const result = swapped('I am apparently like the halfway between a dog and a cat.');
+
+    expect(result.aboutThePerson).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+    expect(result.inferred.confidence).toBeLessThanOrEqual(CONFIDENCE_OFF_QUESTION);
+  });
+
+  it.each([
+    // Every phrasing the model reached for across four live runs of the same
+    // question, once the plain copy stopped working.
+    ["I'm a mix between a dog and a cat."],
+    ['I am somewhere between a dog person and a cat person.'],
+    ["I'm apparently somewhere between a dog person and a cat person."],
+  ])('refuses the paraphrase %s', (answer) => {
+    expect(swapped(answer).aboutThePerson).toBe(false);
+  });
+
+  it('leaves a real answer built from the same citations alone', () => {
+    // What the same evidence should produce, and the reason the check needs both
+    // a copula and a 70% claim overlap rather than either alone.
+    expect(swapped('I am more of a dog person.').aboutThePerson).toBe(true);
+    expect(swapped('I have owned both, but I look after my neighbour’s dogs now.').aboutThePerson).toBe(true);
+    expect(swapped('Dogs.').aboutThePerson).toBe(true);
+  });
+
+  it('does not fire on a short predicate that happens to share words', () => {
+    // "I am a night owl." is a correct answer on this corpus; two content words
+    // are not a claim, and a rule that matched on them would be a coin toss. The
+    // second citation is what keeps this test on the swap path — with the thing
+    // sentence cited ALONE, the all-lines test refuses it for another reason.
+    expect(
+      enforceEvidenceIsAboutThePerson({ answer: 'I am a night owl.', confidence: 0.9, support: 'stated' }, [
+        '[I wrote, Jun 1, 2016] "It is a night owl."',
+        '[I wrote, Jun 25, 2010] "Really.  I am a night owl."',
+      ]).aboutThePerson,
+    ).toBe(true);
   });
 });

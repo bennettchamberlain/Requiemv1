@@ -58,13 +58,25 @@ export const CONFIDENCE_IMPLIED_CEILING = 0.85;
  * what is lexically and topically nearby, and on most questions the nearest
  * material answers a different question.
  *
- * - `stated`  — a line supplies the asked-for thing outright.
+ * - `stated`  — a line supplies the asked-for thing, ABOUT THIS PERSON, outright.
  * - `implied` — no line supplies it, but a consistent pattern adds up to it.
  *               Three restaurant trips → what this person eats.
  * - `topical` — the lines are ABOUT the topic and never supply the asked-for
  *               thing. Doctors in the family are not health conditions; messages
  *               containing "skill" do not name a skill being practised this year.
  * - `none`    — the evidence does not touch the question at all.
+ *
+ * `stated` and `implied` carry TWO claims, and a line can pass one while failing
+ * the other. The second is the one this level keeps losing:
+ *   1. the line supplies the asked-for THING, and
+ *   2. the line is ABOUT THIS PERSON — they are its subject, not its author.
+ * Measured live: "How tall are you?" answered "It'll be like a foot tall." at
+ * 0.80, off an outbound message in which the owner was describing an OBJECT. It
+ * cleared the speaker gate (they really did write it) and matched the question's
+ * vocabulary exactly, and the sentence measures a thing, not a person. Same
+ * shape, same corpus: "Are you more of a cat person or a dog person?" answered
+ * off "It is apparently like the halfway between a dog and cat." — a line about
+ * an animal, offered as a preference of the person who typed it.
  *
  * The model reports it (see {@link INFERRED_ANSWER_PROMPT_RULES}); this side
  * enforces it, because a self-reported relevance judgement is exactly as
@@ -392,12 +404,13 @@ export const INFERRED_ANSWER_PROMPT_RULES = `Return STRICT JSON only — no pros
 
 Fill the fields IN THAT ORDER. \`asked_for\`, \`support\` and \`first_person_evidence\` are settled BEFORE you write a word of the answer, because together they decide whether there is an answer to write at all.
 
-- asked_for: the exact thing this question demands, in a few words. Not its topic — the THING. "Which health conditions run in your immediate family?" demands NAMED MEDICAL CONDITIONS occurring in blood relatives; it does not demand facts about family, and it does not demand doctors. "What languages do you speak?" demands languages this person can already SPEAK. "Which languages are you learning?" demands languages they are STUDYING NOW. Two questions about one topic are still two different questions with two different answers.
+- asked_for: the exact thing this question demands, in a few words, AND about whom. Not its topic — the THING. "Which health conditions run in your immediate family?" demands NAMED MEDICAL CONDITIONS occurring in blood relatives; it does not demand facts about family, and it does not demand doctors. "What languages do you speak?" demands languages this person can already SPEAK. "Which languages are you learning?" demands languages they are STUDYING NOW. Two questions about one topic are still two different questions with two different answers.
 - support: how the evidence stands to the thing \`asked_for\` names — NOT to the topic:
-    stated   — some line supplies that thing outright ("I was born in Camarillo", "I am a night owl")
+    stated   — some line supplies that thing outright, about THIS PERSON ("I was born in Camarillo", "I am a night owl")
     implied  — no line supplies it, but a consistent pattern across several lines adds up to it (three restaurant trips → what this person eats)
     topical  — the lines are ABOUT the topic and never supply the thing. Doctors in the family are not health conditions. Messages containing the word "skill" do not name a skill being practised this year.
     none     — the evidence does not touch the question at all
+  \`stated\` and \`implied\` each assert TWO things, and a line can pass one while failing the other. WHAT it supplies: the thing \`asked_for\` names, in the question's own terms. WHOSE it is: a fact about THIS PERSON — their life, their doing, their choice, their opinion — and not a property of some object they happened to be describing. A line that measures or describes a thing is \`topical\` at best, however exactly its words match the question.
   \`topical\` and \`none\` are near misses, and a near miss is not an answer: both are DISCARDED on arrival whatever score you attach, so report them honestly instead of reaching. Having a great deal to say about the topic is not the same as answering the question.
 - first_person_evidence: the NUMBERS of the evidence lines that carry the claim AND are this person's own — the lines filed under MY OWN RECORDS, where this person is the one speaking or acting. Nothing else counts: a number from WHAT OTHER PEOPLE SAID TO ME counts as nothing, a number that is not in the block counts as nothing, and an empty list is the honest answer whenever this person's own records do not carry the claim. It is checked against the block, so a number put there to fill the field is the same as no number at all. If the list would be empty, set \`support\` to \`topical\` — the answer is then discarded, which is the correct outcome for a question this person's own records cannot answer.
 - answer: the answer itself and nothing else. ONE short first-person sentence at most, and where the question is factual just the bare fact — "O positive", "Night owl", "Spanish and English", "Chicago". No preamble, no restating the question, no "honestly", no complimenting the question, no closing offer to elaborate.
@@ -442,7 +455,32 @@ OTHER PEOPLE'S WORDS ARE NOT THIS PERSON'S WORDS. Just over half of this archive
 An incoming "I do have cats and definitely a cat person :)" means SOMEONE ELSE has cats. Answering "I am definitely a cat person" off three lines like it is not a low-confidence answer — it is a FALSE one, published on this person's own profile as though they had said it, while the only pet they ever mentioned themselves was a dog. Measured live, in exactly those words. The same trap: an incoming "I always wanted a tree house" is the other person's childhood, not this person's.
 Incoming lines are still worth reading. They can CORROBORATE — "Happy birthday!" arriving on March 3 really is evidence about a birthday, and the question someone asked is what this person's own reply is answering. What they can never do is ESTABLISH. The claim itself has to rest on at least one MY OWN RECORDS line, and \`first_person_evidence\` is where you show which one. No own line, no answer.
 
-WORKED EXAMPLES ARE METHOD, NOT CONTENT. Every example below is about an invented person and exists to show you HOW to weigh evidence. Never carry an example's answer, an example's subject or an example's number into your own answer: if your sentence could have been written before you read the EVIDENCE block, it is a fabrication no matter how well it reads.
+WRITTEN BY THIS PERSON IS NOT THE SAME AS ABOUT THIS PERSON. Clearing MY OWN RECORDS proves who typed the line and nothing else. People spend most of their words on things that are not themselves — an object being built, an animal, a price, a thing in a shop window — and a MEASUREMENT OR DESCRIPTION OF A THING says nothing whatever about the person who typed it. So before a line can be \`stated\` or \`implied\`, ask two questions of it:
+    WHAT IT SUPPLIES — the thing \`asked_for\` names, in the question's own terms.
+    WHOSE PROPERTY IT NAMES — this person's, or some object's. "I'm six foot two" is a fact about them. "It'll be about six inches" is a fact about whatever they were building, and would read identically if somebody else had typed it.
+This is NOT a demand that the word "I" appear. A line is about this person whenever it is their life, their doing, their choice or their opinion speaking — "Because the trains actually run on time here" is why they live where they live, and it is about them; a page they opened, a place they went, a thing they bought is about them; a friend's question they answered is about them. An ACTIVITY record has no sentence in it at all and is the ordinary raw material for \`implied\`. None of this narrows any of that.
+What it rules out is one narrow, dangerous thing: a sentence whose subject is an OBJECT and whose claim is that object's property — how big it is, what it is made of, what it is like. Such a line carries the question's own vocabulary, which is why retrieval handed it to you, and it reads as a perfect match right up until you ask whose property is being named. When the answer is "the object's", the level is \`topical\` and the answer is discarded, which is correct.
+
+Worked example — question: "How long is your beard?", evidence:
+    MY OWN RECORDS
+    3. [I wrote, Apr 2, 2016] "It'll be about four inches when it's finished."
+WRONG:
+{"asked_for":"my beard length","support":"stated","first_person_evidence":[3],"answer":"About four inches.","confidence":0.8,"rationale":"[I wrote, Apr 2, 2016] gives the measurement in their own words: \\"It'll be about four inches when it's finished.\\""}
+They did write it, so it clears the speaker test — and the thing it measures is the object they were building. Nothing in the block measures a PERSON. CORRECT:
+{"asked_for":"the length of the beard on MY face","support":"topical","first_person_evidence":[],"answer":"Clean-shaven.","confidence":0.1,"rationale":"The only measurement here is \\"It'll be about four inches\\" — subject \\"It\\", an object being built, not a length of this person."}
+
+Worked example — question: "Would you rather ride a kayak or a canoe?", evidence:
+    MY OWN RECORDS
+    5. [I wrote, Jun 3, 2014] "It's apparently like the halfway between a kayak and a canoe."
+WRONG:
+{"asked_for":"kayak or canoe","support":"stated","first_person_evidence":[5],"answer":"It's like a mix between a kayak and a canoe.","confidence":0.8,"rationale":"[I wrote, Jun 3, 2014] is a direct answer to the question."}
+Both words the question asked about are in the line, and the line describes a BOAT — one hybrid boat somebody was looking at. The question asks which of the two THIS PERSON would rather ride, and a sentence that names both options is not a preference between them. An A-or-B question is answered by A or by B, never by a thing that is part A and part B.
+ALSO WRONG, and worse — do NOT repair a sentence about a thing by changing its subject to "I":
+{"asked_for":"kayak or canoe","support":"implied","first_person_evidence":[5],"answer":"I am apparently like the halfway between a kayak and a canoe.","confidence":0.8,"rationale":"their own records say they are halfway between the two"}
+That is the same non-answer with a pronoun swapped, and it now asserts something absurd about a person on their own profile. A claim about a thing does not become a claim about somebody by moving "I" to the front of it. If the only line you have is about a thing, the level is \`topical\` and there is no answer to write. CORRECT:
+{"asked_for":"which of the two I would rather ride","support":"topical","first_person_evidence":[],"answer":"Kayak.","confidence":0.1,"rationale":"The line names both boats but describes one hybrid boat, not a preference of mine — nothing here says which I would choose."}
+
+WORKED EXAMPLES ARE METHOD, NOT CONTENT. Every example in these rules is about an invented person and exists to show you HOW to weigh evidence. Never carry an example's answer, an example's subject or an example's number into your own answer: if your sentence could have been written before you read the EVIDENCE block, it is a fabrication no matter how well it reads.
 
 EVIDENCE DOES NOT TRANSFER BETWEEN QUESTIONS. The same retrieved lines will be handed to you for several neighbouring questions, and answering all of them the same way makes every one but the closest a fabrication. Speaking a language is not learning one: a Duolingo install and "I studying for English and Sign Language" say what is being LEARNED and say nothing about what this person can already speak. A skill practised in 2019 is not "the skill I am working on this year" unless the evidence carries this year. Where the evidence answers the neighbouring question and only brushes yours, yours is \`topical\`.
 Prior answers to OTHER questions are context, never source material. An answer already given elsewhere may not be restated as this question's answer and may not raise \`confidence\` by a single point — if the only thing supporting your sentence is that a nearby question was answered that way, \`support\` is \`topical\`.
@@ -543,13 +581,7 @@ const ABSENCE_CLAIM =
  * alone was not enough — the measured failure was a refusal self-scored at 0.7.
  */
 export function isNonAnswer(answer: string): boolean {
-  const normalized = (answer ?? '')
-    .toLowerCase()
-    .replace(/[‘’ʼ`]/g, "'")
-    .replace(/[^a-z0-9'/\s]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^(?:sorry|unfortunately|honestly|apologies|well|hmm+)\s+/, '');
+  const normalized = stripSoftener(normalizeAnswerText(answer));
 
   if (normalized.length === 0) {
     return false;
@@ -666,18 +698,349 @@ const NARRATED_VOICE_PATTERNS: readonly RegExp[] = [
  * Notion") is lost here, and that is the cheaper mistake.
  */
 export function isNarratedVoice(answer: string): boolean {
-  const normalized = (answer ?? '')
-    .toLowerCase()
-    .replace(/[‘’ʼ`]/g, "'")
-    .replace(/[^a-z0-9'/\s]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const normalized = normalizeAnswerText(answer);
 
   if (normalized.length === 0) {
     return false;
   }
 
   return NARRATED_VOICE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * One answer text, flattened to the form every predicate here matches against:
+ * lowercase, curly apostrophes straightened, punctuation reduced to spaces.
+ *
+ * Shared rather than repeated so a pattern written against one predicate's
+ * normalization cannot silently fail in another's — the apostrophe rule in
+ * particular is load-bearing in three places ("don't", "i'm", "it'll").
+ */
+function normalizeAnswerText(answer: string): string {
+  return (answer ?? '')
+    .toLowerCase()
+    .replace(/[‘’ʼ`]/g, "'")
+    .replace(/[^a-z0-9'/\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Drop a leading softener so the sentence's real first word is exposed —
+ * "Sorry, I don't know" and "Honestly, it's about a foot tall" both hide their
+ * tell behind one.
+ */
+function stripSoftener(normalized: string): string {
+  return normalized.replace(/^(?:sorry|unfortunately|honestly|apologies|well|hmm+)\s+/, '');
+}
+
+/**
+ * Any reference to the person whose voice this is supposed to be.
+ *
+ * The apostrophe survives {@link normalizeAnswerText}, and a `'` is a non-word
+ * character, so `\bi\b` matches the "i" in "i'm" and "i've" as well as the bare
+ * pronoun — the contractions do not need enumerating.
+ */
+const FIRST_PERSON_REFERENCE = /\b(?:i|me|my|mine|myself|we|us|our|ours|ourselves)\b/;
+
+/**
+ * A sentence whose SUBJECT is an impersonal "it", "that" or "this".
+ *
+ * Two shapes, because the contraction carries the verb: "It's four inches" and
+ * "It is four inches" are the same sentence, and only the second has a separate
+ * verb to match. The verb list is what keeps a determiner out of it — "This year,
+ * mostly hiking." opens with the same word and is a perfectly good answer, so a
+ * bare `^(?:it|that|this)\b` would throw it away.
+ */
+const DEFLECTED_SUBJECT_PATTERNS: readonly RegExp[] = [
+  /^(?:it|that|this)'(?:s|ll|d|re|ve)\b/,
+  /^(?:it|that|this) (?:is|was|isn't|wasn't|are|were|will|would|can|could|may|might|must|should|has|have|had|does|do|did|seems?|seemed|looks?|looked|sounds?|sounded|feels?|felt|comes?|came|goes|went|gets?|got|becomes?|became|remains?|stays?|stayed|tends?|tended|means?|meant|used|measures?|measured|weighs?|weighed|stands?|stood|runs?|ran|sits?|sat|ends?|ended)\b/,
+];
+
+/**
+ * ═══ THE ABOUTNESS GATE ═══
+ *
+ * Is this sentence about SOMETHING ELSE rather than about the person?
+ *
+ * {@link enforceFirstPersonEvidence} settles who WROTE the evidence. This settles
+ * who the resulting sentence is ABOUT, which is a different question and the one
+ * that produced both measured failures on the reference corpus:
+ *
+ *   "How tall are you?"                              → "It'll be like a foot tall."          0.80
+ *   "Are you more of a cat person or a dog person?"  → "It's like a mix between a dog and a cat." 0.80
+ *
+ * Both cleared every existing guard. The cited lines were genuinely outbound, so
+ * the speaker gate passed; both are real sentences, so the non-answer patterns
+ * passed; both match the question's vocabulary exactly, which is precisely why
+ * retrieval surfaced them. What is wrong with them is that their subject is an
+ * OBJECT — a thing the owner was describing — and a measurement or a description
+ * of a thing says nothing about the person who typed it.
+ *
+ * Both halves are required, and the second is what makes this safe to apply:
+ *   - the sentence opens with an impersonal subject ("It's …", "That was …"), and
+ *   - it never refers to the person at all.
+ * "It's the house I grew up in." is about the person by its second clause and is
+ * left alone; "It'll be like a foot tall." has nobody in it.
+ *
+ * Same asymmetry as {@link isNonAnswer}: a false positive leaves a question blank,
+ * which is where it already was, while a miss publishes a fact about a bookshelf
+ * on a person's profile as their own height.
+ */
+export function isAboutSomethingElse(answer: string): boolean {
+  const normalized = stripSoftener(normalizeAnswerText(answer));
+
+  if (normalized.length === 0 || FIRST_PERSON_REFERENCE.test(normalized)) {
+    return false;
+  }
+
+  return DEFLECTED_SUBJECT_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * The same question as {@link isAboutSomethingElse}, asked of an EVIDENCE line
+ * rather than of an answer — and it has to be asked differently.
+ *
+ * An answer is one sentence and the tell is at its start. A retrieved line is
+ * whatever the person typed that day, and the measured one hid in the SECOND
+ * sentence: "Sorry no.  It is apparently like the halfway between a dog and
+ * cat." Anchored at the line's start, that reads as beginning "no" and slips
+ * through; split into sentences, the claim is plainly about an animal.
+ *
+ * The first-person guard is applied to the WHOLE line rather than per sentence,
+ * because a line in which the person says anything about themselves is a line
+ * about them — "I used to have pets. Dogs, cats, birds." must stay usable.
+ */
+function isLineAboutSomethingElse(text: string): boolean {
+  const line = stripSourceLabel(text);
+
+  if (FIRST_PERSON_REFERENCE.test(normalizeAnswerText(line))) {
+    return false;
+  }
+
+  return sentencesOf(line).some((sentence) => isAboutSomethingElse(sentence));
+}
+
+/**
+ * The half of a sentence that follows an impersonal subject and its verb, or
+ * null when the sentence does not have one. "It is apparently like the halfway
+ * between a dog and cat" → "apparently like the halfway between a dog and cat".
+ */
+function impersonalPredicate(normalized: string): string | null {
+  const match = normalized.match(
+    /^(?:it|that|this)(?:'(?:s|ll|d|re|ve)|\s+(?:is|was|are|were|will|would|seems|seemed|looks|looked|sounds|sounded|feels|felt))(?:\s+(?:be|been|being))?\s+(.+)$/,
+  );
+
+  return match ? match[1] : null;
+}
+
+/**
+ * The same half of a sentence, following a FIRST-PERSON subject and copula.
+ *
+ * Deliberately only the copulas — "I am", "I'm", "I was", "I'll be". A first
+ * person doing something ("I grew up all over…", "I sometimes watch hockey…")
+ * is a person acting, which is never the laundering shape below and must not be
+ * caught by it.
+ */
+function firstPersonPredicate(normalized: string): string | null {
+  const match = normalized.match(
+    /^i(?:'(?:m|ll|d|ve)|\s+(?:am|was|are|were|will|would|have|had|feel|felt|seem|seemed))(?:\s+(?:be|been|being))?\s+(.+)$/,
+  );
+
+  return match ? match[1] : null;
+}
+
+/**
+ * Words that carry no claim, dropped from both sides before two predicates are
+ * compared. Hedges and articles are exactly what a paraphrase changes.
+ */
+const PREDICATE_FILLER = new Set([
+  'a',
+  'an',
+  'the',
+  'of',
+  'to',
+  'and',
+  'or',
+  'be',
+  'been',
+  'like',
+  'about',
+  'apparently',
+  'basically',
+  'sort',
+  'kind',
+  'really',
+  'just',
+  'very',
+  'quite',
+  'pretty',
+  'more',
+  'most',
+  'some',
+  'somewhat',
+  'somewhere',
+  'roughly',
+  'approximately',
+  'maybe',
+  'perhaps',
+  'probably',
+  'my',
+  'their',
+  'its',
+]);
+
+/**
+ * The DISTINCT words a predicate actually claims something with.
+ *
+ * Distinct, because a repeated word is one claim said twice and counting it
+ * twice quietly halves the overlap: "somewhere between a dog person and a cat
+ * person" repeats "person", and the repetition is what let that paraphrase
+ * through at 0.50 when its claim is the cited line's claim.
+ */
+function contentTokens(predicate: string): string[] {
+  return [
+    ...new Set(predicate.split(' ').filter((token) => token.length > 0 && !PREDICATE_FILLER.has(token))),
+  ];
+}
+
+/**
+ * The fewest content words a comparison is allowed to rest on.
+ *
+ * Two words match by accident all the time — "night owl" is the whole predicate
+ * of a correct answer on the reference corpus — so a claim has to be at least
+ * this specific before an overlap means anything.
+ */
+const SUBJECT_SWAP_MIN_TOKENS = 3;
+
+/** How much of the answer's claim has to come from the line to count as its copy. */
+const SUBJECT_SWAP_MIN_OVERLAP = 0.7;
+
+/**
+ * Is the answer a cited line's THING-sentence with the subject swapped for "I"?
+ *
+ * The laundering move, measured on the very first run after the answer-side gate
+ * closed the plain version. The owner's line was "Sorry no. It is apparently
+ * like the halfway between a dog and cat." — them relaying what some animal
+ * apparently is — and asked "cat person or dog person?", the model wrote "I am
+ * apparently like the halfway between a dog and a cat." at `implied` 0.80, then
+ * "I am somewhere between a dog person and a cat person." on a later run. Every
+ * gate passed them: own-voice evidence, a first-person sentence, a real claim.
+ * They are the same non-answer with a pronoun changed, and what the first
+ * asserts about the person is an absurdity.
+ *
+ * Only fires on a COPULA answer ("I am …") whose claim is materially the cited
+ * sentence's claim, so a person doing something in their own words is untouched
+ * however closely it echoes a line they wrote.
+ */
+function isSubjectSwapOf(answer: string, citedLineTexts: readonly string[]): boolean {
+  const answerPredicate = firstPersonPredicate(stripSoftener(normalizeAnswerText(answer)));
+
+  if (!answerPredicate) {
+    return false;
+  }
+
+  const answerTokens = contentTokens(answerPredicate);
+
+  if (answerTokens.length < SUBJECT_SWAP_MIN_TOKENS) {
+    return false;
+  }
+
+  for (const text of citedLineTexts) {
+    for (const sentence of sentencesOf(stripSourceLabel(text))) {
+      const linePredicate = impersonalPredicate(stripSoftener(normalizeAnswerText(sentence)));
+
+      if (!linePredicate) {
+        continue;
+      }
+
+      const lineTokens = new Set(contentTokens(linePredicate));
+      const shared = answerTokens.filter((token) => lineTokens.has(token)).length;
+
+      if (shared / answerTokens.length >= SUBJECT_SWAP_MIN_OVERLAP) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * A line split into sentences, because a line's second sentence is where the
+ * measured one hid: "Sorry no.  It is apparently like the halfway between a dog
+ * and cat." is two sentences and only the second is the claim.
+ */
+function sentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+/**
+ * Drop the source label a recall line carries — `[I wrote, Nov 14, 2017] "…"` —
+ * so the sentence's own first word is the one that gets tested.
+ *
+ * The label is THIS side's framing, not the person's words, and every outbound
+ * one begins "I wrote": left in place it would make every line look like a
+ * first-person statement, which is exactly the confusion the gate below exists
+ * to undo.
+ */
+function stripSourceLabel(text: string): string {
+  return (text ?? '')
+    .replace(/^\s*\[[^\]]*\]\s*/, '')
+    .replace(/^["'‘’“”`]+/, '')
+    .trim();
+}
+
+/**
+ * ═══ THE EVIDENCE-SIDE ABOUTNESS GATE ═══
+ *
+ * The same question as {@link isAboutSomethingElse}, asked one step earlier: not
+ * "is this ANSWER about the person" but "is the LINE it rests on about the
+ * person".
+ *
+ * It exists because the answer's wording is the model's to choose and the line
+ * is not. Measured on the reference corpus, two consecutive runs of "How tall
+ * are you?" answered "It'll be like a foot tall." and then "About a foot tall."
+ * — the same wrong claim at the same score, off the same single citation, and
+ * only the first carries a tell in the answer text. The citation was
+ * `[I wrote, Nov 14, 2017] "It'll be like a foot tall."` both times.
+ *
+ * Two ways to fail it:
+ *   - EVERY cited line is a sentence about something else. One object-sentence
+ *     alongside a real first-person line is left alone — one good line is enough
+ *     to support an answer — and nothing cited at all is not this gate's verdict
+ *     to give, {@link enforceFirstPersonEvidence} having already refused it.
+ *   - The answer is one of those sentences with the subject swapped for "I"; see
+ *     {@link isSubjectSwapOf}. That one is the model's response to being denied
+ *     the plain version, and it survives a citation set that is mostly fine.
+ *
+ * The cost it accepts: a question genuinely about an OBJECT the person owns
+ * ("How big is your garden?" → "It's about thirty square metres.") is evidenced
+ * by exactly this shape and is discarded with it. That is the trade the rest of
+ * this file makes too — a blank card, against a bookshelf's height published as
+ * a person's own.
+ */
+export function enforceEvidenceIsAboutThePerson(
+  inferred: InferredAnswer,
+  citedLineTexts: readonly string[],
+): { inferred: InferredAnswer; aboutThePerson: boolean } {
+  const cited = citedLineTexts.filter((text) => (text ?? '').trim().length > 0);
+
+  const everyLineIsAboutAThing = cited.length > 0 && cited.every(isLineAboutSomethingElse);
+
+  if (!everyLineIsAboutAThing && !isSubjectSwapOf(inferred.answer, cited)) {
+    return { inferred, aboutThePerson: true };
+  }
+
+  return {
+    inferred: {
+      ...inferred,
+      support: 'topical',
+      confidence: round2(Math.min(inferred.confidence, CONFIDENCE_OFF_QUESTION)),
+    },
+    aboutThePerson: false,
+  };
 }
 
 /**
@@ -749,8 +1112,18 @@ export function parseInferredAnswer(content: string): InferredAnswer | null {
   // are doctors in my family." for "Which health conditions run in your
   // immediate family?", self-scored 0.90. The prompt states the rule; this makes
   // it true for every caller of the parser rather than only the careful ones.
+
+  // And once more for the sentence that is about a different SUBJECT.
+  // A model that has described an object scores how well the evidence supported
+  // the description — high, and the wrong quantity, because nothing was said
+  // about the person. Measured: "It'll be like a foot tall." for "How tall are
+  // you?", self-reported `stated` at 0.80 with a rationale arguing the point.
+  // See {@link isAboutSomethingElse}; the caller-side gate is in
+  // AnswerInferenceListener, and this is the floor under every other caller.
+  const deflected = isAboutSomethingElse(answer) ? Math.min(clamped, CONFIDENCE_OFF_QUESTION) : clamped;
+
   const support = normalizeAnswerSupport(parsed.support);
-  const confidence = round2(Math.min(clamped, supportConfidenceCeiling(support)));
+  const confidence = round2(Math.min(deflected, supportConfidenceCeiling(support)));
 
   const rationale = parsed.rationale?.trim();
   const askedFor = parsed.asked_for?.trim();

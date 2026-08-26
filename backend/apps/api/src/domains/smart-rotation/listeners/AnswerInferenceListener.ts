@@ -16,11 +16,13 @@ import {
   answersTheQuestion,
   calibrateInferredConfidence,
   confidenceLabel,
+  enforceEvidenceIsAboutThePerson,
   enforceFirstPersonEvidence,
   estimateInferredAnswerConfidence,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
   type InferredAnswer,
+  isAboutSomethingElse,
   isNarratedVoice,
   isNonAnswer,
   LLM_QUEUE,
@@ -388,6 +390,70 @@ ${evidence.block}`
       });
 
       return { status: 'discarded', reason: 'unattributed', inferred: attribution.inferred };
+    }
+
+    // ═══ THE ABOUTNESS GATES ═══
+    //
+    // The speaker gate above settles who WROTE the evidence. These two settle
+    // who the claim is ABOUT, and that is not the same question: most of what
+    // anybody writes is about something other than themselves. Measured live,
+    // both self-reported `stated` at 0.80 with a rationale arguing the point,
+    // both resting on genuinely outbound lines:
+    //
+    //   "How tall are you?"            → "It'll be like a foot tall."
+    //   "…cat person or a dog person?" → "It's like a mix between a dog and a cat."
+    //
+    // The first is the owner describing an object they were building; the second
+    // is them relaying what some ANIMAL apparently is. Retrieval surfaced both BECAUSE
+    // they carry the question's vocabulary, which is exactly what makes the
+    // failure look like a match. `support` cannot catch it — the model called
+    // both `stated` and defended it.
+    //
+    // The EVIDENCE side goes first because it is the stable one. Asked "How tall
+    // are you?" twice, the model answered "It'll be like a foot tall." and then
+    // "About a foot tall." — the same claim off the same single citation, and
+    // only the first has a tell in the answer text. The line does not change
+    // between runs.
+    const citedTexts = attribution.citedOwn.map((line) => evidence.linesByNumber.get(line)?.text ?? '');
+    const aboutness = enforceEvidenceIsAboutThePerson(inferred, citedTexts);
+
+    if (!aboutness.aboutThePerson) {
+      this.logger.log('Inferred answer discarded — every line it cites is about something else', {
+        userId: ownerId,
+        questionId: question.id,
+        question: question.text,
+        memoryEvidence: evidence.shownCount,
+        firstPersonEvidence: evidence.ownCount,
+        citedLines: attribution.citedOwn,
+        citedText: citedTexts,
+        askedFor: inferred.askedFor,
+        support: inferred.support,
+        response: inferred.answer,
+        rationale: inferred.rationale,
+      });
+
+      return { status: 'discarded', reason: 'evidence-not-about-this-person', inferred: aboutness.inferred };
+    }
+
+    // And the ANSWER side: the sentence itself, where "it" is the subject and
+    // nobody else is in the sentence. It catches the case the evidence gate
+    // cannot — a claim assembled from several lines, only one of which is about
+    // a thing — and it is the shape both live failures were published in.
+    if (isAboutSomethingElse(inferred.answer)) {
+      this.logger.log('Inferred answer discarded — the sentence is about something else', {
+        userId: ownerId,
+        questionId: question.id,
+        question: question.text,
+        memoryEvidence: evidence.shownCount,
+        firstPersonEvidence: evidence.ownCount,
+        citedLines: attribution.citedOwn,
+        askedFor: inferred.askedFor,
+        support: inferred.support,
+        response: inferred.answer,
+        rationale: inferred.rationale,
+      });
+
+      return { status: 'discarded', reason: 'answer-not-about-this-person', inferred };
     }
 
     // An answer to a NEARBY question is not an answer to this one, and it is the
