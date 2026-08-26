@@ -84,7 +84,7 @@ fn main() {
             get_local_model_status_command,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running the CI-Server desktop app");
+        .expect("error while running the Companion Memory desktop app");
 }
 
 /// Shared by main.rs's own startup task and start_stack_command — see the
