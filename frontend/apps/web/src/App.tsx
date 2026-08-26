@@ -39,6 +39,7 @@ import {
   useStatusBarScrollToTop,
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
+import { CHAT_BASE, chatThreadPath } from '@/pages/ChatPage/chatPaths';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
@@ -106,6 +107,12 @@ function RedirectFeedSummaryToBrief() {
   const { id } = useParams<{ id: string }>();
 
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+function RedirectToChat() {
+  const { id } = useParams<{ id?: string }>();
+
+  return <Navigate to={id ? chatThreadPath(id) : CHAT_BASE} replace />;
 }
 
 function RedirectProfileToSelfSettings() {
@@ -449,15 +456,23 @@ function AppRoutes() {
 
           <Route path="/memory/knowledge" element={<Navigate to="/memory/events?view=graph" replace />} />
 
+          {/* Chat moved under Memory — it's a bounded view over your own
+              history the same way Events/People/Places are, not a peer
+              destination. The old /chat/:id? address is kept as a redirect,
+              declared here alongside the route it now points at, so a
+              bookmark or an external deep-link still lands. */}
           {isFeatureEnabled('chat.page') && (
-            <Route
-              path="/chat/:id?"
-              element={
-                <ProtectedRoute>
-                  <ChatPage />
-                </ProtectedRoute>
-              }
-            />
+            <>
+              <Route
+                path="/memory/chat/:id?"
+                element={
+                  <ProtectedRoute>
+                    <ChatPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/chat/:id?" element={<RedirectToChat />} />
+            </>
           )}
 
           {/* Admin / System */}

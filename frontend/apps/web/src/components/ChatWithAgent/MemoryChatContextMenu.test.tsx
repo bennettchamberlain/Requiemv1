@@ -92,7 +92,7 @@ describe('MemoryChatAbout', () => {
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Picnic note' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Open chat' }));
 
-    expect(h.navigate).toHaveBeenCalledWith('/chat');
+    expect(h.navigate).toHaveBeenCalledWith('/memory/chat');
     expect(JSON.parse(sessionStorage.getItem('ci.agentChat.seed') ?? '{}')).toMatchObject({
       title: 'Picnic',
       body: 'Bring snacks',

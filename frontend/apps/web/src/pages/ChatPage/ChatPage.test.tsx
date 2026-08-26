@@ -48,6 +48,15 @@ vi.mock('@ci/common', async (importOriginal) => {
   };
 });
 
+// ChatPage now renders inside MemoryHubShell (the shared Memory hub tab
+// strip) — MemoryHubNav reads useFeatures(), which renderWithProviders
+// deliberately does not supply (it fetches on mount).
+vi.mock('@/common/feature', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/common/feature')>();
+
+  return { ...actual, useFeatures: () => ({ isFeatureEnabled: () => true }) };
+});
+
 vi.mock('@/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/hooks')>();
 
@@ -135,7 +144,7 @@ describe('ChatPage', () => {
   });
 
   it('detaches rather than stopping when selecting another thread', () => {
-    renderWithProviders(<ChatPage />, { route: '/chat/t1', path: '/chat/:id' });
+    renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
 
     fireEvent.click(screen.getByText('Second'));
 
@@ -171,13 +180,13 @@ describe('ChatPage', () => {
       ],
     } as unknown as Thread;
 
-    renderWithProviders(<ChatPage />, { route: '/chat/t2', path: '/chat/:id' });
+    renderWithProviders(<ChatPage />, { route: '/memory/chat/t2', path: '/memory/chat/:id' });
 
     await waitFor(() => expect(h.attach).toHaveBeenCalledWith('t2'));
   });
 
   it('Stop still cancels the in-flight job', () => {
-    renderWithProviders(<ChatPage />, { route: '/chat/t1', path: '/chat/:id' });
+    renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
 
     fireEvent.click(screen.getByText('Stop'));
 
@@ -185,7 +194,7 @@ describe('ChatPage', () => {
   });
 
   it('cancels generation when a thread is deleted', () => {
-    renderWithProviders(<ChatPage />, { route: '/chat/t1', path: '/chat/:id' });
+    renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
 
     fireEvent.click(screen.getAllByLabelText('Delete thread')[0]);
 
@@ -201,12 +210,12 @@ describe('ChatPage', () => {
    * matches the one currently open (t1, per the route below).
    */
   it('navigates back to the empty chat list when the currently-open thread is deleted', () => {
-    renderWithProviders(<ChatPage />, { route: '/chat/t1', path: '/chat/:id' });
+    renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
 
     fireEvent.click(screen.getAllByLabelText('Delete thread')[0]); // t1 — the open thread
 
     expect(h.deleteThread).toHaveBeenCalledWith('t1');
-    expect(navigate).toHaveBeenCalledWith('/chat');
+    expect(navigate).toHaveBeenCalledWith('/memory/chat');
   });
 
   /**
@@ -215,7 +224,7 @@ describe('ChatPage', () => {
    * the conversation they're reading — only the matching-id branch navigates.
    */
   it('does not navigate away when a different thread is deleted from the sidebar', () => {
-    renderWithProviders(<ChatPage />, { route: '/chat/t1', path: '/chat/:id' });
+    renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
 
     fireEvent.click(screen.getAllByLabelText('Delete thread')[1]); // t2 — not open
 
@@ -225,11 +234,11 @@ describe('ChatPage', () => {
   });
 
   /**
-   * The empty state only renders on `/chat` — with an `:id` in the route
-   * ChatPage is showing a thread, not the starting screen.
+   * The empty state only renders on `/memory/chat` — with an `:id` in the
+   * route ChatPage is showing a thread, not the starting screen.
    */
   describe('empty state', () => {
-    const renderEmpty = () => renderWithProviders(<ChatPage />, { route: '/chat', path: '/chat' });
+    const renderEmpty = () => renderWithProviders(<ChatPage />, { route: '/memory/chat', path: '/memory/chat' });
 
     /** Chat is the outer chat — it must not embed a second composer. */
     it('no longer embeds the How you’d do it composer', () => {

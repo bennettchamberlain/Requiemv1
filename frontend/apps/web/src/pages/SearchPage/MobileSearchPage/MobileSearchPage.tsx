@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { SearchInput } from '@/components/SearchInput';
+import { CHAT_BASE } from '@/pages/ChatPage/chatPaths';
 
 export function MobileSearchPage() {
   usePageTitle('Search - Companion Intelligence');
@@ -25,7 +26,7 @@ function Actions() {
     <div className="flex flex-col flex-1 justify-end">
       <div className="grid grid-cols-2 gap-4 p-3">
         <Button variant="secondary" className="w-full justify-center p-6" asChild>
-          <Link to="/chat">
+          <Link to={CHAT_BASE}>
             <MessagesSquare className="h-4 w-4" />
             Chats
           </Link>

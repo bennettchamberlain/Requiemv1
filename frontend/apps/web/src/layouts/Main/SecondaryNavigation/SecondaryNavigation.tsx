@@ -12,7 +12,7 @@ import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
 import { RailEdgeToggle } from '../RailEdgeToggle';
 
 import { CaptureRailButton } from './CaptureRailButton';
-import { ChatSubmenu } from './ChatSubmenu';
+import { DestinationWithChildrenSubmenu } from './DestinationWithChildrenSubmenu';
 import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
 import { SelfSubmenu } from './SelfSubmenu';
@@ -192,12 +192,13 @@ export function SecondaryNavigation() {
           return <MemorySubmenu key={destination.id} />;
         }
 
-        // Chat is a group: Asks rides under it, and so do the recent threads.
-        // When `chat.page` is off the group never reaches here — Asks is
-        // promoted to a plain row by `visibleRailDestinations` and falls
-        // through to the NavLink below.
-        if (destination.id === 'chat') {
-          return <ChatSubmenu key={destination.id} destination={destination} />;
+        // Any destination carrying children (currently Saved Searches, with
+        // Asks beside it) gets the group treatment: a chevron reveals them.
+        // A gated group whose flag is off never reaches here — its children
+        // are promoted to plain top-level rows by `visibleRailDestinations`
+        // and fall through to the NavLink below.
+        if (destination.children && destination.children.length > 0) {
+          return <DestinationWithChildrenSubmenu key={destination.id} destination={destination} />;
         }
 
         const Icon = destination.icon;

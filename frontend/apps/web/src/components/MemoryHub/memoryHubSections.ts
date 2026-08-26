@@ -8,7 +8,9 @@ import {
   PlaceIcon,
   ReceiptIcon,
   TagIcon,
+  ThreadIcon,
 } from '@/components/icons';
+import { CHAT_BASE } from '@/pages/ChatPage/chatPaths';
 
 export type MemoryHubIcon = ComponentType<{ className?: string; colorized?: boolean }>;
 
@@ -72,6 +74,15 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
     match: (p) => p === '/memory/tags',
     flag: 'tags.page',
     icon: TagIcon,
+  },
+  {
+    to: CHAT_BASE,
+    label: 'Chat',
+    // A thread deep-link (`/memory/chat/:id`) has to keep this tab lit, same
+    // as Content's `/memory/content/:fileId`.
+    match: (p) => p === CHAT_BASE || p.startsWith(`${CHAT_BASE}/`),
+    flag: 'chat.page',
+    icon: ThreadIcon,
   },
 ];
 

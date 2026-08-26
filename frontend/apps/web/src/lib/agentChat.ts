@@ -1,5 +1,7 @@
 import type { NavigateFunction } from 'react-router-dom';
 
+import { CHAT_BASE } from '@/pages/ChatPage/chatPaths';
+
 export interface AgentChatContext {
   title: string;
   body?: string | null;
@@ -76,7 +78,7 @@ export function clearAgentChatContext(): void {
 /** Open Memory's in-app chat with action context pre-filled. */
 export function openInAppChat(navigate: NavigateFunction, context: AgentChatContext): void {
   stashAgentChatContext(context);
-  navigate('/chat');
+  navigate(CHAT_BASE);
 }
 
 /** Composer seed used by in-app Chat and as the `prompt` query param for harnesses. */

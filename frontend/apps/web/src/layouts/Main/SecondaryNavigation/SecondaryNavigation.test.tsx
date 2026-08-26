@@ -362,46 +362,67 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
   });
 
-  // Chat and Asks are one conversation surface. Two peer rows read as two
-  // unrelated places, which is what the compacting was meant to fix.
-  it('folds Asks into the Chat group instead of a peer row', () => {
+  // Share (a link I mint) and Ask (a request they mint) are both a bounded
+  // search run as me. Two peer rows read as two unrelated places, which is
+  // what the grouping was meant to fix.
+  it('folds Asks into the Saved Searches group instead of a peer row', () => {
     renderRail('/plan', { expanded: true });
 
     expect(screen.queryByRole('link', { name: 'Asks' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Chat sections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Saved Searches sections' }));
 
-    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
+    expect(screen.getByRole('link', { name: 'Saved Searches' })).toHaveAttribute('href', '/saved-searches');
     expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('href', '/asks');
   });
 
-  it('keeps Chat a single icon in the collapsed rail, with no separate Asks row', () => {
+  it('keeps Saved Searches a single icon in the collapsed rail, with no separate Asks row', () => {
     renderRail();
 
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
-    expect(hrefs).toContain('/chat');
+    expect(hrefs).toContain('/saved-searches');
     expect(hrefs).not.toContain('/asks');
   });
 
+  it('opens the Saved Searches group on an Asks route', () => {
+    renderRail('/asks', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  // Chat lives inside Memory now (/memory/chat) — a bounded view over your
+  // own history, the same as Events/People/Places, not a peer of Memory.
+  it('lists Chat as a Memory hub section, not a peer rail row', () => {
+    renderRail('/plan', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: 'Chat' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Memory sections' }));
+
+    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/memory/chat');
+  });
+
   // The point of the submenu: pick a conversation from the menu, not from a
-  // second chat UI nested in it.
-  it('lists recent threads as links under Chat', () => {
+  // second chat UI nested in it. Threads render under Chat's own row, inside
+  // Memory's list — the phone drawer is the only way to change conversation
+  // there, since ChatSidebar portals to a slot the mobile layout never renders.
+  it('lists recent threads as links under Chat, inside the Memory group', () => {
     recentThreads.current = [
       { id: 't1', name: 'Dinner plans' },
       { id: 't2', name: null },
     ];
 
-    renderRail('/chat', { expanded: true });
+    renderRail('/memory/chat', { expanded: true });
 
-    expect(screen.getByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/chat/t1');
-    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/chat/t2');
+    expect(screen.getByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/memory/chat/t1');
+    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/memory/chat/t2');
   });
 
-  it('opens the Chat group on a thread deep-link and marks the thread current', () => {
+  it('opens the Memory group on a thread deep-link and marks the thread current', () => {
     recentThreads.current = [{ id: 't1', name: 'Dinner plans' }];
 
-    renderRail('/chat/t1', { expanded: true });
+    renderRail('/memory/chat/t1', { expanded: true });
 
     const thread = screen.getByRole('link', { name: 'Dinner plans' });
 
@@ -409,13 +430,7 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Chat' })).not.toHaveAttribute('aria-current');
   });
 
-  it('opens the Chat group on an Asks route', () => {
-    renderRail('/asks', { expanded: true });
-
-    expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('aria-current', 'page');
-  });
-
-  it('does not fetch threads while the Chat group is closed', () => {
+  it('does not fetch threads while the Memory group is closed', () => {
     recentThreads.current = [{ id: 't1', name: 'Dinner plans' }];
 
     renderRail('/plan', { expanded: true });
@@ -423,7 +438,7 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Dinner plans' })).not.toBeInTheDocument();
   });
 
-  it('lists Capture first, then the spine, with Self and Settings at the foot', () => {
+  it('lists Capture first, then the spine, with Forecast, Self, and Settings at the foot', () => {
     renderRail();
 
     const capture = screen.getByRole('button', { name: 'Capture' });
@@ -432,13 +447,13 @@ describe('SecondaryNavigation', () => {
 
     expect(capture.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/calendar'));
-    expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/forecast'));
-    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory'));
+    expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/memory'));
     expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
-    expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
-    expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
+    expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/sources'));
     expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));
-    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/self'));
+    // Forecast sits below Jobs, off the primary six, while its flag ships false.
+    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/forecast'));
+    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/self'));
     // Settings is the last row of all — below Self, not nested inside it.
     expect(hrefs.indexOf('/self')).toBeLessThan(hrefs.indexOf('/settings/appearance'));
   });

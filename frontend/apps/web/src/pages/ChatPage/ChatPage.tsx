@@ -9,9 +9,11 @@ import { v7 as uuid7 } from 'uuid';
 import { useThreadService } from '@/api';
 import { Chat, type FormData } from '@/components/Chat';
 import { ErrorState } from '@/components/ErrorState';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { useChatRequester, useCounter, useModel } from '@/hooks';
 import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } from '@/lib/agentChat';
 
+import { CHAT_BASE, chatThreadPath } from './chatPaths';
 import { ChatSidebar } from './ChatSidebar';
 import { STARTER_PROMPTS } from './starterPrompts';
 import { type Message } from './types';
@@ -43,7 +45,7 @@ function ChatPageContent() {
   const handleNewThread = useCallback(
     (threadId: string) => {
       resolvedThreadId.current = threadId;
-      window.history.replaceState({}, '', `/chat/${threadId}`);
+      window.history.replaceState({}, '', chatThreadPath(threadId));
       refetchThreads();
       refetchThread();
     },
@@ -68,7 +70,7 @@ function ChatPageContent() {
     incrementNewThreadCount();
     detachChatStream();
     resolvedThreadId.current = null;
-    navigate('/chat');
+    navigate(CHAT_BASE);
   }, [incrementNewThreadCount, detachChatStream, navigate]);
 
   useEffect(() => {
@@ -116,7 +118,7 @@ function ChatPageContent() {
     (threadId: string) => {
       if (resolvedThreadId.current !== threadId) {
         detachChatStream();
-        navigate(`/chat/${threadId}`);
+        navigate(chatThreadPath(threadId));
       }
     },
     [navigate, detachChatStream],
@@ -283,38 +285,45 @@ function ChatPageContent() {
   }
 
   return (
-    <>
-      <Portal.Slot id="tertiary-navigation">
-        <ChatSidebar
-          threads={threads}
-          loading={loading}
-          selectedThreadId={resolvedThreadId.current}
-          onSelectThread={handleSelectThread}
-          onNewThread={navigateToChatList}
-          onDeleteThread={handleDeleteThread}
-          onRefresh={refetchThreads}
-        />
-      </Portal.Slot>
+    // Plain flex-col at h-full, not PageContent — Chat manages its own
+    // internal scrolling (message list scrolls, the composer stays pinned),
+    // and PageContent's own `overflow-auto` would add a second, unwanted
+    // scroll container around the whole page. `flex-col` alone is enough for
+    // MemoryHubShell's `fillHeight` to participate in the flex layout below.
+    <div className="flex h-full flex-col">
+      <MemoryHubShell fillHeight>
+        <Portal.Slot id="tertiary-navigation">
+          <ChatSidebar
+            threads={threads}
+            loading={loading}
+            selectedThreadId={resolvedThreadId.current}
+            onSelectThread={handleSelectThread}
+            onNewThread={navigateToChatList}
+            onDeleteThread={handleDeleteThread}
+            onRefresh={refetchThreads}
+          />
+        </Portal.Slot>
 
-      <div className="flex flex-col h-full">
-        <Chat
-          key={initialThreadId ?? `new-thread-${newThreadCount}`}
-          loading={loading}
-          streaming={chatRequestStreaming}
-          hasStartedReceiving={hasStartedReceiving}
-          disabled={isSubmitDisabled}
-          placeholder={inputPlaceholder}
-          initialDraft={chatDraft}
-          messages={initialMessages}
-          emptyState={emptyState}
-          readable={stream ?? undefined}
-          onSubmit={handleSubmit}
-          onStop={stopChatRequest}
-          autoFocus={true}
-          onResponseFinished={handleResponseFinished}
-        />
-      </div>
-    </>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <Chat
+            key={initialThreadId ?? `new-thread-${newThreadCount}`}
+            loading={loading}
+            streaming={chatRequestStreaming}
+            hasStartedReceiving={hasStartedReceiving}
+            disabled={isSubmitDisabled}
+            placeholder={inputPlaceholder}
+            initialDraft={chatDraft}
+            messages={initialMessages}
+            emptyState={emptyState}
+            readable={stream ?? undefined}
+            onSubmit={handleSubmit}
+            onStop={stopChatRequest}
+            autoFocus={true}
+            onResponseFinished={handleResponseFinished}
+          />
+        </div>
+      </MemoryHubShell>
+    </div>
   );
 }
 

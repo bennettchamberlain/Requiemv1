@@ -119,7 +119,7 @@ describe('MobileNavigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
 
     expect(await screen.findByRole('link', { name: 'Plan' })).toHaveAttribute('href', '/plan');
-    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
+    expect(screen.getByRole('link', { name: 'Memory' })).toHaveAttribute('href', '/memory');
     expect(screen.queryByRole('link', { name: 'System' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Close menu' }).length).toBeGreaterThanOrEqual(1);
   });
@@ -153,29 +153,48 @@ describe('MobileNavigation', () => {
 
   // ChatSidebar is portaled to `tertiary-navigation`, which the phone layout
   // never renders — without this submenu there is no way to change thread.
+  // Chat lives under Memory now, whose group auto-opens on a memory-hub
+  // route, same as it did for the old dedicated Chat group.
   it('switches among recent threads from the drawer', async () => {
     recentThreads.current = [
       { id: 't1', name: 'Dinner plans' },
       { id: 't2', name: null },
     ];
 
-    renderMobileNav('/chat');
+    renderMobileNav('/memory/chat');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
 
-    expect(await screen.findByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/chat/t1');
-    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/chat/t2');
+    expect(await screen.findByRole('link', { name: 'Dinner plans' })).toHaveAttribute(
+      'href',
+      '/memory/chat/t1',
+    );
+    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/memory/chat/t2');
   });
 
-  it('carries Asks inside the drawer Chat group, not as its own row', async () => {
+  // Chat itself is a Memory hub section now, not a peer row — see the
+  // equivalent assertion in SecondaryNavigation.test.tsx.
+  it('lists Chat inside the Memory group, not as its own row', async () => {
     renderMobileNav();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
 
-    await screen.findByRole('link', { name: 'Chat' });
+    expect(screen.queryByRole('link', { name: 'Chat' })).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Expand Memory sections' }));
+
+    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/memory/chat');
+  });
+
+  it('carries Asks inside the drawer Saved Searches group, not as its own row', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    await screen.findByRole('link', { name: 'Saved Searches' });
     expect(screen.queryByRole('link', { name: 'Asks' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Chat sections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Saved Searches sections' }));
 
     expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('href', '/asks');
   });
