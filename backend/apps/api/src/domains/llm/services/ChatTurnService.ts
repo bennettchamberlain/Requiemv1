@@ -18,6 +18,7 @@ import { SummaryService } from '@ci/domains/summaries';
 
 import { LLM_QUEUE, type ThreadGenerationStatus } from '../constants';
 import { ChatGenerateEvent, type ChatGeneratePayload } from '../events';
+import { foldHistory } from '../foldHistory';
 import { THREAD_TITLE_SYSTEM_PROMPT, sidebarTitleFromModel } from '../threadTitle';
 
 import { ChatGenerationBroker } from './ChatGenerationBroker';
@@ -95,8 +96,12 @@ export class ChatTurnService {
     const messages = await this.messageService.findByThreadId(serviceContext, thread.id);
     const conversation = messages.filter((message) => message.id !== payload.assistantMessageId);
     const seededMessages = await this.ensureActionPrompt(serviceContext, thread, conversation);
+    // Turns older than the newest few replay as prose only: their tool_calls
+    // and the paired role:'tool' result rows are dropped together. Folding
+    // before resolveMessage also skips getFileContent for elided rows.
+    const foldedMessages = foldHistory(seededMessages);
     const inputMessages: OllamaMessage[] = await Promise.all(
-      seededMessages.map((message) => this.resolveMessage(requestContext, message)),
+      foldedMessages.map((message) => this.resolveMessage(requestContext, message)),
     );
 
     const { model, enableThinking, enableTools } = await this.ollamaService.resolveModel(requestContext, {
