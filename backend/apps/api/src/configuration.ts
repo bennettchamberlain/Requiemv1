@@ -637,14 +637,19 @@ export const ConfigSchema = z.object({
        * 0: nothing then distinguishes a well-evidenced inference from a guess.
        */
       autoPromoteThresholdCautious: z.coerce.number().min(0).max(1).default(1),
-      autoPromoteThresholdBalanced: z.coerce.number().min(0).max(1).default(0.85),
+      autoPromoteThresholdBalanced: z.coerce.number().min(0).max(1).default(0.55),
       autoPromoteThresholdHandsOff: z.coerce.number().min(0).max(1).default(0.7),
       /**
        * Below this, `PersonalizationService.decide` always returns 'review'
        * regardless of trust mode or action kind — the floor beneath every
        * `autoPromoteThreshold*` above.
+       *
+       * It has to move WITH `autoPromoteThresholdBalanced`, not independently:
+       * `decide` tests this floor FIRST and returns 'review' before any
+       * promote threshold is consulted, so a promote threshold set below this
+       * floor is dead config. Lowering only one of the pair changes nothing.
        */
-      alwaysReviewBelowConfidence: z.coerce.number().min(0).max(1).default(0.7),
+      alwaysReviewBelowConfidence: z.coerce.number().min(0).max(1).default(0.55),
     })
     .default({}),
   features: z.object({
