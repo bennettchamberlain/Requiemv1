@@ -8,7 +8,7 @@
     "sync": "node scripts/sync-compose-resources.cjs",
     "dev": "yarn sync && tauri dev",
     "build": "yarn sync && tauri build",
-    "icons": "tauri icon ../web/public/logo.svg"
+    "icons": "tauri icon src-tauri/icons/app-icon-source.png"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.0"

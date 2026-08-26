@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CI-Server",
+  "productName": "Companion Memory",
   "mainBinaryName": "ci-server-desktop",
   "version": "0.1.0",
   "identifier": "computer.ci.app.server",
@@ -32,7 +32,7 @@
   "app": {
     "windows": [
       {
-        "title": "CI-Server",
+        "title": "Companion Memory",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
