@@ -4,6 +4,7 @@ import {
   ContentIcon,
   EventIcon,
   ItemIcon,
+  NoteIcon,
   PersonIcon,
   PlaceIcon,
   ReceiptIcon,
@@ -74,6 +75,15 @@ export const MEMORY_HUB_SECTIONS: MemoryHubSection[] = [
     match: (p) => p === '/memory/tags',
     flag: 'tags.page',
     icon: TagIcon,
+  },
+  {
+    to: '/memory/notes',
+    label: 'Notes',
+    // /notes/:id? is the create/edit page and stays at its own top-level
+    // path (same as /people/:id, /receipts/:id) — it still has to keep this
+    // tab lit.
+    match: (p) => p === '/memory/notes' || p.startsWith('/notes/'),
+    icon: NoteIcon,
   },
   {
     to: CHAT_BASE,

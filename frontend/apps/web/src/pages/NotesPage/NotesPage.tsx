@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 
 import { NoteIcon } from '@/components/icons';
 import { PageContent } from '@/components/layout';
+import { MemoryHubShell } from '@/components/MemoryHub';
 import { gql } from '@/graphql';
 
 import { DeleteNoteModal } from './DeleteNoteModal';
@@ -65,19 +66,19 @@ export function NotesPage() {
     );
   } else {
     content = (
-      <PageContent>
-        <div className="grid w-full gap-4 justify-center grid-cols-[repeat(auto-fill,300px)] auto-rows-[300px]">
-          {notes.map((note) => (
-            <Note key={note.id} note={note} onDelete={(e) => handleDelete(e, note.id)} />
-          ))}
-        </div>
-      </PageContent>
+      <div className="grid w-full gap-4 justify-center grid-cols-[repeat(auto-fill,300px)] auto-rows-[300px]">
+        {notes.map((note) => (
+          <Note key={note.id} note={note} onDelete={(e) => handleDelete(e, note.id)} />
+        ))}
+      </div>
     );
   }
 
   return (
     <>
-      {content}
+      <PageContent>
+        <MemoryHubShell>{content}</MemoryHubShell>
+      </PageContent>
 
       {focusedNote && <DeleteNoteModal noteId={focusedNote} onClose={() => setFocusedNote(null)} />}
     </>
