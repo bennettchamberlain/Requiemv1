@@ -103,7 +103,7 @@ export {
 } from './disclosureSummary';
 export type { DisclosureCounterparty, DisclosureSummary } from './disclosureSummary';
 export { MAX_AUDIT_ROWS } from './services/AskAuditService';
-export type { AuditFilter, ListedAudit } from './services/AskAuditService';
+export type { AuditFilter, GrantUsage, ListedAudit } from './services/AskAuditService';
 export {
   MAX_ASK_DATA_CLASS_LENGTH,
   MAX_ASK_PROMPT_LENGTH,

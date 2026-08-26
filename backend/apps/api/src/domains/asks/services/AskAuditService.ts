@@ -38,6 +38,12 @@ export interface AuditFilter {
   limit?: number | null;
 }
 
+/** How often one grant has been cited as the basis for a disclosure, and when last. */
+export interface GrantUsage {
+  useCount: number;
+  lastUsedAt: Date;
+}
+
 export interface ListedAudit {
   rows: AskAudit[];
   /** True when the read hit {@link MAX_AUDIT_ROWS} and older rows exist. */
@@ -187,6 +193,51 @@ export class AskAuditService {
       summaries: summarizeDisclosures(rows, { now: options.now, windowMs: options.windowMs }),
       truncated,
     };
+  }
+
+  /**
+   * How much each of the caller's grants has actually been USED.
+   *
+   * ═══ A GRANT MANAGER THAT CANNOT SAY THIS IS HALF A CONTROL ═══
+   *
+   * The matrix shows what an owner ALLOWED. It has never shown whether anything
+   * came of it — so a grant firing daily and one that has never once matched
+   * look identical, and they call for opposite actions. The dormant one is
+   * clutter to tidy up; the busy one is the thing to look at twice.
+   *
+   * Computed from `ci.ask_audit.consent_basis`, which is the grant id the
+   * disclosure actually cited. NOT from the grants table: a grant's own row
+   * records what it permits, never what it did.
+   *
+   * ONE PASS over the bounded read, folded in memory, rather than a `GROUP BY`
+   * — the same choice `summaryForResponder` makes and for the same reason. Two
+   * implementations of "how often did this grant fire" would drift, and the
+   * drift would be invisible because each looks right alone.
+   */
+  async usageByGrant(context: UserServiceContext): Promise<Map<string, GrantUsage>> {
+    const { rows } = await this.listForResponder(context);
+    const usage = new Map<string, GrantUsage>();
+
+    for (const row of rows) {
+      const basis = row.consentBasis;
+      if (basis == null) {
+        continue;
+      }
+
+      const existing = usage.get(basis);
+      if (existing == null) {
+        usage.set(basis, { useCount: 1, lastUsedAt: row.createdAt });
+
+        continue;
+      }
+
+      existing.useCount += 1;
+      if (row.createdAt > existing.lastUsedAt) {
+        existing.lastUsedAt = row.createdAt;
+      }
+    }
+
+    return usage;
   }
 
   /**

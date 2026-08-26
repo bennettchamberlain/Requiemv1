@@ -92,6 +92,11 @@ export const MY_ASK_GRANTS = gql(`
       revokedAt
       expiresAt
       active
+      # Whether this grant has ever actually fired, and when last. A grant
+      # firing daily and one that has never matched look identical without
+      # these, and they call for opposite actions.
+      useCount
+      lastUsedAt
       createdAt
     }
   }

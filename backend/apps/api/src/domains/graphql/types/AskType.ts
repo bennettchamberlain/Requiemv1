@@ -7,6 +7,7 @@ import {
   type AskGrant,
   type AskQuery,
   type DisclosureSummary,
+  type GrantUsage,
 } from '@ci/domains/asks';
 
 import { GlobalUID } from './GlobalUID';
@@ -380,7 +381,26 @@ export class AskGrantType {
   @Field(() => Boolean)
   active!: boolean;
 
-  static toType(grant: AskGrant): AskGrantType {
+  /**
+   * How many disclosures have cited this grant, and when the last one did.
+   *
+   * `useCount: 0` with a null `lastUsedAt` means DORMANT — the owner allowed
+   * something and nothing ever came of it. That is a different state from
+   * "revoked" and from "lapsed", and the matrix could not previously express
+   * it: a grant firing daily and one that has never matched looked identical,
+   * and they call for opposite actions.
+   *
+   * Read from `ci.ask_audit.consent_basis` — what a disclosure actually cited —
+   * never from the grant's own row, which records what it permits and never
+   * what it did.
+   */
+  @Field(() => Int)
+  useCount!: number;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  lastUsedAt!: Date | null;
+
+  static toType(grant: AskGrant, usage?: GrantUsage): AskGrantType {
     return {
       id: GlobalUID.encode('ask-grant', grant.id),
       granteeId: grant.granteeUserId ? GlobalUID.encode('user', grant.granteeUserId) : null,
@@ -399,6 +419,8 @@ export class AskGrantType {
         ? GlobalUID.encode('ask-grant', grant.supersedesGrantId)
         : null,
       active: isGrantActive(grant),
+      useCount: usage?.useCount ?? 0,
+      lastUsedAt: usage?.lastUsedAt ?? null,
     };
   }
 }

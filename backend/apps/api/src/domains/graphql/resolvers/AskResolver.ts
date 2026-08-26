@@ -815,9 +815,16 @@ export class AskResolver {
       return [];
     }
 
-    const rows = await this.grantService.listForOwner(toServiceContext(context));
+    const serviceContext = toServiceContext(context);
+    // ONE usage read for the whole list, joined in memory. A per-grant lookup
+    // here would be an N+1 over the audit table, on the tab an owner opens to
+    // scan every grant at once.
+    const [rows, usage] = await Promise.all([
+      this.grantService.listForOwner(serviceContext),
+      this.auditService.usageByGrant(serviceContext),
+    ]);
 
-    return rows.map(AskGrantType.toType);
+    return rows.map((row) => AskGrantType.toType(row, usage.get(row.id)));
   }
 
   /** The caller's disclosure history (asks they responded to), newest first. */
@@ -933,9 +940,15 @@ export class AskResolver {
       return [];
     }
 
-    const rows = await this.grantService.listHistoryForOwner(toServiceContext(context));
+    const serviceContext = toServiceContext(context);
+    const [rows, usage] = await Promise.all([
+      this.grantService.listHistoryForOwner(serviceContext),
+      this.auditService.usageByGrant(serviceContext),
+    ]);
 
-    return rows.map(AskGrantType.toType);
+    // Usage is carried on revoked and superseded rows too: "this fired 40 times
+    // before I withdrew it" is exactly what a consent history is for.
+    return rows.map((row) => AskGrantType.toType(row, usage.get(row.id)));
   }
 
   /**

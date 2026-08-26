@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   actorIsDelegated,
+  grantUsageLine,
+  grantsLapsingWithin,
+  lapseNudge,
   purposeAbsentNote,
   purposeLine,
   actorLine,
@@ -340,5 +343,89 @@ describe('purposeLine / purposeAbsentNote — why they say they want this', () =
    */
   it('says nothing extra once a purpose IS stated', () => {
     expect(purposeAbsentNote('wedding invites')).toBeNull();
+  });
+});
+
+describe('grantUsageLine — dormant vs busy', () => {
+  const NOW = new Date('2026-08-26T12:00:00.000Z');
+  const at = (days: number) => new Date(NOW.getTime() - days * 86_400_000).toISOString();
+
+  it('states "Never used" plainly and without alarm', () => {
+    // The ordinary state of a grant somebody wrote in advance — which is
+    // exactly what standing consent is for.
+    expect(grantUsageLine({ useCount: 0, lastUsedAt: null }, NOW)).toBe('Never used');
+    expect(grantUsageLine({ useCount: 0 }, NOW)).toBe('Never used');
+  });
+
+  it('treats a count with no timestamp as never used, rather than half-reporting', () => {
+    expect(grantUsageLine({ useCount: 5, lastUsedAt: null }, NOW)).toBe('Never used');
+  });
+
+  it('singularizes one use', () => {
+    expect(grantUsageLine({ useCount: 1, lastUsedAt: at(3) }, NOW)).toBe('Used once · last 3 days ago');
+  });
+
+  it.each([
+    [0, 'today'],
+    [1, 'yesterday'],
+    [9, '9 days ago'],
+    [45, '1 month ago'],
+    [90, '3 months ago'],
+  ])('renders %s days since last use as "%s"', (days, expected) => {
+    expect(grantUsageLine({ useCount: 4, lastUsedAt: at(days) }, NOW)).toBe(
+      `Used 4 times · last ${expected}`,
+    );
+  });
+
+  it('drops the "last" clause rather than printing a bad date', () => {
+    expect(grantUsageLine({ useCount: 4, lastUsedAt: 'not a date' }, NOW)).toBe('Used 4 times');
+  });
+});
+
+describe('grantsLapsingWithin / lapseNudge', () => {
+  const NOW = new Date('2026-08-26T12:00:00.000Z');
+  const inDays = (days: number) => new Date(NOW.getTime() + days * 86_400_000).toISOString();
+
+  const grant = (over: Partial<{ active: boolean; expiresAt: string | null }> = {}) => ({
+    active: true,
+    expiresAt: inDays(10),
+    ...over,
+  });
+
+  it('finds live grants expiring inside the horizon', () => {
+    expect(grantsLapsingWithin([grant(), grant({ expiresAt: inDays(2) })], 30, NOW)).toHaveLength(2);
+  });
+
+  it('excludes grants expiring beyond it', () => {
+    expect(grantsLapsingWithin([grant({ expiresAt: inDays(90) })], 30, NOW)).toEqual([]);
+  });
+
+  /**
+   * A revoked grant cannot lapse, and one with no expiry never will. Counting
+   * either inflates a nudge whose whole value is being rare enough to read.
+   */
+  it('excludes revoked grants and grants with no expiry', () => {
+    expect(grantsLapsingWithin([grant({ active: false })], 30, NOW)).toEqual([]);
+    expect(grantsLapsingWithin([grant({ expiresAt: null })], 30, NOW)).toEqual([]);
+  });
+
+  it('excludes an expiry already in the past — that lapsed, it is not about to', () => {
+    expect(grantsLapsingWithin([grant({ expiresAt: inDays(-1) })], 30, NOW)).toEqual([]);
+  });
+
+  it('ignores an unparseable expiry rather than counting it', () => {
+    expect(grantsLapsingWithin([grant({ expiresAt: 'soon' })], 30, NOW)).toEqual([]);
+  });
+
+  it('says nothing at all when nothing is lapsing', () => {
+    // A banner that renders every time teaches people to look past the banner.
+    expect(lapseNudge(0, 30)).toBeNull();
+  });
+
+  it('singularizes one grant and explains the consequence', () => {
+    const nudge = lapseNudge(1, 30) ?? '';
+
+    expect(nudge).toContain('1 grant');
+    expect(nudge).toMatch(/stop answering/);
   });
 });
