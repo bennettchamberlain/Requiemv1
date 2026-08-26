@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GetItemDuplicatesQuery } from '@/graphql/graphql';
@@ -29,6 +30,50 @@ vi.mock('./ObservationReview', () => ({
 const THING_A = btoa('item:a');
 const THING_B = btoa('item:b');
 
+/** Renders `pathname + search` so a test can assert what the router URL holds. */
+function LocationProbe() {
+  const location = useLocation();
+
+  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+}
+
+/** See PeoplePage.test.tsx / PlacesPage.test.tsx — stubs IntersectionObserver with a no-op. */
+function captureIntersectionObserver() {
+  const callbacks: IntersectionObserverCallback[] = [];
+  const original = globalThis.IntersectionObserver;
+
+  class CapturingObserver {
+    constructor(callback: IntersectionObserverCallback) {
+      callbacks.push(callback);
+    }
+
+    observe() {}
+
+    unobserve() {}
+
+    disconnect() {}
+
+    takeRecords() {
+      return [];
+    }
+  }
+
+  globalThis.IntersectionObserver = CapturingObserver as unknown as typeof IntersectionObserver;
+
+  return {
+    scrollSentinelIntoView: async () => {
+      await act(async () => {
+        for (const callback of callbacks) {
+          callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        }
+      });
+    },
+    restore: () => {
+      globalThis.IntersectionObserver = original;
+    },
+  };
+}
+
 const BASE_VARIABLES = {
   query: null,
   category: null,
@@ -49,6 +94,11 @@ const makeThing = (id: string, name: string) => ({
   brand: 'Makita',
   model: 'XPH',
   currentValue: 120,
+  // Non-null on the schema — omitting it left the cache's diff of this node
+  // permanently "incomplete", which triggered a background refetch of the
+  // base (no `after`) page every time a fetchMore response landed and
+  // silently clobbered the just-merged accumulated list.
+  currency: 'USD',
   quantity: 1,
   lifecycleState: 'ACTIVE' as const,
   lastSeenAt: '2026-05-01T00:00:00.000Z',
@@ -64,11 +114,19 @@ const makeThing = (id: string, name: string) => ({
   file: null,
 });
 
-const makeThingsResult = (nodes: ReturnType<typeof makeThing>[], totalCount = nodes.length) => ({
+const makeThingsResult = (
+  nodes: ReturnType<typeof makeThing>[],
+  totalCount = nodes.length,
+  pageInfoOverrides: { hasNextPage?: boolean; endCursor?: string | null } = {},
+) => ({
   items: {
     __typename: 'ItemConnection' as const,
     totalCount,
-    pageInfo: { __typename: 'PageInfo' as const, hasNextPage: false, endCursor: null },
+    pageInfo: {
+      __typename: 'PageInfo' as const,
+      hasNextPage: pageInfoOverrides.hasNextPage ?? false,
+      endCursor: pageInfoOverrides.endCursor ?? null,
+    },
     edges: nodes.map((node) => ({
       __typename: 'ItemEdge' as const,
       cursor: node.id,
@@ -170,6 +228,65 @@ describe('ThingsPage', () => {
     expect(await screen.findByText('Desk lamp')).toBeInTheDocument();
   });
 
+  /**
+   * Search text lives in the URL's `?q=` param, not local state, so it
+   * survives navigating away to a thing and back. Covers both directions of
+   * the round trip: a `?q=` deep link restores into the input, and typing
+   * writes back out to the URL.
+   */
+  it('restores search text from a ?q= deep link', async () => {
+    renderWithProviders(<ThingsPage />, {
+      route: '/memory/things?q=lamp',
+      mocks: [
+        mockQuery(
+          GET_THINGS,
+          { ...BASE_VARIABLES, query: 'lamp' },
+          makeThingsResult([makeThing(THING_B, 'Desk lamp')]),
+          { maxUsageCount: 3 },
+        ),
+        duplicatesMock(NO_DUPLICATES),
+      ],
+    });
+
+    expect(
+      await screen.findByPlaceholderText('Search things by name, brand, model or category...'),
+    ).toHaveValue('lamp');
+    expect(await screen.findByText('Desk lamp')).toBeInTheDocument();
+  });
+
+  it('writes typed search text into the URL so it survives navigating away and back', async () => {
+    renderWithProviders(
+      <>
+        <ThingsPage />
+        <LocationProbe />
+      </>,
+      {
+        route: '/memory/things',
+        mocks: [
+          mockQuery(GET_THINGS, BASE_VARIABLES, makeThingsResult([makeThing(THING_A, 'Drill')]), {
+            maxUsageCount: 3,
+          }),
+          mockQuery(
+            GET_THINGS,
+            { ...BASE_VARIABLES, query: 'lamp' },
+            makeThingsResult([makeThing(THING_B, 'Desk lamp')]),
+            { maxUsageCount: 3 },
+          ),
+          duplicatesMock(NO_DUPLICATES),
+        ],
+      },
+    );
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/memory/things');
+
+    const search = await screen.findByPlaceholderText('Search things by name, brand, model or category...');
+
+    fireEvent.change(search, { target: { value: 'lamp' } });
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/memory/things?q=lamp'));
+    expect(await screen.findByText('Desk lamp')).toBeInTheDocument();
+  });
+
   it('sends the code filter as the tri-state Boolean the resolver takes', async () => {
     renderWithProviders(<ThingsPage />, {
       route: '/memory/things',
@@ -227,6 +344,37 @@ describe('ThingsPage', () => {
     });
 
     expect(await screen.findByText('No things found')).toBeInTheDocument();
+  });
+
+  /**
+   * The error branch used to reuse the same confident EmptyState the genuine
+   * "No things found" branch renders — a fetch failure read identically to
+   * "you have none", with no way to retry. It must render the shared
+   * ErrorState instead, with a Try again button that actually refetches.
+   */
+  it('shows the shared ErrorState with a working retry when the query fails, not a silent empty state', async () => {
+    renderWithProviders(<ThingsPage />, {
+      route: '/memory/things',
+      mocks: [
+        { request: { query: GET_THINGS, variables: BASE_VARIABLES }, error: new Error('network down') },
+        duplicatesMock(NO_DUPLICATES),
+        // Consumed only after a successful retry remounts the rest of the page.
+        mockQuery(GET_THINGS, BASE_VARIABLES, makeThingsResult([makeThing(THING_A, 'Drill')]), {
+          maxUsageCount: 3,
+        }),
+      ],
+    });
+
+    expect(await screen.findByText('Could not load things')).toBeInTheDocument();
+    expect(
+      screen.getByText('Your things are still here — this device could not reach them just now.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn.t load things:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('No things found')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Drill')).toBeInTheDocument();
   });
 
   it('offers the duplicate group for review, with the shared code that produced it', async () => {
@@ -412,5 +560,81 @@ describe('ThingsPage', () => {
     expect(screen.queryByRole('button', { name: 'New thing' })).not.toBeInTheDocument();
 
     window.matchMedia = originalMatchMedia;
+  });
+
+  /**
+   * The page used to hand-roll its own cursor pagination; it now goes through
+   * the shared useInfiniteConnection hook + InfiniteListFooter, same as
+   * PlacesPage. This is the same "sentinel scrolls into view" contract.
+   */
+  it('appends the next page of things when the sentinel scrolls into view', async () => {
+    const observer = captureIntersectionObserver();
+
+    try {
+      renderWithProviders(<ThingsPage />, {
+        route: '/memory/things',
+        mocks: [
+          duplicatesMock(NO_DUPLICATES),
+          mockQuery(
+            GET_THINGS,
+            BASE_VARIABLES,
+            makeThingsResult([makeThing(THING_A, 'Drill')], 2, {
+              hasNextPage: true,
+              endCursor: THING_A,
+            }),
+          ),
+          mockQuery(
+            GET_THINGS,
+            { ...BASE_VARIABLES, after: THING_A },
+            makeThingsResult([makeThing(THING_B, 'Desk lamp')], 2),
+          ),
+        ],
+      });
+
+      expect(await screen.findByText('Drill')).toBeInTheDocument();
+      expect(screen.queryByText('Desk lamp')).not.toBeInTheDocument();
+
+      await observer.scrollSentinelIntoView();
+
+      expect(await screen.findByText('Desk lamp')).toBeInTheDocument();
+      expect(screen.getByText('Drill')).toBeInTheDocument();
+      expect(screen.getByText(/loaded/).textContent).toContain('2 of 2 loaded · end');
+    } finally {
+      observer.restore();
+    }
+  });
+
+  it('shows a retry button and keeps the failure latched when a further page fails to load', async () => {
+    const observer = captureIntersectionObserver();
+
+    try {
+      renderWithProviders(<ThingsPage />, {
+        route: '/memory/things',
+        mocks: [
+          duplicatesMock(NO_DUPLICATES),
+          mockQuery(
+            GET_THINGS,
+            BASE_VARIABLES,
+            makeThingsResult([makeThing(THING_A, 'Drill')], 2, {
+              hasNextPage: true,
+              endCursor: THING_A,
+            }),
+          ),
+          {
+            request: { query: GET_THINGS, variables: { ...BASE_VARIABLES, after: THING_A } },
+            error: new Error('network down'),
+          },
+        ],
+      });
+
+      expect(await screen.findByText('Drill')).toBeInTheDocument();
+
+      await observer.scrollSentinelIntoView();
+
+      expect(await screen.findByText(/Couldn.t load more things: network down/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    } finally {
+      observer.restore();
+    }
   });
 });
