@@ -438,14 +438,20 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Dinner plans' })).not.toBeInTheDocument();
   });
 
-  it('lists Capture first, then the spine, with Forecast, Self, and Settings at the foot', () => {
+  // Capture is mobile-only (the overlay drawer) — desktop already has it in
+  // the header Add menu, so a second, always-visible entry point in the
+  // pinned/hover rail would be one too many.
+  it('does not list Capture on the desktop rail', () => {
     renderRail();
 
-    const capture = screen.getByRole('button', { name: 'Capture' });
-    const plan = screen.getByRole('link', { name: 'Plan' });
+    expect(screen.queryByRole('button', { name: 'Capture' })).not.toBeInTheDocument();
+  });
+
+  it('lists the spine with Forecast, Self, and Settings at the foot', () => {
+    renderRail();
+
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
-    expect(capture.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/calendar'));
     expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/memory'));
     expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
