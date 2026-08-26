@@ -1,4 +1,4 @@
-# CI-Server Desktop (macOS / Windows / Linux)
+# Companion Memory Desktop (macOS / Windows / Linux)
 
 A native desktop app (Tauri) that brings up CI-Server's own Docker Compose
 stack **locally** and shows it — a local orchestrator, not a thin client.
@@ -86,6 +86,13 @@ yarn build
 Produces the platform's native bundle(s) via `cargo tauri build` (dmg/app on
 macOS, msi/nsis on Windows, deb/rpm on Linux locally — AppImage is added only
 in CI where `linuxdeploy` is installed, via `-b deb,rpm,appimage`).
+
+## Icon
+
+`src-tauri/icons/app-icon-source.png` is the Companion Memory logo from
+`CI-Marketplace/apps/ci-memory/metadata/logo.png` (2048×2048). Every other
+file in `src-tauri/icons/` is generated from it via `yarn icons` (`tauri icon`)
+— re-run that after replacing the source, don't hand-edit the generated sizes.
 
 ## Local model (chat + embeddings) without a separate Ollama install
 

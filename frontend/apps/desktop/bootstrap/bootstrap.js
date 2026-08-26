@@ -74,7 +74,7 @@ async function boot() {
     return;
   }
 
-  setStatus('Starting CI-Server…');
+  setStatus('Starting Companion Memory…');
   try {
     await invoke('start_stack_command');
   } catch (err) {
@@ -113,7 +113,7 @@ async function waitForHealthy() {
     if (attempt > 0 && attempt % 30 === 0) {
       const suffix = localModelDetail ? ` (${localModelDetail})` : ' — preparing the local model…';
       setStatus(
-        `Still starting CI-Server — first launch can take several minutes while images download…${suffix}`,
+        `Still starting Companion Memory — first launch can take several minutes while images download…${suffix}`,
       );
     }
 
@@ -121,7 +121,7 @@ async function waitForHealthy() {
   }
 
   setSpinning(false);
-  setStatus('CI-Server is taking longer than expected to start.', { error: true });
+  setStatus('Companion Memory is taking longer than expected to start.', { error: true });
   showActions([
     { label: 'Retry', primary: true, onClick: boot },
     { label: 'View Logs', onClick: () => invoke('open_logs_dir_command') },

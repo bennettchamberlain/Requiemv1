@@ -15,7 +15,7 @@ use crate::{local_model, stack_manager, StackPathsState};
 const POLL_INTERVAL: Duration = Duration::from_secs(9);
 
 pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, "show", "Show CI-Server", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show Companion Memory", true, None::<&str>)?;
     let start = MenuItem::with_id(app, "start", "Start Stack", true, None::<&str>)?;
     let stop = MenuItem::with_id(app, "stop", "Stop Stack", true, None::<&str>)?;
     let logs = MenuItem::with_id(app, "logs", "View Logs", true, None::<&str>)?;

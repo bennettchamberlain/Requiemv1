@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CI-Server",
+  "productName": "Companion Memory",
   "mainBinaryName": "ci-server-desktop",
   "bundle": {
     "targets": ["deb", "rpm"]
