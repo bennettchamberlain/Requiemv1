@@ -66,16 +66,30 @@ export { OllamaService } from './services/OllamaService';
 export { PROMPT_MODEL, type ChatRequestContext } from './services/OllamaService';
 export { LLM_QUEUE, LLM_QUEUE_OPTIONS } from './constants';
 export {
+  ANSWER_SUPPORT_LEVELS,
+  type AnswerSupport,
+  answersTheQuestion,
   calibrateInferredConfidence,
   confidenceLabel,
+  CONFIDENCE_IMPLIED_CEILING,
   CONFIDENCE_NON_ANSWER,
+  CONFIDENCE_OFF_QUESTION,
+  CONFIDENCE_UNATTRIBUTED,
   DEFAULT_MIN_ANSWER_CONFIDENCE,
+  enforceEvidenceIsAboutThePerson,
+  enforceFirstPersonEvidence,
   estimateInferredAnswerConfidence,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
   type InferredAnswer,
+  isAboutSomethingElse,
+  isNarratedVoice,
   isNonAnswer,
+  normalizeAnswerSupport,
+  normalizeEvidenceRefs,
   parseInferredAnswer,
+  sanitizeInferredAnswerVoice,
+  supportConfidenceCeiling,
 } from './inferredAnswerConfidence';
 export { CV_DETECTION_LINKED_TABLE } from './listeners/CvDetectionsListener';
 export {

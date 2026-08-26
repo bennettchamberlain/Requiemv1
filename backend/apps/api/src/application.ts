@@ -32,6 +32,7 @@ import { AsksModule } from '@ci/domains/asks';
 import { AuditModule } from '@ci/domains/audit';
 import { AuthModule } from '@ci/domains/auth';
 import { PortalAuthModule } from '@ci/domains/auth/PortalAuthModule';
+import { BlueBubblesModule } from '@ci/domains/bluebubbles';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { DailyMetricsModule } from '@ci/domains/daily-metrics';
@@ -48,6 +49,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MaintenanceModule } from '@ci/domains/maintenance';
 import { McpModule } from '@ci/domains/mcp';
+import { McpClientModule } from '@ci/domains/mcp-client';
 import { MemoryModule } from '@ci/domains/memory';
 import { ModelRoutingModule } from '@ci/domains/model-routing';
 import { NotesModule } from '@ci/domains/notes';
@@ -109,6 +111,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     AuditModule,
     AuthModule,
     PortalAuthModule,
+    BlueBubblesModule,
     BrowserActivityModule,
     ConnectionsModule,
     DailyMetricsModule,
@@ -128,6 +131,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     IntelligenceModule,
     LLMModule,
     McpModule,
+    McpClientModule,
     ModelRoutingModule,
     OnboardingModule,
     PersonalizationModule,

@@ -1,11 +1,12 @@
 import { type ReactNode } from 'react';
 
+import { setApiBaseUrl } from '@ci/common';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { jwtDecode } from 'jwt-decode';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { setApiBaseUrl } from '@ci/common';
+import { bindPowerSyncDatabase } from '@/api/powersync/session';
 
 import { AuthProvider, useAuth } from './useAuth';
 
@@ -421,6 +422,40 @@ describe('useAuth', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/authenticate/logout'))).toBe(
       true,
     );
+  });
+
+  it('still logs out when dropping the local PowerSync replica fails', async () => {
+    // Both the clear and its disconnect fallback reject; logout must not be
+    // sequenced behind a teardown that cannot complete.
+    bindPowerSyncDatabase({
+      disconnectAndClear: vi.fn().mockRejectedValue(new Error('worker never came up')),
+      disconnect: vi.fn().mockRejectedValue(new Error('worker never came up')),
+    } as never);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const fetchMock = setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        return jsonResponse({ accessToken: 'live' });
+      }
+
+      return emptyResponse();
+    });
+
+    try {
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current[0].authToken).toBe('live'));
+
+      await act(async () => {
+        await result.current[1].logout();
+      });
+
+      expect(result.current[0].authToken).toBeNull();
+      expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/authenticate/logout'))).toBe(
+        true,
+      );
+    } finally {
+      bindPowerSyncDatabase(null);
+    }
   });
 
   it('re-primes and retries logout once on a 403 so the server session is torn down', async () => {

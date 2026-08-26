@@ -62,6 +62,7 @@ export class AnswerService {
       ...(data.answerSource !== undefined ? { answerSource: data.answerSource } : {}),
       ...(data.answerConfidence !== undefined ? { answerConfidence: data.answerConfidence } : {}),
       ...(data.answerRationale !== undefined ? { answerRationale: data.answerRationale } : {}),
+      ...(data.answerEvidence !== undefined ? { answerEvidence: data.answerEvidence } : {}),
       ...(data.sessionContext !== undefined ? { sessionContext: data.sessionContext } : {}),
     });
 
@@ -219,6 +220,10 @@ export class AnswerService {
       updateData.answerRationale = data.answerRationale;
     }
 
+    if (data.answerEvidence !== undefined) {
+      updateData.answerEvidence = data.answerEvidence;
+    }
+
     if (data.answerSource !== undefined) {
       updateData.answerSource = data.answerSource;
     }
@@ -286,6 +291,15 @@ export class AnswerService {
 
       if (data.answerRationale === undefined) {
         updateData.answerRationale = null;
+      }
+
+      // Same reasoning as the rationale, one step further: the citations point at
+      // rows that grounded a sentence the user has just replaced. Left behind,
+      // the drawer would offer messages and events as the provenance of words
+      // they never supported — a stronger lie than a stale score, because it
+      // names real records to back it up.
+      if (data.answerEvidence === undefined) {
+        updateData.answerEvidence = null;
       }
     }
 

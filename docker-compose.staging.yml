@@ -13,6 +13,7 @@ services:
       DATABASE_HOST: database
       CI_IMPORT_SCRATCH_DIR: ${CI_IMPORT_SCRATCH_DIR:-/var/lib/ci-import/scratch}
       CI_IMPORT_ROOTS: ${CI_IMPORT_ROOTS:-["/repo"]}
+      CI_IMPORT_INBOX_HOST_DIR: ${CI_IMPORT_INBOX_HOST_DIR:-${CI_IMPORT_WORK_DIR:-./import-work}/inbox}
       OBJECT_STORE_URL: http://object-store:9000
       OLLAMA_HOST: http://host.docker.internal:11434
       # OpenAI-compatible chat backend (Hub-injected on managed deploys). When

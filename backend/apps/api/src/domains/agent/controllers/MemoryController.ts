@@ -113,10 +113,12 @@ export class MemoryController {
   @RequireCapability(READ_CAPABILITY)
   @Post('recall')
   async recall(@Context() context: RequestContext, @Body(new ValidationPipe(recallSchema)) input: RecallDto) {
-    return this.recallService.recall(toServiceContext(context), {
+    const { block, resultCount } = await this.recallService.recall(toServiceContext(context), {
       query: input.query,
       maxResults: input.maxResults,
     });
+
+    return { block, resultCount };
   }
 
   /**

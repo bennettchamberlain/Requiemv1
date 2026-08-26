@@ -156,6 +156,7 @@
     "roots": [],
     "uploadsDir": "/var/lib/ci-import/uploads",
     "inboxDir": "/var/lib/ci-import/inbox",
+    "inboxHostDir": "",
     "maxArchiveEntries": 2000000,
     "maxArchiveBytes": 107374182400,
     "databaseDataDir": "",
@@ -193,9 +194,9 @@
   "reflection": {
     "minAnswerConfidence": 0.4,
     "autoPromoteThresholdCautious": 1,
-    "autoPromoteThresholdBalanced": 0.85,
+    "autoPromoteThresholdBalanced": 0.55,
     "autoPromoteThresholdHandsOff": 0.7,
-    "alwaysReviewBelowConfidence": 0.7
+    "alwaysReviewBelowConfidence": 0.55
   },
   "features": {
     "scheduled.answer.inferencing": true,

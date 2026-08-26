@@ -1,4 +1,4 @@
-import { isIosPlatform, LoadingPage } from '@ci/common';
+import { isNativePlatform, LoadingPage } from '@ci/common';
 import { Navigate } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
@@ -25,7 +25,7 @@ export function RedirectKnownUser({ children }: { children: React.ReactNode }) {
   // A valid token with no resolved user means the profile query failed or the
   // account no longer exists — do not spin forever (see ProtectedRoute).
   if ((authToken || authenticated) && !user) {
-    return <Navigate to={isIosPlatform() ? '/device-connect' : '/login'} replace />;
+    return <Navigate to={isNativePlatform() ? '/device-connect' : '/login'} replace />;
   }
 
   if (user) {

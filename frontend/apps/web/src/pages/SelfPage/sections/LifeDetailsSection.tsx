@@ -86,10 +86,26 @@ function AnswerDisplay({
         />
       </button>
 
+      {/* The badge is the way in to the full account of this answer: the
+          reasoning sentence and the database objects behind it. `details.record`
+          is the catalogue's answer row verbatim — the drawer reads any evidence
+          citations off it defensively, so this call site does not have to track
+          the field the API hangs them on.
+
+          `onEdit` hands straight back to `startEdit`, the SAME inline editor the
+          answer text opens, which PATCHes `{text}` alone and re-stamps the row as
+          the user's. There is deliberately no second write path in the drawer. */}
       <AnswerProvenance
         source={answer.source}
         confidence={answer.confidence}
         rationale={answer.rationale}
+        details={{
+          question: question.text,
+          answerText: answer.text,
+          answeredAt: answer.answeredAt,
+          record: answer,
+          onEdit,
+        }}
         className="shrink-0 sm:mt-px"
       />
     </div>

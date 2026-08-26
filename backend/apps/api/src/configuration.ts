@@ -377,6 +377,16 @@ export const ConfigSchema = z.object({
       // because the folder only holds what a user deliberately put there, and
       // compose ships the mount; an absent directory just scans as unavailable.
       inboxDir: z.string().default('/var/lib/ci-import/inbox'),
+      // Where `inboxDir` lives on the HOST, when the API runs in a container
+      // and the inbox is a bind mount. The scan reports the folder a person
+      // should drop files into, and `/var/lib/ci-import/inbox/<user>` is a
+      // path inside the container that no desktop can reach — Hub, and the
+      // production compose, bind it from somewhere on the appliance's own
+      // disk, and THAT is the spelling to show. A label only: nothing on the
+      // server resolves it, so it is not `path.resolve`d, not required to
+      // exist, and not part of the nesting check below. Empty (the default,
+      // and the right value for a bare-metal dev stack) shows `inboxDir`.
+      inboxHostDir: z.string().default(''),
       // Zip-bomb guards on extraction. These are a ceiling on what an archive
       // may expand to, NOT a statement about what this appliance imports: the
       // uploads controller accepts 50GiB precisely because "Google Takeout
@@ -627,14 +637,19 @@ export const ConfigSchema = z.object({
        * 0: nothing then distinguishes a well-evidenced inference from a guess.
        */
       autoPromoteThresholdCautious: z.coerce.number().min(0).max(1).default(1),
-      autoPromoteThresholdBalanced: z.coerce.number().min(0).max(1).default(0.85),
+      autoPromoteThresholdBalanced: z.coerce.number().min(0).max(1).default(0.55),
       autoPromoteThresholdHandsOff: z.coerce.number().min(0).max(1).default(0.7),
       /**
        * Below this, `PersonalizationService.decide` always returns 'review'
        * regardless of trust mode or action kind — the floor beneath every
        * `autoPromoteThreshold*` above.
+       *
+       * It has to move WITH `autoPromoteThresholdBalanced`, not independently:
+       * `decide` tests this floor FIRST and returns 'review' before any
+       * promote threshold is consulted, so a promote threshold set below this
+       * floor is dead config. Lowering only one of the pair changes nothing.
        */
-      alwaysReviewBelowConfidence: z.coerce.number().min(0).max(1).default(0.7),
+      alwaysReviewBelowConfidence: z.coerce.number().min(0).max(1).default(0.55),
     })
     .default({}),
   features: z.object({

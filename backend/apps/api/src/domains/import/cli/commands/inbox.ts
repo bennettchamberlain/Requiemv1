@@ -80,14 +80,14 @@ export async function inboxCommand(ctx: CliContext, options: InboxOptions = {}):
           },
           { header: 'status', value: (unit) => (unit.claimed ? 'importing' : 'ready') },
         ],
-        `Nothing in ${scan.inboxDir}.`,
+        `Nothing in ${scan.displayDir}.`,
       ),
     );
 
     const ready = selected.filter((unit) => !unit.claimed).length;
 
     if (selected.length > 0) {
-      ctx.term.out(`\n${selected.length} unit(s) in ${scan.inboxDir}, ${ready} ready.`);
+      ctx.term.out(`\n${selected.length} unit(s) in ${scan.displayDir}, ${ready} ready.`);
     }
 
     if (scan.skippedSymlinks > 0) {
@@ -138,7 +138,7 @@ export async function inboxCommand(ctx: CliContext, options: InboxOptions = {}):
   if (startable.length === 0) {
     throw new CliError(
       selected.length === 0
-        ? `Nothing to import in ${scan.inboxDir}.`
+        ? `Nothing to import in ${scan.displayDir}.`
         : `All ${selected.length} matching unit(s) are already being imported.`,
     );
   }

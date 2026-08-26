@@ -123,6 +123,39 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Re-read an already-registered provider's tool list and replace what the registry has on file
+   * for it.
+   *
+   * Every other tool set is fixed at boot (native tools, persona's single tool), so nothing has
+   * needed this until now: an MCP-client provider's tools change at RUNTIME — a server connects,
+   * reconnects with a different tools/list, or gets disabled — and there was previously no way to
+   * make the registry see that without a full restart.
+   *
+   * First drops every tool currently mapped to `providerName` (from both the tools map and
+   * toolToProvider map), then re-runs {@link loadToolsFromProvider} against the provider instance
+   * already tracked in `providers` — the same load path `registerProvider` uses, just without
+   * re-initializing or re-adding the provider itself.
+   */
+  async refreshProvider(providerName: string): Promise<void> {
+    const provider = this.providers.get(providerName);
+
+    if (!provider) {
+      throw new Error(`Provider '${providerName}' is not registered`);
+    }
+
+    for (const [toolName, ownerName] of Array.from(this.toolToProvider.entries())) {
+      if (ownerName === providerName) {
+        this.tools.delete(toolName);
+        this.toolToProvider.delete(toolName);
+      }
+    }
+
+    await this.loadToolsFromProvider(provider);
+
+    this.logger.debug(`Refreshed provider: ${providerName}`);
+  }
+
+  /**
    * Shutdown all providers
    */
   private async shutdownProviders(): Promise<void> {
@@ -162,6 +195,38 @@ export class ToolRegistry implements OnModuleInit, OnModuleDestroy {
    */
   getAgentFacingTools(context?: RequestContext): ToolSchema[] {
     return this.getAvailableTools(context);
+  }
+
+  /**
+   * The tool list CI-Server advertises on its OWN outbound surfaces: the `/api/intents` manifest
+   * and the tools its own MCP server exposes to a connecting client.
+   *
+   * Excludes every tool whose owning provider set {@link ToolProvider.includeInOutboundCatalog}
+   * to `false` — today, exactly the MCP-client provider, so that a tool sourced from a user's own
+   * external MCP server is usable in chat but is not re-published as if CI-Server originated it.
+   * Republishing it would also let an outside caller reach back through CI-Server to that same
+   * external server, which is the recursive re-exposure this method exists to prevent.
+   *
+   * Deliberately separate from {@link getAvailableTools}: chat/agent dispatch must still see every
+   * provider's tools, so that method (and {@link getAgentFacingTools}) stays a full, unfiltered
+   * list.
+   */
+  getOutboundCatalogTools(context?: RequestContext): ToolSchema[] {
+    const schemas = Array.from(this.tools.entries())
+      .filter(([toolName]) => {
+        const providerName = this.toolToProvider.get(toolName);
+        const provider = providerName ? this.providers.get(providerName) : undefined;
+
+        return provider?.includeInOutboundCatalog !== false;
+      })
+      .map(([, tool]) => tool.schema);
+
+    this.logger.debug(`Retrieved ${schemas.length} outbound-catalog tools`, {
+      userId: context?.userId,
+      toolNames: schemas.map((s) => s.name),
+    });
+
+    return schemas;
   }
 
   /**

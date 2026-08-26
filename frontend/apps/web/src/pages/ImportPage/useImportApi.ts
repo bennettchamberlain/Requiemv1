@@ -282,7 +282,13 @@ export interface InboxUnit {
 export interface InboxScan {
   readonly available: boolean;
   readonly reason?: string;
+  /** The folder as the API sees it — inside the container on a managed appliance. */
   readonly inboxDir: string;
+  /**
+   * The folder as a PERSON reaches it: the host-side path of the bind mount
+   * when the appliance knows it, otherwise `inboxDir`. Show this one.
+   */
+  readonly displayDir: string;
   readonly units: readonly InboxUnit[];
   readonly skippedSymlinks: number;
   readonly truncated: boolean;

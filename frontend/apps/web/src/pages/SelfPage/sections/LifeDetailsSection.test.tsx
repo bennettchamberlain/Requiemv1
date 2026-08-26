@@ -1,3 +1,4 @@
+import { DeviceLayoutProvider } from '@ci/common';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -71,7 +72,16 @@ function serverIdFor(key: string): string {
 function catalogueEntry(
   key: string,
   answerText: string | null = null,
-  answerOverrides: { source?: string; confidence?: number | null; rationale?: string | null } = {},
+  // `evidence` is `QuestionCatalogueAnswer.evidence` on the API — the
+  // { citations, linesShown, linesOwn, model } wrapper the drawer reads. Not
+  // part of the frontend `CatalogueAnswer` type yet, hence `unknown`: the
+  // drawer reads it defensively rather than through a generated type.
+  answerOverrides: {
+    source?: string;
+    confidence?: number | null;
+    rationale?: string | null;
+    evidence?: unknown;
+  } = {},
 ) {
   const question = questionFor(key);
   const id = serverIdFor(key);
@@ -478,5 +488,242 @@ describe('LifeDetailsSection', () => {
     expect(screen.queryByText('Health')).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Answer…')).not.toBeInTheDocument();
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('29 curated question(s) are missing'));
+  });
+});
+
+describe('LifeDetailsSection — the provenance drawer', () => {
+  /**
+   * The section plus the ONE provider the drawer adds: it is a
+   * `ResponsiveDialog`, which reads the device layout to decide dialog-vs-
+   * bottom-sheet. Not `renderWithProviders` — this file mocks `@/hooks`
+   * wholesale, and that harness pulls `CaptureModalProvider` out of it.
+   */
+  function renderSection() {
+    return render(
+      <DeviceLayoutProvider args={[]}>
+        <LifeDetailsSection />
+      </DeviceLayoutProvider>,
+    );
+  }
+
+  /** The badge for one row, as the button it now is. */
+  function provenanceButton(questionKey: string): HTMLElement {
+    return within(rowFor(questionKey)).getByRole('button', {
+      name: /Show where this answer came from/,
+    });
+  }
+
+  it('opens the details drawer from the status badge, with the reasoning and the cited objects', async () => {
+    fetchJson.mockResolvedValue(
+      cataloguePage([
+        catalogueEntry(BLOOD_TYPE_KEY, 'AB positive', {
+          source: 'inferred',
+          confidence: 0.72,
+          rationale: 'A donor-card photo and one message to your GP both say AB positive.',
+          // The wrapper exactly as `GET /api/questions/catalogue` sends it:
+          // `evidence: { citations: [{ line, type, id, at, voice, snippet }] }`.
+          evidence: {
+            citations: [
+              {
+                line: 1,
+                type: 'communication',
+                id: 'c-1',
+                at: '2026-02-02T05:41:00.000Z',
+                voice: 'own',
+                snippet: 'they told me AB positive at the donation desk',
+              },
+              {
+                line: 4,
+                type: 'communication',
+                id: 'c-2',
+                at: '2026-02-09T11:00:00.000Z',
+                voice: 'other',
+                snippet: 'your type is AB+, see you in six months',
+              },
+            ],
+            linesShown: 9,
+            linesOwn: 5,
+            model: 'qwen3:8b',
+          },
+        }),
+      ]),
+    );
+
+    renderSection();
+
+    await screen.findByText('AB positive');
+    fireEvent.click(provenanceButton(BLOOD_TYPE_KEY));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('What is your blood type?')).toBeInTheDocument();
+    expect(within(dialog).getByText('AB positive')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('A donor-card photo and one message to your GP both say AB positive.'),
+    ).toBeInTheDocument();
+    // The confidence, spelled out rather than as the bare band word.
+    expect(within(dialog).getByText(/good confidence \(0\.72\)/)).toBeInTheDocument();
+
+    // Both cited objects, and — the point of the attribution work — which of
+    // them is the owner speaking and which is somebody else.
+    const cited = within(dialog).getAllByTestId('answer-citation');
+    expect(cited).toHaveLength(2);
+    expect(within(cited[0]!).getByText('they told me AB positive at the donation desk')).toBeInTheDocument();
+    expect(within(cited[0]!).getByText('Your words')).toBeInTheDocument();
+    expect(within(cited[1]!).getByText("Someone else's words")).toBeInTheDocument();
+
+    // And what those two were picked out of — with the count of THIS list
+    // leading, so the retrieval total cannot be read as records being withheld.
+    expect(
+      within(dialog).getByText('2 records support this answer. 9 were searched, 5 of them your own.'),
+    ).toBeInTheDocument();
+    // This catalogue row kept no unused lines (older write path), so the panel
+    // admits the gap instead of offering an empty "also searched" group.
+    expect(within(dialog).queryByTestId('answer-also-searched-toggle')).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText('7 more records were searched but not kept on this answer.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the records the model read and did not use, straight off the catalogue row', async () => {
+    // End to end through the REST wrapper the Self page actually receives:
+    // `GET /api/questions/catalogue` sends `evidence.uncited` alongside
+    // `evidence.citations`, and the drawer reads both off the row it already has
+    // — no second request to show the provenance of something already on screen.
+    fetchJson.mockResolvedValue(
+      cataloguePage([
+        catalogueEntry(BLOOD_TYPE_KEY, 'AB positive', {
+          source: 'inferred',
+          confidence: 0.72,
+          rationale: 'One message to your GP says AB positive.',
+          evidence: {
+            citations: [
+              {
+                line: 1,
+                type: 'communication',
+                id: 'c-1',
+                at: '2026-02-02T05:41:00.000Z',
+                voice: 'own',
+                snippet: 'they told me AB positive at the donation desk',
+              },
+            ],
+            uncited: [
+              {
+                line: 2,
+                type: 'browser-activity',
+                id: 'b-1',
+                at: '2026-01-04T09:00:00.000Z',
+                voice: 'own',
+                snippet: '[Browser] Blood Type Diet — what to eat for AB',
+              },
+              {
+                line: 3,
+                type: 'communication',
+                id: 'c-9',
+                at: '2026-01-09T11:00:00.000Z',
+                voice: 'other',
+                snippet: 'I am O negative, universal donor apparently',
+              },
+            ],
+            linesShown: 3,
+            linesOwn: 2,
+            model: 'qwen3:8b',
+          },
+        }),
+      ]),
+    );
+
+    renderSection();
+
+    await screen.findByText('AB positive');
+    fireEvent.click(provenanceButton(BLOOD_TYPE_KEY));
+
+    const dialog = screen.getByRole('dialog');
+
+    expect(
+      within(dialog).getByText('1 record supports this answer. 3 were searched, 2 of them your own.'),
+    ).toBeInTheDocument();
+    // Everything is accounted for, so nothing claims a shortfall.
+    expect(within(dialog).queryByTestId('answer-evidence-shortfall')).not.toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByTestId('answer-also-searched-toggle'));
+
+    const unused = within(dialog).getAllByTestId('answer-uncited-record');
+    expect(unused).toHaveLength(2);
+    // The inbound line that was retrieved and correctly NOT used — the speaker
+    // gate visibly working, which is the whole reason this group is worth
+    // showing.
+    expect(within(unused[1]!).getByText('I am O negative, universal donor apparently')).toBeInTheDocument();
+    expect(within(unused[1]!).getByText("Someone else's words")).toBeInTheDocument();
+  });
+
+  it('opens with a graceful empty state when the answer carries no citations', async () => {
+    // Every answer written before evidence was recorded looks like this.
+    fetchJson.mockResolvedValue(
+      cataloguePage([
+        catalogueEntry(BLOOD_TYPE_KEY, 'AB positive', {
+          source: 'inferred',
+          confidence: 0.72,
+          rationale: 'Mentioned once in a message to your GP.',
+        }),
+      ]),
+    );
+
+    renderSection();
+
+    await screen.findByText('AB positive');
+    fireEvent.click(provenanceButton(BLOOD_TYPE_KEY));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryAllByTestId('answer-citation')).toHaveLength(0);
+    expect(within(dialog).getByText(/No source records were kept for this answer/)).toBeInTheDocument();
+    // The rest of the panel still works — the drawer is not all-or-nothing.
+    expect(within(dialog).getByText('Mentioned once in a message to your GP.')).toBeInTheDocument();
+  });
+
+  it('corrects the answer through the SAME edit path — a PATCH carrying text alone', async () => {
+    fetchJson.mockResolvedValue(
+      cataloguePage([
+        catalogueEntry(BLOOD_TYPE_KEY, 'AB positive, I think?', { source: 'inferred', confidence: 0.41 }),
+      ]),
+    );
+
+    renderSection();
+
+    await screen.findByText('AB positive, I think?');
+    fireEvent.click(provenanceButton(BLOOD_TYPE_KEY));
+    fireEvent.click(screen.getByRole('button', { name: /Correct this answer/ }));
+
+    // The drawer closes and hands over to the row's own inline editor — there
+    // is no second write path in the drawer.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    const editor = within(rowFor(BLOOD_TYPE_KEY)).getByRole('textbox');
+    expect(editor).toHaveValue('AB positive, I think?');
+    fireEvent.change(editor, { target: { value: 'O negative' } });
+    fireEvent.click(within(rowFor(BLOOD_TYPE_KEY)).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      const [patchCall] = callsWithMethod('PATCH');
+      expect(patchCall).toBeDefined();
+      expect(patchCall?.[0]).toBe(`/api/answers/${serverIdFor(BLOOD_TYPE_KEY)}-answer`);
+      // Text ONLY — naming a source would opt out of the API's user-correction
+      // flip and leave the row badged as a machine inference.
+      expect(JSON.parse(patchCall![1]!.body!)).toEqual({ text: 'O negative' });
+    });
+
+    expect(callsWithMethod('POST')).toHaveLength(0);
+  });
+
+  it('leaves an unanswered row without a button to press', async () => {
+    fetchJson.mockResolvedValue(cataloguePage([catalogueEntry(BLOOD_TYPE_KEY)]));
+
+    renderSection();
+
+    await screen.findByText('What is your blood type?');
+    const row = rowFor(BLOOD_TYPE_KEY);
+    expect(
+      within(row).queryByRole('button', { name: /Show where this answer came from/ }),
+    ).not.toBeInTheDocument();
+    expect(within(row).getByText('No answer yet')).toBeInTheDocument();
   });
 });

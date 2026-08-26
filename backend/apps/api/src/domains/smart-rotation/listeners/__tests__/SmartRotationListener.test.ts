@@ -168,6 +168,23 @@ describe('SmartRotationListener', () => {
 
       expect(eventService.send).not.toHaveBeenCalled();
     });
+
+    it('never offers a hand-entry question to inference', async () => {
+      const eventService = { send: jest.fn() } as unknown as EventService;
+      const dataSource = { query: jest.fn().mockResolvedValue([{ id: 'q-1' }]) };
+
+      const listener = buildListener({ eventService, dataSource });
+
+      await listener.handleWork({ userId: 'user-1', workType: 'answer_infer' });
+
+      // This is a SECOND copy of "next unanswered question", separate from
+      // QuestionService.findUnansweredByUserId. It shipped without the filter,
+      // so hand-entry questions the cron path refuses still reached inference
+      // through here once an hour — "How tall are you?" came back
+      // "It'll be like a foot tall.", read off a message about an object.
+      const [sql] = dataSource.query.mock.calls[0] as [string];
+      expect(sql.replace(/\s+/g, ' ')).toContain("q.evidence_class <> 'hand_entry'");
+    });
   });
 
   describe('insights', () => {
