@@ -2,7 +2,8 @@ import { BadRequestException } from '@nestjs/common';
 
 import { ASK_ARCHETYPES, type AskArchetype } from './askGrammar';
 import { canonicalQueryType, normalizeText } from './canonical';
-import type { AskQuery } from './types';
+import { DISCLOSURE_RUNGS } from './policy';
+import type { AskQuery, DisclosureRung } from './types';
 
 /**
  * The boundary where an asker's raw strings become an {@link AskQuery}.
@@ -225,4 +226,35 @@ export function parseAskQueryInput(raw: {
   // attacker-shaped, and spreading it would carry unknown keys straight into
   // the `ci.asks.query` jsonb column and from there into the audit replay.
   return dataClass == null ? { queryType, prompt } : { queryType, dataClass, prompt };
+}
+
+/**
+ * Parse an owner-supplied disclosure rung at the API boundary.
+ *
+ * REJECTS rather than coercing, which is the opposite direction from
+ * `grantMatch.ceilingOf` and `ceilingForShare` — and both are right for where
+ * they sit. Those two READ a value that is already stored and must fail closed,
+ * because the alternative is disclosing more than the owner asked for. This one
+ * WRITES, and an owner who typed `summry` meant a restriction: silently storing
+ * `none` would hand them a share that discloses nothing and no explanation, so
+ * a 400 they can act on is the honest answer.
+ *
+ * `null`/`undefined` pass through as "no ceiling declared", which is a real and
+ * intentional posture (the pre-existing behaviour of every share).
+ */
+export function parseDisclosureRung(raw: unknown, field = 'maxDisclosure'): DisclosureRung | null {
+  if (raw == null) {
+    return null;
+  }
+
+  if (typeof raw !== 'string') {
+    throw new BadRequestException(`${field} must be a string`);
+  }
+
+  const canonical = raw.trim().toLowerCase();
+  if (!(DISCLOSURE_RUNGS as readonly string[]).includes(canonical)) {
+    throw new BadRequestException(`${field} must be one of: ${DISCLOSURE_RUNGS.join(', ')}`);
+  }
+
+  return canonical as DisclosureRung;
 }
