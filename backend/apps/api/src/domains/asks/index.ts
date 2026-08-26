@@ -111,8 +111,11 @@ export {
   parseAskPrompt,
   parseAskQueryInput,
   parseAskQueryType,
+  parseAskActor,
   parseDisclosureRung,
   parseGrantQueryType,
+  ASK_ACTOR_KINDS,
+  MAX_ACTOR_LABEL_LENGTH,
 } from './askInput';
 export { ASK_TTL_HOURS_ENV_VAR, DEFAULT_ASK_TTL_HOURS, askTtlHours, defaultAskExpiry } from './askDeadline';
 export { inferAnswerForm, buildDisclosedAnswer, formDisclosesItems, countFreeSummary } from './disclosure';
@@ -171,4 +174,7 @@ export type {
   TrustTier,
   DisclosureRung,
   AskGrantResourceType,
+  AskDelegation,
+  AskActor,
+  AskActorKind,
 } from './types';

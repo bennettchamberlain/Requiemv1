@@ -292,6 +292,7 @@ export function AsksPage() {
                 scopeSummary={scopeSummary(ask.query)}
                 searchBreadth={searchBreadthNote(ask.query)}
                 downgrades={[...OWNER_ANSWER_FORMS]}
+                actor={ask.query.actor}
                 busy={busy}
                 onApprove={() => handleApprove(ask.id)}
                 onDowngrade={(form) => handleApprove(ask.id, form)}

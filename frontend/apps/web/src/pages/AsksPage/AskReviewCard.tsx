@@ -1,13 +1,21 @@
 import { useState } from 'react';
 
 import { Badge, Button, Card } from '@ci/shadcn';
-import { ShieldAlert, ShieldCheck } from '@ci/shadcn/icons';
+import { Bot, ShieldAlert, ShieldCheck } from '@ci/shadcn/icons';
 
 import { PersonAvatar } from '@/components/PersonAvatar';
 import type { AnswerForm } from '@/graphql/graphql';
 
 import { AskerQuote } from './AskerQuote';
-import { answerFormLabel, askApproveLabel, askDecisionNote, type AskDecisionState } from './askPresentation';
+import {
+  actorIsDelegated,
+  actorLine,
+  type AskActorView,
+  answerFormLabel,
+  askApproveLabel,
+  askDecisionNote,
+  type AskDecisionState,
+} from './askPresentation';
 import { ConsentDetailModal, type ConsentRecord } from './ConsentDetailModal';
 import { ConsentLock } from './ConsentLock';
 import { consentLockState } from './consentProvenance';
@@ -58,6 +66,14 @@ interface Props {
   /** Answer forms the owner can cap this ask at instead of declining. */
   downgrades?: AnswerForm[];
   /**
+   * What is making this ask, when the asker declared it.
+   *
+   * Omitted renders no line at all — an ask that declares nothing is the
+   * ordinary case today, and inventing "a person, presumably" would be a claim
+   * about the one thing the asker declined to commit to.
+   */
+  actor?: AskActorView | null;
+  /**
    * What protected this request, for the lock and the signature modal.
    *
    * Optional because a container that cannot answer it must not guess: the lock
@@ -98,6 +114,7 @@ export function AskReviewCard({
   items = [],
   decision,
   downgrades = [],
+  actor,
   consent,
   onToggleItem,
   onApprove,
@@ -154,6 +171,17 @@ export function AskReviewCard({
           controls every character here, including the ones that used to close
           the quote and let them finish the sentence in the app's voice. */}
       <AskerQuote prompt={prompt} attribution={`${askerName} asked:`} />
+
+      {/* WHO is asking, when they said. Its own line rather than a chip beside
+          the name: "Ana is asking" and "something Ana delegated to is asking"
+          are different consent decisions, and the second is the less familiar
+          of the two — it does not belong in the smallest type on the card. */}
+      {actorLine(actor) ? (
+        <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
+          {actorIsDelegated(actor) ? <Bot className="mt-0.5 size-3 shrink-0" aria-hidden /> : null}
+          <span>{actorLine(actor)}</span>
+        </p>
+      ) : null}
 
       {/* What was asked for, and what that actually costs. The second line is
           never omitted: a data class the responder's box does not recognise

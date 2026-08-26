@@ -37,6 +37,17 @@ export enum AskAuditOutcomeEnum {
 }
 registerEnumType(AskAuditOutcomeEnum, { name: 'AskAuditOutcome' });
 
+/** What made an ask — a person, or software acting for them. */
+@ObjectType()
+export class AskActorType {
+  @Field(() => String)
+  kind!: string;
+
+  /** Display only. Never matched on — see `actorSatisfiesDelegation`. */
+  @Field(() => String, { nullable: true })
+  label!: string | null;
+}
+
 /** The bounded, asker-supplied query carried by an ask. */
 @ObjectType()
 export class AskQueryType {
@@ -49,11 +60,20 @@ export class AskQueryType {
   @Field(() => String)
   prompt!: string;
 
+  /**
+   * What made this ask, when the asker declared it. Null means they did not —
+   * which is itself the reason a delegation-restricted grant will not
+   * auto-answer it.
+   */
+  @Field(() => AskActorType, { nullable: true })
+  actor!: AskActorType | null;
+
   static toType(query: AskQuery): AskQueryType {
     return {
       queryType: query.queryType,
       dataClass: query.dataClass ?? null,
       prompt: query.prompt,
+      actor: query.actor ? { kind: query.actor.kind, label: query.actor.label ?? null } : null,
     };
   }
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  actorIsDelegated,
+  actorLine,
   answerFormLabel,
   askApproveLabel,
   askDecisionNote,
@@ -252,5 +254,60 @@ describe('peer trust ladder', () => {
     // somebody needs in front of them.
     expect(peerTrustCeilingNote('family')).toMatch(/only tier where health, finances and secrets/i);
     expect(peerTrustCeilingNote('trusted')).not.toMatch(/only tier/i);
+  });
+});
+
+describe('actorLine — who, or what, is asking', () => {
+  it('says nothing when the ask declares no actor', () => {
+    // Inventing "a person, presumably" would be a claim about the one thing
+    // the asker declined to commit to.
+    expect(actorLine(null)).toBeNull();
+    expect(actorLine(undefined)).toBeNull();
+  });
+
+  it('distinguishes a person from their Companion from delegated software', () => {
+    expect(actorLine({ kind: 'person' })).toMatch(/a person is asking/);
+    expect(actorLine({ kind: 'first-party-agent' })).toMatch(/own Companion/);
+    expect(actorLine({ kind: 'third-party-agent' })).toMatch(/delegated to/);
+  });
+
+  /**
+   * `label` is a string the ASKER writes and this box never verifies — the same
+   * class of input as the prompt. So it is attributed, not asserted.
+   */
+  it('quotes the label rather than asserting it', () => {
+    const line = actorLine({ kind: 'third-party-agent', label: 'Definitely Safe Assistant' }) ?? '';
+
+    expect(line).toContain('calling itself');
+    expect(line).toContain('Definitely Safe Assistant');
+  });
+
+  it('omits the quoting clause for a blank label', () => {
+    expect(actorLine({ kind: 'first-party-agent', label: '  ' })).not.toContain('calling itself');
+  });
+
+  it('claims nothing it cannot support for an unrecognized kind', () => {
+    const line = actorLine({ kind: 'quantum-butler' }) ?? '';
+
+    expect(line).toMatch(/does not recognise/);
+    expect(line).not.toContain('quantum-butler');
+  });
+});
+
+describe('actorIsDelegated', () => {
+  it('is true only for software acting on someone’s behalf', () => {
+    expect(actorIsDelegated({ kind: 'first-party-agent' })).toBe(true);
+    expect(actorIsDelegated({ kind: 'third-party-agent' })).toBe(true);
+    expect(actorIsDelegated({ kind: 'person' })).toBe(false);
+  });
+
+  /**
+   * An ask with no actor is the ordinary case today — nothing sends the field
+   * yet. Marking every ask as noteworthy would make the mark worthless by the
+   * time it means something.
+   */
+  it('is false for an undeclared actor, not true-by-default', () => {
+    expect(actorIsDelegated(null)).toBe(false);
+    expect(actorIsDelegated(undefined)).toBe(false);
   });
 });

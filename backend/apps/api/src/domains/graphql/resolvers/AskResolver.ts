@@ -32,6 +32,7 @@ import {
   UNATTRIBUTED,
   type AuditFilter,
   type AskAuditOutcome,
+  type AskDelegation,
 } from '@ci/domains/asks';
 import { OutboundAskService, type PeerAskRequest, type PeerLink, PeerLinkService } from '@ci/domains/peers';
 
@@ -983,15 +984,48 @@ export class AskResolver {
  * it whole. An empty object would tell create to store `{}` and tell supersede
  * to merge nothing — the same value meaning two different, wrong things.
  */
-function toGrantScope(input: { dataClasses?: string[]; maxDisclosure?: string }): AskGrantScope | undefined {
+function toGrantScope(input: {
+  dataClasses?: string[];
+  maxDisclosure?: string;
+  delegation?: string;
+}): AskGrantScope | undefined {
   const scope: AskGrantScope = {
     // An empty `dataClasses` list is a real instruction ("no classes permitted"),
     // so the presence test is `!= null`, not truthiness.
     ...(input.dataClasses != null ? { dataClasses: input.dataClasses } : {}),
     ...(input.maxDisclosure != null ? { maxDisclosure: input.maxDisclosure as DisclosureRung } : {}),
+    ...parseDelegation(input.delegation),
   };
 
   return Object.keys(scope).length > 0 ? scope : undefined;
+}
+
+/**
+ * Parse the owner's delegation setting, REJECTING anything off-vocabulary.
+ *
+ * Same direction as `parseDisclosureRung` and for the same reason: this is the
+ * WRITE boundary. `actorSatisfiesDelegation` fails closed when it READS an
+ * unreadable value, which is right there — but silently storing a restriction
+ * that will later be read as "deny everything" hands the owner a grant that
+ * never fires and no explanation of why. A 400 they can act on is the honest
+ * answer.
+ *
+ * Returns a spreadable object so an omitted value adds no key at all, keeping
+ * `toGrantScope`'s "empty scope means undefined" contract intact.
+ */
+function parseDelegation(raw: string | undefined): { delegation?: AskDelegation } {
+  if (raw == null) {
+    return {};
+  }
+
+  const canonical = raw.trim().toLowerCase();
+  const known: AskDelegation[] = ['none', 'first-party-only', 'any-agent'];
+
+  if (!(known as string[]).includes(canonical)) {
+    throw new BadRequestException(`delegation must be one of: ${known.join(', ')}`);
+  }
+
+  return { delegation: canonical as AskDelegation };
 }
 
 /** A {@link LoggerService} already tagged with its owner's name. */

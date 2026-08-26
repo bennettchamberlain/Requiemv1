@@ -105,6 +105,15 @@ export interface AskQuery {
   dataClass?: string;
   /** The natural-language question as composed by the asker (shown back to both sides). */
   prompt: string;
+  /**
+   * What is making this ask, when the asker declares it.
+   *
+   * A FIRST-CLASS FIELD rather than one more key in `filters`: it is matched by
+   * the consent evaluator and rendered at the consent moment, and `filters` is
+   * the bag of things that reach the executor. Burying a consent-relevant fact
+   * among search parameters is how it ends up being treated as one.
+   */
+  actor?: AskActor;
   /** Optional structured filters mirroring the explorer capture (who / where / when). */
   filters?: Record<string, unknown>;
 }
@@ -133,6 +142,11 @@ export interface AskGrantScope {
   notAfter?: string;
   /** Purpose the grant is limited to, matched against the ask's stated purpose. */
   purpose?: string;
+  /**
+   * Who may exercise this grant. Absent = no restriction from this dimension.
+   * See {@link AskDelegation}.
+   */
+  delegation?: AskDelegation;
   [key: string]: unknown;
 }
 
@@ -147,6 +161,41 @@ export interface GrantEvaluation {
    * of the two, so neither can loosen the other.
    */
   maxDisclosure?: DisclosureRung;
+}
+
+/**
+ * WHO may exercise a grant — the person, or something acting for them.
+ *
+ * Adapted from UMA-for-agents' recommendation #25, which adds a
+ * `delegation: none | first-party-only | any-agent` field for exactly this
+ * question. Until now a grant said WHO may ask and WHAT about, and had no way
+ * to say whether "Bob" meant Bob or Bob's assistant. That stops being academic
+ * the moment asks arrive from the Intent Catalog / MCP tool registry rather
+ * than from a person at a keyboard.
+ *
+ *   none              — the person themselves, and nothing acting for them.
+ *   first-party-only  — the grantee's own Companion may ask on their behalf.
+ *   any-agent         — including a third-party agent they delegated to.
+ *
+ * Absent means no restriction from this dimension, which is the contract every
+ * other {@link AskGrantScope} field holds. The safety is on the ASK side: an
+ * ask that does not say who is acting cannot satisfy a grant that restricts it.
+ * See `scopeCoversQuery`.
+ */
+export type AskDelegation = 'none' | 'first-party-only' | 'any-agent';
+
+/** What is making an ask — a person, or software acting for them. */
+export type AskActorKind = 'person' | 'first-party-agent' | 'third-party-agent';
+
+export interface AskActor {
+  kind: AskActorKind;
+  /**
+   * Opaque label for the acting software, shown to the owner at the consent
+   * moment. Never used for matching — {@link AskDelegation} matches on `kind`
+   * alone, because a name is a claim the asker writes and a kind is a
+   * commitment they make.
+   */
+  label?: string;
 }
 
 /** Whether an ask is local to this box, sent to a peer, or received from one. */

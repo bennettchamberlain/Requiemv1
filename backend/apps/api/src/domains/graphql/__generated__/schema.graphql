@@ -160,6 +160,16 @@ type AnswerType implements Node {
   question: QuestionType!
 }
 
+input AskActorInput {
+  kind: String!
+  label: String
+}
+
+type AskActorType {
+  kind: String!
+  label: String
+}
+
 type AskAnswerType {
   answerSource: AnswerSource!
   askId: ID!
@@ -267,12 +277,14 @@ type AskPayload {
 }
 
 input AskQueryInput {
+  actor: AskActorInput
   dataClass: String
   prompt: String!
   queryType: String!
 }
 
 type AskQueryType {
+  actor: AskActorType
   dataClass: String
   prompt: String!
   queryType: String!
@@ -566,6 +578,7 @@ input CreateAnswerInput {
 input CreateAskGrantInput {
   dataClass: String
   dataClasses: [String!]
+  delegation: String
   granteeId: ID
   granteePeerLinkId: ID
   maxDisclosure: DisclosureRung

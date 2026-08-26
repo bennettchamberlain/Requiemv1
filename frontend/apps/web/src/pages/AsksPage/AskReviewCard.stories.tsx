@@ -123,3 +123,33 @@ export const SignedPeerAsk: Story = {
     },
   },
 };
+
+/**
+ * An ask made by SOFTWARE the asker delegated to, not by the asker.
+ *
+ * The line is its own, not a chip beside the name: "Ana is asking" and
+ * "something Ana delegated to is asking" are different consent decisions, and
+ * the second is the less familiar one. The label is attributed rather than
+ * asserted — the asker writes it and this box never verifies it.
+ */
+export const DelegatedAgentAsk: Story = {
+  args: {
+    askerName: 'Ana',
+    tier: 'trusted',
+    decision: 'unreviewed',
+    prompt: 'What’s on Sam’s wishlist? I’m putting together birthday options.',
+    scopeSummary: 'Content · wishlist',
+    searchBreadth: 'Your Companion recognises “wishlist”, so this is confined to those notes.',
+    items: [],
+    downgrades: ['boolean'],
+    actor: { kind: 'third-party-agent', label: 'GiftFinder' },
+  },
+};
+
+/** The same ask, made by the person. Same card, materially different decision. */
+export const PersonAsk: Story = {
+  args: {
+    ...DelegatedAgentAsk.args,
+    actor: { kind: 'person' },
+  } as Story['args'],
+};

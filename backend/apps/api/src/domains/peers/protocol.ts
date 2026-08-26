@@ -78,7 +78,27 @@ export const availabilityAskSchema = z.object({
  */
 export const PEER_ASK_ID_PATTERN = /^[\w.:-]{8,64}$/;
 
+/**
+ * What is making an ask, when the asker declares it.
+ *
+ * Optional on the wire, and its ABSENCE is meaningful: a grant that restricts
+ * delegation (`AskGrantScope.delegation`) is not satisfied by an ask that
+ * declines to say who is acting, so an omitted actor lands the ask in the
+ * owner's review inbox rather than being auto-answered. Declaring `person`
+ * dishonestly is a lie a peer can tell; declining to declare is not a way
+ * around the restriction.
+ *
+ * `label` is shown to the owner at the consent moment and is NEVER matched on —
+ * a name is a claim the asker writes, a kind is a commitment they make.
+ */
+export const askActorSchema = z.object({
+  kind: z.enum(['person', 'first-party-agent', 'third-party-agent']),
+  label: z.string().max(80).optional(),
+});
+
 export const peerAskBodySchema = z.object({
+  /** What is making this ask. See {@link askActorSchema}. */
+  actor: askActorSchema.optional(),
   /**
    * Correlation id minted by the asker, and a REAL idempotency key.
    *

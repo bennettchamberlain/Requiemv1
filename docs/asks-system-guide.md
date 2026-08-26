@@ -198,6 +198,26 @@ New peer links default to `stranger` at the GraphQL layer
 (`CreatePeerLinkInput`), deliberately narrower than `PeerLinkService.upsert`'s
 own `peer` fallback: adding a person is not the same gesture as trusting them.
 
+### 2.5b Delegation — may their AGENT ask?
+
+`AskGrantScope.delegation` answers a question a grant previously could not: whether "Bob" means Bob, or something acting for him. Adapted from UMA-for-agents recommendation #25, and it stops being academic the moment asks arrive from the Intent Catalog / MCP tool registry rather than from a person at a keyboard.
+
+| Setting | Admits |
+|---|---|
+| `none` | the person, and nothing acting for them |
+| `first-party-only` | the person, or their own Companion acting for them |
+| `any-agent` | including third-party software they delegated to |
+| *(absent)* | no restriction from this dimension — the contract every scope field holds |
+
+The safety is on the **ask** side, and it mirrors `autoGrantNamesQueryClass` exactly: `AskQuery.actor` is optional and asker-supplied, so "the owner restricted this to Bob himself" must not be enforced against a label Bob chooses whether to write. **An ask that declares no actor satisfies no delegation restriction** — omitting the field is not a narrowing, it is the broadest an ask can be. Such an ask is *downgraded to review*, not denied.
+
+Two further asymmetries:
+
+- **Matching is on `kind`, never on `label`.** A kind is a commitment the asker makes; a label is a name they write. Admitting an agent because it called itself *"Trusted First Party Assistant"* would make the restriction decorative — pinned by a test.
+- **An off-contract actor parses to NO actor, never to `person`.** Defaulting would let an agent satisfy a `delegation: 'none'` grant by sending something *malformed*, which is strictly easier than sending something honest. An unreadable `delegation` value reads as the strictest setting, the same way `ceilingOf` treats an unreadable ceiling.
+
+At the consent moment the review card gives the actor **its own line**, not a chip beside the name: *"Ana is asking"* and *"software Ana delegated to is asking"* are different decisions, and the second is the less familiar of the two. The label is attributed — *"calling itself …"* — rather than stated.
+
 ### 2.6 Sensitive classes
 
 ```ts
