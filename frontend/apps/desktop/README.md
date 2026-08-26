@@ -141,6 +141,27 @@ See `src-tauri/src/local_model/mod.rs` for the exact resolution logic and
   much smaller (~150MB) since Metal is part of the OS. This only happens for
   users who reach configuration 3 above — most won't.
 
+## "Sign in with CI-Portal"
+
+Works out of the box against production Portal (`https://hub.ci.computer`).
+Set `CI_PORTAL_URL` before `yarn dev` / launching the packaged app to point at
+a different Portal instead (e.g. `https://hub.companionintelligence.com`, the
+dev environment) — `stack_manager.rs` writes it into the generated `.env` as
+`OIDC_ISSUER_URL`.
+
+This needed two things neither `docker-compose.yml` nor
+`docker-compose.production.yml` set on their own, both added to
+`docker-compose.desktop.yml`'s `api` service:
+
+- `OIDC_ISSUER_URL` — unset (the default everywhere else), the "Sign in"
+  button redirects nowhere and just fails.
+- `APP_BASE_URL` — unset, CI-Server derives the OIDC callback URL from the
+  inbound request's `Host` header, but `gateway`'s nginx config forwards
+  `Host: $host`, and nginx's `$host` strips the port. That would compute
+  `http://127.0.0.1` (port 80, nothing listening) instead of
+  `http://127.0.0.1:8642`, and the callback would never arrive. Setting
+  `APP_BASE_URL` explicitly skips that derivation.
+
 ## A note on the `!reset` compose tag
 
 `docker-compose.desktop.yml` uses the Compose Specification's `!reset` tag to
