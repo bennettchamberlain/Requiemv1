@@ -160,3 +160,4 @@ export {
   isGloballyUniqueNamespace,
   normalizeObjectIdentifier,
 } from './utils/normalizeObjectIdentifier';
+export { type TruthValue, c2w, expectation, revise, w2c } from './evidence/truth';
