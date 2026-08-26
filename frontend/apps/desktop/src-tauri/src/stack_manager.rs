@@ -24,6 +24,13 @@ use serde::Serialize;
 pub const GATEWAY_PORT: u16 = 8642;
 
 const PROJECT_NAME: &str = "ci-server-desktop";
+
+/// CI-Portal's production origin — the sensible default for "Sign in with
+/// CI-Portal" (see write_env_file). Override with the CI_PORTAL_URL env var
+/// (e.g. to `https://hub.companionintelligence.com`, the dev environment) for
+/// testing against a non-production Portal.
+const DEFAULT_PORTAL_URL: &str = "https://hub.ci.computer";
+
 const COMPOSE_FILES: [&str; 3] = [
     "docker-compose.yml",
     "docker-compose.production.yml",
@@ -114,12 +121,24 @@ fn write_env_file(env_path: &Path, image_tag: &str, import_work_dir: &Path) -> R
     // has no stable CWD for the compose files' own relative defaults to
     // resolve against. CI_LOCAL_ONLY=true is a privacy default appropriate
     // for a single-user local desktop app.
+    //
+    // OIDC_ISSUER_URL/APP_BASE_URL make "Sign in with CI-Portal" work at all
+    // here — see docker-compose.desktop.yml's own comment on the `api`
+    // service for exactly why both are needed (an unset issuer breaks the
+    // redirect outright; an unset public base URL derives the wrong
+    // redirect_uri port from gateway's forwarded, port-stripped Host header).
+    // CI_PORTAL_URL is the one operator-facing override — set it before
+    // `yarn dev`/launching the packaged app to point at a non-production
+    // Portal (e.g. the dev environment) instead.
+    let portal_url = std::env::var("CI_PORTAL_URL").unwrap_or_else(|_| DEFAULT_PORTAL_URL.to_string());
     let contents = format!(
         "COMPOSE_PROJECT_NAME={PROJECT_NAME}\n\
          CI_SERVER_IMAGE_TAG={image_tag}\n\
          APP_PUBLIC_HOSTNAME=127.0.0.1\n\
          CI_IMPORT_WORK_DIR={}\n\
-         CI_LOCAL_ONLY=true\n",
+         CI_LOCAL_ONLY=true\n\
+         OIDC_ISSUER_URL={portal_url}\n\
+         APP_BASE_URL=http://127.0.0.1:{GATEWAY_PORT}\n",
         import_work_dir.display(),
     );
     fs::write(env_path, contents).map_err(|e| format!("Failed to write {}: {e}", env_path.display()))
@@ -373,6 +392,13 @@ mod tests {
         assert!(contents.contains("COMPOSE_PROJECT_NAME=ci-server-desktop"));
         assert!(contents.contains("CI_SERVER_IMAGE_TAG=2026.8.25"));
         assert!(contents.contains("CI_LOCAL_ONLY=true"));
+        assert!(contents.contains("APP_BASE_URL=http://127.0.0.1:8642"));
+        // Not asserting a specific OIDC_ISSUER_URL value: it reads the
+        // CI_PORTAL_URL env var, which this test deliberately doesn't set or
+        // unset (mutating process env vars in a #[test] races against
+        // whatever else cargo test is running in parallel) — just that the
+        // key is present with *some* value.
+        assert!(contents.contains("OIDC_ISSUER_URL="));
         assert!(!contents.to_lowercase().contains("secret"));
         assert!(!contents.to_lowercase().contains("password"));
     }
