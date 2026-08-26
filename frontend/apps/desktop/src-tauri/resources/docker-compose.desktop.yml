@@ -24,6 +24,8 @@
 services:
   api:
     image: ghcr.io/companionintelligence/companion/api:${CI_SERVER_IMAGE_TAG}
+  worker:
+    image: ghcr.io/companionintelligence/companion/api:${CI_SERVER_IMAGE_TAG}
   migrate-database:
     image: ghcr.io/companionintelligence/companion/api:${CI_SERVER_IMAGE_TAG}
   database:
