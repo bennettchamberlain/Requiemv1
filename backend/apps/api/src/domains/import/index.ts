@@ -139,6 +139,11 @@ import { UnpackStage } from './stages/UnpackStage';
     ImportRunService,
     ImportScratchService,
     StagedSourceService,
+    // Exported so a small, non-archive API sync (BlueBubblesSyncService) can
+    // drive the same push machinery in-process, without the full pg-boss
+    // claim/heartbeat stage graph archive imports use. See
+    // domains/bluebubbles/services/BlueBubblesSyncService.ts.
+    PushStage,
   ],
 })
 export class ImportModule {}

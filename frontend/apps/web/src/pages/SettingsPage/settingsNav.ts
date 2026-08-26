@@ -1,6 +1,17 @@
 import { isIosPlatform } from '@ci/common';
 import type { LucideIcon } from '@ci/shadcn/icons';
-import { Compass, Cpu, Globe, HardDrive, Key, KeyRound, MapPin, Palette, Shield } from '@ci/shadcn/icons';
+import {
+  Compass,
+  Cpu,
+  Globe,
+  HardDrive,
+  Key,
+  KeyRound,
+  MapPin,
+  MessageSquare,
+  Palette,
+  Shield,
+} from '@ci/shadcn/icons';
 
 export interface SettingsSection {
   readonly id: string;
@@ -26,6 +37,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: 'safari', label: 'Safari', icon: Compass, iosOnly: true },
   { id: 'api-keys', label: 'API Keys', icon: KeyRound },
   { id: 'oauth', label: 'OAuth Credentials', icon: Key },
+  { id: 'bluebubbles', label: 'BlueBubbles', icon: MessageSquare },
   { id: 'data', label: 'Your data', icon: HardDrive },
 ];
 

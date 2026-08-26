@@ -32,6 +32,7 @@ import { AsksModule } from '@ci/domains/asks';
 import { AuditModule } from '@ci/domains/audit';
 import { AuthModule } from '@ci/domains/auth';
 import { PortalAuthModule } from '@ci/domains/auth/PortalAuthModule';
+import { BlueBubblesModule } from '@ci/domains/bluebubbles';
 import { BrowserActivityModule } from '@ci/domains/browser-activity';
 import { ConnectionsModule } from '@ci/domains/connections';
 import { DailyMetricsModule } from '@ci/domains/daily-metrics';
@@ -109,6 +110,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     AuditModule,
     AuthModule,
     PortalAuthModule,
+    BlueBubblesModule,
     BrowserActivityModule,
     ConnectionsModule,
     DailyMetricsModule,

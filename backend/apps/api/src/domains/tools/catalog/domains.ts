@@ -72,6 +72,11 @@ export const INTENT_DOMAINS: readonly IntentDomain[] = [
     title: 'Suggestions',
     description: 'List evidence-linked suggestions and record accept/dismiss feedback.',
   },
+  {
+    key: 'messaging',
+    title: 'Messaging',
+    description: 'Send and read messages through connected messaging services.',
+  },
 ] as const;
 
 const DOMAIN_KEYS = new Set<string>(INTENT_DOMAINS.map((d) => d.key));

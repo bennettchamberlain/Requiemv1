@@ -23,6 +23,9 @@ const ApiKeysSection = lazy(() =>
   import('./sections/ApiKeysSection').then((m) => ({ default: m.ApiKeysSection })),
 );
 const OAuthSection = lazy(() => import('./sections/OAuthSection').then((m) => ({ default: m.OAuthSection })));
+const BlueBubblesSection = lazy(() =>
+  import('./sections/BlueBubblesSection').then((m) => ({ default: m.BlueBubblesSection })),
+);
 const DataPortabilitySection = lazy(() =>
   import('./sections/DataPortabilitySection').then((m) => ({ default: m.DataPortabilitySection })),
 );
@@ -45,6 +48,8 @@ function sectionElement(section: string): ReactNode {
       return <ApiKeysSection />;
     case 'oauth':
       return <OAuthSection />;
+    case 'bluebubbles':
+      return <BlueBubblesSection />;
     case 'data':
       return <DataPortabilitySection />;
     default:

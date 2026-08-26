@@ -22,6 +22,7 @@
 import { Module } from '@nestjs/common';
 
 import { LoggerService } from '@ci/common/logging';
+import { BlueBubblesModule } from '@ci/domains/bluebubbles';
 import { ConversationModule } from '@ci/domains/conversations';
 import { DailyMetricsModule } from '@ci/domains/daily-metrics';
 import { EventsModule } from '@ci/domains/events';
@@ -59,6 +60,9 @@ import { ImportRunStatusTool } from './tools/ImportRunStatusTool';
 import { ImportScanInboxTool } from './tools/ImportScanInboxTool';
 import { InsightsExplainTool } from './tools/InsightsExplainTool';
 import { MediaFindPhotosTool } from './tools/MediaFindPhotosTool';
+import { MessagingListChatsTool } from './tools/MessagingListChatsTool';
+import { MessagingListMessagesTool } from './tools/MessagingListMessagesTool';
+import { MessagingSendTool } from './tools/MessagingSendTool';
 import { PeopleFindTool } from './tools/PeopleFindTool';
 import { PlacesFindTool } from './tools/PlacesFindTool';
 import { PlacesNextTool } from './tools/PlacesNextTool';
@@ -99,6 +103,12 @@ const nativeToolInstances = [
   ImportRunStatusTool,
   ImportScanInboxTool,
   ImportInboxTool,
+  // The messaging domain's intents — thin wrappers over BlueBubblesClientService
+  // (domains/bluebubbles), following the same "declared here, implemented in its
+  // own domain" pattern as the import intents above.
+  MessagingSendTool,
+  MessagingListChatsTool,
+  MessagingListMessagesTool,
 ];
 
 /**
@@ -118,6 +128,9 @@ const nativeToolInstances = [
     SummariesModule,
     DailyMetricsModule,
     UserModule,
+    // For MessagingSendTool/MessagingListChatsTool/MessagingListMessagesTool's
+    // BlueBubblesClientService dependency.
+    BlueBubblesModule,
   ],
   providers: [
     ToolRegistry,
