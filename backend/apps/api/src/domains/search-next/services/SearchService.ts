@@ -61,6 +61,56 @@ export const SEMANTIC_DISTANCE_THRESHOLD = 0.5;
 export const SEMANTIC_MAX_RESULTS = 25;
 
 /**
+ * pgvector's own default for `hnsw.ef_search`, restated here because this
+ * appliance never sets it: a repo-wide grep finds the parameter only in
+ * `RecallProbeService`'s `SET LOCAL` (which dies with its own transaction),
+ * in migration prose, and here. Every production semantic query therefore runs
+ * the index at 40.
+ *
+ * An HNSW scan keeps a candidate list of `ef_search` nodes and can return at
+ * most that many rows — and it returns them BEFORE `user_id`, the type filter
+ * and the distance floor discard any of them (see
+ * {@link SearchService.buildSemanticSearchPlan}, where all three sit outside
+ * the ORDER BY). A statement whose `LIMIT k` exceeds this budget therefore
+ * cannot fill its own LIMIT even against a corpus with nothing to filter out:
+ * the shortfall is arithmetic, not a property of the data.
+ *
+ * This constant is NOT a tuning decision. It is a restatement of what the index
+ * will do at its current setting, so that a caller asking for k rows can be
+ * checked against it. What `ef_search` this corpus SHOULD run at — a question
+ * about post-filter selectivity, latency and recall — is what
+ * `ci.recall_probe_results` (migration `20260821223302`) was built to answer,
+ * and nothing here pre-empts it.
+ */
+export const HNSW_DEFAULT_EF_SEARCH = 40;
+
+/** pgvector's hard ceiling on `hnsw.ef_search`; setting past it raises. */
+export const HNSW_MAX_EF_SEARCH = 1000;
+
+/**
+ * The candidate budget a `LIMIT k` HNSW request needs to be answerable at all.
+ *
+ * `max(default, k)`, clamped to pgvector's ceiling. This is the MINIMUM
+ * coherent value, not a recall target: at `ef_search = k` the index can still
+ * only just produce k candidates, and any filter that rejects one of them
+ * shortens the result. Asking for more than that on every query would be the
+ * corpus-wide tuning decision the recall probe owns, so this deliberately stops
+ * at "the request is satisfiable" and goes no further.
+ *
+ * Below the default it returns the default, so a caller asking for fewer rows
+ * than the index already offers needs no `SET` at all and is left untouched.
+ */
+export function requiredEfSearch(maxResults: number): number {
+  const k = Math.trunc(maxResults);
+
+  if (!Number.isFinite(k) || k <= HNSW_DEFAULT_EF_SEARCH) {
+    return HNSW_DEFAULT_EF_SEARCH;
+  }
+
+  return Math.min(k, HNSW_MAX_EF_SEARCH);
+}
+
+/**
  * Default ceiling on how many rows a lexeme may match and still be allowed to
  * anchor {@link SearchService.searchAnchored}.
  *
@@ -113,6 +163,14 @@ export type AnchoredSearchOptions = {
 export type SemanticSearchPlan = {
   sql: string;
   params: (number | string | string[])[];
+  /**
+   * The resolved `LIMIT` this statement carries — the k the HNSW index is being
+   * asked for, after the caller's `maxResults` and the default have been folded
+   * together. Reported rather than re-derived so that whoever has to reconcile
+   * it with a candidate budget (see {@link requiredEfSearch}) reads the number
+   * that is actually in the SQL, not a second computation of it.
+   */
+  maxResults: number;
 };
 
 type ScoredRowResult = {
@@ -590,6 +648,21 @@ export class SearchService {
   ): Promise<ScoredSearchResult[]> {
     const { maxResults = 25 } = options;
 
+    // Over-fetch so fusion has something to fuse: a row that ranks 30th on the
+    // semantic side and 5th on the keyword side has to be present in BOTH lists
+    // for the 50/50 average to see it at all.
+    //
+    // At the default `maxResults` of 25 this asks the semantic leg for 50 rows.
+    // That is more than {@link HNSW_DEFAULT_EF_SEARCH}, so before this was
+    // derived the leg could not fill its own LIMIT under ANY conditions — not
+    // "under a selective filter", but with no filter at all, because the index
+    // only ever produced 40 candidates. `semanticSearch` now widens the
+    // candidate list to match whatever it is asked for (see
+    // {@link runSemanticPlan}), so the two numbers agree by construction rather
+    // than by two independent constants happening to line up.
+    //
+    // The keyword leg needs no such treatment: `ci_search.vectors` is a GIN
+    // full-text scan with no candidate-list budget.
     const doubledMaxResults = maxResults * 2;
 
     // Run both semantic and keyword searches in parallel
@@ -717,7 +790,7 @@ export class SearchService {
       params.push(typeFilter.param);
     }
 
-    return { sql, params };
+    return { sql, params, maxResults };
   }
 
   private async semanticSearch(
@@ -728,13 +801,67 @@ export class SearchService {
 
     const plan = this.buildSemanticSearchPlan(context.userId, vector, options);
 
-    const results = await this.dataSource.query(plan.sql, plan.params);
+    const results = await this.runSemanticPlan(plan);
 
     return results.map((row: ScoredRowResult) => ({
       id: row.entity_id,
       type: row.entity_type as IndexableEntity,
       score: parseFloat(row.score),
     }));
+  }
+
+  /**
+   * Run a semantic plan on a connection whose HNSW candidate list is at least
+   * as wide as the plan's own `LIMIT`.
+   *
+   * The plan's SQL is untouched — {@link buildSemanticSearchPlan} stays the one
+   * statement `RecallProbeService` measures — and so is the fast path: a request
+   * the default budget can already satisfy (k <= {@link HNSW_DEFAULT_EF_SEARCH},
+   * which is every default-`maxResults` search in the codebase) runs on the pool
+   * exactly as before, with no transaction and no `SET`.
+   *
+   * A request that CANNOT be satisfied gets its own transaction and a `SET
+   * LOCAL`. `LOCAL`, never a session or global `SET`: the pool hands this
+   * connection to the next query the moment it is released, and a leaked
+   * `hnsw.ef_search` would silently re-tune every unrelated vector query that
+   * borrowed it afterwards. Bounded by {@link requiredEfSearch} to an integer in
+   * [40, 1000] before it reaches the statement, because `SET` takes no bind
+   * parameters and this value is interpolated.
+   *
+   * The HNSW index scan is preserved exactly: `ef_search` widens the candidate
+   * list the scan walks, it does not change the plan. `ORDER BY embedding <=> $2
+   * ASC LIMIT k` against a pseudoconstant is still the only shape the index can
+   * serve, and nothing here touches it.
+   */
+  private async runSemanticPlan(plan: SemanticSearchPlan): Promise<ScoredRowResult[]> {
+    const efSearch = requiredEfSearch(plan.maxResults);
+
+    if (efSearch <= HNSW_DEFAULT_EF_SEARCH) {
+      return this.dataSource.query(plan.sql, plan.params);
+    }
+
+    const runner = this.dataSource.createQueryRunner();
+
+    try {
+      await runner.connect();
+      await runner.startTransaction();
+
+      try {
+        await runner.query(`SET LOCAL hnsw.ef_search = ${efSearch}`);
+
+        const rows = await runner.query(plan.sql, plan.params);
+
+        await runner.commitTransaction();
+
+        return rows;
+      } catch (error) {
+        await runner.rollbackTransaction();
+
+        throw error;
+      }
+    } finally {
+      await runner.release();
+    }
   }
 
   private async keywordSearch(
