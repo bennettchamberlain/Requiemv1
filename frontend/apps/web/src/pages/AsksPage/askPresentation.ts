@@ -15,13 +15,7 @@ export type GrantMode = 'auto' | 'review' | 'block';
 export type DisclosureRung = 'none' | 'boolean' | 'count' | 'summary' | 'redacted' | 'full';
 
 export type AskStatus =
-  | 'sent'
-  | 'delivered'
-  | 'under_review'
-  | 'answering'
-  | 'answered'
-  | 'declined'
-  | 'expired';
+  'sent' | 'delivered' | 'under_review' | 'answering' | 'answered' | 'declined' | 'expired';
 
 /**
  * Owner-facing label for a grant mode.
@@ -474,4 +468,66 @@ export function peerTrustCeilingNote(tier: string): string {
     default:
       return 'This tier is not one this page knows; treat it as unbounded until you check.';
   }
+}
+
+/** What made an ask, as the wire carries it. */
+export interface AskActorView {
+  kind: string;
+  label?: string | null;
+}
+
+/**
+ * Who — or WHAT — is asking, in one line for the consent moment.
+ *
+ * ═══ WHY THIS IS ITS OWN LINE AND NOT A BADGE ═══
+ *
+ * "Ana is asking" and "something Ana delegated to is asking" are different
+ * consent decisions, and the second is the newer and less familiar of the two.
+ * Compressing it into a chip beside the name would put the least understood
+ * fact in the smallest type on the card.
+ *
+ * ═══ THE LABEL IS QUOTED, NOT ASSERTED ═══
+ *
+ * `label` is a string the ASKER writes and this box never verifies — the same
+ * class of input as the prompt, which is why the prompt goes through
+ * `AskerQuote`. So the label is attributed ("calling itself …") rather than
+ * stated, and the KIND — which is a commitment, and what the consent evaluator
+ * actually matches on — carries the meaning.
+ *
+ * Returns null when the ask declares no actor, because there is nothing
+ * truthful to say. The absence is not neutral, though: a grant restricting
+ * delegation will not auto-answer an ask that declines to say who is acting,
+ * so an undeclared actor is part of why some asks reach the inbox at all.
+ */
+export function actorLine(actor: AskActorView | null | undefined): string | null {
+  if (actor == null) {
+    return null;
+  }
+
+  const calling = actor.label?.trim() ? ` calling itself \u201C${actor.label.trim()}\u201D` : '';
+
+  switch (actor.kind) {
+    case 'person':
+      return 'They say a person is asking, not software acting for them.';
+    case 'first-party-agent':
+      return `Their own Companion is asking on their behalf${calling}.`;
+    case 'third-party-agent':
+      return `Software they delegated to is asking${calling} — not their own Companion.`;
+    default:
+      // An unrecognized kind reaches here only if the server's vocabulary grew
+      // past this build's. Say what is known and claim nothing more.
+      return 'Something is asking on their behalf, and this app does not recognise what.';
+  }
+}
+
+/**
+ * Whether an actor should be drawn attention to.
+ *
+ * True for delegated software, false for a person and for an UNDECLARED actor.
+ * Not true for undeclared: an ask with no actor is the ordinary case today —
+ * nothing sends the field yet — and marking every ask as noteworthy would make
+ * the mark worthless by the time it means something.
+ */
+export function actorIsDelegated(actor: AskActorView | null | undefined): boolean {
+  return actor?.kind === 'first-party-agent' || actor?.kind === 'third-party-agent';
 }

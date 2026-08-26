@@ -160,6 +160,16 @@ type AnswerType implements Node {
   question: QuestionType!
 }
 
+input AskActorInput {
+  kind: String!
+  label: String
+}
+
+type AskActorType {
+  kind: String!
+  label: String
+}
+
 type AskAnswerType {
   answerSource: AnswerSource!
   askId: ID!
@@ -193,6 +203,51 @@ type AskAuditType {
   responderId: ID
 }
 
+type AskChannelType {
+  covered: [String!]!
+  keyThumbprint: String!
+  verifiedAt: DateTime!
+}
+
+input AskDisclosureHistoryInput {
+  counterpartyKey: String
+  from: DateTime
+  limit: Int
+  outcomes: [String!]
+  to: DateTime
+}
+
+type AskDisclosureHistoryPayload {
+  rows: [AskAuditType!]!
+  truncated: Boolean!
+}
+
+input AskDisclosureSummaryInput {
+  windowDays: Int
+}
+
+type AskDisclosureSummaryPayload {
+  summaries: [AskDisclosureSummaryType!]!
+  truncated: Boolean!
+}
+
+type AskDisclosureSummaryType {
+  askerId: ID
+  asksInWindow: Int!
+  autoAnswered: Int!
+  declined: Int!
+  expired: Int!
+  firstAt: DateTime!
+  itemsDisclosed: Int!
+  itemsInWindow: Int!
+  key: String!
+  lastAt: DateTime!
+  peerHandle: String
+  peerLinkId: ID
+  reviewed: Int!
+  total: Int!
+}
+
 type AskGrantPayload {
   grant: AskGrantType
   success: Boolean!
@@ -222,12 +277,14 @@ type AskPayload {
 }
 
 input AskQueryInput {
+  actor: AskActorInput
   dataClass: String
   prompt: String!
   queryType: String!
 }
 
 type AskQueryType {
+  actor: AskActorType
   dataClass: String
   prompt: String!
   queryType: String!
@@ -245,6 +302,7 @@ enum AskStatus {
 
 type AskType {
   askerId: ID
+  channel: AskChannelType
   consentBasis: String
   createdAt: DateTime!
   direction: String!
@@ -520,6 +578,7 @@ input CreateAnswerInput {
 input CreateAskGrantInput {
   dataClass: String
   dataClasses: [String!]
+  delegation: String
   granteeId: ID
   granteePeerLinkId: ID
   maxDisclosure: DisclosureRung
@@ -2634,7 +2693,8 @@ type Query {
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   ask(id: ID!): AskType
   askAnswer(id: ID!): AskAnswerType
-  askDisclosureHistory: [AskAuditType!]!
+  askDisclosureHistory(input: AskDisclosureHistoryInput): AskDisclosureHistoryPayload!
+  askDisclosureSummary(input: AskDisclosureSummaryInput): AskDisclosureSummaryPayload!
   askGrant(id: ID!): AskGrantType
   askInbox: [AskType!]!
   askOutbox: [AskType!]!
@@ -3113,6 +3173,8 @@ type SavedSearchType implements Node {
   isSeed: Boolean!
   name: String
   query: String
+  shareExpiresAt: DateTime
+  shareMaxDisclosure: String
   shareToken: String
   tags: [String!]
   updatedAt: DateTime!
@@ -3215,8 +3277,10 @@ type SendPeerAskPayload {
 }
 
 input SetSavedSearchSharingInput {
+  expiresAt: DateTime
   id: ID!
   isPublic: Boolean!
+  maxDisclosure: String
 }
 
 type SummaryConnection implements Connection {

@@ -1,7 +1,7 @@
 import { canonicalDataClass, canonicalQueryType } from './canonical';
 import type { AskGrant } from './entities/AskGrantEntity';
 import { DISCLOSURE_RUNGS } from './policy';
-import type { AskQuery, DisclosureRung, GrantEvaluation } from './types';
+import type { AskActor, AskGrantScope, AskQuery, DisclosureRung, GrantEvaluation } from './types';
 
 export { canonicalDataClass, canonicalQueryType };
 
@@ -356,6 +356,24 @@ function scopeCoversQuery(grant: AskGrant, query: AskQuery): boolean {
     }
   }
 
+  // ═══ DELEGATION: WHO MAY EXERCISE THIS GRANT ═══
+  //
+  // An ask that does NOT say who is acting cannot satisfy a grant that
+  // restricts it. That is the same rule `autoGrantNamesQueryClass` applies to
+  // the data class, and for the same reason: the field is optional and
+  // asker-supplied, so "the owner restricted this to Bob himself" must not be
+  // enforced against a label Bob chooses whether to write.
+  //
+  // Omitting it is not a narrowing — it is the broadest an ask can be. So an
+  // undeclared actor drops the grant out of consideration, which DOWNGRADES the
+  // ask to owner review rather than denying it (see the caller). The owner then
+  // sees it, with the grant named, and answers in one tap.
+  if (scope.delegation != null) {
+    if (!actorSatisfiesDelegation(query.actor, scope.delegation)) {
+      return false;
+    }
+  }
+
   // Purpose binding: a purpose-limited grant requires the ask to state that
   // same purpose.
   if (scope.purpose != null) {
@@ -390,4 +408,39 @@ function blockCoversQuery(grant: AskGrant, query: AskQuery): boolean {
   // would let an asker slip past a block by falling just outside its validity
   // window or by omitting the purpose it names.
   return classMatchesQuery(grant, query);
+}
+
+/**
+ * Whether the declared actor is one this delegation setting admits.
+ *
+ * Matches on KIND alone. `AskActor.label` is a name the asker writes, and a
+ * name is not a commitment — admitting an agent because it called itself
+ * something reassuring would make the restriction decorative.
+ *
+ * An UNDECLARED actor satisfies nothing. Pure.
+ */
+function actorSatisfiesDelegation(
+  actor: AskActor | undefined,
+  delegation: NonNullable<AskGrantScope['delegation']>,
+): boolean {
+  if (actor == null) {
+    return false;
+  }
+
+  switch (delegation) {
+    case 'none':
+      return actor.kind === 'person';
+    case 'first-party-only':
+      return actor.kind === 'person' || actor.kind === 'first-party-agent';
+    case 'any-agent':
+      // Every kind, including one this build does not recognize — `any-agent`
+      // is the owner declining to restrict on this dimension at all, and a
+      // future kind must not be narrower than the setting that admits all.
+      return true;
+    default:
+      // An unreadable delegation setting is the STRICTEST reading, not the
+      // absence of one — `ceilingOf`'s rule. `scope` is jsonb and can hold
+      // anything a client or a migration ever wrote there.
+      return false;
+  }
 }

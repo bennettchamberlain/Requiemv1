@@ -31,6 +31,7 @@ import { AskReviewCard } from './AskReviewCard';
 import {
   APPROVE_ASK,
   ASK_DISCLOSURE_HISTORY,
+  ASK_DISCLOSURE_SUMMARY,
   ASK_INBOX,
   ASK_OUTBOX,
   CREATE_ASK,
@@ -48,9 +49,24 @@ import {
 } from './asksOperations';
 import { COMPOSER_SHAPES, composeRecipients, unreachablePeers } from './composeRecipients';
 import { DisclosureHistory } from './DisclosureHistory';
+import { DisclosureRelationships } from './DisclosureRelationships';
 import { GrantManager, type GranteeGroup } from './GrantManager';
 import { NewGrantForm } from './NewGrantForm';
 import { PeerManager } from './PeerManager';
+import type { RelationshipSummary } from './relationshipPresentation';
+
+/**
+ * The recency window the relationship fold reports against, and the cap the
+ * fold runs over.
+ *
+ * Both MIRROR the server (`DEFAULT_WINDOW_MS` and `MAX_AUDIT_ROWS` in the asks
+ * domain) rather than being sent to it: the client does not get to choose how
+ * much of the owner's history is counted. They exist here only so the copy can
+ * say "the last 30 days" and "your 5,000 most recent" in words rather than
+ * leaving the reader to guess what window a number covers.
+ */
+const DISCLOSURE_WINDOW_DAYS = 30;
+const MAX_COUNTED_DISCLOSURES = 5_000;
 
 type Tab = 'inbox' | 'compose' | 'outbox' | 'grants' | 'peers' | 'history';
 
@@ -106,7 +122,16 @@ export function AsksPage() {
   const outbox = useQuery(ASK_OUTBOX);
   const grants = useQuery(MY_ASK_GRANTS);
   const peers = useQuery(MY_PEER_LINKS);
-  const history = useQuery(ASK_DISCLOSURE_HISTORY);
+  // The relationship fold is the index; the flat list is the drill-in, and it
+  // is NOT fetched until a relationship is opened. Loading every audit row to
+  // render a summary would reintroduce the unbounded read the fold exists to
+  // replace.
+  const [openRelationship, setOpenRelationship] = useState<RelationshipSummary | null>(null);
+  const disclosureSummary = useQuery(ASK_DISCLOSURE_SUMMARY);
+  const history = useQuery(ASK_DISCLOSURE_HISTORY, {
+    variables: { input: { counterpartyKey: openRelationship?.key } },
+    skip: openRelationship == null,
+  });
 
   const refetchAll = () => {
     void inbox.refetch();
@@ -267,6 +292,7 @@ export function AsksPage() {
                 scopeSummary={scopeSummary(ask.query)}
                 searchBreadth={searchBreadthNote(ask.query)}
                 downgrades={[...OWNER_ANSWER_FORMS]}
+                actor={ask.query.actor}
                 busy={busy}
                 onApprove={() => handleApprove(ask.id)}
                 onDowngrade={(form) => handleApprove(ask.id, form)}
@@ -441,30 +467,57 @@ export function AsksPage() {
         />
       );
     }
-  } else if (tab === 'history') {
+  } else if (tab === 'history' && openRelationship != null) {
+    // ── Drill-in: one relationship's individual disclosures ──────────────
     if (history.error) {
       content = <LoadFailure what="what you have shared" onRetry={() => void history.refetch()} />;
     } else if (history.loading) {
       content = <LoadingPage />;
     } else {
-      const rows = history.data?.askDisclosureHistory ?? [];
+      const rows = history.data?.askDisclosureHistory?.rows ?? [];
 
-      content = rows.length ? (
-        <DisclosureHistory
-          rows={rows.map((row) => {
-            const asker = partyAvatar(row.peerHandle, row.askerId, peerLinks);
+      content = (
+        <div className="flex flex-col gap-3">
+          <Button variant="ghost" size="sm" className="self-start" onClick={() => setOpenRelationship(null)}>
+            ← All relationships
+          </Button>
 
-            return {
-              id: row.id,
-              askerName: asker.name,
-              askerAvatarUrl: asker.avatarUrl,
-              outcome: row.outcome as AskAuditOutcome,
-              disclosedCount: row.disclosedCount,
-              consentBasis: row.consentBasis,
-              createdAt: row.createdAt as string,
-              query: row.query,
-            };
-          })}
+          <DisclosureHistory
+            rows={rows.map((row) => {
+              const asker = partyAvatar(row.peerHandle, row.askerId, peerLinks);
+
+              return {
+                id: row.id,
+                askerName: asker.name,
+                askerAvatarUrl: asker.avatarUrl,
+                outcome: row.outcome as AskAuditOutcome,
+                disclosedCount: row.disclosedCount,
+                consentBasis: row.consentBasis,
+                createdAt: row.createdAt as string,
+                query: row.query,
+              };
+            })}
+          />
+        </div>
+      );
+    }
+  } else if (tab === 'history') {
+    // ── Index: the same record, folded by relationship ───────────────────
+    if (disclosureSummary.error) {
+      content = <LoadFailure what="what you have shared" onRetry={() => void disclosureSummary.refetch()} />;
+    } else if (disclosureSummary.loading) {
+      content = <LoadingPage />;
+    } else {
+      const payload = disclosureSummary.data?.askDisclosureSummary;
+      const summaries = payload?.summaries ?? [];
+
+      content = summaries.length ? (
+        <DisclosureRelationships
+          summaries={summaries}
+          windowDays={DISCLOSURE_WINDOW_DAYS}
+          truncated={payload?.truncated ?? false}
+          countedRows={MAX_COUNTED_DISCLOSURES}
+          onOpen={setOpenRelationship}
         />
       ) : (
         <EmptyState message="Nothing has been shared from your Companion yet." />

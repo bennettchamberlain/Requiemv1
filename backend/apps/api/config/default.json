@@ -256,6 +256,8 @@
     "memoryEndpoint": "",
     "handle": "",
     "audience": "",
-    "timeoutMs": 10000
+    "timeoutMs": 10000,
+    "requireHttpSignature": false,
+    "signingKeyJwk": ""
   }
 }
