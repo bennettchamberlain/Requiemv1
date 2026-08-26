@@ -80,7 +80,6 @@ function buildNode(ownerUserId: string, seed: SeedNode): GraphNodeEntity {
   node.is_archived = false;
   node.created_at = new Date('2026-01-01T00:00:00.000Z');
   node.updated_at = new Date('2026-01-01T00:00:00.000Z');
-  node.last_accessed = new Date('2026-01-01T00:00:00.000Z');
 
   return node;
 }
