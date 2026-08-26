@@ -4,6 +4,7 @@ import { type Message as OllamaMessage, type ToolCall } from 'ollama';
 import { type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
+import { fenceUntrusted, untrustedBlock } from '@ci/common/prompt/untrustedBlock';
 import { Channel } from '@ci/common/rpc';
 import { MessageService, ThreadService, type Message, type Thread } from '@ci/domains/conversations';
 import { DescriptiveQuestionService } from '@ci/domains/daily-metrics';
@@ -460,6 +461,15 @@ Communication style:
     }
   }
 
+  /**
+   * The Plan / Forecast / Brief / Stats snapshots, as ONE untrusted region.
+   *
+   * Every title, headline and fact in here is derived from imported data or
+   * from a model that read imported data, so the whole set is wrapped once
+   * rather than four times — the guard sentence competes for the same attention
+   * budget as the real system prompt above it, and repeating it four times buys
+   * nothing.
+   */
   private async buildLiveAppBlocks(context: RequestContext): Promise<string> {
     const serviceContext = toServiceContext(context);
     const [plan, forecast, brief, stats] = await Promise.all([
@@ -469,7 +479,7 @@ Communication style:
       this.buildStatsBlock(serviceContext),
     ]);
 
-    return [plan, forecast, brief, stats].filter(Boolean).join('\n\n');
+    return untrustedBlock([plan, forecast, brief, stats].filter(Boolean).join('\n\n'));
   }
 
   private async buildPlanBlock(context: ReturnType<typeof toServiceContext>): Promise<string> {
@@ -493,7 +503,7 @@ Communication style:
         const dueAt = task.dueAt instanceof Date ? task.dueAt.toISOString().slice(0, 10) : task.dueAt;
         const when = dueAt ? ` due ${dueAt}` : task.scheduledFor ? ` scheduled ${task.scheduledFor}` : '';
 
-        lines.push(`- [${task.status}] ${task.title}${when}`);
+        lines.push(`- [${task.status}] ${fenceUntrusted(task.title)}${when}`);
       }
 
       return lines.join('\n');
@@ -556,7 +566,7 @@ Communication style:
         if (actions.length > 0) {
           lines.push('Actions:');
           for (const action of actions) {
-            lines.push(`- ${action.title || action.text || action.id}`);
+            lines.push(`- ${fenceUntrusted(action.title || action.text || action.id)}`);
           }
         }
       }
@@ -569,7 +579,7 @@ Communication style:
         lines.push('Summaries:');
         for (const summary of summaries) {
           const headline = summary.title?.trim() || summary.summaryText?.trim() || '(untitled)';
-          lines.push(`- [${summary.periodType}] ${headline.slice(0, 160)}`);
+          lines.push(`- [${summary.periodType}] ${fenceUntrusted(headline.slice(0, 160))}`);
         }
       }
 
@@ -599,7 +609,7 @@ Communication style:
         return '';
       }
 
-      return ['## Stats', ...facts.map((fact) => `- ${fact.text}`)].join('\n');
+      return ['## Stats', ...facts.map((fact) => `- ${fenceUntrusted(fact.text)}`)].join('\n');
     } catch (error) {
       this.logger.warn('Failed to hydrate Stats snapshot for chat', {
         userId: context.userId,
