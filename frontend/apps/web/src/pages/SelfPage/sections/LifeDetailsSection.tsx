@@ -315,7 +315,10 @@ export function LifeDetailsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+  // Per-row lock, not a single shared value: a shared lock meant row B's
+  // autosave silently no-op'd whenever row A's POST was still in flight,
+  // dropping B's answer with no error and no retry.
+  const [submittingKeys, setSubmittingKeys] = useState<Set<string>>(new Set());
   // One row edits at a time, so the in-flight text and its error are single
   // values rather than another map keyed by question.
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -367,11 +370,11 @@ export function LifeDetailsSection() {
   // per appliance, which is the whole reason the curated list is keyed by slug.
   const handleAnswer = async (questionKey: string, questionId: string, text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || submittingKey) {
+    if (!trimmed || submittingKeys.has(questionKey)) {
       return;
     }
 
-    setSubmittingKey(questionKey);
+    setSubmittingKeys((prev) => new Set(prev).add(questionKey));
     try {
       await fetchJson('/api/answers', {
         method: 'POST',
@@ -383,7 +386,12 @@ export function LifeDetailsSection() {
     } catch {
       // Draft (if any) survives on failure so the user doesn't retype it.
     } finally {
-      setSubmittingKey(null);
+      setSubmittingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(questionKey);
+
+        return next;
+      });
     }
   };
 
@@ -414,7 +422,7 @@ export function LifeDetailsSection() {
    */
   const handleUpdate = async (questionKey: string, row: CuratedCatalogueRow, text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || submittingKey) {
+    if (!trimmed || submittingKeys.has(questionKey)) {
       return;
     }
 
@@ -434,7 +442,7 @@ export function LifeDetailsSection() {
       return;
     }
 
-    setSubmittingKey(questionKey);
+    setSubmittingKeys((prev) => new Set(prev).add(questionKey));
     setEditError(null);
     try {
       await fetchJson(`/api/answers/${answerId}`, {
@@ -449,7 +457,12 @@ export function LifeDetailsSection() {
       // Stay in the editor with the typed text intact so it can be retried.
       setEditError("Couldn't save that. Try again.");
     } finally {
-      setSubmittingKey(null);
+      setSubmittingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(questionKey);
+
+        return next;
+      });
     }
   };
 
@@ -495,7 +508,7 @@ export function LifeDetailsSection() {
                 >
                   {askable.map(({ question, row }) => {
                     const answer = row.answer;
-                    const busy = submittingKey === question.key;
+                    const busy = submittingKeys.has(question.key);
 
                     return (
                       <Row key={question.key} question={question}>
