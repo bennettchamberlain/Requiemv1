@@ -35,10 +35,17 @@ export function ForecastPage() {
         ) : error && !forecast ? (
           <ErrorPage error={error} />
         ) : !forecast ? (
+          // Reached only once hbpeEnabled is true and no error was thrown — the
+          // resolver's try/catch (ForecastResolver.ts) swallows a real HBPE
+          // failure and returns null either way. A genuinely untrained model
+          // does not land here: it returns real data with
+          // systemStatus: 'COLD_START' instead of a null forecast. So this is
+          // always a failed/unreachable call, never "not started yet" — the
+          // copy has to say that rather than point at Add → Predict.
           <div className="relative min-h-60 flex-1">
             <EmptyState
               icon={<CloudSun size={48} />}
-              message="No forecast yet. Use Add → Predict to start the model."
+              message="Couldn't reach the forecasting service just now. Try again shortly."
             />
           </div>
         ) : (

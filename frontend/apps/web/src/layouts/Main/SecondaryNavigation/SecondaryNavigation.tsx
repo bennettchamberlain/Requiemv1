@@ -12,11 +12,13 @@ import { HELP_LINKS, useVisibleRailDestinations } from '../railDestinations';
 import { RailEdgeToggle } from '../RailEdgeToggle';
 
 import { CaptureRailButton } from './CaptureRailButton';
-import { ChatSubmenu } from './ChatSubmenu';
+import { DestinationWithChildrenSubmenu } from './DestinationWithChildrenSubmenu';
 import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
 import { SelfSubmenu } from './SelfSubmenu';
+import { SettingsRailButton } from './SettingsRailButton';
 import { useFeedBadgeCount } from './useFeedBadgeCount';
+import { usePlanBadgeCount } from './usePlanBadgeCount';
 
 interface ExternalNavLinkProps {
   href: string;
@@ -143,6 +145,7 @@ function OverlayRail({
   return (
     <nav
       id="power-rail"
+      aria-label="Main navigation drawer"
       data-state={expanded ? 'expanded' : 'collapsed'}
       aria-hidden={!expanded}
       onClick={(event) => {
@@ -161,11 +164,11 @@ function OverlayRail({
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
           {destinationsList}
         </div>
-        {showSelf ? (
-          <div className="mt-auto flex flex-col gap-1 pb-2">
-            <SelfSubmenu />
-          </div>
-        ) : null}
+        <div className="mt-auto flex flex-col gap-1 pb-2">
+          <HelpSubmenu />
+          {showSelf ? <SelfSubmenu /> : null}
+          <SettingsRailButton />
+        </div>
       </Tooltip.Provider>
     </nav>
   );
@@ -175,6 +178,7 @@ export function SecondaryNavigation() {
   const { expanded, pinned, setHovered, variant, closeOverlay } = usePowerRail();
   const destinations = useVisibleRailDestinations();
   const feedBadgeCount = useFeedBadgeCount();
+  const planBadgeCount = usePlanBadgeCount();
   const [{ isOpen: captureOpen }, { close: closeCapture }] = useCaptureModal();
   const overlay = variant === 'overlay';
   const showSelf = destinations.some((destination) => destination.id === 'self');
@@ -191,12 +195,13 @@ export function SecondaryNavigation() {
           return <MemorySubmenu key={destination.id} />;
         }
 
-        // Chat is a group: Asks rides under it, and so do the recent threads.
-        // When `chat.page` is off the group never reaches here — Asks is
-        // promoted to a plain row by `visibleRailDestinations` and falls
-        // through to the NavLink below.
-        if (destination.id === 'chat') {
-          return <ChatSubmenu key={destination.id} destination={destination} />;
+        // Any destination carrying children (currently Saved Searches, with
+        // Asks beside it) gets the group treatment: a chevron reveals them.
+        // A gated group whose flag is off never reaches here — its children
+        // are promoted to plain top-level rows by `visibleRailDestinations`
+        // and fall through to the NavLink below.
+        if (destination.children && destination.children.length > 0) {
+          return <DestinationWithChildrenSubmenu key={destination.id} destination={destination} />;
         }
 
         const Icon = destination.icon;
@@ -207,7 +212,9 @@ export function SecondaryNavigation() {
             to={destination.to}
             label={destination.label}
             end={destination.end}
-            badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
+            badgeCount={
+              destination.badge === 'feed' ? feedBadgeCount : destination.badge === 'plan' ? planBadgeCount : 0
+            }
           >
             <Icon className="h-6 w-6 shrink-0" strokeWidth={1.25} />
           </NavLink>
@@ -258,6 +265,7 @@ export function SecondaryNavigation() {
       >
         <nav
           id="power-rail"
+          aria-label="Main navigation"
           data-state={expanded ? 'expanded' : 'collapsed'}
           className={cn(
             'absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden p-2 transition-[width] duration-200',
@@ -276,6 +284,7 @@ export function SecondaryNavigation() {
             <div className="mt-auto flex flex-col gap-1 pb-2">
               <HelpSubmenu />
               {showSelf ? <SelfSubmenu /> : null}
+              <SettingsRailButton />
             </div>
           </Tooltip.Provider>
         </nav>

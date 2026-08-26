@@ -38,6 +38,7 @@ import {
   useStatusBarScrollToTop,
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
+import { CHAT_BASE, chatThreadPath } from '@/pages/ChatPage/chatPaths';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
@@ -68,7 +69,6 @@ const PersonPage = lazy(() => import('@/pages/PersonPage'));
 const PlacePage = lazy(() => import('@/pages/PlacePage'));
 const PlacesPage = lazy(() => import('@/pages/PlacesPage'));
 const ProviderPage = lazy(() => import('@/pages/ProviderPage'));
-const SearchPage = lazy(() => import('@/pages/SearchPage'));
 const ContentLibraryPage = lazy(() => import('@/pages/ContentLibraryPage'));
 const SavedSearchesPage = lazy(() => import('@/pages/SavedSearchesPage'));
 const ServerSettingsPage = lazy(() => import('@/pages/ServerSettingsPage'));
@@ -105,6 +105,12 @@ function RedirectFeedSummaryToBrief() {
   const { id } = useParams<{ id: string }>();
 
   return <Navigate to={`/brief/summaries/${id ?? ''}`} replace />;
+}
+
+function RedirectToChat() {
+  const { id } = useParams<{ id?: string }>();
+
+  return <Navigate to={id ? chatThreadPath(id) : CHAT_BASE} replace />;
 }
 
 function RedirectProfileToSelfSettings() {
@@ -284,14 +290,14 @@ function AppRoutes() {
           <Route path="/feed/summaries/:id" element={<RedirectFeedSummaryToBrief />} />
           <Route path="/feed/:id?" element={<RedirectToCalendar />} />
 
-          <Route
-            path="/search"
-            element={
-              <ProtectedRoute>
-                <SearchPage />
-              </ProtectedRoute>
-            }
-          />
+          {/* Nothing in the shell ever linked here — GlobalSearchBox is
+              embedded directly in both the desktop header and MobileTopBar
+              and commits straight to /memory/events?search=, and desktop
+              search itself is List View in Memory now (the old
+              DesktopSearchRedirect this replaced already said so). Kept as a
+              redirect, not deleted outright, in case an old bookmark or
+              external link still points at /search. */}
+          <Route path="/search" element={<Navigate to="/memory/events" replace />} />
 
           {/* `/memory` is the unfiltered explorer (all kinds). `/memory/events`
               is the same page with the Events submenu's type filter. */}
@@ -449,15 +455,23 @@ function AppRoutes() {
 
           <Route path="/memory/knowledge" element={<Navigate to="/memory/events?view=graph" replace />} />
 
+          {/* Chat moved under Memory — it's a bounded view over your own
+              history the same way Events/People/Places are, not a peer
+              destination. The old /chat/:id? address is kept as a redirect,
+              declared here alongside the route it now points at, so a
+              bookmark or an external deep-link still lands. */}
           {isFeatureEnabled('chat.page') && (
-            <Route
-              path="/chat/:id?"
-              element={
-                <ProtectedRoute>
-                  <ChatPage />
-                </ProtectedRoute>
-              }
-            />
+            <>
+              <Route
+                path="/memory/chat/:id?"
+                element={
+                  <ProtectedRoute>
+                    <ChatPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/chat/:id?" element={<RedirectToChat />} />
+            </>
           )}
 
           {/* Admin / System */}
@@ -558,8 +572,15 @@ function AppRoutes() {
             />
           )}
 
+          {/* Notes used to be write-only from the shell — reachable to create
+              (Add ▸ Note) or open from search, but never browsed. Folded into
+              the Memory hub the same way Things/Receipts/Content were: the
+              list moves under /memory/*, the old address stays as a redirect
+              for whatever already links here. The detail/edit page keeps its
+              own top-level path, same as /people/:id and /receipts/:id. */}
+          <Route path="/notes" element={<Navigate to="/memory/notes" replace />} />
           <Route
-            path="/notes"
+            path="/memory/notes"
             element={
               <ProtectedRoute>
                 <NotesPage />

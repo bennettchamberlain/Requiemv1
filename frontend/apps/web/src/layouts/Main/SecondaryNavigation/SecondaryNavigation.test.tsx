@@ -25,6 +25,7 @@ vi.mock('@/common/feature', async () => {
 });
 
 vi.mock('./useFeedBadgeCount', () => ({ useFeedBadgeCount: () => 0 }));
+vi.mock('./usePlanBadgeCount', () => ({ usePlanBadgeCount: () => 0 }));
 
 const recentThreads = vi.hoisted(() => ({ current: [] as { id: string; name: string | null }[] }));
 
@@ -143,19 +144,22 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Brief' })).not.toBeInTheDocument();
   });
 
-  // One row that opens, not five flat ones. A wall of settings sitting level
-  // with the places you actually work is the thing this replaced.
-  it('keeps the account to one user tile that opens', () => {
+  // One row that opens for theme and log out — not five flat ones sitting
+  // level with the places you actually work. Settings itself is no longer
+  // one of the things behind that chevron: it's its own bottom-anchored rail
+  // row (SettingsRailButton), reachable without opening Self at all — the
+  // whole point being it used to have no icon in the collapsed rail at all.
+  it('keeps the account to one user tile that opens for theme and log out', () => {
     renderRail('/feed', { expanded: true });
 
     const account = screen.getByRole('link', { name: 'Test User' });
 
     expect(account).toHaveAttribute('href', '/self');
-    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/appearance');
+    expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
 
-    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/appearance');
     expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
   });
 
@@ -223,6 +227,14 @@ describe('SecondaryNavigation', () => {
     renderRail(route);
 
     expect(screen.getByRole('link', { name: 'Sources' })).toHaveClass('border-l-primary');
+  });
+
+  // Distinct from the mobile drawer's "Main navigation drawer" label (see
+  // MobileNavigation.test.tsx) so assistive tech can tell the two apart.
+  it('labels the desktop rail nav distinctly from the mobile drawer nav', () => {
+    renderRail();
+
+    expect(screen.getByRole('navigation')).toHaveAttribute('aria-label', 'Main navigation');
   });
 
   it('stays icon-only until the rail is opened', () => {
@@ -351,46 +363,67 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument();
   });
 
-  // Chat and Asks are one conversation surface. Two peer rows read as two
-  // unrelated places, which is what the compacting was meant to fix.
-  it('folds Asks into the Chat group instead of a peer row', () => {
+  // Share (a link I mint) and Ask (a request they mint) are both a bounded
+  // search run as me. Two peer rows read as two unrelated places, which is
+  // what the grouping was meant to fix.
+  it('folds Asks into the Saved Searches group instead of a peer row', () => {
     renderRail('/plan', { expanded: true });
 
     expect(screen.queryByRole('link', { name: 'Asks' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Expand Chat sections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Saved Searches sections' }));
 
-    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/chat');
+    expect(screen.getByRole('link', { name: 'Saved Searches' })).toHaveAttribute('href', '/saved-searches');
     expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('href', '/asks');
   });
 
-  it('keeps Chat a single icon in the collapsed rail, with no separate Asks row', () => {
+  it('keeps Saved Searches a single icon in the collapsed rail, with no separate Asks row', () => {
     renderRail();
 
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
-    expect(hrefs).toContain('/chat');
+    expect(hrefs).toContain('/saved-searches');
     expect(hrefs).not.toContain('/asks');
   });
 
+  it('opens the Saved Searches group on an Asks route', () => {
+    renderRail('/asks', { expanded: true });
+
+    expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  // Chat lives inside Memory now (/memory/chat) — a bounded view over your
+  // own history, the same as Events/People/Places, not a peer of Memory.
+  it('lists Chat as a Memory hub section, not a peer rail row', () => {
+    renderRail('/plan', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: 'Chat' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Memory sections' }));
+
+    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/memory/chat');
+  });
+
   // The point of the submenu: pick a conversation from the menu, not from a
-  // second chat UI nested in it.
-  it('lists recent threads as links under Chat', () => {
+  // second chat UI nested in it. Threads render under Chat's own row, inside
+  // Memory's list — the phone drawer is the only way to change conversation
+  // there, since ChatSidebar portals to a slot the mobile layout never renders.
+  it('lists recent threads as links under Chat, inside the Memory group', () => {
     recentThreads.current = [
       { id: 't1', name: 'Dinner plans' },
       { id: 't2', name: null },
     ];
 
-    renderRail('/chat', { expanded: true });
+    renderRail('/memory/chat', { expanded: true });
 
-    expect(screen.getByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/chat/t1');
-    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/chat/t2');
+    expect(screen.getByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/memory/chat/t1');
+    expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/memory/chat/t2');
   });
 
-  it('opens the Chat group on a thread deep-link and marks the thread current', () => {
+  it('opens the Memory group on a thread deep-link and marks the thread current', () => {
     recentThreads.current = [{ id: 't1', name: 'Dinner plans' }];
 
-    renderRail('/chat/t1', { expanded: true });
+    renderRail('/memory/chat/t1', { expanded: true });
 
     const thread = screen.getByRole('link', { name: 'Dinner plans' });
 
@@ -398,13 +431,7 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Chat' })).not.toHaveAttribute('aria-current');
   });
 
-  it('opens the Chat group on an Asks route', () => {
-    renderRail('/asks', { expanded: true });
-
-    expect(screen.getByRole('link', { name: 'Asks' })).toHaveAttribute('aria-current', 'page');
-  });
-
-  it('does not fetch threads while the Chat group is closed', () => {
+  it('does not fetch threads while the Memory group is closed', () => {
     recentThreads.current = [{ id: 't1', name: 'Dinner plans' }];
 
     renderRail('/plan', { expanded: true });
@@ -412,22 +439,30 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Dinner plans' })).not.toBeInTheDocument();
   });
 
-  it('lists Capture first, then the spine, with Self as the user tile at the foot', () => {
+  // Capture is mobile-only (the overlay drawer) — desktop already has it in
+  // the header Add menu, so a second, always-visible entry point in the
+  // pinned/hover rail would be one too many.
+  it('does not list Capture on the desktop rail', () => {
     renderRail();
 
-    const capture = screen.getByRole('button', { name: 'Capture' });
-    const plan = screen.getByRole('link', { name: 'Plan' });
+    expect(screen.queryByRole('button', { name: 'Capture' })).not.toBeInTheDocument();
+  });
+
+  it('lists the spine with Forecast, Self, and Settings at the foot', () => {
+    renderRail();
+
     const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
 
-    expect(capture.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(hrefs.indexOf('/plan')).toBeLessThan(hrefs.indexOf('/calendar'));
-    expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/forecast'));
-    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/memory'));
+    expect(hrefs.indexOf('/calendar')).toBeLessThan(hrefs.indexOf('/memory'));
     expect(hrefs.indexOf('/memory')).toBeLessThan(hrefs.indexOf('/saved-searches'));
-    expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/chat'));
-    expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
+    expect(hrefs.indexOf('/saved-searches')).toBeLessThan(hrefs.indexOf('/sources'));
     expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));
-    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/self'));
+    // Forecast sits below Jobs, off the primary six, while its flag ships false.
+    expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/forecast'));
+    expect(hrefs.indexOf('/forecast')).toBeLessThan(hrefs.indexOf('/self'));
+    // Settings is the last row of all — below Self, not nested inside it.
+    expect(hrefs.indexOf('/self')).toBeLessThan(hrefs.indexOf('/settings/appearance'));
   });
 });
 
@@ -455,6 +490,31 @@ describe('PowerRailToggle', () => {
     expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByText('Main')).not.toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
+  });
+
+  // H4: hovering the rail open is a passing intention, not a decision — it
+  // must not tell assistive tech the menu was deliberately expanded. Only a
+  // pin (persisted, survives the pointer leaving) should.
+  it('reports aria-expanded from pinned, not from a hover-only expansion', () => {
+    const { container } = renderToggleAndRail();
+
+    const toggle = container.querySelector('button[aria-controls="power-rail"]');
+    const lane = container.querySelector('div.relative');
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.mouseEnter(lane as Element);
+
+    // Hover really did open the rail...
+    expect(screen.getByRole('navigation')).toHaveAttribute('data-state', 'expanded');
+    // ...but the toggle must not claim it as "expanded".
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.mouseLeave(lane as Element);
+
+    // A deliberate pin is what flips it.
+    fireEvent.click(toggle as Element);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 });
 

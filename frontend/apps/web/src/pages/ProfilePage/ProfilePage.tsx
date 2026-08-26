@@ -26,7 +26,19 @@ export function ProfilePage() {
   }
 
   if (!isMobile) {
-    return <Navigate to="/settings/appearance" replace />;
+    // A synthesized backgroundLocation, not the real referrer — this route is
+    // reached directly (a bookmark, a redirect), with no prior page to fall
+    // back to. Without it, SettingsPage's own `location.state.backgroundLocation`
+    // is undefined too, so it portals over a blank `<main>` and Escape/Close
+    // falls back to `appHomePath()` instead of back to Self, where this
+    // destination conceptually lives.
+    return (
+      <Navigate
+        to="/settings/appearance"
+        state={{ backgroundLocation: { pathname: '/self', search: '', hash: '' } }}
+        replace
+      />
+    );
   }
 
   return (

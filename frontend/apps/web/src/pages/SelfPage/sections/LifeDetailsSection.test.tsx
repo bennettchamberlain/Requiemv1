@@ -201,6 +201,55 @@ describe('LifeDetailsSection', () => {
     );
   });
 
+  it('autosaves a second row even while an earlier row is still mid-submit, instead of silently dropping it', async () => {
+    // Regression test for a single shared `submittingKey` lock across every
+    // row: if row A's POST was still in flight when row B's own debounce
+    // fired, `handleAnswer`'s guard saw the lock still held by A and
+    // silently returned — B's text stayed visible in its input but was never
+    // sent, with no error and no retry. Row A's POST is kept pending forever
+    // here (never resolved) so the whole test runs with the lock still held.
+    const pendingRowAPost = new Promise<unknown>(() => {});
+    let postCount = 0;
+
+    fetchJson.mockImplementation((_url: string, init?: FetchCallInit) => {
+      if (init?.method === 'POST') {
+        postCount += 1;
+
+        return postCount === 1 ? pendingRowAPost : Promise.resolve({});
+      }
+
+      return Promise.resolve(fullCataloguePage());
+    });
+
+    render(<LifeDetailsSection />);
+
+    await screen.findByText('What is your blood type?');
+    await screen.findByText('Which hobby have you kept the longest, and for how many years?');
+
+    // Row A: a compact Input. Its debounced autosave fires and its POST is
+    // left pending (never resolves) for the rest of the test.
+    fireEvent.change(within(rowFor(BLOOD_TYPE_KEY)).getByPlaceholderText('Answer…'), {
+      target: { value: 'O negative' },
+    });
+
+    await waitFor(() => expect(callsWithMethod('POST')).toHaveLength(1), { timeout: 3000 });
+
+    // Row B: a different row, typed into and debounced while row A's POST is
+    // still unresolved — the exact overlap the shared lock used to block.
+    fireEvent.change(within(rowFor(HOBBY_KEY)).getByPlaceholderText('Your answer…'), {
+      target: { value: 'Photography, going on 8 years now.' },
+    });
+
+    // Before the fix this second call never arrives and the test times out.
+    await waitFor(() => expect(callsWithMethod('POST')).toHaveLength(2), { timeout: 3000 });
+
+    const [, rowBPostCall] = callsWithMethod('POST');
+    expect(JSON.parse(rowBPostCall![1]!.body!)).toEqual({
+      text: 'Photography, going on 8 years now.',
+      question: { id: serverIdFor(HOBBY_KEY) },
+    });
+  });
+
   it('renders a yes_no question as two buttons, not a text field, and submits the clicked label', async () => {
     fetchJson.mockResolvedValue(fullCataloguePage());
 

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useRescheduleEvent } from '@/api/useRescheduleEvent';
 import { type RhythmDay, type ScheduleEvent, useScheduleService } from '@/api/useScheduleService';
+import { useFeatures } from '@/common/feature';
 import { VerticalCalendar } from '@/components/HorizonGrid';
 import { TodayNowNext, WeekDayChips } from '@/components/HorizonGrid/TodayNowNext';
 import { PageContent } from '@/components/layout';
@@ -55,10 +56,24 @@ function formatRange(start: Date, end: Date): string {
  * seven days from today. Saying "updated <date>" over a lane that has nothing
  * to draw reads as "the model has learned nothing about you" — a different and
  * much worse statement than "this view cannot fetch that week".
+ *
+ * Three-way branch: `hbpeEnabled` is the sole "is it off" signal (the local
+ * flags fetch, same source of truth as the backend FeatureService) — a falsy
+ * `generatedAt` no longer implies "off" by itself. With the flag off, the
+ * layer really is off. With the flag on but `generatedAt` still falsy, the
+ * resolver's try/catch (ForecastResolver.ts) swallowed a real HBPE failure —
+ * a genuinely untrained model returns real data with
+ * systemStatus: 'COLD_START' instead, so a null `weekForecast` here can only
+ * mean the call failed, never "not started yet". Only once the flag is on and
+ * data resolved does `coversWindow` / the success copy apply.
  */
-function rhythmFooter(generatedAt: string | null, coversWindow: boolean): string {
-  if (!generatedAt) {
+function rhythmFooter(generatedAt: string | null, coversWindow: boolean, hbpeEnabled: boolean): string {
+  if (!hbpeEnabled) {
     return 'HBPE rhythm forecast is off — showing committed time only.';
+  }
+
+  if (!generatedAt) {
+    return "Couldn't reach the rhythm forecast just now — showing committed time only.";
   }
 
   if (!coversWindow) {
@@ -174,6 +189,8 @@ export interface SchedulePageProps {
 export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const { t } = useTranslation();
   const { isMobile } = useDeviceLayout();
+  const { isFeatureEnabled } = useFeatures();
+  const hbpeEnabled = isFeatureEnabled('hbpe');
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   /** Phone only: Possibilities lives behind a drawer rather than under the day. */
@@ -446,7 +463,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                 onSelectDay={setSelectedDay}
                 onDropCandidate={handleDrop}
                 onMoveEvent={handleMove}
-                footer={rhythmFooter(generatedAt, rhythmCoversWindow)}
+                footer={rhythmFooter(generatedAt, rhythmCoversWindow, hbpeEnabled)}
               />
 
               {/* `=== false` rather than a plain ternary: `isMobile` is

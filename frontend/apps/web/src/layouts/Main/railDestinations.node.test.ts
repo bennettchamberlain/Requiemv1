@@ -8,20 +8,20 @@ import {
 } from './railDestinations';
 
 describe('visibleRailDestinations', () => {
-  it('keeps ungated rows and drops gated ones whose flag is off', () => {
-    const visible = visibleRailDestinations((flag) => flag !== 'chat.page');
+  it('keeps ungated rows in order, with Asks folded under Saved Searches', () => {
+    const visible = visibleRailDestinations(() => true);
 
     expect(visible.map((destination) => destination.id)).toEqual([
       'plan',
       'calendar',
-      'forecast',
       'memory',
       'saved-searches',
-      'asks',
       'sources',
       'jobs',
+      'forecast',
       'self',
     ]);
+    expect(visible.find((d) => d.id === 'saved-searches')?.children?.map((c) => c.id)).toEqual(['asks']);
   });
 
   // ═══ THE ACCOUNT TILE IS NOT A STATISTICS PAGE ═══
@@ -44,41 +44,27 @@ describe('visibleRailDestinations', () => {
     expect(visible.map((destination) => destination.id)).not.toContain('self');
   });
 
-  // Two peer rows for "talk to it" and "what it asked back" read as two
-  // unrelated places. One group, one row.
-  it('carries Asks inside the Chat group rather than as a peer row', () => {
+  // Share (a link I mint) and Ask (a request they mint) are both a bounded
+  // search run as me. Two peer rows read as two unrelated places. One group,
+  // one row — Chat itself moved under Memory, not into this group.
+  it('carries Asks inside the Saved Searches group rather than as a peer row', () => {
     const visible = visibleRailDestinations(() => true);
     const ids = visible.map((destination) => destination.id);
 
-    expect(ids).toContain('chat');
+    expect(ids).not.toContain('chat');
     expect(ids).not.toContain('asks');
-    expect(visible.find((d) => d.id === 'chat')?.children?.map((c) => c.id)).toEqual(['asks']);
+    expect(visible.find((d) => d.id === 'saved-searches')?.children?.map((c) => c.id)).toEqual(['asks']);
   });
 
-  // Grouping is a layout decision; it must not become a second gate. /asks is
-  // still a registered route when `chat.page` is off, so the row has to survive
-  // its group head.
-  it('promotes Asks back to a top-level row when the Chat group is gated off', () => {
-    const visible = visibleRailDestinations((flag) => flag !== 'chat.page');
-    const asks = visible.find((destination) => destination.id === 'asks');
-
-    expect(asks?.to).toBe('/asks');
-    expect(visible.find((destination) => destination.id === 'chat')).toBeUndefined();
-  });
-
-  it('drops Asks from the group when `ask` is off but keeps Chat', () => {
+  // Grouping is a layout decision; it must not become a second gate. Asks
+  // rides its own flag independently of its group head (which, unlike the
+  // old Chat group, is itself ungated and can never go dark).
+  it('drops Asks from the group when `ask` is off but keeps Saved Searches', () => {
     const visible = visibleRailDestinations((flag) => flag !== 'ask');
 
-    expect(visible.map((destination) => destination.id)).toContain('chat');
-    expect(visible.find((d) => d.id === 'chat')?.children).toEqual([]);
+    expect(visible.map((destination) => destination.id)).toContain('saved-searches');
+    expect(visible.find((d) => d.id === 'saved-searches')?.children).toEqual([]);
     expect(allRailDestinations().map((d) => d.id)).toContain('asks');
-  });
-
-  it('marks a thread deep-link as Chat so the group stays lit', () => {
-    const chat = visibleRailDestinations(() => true).find((destination) => destination.id === 'chat');
-
-    expect(chat?.end).toBe(false);
-    expect(isRailDestinationActive(chat!, '/chat/abc123')).toBe(true);
   });
 
   it('gates Forecast on `forecast.page` — the same flag the /forecast route checks', () => {
@@ -114,6 +100,13 @@ describe('isRailDestinationActive', () => {
     expect(isRailDestinationActive(byId.memory, '/memory/people')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/people/abc')).toBe(true);
     expect(isRailDestinationActive(byId.memory, '/calendar')).toBe(false);
+  });
+
+  // Chat moved under Memory (/memory/chat) — a thread deep-link has to keep
+  // the Memory row lit the same way a person detail page already does.
+  it('treats a Chat thread deep-link as Memory', () => {
+    expect(isRailDestinationActive(byId.memory, '/memory/chat')).toBe(true);
+    expect(isRailDestinationActive(byId.memory, '/memory/chat/abc123')).toBe(true);
   });
 
   it('treats Calendar card deep-links as Calendar', () => {

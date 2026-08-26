@@ -9,6 +9,7 @@ import { EntityServiceProvider } from '../MemoryPage/useEntityService';
 
 import { parseBbox } from './bbox';
 import { explorerSearchTypeFilters } from './Components/ExplorerToolbar/filterParams';
+import { useSavedSearchResolution } from './useSavedSearchResolution';
 
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
 const MobilePage = lazy(() => import('./MobileMemoryPage'));
@@ -54,6 +55,10 @@ export function MemoryPage() {
   usePageTitle('Memory - Companion Intelligence');
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
+
+  // Resolves `?saved_search=` into the params below, above the Desktop/Mobile
+  // split, so both read the same resolved filters (see useSavedSearchResolution).
+  useSavedSearchResolution();
 
   // Before the provider mounts, so `/memory/events` never fires the unfiltered
   // everything-query. `/memory` is that unfiltered browse on purpose.

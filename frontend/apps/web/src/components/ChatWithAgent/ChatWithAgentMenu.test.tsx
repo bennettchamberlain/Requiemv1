@@ -49,7 +49,7 @@ describe('ChatWithAgentMenu', () => {
     renderWithProviders(<ChatWithAgentMenu context={{ title: 'Picnic', body: 'Bring snacks' }} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Chat about “Picnic”' }));
-    expect(h.navigate).toHaveBeenCalledWith('/chat');
+    expect(h.navigate).toHaveBeenCalledWith('/memory/chat');
   });
 
   it('offers a connected Hermes even when it is not marked running', async () => {

@@ -5,6 +5,7 @@ import {
   graphNodeChatContext,
   namedChatContext,
   openAgentHarness,
+  openInAppChat,
   stashAgentChatContext,
   readAgentChatContext,
   clearAgentChatContext,
@@ -90,6 +91,20 @@ describe('openAgentHarness', () => {
     expect(open.mock.calls[0]?.[1]).toBe('_blank');
 
     open.mockRestore();
+  });
+});
+
+describe('openInAppChat', () => {
+  // Chat lives under Memory now (/memory/chat) — this used to hardcode /chat.
+  it('stashes the context and navigates to the Memory chat route', () => {
+    const navigate = vi.fn();
+
+    openInAppChat(navigate, { title: 'Picnic', body: 'Bring snacks' });
+
+    expect(readAgentChatContext()).toEqual({ title: 'Picnic', body: 'Bring snacks' });
+    expect(navigate).toHaveBeenCalledWith('/memory/chat');
+
+    clearAgentChatContext();
   });
 });
 

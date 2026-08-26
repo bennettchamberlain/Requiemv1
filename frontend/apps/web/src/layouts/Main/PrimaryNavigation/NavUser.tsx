@@ -1,9 +1,7 @@
 import { type ReactNode } from 'react';
 
-import { useDeviceLayout } from '@ci/common';
 import { Collapsible, Popover, cn } from '@ci/shadcn';
-import { ChevronRight, LogOut, Palette, Settings2 } from '@ci/shadcn/icons';
-import { Link, useLocation } from 'react-router-dom';
+import { ChevronRight, LogOut, Palette } from '@ci/shadcn/icons';
 
 import { ColorPicker, useTheme } from '@/components/ThemePicker';
 import { useAuth } from '@/hooks';
@@ -17,25 +15,17 @@ const THEME_MODES = [
 ] as const;
 
 /**
- * Settings, theme, and log out — nested under the Self user tile.
+ * Theme and log out — nested under the Self user tile.
  *
- * Desktop Settings stays an overlay over the page you were on. The phone
- * walks to `/self/settings`, the same hub `/profile` used to be.
+ * Settings used to have its own row here too; it's now a standalone
+ * bottom-anchored rail row (SettingsRailButton) instead of a second level of
+ * nesting under Self's chevron, so it isn't repeated here.
  */
 export function NavUserMenu() {
   const [, { logout }] = useAuth();
-  const location = useLocation();
-  const { isMobile } = useDeviceLayout();
 
   return (
     <div className="flex flex-col gap-1 pt-1">
-      <SubRow
-        icon={<Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
-        label="Settings"
-        to={isMobile ? '/self/settings' : '/settings/appearance'}
-        state={isMobile ? undefined : { backgroundLocation: location }}
-      />
-
       <ThemeSubmenu />
 
       <SubRow
@@ -50,34 +40,21 @@ export function NavUserMenu() {
 interface SubRowProps {
   icon: ReactNode;
   label: string;
-  to?: string;
-  state?: unknown;
-  onClick?: () => void;
+  onClick: () => void;
 }
 
 /** A row inside an opened submenu — smaller than a top-level rail entry. */
-function SubRow({ icon, label, to, state, onClick }: SubRowProps) {
-  const className =
-    'flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground';
-
-  const leading = (
-    <span className="grid size-8 shrink-0 place-items-center" aria-hidden>
-      {icon}
-    </span>
-  );
-
-  if (to != null) {
-    return (
-      <Link to={to} state={state} aria-label={label} className={className}>
-        {leading}
-        <span className="truncate">{label}</span>
-      </Link>
-    );
-  }
-
+function SubRow({ icon, label, onClick }: SubRowProps) {
   return (
-    <button type="button" onClick={onClick} aria-label={label} className={className}>
-      {leading}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-accent hover:text-accent-foreground"
+    >
+      <span className="grid size-8 shrink-0 place-items-center" aria-hidden>
+        {icon}
+      </span>
       <span className="truncate">{label}</span>
     </button>
   );
