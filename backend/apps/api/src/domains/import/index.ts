@@ -139,6 +139,11 @@ import { UnpackStage } from './stages/UnpackStage';
     ImportRunService,
     ImportScratchService,
     StagedSourceService,
+    // Exported so a small, non-archive API sync (BlueBubblesSyncService) can
+    // drive the same push machinery in-process, without the full pg-boss
+    // claim/heartbeat stage graph archive imports use. See
+    // domains/bluebubbles/services/BlueBubblesSyncService.ts.
+    PushStage,
   ],
 })
 export class ImportModule {}
@@ -186,6 +191,26 @@ export { dataSourcesRecognize } from './datasources/registry';
 export type { DirEntry, DataSourceRecognition } from './datasources/registry';
 export { recognizePathWithinRoots } from './datasources/recognizePath';
 export type { PathRecognition, PathRecognitionMatch } from './datasources/recognizePath';
+// Re-exported for the bluebubbles domain, whose DI-friendly sync service/webhook
+// controller drive this framework-free importer's mapping logic and must reach it
+// through this barrel rather than into its internals.
+export {
+  BlueBubblesAPIImporter,
+  downloadAttachments,
+  mapBlueBubblesMessageToGraph,
+} from './datasources/bluebubbles';
+export {
+  BlueBubblesApiClient,
+  BLUEBUBBLES_PAGE_LIMIT,
+  redactUrl,
+} from './datasources/bluebubblesApiClient';
+export type {
+  BlueBubblesClientConfig,
+  BlueBubblesHandle,
+  BlueBubblesChat,
+  BlueBubblesAttachment,
+  BlueBubblesMessage,
+} from './datasources/bluebubblesApiClient';
 
 export { ParseStage } from './stages/ParseStage';
 export { PushStage } from './stages/PushStage';
