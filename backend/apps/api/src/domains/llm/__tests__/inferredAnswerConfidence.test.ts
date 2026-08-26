@@ -10,7 +10,10 @@ import {
   DEFAULT_MIN_ANSWER_CONFIDENCE,
   enforceEvidenceIsAboutThePerson,
   enforceFirstPersonEvidence,
+  enforceForcedChoiceCommitment,
+  enforceYesNoQualifierIsInformative,
   estimateInferredAnswerConfidence,
+  extractForcedChoiceAlternatives,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
   type InferredAnswer,
@@ -1061,5 +1064,275 @@ describe('enforceEvidenceIsAboutThePerson — the subject-swap laundering shape'
         '[I wrote, Jun 25, 2010] "Really.  I am a night owl."',
       ]).aboutThePerson,
     ).toBe(true);
+  });
+});
+
+describe('extractForcedChoiceAlternatives', () => {
+  it('splits a plain "Do you prefer X or Y?" question into its two alternatives', () => {
+    const alternatives = extractForcedChoiceAlternatives('Do you prefer the beach or the mountains?');
+
+    expect(alternatives).not.toBeNull();
+    expect(alternatives?.map((a) => a.tokens)).toEqual([['beach'], ['mountains']]);
+  });
+
+  it('drops the words every alternative shares, keeping only what distinguishes them', () => {
+    // "person" is the topic, not a distinguishing word — this is what stops a
+    // paraphrase that reuses only "person" ("I have cared for many kinds of
+    // pets, and I'm definitely a people person") from being able to pass by
+    // accident later.
+    const alternatives = extractForcedChoiceAlternatives('Are you more of a cat person or a dog person?');
+
+    expect(alternatives?.map((a) => a.tokens)).toEqual([['cat'], ['dog']]);
+  });
+
+  it('reads a three-way comma list, dropping the lead-in rather than counting it as a fourth option', () => {
+    const alternatives = extractForcedChoiceAlternatives(
+      'Do you keep your phone on silent, vibrate, or ringer?',
+    );
+
+    expect(alternatives?.map((a) => a.tokens)).toEqual([['silent'], ['vibrate'], ['ringer']]);
+  });
+
+  it('drops a lead-in that trims to nothing rather than treating it as an alternative', () => {
+    // "What kind of stove do you cook on" ends in the stopword "on" — the
+    // trailing run is empty, so it is dropped instead of surfacing "cook" as a
+    // fourth, nonsensical option alongside gas/electric/induction.
+    const alternatives = extractForcedChoiceAlternatives(
+      'What kind of stove do you cook on, gas, electric, or induction?',
+    );
+
+    expect(alternatives?.map((a) => a.tokens)).toEqual([['gas'], ['electric'], ['induction']]);
+  });
+
+  it.each([
+    // Open-domain multiple_choice: no " or " to split on at all.
+    ['What time of day do you prefer to exercise?'],
+    ['What day of the week is your usual day off?'],
+    // A quantity question that HAPPENS to contain a clean " or " split — the
+    // real trap this session's sampling turned up. "therapy" and "counseling
+    // appointments" are the same category said two ways, and the question
+    // wants a frequency, not a pick between them.
+    ['How often do you have therapy or counseling appointments?'],
+    ['What time do you usually leave for work or school?'],
+  ])('names no alternatives for %s', (text) => {
+    expect(extractForcedChoiceAlternatives(text)).toBeNull();
+  });
+
+  it('refuses a split where the two sides reduce to the same words', () => {
+    expect(extractForcedChoiceAlternatives('Do you prefer tea or tea?')).toBeNull();
+  });
+
+  it('refuses a split that would leave more than four alternatives', () => {
+    expect(
+      extractForcedChoiceAlternatives('Do you prefer red, blue, green, yellow, or purple?'),
+    ).toBeNull();
+  });
+});
+
+describe('enforceForcedChoiceCommitment — the forced-choice commitment gate', () => {
+  function answer(overrides: Partial<InferredAnswer> = {}): InferredAnswer {
+    return { answer: 'It depends.', confidence: 0.9, ...overrides };
+  }
+
+  it('is a no-op for anything other than multiple_choice', () => {
+    const result = enforceForcedChoiceCommitment(
+      answer({ answer: 'It depends on the parties I go to.' }),
+      { text: 'Do you prefer small gatherings or large parties?', questionType: 'yes_no' },
+    );
+
+    expect(result.committed).toBe(true);
+    expect(result.alternatives).toBeNull();
+    expect(result.inferred.confidence).toBe(0.9);
+  });
+
+  it('is a no-op when the question does not cleanly name a closed set', () => {
+    const result = enforceForcedChoiceCommitment(answer({ answer: 'Around 7am, usually.' }), {
+      text: 'What time of day do you prefer to exercise?',
+      questionType: 'multiple_choice',
+    });
+
+    expect(result.committed).toBe(true);
+    expect(result.alternatives).toBeNull();
+  });
+
+  it('discards the measured live failure — a hedge that restates the axis without picking a side', () => {
+    const result = enforceForcedChoiceCommitment(
+      answer({ answer: 'It depends on the parties I go to.', confidence: 0.75, support: 'stated' }),
+      { text: 'Do you prefer small gatherings or large parties?', questionType: 'multiple_choice' },
+    );
+
+    expect(result.committed).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+    expect(result.inferred.confidence).toBeLessThanOrEqual(CONFIDENCE_OFF_QUESTION);
+    expect(answersTheQuestion(result.inferred.support)).toBe(false);
+  });
+
+  it('discards a paraphrase that names the shared topic word but neither distinguishing word', () => {
+    // "the parties I go to" contains "parties" — one of "large parties"'s two
+    // words — without ever saying "large". A single-word check would wave
+    // this through; the gate requires ALL of an alternative's own words.
+    const result = enforceForcedChoiceCommitment(
+      answer({ answer: 'It depends on the parties I go to.' }),
+      { text: 'Do you prefer small gatherings or large parties?', questionType: 'multiple_choice' },
+    );
+
+    expect(result.committed).toBe(false);
+  });
+
+  it('discards an answer that names BOTH alternatives — that is a hedge, not a choice', () => {
+    // Measured live, on the same question: "I am somewhere between cat and
+    // dog, though I currently take care of my neighbor's dogs." contains the
+    // literal words "cat" AND "dog" — an "at least one" check would pass it.
+    const result = enforceForcedChoiceCommitment(
+      answer({
+        answer: "I am somewhere between cat and dog, though I currently take care of my neighbor's dogs.",
+        confidence: 0.8,
+        support: 'stated',
+      }),
+      { text: 'Are you more of a cat person or a dog person?', questionType: 'multiple_choice' },
+    );
+
+    expect(result.committed).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+  });
+
+  it('keeps a real commitment that also hedges', () => {
+    // The case a phrase-ban on hedges would have broken: this answer hedges
+    // AND commits, and the gate must let it through unchanged.
+    const result = enforceForcedChoiceCommitment(
+      answer({ answer: "I'm not sure, but I prefer the beach and nature areas.", confidence: 0.6 }),
+      { text: 'Do you prefer the beach or the mountains?', questionType: 'multiple_choice' },
+    );
+
+    expect(result.committed).toBe(true);
+    expect(result.inferred).toEqual(answer({ answer: "I'm not sure, but I prefer the beach and nature areas.", confidence: 0.6 }));
+  });
+
+  it('keeps a short, direct commitment', () => {
+    const result = enforceForcedChoiceCommitment(answer({ answer: "I'm a night owl.", confidence: 0.9 }), {
+      text: 'Are you a morning person or a night owl?',
+      questionType: 'multiple_choice',
+    });
+
+    expect(result.committed).toBe(true);
+  });
+
+  it('matches across a simple inflection, so a real commitment is not lost to a verb form', () => {
+    // Measured against a fresh answer from the live corpus: "travel" in the
+    // question, "traveling" in the answer.
+    const result = enforceForcedChoiceCommitment(
+      answer({ answer: 'I prefer traveling with a carry-on.', confidence: 0.95 }),
+      { text: 'Do you check a bag or travel carry-on only?', questionType: 'multiple_choice' },
+    );
+
+    expect(result.committed).toBe(true);
+  });
+
+  it('never RAISES a confidence, only caps it', () => {
+    const result = enforceForcedChoiceCommitment(answer({ answer: 'It depends.', confidence: 0.03 }), {
+      text: 'Do you prefer the beach or the mountains?',
+      questionType: 'multiple_choice',
+    });
+
+    expect(result.inferred.confidence).toBe(0.03);
+  });
+});
+
+describe('enforceYesNoQualifierIsInformative — the yes/no qualified-answer gate', () => {
+  function answer(overrides: Partial<InferredAnswer> = {}): InferredAnswer {
+    return { answer: 'It depends.', confidence: 0.65, ...overrides };
+  }
+
+  it('is a no-op for anything other than yes_no', () => {
+    const result = enforceYesNoQualifierIsInformative(
+      answer({ answer: 'It depends on the parties I go to.' }),
+      { text: 'Do you prefer small gatherings or large parties?', questionType: 'multiple_choice' },
+    );
+
+    expect(result.informative).toBe(true);
+    expect(result.inferred.confidence).toBe(0.65);
+  });
+
+  it('is a no-op when the answer never says "it depends" at all', () => {
+    const result = enforceYesNoQualifierIsInformative(answer({ answer: 'Yes, always.' }), {
+      text: 'Do you buy the extended warranty when it is offered?',
+      questionType: 'yes_no',
+    });
+
+    expect(result.informative).toBe(true);
+  });
+
+  it('leaves a GENUINELY conditional answer alone — the false-positive case this gate must not create', () => {
+    // Point 2 of the design: "it depends" is not always the same defect as the
+    // multiple_choice hedge. Price is a real variable "Do you buy the
+    // extended warranty when it is offered?" never named, so naming it is new
+    // information, not a restatement.
+    const result = enforceYesNoQualifierIsInformative(
+      answer({ answer: 'It depends on the price.', confidence: 0.65, support: 'stated' }),
+      { text: 'Do you buy the extended warranty when it is offered?', questionType: 'yes_no' },
+    );
+
+    expect(result.informative).toBe(true);
+    expect(result.inferred.confidence).toBe(0.65);
+    expect(result.inferred.support).toBe('stated');
+  });
+
+  it('discards a circular "it depends" that just restates the question\'s own subject', () => {
+    // The yes_no mirror of the multiple_choice bug: the condition offered is
+    // not a new variable, it is the choice itself said back.
+    const result = enforceYesNoQualifierIsInformative(
+      answer({
+        answer: 'It depends on how I am camping that trip.',
+        confidence: 0.7,
+        support: 'stated',
+      }),
+      { text: 'Do you prefer camping in a tent or staying in a hotel?', questionType: 'yes_no' },
+    );
+
+    expect(result.informative).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+    expect(result.inferred.confidence).toBeLessThanOrEqual(CONFIDENCE_OFF_QUESTION);
+  });
+
+  it('discards a bare "it depends" with no stated condition at all', () => {
+    const result = enforceYesNoQualifierIsInformative(answer({ answer: 'It depends.' }), {
+      text: 'Do you buy the extended warranty when it is offered?',
+      questionType: 'yes_no',
+    });
+
+    expect(result.informative).toBe(false);
+  });
+
+  it('discards a qualifier that names a hollow category instead of an actual condition', () => {
+    const result = enforceYesNoQualifierIsInformative(
+      answer({ answer: 'It really depends on the situation.' }),
+      { text: 'Do you buy the extended warranty when it is offered?', questionType: 'yes_no' },
+    );
+
+    expect(result.informative).toBe(false);
+  });
+
+  it('never RAISES a confidence, only caps it', () => {
+    const result = enforceYesNoQualifierIsInformative(answer({ answer: 'It depends.', confidence: 0.03 }), {
+      text: 'Do you buy the extended warranty when it is offered?',
+      questionType: 'yes_no',
+    });
+
+    expect(result.inferred.confidence).toBe(0.03);
+  });
+});
+
+describe('the prompt contract — forced-choice commitment', () => {
+  it('teaches the rule with an invented subject, never the real catalogue questions it was measured on', () => {
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('FORCED CHOICE IS NOT ANSWERED BY ORBITING THE CHOICE');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('camping in a tent or in a hammock');
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('Do you prefer small gatherings or large parties?');
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('Are you more of a cat person or a dog person?');
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('It depends on the parties I go to');
+  });
+
+  it('distinguishes a genuine condition from a circular one', () => {
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('CONDITION IS ACTUALLY NEW');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('It depends on the weather.');
   });
 });

@@ -18,6 +18,8 @@ import {
   confidenceLabel,
   enforceEvidenceIsAboutThePerson,
   enforceFirstPersonEvidence,
+  enforceForcedChoiceCommitment,
+  enforceYesNoQualifierIsInformative,
   estimateInferredAnswerConfidence,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
@@ -219,7 +221,11 @@ export class AnswerInferenceListener {
    */
   async inferAnswerForQuestion(
     serviceContext: UserServiceContext,
-    question: { id: string; text: string },
+    // `questionType` is optional so a caller that predates the forced-choice
+    // gates (a test, a probe) keeps building a valid argument without it —
+    // both gates below treat a missing type as "not applicable" the same way
+    // they treat a type that is neither 'multiple_choice' nor 'yes_no'.
+    question: { id: string; text: string; questionType?: string | null },
   ): Promise<InferenceOutcome> {
     const ownerId = serviceContext.userId;
     const resolvedAnswers = await this.findRelatedAnswers(serviceContext, question.text, question.id);
@@ -454,6 +460,71 @@ ${evidence.block}`
       });
 
       return { status: 'discarded', reason: 'answer-not-about-this-person', inferred };
+    }
+
+    // ═══ THE FORCED-CHOICE COMMITMENT GATE ═══
+    //
+    // A `multiple_choice` question that names its own two (or few) options is
+    // not answered by a sentence that only orbits the topic. Measured live:
+    // "Do you prefer small gatherings or large parties?" answered "It depends
+    // on the parties I go to." at 0.75 — `support` unset, so nothing upstream
+    // caught it, and the sentence is circular rather than uncertain: "the
+    // parties I go to" is the question's own axis handed back, not new
+    // information about which size this person prefers.
+    //
+    // A phrase-ban on hedges was tried and rejected before this gate existed —
+    // "Do you prefer the beach or the mountains?" has a CORRECT promoted
+    // answer, "I'm not sure, but I prefer the beach and nature areas.", that
+    // hedges AND commits. The test this gate runs is narrower and survives
+    // that case: does the answer name EITHER alternative the question itself
+    // named, by word or unmistakable paraphrase? See
+    // `extractForcedChoiceAlternatives` for how the alternatives are read out
+    // of the question text, and why most open-domain `multiple_choice`
+    // questions ("What time of day do you prefer to exercise?") are left
+    // alone entirely rather than forced into a split that is not there.
+    const forcedChoice = enforceForcedChoiceCommitment(inferred, question);
+
+    if (!forcedChoice.committed) {
+      this.logger.log('Inferred answer discarded — names neither alternative the question asked between', {
+        userId: ownerId,
+        questionId: question.id,
+        question: question.text,
+        alternatives: forcedChoice.alternatives,
+        askedFor: inferred.askedFor,
+        support: inferred.support,
+        response: inferred.answer,
+        rationale: inferred.rationale,
+      });
+
+      return { status: 'discarded', reason: 'forced-choice-not-committed', inferred: forcedChoice.inferred };
+    }
+
+    // ═══ THE YES/NO QUALIFIED-ANSWER GATE ═══
+    //
+    // `yes_no` has no alternatives to extract — its poles are always yes and
+    // no — so the failure this gate exists for is narrower: an "it depends on
+    // X" answer where X is the question's own subject rather than an actual
+    // condition. "It depends on the price." for "Do you buy the extended
+    // warranty when it is offered?" is a GOOD answer — price is a real
+    // variable the question never named. "It depends on the parties I go to"
+    // would be circular for exactly the same reason the forced-choice gate
+    // above catches it on the `multiple_choice` version of that question. See
+    // `enforceYesNoQualifierIsInformative` for how a genuine condition is told
+    // apart from a restatement.
+    const yesNoQualifier = enforceYesNoQualifierIsInformative(inferred, question);
+
+    if (!yesNoQualifier.informative) {
+      this.logger.log('Inferred answer discarded — "it depends" restates the question rather than adding a condition', {
+        userId: ownerId,
+        questionId: question.id,
+        question: question.text,
+        askedFor: inferred.askedFor,
+        support: inferred.support,
+        response: inferred.answer,
+        rationale: inferred.rationale,
+      });
+
+      return { status: 'discarded', reason: 'yes-no-qualifier-not-informative', inferred: yesNoQualifier.inferred };
     }
 
     // An answer to a NEARBY question is not an answer to this one, and it is the
