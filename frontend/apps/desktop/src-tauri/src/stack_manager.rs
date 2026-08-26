@@ -252,7 +252,26 @@ pub fn start_stack(paths: &StackPaths) -> Result<(), String> {
     }
 
     let output = compose_command(paths)
-        .args(["up", "-d", "--remove-orphans"])
+        // --scale powersync=0: powersync is in the "production" profile in
+        // docker-compose.yml, so it's otherwise created by this `up`, but its
+        // Postgres/JWT credentials (PS_STORAGE_URI, PS_JWT_SECRET_B64URL) come
+        // from DATABASE_PASSWORD/POWERSYNC_JWT_SECRET, which this app's own
+        // secrets model never populates — generate-secrets writes real
+        // credentials straight into a Docker-managed volume for the other
+        // services to read, not into compose-interpolated env vars (see the
+        // module doc comment above). Left running, it crash-loops forever
+        // (confirmed live: exit 150, first on its bind-mounted config
+        // directory, then again on an empty JWT key) for a service nothing in
+        // this app talks to yet — per infrastructure/powersync/README.md it's
+        // an unverified, no-client-yet scaffold, excluded from the "local"
+        // profile for the same reason. `--scale` (not a profiles/compose-file
+        // override) sidesteps the docker-compose.yml service definition
+        // entirely: profiles merge by concatenation like devices/group_add
+        // above, and `!reset` clears a list to *empty*, which for `profiles`
+        // means "no restriction — always active," the opposite of exclusion
+        // (verified against this Compose CLI directly before choosing this
+        // approach).
+        .args(["up", "-d", "--remove-orphans", "--scale", "powersync=0"])
         .output()
         .map_err(|e| format!("Failed to run docker compose up: {e}"))?;
 
