@@ -807,6 +807,30 @@ export const ConfigSchema = z.object({
     audience: z.string().optional(),
     /** Bound on every outbound call to a peer or the directory. */
     timeoutMs: z.coerce.number().int().positive().default(10_000),
+    /**
+     * REQUIRE a valid RFC 9421 message signature on the inbound peer surface.
+     *
+     * Off by default, and deliberately a separate knob from having a key: a box
+     * that starts signing must not immediately stop talking to peers that have
+     * not yet upgraded. The rollout is (1) both sides configure a key and sign,
+     * (2) both sides turn this on. Turning it on with peers that do not sign
+     * refuses them -- which is the point, but it is the operator's call and not
+     * a side effect of setting a key.
+     */
+    requireHttpSignature: z.coerce.boolean().default(false),
+    /**
+     * This box's Ed25519 signing key, as a PRIVATE JWK (JSON string or object).
+     *
+     * Absent means this box does not sign; outbound asks go unsigned and a peer
+     * with `requireHttpSignature` on will refuse them. An unusable value
+     * degrades to the same thing rather than failing startup -- see
+     * `PeerSignatureService.signingKey`.
+     *
+     * Generate one with:
+     *   node -e "const {generateKeyPairSync}=require('node:crypto');
+     *     console.log(JSON.stringify(generateKeyPairSync('ed25519').privateKey.export({format:'jwk'})))"
+     */
+    signingKeyJwk: z.string().optional(),
   }),
   // Geocoding, both directions (address <-> coordinates). Egress normally goes
   // through CI-Portal, which holds the provider key and fronts a cache shared by
