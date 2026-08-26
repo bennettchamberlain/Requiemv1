@@ -10,10 +10,17 @@ const h = vi.hoisted(() => ({
   schedule: {} as Record<string, unknown>,
   plan: {} as Record<string, unknown>,
   reschedule: vi.fn(),
+  hbpeEnabled: true,
 }));
 
 vi.mock('@/api/useScheduleService', () => ({
   useScheduleService: () => h.schedule,
+}));
+
+// Defaults ON so the existing rhythm-copy tests exercise the resolved-data
+// branches; the off-vs-failed distinction below flips this explicitly.
+vi.mock('@/common/feature', () => ({
+  useFeatures: () => ({ isFeatureEnabled: (flag: string) => (flag === 'hbpe' ? h.hbpeEnabled : true) }),
 }));
 
 vi.mock('@/pages/PlanPage/usePlanTasks', () => ({
@@ -135,6 +142,7 @@ beforeEach(() => {
   setSchedule();
   setPlan();
   h.reschedule = vi.fn().mockResolvedValue(undefined);
+  h.hbpeEnabled = true;
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -164,12 +172,27 @@ describe('SchedulePage — what the footer is allowed to claim', () => {
     expect(screen.getByText(/only covers the next seven days/)).toBeInTheDocument();
   });
 
-  it('says the layer is unavailable when the forecast resolver returned nothing', () => {
+  it('says the layer is off when the hbpe flag is off', () => {
+    h.hbpeEnabled = false;
     setSchedule({ generatedAt: null, rhythm: [], rhythmCoversWindow: false });
 
     renderWithProviders(<SchedulePage />);
 
     expect(screen.getByText(/HBPE rhythm forecast is off/)).toBeInTheDocument();
+  });
+
+  it('says the call failed — not "off" — when the flag is on but the resolver returned nothing', () => {
+    // The regression this guards: before the fix, a null `generatedAt` alone
+    // decided the "off" copy, so a live flag with a swallowed HBPE failure
+    // (ForecastResolver.ts's try/catch) rendered identically to the flag
+    // actually being off.
+    h.hbpeEnabled = true;
+    setSchedule({ generatedAt: null, rhythm: [], rhythmCoversWindow: false });
+
+    renderWithProviders(<SchedulePage />);
+
+    expect(screen.getByText(/Couldn't reach the rhythm forecast/)).toBeInTheDocument();
+    expect(screen.queryByText(/HBPE rhythm forecast is off/)).not.toBeInTheDocument();
   });
 });
 
