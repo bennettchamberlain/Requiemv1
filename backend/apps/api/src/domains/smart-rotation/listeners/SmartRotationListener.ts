@@ -263,6 +263,14 @@ export class SmartRotationListener {
       SELECT q.question_id AS id
       FROM ci.questions q
       WHERE q.is_active = TRUE
+        -- Same guard as QuestionService.findUnansweredByUserId. This is a
+        -- SECOND, independent copy of "next unanswered question", and it did
+        -- not carry the filter — so hand-entry questions the cron path refuses
+        -- were still reaching inference through here, once an hour, forever.
+        -- Observed: "How tall are you?" (hand_entry) answered from the owner's
+        -- own outbound line "It'll be like a foot tall." — about an object,
+        -- written to their profile as their height.
+        AND q.evidence_class <> 'hand_entry'
         AND (q.is_private_to IS NULL OR q.is_private_to = $1)
         ${excludeForkedOriginsSql('q', '$1')}
         AND NOT EXISTS (
