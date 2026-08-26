@@ -1,4 +1,5 @@
 import type { LoggerService } from '@ci/common/logging';
+import { RETRIEVAL_POLICY_DEFAULTS } from '@ci/domains/retrieval-policy';
 import { SearchService } from '@ci/domains/search-next';
 
 import type { RecallProbeResultEntity } from '../../entities/RecallProbeResultEntity';
@@ -218,6 +219,7 @@ function makeHarness(
   const searchService = new SearchService(
     dataSource as never,
     { generateEmbeddingString: jest.fn() } as never,
+    { get: jest.fn().mockResolvedValue(RETRIEVAL_POLICY_DEFAULTS) } as never,
   );
 
   return {
@@ -317,6 +319,7 @@ describe('RecallProbeService', () => {
     const searchService = new SearchService(
       { query: jest.fn() } as never,
       { generateEmbeddingString: jest.fn() } as never,
+      { get: jest.fn().mockResolvedValue(RETRIEVAL_POLICY_DEFAULTS) } as never,
     );
 
     await service.probe(new Date('2026-08-23T05:20:13.000Z'));

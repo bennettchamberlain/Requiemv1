@@ -4,6 +4,7 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { EntityResolutionService, type ResolvedEntity } from '@ci/domains/entity-resolution';
 import { GraphExpansionService } from '@ci/domains/graph';
+import { type RetrievalPolicy, RetrievalPolicyService } from '@ci/domains/retrieval-policy';
 import { type IndexableEntity, SearchService } from '@ci/domains/search-next';
 
 import type { EvidenceVoice, RecallDto, RecallLine, RecallResult } from '../types';
@@ -13,30 +14,45 @@ import { SerializerService } from './SerializerService';
 
 const DEFAULT_MAX_RESULTS = 5;
 
-// Raw-message ("naive RAG") channel: how many source fragments to vector-search
-// and union into the recall block alongside the graph nodes + expansion. The
-// merge itself is uncapped (tuning showed capping/re-ranking only hurts); the
-// noise control now lives in SearchService.searchMessages' cosine-distance floor
-// (gap G5) rather than in a post-hoc cap here.
-const MESSAGE_RESULTS = 10;
-
-// Cosine-distance floor for the message channel, forwarded to searchMessages.
-// `undefined` means "use the SearchService default" (0.5, matching semantic
-// mode) — kept explicit here so per-deployment tuning has one obvious knob.
-// See memory-and-search plan §5 ("searchMessages floor → start at 0.5").
-const MESSAGE_DISTANCE_FLOOR: number | undefined = undefined;
-
-// Seed mode for the entity/graph channel. DECISION (memory-and-search plan §5,
-// "Default recall seed mode boosted vs. hybrid → keep boosted; switch only if
-// the merged benchmark shows hybrid winning"): stays 'boosted'. Boosted is the
-// most reliable seed finder for entity-centric KG queries and, unlike 'hybrid',
-// never lets a pure-semantic single-channel hit outrank a keyword-anchored one.
-// This is a data-backed default pending PR #1587's regression gate; flip the
-// constant (not the call sites) if the benchmark reverses it.
-const SEED_MODE = 'boosted' as const;
-
 /**
- * Cosine-similarity floor for the 'grounded' strategy's semantic channel.
+ * ═══ Where the recall knobs live now ═══
+ *
+ * `MESSAGE_RESULTS`, `MESSAGE_DISTANCE_FLOOR`, `SEED_MODE`,
+ * `GROUNDED_SIMILARITY_FLOOR` and `ANCHORED_DEPTH_MULTIPLIER` used to be
+ * module-level literals here. They are fields of the appliance's versioned
+ * retrieval policy (`ci.retrieval_policy`, read through
+ * {@link RetrievalPolicyService}), because the tuning loop that sets them is
+ * already being run by hand — the comments they carried said as much ("flip the
+ * constant (not the call sites) if the benchmark reverses it") — and a measured
+ * result should be promotable without an edit-rebuild-redeploy.
+ *
+ * The baseline is unchanged and still stated in code, as
+ * `RETRIEVAL_POLICY_DEFAULTS` in `domains/retrieval-policy/constants.ts`. v1 of
+ * the table is seeded with exactly those numbers and the service falls back to
+ * them when the table is empty or unreachable, so behaviour is identical until
+ * somebody promotes a v2. What each one meant, unchanged:
+ *
+ * - `recallMessageResults` (10) — raw-message ("naive RAG") channel: how many
+ *   source fragments to vector-search and union into the recall block alongside
+ *   the graph nodes + expansion. The merge itself is uncapped (tuning showed
+ *   capping/re-ranking only hurts); the noise control lives in
+ *   `SearchService.searchMessages`' cosine-distance floor (gap G5) rather than
+ *   in a post-hoc cap here.
+ * - `recallMessageDistanceFloor` (null) — cosine-distance floor forwarded to
+ *   `searchMessages`. Null/undefined means "use the SearchService default" (0.5,
+ *   matching semantic mode). See memory-and-search plan §5 ("searchMessages
+ *   floor → start at 0.5").
+ * - `recallSeedMode` ('boosted') — seed mode for the entity/graph channel.
+ *   DECISION (memory-and-search plan §5, "Default recall seed mode boosted vs.
+ *   hybrid → keep boosted; switch only if the merged benchmark shows hybrid
+ *   winning"). Boosted is the most reliable seed finder for entity-centric KG
+ *   queries and, unlike 'hybrid', never lets a pure-semantic single-channel hit
+ *   outrank a keyword-anchored one. Reversing it is now a v2 promotion rather
+ *   than a diff.
+ *
+ * ── `groundedSimilarityFloor` (0.7) ────────────────────────────────────────
+ *
+ * Cosine-SIMILARITY floor for the 'grounded' strategy's semantic channel.
  *
  * `semanticSearch`'s own default (0.5) is a "not obviously unrelated" bar, which
  * is the right bar when the caller is a person scrolling results and the wrong
@@ -54,10 +70,9 @@ const SEED_MODE = 'boosted' as const;
  * about sport. A model handed those infers from noise; handed nothing, it says
  * so, and the anchored channel (which returns real sporting-goods trips) carries
  * the question instead.
- */
-const GROUNDED_SIMILARITY_FLOOR = 0.7;
-
-/**
+ *
+ * ── `anchoredDepthMultiplier` (2) ──────────────────────────────────────────
+ *
  * How much deeper the 'grounded' strategy cuts its anchored channel than its
  * semantic one.
  *
@@ -83,14 +98,14 @@ const GROUNDED_SIMILARITY_FLOOR = 0.7;
  * a Day" — the record behind this user's actual answer to "Which languages are
  * you learning?" — is rank 14.
  */
-const ANCHORED_DEPTH_MULTIPLIER = 2;
 
 export interface RecallOptions {
   /**
    * How the seed channel is built.
    *
    * - `seed-then-fallback` (default) — today's behaviour, unchanged: one
-   *   {@link SEED_MODE} search, falling back to semantic only when it is empty.
+   *   `policy.recallSeedMode` search, falling back to semantic only when it is
+   *   empty.
    *   Tuned for entity-centric agent queries, where a keyword anchor is usually
    *   present and recall beats precision.
    * - `grounded` — precision-first, for callers that put the result in front of
@@ -125,6 +140,7 @@ export class RecallService {
     private readonly graphExpansion: GraphExpansionService,
     private readonly agentMemory: AgentMemoryService,
     private readonly logger: LoggerService,
+    private readonly retrievalPolicy: RetrievalPolicyService,
   ) {
     this.logger.setContext(RecallService.name);
   }
@@ -141,11 +157,17 @@ export class RecallService {
       return { block: '', resultCount: 0, lines: [] };
     }
 
+    // Resolved ONCE per recall and threaded down, so both seed channels and the
+    // message channel of a single call are guaranteed to have been built by the
+    // same policy version. Re-reading per channel would let a promotion landing
+    // mid-call produce a block that no single version explains.
+    const policy = await this.retrievalPolicy.get();
+
     try {
       const results =
         options.strategy === 'grounded'
-          ? await this.groundedSeeds(context, dto.query, maxResults, options.excludeTypes)
-          : await this.seedThenFallback(context, query, maxResults, options.excludeTypes);
+          ? await this.groundedSeeds(context, dto.query, maxResults, policy, options.excludeTypes)
+          : await this.seedThenFallback(context, query, maxResults, policy, options.excludeTypes);
 
       if (results.length === 0) {
         return { block: '', resultCount: 0, lines: [] };
@@ -223,8 +245,10 @@ export class RecallService {
         const messageHits = await this.searchService.searchMessages(
           context,
           dto.query,
-          MESSAGE_RESULTS,
-          MESSAGE_DISTANCE_FLOOR,
+          policy.recallMessageResults,
+          // `null` in the policy row means "inherit searchMessages' own
+          // default", which is what the constant's `undefined` meant.
+          policy.recallMessageDistanceFloor ?? undefined,
         );
 
         if (messageHits.length > 0) {
@@ -316,13 +340,14 @@ export class RecallService {
     context: UserServiceContext,
     query: string,
     maxResults: number,
+    policy: RetrievalPolicy,
     excludeTypes: IndexableEntity[] = [],
   ) {
     const exclude: IndexableEntity[] = ['message', ...excludeTypes];
 
     const seeded = await this.searchService.search(context, {
       query,
-      mode: SEED_MODE,
+      mode: policy.recallSeedMode,
       maxResults,
       excludeTypes: exclude,
     });
@@ -345,7 +370,7 @@ export class RecallService {
    * Two channels, unioned, each with its own budget of `maxResults`, because
    * they answer different halves of a question about a person:
    *
-   *   1. SEMANTIC, at {@link GROUNDED_SIMILARITY_FLOOR} rather than the looser
+   *   1. SEMANTIC, at the policy's `groundedSimilarityFloor` rather than the looser
    *      search default — what the user and others have SAID. This is the
    *      channel that finds "Favorite food? Hard to choose… Mexican and Indian
    *      cuisine is my usual go to."
@@ -368,6 +393,7 @@ export class RecallService {
     context: UserServiceContext,
     rawQuery: string,
     maxResults: number,
+    policy: RetrievalPolicy,
     excludeTypes: IndexableEntity[] = [],
   ) {
     const exclude: IndexableEntity[] = ['message', ...excludeTypes];
@@ -377,7 +403,7 @@ export class RecallService {
       // sentence both to pick lexemes from and to embed, and natural language
       // embeds better than a punctuation-stripped bag of words.
       this.searchService.searchAnchored(context, rawQuery, {
-        maxResults: Math.round(maxResults * ANCHORED_DEPTH_MULTIPLIER),
+        maxResults: Math.round(maxResults * policy.anchoredDepthMultiplier),
         excludeTypes: exclude,
       }),
       this.searchService.search(context, {
@@ -385,7 +411,7 @@ export class RecallService {
         mode: 'semantic',
         maxResults,
         excludeTypes: exclude,
-        distanceThreshold: 1 - GROUNDED_SIMILARITY_FLOOR,
+        distanceThreshold: 1 - policy.groundedSimilarityFloor,
       }),
     ]);
 
