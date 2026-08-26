@@ -18,6 +18,7 @@ import { NavLink } from './NavLink';
 import { SelfSubmenu } from './SelfSubmenu';
 import { SettingsRailButton } from './SettingsRailButton';
 import { useFeedBadgeCount } from './useFeedBadgeCount';
+import { usePlanBadgeCount } from './usePlanBadgeCount';
 
 interface ExternalNavLinkProps {
   href: string;
@@ -176,6 +177,7 @@ export function SecondaryNavigation() {
   const { expanded, pinned, setHovered, variant, closeOverlay } = usePowerRail();
   const destinations = useVisibleRailDestinations();
   const feedBadgeCount = useFeedBadgeCount();
+  const planBadgeCount = usePlanBadgeCount();
   const [{ isOpen: captureOpen }, { close: closeCapture }] = useCaptureModal();
   const overlay = variant === 'overlay';
   const showSelf = destinations.some((destination) => destination.id === 'self');
@@ -209,7 +211,9 @@ export function SecondaryNavigation() {
             to={destination.to}
             label={destination.label}
             end={destination.end}
-            badgeCount={destination.badge === 'feed' ? feedBadgeCount : 0}
+            badgeCount={
+              destination.badge === 'feed' ? feedBadgeCount : destination.badge === 'plan' ? planBadgeCount : 0
+            }
           >
             <Icon className="h-6 w-6 shrink-0" strokeWidth={1.25} />
           </NavLink>

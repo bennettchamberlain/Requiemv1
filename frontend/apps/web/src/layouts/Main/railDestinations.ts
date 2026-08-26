@@ -29,7 +29,7 @@ export interface RailDestination {
   /** When false, a child path of `to` still counts as this destination. */
   readonly end?: boolean;
   readonly match?: (pathname: string) => boolean;
-  readonly badge?: 'feed';
+  readonly badge?: 'feed' | 'plan';
   /**
    * Rows that belong under this one, as one compact group.
    *
@@ -42,7 +42,7 @@ export interface RailDestination {
 }
 
 export const RAIL_DESTINATIONS: readonly RailDestination[] = [
-  { id: 'plan', to: '/plan', label: 'Plan', icon: ListTodo, flag: 'planning.page' },
+  { id: 'plan', to: '/plan', label: 'Plan', icon: ListTodo, flag: 'planning.page', badge: 'plan' },
   { id: 'calendar', to: '/calendar', label: 'Calendar', icon: CalendarRange, badge: 'feed', end: false },
   // Chat moved under Memory (/memory/chat) — it's a bounded view over your
   // own history the same way Events/People/Places are, not a peer place. See

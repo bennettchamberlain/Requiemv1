@@ -25,6 +25,7 @@ vi.mock('@/common/feature', async () => {
 });
 
 vi.mock('./useFeedBadgeCount', () => ({ useFeedBadgeCount: () => 0 }));
+vi.mock('./usePlanBadgeCount', () => ({ usePlanBadgeCount: () => 0 }));
 
 const recentThreads = vi.hoisted(() => ({ current: [] as { id: string; name: string | null }[] }));
 
