@@ -10,6 +10,7 @@ import './apple_music';
 import './apple_photos';
 import './applecontacts';
 import './audible';
+import './bluebubbles';
 import './calendar';
 import './chatgpt';
 import './chromium';

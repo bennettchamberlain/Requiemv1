@@ -6,13 +6,16 @@ import {
   CONFIDENCE_IMPLIED_CEILING,
   CONFIDENCE_NON_ANSWER,
   CONFIDENCE_OFF_QUESTION,
+  CONFIDENCE_UNATTRIBUTED,
   DEFAULT_MIN_ANSWER_CONFIDENCE,
+  enforceFirstPersonEvidence,
   estimateInferredAnswerConfidence,
   INFERRED_ANSWER_JSON_SCHEMA,
   INFERRED_ANSWER_PROMPT_RULES,
   isNarratedVoice,
   isNonAnswer,
   normalizeAnswerSupport,
+  normalizeEvidenceRefs,
   parseInferredAnswer,
   supportConfidenceCeiling,
   sanitizeInferredAnswerVoice,
@@ -417,6 +420,7 @@ describe('the prompt contract', () => {
     expect(INFERRED_ANSWER_JSON_SCHEMA.required).toEqual([
       'asked_for',
       'support',
+      'first_person_evidence',
       'answer',
       'confidence',
       'rationale',
@@ -643,5 +647,122 @@ describe('the prompt contract — relevance and cross-question bleed', () => {
     expect(INFERRED_ANSWER_PROMPT_RULES).toContain('EVIDENCE DOES NOT TRANSFER BETWEEN QUESTIONS');
     expect(INFERRED_ANSWER_PROMPT_RULES).toMatch(/speaking a language is not learning one/i);
     expect(INFERRED_ANSWER_PROMPT_RULES).toMatch(/prior answers to other questions are context/i);
+  });
+});
+
+describe('normalizeEvidenceRefs', () => {
+  it('reads the plain array a schema-constrained model emits', () => {
+    expect(normalizeEvidenceRefs([2, 7])).toEqual([2, 7]);
+  });
+
+  it.each([
+    [
+      ['2', '7'],
+      [2, 7],
+    ],
+    [
+      ['E2', 'line 7'],
+      [2, 7],
+    ],
+    ['2, 7', [2, 7]],
+    [
+      [2, 2, 7],
+      [2, 7],
+    ],
+  ])('coerces %p to %p', (input, expected) => {
+    expect(normalizeEvidenceRefs(input)).toEqual(expected);
+  });
+
+  it.each([undefined, null, {}, [null, true, 1.5]])('reads %p as no citation at all', (input) => {
+    // A malformed citation must degrade to an ABSENT one, never to a parse
+    // failure: absent is already the strictest verdict the gate has.
+    expect(normalizeEvidenceRefs(input)).toEqual([]);
+  });
+});
+
+describe('enforceFirstPersonEvidence — the speaker gate', () => {
+  const answer = (overrides: Partial<Parameters<typeof enforceFirstPersonEvidence>[0]> = {}) => ({
+    answer: 'I am definitely a cat person.',
+    confidence: 0.95,
+    support: 'stated' as const,
+    firstPersonEvidence: [1],
+    ...overrides,
+  });
+
+  it('passes an answer that cites one of the owner’s own lines', () => {
+    const result = enforceFirstPersonEvidence(answer(), new Set([1, 2]));
+
+    expect(result.grounded).toBe(true);
+    expect(result.citedOwn).toEqual([1]);
+    expect(result.inferred.support).toBe('stated');
+    expect(result.inferred.confidence).toBe(0.95);
+  });
+
+  it.each([
+    ['cites only inbound lines', [9, 10]],
+    ['cites a line that is not in the block at all', [42]],
+    ['cites nothing', []],
+  ])('refuses `stated` on inbound-only evidence when the model %s', (_case, firstPersonEvidence) => {
+    // The measured failure this exists for: "Are you more of a cat person or a
+    // dog person?" → "I am definitely a cat person, and I have cats." at 0.95,
+    // supported entirely by three OTHER people's messages about their cats.
+    const result = enforceFirstPersonEvidence(answer({ firstPersonEvidence }), new Set([1, 2]));
+
+    expect(result.grounded).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+    expect(answersTheQuestion(result.inferred.support)).toBe(false);
+    expect(result.inferred.confidence).toBeLessThanOrEqual(CONFIDENCE_UNATTRIBUTED);
+  });
+
+  it('refuses when the retrieval produced no first-person lines at all', () => {
+    const result = enforceFirstPersonEvidence(answer(), new Set());
+
+    expect(result.grounded).toBe(false);
+    expect(result.inferred.support).toBe('topical');
+  });
+
+  it('refuses when the model omitted the field entirely', () => {
+    // A model that predates the field, or one that dropped it, gets the strict
+    // outcome — the opposite of `support`, where "no judgement" means "carry on".
+    // An unproven first-person claim is the expensive mistake here.
+    const { firstPersonEvidence: _omitted, ...withoutCitation } = answer();
+    const result = enforceFirstPersonEvidence(withoutCitation, new Set([1]));
+
+    expect(result.grounded).toBe(false);
+  });
+
+  it('never RAISES a confidence, only caps it', () => {
+    const result = enforceFirstPersonEvidence(answer({ confidence: 0.02 }), new Set());
+
+    expect(result.inferred.confidence).toBe(0.02);
+  });
+});
+
+describe('the prompt contract — speaker attribution', () => {
+  it('tells the model that an inbound line is somebody else talking', () => {
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain("OTHER PEOPLE'S WORDS ARE NOT THIS PERSON'S WORDS");
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('MY OWN RECORDS');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('WHAT OTHER PEOPLE SAID TO ME');
+    expect(INFERRED_ANSWER_PROMPT_RULES).toMatch(/can never do is ESTABLISH/i);
+  });
+
+  it('asks for the citation BEFORE the answer, so the answer is conditioned on it', () => {
+    const keys = INFERRED_ANSWER_JSON_SCHEMA.required as string[];
+
+    expect(keys.indexOf('first_person_evidence')).toBeLessThan(keys.indexOf('answer'));
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('- first_person_evidence:');
+  });
+
+  it('does not hand the model a ready-made answer to a real catalogue question', () => {
+    // The fabrication: the SPEAK AS THE PERSON example answered
+    // "Woodworking — about fifteen years now." and the paragraph below it used
+    // `longest_hobby`'s exact text as its illustration. Asked that question with
+    // no hobby in the evidence, the model returned the example verbatim at 0.90,
+    // rationale "The User Context section explicitly states …".
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain('Woodworking');
+    expect(INFERRED_ANSWER_PROMPT_RULES).not.toContain(
+      'Which hobby have you kept the longest, and for how many years?',
+    );
+    expect(INFERRED_ANSWER_PROMPT_RULES).toContain('WORKED EXAMPLES ARE METHOD, NOT CONTENT');
   });
 });

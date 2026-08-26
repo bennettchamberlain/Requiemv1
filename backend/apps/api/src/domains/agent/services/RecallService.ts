@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { EntityResolutionService } from '@ci/domains/entity-resolution';
+import { EntityResolutionService, type ResolvedEntity } from '@ci/domains/entity-resolution';
 import { GraphExpansionService } from '@ci/domains/graph';
 import { type IndexableEntity, SearchService } from '@ci/domains/search-next';
 
-import type { RecallDto, RecallResult } from '../types';
+import type { EvidenceVoice, RecallDto, RecallLine, RecallResult } from '../types';
 
 import { AgentMemoryService } from './AgentMemoryService';
 import { SerializerService } from './SerializerService';
@@ -138,7 +138,7 @@ export class RecallService {
     const query = this.sanitizeQuery(dto.query);
 
     if (!query) {
-      return { block: '', resultCount: 0 };
+      return { block: '', resultCount: 0, lines: [] };
     }
 
     try {
@@ -148,12 +148,12 @@ export class RecallService {
           : await this.seedThenFallback(context, query, maxResults, options.excludeTypes);
 
       if (results.length === 0) {
-        return { block: '', resultCount: 0 };
+        return { block: '', resultCount: 0, lines: [] };
       }
 
       const resolved = await this.entityResolution.resolve(context, results);
 
-      const lines: string[] = [];
+      const lines: RecallLine[] = [];
       const includedIds = new Set<string>();
 
       // Identical text from distinct rows is one piece of evidence, not six —
@@ -177,13 +177,13 @@ export class RecallService {
           continue;
         }
 
-        lines.push(line);
+        lines.push({ text: line, voice: this.voiceOf(hit), ref: this.serializer.reference(hit) });
         includedIds.add(id);
         seenLines?.add(line);
       }
 
       if (lines.length === 0) {
-        return { block: '', resultCount: 0 };
+        return { block: '', resultCount: 0, lines: [] };
       }
 
       // Expand one query-relevant hop. Seeds are the search hits; their ids are
@@ -198,7 +198,19 @@ export class RecallService {
           continue;
         }
 
-        lines.push(neighbour.line);
+        // A graph neighbour is a node in the OWNER's own graph — a place, a
+        // person, a concept — not a line somebody spoke, so it carries no
+        // speaker of its own and belongs to the archive's owner.
+        //
+        // The id is a `ci.entities.entity_id` and the node's own type is not
+        // carried on `ExpandedNeighbour`, so the ref names the TABLE rather than
+        // guessing the type: 'graph-node' resolves against ci.entities, which is
+        // where a click would have to land anyway.
+        lines.push({
+          text: neighbour.line,
+          voice: 'own',
+          ref: { type: 'graph-node', id: neighbour.entityId, at: null },
+        });
         includedIds.add(neighbour.entityId);
       }
 
@@ -220,14 +232,30 @@ export class RecallService {
             context,
             messageHits.map((hit) => hit.id),
           );
-          const contentById = new Map(memories.map((memory) => [memory.id, memory.content]));
-          const seenText = new Set(lines);
+          const memoryById = new Map(memories.map((memory) => [memory.id, memory]));
+          const seenText = new Set(lines.map((line) => line.text));
 
           for (const hit of messageHits) {
-            const text = contentById.get(hit.id)?.trim();
+            const memory = memoryById.get(hit.id);
+            const text = memory?.content?.trim();
 
             if (text && !seenText.has(text)) {
-              lines.push(text);
+              // An agent-memory fragment is a raw turn with no direction column
+              // and no speaker in the text. Unattributable, so 'other': a line
+              // whose speaker cannot be established must never be able to carry
+              // a first-person claim about the owner.
+              lines.push({
+                text,
+                voice: 'other',
+                ref: {
+                  type: 'agent-memory',
+                  id: hit.id,
+                  // The only timestamp this table has. Unlike an imported
+                  // message's `time`, `created_at` on a fragment written by the
+                  // agent IS when it happened.
+                  at: memory?.createdAt ? new Date(memory.createdAt).toISOString() : null,
+                },
+              });
               seenText.add(text);
             }
           }
@@ -240,17 +268,34 @@ export class RecallService {
         });
       }
 
-      const block = `## Relevant context\n${lines.join('\n')}`;
+      const block = `## Relevant context\n${lines.map((line) => line.text).join('\n')}`;
 
-      return { block, resultCount: lines.length };
+      return { block, resultCount: lines.length, lines };
     } catch (err) {
       this.logger.warn('Recall failed', {
         userId: context.userId,
         error: err instanceof Error ? err.message : String(err),
       });
 
-      return { block: '', resultCount: 0 };
+      return { block: '', resultCount: 0, lines: [] };
     }
+  }
+
+  /**
+   * Who produced this line.
+   *
+   * A communication is the only resolved type that has a speaker other than the
+   * archive's owner: an INBOUND message is somebody else talking. Everything
+   * else the resolver returns — browser activity, events, places, items,
+   * receipts, notes, files, graph concepts — is a record of what the OWNER did,
+   * which is first-person evidence even though nobody said it out loud.
+   */
+  private voiceOf(hit: ResolvedEntity): EvidenceVoice {
+    if (hit.type !== 'communication') {
+      return 'own';
+    }
+
+    return hit.entity.direction === 'outbound' ? 'own' : 'other';
   }
 
   // ---------------------------------------------------------------------------

@@ -22,7 +22,7 @@ import {
 import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-import { disconnectAndClearPowerSync } from '@/api/powersync/session';
+import { disconnectAndClearPowerSyncForLogout } from '@/api/powersync/session';
 import { registerNativePushToken } from '@/lib/registerNativePushToken';
 
 const authChannel = new BroadcastChannel('auth');
@@ -446,7 +446,9 @@ function useAuth(): ReturnValue {
   }, []);
 
   const logout = useCallback(async () => {
-    await disconnectAndClearPowerSync();
+    // Bounded: a replica that cannot be dropped (worker never came up) must not
+    // leave the user stuck signed in. Everything below still runs on timeout.
+    await disconnectAndClearPowerSyncForLogout();
 
     if (isNativePlatform()) {
       // No cookie session to revoke. Clear the local credential; the API key stays
