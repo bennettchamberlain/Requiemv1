@@ -14,9 +14,14 @@ describe('PersonalizationService.decide for inferred_fact', () => {
     const profile = PersonalizationService.profileForTrustMode('balanced');
 
     expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.9 })).toBe('auto');
-    expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.76 })).toBe(
-      'review',
-    );
+    // 0.76 used to review: the promote threshold was 0.85, which collided with
+    // CONFIDENCE_IMPLIED_CEILING so no 'implied' answer could ever be written.
+    // Both the threshold and the review floor are 0.55 now — an answer citing
+    // the owner's own words gets surfaced with its provenance rather than
+    // discarded into a 'review' verdict that nothing in the repo consumes.
+    expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.76 })).toBe('auto');
+    expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.55 })).toBe('auto');
+    // Still reviewed below the floor — 0.55 is a real boundary, not "write everything".
     expect(PersonalizationService.decide(profile, { kind: 'inferred_fact', confidence: 0.5 })).toBe('review');
   });
 
@@ -124,8 +129,12 @@ describe('PersonalizationService.decide for planning task kinds', () => {
     const profile = PersonalizationService.profileForTrustMode('balanced');
 
     expect(PersonalizationService.decide(profile, { kind: 'task_create', confidence: 0.9 })).toBe('auto');
-    expect(PersonalizationService.decide(profile, { kind: 'task_mutate', confidence: 0.8 })).toBe('review');
     expect(PersonalizationService.decide(profile, { kind: 'task_complete', confidence: 0.85 })).toBe('auto');
+    // Planning kinds share `autoPromoteThresholdBalanced` with inferred_fact, so
+    // lowering it for answers moved these too. 0.8 now promotes; the boundary
+    // this test guards is the 0.55 floor beneath it.
+    expect(PersonalizationService.decide(profile, { kind: 'task_mutate', confidence: 0.8 })).toBe('auto');
+    expect(PersonalizationService.decide(profile, { kind: 'task_mutate', confidence: 0.54 })).toBe('review');
   });
 
   it('hands_off auto-accepts from 0.7 upward', () => {
