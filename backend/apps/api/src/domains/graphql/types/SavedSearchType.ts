@@ -47,6 +47,10 @@ export class SavedSearchType implements Node {
   @Field(() => String, { nullable: true })
   shareToken!: string | null;
 
+  /** True for a row `ensureDefaults` seeded from the starter library, not one the user created. */
+  @Field(() => Boolean)
+  isSeed!: boolean;
+
   @Field(() => Date)
   createdAt!: Date;
 
@@ -66,6 +70,7 @@ export class SavedSearchType implements Node {
       filters: SavedSearchFiltersType.toType(savedSearch.filters),
       isPublic: savedSearch.isPublic ?? false,
       shareToken: savedSearch.shareToken ?? null,
+      isSeed: savedSearch.isSeed ?? false,
       createdAt: savedSearch.createdAt,
       updatedAt: savedSearch.updatedAt,
     };

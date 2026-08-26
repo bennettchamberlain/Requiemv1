@@ -2828,7 +2828,7 @@ type Query {
   relationships(after: String, before: String, first: Int, last: Int): RelationshipConnection!
   reverseGeocode(latitude: Float!, longitude: Float!): ReverseGeocodeResultType!
   savedSearch(id: ID!): SavedSearchType
-  savedSearches(after: String, before: String, first: Int, last: Int): SavedSearchConnection!
+  savedSearches(after: String, before: String, first: Int, isSeed: Boolean, last: Int, query: String): SavedSearchConnection!
 
   """Open schedule candidates whose plausible window overlaps [from, to)"""
   scheduleCandidates(from: DateTime!, to: DateTime!): [ScheduleCandidateType!]!
@@ -3110,6 +3110,7 @@ type SavedSearchType implements Node {
   filters: SavedSearchFiltersType
   id: ID!
   isPublic: Boolean!
+  isSeed: Boolean!
   name: String
   query: String
   shareToken: String

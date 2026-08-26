@@ -16,6 +16,7 @@ function makeRepo() {
   return {
     update: jest.fn(),
     findOne: jest.fn(),
+    find: jest.fn().mockResolvedValue([]),
     count: jest.fn(),
     create: jest.fn((row: Record<string, unknown>) => row),
     save: jest.fn(async (row: Record<string, unknown>) => row),
@@ -266,5 +267,60 @@ describe('SavedSearchService.ensureDefaults', () => {
     const rows = repo.save.mock.calls[0][0] as unknown as Array<{ name: string; tags: string[] }>;
     const diet = rows.find((row) => row.name === 'MicroFlesh Diet');
     expect(diet?.tags).toEqual(expect.arrayContaining(['NotBeyondMeat', 'PossibleBurger']));
+  });
+
+  // Every seeded row must be flaggable as a starter, so the frontend can put
+  // it in its own collapsed section instead of mixing it into what the user
+  // thinks they saved themselves.
+  it('marks every inserted row as seeded', async () => {
+    const repo = makeRepo();
+    repo.count.mockResolvedValue(0);
+    const { service } = makeService(repo);
+
+    await service.ensureDefaults(ownerCtx);
+
+    const rows = repo.save.mock.calls[0][0] as unknown as Array<{ isSeed: boolean }>;
+    expect(rows.every((row) => row.isSeed === true)).toBe(true);
+  });
+});
+
+describe('SavedSearchService.findAll', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function entity(overrides: Partial<Record<string, unknown>>) {
+    return { userId: 'owner-1', name: '', description: null, tags: [], isSeed: false, ...overrides };
+  }
+
+  it('scopes to the caller by default, with no query or isSeed filter', async () => {
+    const repo = makeRepo();
+    const { service } = makeService(repo);
+
+    await service.findAll(ownerCtx);
+
+    expect(repo.find).toHaveBeenCalledWith({ where: { userId: 'owner-1' } });
+  });
+
+  it('filters at the database level by isSeed when asked', async () => {
+    const repo = makeRepo();
+    const { service } = makeService(repo);
+
+    await service.findAll(ownerCtx, { isSeed: true });
+
+    expect(repo.find).toHaveBeenCalledWith({ where: { userId: 'owner-1', isSeed: true } });
+  });
+
+  it('matches query text against name, description or tags, case-insensitively', async () => {
+    const repo = makeRepo();
+    repo.find.mockResolvedValue([
+      entity({ id: '1', name: 'Yoga for the Power Mad' }),
+      entity({ id: '2', name: 'Space Car', description: 'blueprints for a YOGA studio' }),
+      entity({ id: '3', name: 'Weekend trip', tags: ['Yoga'] }),
+      entity({ id: '4', name: 'Groceries' }),
+    ]);
+    const { service } = makeService(repo);
+
+    const result = await service.findAll(ownerCtx, { query: 'yoga' });
+
+    expect(result.map((row) => row.id)).toEqual(['1', '2', '3']);
   });
 });

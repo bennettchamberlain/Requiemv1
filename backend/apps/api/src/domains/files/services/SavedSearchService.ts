@@ -19,6 +19,19 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Whether `entity`'s name, description or tags contain the lowercased `query`. */
+function matchesSavedSearchQuery(entity: SavedSearchEntity, query: string): boolean {
+  if (entity.name?.toLowerCase().includes(query)) {
+    return true;
+  }
+
+  if (entity.description?.toLowerCase().includes(query)) {
+    return true;
+  }
+
+  return (entity.tags ?? []).some((tag) => tag.toLowerCase().includes(query));
+}
+
 @Injectable()
 export class SavedSearchService {
   constructor(
@@ -77,6 +90,7 @@ export class SavedSearchService {
       entity.tags = this.assembleTags({ query: seed.query, tags: seed.tags });
       entity.filters = seed.filters ?? null;
       entity.userId = context.userId;
+      entity.isSeed = true;
 
       return entity;
     });
@@ -86,16 +100,28 @@ export class SavedSearchService {
     return true;
   }
 
-  async findAll(context: ServiceContext): Promise<SavedSearch[]> {
+  async findAll(
+    context: ServiceContext,
+    options?: { query?: string; isSeed?: boolean },
+  ): Promise<SavedSearch[]> {
     const results = await this.savedSearchRepository.find({
       where: {
         ...(context.userId !== SYSTEM_USER && {
           userId: context.userId,
         }),
+        ...(options?.isSeed !== undefined && { isSeed: options.isSeed }),
       },
     });
 
-    return results.map((entity) => SavedSearchEntity.toEgressType(entity));
+    // In-memory rather than a query-builder ILIKE: a user's saved-search table
+    // tops out in the low hundreds (the starter library plus their own), so
+    // there's no scale reason to reach for SQL here.
+    const trimmed = options?.query?.trim().toLowerCase();
+    const filtered = trimmed
+      ? results.filter((entity) => matchesSavedSearchQuery(entity, trimmed))
+      : results;
+
+    return filtered.map((entity) => SavedSearchEntity.toEgressType(entity));
   }
 
   async findByIds(context: ServiceContext, ids: string[]): Promise<(SavedSearch | null)[]> {
