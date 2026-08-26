@@ -1,17 +1,20 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
-import { Badge, Button, Input, Select } from '@ci/shadcn';
-import { useNavigate } from 'react-router-dom';
+import { Badge, Input, Select } from '@ci/shadcn';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ChatAbout } from '@/components/ChatWithAgent';
+import { ErrorState } from '@/components/ErrorState';
 import { ReceiptIcon } from '@/components/icons';
+import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
 import type { GetReceiptsQuery, ReceiptExtractionState } from '@/graphql/graphql';
+import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
 import { namedChatContext } from '@/lib/agentChat';
 import { formatMinor } from '@/lib/money';
 import { humanizeEnum } from '@/lib/utils';
@@ -116,7 +119,27 @@ export function ReceiptsPage() {
   usePageTitle('Receipts - Companion Intelligence');
 
   const navigate = useNavigate();
-  const [merchantQuery, setMerchantQuery] = useState('');
+  // `q` to stay consistent with the URL key the rest of the hub uses for its
+  // free-text search box, even though this resolver's arg is specifically
+  // `merchantName`.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const merchantQuery = searchParams.get('q') ?? '';
+  const setMerchantQuery = useCallback(
+    (value: string) => {
+      setSearchParams((params) => {
+        const next = new URLSearchParams(params);
+
+        if (value === '') {
+          next.delete('q');
+        } else {
+          next.set('q', value);
+        }
+
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
   const [extractionState, setExtractionState] = useState<ReceiptExtractionState | null>(null);
 
   const variables = useMemo(
@@ -140,80 +163,52 @@ export function ReceiptsPage() {
   // search input is not unmounted on the first keystroke.
   const view = data ?? previousData;
   const receipts = useMemo(() => (view?.receipts.edges ?? []).map((edge) => edge.node), [view]);
-  const pageInfo = view?.receipts.pageInfo;
-  const hasNextPage = pageInfo?.hasNextPage ?? false;
-  const totalCount = view?.receipts.totalCount ?? 0;
 
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const fetchNextPage = useCallback(
+    (after: string) =>
+      fetchMore({
+        variables: { after },
+        updateQuery: (prev, { fetchMoreResult }) => {
+          if (!fetchMoreResult?.receipts) {
+            return prev;
+          }
 
-  const loadMore = useCallback(() => {
-    if (!hasNextPage || loadingMore || loadMoreError != null || !pageInfo?.endCursor) {
-      return;
-    }
+          const prevEdges = prev.receipts?.edges ?? [];
+          const seen = new Set(prevEdges.map((edge) => edge.cursor));
 
-    setLoadingMore(true);
+          return {
+            receipts: {
+              ...fetchMoreResult.receipts,
+              edges: [...prevEdges, ...fetchMoreResult.receipts.edges.filter((edge) => !seen.has(edge.cursor))],
+            },
+          };
+        },
+      }),
+    [fetchMore],
+  );
 
-    fetchMore({
-      variables: { after: pageInfo.endCursor },
-      updateQuery: (prev, { fetchMoreResult }) => {
-        if (!fetchMoreResult?.receipts) {
-          return prev;
-        }
-
-        const prevEdges = prev.receipts?.edges ?? [];
-        const seen = new Set(prevEdges.map((edge) => edge.cursor));
-
-        return {
-          receipts: {
-            ...fetchMoreResult.receipts,
-            edges: [...prevEdges, ...fetchMoreResult.receipts.edges.filter((edge) => !seen.has(edge.cursor))],
-          },
-        };
-      },
-    })
-      .catch((cause: unknown) => {
-        // Latch the failure: clearing `loadingMore` alone would rebuild the
-        // observer over a sentinel that is still on screen and spin a request
-        // loop against a persistently failing page.
-        setLoadMoreError(cause instanceof Error ? cause.message : 'Something went wrong.');
-      })
-      .finally(() => setLoadingMore(false));
-  }, [fetchMore, hasNextPage, loadMoreError, loadingMore, pageInfo?.endCursor]);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-
-    if (!sentinel || !hasNextPage) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          loadMore();
-        }
-      },
-      { root: scrollRef.current, rootMargin: '400px' },
-    );
-
-    observer.observe(sentinel);
-
-    return () => observer.disconnect();
-  }, [hasNextPage, loadMore]);
+  const pagination = useInfiniteConnection({
+    connection: view?.receipts,
+    loadedCount: receipts.length,
+    fetchNextPage,
+  });
 
   let content: ReactNode | null = null;
 
   if (loading && view == null) {
     content = <LoadingPage />;
   } else if (error && view == null) {
-    content = <EmptyState message={`Couldn't load receipts: ${error.message}`} />;
+    content = (
+      <ErrorState
+        title="Could not load receipts"
+        description="Your receipts are still here — this device could not reach them just now."
+        onRetry={() => void refetch()}
+      />
+    );
   } else {
     content = (
       <PullToRefresh onRefresh={refetch}>
-      <PageContent ref={scrollRef} className="gap-4 p-0">
+      <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
           <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
             <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -222,7 +217,7 @@ export function ReceiptsPage() {
                 value={merchantQuery}
                 onChange={(e) => {
                   setMerchantQuery(e.target.value);
-                  setLoadMoreError(null);
+                  pagination.reset();
                 }}
                 // Three items (search, extraction-state select, count) never all fit
                 // one row at phone widths — full-width below `sm` lets each wrap to
@@ -234,7 +229,7 @@ export function ReceiptsPage() {
                 value={extractionState ?? ANY}
                 onValueChange={(next) => {
                   setExtractionState(next === ANY ? null : (next as ReceiptExtractionState));
-                  setLoadMoreError(null);
+                  pagination.reset();
                 }}
               >
                 <Select.Trigger className="w-full sm:w-48" aria-label="Extraction state">
@@ -250,7 +245,7 @@ export function ReceiptsPage() {
                 </Select.Content>
               </Select>
 
-              <div className="text-sm text-muted-foreground">{totalCount} receipts</div>
+              <div className="text-sm text-muted-foreground">{pagination.totalCount} receipts</div>
             </div>
 
             {receipts.length === 0 ? (
@@ -267,23 +262,7 @@ export function ReceiptsPage() {
                   ))}
                 </div>
 
-                {hasNextPage && loadMoreError == null && <div ref={sentinelRef} className="h-8" />}
-
-                {loadMoreError != null && (
-                  <div className="flex flex-col items-center gap-2 py-3">
-                    <div className="text-sm text-muted-foreground">
-                      Couldn&apos;t load more receipts: {loadMoreError}
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => setLoadMoreError(null)}>
-                      Try again
-                    </Button>
-                  </div>
-                )}
-
-                <div className="py-3 text-center text-xs text-muted-foreground">
-                  {receipts.length} of {totalCount} loaded
-                  {loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
-                </div>
+                <InfiniteListFooter pagination={pagination} noun="receipts" />
               </>
             )}
           </div>

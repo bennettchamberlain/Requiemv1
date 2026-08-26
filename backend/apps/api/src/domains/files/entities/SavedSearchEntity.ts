@@ -41,6 +41,11 @@ export class SavedSearchEntity {
   @Column({ type: 'text', name: 'share_token', nullable: true })
   shareToken!: string | null;
 
+  // Marks a row `ensureDefaults` bulk-inserted from the starter library, as
+  // opposed to one the user created themselves. Never set outside seeding.
+  @Column({ type: 'boolean', name: 'is_seed', default: false })
+  isSeed!: boolean;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;
 
@@ -59,6 +64,7 @@ export class SavedSearchEntity {
       userId: entity.userId,
       isPublic: entity.isPublic,
       shareToken: entity.shareToken,
+      isSeed: entity.isSeed,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

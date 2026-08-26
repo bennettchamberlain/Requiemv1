@@ -1,18 +1,21 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { useApolloClient, useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
 import { AlertDialog, Badge, Button, Card, Input } from '@ci/shadcn';
 import { Merge } from '@ci/shadcn/icons';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ChatAbout } from '@/components/ChatWithAgent';
+import { ErrorState } from '@/components/ErrorState';
+import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { PersonAvatar } from '@/components/PersonAvatar';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
 import type { GetMergeCandidatesQuery, GetPeopleQuery } from '@/graphql/graphql';
+import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
 import { namedChatContext } from '@/lib/agentChat';
 
 // Matches MemoryPage's PAGE_SIZE. Keeping it small also keeps the batch handed
@@ -442,7 +445,10 @@ export function PeoplePage() {
   usePageTitle('People & communications - Companion Intelligence');
 
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
+  // Lives in the URL (not local state) so the search text survives navigating
+  // away and back — e.g. via the Memory hub tabs — and is deep-linkable.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get('q') ?? '';
 
   const client = useApolloClient();
 
@@ -511,80 +517,41 @@ export function PeoplePage() {
       },
     });
 
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  // Append the next server page (cursor-based) onto the accumulated results.
+  const fetchNextPage = useCallback(
+    (after: string) =>
+      fetchMore({
+        variables: { after },
+        updateQuery: (prev, { fetchMoreResult }) => {
+          if (!fetchMoreResult?.people) {
+            return prev;
+          }
+
+          const prevEdges = prev.people?.edges ?? [];
+          const seen = new Set(prevEdges.map((edge) => edge.cursor));
+          const nextEdges = fetchMoreResult.people.edges.filter((edge) => !seen.has(edge.cursor));
+
+          return {
+            people: {
+              ...fetchMoreResult.people,
+              edges: [...prevEdges, ...nextEdges],
+            },
+          };
+        },
+      }),
+    [fetchMore],
+  );
+
+  const pagination = useInfiniteConnection({
+    connection: view?.people,
+    loadedCount: people.length,
+    fetchNextPage,
+  });
 
   const refreshPeople = useCallback(async () => {
-    setLoadMoreError(null);
+    pagination.reset();
     await Promise.all([refetch(), refetchCandidates()]);
-  }, [refetch, refetchCandidates]);
-
-  const pageInfo = view?.people.pageInfo;
-  const hasNextPage = pageInfo?.hasNextPage ?? false;
-  const totalCount = view?.people.totalCount ?? 0;
-
-  // Append the next server page (cursor-based) onto the accumulated results.
-  const loadMore = useCallback(() => {
-    if (!hasNextPage || loadingMore || loadMoreError != null || !pageInfo?.endCursor) {
-      return;
-    }
-
-    setLoadingMore(true);
-
-    fetchMore({
-      variables: { after: pageInfo.endCursor },
-      updateQuery: (prev, { fetchMoreResult }) => {
-        if (!fetchMoreResult?.people) {
-          return prev;
-        }
-
-        const prevEdges = prev.people?.edges ?? [];
-        const seen = new Set(prevEdges.map((edge) => edge.cursor));
-        const nextEdges = fetchMoreResult.people.edges.filter((edge) => !seen.has(edge.cursor));
-
-        return {
-          people: {
-            ...fetchMoreResult.people,
-            edges: [...prevEdges, ...nextEdges],
-          },
-        };
-      },
-    })
-      .catch((cause: unknown) => {
-        // fetchMore rejects on network/GraphQL errors, and an unhandled rejection
-        // is only half the problem: the sentinel is still on screen, so clearing
-        // `loadingMore` would rebuild the observer, which re-fires immediately on
-        // observe() and spins a request loop (measured at ~220 requests in 300ms
-        // against a persistently failing page). Latch the error instead — it
-        // unmounts the sentinel and gates `loadMore` until the user retries.
-        setLoadMoreError(cause instanceof Error ? cause.message : 'Something went wrong.');
-      })
-      .finally(() => setLoadingMore(false));
-  }, [fetchMore, hasNextPage, loadingMore, loadMoreError, pageInfo?.endCursor]);
-
-  // Fetch the next server page when the sentinel scrolls into view.
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-
-    if (!sentinel || !hasNextPage) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          loadMore();
-        }
-      },
-      { root: scrollRef.current, rootMargin: '400px' },
-    );
-
-    observer.observe(sentinel);
-
-    return () => observer.disconnect();
-  }, [hasNextPage, loadMore]);
+  }, [pagination, refetch, refetchCandidates]);
 
   // Patch the accumulated list rather than refetch()ing it. refetch() replays
   // the hook's ORIGINAL variables (first: PAGE_SIZE, no cursor) and overwrites
@@ -650,11 +617,17 @@ export function PeoplePage() {
   if (loading && view == null) {
     content = <LoadingPage />;
   } else if (error && view == null) {
-    content = <EmptyState message={`Couldn't load people: ${error.message}`} />;
+    content = (
+      <ErrorState
+        title="Could not load people"
+        description="Your people are still here — this device could not reach them just now."
+        onRetry={() => void refetch()}
+      />
+    );
   } else {
     content = (
       <PullToRefresh onRefresh={refreshPeople}>
-      <PageContent ref={scrollRef} className="gap-4 p-0">
+      <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
         <MemoryHubShell>
           <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
             <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
@@ -662,9 +635,22 @@ export function PeoplePage() {
                 placeholder="Search people and communications..."
                 value={searchQuery}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
+                  const value = e.target.value;
+
+                  setSearchParams(
+                    (params) => {
+                      if (value === '') {
+                        params.delete('q');
+                      } else {
+                        params.set('q', value);
+                      }
+
+                      return params;
+                    },
+                    { replace: true },
+                  );
                   // New query, new cursor space — a stale failure must not gate it.
-                  setLoadMoreError(null);
+                  pagination.reset();
                 }}
                 // A long placeholder next to the count on one row always has SOME
                 // width where it clips mid-word — a min-width guess just moves the
@@ -672,7 +658,7 @@ export function PeoplePage() {
                 // to its own line instead of fighting the input for space.
                 className="max-w-xl w-full flex-1 sm:w-auto"
               />
-              <div className="text-sm text-muted-foreground">{totalCount} people</div>
+              <div className="text-sm text-muted-foreground">{pagination.totalCount} people</div>
             </div>
 
             {candidatesError && (
@@ -728,23 +714,7 @@ export function PeoplePage() {
                   ))}
                 </div>
 
-                {hasNextPage && loadMoreError == null && <div ref={sentinelRef} className="h-8" />}
-
-                {loadMoreError != null && (
-                  <div className="flex flex-col items-center gap-2 py-3">
-                    <div className="text-sm text-muted-foreground">
-                      Couldn&apos;t load more people: {loadMoreError}
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => setLoadMoreError(null)}>
-                      Try again
-                    </Button>
-                  </div>
-                )}
-
-                <div className="py-3 text-center text-xs text-muted-foreground">
-                  {people.length} of {totalCount} loaded
-                  {loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
-                </div>
+                <InfiniteListFooter pagination={pagination} noun="people" />
               </>
             )}
           </div>

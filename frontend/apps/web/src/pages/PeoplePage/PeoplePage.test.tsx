@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { gql } from '@/graphql';
@@ -203,6 +204,18 @@ function personNode(overrides: Record<string, unknown> = {}) {
 
 function pageInfo({ hasNextPage = false, endCursor = null as string | null } = {}) {
   return { __typename: 'PageInfo' as const, hasNextPage, endCursor };
+}
+
+/**
+ * Renders the current route's query string so a test can assert on it directly
+ * — the same technique GlobalSearchBox's suite uses to check what a typed
+ * search actually commits to the URL, rather than reaching into router
+ * internals.
+ */
+function LocationProbe() {
+  const location = useLocation();
+
+  return <div data-testid="query">{location.search}</div>;
 }
 
 /**
@@ -812,5 +825,128 @@ describe('PeoplePage', () => {
     expect(screen.getByText('85% match')).toBeInTheDocument();
     expect(screen.getByText('9145826767')).toBeInTheDocument();
     expect(screen.getByText(/Detected by clean.duplicate_detect/)).toBeInTheDocument();
+  });
+
+  /**
+   * The search box used to be local `useState`, so it reset on every navigation
+   * away and back and could never be linked to. It now lives in the `?q=` URL
+   * param instead — same debounce-free, trim-on-query-build behavior, different
+   * storage.
+   */
+  it('writes typed search text into the ?q= URL param', async () => {
+    renderWithProviders(
+      <>
+        <PeoplePage />
+        <LocationProbe />
+      </>,
+      {
+        mocks: [
+          ...mocks(),
+          {
+            request: { query: GET_PEOPLE, variables: { query: 'Bea', first: PAGE_SIZE } },
+            result: {
+              data: {
+                people: {
+                  __typename: 'PersonConnection' as const,
+                  totalCount: 0,
+                  pageInfo: pageInfo(),
+                  edges: [],
+                },
+              },
+            },
+          },
+        ],
+      },
+    );
+
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.getByTestId('query')).toHaveTextContent('');
+
+    fireEvent.change(screen.getByPlaceholderText('Search people and communications...'), {
+      target: { value: 'Bea' },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('query')).toHaveTextContent('?q=Bea'));
+  });
+
+  /**
+   * The other half of the same contract: a page freshly mounted at a `?q=`
+   * URL — e.g. navigated back to from the Memory hub tabs, or opened from a
+   * shared link — must show that search already applied, not an empty box
+   * that silently re-queries everyone.
+   */
+  it('restores the search text from the ?q= URL param on mount', async () => {
+    renderWithProviders(<PeoplePage />, {
+      route: '/?q=Ada',
+      mocks: [
+        {
+          request: { query: GET_PEOPLE, variables: { query: 'Ada', first: PAGE_SIZE } },
+          result: {
+            data: {
+              people: {
+                __typename: 'PersonConnection' as const,
+                totalCount: 1,
+                pageInfo: pageInfo(),
+                edges: [{ __typename: 'PersonEdge' as const, cursor: PERSON_GLOBAL_ID, node: personNode() }],
+              },
+            },
+          },
+        },
+        {
+          request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+          result: candidatesResult([]),
+        },
+      ],
+    });
+
+    expect(await screen.findByPlaceholderText('Search people and communications...')).toHaveValue('Ada');
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument();
+  });
+
+  /**
+   * Regression: both the error branch and the genuine-empty branch used to
+   * render the same wording-agnostic `<EmptyState>` with no way to retry, so a
+   * transient network failure read exactly like "you have no people" — the
+   * false-emptiness failure mode ErrorState exists to end. Only the error
+   * branch changes; "No people found" (covered by other suites' EmptyState
+   * usage) is untouched.
+   */
+  it('shows ErrorState with a working retry instead of the old generic empty-state text on a query error', async () => {
+    const failingRequest = { query: GET_PEOPLE, variables: { query: null, first: PAGE_SIZE } };
+
+    renderWithProviders(<PeoplePage />, {
+      mocks: [
+        { request: failingRequest, error: new Error('network boom') },
+        {
+          request: { query: GET_MERGE_CANDIDATES, variables: { first: CANDIDATE_PAGE_SIZE } },
+          result: candidatesResult([]),
+        },
+        // What Retry re-issues: the exact same query, this time succeeding.
+        {
+          request: failingRequest,
+          result: {
+            data: {
+              people: {
+                __typename: 'PersonConnection' as const,
+                totalCount: 1,
+                pageInfo: pageInfo(),
+                edges: [{ __typename: 'PersonEdge' as const, cursor: PERSON_GLOBAL_ID, node: personNode() }],
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    expect(await screen.findByText('Could not load people')).toBeInTheDocument();
+    expect(
+      screen.getByText('Your people are still here — this device could not reach them just now.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn.t load people: network boom/)).not.toBeInTheDocument();
+    expect(screen.queryByText('No people found')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    await screen.findByText('Ada Lovelace');
   });
 });

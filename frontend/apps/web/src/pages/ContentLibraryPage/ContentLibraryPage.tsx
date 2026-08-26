@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { GlobalUID, usePageTitle } from '@ci/common';
+import { EmptyState, GlobalUID, usePageTitle } from '@ci/common';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { ErrorState } from '@/components/ErrorState';
@@ -126,11 +126,7 @@ export function ContentLibraryPage() {
               onRetry={() => void refetch()}
             />
           ) : contents.length === 0 ? (
-            // There was no empty state at ALL, even for a genuinely empty
-            // library — the grid simply rendered nothing.
-            <p className="text-sm text-muted-foreground">
-              Nothing here yet. Content appears as your sources sync and files finish parsing.
-            </p>
+            <EmptyState message="Nothing here yet. Content appears as your sources sync and files finish parsing." />
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">

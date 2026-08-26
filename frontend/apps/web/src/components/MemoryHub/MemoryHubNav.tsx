@@ -15,13 +15,6 @@ export function MemoryHubNav({ actions }: { actions?: ReactNode }) {
 
   const visible = MEMORY_HUB_SECTIONS.filter((section) => !section.flag || isFeatureEnabled(section.flag));
 
-  // Phone: the Power Rail Memory submenu already lists these destinations.
-  // Create lives in the top-bar Add menu, so page actions are omitted too —
-  // rendering them here duplicated "New place" / "New thing" under the header.
-  if (isMobile) {
-    return null;
-  }
-
   return (
     <nav
       aria-label="Memory sections"
@@ -50,7 +43,13 @@ export function MemoryHubNav({ actions }: { actions?: ReactNode }) {
         </div>
       </div>
 
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {/* Create lives in the top-bar Add menu on a phone, so page actions
+          (a "New place" / "New thing" button) are omitted there — rendering
+          them here would duplicate it. The scrolling section strip above
+          stays: the phone's only nav surface is the left drawer, and its own
+          Memory row doesn't expose People/Places/Things individually unless
+          its chevron is opened, so this strip is the fast path to them. */}
+      {actions && !isMobile && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </nav>
   );
 }

@@ -119,8 +119,23 @@ describe('SavedSearchResolver.savedSearches', () => {
     const result = await resolver.savedSearches(ownerCtx, { first: 50 });
 
     expect(savedSearchService.ensureDefaults).toHaveBeenCalledWith({ userId: 'owner-1' });
-    expect(savedSearchService.findAll).toHaveBeenCalledWith({ userId: 'owner-1' });
+    expect(savedSearchService.findAll).toHaveBeenCalledWith(
+      { userId: 'owner-1' },
+      { query: undefined, isSeed: undefined },
+    );
     expect(result.totalCount).toBe(1);
     expect(result.edges[0]?.node.name).toBe('My search');
+  });
+
+  it('passes the query text and isSeed filter through to the service', async () => {
+    const { resolver, savedSearchService } = makeResolver();
+    savedSearchService.findAll.mockResolvedValue([]);
+
+    await resolver.savedSearches(ownerCtx, { first: 50 }, 'yoga', false);
+
+    expect(savedSearchService.findAll).toHaveBeenCalledWith(
+      { userId: 'owner-1' },
+      { query: 'yoga', isSeed: false },
+    );
   });
 });

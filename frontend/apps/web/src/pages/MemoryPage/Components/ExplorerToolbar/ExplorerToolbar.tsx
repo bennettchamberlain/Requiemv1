@@ -70,6 +70,7 @@ import {
   removeEntityFilter,
   writeCsvFilterParam,
 } from './filterParams';
+import { SavedSearchPicker } from './SavedSearchPicker';
 import { droppedFilters, readMemoryView, unsupportedReason, type FilterDimension } from './viewFilterSupport';
 
 // Single-select sort presets that map to the backend's sortBy + sortOrder pair.
@@ -662,6 +663,7 @@ function FilterDropArea() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <FilterCountLabel />
+          <SavedSearchPicker />
           <SaveSearchButton />
         </div>
       </div>
@@ -1092,6 +1094,7 @@ function FilterControlsRow({
       {showSave && (
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <FilterCountLabel />
+          <SavedSearchPicker />
           <SaveSearchButton />
         </div>
       )}

@@ -146,6 +146,8 @@ export class SavedSearchResolver {
   async savedSearches(
     @Context() context: RequestContext,
     @Args() pagination: PaginationArgs,
+    @Args('query', { type: () => String, nullable: true }) query?: string,
+    @Args('isSeed', { type: () => Boolean, nullable: true }) isSeed?: boolean,
   ): Promise<SavedSearchConnection> {
     const serviceContext = toServiceContext(context);
 
@@ -153,7 +155,7 @@ export class SavedSearchResolver {
     // user already has any saved search, so a reboot cannot duplicate seeds.
     await this.savedSearchService.ensureDefaults(serviceContext);
 
-    const entities = await this.savedSearchService.findAll(serviceContext);
+    const entities = await this.savedSearchService.findAll(serviceContext, { query, isSeed });
 
     const { slice, pageInfo, totalCount } = Paginator.paginate(entities, {
       ...pagination,

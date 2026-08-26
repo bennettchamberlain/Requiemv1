@@ -83,9 +83,11 @@ hub tabs) and `layouts/Main/SecondaryNavigation/selfSections.ts` (the Self tabs)
 > bottom-anchored rail row instead of two levels deep inside the Self tile;
 > Capture (the header/rail camera button) became mobile-only; Notes joined
 > `MEMORY_HUB_SECTIONS` at `/memory/notes`; `/search`'s dead standalone UI was
-> deleted (it now redirects to `/memory/events`); the phone gained a
-> persistent bottom tab bar (Plan/Calendar/Memory/Saved Searches/Self) as well
-> as the drawer. **`images/nav/power-rail*.png` and `images/nav/memory-submenu.png`
+> deleted (it now redirects to `/memory/events`). A persistent bottom tab bar
+> was briefly added and then reverted the same day — the phone's only
+> navigation surface is the left drawer, matching desktop's own left-side
+> rail rather than mixing two different navigation paradigms.
+> **`images/nav/power-rail*.png` and `images/nav/memory-submenu.png`
 > below have not been recaptured against this order** — treat the bullets as
 > authoritative over the screenshots until they are.
 

@@ -51,7 +51,9 @@ const UNSUPPORTED: Record<MemoryView, Partial<Record<FilterDimension, string>>> 
   list: {},
   gallery: {},
   map: {},
-  timeline: {},
+  timeline: {
+    sort: 'Timeline always plays chronologically, so sort has no effect here.',
+  },
   graph: {
     semantic: 'The graph ranks by connection, not by meaning, so semantic search has no effect here.',
     bbox: 'The graph has no map viewport, so a map area cannot narrow it.',

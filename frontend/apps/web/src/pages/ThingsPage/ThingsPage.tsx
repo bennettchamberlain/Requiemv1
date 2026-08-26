@@ -1,13 +1,15 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
 import { AlertDialog, Badge, Button, Card, Input, Select, Sheet, Tabs } from '@ci/shadcn';
 import { Filter, Merge, X } from '@ci/shadcn/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ChatAbout } from '@/components/ChatWithAgent';
 import { EntityGrid, ItemGridItem } from '@/components/entities';
+import { ErrorState } from '@/components/ErrorState';
+import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { ThingModal } from '@/components/modals/ThingModal';
@@ -20,6 +22,7 @@ import type {
   ItemLifecycleState,
   ItemSortOrder,
 } from '@/graphql/graphql';
+import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
 import { namedChatContext } from '@/lib/agentChat';
 import { humanizeEnum } from '@/lib/utils';
 
@@ -494,7 +497,30 @@ export function ThingsPage() {
   const navigate = useNavigate();
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  // Search text lives in the URL (not local state) so it survives navigating
+  // away to a thing and back, the way the filter-panel URLs elsewhere in the
+  // app already do.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchQuery = searchParams.get('q') ?? '';
+  const setSearchQuery = useCallback(
+    (value: string) => {
+      setSearchParams(
+        (params) => {
+          const next = new URLSearchParams(params);
+
+          if (value === '') {
+            next.delete('q');
+          } else {
+            next.set('q', value);
+          }
+
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
   const [category, setCategory] = useState('');
   const [brand, setBrand] = useState('');
   const [condition, setCondition] = useState<ItemCondition | null>(null);
@@ -545,21 +571,43 @@ export function ThingsPage() {
   // focus on the first keystroke of every new query.
   const view = data ?? previousData;
   const things: ThingNode[] = useMemo(() => (view?.items.edges ?? []).map((edge) => edge.node), [view]);
-  const pageInfo = view?.items.pageInfo;
-  const hasNextPage = pageInfo?.hasNextPage ?? false;
   const totalCount = view?.items.totalCount ?? 0;
 
   const duplicates = duplicatesData?.itemDuplicates;
   const duplicateGroups = duplicates?.groups ?? [];
 
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const fetchNextPage = useCallback(
+    (after: string) =>
+      fetchMore({
+        variables: { after },
+        updateQuery: (prev, { fetchMoreResult }) => {
+          if (!fetchMoreResult?.items) {
+            return prev;
+          }
+
+          const prevEdges = prev.items?.edges ?? [];
+          const seen = new Set(prevEdges.map((edge) => edge.cursor));
+
+          return {
+            items: {
+              ...fetchMoreResult.items,
+              edges: [...prevEdges, ...fetchMoreResult.items.edges.filter((edge) => !seen.has(edge.cursor))],
+            },
+          };
+        },
+      }),
+    [fetchMore],
+  );
+
+  const pagination = useInfiniteConnection({
+    connection: view?.items,
+    loadedCount: things.length,
+    fetchNextPage,
+  });
 
   const markFilterChanged = useCallback(() => {
-    setLoadMoreError(null);
-  }, []);
+    pagination.reset();
+  }, [pagination.reset]);
 
   const activeFilterChips = useMemo(() => {
     const chips: Array<{ id: string; label: string; onClear: () => void }> = [];
@@ -666,61 +714,6 @@ export function ThingsPage() {
     },
   };
 
-  const loadMore = useCallback(() => {
-    if (!hasNextPage || loadingMore || loadMoreError != null || !pageInfo?.endCursor) {
-      return;
-    }
-
-    setLoadingMore(true);
-
-    fetchMore({
-      variables: { after: pageInfo.endCursor },
-      updateQuery: (prev, { fetchMoreResult }) => {
-        if (!fetchMoreResult?.items) {
-          return prev;
-        }
-
-        const prevEdges = prev.items?.edges ?? [];
-        const seen = new Set(prevEdges.map((edge) => edge.cursor));
-
-        return {
-          items: {
-            ...fetchMoreResult.items,
-            edges: [...prevEdges, ...fetchMoreResult.items.edges.filter((edge) => !seen.has(edge.cursor))],
-          },
-        };
-      },
-    })
-      .catch((cause: unknown) => {
-        // Latch the failure rather than just clearing `loadingMore`: the
-        // sentinel is still on screen, so rebuilding the observer would re-fire
-        // it immediately and spin a request loop against a failing page.
-        setLoadMoreError(cause instanceof Error ? cause.message : 'Something went wrong.');
-      })
-      .finally(() => setLoadingMore(false));
-  }, [fetchMore, hasNextPage, loadMoreError, loadingMore, pageInfo?.endCursor]);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-
-    if (!sentinel || !hasNextPage) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          loadMore();
-        }
-      },
-      { root: scrollRef.current, rootMargin: '400px' },
-    );
-
-    observer.observe(sentinel);
-
-    return () => observer.disconnect();
-  }, [hasNextPage, loadMore]);
-
   const loadMoreDuplicates = () => {
     setDuplicatePages((pages) => pages + 1);
 
@@ -764,11 +757,20 @@ export function ThingsPage() {
   if (loading && view == null) {
     content = <LoadingPage />;
   } else if (error && view == null) {
-    content = <EmptyState message={`Couldn't load things: ${error.message}`} />;
+    // Was the same confident EmptyState the genuine "No things found" branch
+    // below uses — a fetch failure read identically to "you have none", with
+    // no retry. ErrorState is the shared alternative (see its docblock).
+    content = (
+      <ErrorState
+        title="Could not load things"
+        description="Your things are still here — this device could not reach them just now."
+        onRetry={() => void refetch()}
+      />
+    );
   } else {
     content = (
       <PullToRefresh onRefresh={refetch}>
-      <PageContent ref={scrollRef} className="gap-4 p-0">
+      <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
         <MemoryHubShell
           actions={
             isMobile ? undefined : (
@@ -794,7 +796,7 @@ export function ThingsPage() {
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
                     // New query, new cursor space — a stale failure must not gate it.
-                    setLoadMoreError(null);
+                    pagination.reset();
                   }}
                   // Any min-width guess still clips this placeholder at SOME width —
                   // full-width below `sm` sidesteps that: count + Filters drop to
@@ -951,23 +953,7 @@ export function ThingsPage() {
                     ))}
                   </EntityGrid>
 
-                  {hasNextPage && loadMoreError == null && <div ref={sentinelRef} className="h-8" />}
-
-                  {loadMoreError != null && (
-                    <div className="flex flex-col items-center gap-2 py-3">
-                      <div className="text-sm text-muted-foreground">
-                        Couldn&apos;t load more things: {loadMoreError}
-                      </div>
-                      <Button variant="outline" size="sm" onClick={() => setLoadMoreError(null)}>
-                        Try again
-                      </Button>
-                    </div>
-                  )}
-
-                  <div className="py-3 text-center text-xs text-muted-foreground">
-                    {things.length} of {totalCount} loaded
-                    {loadingMore ? ' · loading…' : hasNextPage ? '' : ' · end'}
-                  </div>
+                  <InfiniteListFooter pagination={pagination} noun="things" />
                 </>
               )}
             </Tabs.Content>
