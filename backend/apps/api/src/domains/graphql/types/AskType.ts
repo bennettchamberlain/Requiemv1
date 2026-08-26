@@ -7,6 +7,7 @@ import {
   type AskGrant,
   type AskQuery,
   type DisclosureSummary,
+  type GrantUsage,
 } from '@ci/domains/asks';
 
 import { GlobalUID } from './GlobalUID';
@@ -68,12 +69,27 @@ export class AskQueryType {
   @Field(() => AskActorType, { nullable: true })
   actor!: AskActorType | null;
 
+  /**
+   * The purpose the asker stated, lifted out of `filters` for display.
+   *
+   * A first-class field on the OUTPUT even though it lives in `filters` on the
+   * way in: the consent surface renders it, and making every client reach into
+   * an untyped bag for a consent-relevant fact is how it ends up unrendered.
+   * Null means none was stated — which is itself an input to the decision.
+   */
+  @Field(() => String, { nullable: true })
+  purpose!: string | null;
+
   static toType(query: AskQuery): AskQueryType {
     return {
       queryType: query.queryType,
       dataClass: query.dataClass ?? null,
       prompt: query.prompt,
       actor: query.actor ? { kind: query.actor.kind, label: query.actor.label ?? null } : null,
+      // Only a string counts. `filters` is jsonb and a non-string there is not
+      // a purpose somebody stated — rendering `[object Object]` beside "they
+      // say this is for" would be worse than showing nothing.
+      purpose: typeof query.filters?.purpose === 'string' ? query.filters.purpose : null,
     };
   }
 }
@@ -365,7 +381,26 @@ export class AskGrantType {
   @Field(() => Boolean)
   active!: boolean;
 
-  static toType(grant: AskGrant): AskGrantType {
+  /**
+   * How many disclosures have cited this grant, and when the last one did.
+   *
+   * `useCount: 0` with a null `lastUsedAt` means DORMANT — the owner allowed
+   * something and nothing ever came of it. That is a different state from
+   * "revoked" and from "lapsed", and the matrix could not previously express
+   * it: a grant firing daily and one that has never matched looked identical,
+   * and they call for opposite actions.
+   *
+   * Read from `ci.ask_audit.consent_basis` — what a disclosure actually cited —
+   * never from the grant's own row, which records what it permits and never
+   * what it did.
+   */
+  @Field(() => Int)
+  useCount!: number;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  lastUsedAt!: Date | null;
+
+  static toType(grant: AskGrant, usage?: GrantUsage): AskGrantType {
     return {
       id: GlobalUID.encode('ask-grant', grant.id),
       granteeId: grant.granteeUserId ? GlobalUID.encode('user', grant.granteeUserId) : null,
@@ -384,6 +419,8 @@ export class AskGrantType {
         ? GlobalUID.encode('ask-grant', grant.supersedesGrantId)
         : null,
       active: isGrantActive(grant),
+      useCount: usage?.useCount ?? 0,
+      lastUsedAt: usage?.lastUsedAt ?? null,
     };
   }
 }

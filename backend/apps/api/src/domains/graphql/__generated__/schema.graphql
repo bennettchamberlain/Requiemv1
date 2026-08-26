@@ -261,6 +261,7 @@ type AskGrantType {
   granteeId: ID
   granteePeerLinkId: ID
   id: ID!
+  lastUsedAt: DateTime
   mode: GrantMode!
   purpose: String
   queryType: String!
@@ -268,6 +269,7 @@ type AskGrantType {
   revokedAt: DateTime
   supersedesGrantId: ID
   updatedAt: DateTime!
+  useCount: Int!
   version: Int!
 }
 
@@ -287,6 +289,7 @@ type AskQueryType {
   actor: AskActorType
   dataClass: String
   prompt: String!
+  purpose: String
   queryType: String!
 }
 

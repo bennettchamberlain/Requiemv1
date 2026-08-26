@@ -20,6 +20,8 @@ import {
 } from './askBinding';
 import { AskComposer } from './AskComposer';
 import {
+  grantsLapsingWithin,
+  lapseNudge,
   type AskAuditOutcome,
   askDecisionState,
   askStatusLabel,
@@ -66,6 +68,14 @@ import type { RelationshipSummary } from './relationshipPresentation';
  * leaving the reader to guess what window a number covers.
  */
 const DISCLOSURE_WINDOW_DAYS = 30;
+
+/**
+ * How far ahead the Grant Manager looks for grants about to lapse.
+ *
+ * A month, matching the disclosure window above — the unit people reason about
+ * consent in. Far enough ahead to act on, near enough that the nudge stays rare.
+ */
+const LAPSE_HORIZON_DAYS = 30;
 const MAX_COUNTED_DISCLOSURES = 5_000;
 
 type Tab = 'inbox' | 'compose' | 'outbox' | 'grants' | 'peers' | 'history';
@@ -293,6 +303,7 @@ export function AsksPage() {
                 searchBreadth={searchBreadthNote(ask.query)}
                 downgrades={[...OWNER_ANSWER_FORMS]}
                 actor={ask.query.actor}
+                statedPurpose={ask.query.purpose}
                 busy={busy}
                 onApprove={() => handleApprove(ask.id)}
                 onDowngrade={(form) => handleApprove(ask.id, form)}
@@ -407,8 +418,20 @@ export function AsksPage() {
       // `GrantManager` is only rendered once at least one grant exists — so the
       // one screen a new owner actually sees was the one screen with no way to
       // write the first grant.
+      // Grants that will lapse ON THEIR OWN soon. Rendered above the matrix
+      // and only when there is something to say — a banner that appears every
+      // time teaches people to look past the banner, and then the one time it
+      // matters they look past it too.
+      const lapsing = lapseNudge(
+        grantsLapsingWithin(grants.data?.myAskGrants ?? [], LAPSE_HORIZON_DAYS).length,
+        LAPSE_HORIZON_DAYS,
+      );
+
       content = grantGroups.length ? (
         <div className="flex flex-col gap-4">
+          {lapsing ? (
+            <p className="text-muted-foreground bg-muted rounded-md px-3 py-2 text-xs">{lapsing}</p>
+          ) : null}
           {addingGrant ? newGrantForm : null}
           <GrantManager
             groups={grantGroups}
@@ -689,6 +712,8 @@ function groupGrants(
     revokedAt?: unknown;
     expiresAt?: unknown;
     active?: boolean | null;
+    useCount?: number | null;
+    lastUsedAt?: unknown;
   }[],
   peerLinks: readonly {
     id: string;
@@ -742,6 +767,8 @@ function groupGrants(
       expiresAt: asIsoString(row.expiresAt),
       revokedAt: asIsoString(row.revokedAt),
       active: row.active ?? undefined,
+      useCount: row.useCount ?? 0,
+      lastUsedAt: asIsoString(row.lastUsedAt),
     });
   }
 

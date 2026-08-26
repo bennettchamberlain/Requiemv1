@@ -28,6 +28,7 @@ export const ASK_INBOX = gql(`
         queryType
         dataClass
         prompt
+        purpose
         actor {
           kind
           label
@@ -49,6 +50,7 @@ export const ASK_OUTBOX = gql(`
         queryType
         dataClass
         prompt
+        purpose
         actor {
           kind
           label
@@ -90,6 +92,11 @@ export const MY_ASK_GRANTS = gql(`
       revokedAt
       expiresAt
       active
+      # Whether this grant has ever actually fired, and when last. A grant
+      # firing daily and one that has never matched look identical without
+      # these, and they call for opposite actions.
+      useCount
+      lastUsedAt
       createdAt
     }
   }
@@ -284,6 +291,7 @@ export const ASK_DISCLOSURE_HISTORY = gql(`
           queryType
           dataClass
           prompt
+          purpose
           actor {
             kind
             label
@@ -394,6 +402,7 @@ export const CREATE_ASK = gql(`
           queryType
           dataClass
           prompt
+          purpose
           actor {
             kind
             label

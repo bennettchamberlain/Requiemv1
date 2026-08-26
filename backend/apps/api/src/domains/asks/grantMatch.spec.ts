@@ -629,3 +629,57 @@ describe('delegation — whether their AGENT may exercise a grant', () => {
     );
   });
 });
+
+describe('purpose binding', () => {
+  const purposeGrant = [
+    {
+      id: 'g1',
+      mode: 'auto',
+      queryType: 'content',
+      dataClass: 'photos',
+      revokedAt: null,
+      expiresAt: null,
+      scope: { purpose: 'wedding invites' },
+    },
+  ] as unknown as Parameters<typeof evaluateGrant>[1];
+
+  const ask = (purpose?: string) =>
+    ({
+      queryType: 'content',
+      dataClass: 'photos',
+      prompt: 'the address',
+      ...(purpose == null ? {} : { filters: { purpose } }),
+    }) as Parameters<typeof evaluateGrant>[0];
+
+  it('auto-answers when the ask states the purpose the grant names', () => {
+    expect(evaluateGrant(ask('wedding invites'), purposeGrant).decision).toBe('auto');
+  });
+
+  it('normalizes both sides, so casing and padding do not decide consent', () => {
+    expect(evaluateGrant(ask('  Wedding Invites '), purposeGrant).decision).toBe('auto');
+  });
+
+  it('does not match a DIFFERENT purpose', () => {
+    expect(evaluateGrant(ask('marketing'), purposeGrant).decision).toBe('review');
+  });
+
+  /**
+   * The same rule every other "the ask must name it too" clause in this file
+   * follows: a grant that names a purpose is not satisfied by an ask that
+   * states none. Downgraded to review, never widened.
+   */
+  it('does not match an ask that states NO purpose', () => {
+    expect(evaluateGrant(ask(), purposeGrant).decision).toBe('review');
+  });
+
+  it('ignores a non-string purpose on the ask rather than coercing it', () => {
+    const weird = {
+      queryType: 'content',
+      dataClass: 'photos',
+      prompt: 'x',
+      filters: { purpose: { toString: () => 'wedding invites' } },
+    } as unknown as Parameters<typeof evaluateGrant>[0];
+
+    expect(evaluateGrant(weird, purposeGrant).decision).toBe('review');
+  });
+});

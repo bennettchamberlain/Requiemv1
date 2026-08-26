@@ -531,3 +531,149 @@ export function actorLine(actor: AskActorView | null | undefined): string | null
 export function actorIsDelegated(actor: AskActorView | null | undefined): boolean {
   return actor?.kind === 'first-party-agent' || actor?.kind === 'third-party-agent';
 }
+
+/**
+ * WHY the asker says they want this, shown at the consent moment.
+ *
+ * ═══ CARRIED, SHOWN, NEVER JUDGED ═══
+ *
+ * UMA-for-agents' recommendation #15 is *stated intent, never evaluated*: let a
+ * requester declare their purpose, carry it unread, and let policy notice its
+ * ABSENCE rather than judge its truthfulness. That is exactly right here — this
+ * box has no way to verify why anyone wants anything, and a UI that implied it
+ * had checked would be asserting something nobody checked.
+ *
+ * So the purpose is ATTRIBUTED, like the prompt and the actor label: it appears
+ * as something they said, not as something established. The one place a purpose
+ * is enforced is a purpose-LIMITED grant, which is the owner's own narrowing
+ * and can only ever refuse to match.
+ *
+ * Null when none was stated — and the absence is worth noticing rather than
+ * hiding, which is why `purposeAbsentNote` exists beside this.
+ */
+export function purposeLine(purpose: unknown): string | null {
+  if (typeof purpose !== 'string' || !purpose.trim()) {
+    return null;
+  }
+
+  return `They say this is for: \u201C${purpose.trim()}\u201D`;
+}
+
+/**
+ * The note shown when an ask states no purpose at all.
+ *
+ * Deliberately mild. Most asks state none — nothing populates the field on the
+ * local path yet — so this is a fact, not a flag. It exists because "they did
+ * not say why" is a real input to a consent decision, and a card that simply
+ * omitted the line would leave the owner unable to tell it from "the app did
+ * not show me".
+ */
+export function purposeAbsentNote(purpose: unknown): string | null {
+  return purposeLine(purpose) == null ? 'They did not say what this is for.' : null;
+}
+
+/**
+ * Whether a grant has ever fired, and when it last did.
+ *
+ * ═══ DORMANT IS A STATE, AND THE MATRIX COULD NOT SHOW IT ═══
+ *
+ * The Grant Manager showed what an owner ALLOWED and never whether anything
+ * came of it, so a grant firing daily and one that has never once matched
+ * looked identical — and they call for opposite actions. The dormant one is
+ * clutter to tidy up; the busy one is the thing to look at twice.
+ *
+ * "Never used" is stated plainly and WITHOUT alarm. It is the ordinary state of
+ * a grant somebody wrote in advance, which is exactly what standing consent is
+ * for.
+ */
+export function grantUsageLine(
+  usage: { useCount: number; lastUsedAt?: string | null },
+  now: Date = new Date(),
+): string {
+  if (usage.useCount <= 0 || !usage.lastUsedAt) {
+    return 'Never used';
+  }
+
+  const times = usage.useCount === 1 ? 'Used once' : `Used ${usage.useCount} times`;
+  const last = lastActiveRelative(usage.lastUsedAt, now);
+
+  return last ? `${times} · last ${last}` : times;
+}
+
+/** "3 days ago" / "today", or null when the value is unreadable. */
+function lastActiveRelative(iso: string, now: Date): string | null {
+  const at = new Date(iso);
+
+  if (Number.isNaN(at.getTime())) {
+    return null;
+  }
+
+  const days = Math.floor((now.getTime() - at.getTime()) / 86_400_000);
+
+  if (days < 0) {
+    return null;
+  }
+
+  if (days === 0) {
+    return 'today';
+  }
+
+  if (days === 1) {
+    return 'yesterday';
+  }
+
+  if (days < 30) {
+    return `${days} days ago`;
+  }
+
+  const months = Math.floor(days / 30);
+
+  return `${months} month${months === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * Grants that will lapse on their own within `withinDays`.
+ *
+ * ONLY LIVE ONES, and only ones that actually carry an expiry. A revoked grant
+ * cannot lapse and a grant with no `expiresAt` never will, so counting either
+ * would inflate a nudge whose whole value is that it is rare enough to read.
+ *
+ * An expiry ALREADY PAST is excluded too: that grant has lapsed, which is a
+ * thing that happened rather than a thing about to. `active` from the server is
+ * what decides liveness — the client re-deriving it from `revokedAt` alone is
+ * how a lapsed grant gets treated as live.
+ */
+export function grantsLapsingWithin<T extends { active: boolean; expiresAt?: string | null }>(
+  grants: readonly T[],
+  withinDays: number,
+  now: Date = new Date(),
+): T[] {
+  const horizon = now.getTime() + withinDays * 86_400_000;
+
+  return grants.filter((grant) => {
+    if (!grant.active || !grant.expiresAt) {
+      return false;
+    }
+
+    const at = new Date(grant.expiresAt).getTime();
+
+    return Number.isFinite(at) && at > now.getTime() && at <= horizon;
+  });
+}
+
+/**
+ * The nudge shown above the matrix, or null when there is nothing to say.
+ *
+ * Null rather than "0 grants lapse soon" — a banner that renders every time
+ * teaches people to look past the banner, and then the one time it matters they
+ * look past it too.
+ */
+export function lapseNudge(count: number, withinDays: number): string | null {
+  if (count <= 0) {
+    return null;
+  }
+
+  const grants = count === 1 ? '1 grant' : `${count} grants`;
+
+  return `${grants} will lapse on their own within ${withinDays} days. They stop answering when they do — nothing else changes.`;
+}

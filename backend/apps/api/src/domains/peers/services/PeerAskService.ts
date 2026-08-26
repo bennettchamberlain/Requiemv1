@@ -847,15 +847,31 @@ export function toAskQuery(body: PeerAskBody): AskQuery {
   // way around a `delegation` restriction rather than a gap in one.
   const actor = body.actor ? { actor: body.actor } : {};
 
+  // WHY, carried on every archetype.
+  //
+  // `scopeCoversQuery` reads `filters.purpose`, and nothing ever wrote one:
+  // availability folded its purpose into the PROMPT and the other two had no
+  // field at all, so a purpose-limited grant matched no inbound peer ask ever.
+  // The body-level `purpose` is preferred; availability's own is the fallback,
+  // so a peer that predates the body field still binds correctly.
+  const statedPurpose =
+    body.purpose ?? (body.request.archetype === 'availability' ? body.request.purpose : undefined);
+  const purpose = statedPurpose ? { purpose: statedPurpose } : {};
+
   switch (body.request.archetype) {
     case 'relationship':
-      return { queryType: 'relationship', prompt: body.request.subject, ...actor };
+      return {
+        queryType: 'relationship',
+        prompt: body.request.subject,
+        filters: { ...purpose },
+        ...actor,
+      };
     case 'content':
       return {
         queryType: 'content',
         dataClass: body.request.dataClass,
         prompt: body.request.subject,
-        filters: { from: body.request.from, to: body.request.to },
+        filters: { from: body.request.from, to: body.request.to, ...purpose },
         ...actor,
       };
     case 'availability':
@@ -863,7 +879,7 @@ export function toAskQuery(body: PeerAskBody): AskQuery {
         queryType: 'availability',
         dataClass: 'calendar',
         prompt: body.request.purpose ?? body.prompt,
-        filters: { from: body.request.from, to: body.request.to },
+        filters: { from: body.request.from, to: body.request.to, ...purpose },
         ...actor,
       };
   }

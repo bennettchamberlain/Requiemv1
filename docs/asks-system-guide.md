@@ -271,6 +271,16 @@ asker ask again — never as a side effect of withdrawing one.
 A `deny` at approval time stamps `none`: if a block grant covers this ask *now*,
 the owner's tap must not be able to push anything past it.
 
+### 2.7b Dormant grants, and grants about to lapse
+
+The matrix showed what an owner **allowed** and never whether anything came of it, so a grant firing daily and one that has never once matched looked identical — and they call for opposite actions. The dormant one is clutter to tidy up; the busy one is the thing to look at twice.
+
+`AskGrantType.useCount` / `lastUsedAt` are folded from **`ci.ask_audit.consent_basis`** — the grant id a disclosure actually cited — never from the grant's own row, which records what it *permits* and never what it *did*. One usage read is joined onto the whole list in memory, rather than a lookup per grant: this is the tab an owner opens to scan everything at once, and a per-row query would be an N+1 over the audit.
+
+Usage is carried on **revoked and superseded rows too**: *"this fired 40 times before I withdrew it"* is exactly what a consent history is for.
+
+Beside it, the Grant Manager now nudges about grants that will **lapse on their own** within 30 days. `grantsLapsingWithin` counts only grants that are live (by the server's own `active`, never re-derived) *and* carry an expiry *and* whose expiry is still ahead — a revoked grant cannot lapse, one with no expiry never will, and one already past has lapsed rather than being about to. The banner renders **only when there is something to say**: one that appears every time teaches people to look past it, and then the once it matters they look past it too.
+
 ### 2.8 Grants supersede; they are never updated
 
 `ci.ask_grants` is **append-only by design**. `revoke` stamps `revoked_at` with
