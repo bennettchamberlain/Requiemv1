@@ -191,8 +191,11 @@ export class McpToolService implements OnModuleInit {
 
   private registerNativeTools() {
     // Every registered tool is a curated intent; advertise them all to MCP clients under their
-    // executable (underscored) names.
-    const schemas = this.toolRegistry.getAgentFacingTools();
+    // executable (underscored) names. `getOutboundCatalogTools` (rather than the agent-facing
+    // full list) excludes tools sourced from a user's own external MCP servers — re-publishing
+    // those here would let a client reach back through CI-Server's own MCP server to that same
+    // external server, a recursive re-exposure this endpoint does not exist to provide.
+    const schemas = this.toolRegistry.getOutboundCatalogTools();
 
     for (const schema of schemas) {
       // schema.name is the dotted intent id; expose/execute by the MCP-safe executable name.

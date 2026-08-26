@@ -16,7 +16,7 @@
  *
  * The actual BlueBubbles HTTP protocol (auth, pagination, the envelope shape)
  * is NOT reimplemented here: it lives once in `BlueBubblesApiClient`
- * (`domains/bluebubbles/BlueBubblesApiClient.ts`), a plain DI-free class with
+ * (`./bluebubblesApiClient.ts`, same domain), a plain DI-free class with
  * no NestJS imports, so it is safe to use from this framework-free module too.
  */
 import fs from 'node:fs';
@@ -25,16 +25,11 @@ import path from 'node:path';
 import { isShortCode } from '../staging/identity';
 
 import { attachmentMediaKind, sanitizeAttachmentFilename } from './attachment_extract';
+import { BlueBubblesApiClient, type BlueBubblesChat, type BlueBubblesMessage } from './bluebubblesApiClient';
 import type { APIImporter, SettingsAccess } from './registry';
 import { registerDataSource } from './registry';
 import type { AttachmentDescriptor, Entity, Graph, ImportParams, Item } from './timeline';
 import { timeframeContains } from './timeline';
-
-import {
-  BlueBubblesApiClient,
-  type BlueBubblesChat,
-  type BlueBubblesMessage,
-} from '@ci/domains/bluebubbles/BlueBubblesApiClient';
 
 /** Rows requested per `/message/query` page. A short page is the drain signal. */
 const PAGE_LIMIT = 1000;

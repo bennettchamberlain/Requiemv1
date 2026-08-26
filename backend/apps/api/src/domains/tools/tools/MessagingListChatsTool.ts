@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
 import { LoggerService } from '@ci/common/logging';
-import { BlueBubblesClientService } from '@ci/domains/bluebubbles/services/BlueBubblesClientService';
+import { BlueBubblesClientService } from '@ci/domains/bluebubbles';
 
 import { BaseTool } from '../core/BaseTool';
 import type { IntentDefinition, ToolExecutionContext } from '../core/types';

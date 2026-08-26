@@ -3,8 +3,8 @@ import { z } from 'zod';
 
 import { LoggerService } from '@ci/common/logging';
 import { ValidationPipe } from '@ci/common/pipes';
+import type { BlueBubblesMessage } from '@ci/domains/import';
 
-import type { BlueBubblesMessage } from '../BlueBubblesApiClient';
 import { BlueBubblesConfigService } from '../services/BlueBubblesConfigService';
 import { BlueBubblesSyncService } from '../services/BlueBubblesSyncService';
 

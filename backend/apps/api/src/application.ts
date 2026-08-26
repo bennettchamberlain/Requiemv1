@@ -49,6 +49,7 @@ import { IntelligenceModule } from '@ci/domains/intelligence';
 import { LLMModule } from '@ci/domains/llm';
 import { MaintenanceModule } from '@ci/domains/maintenance';
 import { McpModule } from '@ci/domains/mcp';
+import { McpClientModule } from '@ci/domains/mcp-client';
 import { MemoryModule } from '@ci/domains/memory';
 import { ModelRoutingModule } from '@ci/domains/model-routing';
 import { NotesModule } from '@ci/domains/notes';
@@ -130,6 +131,7 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     IntelligenceModule,
     LLMModule,
     McpModule,
+    McpClientModule,
     ModelRoutingModule,
     OnboardingModule,
     PersonalizationModule,

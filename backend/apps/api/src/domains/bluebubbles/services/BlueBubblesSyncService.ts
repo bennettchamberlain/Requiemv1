@@ -6,20 +6,19 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import {
-  IMPORT_STAGE_WEIGHTS,
-  ImportRunService,
-  PushStage,
-  StagedWriter,
-  type ImportStageKindName,
-} from '@ci/domains/import';
-import {
+  BlueBubblesApiClient,
   BlueBubblesAPIImporter,
   downloadAttachments,
+  IMPORT_STAGE_WEIGHTS,
+  ImportRunService,
   mapBlueBubblesMessageToGraph,
-} from '@ci/domains/import/datasources/bluebubbles';
+  PushStage,
+  StagedWriter,
+  type BlueBubblesMessage,
+  type ImportStageKindName,
+} from '@ci/domains/import';
 import { UserService } from '@ci/domains/user';
 
-import { BlueBubblesApiClient, type BlueBubblesMessage } from '../BlueBubblesApiClient';
 import { BlueBubblesConfigEntity } from '../entities/BlueBubblesConfigEntity';
 
 import { BlueBubblesConfigService } from './BlueBubblesConfigService';

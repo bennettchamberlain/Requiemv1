@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { BlueBubblesApiClient, type BlueBubblesChat, type BlueBubblesMessage } from '../BlueBubblesApiClient';
+import { BlueBubblesApiClient, type BlueBubblesChat, type BlueBubblesMessage } from '@ci/domains/import';
 
 import { BlueBubblesConfigService } from './BlueBubblesConfigService';
 

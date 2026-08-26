@@ -46,3 +46,6 @@ import { BlueBubblesSyncService } from './services/BlueBubblesSyncService';
   exports: [BlueBubblesClientService, BlueBubblesConfigService],
 })
 export class BlueBubblesModule {}
+
+export { BlueBubblesClientService } from './services/BlueBubblesClientService';
+export { BlueBubblesConfigService } from './services/BlueBubblesConfigService';

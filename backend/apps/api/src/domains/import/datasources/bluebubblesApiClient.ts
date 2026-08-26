@@ -5,10 +5,17 @@
  *
  * The actual BlueBubbles HTTP protocol logic — auth, pagination, the
  * `{status, message, data}` envelope — lives here ONCE, shared by:
- *   - the ETL importer (`domains/import/datasources/bluebubbles.ts`), which
+ *   - `./bluebubbles.ts`, the ETL importer in this same domain, which
  *     constructs this class directly (datasources are framework-free), and
- *   - the AI messaging tools, via `BlueBubblesClientService` (the NestJS-DI
- *     wrapper in `services/BlueBubblesClientService.ts`).
+ *   - `domains/bluebubbles`'s `BlueBubblesClientService` (the NestJS-DI
+ *     wrapper the AI messaging tools and the settings controller use),
+ *     reached through this domain's `@ci/domains/import` barrel.
+ *
+ * Lives in `domains/import`, not `domains/bluebubbles`, specifically so that
+ * dependency stays one-directional (`bluebubbles` → `import`): the datasource
+ * needs this client, and `bluebubbles` needs the datasource's importer +
+ * mapping functions, so putting the client in `bluebubbles` instead would
+ * create a real barrel-to-barrel import cycle between the two domains.
  *
  * No framework imports (no NestJS decorators) — this file must stay importable
  * from the plain-TypeScript `datasources/*.ts` module, which never imports
