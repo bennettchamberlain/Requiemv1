@@ -9,6 +9,7 @@ import {
   ErrorState,
   MemoryEmptyState,
   TimelineSkeleton,
+  formatLoadedCount,
   getEntityTimestamp,
   isChronologicalSort,
 } from '../Components';
@@ -39,7 +40,8 @@ export function StoryTimelineView() {
     searchParams.get('sortOrder') === 'asc' ? 'newer' : 'older';
   const sessionKey = searchParams.toString();
 
-  const [{ data, loading, loadingMore, hasNextPage, loadMore, error, refetch }] = useEntityService();
+  const [{ data, loading, loadingMore, hasNextPage, loadMore, error, refetch }, { setActiveEntity }] =
+    useEntityService();
   const [focusId, setFocusId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,6 +66,7 @@ export function StoryTimelineView() {
       }
 
       loadMore();
+
       return;
     }
 
@@ -130,20 +133,32 @@ export function StoryTimelineView() {
     nextPageDirection,
   ]);
 
+  const focusEntity = useCallback(
+    (entityId: string) => {
+      const entity = data.find((item) => item.id === entityId);
+      if (entity) {
+        setActiveEntity(entity);
+      }
+    },
+    [data, setActiveEntity],
+  );
+
   const handleSlideChange = useCallback(
     (uniqueId: string) => {
       if (uniqueId === TITLE_SLIDE_ID || uniqueId === deck.title.unique_id) {
         const first = deck.events[0]?.unique_id;
         if (first) {
           setFocusId(first);
+          focusEntity(first);
         }
 
         return;
       }
 
       setFocusId(uniqueId);
+      focusEntity(uniqueId);
     },
-    [deck.events, deck.title.unique_id],
+    [deck.events, deck.title.unique_id, focusEntity],
   );
 
   if (filling) {
@@ -193,6 +208,12 @@ export function StoryTimelineView() {
         sessionKey={sessionKey}
         onSlideChange={handleSlideChange}
       />
+
+      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2">
+        <div className="rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md">
+          {formatLoadedCount({ loaded: deck.events.length, totalCount: datedInDeck, loadingMore, hasNextPage })}
+        </div>
+      </div>
     </div>
   );
 }

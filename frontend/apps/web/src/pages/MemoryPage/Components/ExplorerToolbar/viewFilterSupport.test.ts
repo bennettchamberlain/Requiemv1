@@ -26,7 +26,7 @@ describe('readMemoryView', () => {
 
 describe('unsupportedReason', () => {
   it('reports every filter as honoured in the search-backed views', () => {
-    for (const view of ['list', 'gallery', 'map', 'timeline'] as const) {
+    for (const view of ['list', 'gallery', 'map'] as const) {
       expect(unsupportedDimensions(view)).toEqual([]);
     }
   });
@@ -36,6 +36,28 @@ describe('unsupportedReason', () => {
     expect(unsupportedReason('graph', 'semantic')).toMatch(/semantic/i);
     expect(unsupportedReason('graph', 'bbox')).toMatch(/map/i);
     expect(unsupportedReason('graph', 'sort')).toMatch(/order/i);
+  });
+
+  it('drops sort on the timeline, which always plays chronologically', () => {
+    expect(unsupportedDimensions('timeline')).toEqual(['sort']);
+    expect(unsupportedReason('timeline', 'sort')).toMatch(/chronological/i);
+  });
+
+  it('leaves the timeline honouring every other dimension', () => {
+    for (const dimension of [
+      'entityTypes',
+      'eventTypes',
+      'tags',
+      'date',
+      'connectors',
+      'people',
+      'places',
+      'hasLocation',
+      'semantic',
+      'bbox',
+    ] as const) {
+      expect(unsupportedReason('timeline', dimension)).toBeNull();
+    }
   });
 
   it('leaves the graph honouring the dimensions it does forward', () => {
@@ -79,7 +101,10 @@ describe('droppedFilters', () => {
     expect(droppedFilters('list', params)).toEqual([]);
     expect(droppedFilters('gallery', params)).toEqual([]);
     expect(droppedFilters('map', params)).toEqual([]);
-    expect(droppedFilters('timeline', params)).toEqual([]);
+  });
+
+  it('drops the sort the user set when the timeline is active', () => {
+    expect(droppedFilters('timeline', params)).toEqual(['sort']);
   });
 
   it('ignores unsupported dimensions the user has not set', () => {
