@@ -89,6 +89,10 @@ async function boot() {
 
 async function waitForHealthy() {
   const gatewayUrl = await invoke('get_gateway_url_command');
+  // Set once local_model::resolve_and_start finishes on the Rust side —
+  // still null for a while on a first launch that needs to download a
+  // bundled model. Purely informational; never blocks the health poll below.
+  let localModelDetail = null;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const healthy = await invoke('check_stack_status_command');
@@ -99,8 +103,18 @@ async function waitForHealthy() {
       return;
     }
 
+    if (!localModelDetail) {
+      const localModel = await invoke('get_local_model_status_command');
+      if (localModel) {
+        localModelDetail = localModel.detail;
+      }
+    }
+
     if (attempt > 0 && attempt % 30 === 0) {
-      setStatus('Still starting CI-Server — first launch can take several minutes while images download…');
+      const suffix = localModelDetail ? ` (${localModelDetail})` : ' — preparing the local model…';
+      setStatus(
+        `Still starting CI-Server — first launch can take several minutes while images download…${suffix}`,
+      );
     }
 
     await sleep(POLL_INTERVAL_MS);

@@ -87,6 +87,53 @@ Produces the platform's native bundle(s) via `cargo tauri build` (dmg/app on
 macOS, msi/nsis on Windows, deb/rpm on Linux locally — AppImage is added only
 in CI where `linuxdeploy` is installed, via `-b deb,rpm,appimage`).
 
+## Local model (chat + embeddings) without a separate Ollama install
+
+CI-Server's `api` service already treats its chat backend as swappable
+(`LLM_API_BASE`/`LLM_API_KEY` override the default `OLLAMA_HOST` fallback —
+see `backend/apps/api/src/domains/llm/services/LlmEndpointService.ts`). This
+app uses that same mechanism so a first-time user doesn't have to separately
+install Ollama and pull a large model just to get chat + RAG embeddings
+working. Resolved once per launch, cheapest option first:
+
+1. **You already run Ollama** (something answers `127.0.0.1:11434`) — used
+   as-is, unchanged. Nothing else in this list applies.
+2. **Apple on-device (macOS only)** — if Apple Intelligence is available
+   (Apple Silicon, macOS 26+, enabled in System Settings), chat is served by
+   Apple's on-device `FoundationModels` framework via a small bundled Swift
+   CLI (`apple-bridge/`, compiled by `build.rs`), reached through a tiny local
+   HTTP shim (`src-tauri/src/local_model/apple_bridge.rs`) that speaks just
+   enough of the OpenAI chat-completions protocol for `OpenAiCompatChatDriver`
+   to work against it. FoundationModels has no embeddings API, so embeddings
+   still come from option 3 below in this configuration — just a much smaller
+   download, since no chat-model weights are needed.
+3. **Bundled Ollama** — otherwise, this app finds (`ollama` already on PATH)
+   or downloads (Ollama's own official release archive, checksum-verified,
+   into this app's data directory) a copy of Ollama, runs it on port 11434,
+   and pulls two small, ungated models: `gemma3:1b` for chat (skipped in
+   configuration 2) and `nomic-embed-text` for embeddings.
+
+See `src-tauri/src/local_model/mod.rs` for the exact resolution logic and
+`ollama_sidecar.rs`/`apple_bridge.rs` for each backend. Known v1 limitations:
+
+- **No tool-calling** on either the Apple bridge or the bundled-Ollama path —
+  CI-Server's Intent Catalog tool loop just never sees a `tool_calls` field,
+  so it degrades to "answered without calling a tool" the same way any model
+  handed tools it can't invoke would.
+- The Apple bridge assembles a full SSE response before sending it, rather
+  than delivering it token-by-token over the wire — a real but currently
+  accepted latency-vs-complexity tradeoff (see that file's module doc
+  comment).
+- Building the Apple bridge needs **Xcode 26+ with the macOS 26 SDK**
+  specifically (`FoundationModels` isn't in older SDKs) — `build.rs` degrades
+  to a warning, not a build failure, on anything older, and the app falls
+  back to bundled Ollama.
+- Windows/Linux installer size grows meaningfully (~1.3–1.5GB) the first time
+  the bundled-Ollama fallback actually downloads its own copy, since Ollama's
+  official release archives for those platforms bundle CUDA/ROCm; macOS's is
+  much smaller (~150MB) since Metal is part of the OS. This only happens for
+  users who reach configuration 3 above — most won't.
+
 ## A note on the `!reset` compose tag
 
 `docker-compose.desktop.yml` uses the Compose Specification's `!reset` tag to
@@ -104,8 +151,11 @@ The following exist in CI-Hub's own Tauri desktop app
 (`CI-Hub/packages/desktop`) but are deliberately **not** implemented here yet.
 Not silently missing — just out of scope for this first pass:
 
-- Docker / Ollama / GPU-driver **auto-installers** — this app detects Docker's
-  absence and links to the download page; it doesn't install anything for you.
+- Docker / GPU-driver **auto-installers** — this app detects Docker's absence
+  and links to the download page; it doesn't install Docker or GPU drivers
+  for you. (Ollama itself is handled — see "Local model" above — but that's a
+  narrower, self-contained download scoped to this app, not a system-wide
+  Ollama install the way Docker Desktop would be.)
 - GPU host-hardware auto-detection or Docker Desktop VM resource tuning.
 - GPU-variant (CUDA/ROCm) image selection — always pulls the CPU-built
   `hbpe-service` image, with GPU device passthrough explicitly disabled (see

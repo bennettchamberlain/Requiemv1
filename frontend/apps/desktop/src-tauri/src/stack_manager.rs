@@ -125,7 +125,37 @@ fn write_env_file(env_path: &Path, image_tag: &str, import_work_dir: &Path) -> R
     fs::write(env_path, contents).map_err(|e| format!("Failed to write {}: {e}", env_path.display()))
 }
 
-fn extended_path_env() -> String {
+/// Appends the LLM_API_BASE/LLM_API_KEY override
+/// local_model::LocalModelHandles::resolve_once resolved (Apple-on-device-
+/// for-chat only — every other outcome relies on the existing OLLAMA_HOST
+/// default and calls this with an empty override, a harmless no-op).
+/// Additive rather than rewriting write_env_file's own content: it never
+/// writes these two keys itself, so there's no duplicate-key risk, and this
+/// keeps "the no-secrets baseline env" and "the local-model resolution
+/// result" as two independently reasoned-about writers. Must run before the
+/// first `docker compose up` — Compose only reads `.env` when a container is
+/// (re)created, not on every request. resolve_once itself only calls this
+/// once (see its doc comment), so calling it twice is not a concern in
+/// practice, but it would still duplicate lines if it ever were.
+pub fn apply_llm_env_override(paths: &StackPaths, llm_env: &crate::local_model::LlmEnvOverride) -> Result<(), String> {
+    let (Some(api_base), Some(api_key)) = (&llm_env.llm_api_base, &llm_env.llm_api_key) else {
+        return Ok(());
+    };
+    let env_path = paths.compose_dir.join(".env");
+    let addition = format!("LLM_API_BASE={api_base}\nLLM_API_KEY={api_key}\n");
+    use std::io::Write;
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&env_path)
+        .and_then(|mut file| file.write_all(addition.as_bytes()))
+        .map_err(|e| format!("Failed to append LLM override to {}: {e}", env_path.display()))
+}
+
+/// Extra host-tool search dirs Docker Desktop/Docker Engine installers don't
+/// always add to a GUI-launched app's PATH. Also reused by
+/// local_model::ollama_sidecar to find a host-installed `ollama` binary,
+/// since the same "GUI apps get a minimal PATH" problem applies there too.
+pub(crate) fn extended_path_env() -> String {
     let existing = std::env::var("PATH").unwrap_or_default();
     let mut extra_dirs: Vec<String> = Vec::new();
 
