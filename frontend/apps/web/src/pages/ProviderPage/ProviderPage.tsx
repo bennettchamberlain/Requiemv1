@@ -16,7 +16,7 @@ import {
   Popover,
   Tooltip,
 } from '@ci/shadcn';
-import { ChevronLeft, ChevronRight, Info } from '@ci/shadcn/icons';
+import { ChevronLeft, Info } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -124,10 +124,14 @@ export function ProviderPage() {
       return;
     }
 
-    toast.error('Error connecting to API');
+    // Names the provider and the real cause, where there is one, rather than
+    // a generic sentence that could describe any request on the page — the
+    // connect call, the API key field, or the endpoint form all funnel their
+    // failures into this one `error` state.
+    const message = error instanceof Error && error.message ? error.message : 'Please try again.';
 
-    // handleGoBack();
-  }, [error]);
+    toast.error(`Could not connect to ${provider?.name ?? 'this service'}. ${message}`);
+  }, [error, provider?.name]);
 
   const backgroundStyle = useMemo(() => {
     if (provider?.theme?.backgroundColor && isHexColor(provider.theme.backgroundColor)) {
@@ -282,6 +286,16 @@ export function ProviderPage() {
             </Button>
           </div>
 
+          {/* This used to be a three-dot carousel row under the real Back
+              icon button above — a leftover from a multi-step wizard this
+              form no longer is. The middle dot had no onClick at all (a
+              focusable, clickable dead control), and the right chevron was
+              labelled "Next slide" but actually called handleConnect,
+              starting the real OAuth redirect — the exact same action the
+              honest "Connect" button above already offers. Both real actions
+              on this page (Back, Connect) already have a correctly-labelled
+              control; this row only duplicated one of them and disguised the
+              other. */}
           <div className="flex justify-center items-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <IconButton
               variant="ghost"
@@ -291,40 +305,6 @@ export function ProviderPage() {
             >
               <ChevronLeft className="h-4 w-4" />
             </IconButton>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="cursor-pointer"
-              onClick={handleGoBack}
-              aria-label="Go back to connect page"
-            >
-              <div className={cn('h-2 w-2 m-2 rounded-full transition-all duration-200', 'bg-slate-300')} />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="cursor-pointer"
-              aria-label="Select provider endpoints"
-            >
-              <div
-                className={cn(
-                  'h-2 w-2 m-2 rounded-full transition-all duration-200',
-                  'bg-slate-800 scale-115',
-                )}
-              />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="cursor-pointer"
-              onClick={handleConnect}
-              aria-label="Next slide"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
           </div>
         </form>
       </Form>
