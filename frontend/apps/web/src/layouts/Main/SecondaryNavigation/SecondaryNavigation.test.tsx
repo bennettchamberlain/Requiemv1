@@ -225,6 +225,14 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('link', { name: 'Sources' })).toHaveClass('border-l-primary');
   });
 
+  // Distinct from the mobile drawer's "Main navigation drawer" label (see
+  // MobileNavigation.test.tsx) so assistive tech can tell the two apart.
+  it('labels the desktop rail nav distinctly from the mobile drawer nav', () => {
+    renderRail();
+
+    expect(screen.getByRole('navigation')).toHaveAttribute('aria-label', 'Main navigation');
+  });
+
   it('stays icon-only until the rail is opened', () => {
     renderRail();
 
@@ -455,6 +463,31 @@ describe('PowerRailToggle', () => {
     expect(screen.getByText('Companion Memory')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByText('Main')).not.toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false');
+  });
+
+  // H4: hovering the rail open is a passing intention, not a decision — it
+  // must not tell assistive tech the menu was deliberately expanded. Only a
+  // pin (persisted, survives the pointer leaving) should.
+  it('reports aria-expanded from pinned, not from a hover-only expansion', () => {
+    const { container } = renderToggleAndRail();
+
+    const toggle = container.querySelector('button[aria-controls="power-rail"]');
+    const lane = container.querySelector('div.relative');
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.mouseEnter(lane as Element);
+
+    // Hover really did open the rail...
+    expect(screen.getByRole('navigation')).toHaveAttribute('data-state', 'expanded');
+    // ...but the toggle must not claim it as "expanded".
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.mouseLeave(lane as Element);
+
+    // A deliberate pin is what flips it.
+    fireEvent.click(toggle as Element);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 });
 

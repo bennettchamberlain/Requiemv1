@@ -82,7 +82,10 @@ export function PowerRailToggle() {
           <button
             type="button"
             aria-label={label}
-            aria-expanded={expanded}
+            // Pinned, not merely hover-expanded — a mouse brushing the rail
+            // open must not tell assistive tech the menu was deliberately
+            // opened. Only a pin (a click, persisted) is "expanded" here.
+            aria-expanded={pinned}
             aria-controls="power-rail"
             onClick={toggle}
             // PINNED, not merely expanded. This button sits in the same `auto`

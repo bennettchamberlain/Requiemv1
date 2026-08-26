@@ -209,4 +209,68 @@ describe('MobileNavigation', () => {
       expect(screen.getByRole('link', { name: 'Calendar' })).toBeInTheDocument();
     });
   });
+
+  // The drawer names itself distinctly from the desktop rail's nav (see the
+  // "Main navigation" assertion in SecondaryNavigation.test.tsx), so a
+  // screen-reader user can tell which one they are in.
+  it('labels the drawer nav distinctly from the desktop rail nav', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    const nav = await screen.findByRole('navigation');
+
+    expect(nav).toHaveAttribute('aria-label', 'Main navigation drawer');
+  });
+
+  // H4: Escape is a standard way to dismiss any dialog-like overlay, and the
+  // drawer covers the whole screen on a phone.
+  it('closes the drawer when Escape is pressed', async () => {
+    renderMobileNav();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    expect(await screen.findByRole('link', { name: 'Plan' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('link', { name: 'Plan' })).not.toBeInTheDocument();
+  });
+
+  // H4: without this, closing the drawer (by any means) strands keyboard
+  // focus on a node that just left the accessibility tree.
+  it('returns focus to the button that opened it once the drawer closes', async () => {
+    renderMobileNav();
+
+    const trigger = screen.getByRole('button', { name: 'Open menu' });
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    await screen.findByRole('navigation');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  // H4: `aria-hidden` on the drawer already keeps the scrim-covered page out
+  // of the accessibility tree, but its links stayed tabbable. `inert` is what
+  // actually pulls them out of tab order (and pointer hit-testing) too.
+  it('makes the page behind the scrim inert, not just visually covered, while the drawer is open', async () => {
+    renderMobileNav();
+
+    const banner = screen.getByRole('banner');
+
+    expect(banner).not.toHaveAttribute('inert');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    await screen.findByRole('navigation');
+
+    expect(banner).toHaveAttribute('inert');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(banner).not.toHaveAttribute('inert');
+  });
 });

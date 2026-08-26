@@ -143,6 +143,7 @@ function OverlayRail({
   return (
     <nav
       id="power-rail"
+      aria-label="Main navigation drawer"
       data-state={expanded ? 'expanded' : 'collapsed'}
       aria-hidden={!expanded}
       onClick={(event) => {
@@ -258,6 +259,7 @@ export function SecondaryNavigation() {
       >
         <nav
           id="power-rail"
+          aria-label="Main navigation"
           data-state={expanded ? 'expanded' : 'collapsed'}
           className={cn(
             'absolute inset-y-0 left-0 z-30 flex flex-col overflow-x-hidden p-2 transition-[width] duration-200',
