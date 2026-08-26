@@ -75,11 +75,31 @@ hub tabs) and `layouts/Main/SecondaryNavigation/selfSections.ts` (the Self tabs)
 > against the running app — the two shots below are captures of it, not
 > drawings.
 
-- The **Power Rail** declares **ten** destinations in `RAIL_DESTINATIONS`, top
-  to bottom: Plan, Calendar, Forecast, Memory, Saved Searches, Chat, Asks,
-  Sources, Jobs, Self. **Nine of them are visible on a default appliance** —
-  Forecast is hidden because `forecast.page` ships **`false`** (see the flag
-  note under *Screens to capture*).
+> **Δ 2026-08-25 — reordered to match the target IA; screenshots below are now
+> stale.** `cc25c7488`→`9e44b2a6b`: Chat moved under Memory as a hub section
+> (`/memory/chat`, no longer a rail row of its own — its Asks child moved too,
+> now beside Saved Searches instead); Forecast moved below Jobs, off the
+> primary six, while its flag ships off; Settings became its own
+> bottom-anchored rail row instead of two levels deep inside the Self tile;
+> Capture (the header/rail camera button) became mobile-only; Notes joined
+> `MEMORY_HUB_SECTIONS` at `/memory/notes`; `/search`'s dead standalone UI was
+> deleted (it now redirects to `/memory/events`); the phone gained a
+> persistent bottom tab bar (Plan/Calendar/Memory/Saved Searches/Self) as well
+> as the drawer. **`images/nav/power-rail*.png` and `images/nav/memory-submenu.png`
+> below have not been recaptured against this order** — treat the bullets as
+> authoritative over the screenshots until they are.
+
+- The **Power Rail** declares **eight** destinations in `RAIL_DESTINATIONS`,
+  top to bottom: Plan, Calendar, Memory, Saved Searches, Sources, Jobs,
+  Forecast, Self — plus Asks nested as a child of Saved Searches (a search run
+  as you, the same primitive Share already is) rather than counted as its own
+  row. Two more controls sit outside the array, matching how Capture always
+  has: Capture itself, now gated to the phone's overlay drawer only (desktop
+  keeps it in the header Add menu instead), and Settings, a new
+  bottom-anchored row below Self on both desktop and the drawer. **Forecast is
+  the only one of the eight hidden on a default appliance** —
+  `forecast.page` ships **`false`** (see the flag note under *Screens to
+  capture*).
 - The rail is **icon-only until it is opened**. Click the Companion Memory mark
   at the top (`button[aria-controls="power-rail"]`) to pin it open; that is how
   these were captured, and a collapsed capture documents nothing.
@@ -88,13 +108,18 @@ hub tabs) and `layouts/Main/SecondaryNavigation/selfSections.ts` (the Self tabs)
 
   Same rail in light theme: [`images/nav/power-rail-light.png`](images/nav/power-rail-light.png).
 
-- **Memory is a hub**, not a single screen. `MEMORY_HUB_SECTIONS` holds **seven**
-  sibling sections — Events, People, Places, Things, Receipts, Content, Tags —
-  rendered both as in-page tabs and as the rail's Memory submenu. The Explorer
-  is the Events section at `/memory/events`; `/memory` on its own is now a
-  **real route** (the unfiltered explorer, all kinds), not a redirect.
+- **Memory is a hub**, not a single screen. `MEMORY_HUB_SECTIONS` holds **nine**
+  sibling sections — Events, People, Places, Things, Receipts, Content, Tags,
+  Notes, Chat — rendered both as in-page tabs and as the rail's Memory
+  submenu. Chat's recent threads render nested under its own row in the rail
+  submenu (moved from the old, now-removed Chat rail group); on the phone,
+  ChatSidebar's own thread list is unreachable (it portals to a slot mobile
+  never renders), so the drawer submenu is the only way to switch conversation
+  there. The Explorer is the Events section at `/memory/events`; `/memory` on
+  its own is now a **real route** (the unfiltered explorer, all kinds), not a
+  redirect.
 
-  ![The Memory submenu — seven sections](images/nav/memory-submenu.png)
+  ![The Memory submenu — nine sections, screenshot still shows the old seven](images/nav/memory-submenu.png)
 
 - **Self is the other hub** (`SELF_SECTIONS`): Profile (`/self`), Account
   (`/self/account`), Stats (`/self/stats`), Reflections (`/self/reflections`,
@@ -120,6 +145,9 @@ hub tabs) and `layouts/Main/SecondaryNavigation/selfSections.ts` (the Self tabs)
   | `/connect`, `/connections` | `/sources/connect` |
   | `/import` | `/sources/import` |
   | `/memory/knowledge` | `/memory/events?view=graph` |
+  | `/chat/:id?` | `/memory/chat/:id?` |
+  | `/notes` | `/memory/notes` |
+  | `/search` | `/memory/events` |
 
 ## Screens to capture
 
@@ -151,19 +179,18 @@ entry are invisible until someone turns it on, so capturing it needs
 | Saved searches | `/saved-searches` | `saved-searches.png` | Saved-search rows with the Shared badge and the active filter dimensions |
 | Shared search viewer | `/shared/:token` | `shared-search.png` | Read-only shared explorer (see [saved-search-sharing.md](saved-search-sharing.md)) |
 | Asks | `/asks` | `images/asks/*.png` ✅ | **Captured** — all six tabs plus a light-theme shot, wired into [asks-system-guide.md](asks-system-guide.md) §8. Kept in their own `images/asks/` folder because it is a set, not one screen, and captured in **dark** theme (the surface's own default) rather than the light default this guide otherwise asks for (flag `ask`) |
-| Search | `/search` | `search.png` | Standalone query box with ranked results |
-| Chat / Ask | `/chat` | `chat.png` | "Ask my memory" conversation surface (flag `chat.page`) |
+| Chat / Ask | `/memory/chat` | `chat.png` | "Ask my memory" conversation surface, now a Memory hub section rather than its own rail row (flag `chat.page`) |
 | Sources · Connect | `/sources/connect` | `sources-connect.png` | Connected accounts above the 17-service catalogue (Google, Microsoft, Meta, Spotify, Steam, GitHub, …; 8 of the 17 render as "coming soon") |
 | Sources · Import | `/sources/import` | `sources-import.png` | Native import run kickoff + stage progress (flag `import.page` — with it off the route still resolves but redirects to `/sources/connect`) |
 | Sources · Devices | `/sources/devices` | `sources-devices.png` | Registered devices, plus the browser-extension (Chrome/Firefox/Safari) and Companion Capture (macOS/Windows/Linux) galleries |
 | Connection detail | `/connections/:id` | `connection.png` | One connection: sync state, scopes, history |
 | Jobs | `/jobs` | `jobs.png` | Job dashboard, filterable list, history charts, dead letters (flag `jobs.page`) |
-| Self · Profile | `/self` | `self-profile.png` | Your own Person entity (name, birthday, gender, about) plus what Companion has learned about you (flag `stats.page` — it gates the whole `/self/*` subtree) |
+| Self · Profile | `/self` | `self-profile.png` | Your own Person entity (name, birthday, gender, about) plus what Companion has learned about you (flag `self.page` — it gates the whole `/self/*` subtree; `stats.page` gates only the Stats entry inside it) |
 | Self · Account | `/self/account` | `self-account.png` | Account settings incl. deletion (was `/settings/account`) |
 | Self · Stats | `/self/stats` | `self-stats.png` | "Life stats" — entities by type and by tag (was `/stats`) |
 | Self · Reflections | `/self/reflections` | `self-reflections.png` | Reflection catalogue (formerly "Questions", and before that Memory § Reflections; flag `insights.page`) |
-| Notes | `/notes` | `notes.png` | Notes list + editor |
-| Settings | `/settings` | `settings.png` | Settings (appearance, API keys, OAuth) |
+| Notes | `/memory/notes` | `notes.png` | Notes list + editor, now a Memory hub section (was orphaned: reachable to create or open from search, never browsable) |
+| Settings | `/settings` | `settings.png` | Settings (appearance, API keys, OAuth) — reachable from its own bottom-anchored rail row now, not two levels deep inside Self |
 | System | `/system` | `system.png` | System / health view |
 | Device connect | `/device-connect` | `device-connect.png` | Native first-launch Portal sign-in + Memory Server picker (`/server` is the Advanced URL fallback) |
 
