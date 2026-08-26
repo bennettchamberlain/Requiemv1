@@ -1751,3 +1751,132 @@ describe('AnswerInferenceListener — the citations written onto the answer', ()
     expect(answerService.update).not.toHaveBeenCalled();
   });
 });
+
+describe('AnswerInferenceListener.inferQuestionAnswer — the answer has to be ABOUT the person', () => {
+  /** The measured line, verbatim: the owner describing an object they were building. */
+  const OBJECT_LINE = '[I wrote, Nov 14, 2017] "It\'ll be like a foot tall."';
+
+  it('writes nothing when the answer describes a thing instead of the person', async () => {
+    // Live on the profile under "How tall are you?": own-voice evidence, a real
+    // sentence, `stated` at 0.80 — every existing gate passed it.
+    const { listener, answerService, personalizationService } = buildListener({
+      recallService: { recall: jest.fn().mockResolvedValue(recallResult([OBJECT_LINE])) },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              asked_for: 'my height',
+              support: 'stated',
+              answer: "It'll be like a foot tall.",
+              confidence: 0.9,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+    expect(personalizationService.decideAction).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when the only line the claim rests on is a sentence about a thing', async () => {
+    // The same failure with the tell edited out of the ANSWER — measured on the
+    // next run of the same question, which returned "About a foot tall." off the
+    // same single citation. The answer is the model's to phrase; the line it
+    // rests on is not.
+    const { listener, answerService } = buildListener({
+      recallService: { recall: jest.fn().mockResolvedValue(recallResult([OBJECT_LINE])) },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              asked_for: 'my height',
+              support: 'stated',
+              first_person_evidence: [1],
+              answer: 'About a foot tall.',
+              confidence: 0.9,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).not.toHaveBeenCalled();
+    expect(answerService.update).not.toHaveBeenCalled();
+  });
+
+  it('DOES write when a cited line is genuinely about the person, even alongside a thing-sentence', async () => {
+    // The other half, and what keeps the gate from being a blanket ban on lines
+    // that mention an object: one real first-person line is enough.
+    const { listener, answerService } = buildListener({
+      recallService: {
+        recall: jest
+          .fn()
+          .mockResolvedValue(recallResult([OBJECT_LINE, '[I wrote, Jan 2, 2018] "I am six foot two."'])),
+      },
+      ollamaService: {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: structuredResponse({
+              asked_for: 'my height',
+              support: 'stated',
+              first_person_evidence: [1, 2],
+              answer: 'Six foot two.',
+              confidence: 0.9,
+            }),
+          },
+        }),
+      },
+    });
+
+    await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+    expect(answerService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ text: 'Six foot two.' }),
+    );
+  });
+
+  it('drops an answer about a thing even when its evidence is about the person', async () => {
+    // Isolates the ANSWER-side gate from the evidence-side one: the cited line
+    // here is a real first-person sentence, so the evidence gate passes it, and
+    // the floor is at zero so nothing but this gate is left. It is the shape
+    // "Are you more of a cat person or a dog person?" was published in.
+    const reflection = config.reflection as { minAnswerConfidence: number };
+    const originalFloor = reflection.minAnswerConfidence;
+    reflection.minAnswerConfidence = 0;
+
+    try {
+      const { listener, answerService } = buildListener({
+        recallService: {
+          recall: jest
+            .fn()
+            .mockResolvedValue(recallResult(['[I wrote, May 3, 2016] "I used to have pets."'])),
+        },
+        ollamaService: {
+          chat: jest.fn().mockResolvedValue({
+            message: {
+              content: structuredResponse({
+                support: 'stated',
+                answer: "It's like a mix between a dog and a cat.",
+                confidence: 0.9,
+              }),
+            },
+          }),
+        },
+      });
+
+      await listener.inferQuestionAnswer({ ownerId: 'user-1', questionId: 'q-1' } as Payload);
+
+      expect(answerService.create).not.toHaveBeenCalled();
+      expect(answerService.update).not.toHaveBeenCalled();
+    } finally {
+      reflection.minAnswerConfidence = originalFloor;
+    }
+  });
+});
