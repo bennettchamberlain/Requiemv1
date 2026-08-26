@@ -162,7 +162,6 @@ export class PersonService extends EntityService<PersonEntity, Person> {
           linkedTable: data.linkedTable,
           linkedId: data.linkedId,
           searchContent: data.searchContent,
-          lastAccessed: data.lastAccessed,
           userId: context.userId,
           properties,
           ...typedColumnsFromProperties(properties),
@@ -192,7 +191,7 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     }
 
     // Reload so @AfterLoad projects the normalized fields and DB-side defaults
-    // (e.g. last_accessed) are present. `save` runs neither, and egress strips
+    // (e.g. created_at) are present. `save` runs neither, and egress strips
     // the normalized keys out of `properties`, so the saved instance alone
     // would expose them in neither place.
     const created = await this.repository.findOne({ where: { id: entity.id } });
@@ -233,7 +232,6 @@ export class PersonService extends EntityService<PersonEntity, Person> {
         linkedTable: item.linkedTable,
         linkedId: item.linkedId,
         searchContent: item.searchContent,
-        lastAccessed: item.lastAccessed,
         userId: context.userId,
         properties,
         ...typedColumnsFromProperties(properties),
