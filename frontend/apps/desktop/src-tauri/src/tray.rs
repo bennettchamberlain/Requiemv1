@@ -10,7 +10,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::{stack_manager, StackPathsState};
+use crate::{local_model, stack_manager, StackPathsState};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(9);
 
@@ -71,7 +71,17 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 .opener()
                 .open_path(state.0.logs_dir.to_string_lossy().to_string(), None::<String>);
         }
-        "quit" => app.exit(0),
+        "quit" => {
+            // Docker containers deliberately outlive the app (see main.rs's
+            // hide-to-tray close handler) — a real appliance server should
+            // keep running. The local-model child processes exist only to
+            // serve requests from this app's own stack, so they don't get
+            // the same treatment: kill them before quitting, or an orphaned
+            // Ollama sidecar / Apple bridge process lingers with nothing left
+            // to talk to it.
+            app.state::<local_model::LocalModelHandles>().shutdown();
+            app.exit(0);
+        }
         _ => {}
     }
 }

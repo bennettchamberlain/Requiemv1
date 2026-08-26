@@ -22,7 +22,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "resources/*": "resources/"
+      "resources/*": "resources/",
+      "resources/apple-bridge/*": "resources/apple-bridge/"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"

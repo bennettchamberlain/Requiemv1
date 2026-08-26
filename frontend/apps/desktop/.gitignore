@@ -15,3 +15,13 @@ src-tauri/gen
 src-tauri/resources/docker-compose.yml
 src-tauri/resources/docker-compose.production.yml
 src-tauri/resources/image-tag.txt
+
+# Compiled by src-tauri/build.rs on macOS from src-tauri/apple-bridge and
+# copied into src-tauri/resources/apple-bridge/ — never hand-edit or commit
+# the binary.
+src-tauri/apple-bridge/.build
+src-tauri/resources/apple-bridge
+
+# Downloaded on demand by local_model::ollama_sidecar when the host has no
+# usable Ollama — never committed, verified by pinned checksum at fetch time.
+src-tauri/ollama-runtime
