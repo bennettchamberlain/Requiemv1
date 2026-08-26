@@ -28,6 +28,7 @@ export const ASK_INBOX = gql(`
         queryType
         dataClass
         prompt
+        purpose
         actor {
           kind
           label
@@ -49,6 +50,7 @@ export const ASK_OUTBOX = gql(`
         queryType
         dataClass
         prompt
+        purpose
         actor {
           kind
           label
@@ -284,6 +286,7 @@ export const ASK_DISCLOSURE_HISTORY = gql(`
           queryType
           dataClass
           prompt
+          purpose
           actor {
             kind
             label
@@ -394,6 +397,7 @@ export const CREATE_ASK = gql(`
           queryType
           dataClass
           prompt
+          purpose
           actor {
             kind
             label

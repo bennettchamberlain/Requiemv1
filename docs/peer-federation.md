@@ -217,6 +217,19 @@ Two details worth knowing:
 
 An unknown handle and a revoked link are refused **identically**, so a caller cannot use the error to discover which handles the owner has ever been linked to.
 
+### Purpose, and what it is for
+
+`peerAskBodySchema` carries a body-level `purpose`, and `toAskQuery` writes it into `filters.purpose` on **every** archetype.
+
+It did not, and that was a real (if fail-closed) defect: `scopeCoversQuery` reads `filters.purpose`, and nothing ever wrote one — `availability` folded its purpose into the *prompt* and the other two archetypes had no field at all. A purpose-limited grant therefore matched **no inbound peer ask, ever**. It failed closed, so nothing leaked; the feature was simply dead across boxes, silently, with no signal to the owner who set it.
+
+Two different treatments, deliberately:
+
+- **Stated intent is carried, shown, and never judged.** UMA-for-agents' recommendation #15 — carry a requester's purpose unread and let policy notice its *absence* rather than judge its truthfulness. This box cannot verify why anyone wants anything, so the review card attributes it (*"They say this is for: …"*) and says so plainly when none was stated.
+- **A purpose-LIMITED grant is enforced**, because that is the owner writing down their own narrowing ("only for the wedding invites"). It can only ever refuse to match, never widen — and a grant that names a purpose is not satisfied by an ask that states none.
+
+`canonicalPurpose` is its own function rather than a reuse of `canonicalDataClass`. Same normalizer today, different contract: a data class is a token from a closed vocabulary and may one day be aliased or singularized; a purpose is a short human phrase and must not be.
+
 ### Message signatures
 <a id="message-signatures"></a>
 

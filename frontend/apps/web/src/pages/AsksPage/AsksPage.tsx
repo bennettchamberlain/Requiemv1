@@ -293,6 +293,7 @@ export function AsksPage() {
                 searchBreadth={searchBreadthNote(ask.query)}
                 downgrades={[...OWNER_ANSWER_FORMS]}
                 actor={ask.query.actor}
+                statedPurpose={ask.query.purpose}
                 busy={busy}
                 onApprove={() => handleApprove(ask.id)}
                 onDowngrade={(form) => handleApprove(ask.id, form)}

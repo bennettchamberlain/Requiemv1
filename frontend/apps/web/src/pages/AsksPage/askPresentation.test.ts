@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   actorIsDelegated,
+  purposeAbsentNote,
+  purposeLine,
   actorLine,
   answerFormLabel,
   askApproveLabel,
@@ -309,5 +311,34 @@ describe('actorIsDelegated', () => {
   it('is false for an undeclared actor, not true-by-default', () => {
     expect(actorIsDelegated(null)).toBe(false);
     expect(actorIsDelegated(undefined)).toBe(false);
+  });
+});
+
+describe('purposeLine / purposeAbsentNote — why they say they want this', () => {
+  it('attributes the purpose rather than asserting it', () => {
+    // This box cannot verify why anyone wants anything. A line that read
+    // "For: wedding invites" would assert something nobody checked.
+    const line = purposeLine('wedding invites') ?? '';
+
+    expect(line).toMatch(/They say/);
+    expect(line).toContain('wedding invites');
+  });
+
+  it('trims, so padding does not become part of the quoted phrase', () => {
+    expect(purposeLine('  lunch  ')).toContain('“lunch”');
+  });
+
+  it.each([[null], [undefined], [''], ['   '], [42], [{}]])('reports %p as no stated purpose', (value) => {
+    expect(purposeLine(value)).toBeNull();
+    expect(purposeAbsentNote(value)).toMatch(/did not say/);
+  });
+
+  /**
+   * "They did not say why" is a real input to a consent decision. A card that
+   * simply omitted the line would leave the owner unable to tell it from "the
+   * app did not show me".
+   */
+  it('says nothing extra once a purpose IS stated', () => {
+    expect(purposeAbsentNote('wedding invites')).toBeNull();
   });
 });

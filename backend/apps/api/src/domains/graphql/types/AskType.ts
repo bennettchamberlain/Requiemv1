@@ -68,12 +68,27 @@ export class AskQueryType {
   @Field(() => AskActorType, { nullable: true })
   actor!: AskActorType | null;
 
+  /**
+   * The purpose the asker stated, lifted out of `filters` for display.
+   *
+   * A first-class field on the OUTPUT even though it lives in `filters` on the
+   * way in: the consent surface renders it, and making every client reach into
+   * an untyped bag for a consent-relevant fact is how it ends up unrendered.
+   * Null means none was stated — which is itself an input to the decision.
+   */
+  @Field(() => String, { nullable: true })
+  purpose!: string | null;
+
   static toType(query: AskQuery): AskQueryType {
     return {
       queryType: query.queryType,
       dataClass: query.dataClass ?? null,
       prompt: query.prompt,
       actor: query.actor ? { kind: query.actor.kind, label: query.actor.label ?? null } : null,
+      // Only a string counts. `filters` is jsonb and a non-string there is not
+      // a purpose somebody stated — rendering `[object Object]` beside "they
+      // say this is for" would be worse than showing nothing.
+      purpose: typeof query.filters?.purpose === 'string' ? query.filters.purpose : null,
     };
   }
 }

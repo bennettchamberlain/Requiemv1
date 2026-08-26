@@ -1,9 +1,9 @@
-import { canonicalDataClass, canonicalQueryType } from './canonical';
+import { canonicalDataClass, canonicalPurpose, canonicalQueryType } from './canonical';
 import type { AskGrant } from './entities/AskGrantEntity';
 import { DISCLOSURE_RUNGS } from './policy';
 import type { AskActor, AskGrantScope, AskQuery, DisclosureRung, GrantEvaluation } from './types';
 
-export { canonicalDataClass, canonicalQueryType };
+export { canonicalDataClass, canonicalPurpose, canonicalQueryType };
 
 /**
  * Pure, per-query consent evaluation — the heart of the ask gate.
@@ -378,7 +378,16 @@ function scopeCoversQuery(grant: AskGrant, query: AskQuery): boolean {
   // same purpose.
   if (scope.purpose != null) {
     const asked = typeof query.filters?.purpose === 'string' ? query.filters.purpose : undefined;
-    if (canonicalDataClass(asked) !== canonicalDataClass(scope.purpose)) {
+    // `canonicalPurpose`, not `canonicalDataClass`. Same normalizer today,
+    // different contract — a data class is a token from a closed vocabulary and
+    // may one day be aliased or singularized; a purpose is a human phrase and
+    // must not be.
+    //
+    // A grant that names a purpose and an ask that states none does NOT match:
+    // `canonicalPurpose(undefined)` is null and the grant's is not, so this
+    // fails and the ask is downgraded to review. Same shape as every other
+    // "the ask must name it too" rule in this file.
+    if (canonicalPurpose(asked) !== canonicalPurpose(scope.purpose)) {
       return false;
     }
   }

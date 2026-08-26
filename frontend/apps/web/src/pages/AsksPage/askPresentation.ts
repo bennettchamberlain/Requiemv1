@@ -531,3 +531,43 @@ export function actorLine(actor: AskActorView | null | undefined): string | null
 export function actorIsDelegated(actor: AskActorView | null | undefined): boolean {
   return actor?.kind === 'first-party-agent' || actor?.kind === 'third-party-agent';
 }
+
+/**
+ * WHY the asker says they want this, shown at the consent moment.
+ *
+ * ═══ CARRIED, SHOWN, NEVER JUDGED ═══
+ *
+ * UMA-for-agents' recommendation #15 is *stated intent, never evaluated*: let a
+ * requester declare their purpose, carry it unread, and let policy notice its
+ * ABSENCE rather than judge its truthfulness. That is exactly right here — this
+ * box has no way to verify why anyone wants anything, and a UI that implied it
+ * had checked would be asserting something nobody checked.
+ *
+ * So the purpose is ATTRIBUTED, like the prompt and the actor label: it appears
+ * as something they said, not as something established. The one place a purpose
+ * is enforced is a purpose-LIMITED grant, which is the owner's own narrowing
+ * and can only ever refuse to match.
+ *
+ * Null when none was stated — and the absence is worth noticing rather than
+ * hiding, which is why `purposeAbsentNote` exists beside this.
+ */
+export function purposeLine(purpose: unknown): string | null {
+  if (typeof purpose !== 'string' || !purpose.trim()) {
+    return null;
+  }
+
+  return `They say this is for: \u201C${purpose.trim()}\u201D`;
+}
+
+/**
+ * The note shown when an ask states no purpose at all.
+ *
+ * Deliberately mild. Most asks state none — nothing populates the field on the
+ * local path yet — so this is a fact, not a flag. It exists because "they did
+ * not say why" is a real input to a consent decision, and a card that simply
+ * omitted the line would leave the owner unable to tell it from "the app did
+ * not show me".
+ */
+export function purposeAbsentNote(purpose: unknown): string | null {
+  return purposeLine(purpose) == null ? 'They did not say what this is for.' : null;
+}
