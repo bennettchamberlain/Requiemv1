@@ -199,6 +199,45 @@ type AskChannelType {
   verifiedAt: DateTime!
 }
 
+input AskDisclosureHistoryInput {
+  counterpartyKey: String
+  from: DateTime
+  limit: Int
+  outcomes: [String!]
+  to: DateTime
+}
+
+type AskDisclosureHistoryPayload {
+  rows: [AskAuditType!]!
+  truncated: Boolean!
+}
+
+input AskDisclosureSummaryInput {
+  windowDays: Int
+}
+
+type AskDisclosureSummaryPayload {
+  summaries: [AskDisclosureSummaryType!]!
+  truncated: Boolean!
+}
+
+type AskDisclosureSummaryType {
+  askerId: ID
+  asksInWindow: Int!
+  autoAnswered: Int!
+  declined: Int!
+  expired: Int!
+  firstAt: DateTime!
+  itemsDisclosed: Int!
+  itemsInWindow: Int!
+  key: String!
+  lastAt: DateTime!
+  peerHandle: String
+  peerLinkId: ID
+  reviewed: Int!
+  total: Int!
+}
+
 type AskGrantPayload {
   grant: AskGrantType
   success: Boolean!
@@ -2641,7 +2680,8 @@ type Query {
   answers(after: String, before: String, first: Int, last: Int): AnswerConnection!
   ask(id: ID!): AskType
   askAnswer(id: ID!): AskAnswerType
-  askDisclosureHistory: [AskAuditType!]!
+  askDisclosureHistory(input: AskDisclosureHistoryInput): AskDisclosureHistoryPayload!
+  askDisclosureSummary(input: AskDisclosureSummaryInput): AskDisclosureSummaryPayload!
   askGrant(id: ID!): AskGrantType
   askInbox: [AskType!]!
   askOutbox: [AskType!]!

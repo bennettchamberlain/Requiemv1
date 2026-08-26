@@ -892,6 +892,31 @@ Two invariants live in `consentProvenance.ts` and are pinned by `consentProvenan
 
 Protocol reference: [`SIGNATURES.md`](https://github.com/companionintelligence/CI-Engineering/blob/main/projects/decentralized-trust-graphs/SIGNATURES.md) in CI-Engineering.
 
+### The disclosure history, by relationship
+
+![Disclosure history folded by relationship](images/asks/disclosure-relationships.png)
+
+`askDisclosureHistory` used to take **no arguments** — no filter, no window, no cap — and the page rendered every audit row this box held in one flat reverse-chronological list. A standing grant answering twice a day writes some seven hundred rows a year, so the surface whose stated purpose is *"you cannot withdraw consent you cannot see the consequences of"* was at its least usable exactly when it had most to say.
+
+Pagination would not have fixed it, because **the unit was wrong**. Nobody arrives asking "what happened at 14:07 on Tuesday"; they arrive asking *"what has Ana been getting?"*. So the history now opens on the fold and the flat list is the drill-in.
+
+| Layer | Query | Notes |
+|---|---|---|
+| Index | `askDisclosureSummary` | One row per counterparty. `disclosureSummary.ts` is the fold — pure, 21 tests |
+| Drill-in | `askDisclosureHistory(input: { counterpartyKey })` | Not fetched at all until a relationship is opened |
+
+Four properties worth keeping:
+
+- **`autoAnswered` and `reviewed` never merge.** They differ by whether a human was in the loop, which is the entire question. `activityLine` leads with the automatic count because that is the one an owner might want to go and stop — a decision they made themselves, they remember making.
+- **Magnitude, not ask count.** "14 asks" and "213 items" are different facts; only the second describes what the other person now holds.
+- **The unattributed bucket is never merged into a person.** Rows whose counterparty was erased group under one key labelled as a bucket. Attributing an unattributable disclosure to somebody specific is the one error this surface must not make, since the owner may act on it by revoking them.
+
+  ![The unattributed bucket](images/asks/disclosure-unattributed.png)
+
+- **`truncated` is on the wire.** The read is capped at `MAX_AUDIT_ROWS` (5,000) — a cost bound, not a privacy control — and the fold says so, because the totals beside a capped read are floors. A completeness surface presenting a floor as a total is the failure the flag exists to prevent.
+
+`accelerationNote` states a fact — *"90% of everything they have ever received arrived in this window"* — and stops there. There is **no enforced disclosure budget** yet ([#2364](https://github.com/companionintelligence/CI-Server/issues/2364)); a threshold rendered here would be a number with nothing behind it.
+
 ### The disclosure history — **What I've shared**
 
 ![The disclosure history](images/asks/07-what-i-ve-shared.png)
@@ -963,8 +988,11 @@ scenario runs. The second succeeds.
 the effective limit, and a restart resets the window. Both files say so
 themselves; a shared store is needed before the ask path goes multi-instance.
 
-**G9 — Rate limits bound RATE, not TOTAL.** Nothing tracks cumulative
-disclosure. A patient asker with a narrow, legitimately-granted permission can
+**G9 — Rate limits bound RATE, not TOTAL.** Nothing *enforces* a cumulative
+disclosure budget. (The owner can now SEE consumption per relationship — see
+"The disclosure history, by relationship" in §8 — but seeing is not a limit;
+enforcement is [#2364](https://github.com/companionintelligence/CI-Server/issues/2364).)
+Nothing tracks cumulative disclosure. A patient asker with a narrow, legitimately-granted permission can
 reconstruct a great deal through many individually-legitimate asks. The ceiling
 is 28,800 local asks and 14,400 peer asks per day. `ci.ask_audit` already holds
 everything a budget would need (`disclosed_count`, `backing_entities`,

@@ -259,21 +259,65 @@ export const UPDATE_ASK_GRANT = gql(`
  * so unlike `askAnswer` it is not narrowed for an asker.
  */
 export const ASK_DISCLOSURE_HISTORY = gql(`
-  query AskDisclosureHistory {
-    askDisclosureHistory {
-      id
-      askId
-      askerId
-      peerHandle
-      responderId
-      consentBasis
-      outcome
-      disclosedCount
-      createdAt
-      query {
-        queryType
-        dataClass
-        prompt
+  query AskDisclosureHistory($input: AskDisclosureHistoryInput) {
+    askDisclosureHistory(input: $input) {
+      truncated
+      rows {
+        id
+        askId
+        askerId
+        peerHandle
+        responderId
+        consentBasis
+        outcome
+        disclosedCount
+        createdAt
+        query {
+          queryType
+          dataClass
+          prompt
+        }
+      }
+    }
+  }
+`);
+
+/**
+ * The same record, folded BY RELATIONSHIP — the unit an owner actually arrives
+ * with.
+ *
+ * A flat event list makes "what has Ana been getting?" a scrolling-and-tallying
+ * exercise, and it is at its LEAST usable exactly when it has accumulated the
+ * most to say. This is the index; `ASK_DISCLOSURE_HISTORY` filtered by
+ * `counterpartyKey` is the drill-in.
+ *
+ * `autoAnswered` and `reviewed` stay SEPARATE on the wire rather than summing
+ * to "answered", because "a rule you wrote once released this without asking
+ * you" is the number an owner needs to notice and the other is not.
+ *
+ * `truncated` says the fold ran over a capped read, so the totals are floors
+ * rather than totals. Rendering a floor as a total on a completeness surface is
+ * the failure this flag exists to prevent.
+ */
+export const ASK_DISCLOSURE_SUMMARY = gql(`
+  query AskDisclosureSummary($input: AskDisclosureSummaryInput) {
+    askDisclosureSummary(input: $input) {
+      truncated
+      summaries {
+        key
+        askerId
+        peerLinkId
+        peerHandle
+        total
+        autoAnswered
+        reviewed
+        declined
+        expired
+        itemsDisclosed
+        asksInWindow
+        itemsInWindow
+        firstAt
+        lastAt
       }
     }
   }

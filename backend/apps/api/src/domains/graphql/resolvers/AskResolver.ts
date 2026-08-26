@@ -29,10 +29,14 @@ import {
   type DisclosureRung,
   type GrantMode,
   type TrustTier,
+  UNATTRIBUTED,
+  type AuditFilter,
+  type AskAuditOutcome,
 } from '@ci/domains/asks';
 import { OutboundAskService, type PeerAskRequest, type PeerLink, PeerLinkService } from '@ci/domains/peers';
 
 import { AnswerFormEnum, AskAnswerType } from '../types/AskAnswerType';
+import { AskDisclosureHistoryInput, AskDisclosureSummaryInput } from '../types/AskDisclosureInputs';
 import {
   CreateAskGrantInput,
   CreateAskInput,
@@ -47,7 +51,14 @@ import {
   RunAskPayload,
   SendPeerAskPayload,
 } from '../types/AskPayloads';
-import { AskAuditType, AskGrantType, AskType } from '../types/AskType';
+import {
+  AskAuditType,
+  AskDisclosureHistoryPayload,
+  AskDisclosureSummaryPayload,
+  AskDisclosureSummaryType,
+  AskGrantType,
+  AskType,
+} from '../types/AskType';
 import { GlobalUID } from '../types/GlobalUID';
 
 /**
@@ -808,16 +819,45 @@ export class AskResolver {
     return rows.map(AskGrantType.toType);
   }
 
-  /** The caller's disclosure history (asks they responded to). */
-  @Query(() => [AskAuditType])
-  async askDisclosureHistory(@Context() context: RequestContext): Promise<AskAuditType[]> {
+  /** The caller's disclosure history (asks they responded to), newest first. */
+  @Query(() => AskDisclosureHistoryPayload)
+  async askDisclosureHistory(
+    @Context() context: RequestContext,
+    @Args('input', { nullable: true }) input?: AskDisclosureHistoryInput,
+  ): Promise<AskDisclosureHistoryPayload> {
     if (!(await this.enabled())) {
-      return [];
+      return { rows: [], truncated: false };
     }
 
-    const rows = await this.auditService.listForResponder(toServiceContext(context));
+    const { rows, truncated } = await this.auditService.listForResponder(
+      toServiceContext(context),
+      toAuditFilter(input),
+    );
 
-    return rows.map(AskAuditType.toType);
+    return { rows: rows.map(AskAuditType.toType), truncated };
+  }
+
+  /**
+   * The same record, folded BY RELATIONSHIP — the unit an owner arrives with.
+   *
+   * Responder-scoped by exactly the same service call the flat history uses, so
+   * there is one place where "whose disclosures are these" is decided. A second
+   * scoping clause here would be a second place to get it wrong.
+   */
+  @Query(() => AskDisclosureSummaryPayload)
+  async askDisclosureSummary(
+    @Context() context: RequestContext,
+    @Args('input', { nullable: true }) input?: AskDisclosureSummaryInput,
+  ): Promise<AskDisclosureSummaryPayload> {
+    if (!(await this.enabled())) {
+      return { summaries: [], truncated: false };
+    }
+
+    const { summaries, truncated } = await this.auditService.summaryForResponder(toServiceContext(context), {
+      windowMs: windowMsFrom(input?.windowDays),
+    });
+
+    return { summaries: summaries.map(AskDisclosureSummaryType.toType), truncated };
   }
 
   /**
@@ -1025,4 +1065,77 @@ function toPeerAskRequest(input: SendPeerAskInput): PeerAskRequest {
     default:
       throw new BadRequestException(`Unsupported ask archetype: ${input.archetype}`);
   }
+}
+
+/**
+ * Translate the GraphQL filter into the service's, resolving the counterparty
+ * key back into the column it came from.
+ *
+ * A key that names neither column narrows to NOTHING rather than to everything.
+ * An unrecognized filter that silently widens the read is the shape of bug this
+ * whole domain keeps closing — an omitted `dataClass` that read as a wildcard,
+ * an unreadable ceiling that read as no ceiling. Same rule here.
+ */
+function toAuditFilter(input?: AskDisclosureHistoryInput): AuditFilter {
+  const filter: AuditFilter = {
+    from: input?.from ?? null,
+    to: input?.to ?? null,
+    limit: input?.limit ?? null,
+    outcomes: parseOutcomes(input?.outcomes),
+  };
+
+  const key = input?.counterpartyKey?.trim();
+  if (!key) {
+    return filter;
+  }
+
+  if (key.startsWith('user:')) {
+    return { ...filter, askerUserId: key.slice('user:'.length) };
+  }
+
+  if (key.startsWith('peer:')) {
+    return { ...filter, peerLinkId: key.slice('peer:'.length) };
+  }
+
+  if (key === UNATTRIBUTED) {
+    // Rows naming neither party. Expressed as explicit nulls so the service
+    // filters on them rather than dropping the clause.
+    return { ...filter, askerUserId: null, peerLinkId: null };
+  }
+
+  // A key we do not recognize. Narrow to nothing.
+  return { ...filter, askerUserId: NO_SUCH_ID };
+}
+
+/**
+ * A uuid that cannot match any row, for the unrecognized-key case.
+ *
+ * The nil uuid rather than a random one so the behaviour is deterministic, and
+ * a uuid rather than a sentinel string because the column is typed and Postgres
+ * would reject anything else with a 22P02 — a 500 where a clean empty result
+ * belongs.
+ */
+const NO_SUCH_ID = '00000000-0000-0000-0000-000000000000';
+
+/** Keep only outcomes the audit actually records; anything else is dropped. */
+function parseOutcomes(outcomes?: readonly string[]): AskAuditOutcome[] | undefined {
+  if (outcomes == null || outcomes.length === 0) {
+    return undefined;
+  }
+
+  const known: AskAuditOutcome[] = ['answered', 'auto_answered', 'declined', 'expired'];
+  const kept = outcomes.filter((o): o is AskAuditOutcome => (known as string[]).includes(o));
+
+  // An all-unrecognized list must not read as "no filter" — that would WIDEN
+  // the read on a typo. One impossible value keeps it narrow.
+  return kept.length > 0 ? kept : ['__none__' as AskAuditOutcome];
+}
+
+/** Days -> ms, with anything unreadable falling back to the default window. */
+function windowMsFrom(days?: number | null): number | undefined {
+  if (days == null || !Number.isFinite(days) || days <= 0) {
+    return undefined;
+  }
+
+  return Math.trunc(days) * 24 * 60 * 60 * 1000;
 }

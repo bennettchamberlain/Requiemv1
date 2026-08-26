@@ -1,6 +1,13 @@
 import { Field, GraphQLISODateTime, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 
-import { isGrantActive, type Ask, type AskAudit, type AskGrant, type AskQuery } from '@ci/domains/asks';
+import {
+  isGrantActive,
+  type Ask,
+  type AskAudit,
+  type AskGrant,
+  type AskQuery,
+  type DisclosureSummary,
+} from '@ci/domains/asks';
 
 import { GlobalUID } from './GlobalUID';
 
@@ -359,6 +366,116 @@ export class AskGrantType {
       active: isGrantActive(grant),
     };
   }
+}
+
+/**
+ * One relationship's disclosure record, folded.
+ *
+ * The unit an owner actually arrives with. A flat event list makes "what has
+ * Ana been getting?" a scrolling-and-tallying exercise; this answers it.
+ */
+@ObjectType()
+export class AskDisclosureSummaryType {
+  /** Stable grouping key — `user:<id>`, `peer:<linkId>`, or `unattributed`. */
+  @Field(() => String)
+  key!: string;
+
+  /** Opaque local asker id, when the counterparty is on this box. */
+  @Field(() => ID, { nullable: true })
+  askerId!: string | null;
+
+  @Field(() => ID, { nullable: true })
+  peerLinkId!: string | null;
+
+  /** The peer's handle as of the most recent disclosure. Null for a local asker. */
+  @Field(() => String, { nullable: true })
+  peerHandle!: string | null;
+
+  @Field(() => Int)
+  total!: number;
+
+  /**
+   * Released by a standing grant with no human in the loop.
+   *
+   * Kept apart from {@link reviewed} on the wire, not merged into one
+   * "answered" count, for the reason `DisclosureHistory` states: "a rule you
+   * wrote once released this without asking you" is the outcome an owner needs
+   * to notice, and a decision they made themselves is not.
+   */
+  @Field(() => Int)
+  autoAnswered!: number;
+
+  @Field(() => Int)
+  reviewed!: number;
+
+  @Field(() => Int)
+  declined!: number;
+
+  @Field(() => Int)
+  expired!: number;
+
+  /** Items that actually crossed, all time — magnitude, not ask count. */
+  @Field(() => Int)
+  itemsDisclosed!: number;
+
+  @Field(() => Int)
+  asksInWindow!: number;
+
+  @Field(() => Int)
+  itemsInWindow!: number;
+
+  @Field(() => GraphQLISODateTime)
+  firstAt!: Date;
+
+  @Field(() => GraphQLISODateTime)
+  lastAt!: Date;
+
+  static toType(summary: DisclosureSummary): AskDisclosureSummaryType {
+    return {
+      key: summary.counterparty.key,
+      askerId: summary.counterparty.askerUserId
+        ? GlobalUID.encode('user', summary.counterparty.askerUserId)
+        : null,
+      peerLinkId: summary.counterparty.peerLinkId,
+      peerHandle: summary.counterparty.peerHandle,
+      total: summary.total,
+      autoAnswered: summary.autoAnswered,
+      reviewed: summary.reviewed,
+      declined: summary.declined,
+      expired: summary.expired,
+      itemsDisclosed: summary.itemsDisclosed,
+      asksInWindow: summary.asksInWindow,
+      itemsInWindow: summary.itemsInWindow,
+      firstAt: summary.firstAt,
+      lastAt: summary.lastAt,
+    };
+  }
+}
+
+/**
+ * A disclosure read, with whether it was complete.
+ *
+ * `truncated` is on the wire rather than inferred from `rows.length` because
+ * the client cannot know the server's cap — and a completeness surface that
+ * quietly shows part of the record is worse than one that admits it.
+ */
+@ObjectType()
+export class AskDisclosureHistoryPayload {
+  @Field(() => [AskAuditType])
+  rows!: AskAuditType[];
+
+  @Field(() => Boolean)
+  truncated!: boolean;
+}
+
+@ObjectType()
+export class AskDisclosureSummaryPayload {
+  @Field(() => [AskDisclosureSummaryType])
+  summaries!: AskDisclosureSummaryType[];
+
+  /** True when the fold ran over a truncated read — so the totals are floors. */
+  @Field(() => Boolean)
+  truncated!: boolean;
 }
 
 /** A disclosure-history entry (one terminal ask outcome). */
