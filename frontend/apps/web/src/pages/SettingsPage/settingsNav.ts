@@ -8,8 +8,9 @@ import {
   Key,
   KeyRound,
   MapPin,
-  MessageSquare,
+  MessageCircle,
   Palette,
+  Plug,
   Shield,
 } from '@ci/shadcn/icons';
 
@@ -35,9 +36,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   { id: 'model', label: 'Model', icon: Cpu },
   { id: 'location', label: 'Location', icon: MapPin },
   { id: 'safari', label: 'Safari', icon: Compass, iosOnly: true },
+  { id: 'bluebubbles', label: 'BlueBubbles', icon: MessageCircle },
+  { id: 'mcp', label: 'MCP Servers', icon: Plug },
   { id: 'api-keys', label: 'API Keys', icon: KeyRound },
   { id: 'oauth', label: 'OAuth Credentials', icon: Key },
-  { id: 'bluebubbles', label: 'BlueBubbles', icon: MessageSquare },
   { id: 'data', label: 'Your data', icon: HardDrive },
 ];
 
