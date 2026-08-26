@@ -1,4 +1,6 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { DeviceLayoutProvider } from '@ci/common';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -82,5 +84,38 @@ describe('ProfilePage', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'Test User' })).not.toBeInTheDocument();
     });
+  });
+
+  /**
+   * I5: this redirect used to carry no `state`, so SettingsPage's own
+   * `location.state.backgroundLocation` was undefined too — it portalled
+   * over a blank `<main>` (nothing else matched the URL to render behind it)
+   * and Escape/Close fell back to `appHomePath()` instead of back to Self,
+   * where `/self/settings` conceptually lives. A direct visit (a bookmark)
+   * has no real prior page to fall back to, so this synthesizes one.
+   */
+  it('carries a synthesized backgroundLocation to Self, not a blank one', async () => {
+    setViewport(false);
+
+    function LocationProbe() {
+      const location = useLocation();
+
+      return <div data-testid="state">{JSON.stringify(location.state)}</div>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/self/settings']}>
+        <DeviceLayoutProvider args={[]}>
+          <Routes>
+            <Route path="/self/settings/*" element={<ProfilePage />} />
+            <Route path="/settings/appearance" element={<LocationProbe />} />
+          </Routes>
+        </DeviceLayoutProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('state')).toHaveTextContent(
+      JSON.stringify({ backgroundLocation: { pathname: '/self', search: '', hash: '' } }),
+    );
   });
 });

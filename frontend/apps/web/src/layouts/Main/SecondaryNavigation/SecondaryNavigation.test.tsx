@@ -143,19 +143,22 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Brief' })).not.toBeInTheDocument();
   });
 
-  // One row that opens, not five flat ones. A wall of settings sitting level
-  // with the places you actually work is the thing this replaced.
-  it('keeps the account to one user tile that opens', () => {
+  // One row that opens for theme and log out — not five flat ones sitting
+  // level with the places you actually work. Settings itself is no longer
+  // one of the things behind that chevron: it's its own bottom-anchored rail
+  // row (SettingsRailButton), reachable without opening Self at all — the
+  // whole point being it used to have no icon in the collapsed rail at all.
+  it('keeps the account to one user tile that opens for theme and log out', () => {
     renderRail('/feed', { expanded: true });
 
     const account = screen.getByRole('link', { name: 'Test User' });
 
     expect(account).toHaveAttribute('href', '/self');
-    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/appearance');
+    expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
 
-    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings/appearance');
     expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
   });
 
@@ -420,7 +423,7 @@ describe('SecondaryNavigation', () => {
     expect(screen.queryByRole('link', { name: 'Dinner plans' })).not.toBeInTheDocument();
   });
 
-  it('lists Capture first, then the spine, with Self as the user tile at the foot', () => {
+  it('lists Capture first, then the spine, with Self and Settings at the foot', () => {
     renderRail();
 
     const capture = screen.getByRole('button', { name: 'Capture' });
@@ -436,6 +439,8 @@ describe('SecondaryNavigation', () => {
     expect(hrefs.indexOf('/chat')).toBeLessThan(hrefs.indexOf('/sources'));
     expect(hrefs.indexOf('/sources')).toBeLessThan(hrefs.indexOf('/jobs'));
     expect(hrefs.indexOf('/jobs')).toBeLessThan(hrefs.indexOf('/self'));
+    // Settings is the last row of all — below Self, not nested inside it.
+    expect(hrefs.indexOf('/self')).toBeLessThan(hrefs.indexOf('/settings/appearance'));
   });
 });
 

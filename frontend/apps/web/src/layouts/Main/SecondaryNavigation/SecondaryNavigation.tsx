@@ -16,6 +16,7 @@ import { ChatSubmenu } from './ChatSubmenu';
 import { MemorySubmenu } from './MemorySubmenu';
 import { NavLink } from './NavLink';
 import { SelfSubmenu } from './SelfSubmenu';
+import { SettingsRailButton } from './SettingsRailButton';
 import { useFeedBadgeCount } from './useFeedBadgeCount';
 
 interface ExternalNavLinkProps {
@@ -162,11 +163,10 @@ function OverlayRail({
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-gutter:stable]">
           {destinationsList}
         </div>
-        {showSelf ? (
-          <div className="mt-auto flex flex-col gap-1 pb-2">
-            <SelfSubmenu />
-          </div>
-        ) : null}
+        <div className="mt-auto flex flex-col gap-1 pb-2">
+          {showSelf ? <SelfSubmenu /> : null}
+          <SettingsRailButton />
+        </div>
       </Tooltip.Provider>
     </nav>
   );
@@ -278,6 +278,7 @@ export function SecondaryNavigation() {
             <div className="mt-auto flex flex-col gap-1 pb-2">
               <HelpSubmenu />
               {showSelf ? <SelfSubmenu /> : null}
+              <SettingsRailButton />
             </div>
           </Tooltip.Provider>
         </nav>
