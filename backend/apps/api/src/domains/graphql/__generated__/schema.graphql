@@ -3113,6 +3113,8 @@ type SavedSearchType implements Node {
   isSeed: Boolean!
   name: String
   query: String
+  shareExpiresAt: DateTime
+  shareMaxDisclosure: String
   shareToken: String
   tags: [String!]
   updatedAt: DateTime!
@@ -3215,8 +3217,10 @@ type SendPeerAskPayload {
 }
 
 input SetSavedSearchSharingInput {
+  expiresAt: DateTime
   id: ID!
   isPublic: Boolean!
+  maxDisclosure: String
 }
 
 type SummaryConnection implements Connection {

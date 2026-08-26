@@ -9,13 +9,7 @@
 
 /** Lifecycle states of an Ask. See ARCHITECTURE.md §6 (ask lifecycle). */
 export type AskStatus =
-  | 'sent'
-  | 'delivered'
-  | 'under_review'
-  | 'answering'
-  | 'answered'
-  | 'declined'
-  | 'expired';
+  'sent' | 'delivered' | 'under_review' | 'answering' | 'answered' | 'declined' | 'expired';
 
 /** Terminal outcome recorded in the per-ask audit log. */
 export type AskAuditOutcome = 'answered' | 'auto_answered' | 'declined' | 'expired';
@@ -26,6 +20,12 @@ export type AskAuditOutcome = 'answered' | 'auto_answered' | 'declined' | 'expir
  * default), `block` denies outright.
  */
 export type GrantMode = 'auto' | 'review' | 'block';
+
+/**
+ * The kinds of object a grant may name directly, rather than by class of
+ * question. Pinned to the `ask_grants_resource_type_chk` CHECK.
+ */
+export type AskGrantResourceType = 'saved_search';
 
 /** Outcome of evaluating an ask against the owner's standing grants. */
 export type GrantDecision = 'auto' | 'review' | 'deny';
@@ -172,6 +172,12 @@ export interface CreateAskGrantDto {
   granteeUserId?: string | null;
   /** Grant addressed to a linked peer Companion (federated asks). */
   granteePeerLinkId?: string | null;
+  /**
+   * The single object this grant covers. Both or neither — a resource id with
+   * no type names nothing, a type with no id is a wildcard.
+   */
+  resourceType?: AskGrantResourceType | null;
+  resourceId?: string | null;
   queryType: string;
   dataClass?: string | null;
   scope?: AskGrantScope | null;
@@ -197,7 +203,13 @@ export interface UpdateAskGrantDto {
 }
 
 export interface RecordAskAuditDto {
-  askId: string;
+  /**
+   * The ask this outcome belongs to, or NULL for a disclosure with no ask
+   * behind it — a read through a shared saved search, which is pre-authorized
+   * and therefore has no request lifecycle to model. The column has been
+   * nullable since it was written (`ON DELETE SET NULL`).
+   */
+  askId: string | null;
   /** NULL for an inbound peer ask — the asker is identified by `peerLinkId`. */
   askerUserId: string | null;
   peerLinkId?: string | null;
