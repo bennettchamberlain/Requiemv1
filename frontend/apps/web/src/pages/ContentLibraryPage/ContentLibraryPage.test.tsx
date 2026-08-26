@@ -228,6 +228,37 @@ describe('ContentLibraryPage', () => {
     expect(navigate).toHaveBeenCalledWith(`/memory/content/${CONTENT_UUID}`);
     expect(navigate).not.toHaveBeenCalledWith(`/memory/content/${CONTENT_GLOBAL_ID}`);
   });
+
+  it('shows the shared EmptyState when the library is genuinely empty', async () => {
+    renderWithProviders(<ContentLibraryPage />, {
+      mocks: [
+        {
+          request: { query: GET_CONTENTS, variables: { first: PAGE_SIZE } },
+          result: {
+            data: {
+              contents: {
+                __typename: 'ContentConnection' as const,
+                totalCount: 0,
+                pageInfo: pageInfo(),
+                edges: [],
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const message = await screen.findByText(
+      'Nothing here yet. Content appears as your sources sync and files finish parsing.',
+    );
+
+    // `EmptyState` (from `@ci/common`) wraps its message in an
+    // absolutely-positioned, pointer-events-none container — a DOM
+    // fingerprint the old bespoke `<p className="text-sm text-muted-foreground">`
+    // never had. Asserting on it proves this is genuinely the shared
+    // component now, not just visually identical bespoke markup.
+    expect(message.parentElement).toHaveClass('absolute', 'inset-0', 'pointer-events-none');
+  });
 });
 
 describe('resolveContentTileUrl', () => {
