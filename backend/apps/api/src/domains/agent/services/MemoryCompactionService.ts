@@ -26,6 +26,7 @@ import {
   ItemService,
   PersonService,
   PlaceService,
+  tokenizePersonName,
   UserContextService,
 } from '@ci/domains/memory';
 
@@ -779,17 +780,12 @@ export class MemoryCompactionService {
   }
 
   /**
-   * Lower-cases a name and splits it into a set of word tokens, dropping
-   * punctuation. "Priya Sharma" -> {priya, sharma}.
+   * Name elements after honorific/suffix strip. "Mr Broza" -> {broza}.
+   * Shared with the People resolver so compaction and merge-candidate
+   * scoring agree on what a name *is*.
    */
   private nameTokens(name: string | null | undefined): Set<string> {
-    return new Set(
-      (name ?? '')
-        .toLowerCase()
-        .replace(/[^\w\s]/g, ' ')
-        .split(/\s+/)
-        .filter(Boolean),
-    );
+    return tokenizePersonName(name)?.set ?? new Set();
   }
 
   /**

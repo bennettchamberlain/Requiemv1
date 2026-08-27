@@ -4,6 +4,12 @@ import { DataSource } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import {
+  compareTokenizedNames,
+  indexableTokens,
+  tokenizePersonName,
+  type TokenizedPersonName,
+} from '@ci/domains/memory';
 
 import { PIPELINE_QUEUES } from '../../constants';
 import type { Stage, StageResult, StageSource } from '../../types';
@@ -43,8 +49,11 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
  *
  * 2 — phone evidence is adjudicated against `value_e164` instead of being
  * discounted wholesale. See {@link PHONE_MATCH_SCORES}.
+ * 3 — name evidence is no longer exact-string only. Token-subset overlap
+ * ("mr broza" ⊂ "william d broza") is scored and proposed; a last-name
+ * conflict is not. See {@link buildNameOverlapCandidates}.
  */
-export const DUPLICATE_SCORING_GENERATION = 2;
+export const DUPLICATE_SCORING_GENERATION = 3;
 
 /**
  * Generation of the CANDIDATE SET — which subjects are compared, i.e. the
@@ -259,6 +268,16 @@ export const PHONE_MATCH_SCORES = {
 export const MAX_GROUP_MEMBERS = 6;
 
 /**
+ * How many people a bare given name may fit before it stops being a question
+ * and becomes noise ("william" against forty email Williams).
+ *
+ * Higher than {@link MAX_GROUP_MEMBERS} because the UI groups these into one
+ * picker rather than N pairwise cards. Above the cap the given-name match is
+ * dropped; family-token matches for the same person still stand.
+ */
+export const MAX_NAME_CLUSTER = 8;
+
+/**
  * Minimum score worth writing a row for.
  *
  * Equal to the weakest single piece of evidence, so a lone name match still
@@ -450,6 +469,194 @@ export function buildCandidates(claims: readonly SharedClaim[]): {
   return { candidates, suppressed };
 }
 
+/** One live person name, as the name-overlap pass reads it. */
+export interface PersonNameRow {
+  entity_id: string;
+  name: string | null;
+}
+
+/**
+ * Fold two candidate lists for the same pair into one row.
+ *
+ * Exact-identifier evidence and name-overlap evidence are different facts
+ * about the same two people. The score stays the MAX (an email is not made
+ * stronger by also sharing a last name); every piece of evidence is kept.
+ */
+export function mergeCandidateLists(
+  left: readonly MergeCandidate[],
+  right: readonly MergeCandidate[],
+): MergeCandidate[] {
+  const byPair = new Map<string, MergeCandidate>();
+
+  for (const candidate of [...left, ...right]) {
+    const key = `${candidate.entityIdA}|${candidate.entityIdB}`;
+    const existing = byPair.get(key);
+
+    if (existing == null) {
+      byPair.set(key, {
+        ...candidate,
+        evidence: candidate.evidence.map((item) => ({ ...item })),
+      });
+      continue;
+    }
+
+    const seen = new Set(existing.evidence.map((item) => `${item.kind}|${item.value}`));
+
+    for (const item of candidate.evidence) {
+      const evidenceKey = `${item.kind}|${item.value}`;
+      if (seen.has(evidenceKey)) {
+        continue;
+      }
+
+      seen.add(evidenceKey);
+      existing.evidence.push(item);
+    }
+
+    existing.evidence.sort((a, b) => b.score - a.score || a.kind.localeCompare(b.kind));
+    existing.score = existing.evidence[0]?.score ?? existing.score;
+  }
+
+  return [...byPair.values()];
+}
+
+/**
+ * Propose pairs whose display names overlap by token subset.
+ *
+ * Exact name claims ("william broza" = "william broza") are already handled
+ * by {@link buildCandidates}. This pass is the one that notices "mr broza"
+ * and "william d broza" are a question, and that Discord "william" might be
+ * one of several email Williams.
+ *
+ * Only pairs that include at least one swept subject are returned — this
+ * stage examines a slice, not the whole corpus, and proposing a pair that
+ * touches nobody in the slice would write a row nobody asked this sweep
+ * for.
+ */
+export function buildNameOverlapCandidates(
+  rows: readonly PersonNameRow[],
+  sliceIds: ReadonlySet<string>,
+): { candidates: MergeCandidate[]; suppressed: Set<string> } {
+  const tokenized = new Map<string, TokenizedPersonName>();
+
+  for (const row of rows) {
+    const parsed = tokenizePersonName(row.name);
+    if (parsed == null || parsed.isRelational) {
+      continue;
+    }
+
+    tokenized.set(row.entity_id, parsed);
+  }
+
+  const holders = new Map<string, string[]>();
+  for (const [entityId, name] of tokenized) {
+    for (const token of indexableTokens(name)) {
+      const bucket = holders.get(token);
+      if (bucket == null) {
+        holders.set(token, [entityId]);
+      } else {
+        bucket.push(entityId);
+      }
+    }
+  }
+
+  const pairEvidence = new Map<string, MergeCandidate>();
+  const givenFits = new Map<string, Set<string>>();
+  const suppressed = new Set<string>();
+
+  for (const subjectId of sliceIds) {
+    const subject = tokenized.get(subjectId);
+    if (subject == null) {
+      continue;
+    }
+
+    const others = new Set<string>();
+    for (const token of indexableTokens(subject)) {
+      for (const otherId of holders.get(token) ?? []) {
+        if (otherId !== subjectId) {
+          others.add(otherId);
+        }
+      }
+    }
+
+    for (const otherId of others) {
+      const other = tokenized.get(otherId);
+      if (other == null) {
+        continue;
+      }
+
+      const overlap = compareTokenizedNames(subject, other);
+      if (overlap == null) {
+        continue;
+      }
+
+      if (overlap.kind === 'family') {
+        const family = subject.family ?? other.family;
+        if (family != null && (holders.get(family)?.length ?? 0) > MAX_GROUP_MEMBERS) {
+          suppressed.add(subjectId);
+          continue;
+        }
+      }
+
+      if (overlap.kind === 'given') {
+        const key = subject.set.size <= other.set.size ? subjectId : otherId;
+        const fits = givenFits.get(key) ?? new Set<string>();
+        fits.add(subjectId === key ? otherId : subjectId);
+        givenFits.set(key, fits);
+      }
+
+      const [entityIdA, entityIdB] = subjectId < otherId ? [subjectId, otherId] : [otherId, subjectId];
+      const pairKey = `${entityIdA}|${entityIdB}`;
+      const kind = overlap.kind === 'given' ? 'name_cluster' : 'name_overlap';
+      const value = overlap.shared[overlap.shared.length - 1] ?? overlap.shared[0] ?? '';
+      const existing = pairEvidence.get(pairKey);
+
+      if (existing == null) {
+        pairEvidence.set(pairKey, {
+          entityIdA,
+          entityIdB,
+          score: overlap.score,
+          evidence: [{ kind, value, score: overlap.score }],
+        });
+        continue;
+      }
+
+      if (overlap.score > existing.score) {
+        existing.score = overlap.score;
+      }
+
+      if (!existing.evidence.some((item) => item.kind === kind && item.value === value)) {
+        existing.evidence.push({ kind, value, score: overlap.score });
+        existing.evidence.sort((a, b) => b.score - a.score || a.kind.localeCompare(b.kind));
+      }
+    }
+  }
+
+  const candidates: MergeCandidate[] = [];
+
+  for (const candidate of pairEvidence.values()) {
+    const cluster = candidate.evidence.find((item) => item.kind === 'name_cluster');
+    if (cluster != null) {
+      const leftFits = givenFits.get(candidate.entityIdA)?.size ?? 0;
+      const rightFits = givenFits.get(candidate.entityIdB)?.size ?? 0;
+      const fits = Math.max(leftFits, rightFits);
+
+      if (fits > MAX_NAME_CLUSTER) {
+        suppressed.add(candidate.entityIdA);
+        suppressed.add(candidate.entityIdB);
+        continue;
+      }
+    }
+
+    if (candidate.score < MIN_CANDIDATE_SCORE) {
+      continue;
+    }
+
+    candidates.push(candidate);
+  }
+
+  return { candidates, suppressed };
+}
+
 // ---------------------------------------------------------------------------
 // The stage
 // ---------------------------------------------------------------------------
@@ -572,7 +779,18 @@ export class DuplicateDetectStage implements Stage {
     }
 
     const claims = await this.loadEvidence(ctx.userId, examined);
-    const { candidates, suppressed } = buildCandidates(claims);
+    const { candidates: exactCandidates, suppressed } = buildCandidates(claims);
+    const names = await this.loadPersonNames(ctx.userId);
+    const { candidates: nameCandidates, suppressed: nameSuppressed } = buildNameOverlapCandidates(
+      names,
+      new Set(examined),
+    );
+
+    for (const id of nameSuppressed) {
+      suppressed.add(id);
+    }
+
+    const candidates = mergeCandidateLists(exactCandidates, nameCandidates);
 
     /** How many surviving pairs each swept subject appears in. */
     const proposedFor = new Map<string, number>();
@@ -690,6 +908,31 @@ export class DuplicateDetectStage implements Stage {
     );
 
     return new Map(rows.map((row) => [row.entity_id, Number(row.claim_count)]));
+  }
+
+  /**
+   * Live Person display names for the owner — the input to
+   * {@link buildNameOverlapCandidates}.
+   *
+   * Loaded corpus-wide rather than regex-matched against the slice's tokens
+   * because display names keep diacritics ("José") while tokens are NFKD-
+   * folded ("jose"), so a word-boundary lookup on the raw column would miss
+   * the people the pass exists to find. A user's person list fits in one
+   * result set; the nightly slice cost is the price of comparing names that
+   * are not exact identifier matches.
+   */
+  private loadPersonNames(userId: string): Promise<PersonNameRow[]> {
+    return this.dataSource.query<PersonNameRow[]>(
+      `SELECT e.entity_id, e.name
+         FROM ci.entities e
+        WHERE e.owner_user_id = $1::uuid
+          AND e.entity_type = '${CANDIDATE_ENTITY_TYPE}'
+          AND COALESCE(e.is_active, true) = true
+          AND e.merged_into_entity_id IS NULL
+          AND e.name IS NOT NULL
+          AND btrim(e.name) <> ''`,
+      [userId],
+    );
   }
 
   /**

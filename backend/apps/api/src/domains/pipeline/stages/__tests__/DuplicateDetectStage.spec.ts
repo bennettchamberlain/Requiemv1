@@ -13,12 +13,15 @@ import {
   DuplicateDetectStage,
   IDENTIFIER_KIND_SCORES,
   MAX_GROUP_MEMBERS,
+  MAX_NAME_CLUSTER,
   MIN_CANDIDATE_SCORE,
   PHONE_MATCH_SCORES,
   type SharedClaim,
   buildCandidates,
+  buildNameOverlapCandidates,
   claimScore,
   duplicateDetectStageVersion,
+  mergeCandidateLists,
   scorePair,
 } from '../clean/DuplicateDetectStage';
 
@@ -94,10 +97,10 @@ describe('the version', () => {
   it('is monotone in each generation, so a bump can only go up', () => {
     // A hash would be uniformly distributed and would move the version DOWN half
     // the time, which pins the corpus to the abandoned high-water mark forever.
-    // A sum cannot. 3 = DUPLICATE_SCORING_GENERATION (2, since phone evidence is
-    // adjudicated against value_e164) + DUPLICATE_CANDIDATE_GENERATION (2, since
-    // enrich.person_self_claim widened the evidence set) - 1.
-    expect(DUPLICATE_DETECT_VERSION).toBe(3);
+    // A sum cannot. 4 = DUPLICATE_SCORING_GENERATION (3, name token-subset
+    // overlap) + DUPLICATE_CANDIDATE_GENERATION (2, since enrich.person_self_claim
+    // widened the evidence set) - 1.
+    expect(DUPLICATE_DETECT_VERSION).toBe(4);
   });
 });
 
@@ -323,6 +326,89 @@ describe('buildCandidates', () => {
   });
 });
 
+describe('buildNameOverlapCandidates', () => {
+  function names(...pairs: Array<[number, string]>) {
+    return pairs.map(([n, name]) => ({ entity_id: personId(n), name }));
+  }
+
+  it('proposes mr broza against william d broza', () => {
+    const { candidates } = buildNameOverlapCandidates(
+      names([1, 'Mr Broza'], [2, 'William D Broza']),
+      new Set([personId(1)]),
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].evidence[0]).toEqual(
+      expect.objectContaining({ kind: 'name_overlap', value: 'broza' }),
+    );
+  });
+
+  it('refuses john smith against john jones', () => {
+    const { candidates } = buildNameOverlapCandidates(
+      names([1, 'John Smith'], [2, 'John Jones']),
+      new Set([personId(1)]),
+    );
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('clusters a bare given name against several fuller matches', () => {
+    const { candidates } = buildNameOverlapCandidates(
+      names([1, 'william'], [2, 'William Broza'], [3, 'William Smith']),
+      new Set([personId(1)]),
+    );
+
+    expect(candidates).toHaveLength(2);
+    expect(candidates.every((candidate) => candidate.evidence.some((item) => item.kind === 'name_cluster'))).toBe(
+      true,
+    );
+  });
+
+  it('drops a given name that fits more people than the cluster cap', () => {
+    const rows = names(
+      [1, 'william'],
+      ...Array.from({ length: MAX_NAME_CLUSTER + 1 }, (_, index) => [index + 2, `William Extra${index}`] as [
+        number,
+        string,
+      ]),
+    );
+
+    const { candidates } = buildNameOverlapCandidates(rows, new Set([personId(1)]));
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('does not propose a pair that touches nobody in the slice', () => {
+    const { candidates } = buildNameOverlapCandidates(
+      names([1, 'Mr Broza'], [2, 'William D Broza']),
+      new Set([personId(9)]),
+    );
+
+    expect(candidates).toEqual([]);
+  });
+});
+
+describe('mergeCandidateLists', () => {
+  it('keeps email evidence and adds the name overlap on the same pair', () => {
+    const exact = scorePair([claim()])!;
+    const { candidates: nameCandidates } = buildNameOverlapCandidates(
+      [
+        { entity_id: personId(1), name: 'Mr Broza' },
+        { entity_id: personId(2), name: 'William D Broza' },
+      ],
+      new Set([personId(1)]),
+    );
+
+    const merged = mergeCandidateLists([exact], nameCandidates);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].score).toBe(IDENTIFIER_KIND_SCORES.email);
+    expect(merged[0].evidence.map((item) => item.kind)).toEqual(
+      expect.arrayContaining(['email', 'name_overlap']),
+    );
+  });
+});
+
 /* ===================================================================== *
  * run() — the slice
  * ===================================================================== */
@@ -349,12 +435,16 @@ function makeStage(
     const sql = raw.replace(/\s+/g, ' ').trim();
     statements.push({ sql, params: params ?? [] });
 
-    if (/FROM ci\.entities e/i.test(sql) && /^select/i.test(sql)) {
+    if (/claim_count/i.test(sql) && /FROM ci\.entities e/i.test(sql)) {
       const [ids] = (params ?? []) as [string[]];
 
       return ids
         .filter((id) => present.includes(id))
         .map((entity_id) => ({ entity_id, claim_count: opts.claimCounts?.[entity_id] ?? 1 }));
+    }
+
+    if (/e\.name/i.test(sql) && /FROM ci\.entities e/i.test(sql)) {
+      return [];
     }
 
     if (/identifier_claims/i.test(sql) && /^with/i.test(sql)) {
