@@ -1,6 +1,6 @@
-import { render, screen , fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EntityItem } from '../useEntityService';
 
@@ -38,13 +38,24 @@ vi.mock('@/components/TimelineJs', () => ({
   TimelineJsHost: ({
     data,
     onSlideChange,
+    onSlideOpen,
   }: {
     data: { events: Array<{ unique_id: string; text: { headline: string } }> };
     onSlideChange?: (uniqueId: string) => void;
+    onSlideOpen?: (uniqueId: string) => void;
   }) => (
     <div>
+      <button type="button" onClick={() => onSlideChange?.(data.events[0]?.unique_id ?? '')}>
+        land
+      </button>
       {data.events.map((slide) => (
-        <button key={slide.unique_id} onClick={() => onSlideChange?.(slide.unique_id)}>
+        <button
+          key={slide.unique_id}
+          onClick={() => {
+            onSlideChange?.(slide.unique_id);
+            onSlideOpen?.(slide.unique_id);
+          }}
+        >
           {slide.text.headline}
         </button>
       ))}
@@ -78,16 +89,40 @@ function renderTimeline(url = '/memory/events?view=timeline') {
 }
 
 describe('StoryTimelineView', () => {
+  beforeEach(() => {
+    setActiveEntityMock.mockReset();
+  });
+
+  it('does not open the detail drawer on TimelineJS landing change', () => {
+    const drill = eventAt('drill', new Date(2026, 6, 1, 10), 'Drill run');
+    useEntityServiceMock.mockReturnValue(baseService({ data: [drill] }));
+
+    renderTimeline();
+    fireEvent.click(screen.getByRole('button', { name: 'land' }));
+
+    expect(setActiveEntityMock).not.toHaveBeenCalled();
+  });
+
   it('sets the active entity to the clicked slide, so it opens the shared detail drawer', () => {
     const drill = eventAt('drill', new Date(2026, 6, 1, 10), 'Drill run');
     const lamp = eventAt('lamp', new Date(2026, 6, 2, 10), 'Desk lamp');
     useEntityServiceMock.mockReturnValue(baseService({ data: [drill, lamp] }));
 
     renderTimeline();
-
+    fireEvent.click(screen.getByRole('button', { name: 'land' }));
     fireEvent.click(screen.getByText('Desk lamp'));
 
     expect(setActiveEntityMock).toHaveBeenCalledWith(lamp);
+  });
+
+  it('opens the drawer from a tap on the current slide', () => {
+    const drill = eventAt('drill', new Date(2026, 6, 1, 10), 'Drill run');
+    useEntityServiceMock.mockReturnValue(baseService({ data: [drill] }));
+
+    renderTimeline();
+    fireEvent.click(screen.getByText('Drill run'));
+
+    expect(setActiveEntityMock).toHaveBeenCalledWith(drill);
   });
 
   it('shows how many dated slides are loaded, not just the ones that fit the window', () => {
@@ -101,5 +136,38 @@ describe('StoryTimelineView', () => {
     // 80 dated rows are in hand but the deck only ever mounts a window of
     // MEMORY_TIMELINE_MAX_SLIDES (48) — the count must say so, not go silent.
     expect(screen.getByText('48 of 80 loaded · end')).toBeInTheDocument();
+  });
+
+  it('shows the timeline, not an endless skeleton, when a later search page fails', () => {
+    const drill = eventAt('drill', new Date(2026, 6, 1, 10), 'Drill run');
+    const lamp = eventAt('lamp', new Date(2026, 6, 2, 10), 'Desk lamp');
+    useEntityServiceMock.mockReturnValue(
+      baseService({
+        data: [drill, lamp],
+        hasNextPage: true,
+        error: new Error('network'),
+      }),
+    );
+
+    renderTimeline();
+
+    expect(screen.getByTestId('memory-timeline')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+  });
+
+  it('shows ErrorState when the search fails with nothing to put on the axis', () => {
+    useEntityServiceMock.mockReturnValue(
+      baseService({
+        data: [],
+        hasNextPage: true,
+        error: new Error('network'),
+      }),
+    );
+
+    renderTimeline();
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });
