@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { useApolloClient, useMutation, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
-import { AlertDialog, Badge, Button, Card, Input } from '@ci/shadcn';
+import { Badge, Button, Card, Input } from '@ci/shadcn';
 import { Merge } from '@ci/shadcn/icons';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -59,13 +59,9 @@ const GET_PEOPLE = gql(`
   }
 `);
 
-// The duplicate-detection pipeline's own queue: pairs it scored, with the
-// evidence behind each one — the sole source of merge suggestions now that
-// `clean.duplicate_detect` has a real evidence producer for every Person
-// (enrich.person_self_claim), not only ones a communication or event
-// resolved to. This page used to ALSO run its own cruder exact-match
-// recomputation (personDuplicates) on every request; that path is retired
-// in favour of this one, single, human-reviewed queue.
+// The duplicate-detection pipeline's queue: scored pairs with evidence.
+// Same-email pairs are folded automatically when this query runs; name and
+// phone matches stay here for a one-click merge (no extra confirm).
 const GET_MERGE_CANDIDATES = gql(`
   query GetMergeCandidates($first: Int, $after: String) {
     mergeCandidates(first: $first, after: $after) {
@@ -251,7 +247,6 @@ function MergeSuggestionCard({
 }) {
   const [mergePeople, { loading }] = useMutation(MERGE_PEOPLE);
   const [rejectDuplicates, { loading: rejecting }] = useMutation(REJECT_PERSON_DUPLICATES);
-  const [pendingTargetId, setPendingTargetId] = useState<string | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
 
   // The self person (if present) is always the preferred merge target — the
@@ -269,12 +264,9 @@ function MergeSuggestionCard({
 
     try {
       await mergePeople({ variables: { input: { targetId, sourceIds } } });
-      setPendingTargetId(null);
       setMergeError(null);
       await onMerged({ removedIds: sourceIds, keptId: targetId });
     } catch (error) {
-      // Keep the dialog open and show what went wrong instead of silently
-      // closing on failure.
       setMergeError(error instanceof Error ? error.message : 'The merge failed. Please try again.');
     }
   };
@@ -292,12 +284,6 @@ function MergeSuggestionCard({
     } catch (error) {
       setMergeError(error instanceof Error ? error.message : 'Could not record that. Please try again.');
     }
-  };
-
-  const pendingTarget = orderedPeople.find((person) => person.id === pendingTargetId);
-  const openMerge = (targetId: string) => {
-    setMergeError(null);
-    setPendingTargetId(targetId);
   };
 
   return (
@@ -343,7 +329,7 @@ function MergeSuggestionCard({
                 className="self-start sm:self-auto shrink-0"
                 disabled={loading}
                 onClick={() => {
-                  openMerge(person.id);
+                  void merge(person.id);
                 }}
               >
                 Use as the kept person
@@ -357,7 +343,7 @@ function MergeSuggestionCard({
           wrong suggestion is to merge people who are not the same, and the
           group returns on every load. */}
       <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t pt-2">
-        {mergeError && !pendingTargetId && <span className="text-sm text-destructive">{mergeError}</span>}
+        {mergeError && <span className="text-sm text-destructive">{mergeError}</span>}
         <Button size="sm" variant="ghost" disabled={loading || rejecting} onClick={() => void reject()}>
           {rejecting ? 'Saving…' : 'Not the same person'}
         </Button>
@@ -366,48 +352,13 @@ function MergeSuggestionCard({
           disabled={loading || defaultTargetId == null}
           onClick={() => {
             if (defaultTargetId != null) {
-              openMerge(defaultTargetId);
+              void merge(defaultTargetId);
             }
           }}
         >
-          Merge into one person
+          {loading ? 'Merging…' : 'Merge into one person'}
         </Button>
       </div>
-
-      <AlertDialog
-        open={pendingTargetId != null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingTargetId(null);
-          }
-        }}
-      >
-        <AlertDialog.Content>
-          <AlertDialog.Header>
-            <AlertDialog.Title>Merge into one person?</AlertDialog.Title>
-            <AlertDialog.Description>
-              {`Events, messages, and contact methods from the other ${people.length - 1 === 1 ? 'person' : `${people.length - 1} people`} will move onto "${pendingTarget?.name || 'Unnamed'}"${pendingTarget?.isSelf ? ' (You)' : ''}. This folds multi-platform stubs into one Person and cannot be undone from the UI.`}
-            </AlertDialog.Description>
-          </AlertDialog.Header>
-          {mergeError && <div className="text-sm text-destructive">{mergeError}</div>}
-          <AlertDialog.Footer>
-            <AlertDialog.Cancel disabled={loading}>Cancel</AlertDialog.Cancel>
-            <AlertDialog.Action
-              disabled={loading || pendingTargetId == null}
-              onClick={(e) => {
-                // Radix auto-closes on Action click; keep the dialog open so a
-                // failure (or the in-flight state) stays visible.
-                e.preventDefault();
-                if (pendingTargetId != null) {
-                  void merge(pendingTargetId);
-                }
-              }}
-            >
-              {loading ? 'Merging…' : 'Merge into one person'}
-            </AlertDialog.Action>
-          </AlertDialog.Footer>
-        </AlertDialog.Content>
-      </AlertDialog>
     </div>
   );
 }

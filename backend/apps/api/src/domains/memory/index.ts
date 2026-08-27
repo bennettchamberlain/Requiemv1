@@ -301,6 +301,7 @@ export type {
 } from './services/MergeCandidateService';
 export {
   encodeMergeCandidateCursor,
+  hasEmailEvidence,
   isMergeCandidateStatus,
   MERGE_CANDIDATE_STATUSES,
 } from './services/MergeCandidateService';

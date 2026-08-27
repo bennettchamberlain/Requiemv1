@@ -7,6 +7,8 @@ import { LoggerService } from '@ci/common/logging';
 
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 
+import { PersonMergeService } from './PersonMergeService';
+
 /** The three states `ci.merge_candidates.status` is CHECK-constrained to. */
 export type MergeCandidateStatus = 'pending' | 'accepted' | 'rejected';
 
@@ -47,6 +49,12 @@ export interface MergeCandidatePage {
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+/** Same-email pairs are merged, not reviewed. Bound one request so a backlog cannot hang the People page. */
+const AUTO_MERGE_EMAIL_LIMIT = 50;
+
+export function hasEmailEvidence(evidence: readonly MergeCandidateEvidence[]): boolean {
+  return evidence.some((item) => item.kind === 'email');
+}
 
 /**
  * Opaque keyset cursor over the review order (`score DESC, id ASC`).
@@ -169,8 +177,64 @@ export class MergeCandidateService {
     @InjectRepository(PersonEntity)
     private readonly personRepository: Repository<PersonEntity>,
     private readonly logger: LoggerService,
+    private readonly personMergeService: PersonMergeService,
   ) {
     this.logger.setContext(MergeCandidateService.name);
+  }
+
+  /**
+   * Fold pending same-email pairs into one person.
+   *
+   * A shared mailbox is 0.95 on the review queue — "95% match" — because the
+   * detector never merges. Two stubs that actually use the same email are the
+   * same person; leave name/phone matches for a human. Keep the self person
+   * when it is in the pair, otherwise the detector's ordered `entity_id_a`.
+   */
+  async autoMergePendingEmailPairs(context: UserServiceContext): Promise<number> {
+    const [selfRow]: Array<{ entity_id: string | null }> = await this.personRepository.manager.query(
+      `SELECT entity_id FROM ci.users WHERE id = $1`,
+      [context.userId],
+    );
+    const selfId = selfRow?.entity_id ?? null;
+
+    const rows: Array<{ merge_candidate_id: string; entity_id_a: string; entity_id_b: string }> =
+      await this.personRepository.manager.query(
+        `SELECT mc.merge_candidate_id, mc.entity_id_a, mc.entity_id_b
+           FROM ci.merge_candidates mc
+          WHERE mc.owner_user_id = $1
+            AND mc.entity_type = 'Person'
+            AND mc.status = 'pending'
+            AND mc.evidence @> '[{"kind":"email"}]'::jsonb
+            AND ${LIVE_PAIR_PREDICATE}
+          ORDER BY mc.score DESC, mc.merge_candidate_id ASC
+          LIMIT $2`,
+        [context.userId, AUTO_MERGE_EMAIL_LIMIT],
+      );
+
+    let merged = 0;
+
+    for (const row of rows) {
+      const targetId = selfId === row.entity_id_b ? row.entity_id_b : row.entity_id_a;
+      const sourceId = targetId === row.entity_id_a ? row.entity_id_b : row.entity_id_a;
+
+      try {
+        await this.personMergeService.mergePeople(context, [sourceId], targetId);
+        await this.resolvePairs(context, [row.entity_id_a, row.entity_id_b], 'accepted');
+        merged += 1;
+      } catch (err: unknown) {
+        this.logger.warn('Same-email auto-merge skipped a pair', {
+          err,
+          entityIdA: row.entity_id_a,
+          entityIdB: row.entity_id_b,
+        });
+      }
+    }
+
+    if (merged > 0) {
+      this.logger.log('Auto-merged same-email people', { merged, considered: rows.length });
+    }
+
+    return merged;
   }
 
   /**
