@@ -5,6 +5,7 @@ import type { PersonalizationService } from '@ci/domains/personalization';
 
 import { InboxScanService } from '../InboxScanService';
 import type { PlannedBlockService } from '../PlannedBlockService';
+import type { ProposedTaskReconcileService } from '../ProposedTaskReconcileService';
 import type { TaskService } from '../TaskService';
 
 const USER_ID = 'user-1';
@@ -52,6 +53,16 @@ function makeLogger(): LoggerService {
   } as unknown as LoggerService;
 }
 
+function makeProposedReconcile(): ProposedTaskReconcileService {
+  return {
+    reconcileStaleProposed: jest.fn(async () => ({ redated: 0, archived: 0 })),
+    windowForToday: jest.fn(async () => ({
+      scheduledFor: '2026-08-26',
+      dueAt: new Date('2026-08-26T12:00:00.000Z'),
+    })),
+  } as unknown as ProposedTaskReconcileService;
+}
+
 describe('InboxScanService per-item error isolation', () => {
   it("one item's failure does not abort the rest of the batch", async () => {
     // Same failure mode as TodoScanService: a mid-batch throw must not
@@ -87,6 +98,7 @@ describe('InboxScanService per-item error isolation', () => {
     } as unknown as PlannedBlockService;
 
     const logger = makeLogger();
+    const proposedReconcile = makeProposedReconcile();
 
     const service = new InboxScanService(
       makeCommunicationRepository([makeMessage()]) as never,
@@ -94,6 +106,7 @@ describe('InboxScanService per-item error isolation', () => {
       makeOllamaService(items),
       personalizationService,
       plannedBlockService,
+      proposedReconcile,
       logger,
     );
 
@@ -101,9 +114,57 @@ describe('InboxScanService per-item error isolation', () => {
 
     expect(created).toEqual(new Set(['Pay the invoice', 'Reply to Sam']));
     expect(result.created).toBe(2);
+    expect(proposedReconcile.reconcileStaleProposed).toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       'Inbox scan item failed; continuing with remaining items',
       expect.objectContaining({ title: 'Explodes' }),
     );
+  });
+});
+
+describe('InboxScanService stale proposed sweep', () => {
+  it('sweeps with an empty relevant set when there are no recent messages', async () => {
+    const proposedReconcile = makeProposedReconcile();
+
+    const service = new InboxScanService(
+      makeCommunicationRepository([]) as never,
+      { findBySourceRef: jest.fn(), findByTitleMatch: jest.fn(), create: jest.fn() } as unknown as TaskService,
+      makeOllamaService([]),
+      { decideAction: jest.fn() } as unknown as PersonalizationService,
+      { tryPlaceAfterOpen: jest.fn() } as unknown as PlannedBlockService,
+      proposedReconcile,
+      makeLogger(),
+    );
+
+    const result = await service.runForUser(USER_ID);
+
+    expect(proposedReconcile.reconcileStaleProposed).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: USER_ID }),
+      expect.objectContaining({ sourceKind: 'inbox', relevantTitles: [] }),
+    );
+    expect(result).toEqual({ created: 0, proposed: 0, placed: 0, redated: 0, archived: 0 });
+  });
+
+  it('does not sweep when the LLM fails', async () => {
+    const proposedReconcile = makeProposedReconcile();
+    const ollamaService = {
+      chat: jest.fn(async () => {
+        throw new Error('model timeout');
+      }),
+    } as unknown as OllamaService;
+
+    const service = new InboxScanService(
+      makeCommunicationRepository([makeMessage()]) as never,
+      { findBySourceRef: jest.fn(), findByTitleMatch: jest.fn(), create: jest.fn() } as unknown as TaskService,
+      ollamaService,
+      { decideAction: jest.fn() } as unknown as PersonalizationService,
+      { tryPlaceAfterOpen: jest.fn() } as unknown as PlannedBlockService,
+      proposedReconcile,
+      makeLogger(),
+    );
+
+    await service.runForUser(USER_ID);
+
+    expect(proposedReconcile.reconcileStaleProposed).not.toHaveBeenCalled();
   });
 });

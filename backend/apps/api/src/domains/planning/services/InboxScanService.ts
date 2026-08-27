@@ -10,6 +10,7 @@ import { CommunicationEntity } from '@ci/domains/memory';
 import { PersonalizationService } from '@ci/domains/personalization';
 
 import { PlannedBlockService } from './PlannedBlockService';
+import { ProposedTaskReconcileService } from './ProposedTaskReconcileService';
 import { TaskService } from './TaskService';
 
 const MAX_MESSAGES = 30;
@@ -63,14 +64,17 @@ export class InboxScanService {
     private readonly ollamaService: OllamaService,
     private readonly personalizationService: PersonalizationService,
     private readonly plannedBlockService: PlannedBlockService,
+    private readonly proposedReconcile: ProposedTaskReconcileService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(InboxScanService.name);
   }
 
-  async runForUser(userId: string): Promise<{ created: number; proposed: number; placed: number }> {
+  async runForUser(
+    userId: string,
+  ): Promise<{ created: number; proposed: number; placed: number; redated: number; archived: number }> {
     const context = { userId } as UserServiceContext;
-    const tallies = { created: 0, proposed: 0, placed: 0 };
+    const tallies = { created: 0, proposed: 0, placed: 0, redated: 0, archived: 0 };
     const since = new Date(Date.now() - LOOKBACK_MS);
 
     const messages = await this.communicationRepository
@@ -86,8 +90,9 @@ export class InboxScanService {
 
     if (messages.length === 0) {
       this.logger.debug('Inbox scan found no recent inbound messages', { userId });
+      const sweep = await this.sweepStale(context, []);
 
-      return tallies;
+      return { ...tallies, ...sweep };
     }
 
     const block = messages
@@ -96,6 +101,18 @@ export class InboxScanService {
       .slice(0, 8000);
 
     const surfaced = await this.surfaceItems(context, block);
+
+    if (surfaced == null) {
+      this.logger.log('Inbox scan finished', { userId, ...tallies, skippedReconcile: true });
+
+      return tallies;
+    }
+
+    const sweep = await this.sweepStale(context, surfaced);
+    tallies.redated = sweep.redated;
+    tallies.archived = sweep.archived;
+
+    const proposedWindow = await this.proposedReconcile.windowForToday(context);
 
     for (const item of surfaced.slice(0, MAX_SURFACED)) {
       const title = item.title.trim();
@@ -139,6 +156,7 @@ export class InboxScanService {
           sourceKind: 'inbox',
           sourceRef,
           metadata: { confidence, generator: 'planning.inbox_scan' },
+          ...(status === 'proposed' ? proposedWindow : {}),
         });
 
         if (!created) {
@@ -172,10 +190,28 @@ export class InboxScanService {
     return tallies;
   }
 
+  private async sweepStale(
+    context: UserServiceContext,
+    surfaced: Array<{ title: string }>,
+  ): Promise<{ redated: number; archived: number }> {
+    return this.proposedReconcile.reconcileStaleProposed(context, {
+      sourceKind: 'inbox',
+      relevantTitles: surfaced.map((item) => item.title),
+      relevantSourceRefs: surfaced.map((item) =>
+        TaskService.memoryScanSourceRef(item.title.trim(), 'inbox'),
+      ),
+    });
+  }
+
+  /**
+   * `null` means the model failed — callers skip reconcile so a timeout does
+   * not mass-archive still-open proposals. An empty array is a real "nothing
+   * to surface" result and does sweep.
+   */
   private async surfaceItems(
     context: UserServiceContext,
     inboxBlock: string,
-  ): Promise<Array<z.infer<typeof itemSchema>>> {
+  ): Promise<Array<z.infer<typeof itemSchema>> | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
 
@@ -200,7 +236,9 @@ export class InboxScanService {
       const parsed = responseSchema.safeParse(JSON.parse(response.message.content || '{}'));
 
       if (!parsed.success) {
-        return [];
+        this.logger.warn('Inbox scan LLM returned unparseable items; skipping reconcile');
+
+        return null;
       }
 
       const items: Array<z.infer<typeof itemSchema>> = [];
@@ -215,11 +253,11 @@ export class InboxScanService {
 
       return items;
     } catch (err) {
-      this.logger.warn('Inbox scan LLM failed; treating as empty', {
+      this.logger.warn('Inbox scan LLM failed; skipping reconcile', {
         error: err instanceof Error ? err.message : String(err),
       });
 
-      return [];
+      return null;
     } finally {
       clearTimeout(timer);
     }
