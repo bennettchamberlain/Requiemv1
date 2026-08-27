@@ -273,4 +273,47 @@ describe('EntityRelationshipCards', () => {
     expect(screen.queryByText('CATEGORY_PERSONAL')).not.toBeInTheDocument();
     expect(screen.queryByText('COMMUNICATION')).not.toBeInTheDocument();
   });
+
+  it('clips long titles and tags inside the card instead of hanging off the tile', () => {
+    useNodeGraphServiceMock.mockReturnValue({
+      data: {
+        nodes: [
+          SUBGRAPH.nodes[0],
+          {
+            id: 'comm-long',
+            entity_id: 'comm-long',
+            entity_type: 'communication',
+            name: 'Order complete: Reverb — The Vinyl Factory plus a very long leftover subject',
+            description: null,
+            properties: { tags: ['a-very-long-collector-label-that-used-to-overflow'] },
+          },
+        ],
+        links: [
+          {
+            id: 'rel-long',
+            relationship_id: 'rel-long',
+            source: FOCUS_ID,
+            target: 'comm-long',
+            relationship_type: 'RECEIVED',
+            strength: 0.5,
+            properties: {},
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+    });
+
+    renderCards();
+
+    const title = screen.getByText(/Order complete: Reverb/);
+    const card = title.closest('[data-slot="card"]');
+    expect(card).toHaveClass('overflow-hidden');
+    expect(card).toHaveClass('min-w-0');
+
+    const tag = screen.getByText('a-very-long-collector-label-that-used-to-overflow');
+    expect(tag.closest('[data-slot="badge"], .flex.items-center')).toBeTruthy();
+    expect(tag.parentElement).toHaveClass('max-w-full');
+    expect(tag.parentElement).toHaveClass('truncate');
+  });
 });

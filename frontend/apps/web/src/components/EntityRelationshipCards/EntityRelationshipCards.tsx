@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { gql as apolloGql, useApolloClient } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
-import { Button, Card } from '@ci/shadcn';
+import { Button, Card, cn } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { useNodeGraphService } from '@/api/useNodeGraphService';
@@ -22,6 +22,10 @@ const CARD_MIN_WIDTH = 180;
 const CARD_GAP_PX = 12;
 const MAX_VISIBLE_CARDS = 10;
 const DEFAULT_VISIBLE_CARDS = 5;
+/** Grid items default to min-width:auto, so a nowrap tag or long subject
+ *  expands the track and paints off the rounded card. min-w-0 + clip keeps
+ *  every child inside the tile. */
+const CARD_SHELL = 'min-h-[96px] min-w-0 max-w-full overflow-hidden p-0';
 
 type RelationshipCard = {
   relationshipId: string;
@@ -512,37 +516,39 @@ export function EntityRelationshipCards({
   }
 
   const renderCardContent = (card: RelationshipCard, tags: string[]) => (
-    <Card.Content className="p-3 flex flex-col gap-2">
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-        <div className="min-w-0 flex-[1_1_8rem] space-y-1">
-          <p className="text-sm font-semibold leading-tight break-words">{card.otherEntityName}</p>
-          {card.relationshipPhrase && (
-            <p className="text-xs text-muted-foreground leading-snug">{card.relationshipPhrase}</p>
-          )}
-        </div>
-        <p className="ml-auto shrink-0 text-xs text-muted-foreground whitespace-nowrap">
-          {formatNeighborKind(card.otherEntityType, card.otherEntityProperties)}
+    <Card.Content className="flex min-w-0 flex-col gap-2 overflow-hidden p-3">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="line-clamp-3 text-sm font-semibold leading-tight [overflow-wrap:anywhere]">
+          {card.otherEntityName}
         </p>
+        <div className="flex min-w-0 items-baseline justify-between gap-2">
+          {card.relationshipPhrase ? (
+            <p className="min-w-0 truncate text-xs text-muted-foreground">{card.relationshipPhrase}</p>
+          ) : (
+            <span />
+          )}
+          <p className="shrink-0 text-xs text-muted-foreground">
+            {formatNeighborKind(card.otherEntityType, card.otherEntityProperties)}
+          </p>
+        </div>
       </div>
 
       {card.summary && (
-        <p className="text-xs leading-snug text-foreground/80 line-clamp-3 break-words">{card.summary}</p>
+        <p className="line-clamp-3 text-xs leading-snug text-foreground/80 [overflow-wrap:anywhere]">
+          {card.summary}
+        </p>
       )}
 
       {(card.when || tags.length > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pt-0.5">
-          {card.when && <p className="text-[11px] text-muted-foreground">{card.when}</p>}
-          {tags.length > 0 && (
-            <div className="ml-auto flex flex-wrap justify-end gap-1">
-              {tags.map((tag) => (
-                <Tag
-                  key={`${card.relationshipId}-${tag}`}
-                  text={tag}
-                  className="h-5 px-1.5 py-0 text-[10px] font-medium"
-                />
-              ))}
-            </div>
-          )}
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+          {card.when && <p className="shrink-0 text-[11px] text-muted-foreground">{card.when}</p>}
+          {tags.map((tag) => (
+            <Tag
+              key={`${card.relationshipId}-${tag}`}
+              text={tag}
+              className="h-5 max-w-full min-w-0 shrink truncate px-1.5 py-0 text-[10px] font-medium"
+            />
+          ))}
         </div>
       )}
     </Card.Content>
@@ -581,7 +587,7 @@ export function EntityRelationshipCards({
       >
         {loading &&
           Array.from({ length: Math.max(1, visibleCardCount) }).map((_, idx) => (
-            <Card key={`loading-${idx}`} className="p-0 min-h-[96px] animate-pulse">
+            <Card key={`loading-${idx}`} className={cn(CARD_SHELL, 'animate-pulse')}>
               <Card.Content className="p-3 flex flex-col gap-2">
                 <div className="h-4 w-2/3 rounded bg-muted" />
                 <div className="h-3 w-1/2 rounded bg-muted" />
@@ -598,8 +604,10 @@ export function EntityRelationshipCards({
               tagsByEntityKey[lookupKey] ?? card.otherEntityTags,
               card.otherEntityType,
             ).slice(0, 3);
-            const cardClassName =
-              'p-0 min-h-[96px] transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+            const cardClassName = cn(
+              CARD_SHELL,
+              'transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            );
             const chatContext = namedChatContext({
               title: target.name,
               body: target.description,
@@ -609,10 +617,10 @@ export function EntityRelationshipCards({
 
             if (onOpenRelatedEntity) {
               return (
-                <ChatAbout key={card.relationshipId} context={chatContext}>
+                <ChatAbout key={card.relationshipId} context={chatContext} className="min-w-0 max-w-full">
                   <button
                     type="button"
-                    className="block w-full rounded-xl text-left"
+                    className="block min-w-0 w-full max-w-full rounded-xl text-left"
                     onClick={() => onOpenRelatedEntity(target)}
                   >
                     <Card className={cardClassName}>{renderCardContent(card, tags)}</Card>
@@ -623,15 +631,15 @@ export function EntityRelationshipCards({
 
             if (!detailPath) {
               return (
-                <ChatAbout key={card.relationshipId} context={chatContext}>
-                  <Card className="p-0 min-h-[96px]">{renderCardContent(card, tags)}</Card>
+                <ChatAbout key={card.relationshipId} context={chatContext} className="min-w-0 max-w-full">
+                  <Card className={CARD_SHELL}>{renderCardContent(card, tags)}</Card>
                 </ChatAbout>
               );
             }
 
             return (
-              <ChatAbout key={card.relationshipId} context={chatContext}>
-                <Link to={detailPath} className="block">
+              <ChatAbout key={card.relationshipId} context={chatContext} className="min-w-0 max-w-full">
+                <Link to={detailPath} className="block min-w-0 max-w-full">
                   <Card className={cardClassName}>{renderCardContent(card, tags)}</Card>
                 </Link>
               </ChatAbout>
