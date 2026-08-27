@@ -612,12 +612,8 @@ describe('PeoplePage', () => {
     expect(await screen.findByRole('button', { name: 'Merge into one person' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Use as the kept person' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Keep this one' })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Merge into one person' }));
-
-    expect(await screen.findByText('Merge into one person?')).toBeInTheDocument();
-    expect(screen.getByText(/Events, messages, and contact methods/)).toBeInTheDocument();
-    expect(screen.getByText(/\(You\)/)).toBeInTheDocument();
+    expect(screen.queryByText('Merge into one person?')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
   });
 
   /**
@@ -751,11 +747,6 @@ describe('PeoplePage', () => {
       expect(await screen.findByText('Beatrice Clarke')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'Merge into one person' }));
-      // The dialog's confirm carries the same label as the card's trigger; the
-      // last match is the one inside the dialog.
-      await screen.findByText('Merge into one person?');
-      const confirmButtons = screen.getAllByRole('button', { name: 'Merge into one person' });
-      fireEvent.click(confirmButtons[confirmButtons.length - 1]!);
 
       // The merged-away row goes; the page-two row that refetch() used to wipe
       // out stays, and the kept row picks up its new aggregates.

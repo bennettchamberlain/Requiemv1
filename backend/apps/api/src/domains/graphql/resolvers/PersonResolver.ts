@@ -626,6 +626,12 @@ export class PersonResolver {
       parsedStatus = status;
     }
 
+    // Same-email pairs are the same person. Fold them before the queue is
+    // shown so "95% match" on a shared mailbox never sits waiting for a click.
+    if (parsedStatus === 'pending') {
+      await this.mergeCandidateService.autoMergePendingEmailPairs(serviceContext);
+    }
+
     const page = await this.mergeCandidateService.findCandidates(serviceContext, {
       status: parsedStatus,
       limit: first ?? undefined,
