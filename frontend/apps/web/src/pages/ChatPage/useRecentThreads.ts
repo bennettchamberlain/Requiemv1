@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
 
-import { useAuth } from '@/hooks';
+import { useSessionAuth } from '@/hooks/useSessionAuth';
 
 import type { Thread } from './types';
 
@@ -48,20 +48,21 @@ interface RecentThreads {
  * read-only slice the navigation needs, capped, and idle until asked.
  */
 export function useRecentThreads({ enabled, limit = RECENT_THREAD_LIMIT }: Options): RecentThreads {
-  const [{ authToken }] = useAuth();
+  const { ready, headers } = useSessionAuth();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const fetchedAt = useRef(0);
 
-  // Hovering the rail flickers `enabled` on and off; a token change means a
-  // different user's threads, so that one always refetches.
+  // Hovering the rail flickers `enabled` on and off; a session change means a
+  // different user's threads, so that one always refetches. Native has no JWT —
+  // `ready` flipping true after the keystore restore is the signal.
   useEffect(() => {
     fetchedAt.current = 0;
-  }, [authToken]);
+  }, [ready]);
 
   useEffect(() => {
-    if (!enabled || !authToken || Date.now() - fetchedAt.current < STALE_MS) {
+    if (!enabled || !ready || Date.now() - fetchedAt.current < STALE_MS) {
       return;
     }
 
@@ -72,7 +73,7 @@ export function useRecentThreads({ enabled, limit = RECENT_THREAD_LIMIT }: Optio
 
     fetchJson<Thread[]>('/api/threads', {
       headers: {
-        Authorization: `Bearer ${authToken}`,
+        ...headers,
         'Content-Type': 'application/json',
       },
     })
@@ -97,7 +98,7 @@ export function useRecentThreads({ enabled, limit = RECENT_THREAD_LIMIT }: Optio
     return () => {
       cancelled = true;
     };
-  }, [enabled, authToken]);
+  }, [enabled, ready, headers]);
 
   // The API orders by `updatedAt` descending, so the head of the list is the
   // most recent — no client-side sort, just a cap.

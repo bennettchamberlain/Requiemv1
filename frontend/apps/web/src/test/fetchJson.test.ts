@@ -1,6 +1,6 @@
 import { setApiKey } from '@ci/common/src/utils/apiAuth';
 import { setApiBaseUrl } from '@ci/common/src/utils/apiBase';
-import { apiFetch, fetchJson } from '@ci/common/src/utils/fetchJson';
+import { apiFetch, fetchJson, streamingFetch } from '@ci/common/src/utils/fetchJson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 function stubFetch(body: unknown = {}) {
@@ -229,5 +229,68 @@ describe('fetchJson — native CapacitorHttp', () => {
     expect(request).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalled();
     expect(callArgs(fetchMock)[1]?.body).toBe(body);
+  });
+});
+
+describe('streamingFetch', () => {
+  beforeEach(() => {
+    setApiBaseUrl('');
+    setApiKey(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setApiBaseUrl('');
+    setApiKey(null);
+    delete (window as unknown as { Capacitor?: unknown; __ciUnpatchedFetch?: unknown }).Capacitor;
+    delete (window as unknown as { __ciUnpatchedFetch?: unknown }).__ciUnpatchedFetch;
+  });
+
+  it('uses window.fetch on web and attaches the API key when set', async () => {
+    setApiKey('key-123');
+    const fetchMock = stubFetch();
+
+    await streamingFetch('/api/llm/generate', { method: 'POST', body: '{}' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/llm/generate',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'x-api-key': 'key-123' }),
+      }),
+    );
+  });
+
+  it('falls back to a binary CapacitorHttp request when the webview fetch fails', async () => {
+    const fetchMock = stubFetch();
+    const bytes = new Uint8Array([0, 0, 0, 5, 104, 101, 108, 108, 111]);
+    const request = vi.fn(async () => ({
+      status: 200,
+      data: btoa(String.fromCharCode(...bytes)),
+      headers: { 'X-Thread-Id': 't-1' },
+    }));
+
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { CapacitorHttp: { request } },
+    };
+
+    setApiBaseUrl('https://memory.example.com');
+    (window as unknown as { __ciUnpatchedFetch?: typeof fetch }).__ciUnpatchedFetch = (() =>
+      Promise.reject(new TypeError('Load failed'))) as typeof fetch;
+
+    const res = await streamingFetch('/api/llm/generate', { method: 'POST', body: '{}' });
+
+    expect(res.ok).toBe(true);
+    expect(res.headers.get('X-Thread-Id')).toBe('t-1');
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://memory.example.com/api/llm/generate',
+        responseType: 'arraybuffer',
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    const body = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(body)).toEqual(Array.from(bytes));
   });
 });

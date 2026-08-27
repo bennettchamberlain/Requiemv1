@@ -179,6 +179,7 @@ type CapacitorHttpPlugin = {
     data?: unknown;
     connectTimeout?: number;
     readTimeout?: number;
+    responseType?: 'arraybuffer' | 'blob' | 'json' | 'text';
   }) => Promise<{ status: number; data: unknown; headers?: Record<string, string> }>;
 };
 
@@ -337,6 +338,121 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
   }
 
   return nativeAwareFetch(input, init ?? {});
+}
+
+/**
+ * Fetch a streaming / binary API response (chat generate, thread attach).
+ *
+ * CapacitorHttp patches `window.fetch` and buffers the body as UTF-8 text.
+ * Chat tokens are length-prefixed binary frames — a payload ≥ 128 bytes
+ * puts a non-UTF-8 byte in the length field and the patched path corrupts
+ * the stream. Nest already CORS-allows `capacitor://localhost`, so the
+ * unpatched webview fetch can stream bytes with `x-api-key`. If that
+ * preflight fails, fall back to a buffered but binary-safe CapacitorHttp
+ * `arraybuffer` (the reply lands all at once after generation finishes).
+ *
+ * On-device LocalLLM is a later opt-in. Do not route this helper through
+ * `generateOffline` — `isAvailable()` is a RAM floor, not a loaded model.
+ */
+export async function streamingFetch(input: string, init?: RequestInit): Promise<Response> {
+  const url = buildApiUrl(input);
+  const headers = {
+    ...apiKeyHeaders(),
+    ...flattenHeaders(init?.headers),
+  };
+  const next = { ...init, headers };
+
+  if (!isNativePlatform()) {
+    return fetch(url, next);
+  }
+
+  try {
+    return await unpatchedWebFetch()(url, next);
+  } catch {
+    return nativeBinaryFetch(url, next);
+  }
+}
+
+function unpatchedWebFetch(): typeof fetch {
+  const w = window as Window & { __ciUnpatchedFetch?: typeof fetch };
+
+  if (w.__ciUnpatchedFetch) {
+    return w.__ciUnpatchedFetch;
+  }
+
+  if (typeof document === 'undefined') {
+    return fetch.bind(window);
+  }
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'display:none;width:0;height:0;border:0';
+  document.documentElement.appendChild(iframe);
+
+  const childFetch = iframe.contentWindow?.fetch;
+
+  if (typeof childFetch === 'function' && iframe.contentWindow) {
+    w.__ciUnpatchedFetch = childFetch.bind(iframe.contentWindow);
+
+    return w.__ciUnpatchedFetch;
+  }
+
+  return fetch.bind(window);
+}
+
+function decodeCapacitorBinaryBody(data: unknown): BodyInit {
+  if (data instanceof ArrayBuffer) {
+    return data;
+  }
+
+  if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(data)) {
+    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+  }
+
+  if (typeof data === 'string') {
+    // Capacitor's arraybuffer responseType is a base64 string. A UTF-8 text
+    // fallback (plugin ignored responseType) still round-trips through atob
+    // only when the payload is actually base64 — otherwise keep the string.
+    if (/^[A-Za-z0-9+/]+=*$/.test(data) && data.length % 4 === 0) {
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      return bytes;
+    }
+
+    return data;
+  }
+
+  return JSON.stringify(data ?? {});
+}
+
+async function nativeBinaryFetch(url: string, init: RequestInit): Promise<Response> {
+  const cap = capacitorHttp();
+
+  if (!cap?.request) {
+    return fetch(url, init);
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error(`Native HTTP needs an absolute http(s) URL (got "${url}"). Pick a Memory Server again.`);
+  }
+
+  const result = await cap.request({
+    url,
+    method: (init.method ?? 'GET').toUpperCase(),
+    headers: flattenHeaders(init.headers),
+    data: requestData(init.body),
+    responseType: 'arraybuffer',
+  });
+
+  return new Response(decodeCapacitorBinaryBody(result.data), {
+    status: result.status,
+    headers: result.headers,
+  });
 }
 
 export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T | undefined> {

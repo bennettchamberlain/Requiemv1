@@ -10,8 +10,8 @@
  * falls back to `localStorage`, and external links fall back to a normal navigation.
  */
 
-import { apiKeyHeaders } from './apiAuth';
-import { buildApiUrl, isIosPlatform, isNativePlatform } from './apiBase';
+import { isIosPlatform, isNativePlatform } from './apiBase';
+import { streamingFetch } from './fetchJson';
 import type { BackgroundGeolocationLocation } from './deviceSources/location';
 
 /**
@@ -1131,11 +1131,10 @@ async function generateLocalStreaming(
  * than importing the web app's decoder: `@ci/common` must not depend on `@ci/fe-web`.
  */
 async function generateRemote(prompt: string, options: GenerateOfflineOptions): Promise<string> {
-  const res = await fetch(buildApiUrl('/api/llm/generate'), {
+  const res = await streamingFetch('/api/llm/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...apiKeyHeaders(),
       ...(options.authToken ? { Authorization: `Bearer ${options.authToken}` } : {}),
     },
     body: JSON.stringify({

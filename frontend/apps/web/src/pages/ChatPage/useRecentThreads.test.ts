@@ -1,11 +1,21 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Thread } from './types';
 import { RECENT_THREAD_LIMIT, threadLabel, useRecentThreads } from './useRecentThreads';
 
-vi.mock('@/hooks', () => ({
-  useAuth: () => [{ authToken: 'tok', expired: false, loading: false, error: null }, {}],
+const h = vi.hoisted(() => ({
+  auth: {
+    authToken: 'tok' as string | null,
+    authenticated: true,
+    expired: false,
+    loading: false,
+    error: null,
+  },
+}));
+
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => [h.auth, {}],
 }));
 
 const thread = (id: string, name: string | null = null) => ({ id, name }) as unknown as Thread;
@@ -21,6 +31,12 @@ function setFetch(handler: (url: string, init?: RequestInit) => Response | Promi
 
 const ok = (body: unknown): Response =>
   ({ ok: true, status: 200, text: async () => JSON.stringify(body) }) as Response;
+
+beforeEach(() => {
+  h.auth.authToken = 'tok';
+  h.auth.authenticated = true;
+  h.auth.expired = false;
+});
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -103,5 +119,17 @@ describe('useRecentThreads', () => {
 
     await waitFor(() => expect(result.current.threads).toHaveLength(1));
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches when authenticated with no JWT (native API key session)', async () => {
+    h.auth.authToken = null;
+    h.auth.authenticated = true;
+    const fetchMock = setFetch(() => ok([thread('t1')]));
+
+    const { result } = renderHook(() => useRecentThreads({ enabled: true }));
+
+    await waitFor(() => expect(result.current.threads).toHaveLength(1));
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect((init?.headers as Record<string, string> | undefined)?.Authorization).toBeUndefined();
   });
 });

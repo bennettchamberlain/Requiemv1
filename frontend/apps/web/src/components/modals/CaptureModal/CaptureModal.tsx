@@ -22,7 +22,7 @@ import type { File as FileData, Thread } from '@/api/types';
 import { Chat, type FormData } from '@/components/Chat';
 import { InlineModal } from '@/components/InlineModal';
 import { ModelSelector } from '@/components/ModelSelector';
-import { useAuth, useChatRequester, useModel } from '@/hooks';
+import { useAuth, useChatRequester, useModel, useSessionAuth } from '@/hooks';
 import { captureFromCamera, chooseFiles, chooseFromLibrary, type CameraMode } from '@/lib/captureMedia';
 import { enqueueMemoryUpload } from '@/lib/memoryUploadQueue';
 import { pickFromUserDevice, pickPhotosFromLibrary } from '@/lib/pickPhotosFromLibrary';
@@ -68,7 +68,7 @@ export function CaptureModal({ open = false, onClose }: Props) {
 
 function DesktopCaptureModal({ open = false, onClose }: Props) {
   const { t } = useTranslation();
-  const [{ authToken }] = useAuth();
+  const { ready, headers } = useSessionAuth();
   const [{ selectedVisionModel: selectedModel }] = useModel();
   const { toast } = useToast();
 
@@ -107,7 +107,7 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
   }, [open]);
 
   useEffect(() => {
-    if (authToken == null || selectedModel == null) {
+    if (!ready || selectedModel == null) {
       setSelectedModelSupportsVision(null);
       setCapabilityCheckFailed(false);
       setIsCheckingModelCapabilities(false);
@@ -139,7 +139,7 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`,
+            ...headers,
           },
         });
 
@@ -166,7 +166,7 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
     return () => {
       canceled = true;
     };
-  }, [authToken, selectedModel]);
+  }, [headers, ready, selectedModel]);
 
   const ensureImageModelSupported = useCallback((): boolean => {
     if (selectedModel == null) {
@@ -249,7 +249,7 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
+        ...headers,
       },
       body: JSON.stringify({
         model: selectedModel,
@@ -259,7 +259,7 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
     if (thread) {
       setThreadId(thread.id);
     }
-  }, [authToken, selectedModel]);
+  }, [headers, selectedModel]);
 
   useEffect(() => {
     (async () => {

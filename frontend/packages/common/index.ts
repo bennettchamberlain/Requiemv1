@@ -73,7 +73,13 @@ export type {
   PositionRecord,
   PositionRecordOptions,
 } from './src/utils/deviceSources';
-export { FetchJsonError, apiFetch, fetchJson, type FetchJsonIssue } from './src/utils/fetchJson';
+export {
+  FetchJsonError,
+  apiFetch,
+  fetchJson,
+  streamingFetch,
+  type FetchJsonIssue,
+} from './src/utils/fetchJson';
 export { localHubPlugin, localHubSession, type LocalHubSession } from './src/utils/localHub';
 export {
   OUTBOX_MAX_ATTEMPTS,
