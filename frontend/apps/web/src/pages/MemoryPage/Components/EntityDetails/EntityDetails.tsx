@@ -1,6 +1,10 @@
 import '../styles.css';
 
+import { Sheet } from '@ci/shadcn';
+
 import type { MemoryEntity } from '../../useEntityService';
+import { ErrorState } from '../ErrorState';
+import { ViewCrashBoundary } from '../ViewCrashBoundary';
 
 import { AnswerDetails } from './AnswerDetails';
 import { BrowserActivityDetails } from './BrowserActivityDetails';
@@ -64,5 +68,24 @@ function getCategoryComponent({ entity }: Props) {
 }
 
 export function EntityDetails({ entity, readOnly = false }: Props) {
-  return <ReadOnlyProvider value={readOnly}>{getCategoryComponent({ entity })}</ReadOnlyProvider>;
+  return (
+    <ReadOnlyProvider value={readOnly}>
+      <ViewCrashBoundary
+        resetKey={entity.id}
+        fallback={(retry) => (
+          <Sheet.Content
+            data-testid="entity-detail-sheet"
+            className="z-[1000] w-full sm:max-w-xl pt-[var(--safe-area-top)] pb-[var(--safe-area-bottom)]"
+          >
+            <ErrorState
+              description="This memory's details could not be shown. Close the drawer or try again."
+              onRetry={retry}
+            />
+          </Sheet.Content>
+        )}
+      >
+        {getCategoryComponent({ entity })}
+      </ViewCrashBoundary>
+    </ReadOnlyProvider>
+  );
 }
