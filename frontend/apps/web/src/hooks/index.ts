@@ -1,4 +1,5 @@
 export { AuthProvider, useAuth } from './useAuth';
+export { useSessionAuth } from './useSessionAuth';
 export { CaptureModalProvider, useCaptureModal } from './useCaptureModal';
 export { useChatRequester } from './useChatRequester';
 export { useCounter } from './useCounter';
