@@ -277,15 +277,13 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 2,
 
   /**
-   * v3 — DUPLICATE_SCORING_GENERATION bumped to 2: phone evidence is
-   * adjudicated against `value_e164` (exact international match above the old
-   * flat discount, country-less last-ten below it, a country CONFLICT not
-   * evidence at all) instead of every phone match being worth the same. v2 was
-   * DUPLICATE_CANDIDATE_GENERATION 2, which widened the evidence set to
-   * enrich.person_self_claim's claims. A bump rescores pending candidates; it
-   * never resurrects a rejected pair.
+   * v4 — DUPLICATE_SCORING_GENERATION bumped to 3: name evidence is token-
+   * subset overlap (honorifics stripped, last-name conflicts refused), not
+   * exact display-string only. v3 was phone E.164 adjudication; v2 was
+   * enrich.person_self_claim widening the evidence set. A bump rescores
+   * pending candidates; it never resurrects a rejected pair.
    */
-  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 3,
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 4,
 
   /**
    * v1 — initial owned-unit detector. A literal mirroring the derivation in

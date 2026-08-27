@@ -1,10 +1,10 @@
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo } from 'react';
 
-import { useApolloClient, useMutation, useQuery } from '@apollo/client';
+import { useApolloClient, useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, LoadingPage, usePageTitle } from '@ci/common';
 import { Badge, Button, Card, Input } from '@ci/shadcn';
 import { Merge } from '@ci/shadcn/icons';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { ChatAbout } from '@/components/ChatWithAgent';
 import { ErrorState } from '@/components/ErrorState';
@@ -14,9 +14,16 @@ import { MemoryHubShell } from '@/components/MemoryHub';
 import { PersonAvatar } from '@/components/PersonAvatar';
 import { PullToRefresh } from '@/components/PullToRefresh';
 import { gql } from '@/graphql';
-import type { GetMergeCandidatesQuery, GetPeopleQuery } from '@/graphql/graphql';
+import type { GetPeopleQuery } from '@/graphql/graphql';
 import { useInfiniteConnection } from '@/hooks/useInfiniteConnection';
 import { namedChatContext } from '@/lib/agentChat';
+
+import {
+  groupMergeCandidates,
+  MergeCandidateCard,
+  MergeClusterCard,
+  type MergeOutcome,
+} from './PeopleMergeCards';
 
 // Matches MemoryPage's PAGE_SIZE. Keeping it small also keeps the batch handed
 // to PersonInteractionStatsLoader small — that resolver aggregates over the
@@ -60,8 +67,8 @@ const GET_PEOPLE = gql(`
 `);
 
 // The duplicate-detection pipeline's queue: scored pairs with evidence.
-// Same-email pairs are folded automatically when this query runs; name and
-// phone matches stay here for a one-click merge (no extra confirm).
+// Same-email / E.164-phone pairs are folded automatically when this query
+// runs; name overlap stays here for a one-click merge (no extra confirm).
 const GET_MERGE_CANDIDATES = gql(`
   query GetMergeCandidates($first: Int, $after: String) {
     mergeCandidates(first: $first, after: $after) {
@@ -89,28 +96,22 @@ const GET_MERGE_CANDIDATES = gql(`
             description
             avatarUrl
             isSelf
+            identifiers {
+              kind
+              value
+              rawValue
+              label
+              source
+            }
+            interactionStats {
+              eventCount
+              communicationCount
+              lastInteractionAt
+            }
           }
         }
       }
     }
-  }
-`);
-
-const MERGE_PEOPLE = gql(`
-  mutation MergePeople($input: MergePeopleInput!) {
-    mergePeople(input: $input) {
-      success
-      person {
-        id
-        name
-      }
-    }
-  }
-`);
-
-const REJECT_PERSON_DUPLICATES = gql(`
-  mutation RejectPersonDuplicates($personIds: [ID!]!) {
-    rejectPersonDuplicates(personIds: $personIds)
   }
 `);
 
@@ -148,17 +149,7 @@ const GET_MERGED_PERSON = gql(`
   }
 `);
 
-/** What a duplicate-group action did, so the page can patch the list precisely. */
-interface MergeOutcome {
-  /** People folded away and no longer in the list, or [] for "not the same". */
-  removedIds: string[];
-  /** The surviving person whose aggregates changed, or null when nothing merged. */
-  keptId: string | null;
-}
-
 type PersonNode = GetPeopleQuery['people']['edges'][number]['node'];
-type MergeCandidate = GetMergeCandidatesQuery['mergeCandidates']['edges'][number]['node'];
-type MergablePerson = MergeCandidate['people'][number];
 
 /** Candidates per page — "load more"-able. */
 export const CANDIDATE_PAGE_SIZE = 20;
@@ -225,173 +216,6 @@ function PersonRow({ person, onOpen }: { person: PersonNode; onOpen: () => void 
   );
 }
 
-/**
- * One merge suggestion: a set of people, a heading explaining why they were put
- * together, and the two decisions the user can make about them.
- *
- * Shared by both producers of suggestions — the recomputed exact-match groups
- * and the pipeline's scored `ci.merge_candidates` pairs — because the decision
- * is identical either way: merge the set into one target, or record that these
- * are different people so it is never proposed again.
- */
-function MergeSuggestionCard({
-  people,
-  heading,
-  note,
-  onMerged,
-}: {
-  people: readonly MergablePerson[];
-  heading: ReactNode;
-  note?: ReactNode;
-  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
-}) {
-  const [mergePeople, { loading }] = useMutation(MERGE_PEOPLE);
-  const [rejectDuplicates, { loading: rejecting }] = useMutation(REJECT_PERSON_DUPLICATES);
-  const [mergeError, setMergeError] = useState<string | null>(null);
-
-  // The self person (if present) is always the preferred merge target — the
-  // backend refuses to merge it away, so when the group contains "You" the
-  // other members must not be offered as targets.
-  const orderedPeople = useMemo(
-    () => [...people].sort((a, b) => Number(b.isSelf) - Number(a.isSelf)),
-    [people],
-  );
-  const hasSelf = orderedPeople.some((person) => person.isSelf);
-  const defaultTargetId = orderedPeople.find((person) => person.isSelf)?.id ?? orderedPeople[0]?.id ?? null;
-
-  const merge = async (targetId: string) => {
-    const sourceIds = people.map((person) => person.id).filter((id) => id !== targetId);
-
-    try {
-      await mergePeople({ variables: { input: { targetId, sourceIds } } });
-      setMergeError(null);
-      await onMerged({ removedIds: sourceIds, keptId: targetId });
-    } catch (error) {
-      setMergeError(error instanceof Error ? error.message : 'The merge failed. Please try again.');
-    }
-  };
-
-  // Saying "not the same" has to STICK. Duplicate groups are recomputed from
-  // identifiers on every load, so without recording the rejection this exact
-  // group would be proposed again immediately. The same call also stamps the
-  // pipeline's candidate row, so the scored queue shrinks as it is worked.
-  const reject = async () => {
-    try {
-      await rejectDuplicates({ variables: { personIds: people.map((person) => person.id) } });
-      setMergeError(null);
-      // Nothing left the list — only the duplicate suggestions changed.
-      await onMerged({ removedIds: [], keptId: null });
-    } catch (error) {
-      setMergeError(error instanceof Error ? error.message : 'Could not record that. Please try again.');
-    }
-  };
-
-  return (
-    <div className="rounded-md border p-3">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">{heading}</div>
-
-      {note && <div className="mb-2 text-xs text-muted-foreground">{note}</div>}
-
-      <div className="flex flex-col gap-2">
-        {orderedPeople.map((person) => (
-          <div
-            key={person.id}
-            className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3"
-          >
-            {/* size="sm" is 32px — the exact h-8 w-8 this rendered before
-                PersonAvatar existed. Identity sits above the keep-action on
-                phones so the two don't overlap. */}
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <PersonAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
-
-              <div className="min-w-0 flex-1">
-                <Link
-                  to={`/people/${GlobalUID.parse('person', person.id)}`}
-                  className="truncate font-medium hover:underline"
-                >
-                  {person.name || 'Unnamed'}
-                </Link>
-                {person.isSelf && (
-                  <Badge variant="secondary" className="ml-2">
-                    You
-                  </Badge>
-                )}
-                {person.description && (
-                  <div className="truncate text-sm text-muted-foreground">{person.description}</div>
-                )}
-              </div>
-            </div>
-
-            {(!hasSelf || person.isSelf) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="self-start sm:self-auto shrink-0"
-                disabled={loading}
-                onClick={() => {
-                  void merge(person.id);
-                }}
-              >
-                Use as the kept person
-              </Button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* The other half of the decision. Without it the only way to clear a
-          wrong suggestion is to merge people who are not the same, and the
-          group returns on every load. */}
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t pt-2">
-        {mergeError && <span className="text-sm text-destructive">{mergeError}</span>}
-        <Button size="sm" variant="ghost" disabled={loading || rejecting} onClick={() => void reject()}>
-          {rejecting ? 'Saving…' : 'Not the same person'}
-        </Button>
-        <Button
-          size="sm"
-          disabled={loading || defaultTargetId == null}
-          onClick={() => {
-            if (defaultTargetId != null) {
-              void merge(defaultTargetId);
-            }
-          }}
-        >
-          {loading ? 'Merging…' : 'Merge into one person'}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** A scored pair from `ci.merge_candidates`, with the evidence behind it. */
-function MergeCandidateCard({
-  candidate,
-  onMerged,
-}: {
-  candidate: MergeCandidate;
-  onMerged: (outcome: MergeOutcome) => Promise<unknown>;
-}) {
-  return (
-    <MergeSuggestionCard
-      people={candidate.people}
-      onMerged={onMerged}
-      heading={
-        <>
-          <Merge className="h-4 w-4" />
-          <Badge variant="secondary">{Math.round(candidate.score * 100)}% match</Badge>
-          {candidate.evidence.map((item, index) => (
-            <span key={`${item.kind}:${item.value}:${index}`}>
-              Same {item.kind}: <span className="font-medium text-foreground">{item.value}</span>
-            </span>
-          ))}
-          {candidate.evidence.length === 0 && <span>Proposed as the same person</span>}
-        </>
-      }
-      note={`Detected by ${candidate.detectedBy}`}
-    />
-  );
-}
-
 export function PeoplePage() {
   usePageTitle('People & communications - Companion Intelligence');
 
@@ -443,6 +267,7 @@ export function PeoplePage() {
     () => (candidatesData?.mergeCandidates.edges ?? []).map((edge) => edge.node),
     [candidatesData],
   );
+  const mergeGroups = useMemo(() => groupMergeCandidates(mergeCandidates), [mergeCandidates]);
   const candidatesPageInfo = candidatesData?.mergeCandidates.pageInfo;
 
   const loadMoreCandidates = () =>
@@ -627,14 +452,28 @@ export function PeoplePage() {
                     <Badge variant="secondary">{candidatesData?.mergeCandidates.totalCount ?? 0}</Badge>
                   </Card.Title>
                   <Card.Description>
-                    Pairs the duplicate detector scored, strongest match first. Each one shows the evidence
-                    behind it.
+                    Name variants and uncertain matches. Same email or exact phone is folded
+                    automatically — what remains is a question, with what differs on each side.
                   </Card.Description>
                 </Card.Header>
                 <Card.Content className="flex flex-col gap-3">
-                  {mergeCandidates.map((candidate) => (
-                    <MergeCandidateCard key={candidate.id} candidate={candidate} onMerged={onMerged} />
-                  ))}
+                  {mergeGroups.map((group) =>
+                    group.type === 'cluster' ? (
+                      <MergeClusterCard
+                        key={`cluster:${group.anchor.id}:${group.token}`}
+                        token={group.token}
+                        anchor={group.anchor}
+                        members={group.members}
+                        onMerged={onMerged}
+                      />
+                    ) : (
+                      <MergeCandidateCard
+                        key={group.candidate.id}
+                        candidate={group.candidate}
+                        onMerged={onMerged}
+                      />
+                    ),
+                  )}
 
                   {candidatesPageInfo?.hasNextPage && (
                     <div className="flex justify-center">

@@ -68,7 +68,10 @@ describe('ProposedTaskReconcileService', () => {
   beforeEach(() => {
     taskService = {
       findAll: jest.fn(async () => []),
-      update: jest.fn(async (_ctx: unknown, id: string, data: unknown) => ({ id, ...data })),
+      update: jest.fn(async (_ctx: unknown, id: string, data: Record<string, unknown>) => ({
+        id,
+        ...data,
+      })),
       declineProposed: jest.fn(async (_ctx: unknown, id: string) => ({ id, status: 'archived' })),
     };
     planningTime = makePlanningTime();

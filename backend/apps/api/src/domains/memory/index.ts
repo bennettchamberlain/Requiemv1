@@ -456,3 +456,16 @@ export {
   serializePersonAddress,
 } from './types';
 export type { PersonAddress } from './types';
+export {
+  type NameOverlap,
+  type NameOverlapKind,
+  type NameTokenRole,
+  type PersonNameToken,
+  type TokenizedPersonName,
+  NAME_OVERLAP_SCORES,
+  compareTokenizedNames,
+  indexableTokens,
+  isRelationalDescriptor,
+  pickFullerName,
+  tokenizePersonName,
+} from './utils/personNameTokens';

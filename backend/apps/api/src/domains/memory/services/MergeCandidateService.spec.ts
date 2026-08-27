@@ -6,6 +6,7 @@ import {
   decodeMergeCandidateCursor,
   encodeMergeCandidateCursor,
   hasEmailEvidence,
+  hasExactPhoneEvidence,
   MergeCandidateService,
 } from './MergeCandidateService';
 
@@ -80,6 +81,11 @@ describe('MergeCandidateService', () => {
   it('treats email evidence as the auto-merge signal', () => {
     expect(hasEmailEvidence([{ kind: 'email', value: 'dana@x.com', score: 0.95 }])).toBe(true);
     expect(hasEmailEvidence([{ kind: 'phone', value: '9145826767', score: 0.85 }])).toBe(false);
+  });
+
+  it('treats E.164-exact phone evidence as deterministic too', () => {
+    expect(hasExactPhoneEvidence([{ kind: 'phone', value: '9145826767', score: 0.95 }])).toBe(true);
+    expect(hasExactPhoneEvidence([{ kind: 'phone', value: '9145826767', score: 0.85 }])).toBe(false);
   });
   it('hydrates a scored pair with its evidence', async () => {
     const { service } = makeService(
@@ -200,6 +206,7 @@ describe('MergeCandidateService', () => {
       expect(merged).toBe(1);
       expect(personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_A], PERSON_B);
       expect(query.mock.calls[1]?.[0]).toMatch(/evidence @> '\[\{"kind":"email"\}\]'/);
+      expect(query.mock.calls[1]?.[0]).toMatch(/value_e164/);
     });
 
     it('keeps entity_id_a when neither person is self', async () => {

@@ -108,6 +108,18 @@ const GET_MERGE_CANDIDATES = gql(`
             description
             avatarUrl
             isSelf
+            identifiers {
+              kind
+              value
+              rawValue
+              label
+              source
+            }
+            interactionStats {
+              eventCount
+              communicationCount
+              lastInteractionAt
+            }
           }
         }
       }
@@ -140,6 +152,25 @@ function candidatesResult(
         edges,
       },
     },
+  };
+}
+
+function mergePerson(overrides: Record<string, unknown> = {}) {
+  return {
+    __typename: 'PersonType' as const,
+    id: PERSON_GLOBAL_ID,
+    name: 'Ada Lovelace',
+    description: null,
+    avatarUrl: null,
+    isSelf: false,
+    identifiers: [],
+    interactionStats: {
+      __typename: 'PersonInteractionStatsType' as const,
+      eventCount: 0,
+      communicationCount: 0,
+      lastInteractionAt: null,
+    },
+    ...overrides,
   };
 }
 
@@ -814,8 +845,74 @@ describe('PeoplePage', () => {
 
     expect(await screen.findByText('Suggested merges')).toBeInTheDocument();
     expect(screen.getByText('85% match')).toBeInTheDocument();
-    expect(screen.getByText('9145826767')).toBeInTheDocument();
-    expect(screen.getByText(/Detected by clean.duplicate_detect/)).toBeInTheDocument();
+    expect(screen.getByText(/Same phone digits: 9145826767/)).toBeInTheDocument();
+    expect(screen.queryByText(/Detected by/)).not.toBeInTheDocument();
+  });
+
+  it('shows a merging spinner on the merge button until the request finishes', async () => {
+    renderWithProviders(<PeoplePage />, {
+      mocks: [
+        ...mocks({
+          candidates: [
+            candidateEdge([
+              mergePerson({ isSelf: true }),
+              mergePerson({ id: DUPLICATE_GLOBAL_ID, name: 'A. Lovelace' }),
+            ]),
+          ],
+        }),
+        {
+          request: {
+            query: MERGE_PEOPLE,
+            variables: { input: { targetId: PERSON_GLOBAL_ID, sourceIds: [DUPLICATE_GLOBAL_ID] } },
+          },
+          delay: 10_000,
+          result: {
+            data: {
+              mergePeople: {
+                __typename: 'MergePeoplePayload' as const,
+                success: true,
+                person: { __typename: 'PersonType' as const, id: PERSON_GLOBAL_ID, name: 'Ada Lovelace' },
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Merge into one person' }));
+    expect(await screen.findByRole('button', { name: 'Merging' })).toBeDisabled();
+  });
+
+  it('groups a bare given name against several fuller people as a picker', async () => {
+    const smithId = btoa('person:019fd7c0-641c-76dd-8ed7-a5053faff6fe');
+    const clusterEvidence = [
+      {
+        __typename: 'MergeCandidateEvidenceType' as const,
+        kind: 'name_cluster',
+        value: 'william',
+        score: 0.5,
+      },
+    ];
+
+    renderWithProviders(<PeoplePage />, {
+      mocks: mocks({
+        candidates: [
+          candidateEdge(
+            [mergePerson({ name: 'william' }), mergePerson({ id: DUPLICATE_GLOBAL_ID, name: 'William Broza' })],
+            { evidence: clusterEvidence },
+          ),
+          candidateEdge(
+            [mergePerson({ name: 'william' }), mergePerson({ id: smithId, name: 'William Smith' })],
+            { id: 'candidate-2', evidence: clusterEvidence },
+          ),
+        ],
+      }),
+    });
+
+    expect(await screen.findByText(/might be one of these people/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'This is them' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'None of these' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Merge into one person' })).not.toBeInTheDocument();
   });
 
   /**
