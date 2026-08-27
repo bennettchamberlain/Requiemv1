@@ -39,9 +39,28 @@ sync_from_dir() {
   rsync -a --delete --exclude '.gitkeep' --exclude 'README.md' "$src"/ "$DEST"/
 }
 
-# Xcode Run/Archive can reuse a snapshot from `yarn sync`. Set
-# FORCE_SAFARI_EXTENSION_SYNC=1 to rebuild every time.
-if [[ -f "$DEST/manifest.json" && "${FORCE_SAFARI_EXTENSION_SYNC:-}" != "1" ]]; then
+# Rewrite Vite's root-absolute asset URLs. iOS Safari loads popup.html from an
+# origin where `/chunks/…` does not resolve, which produced a blank popup.
+rewrite_safari_asset_urls() {
+  local dir="$1"
+  local f
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      *.css)
+        # CSS already lives in assets/; /assets/foo → ./foo
+        perl -0pi -e 's#url\(/assets/#url(./#g' "$f"
+        ;;
+      *)
+        perl -0pi -e 's/(src|href)="\//$1=".\//g; s/"\/(chunks|assets|icon|content-scripts)\//".\/$1\//g' "$f"
+        ;;
+    esac
+  done < <(find "$dir" \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -print0)
+}
+
+# Xcode incremental builds may reuse a snapshot from `yarn sync`. CLI sync
+# always rebuilds from the sibling checkout so the app ships current extension
+# code. FORCE_SAFARI_EXTENSION_SYNC=1 rebuilds even inside Xcode.
+if [[ -f "$DEST/manifest.json" && -n "${BUILT_PRODUCTS_DIR:-}" && "${FORCE_SAFARI_EXTENSION_SYNC:-}" != "1" ]]; then
   echo "Reusing existing Safari Web Extension resources at $DEST"
 elif [[ -d "$EXT_DIR" && -f "$EXT_DIR/package.json" ]] && { command -v yarn >/dev/null 2>&1 || command -v npm >/dev/null 2>&1; }; then
   echo "Building safari-mobile from $EXT_DIR"
@@ -56,6 +75,7 @@ elif [[ -d "$EXT_DIR" && -f "$EXT_DIR/package.json" ]] && { command -v yarn >/de
     fi
   )
   sync_from_dir "$EXT_DIR/.output/safari-mv3"
+  rewrite_safari_asset_urls "$DEST"
 else
   echo "No sibling extension at $EXT_DIR — downloading $GH_REPO@$PINNED_VERSION"
   tmp="$(mktemp -d)"
@@ -70,6 +90,7 @@ else
   unzip -q "$tmp"/*safari-mobile.zip -d "$tmp/unpacked"
   src="$(find "$tmp/unpacked" -name manifest.json -print -quit | xargs dirname)"
   sync_from_dir "$src"
+  rewrite_safari_asset_urls "$DEST"
 fi
 
 if [[ ! -f "$DEST/manifest.json" ]]; then
