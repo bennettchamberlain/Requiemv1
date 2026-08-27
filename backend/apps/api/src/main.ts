@@ -55,6 +55,7 @@ async function bootstrapWeb(): Promise<void> {
     origin: [...nativeAppOrigins, ...config.cors.allowedOrigins],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-API-Key'],
+    exposedHeaders: ['X-Thread-Id'],
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   });
 
