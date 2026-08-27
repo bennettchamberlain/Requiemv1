@@ -391,7 +391,12 @@ function useEntityService({
           },
         };
       },
-    }).finally(() => setLoadingMore(false));
+    })
+      .catch(() => {
+        // Apollo records the query error. Swallow so a failed page is not an
+        // unhandled rejection — callers decide whether to show ErrorState.
+      })
+      .finally(() => setLoadingMore(false));
   }, [fetchMore, hasNextPage, loadingMore, pageInfo?.endCursor]);
 
   const results = useMemo(() => (data?.search?.edges ?? []).map((edge) => edge.node), [data]);

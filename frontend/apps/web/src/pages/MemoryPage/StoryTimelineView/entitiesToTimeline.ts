@@ -235,6 +235,45 @@ export function shouldPrefetchBuffer({
 }
 
 /**
+ * Whether the Timeline tab should keep the skeleton up while it fills an
+ * initial deck. A failed page must not count as "still filling" — that hid
+ * ErrorState behind an endless placeholder after the first page succeeded.
+ */
+export function isTimelineFilling({
+  error,
+  loading,
+  hasNextPage,
+  dataLength,
+  datedCount,
+  dateFiltered,
+  fetchCap,
+  maxSlides = MEMORY_TIMELINE_MAX_SLIDES,
+}: {
+  error: boolean;
+  loading: boolean;
+  hasNextPage: boolean;
+  dataLength: number;
+  datedCount: number;
+  dateFiltered: boolean;
+  fetchCap: number;
+  maxSlides?: number;
+}): boolean {
+  if (error) {
+    return false;
+  }
+
+  if (loading && dataLength === 0) {
+    return true;
+  }
+
+  if (!hasNextPage || dataLength >= fetchCap) {
+    return false;
+  }
+
+  return dateFiltered || datedCount < maxSlides;
+}
+
+/**
  * TimelineJS deck from the explorer's current result page(s).
  *
  * Dated Event / Communication / BrowserActivity rows become slides, sorted in

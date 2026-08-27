@@ -4,6 +4,7 @@ import type { EntityItem } from '../useEntityService';
 
 import {
   buildMemoryTimelineData,
+  isTimelineFilling,
   MEMORY_TIMELINE_MAX_SLIDES,
   shouldPrefetchBuffer,
 } from './entitiesToTimeline';
@@ -163,5 +164,30 @@ describe('shouldPrefetchBuffer', () => {
         nextPageDirection: 'newer',
       }),
     ).toBe(false);
+  });
+});
+
+describe('isTimelineFilling', () => {
+  const filling = {
+    error: false,
+    loading: false,
+    hasNextPage: true,
+    dataLength: 30,
+    datedCount: 10,
+    dateFiltered: false,
+    fetchCap: 90,
+  };
+
+  it('keeps the skeleton up while the first unfiltered window is still short', () => {
+    expect(isTimelineFilling(filling)).toBe(true);
+  });
+
+  it('stops filling when a page failed, even if more results remain', () => {
+    expect(isTimelineFilling({ ...filling, error: true })).toBe(false);
+  });
+
+  it('does not treat a completed first page as still filling', () => {
+    expect(isTimelineFilling({ ...filling, hasNextPage: false })).toBe(false);
+    expect(isTimelineFilling({ ...filling, datedCount: MEMORY_TIMELINE_MAX_SLIDES })).toBe(false);
   });
 });
