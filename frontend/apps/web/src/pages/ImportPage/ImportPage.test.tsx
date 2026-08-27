@@ -67,46 +67,25 @@ describe('ImportSurface', () => {
    * here rather than inside the component because it is a fact about this
    * host — the Jobs page, whose own page scrolls, deliberately passes none.
    */
-  it('caps the region so the wizard keeps the space it needs', () => {
+  it('does not cap live progress — the path column under the tiles scrolls', () => {
     render(<ImportSurface />);
 
     const activity = screen.getByText('import activity');
 
-    // A MEASURED ceiling, and the number is the assertion. At 1280x800 this
-    // column is 440px: at the old 50% the region took 220px and the picker's
-    // service grid — the default step's entire content — measured ZERO. The cap
-    // is fixed rather than proportional because the thing that must survive is
-    // a grid of fixed-height rows. Raising it re-breaks the picker, so the test
-    // names the value — and #2182 raised it to 40rem, which is 640px and cannot
-    // bind inside a 440px column, so the cap silently stopped existing. The
-    // region is `shrink-0` with its own internal scroller: it never yields
-    // space under pressure, and this ceiling is all that bounds it.
-    expect(activity.className).toContain('sm:max-h-[8.5rem]');
-    // And no cap on a phone, where this column is ~200px and half of it is
-    // less than the region's own summary — that clipped it mid-sentence.
+    // The 8.5rem / 50% ceilings existed because this column did not scroll and
+    // a tall region ate the catalog. The tiles stay put; everything under them
+    // shares one scroller, so a long run list just pushes the picker down.
     expect(activity.className).toContain('max-h-none');
+    expect(activity.className).not.toContain('sm:max-h-[8.5rem]');
+    expect(activity.className).not.toContain('sm:max-h-[50%]');
   });
 
-  /**
-   * The cap is about the WIZARD, and the wizard is hidden on the other two
-   * surfaces. Keeping 8.5rem there left the run list a few pixels tall on the
-   * Inbox page — the region's own chrome spends nearly all of 136px — with
-   * nothing to scroll. Those surfaces scroll themselves, so the region gets
-   * half the column and scrolls inside it.
-   */
-  it('gives the region room on the Inbox and History surfaces', () => {
+  it('lets the host column be the only scroller', () => {
     render(<ImportSurface />);
 
-    fireEvent.click(screen.getByRole('button', { name: /inbox/i }));
-    expect(screen.getByText('import activity').className).toContain('sm:max-h-[50%]');
-    expect(screen.getByText('import activity').className).not.toContain('sm:max-h-[8.5rem]');
-
-    fireEvent.click(screen.getByRole('button', { name: /history/i }));
-    expect(screen.getByText('import activity').className).toContain('sm:max-h-[50%]');
-
-    // Back on the wizard the picker's ceiling returns.
-    fireEvent.click(screen.getByRole('button', { name: /history/i }));
-    expect(screen.getByText('import activity').className).toContain('sm:max-h-[8.5rem]');
+    const wizard = screen.getByText(/wizard surface/);
+    expect(wizard).toHaveTextContent('scroll:page');
+    expect(wizard.parentElement?.className).not.toMatch(/overflow-hidden/);
   });
 
   it('lets the onboarding host be the only scroller', () => {

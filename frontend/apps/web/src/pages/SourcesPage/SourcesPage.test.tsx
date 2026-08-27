@@ -91,6 +91,16 @@ describe('SourcesPage', () => {
     expect(await screen.findByText(/import surface: page/)).toBeInTheDocument();
   });
 
+  it('scrolls the import surface under the path tiles, like connect and devices', async () => {
+    renderAt('/sources/import');
+
+    const surface = await screen.findByText(/import surface: page/);
+    const scroller = surface.parentElement;
+
+    expect(scroller).toHaveClass('overflow-y-auto');
+    expect(scroller?.contains(screen.getByRole('link', { name: /Services/ }))).toBe(false);
+  });
+
   // The breadcrumb, the rail entry and the tiles all already name this page;
   // a heading and a standfirst on top of them pushed the only actionable thing
   // on the screen below the fold.
