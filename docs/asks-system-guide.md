@@ -819,7 +819,9 @@ automated verification.
 > either: it is not in `required_status_checks`, and it fails on every run at the
 > SARIF upload — `Code Security must be enabled for this repository to use code
 > scanning` — so it is a *second* red-by-baseline check rather than a first real
-> one. Xcode Cloud is still red on every PR (verified on #2263 and #2265).
+> one. Xcode Cloud leftovers (`ci_post_clone.sh`, `xcode-cloud-manual-only.yml`)
+> were removed from the repo; disconnect `App | BuildTestFlight` in App Store
+> Connect so it stops reporting on PRs. TestFlight is `mobile-release.yml`.
 
 Turning `ci.yml` back on would have made it *worse*, not better: its backend job
 runs the suite with **no database**, every DB-backed suite is

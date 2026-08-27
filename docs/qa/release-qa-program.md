@@ -19,7 +19,7 @@ A release is **go** when all of the following hold. Anything not met is either f
 | G7 | The UI-refactor rubric passes | §6 |
 | G8 | No unresolved P0 in §7 | §7 |
 
-**The single most important rule in this document:** a check that did not run is not a check that passed. Eleven of thirteen workflows here are `workflow_dispatch`-only, so an absent GitHub check means *nobody started it*. Record the run, not the absence of a failure.
+**The single most important rule in this document:** a check that did not run is not a check that passed. Nine of twelve workflows here are `workflow_dispatch`-only, so an absent GitHub check means *nobody started it*. Record the run, not the absence of a failure.
 
 ## 2. Feature inventory and risk ranking
 

@@ -15,10 +15,8 @@ name: Consent path gate
 #     dispatch` on 2026-08-17.
 #   · `main`'s branch protection has NO `required_status_checks` block at all,
 #     and `required_approving_review_count` is 0.
-#   · The only check that reports on a PR is the Xcode Cloud iOS build
-#     `App | BuildTestFlight`, and it is FAILURE on every recent PR — it is
-#     missing a NODE_AUTH_TOKEN secret that lives in App Store Connect. A red
-#     iOS build is the baseline here, not a signal.
+#   · A red `App | BuildTestFlight` on a PR is Xcode Cloud (App Store Connect),
+#     not this repo. Disconnect it there; TestFlight is `mobile-release.yml`.
 #
 # So nine PRs of security-critical consent changes merged with zero automated
 # verification.

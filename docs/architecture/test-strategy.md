@@ -39,11 +39,11 @@ A consent-path or nav change usually touches both. Verified by running each on
 > Re-measured 2026-08-26.
 
 > **CI is mostly manual — and the two automatic lanes do not check what you
-> would assume.** There are **thirteen** workflows under `.github/workflows/`
-> (re-verified 2026-08-26), and **eleven** are `workflow_dispatch`-only:
+> would assume.** There are **twelve** workflows under `.github/workflows/`
+> (re-verified 2026-08-27), and **nine** are `workflow_dispatch`-only:
 > `ci.yml`, `codeql.yml`, `consent-path-gate.yml`, `desktop-build.yml`,
 > `e2e.yml`, `migration-integrity-check.yml`, `mobile-build.yml`, `publish.yml`,
-> `style-canon-lint.yml`, `xcode-cloud-manual-only.yml`. For those, an absent or
+> `style-canon-lint.yml`. For those, an absent or
 > green check means **nobody dispatched it**, not that the suite passed — run one
 > deliberately with `gh workflow run <file> --ref <branch>`.
 >

@@ -153,13 +153,6 @@ a build number already used) — and stops short of submitting.
 Each platform **skips rather than fails** when its secrets are missing, so you can wire up
 one store before the other.
 
-## Xcode Cloud
-
-There is a second, iOS-only route to TestFlight (an `App | BuildTestFlight` workflow
-configured in App Store Connect, bootstrapped by `ci_scripts/ci_post_clone.sh`). Nothing
-about it touches this package — see
-[`frontend/apps/ios/README.md`](../ios/README.md#xcode-cloud-ci_scriptsci_post_clonesh).
-
 ### Required secrets
 
 | Secret | What it is |
