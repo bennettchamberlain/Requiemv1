@@ -10,6 +10,7 @@ import { PersonalizationService } from '@ci/domains/personalization';
 import { SearchService } from '@ci/domains/search-next';
 
 import { PlannedBlockService } from './PlannedBlockService';
+import { ProposedTaskReconcileService } from './ProposedTaskReconcileService';
 import { TaskService } from './TaskService';
 
 const MAX_SURFACED = 12;
@@ -63,24 +64,46 @@ export class TodoScanService {
     private readonly plannedBlockService: PlannedBlockService,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly proposedReconcile: ProposedTaskReconcileService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(TodoScanService.name);
   }
 
-  async runForUser(userId: string): Promise<{ created: number; proposed: number; appended: number }> {
+  async runForUser(
+    userId: string,
+  ): Promise<{ created: number; proposed: number; appended: number; redated: number; archived: number }> {
     const context = { userId } as UserServiceContext;
-    const tallies = { created: 0, proposed: 0, appended: 0 };
+    const tallies = { created: 0, proposed: 0, appended: 0, redated: 0, archived: 0 };
 
     const memoryBlock = await this.memoryBlock(context);
 
-    if (!memoryBlock.trim()) {
-      this.logger.debug('Todo scan found no memory hits', { userId });
+    if (memoryBlock == null) {
+      this.logger.log('Todo scan finished', { userId, ...tallies, skippedReconcile: true });
 
       return tallies;
     }
 
+    if (!memoryBlock.trim()) {
+      this.logger.debug('Todo scan found no memory hits', { userId });
+      const sweep = await this.sweepStale(context, []);
+
+      return { ...tallies, ...sweep };
+    }
+
     const surfaced = await this.surfaceItems(context, memoryBlock);
+
+    if (surfaced == null) {
+      this.logger.log('Todo scan finished', { userId, ...tallies, skippedReconcile: true });
+
+      return tallies;
+    }
+
+    const sweep = await this.sweepStale(context, surfaced);
+    tallies.redated = sweep.redated;
+    tallies.archived = sweep.archived;
+
+    const proposedWindow = await this.proposedReconcile.windowForToday(context);
 
     for (const item of surfaced.slice(0, MAX_SURFACED)) {
       const title = item.title.trim();
@@ -122,6 +145,7 @@ export class TodoScanService {
           sourceKind: 'memory_scan',
           sourceRef,
           metadata: { confidence, generator: 'planning.todo_scan' },
+          ...(status === 'proposed' ? proposedWindow : {}),
         });
 
         if (created) {
@@ -150,7 +174,7 @@ export class TodoScanService {
     return tallies;
   }
 
-  private async memoryBlock(context: UserServiceContext): Promise<string> {
+  private async memoryBlock(context: UserServiceContext): Promise<string | null> {
     try {
       const results = await this.searchService.search(context, {
         query: MEMORY_LOOKBACK_QUERY,
@@ -197,14 +221,30 @@ export class TodoScanService {
         error: err instanceof Error ? err.message : String(err),
       });
 
-      return '';
+      return null;
     }
   }
 
+  private async sweepStale(
+    context: UserServiceContext,
+    surfaced: Array<{ title: string }>,
+  ): Promise<{ redated: number; archived: number }> {
+    return this.proposedReconcile.reconcileStaleProposed(context, {
+      sourceKind: 'memory_scan',
+      relevantTitles: surfaced.map((item) => item.title),
+      relevantSourceRefs: surfaced.map((item) => TaskService.memoryScanSourceRef(item.title.trim())),
+    });
+  }
+
+  /**
+   * `null` means the model failed — callers skip reconcile so a timeout does
+   * not mass-archive still-open proposals. An empty array is a real "nothing
+   * to surface" result and does sweep.
+   */
   private async surfaceItems(
     context: UserServiceContext,
     memoryBlock: string,
-  ): Promise<Array<{ title: string; detail?: string; confidence?: number }>> {
+  ): Promise<Array<{ title: string; detail?: string; confidence?: number }> | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
 
@@ -229,7 +269,9 @@ export class TodoScanService {
       const parsed = responseSchema.safeParse(JSON.parse(response.message.content || '{}'));
 
       if (!parsed.success) {
-        return [];
+        this.logger.warn('Todo scan LLM returned unparseable items; skipping reconcile');
+
+        return null;
       }
 
       const items: Array<{ title: string; detail?: string; confidence?: number }> = [];
@@ -244,11 +286,11 @@ export class TodoScanService {
 
       return items;
     } catch (err) {
-      this.logger.warn('Todo scan LLM failed; treating as empty', {
+      this.logger.warn('Todo scan LLM failed; skipping reconcile', {
         error: err instanceof Error ? err.message : String(err),
       });
 
-      return [];
+      return null;
     } finally {
       clearTimeout(timer);
     }
