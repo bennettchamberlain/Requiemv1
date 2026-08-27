@@ -35,9 +35,12 @@
   --tl-menubar: color-mix(in oklab, var(--foreground) 10%, var(--card));
   --tl-nav-bg: color-mix(in oklab, var(--card) 92%, var(--foreground));
 
-  content-visibility: auto;
-  contain-intrinsic-size: auto 410px;
-  contain: layout paint;
+  /*
+   * Do not use content-visibility / contain-intrinsic-size here. This host is
+   * the Memory Timeline tab (full pane, often a phone). Those properties let
+   * Safari treat the box as off-screen and skip paint — a blank card after
+   * "Loading timeline…".
+   */
 }
 
 .dark .ci-timeline-js {

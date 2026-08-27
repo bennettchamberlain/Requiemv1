@@ -28,6 +28,8 @@ interface TimelineJsHostProps {
    */
   sessionKey?: string;
   onSlideChange?: (uniqueId: string) => void;
+  /** User tapped a slide or marker — distinct from TimelineJS's landing `change`. */
+  onSlideOpen?: (uniqueId: string) => void;
 }
 
 type TimelineInstance = {
@@ -194,46 +196,21 @@ export function TimelineJsHost({
   fallbackHeightPx = TIMELINE_HEIGHT_PX,
   sessionKey,
   onSlideChange,
+  onSlideOpen,
 }: TimelineJsHostProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<TimelineInstance | null>(null);
   const onSlideChangeRef = useRef(onSlideChange);
   onSlideChangeRef.current = onSlideChange;
+  const onSlideOpenRef = useRef(onSlideOpen);
+  onSlideOpenRef.current = onSlideOpen;
   const deckKey = timelineDeckKey(data, startAtSlide);
-  const mountKey = sessionKey ?? deckKey;
+  const [generation, setGeneration] = useState(0);
+  const mountKey = `${sessionKey ?? deckKey}:${generation}`;
   const payloadRef = useRef({ data, startAtSlide, fallbackHeightPx });
   payloadRef.current = { data, startAtSlide, fallbackHeightPx };
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [inView, setInView] = useState(true);
-  const inViewRef = useRef(true);
-  inViewRef.current = inView;
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setInView(entry.isIntersecting);
-      },
-      { rootMargin: '80px', threshold: 0 },
-    );
-    observer.observe(host);
-
-    return () => observer.disconnect();
-  }, [mountKey]);
-
-  useEffect(() => {
-    const instance = instanceRef.current;
-    if (!instance) {
-      return;
-    }
-
-    instance.ready = inView && !document.hidden;
-  }, [inView]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -251,6 +228,7 @@ export function TimelineJsHost({
     const mount = document.createElement('div');
     mount.style.width = '100%';
     mount.style.height = '100%';
+    mount.style.minHeight = `${minHeight}px`;
     host.appendChild(mount);
 
     const onVisibility = () => {
@@ -259,7 +237,10 @@ export function TimelineJsHost({
         return;
       }
 
-      instance.ready = inViewRef.current && !document.hidden;
+      // Pause animators in a background tab. Do not key this off intersection:
+      // a 0-height first paint (or a sheet covering the pane on a phone) used
+      // to set ready=false and leave a blank host after "Loading timeline…".
+      instance.ready = !document.hidden;
     };
 
     document.addEventListener('visibilitychange', onVisibility);
@@ -292,7 +273,7 @@ export function TimelineJsHost({
               }),
             );
             instanceRef.current = instance;
-            instance.ready = inViewRef.current && !document.hidden;
+            instance.ready = !document.hidden;
             const syncAxis = () => syncTimeaxisLabelCollision(mount);
             instance.on?.('zoom_in', syncAxis);
             instance.on?.('zoom_out', syncAxis);
@@ -303,8 +284,21 @@ export function TimelineJsHost({
               }
             });
             mount.addEventListener('click', (event) => {
-              if (event.target instanceof Element && event.target.closest('.tl-menubar-button')) {
+              if (!(event.target instanceof Element)) {
+                return;
+              }
+
+              if (event.target.closest('.tl-menubar-button')) {
                 requestAnimationFrame(syncAxis);
+
+                return;
+              }
+
+              if (event.target.closest('.tl-slide, .tl-timemarker')) {
+                const id = instance.current_id;
+                if (id) {
+                  onSlideOpenRef.current?.(id);
+                }
               }
             });
             requestAnimationFrame(syncAxis);
@@ -344,20 +338,30 @@ export function TimelineJsHost({
 
   if (error) {
     return (
-      <p role="alert" className="px-3 py-6 text-sm text-muted-foreground">
-        Could not open the timeline ({error}).
-      </p>
+      <div role="alert" className="flex flex-col items-center justify-center gap-3 px-3 py-6 text-center">
+        <p className="text-sm text-muted-foreground">Could not open the timeline ({error}).</p>
+        <button
+          type="button"
+          className="text-sm font-medium text-primary hover:underline"
+          onClick={() => {
+            setError(null);
+            setGeneration((current) => current + 1);
+          }}
+        >
+          Try again
+        </button>
+      </div>
     );
   }
 
   return (
-    <div className={cn('ci-timeline-js relative h-full w-full', className)}>
+    <div className={cn('ci-timeline-js relative h-full min-h-[16rem] w-full', className)}>
       {!ready && (
         <p className="absolute inset-0 z-10 flex items-center justify-center text-xs text-muted-foreground">
           Loading timeline…
         </p>
       )}
-      <div ref={hostRef} className="h-full w-full [&_.tl-timeline]:h-full" />
+      <div ref={hostRef} className="h-full min-h-[16rem] w-full [&_.tl-timeline]:h-full" />
     </div>
   );
 }
