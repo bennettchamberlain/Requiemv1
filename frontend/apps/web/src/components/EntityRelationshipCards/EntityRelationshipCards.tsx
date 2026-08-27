@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { gql as apolloGql, useApolloClient } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
-import { Button, Card } from '@ci/shadcn';
+import { Button, Card, cn } from '@ci/shadcn';
 import { Link } from 'react-router-dom';
 
 import { useNodeGraphService } from '@/api/useNodeGraphService';
@@ -10,10 +10,22 @@ import { ChatAbout } from '@/components/ChatWithAgent';
 import { Tag } from '@/components/Tag';
 import { namedChatContext } from '@/lib/agentChat';
 
+import {
+  filterDisplayTags,
+  formatCardWhen,
+  formatNeighborKind,
+  formatRelationshipPhrase,
+  pickCardSummary,
+} from './relationshipCardDisplay';
+
 const CARD_MIN_WIDTH = 180;
 const CARD_GAP_PX = 12;
 const MAX_VISIBLE_CARDS = 10;
 const DEFAULT_VISIBLE_CARDS = 5;
+/** Grid items default to min-width:auto, so a nowrap tag or long subject
+ *  expands the track and paints off the rounded card. min-w-0 + clip keeps
+ *  every child inside the tile. */
+const CARD_SHELL = 'min-h-[96px] min-w-0 max-w-full overflow-hidden p-0';
 
 type RelationshipCard = {
   relationshipId: string;
@@ -24,8 +36,10 @@ type RelationshipCard = {
   otherEntityTags: string[];
   otherEntityDescription: string | null;
   otherEntityProperties: Record<string, unknown>;
-  relationshipDetails: Array<{ label: string; value: string }>;
   relationshipProperties: Record<string, unknown>;
+  relationshipPhrase: string | null;
+  summary: string | null;
+  when: string | null;
   /** Relationship weight (graph link strength), used for stable ordering. */
   strength: number;
   /** Most recent timestamp on the link, used as a secondary sort key. */
@@ -58,7 +72,7 @@ interface Props {
   relationshipTypes?: string[];
   /** Restrict to neighbors of these entity types. */
   entityTypes?: string[];
-  /** Overrides the default "Relationship Cards" heading. */
+  /** Overrides the default "Connections" heading. */
   heading?: string;
 }
 
@@ -109,100 +123,6 @@ function buildBatchNodeTagsQuery(count: number) {
     ${selections}
   }
 `);
-}
-
-const IGNORED_RELATIONSHIP_PROPERTIES = new Set([
-  'id',
-  'relationship_id',
-  'relationshipId',
-  'source',
-  'target',
-  'from_entity_id',
-  'to_entity_id',
-  'created_at',
-  'updated_at',
-]);
-
-function formatPropertyLabel(key: string): string {
-  return key
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ')
-    .split(' ')
-    .filter((part) => part.length > 0)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function formatPropertyValue(value: unknown): string | null {
-  if (value == null) {
-    return null;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) {
-      return null;
-    }
-
-    return trimmed.length > 48 ? `${trimmed.slice(0, 45)}...` : trimmed;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  if (Array.isArray(value)) {
-    const items = value
-      .filter(
-        (item): item is string | number | boolean =>
-          typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean',
-      )
-      .map((item) => String(item).trim())
-      .filter((item) => item.length > 0);
-
-    if (items.length === 0) {
-      return null;
-    }
-
-    const displayItems = items.slice(0, 3);
-    const suffix = items.length > 3 ? ` +${items.length - 3}` : '';
-
-    return `${displayItems.join(', ')}${suffix}`;
-  }
-
-  return null;
-}
-
-function extractRelationshipDetails(
-  properties: Record<string, unknown> | undefined,
-): Array<{ label: string; value: string }> {
-  if (!properties) {
-    return [];
-  }
-
-  const details: Array<{ label: string; value: string }> = [];
-
-  for (const [key, value] of Object.entries(properties)) {
-    if (IGNORED_RELATIONSHIP_PROPERTIES.has(key)) {
-      continue;
-    }
-
-    const formattedValue = formatPropertyValue(value);
-    if (!formattedValue) {
-      continue;
-    }
-
-    details.push({
-      label: formatPropertyLabel(key),
-      value: formattedValue,
-    });
-
-    if (details.length >= 2) {
-      break;
-    }
-  }
-
-  return details;
 }
 
 /** Pull the most recent timestamp from a link's properties for stable ordering. */
@@ -291,7 +211,6 @@ export function resolveRelatedEntityTarget(card: {
   otherEntityType: string;
   otherEntityDescription: string | null;
   otherEntityProperties: Record<string, unknown>;
-  relationshipDetails: Array<{ label: string; value: string }>;
   relationshipProperties?: Record<string, unknown>;
 }): RelatedEntityOpenTarget {
   const normalizedType = normalizeGraphEntityType(card.otherEntityType);
@@ -412,7 +331,7 @@ export function EntityRelationshipCards({
   onOpenRelatedEntity,
   relationshipTypes,
   entityTypes,
-  heading = 'Relationship Cards',
+  heading = 'Connections',
 }: Props) {
   const apolloClient = useApolloClient();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -462,21 +381,35 @@ export function EntityRelationshipCards({
       .map((link) => {
         const otherEntityId = link.source === entityId ? link.target : link.source;
         const otherNode = nodeById.get(otherEntityId);
+        const otherEntityName = otherNode?.name ?? 'Unnamed Entity';
+        const otherEntityDescription = otherNode?.description ?? null;
+        const otherEntityProperties = otherNode?.properties ?? {};
+        const relationshipProperties = link.properties ?? {};
+        const recency = extractRecency(link.properties);
 
         return {
           relationshipId: link.relationship_id,
           relationshipType: link.relationship_type,
           otherEntityId,
-          otherEntityName: otherNode?.name ?? 'Unnamed Entity',
+          otherEntityName,
           otherEntityType: otherNode?.entity_type ?? 'unknown',
           otherEntityTags: extractTagsFromProperties(otherNode?.properties),
-          otherEntityDescription: otherNode?.description ?? null,
-          otherEntityProperties: otherNode?.properties ?? {},
-          relationshipDetails: extractRelationshipDetails(link.properties),
+          otherEntityDescription,
+          otherEntityProperties,
+          relationshipPhrase: formatRelationshipPhrase(link.relationship_type, {
+            focusIsSource: link.source === entityId,
+            relationshipProperties,
+          }),
+          summary: pickCardSummary({
+            name: otherEntityName,
+            description: otherEntityDescription,
+            entityProperties: otherEntityProperties,
+          }),
+          when: formatCardWhen(recency),
           strength: typeof link.strength === 'number' ? link.strength : 0,
-          recency: extractRecency(link.properties),
+          recency,
           // Stash raw link props for communication id recovery in the click handler.
-          relationshipProperties: link.properties ?? {},
+          relationshipProperties,
         };
       })
       .filter(
@@ -583,50 +516,38 @@ export function EntityRelationshipCards({
   }
 
   const renderCardContent = (card: RelationshipCard, tags: string[]) => (
-    <Card.Content className="p-3 flex flex-col gap-2">
-      {/* The header WRAPS, and the card grows to fit. It used to be a single
-          line with the type column capped at max-w-[45%]: at the 180px minimum
-          card width that is ~70px, and ORGANIZATION (or COMMUNICATION) set in
-          uppercase text-xs is wider than that. A single word cannot wrap, and a
-          flex child anchored to the end edge overflows toward the START — so
-          the label was drawn across the name. Now the label keeps its width
-          (whitespace-nowrap, no max-w) and, when it cannot share a line with
-          the name, drops to its own line, still right-aligned (ml-auto). The
-          name is no longer clamped either: a long name makes a taller card
-          rather than an elided one. */}
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-        <div className="min-w-0 flex-[1_1_8rem] space-y-1">
-          {/* The edge type (DOCUMENTS, SENT, PARTICIPATED_IN…) is deliberately not
-              shown: it is the graph's vocabulary, not the reader's, and read
-              from the wrong end of the edge ("Documents" over a song on an
-              event's card) it misleads more than it informs. The other entity's
-              name and type badge say what the link is. Still on the card data
-              for sorting/filtering. */}
-          <p className="text-sm font-semibold leading-tight break-words">{card.otherEntityName}</p>
-        </div>
-        <div className="ml-auto flex shrink-0 flex-col items-end gap-1 text-right">
-          <p className="text-xs text-muted-foreground uppercase whitespace-nowrap">{card.otherEntityType}</p>
-          {tags.length > 0 && (
-            <div className="flex flex-wrap justify-end gap-1">
-              {tags.map((tag) => (
-                <Tag
-                  key={`${card.relationshipId}-${tag}`}
-                  text={tag}
-                  className="h-5 px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide"
-                />
-              ))}
-            </div>
+    <Card.Content className="flex min-w-0 flex-col gap-2 overflow-hidden p-3">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="line-clamp-3 text-sm font-semibold leading-tight [overflow-wrap:anywhere]">
+          {card.otherEntityName}
+        </p>
+        <div className="flex min-w-0 items-baseline justify-between gap-2">
+          {card.relationshipPhrase ? (
+            <p className="min-w-0 truncate text-xs text-muted-foreground">{card.relationshipPhrase}</p>
+          ) : (
+            <span />
           )}
+          <p className="shrink-0 text-xs text-muted-foreground">
+            {formatNeighborKind(card.otherEntityType, card.otherEntityProperties)}
+          </p>
         </div>
       </div>
 
-      {card.relationshipDetails.length > 0 && (
-        <div className="border-t border-border/50 pt-2 flex flex-col gap-1">
-          {card.relationshipDetails.map((detail) => (
-            <p key={`${card.relationshipId}-${detail.label}`} className="text-xs leading-snug break-words">
-              <span className="text-muted-foreground">{detail.label}:</span>{' '}
-              <span className="text-foreground/85">{detail.value}</span>
-            </p>
+      {card.summary && (
+        <p className="line-clamp-3 text-xs leading-snug text-foreground/80 [overflow-wrap:anywhere]">
+          {card.summary}
+        </p>
+      )}
+
+      {(card.when || tags.length > 0) && (
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+          {card.when && <p className="shrink-0 text-[11px] text-muted-foreground">{card.when}</p>}
+          {tags.map((tag) => (
+            <Tag
+              key={`${card.relationshipId}-${tag}`}
+              text={tag}
+              className="h-5 max-w-full min-w-0 shrink truncate px-1.5 py-0 text-[10px] font-medium"
+            />
           ))}
         </div>
       )}
@@ -666,7 +587,7 @@ export function EntityRelationshipCards({
       >
         {loading &&
           Array.from({ length: Math.max(1, visibleCardCount) }).map((_, idx) => (
-            <Card key={`loading-${idx}`} className="p-0 min-h-[96px] animate-pulse">
+            <Card key={`loading-${idx}`} className={cn(CARD_SHELL, 'animate-pulse')}>
               <Card.Content className="p-3 flex flex-col gap-2">
                 <div className="h-4 w-2/3 rounded bg-muted" />
                 <div className="h-3 w-1/2 rounded bg-muted" />
@@ -679,9 +600,14 @@ export function EntityRelationshipCards({
             const target = resolveRelatedEntityTarget(card);
             const detailPath = getEntityDetailPath(target.entityType, target.id);
             const lookupKey = getEntityLookupKey(card.otherEntityType, card.otherEntityId);
-            const tags = (tagsByEntityKey[lookupKey] ?? card.otherEntityTags).slice(0, 3);
-            const cardClassName =
-              'p-0 min-h-[96px] transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+            const tags = filterDisplayTags(
+              tagsByEntityKey[lookupKey] ?? card.otherEntityTags,
+              card.otherEntityType,
+            ).slice(0, 3);
+            const cardClassName = cn(
+              CARD_SHELL,
+              'transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            );
             const chatContext = namedChatContext({
               title: target.name,
               body: target.description,
@@ -691,10 +617,10 @@ export function EntityRelationshipCards({
 
             if (onOpenRelatedEntity) {
               return (
-                <ChatAbout key={card.relationshipId} context={chatContext}>
+                <ChatAbout key={card.relationshipId} context={chatContext} className="min-w-0 max-w-full">
                   <button
                     type="button"
-                    className="block w-full rounded-xl text-left"
+                    className="block min-w-0 w-full max-w-full rounded-xl text-left"
                     onClick={() => onOpenRelatedEntity(target)}
                   >
                     <Card className={cardClassName}>{renderCardContent(card, tags)}</Card>
@@ -705,15 +631,15 @@ export function EntityRelationshipCards({
 
             if (!detailPath) {
               return (
-                <ChatAbout key={card.relationshipId} context={chatContext}>
-                  <Card className="p-0 min-h-[96px]">{renderCardContent(card, tags)}</Card>
+                <ChatAbout key={card.relationshipId} context={chatContext} className="min-w-0 max-w-full">
+                  <Card className={CARD_SHELL}>{renderCardContent(card, tags)}</Card>
                 </ChatAbout>
               );
             }
 
             return (
-              <ChatAbout key={card.relationshipId} context={chatContext}>
-                <Link to={detailPath} className="block">
+              <ChatAbout key={card.relationshipId} context={chatContext} className="min-w-0 max-w-full">
+                <Link to={detailPath} className="block min-w-0 max-w-full">
                   <Card className={cardClassName}>{renderCardContent(card, tags)}</Card>
                 </Link>
               </ChatAbout>

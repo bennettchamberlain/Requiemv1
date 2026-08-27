@@ -62,13 +62,15 @@ describe('EntityRelationshipCards', () => {
     useNodeGraphServiceMock.mockReturnValue({ data: SUBGRAPH, loading: false, error: null });
   });
 
-  it('renders a card for the related entity, naming the neighbor but not the edge type', () => {
+  it('renders a card for the related entity with a human relationship, not the raw edge type', () => {
     renderCards();
 
     expect(screen.getByText('Frida Friend')).toBeInTheDocument();
-    // The raw edge type (KNOWS, DOCUMENTS…) is graph vocabulary and is not shown.
-    expect(screen.queryByText('Knows')).not.toBeInTheDocument();
+    expect(screen.getByText('Someone you know')).toBeInTheDocument();
+    expect(screen.getByText('Person')).toBeInTheDocument();
+    expect(screen.getByText('A friend from work')).toBeInTheDocument();
     expect(screen.queryByText('KNOWS')).not.toBeInTheDocument();
+    expect(screen.queryByText('PERSON')).not.toBeInTheDocument();
   });
 
   it('navigates to the related entity route when a card is clicked', async () => {
@@ -94,7 +96,7 @@ describe('EntityRelationshipCards', () => {
     renderCards();
 
     expect(screen.queryByText('Frida Friend')).not.toBeInTheDocument();
-    expect(screen.getByText('Relationship Cards')).toBeInTheDocument();
+    expect(screen.getByText('Connections')).toBeInTheDocument();
   });
 
   it('does not wrap a card in a Link when the neighbor type has no detail route', async () => {
@@ -196,6 +198,122 @@ describe('EntityRelationshipCards', () => {
     );
 
     expect(screen.getByText('Friends & Connections')).toBeInTheDocument();
-    expect(screen.queryByText('Relationship Cards')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connections')).not.toBeInTheDocument();
+  });
+
+  it('does not dump connection ids, normalize leftovers, or Gmail system labels', () => {
+    useNodeGraphServiceMock.mockReturnValue({
+      data: {
+        nodes: [
+          SUBGRAPH.nodes[0],
+          {
+            id: 'bennett-1',
+            entity_id: 'bennett-1',
+            entity_type: 'PERSON',
+            name: 'bennett',
+            description: null,
+            properties: {},
+          },
+          {
+            id: 'comm-1',
+            entity_id: 'comm-1',
+            entity_type: 'COMMUNICATION',
+            name: 'Order complete: Reverb — The Vinyl Factory',
+            description: 'Your order has shipped.',
+            properties: {
+              type: 'email',
+              tags: ['COMMUNICATION', 'IMPORTANT', 'INBOX', 'CATEGORY_PERSONAL', 'vinyl'],
+            },
+          },
+        ],
+        links: [
+          {
+            id: 'rel-mail',
+            relationship_id: 'rel-mail',
+            source: 'bennett-1',
+            target: FOCUS_ID,
+            relationship_type: 'EMAILED',
+            strength: 0.8,
+            properties: {
+              connection_id: '019fb4ad-1456-761c-bd32-a2b263e81e02',
+              normalized_from: 'RECEIVED_EMAIL_FROM',
+            },
+          },
+          {
+            id: 'rel-comm',
+            relationship_id: 'rel-comm',
+            source: FOCUS_ID,
+            target: 'comm-1',
+            relationship_type: 'RECEIVED',
+            strength: 0.7,
+            properties: {},
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+    });
+
+    renderCards();
+
+    expect(screen.getByText('bennett')).toBeInTheDocument();
+    expect(screen.getByText('Emailed you')).toBeInTheDocument();
+    expect(screen.getByText('Order complete: Reverb — The Vinyl Factory')).toBeInTheDocument();
+    expect(screen.getByText('You received this')).toBeInTheDocument();
+    expect(screen.getByText('Your order has shipped.')).toBeInTheDocument();
+    expect(screen.getByText('Email')).toBeInTheDocument();
+    expect(screen.getByText('vinyl')).toBeInTheDocument();
+
+    expect(screen.queryByText(/Connection Id/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/019fb4ad-1456-761c-bd32-a2b263e81e02/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Normalized From/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('RECEIVED_EMAIL_FROM')).not.toBeInTheDocument();
+    expect(screen.queryByText('IMPORTANT')).not.toBeInTheDocument();
+    expect(screen.queryByText('INBOX')).not.toBeInTheDocument();
+    expect(screen.queryByText('CATEGORY_PERSONAL')).not.toBeInTheDocument();
+    expect(screen.queryByText('COMMUNICATION')).not.toBeInTheDocument();
+  });
+
+  it('clips long titles and tags inside the card instead of hanging off the tile', () => {
+    useNodeGraphServiceMock.mockReturnValue({
+      data: {
+        nodes: [
+          SUBGRAPH.nodes[0],
+          {
+            id: 'comm-long',
+            entity_id: 'comm-long',
+            entity_type: 'communication',
+            name: 'Order complete: Reverb — The Vinyl Factory plus a very long leftover subject',
+            description: null,
+            properties: { tags: ['a-very-long-collector-label-that-used-to-overflow'] },
+          },
+        ],
+        links: [
+          {
+            id: 'rel-long',
+            relationship_id: 'rel-long',
+            source: FOCUS_ID,
+            target: 'comm-long',
+            relationship_type: 'RECEIVED',
+            strength: 0.5,
+            properties: {},
+          },
+        ],
+      },
+      loading: false,
+      error: null,
+    });
+
+    renderCards();
+
+    const title = screen.getByText(/Order complete: Reverb/);
+    const card = title.closest('[data-slot="card"]');
+    expect(card).toHaveClass('overflow-hidden');
+    expect(card).toHaveClass('min-w-0');
+
+    const tag = screen.getByText('a-very-long-collector-label-that-used-to-overflow');
+    expect(tag.closest('[data-slot="badge"], .flex.items-center')).toBeTruthy();
+    expect(tag.parentElement).toHaveClass('max-w-full');
+    expect(tag.parentElement).toHaveClass('truncate');
   });
 });
