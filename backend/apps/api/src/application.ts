@@ -74,7 +74,6 @@ import { SolidModule } from '@ci/domains/solid';
 import { SummariesModule } from '@ci/domains/summaries';
 import { ToolsModule } from '@ci/domains/tools';
 import { UserModule } from '@ci/domains/user';
-import { UserSnapshotsModule } from '@ci/domains/user-snapshots';
 import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
 
 @Module({
@@ -156,7 +155,6 @@ import { flushTelemetry, isTelemetryEnabled } from '@ci/instrument';
     SolidModule,
     SummariesModule,
     UserModule,
-    UserSnapshotsModule,
   ],
   controllers: [HealthController, MapsConfigController, TelemetryConfigController],
   providers: [

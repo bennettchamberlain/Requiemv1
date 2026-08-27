@@ -1437,24 +1437,6 @@ type GraphType {
   nodes: [GraphNodeType!]!
 }
 
-input IngestUserSnapshotInput {
-  cwd: String
-  deviceId: ID!
-  focusApp: String
-  focusTitle: String
-  fsEventCount: Int!
-  monotonicMs: Float!
-  observedAt: DateTime!
-  payload: JSON!
-  sessionId: ID!
-  snapshotKind: String!
-}
-
-type IngestUserSnapshotPayload {
-  errorMessage: String
-  success: Boolean!
-}
-
 type InsightItemType {
   keyActions: [String!]!
   relatedEntityIds: [String!]
@@ -1983,7 +1965,6 @@ type Mutation {
   Name occupancy branches from memory via the LLM; falls back to occupancy labels on failure
   """
   guessBranchialForecast: BranchialTreeType
-  ingestUserSnapshot(input: IngestUserSnapshotInput!): IngestUserSnapshotPayload!
   linkItemToProduct(input: LinkItemToProductInput!): UpdateItemPayload!
 
   """Mark an action as dismissed"""
