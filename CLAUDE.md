@@ -57,11 +57,11 @@ make build
 `packageManager`, `uv` present — any mismatch exits 1), then hard-fails unless `overmind`,
 `caddy` (admin API live on `:2019`) and `ollama` (on `:11434`) are present.
 
-**CI is `workflow_dispatch`-only, with three exceptions.** Eleven of the
-thirteen workflows do not run on push, pull request, tag or schedule — for
+**CI is `workflow_dispatch`-only, with three exceptions.** Nine of the
+twelve workflows do not run on push, pull request, tag or schedule — for
 those, an absent check means nobody dispatched it, not that anything passed.
 Start one with `gh workflow run <file> --ref <branch-or-tag>`; see `docs/CI.md`
-for the full table. The exceptions (re-verified 2026-08-26):
+for the full table. The exceptions (re-verified 2026-08-27):
 
 - **`mobile-release.yml`** — push `ios-v*`, `android-v*`, or
   `mobile-release-v*` to upload to TestFlight / Play internal.
@@ -74,9 +74,7 @@ for the full table. The exceptions (re-verified 2026-08-26):
 file said push/PR/cron — that is stale). It was gated because it failed every
 run for reasons unrelated to any change: the scan completes, then the upload is
 rejected with `Code Security must be enabled for this repository to use code
-scanning`. The App Store Connect `App | BuildTestFlight` check is Xcode Cloud
-rather than GitHub Actions, so none of this gating touches it; a red one there
-is still the baseline.
+scanning`. TestFlight is `mobile-release.yml` (tag or dispatch), not Xcode Cloud.
 
 **Nothing gates a merge.** `main`'s branch protection has no
 `required_status_checks` block and `required_approving_review_count: 0`, so no

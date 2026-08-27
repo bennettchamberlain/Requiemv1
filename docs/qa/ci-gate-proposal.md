@@ -4,7 +4,7 @@
 
 ## 1. What actually runs today
 
-Thirteen workflows live in `.github/workflows/`. **Eleven are `workflow_dispatch`-only.**
+Twelve workflows live in `.github/workflows/`. **Nine are `workflow_dispatch`-only.**
 
 | Workflow | Trigger | Runs on a PR? |
 |---|---|---|
@@ -17,7 +17,6 @@ Thirteen workflows live in `.github/workflows/`. **Eleven are `workflow_dispatch
 | `desktop-build.yml` | dispatch | **no** |
 | `style-canon-lint.yml` | dispatch | **no** |
 | `publish.yml` | dispatch | **no** |
-| `xcode-cloud-manual-only.yml` | dispatch | **no** |
 | `benchmark-unit.yml` | `pull_request` + `push` on `main`, path-filtered to `scripts/benchmark/**` | **yes**, for that path |
 | `mobile-release.yml` | `push` on `ios-v*` / `android-v*` / `mobile-release-v*` tags | no |
 | `desktop-release.yml` | `push` on `desktop-v*` tags | no |
@@ -134,33 +133,7 @@ ci-local run --repo CI-Server
 
 Both are pre-existing baselines. Neither should be treated as a signal, and neither should be added to branch protection until fixed:
 
-- **`App | BuildTestFlight`** — Xcode Cloud, reported from App Store Connect, not GitHub Actions, so none of the gating above touches it.
-
-  **It is failing on purpose, and that is worth knowing before anyone debugs it.**
-  `ci_scripts/ci_post_clone.sh:67` aborts the run whenever `CI_PULL_REQUEST_NUMBER`
-  is set:
-
-  ```
-  ✗ Xcode Cloud started from a GitHub pull request or a push to main.
-    That is not how this repo ships TestFlight. Aborting so this run does not
-    archive or upload.
-  ```
-
-  That guard exists so a PR cannot archive-and-upload to TestFlight, and it fires
-  in ~26s — long before the `NODE_AUTH_TOKEN` check further down the script, and
-  long before anything is compiled. So a red `App | BuildTestFlight` on a PR is
-  **not** evidence that the iOS build is broken, and is unrelated to the two real
-  iOS build defects in [`baseline-2026-08-26.md`](baseline-2026-08-26.md) §6.2.
-  Verified 2026-08-26: 2 of 2 failing on #2354, #2356, #2395, #2398 and #2412
-  alike — including PRs that touch no iOS file at all.
-
-  **Nothing in this repository can turn it green**, because green is not what the
-  guard is for. The two remedies are both outside it: delete the workflow in
-  App Store Connect → Xcode Cloud → Manage Workflows, or dispatch
-  `xcode-cloud-manual-only.yml`, which needs `APPSTORE_*` secrets that do not
-  exist (the repo currently holds only `DEV_/STAGING_/PRODUCTION_STORE_ADMIN_API_KEY`
-  and `SENTRY_DSN`). Until one of those happens, treat it as permanent noise —
-  and do not add it to branch protection.
+- **`App | BuildTestFlight`** — leftover Xcode Cloud check, reported from App Store Connect, not GitHub Actions. This repo no longer ships `ci_scripts/ci_post_clone.sh` or `xcode-cloud-manual-only.yml`. TestFlight is `mobile-release.yml` (tag or dispatch). Delete `App | BuildTestFlight` in App Store Connect → Xcode Cloud → Manage Workflows so it stops reporting on PRs. Until that happens a Cloud start may still fire and fail later in the build (no abort script). Do not add it to branch protection.
 - **CodeQL** — historically failed every run because SARIF upload is rejected with `Code Security must be enabled for this repository`. It is now dispatch-only, so it no longer reports on PRs. Restore `push`/`pull_request` only after GitHub Code Security is enabled for the repo.
 
 > `docs/architecture/test-strategy.md` and the root `CLAUDE.md` both still describe CodeQL as running on push/PR plus a weekly cron. That is stale — it is `workflow_dispatch:` only. Corrected in this pass.
