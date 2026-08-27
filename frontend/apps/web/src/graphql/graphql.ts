@@ -217,6 +217,17 @@ export type AskAuditType = {
   responderId?: Maybe<Scalars['ID']['output']>;
 };
 
+export type AskBroadcastType = {
+  __typename?: 'AskBroadcastType';
+  answered: Scalars['Int']['output'];
+  createdAt: Scalars['DateTime']['output'];
+  expiresAt?: Maybe<Scalars['DateTime']['output']>;
+  id: Scalars['ID']['output'];
+  query: AskQueryType;
+  recipients: Scalars['Int']['output'];
+  waiting: Scalars['Int']['output'];
+};
+
 export type AskChannelType = {
   __typename?: 'AskChannelType';
   covered: Array<Scalars['String']['output']>;
@@ -327,6 +338,7 @@ export type AskStatus =
 export type AskType = {
   __typename?: 'AskType';
   askerId?: Maybe<Scalars['ID']['output']>;
+  broadcastId?: Maybe<Scalars['ID']['output']>;
   channel?: Maybe<AskChannelType>;
   consentBasis?: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['DateTime']['output'];
@@ -630,6 +642,12 @@ export type ContentType = Node & Taggable & {
 export type CreateAnswerInput = {
   answer: Scalars['String']['input'];
   questionId: Scalars['String']['input'];
+};
+
+export type CreateAskBroadcastInput = {
+  query: AskQueryInput;
+  /** 2–25 recipients. */
+  responderIds: Array<Scalars['ID']['input']>;
 };
 
 export type CreateAskGrantInput = {
@@ -1890,6 +1908,7 @@ export type Mutation = {
   createAnswer: AnswerType;
   createAnswers: Array<AnswerType>;
   createAsk: CreateAskPayload;
+  createAskBroadcast: AskBroadcastType;
   createAskGrant: AskGrantPayload;
   createBrowserActivities: Array<BrowserActivityType>;
   createCommunications: Array<CommunicationType>;
@@ -2103,6 +2122,11 @@ export type MutationCreateAnswersArgs = {
 
 export type MutationCreateAskArgs = {
   input: CreateAskInput;
+};
+
+
+export type MutationCreateAskBroadcastArgs = {
+  input: CreateAskBroadcastInput;
 };
 
 
@@ -3316,6 +3340,7 @@ export type Query = {
   metricForecast: Array<MetricForecastType>;
   /** Evidence-linked suggestions. Findings persist even when derivation.engines is off. */
   metricSuggestions: Array<MetricSuggestionType>;
+  myAskBroadcasts: Array<AskBroadcastType>;
   myAskGrantHistory: Array<AskGrantType>;
   myAskGrants: Array<AskGrantType>;
   myHouseholdTiers: Array<HouseholdTierType>;
