@@ -59,10 +59,9 @@ export function PickStep({ catalog, picked, onToggle, onContinue, pinContinue = 
   }, [sections, query]);
 
   return (
-    // The search box stays pinned with the stepper above; only the service
-    // grid scrolls. The filter is what CAUSES the content swaps, so it must
-    // not live in the region whose scrollbar those swaps toggle — and losing
-    // it off the top of a 100-service list would be no better.
+    // Contained hosts pin Continue and scroll only the catalog. The sources
+    // page is not one of those: its host column scrolls the header, steps,
+    // search and catalog together, so pinContinue is false there.
     <div className={cn('flex flex-col gap-5', pinContinue && 'h-full min-h-0')}>
       <div className="relative">
         <Search

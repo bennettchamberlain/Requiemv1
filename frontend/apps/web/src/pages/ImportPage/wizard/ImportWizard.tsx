@@ -37,9 +37,9 @@ export interface ImportWizardProps {
   /** Whether Export is reachable yet, for a host rendering the step buttons. */
   onCanExportChange?: (canExport: boolean) => void;
   /**
-   * `contained` (default) is the /sources/import column: pick pins Continue and
-   * scrolls only the catalog. `page` is onboarding: the host page scrolls, so
-   * the catalog grows and Continue sits after it.
+   * `contained` pins Continue and scrolls only the catalog. `page` is the
+   * /sources/import column and onboarding: the host scrolls, so the search
+   * box and catalog grow with the header and steps above them.
    */
   scroll?: 'contained' | 'page';
 }
