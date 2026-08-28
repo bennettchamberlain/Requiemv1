@@ -12,12 +12,18 @@ import { SearchService } from '@ci/domains/search-next';
 
 import { TaskService } from './TaskService';
 
-// Presumes the UTILITY tier. 15s is comfortable for a single enum-shaped answer
-// from a small model and unmeetable on a large one — prompt evaluation alone
-// exceeded it by an order of magnitude when this ran on the operator's chat
-// model. If this call is ever re-pointed at `PROMPT_MODEL`, this constant is
-// wrong, not generous.
-const PROCESS_TIMEOUT_MS = 15_000;
+// 60s, not 15 — same reasoning as InboxScanService.ts's SCAN_TIMEOUT_MS. This
+// was the tightest of the three planning-domain LLM budgets; a local model
+// under real load needs far more than 15s for a first token, and this
+// service shares that failure mode with TodoScanService and InboxScanService
+// (all three independently invented their own too-tight abort budget).
+//
+// The budget presumes the UTILITY tier, and is headroom on top of it rather
+// than a substitute for it: a single enum-shaped answer from a small model
+// returns in seconds, while on the operator's chat model prompt evaluation
+// alone exceeded even 60s. If this call is ever re-pointed at `PROMPT_MODEL`,
+// this constant is wrong rather than generous.
+export const PROCESS_TIMEOUT_MS = 60_000;
 
 /**
  * Output cap for one suggestion (Ollama `options.num_predict`).
