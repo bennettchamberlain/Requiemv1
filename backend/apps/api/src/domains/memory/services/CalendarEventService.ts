@@ -285,6 +285,10 @@ export class CalendarEventService {
       toCreate.connectionId = item.connection_id;
     }
 
+    if (item.capture_tick_id) {
+      toCreate.captureTickId = item.capture_tick_id;
+    }
+
     if (item.sharing_level) {
       toCreate.sharingLevel = item.sharing_level;
     }
