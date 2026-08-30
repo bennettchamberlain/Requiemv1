@@ -14,7 +14,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import { type BulkInsertResult, bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
-import { EventService as SignallingEventService } from '@ci/domains/events';
+import { EventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -62,12 +62,12 @@ interface Options {
   ids?: string[];
 }
 
-/** Filter subset of {@link Options} that {@link EventService.countEntitiesForEvents} accepts —
+/** Filter subset of {@link Options} that {@link CalendarEventService.countEntitiesForEvents} accepts —
  * everything `getEntitiesForEvents` filters *by*, minus the pagination-only fields
  * (`limit`, `order`, `afterTime`, `afterId`), which a total count must not depend on. */
 type CountOptions = Omit<Options, 'limit' | 'order' | 'afterTime' | 'afterId'>;
 
-/** Options for {@link EventService.findMapPins}: the shared filter set plus a hard row cap. */
+/** Options for {@link CalendarEventService.findMapPins}: the shared filter set plus a hard row cap. */
 type MapPinOptions = CountOptions & { limit: number };
 
 /**
@@ -164,7 +164,7 @@ const SCHEDULE_EVENT_TYPES = ['calendar_event', 'meeting', 'appointment', 'plann
  * batched base-row fetch.
  */
 @Injectable()
-export class EventService {
+export class CalendarEventService {
   private readonly aggregate: CtiAggregate<EventEntity, EventBaseEntity>;
 
   constructor(
@@ -172,7 +172,7 @@ export class EventService {
     private readonly eventRepository: Repository<EventEntity>,
     @InjectRepository(EventBaseEntity)
     private readonly eventBaseRepository: Repository<EventBaseEntity>,
-    private readonly signallingEventService: SignallingEventService,
+    private readonly signallingEventService: EventService,
     private readonly dataSource: DataSource,
     private readonly graphDeltaWriter: GraphDeltaWriter,
   ) {
@@ -392,7 +392,7 @@ export class EventService {
           name: item.title,
           description: item.description ?? null,
           ownerUserId: context.userId,
-          changeSource: 'EventService.create',
+          changeSource: 'CalendarEventService.create',
           changedByUserId: typeof context.userId === 'string' ? context.userId : null,
           manager,
         });
@@ -542,7 +542,7 @@ export class EventService {
               entityId: entity.id,
               entityType: 'Event',
               ownerUserId: context.userId,
-              changeSource: 'EventService.createMany',
+              changeSource: 'CalendarEventService.createMany',
               changedByUserId: typeof context.userId === 'string' ? context.userId : null,
               changedFields: {
                 name: { new: ingress?.title ?? null },
@@ -902,7 +902,7 @@ export class EventService {
               ...(Object.keys(updateData).length > 0 ? { detail_updated: { new: true } } : {}),
             },
             ownerUserId: typeof context.userId === 'string' ? context.userId : null,
-            changeSource: 'EventService.update',
+            changeSource: 'CalendarEventService.update',
             changedByUserId: typeof context.userId === 'string' ? context.userId : null,
             manager,
           });
@@ -942,7 +942,7 @@ export class EventService {
           entityType: 'Event',
           name: base?.name ?? null,
           ownerUserId: typeof context.userId === 'string' ? context.userId : null,
-          changeSource: 'EventService.remove',
+          changeSource: 'CalendarEventService.remove',
           changedByUserId: typeof context.userId === 'string' ? context.userId : null,
           manager,
         });
@@ -977,7 +977,7 @@ export class EventService {
           entityType: 'Event',
           name: base?.name ?? null,
           ownerUserId: typeof context.userId === 'string' ? context.userId : (after?.userId ?? null),
-          changeSource: 'EventService.restore',
+          changeSource: 'CalendarEventService.restore',
           changedByUserId: typeof context.userId === 'string' ? context.userId : null,
           manager,
         });
