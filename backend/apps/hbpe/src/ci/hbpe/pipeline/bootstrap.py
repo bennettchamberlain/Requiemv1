@@ -37,11 +37,34 @@ log = logging.getLogger(__name__)
 # ``nightly_runner.label_unlabeled``.
 SERIALIZE_WINDOW_DAYS = 90
 
-_EVENT_DATE_BOUNDS_SQL = """
-    SELECT MIN(start_time::date), MAX(start_time::date)
-    FROM ci.events
-    WHERE user_id = %s AND is_deleted = FALSE
-      AND start_time >= '2010-01-01'::timestamptz
+_TOKEN_DATE_BOUNDS_SQL = """
+    SELECT MIN(source_date), MAX(source_date)
+    FROM (
+        SELECT e.start_time::date AS source_date
+        FROM ci.events e
+        WHERE e.user_id = %s::uuid
+          AND e.is_deleted = FALSE
+          AND e.start_time >= '2010-01-01'::timestamptz
+
+        UNION ALL
+
+        SELECT s.period_start::date AS source_date
+        FROM ci.summaries s
+        WHERE s.user_id = %s::uuid
+          AND s.period_type = 'hourly'
+          AND s.period_start >= '2010-01-01'::timestamptz
+
+        UNION ALL
+
+        SELECT t.completed_at::date AS source_date
+        FROM ci.tasks t
+        WHERE t.user_id = %s::uuid
+          AND t.status = 'done'
+          AND t.completed_at IS NOT NULL
+          AND t.completed_at >= '2010-01-01'::timestamptz
+          AND t.l0_class IS NOT NULL
+          AND t.l0_class <> 'UNKNOWN'
+    ) token_sources
 """
 
 
@@ -52,16 +75,18 @@ def _utc_today() -> date:
 
 def event_date_bounds(user_id: str) -> tuple[date, date] | None:
     """
-    First and last calendar day this user has events on, or ``None`` for none.
+    First and last calendar day with input the serializer can publish.
 
-    Shared by the serializer and by the nightly label drain so the two aim at
-    the same window; see ``serialize_window``.
+    The legacy name is retained for callers, but the bounds include events,
+    hourly summaries, and completed labeled tasks. Shared by the serializer,
+    summary labeler, and nightly event drain so all three aim at the same
+    window; see ``serialize_window``.
     """
     from ci.hbpe.database import get_conn
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(_EVENT_DATE_BOUNDS_SQL, (user_id,))
+            cur.execute(_TOKEN_DATE_BOUNDS_SQL, (user_id, user_id, user_id))
             row = cur.fetchone()
 
     if not row or row[0] is None:
@@ -148,8 +173,9 @@ async def serialize_token_stream(user_id: str) -> dict:
         # stays cheap; see serialize_window() for the clamp-to-today reasoning.
         window = serialize_window(bounds)
         if window is None:
-            # Every event this user has is in the future. Say so explicitly
-            # instead of emitting a start > end range.
+            # Every dated token source is in the future. Say so explicitly
+            # instead of emitting a start > end range. Keep the legacy reason
+            # string because callers may use it as a stable status code.
             return {"rows": 0, "reason": "only_future_events"}
         start, end = window
         total_rows = TokenSerializer().serialize_range(

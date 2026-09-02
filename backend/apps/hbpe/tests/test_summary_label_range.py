@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from ci.hbpe import data_client as dc  # noqa: E402
+from ci.hbpe import database as db  # noqa: E402
 from ci.hbpe import functions  # noqa: E402
 from ci.hbpe.pipeline import bootstrap as bs  # noqa: E402
 from ci.hbpe.pipeline import nightly_runner as nr  # noqa: E402
@@ -51,6 +52,45 @@ class _Conn:
 
     def __exit__(self, *_exc):
         return False
+
+
+def test_token_date_bounds_include_every_serializer_input(monkeypatch):
+    calls: list[tuple] = []
+    bounds = (dt.date(2026, 6, 1), dt.date(2026, 9, 2))
+
+    class _BoundsCursor:
+        def execute(self, sql, params=None):
+            calls.append((" ".join(str(sql).split()), tuple(params or ())))
+
+        def fetchone(self):
+            return bounds
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    class _BoundsConn:
+        def cursor(self):
+            return _BoundsCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    monkeypatch.setattr(db, "get_conn", lambda: _BoundsConn())
+
+    assert bs.event_date_bounds(USER) == bounds
+    sql, params = calls[0]
+    assert "FROM ci.events e" in sql
+    assert "FROM ci.summaries s" in sql
+    assert "s.period_type = 'hourly'" in sql
+    assert "FROM ci.tasks t" in sql
+    assert "t.l0_class <> 'UNKNOWN'" in sql
+    assert params == (USER, USER, USER)
 
 
 def test_range_reader_selects_only_unlabeled_hourly_summaries(monkeypatch):
