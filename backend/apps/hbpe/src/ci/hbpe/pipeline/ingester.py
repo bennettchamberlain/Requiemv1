@@ -16,6 +16,17 @@ On notification:
   3. Tokenise the affected day (re-run L0/L1/L2 routing + serialiser).
   4. Invalidate the InferenceEngine output-cache for that date.
 
+Only the NOTIFY path re-tokenises. The safety poll watches
+``hbpe.token_stream`` — HBPE's own *output* — so a poll hit means a producer
+(nightly, bootstrap, ``run_pipeline.py``) has already serialised that day, and
+re-running the serialiser would recompute what was just written. Worse, it
+would feed itself: ``serialize_day`` is a DELETE-then-INSERT and
+``serialized_at`` defaults to ``NOW()``, so the rows it wrote satisfy the very
+predicate the next poll uses (``serialized_at > watermark``) — detection
+re-triggers the flush, which re-serialises, which re-triggers, once per poll
+interval with no new source data. The poll therefore invalidates only; source
+data arriving live still re-tokenises via NOTIFY.
+
 The ingester is started by the FastAPI lifespan handler and runs as a
 background asyncio task.  Each HBPE process instance ingests for all
 users whose channels it receives notifications on.
@@ -28,7 +39,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +50,22 @@ DEBOUNCE_SEC = 5.0
 SAFETY_POLL_SEC = 30.0
 RECONNECT_SEC = 5.0
 CHANNELS = ("ci_events", "ci_browser_activity", "ci_communications")
+
+# Grouped by (user, date) so one row carries the newest write for that day,
+# which is what advances the watermark.
+_POLL_SQL = """
+    SELECT user_id::text        AS user_id,
+           date::text           AS date,
+           MAX(serialized_at)   AS last_serialized
+    FROM hbpe.token_stream
+    WHERE serialized_at > %s
+    GROUP BY user_id, date
+"""
+
+
+def _as_utc(ts: datetime) -> datetime:
+    """Treat a naive timestamp as UTC so watermark comparisons never raise."""
+    return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
 
 
 class EventIngester:
@@ -58,6 +85,9 @@ class EventIngester:
         self._task: asyncio.Task | None = None
         # Pending invalidations: user_id → {date_str}
         self._pending: dict[str, set[str]] = {}
+        # Subset of _pending whose source was a NOTIFY (i.e. new source data).
+        # Only these may re-tokenise; poll hits are invalidate-only.
+        self._notified: dict[str, set[str]] = {}
         self._debounce_tasks: dict[str, asyncio.Task] = {}
         # asyncio holds only a weak reference to a running task, so a
         # fire-and-forget create_task() can be garbage collected mid-flight
@@ -133,41 +163,52 @@ class EventIngester:
 
     async def _polling_loop(self, interval: float = DEBOUNCE_SEC) -> None:
         """
-        Poll hbpe.token_stream for rows newer than the last check and invalidate.
+        Poll hbpe.token_stream for rows newer than the watermark and invalidate.
 
         Runs as a safety net alongside the LISTEN path (or as the sole path when
-        asyncpg is unavailable). Errors are logged and the loop continues; the
-        connection pool recycles dead connections so a DB blip self-heals.
+        asyncpg is unavailable): it covers a dropped LISTEN connection, a
+        producer that failed to notify, and the out-of-process writers (nightly,
+        bootstrap, run_pipeline.py) that never notify at all.
+
+        Invalidate-only — see the module docstring for why re-tokenising here
+        would feed itself.
+
+        The watermark only ever advances to a ``serialized_at`` this loop has
+        actually seen. Using the host clock instead (``datetime.utcnow()``) had
+        two defects: it is naive, so Postgres reinterpreted it in the session
+        time zone when comparing against a TIMESTAMPTZ column, and it was
+        stamped after the query returned, so a producer committing in between
+        was skipped for good.
+
+        Errors are logged and the loop continues; the connection pool recycles
+        dead connections so a DB blip self-heals.
         """
         from ci.hbpe.database import get_conn
 
-        last_check: datetime = datetime.utcnow() - timedelta(hours=1)
+        watermark: datetime = datetime.now(UTC) - timedelta(hours=1)
         while True:
             await asyncio.sleep(interval)
             try:
-                # last_check is bound as a default so the closure captures
-                # this iteration's value rather than the loop variable.
-                def _query(last_check=last_check):
+                # `since` is bound as a default so the closure captures this
+                # iteration's value rather than the loop variable.
+                def _query(since=watermark):
                     import psycopg2.extras
 
                     with get_conn() as conn:
                         with conn.cursor(
                             cursor_factory=psycopg2.extras.RealDictCursor
                         ) as cur:
-                            cur.execute(
-                                """
-                                SELECT DISTINCT user_id::text, date
-                                FROM hbpe.token_stream
-                                WHERE serialized_at > %s
-                                """,
-                                (last_check,),
-                            )
+                            cur.execute(_POLL_SQL, (since,))
                             return cur.fetchall()
 
                 rows = await asyncio.get_running_loop().run_in_executor(None, _query)
                 for row in rows:
-                    self._dispatch(str(row["user_id"]), str(row["date"]))
-                last_check = datetime.utcnow()
+                    self._dispatch(
+                        str(row["user_id"]), str(row["date"]), from_notify=False
+                    )
+                    seen = row["last_serialized"]
+                    if seen is not None and _as_utc(seen) > watermark:
+                        watermark = _as_utc(seen)
             except Exception:
                 log.exception("Polling ingester error")
 
@@ -178,15 +219,24 @@ class EventIngester:
             user_id = str(data.get("user_id", ""))
             date_str = str(data.get("date", ""))
             if user_id and date_str:
-                self._dispatch(user_id, date_str)
+                self._dispatch(user_id, date_str, from_notify=True)
         except Exception as exc:
             log.warning("Notify parse error on %s: %s", channel, exc)
 
-    def _dispatch(self, user_id: str, date_str: str) -> None:
-        """Schedule a debounced invalidation for (user_id, date)."""
+    def _dispatch(self, user_id: str, date_str: str, *, from_notify: bool) -> None:
+        """
+        Schedule a debounced invalidation for (user_id, date).
+
+        ``from_notify`` marks new *source* data, which is the only thing that
+        may re-tokenise. Poll hits describe token_stream writes that already
+        happened, so they invalidate without re-serialising.
+        """
         if user_id not in self._pending:
             self._pending[user_id] = set()
         self._pending[user_id].add(date_str)
+
+        if from_notify:
+            self._notified.setdefault(user_id, set()).add(date_str)
 
         # Cancel any existing debounce timer for this user
         existing = self._debounce_tasks.get(user_id)
@@ -202,6 +252,7 @@ class EventIngester:
         """Wait DEBOUNCE_SEC, then invalidate all pending dates for this user."""
         await asyncio.sleep(DEBOUNCE_SEC)
         dates = self._pending.pop(user_id, set())
+        notified = self._notified.pop(user_id, set())
         engine = self._registry.get(user_id)
         if engine is None:
             log.debug("No engine for user %s — skip invalidation", user_id[:8])
@@ -214,9 +265,12 @@ class EventIngester:
             except ValueError:
                 log.warning("Bad date in notify payload: %s", date_str)
 
-        # Re-run serialisation for today to pick up the new token(s)
+        # Re-run serialisation for today to pick up the new token(s). Gated on
+        # `notified`, not `dates`: a poll hit is token_stream reporting its own
+        # contents back, and re-serialising it restamps serialized_at into the
+        # next poll's window — a loop with no new source data behind it.
         today = date.today()
-        if str(today) in set(dates):
+        if str(today) in notified:
             task = asyncio.create_task(
                 self._reserialise(user_id, today),
                 name=f"reserialise-{user_id[:8]}",
