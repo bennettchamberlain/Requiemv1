@@ -24,6 +24,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { JobsController } from './controllers/JobsController';
 import { CronRunEntity } from './entities/CronRunEntity';
+import { JobCategoryMetricEntity } from './entities/JobCategoryMetricEntity';
 import { JobMetricEntity } from './entities/JobMetricEntity';
 import { JobSettingEntity } from './entities/JobSettingEntity';
 import { PgBossArchiveEntity } from './entities/PgBossArchiveEntity';
@@ -51,6 +52,7 @@ import { PGBossEventService } from './services/PGBossEventService';
       PgBossScheduleEntity,
       PgBossQueueEntity,
       JobMetricEntity,
+      JobCategoryMetricEntity,
       CronRunEntity,
       JobSettingEntity,
     ]),

@@ -1,10 +1,12 @@
 import {
+  categoryOfEvent,
   describeJob,
   jobCategoryIndex,
   jobCategorySelector,
   JOB_CATEGORIES,
   JOB_TYPES,
   SMART_ROTATION_WORK_LABELS,
+  UNCLASSIFIED_CATEGORY,
 } from '../taxonomy';
 
 /**
@@ -131,6 +133,61 @@ describe('job taxonomy', () => {
       'ingest.coalesce',
     ]) {
       expect(describeJob(event).label).not.toBe('Unclassified job');
+    }
+  });
+
+  it('counts an event with no taxonomy entry as `unclassified`, whatever the row is labelled', () => {
+    // `describeJob` now FINGERPRINTS an unknown event — it mints a readable
+    // label and GUESSES a category from the prefix or queue, which is a strictly
+    // better row than "Unclassified job". But a guess is not filterable: the
+    // category filter unfolds a category back into event names out of JOB_TYPES,
+    // and a fingerprinted event is by definition not in there.
+    //
+    // So counting must NOT follow the guess. `categoryOfEvent` is the fold the
+    // chips, the category chart and the sampled metrics all share, and it has to
+    // agree with what clicking a chip returns — otherwise a chip reads a number
+    // that selecting it cannot reproduce, which is the bug this bucket exists to
+    // end (measured live: 587 of 9,557 jobs, 54% of the Completed tab).
+    expect(categoryOfEvent('some.brand.new.event')).toBe(UNCLASSIFIED_CATEGORY);
+    expect(categoryOfEvent(null)).toBe(UNCLASSIFIED_CATEGORY);
+
+    // The fingerprint is free to guess a real category for DISPLAY…
+    expect(describeJob('some.brand.new.event').label).toBe('Some brand new event');
+    // …and the fold still refuses to follow it.
+    expect(categoryOfEvent('some.brand.new.event')).not.toBe(
+      describeJob('some.brand.new.event').category,
+    );
+
+    // A known event folds to its real category, so the two only diverge where
+    // the taxonomy has nothing to say.
+    expect(categoryOfEvent('chat.generate')).toBe(JOB_CATEGORIES.llm);
+
+    // And the sentinel stays out of the real category enum, or a descriptor
+    // could be written against it and the bucket would stop meaning "absent".
+    expect(Object.values(JOB_CATEGORIES)).not.toContain(UNCLASSIFIED_CATEGORY);
+  });
+
+  it('classifies the events a live appliance was rendering as "Unclassified job"', () => {
+    // Measured on the running box: 587 of 9,557 jobs — and 54% of everything on
+    // the Completed tab — carried no category, so they were unreachable from the
+    // category filter entirely. `retrieval.query` alone was 586 of them.
+    // Each entry below is an event with a real listener AND a real producer that
+    // simply had no descriptor here.
+    const cases: ReadonlyArray<[string, string]> = [
+      ['retrieval.query', JOB_CATEGORIES.maintenance],
+      ['embed.unfurl-sweep-request', JOB_CATEGORIES.pipeline],
+      ['file.preview-sweep-request', JOB_CATEGORIES.pipeline],
+      ['maintenance.derivation-run-request', JOB_CATEGORIES.graph],
+    ];
+
+    for (const [event, category] of cases) {
+      const descriptor = describeJob(event);
+
+      expect(descriptor.label).not.toBe('Unclassified job');
+      expect(descriptor.category).toBe(category);
+      // A label with no description is only half a classification — the
+      // dashboard shows the description in the expanded row.
+      expect(descriptor.description.length).toBeGreaterThan(20);
     }
   });
 

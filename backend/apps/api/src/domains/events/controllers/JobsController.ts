@@ -10,7 +10,12 @@ import { ValidationPipe } from '@ci/common/pipes';
 
 import { JobControlsDto, JobControlsService } from '../services/JobControlsService';
 import { JobDashboardDto, JobMonitorService } from '../services/JobMonitorService';
-import { JobHistoryDto, JobListDto, JobQueryService } from '../services/JobQueryService';
+import {
+  JobCategoryHistoryDto,
+  JobHistoryDto,
+  JobListDto,
+  JobQueryService,
+} from '../services/JobQueryService';
 import { JOB_CATEGORIES, JOB_TYPES } from '../taxonomy';
 
 /**
@@ -153,6 +158,30 @@ export class JobsController {
     return this.jobQueryService.history(context, {
       windowHours: hours ? Number(hours) : undefined,
       queue,
+    });
+  }
+
+  /**
+   * Job volume by category over time.
+   *
+   * A separate route from `history` rather than a mode of it: that series is
+   * per-queue and comes only from `ci.job_metrics`, while this one is keyed on
+   * the taxonomy and is stitched from two stores — live `pgboss.job` for the
+   * ~36 hours it still holds, the sampled `ci.job_category_metrics` for
+   * anything older. The response says which via `source`.
+   *
+   * A queue could never have been folded into a category here: pg-boss
+   * rewrites the queue name on the copy it makes of a dead-lettered job (43% of
+   * rows on a live appliance), so only the event name in the payload survives.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('history/categories')
+  categoryHistory(
+    @Context() context: RequestContext,
+    @Query('hours') hours?: string,
+  ): Promise<JobCategoryHistoryDto> {
+    return this.jobQueryService.categoryHistory(context, {
+      windowHours: hours ? Number(hours) : undefined,
     });
   }
 

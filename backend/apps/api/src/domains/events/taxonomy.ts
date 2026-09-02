@@ -415,6 +415,40 @@ export const JOB_TYPES: Readonly<Record<string, JobTypeDescriptor>> = {
     category: JOB_CATEGORIES.maintenance,
     description: 'Record that an agent tool ran, for usage reporting.',
   },
+  'retrieval.query': {
+    label: 'Retrieval telemetry',
+    category: JOB_CATEGORIES.maintenance,
+    description:
+      'Record one search or recall — its query, mode and result count — so retrieval health can be measured over time. Fires once per real retrieval, so it is the highest-volume job on an idle appliance.',
+  },
+
+  // ── Sweep requests ──────────────────────────────────────────────────────
+  //
+  // Each of these is a one-shot "go and start a sweep" job: it validates a
+  // request, resolves it to pipeline stages, and enqueues `pipeline.sweep`.
+  // They are pipeline control, not the work itself — the work lands as
+  // `pipeline.slice`. Their two siblings (`maintenance.search-index-backfill-request`
+  // and `maintenance.graph-edge-backfill-request`) are already classified up in
+  // the Pipeline block; these three were missed, which is why they rendered as
+  // "Unclassified job" on the dashboard.
+  'embed.unfurl-sweep-request': {
+    label: 'Kick unfurl sweep',
+    category: JOB_CATEGORIES.pipeline,
+    description:
+      "Start an immediate enrich.unfurl sweep for the requesting user, so a bulk load's links get their titles and posters without waiting for the next scheduled sweep.",
+  },
+  'file.preview-sweep-request': {
+    label: 'Kick preview sweep',
+    category: JOB_CATEGORIES.pipeline,
+    description:
+      'Start an immediate enrich.file_preview sweep for the requesting user, regenerating thumbnails for originals that have none.',
+  },
+  'maintenance.derivation-run-request': {
+    label: 'Nightly graph derivation',
+    category: JOB_CATEGORIES.graph,
+    description:
+      "One user's nightly graph aggregate — set-based SQL over the relationship table that derives connection strength and household structure. Skipped while an operator orchestration is already running for that user.",
+  },
 } as const;
 
 /** Human labels for the `smart.rotation.work` work types. */
@@ -431,8 +465,29 @@ export const SMART_ROTATION_WORK_LABELS: Readonly<Record<string, string>> = {
   hydrate_things: 'Hydrate things',
 };
 
+/**
+ * The bucket for an event with no {@link JOB_TYPES} entry.
+ *
+ * Deliberately NOT a member of {@link JOB_CATEGORIES}: it is not a part of the
+ * appliance, it is the absence of a classification, and putting it in the enum
+ * would let a descriptor be written against it. It exists as a shared sentinel
+ * because the dashboard has to be able to COUNT and FILTER these jobs — on a
+ * live appliance they were 587 of 9,557, and 54% of everything not
+ * dead-lettered, all rendering as "Unclassified job" with no way to select them.
+ *
+ * A non-zero count here is a gap in this file, not a category of work.
+ */
+export const UNCLASSIFIED_CATEGORY = 'unclassified';
+
 const UNCLASSIFIED: JobTypeDescriptor = {
   label: 'Unclassified job',
+  // Reached only when a row has NO event name at all — a named event with no
+  // JOB_TYPES entry is fingerprinted instead, which is what closed the bug this
+  // used to carry (an unknown event rendered "Maintenance" while the Maintenance
+  // filter, resolving category -> events out of JOB_TYPES, returned none of
+  // them; 586 rows on a live appliance). {@link UNCLASSIFIED_CATEGORY} still
+  // exists, but as the COUNTING and FILTERING bucket — see
+  // {@link categoryOfEvent} — where it does the work this field cannot.
   category: JOB_CATEGORIES.maintenance,
   description:
     'This row has no event name, so there is nothing to look up or fingerprint.',
@@ -581,6 +636,42 @@ export function describeJob(
 }
 
 /**
+ * The category an event belongs to, for COUNTING and GROUPING.
+ *
+ * Deliberately NOT {@link describeJob}`(event).category`, even though the
+ * fallback descriptor now reports {@link UNCLASSIFIED_CATEGORY} and the two
+ * agree for most events. describeJob resolves {@link JOB_TYPES_BY_QUEUE} first,
+ * so it answers "what is this ROW", and the same event on two queues gets two
+ * categories from it. The category FILTER cannot: `applyFilters` turns a
+ * category back into a set of event names out of JOB_TYPES alone, because the
+ * queue a dead-lettered row came from no longer exists on it. Anything that
+ * counts categories has to fold the way the filter unfolds, or a chip reads a
+ * number that clicking it will not reproduce — which is the bug
+ * UNCLASSIFIED_CATEGORY itself was introduced to end.
+ *
+ * One exported function rather than the same two-line expression in each
+ * caller: the aggregates that must agree (the list's category chips, the
+ * category chart, and the sampled `ci.job_category_metrics` rows behind it) are
+ * written in three different files and computed at three different times.
+ */
+export function categoryOfEvent(event: string | null | undefined): string {
+  return (event ? JOB_TYPES[event]?.category : undefined) ?? UNCLASSIFIED_CATEGORY;
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * TWO functions, because counting and filtering are not the same operation.
+ *
+ * {@link categoryOfEvent} FOLDS a row into a bucket, from the event name alone.
+ * {@link jobCategorySelector} UNFOLDS a bucket into the SQL that selects it,
+ * and is queue-aware. They deliberately disagree for the handful of events in
+ * {@link JOB_TYPES_BY_QUEUE}: the selector can move `content.created@pipeline-index`
+ * into `pipeline`, and the fold cannot, because a dead-lettered row's queue
+ * column reads `dead-letter` and the queue it died on is gone — and on a live
+ * appliance 43% of rows are dead-lettered. Folding queue-aware would make a
+ * chip count rows that clicking it can never return.
+ * ─────────────────────────────────────────────────────────────────────────
+ *
  * How to select a category, given that a category is not just a set of events.
  *
  * `describeJob` resolves a row's category from the (event, queue) PAIR, because

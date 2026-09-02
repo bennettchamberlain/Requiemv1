@@ -7,6 +7,7 @@ import type { RequestContext } from '@ci/common/context';
 import { databaseAvailability, resolveConnection } from '../../../__tests__/support/databaseConnection';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { DEAD_LETTER_QUEUE } from '../../constants';
+import { JobCategoryMetricEntity } from '../../entities/JobCategoryMetricEntity';
 import { JobMetricEntity } from '../../entities/JobMetricEntity';
 import { PgBossArchiveEntity } from '../../entities/PgBossArchiveEntity';
 import { PgBossJobEntity } from '../../entities/PgBossJobEntity';
@@ -16,7 +17,7 @@ describe('JobQueryService — the auth guard (no database required)', () => {
   function makeService() {
     const noop = { createQueryBuilder: jest.fn() };
 
-    return new JobQueryService(noop as never, noop as never, noop as never);
+    return new JobQueryService(noop as never, noop as never, noop as never, noop as never);
   }
 
   it('list() refuses a request with no user context', async () => {
@@ -101,7 +102,7 @@ describe('JobQueryService — the category filter (no database required)', () =>
     });
 
     const repo = { createQueryBuilder: jest.fn(() => builder) };
-    const service = new JobQueryService(repo as never, repo as never, repo as never);
+    const service = new JobQueryService(repo as never, repo as never, repo as never, repo as never);
 
     (
       service as unknown as {
@@ -208,7 +209,7 @@ describeWithDatabase(`JobQueryService — against real Postgres (${availability.
             password: connection.password,
             database: connection.database,
           }),
-      entities: [PgBossJobEntity, PgBossArchiveEntity, JobMetricEntity],
+      entities: [PgBossJobEntity, PgBossArchiveEntity, JobMetricEntity, JobCategoryMetricEntity],
       synchronize: false,
     });
 
@@ -222,6 +223,7 @@ describeWithDatabase(`JobQueryService — against real Postgres (${availability.
       dataSource.getRepository(PgBossJobEntity),
       dataSource.getRepository(PgBossArchiveEntity),
       dataSource.getRepository(JobMetricEntity),
+      dataSource.getRepository(JobCategoryMetricEntity),
     );
 
     // pgboss.job is partitioned by (name); 'default' and 'dead-letter' are both
