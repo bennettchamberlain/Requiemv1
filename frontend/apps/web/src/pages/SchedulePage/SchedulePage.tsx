@@ -33,6 +33,8 @@ import {
 } from '@/lib/activityPalette';
 import { usePlanTasks } from '@/pages/PlanPage/usePlanTasks';
 
+import { PredictionBand } from './PredictionBand';
+
 const DAYS_IN_VIEW = 7;
 
 function startOfLocalDay(date: Date): Date {
@@ -219,6 +221,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const { isMobile } = useDeviceLayout();
   const { isFeatureEnabled } = useFeatures();
   const hbpeEnabled = isFeatureEnabled('hbpe');
+  const forecastPageEnabled = isFeatureEnabled('forecast.page');
   const [weekOffset, setWeekOffset] = useState(0);
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [slot, setSlot] = useState<CalendarSlot | null>(null);
@@ -239,7 +242,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
   const { events, rhythm, generatedAt, rhythmCoversWindow, loading, fetching, error, refetch } =
     useScheduleService(start, end);
-  const [{ data: occupancy, stalled: occupancyStalled }] = useForecastService();
+  const [{ data: occupancy, loading: occupancyLoading, stalled: occupancyStalled }] = useForecastService();
   const pipelineRunning = Boolean(
     hbpeEnabled && Boolean(occupancy?.systemStatus?.includes(':')) && !occupancyStalled,
   );
@@ -449,6 +452,15 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
               ? 'Part of this week could not be loaded — what is shown may be incomplete.'
               : 'Could not load the schedule. Try again shortly.'}
           </p>
+        )}
+
+        {hbpeEnabled && (
+          <PredictionBand
+            forecast={occupancy}
+            loading={occupancyLoading}
+            stalled={occupancyStalled}
+            showFullForecastLink={forecastPageEnabled}
+          />
         )}
 
         {isTrulyEmpty && (
