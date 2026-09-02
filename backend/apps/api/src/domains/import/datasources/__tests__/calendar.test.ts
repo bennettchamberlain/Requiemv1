@@ -269,7 +269,7 @@ describe('Calendar datasource', () => {
     // UID and is told apart only by RECURRENCE-ID. Until the nested-component
     // fix the ids happened to differ because each block was keyed on its own
     // alarm's UID; keying on the (now correct) VEVENT UID alone would collapse
-    // the master and both overrides onto one id, and `events_source_triple_uniq`
+    // the master and both overrides onto one id, and `events_source_identity_uniq`
     // would let the last push overwrite the other two. The reference Apple
     // export carries 10 such overrides across 2 series.
     const pipeline = await importIcs(path.join(FIXTURES_DIR, 'apple-calendar-valarm.ics'));
@@ -287,9 +287,13 @@ describe('Calendar datasource', () => {
     ]);
 
     // The master keeps the bare UID; only an override carries the suffix, so
-    // ids minted before overrides existed in a calendar stay stable.
+    // ids minted before overrides existed in a calendar stay stable. The
+    // suffix is the TZID-local RECURRENCE-ID normalized to UTC basic
+    // (identity/calendar.ts normalizeIcsRecurrenceId), matching what the
+    // Calendar connection derives for the same override — this fixture's
+    // 14:00 America/Los_Angeles override is the 21:00Z instant.
     expect(series.map((item) => item.id)).toContain(seriesUid);
-    expect(series.map((item) => item.id)).toContain(`${seriesUid}#20210330T140000`);
+    expect(series.map((item) => item.id)).toContain(`${seriesUid}#20210330T210000Z`);
   });
 
   it('keeps UID-less same-date events distinct and idempotent', async () => {

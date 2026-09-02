@@ -5,7 +5,8 @@ import { v7 as uuid7 } from 'uuid';
 
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { type BulkInsertResult, bulkInsertIdempotent, computeChunkSize } from '@ci/common/persistence';
+import {
+  appendRecordSources, type BulkInsertResult, bulkInsertIdempotent, computeChunkSize } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { ObjectIdentifierService } from '@ci/domains/graph/services/ObjectIdentifierService';
 import type {
@@ -41,9 +42,9 @@ import { ProductModelService } from './ProductModelService';
  */
 const RECEIPT_BROWSE_TIME = 'COALESCE(receipt.purchased_at, receipt.created_at)';
 
-/** The `receipts_source_triple_uniq` arbiter. */
-const SOURCE_TRIPLE_CONFLICT_TARGET =
-  '(owner_user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL';
+/** The `receipts_source_identity_uniq` arbiter. */
+const SOURCE_IDENTITY_CONFLICT_TARGET =
+  '(owner_user_id, source_system, source_id) WHERE source_id IS NOT NULL';
 
 /**
  * Confidence written onto an identifier claim promoted off a receipt line, by
@@ -256,8 +257,9 @@ export class ReceiptService {
         sourceId: entity.sourceId,
       }),
       scope: { ownerUserId: context.userId },
-      conflictTarget: SOURCE_TRIPLE_CONFLICT_TARGET,
-      tripleColumns: ['source_type', 'source_system', 'source_id'],
+      conflictTarget: SOURCE_IDENTITY_CONFLICT_TARGET,
+      identityColumns: ['source_system', 'source_id'],
+      sourceLedger: { table: 'receipts', userId: context.userId, importRunId: context.importRunId ?? null },
     });
   }
 
@@ -926,7 +928,7 @@ export class ReceiptService {
    * NULL", it means "do not constrain source_system at all". A re-extraction
    * carrying no `sourceSystem` would then match a receipt imported under
    * `source_system = 'amazon'` — a row keyed by a DIFFERENT triple. The live
-   * arbiter is `receipts_source_triple_uniq (owner_user_id, source_type,
+   * arbiter is `receipts_source_identity_uniq (owner_user_id, source_type,
    * source_system, source_id) NULLS NOT DISTINCT WHERE source_id IS NOT NULL`,
    * so NULL is a real, distinguishable key value here and the lookup has to say
    * so.
@@ -954,11 +956,12 @@ export class ReceiptService {
     const repository = em.withRepository(this.receiptRepository);
 
     const existing =
-      extraction.sourceId != null && extraction.sourceType != null
+      // Identity is (source_system, source_id) — source_type is provenance
+      // and deliberately unmatched (docs/design/cross-pipeline-identity.md).
+      extraction.sourceId != null
         ? await repository.findOne({
             where: {
               ownerUserId: context.userId,
-              sourceType: extraction.sourceType,
               sourceSystem: extraction.sourceSystem ?? IsNull(),
               sourceId: extraction.sourceId,
             },
@@ -972,13 +975,41 @@ export class ReceiptService {
     // that just processed it.
     const extractionState = extraction.extractionState ?? 'extracted';
 
+    // Either outcome is one arrival of this receipt — ledger it (insert AND
+    // match; a match from the other pipeline is exactly the evidence
+    // ci.record_sources exists to keep). Joins the caller's transaction via
+    // `em`, so the ledger row commits or rolls back with the receipt.
+    const ledger = async (recordId: string) => {
+      if (!extraction.sourceType || !extraction.sourceSystem || !extraction.sourceId) {
+        return;
+      }
+
+      await appendRecordSources(em, { table: 'receipts', userId: context.userId }, [
+        {
+          recordId,
+          sourceType: extraction.sourceType,
+          sourceSystem: extraction.sourceSystem,
+          sourceId: extraction.sourceId,
+          importRunId: context.importRunId ?? null,
+        },
+      ]);
+    };
+
     if (existing == null) {
-      return repository.save(this.toEntity(context, { ...extraction, extractionState }));
+      const saved = await repository.save(this.toEntity(context, { ...extraction, extractionState }));
+
+      await ledger(saved.id);
+
+      return saved;
     }
 
     repository.merge(existing, this.headerPatch(extraction), { extractionState });
 
-    return repository.save(existing);
+    const saved = await repository.save(existing);
+
+    await ledger(saved.id);
+
+    return saved;
   }
 
   /**

@@ -19,7 +19,7 @@ describe('CalendarEventService.create — source idempotency', () => {
     findOne: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
-    manager: { transaction: jest.Mock };
+    manager: { transaction: jest.Mock; query: jest.Mock };
   };
   let baseRepo: { create: jest.Mock; save: jest.Mock; find: jest.Mock };
   let signalling: { send: jest.Mock };
@@ -46,6 +46,8 @@ describe('CalendarEventService.create — source idempotency', () => {
       save: jest.fn(async (x: Partial<EventEntity>) => ({ ...x, id: x.id ?? 'inserted-id' })),
       // Writes run in a transaction; the manager dispatches by entity class.
       manager: {
+        // ci.record_sources ledger writes go through manager.query.
+        query: jest.fn(async () => []),
         transaction: jest.fn(async (cb: (m: unknown) => unknown) =>
           cb({
             getRepository: (cls: unknown): unknown => (cls === EventBaseEntity ? baseRepo : repo),
@@ -120,7 +122,6 @@ describe('CalendarEventService.create — source idempotency', () => {
 
     const where = repo.findOne.mock.calls[0][0].where;
     expect(where).toMatchObject({
-      sourceType: 'ci-import-tools',
       sourceSystem: 'gmail',
       sourceId: 'gmail:abc-123',
       user: { id: 'user-1' },

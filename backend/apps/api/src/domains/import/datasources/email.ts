@@ -5,6 +5,8 @@ import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 
+import { messageIdFromHeaders, normalizeMessageId } from '@ci/domains/memory';
+
 import { extractAttachmentToFile, attachmentMediaKind } from './attachment_extract';
 import { mboxFromLineDate, receivedDate } from './email_date';
 import { emailDirection, isDraft } from './email_direction';
@@ -313,7 +315,12 @@ export class EmailFileImporter implements FileImporter {
     addParticipants(headers.To, 'to');
     addParticipants(headers.Cc, 'cc');
 
-    const cleanMsgID = headers['Message-ID'] ? headers['Message-ID'].replace(/[<>]/g, '') : undefined;
+    // Shared Message-ID normalization — see gmail.ts and
+    // docs/design/cross-pipeline-identity.md.
+    // Case-insensitive lookup + shared normalization — see gmail.ts and
+    // docs/design/cross-pipeline-identity.md.
+    const rawMsgID = messageIdFromHeaders(headers);
+    const cleanMsgID = rawMsgID ? normalizeMessageId(rawMsgID) : undefined;
 
     // Direction: inbound iff the message carries receiving-MTA delivery-trace
     // headers (Return-Path etc. — see email_direction.ts); a copy filed at

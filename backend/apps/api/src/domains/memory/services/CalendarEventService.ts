@@ -14,7 +14,12 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import { HbpeNotifyService } from '@ci/common/hbpe';
-import { type BulkInsertResult, bulkInsertIdempotent, INGEST_REFRESH_COLUMNS } from '@ci/common/persistence';
+import {
+  type BulkInsertResult,
+  appendRecordSources,
+  bulkInsertIdempotent,
+  INGEST_REFRESH_COLUMNS,
+} from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -345,24 +350,28 @@ export class CalendarEventService {
     // — flaky-client retries, a full importer re-sync — must NOT create a
     // duplicate. When the triple is present, return the existing row.
     //
-    // Deliberately NOT filtered by `isDeleted`: `events_source_triple_uniq`
+    // Deliberately NOT filtered by `isDeleted`: `events_source_identity_uniq`
     // covers tombstoned rows too, so skipping one here would send the insert
     // below into a guaranteed 23505. Matching it instead means a re-import of
     // an event the user deleted stays deleted rather than silently coming
     // back — the deletion outlives the next sync.
-    const sourceWhere: FindOptionsWhere<EventEntity> | null =
-      item.source_type && item.source_id
-        ? {
-            sourceType: item.source_type,
-            sourceSystem: item.source_system ?? IsNull(),
-            sourceId: item.source_id,
-            user: { id: context.userId },
-          }
-        : null;
+    //
+    // Matches (source_system, source_id) only — source_type is provenance,
+    // and a row written by the other pipeline is a hit
+    // (docs/design/cross-pipeline-identity.md).
+    const sourceWhere: FindOptionsWhere<EventEntity> | null = item.source_id
+      ? {
+          sourceSystem: item.source_system ?? IsNull(),
+          sourceId: item.source_id,
+          user: { id: context.userId },
+        }
+      : null;
 
     if (sourceWhere) {
       const existing = await this.eventRepository.findOne({ where: sourceWhere });
       if (existing) {
+        await this.ledgerArrival(context, existing.id, item);
+
         return this.composeOne(existing);
       }
     }
@@ -412,6 +421,8 @@ export class CalendarEventService {
       if (sourceWhere && (err as { code?: string })?.code === '23505') {
         const existing = await this.eventRepository.findOne({ where: sourceWhere });
         if (existing) {
+          await this.ledgerArrival(context, existing.id, item);
+
           return this.composeOne(existing);
         }
       }
@@ -419,6 +430,7 @@ export class CalendarEventService {
       throw err;
     }
 
+    await this.ledgerArrival(context, eventResult.id, item);
     await this.signallingEventService.send(EventCreatedEvent, {
       eventId: eventResult.id,
     });
@@ -428,6 +440,32 @@ export class CalendarEventService {
       name: item.title,
       description: item.description ?? null,
     });
+  }
+
+  /**
+   * Ledger one arrival of an event (insert, dedup hit, or lost race — all
+   * three evidence the record; see ci.record_sources). No-op on an incomplete
+   * triple. Mirrors CommunicationService.ledgerArrival.
+   */
+  private async ledgerArrival(
+    context: UserServiceContext,
+    recordId: string,
+    item: Pick<CreateEventDto, 'source_type' | 'source_system' | 'source_id' | 'connection_id'>,
+  ): Promise<void> {
+    if (!item.source_type || !item.source_system || !item.source_id) {
+      return;
+    }
+
+    await appendRecordSources(this.eventRepository.manager, { table: 'events', userId: context.userId }, [
+      {
+        recordId,
+        sourceType: item.source_type,
+        sourceSystem: item.source_system,
+        sourceId: item.source_id,
+        connectionId: item.connection_id ?? null,
+        importRunId: context.importRunId ?? null,
+      },
+    ]);
   }
 
   async create(context: UserServiceContext, data: CreateEventDto | CreateEventDto[]): Promise<Event[]> {
@@ -458,7 +496,7 @@ export class CalendarEventService {
    * set-based INSERT ... ON CONFLICT DO NOTHING instead of a per-row findOne + save
    * loop (the old path was N findOnes + N inserts and throttled the ~1M-row push).
    * Re-syncing the same triple returns the existing row instead of inserting a
-   * duplicate. Paired with the events_source_triple_uniq partial unique index,
+   * duplicate. Paired with the events_source_identity_uniq partial unique index,
    * which also absorbs a lost insert race. Bulk ingest does NOT emit a per-row
    * EventCreatedEvent — search indexing is deferred to the post-load batch embed
    * (POST /api/maintenance/search-index/backfill); single-row create() still emits.
@@ -506,9 +544,15 @@ export class CalendarEventService {
           sourceId: entity.sourceId,
         }),
         scope: { userId: context.userId },
-        // Must match events_source_triple_uniq (user-scoped as of 20260808150100).
-        conflictTarget: '(user_id, source_type, source_system, source_id) WHERE source_id IS NOT NULL',
-        tripleColumns: ['source_type', 'source_system', 'source_id'],
+        // Must match events_source_identity_uniq (20260901175654).
+        conflictTarget: '(user_id, source_system, source_id) WHERE source_id IS NOT NULL',
+        identityColumns: ['source_system', 'source_id'],
+        sourceLedger: {
+          table: 'events',
+          userId: context.userId,
+          importRunId: context.importRunId ?? null,
+          getConnectionId: (entity) => entity.connectionId,
+        },
         // Centralized refresh contract — currently empty, so conflicts stay
         // DO NOTHING find-or-return.
         conflictUpdateColumns: INGEST_REFRESH_COLUMNS.event,

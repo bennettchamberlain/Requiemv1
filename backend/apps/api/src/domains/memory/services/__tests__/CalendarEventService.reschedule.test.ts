@@ -7,6 +7,7 @@ import { EventService } from '@ci/domains/events';
 
 import { EventBaseEntity } from '../../entities/EventBaseEntity';
 import { EventEntity } from '../../entities/EventEntity';
+import { platformIdentity } from '../../identity';
 import { CalendarEventService } from '../CalendarEventService';
 import { GraphDeltaWriter } from '../GraphDeltaWriter';
 
@@ -167,6 +168,8 @@ describe('CalendarEventService.create — provenance survives the DTO mapping', 
       // create() writes both halves of the CTI aggregate in one transaction, so
       // the mock hands back the same repositories through a manager.
       manager: {
+        // ci.record_sources ledger writes go through manager.query.
+        query: jest.fn(async () => []),
         transaction: (run: (manager: unknown) => unknown) =>
           Promise.resolve(
             run({
@@ -266,8 +269,11 @@ describe('CalendarEventService.create — provenance survives the DTO mapping', 
       end_time: new Date('2026-08-06T09:15:00Z'),
       event_type: 'meeting',
       source_type: 'calendar',
-      source_system: 'google_calendar',
-      source_id: 'gcal-1',
+      ...(() => {
+        const identity = platformIdentity('google_calendar', 'gcal-1');
+
+        return { source_system: identity.system, source_id: identity.id };
+      })(),
       location_name: 'Room 3',
       organizer_entity_id: 'entity-1',
       participant_entity_ids: ['entity-2'],
