@@ -110,7 +110,12 @@ async def _safe(coro: Awaitable, step_name: str) -> dict:
         return {"status": "error", "error": str(exc)}
 
 
-async def nightly(user_id: str, **_: Any) -> dict:
+async def nightly(
+    user_id: str,
+    summary_start_date: str | None = None,
+    summary_end_date: str | None = None,
+    **_: Any,
+) -> dict:
     """
     Nightly incremental pipeline: label new data, sweep stale clusters,
     (re)bootstrap on vocab drift, LoRA fine-tune, backfill actuals, rebuild
@@ -146,8 +151,14 @@ async def nightly(user_id: str, **_: Any) -> dict:
         )
 
         step("label_summaries")
+        summary_label_args = {}
+        if summary_start_date is not None or summary_end_date is not None:
+            summary_label_args = {
+                "start_date": summary_start_date,
+                "end_date": summary_end_date,
+            }
         results["steps"]["step1b_summaries"] = await _safe(
-            label_summary_tokens(user_id), "step1b_summaries"
+            label_summary_tokens(user_id, **summary_label_args), "step1b_summaries"
         )
 
         step("l1_sweep")
@@ -231,7 +242,12 @@ async def nightly(user_id: str, **_: Any) -> dict:
     return results
 
 
-async def bootstrap(user_id: str, **_: Any) -> dict:
+async def bootstrap(
+    user_id: str,
+    summary_start_date: str | None = None,
+    summary_end_date: str | None = None,
+    **_: Any,
+) -> dict:
     """
     Full cold-start pipeline: label everything, serialize the token stream,
     train the HMT model, calibrate/export ONNX, initial LoRA fine-tune.
@@ -258,8 +274,14 @@ async def bootstrap(user_id: str, **_: Any) -> dict:
         results["steps"]["label"] = await _safe(label_unlabeled(user_id), "label")
 
         step("label_summaries")
+        summary_label_args = {}
+        if summary_start_date is not None or summary_end_date is not None:
+            summary_label_args = {
+                "start_date": summary_start_date,
+                "end_date": summary_end_date,
+            }
         results["steps"]["label_summaries"] = await _safe(
-            label_summary_tokens(user_id), "label_summaries"
+            label_summary_tokens(user_id, **summary_label_args), "label_summaries"
         )
 
         step("serialize")

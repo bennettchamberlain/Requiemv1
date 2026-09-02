@@ -425,6 +425,35 @@ def get_unlabeled_summaries(user_id: str, date_str: str) -> list[dict]:
     return [s for s in summaries if s["summary_id"] not in labeled_ids]
 
 
+def get_unlabeled_summaries_in_range(
+    user_id: str,
+    start_date: str,
+    end_date: str,
+) -> list[dict]:
+    """Return unlabeled hourly summaries in an inclusive calendar-date range."""
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    if end < start:
+        raise ValueError("summary label end_date must be on or after start_date")
+
+    sql = """
+        SELECT s.summary_id::text, s.period_start, s.content
+        FROM ci.summaries s
+        LEFT JOIN hbpe.summary_l1_label label
+          ON label.summary_id = s.summary_id
+        WHERE s.user_id = %s::uuid
+          AND s.period_type = 'hourly'
+          AND s.period_start >= %s::date
+          AND s.period_start < (%s::date + INTERVAL '1 day')
+          AND label.summary_id IS NULL
+        ORDER BY s.period_start
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, (str(user_id), start.isoformat(), end.isoformat()))
+            return [dict(row) for row in cur.fetchall()]
+
+
 def get_labeled_summaries(user_id: str, date_str: str) -> list[dict]:
     """
     Return hourly summaries that have a hbpe.summary_l1_label entry.

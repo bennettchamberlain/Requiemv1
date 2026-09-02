@@ -180,6 +180,48 @@ async def generate_rollup_summary_activity(
 # ============================================================================
 
 
+async def find_existing_summary_activity(
+    user_id: str,
+    period_type: str,
+    start_time: str,
+    end_time: str,
+) -> dict[str, Any] | None:
+    """Return an existing summary for the exact user/type/window, if any."""
+    rows = db.execute_query(
+        """
+        SELECT summary_id::text, content
+        FROM ci.summaries
+        WHERE user_id = :user_id
+          AND period_type = :period_type
+          AND period_start = :period_start
+          AND period_end = :period_end
+        ORDER BY created_at
+        LIMIT 1
+        """,
+        {
+            "user_id": str(UUID(user_id)),
+            "period_type": period_type,
+            "period_start": datetime.fromisoformat(start_time),
+            "period_end": datetime.fromisoformat(end_time),
+        },
+    )
+    if not rows:
+        return None
+
+    row = rows[0]
+    content = row.get("content")
+    if isinstance(content, str):
+        try:
+            content = json.loads(content)
+        except json.JSONDecodeError:
+            content = {}
+
+    return {
+        "summary_id": row["summary_id"],
+        "content": content if isinstance(content, dict) else {},
+    }
+
+
 async def store_summary_activity(
     user_id: str,
     summary_data: dict[str, Any],
@@ -984,6 +1026,7 @@ __all__ = [
     "fetch_child_summaries_activity",
     "fetch_previous_dossier_activity",
     "fetch_summaries_for_dossier_activity",
+    "find_existing_summary_activity",
     "generate_actions_activity",
     "generate_dossier_activity",
     "generate_hourly_summary_activity",

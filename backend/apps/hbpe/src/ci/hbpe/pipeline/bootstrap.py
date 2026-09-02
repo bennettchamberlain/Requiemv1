@@ -7,7 +7,7 @@ incremental updates. Orchestrated by ci.hbpe.functions.bootstrap.
 
 Step order (mirrors run_pipeline.py steps 2–11):
   1. label_unlabeled      — assign L0/L1 to all events and content
-  2. label_summary_tokens — assign L0/L1 to all hourly summaries
+  2. label_summary_tokens — label hourly summaries in the serialize window
   3. serialize            — write hbpe.token_stream for all labeled days
   4. train                — L0 MAE pre-train + HMT joint fine-tune
   5. export               — temperature calibration + ONNX FP32 + INT8

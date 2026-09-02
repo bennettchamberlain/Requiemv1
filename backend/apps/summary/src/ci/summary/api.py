@@ -84,7 +84,8 @@ async def health() -> dict[str, Any]:
 class ManualSummaryRequest(BaseModel):
     user_id: str = Field(description="User UUID")
     period_type: str = Field(
-        default="hourly", description="hourly|daily|weekly|monthly|dossier"
+        default="hourly",
+        description="hourly|hourly_backfill|daily|weekly|monthly|dossier",
     )
     start_time: str | None = Field(default=None, description="ISO start time")
     end_time: str | None = Field(default=None, description="ISO end time")
@@ -119,6 +120,11 @@ async def _trigger_summary_workflow(
             user_id, start_time=start_time, end_time=end_time, timezone=timezone
         )
 
+    if period_type == "hourly_backfill":
+        return await functions.hourly_summary_backfill(
+            user_id, start_time=start_time, end_time=end_time, timezone=timezone
+        )
+
     rollups = {
         "daily": functions.daily_summary,
         "weekly": functions.weekly_summary,
@@ -141,6 +147,14 @@ async def manual_trigger_summary(request: ManualSummaryRequest) -> dict[str, Any
         user_id = uuid.UUID(request.user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid user_id: {exc}") from exc
+
+    if request.period_type == "hourly_backfill" and (
+        request.start_time is None or request.end_time is None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="hourly_backfill requires explicit start_time and end_time",
+        )
 
     # Parse time range
     end_time = _parse_iso(request.end_time) if request.end_time else datetime.utcnow()
