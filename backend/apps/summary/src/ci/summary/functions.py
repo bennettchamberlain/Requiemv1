@@ -4,9 +4,9 @@ Named background functions for the summary service.
 These are the former Temporal workflow bodies as plain async functions. The
 NestJS API schedules them through pg-boss and dispatches each run to
 ``POST /functions/run`` (see runner.py); the manual API endpoints call them
-directly. Each function is idempotent-ish per (user, window): summaries and
-insights upsert-or-append, so a pg-boss retry after a mid-run crash re-runs the
-whole function safely.
+directly. Hourly summaries first reuse an existing exact-window row so retries
+and bounded recovery do not duplicate that stream. Insight cards are appended
+one at a time so a later failure preserves completed work.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -23,6 +23,7 @@ from .activities import (
     fetch_child_summaries_activity,
     fetch_previous_dossier_activity,
     fetch_summaries_for_dossier_activity,
+    find_existing_summary_activity,
     generate_actions_activity,
     generate_dossier_activity,
     generate_hourly_summary_activity,
@@ -48,6 +49,10 @@ DEFAULT_MAX_FEED_ACTIONS = 5
 # Hard cap on the incremental insight loop (the prompt targets 3-5; the model
 # usually stops earlier by returning a null insight).
 MAX_INSIGHTS_PER_RUN = 5
+
+# Manual recovery may call a model once per non-empty hour. Keep the operator
+# surface bounded so one typo cannot enqueue days or months of generation.
+MAX_HOURLY_BACKFILL_HOURS = 24
 
 
 def _utcnow() -> datetime:
@@ -82,6 +87,29 @@ async def hourly_summary(
     logger.info(
         "hourly_summary_started", user_id=user_id[:8], start=start_iso, end=end_iso
     )
+
+    existing = await find_existing_summary_activity(
+        user_id, "hourly", start_iso, end_iso
+    )
+    if existing:
+        content = existing.get("content", {})
+        logger.info(
+            "hourly_summary_skipped",
+            user_id=user_id[:8],
+            reason="already_exists",
+            summary_id=existing["summary_id"],
+            start=start_iso,
+            end=end_iso,
+        )
+        return {
+            "summary_id": existing["summary_id"],
+            "summary_type": "hourly",
+            "skipped": "already_exists",
+            "summary_text": content.get("summary_text", ""),
+            "key_insights": content.get("key_insights", []),
+            "activity_counts": content.get("activity_counts", {}),
+            "tokens_used": content.get("tokens_used", 0),
+        }
 
     aggregated_data = await aggregate_data_activity(user_id, start_iso, end_iso)
     activity_counts = count_activities(aggregated_data)
@@ -122,6 +150,66 @@ async def hourly_summary(
         "key_insights": summary_data.get("key_insights", []),
         "activity_counts": summary_data.get("activity_counts", {}),
         "tokens_used": summary_data.get("tokens_used", 0),
+    }
+
+
+async def hourly_summary_backfill(
+    user_id: str,
+    start_time: str,
+    end_time: str,
+    timezone: str = "UTC",
+    **_: Any,
+) -> dict[str, Any]:
+    """Generate missing hourly summaries over an explicit bounded range."""
+    start_dt = _parse_iso(start_time)
+    end_dt = _parse_iso(end_time)
+
+    if start_dt.utcoffset() is None or end_dt.utcoffset() is None:
+        raise ValueError("hourly backfill timestamps must include UTC offsets")
+    if any((start_dt.minute, start_dt.second, start_dt.microsecond)) or any(
+        (end_dt.minute, end_dt.second, end_dt.microsecond)
+    ):
+        raise ValueError("hourly backfill timestamps must align to hour boundaries")
+
+    duration = end_dt - start_dt
+    if duration <= timedelta(0):
+        raise ValueError("hourly backfill end_time must be after start_time")
+    hours = duration.total_seconds() / 3_600
+    if not hours.is_integer():
+        raise ValueError("hourly backfill range must contain whole hours")
+    if hours > MAX_HOURLY_BACKFILL_HOURS:
+        raise ValueError(
+            f"hourly backfill is limited to {MAX_HOURLY_BACKFILL_HOURS} hours"
+        )
+
+    windows: list[dict[str, Any]] = []
+    cursor = start_dt
+    while cursor < end_dt:
+        window_end = cursor + timedelta(hours=1)
+        result = await hourly_summary(
+            user_id,
+            start_time=cursor.isoformat(),
+            end_time=window_end.isoformat(),
+            timezone=timezone,
+        )
+        windows.append(
+            {
+                "start_time": cursor.isoformat(),
+                "end_time": window_end.isoformat(),
+                **result,
+            }
+        )
+        cursor = window_end
+
+    skipped = sum(1 for window in windows if window.get("skipped"))
+    return {
+        "user_id": user_id,
+        "start_time": start_dt.isoformat(),
+        "end_time": end_dt.isoformat(),
+        "hours": len(windows),
+        "generated": len(windows) - skipped,
+        "skipped": skipped,
+        "windows": windows,
     }
 
 
@@ -567,11 +655,13 @@ FUNCTIONS = {
 __all__ = [
     "DEFAULT_MAX_FEED_ACTIONS",
     "FUNCTIONS",
+    "MAX_HOURLY_BACKFILL_HOURS",
     "MAX_INSIGHTS_PER_RUN",
     "actions_generation",
     "daily_summary",
     "dossier_refresh",
     "hourly_summary",
+    "hourly_summary_backfill",
     "insights_generation",
     "monthly_summary",
     "weekly_summary",

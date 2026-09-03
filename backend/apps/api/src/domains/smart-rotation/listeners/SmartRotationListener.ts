@@ -138,16 +138,11 @@ export class SmartRotationListener {
       }
 
       case 'insights': {
-        const hasNovelty = await this.lifeContextService.hasNoveltySinceLastRun(userId, 'insights');
-        if (!hasNovelty) {
-          this.logger.log('Smart rotation insights skipped — no novelty', { userId });
-
-          return;
-        }
-
-        // Dispatch to the summary service via pg-boss (deferred completion +
-        // retries) instead of a blocking HTTP call. Personalization is
-        // resolved here because the trust dial lives app-side.
+        // Novelty is decided by the summary sidecar against the timestamp of
+        // the last STORED insight. A scheduler-side gate used the timestamp of
+        // the last rotation job instead, so a dispatched run that failed (or
+        // skipped on a different source set) suppressed retries until some
+        // unrelated data changed. Keep one authoritative gate.
         const lifeContext = await this.lifeContextService.buildForUser(userId);
         const enqueued = await this.pythonFunctionService.dispatch(
           'summary',
@@ -170,19 +165,33 @@ export class SmartRotationListener {
       }
 
       case 'summaries': {
-        const hoursSince = await this.hoursSinceLastSummary(userId);
-        const stale = hoursSince == null || hoursSince >= 24;
-        const functionName = stale ? 'dossier_refresh' : 'hourly_summary';
-
-        const enqueued = await this.pythonFunctionService.dispatch(
+        // These are two independent products. The old either/or branch sent a
+        // user with no summaries to dossier_refresh; that function needs
+        // summaries as input, so the user could never become non-stale and the
+        // hourly stream never started. Always advance the activity digest.
+        const summaryEnqueued = await this.pythonFunctionService.dispatch(
           'summary',
-          functionName,
+          'hourly_summary',
           userId,
           {},
-          { singletonKey: `fn:${functionName}:${userId}:rotation` },
+          { singletonKey: `fn:hourly_summary:${userId}:rotation` },
+        );
+        // Dossier refresh remains a separate best-effort job. On a brand-new
+        // user it may run before the first summary lands and skip; the next
+        // hourly tick sees the stored summary and can build the dossier.
+        const dossierEnqueued = await this.pythonFunctionService.dispatch(
+          'summary',
+          'dossier_refresh',
+          userId,
+          {},
+          { singletonKey: `fn:dossier_refresh:${userId}:rotation` },
         );
 
-        this.logger.log('Smart rotation summary dispatched', { userId, functionName, enqueued });
+        this.logger.log('Smart rotation summary work dispatched', {
+          userId,
+          summaryEnqueued,
+          dossierEnqueued,
+        });
 
         return;
       }
@@ -267,27 +276,6 @@ export class SmartRotationListener {
       default:
         throw new Error(`Unknown smart rotation work type: ${workType satisfies never}`);
     }
-  }
-
-  private async hoursSinceLastSummary(userId: string): Promise<number | null> {
-    type Row = { created_at: Date | null };
-    const rows = (await this.dataSource.query(
-      `
-      SELECT MAX(created_at) AS created_at
-      FROM ci.summaries
-      WHERE user_id = $1
-        AND period_type != 'insight';
-      `,
-      [userId],
-    )) as Row[];
-
-    const createdAt = rows[0]?.created_at;
-
-    if (!createdAt) {
-      return null;
-    }
-
-    return (Date.now() - new Date(createdAt).getTime()) / 3_600_000;
   }
 
   /**

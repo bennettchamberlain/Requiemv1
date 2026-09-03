@@ -14,6 +14,10 @@ import httpx
 from .config import resolve_embedding_api_base, resolve_embedding_api_key, settings
 from .llm_config import LLMConfig, run_agent_sync
 
+MAX_HOURLY_PROMPT_CHARS = 24_000
+MAX_PROMPT_ITEMS_PER_SOURCE = 5
+MAX_PROMPT_ITEM_CHARS = 1_000
+
 
 def count_activities(aggregated_data: dict[str, Any]) -> dict[str, int]:
     """
@@ -22,17 +26,11 @@ def count_activities(aggregated_data: dict[str, Any]) -> dict[str, int]:
     Pure function - no side effects, deterministic output.
     """
     counts = {
-        "measurements": len(aggregated_data.get("measurements", [])),
-        "position": len(aggregated_data.get("position", [])),
-        "communications": len(aggregated_data.get("communications", [])),
-        "activities": len(aggregated_data.get("activities", [])),
-        "events": len(aggregated_data.get("events", [])),
-        "messages": len(aggregated_data.get("messages", [])),
-        "files": len(aggregated_data.get("files", [])),
-        "browser_activity": len(aggregated_data.get("browser_activity", [])),
-        "screen_captures": len(aggregated_data.get("screen_captures", [])),
+        source: len(rows)
+        for source, rows in aggregated_data.items()
+        if isinstance(rows, list)
     }
-    counts["total"] = sum(v for k, v in counts.items() if k != "total")
+    counts["total"] = sum(counts.values())
     return counts
 
 
@@ -44,22 +42,40 @@ def build_data_prompt(
 
     Pure function - creates the LLM prompt from data.
     """
-    parts = [f"Activity Summary ({activity_counts['total']} total items):"]
+    header = f"Activity Summary ({activity_counts['total']} total items):"
+    active_sources = [
+        (source, count)
+        for source, count in activity_counts.items()
+        if source != "total" and count > 0
+    ]
+    if not active_sources:
+        return header
 
-    for key, count in activity_counts.items():
-        if key != "total" and count > 0:
-            parts.append(f"\n{key.replace('_', ' ').title()}: {count} items")
-            items = aggregated_data.get(key, [])
-            if items:
-                sample_size = min(10, len(items))
-                parts.append(f"  Sample (first {sample_size}):")
-                for item in items[:sample_size]:
-                    item_str = json.dumps(item, default=str)
-                    if len(item_str) > 200:
-                        item_str = item_str[:200] + "..."
-                    parts.append(f"    - {item_str}")
+    separators_size = 2 * len(active_sources)
+    available = MAX_HOURLY_PROMPT_CHARS - len(header) - separators_size
+    section_budget = max(1, available // len(active_sources))
+    sections: list[str] = []
 
-    return "\n".join(parts)
+    for source, count in active_sources:
+        items = aggregated_data[source]
+        sample_size = min(MAX_PROMPT_ITEMS_PER_SOURCE, len(items))
+        lines = [
+            f"{source.replace('_', ' ').title()}: {count} items",
+            f"  Sample (newest {sample_size}):",
+        ]
+
+        for item in items[:sample_size]:
+            item_text = json.dumps(item, default=str, ensure_ascii=False)
+            if len(item_text) > MAX_PROMPT_ITEM_CHARS:
+                item_text = f"{item_text[: MAX_PROMPT_ITEM_CHARS - 3]}..."
+            lines.append(f"    - {item_text}")
+
+        section = "\n".join(lines)
+        if len(section) > section_budget:
+            section = section[: max(0, section_budget - 3)] + "..."
+        sections.append(section)
+
+    return "\n\n".join([header, *sections])
 
 
 def generate_hourly_summary(
@@ -604,8 +620,14 @@ def _build_insights_prompt(context: dict[str, Any]) -> str:
         parts.append("## RECENT COMMUNICATIONS")
         for comm in comms[:5]:
             subject = comm.get("subject") or comm.get("title", "")
-            if subject:
-                parts.append(f"- {subject[:50]}")
+            text = comm.get("text", "")
+            direction = comm.get("direction", "")
+            from_name = comm.get("from_name", "")
+            to_names = ", ".join(comm.get("to_names") or [])
+            label = subject or text or "Communication"
+            details = [value for value in (direction, from_name, to_names) if value]
+            prefix = f" ({'; '.join(details)})" if details else ""
+            parts.append(f"- {label[:100]}{prefix}: {text[:300]}")
         parts.append("")
 
     parts.append(

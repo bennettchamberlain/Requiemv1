@@ -90,7 +90,7 @@ class InsightAggregator:
     def has_new_data(self, user_id: UUID, since: datetime) -> bool:
         """
         Check if there's new data worth generating insights for.
-        Returns True if there are new graph deltas, events, or summaries.
+        Returns True for grounded changes since the last stored insight.
         """
         query = """
         SELECT EXISTS (
@@ -102,8 +102,14 @@ class InsightAggregator:
             WHERE user_id = :user_id AND created_at >= :since AND period_type != 'insight'
             LIMIT 1
         ) OR EXISTS (
+            SELECT 1 FROM ci.communications
+            WHERE user_id = :user_id AND time >= :since
+            LIMIT 1
+        ) OR EXISTS (
             SELECT 1 FROM ci.events
-            WHERE user_id = :user_id AND created_at >= :since
+            WHERE user_id = :user_id
+              AND GREATEST(created_at, updated_at) >= :since
+              AND is_deleted = false
             LIMIT 1
         ) as has_new_data
         """
@@ -309,18 +315,27 @@ class InsightAggregator:
         """Get recent communications (emails, messages, etc.)."""
         query = """
         SELECT
-            id,
-            subject,
-            communication_type,
-            direction,
-            time,
-            from_entity_id,
-            to_entity_ids
-        FROM ci.communications
-        WHERE user_id = :user_id
-          AND time >= :since
-          AND time < :until
-        ORDER BY time DESC
+            LEFT(
+                COALESCE(NULLIF(comm.summary, ''), NULLIF(comm.preview, ''), NULLIF(comm.content, '')),
+                1000
+            ) AS text,
+            comm.subject,
+            comm.communication_type,
+            comm.direction,
+            sender.name AS from_name,
+            (
+                SELECT ARRAY_AGG(recipient.name ORDER BY recipient.name)
+                FROM UNNEST(comm.to_entity_ids) AS recipient_id
+                JOIN ci.entities recipient ON recipient.entity_id = recipient_id
+            ) AS to_names,
+            comm.time
+        FROM ci.communications comm
+        LEFT JOIN ci.entities sender ON sender.entity_id = comm.from_entity_id
+        WHERE comm.user_id = :user_id
+          AND comm.time >= :since
+          AND comm.time < :until
+          AND comm.is_archived = false
+        ORDER BY comm.time DESC
         LIMIT 20
         """
         return db.execute_query(

@@ -8,7 +8,7 @@ bucket has no event-derived token, a summary-derived token fills the gap,
 giving the model signal for hours that contain no calendar events (sleep,
 leisure, off-calendar work, commutes).
 
-Labels are cached in ci.summary_l1_label after the first Qwen call, so
+Labels are cached in hbpe.summary_l1_label after the first Qwen call, so
 re-serializing the same day does not re-invoke the model.
 
 Summary tokens are written with soft_prob=SUMMARY_SOFT_PROB (0.7) to indicate
@@ -45,6 +45,19 @@ class SummaryTokenizer:
         from ci.hbpe.data_client import get_unlabeled_summaries
 
         unlabeled = get_unlabeled_summaries(user_id, date_str)
+        return self._label_rows(user_id, unlabeled, f"date={date_str}")
+
+    def label_range(self, user_id: str, start_date: str, end_date: str) -> int:
+        """Label all unlabeled hourly summaries in an inclusive date range."""
+        from ci.hbpe.data_client import get_unlabeled_summaries_in_range
+
+        unlabeled = get_unlabeled_summaries_in_range(user_id, start_date, end_date)
+        return self._label_rows(
+            user_id, unlabeled, f"start={start_date} end={end_date}"
+        )
+
+    def _label_rows(self, user_id: str, unlabeled: list[dict], scope: str) -> int:
+        """Run the shared L0/L1 classifier and persist labels for supplied rows."""
         if not unlabeled:
             return 0
 
@@ -120,11 +133,11 @@ class SummaryTokenizer:
                 )
 
         log.info(
-            "SummaryTokenizer.label_day: labeled %d/%d summaries (user=%s date=%s)",
+            "SummaryTokenizer: labeled %d/%d summaries (user=%s %s)",
             labeled,
             len(unlabeled),
             user_id,
-            date_str,
+            scope,
         )
         return labeled
 

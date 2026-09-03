@@ -19,7 +19,7 @@ function buildListener(overrides: {
   maintenanceOrchestratorService?: MaintenanceOrchestratorService;
   contextPromptGenerateService?: ContextPromptGenerateService;
   crossTableHydrationService?: CrossTableHydrationService;
-  lifeContextService?: { hasNoveltySinceLastRun: jest.Mock; buildForUser: jest.Mock };
+  lifeContextService?: { buildForUser: jest.Mock };
   dataSource?: { query: jest.Mock };
 }) {
   const questionService = (overrides.questionService ?? {}) as QuestionService;
@@ -36,7 +36,6 @@ function buildListener(overrides: {
   const crossTableHydrationService = (overrides.crossTableHydrationService ??
     {}) as CrossTableHydrationService;
   const lifeContextService = (overrides.lifeContextService ?? {
-    hasNoveltySinceLastRun: jest.fn(),
     buildForUser: jest.fn(),
   }) as never;
   const dataSource = overrides.dataSource ?? { query: jest.fn() };
@@ -259,28 +258,11 @@ describe('SmartRotationListener', () => {
   });
 
   describe('insights', () => {
-    it('skips dispatch when there is no novelty since the last run', async () => {
-      const pythonFunctionService = { dispatch: jest.fn() } as unknown as PythonFunctionService;
-      const lifeContextService = {
-        hasNoveltySinceLastRun: jest.fn().mockResolvedValue(false),
-        buildForUser: jest.fn(),
-      };
-
-      const listener = buildListener({ pythonFunctionService, lifeContextService });
-
-      await listener.handleWork({ userId: 'user-1', workType: 'insights' });
-
-      expect(lifeContextService.hasNoveltySinceLastRun).toHaveBeenCalledWith('user-1', 'insights');
-      expect(lifeContextService.buildForUser).not.toHaveBeenCalled();
-      expect(pythonFunctionService.dispatch).not.toHaveBeenCalled();
-    });
-
-    it('dispatches insights_generation with the personalization payload when there is novelty', async () => {
+    it('always dispatches so the sidecar can compare against the last stored insight', async () => {
       const pythonFunctionService = {
         dispatch: jest.fn().mockResolvedValue(true),
       } as unknown as PythonFunctionService;
       const lifeContextService = {
-        hasNoveltySinceLastRun: jest.fn().mockResolvedValue(true),
         buildForUser: jest.fn().mockResolvedValue({
           trustMode: 'hands_off',
           insightVolumeMultiplier: 1.5,
@@ -310,17 +292,25 @@ describe('SmartRotationListener', () => {
   });
 
   describe('summaries', () => {
-    it('dispatches dossier_refresh when there is no prior summary at all', async () => {
+    it('dispatches both the hourly digest and dossier maintenance for a new user', async () => {
       const pythonFunctionService = {
         dispatch: jest.fn().mockResolvedValue(true),
       } as unknown as PythonFunctionService;
-      const dataSource = { query: jest.fn().mockResolvedValue([{ created_at: null }]) };
 
-      const listener = buildListener({ pythonFunctionService, dataSource });
+      const listener = buildListener({ pythonFunctionService });
 
       await listener.handleWork({ userId: 'user-1', workType: 'summaries' });
 
-      expect(pythonFunctionService.dispatch).toHaveBeenCalledWith(
+      expect(pythonFunctionService.dispatch).toHaveBeenNthCalledWith(
+        1,
+        'summary',
+        'hourly_summary',
+        'user-1',
+        {},
+        { singletonKey: 'fn:hourly_summary:user-1:rotation' },
+      );
+      expect(pythonFunctionService.dispatch).toHaveBeenNthCalledWith(
+        2,
         'summary',
         'dossier_refresh',
         'user-1',
@@ -329,34 +319,12 @@ describe('SmartRotationListener', () => {
       );
     });
 
-    it('dispatches dossier_refresh when the last summary is >= 24h stale', async () => {
+    it('never withholds the hourly digest because prior summaries are stale', async () => {
       const pythonFunctionService = {
         dispatch: jest.fn().mockResolvedValue(true),
       } as unknown as PythonFunctionService;
-      const staleDate = new Date(Date.now() - 25 * 3_600_000);
-      const dataSource = { query: jest.fn().mockResolvedValue([{ created_at: staleDate }]) };
 
-      const listener = buildListener({ pythonFunctionService, dataSource });
-
-      await listener.handleWork({ userId: 'user-1', workType: 'summaries' });
-
-      expect(pythonFunctionService.dispatch).toHaveBeenCalledWith(
-        'summary',
-        'dossier_refresh',
-        'user-1',
-        {},
-        { singletonKey: 'fn:dossier_refresh:user-1:rotation' },
-      );
-    });
-
-    it('dispatches hourly_summary when the last summary is fresh (< 24h)', async () => {
-      const pythonFunctionService = {
-        dispatch: jest.fn().mockResolvedValue(true),
-      } as unknown as PythonFunctionService;
-      const freshDate = new Date(Date.now() - 1 * 3_600_000);
-      const dataSource = { query: jest.fn().mockResolvedValue([{ created_at: freshDate }]) };
-
-      const listener = buildListener({ pythonFunctionService, dataSource });
+      const listener = buildListener({ pythonFunctionService });
 
       await listener.handleWork({ userId: 'user-1', workType: 'summaries' });
 

@@ -57,9 +57,9 @@ function hbpePipelineSingleton(
  * Three of these crons stand down when `smart.rotation` is on, because
  * SmartRotationListener dispatches the same Python functions on its own cadence:
  * `insights` (rotation's `insights` work type) and `hourlySummaries` /
- * `dossierRefresh` (rotation's `summaries` work type picks one of the two by
- * staleness). Their singleton keys do NOT collide — this class scopes by
- * time window (`fn:<name>:<user>:<hourKey>`) and rotation scopes by
+ * `dossierRefresh` (rotation's `summaries` work type dispatches both as
+ * independent products). Their singleton keys do NOT collide — this class
+ * scopes by time window (`fn:<name>:<user>:<hourKey>`) and rotation scopes by
  * `fn:<name>:<user>:rotation` — so without the guard pg-boss treats them as
  * distinct jobs and both run. These are LLM-bound and take minutes per run.
  *

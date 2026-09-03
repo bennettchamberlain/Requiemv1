@@ -376,22 +376,61 @@ async def label_unlabeled(user_id: str) -> dict:
 # ── Step 1b — Label hourly summaries ──────────────────────────────────────────
 
 
-async def label_summary_tokens(user_id: str) -> dict:
+async def label_summary_tokens(
+    user_id: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict:
     """
-    Step 1b: Label yesterday's hourly summaries with L0+L1 via Qwen.
+    Step 1b: Label hourly summaries in the next serialization window via Qwen.
 
     Summary tokens fill 15-min buckets that have no event-derived coverage
     (sleep, leisure, off-calendar hours).  Labels are stored in
-    ci.summary_l1_label and merged into the token stream at serialization time.
+    hbpe.summary_l1_label and merged into the token stream at serialization time.
+    An explicit inclusive range may be supplied for bounded recovery.
     """
     import datetime
 
     def _run(should_stop) -> dict:
+        from ci.hbpe.pipeline.bootstrap import (
+            SERIALIZE_WINDOW_DAYS,
+            event_date_bounds,
+            serialize_window,
+        )
         from ci.hbpe.tokenizer.summary_tokenizer import SummaryTokenizer
 
-        yesterday = datetime.date.today() - datetime.timedelta(days=1)
-        n = SummaryTokenizer().label_day(user_id, yesterday.isoformat())
-        return {"labeled": n, "date": yesterday.isoformat()}
+        if (start_date is None) != (end_date is None):
+            raise ValueError(
+                "summary label recovery requires both start_date and end_date"
+            )
+
+        if start_date is not None and end_date is not None:
+            start = datetime.date.fromisoformat(start_date)
+            end = datetime.date.fromisoformat(end_date)
+            if end < start:
+                raise ValueError(
+                    "summary label end_date must be on or after start_date"
+                )
+            if (end - start).days > SERIALIZE_WINDOW_DAYS:
+                raise ValueError(
+                    "summary label recovery cannot exceed the serialization window"
+                )
+        else:
+            window = serialize_window(event_date_bounds(user_id))
+            if window is None:
+                yesterday = datetime.datetime.now(
+                    datetime.UTC
+                ).date() - datetime.timedelta(days=1)
+                start, end = yesterday, yesterday
+            else:
+                start, end = window
+
+        n = SummaryTokenizer().label_range(user_id, start.isoformat(), end.isoformat())
+        return {
+            "labeled": n,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
 
     return await _run_inference(_run)
 
