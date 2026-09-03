@@ -88,3 +88,34 @@ describe('MemoryPage default filters', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/memory/events?view=timeline');
   });
 });
+
+describe('MemoryPage time-sort reset', () => {
+  it('drops a time sort from /memory once no When filter is active', () => {
+    renderAt('/memory?view=list&sortBy=time&sortOrder=desc');
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/memory?view=list');
+  });
+
+  it('keeps a time sort on /memory while a When filter is active', () => {
+    const url =
+      '/memory?view=list&when=last-week&from=2026-01-01T00:00:00.000Z&to=2026-01-07T23:59:59.999Z&sortBy=time&sortOrder=asc';
+
+    renderAt(url);
+
+    expect(screen.getByTestId('location')).toHaveTextContent(url);
+  });
+
+  it('never touches the events browse, which is a chronology', () => {
+    renderAt('/memory/events?view=list&sortBy=time&sortOrder=desc');
+
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/memory/events?view=list&sortBy=time&sortOrder=desc',
+    );
+  });
+
+  it('leaves a name sort alone', () => {
+    renderAt('/memory?view=list&sortBy=name&sortOrder=asc');
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/memory?view=list&sortBy=name&sortOrder=asc');
+  });
+});

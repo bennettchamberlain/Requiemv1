@@ -304,7 +304,7 @@ describe('SearchResolver.search — combinable filters', () => {
 
 /**
  * VIEW-01. The unfiltered browse is a chronology, but ten of the thirteen
- * result types are ordered by `created_at` — the row-WRITE time — which a bulk
+ * result types are ordered by `updated_at` — the row-WRITE time — which a bulk
  * import parks at "now". Measured on the QA appliance, 22,145 rows sat ahead of
  * the newest genuinely-dated memory: 11,211 event-linked media content rows,
  * 9,753 people, 1,178 places and 3 others. Reordering within the page cannot
@@ -357,7 +357,7 @@ describe('SearchResolver.search — undated types stay out of the unfiltered bro
         {
           type: 'person',
           id: 'p1',
-          entity: { id: 'p1', name: 'Ada', createdAt: new Date('2026-08-01T00:00:00.000Z') },
+          entity: { id: 'p1', name: 'Ada', updatedAt: new Date('2026-08-01T00:00:00.000Z') },
         },
       ]),
     );
@@ -477,7 +477,7 @@ describe('SearchResolver.search — products and receipts are browsable (B1)', (
     productModelService.getEntitiesForProducts.mockResolvedValue([{ type: 'product', id: 'pr1' }]);
     productModelService.countEntitiesForProducts.mockResolvedValue(3);
     entityResolutionService.resolve.mockResolvedValue(
-      resolveMap([{ type: 'product', id: 'pr1', entity: { createdAt: new Date('2026-02-01') } }]),
+      resolveMap([{ type: 'product', id: 'pr1', entity: { updatedAt: new Date('2026-02-01') } }]),
     );
 
     const result = await resolver.search(ctx, { includeTypes: ['product'] } as SearchInput);
@@ -518,7 +518,7 @@ describe('SearchResolver.search — products and receipts are browsable (B1)', (
     expect(receiptService.countEntitiesForReceipts).not.toHaveBeenCalled();
   });
 
-  // The SQL orders receipts by COALESCE(purchased_at, created_at); the in-memory
+  // The SQL orders receipts by COALESCE(purchased_at, updated_at); the in-memory
   // sort — which also mints the cursor — has to read the same thing, or a page
   // boundary lands somewhere the next query does not resume from.
   it('orders receipts by their purchase date, falling back to the row time', async () => {
@@ -533,12 +533,12 @@ describe('SearchResolver.search — products and receipts are browsable (B1)', (
           type: 'receipt',
           id: 'old-purchase',
           // Bought long ago, imported today: the purchase date is the truth.
-          entity: { purchasedAt: new Date('2020-01-01'), createdAt: new Date('2026-08-19') },
+          entity: { purchasedAt: new Date('2020-01-01'), updatedAt: new Date('2026-08-19') },
         },
         {
           type: 'receipt',
           id: 'undated',
-          entity: { purchasedAt: null, createdAt: new Date('2026-08-18') },
+          entity: { purchasedAt: null, updatedAt: new Date('2026-08-18') },
         },
       ]),
     );

@@ -220,7 +220,11 @@ export class ProductModelService {
       scope: { ownerUserId: context.userId },
       conflictTarget: SOURCE_IDENTITY_CONFLICT_TARGET,
       identityColumns: ['source_system', 'source_id'],
-      sourceLedger: { table: 'product_models', userId: context.userId, importRunId: context.importRunId ?? null },
+      sourceLedger: {
+        table: 'product_models',
+        userId: context.userId,
+        importRunId: context.importRunId ?? null,
+      },
     });
   }
 
@@ -293,24 +297,24 @@ export class ProductModelService {
       .andWhere('product.merged_into_product_id IS NULL');
 
     if (options.startTime) {
-      query = query.andWhere('product.created_at >= :startTime', { startTime: options.startTime });
+      query = query.andWhere('product.updated_at >= :startTime', { startTime: options.startTime });
     }
 
     if (options.endTime) {
-      query = query.andWhere('product.created_at <= :endTime', { endTime: options.endTime });
+      query = query.andWhere('product.updated_at <= :endTime', { endTime: options.endTime });
     }
 
     // Composite keyset: page strictly past (afterTime, afterId) in
-    // (created_at DESC, product_id DESC) — see ItemService.getEntitiesForItems.
+    // (updated_at DESC, product_id DESC) — see ItemService.getEntitiesForItems.
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(product.created_at < :afterTime OR (product.created_at = :afterTime AND product.product_id < :afterId))',
+        '(product.updated_at < :afterTime OR (product.updated_at = :afterTime AND product.product_id < :afterId))',
         { afterTime: options.afterTime, afterId: options.afterId },
       );
     }
 
     query = query
-      .orderBy('product.created_at', options.order ?? 'DESC')
+      .orderBy('product.updated_at', options.order ?? 'DESC')
       .addOrderBy('product.product_id', 'DESC');
 
     if (options.limit) {
@@ -339,11 +343,11 @@ export class ProductModelService {
       .andWhere('product.merged_into_product_id IS NULL');
 
     if (options.startTime) {
-      query = query.andWhere('product.created_at >= :startTime', { startTime: options.startTime });
+      query = query.andWhere('product.updated_at >= :startTime', { startTime: options.startTime });
     }
 
     if (options.endTime) {
-      query = query.andWhere('product.created_at <= :endTime', { endTime: options.endTime });
+      query = query.andWhere('product.updated_at <= :endTime', { endTime: options.endTime });
     }
 
     return query.getCount();

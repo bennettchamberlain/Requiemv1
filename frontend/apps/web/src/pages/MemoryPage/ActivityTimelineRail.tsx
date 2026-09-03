@@ -13,6 +13,7 @@ import type { TimelineGridRange } from '@/components/TimelineGrid/useTimelineGri
 import { gql } from '@/graphql';
 
 import { activityTimelineFiltersFromSearchParams } from './activityTimelineFilters';
+import { resolveExplorerTypes } from './Components/ExplorerToolbar/filterParams';
 
 // The rollup table only holds days that actually have activity, so an
 // effectively-unbounded start fetches the user's whole history in one query —
@@ -90,8 +91,13 @@ function RailContent() {
     [searchParams],
   );
 
+  // When the When filter has set aside every selected kind there is nothing
+  // to count — the list is skipping its query for the same reason (MemoryPage).
+  const nothingToCount = resolveExplorerTypes(searchParams).nothingLeft;
+
   const { data } = useQuery(ACTIVITY_TIMELINE, {
     variables: { start: HISTORY_START, end: endKey, filters: timelineFilters },
+    skip: nothingToCount,
   });
 
   const buckets = data?.activityTimeline;

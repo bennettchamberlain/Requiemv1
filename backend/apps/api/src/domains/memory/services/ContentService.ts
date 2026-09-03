@@ -264,7 +264,10 @@ export class ContentService {
   private async ledgerArrival(
     context: UserServiceContext,
     recordId: string,
-    item: Pick<CreateContentDto, 'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'>,
+    item: Pick<
+      CreateContentDto,
+      'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'
+    >,
   ): Promise<void> {
     if (!item.source_type || !item.source_system || !item.source_id) {
       return;
@@ -711,25 +714,25 @@ export class ContentService {
     }
 
     if (options.startTime) {
-      query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });
+      query = query.andWhere('content.updated_at >= :startTime', { startTime: options.startTime });
     }
 
     if (options.endTime) {
-      query = query.andWhere('content.created_at <= :endTime', { endTime: options.endTime });
+      query = query.andWhere('content.updated_at <= :endTime', { endTime: options.endTime });
     }
 
     // Composite keyset: page strictly past (afterTime, afterId) in
-    // (created_at DESC, id DESC). Without it the search feed re-fetched the same
+    // (updated_at DESC, id DESC). Without it the search feed re-fetched the same
     // top-N rows every page and dead-ended at `first * FETCH_MULTIPLIER` rows.
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(content.created_at < :afterTime OR (content.created_at = :afterTime AND content.id < :afterId))',
+        '(content.updated_at < :afterTime OR (content.updated_at = :afterTime AND content.id < :afterId))',
         { afterTime: options.afterTime, afterId: options.afterId },
       );
     }
 
     // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query.orderBy('content.created_at', options.order ?? 'DESC').addOrderBy('content.id', 'DESC');
+    query = query.orderBy('content.updated_at', options.order ?? 'DESC').addOrderBy('content.id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -761,11 +764,11 @@ export class ContentService {
     }
 
     if (options.startTime) {
-      query = query.andWhere('content.created_at >= :startTime', { startTime: options.startTime });
+      query = query.andWhere('content.updated_at >= :startTime', { startTime: options.startTime });
     }
 
     if (options.endTime) {
-      query = query.andWhere('content.created_at <= :endTime', { endTime: options.endTime });
+      query = query.andWhere('content.updated_at <= :endTime', { endTime: options.endTime });
     }
 
     return query.getCount();

@@ -32,6 +32,7 @@ vi.mock('./Components/ExplorerToolbar/ExplorerToolbar', () => ({
 }));
 
 vi.mock('./ListView', () => ({ ListView: () => <div>list</div> }));
+vi.mock('./ExploreView', () => ({ ExploreView: () => <div>explore</div> }));
 vi.mock('./MapView', () => ({ MobileMapView: () => <div>map</div> }));
 vi.mock('./StoryTimelineView', () => ({ StoryTimelineView: () => <div>timeline</div> }));
 vi.mock('./GalleryView', () => ({ GalleryView: () => <div>gallery</div> }));

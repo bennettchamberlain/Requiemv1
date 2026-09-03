@@ -92,10 +92,11 @@ const MAP_PIN_MAX_LIMIT = 20_000;
  *
  * ── Why ────────────────────────────────────────────────────────────────────
  * The browse is a CHRONOLOGY. Every type it merges is ordered by whatever
- * timestamp it has, and for these types that timestamp is `created_at` — the
- * row-WRITE time, not the time the thing happened. A bulk import writes the
- * whole corpus at once, so every one of these rows is stamped "now" and lands
- * ahead of the entire real timeline. Measured on the QA appliance, rows sitting
+ * timestamp it has, and for these types that timestamp is `updated_at` — the
+ * row's last-WRITE time (equal to `created_at` until something changes it),
+ * not the time the thing happened. A bulk import writes the whole corpus at
+ * once, so every one of these rows is stamped "now" and lands ahead of the
+ * entire real timeline. Measured on the QA appliance, rows sitting
  * ahead of the newest genuinely-dated memory (2026-08-18 18:41:33Z) in the
  * unfiltered browse:
  *
@@ -135,14 +136,14 @@ const BROWSE_OPT_IN_TYPES: ReadonlySet<IndexableEntity> = new Set([
   'place',
   'concept',
   'item',
-  // A catalog model is not a moment at all: `ci.product_models` has only
-  // `created_at`, so a product on the chronology is an import artifact wearing a
+  // A catalog model is not a moment at all: `ci.product_models` has only row
+  // stamps, so a product on the chronology is an import artifact wearing a
   // date, exactly like `person` and `place` above.
   'product',
   // A receipt IS a moment — `purchased_at` is when the purchase happened, and
   // the browse orders by it (see ReceiptService.getEntitiesForReceipts). It is
   // still opt-in because that column is NULLABLE: an OCR backlog is mostly
-  // undated, falls back to `created_at`, and would land the whole backlog at
+  // undated, falls back to `updated_at`, and would land the whole backlog at
   // import time ahead of the real timeline — the head this gate exists to keep
   // clear.
   'receipt',
@@ -180,7 +181,7 @@ const EMPTY_PAGE_INFO = {
  * entity* (getEntityTimestamp), while a GraphQL type only exposes the fields it
  * declares. ContentType/PersonType/PlaceType/ConceptType declare no time field
  * at all, so re-deriving produced an epoch cursor for a row the sort had placed
- * by its 2026 createdAt. That epoch then travelled back as `afterTime` and
+ * by its 2026 updatedAt. That epoch then travelled back as `afterTime` and
  * windowed every sibling type's query to "before 1970", emptying the browse.
  * Carrying the sort key forward makes the two identical by construction.
  */
@@ -851,7 +852,7 @@ export class SearchResolver {
       order: { time: 'DESC' },
     };
 
-    // Files and document chunks order by created_at (their only timestamp) and
+    // Files and document chunks order by updated_at (their only timestamp) and
     // take a plain 'DESC' rather than the FindOptionsOrder shape the memory
     // services use — see their getEntitiesFor* signatures.
     const fileOptions: {
@@ -907,12 +908,13 @@ export class SearchResolver {
       fileChunkOptions.afterId = afterId;
     }
 
-    // Types ordered by their row timestamp (created_at, or answered_at for
+    // Types ordered by their row timestamp (updated_at — the last write, which
+    // is the insert until something changes the row — or answered_at for
     // answers). They take the same keyset cursor as the timeline types above —
     // omitting it made every page re-run the identical top-N query, so paging
     // dead-ended after `first * FETCH_MULTIPLIER` rows no matter how many rows
     // existed (the Paginator could only slice within that one fetched window).
-    const createdAtOptions = {
+    const rowTimeOptions = {
       limit,
       order: 'DESC' as const,
       ...(startTime ? { startTime } : {}),
@@ -945,27 +947,27 @@ export class SearchResolver {
         : [],
       wants('file') ? this.fileService.getEntitiesForFiles(context, fileOptions) : [],
       wants('file-chunk') ? this.fileChunkService.getEntitiesForFileChunks(context, fileChunkOptions) : [],
-      wants('note') ? this.noteService.getEntitiesForNotes(context, createdAtOptions) : [],
+      wants('note') ? this.noteService.getEntitiesForNotes(context, rowTimeOptions) : [],
       // Event-linked content is a facet of an event the same merge already
       // returns — see ContentService.getEntitiesForContents.
       wants('content')
         ? this.contentService.getEntitiesForContents(context, {
-            ...createdAtOptions,
+            ...rowTimeOptions,
             excludeEventLinked: true,
           })
         : [],
-      wants('person') ? this.personService.getEntitiesForPeople(context, createdAtOptions) : [],
-      wants('place') ? this.placeService.getEntitiesForPlaces(context, createdAtOptions) : [],
-      wants('item') ? this.itemService.getEntitiesForItems(context, createdAtOptions) : [],
-      wants('product') ? this.productModelService.getEntitiesForProducts(context, createdAtOptions) : [],
-      // Receipts order by COALESCE(purchased_at, created_at) rather than the row
+      wants('person') ? this.personService.getEntitiesForPeople(context, rowTimeOptions) : [],
+      wants('place') ? this.placeService.getEntitiesForPlaces(context, rowTimeOptions) : [],
+      wants('item') ? this.itemService.getEntitiesForItems(context, rowTimeOptions) : [],
+      wants('product') ? this.productModelService.getEntitiesForProducts(context, rowTimeOptions) : [],
+      // Receipts order by COALESCE(purchased_at, updated_at) rather than the row
       // timestamp the other opt-in types use — the only one of them with a real
       // domain time. Same keyset shape, different column; see
       // ReceiptService.getEntitiesForReceipts and getEntityTimestamp, which reads
-      // `purchasedAt ?? createdAt` so the cursor it mints matches this order.
-      wants('receipt') ? this.receiptService.getEntitiesForReceipts(context, createdAtOptions) : [],
-      wants('concept') ? this.conceptService.getEntitiesForConcepts(context, createdAtOptions) : [],
-      wants('answer') ? this.answerService.getEntitiesForAnswers(context, createdAtOptions) : [],
+      // `purchasedAt ?? updatedAt` so the cursor it mints matches this order.
+      wants('receipt') ? this.receiptService.getEntitiesForReceipts(context, rowTimeOptions) : [],
+      wants('concept') ? this.conceptService.getEntitiesForConcepts(context, rowTimeOptions) : [],
+      wants('answer') ? this.answerService.getEntitiesForAnswers(context, rowTimeOptions) : [],
     ]);
 
     return [
@@ -1232,7 +1234,7 @@ export class SearchResolver {
    * The single source of truth for "when" an entry happened: it drives both the
    * timeline sort and — via {@link OrderedResult} — the cursor minted for it, so
    * the two can never disagree. Whatever column a type is ordered by in SQL
-   * (start_time, time, created_at, answered_at) must be readable here, or that
+   * (start_time, time, updated_at, answered_at) must be readable here, or that
    * type's keyset window will not line up with its position in the merged page.
    */
   private static getEntityTimestamp(entry: ResolvedEntity): Date | null {
@@ -1242,16 +1244,20 @@ export class SearchResolver {
       unknown
     >;
     // Files/chunks/content have no domain time/startTime — fall back to the row
-    // timestamp so they interleave into the browse by upload time rather than
-    // sinking to the epoch.
+    // timestamp so they interleave into the browse by when they were last
+    // written rather than sinking to the epoch. That row timestamp is
+    // `updatedAt`: it equals `createdAt` until something changes the row, and
+    // then the change is the more recent (and more interesting) moment. Every
+    // row-stamped kind's SQL orders, windows and keyset-pages on `updated_at`
+    // for the same reason, and this chain has to read the same column.
     //
-    // The `createdAt` fallback CANNOT simply be dropped: it is also the cursor
+    // The row-timestamp fallback CANNOT simply be dropped: it is also the cursor
     // key (see OrderedResult), and a null here becomes `new Date(0)`, which
     // travels back as `afterTime` and windows every sibling type's SQL to
     // "before 1970", emptying the browse. Row-write time is therefore kept as
     // the sort key, and the types for which it is a LIE about when the thing
     // happened are instead kept out of the unfiltered chronological browse —
-    // see BROWSE_OPT_IN_TYPES. What still rides `createdAt` inside the browse
+    // see BROWSE_OPT_IN_TYPES. What still rides the row stamp inside the browse
     // is `note`, `file` and non-event-linked `content` — 10,524 rows ahead of
     // the timeline on the QA appliance, against 32,666 before the gate, and all
     // but 3 of them files. Giving those a real domain timestamp is a schema/ETL
@@ -1262,19 +1268,24 @@ export class SearchResolver {
     // when they have no other time — except people/places with a date window,
     // which stamp `appearedAt` (first real activity in that window) so Last
     // week groups them on the day they showed up, not the import day.
-    // `purchasedAt` before `createdAt`: a receipt's purchase date is its real
+    // `purchasedAt` before `updatedAt`: a receipt's purchase date is its real
     // domain time, and the browse's SQL orders by COALESCE(purchased_at,
-    // created_at) — a nullish chain in the same order, so a null purchase date
+    // updated_at) — a nullish chain in the same order, so a null purchase date
     // falls through to the write time here exactly as the COALESCE does there.
     // If the two disagreed, a receipt's cursor would not match its position and
-    // paging past it would skip or repeat rows.
+    // paging past it would skip or repeat rows. `answeredAt` sits before the
+    // row stamps because AnswerService orders by it. `updated_at` is NOT NULL
+    // on every browsed table (the browse_by_updated_at_indexes migration
+    // pinned the last three), so `createdAt` after it is only a guard against
+    // a resolved entity shape that never mapped the column.
     const value =
       entity.appearedAt ??
       entity.time ??
       entity.startTime ??
       entity.purchasedAt ??
-      entity.createdAt ??
       entity.answeredAt ??
+      entity.updatedAt ??
+      entity.createdAt ??
       null;
 
     if (value instanceof Date) {

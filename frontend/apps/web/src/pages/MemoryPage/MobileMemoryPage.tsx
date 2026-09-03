@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 import { Tabs, Sheet } from '@ci/shadcn';
 import { ChartNetwork, GanttChart, Images, List, Map as MapIcon } from '@ci/shadcn/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 import { PageContent } from '@/components/layout';
 import { MemoryHubShell } from '@/components/MemoryHub';
@@ -14,6 +14,8 @@ import { useEntityService } from '../MemoryPage/useEntityService';
 import { EntityDetails } from './Components';
 import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
 import { applyViewFilterDefaults, readMemoryView } from './Components/ExplorerToolbar/viewFilterSupport';
+import { isEventsExplorer } from './explorerRoute';
+import { ExploreView } from './ExploreView';
 import { GalleryView } from './GalleryView';
 import { GraphView } from './GraphView';
 import { ListView } from './ListView';
@@ -29,6 +31,10 @@ export default function MobileMemoryPage() {
   const activeSheetEntity =
     activeEntity != null && activeEntity.__typename !== 'FileChunkType' ? activeEntity : null;
   const [searchParams, setSearchParams] = useSearchParams();
+  // `/memory/events` lists a chronology; a bare `/memory` lists everything by
+  // relevance (see explorerRoute and ExploreView).
+  const { pathname } = useLocation();
+  const eventsExplorer = isEventsExplorer(pathname);
 
   // The active view lives in the URL (`?view=`) so a query is shareable and
   // restores in the same view; list is the mobile default.
@@ -126,7 +132,7 @@ export default function MobileMemoryPage() {
 
               {/* Content */}
               <>
-                {activeTab === 'list' && <ListView />}
+                {activeTab === 'list' && (eventsExplorer ? <ListView /> : <ExploreView />)}
 
                 {activeTab === 'map' && <MobileMapView />}
 

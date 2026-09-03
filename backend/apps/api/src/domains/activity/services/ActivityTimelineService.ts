@@ -210,7 +210,9 @@ export class ActivityTimelineService {
     return this.dailyCountsByTimestampColumn(context, start, end, timezone, {
       table: 'ci.objects',
       userColumn: 'user_id',
-      timeColumn: 'created_at',
+      // The row's last write, matching ItemService.getEntitiesForItems so the
+      // heatmap counts a thing on the day the list shows it.
+      timeColumn: 'updated_at',
     });
   }
 
@@ -222,14 +224,14 @@ export class ActivityTimelineService {
     entityTypes: string[],
   ): Promise<ActivityDailyCount[]> {
     const rows = await this.dataSource.query<Array<{ date: string; count: number }>>(
-      `SELECT to_char(created_at AT TIME ZONE $4, 'YYYY-MM-DD') AS date,
+      `SELECT to_char(updated_at AT TIME ZONE $4, 'YYYY-MM-DD') AS date,
               COUNT(*)::int AS count
        FROM ci.entities
        WHERE owner_user_id = $1
          AND is_active IS DISTINCT FROM FALSE
          AND entity_type = ANY($5)
-         AND created_at >= ($2::date::timestamp AT TIME ZONE $4)
-         AND created_at < (($3::date + 1)::timestamp AT TIME ZONE $4)
+         AND updated_at >= ($2::date::timestamp AT TIME ZONE $4)
+         AND updated_at < (($3::date + 1)::timestamp AT TIME ZONE $4)
        GROUP BY 1
        ORDER BY 1`,
       [context.userId, start, end, timezone, entityTypes],
@@ -328,7 +330,16 @@ export class ActivityTimelineService {
   }
 
   private readEntityTimestamp(entity: Record<string, unknown>): Date | null {
-    const value = entity.time ?? entity.startTime ?? entity.createdAt ?? entity.answeredAt ?? null;
+    // Same column priority as SearchResolver.getEntityTimestamp, so a day on
+    // the heatmap holds the rows the list files under that day.
+    const value =
+      entity.time ??
+      entity.startTime ??
+      entity.purchasedAt ??
+      entity.answeredAt ??
+      entity.updatedAt ??
+      entity.createdAt ??
+      null;
 
     if (value instanceof Date) {
       return value;

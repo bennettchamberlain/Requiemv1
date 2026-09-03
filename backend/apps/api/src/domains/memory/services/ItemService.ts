@@ -615,24 +615,24 @@ export class ItemService {
       .andWhere('item.merged_into_object_id IS NULL');
 
     if (options.startTime) {
-      query = query.andWhere('item.created_at >= :startTime', { startTime: options.startTime });
+      query = query.andWhere('item.updated_at >= :startTime', { startTime: options.startTime });
     }
 
     if (options.endTime) {
-      query = query.andWhere('item.created_at <= :endTime', { endTime: options.endTime });
+      query = query.andWhere('item.updated_at <= :endTime', { endTime: options.endTime });
     }
 
     // Composite keyset: page strictly past (afterTime, afterId) in
-    // (created_at DESC, object_id DESC) — see ContentService.getEntitiesForContents.
+    // (updated_at DESC, object_id DESC) — see ContentService.getEntitiesForContents.
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(item.created_at < :afterTime OR (item.created_at = :afterTime AND item.object_id < :afterId))',
+        '(item.updated_at < :afterTime OR (item.updated_at = :afterTime AND item.object_id < :afterId))',
         { afterTime: options.afterTime, afterId: options.afterId },
       );
     }
 
     // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query.orderBy('item.created_at', options.order ?? 'DESC').addOrderBy('item.object_id', 'DESC');
+    query = query.orderBy('item.updated_at', options.order ?? 'DESC').addOrderBy('item.object_id', 'DESC');
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -660,11 +660,11 @@ export class ItemService {
       .andWhere('item.merged_into_object_id IS NULL');
 
     if (options.startTime) {
-      query = query.andWhere('item.created_at >= :startTime', { startTime: options.startTime });
+      query = query.andWhere('item.updated_at >= :startTime', { startTime: options.startTime });
     }
 
     if (options.endTime) {
-      query = query.andWhere('item.created_at <= :endTime', { endTime: options.endTime });
+      query = query.andWhere('item.updated_at <= :endTime', { endTime: options.endTime });
     }
 
     return query.getCount();

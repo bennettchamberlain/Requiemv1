@@ -8,7 +8,8 @@ import { ResponsiveLoader } from '@/components/ResponsiveLoader';
 import { EntityServiceProvider } from '../MemoryPage/useEntityService';
 
 import { parseBbox } from './bbox';
-import { explorerSearchTypeFilters } from './Components/ExplorerToolbar/filterParams';
+import { resolveExplorerTypes } from './Components/ExplorerToolbar/filterParams';
+import { useExplorerSortReset } from './useExplorerSortReset';
 import { useSavedSearchResolution } from './useSavedSearchResolution';
 
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
@@ -60,6 +61,11 @@ export function MemoryPage() {
   // split, so both read the same resolved filters (see useSavedSearchResolution).
   useSavedSearchResolution();
 
+  // `/memory` offers Newest / Oldest only inside a When filter; once that
+  // filter is gone the sort goes back to relevance (rewritten in the URL, and
+  // already left out of this render's request).
+  const timeSortStale = useExplorerSortReset();
+
   // Before the provider mounts, so `/memory/events` never fires the unfiltered
   // everything-query. `/memory` is that unfiltered browse on purpose.
   if ([...searchParams.keys()].length === 0) {
@@ -68,7 +74,11 @@ export function MemoryPage() {
     return <Navigate to={{ search }} replace />;
   }
 
-  const typeFilters = explorerSearchTypeFilters(searchParams);
+  // Type filters with the When override applied: a date range only asks for
+  // kinds that have a date (see resolveExplorerTypes). When that leaves nothing
+  // to ask for, the query is skipped outright — an empty include list would
+  // read as "everything" — and the view explains why instead.
+  const typeFilters = resolveExplorerTypes(searchParams);
 
   return (
     <EntityServiceProvider
@@ -77,12 +87,13 @@ export function MemoryPage() {
           searchQuery: searchParams.get('search') || '',
           includeTypes: typeFilters.includeTypes,
           excludeTypes: typeFilters.excludeTypes,
+          skip: typeFilters.nothingLeft,
           eventTypes: searchParams.get('eventTypes')?.split(',').filter(Boolean) || undefined,
           tags: searchParams.get('tags')?.split(',').filter(Boolean) || undefined,
           startTime: searchParams.get('from') || undefined,
           endTime: searchParams.get('to') || undefined,
-          sortBy: searchParams.get('sortBy') || undefined,
-          sortOrder: searchParams.get('sortOrder') || undefined,
+          sortBy: timeSortStale ? undefined : searchParams.get('sortBy') || undefined,
+          sortOrder: timeSortStale ? undefined : searchParams.get('sortOrder') || undefined,
           // LifeScope-parity dimensions (who / where / connector / semantic).
           connectors: searchParams.get('connectors')?.split(',').filter(Boolean) || undefined,
           people: searchParams.get('people')?.split(',').filter(Boolean) || undefined,
