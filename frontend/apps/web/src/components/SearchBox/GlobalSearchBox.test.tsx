@@ -176,24 +176,24 @@ describe('GlobalSearchBox off /memory/events (jump-to launcher)', () => {
     expect(params().toString()).toBe('');
   });
 
-  it('Enter navigates to /memory/events?search=…, carrying forward pinned filters already on the URL', () => {
+  it('Enter navigates to /memory?search=… (everything, not the events browse), carrying forward pinned filters', () => {
     renderAt('/dashboard?tags=vacation');
 
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'latte' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(path()).toBe('/memory/events');
+    expect(path()).toBe('/memory');
     expect(params().get('search')).toBe('latte');
     expect(params().get('tags')).toBe('vacation');
   });
 
-  it('X on a /memory sub-route resets back to the Events explorer, dropping its filters', () => {
+  it('X on a /memory sub-route resets back to the everything browse, dropping its filters', () => {
     renderAt('/memory/people/42?tags=vacation');
 
     fireEvent.click(screen.getByRole('button', { name: /clear search and filters/i }));
 
-    expect(path()).toBe('/memory/events');
+    expect(path()).toBe('/memory');
     expect(params().toString()).toBe('');
   });
 });
@@ -230,7 +230,7 @@ describe('GlobalSearchBox suggestions', () => {
 
     fireEvent.click(await screen.findByText('#vacation'));
 
-    expect(path()).toBe('/memory/events');
+    expect(path()).toBe('/memory');
     expect(params().get('tags')).toBe('vacation');
     expect(params().has('search')).toBe(false);
   });

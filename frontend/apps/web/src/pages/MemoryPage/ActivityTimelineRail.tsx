@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQuery } from '@apollo/client';
 import { cn } from '@ci/shadcn';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 import { TimelineGrid } from '@/components/TimelineGrid/TimelineGrid';
 import {
@@ -80,6 +80,7 @@ function sameRange(a: TimelineGridRange | null, b: TimelineGridRange | null): bo
 
 function RailContent() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
   const [{ selection }, { setSelection }] = useTimelineGridSelection();
 
   // Stable for the mount — a midnight rollover mid-session just means the new
@@ -87,13 +88,13 @@ function RailContent() {
   const [endKey] = useState(() => localDayKey(new Date()));
 
   const timelineFilters = useMemo(
-    () => activityTimelineFiltersFromSearchParams(searchParams),
-    [searchParams],
+    () => activityTimelineFiltersFromSearchParams(searchParams, pathname),
+    [searchParams, pathname],
   );
 
   // When the When filter has set aside every selected kind there is nothing
   // to count — the list is skipping its query for the same reason (MemoryPage).
-  const nothingToCount = resolveExplorerTypes(searchParams).nothingLeft;
+  const nothingToCount = resolveExplorerTypes(searchParams, pathname).nothingLeft;
 
   const { data } = useQuery(ACTIVITY_TIMELINE, {
     variables: { start: HISTORY_START, end: endKey, filters: timelineFilters },

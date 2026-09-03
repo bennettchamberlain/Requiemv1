@@ -94,3 +94,36 @@ describe('resolveExplorerTypes with a When filter', () => {
     });
   });
 });
+
+describe('resolveExplorerTypes on the events browse', () => {
+  it('asks for the three happening kinds when nothing is narrowed', () => {
+    expect(resolveExplorerTypes(new URLSearchParams('view=list'), '/memory/events')).toEqual({
+      includeTypes: ['Browser', 'Communication', 'Event'],
+      droppedByWhen: [],
+      nothingLeft: false,
+    });
+  });
+
+  it('keeps a narrowing inside those kinds', () => {
+    expect(
+      resolveExplorerTypes(new URLSearchParams('includedEntityTypes=Communication'), '/memory/events').includeTypes,
+    ).toEqual(['Communication']);
+  });
+
+  it('clips a deep link that names other kinds instead of widening or emptying', () => {
+    expect(
+      resolveExplorerTypes(new URLSearchParams('includedEntityTypes=Event,Content,Person'), '/memory/events')
+        .includeTypes,
+    ).toEqual(['Event']);
+    expect(
+      resolveExplorerTypes(new URLSearchParams('includedEntityTypes=Person'), '/memory/events').includeTypes,
+    ).toEqual(['Browser', 'Communication', 'Event']);
+  });
+
+  it('never applies the route scope to /memory', () => {
+    expect(resolveExplorerTypes(new URLSearchParams('view=list'), '/memory')).toEqual({
+      droppedByWhen: [],
+      nothingLeft: false,
+    });
+  });
+});

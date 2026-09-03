@@ -163,7 +163,9 @@ export function GlobalSearchBox() {
         }
       }
 
-      navigate(`/memory/events?${params.toString()}`);
+      // `/memory`, not `/memory/events`: that page is scoped to happenings by its
+      // route, and a search from the header has to cover everything.
+      navigate(`/memory?${params.toString()}`);
       clearInput();
     },
     [addRecentSearch, clearInput, navigate, onMemoryExplorer, searchParams, setSearchParams],
@@ -405,7 +407,7 @@ export function GlobalSearchBox() {
     setQuery(null);
 
     if (onMemoryHub && !onMemoryExplorer) {
-      navigate('/memory/events', { replace: true });
+      navigate('/memory', { replace: true });
 
       return;
     }
@@ -481,7 +483,7 @@ export function GlobalSearchBox() {
       // Tag suggestion → the explorer filtered to the tag (its de facto detail
       // page); fresh params, like any other detail navigation.
       if (id.startsWith(TAG_PREFIX)) {
-        navigate(`/memory/events?tags=${encodeURIComponent(id.slice(TAG_PREFIX.length))}`);
+        navigate(`/memory?tags=${encodeURIComponent(id.slice(TAG_PREFIX.length))}`);
 
         return;
       }

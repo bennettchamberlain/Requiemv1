@@ -25,3 +25,11 @@ export function isEverythingExplorer(pathname: string): boolean {
 export function isEventsExplorer(pathname: string): boolean {
   return normalizePathname(pathname) === EVENTS_EXPLORER_PATH;
 }
+
+/**
+ * The only kinds the events browse shows or lets the What bar pick: the ones
+ * whose rows carry the moment they happened. Receipts have a purchase date
+ * too, but they have their own page. Display names, as the What picker and
+ * the `includedEntityTypes` / `excludedEntityTypes` params spell them.
+ */
+export const EVENTS_EXPLORER_TYPES: readonly string[] = ['Browser', 'Communication', 'Event'];

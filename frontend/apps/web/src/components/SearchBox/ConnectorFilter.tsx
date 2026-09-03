@@ -4,7 +4,7 @@ import { useQuery } from '@apollo/client';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import { Button, DropdownMenu } from '@ci/shadcn';
 import { ChevronDown, Database } from '@ci/shadcn/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 import { gql } from '@/graphql';
 import { explorerSearchTypeFilters } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
@@ -33,11 +33,14 @@ function toIndexableTypes(displayTypes: string[]): string[] {
  * resolution the list and heatmap use (explorerSearchTypeFilters), including
  * the When override, so every option shown can match something.
  */
-export function sourceSystemsVariables(params: URLSearchParams): {
+export function sourceSystemsVariables(
+  params: URLSearchParams,
+  pathname?: string,
+): {
   includeTypes?: string[];
   excludeTypes?: string[];
 } {
-  const { includeTypes, excludeTypes } = explorerSearchTypeFilters(params);
+  const { includeTypes, excludeTypes } = explorerSearchTypeFilters(params, pathname);
 
   return {
     ...(includeTypes ? { includeTypes: toIndexableTypes(includeTypes) } : {}),
@@ -54,8 +57,9 @@ interface Props {
 export function ConnectorFilter({ modal = true, label }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const { pathname } = useLocation();
 
-  const variables = useMemo(() => sourceSystemsVariables(searchParams), [searchParams]);
+  const variables = useMemo(() => sourceSystemsVariables(searchParams, pathname), [searchParams, pathname]);
   const { data } = useQuery(SOURCE_SYSTEMS_QUERY, { variables });
   const availableSources = data?.sourceSystems ?? [];
 

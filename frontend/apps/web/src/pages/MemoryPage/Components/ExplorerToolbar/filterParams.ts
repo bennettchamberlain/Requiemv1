@@ -1,5 +1,6 @@
 import type { FilterDragKind } from '@/components/SearchBox/filterDrag';
 import { AVAILABLE_ENTITY_TYPES, HIDDEN_ENTITY_TYPES } from '@/components/SearchBox/useDropdown';
+import { EVENTS_EXPLORER_TYPES, isEventsExplorer } from '@/pages/MemoryPage/explorerRoute';
 
 import { isRollingDatePreset } from './datePresets';
 
@@ -119,9 +120,22 @@ export interface ExplorerTypeResolution {
  * is an exclude list, so the server's default browse set is otherwise
  * untouched (opt-in types stay opt-in). With a selection it intersects, and
  * reports what it set aside in `droppedByWhen`.
+ *
+ * On `/memory/events` (pass the `pathname`) the universe is smaller still:
+ * only the kinds with a moment of their own (EVENTS_EXPLORER_TYPES). The What
+ * bar there offers only those, and a deep link naming anything else is
+ * clipped to them — never widened back to everything, and never emptied. That
+ * clipping happens before the When override, and every one of those kinds
+ * is dated, so the two never fight.
  */
-export function resolveExplorerTypes(params: URLSearchParams): ExplorerTypeResolution {
-  const narrowed = narrowedEntityTypes(params);
+export function resolveExplorerTypes(params: URLSearchParams, pathname?: string): ExplorerTypeResolution {
+  let narrowed = narrowedEntityTypes(params);
+
+  if (pathname != null && isEventsExplorer(pathname)) {
+    const kept = (narrowed ?? EVENTS_EXPLORER_TYPES).filter((type) => EVENTS_EXPLORER_TYPES.includes(type));
+
+    narrowed = kept.length > 0 ? kept : [...EVENTS_EXPLORER_TYPES];
+  }
 
   if (!hasWhenFilter(params)) {
     return narrowed
@@ -148,11 +162,14 @@ export function resolveExplorerTypes(params: URLSearchParams): ExplorerTypeResol
 }
 
 /** Just the include/exclude pair of {@link resolveExplorerTypes}. */
-export function explorerSearchTypeFilters(params: URLSearchParams): {
+export function explorerSearchTypeFilters(
+  params: URLSearchParams,
+  pathname?: string,
+): {
   includeTypes?: string[];
   excludeTypes?: string[];
 } {
-  const { includeTypes, excludeTypes } = resolveExplorerTypes(params);
+  const { includeTypes, excludeTypes } = resolveExplorerTypes(params, pathname);
 
   return {
     ...(includeTypes ? { includeTypes } : {}),

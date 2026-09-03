@@ -55,7 +55,7 @@ describe('MemoryPage default filters', () => {
     expect(screen.getByTestId('explorer-body')).toBeInTheDocument();
   });
 
-  it('redirects a bare /memory/events URL to the list view filtered to events', () => {
+  it('redirects a bare /memory/events URL to the list view — the route itself scopes the kinds', () => {
     renderAt('/memory/events');
 
     expect(screen.getByTestId('location')).toHaveTextContent(

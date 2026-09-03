@@ -28,8 +28,9 @@ function toIndexableTypes(displayTypes: string[]): string[] {
  */
 export function activityTimelineFiltersFromSearchParams(
   params: URLSearchParams,
+  pathname?: string,
 ): ActivityTimelineFilterVariables | undefined {
-  const { includeTypes, excludeTypes } = explorerSearchTypeFilters(params);
+  const { includeTypes, excludeTypes } = explorerSearchTypeFilters(params, pathname);
   const search = params.get('search')?.trim();
   const tags =
     params
