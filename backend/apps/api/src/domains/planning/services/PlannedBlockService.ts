@@ -4,7 +4,12 @@ import { Repository } from 'typeorm';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { EventEntity, CalendarEventService, PersonService, UserContextService, type Event,
+import {
+  EventEntity,
+  CalendarEventService,
+  PersonService,
+  UserContextService,
+  type Event,
   platformIdentity,
 } from '@ci/domains/memory';
 import { PersonalizationService } from '@ci/domains/personalization';
@@ -17,15 +22,28 @@ import {
   type OccupiedSpan,
   type PlacementPlan,
 } from '../engine/computePlacement';
+import { PLANNING_PREFS_DEFAULTS } from '../entities/PlanningPrefsEntity';
 import type { Task } from '../entities/TaskEntity';
 
+import { PlanningPrefsService } from './PlanningPrefsService';
 import { PlanningTimeService } from './PlanningTimeService';
 import { TaskService } from './TaskService';
 
-const DEFAULT_WORK_START = '09:00';
-const DEFAULT_WORK_END = '17:00';
-const FLEX_DAYS = 7;
+// The legacy self-Person path still needs these; they and
+// PLANNING_PREFS_DEFAULTS must agree, so they are read from it.
+const DEFAULT_WORK_START = PLANNING_PREFS_DEFAULTS.workStart;
+const DEFAULT_WORK_END = PLANNING_PREFS_DEFAULTS.workEnd;
 const PLANNED_BLOCK = 'planned_block';
+
+/**
+ * Statuses an accepted `event_revise` confirmation may write to a planned
+ * block. `EventNowService` only ever proposes `cancelled`; the other two are
+ * the same "this did not happen" family the block queries already filter on
+ * (`status NOT IN ('cancelled', 'no_show', 'skipped')`). Anything else is a
+ * patch this pathway did not author, and is refused rather than written blind
+ * into a CHECK-constrained column.
+ */
+const REVISABLE_BLOCK_STATUSES = new Set(['cancelled', 'no_show', 'skipped']);
 
 export type PlaceOutcome =
   | { status: 'placed'; event: Event; task: Task }
@@ -45,6 +63,7 @@ export class PlannedBlockService {
     private readonly personalizationService: PersonalizationService,
     private readonly personService: PersonService,
     private readonly userContextService: UserContextService,
+    private readonly planningPrefs: PlanningPrefsService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(PlannedBlockService.name);
@@ -271,6 +290,59 @@ export class PlannedBlockService {
     return this.placeAt(context, task, start, end);
   }
 
+  /**
+   * Apply an accepted `event_revise` confirmation to the linked planned block.
+   *
+   * ═══ WHAT THIS USED TO DO ═══
+   *
+   * Nothing at all. `EventNowService` files an `event_revise` change carrying
+   * `{ eventStatus: 'cancelled', eventId }`, and accepting it fell through to
+   * `TaskService.acceptPendingChange`, which treats a patch as a TASK patch:
+   * `eventStatus` was destructured away and `eventId` was handed to
+   * `taskRepository.save` as a column that exists on neither UpdateTaskDto nor
+   * TaskEntity, so TypeORM dropped it. Nothing anywhere read either key. The
+   * change flipped to `accepted` and the appointment the user had just
+   * confirmed as cancelled kept showing on the calendar.
+   *
+   * Owner-scoped like every other planning write, and it names only `status` —
+   * `duration_minutes` is `GENERATED ALWAYS`, so writing it is a hard Postgres
+   * error (docs/architecture/planning-roadmap.md, guardrail 1).
+   */
+  async applyPendingEventRevision(
+    context: UserServiceContext,
+    taskId: string,
+    patch: Record<string, unknown>,
+  ): Promise<Event | null> {
+    const status = typeof patch.eventStatus === 'string' ? patch.eventStatus : null;
+
+    if (!status || !REVISABLE_BLOCK_STATUSES.has(status)) {
+      return null;
+    }
+
+    const eventId = typeof patch.eventId === 'string' && patch.eventId ? patch.eventId : null;
+    const block = eventId
+      ? await this.eventService.findById(context, eventId)
+      : await this.findActiveForTask(context, taskId);
+
+    // The proposal named a block; a patch that points at some other task's
+    // block (or at a plain calendar event) is not this confirmation's to
+    // revise, however it got into the row.
+    if (!block || block.taskId !== taskId || block.eventType !== PLANNED_BLOCK) {
+      return null;
+    }
+
+    const updated = await this.eventService.update(context, block.id, { status });
+
+    this.logger.log('Applied pending event revision', {
+      userId: context.userId,
+      taskId,
+      eventId: block.id,
+      status,
+    });
+
+    return updated;
+  }
+
   async unschedule(context: UserServiceContext, taskId: string): Promise<Task | null> {
     const existing = await this.findActiveForTask(context, taskId);
 
@@ -436,14 +508,17 @@ export class PlannedBlockService {
     const timezone = await this.planningTime.timezoneFor(context.userId);
     const today = await this.planningTime.today(context);
     const hours = await this.workdayHours(context);
+    const prefs = await this.planningPrefs.resolve(context);
+    const flexDays = prefs.flexDays;
     const now = new Date();
-    const estimate = estimatedMinutes && estimatedMinutes > 0 ? estimatedMinutes : DEFAULT_ESTIMATED_MINUTES;
+    const estimate =
+      estimatedMinutes && estimatedMinutes > 0 ? estimatedMinutes : prefs.defaultEstimatedMinutes;
 
     const startDate = preferDate && preferDate >= today ? preferDate : today;
     const windowStart = await this.planningTime.toInstant(context, startDate, hours.start);
     const windowEnd = await this.planningTime.toInstant(
       context,
-      shiftLocalDate(startDate, FLEX_DAYS),
+      shiftLocalDate(startDate, flexDays),
       hours.start,
     );
 
@@ -453,7 +528,7 @@ export class PlannedBlockService {
       end: event.endTime ?? new Date(event.startTime.getTime() + (event.plannedMinutes ?? estimate) * 60_000),
     }));
 
-    for (let day = 0; day < FLEX_DAYS; day += 1) {
+    for (let day = 0; day < flexDays; day += 1) {
       const date = shiftLocalDate(startDate, day);
       const workdayStart = await this.planningTime.toInstant(context, date, hours.start);
       const workdayEnd = await this.planningTime.toInstant(context, date, hours.end);
@@ -484,7 +559,39 @@ export class PlannedBlockService {
     return { kind: 'no_gap' };
   }
 
+  /**
+   * The workday window this user's blocks must fit inside.
+   *
+   * Read order is deliberate: `ci.planning_prefs` first, then the legacy
+   * `properties.schedule.work_start` / `work_end` leaf on the self-Person, then
+   * the shipped default. The middle step is what makes adding the prefs table a
+   * non-event for anyone who had already set their hours through the graph —
+   * dropping it would silently reset those users to 09:00-17:00.
+   *
+   * Once nothing writes the Person leaf, the fallback and its two graph reads
+   * can go.
+   */
   private async workdayHours(context: UserServiceContext): Promise<{ start: string; end: string }> {
+    const prefs = await this.planningPrefs.find(context);
+    const storedStart = parseWallClock(prefs?.workStart ?? null);
+    const storedEnd = parseWallClock(prefs?.workEnd ?? null);
+
+    if (storedStart != null && storedEnd != null) {
+      return { start: storedStart, end: storedEnd };
+    }
+
+    const legacy = await this.legacyWorkdayHours(context);
+
+    return {
+      start: storedStart ?? legacy.start,
+      end: storedEnd ?? legacy.end,
+    };
+  }
+
+  /** Pre-`ci.planning_prefs` home for the workday: a jsonb leaf on the self-Person. */
+  private async legacyWorkdayHours(
+    context: UserServiceContext,
+  ): Promise<{ start: string; end: string }> {
     const self = await this.userContextService.getSelfIdentity(context.userId);
 
     if (!self) {

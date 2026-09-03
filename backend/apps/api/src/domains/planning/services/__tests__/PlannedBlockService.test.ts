@@ -6,7 +6,9 @@ import { LoggerService } from '@ci/common/logging';
 import { EventEntity, CalendarEventService, PersonService, UserContextService } from '@ci/domains/memory';
 import { PersonalizationService } from '@ci/domains/personalization';
 
+import { PLANNING_PREFS_DEFAULTS } from '../../entities/PlanningPrefsEntity';
 import { PlannedBlockService } from '../PlannedBlockService';
+import { PlanningPrefsService } from '../PlanningPrefsService';
 import { PlanningTimeService } from '../PlanningTimeService';
 import { TaskService } from '../TaskService';
 
@@ -57,6 +59,7 @@ describe('PlannedBlockService', () => {
     create: jest.Mock;
     remove: jest.Mock;
     reschedule: jest.Mock;
+    update: jest.Mock;
   };
   let taskService: {
     findById: jest.Mock;
@@ -66,6 +69,10 @@ describe('PlannedBlockService', () => {
     declinePendingChange: jest.Mock;
     acceptProposed: jest.Mock;
   };
+  let planningPrefs: { find: jest.Mock; resolve: jest.Mock };
+  let planningTimeMock: { toInstant: jest.Mock; [k: string]: unknown };
+  let userContextMock: { getSelfIdentity: jest.Mock };
+  let personServiceMock: { findById: jest.Mock };
   let personalizationService: { decideAction: jest.Mock };
 
   beforeEach(async () => {
@@ -85,6 +92,7 @@ describe('PlannedBlockService', () => {
       ]),
       remove: jest.fn(),
       reschedule: jest.fn(),
+      update: jest.fn(),
     };
     taskService = {
       findById: jest.fn().mockResolvedValue(OPEN_TASK),
@@ -105,6 +113,17 @@ describe('PlannedBlockService', () => {
       ),
     };
 
+    // No stored row: these cases assert the shipped-default workday, which is
+    // what an appliance that has never opened a settings page uses.
+    planningPrefs = {
+      find: jest.fn().mockResolvedValue(null),
+      resolve: jest.fn().mockResolvedValue({ ...PLANNING_PREFS_DEFAULTS }),
+    };
+
+    planningTimeMock = planningTime as never;
+    userContextMock = { getSelfIdentity: jest.fn().mockResolvedValue(null) };
+    personServiceMock = { findById: jest.fn().mockResolvedValue(null) };
+
     const module = await Test.createTestingModule({
       providers: [
         PlannedBlockService,
@@ -112,9 +131,10 @@ describe('PlannedBlockService', () => {
         { provide: CalendarEventService, useValue: eventService },
         { provide: TaskService, useValue: taskService },
         { provide: PlanningTimeService, useValue: planningTime },
+        { provide: PlanningPrefsService, useValue: planningPrefs },
         { provide: PersonalizationService, useValue: personalizationService },
-        { provide: PersonService, useValue: { findById: jest.fn() } },
-        { provide: UserContextService, useValue: { getSelfIdentity: jest.fn().mockResolvedValue(null) } },
+        { provide: PersonService, useValue: personServiceMock },
+        { provide: UserContextService, useValue: userContextMock },
         { provide: LoggerService, useValue: { setContext: jest.fn(), log: jest.fn(), debug: jest.fn() } },
       ],
     }).compile();
@@ -323,6 +343,69 @@ describe('PlannedBlockService', () => {
     expect(taskService.update).toHaveBeenCalledWith(CTX, OPEN_TASK.id, { scheduledFor: null });
   });
 
+  // ═══ applyPendingEventRevision — the Accept click on a cancellation ═══
+  //
+  // EventNowService only ever PROPOSES a cancellation; accepting it used to
+  // apply nothing at all, because TaskService treated the patch as a task
+  // patch and TypeORM silently dropped the event fields. The block stayed on
+  // the calendar — the opposite of what Accept promised.
+
+  const CANCEL_PATCH = { eventStatus: 'cancelled', eventId: 'evt-1' };
+
+  function plannedBlock(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'evt-1',
+      taskId: OPEN_TASK.id,
+      eventType: 'planned_block',
+      status: 'confirmed',
+      ...overrides,
+    };
+  }
+
+  it('cancels the linked planned block when an event_revise change is accepted', async () => {
+    eventService.findById.mockResolvedValue(plannedBlock());
+    eventService.update.mockImplementation(async (_ctx: unknown, id: string, data: { status: string }) =>
+      plannedBlock({ id, status: data.status }),
+    );
+
+    const result = await service.applyPendingEventRevision(CTX, OPEN_TASK.id, CANCEL_PATCH);
+
+    expect(eventService.update).toHaveBeenCalledWith(CTX, 'evt-1', { status: 'cancelled' });
+    expect(result?.status).toBe('cancelled');
+  });
+
+  it('never names the generated duration_minutes column', async () => {
+    // ci.events.duration_minutes is GENERATED ALWAYS — naming it in an UPDATE
+    // is a hard Postgres error, not a silent no-op.
+    eventService.findById.mockResolvedValue(plannedBlock());
+    eventService.update.mockResolvedValue(plannedBlock({ status: 'cancelled' }));
+
+    await service.applyPendingEventRevision(CTX, OPEN_TASK.id, CANCEL_PATCH);
+
+    const [, , patch] = eventService.update.mock.calls[0];
+
+    expect(Object.keys(patch)).toEqual(['status']);
+  });
+
+  it("refuses a patch pointing at another task's block", async () => {
+    eventService.findById.mockResolvedValue(plannedBlock({ taskId: 'someone-elses-task' }));
+
+    expect(await service.applyPendingEventRevision(CTX, OPEN_TASK.id, CANCEL_PATCH)).toBeNull();
+    expect(eventService.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a status this pathway never proposes', async () => {
+    eventService.findById.mockResolvedValue(plannedBlock());
+
+    expect(
+      await service.applyPendingEventRevision(CTX, OPEN_TASK.id, {
+        ...CANCEL_PATCH,
+        eventStatus: 'confirmed',
+      }),
+    ).toBeNull();
+    expect(eventService.update).not.toHaveBeenCalled();
+  });
+
   it('automation skip leaves the task unscheduled', async () => {
     personalizationService.decideAction.mockResolvedValue('skip');
 
@@ -331,5 +414,50 @@ describe('PlannedBlockService', () => {
     expect(outcome.status).toBe('skipped');
     expect(eventService.create).not.toHaveBeenCalled();
     expect(taskService.createPendingChange).not.toHaveBeenCalled();
+  });
+
+
+  describe('PlannedBlockService workday resolution', () => {
+    // ci.planning_prefs is the new home for the workday. It must win.
+    it('uses the stored preference when there is one', async () => {
+      planningPrefs.find.mockResolvedValue({
+        userId: 'user-1',
+        workStart: '07:00',
+        workEnd: '15:00',
+        defaultEstimatedMinutes: null,
+        flexDays: null,
+      });
+
+      await service.scheduleTask(CTX, OPEN_TASK.id);
+
+      expect(planningTimeMock.toInstant).toHaveBeenCalledWith(CTX, expect.any(String), '07:00');
+      expect(planningTimeMock.toInstant).toHaveBeenCalledWith(CTX, expect.any(String), '15:00');
+    });
+
+    // The regression that matters for shipping this table: anyone who had already
+    // set their hours through the self-Person jsonb leaf must keep them. Dropping
+    // this fallback would silently reset those users to 09:00-17:00.
+    it('falls back to the legacy self-Person leaf when no preference is stored', async () => {
+      planningPrefs.find.mockResolvedValue(null);
+      userContextMock.getSelfIdentity.mockResolvedValue({ entityId: 'person-1' });
+      personServiceMock.findById.mockResolvedValue({
+        properties: { schedule: { work_start: '06:30', work_end: '14:30' } },
+      });
+
+      await service.scheduleTask(CTX, OPEN_TASK.id);
+
+      expect(planningTimeMock.toInstant).toHaveBeenCalledWith(CTX, expect.any(String), '06:30');
+      expect(planningTimeMock.toInstant).toHaveBeenCalledWith(CTX, expect.any(String), '14:30');
+    });
+
+    it('uses the shipped default when neither a preference nor a legacy leaf exists', async () => {
+      planningPrefs.find.mockResolvedValue(null);
+      userContextMock.getSelfIdentity.mockResolvedValue(null);
+
+      await service.scheduleTask(CTX, OPEN_TASK.id);
+
+      expect(planningTimeMock.toInstant).toHaveBeenCalledWith(CTX, expect.any(String), '09:00');
+      expect(planningTimeMock.toInstant).toHaveBeenCalledWith(CTX, expect.any(String), '17:00');
+    });
   });
 });

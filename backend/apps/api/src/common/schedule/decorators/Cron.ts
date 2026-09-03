@@ -6,6 +6,7 @@ import { ContextService } from '@ci/common/context';
 import { JobControlStore } from '@ci/common/job-controls';
 import { serves, type ServedRole } from '@ci/common/roles';
 
+import { CronRegistry } from '../CronRegistry';
 import { CronRunStore } from '../CronRunStore';
 
 /**
@@ -106,6 +107,20 @@ export function Cron(expression: string, options?: CiCronOptions) {
         return undefined;
       }
     };
+
+    // Declared before the role gate, so the record of what this BUILD schedules
+    // is identical in the web and worker processes. The settings API reads it
+    // instead of the scheduler registry, which by construction only ever knew
+    // about the half of the schedules its own process runs — and presented that
+    // half as the whole list.
+    CronRegistry.declare({
+      name: runName,
+      cron: expression,
+      // Nest types this `unknown`; only a string is a timezone `cron` can evaluate.
+      timeZone: typeof cronOptions.timeZone === 'string' ? cronOptions.timeZone : null,
+      role,
+      servedHere: serves(role),
+    });
 
     if (!serves(role)) {
       return descriptor;

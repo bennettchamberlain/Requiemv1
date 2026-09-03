@@ -1,12 +1,15 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useDeviceLayout } from '@ci/common';
 import { Button, Checkbox, DropdownMenu, IconButton, cn } from '@ci/shadcn';
 import { CalendarRange, ChevronDown, MoreHorizontal, Pencil, Trash } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
+import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
+import { AgentActionItems } from '@/components/ChatWithAgent/AgentActionItems';
 import { gql } from '@/graphql';
 import { type FragmentType, useFragment } from '@/graphql/fragment-masking';
+import { namedChatContext } from '@/lib/agentChat';
 
 import { isOverdue, localDateOf } from './taskSections';
 import { WhenSelector } from './WhenSelector';
@@ -77,6 +80,28 @@ const PRIORITY_LABELS: Record<number, string> = {
 export const SELECT_HOLD_MS = 450;
 const SELECT_CANCEL_PX = 12;
 
+type Gesture = {
+  pointerId: number;
+  timer: number;
+  onMove: (event: PointerEvent) => void;
+  onUp: (event: PointerEvent) => void;
+};
+
+/** Drop a hold in progress: its timer and its three window listeners. */
+function endGesture(gesture: React.MutableRefObject<Gesture | null>) {
+  const current = gesture.current;
+
+  if (!current) {
+    return;
+  }
+
+  gesture.current = null;
+  window.clearTimeout(current.timer);
+  window.removeEventListener('pointermove', current.onMove);
+  window.removeEventListener('pointerup', current.onUp);
+  window.removeEventListener('pointercancel', current.onUp);
+}
+
 /** `2026-01-15T17:00:00Z` -> `Jan 15`, in the viewer's own zone. */
 function formatDue(dueAt: string): string {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(dueAt));
@@ -115,7 +140,7 @@ export function Task({
   const [pickingWhen, setPickingWhen] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
   const suppressTap = useRef(false);
-  const gesture = useRef<{ pointerId: number; startX: number; startY: number; timer: number } | null>(null);
+  const gesture = useRef<Gesture | null>(null);
   const priorityLabel = PRIORITY_LABELS[task.priority];
   const phone = isMobile === true;
   const canSelect = phone && Boolean(onLongPressSelect || onSelectToggle);
@@ -131,6 +156,12 @@ export function Task({
     dueAt: task.dueAt as string | null,
     estimatedMinutes: task.estimatedMinutes,
   };
+  const chatContext = namedChatContext({
+    title: task.title,
+    body: task.description,
+    sourceKind: 'Task',
+    sourceId: task.id,
+  });
 
   const activateBody = () => {
     if (suppressTap.current) {
@@ -148,15 +179,25 @@ export function Task({
     onEdit?.(editPayload);
   };
 
+  /**
+   * ═══ THE HOLD USED TO OUTLIVE THE CARD ═══
+   *
+   * Radix Tabs unmounts the inactive panel, so a hold begun just before a tab
+   * switch fired against a card the user could no longer see and popped the
+   * selection bar over a different column. Nothing cleared the timer or the
+   * window listeners on unmount.
+   */
+  useEffect(() => () => endGesture(gesture), []);
+
   const onSelectPointerDown = (event: React.PointerEvent<HTMLElement>) => {
     if (!canSelect || selecting) {
       return;
     }
 
-    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') {
-      return;
-    }
-
+    // Every pointer type may hold, mouse included: the phone card layout is
+    // also what an iPad with a trackpad and any narrowed desktop window get,
+    // and selection is the only route to bulk delete. The hold duration and
+    // the move threshold are what separate a deliberate hold from a click.
     if (event.button !== 0) {
       return;
     }
@@ -171,49 +212,28 @@ export function Task({
         return;
       }
 
+      endGesture(gesture);
       suppressTap.current = true;
-      gesture.current = null;
       onLongPressSelect?.(task.id);
     }, SELECT_HOLD_MS);
-
-    gesture.current = { pointerId, startX, startY, timer };
 
     const onMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) {
         return;
       }
 
-      const current = gesture.current;
-
-      if (!current) {
-        return;
-      }
-
       if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > SELECT_CANCEL_PX) {
-        window.clearTimeout(current.timer);
-        gesture.current = null;
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
+        endGesture(gesture);
       }
     };
 
     const onUp = (upEvent: PointerEvent) => {
-      if (upEvent.pointerId !== pointerId) {
-        return;
-      }
-
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-
-      const current = gesture.current;
-      gesture.current = null;
-
-      if (current) {
-        window.clearTimeout(current.timer);
+      if (upEvent.pointerId === pointerId) {
+        endGesture(gesture);
       }
     };
+
+    gesture.current = { pointerId, timer, onMove, onUp };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -244,7 +264,18 @@ export function Task({
       <div className={cn('flex items-start', phone ? 'gap-2' : 'gap-3')}>
         {!selecting && !proposed ? (
           <Checkbox
-            className="mt-1"
+            // The box stays 16px; the transparent ::before makes it a tap
+            // target. Completing a task is the primary action on every card,
+            // and a near-miss used to land on the card padding or the title
+            // button — which opens the edit modal instead.
+            //
+            // The reach to the RIGHT is capped at 0.5rem because that is the
+            // phone row's whole `gap-2`: a uniform `-inset-2.5` reached 10px
+            // and so painted 2px over the title button's left edge — and the
+            // checkbox is positioned while the title was not, so those pixels
+            // completed the task instead of opening edit. Up, down and left is
+            // card padding, which nothing else is competing for.
+            className="relative mt-1 before:absolute before:-inset-y-2.5 before:-left-2.5 before:-right-2"
             checked={done}
             onCheckedChange={(checked) => onToggle(task.id, checked === true)}
             aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
@@ -267,7 +298,11 @@ export function Task({
               <button
                 type="button"
                 className={cn(
-                  'min-w-0 flex-1 break-words text-left font-medium line-clamp-5',
+                  // `relative` is not layout: it is what makes the title win
+                  // its own pixels. The checkbox beside it is positioned and
+                  // grows a ::before tap target, and an unpositioned title
+                  // paints beneath any of it that reaches over.
+                  'relative min-w-0 flex-1 break-words text-left font-medium line-clamp-5',
                   done ? 'text-muted-foreground line-through' : '',
                 )}
                 onClick={activateBody}
@@ -283,11 +318,15 @@ export function Task({
               </span>
             )}
 
+            {/* Full icon-button size, not the 32px this used to be overridden
+                to: on a phone the chevron is the ONLY way to read a
+                description, and it sits against a much larger title button
+                that opens the edit modal on a mis-tap. */}
             {phone && task.description ? (
               <IconButton
                 type="button"
                 variant="ghost"
-                className="mt-0.5 h-8 w-8 shrink-0"
+                className="shrink-0"
                 label={descOpen ? `Hide description for ${task.title}` : `Show description for ${task.title}`}
                 onClick={(event) => {
                   stop(event);
@@ -411,6 +450,7 @@ export function Task({
               </Button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Content align="end">
+              <AgentActionItems context={chatContext} surface="dropdown" />
               {onEdit ? (
                 <DropdownMenu.Item
                   onSelect={() => {
@@ -429,6 +469,7 @@ export function Task({
 
         {!phone ? (
           <div className="flex shrink-0 items-center gap-0.5">
+            <ChatWithAgentMenu context={chatContext} />
             {onEdit ? (
               <IconButton
                 onClick={(event) => {
