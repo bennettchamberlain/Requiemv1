@@ -52,14 +52,24 @@ interface Props {
   modal?: boolean;
   /** When set, renders a plain "{label}: {value}" trigger (e.g. "How: all"). */
   label?: string;
+  /**
+   * The kinds to list sources for, in the search index's names, when the page
+   * is not the explorer and its What filters do not apply — the content
+   * library passes `['content']`. Without it the list follows the URL's What
+   * selection, as the explorer's does.
+   */
+  includeTypes?: string[];
 }
 
-export function ConnectorFilter({ modal = true, label }: Props) {
+export function ConnectorFilter({ modal = true, label, includeTypes }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const { pathname } = useLocation();
 
-  const variables = useMemo(() => sourceSystemsVariables(searchParams, pathname), [searchParams, pathname]);
+  const variables = useMemo(
+    () => (includeTypes ? { includeTypes } : sourceSystemsVariables(searchParams, pathname)),
+    [includeTypes, searchParams, pathname],
+  );
   const { data } = useQuery(SOURCE_SYSTEMS_QUERY, { variables });
   const availableSources = data?.sourceSystems ?? [];
 

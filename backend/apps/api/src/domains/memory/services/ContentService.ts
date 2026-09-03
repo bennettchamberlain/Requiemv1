@@ -37,6 +37,23 @@ import { CtiAggregate } from './CtiAggregate';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 /** The provenance triple shared by a content row and the event it auto-links to. */
+/** Scoped filter for {@link ContentService.findPage}: the content library's pickers. */
+export interface FindContentsFilter {
+  /** `ci.content.type` values to keep (image, post, note, …). */
+  types?: string[];
+  /** `ci.content.mimetype` values to keep. */
+  mimetypes?: string[];
+  /** `ci.content.source_system` values to keep — the How filter. */
+  sourceSystems?: string[];
+}
+
+/** What the library's pickers can offer — see {@link ContentService.getFacets}. */
+export interface ContentFacets {
+  types: string[];
+  mimetypes: string[];
+  sourceSystems: string[];
+}
+
 type Triple = { sourceType: string; sourceSystem: string | null; sourceId: string };
 
 /**
@@ -596,20 +613,83 @@ export class ContentService {
    * id) DESC over the (user_id, created_at) index. Reads one page (+1 sentinel)
    * instead of the whole 194k-row table and drops the eager `user` join.
    */
-  async findPage(context: UserServiceContext, args: KeysetPageArgs): Promise<KeysetPage<Content>> {
+  async findPage(
+    context: UserServiceContext,
+    args: KeysetPageArgs,
+    filter: FindContentsFilter = {},
+  ): Promise<KeysetPage<Content>> {
     const page = await keysetPaginate(this.contentRepository, args, {
       alias: 'content',
       timeProp: 'createdAt',
       userId: context.userId,
       // Same rule as findById/findByIds: a deleted event's photo must not resurface
       // in the paginated library (and must not inflate totalCount).
-      scope: (qb) => this.excludeDeletedEventMedia(qb, 'content'),
+      scope: (qb) => this.applyContentsFilter(this.excludeDeletedEventMedia(qb, 'content'), 'content', filter),
     });
 
     return {
       ...page,
       entities: await this.composeMany(page.entities),
     };
+  }
+
+  /**
+   * The content library's filter facets: every distinct `type`, `mimetype`
+   * and `source_system` the user's rows carry, each sorted. Built the way the
+   * explorer's How list is (SourceSystemService) — from what is actually in
+   * the column, not a fixed vocabulary — over the same rows the library
+   * pages, so every option offered matches something.
+   */
+  async getFacets(context: UserServiceContext): Promise<ContentFacets> {
+    const distinct = async (column: 'type' | 'mimetype' | 'source_system'): Promise<string[]> => {
+      const rows = await this.excludeDeletedEventMedia(
+        this.contentRepository
+          .createQueryBuilder('content')
+          .select(`DISTINCT content.${column}`, 'value')
+          .where('content.user_id = :userId', { userId: context.userId })
+          .andWhere(`content.${column} IS NOT NULL`),
+        'content',
+      )
+        .orderBy('value', 'ASC')
+        .getRawMany<{ value: string }>();
+
+      return rows.map((row) => row.value);
+    };
+
+    const [types, mimetypes, sourceSystems] = await Promise.all([
+      distinct('type'),
+      distinct('mimetype'),
+      distinct('source_system'),
+    ]);
+
+    return { types, mimetypes, sourceSystems };
+  }
+
+  /** The library's explicit filters, each an IN list over its column. */
+  private applyContentsFilter<T extends ObjectLiteral>(
+    query: SelectQueryBuilder<T>,
+    alias: string,
+    filter: FindContentsFilter,
+  ): SelectQueryBuilder<T> {
+    let scoped = query;
+
+    if (filter.types && filter.types.length > 0) {
+      scoped = scoped.andWhere(`${alias}.type IN (:...contentTypes)`, { contentTypes: filter.types });
+    }
+
+    if (filter.mimetypes && filter.mimetypes.length > 0) {
+      scoped = scoped.andWhere(`${alias}.mimetype IN (:...contentMimetypes)`, {
+        contentMimetypes: filter.mimetypes,
+      });
+    }
+
+    if (filter.sourceSystems && filter.sourceSystems.length > 0) {
+      scoped = scoped.andWhere(`${alias}.source_system IN (:...contentSources)`, {
+        contentSources: filter.sourceSystems,
+      });
+    }
+
+    return scoped;
   }
 
   /**
