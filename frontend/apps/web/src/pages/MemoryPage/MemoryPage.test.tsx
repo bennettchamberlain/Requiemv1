@@ -113,6 +113,22 @@ describe('MemoryPage time-sort reset', () => {
     );
   });
 
+  it('walks a stale Timeline view on /memory back to List once no When filter is active', () => {
+    renderAt('/memory?view=timeline&sortBy=time&sortOrder=desc');
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/memory?view=list');
+  });
+
+  it('keeps the Timeline view on /memory inside a When filter, and always on the events browse', () => {
+    const inWindow = '/memory?view=timeline&when=last-week&from=2026-01-01T00:00:00.000Z&to=2026-01-07T23:59:59.999Z';
+
+    renderAt(inWindow);
+    expect(screen.getByTestId('location')).toHaveTextContent(inWindow);
+
+    renderAt('/memory/events?view=timeline');
+    expect(screen.getAllByTestId('location').at(-1)).toHaveTextContent('/memory/events?view=timeline');
+  });
+
   it('leaves a name sort alone', () => {
     renderAt('/memory?view=list&sortBy=name&sortOrder=asc');
 

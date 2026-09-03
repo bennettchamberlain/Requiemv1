@@ -9,7 +9,7 @@ import { EntityServiceProvider } from '../MemoryPage/useEntityService';
 
 import { parseBbox } from './bbox';
 import { resolveExplorerTypes } from './Components/ExplorerToolbar/filterParams';
-import { useExplorerSortReset } from './useExplorerSortReset';
+import { useExplorerWhenReset } from './useExplorerWhenReset';
 import { useSavedSearchResolution } from './useSavedSearchResolution';
 
 const DesktopPage = lazy(() => import('./DesktopMemoryPage'));
@@ -61,10 +61,11 @@ export function MemoryPage() {
   // split, so both read the same resolved filters (see useSavedSearchResolution).
   useSavedSearchResolution();
 
-  // `/memory` offers Newest / Oldest only inside a When filter; once that
-  // filter is gone the sort goes back to relevance (rewritten in the URL, and
-  // already left out of this render's request).
-  const timeSortStale = useExplorerSortReset();
+  // `/memory` offers Newest / Oldest and the Timeline view only inside a When
+  // filter; once that filter is gone the sort goes back to relevance and the
+  // view to List (rewritten in the URL, and the sort already left out of this
+  // render's request).
+  const { timeSortStale } = useExplorerWhenReset();
 
   // Before the provider mounts, so `/memory/events` never fires the unfiltered
   // everything-query. `/memory` is that unfiltered browse on purpose.

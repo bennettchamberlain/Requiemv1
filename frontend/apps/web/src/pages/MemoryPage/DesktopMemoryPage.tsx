@@ -55,11 +55,14 @@ export default function DesktopMemoryPage() {
   const [{ activeEntity, refetch }, { setActiveEntity }] = useEntityService();
 
   // Which list the List tab is: `/memory/events` is the chronology (ListView)
-  // and always has the activity heatmap beside it; a bare `/memory` is the
-  // ranked everything browse (ExploreView), which only shows the heatmap once
-  // a When filter has made time part of the question. See explorerRoute.
+  // and always has the activity heatmap and the Timeline view; a bare
+  // `/memory` is the ranked everything browse (ExploreView), which only
+  // offers either once a When filter has made time part of the question (and
+  // useExplorerWhenReset walks a stale `?view=timeline` back to List). See
+  // explorerRoute.
   const eventsExplorer = isEventsExplorer(pathname);
-  const showTimelineRail = eventsExplorer || hasWhenFilter(searchParams);
+  const timeInPlay = eventsExplorer || hasWhenFilter(searchParams);
+  const viewTabs = timeInPlay ? VIEW_TABS : VIEW_TABS.filter((tab) => tab.value !== 'timeline');
 
   const [{ isOpen: isAddEventOpen }, { open: openAddEvent, close: closeAddEvent }] = useModalControls();
 
@@ -148,7 +151,7 @@ export default function DesktopMemoryPage() {
       {/* View tabs (list / map / timeline / gallery / graph) live in the header nav-views portal. */}
       <Portal.Slot id="nav-views">
         <div className="flex flex-wrap items-center gap-1">
-          {VIEW_TABS.map(({ value, label, titleKey, Icon }) => {
+          {viewTabs.map(({ value, label, titleKey, Icon }) => {
             const title = t(titleKey);
 
             return (
@@ -194,7 +197,7 @@ export default function DesktopMemoryPage() {
               right keeps its own scroll. */}
             {activeTab === 'list' && (
               <div className="flex min-h-0 flex-1">
-                {showTimelineRail && <ActivityTimelineRail className="shrink-0 border-r" />}
+                {timeInPlay && <ActivityTimelineRail className="shrink-0 border-r" />}
                 {eventsExplorer ? <ListView /> : <ExploreView />}
               </div>
             )}

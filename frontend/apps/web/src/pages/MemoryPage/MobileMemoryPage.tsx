@@ -13,6 +13,7 @@ import { useEntityService } from '../MemoryPage/useEntityService';
 
 import { EntityDetails } from './Components';
 import { ExplorerToolbar } from './Components/ExplorerToolbar/ExplorerToolbar';
+import { hasWhenFilter } from './Components/ExplorerToolbar/filterParams';
 import { applyViewFilterDefaults, readMemoryView } from './Components/ExplorerToolbar/viewFilterSupport';
 import { isEventsExplorer } from './explorerRoute';
 import { ExploreView } from './ExploreView';
@@ -32,9 +33,11 @@ export default function MobileMemoryPage() {
     activeEntity != null && activeEntity.__typename !== 'FileChunkType' ? activeEntity : null;
   const [searchParams, setSearchParams] = useSearchParams();
   // `/memory/events` lists a chronology; a bare `/memory` lists everything by
-  // relevance (see explorerRoute and ExploreView).
+  // relevance (see explorerRoute and ExploreView), and offers the Timeline
+  // view only once a When filter is in place.
   const { pathname } = useLocation();
   const eventsExplorer = isEventsExplorer(pathname);
+  const showTimelineView = eventsExplorer || hasWhenFilter(searchParams);
 
   // The active view lives in the URL (`?view=`) so a query is shareable and
   // restores in the same view; list is the mobile default.
@@ -93,7 +96,7 @@ export default function MobileMemoryPage() {
 
                 {/* Tab Navigation */}
                 <Tabs defaultValue="list" onValueChange={setActiveTab} value={activeTab}>
-                  <Tabs.List className="grid w-full grid-cols-5">
+                  <Tabs.List className={showTimelineView ? 'grid w-full grid-cols-5' : 'grid w-full grid-cols-4'}>
                     <Tabs.Trigger
                       value="list"
                       className="flex items-center gap-1 px-1 text-[11px] sm:text-sm"
@@ -105,13 +108,15 @@ export default function MobileMemoryPage() {
                       <MapIcon className="h-4 w-4" />
                       Map
                     </Tabs.Trigger>
-                    <Tabs.Trigger
-                      value="timeline"
-                      className="flex items-center gap-1 px-1 text-[11px] sm:text-sm"
-                    >
-                      <GanttChart className="h-4 w-4" />
-                      Timeline
-                    </Tabs.Trigger>
+                    {showTimelineView && (
+                      <Tabs.Trigger
+                        value="timeline"
+                        className="flex items-center gap-1 px-1 text-[11px] sm:text-sm"
+                      >
+                        <GanttChart className="h-4 w-4" />
+                        Timeline
+                      </Tabs.Trigger>
+                    )}
                     <Tabs.Trigger
                       value="gallery"
                       className="flex items-center gap-1 px-1 text-[11px] sm:text-sm"

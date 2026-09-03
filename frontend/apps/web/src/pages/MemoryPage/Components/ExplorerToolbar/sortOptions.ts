@@ -36,7 +36,7 @@ export const SORT_OPTIONS: readonly SortOption[] = [
  * Newest / Oldest only appear while a When filter is active: they group the
  * list under date headings, and outside a date range the everything browse
  * is a mix of kinds that mostly have no date to sort on. When the When
- * filter goes, useExplorerSortReset drops a time sort back to relevance.
+ * filter goes, useExplorerWhenReset drops a time sort back to relevance.
  */
 const EVERYTHING_SORT_OPTIONS: readonly SortOption[] = [
   { value: 'relevance', label: 'Relevance', sortBy: '', sortOrder: '' },

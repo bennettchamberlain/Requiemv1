@@ -7,7 +7,7 @@
  * heatmap alongside. Both render the same page component and read the same
  * URL filters; the pathname is what decides which list shape, which sort
  * presets and whether the heatmap shows (see DesktopMemoryPage, SortControl
- * and useExplorerSortReset).
+ * and useExplorerWhenReset).
  */
 export const MEMORY_EXPLORER_PATH = '/memory';
 export const EVENTS_EXPLORER_PATH = '/memory/events';
