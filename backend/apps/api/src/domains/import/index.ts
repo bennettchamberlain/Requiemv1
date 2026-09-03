@@ -194,6 +194,7 @@ export {
 export { dataSourcesRecognize } from './datasources/registry';
 export type { DirEntry, DataSourceRecognition } from './datasources/registry';
 export { recognizePathWithinRoots } from './datasources/recognizePath';
+export { mimeForFile } from './datasources/timeline';
 export type { PathRecognition, PathRecognitionMatch } from './datasources/recognizePath';
 // Re-exported for the bluebubbles domain, whose DI-friendly sync service/webhook
 // controller drive this framework-free importer's mapping logic and must reach it
@@ -249,6 +250,8 @@ export {
   stagedNaturalKey,
 } from './staging/identity';
 export { entityTypeFor, naturalKeyFor } from './push/entities';
+export { firstRedditMediaLink, redditLinkMedia, redditMediaKind } from './push/redditMedia';
+export type { RedditMediaKind, RedditMediaRef } from './push/redditMedia';
 
 export { ImportDoctorController } from './controllers/ImportDoctorController';
 export type { DoctorCheckSummary } from './controllers/ImportDoctorController';
