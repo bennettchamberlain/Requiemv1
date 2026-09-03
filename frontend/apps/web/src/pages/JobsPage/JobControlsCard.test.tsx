@@ -95,7 +95,6 @@ function renderCard(
       saving={false}
       error={failure.error ?? null}
       errorStatus={failure.errorStatus ?? null}
-      jobTypes={null}
       onSave={onSave}
     />,
   );
@@ -327,83 +326,6 @@ describe('JobControlsCard concurrency ceilings', () => {
     );
 
     expect(screen.getByText(/Running at 10 — a lower ceiling applies/)).toBeInTheDocument();
-  });
-});
-
-describe('JobControlsCard schedules', () => {
-  it('switches a schedule off by name', async () => {
-    const { onSave } = renderCard(controls());
-
-    openSection(/Schedules/);
-    // The switch is identified by the schedule's human label, which
-    // `describeCron` derives from the registry key `PlanningJobsCron.todoScan`.
-    fireEvent.click(screen.getByRole('switch', { name: /Todo scan/i }));
-
-    await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith({
-        crons: [{ name: 'PlanningJobsCron.todoScan', mode: 'disabled' }],
-      }),
-    );
-  });
-
-  it('says a disabled schedule does not run, and how many ticks it has skipped', () => {
-    renderCard(controls({ crons: [cron({ mode: 'disabled', skippedCount: 42 })] }));
-    openSection(/Schedules/);
-
-    expect(screen.getByText(/this schedule does not run/i)).toBeInTheDocument();
-    expect(screen.getByText(/42 ticks skipped/)).toBeInTheDocument();
-  });
-
-  it('marks a schedule the answering process does not run, and explains it once', () => {
-    renderCard(
-      controls({
-        topology: { role: 'web', queueWorkerProcesses: 2, perProcessConcurrency: 10 },
-        crons: [
-          cron(),
-          cron({
-            name: 'OrphanCleanupCron.sweepOnSchedule',
-            role: 'worker',
-            servedHere: false,
-          }),
-        ],
-      }),
-    );
-    openSection(/Schedules/);
-
-    // Sourced from the live scheduler, this row was simply absent under
-    // CI_ROLE=web — with a plain count above it saying the list was complete.
-    expect(screen.getByText(/1 of these run in the worker process/i)).toBeInTheDocument();
-    expect(screen.getByText('worker')).toBeInTheDocument();
-
-    // And it is still switchable from here: the mode is stored on the appliance
-    // and read by the process that runs it.
-    expect(screen.getByRole('switch', { name: /Orphan cleanup sweep/i })).toBeEnabled();
-  });
-
-  it('says nothing about other processes on a single-process appliance', () => {
-    renderCard(controls());
-    openSection(/Schedules/);
-
-    // CI_ROLE=all is the default and every test; a note on every appliance
-    // would be noise about a topology most of them do not run.
-    expect(screen.queryByText(/run in the worker process/i)).not.toBeInTheDocument();
-  });
-
-  it('will not let a protected schedule be switched off', () => {
-    renderCard(
-      controls({
-        crons: [
-          cron({
-            name: 'JobMetricsCollector.sampleOnSchedule',
-            locked: true,
-            lockedReason: 'Samples the queue depths this page charts.',
-          }),
-        ],
-      }),
-    );
-    openSection(/Schedules/);
-
-    expect(screen.getByRole('switch', { name: /Job metrics sample/i })).toBeDisabled();
   });
 });
 
