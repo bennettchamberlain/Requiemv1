@@ -5,6 +5,14 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { SELECT_HOLD_MS, Task } from './Task';
 
+vi.mock('@/components/ChatWithAgent', () => ({
+  ChatWithAgentMenu: () => null,
+}));
+
+vi.mock('@/components/ChatWithAgent/AgentActionItems', () => ({
+  AgentActionItems: () => null,
+}));
+
 function node(overrides: Record<string, unknown> = {}) {
   return {
     __typename: 'TaskType',
