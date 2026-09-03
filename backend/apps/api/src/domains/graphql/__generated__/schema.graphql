@@ -2931,6 +2931,11 @@ type Query {
   scheduleCandidates(from: DateTime!, to: DateTime!): [ScheduleCandidateType!]!
   search(input: SearchInput!): SearchResultConnection!
   sharedSavedSearch(token: String!): SavedSearchType
+
+  """
+  Distinct data sources (source_system) present for the user across every browsed table — events, communications, content, browser activity, receipts, products and things. The How picker's option list; `eventSources` is the events-only subset. Takes the same includeTypes / excludeTypes pair as `search`, so the list is pared to the kinds a What selection has in play — a source no selected kind carries would select nothing.
+  """
+  sourceSystems(excludeTypes: [String!], includeTypes: [String!]): [String!]!
   summaries(after: String, before: String, first: Int, last: Int): SummaryConnection!
   summary(id: ID!): SummaryType
   tag(id: ID!): TagType

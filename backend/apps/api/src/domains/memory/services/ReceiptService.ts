@@ -455,6 +455,7 @@ export class ReceiptService {
       limit?: number;
       startTime?: Date;
       endTime?: Date;
+      connectors?: string[];
       afterTime?: Date;
       afterId?: string;
       order?: 'ASC' | 'DESC';
@@ -464,6 +465,14 @@ export class ReceiptService {
       .createQueryBuilder('receipt')
       .select('receipt.receipt_id', 'id')
       .where('receipt.user_id = :userId', { userId: context.userId });
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('receipt.source_system IN (:...connectors)', { connectors: options.connectors });
+    }
 
     if (options.startTime) {
       query = query.andWhere(`${RECEIPT_BROWSE_TIME} >= :startTime`, { startTime: options.startTime });
@@ -503,11 +512,19 @@ export class ReceiptService {
    */
   async countEntitiesForReceipts(
     context: ServiceContext,
-    options: { startTime?: Date; endTime?: Date } = {},
+    options: { startTime?: Date; endTime?: Date; connectors?: string[] } = {},
   ): Promise<number> {
     let query = this.receiptRepository
       .createQueryBuilder('receipt')
       .where('receipt.user_id = :userId', { userId: context.userId });
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('receipt.source_system IN (:...connectors)', { connectors: options.connectors });
+    }
 
     if (options.startTime) {
       query = query.andWhere(`${RECEIPT_BROWSE_TIME} >= :startTime`, { startTime: options.startTime });

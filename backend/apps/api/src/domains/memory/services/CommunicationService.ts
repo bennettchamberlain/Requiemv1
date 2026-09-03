@@ -34,6 +34,8 @@ interface Options {
   order?: FindOptionsOrder<CommunicationEntity>;
   startTime?: Date;
   endTime?: Date;
+  /** The How filter: `source_system` values to keep (the explorer's connectors). */
+  connectors?: string[];
   /** Composite keyset cursor for the timed search path (see CalendarEventService). */
   afterTime?: Date;
   afterId?: string;
@@ -143,7 +145,10 @@ export class CommunicationService {
   async recordArrival(
     context: UserServiceContext,
     recordId: string,
-    data: Pick<CreateCommunicationDto, 'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'>,
+    data: Pick<
+      CreateCommunicationDto,
+      'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'
+    >,
   ): Promise<void> {
     await this.ledgerArrival(context, recordId, data);
   }
@@ -156,7 +161,10 @@ export class CommunicationService {
   private async ledgerArrival(
     context: UserServiceContext,
     recordId: string,
-    data: Pick<CreateCommunicationDto, 'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'>,
+    data: Pick<
+      CreateCommunicationDto,
+      'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'
+    >,
   ): Promise<void> {
     if (!data.source_type || !data.source_system || !data.source_id) {
       return;
@@ -364,7 +372,10 @@ export class CommunicationService {
     // Ledger platform per input row (entities[i] was built from data[i]); keyed
     // by id so the hydrated twin of an input entity resolves to the same value.
     const platformById = new Map(
-      entities.map((entity, i) => [entity.id, ledgerPlatform(data[i].source_system, data[i].source_platform)]),
+      entities.map((entity, i) => [
+        entity.id,
+        ledgerPlatform(data[i].source_system, data[i].source_platform),
+      ]),
     );
 
     // One transaction spans both halves of the CTI aggregate. The base phase
@@ -785,6 +796,12 @@ export class CommunicationService {
       );
     }
 
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('communications.source_system IN (:...connectors)', {
+        connectors: options.connectors,
+      });
+    }
+
     if (options.startTime) {
       query = query.andWhere('communications.time >= :startTime', { startTime: options.startTime });
     }
@@ -808,12 +825,18 @@ export class CommunicationService {
    */
   async countEntitiesForCommunications(
     context: ServiceContext,
-    options: Pick<Options, 'startTime' | 'endTime'>,
+    options: Pick<Options, 'startTime' | 'endTime' | 'connectors'>,
   ): Promise<number> {
     let query = this.dataSource
       .getRepository(CommunicationEntity)
       .createQueryBuilder('communications')
       .where('communications.user_id = :userId', { userId: context.userId });
+
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('communications.source_system IN (:...connectors)', {
+        connectors: options.connectors,
+      });
+    }
 
     if (options.startTime) {
       query = query.andWhere('communications.time >= :startTime', { startTime: options.startTime });

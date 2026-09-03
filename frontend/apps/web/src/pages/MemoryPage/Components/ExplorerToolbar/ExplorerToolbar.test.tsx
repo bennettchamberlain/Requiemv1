@@ -56,9 +56,9 @@ vi.mock('@ci/shadcn', async (importOriginal) => {
   };
 });
 
-const EVENT_SOURCES_QUERY = gql(`
-  query EventSources {
-    eventSources
+const SOURCE_SYSTEMS_QUERY = gql(`
+  query SourceSystems($includeTypes: [String!], $excludeTypes: [String!]) {
+    sourceSystems(includeTypes: $includeTypes, excludeTypes: $excludeTypes)
   }
 `);
 
@@ -77,7 +77,7 @@ function renderToolbar(ui: ReactNode, options: RenderWithProvidersOptions = {}) 
       {ui}
     </DropdownProvider>,
     {
-      mocks: [mockQuery(EVENT_SOURCES_QUERY, {}, { eventSources: [] })],
+      mocks: [mockQuery(SOURCE_SYSTEMS_QUERY, {}, { sourceSystems: [] })],
       ...options,
     },
   );

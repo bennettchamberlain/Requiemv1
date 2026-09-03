@@ -38,7 +38,7 @@ type Documents = {
     "\n  query GetTags {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n        }\n      }\n    }\n  }\n": typeof types.GetTagsDocument,
     "\n  query WhatBarEventTypes {\n    eventTypes\n  }\n": typeof types.WhatBarEventTypesDocument,
     "\n  query ReverseGeocode($latitude: Float!, $longitude: Float!) {\n    reverseGeocode(latitude: $latitude, longitude: $longitude) {\n      status\n      placeName\n    }\n  }\n": typeof types.ReverseGeocodeDocument,
-    "\n  query EventSources {\n    eventSources\n  }\n": typeof types.EventSourcesDocument,
+    "\n  query SourceSystems($includeTypes: [String!], $excludeTypes: [String!]) {\n    sourceSystems(includeTypes: $includeTypes, excludeTypes: $excludeTypes)\n  }\n": typeof types.SourceSystemsDocument,
     "\n  query EventTypes {\n    eventTypes\n  }\n": typeof types.EventTypesDocument,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": typeof types.SearchResultCommunicationDataFragmentDoc,
     "\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n": typeof types.SearchResultConceptDataFragmentDoc,
@@ -293,7 +293,7 @@ const documents: Documents = {
     "\n  query GetTags {\n    tags {\n      edges {\n        node {\n          id\n          label\n          description\n        }\n      }\n    }\n  }\n": types.GetTagsDocument,
     "\n  query WhatBarEventTypes {\n    eventTypes\n  }\n": types.WhatBarEventTypesDocument,
     "\n  query ReverseGeocode($latitude: Float!, $longitude: Float!) {\n    reverseGeocode(latitude: $latitude, longitude: $longitude) {\n      status\n      placeName\n    }\n  }\n": types.ReverseGeocodeDocument,
-    "\n  query EventSources {\n    eventSources\n  }\n": types.EventSourcesDocument,
+    "\n  query SourceSystems($includeTypes: [String!], $excludeTypes: [String!]) {\n    sourceSystems(includeTypes: $includeTypes, excludeTypes: $excludeTypes)\n  }\n": types.SourceSystemsDocument,
     "\n  query EventTypes {\n    eventTypes\n  }\n": types.EventTypesDocument,
     "\n  fragment SearchResultCommunicationData on CommunicationType {\n    id\n    preview\n    time\n  }\n": types.SearchResultCommunicationDataFragmentDoc,
     "\n  fragment SearchResultConceptData on ConceptType {\n    id\n    name\n  }\n": types.SearchResultConceptDataFragmentDoc,
@@ -625,7 +625,7 @@ export function gql(source: "\n  query ReverseGeocode($latitude: Float!, $longit
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query EventSources {\n    eventSources\n  }\n"): (typeof documents)["\n  query EventSources {\n    eventSources\n  }\n"];
+export function gql(source: "\n  query SourceSystems($includeTypes: [String!], $excludeTypes: [String!]) {\n    sourceSystems(includeTypes: $includeTypes, excludeTypes: $excludeTypes)\n  }\n"): (typeof documents)["\n  query SourceSystems($includeTypes: [String!], $excludeTypes: [String!]) {\n    sourceSystems(includeTypes: $includeTypes, excludeTypes: $excludeTypes)\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

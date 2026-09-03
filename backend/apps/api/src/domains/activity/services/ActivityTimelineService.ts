@@ -74,14 +74,31 @@ export class ActivityTimelineService {
 
     const eventScoped =
       (filters.eventTypes != null && filters.eventTypes.length > 0) ||
-      (filters.connectors != null && filters.connectors.length > 0) ||
       (filters.people != null && filters.people.length > 0) ||
       (filters.places != null && filters.places.length > 0);
 
-    // Who / where / connector / how are event-only dimensions — mirror the search
-    // path, which drops every other entity type while one of these is active.
+    // Who / where / how are event-only dimensions — mirror the search path,
+    // which drops every other entity type while one of these is active.
     if (eventScoped) {
       return this.getFilteredEventDailyCounts(context, start, end, timezone, filters);
+    }
+
+    // A source (the How filter) is not event-only: the search applies it to
+    // every kind with a source_system column and sets the rest aside
+    // (SearchResolver SOURCED_TYPES), so the heatmap counts the same rows —
+    // straight from each table, since the rollup cannot split by source.
+    const connectors = filters.connectors?.filter(Boolean) ?? [];
+
+    if (connectors.length > 0) {
+      return this.getSourceScopedDailyCounts(
+        context,
+        start,
+        end,
+        timezone,
+        includedTypes,
+        connectors,
+        filters,
+      );
     }
 
     const hasEventTypeFilter = filters.eventTypes != null && filters.eventTypes.length > 0;
@@ -186,6 +203,62 @@ export class ActivityTimelineService {
     return [...dayCounts.entries()]
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /**
+   * Per-day counts under the How filter: one direct query per included kind
+   * that records a source, each on the column the explorer dates that kind by
+   * (see SearchResolver.getEntityTimestamp), summed per day.
+   */
+  private async getSourceScopedDailyCounts(
+    context: UserServiceContext,
+    start: string,
+    end: string,
+    timezone: string,
+    includedTypes: IndexableEntity[],
+    sourceSystems: string[],
+    filters: ActivityTimelineFilters,
+  ): Promise<ActivityDailyCount[]> {
+    const parts: ActivityDailyCount[][] = [];
+
+    if (includedTypes.includes('event')) {
+      // Handles the source clause itself, alongside the event-only dimensions.
+      parts.push(await this.getFilteredEventDailyCounts(context, start, end, timezone, filters));
+    }
+
+    const sourced: Array<[IndexableEntity, { table: string; timeColumn: string; extraWhere?: string }]> = [
+      ['browser-activity', { table: 'ci.browser_activity', timeColumn: 'time' }],
+      ['communication', { table: 'ci.communications', timeColumn: 'time' }],
+      // Event-linked content is a facet of its event, which is counted above.
+      ['content', { table: 'ci.content', timeColumn: 'updated_at', extraWhere: 'event_id IS NULL' }],
+      [
+        'item',
+        { table: 'ci.objects', timeColumn: 'updated_at', extraWhere: 'merged_into_object_id IS NULL' },
+      ],
+      ['receipt', { table: 'ci.receipts', timeColumn: 'COALESCE(purchased_at, updated_at)' }],
+      [
+        'product',
+        {
+          table: 'ci.product_models',
+          timeColumn: 'updated_at',
+          extraWhere: 'merged_into_product_id IS NULL',
+        },
+      ],
+    ];
+
+    for (const [type, spec] of sourced) {
+      if (includedTypes.includes(type)) {
+        parts.push(
+          await this.dailyCountsByTimestampColumn(context, start, end, timezone, {
+            ...spec,
+            userColumn: 'user_id',
+            sourceSystems,
+          }),
+        );
+      }
+    }
+
+    return mergeDailyCounts(parts);
   }
 
   private async getBrowserDailyCounts(
@@ -312,8 +385,28 @@ export class ActivityTimelineService {
     start: string,
     end: string,
     timezone: string,
-    spec: { table: string; userColumn: string; timeColumn: string },
+    spec: {
+      table: string;
+      userColumn: string;
+      timeColumn: string;
+      /** Keep rows whose `source_system` is one of these (the How filter). */
+      sourceSystems?: string[];
+      /** Extra SQL predicate, already scoped to the table's own columns. */
+      extraWhere?: string;
+    },
   ): Promise<ActivityDailyCount[]> {
+    const params: unknown[] = [context.userId, start, end, timezone];
+    const clauses: string[] = [];
+
+    if (spec.sourceSystems && spec.sourceSystems.length > 0) {
+      params.push(spec.sourceSystems);
+      clauses.push(`AND source_system = ANY($${params.length})`);
+    }
+
+    if (spec.extraWhere) {
+      clauses.push(`AND ${spec.extraWhere}`);
+    }
+
     const rows = await this.dataSource.query<Array<{ date: string; count: number }>>(
       `SELECT to_char(${spec.timeColumn} AT TIME ZONE $4, 'YYYY-MM-DD') AS date,
               COUNT(*)::int AS count
@@ -321,9 +414,10 @@ export class ActivityTimelineService {
        WHERE ${spec.userColumn} = $1
          AND ${spec.timeColumn} >= ($2::date::timestamp AT TIME ZONE $4)
          AND ${spec.timeColumn} < (($3::date + 1)::timestamp AT TIME ZONE $4)
+         ${clauses.join('\n         ')}
        GROUP BY 1
        ORDER BY 1`,
-      [context.userId, start, end, timezone],
+      params,
     );
 
     return rows.map((row) => ({ date: row.date, count: row.count }));

@@ -121,6 +121,7 @@ function makeResolver() {
     fileService,
     fileChunkService,
     contentService,
+    noteService,
     personService,
     placeService,
     conceptService,
@@ -546,5 +547,75 @@ describe('SearchResolver.search — products and receipts are browsable (B1)', (
     const result = await resolver.search(ctx, { includeTypes: ['receipt'] } as SearchInput);
 
     expect(nodeIds(result)).toEqual(['receipt:undated', 'receipt:old-purchase']);
+  });
+});
+
+/**
+ * The How filter (`connectors`) spans every kind that records a source. It
+ * used to be folded into the event-only who / where filter, so picking a
+ * source made the whole browse events-only — and an account whose reddit
+ * import produced communications and content but no events got nothing.
+ */
+describe('SearchResolver.search — the How filter narrows every sourced kind', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('pushes the source down to each sourced table on the timed browse and leaves the rest unfetched', async () => {
+    const {
+      resolver,
+      eventService,
+      communicationService,
+      contentService,
+      browserActivityService,
+      noteService,
+      fileService,
+      personService,
+    } = makeResolver();
+
+    await resolver.search(ctx, { connectors: ['reddit'] } as SearchInput);
+
+    const withSource = expect.objectContaining({ connectors: ['reddit'] });
+
+    expect(eventService.getEntitiesForEvents).toHaveBeenCalledWith(ctx, withSource);
+    expect(communicationService.getEntitiesForCommunications).toHaveBeenCalledWith(ctx, withSource);
+    expect(contentService.getEntitiesForContents).toHaveBeenCalledWith(ctx, withSource);
+    expect(browserActivityService.getEntitiesForBrowserActivities).toHaveBeenCalledWith(ctx, withSource);
+    expect(communicationService.countEntitiesForCommunications).toHaveBeenCalledWith(ctx, withSource);
+    expect(contentService.countEntitiesForContents).toHaveBeenCalledWith(ctx, withSource);
+
+    // No source column to match on: not asked for, not counted.
+    expect(noteService.getEntitiesForNotes).not.toHaveBeenCalled();
+    expect(fileService.getEntitiesForFiles).not.toHaveBeenCalled();
+    expect(personService.getEntitiesForPeople).not.toHaveBeenCalled();
+    expect(noteService.countEntitiesForNotes).not.toHaveBeenCalled();
+  });
+
+  it('keeps the query path to rows from the chosen source, without collapsing it to events', async () => {
+    const { resolver, searchService, entityResolutionService, eventService } = makeResolver();
+    searchService.search.mockResolvedValue([
+      { type: 'content', id: 'c1' },
+      { type: 'note', id: 'n1' },
+      { type: 'event', id: 'e1' },
+      { type: 'browser-activity', id: 'b1' },
+    ] as Identifier[]);
+    entityResolutionService.resolve.mockResolvedValue(
+      resolveMap([
+        { type: 'content', id: 'c1', entity: { sourceSystem: 'reddit', updatedAt: new Date('2026-09-01') } },
+        { type: 'note', id: 'n1', entity: { updatedAt: new Date('2026-09-02') } },
+        { type: 'event', id: 'e1', entity: { sourceSystem: 'gmail', startTime: new Date('2026-09-03') } },
+        // Browser activity keeps the column's snake_case name on its entity.
+        {
+          type: 'browser-activity',
+          id: 'b1',
+          entity: { source_system: 'reddit', time: new Date('2026-09-04') },
+        },
+      ]),
+    );
+
+    const result = await resolver.search(ctx, { query: 'shells', connectors: ['reddit'] } as SearchInput);
+
+    // Relevance order, i.e. the candidate order the search returned them in.
+    expect(nodeIds(result)).toEqual(['content:c1', 'browser-activity:b1']);
+    // The event-only who / where restriction must not have been triggered.
+    expect(eventService.getEntitiesForEvents).not.toHaveBeenCalled();
   });
 });

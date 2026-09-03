@@ -150,6 +150,25 @@ const BROWSE_OPT_IN_TYPES: ReadonlySet<IndexableEntity> = new Set([
 ]);
 
 /**
+ * The result types whose rows carry a `source_system` column, and so can be
+ * narrowed by the How filter (`connectors`). Mirrors SOURCED_BROWSE_TABLES in
+ * SourceSystemService, which is where the picker's option list comes from —
+ * a source offered there must be filterable here, on the same set of kinds.
+ * Files, notes, people, places, concepts, answers and document chunks have no
+ * such column; while a source is selected they are left unfetched (timed
+ * path) or dropped (query / tags path).
+ */
+const SOURCED_TYPES: ReadonlySet<IndexableEntity> = new Set<IndexableEntity>([
+  'event',
+  'communication',
+  'content',
+  'browser-activity',
+  'receipt',
+  'product',
+  'item',
+]);
+
+/**
  * Entity ids behind a page of search results, for the disclosure audit.
  *
  * `node` is a GraphQL union (`SearchResultType`) whose members all carry an
@@ -516,10 +535,13 @@ export class SearchResolver {
     const endTime = input.endTime ? new Date(input.endTime) : undefined;
     const hasDate = startTime != null || endTime != null;
 
-    // LifeScope-parity event-scoped dimensions (who / where / connector). When
-    // any is set the result is restricted to matching events (these dimensions
-    // only exist on the event timeline).
+    // "How" — the source a row came from. Not event-scoped: every browsed
+    // table with a source_system column applies it (see SOURCED_TYPES), and
+    // the kinds without one drop out while it is set.
     const connectors = input.connectors && input.connectors.length > 0 ? input.connectors : undefined;
+    // LifeScope-parity event-scoped dimensions (who / where). When any is set
+    // the result is restricted to matching events (these dimensions only
+    // exist on the event timeline).
     const people = input.people && input.people.length > 0 ? input.people : undefined;
     const places = input.places && input.places.length > 0 ? input.places : undefined;
     const hasLocation = input.hasLocation === true ? true : undefined;
@@ -530,12 +552,13 @@ export class SearchResolver {
         ? input.bbox
         : undefined;
     const eventFilter =
-      connectors != null || people != null || places != null || hasLocation != null || bbox != null
-        ? { connectors, people, places, hasLocation, bbox }
+      people != null || places != null || hasLocation != null || bbox != null
+        ? { people, places, hasLocation, bbox }
         : undefined;
 
     // No filter signal at all -> fall back to recent timed entities (preserves prior behavior).
-    const noInputs = query == null && tags == null && !hasTypes && !hasDate && eventFilter == null;
+    const noInputs =
+      query == null && tags == null && !hasTypes && !hasDate && eventFilter == null && connectors == null;
 
     // Build a candidate identifier set from the strongest available signal, then AND the
     // remaining filter dimensions on as post-filters so all filters combine (LifeScope parity).
@@ -586,6 +609,7 @@ export class SearchResolver {
         startTime,
         eventTypes,
         eventFilter,
+        connectors,
       };
 
       [identifiers, timedTotalCount] = await Promise.all([
@@ -616,10 +640,10 @@ export class SearchResolver {
       identifiers = identifiers.filter((identifier) => taggedKeys.has(`${identifier.type}:${identifier.id}`));
     }
 
-    // who / where / connector (when not the timed path, which pushes these down
-    // to SQL): restrict the candidate set to events matching the structured
-    // predicates. Non-event candidates drop out — these dimensions are
-    // event-only — matching the behaviour of selecting a person/place/source.
+    // who / where (when not the timed path, which pushes these down to SQL):
+    // restrict the candidate set to events matching the structured predicates.
+    // Non-event candidates drop out — these dimensions are event-only —
+    // matching the behaviour of selecting a person/place.
     if (eventFilter != null && candidateSource !== 'timed') {
       const allowedEvents = await this.eventService.getEntitiesForEvents(serviceContext, {
         ...eventFilter,
@@ -637,6 +661,20 @@ export class SearchResolver {
     }
 
     let entries = await this.resolveToEntries(serviceContext, identifiers);
+
+    // How (when not the timed path, which pushes it down to SQL): keep the
+    // entries whose row came from one of the named sources. A kind with no
+    // source column cannot match and drops out, exactly as the timed path
+    // leaves it unfetched (see browseWants).
+    if (connectors != null && candidateSource !== 'timed') {
+      const allowed = new Set(connectors);
+
+      entries = entries.filter((entry) => {
+        const source = SearchResolver.getEntitySourceSystem(entry);
+
+        return source != null && allowed.has(source);
+      });
+    }
 
     // Date filter (when date wasn't the candidate source — the timed path filters in SQL).
     // Entities without a domain timestamp are dropped while a date filter is active.
@@ -779,6 +817,7 @@ export class SearchResolver {
       afterId,
       eventTypes,
       eventFilter,
+      connectors,
       limit = 25,
     }: {
       includeTypes?: IndexableEntity[];
@@ -793,17 +832,18 @@ export class SearchResolver {
       afterId?: string;
       eventTypes?: string[];
       eventFilter?: {
-        connectors?: string[];
         people?: string[];
         places?: string[];
         hasLocation?: boolean;
         bbox?: number[];
       };
+      /** The How filter — applied to every sourced type, see SOURCED_TYPES. */
+      connectors?: string[];
       limit?: number;
     },
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     const wants = (type: IndexableEntity) =>
-      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter, connectors });
 
     const eventOptions: {
       limit: number;
@@ -822,6 +862,7 @@ export class SearchResolver {
       limit,
       order: { startTime: 'DESC' },
       ...(eventFilter ?? {}),
+      ...(connectors ? { connectors } : {}),
     };
 
     if (eventTypes && eventTypes.length > 0) {
@@ -835,9 +876,11 @@ export class SearchResolver {
       endTime?: Date;
       afterTime?: Date;
       afterId?: string;
+      connectors?: string[];
     } = {
       limit,
       order: { time: 'DESC' },
+      ...(connectors ? { connectors } : {}),
     };
 
     const communicationOptions: {
@@ -847,9 +890,11 @@ export class SearchResolver {
       endTime?: Date;
       afterTime?: Date;
       afterId?: string;
+      connectors?: string[];
     } = {
       limit,
       order: { time: 'DESC' },
+      ...(connectors ? { connectors } : {}),
     };
 
     // Files and document chunks order by updated_at (their only timestamp) and
@@ -921,6 +966,9 @@ export class SearchResolver {
       ...(endTime ? { endTime } : {}),
       ...(afterTime && afterId ? { afterTime, afterId } : {}),
     };
+    // The same, plus the How filter, for the row-stamped kinds that carry a
+    // source_system column (content, things, products, receipts).
+    const sourcedRowTimeOptions = { ...rowTimeOptions, ...(connectors ? { connectors } : {}) };
 
     const [
       eventResults,
@@ -952,20 +1000,20 @@ export class SearchResolver {
       // returns — see ContentService.getEntitiesForContents.
       wants('content')
         ? this.contentService.getEntitiesForContents(context, {
-            ...rowTimeOptions,
+            ...sourcedRowTimeOptions,
             excludeEventLinked: true,
           })
         : [],
       wants('person') ? this.personService.getEntitiesForPeople(context, rowTimeOptions) : [],
       wants('place') ? this.placeService.getEntitiesForPlaces(context, rowTimeOptions) : [],
-      wants('item') ? this.itemService.getEntitiesForItems(context, rowTimeOptions) : [],
-      wants('product') ? this.productModelService.getEntitiesForProducts(context, rowTimeOptions) : [],
+      wants('item') ? this.itemService.getEntitiesForItems(context, sourcedRowTimeOptions) : [],
+      wants('product') ? this.productModelService.getEntitiesForProducts(context, sourcedRowTimeOptions) : [],
       // Receipts order by COALESCE(purchased_at, updated_at) rather than the row
       // timestamp the other opt-in types use — the only one of them with a real
       // domain time. Same keyset shape, different column; see
       // ReceiptService.getEntitiesForReceipts and getEntityTimestamp, which reads
       // `purchasedAt ?? updatedAt` so the cursor it mints matches this order.
-      wants('receipt') ? this.receiptService.getEntitiesForReceipts(context, rowTimeOptions) : [],
+      wants('receipt') ? this.receiptService.getEntitiesForReceipts(context, sourcedRowTimeOptions) : [],
       wants('concept') ? this.conceptService.getEntitiesForConcepts(context, rowTimeOptions) : [],
       wants('answer') ? this.answerService.getEntitiesForAnswers(context, rowTimeOptions) : [],
     ]);
@@ -1013,6 +1061,7 @@ export class SearchResolver {
       endTime,
       eventTypes,
       eventFilter,
+      connectors,
     }: {
       includeTypes?: IndexableEntity[];
       excludeTypes?: IndexableEntity[];
@@ -1021,20 +1070,22 @@ export class SearchResolver {
       endTime?: Date;
       eventTypes?: string[];
       eventFilter?: {
-        connectors?: string[];
         people?: string[];
         places?: string[];
         hasLocation?: boolean;
         bbox?: number[];
       };
+      connectors?: string[];
     },
   ): Promise<number> {
     const wants = (type: IndexableEntity) =>
-      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter });
+      this.browseWants(type, { includeTypes, excludeTypes, includeFiles, eventFilter, connectors });
 
     const dateOptions = { startTime, endTime };
+    // Kinds with a source_system column count under the How filter too.
+    const sourcedOptions = { ...dateOptions, ...(connectors ? { connectors } : {}) };
     const eventOptions = {
-      ...dateOptions,
+      ...sourcedOptions,
       ...(eventTypes && eventTypes.length > 0 ? { eventTypes } : {}),
       ...(eventFilter ?? {}),
     };
@@ -1042,22 +1093,25 @@ export class SearchResolver {
     const counts = await Promise.all([
       wants('event') ? this.eventService.countEntitiesForEvents(context, eventOptions) : 0,
       wants('browser-activity')
-        ? this.browserActivityService.countEntitiesForBrowserActivities(context, dateOptions)
+        ? this.browserActivityService.countEntitiesForBrowserActivities(context, sourcedOptions)
         : 0,
       wants('communication')
-        ? this.communicationService.countEntitiesForCommunications(context, dateOptions)
+        ? this.communicationService.countEntitiesForCommunications(context, sourcedOptions)
         : 0,
       wants('file') ? this.fileService.countEntitiesForFiles(context, dateOptions) : 0,
       wants('file-chunk') ? this.fileChunkService.countEntitiesForFileChunks(context, dateOptions) : 0,
       wants('note') ? this.noteService.countEntitiesForNotes(context, dateOptions) : 0,
       wants('content')
-        ? this.contentService.countEntitiesForContents(context, { ...dateOptions, excludeEventLinked: true })
+        ? this.contentService.countEntitiesForContents(context, {
+            ...sourcedOptions,
+            excludeEventLinked: true,
+          })
         : 0,
       wants('person') ? this.personService.countEntitiesForPeople(context, dateOptions) : 0,
       wants('place') ? this.placeService.countEntitiesForPlaces(context, dateOptions) : 0,
-      wants('item') ? this.itemService.countEntitiesForItems(context, dateOptions) : 0,
-      wants('product') ? this.productModelService.countEntitiesForProducts(context, dateOptions) : 0,
-      wants('receipt') ? this.receiptService.countEntitiesForReceipts(context, dateOptions) : 0,
+      wants('item') ? this.itemService.countEntitiesForItems(context, sourcedOptions) : 0,
+      wants('product') ? this.productModelService.countEntitiesForProducts(context, sourcedOptions) : 0,
+      wants('receipt') ? this.receiptService.countEntitiesForReceipts(context, sourcedOptions) : 0,
       wants('concept') ? this.conceptService.countEntitiesForConcepts(context, dateOptions) : 0,
       wants('answer') ? this.answerService.countEntitiesForAnswers(context, dateOptions) : 0,
     ]);
@@ -1127,19 +1181,26 @@ export class SearchResolver {
       excludeTypes,
       includeFiles,
       eventFilter,
+      connectors,
     }: {
       includeTypes?: IndexableEntity[];
       excludeTypes?: IndexableEntity[];
       includeFiles?: boolean;
       eventFilter?: unknown;
+      connectors?: string[];
     },
   ): boolean {
     if (!this.matchesTypeFilter(type, includeTypes, excludeTypes)) {
       return false;
     }
 
-    // who / where / connector are event-only dimensions; restrict to events when set.
+    // who / where are event-only dimensions; restrict to events when set.
     if (eventFilter != null && type !== 'event') {
+      return false;
+    }
+
+    // How applies to every kind that records a source; the rest cannot match.
+    if (connectors != null && connectors.length > 0 && !SOURCED_TYPES.has(type)) {
       return false;
     }
 
@@ -1299,6 +1360,23 @@ export class SearchResolver {
     }
 
     return null;
+  }
+
+  /**
+   * The `source_system` a resolved row came from, or null for a kind that has
+   * none. Read for the query / tags path's How filter; the timed path applies
+   * the same predicate in SQL. Browser activity is a plain-object entity that
+   * keeps the column's snake_case name, every other kind maps it to camelCase.
+   */
+  private static getEntitySourceSystem(entry: ResolvedEntity): string | null {
+    if (!SOURCED_TYPES.has(entry.type as IndexableEntity)) {
+      return null;
+    }
+
+    const entity = entry.entity as { sourceSystem?: unknown; source_system?: unknown };
+    const value = entity.sourceSystem ?? entity.source_system ?? null;
+
+    return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
   private static getEntityName(entry: ResolvedEntity): string {

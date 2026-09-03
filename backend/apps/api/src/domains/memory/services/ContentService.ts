@@ -694,6 +694,7 @@ export class ContentService {
       limit?: number;
       startTime?: Date;
       endTime?: Date;
+      connectors?: string[];
       afterTime?: Date;
       afterId?: string;
       order?: 'ASC' | 'DESC';
@@ -711,6 +712,14 @@ export class ContentService {
 
     if (options.excludeEventLinked) {
       query = query.andWhere('content.event_id IS NULL');
+    }
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('content.source_system IN (:...connectors)', { connectors: options.connectors });
     }
 
     if (options.startTime) {
@@ -750,7 +759,7 @@ export class ContentService {
    */
   async countEntitiesForContents(
     context: ServiceContext,
-    options: { startTime?: Date; endTime?: Date; excludeEventLinked?: boolean },
+    options: { startTime?: Date; endTime?: Date; connectors?: string[]; excludeEventLinked?: boolean },
   ): Promise<number> {
     let query = this.excludeDeletedEventMedia(
       this.contentRepository
@@ -761,6 +770,14 @@ export class ContentService {
 
     if (options.excludeEventLinked) {
       query = query.andWhere('content.event_id IS NULL');
+    }
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('content.source_system IN (:...connectors)', { connectors: options.connectors });
     }
 
     if (options.startTime) {

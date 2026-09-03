@@ -285,6 +285,7 @@ export class ProductModelService {
       limit?: number;
       startTime?: Date;
       endTime?: Date;
+      connectors?: string[];
       afterTime?: Date;
       afterId?: string;
       order?: 'ASC' | 'DESC';
@@ -295,6 +296,14 @@ export class ProductModelService {
       .select('product.product_id', 'id')
       .where('product.user_id = :userId', { userId: context.userId })
       .andWhere('product.merged_into_product_id IS NULL');
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('product.source_system IN (:...connectors)', { connectors: options.connectors });
+    }
 
     if (options.startTime) {
       query = query.andWhere('product.updated_at >= :startTime', { startTime: options.startTime });
@@ -333,7 +342,7 @@ export class ProductModelService {
    */
   async countEntitiesForProducts(
     context: ServiceContext,
-    options: { startTime?: Date; endTime?: Date } = {},
+    options: { startTime?: Date; endTime?: Date; connectors?: string[] } = {},
   ): Promise<number> {
     let query = this.repository
       .createQueryBuilder('product')
@@ -341,6 +350,14 @@ export class ProductModelService {
       // Same predicate as getEntitiesForProducts, or the count disagrees with
       // the page it is supposed to describe.
       .andWhere('product.merged_into_product_id IS NULL');
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('product.source_system IN (:...connectors)', { connectors: options.connectors });
+    }
 
     if (options.startTime) {
       query = query.andWhere('product.updated_at >= :startTime', { startTime: options.startTime });

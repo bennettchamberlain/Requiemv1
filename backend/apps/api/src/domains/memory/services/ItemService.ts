@@ -601,6 +601,7 @@ export class ItemService {
       limit?: number;
       startTime?: Date;
       endTime?: Date;
+      connectors?: string[];
       afterTime?: Date;
       afterId?: string;
       order?: 'ASC' | 'DESC';
@@ -613,6 +614,14 @@ export class ItemService {
       // Tombstones must not enter the search/explorer feed: indexing one puts a
       // merged-away unit back in front of the user.
       .andWhere('item.merged_into_object_id IS NULL');
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('item.source_system IN (:...connectors)', { connectors: options.connectors });
+    }
 
     if (options.startTime) {
       query = query.andWhere('item.updated_at >= :startTime', { startTime: options.startTime });
@@ -650,7 +659,7 @@ export class ItemService {
    */
   async countEntitiesForItems(
     context: ServiceContext,
-    options: { startTime?: Date; endTime?: Date },
+    options: { startTime?: Date; endTime?: Date; connectors?: string[] },
   ): Promise<number> {
     let query = this.itemRepository
       .createQueryBuilder('item')
@@ -658,6 +667,14 @@ export class ItemService {
       // Same predicate as getEntitiesForItems, or the count disagrees with the
       // page it is supposed to describe.
       .andWhere('item.merged_into_object_id IS NULL');
+
+    // The How filter: keep rows from the named sources. Every browsed table
+    // with a source_system column applies this same clause (see
+    // SearchResolver.searchByTimedEntities), so a source selected on /memory
+    // narrows every kind it can, not just events.
+    if (options.connectors && options.connectors.length > 0) {
+      query = query.andWhere('item.source_system IN (:...connectors)', { connectors: options.connectors });
+    }
 
     if (options.startTime) {
       query = query.andWhere('item.updated_at >= :startTime', { startTime: options.startTime });
