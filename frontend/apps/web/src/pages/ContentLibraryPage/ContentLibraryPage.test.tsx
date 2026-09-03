@@ -234,13 +234,13 @@ describe('ContentLibraryPage', () => {
 
     // The tile only appears if the request carried exactly those variables.
     expect(await screen.findByText('Holiday photo')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Type: image/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^File Type: all/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Content type: image/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^File type: all/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^How: reddit/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
 
-    await screen.findByRole('button', { name: /^Type: all/ });
+    await screen.findByRole('button', { name: /^Content type: all/ });
     expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
   });
 

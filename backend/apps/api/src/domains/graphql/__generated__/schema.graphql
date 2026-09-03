@@ -2784,6 +2784,11 @@ type Query {
     """Keep only these mimetypes."""
     mimetypes: [String!]
 
+    """
+    Substring of the title, text or URL — the header search box on /memory/content.
+    """
+    query: String
+
     """Keep only these `type` values."""
     types: [String!]
   ): ContentConnection!

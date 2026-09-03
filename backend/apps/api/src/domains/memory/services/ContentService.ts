@@ -39,6 +39,8 @@ import { GraphDeltaWriter } from './GraphDeltaWriter';
 /** The provenance triple shared by a content row and the event it auto-links to. */
 /** Scoped filter for {@link ContentService.findPage}: the content library's pickers. */
 export interface FindContentsFilter {
+  /** Free text: a case-insensitive substring of the title, the text or the URL. */
+  query?: string;
   /** `ci.content.type` values to keep (image, post, note, …). */
   types?: string[];
   /** `ci.content.mimetype` values to keep. */
@@ -672,6 +674,19 @@ export class ContentService {
     filter: FindContentsFilter,
   ): SelectQueryBuilder<T> {
     let scoped = query;
+
+    const needle = filter.query?.trim();
+
+    if (needle) {
+      // The title is the base row's `name` (ci.entities, same id — CTI), so the
+      // text search reaches it through a join rather than a column of its own.
+      scoped = scoped
+        .leftJoin(ContentBaseEntity, `${alias}_base`, `${alias}_base.id = ${alias}.id`)
+        .andWhere(
+          `(${alias}_base.name ILIKE :contentQuery OR ${alias}.text ILIKE :contentQuery OR ${alias}.url ILIKE :contentQuery)`,
+          { contentQuery: `%${needle}%` },
+        );
+    }
 
     if (filter.types && filter.types.length > 0) {
       scoped = scoped.andWhere(`${alias}.type IN (:...contentTypes)`, { contentTypes: filter.types });

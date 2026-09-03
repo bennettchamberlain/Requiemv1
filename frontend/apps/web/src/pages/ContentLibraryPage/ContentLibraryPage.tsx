@@ -39,8 +39,22 @@ export const GET_CONTENT_FACETS = gql(`
 `);
 
 export const GET_CONTENTS = gql(`
-  query GetContents($first: Int, $after: String, $types: [String!], $mimetypes: [String!], $connectors: [String!]) {
-    contents(first: $first, after: $after, types: $types, mimetypes: $mimetypes, connectors: $connectors) {
+  query GetContents(
+    $first: Int
+    $after: String
+    $query: String
+    $types: [String!]
+    $mimetypes: [String!]
+    $connectors: [String!]
+  ) {
+    contents(
+      first: $first
+      after: $after
+      query: $query
+      types: $types
+      mimetypes: $mimetypes
+      connectors: $connectors
+    ) {
       totalCount
       pageInfo {
         hasNextPage
@@ -74,17 +88,20 @@ export function ContentLibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const filterVariables = useMemo(() => {
+    // The header search box's `?search=` (see isLiveSearchPath): title, text or URL.
+    const query = searchParams.get('search')?.trim() ?? '';
     const types = readFacetParam(searchParams, 'types');
     const mimetypes = readFacetParam(searchParams, 'mimetypes');
     const connectors = readFacetParam(searchParams, 'connectors');
 
     return {
+      ...(query ? { query } : {}),
       ...(types.length > 0 ? { types } : {}),
       ...(mimetypes.length > 0 ? { mimetypes } : {}),
       ...(connectors.length > 0 ? { connectors } : {}),
     };
   }, [searchParams]);
-  const filtered = Object.keys(filterVariables).length > 0;
+  const filtered = Object.keys(filterVariables).some((key) => key !== 'query');
 
   const { data, loading, error, fetchMore, refetch } = useQuery(GET_CONTENTS, {
     variables: { first: PAGE_SIZE, ...filterVariables },
@@ -194,8 +211,8 @@ export function ContentLibraryPage() {
             ) : contents.length === 0 ? (
               <EmptyState
                 message={
-                  filtered
-                    ? 'Nothing matches these filters. Clear one to widen the library.'
+                  filtered || filterVariables.query
+                    ? 'Nothing matches this search. Clear a filter or change the query to widen the library.'
                     : 'Nothing here yet. Content appears as your sources sync and files finish parsing.'
                 }
               />

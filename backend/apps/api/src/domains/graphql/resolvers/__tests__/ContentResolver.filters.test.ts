@@ -33,19 +33,19 @@ describe('ContentResolver.contents filters', () => {
   it('forwards each list as a filter, mapping connectors onto source_system', async () => {
     const { resolver, findPage } = makeResolver();
 
-    await resolver.contents(ctx, { first: 50 } as PaginationArgs, ['image'], ['image/png'], ['reddit']);
+    await resolver.contents(ctx, { first: 50 } as PaginationArgs, ' shells ', ['image'], ['image/png'], ['reddit']);
 
     expect(findPage).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user-1' }),
       expect.objectContaining({ first: 50 }),
-      { types: ['image'], mimetypes: ['image/png'], sourceSystems: ['reddit'] },
+      { query: 'shells', types: ['image'], mimetypes: ['image/png'], sourceSystems: ['reddit'] },
     );
   });
 
   it('sends no filter at all for an unfiltered library', async () => {
     const { resolver, findPage } = makeResolver();
 
-    await resolver.contents(ctx, { first: 50 } as PaginationArgs, undefined, [], undefined);
+    await resolver.contents(ctx, { first: 50 } as PaginationArgs, '  ', undefined, [], undefined);
 
     expect(findPage).toHaveBeenCalledWith(expect.anything(), expect.anything(), {});
   });

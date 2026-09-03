@@ -226,6 +226,12 @@ export class ContentResolver {
   async contents(
     @Context() context: RequestContext,
     @Args() pagination: PaginationArgs,
+    @Args('query', {
+      type: () => String,
+      nullable: true,
+      description: 'Substring of the title, text or URL — the header search box on /memory/content.',
+    })
+    query?: string,
     @Args('types', { type: () => [String], nullable: true, description: 'Keep only these `type` values.' })
     types?: string[],
     @Args('mimetypes', { type: () => [String], nullable: true, description: 'Keep only these mimetypes.' })
@@ -248,6 +254,7 @@ export class ContentResolver {
         beforeId: pagination.before ? GlobalUID.decode(pagination.before).id : null,
       },
       {
+        ...(query && query.trim() !== '' ? { query: query.trim() } : {}),
         ...(types && types.length > 0 ? { types } : {}),
         ...(mimetypes && mimetypes.length > 0 ? { mimetypes } : {}),
         ...(connectors && connectors.length > 0 ? { sourceSystems: connectors } : {}),
