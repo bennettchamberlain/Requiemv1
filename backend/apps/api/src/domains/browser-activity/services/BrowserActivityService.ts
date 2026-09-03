@@ -9,6 +9,8 @@ import { LoggerService } from '@ci/common/logging';
 import {
   type BulkInsertResult,
   bulkInsertIdempotent,
+  INGEST_MERGE_KINDS,
+  INGEST_PRODUCER_PREFERENCE,
   INGEST_REFRESH_COLUMNS,
   keysetPaginate,
   type KeysetPageArgs,
@@ -167,15 +169,26 @@ export class BrowserActivityService {
       scope: { user_id: context.userId },
       conflictTarget: '(user_id, source_system, source_id) WHERE source_id IS NOT NULL',
       identityColumns: ['source_system', 'source_id'],
-      sourceLedger: { table: 'browser_activity', userId: context.userId, importRunId: context.importRunId ?? null },
+      sourceLedger: {
+        table: 'browser_activity',
+        userId: context.userId,
+        importRunId: context.importRunId ?? null,
+      },
       // Centralized refresh contract — self-heals the capture-derived columns
       // (action_type, properties, duration_seconds, scroll_depth_percent,
-      // is_incognito, contains_sensitive) on a conflicting re-sync. Excludes
-      // title/url (user-editable via updateBrowserActivity) and the
-      // AI-generated insight columns (page_summary, category,
-      // productivity_score) so enrichment output survives a re-import. See
-      // INGEST_REFRESH_COLUMNS.browser_activity for the full rationale.
+      // is_incognito, contains_sensitive) on a conflicting re-sync from the
+      // SAME producer; a different producer (the extension after a History
+      // import, or vice versa) only fills what is still empty, merges the
+      // properties bag and ORs the privacy flags. Excludes title/url
+      // (user-editable via updateBrowserActivity) and the AI-generated insight
+      // columns (page_summary, category, productivity_score) so enrichment
+      // output survives a re-import. See INGEST_REFRESH_COLUMNS /
+      // INGEST_MERGE_KINDS .browser_activity for the full rationale.
       conflictUpdateColumns: INGEST_REFRESH_COLUMNS.browser_activity,
+      conflictMergeKinds: INGEST_MERGE_KINDS.browser_activity,
+      // duration_seconds: the History file's measured dwell outranks the
+      // extension's default whichever arrived first.
+      conflictProducerPreference: INGEST_PRODUCER_PREFERENCE.browser_activity,
     });
 
     const egress = results.map(({ entity, inserted }) => ({

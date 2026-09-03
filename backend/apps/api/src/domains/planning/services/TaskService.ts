@@ -80,7 +80,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskCreatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskCreatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -136,7 +136,7 @@ export class TaskService {
       .createQueryBuilder('task')
       .where('task.user_id = :userId', { userId: context.userId })
       .andWhere('task.status IN (:...statuses)', {
-        statuses: ['proposed', 'open', 'in_progress', 'done'],
+        statuses: ['proposed', 'open', 'in_progress', 'delegated', 'done'],
       })
       .andWhere('lower(trim(task.title)) = :title', { title: normalized })
       .orderBy('task.updated_at', 'DESC')
@@ -207,7 +207,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -237,7 +237,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -265,7 +265,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -284,7 +284,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -303,7 +303,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -322,7 +322,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -345,7 +345,7 @@ export class TaskService {
 
     const entity = await this.taskRepository.save(record);
 
-    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id });
+    await this.eventService.send(TaskUpdatedEvent, { taskId: entity.id, userId: entity.userId });
 
     return TaskEntity.toEgressType(entity);
   }
@@ -354,7 +354,7 @@ export class TaskService {
     const result = await this.taskRepository.delete({ id, userId: context.userId });
 
     if (result.affected != null && result.affected > 0) {
-      await this.eventService.send(TaskRemovedEvent, { taskId: id });
+      await this.eventService.send(TaskRemovedEvent, { taskId: id, userId: context.userId });
 
       return true;
     }
@@ -440,13 +440,24 @@ export class TaskService {
     if (change.kind === 'complete') {
       task = await this.complete(context, change.taskId);
     } else if (change.kind === 'mutate' || change.kind === 'event_revise') {
-      const patch = change.patch as UpdateTaskDto & { appendNotes?: string; eventStatus?: string };
+      const patch = change.patch as UpdateTaskDto & {
+        appendNotes?: string;
+        eventStatus?: string;
+        eventId?: string;
+      };
 
       if (typeof patch.appendNotes === 'string' && patch.appendNotes.trim()) {
         await this.appendNotes(context, change.taskId, patch.appendNotes);
       }
 
-      const { appendNotes: _append, eventStatus: _eventStatus, ...taskPatch } = patch;
+      // `eventStatus`/`eventId` address the linked planned block, not the task.
+      // They are stripped here and applied by
+      // `PlannedBlockService.applyPendingEventRevision`, which owns ci.events
+      // writes. A bare `eventId` left in the patch used to reach
+      // `taskRepository.save` as a column that exists on neither UpdateTaskDto
+      // nor TaskEntity, where TypeORM silently dropped it — which is how an
+      // accepted cancellation left the block on the calendar.
+      const { appendNotes: _append, eventStatus: _eventStatus, eventId: _eventId, ...taskPatch } = patch;
       const hasTaskFields = Object.keys(taskPatch).length > 0;
 
       task = hasTaskFields

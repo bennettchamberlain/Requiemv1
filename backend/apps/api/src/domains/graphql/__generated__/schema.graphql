@@ -3279,7 +3279,7 @@ type SearchResultEdge {
   node: SearchResultType!
 }
 
-union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ProductModelType | ReceiptType | ThreadType
+union SearchResultType = ActionType | AnswerType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileChunkType | FileType | ItemType | NoteType | PersonType | PlaceType | ProductModelType | ReceiptType | TaskType | ThreadType
 
 input SendPeerAskInput {
   archetype: String!
@@ -3393,7 +3393,7 @@ type TaggableEntityEdge {
   node: TaggableEntityType!
 }
 
-union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ProductModelType | ReceiptType | ThreadType
+union TaggableEntityType = ActionType | BrowserActivityType | CommunicationType | ConceptType | ContentType | EventType | FileType | ItemType | NoteType | PersonType | PlaceType | ProductModelType | ReceiptType | TaskType | ThreadType
 
 type TaskConnection implements Connection {
   edges: [TaskEdge!]!
@@ -3435,6 +3435,7 @@ type TaskPendingChangeType implements Node {
 """Lifecycle state of a planning task."""
 enum TaskStatus {
   archived
+  delegated
   done
   in_progress
   open
@@ -3442,7 +3443,7 @@ enum TaskStatus {
   skipped
 }
 
-type TaskType implements Node {
+type TaskType implements Node & Taggable {
   actualMinutes: Int!
 
   """
@@ -3484,6 +3485,7 @@ type TaskType implements Node {
   """Where the task came from: `manual`, or an ingest source."""
   sourceKind: String!
   status: TaskStatus!
+  tags: [EntityTagType!]!
 
   """
   Wall-clock time of day, `HH:MM:SS`, in the user timezone. Zoneless by design.

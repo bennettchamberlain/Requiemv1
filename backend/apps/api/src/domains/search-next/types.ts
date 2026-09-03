@@ -22,6 +22,12 @@ export const INDEXABLE_ENTITIES = [
   // finds the evidence rather than only the things minted off it.
   'product',
   'receipt',
+  // Planning work items (ci.tasks). Indexed so "what am I supposed to be doing
+  // about the Fenwick contract?" answers from the planner without a tool call —
+  // the stated reason planning lives in CI-Server at all
+  // (docs/architecture/planning-roadmap.md:14). Planned blocks are deliberately
+  // NOT indexed: the task carries the words, the block only carries a time.
+  'task',
   'thread',
 ] as const;
 
@@ -41,6 +47,10 @@ export const TAGGABLE_ENTITIES = [
   'place',
   'product',
   'receipt',
+  // Planning work items. Tags are how a task inherits a direction and the
+  // life-balance categories that placement and balance bias read, so tasks
+  // must share the one tag vocabulary rather than growing a parallel one.
+  'task',
   'thread',
 ] as const;
 

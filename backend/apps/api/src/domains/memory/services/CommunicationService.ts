@@ -7,6 +7,8 @@ import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/c
 import { HbpeNotifyService } from '@ci/common/hbpe';
 import { LoggerService } from '@ci/common/logging';
 import {
+  INGEST_MERGE_KINDS,
+  INGEST_PRODUCER_PREFERENCE,
   INGEST_REFRESH_COLUMNS,
   type BulkInsertResult,
   appendRecordSources,
@@ -21,6 +23,7 @@ import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next'
 import { CommunicationBaseEntity } from '../entities/CommunicationBaseEntity';
 import { CommunicationEntity, Communication, previewFromContent } from '../entities/CommunicationEntity';
 import { CommunicationCreatedEvent, CommunicationUpdatedEvent, CommunicationRemovedEvent } from '../events';
+import { ledgerPlatform } from '../identity';
 import { CreateCommunicationDto, UpdateCommunicationDto } from '../types';
 
 import { CtiAggregate, type RepositoryProvider } from './CtiAggregate';
@@ -138,22 +141,27 @@ export class CommunicationService {
   private async ledgerArrival(
     context: UserServiceContext,
     recordId: string,
-    data: Pick<CreateCommunicationDto, 'source_type' | 'source_system' | 'source_id' | 'connection_id'>,
+    data: Pick<CreateCommunicationDto, 'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'>,
   ): Promise<void> {
     if (!data.source_type || !data.source_system || !data.source_id) {
       return;
     }
 
-    await appendRecordSources(this.communicationRepository.manager, { table: 'communications', userId: context.userId }, [
-      {
-        recordId,
-        sourceType: data.source_type,
-        sourceSystem: data.source_system,
-        sourceId: data.source_id,
-        connectionId: data.connection_id ?? null,
-        importRunId: context.importRunId ?? null,
-      },
-    ]);
+    await appendRecordSources(
+      this.communicationRepository.manager,
+      { table: 'communications', userId: context.userId },
+      [
+        {
+          recordId,
+          sourceType: data.source_type,
+          sourceSystem: data.source_system,
+          sourceId: data.source_id,
+          connectionId: data.connection_id ?? null,
+          importRunId: context.importRunId ?? null,
+          platform: ledgerPlatform(data.source_system, data.source_platform),
+        },
+      ],
+    );
   }
 
   async create(context: UserServiceContext, data: CreateCommunicationDto): Promise<Communication> {
@@ -338,6 +346,12 @@ export class CommunicationService {
       }),
     );
 
+    // Ledger platform per input row (entities[i] was built from data[i]); keyed
+    // by id so the hydrated twin of an input entity resolves to the same value.
+    const platformById = new Map(
+      entities.map((entity, i) => [entity.id, ledgerPlatform(data[i].source_system, data[i].source_platform)]),
+    );
+
     // One transaction spans both halves of the CTI aggregate. The base phase
     // UPSERTS for every result row — not just inserts — because the detail
     // conflict action refreshes subject/preview/content on re-ingest
@@ -354,11 +368,14 @@ export class CommunicationService {
           sourceType: entity.sourceType,
           sourceSystem: entity.sourceSystem,
           sourceId: entity.sourceId,
+          sourcePlatform: platformById.get(entity.id) ?? null,
         }),
         scope: { userId: context.userId },
         conflictTarget: '(user_id, source_system, source_id) WHERE source_id IS NOT NULL',
         identityColumns: ['source_system', 'source_id'],
         conflictUpdateColumns: INGEST_REFRESH_COLUMNS.communication,
+        conflictMergeKinds: INGEST_MERGE_KINDS.communication,
+        conflictProducerPreference: INGEST_PRODUCER_PREFERENCE.communication,
         sourceLedger: {
           table: 'communications',
           userId: context.userId,

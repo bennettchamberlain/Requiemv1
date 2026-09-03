@@ -236,8 +236,13 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
   const [selectedDay, setSelectedDay] = useState(start);
 
+  // ═══ WHAT THIS USED TO DO ═══
+  // Move the selected day and leave `slot` alone, so paging a week with the
+  // drawer open kept composing against the day that had just scrolled off
+  // screen: "New event" → Add, or a Possibilities card, landed on last week.
   useEffect(() => {
     setSelectedDay(start);
+    setSlot(null);
   }, [start]);
 
   const { events, rhythm, generatedAt, rhythmCoversWindow, loading, fetching, error, refetch } =
@@ -279,17 +284,30 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
     work.catch(() => setActionError(message));
   }, []);
 
-  const handleDrop = useCallback(
-    (taskId: string, startTime: Date) => {
-      run(placeOnDay(taskId, startTime), 'Could not put that on the calendar. Try again shortly.');
-    },
-    [placeOnDay, run],
-  );
-
   const handleSelectSlot = useCallback((next: CalendarSlot) => {
     setSlot(next);
     setSelectedDay(startOfLocalDay(next.instant));
   }, []);
+
+  /**
+   * The slot and the visible window are one selection.
+   *
+   * Paging the week clears it (the effect above), but on the phone the window
+   * is a SINGLE day and the day chips are what move it — so changing the chip
+   * has to clear the slot too. Without this the grid showed Wednesday while the
+   * open drawer still wrote to Monday. On a week-wide window the slot stays on
+   * screen, so picking a day column there is not a reason to drop it.
+   */
+  const handleSelectDay = useCallback(
+    (day: Date) => {
+      setSelectedDay(day);
+
+      if (isMobile) {
+        setSlot(null);
+      }
+    },
+    [isMobile],
+  );
 
   const handlePlace = useCallback(
     (taskId: string) => {
@@ -339,24 +357,15 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
   const isTrulyEmpty = !loading && !fetching && !hasAnything && !error && !planError && weekOffset === 0;
   const showScheduleSurface = weekOffset !== 0 || hasAnything || planError || fetching;
 
-  // Embedded, the host supplies the frame, so this keeps only the column gap
-  // and drops the safe-area top padding, which belongs to whatever is actually
-  // at the top of the page.
+  // Embedded, the host (Calendar) supplies the frame and is otherwise empty —
+  // this is the whole page now, not one block in a taller scrolling column —
+  // so it takes the host's full height (`flex-1 min-h-0`) rather than sizing
+  // to its own content, and the calendar grid inside gets a real, bounded
+  // height to fill and scroll within instead of a viewport-fraction cap.
   //
   // `relative` is not decoration: LoadingPage is `absolute inset-0 z-10`, so
   // without a positioned boundary here it anchors to the HOST's PageContent
-  // and blankets the whole composed page — the schedule's spinner would cover
-  // the brief below it. `min-h-60` gives that spinner somewhere to be, since
-  // while it shows there is nothing else in this column to give the box height.
-  //
-  // `shrink-0` is what makes `min-h-60` safe. The host is a definite-height
-  // flex column, and a flex item's default `min-height: auto` — its
-  // content-based automatic minimum — is the only reason pages overflow and
-  // scroll instead of squashing. Setting min-height REPLACES that automatic
-  // minimum, which would re-enable shrinking: schedule and brief together
-  // exceed any normal viewport, so both would be compressed below their
-  // content, painting over each other and putting part of the page out of
-  // scroll range. Refusing to shrink restores overflow-and-scroll.
+  // and blankets the page.
   //
   // `PageContent` is a stable module-level reference and `'div'` is a string,
   // so `Frame` keeps the same element type across renders — no remounting, and
@@ -437,7 +446,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
   return (
     <>
-      <Frame className={embedded ? 'relative flex min-h-60 w-full min-w-0 shrink-0 flex-col gap-3' : 'gap-3'}>
+      <Frame className={embedded ? 'relative flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3' : 'gap-3'}>
         {fetching && !hasAnything && <LoadingPage />}
 
         {actionError && (
@@ -478,7 +487,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
             {/* One schedule, one geometry. Week chrome, then the week — where
                 what a day usually holds rides in beside the hours rather than
                 as a second tab of the same seven days. */}
-            <div className={cn('flex flex-col', isMobile ? 'gap-3' : 'gap-4')}>
+            <div className={cn('flex min-h-0 flex-1 flex-col', isMobile ? 'gap-3' : 'gap-4')}>
               {isMobile ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -505,7 +514,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                     start={start}
                     days={DAYS_IN_VIEW}
                     selectedDay={selectedDay}
-                    onSelectDay={setSelectedDay}
+                    onSelectDay={handleSelectDay}
                   />
 
                   {colorChrome}
@@ -517,6 +526,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
               {isMobile && <TodayNowNext events={events} day={selectedDay} />}
 
               <VerticalCalendar
+                className="min-h-0 flex-1"
                 start={isMobile ? selectedDay : start}
                 days={isMobile ? 1 : DAYS_IN_VIEW}
                 events={events}
@@ -524,10 +534,9 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                 colorMode={colorMode}
                 pipelineRunning={pipelineRunning}
                 selectedDay={selectedDay}
-                onSelectDay={setSelectedDay}
+                onSelectDay={handleSelectDay}
                 selectedSlot={slot}
                 onSelectSlot={handleSelectSlot}
-                onDropCandidate={handleDrop}
                 onMoveEvent={handleMove}
                 footer={rhythmFooter(
                   generatedAt,
