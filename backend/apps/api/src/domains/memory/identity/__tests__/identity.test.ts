@@ -20,6 +20,7 @@ import {
 } from '../email';
 import { facebookPostIdentity } from '../facebook';
 import { fileIdentity } from '../file';
+import { isRedditCommentFullname, redditBareId, redditIdentity, redditRecordId } from '../reddit';
 import {
   FEDERATED_SYSTEMS,
   PLATFORM_SYSTEMS,
@@ -403,5 +404,31 @@ describe("browser identity (platform-scoped on the browser's own visit instant)"
     expect(canonicalSystem('firefox')).toBe('firefox');
     expect(browserVisitIdentity('firefox', URL, UNIX_MS).system).toBe('firefox');
     expect(isRegisteredSystem('safari')).toBe(true);
+  });
+});
+
+describe('reddit identities', () => {
+  it('strips the fullname prefix so the API (t3_xfkamy) and the CSV (xfkamy) agree', () => {
+    expect(redditBareId('t3_xfkamy')).toBe('xfkamy');
+    expect(redditBareId('t1_iomlcrs')).toBe('iomlcrs');
+    expect(redditBareId('xfkamy')).toBe('xfkamy');
+    // A permalink (the importer's fallback key when a CSV row has no id) passes through.
+    expect(redditBareId('/r/x/comments/abc/t/')).toBe('/r/x/comments/abc/t/');
+  });
+
+  it("mints the importer's staged-id spelling, verbatim, as the source_id", () => {
+    expect(redditRecordId('post', 'xfkamy')).toBe('reddit:post:xfkamy');
+    expect(redditIdentity('post', 't3_xfkamy')).toEqual({ system: 'reddit', id: 'reddit:post:xfkamy' });
+    expect(redditIdentity('comment', 't1_iomlcrs')).toEqual({ system: 'reddit', id: 'reddit:comment:iomlcrs' });
+  });
+
+  it('keeps authored and saved copies of the same thing distinct, as both exports do', () => {
+    expect(redditIdentity('saved_post', 't3_xfkamy').id).toBe('reddit:saved_post:xfkamy');
+    expect(redditIdentity('saved_post', 't3_xfkamy').id).not.toBe(redditIdentity('post', 't3_xfkamy').id);
+  });
+
+  it('tells a saved comment from a saved post by the fullname prefix', () => {
+    expect(isRedditCommentFullname('t1_abc')).toBe(true);
+    expect(isRedditCommentFullname('t3_abc')).toBe(false);
   });
 });

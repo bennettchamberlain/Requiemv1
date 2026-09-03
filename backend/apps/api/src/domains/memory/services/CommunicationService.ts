@@ -134,6 +134,21 @@ export class CommunicationService {
   }
 
   /**
+   * Ledger an arrival that {@link create} did not see: a producer that found
+   * the row itself via {@link findBySource} and refreshed it with
+   * {@link update} (the connection transforms' find-then-update path). Without
+   * this the ledger shows only the pipeline that inserted the row, and a
+   * cross-pipeline dedup hit leaves no evidence that it happened.
+   */
+  async recordArrival(
+    context: UserServiceContext,
+    recordId: string,
+    data: Pick<CreateCommunicationDto, 'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'>,
+  ): Promise<void> {
+    await this.ledgerArrival(context, recordId, data);
+  }
+
+  /**
    * Ledger one arrival of a communication (insert, dedup hit, or lost race —
    * all three evidence the record; see ci.record_sources). No-op when the
    * arrival carries an incomplete triple.
