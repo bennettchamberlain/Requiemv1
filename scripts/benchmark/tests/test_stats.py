@@ -5,9 +5,7 @@ from __future__ import annotations
 import math
 
 import pytest
-
 from benchmark.stats import describe, iqr, mean, median, stddev
-
 
 # ── median ──────────────────────────────────────────────────────────────────
 

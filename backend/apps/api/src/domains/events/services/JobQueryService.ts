@@ -622,9 +622,7 @@ export class JobQueryService {
             // typo in a query string should return an empty table, not the
             // unfiltered one — so an empty event list becomes a sentinel.
             const excludes =
-              selector.excludeQueueKeys.length > 0
-                ? ` AND ${queueKey} NOT IN (:...excludedQueueKeys)`
-                : '';
+              selector.excludeQueueKeys.length > 0 ? ` AND ${queueKey} NOT IN (:...excludedQueueKeys)` : '';
 
             where.where(`job.data->>'name' IN (:...categoryEvents)${excludes}`, {
               categoryEvents: selector.events.length > 0 ? selector.events : ['__no-such-category__'],

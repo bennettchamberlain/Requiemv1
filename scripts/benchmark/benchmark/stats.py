@@ -20,9 +20,9 @@ Every helper:
 from __future__ import annotations
 
 import statistics
-from typing import Dict, Sequence, Union
+from collections.abc import Sequence
 
-Number = Union[int, float]
+Number = int | float
 
 
 def median(xs: Sequence[Number]) -> float:
@@ -80,7 +80,7 @@ def stddev(xs: Sequence[Number]) -> float:
     return float(statistics.pstdev(xs))
 
 
-def describe(xs: Sequence[Number]) -> Dict[str, float]:
+def describe(xs: Sequence[Number]) -> dict[str, float]:
     """Return ``{median, mean, min, max, iqr, stddev, count}``.
 
     Empty input → empty dict so the caller can ``if not d: ...`` and skip

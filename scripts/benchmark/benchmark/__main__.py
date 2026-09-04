@@ -31,7 +31,7 @@ from .stats import describe
 
 
 def _load_persona(path: Path) -> dict:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     errors = validate_persona(data)
     if errors:
@@ -43,7 +43,9 @@ def _load_persona(path: Path) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="python -m benchmark", description="CI-Server memory benchmark")
+    p = argparse.ArgumentParser(
+        prog="python -m benchmark", description="CI-Server memory benchmark"
+    )
     p.add_argument("--persona", type=Path, required=True, help="persona JSON file")
     p.add_argument(
         "--systems",
@@ -66,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="persist LLM-judge verdicts to this JSON file; identical (question, context, model)"
-             " tuples are read from cache instead of re-queried",
+        " tuples are read from cache instead of re-queried",
     )
     p.add_argument(
         "--baseline",
@@ -85,11 +87,14 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=1,
         help="repeat each adapter N times and aggregate (median/IQR/etc.) into the"
-             " report; 1 = single-run, byte-identical to round-3 output",
+        " report; 1 = single-run, byte-identical to round-3 output",
     )
     args = p.parse_args(argv)
     if args.runs < 1 or args.runs > 50:
-        print(f"[error] --runs must be between 1 and 50 (got {args.runs})", file=sys.stderr)
+        print(
+            f"[error] --runs must be between 1 and 50 (got {args.runs})",
+            file=sys.stderr,
+        )
         return 2
 
     persona = _load_persona(args.persona)
@@ -104,7 +109,10 @@ def main(argv: list[str] | None = None) -> int:
     judge_cache: JudgeCache | None = None
     if args.scorer == "llm":
         if not args.judge_url or not args.judge_model:
-            print("[error] --scorer llm requires --judge-url and --judge-model", file=sys.stderr)
+            print(
+                "[error] --scorer llm requires --judge-url and --judge-model",
+                file=sys.stderr,
+            )
             return 2
         scorer = make_llm_scorer(args.judge_url, args.judge_model, args.judge_key)
         if args.judge_cache:
@@ -113,7 +121,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         scorer = score_keyword
         if args.judge_cache:
-            print("[warn] --judge-cache is ignored when --scorer is not 'llm'", file=sys.stderr)
+            print(
+                "[warn] --judge-cache is ignored when --scorer is not 'llm'",
+                file=sys.stderr,
+            )
 
     def _event(phase: str, system: str, payload: dict) -> None:
         if phase == "start":
@@ -123,9 +134,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"   {mark} {payload['id']} ({payload['latency_ms']:.0f} ms)")
         elif phase == "done":
             ratio = payload["score"]
-            print(f"   score: {payload['score'] * payload['total']:.0f}/{payload['total']} ({ratio:.0%})")
+            print(
+                f"   score: {payload['score'] * payload['total']:.0f}/{payload['total']} ({ratio:.0%})"
+            )
         elif phase == "error":
-            print(f"   [ERROR @ {payload['phase']}]: {payload['error']}", file=sys.stderr)
+            print(
+                f"   [ERROR @ {payload['phase']}]: {payload['error']}", file=sys.stderr
+            )
 
     if args.runs == 1:
         results = run_all(adapters, persona, args.user_id, scorer, on_event=_event)
@@ -136,8 +151,12 @@ def main(argv: list[str] | None = None) -> int:
         multi: list = []
         for adapter in adapters:
             runs = run_system_repeated(
-                adapter, persona, args.user_id, scorer,
-                runs=args.runs, on_event=_event,
+                adapter,
+                persona,
+                args.user_id,
+                scorer,
+                runs=args.runs,
+                on_event=_event,
             )
             overalls = [r.overall_score for r in runs]
             searches = [r.avg_search_latency_ms for r in runs]
@@ -156,15 +175,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if judge_cache is not None:
         judge_cache.save()
-        print(f"\n[judge-cache] hits={judge_cache.hits} misses={judge_cache.misses} "
-              f"entries={len(judge_cache)} ({judge_cache.path})")
+        print(
+            f"\n[judge-cache] hits={judge_cache.hits} misses={judge_cache.misses} "
+            f"entries={len(judge_cache)} ({judge_cache.path})"
+        )
 
     md = build_markdown_report(persona, report_input, scorer_label=args.scorer)
     js = build_json_report(persona, report_input)
 
     if args.out:
         args.out.write_text(md, encoding="utf-8")
-        args.out.with_suffix(".json").write_text(json.dumps(js, indent=2), encoding="utf-8")
+        args.out.with_suffix(".json").write_text(
+            json.dumps(js, indent=2), encoding="utf-8"
+        )
         print(f"\nReport: {args.out}")
         print(f"JSON:   {args.out.with_suffix('.json')}")
     else:
@@ -178,7 +201,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"[error] could not load baseline {args.baseline}: {exc}", file=sys.stderr)
+            print(
+                f"[error] could not load baseline {args.baseline}: {exc}",
+                file=sys.stderr,
+            )
             return 2
         report = compare(baseline, js, tolerance=args.tolerance)
         print()

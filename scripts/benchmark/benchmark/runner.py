@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import time
 import traceback
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 from .adapters.base import MemoryAdapter
 from .schema import EvalQuestion, QuestionResult, SystemResult
@@ -23,10 +24,10 @@ from .schema import EvalQuestion, QuestionResult, SystemResult
 Scorer = Callable[[EvalQuestion, str], tuple[bool, str]]
 
 # Optional event sink; receives ("phase", system, payload) tuples.
-Listener = Callable[[str, str, Dict[str, Any]], None]
+Listener = Callable[[str, str, dict[str, Any]], None]
 
 
-def _iter_user_messages(persona: Dict[str, Any]) -> Iterable[tuple[str, str]]:
+def _iter_user_messages(persona: dict[str, Any]) -> Iterable[tuple[str, str]]:
     """Yield (session_id, content) for every user message in every session."""
     for session in persona["sessions"]:
         sid = session["id"]
@@ -37,17 +38,19 @@ def _iter_user_messages(persona: Dict[str, Any]) -> Iterable[tuple[str, str]]:
 
 def run_system(
     adapter: MemoryAdapter,
-    persona: Dict[str, Any],
+    persona: dict[str, Any],
     user_id: str,
     scorer: Scorer,
     *,
-    on_event: Optional[Listener] = None,
+    on_event: Listener | None = None,
 ) -> SystemResult:
     """Run one adapter end-to-end and produce a :class:`SystemResult`."""
     name = adapter.name
-    questions: List[EvalQuestion] = [EvalQuestion.from_dict(q) for q in persona["eval_questions"]]
+    questions: list[EvalQuestion] = [
+        EvalQuestion.from_dict(q) for q in persona["eval_questions"]
+    ]
 
-    def emit(phase: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    def emit(phase: str, payload: dict[str, Any] | None = None) -> None:
         if on_event:
             on_event(phase, name, payload or {})
 
@@ -56,10 +59,13 @@ def run_system(
     # --- Setup ---
     try:
         adapter.setup(user_id)
-    except Exception as exc:  # noqa: BLE001 — adapter contracts are best-effort
+    except Exception as exc:
         emit("error", {"phase": "setup", "error": str(exc)})
         return SystemResult(
-            system_name=name, ingest_total_ms=0, flush_total_ms=0, error=f"setup failed: {exc}"
+            system_name=name,
+            ingest_total_ms=0,
+            flush_total_ms=0,
+            error=f"setup failed: {exc}",
         )
 
     # --- Ingest ---
@@ -72,7 +78,10 @@ def run_system(
         _safe_teardown(adapter)
         emit("error", {"phase": "ingest", "error": str(exc)})
         return SystemResult(
-            system_name=name, ingest_total_ms=0, flush_total_ms=0, error=f"ingest failed: {exc}"
+            system_name=name,
+            ingest_total_ms=0,
+            flush_total_ms=0,
+            error=f"ingest failed: {exc}",
         )
     ingest_ms = (time.monotonic() - ingest_start) * 1000
 
@@ -85,12 +94,15 @@ def run_system(
         _safe_teardown(adapter)
         emit("error", {"phase": "flush", "error": str(exc)})
         return SystemResult(
-            system_name=name, ingest_total_ms=ingest_ms, flush_total_ms=0, error=f"flush failed: {exc}"
+            system_name=name,
+            ingest_total_ms=ingest_ms,
+            flush_total_ms=0,
+            error=f"flush failed: {exc}",
         )
     flush_ms = (time.monotonic() - flush_start) * 1000
 
     # --- Evaluate ---
-    question_results: List[QuestionResult] = []
+    question_results: list[QuestionResult] = []
     for q in questions:
         t0 = time.monotonic()
         try:
@@ -128,25 +140,27 @@ def run_system(
 
 def run_all(
     adapters: Sequence[MemoryAdapter],
-    persona: Dict[str, Any],
+    persona: dict[str, Any],
     user_id: str,
     scorer: Scorer,
     *,
-    on_event: Optional[Listener] = None,
-) -> List[SystemResult]:
+    on_event: Listener | None = None,
+) -> list[SystemResult]:
     """Run every adapter and return one :class:`SystemResult` per system."""
-    return [run_system(a, persona, user_id, scorer, on_event=on_event) for a in adapters]
+    return [
+        run_system(a, persona, user_id, scorer, on_event=on_event) for a in adapters
+    ]
 
 
 def run_system_repeated(
     adapter: MemoryAdapter,
-    persona: Dict[str, Any],
+    persona: dict[str, Any],
     user_id: str,
     scorer: Scorer,
     *,
     runs: int,
-    on_event: Optional[Listener] = None,
-) -> List[SystemResult]:
+    on_event: Listener | None = None,
+) -> list[SystemResult]:
     """Run an adapter ``runs`` times and return one :class:`SystemResult` per run.
 
     Why this exists as a separate function (rather than baking the loop into
@@ -175,13 +189,16 @@ def run_system_repeated(
     if runs < 1:
         raise ValueError(f"runs must be >= 1, got {runs}")
 
-    results: List[SystemResult] = []
+    results: list[SystemResult] = []
     for i in range(runs):
-        def _wrapped(phase: str, system: str, payload: Dict[str, Any], _i: int = i) -> None:
+
+        def _wrapped(
+            phase: str, system: str, payload: dict[str, Any], _i: int = i
+        ) -> None:
             if on_event:
                 on_event(phase, system, {**payload, "run_index": _i})
 
-        listener: Optional[Listener] = _wrapped if on_event else None
+        listener: Listener | None = _wrapped if on_event else None
         results.append(run_system(adapter, persona, user_id, scorer, on_event=listener))
     return results
 

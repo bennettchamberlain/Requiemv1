@@ -3,20 +3,26 @@
 from __future__ import annotations
 
 import pytest
-
 from benchmark.aggregation import aggregate_runs, aggregated_to_json
 from benchmark.schema import QuestionResult, SystemResult
 
 
-def _make_run(name: str, hits: tuple[bool, ...], ingest_ms: float, flush_ms: float,
-              search_lats: tuple[float, ...]) -> SystemResult:
+def _make_run(
+    name: str,
+    hits: tuple[bool, ...],
+    ingest_ms: float,
+    flush_ms: float,
+    search_lats: tuple[float, ...],
+) -> SystemResult:
     qs = []
     cats = ("flat-recall", "flat-recall", "relational")
     ids = ("q1", "q2", "q3")
-    for q_id, cat, hit, lat in zip(ids, cats, hits, search_lats):
+    for q_id, cat, hit, lat in zip(ids, cats, hits, search_lats, strict=True):
         qs.append(QuestionResult(q_id, "?", cat, ["k"], "ctx", hit, lat, ""))
     return SystemResult(
-        system_name=name, ingest_total_ms=ingest_ms, flush_total_ms=flush_ms,
+        system_name=name,
+        ingest_total_ms=ingest_ms,
+        flush_total_ms=flush_ms,
         question_results=qs,
     )
 
@@ -44,8 +50,8 @@ def test_aggregated_to_json_carries_locked_keys():
     agg = aggregate_runs(_runs(), categories=["flat-recall", "relational"])
     js = aggregated_to_json(agg, categories=["flat-recall", "relational"])
     # Run-0 representative fields
-    assert js["categories"]["flat-recall"] == [1, 2]   # run 0: q1 hit, q2 miss
-    assert js["categories"]["relational"] == [1, 1]   # run 0: q3 hit
+    assert js["categories"]["flat-recall"] == [1, 2]  # run 0: q1 hit, q2 miss
+    assert js["categories"]["relational"] == [1, 1]  # run 0: q3 hit
     assert len(js["questions"]) == 3
     # Multi-run fields
     assert js["runs"] == 3
