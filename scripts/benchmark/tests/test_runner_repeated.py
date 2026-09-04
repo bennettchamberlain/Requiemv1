@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
-
 import pytest
-
 from benchmark.adapters.base import MemoryAdapter
 from benchmark.runner import run_system, run_system_repeated
 from benchmark.scoring import score_keyword
@@ -16,16 +13,27 @@ def _persona() -> dict:
         "persona_id": "p1",
         "name": "Test",
         "sessions": [
-            {"id": "s1", "messages": [
-                {"role": "user", "content": "Jordan lives in Austin, Texas."},
-                {"role": "user", "content": "Loves climbing."},
-            ]},
+            {
+                "id": "s1",
+                "messages": [
+                    {"role": "user", "content": "Jordan lives in Austin, Texas."},
+                    {"role": "user", "content": "Loves climbing."},
+                ],
+            },
         ],
         "eval_questions": [
-            {"id": "q1", "question": "Jordan lives where?",
-             "keywords": ["Austin"], "category": "flat-recall"},
-            {"id": "q2", "question": "submarine trivia please",
-             "keywords": ["never-matches"], "category": "flat-recall"},
+            {
+                "id": "q1",
+                "question": "Jordan lives where?",
+                "keywords": ["Austin"],
+                "category": "flat-recall",
+            },
+            {
+                "id": "q2",
+                "question": "submarine trivia please",
+                "keywords": ["never-matches"],
+                "category": "flat-recall",
+            },
         ],
     }
 
@@ -38,7 +46,7 @@ class _RecAdapter(MemoryAdapter):
         self.teardown_count = 0
         self.ingest_count = 0
         self.flush_count = 0
-        self._store: List[str] = []
+        self._store: list[str] = []
         self.fail_run: int | None = None  # which run-index to fail in
         self._current_run = -1
 
@@ -61,7 +69,9 @@ class _RecAdapter(MemoryAdapter):
         self.flush_count += 1
 
     def search(self, query: str) -> str:
-        return "\n".join(t for t in self._store if any(w.lower() in t.lower() for w in query.split()))
+        return "\n".join(
+            t for t in self._store if any(w.lower() in t.lower() for w in query.split())
+        )
 
     def teardown(self) -> None:
         self.teardown_count += 1

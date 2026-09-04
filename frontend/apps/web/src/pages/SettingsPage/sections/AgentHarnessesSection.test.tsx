@@ -30,6 +30,10 @@ function harness(overrides: Partial<AgentHarnessStatus> = {}): AgentHarnessStatu
     running: true,
     openUrl: 'https://hermes.example/chat',
     accessible: true,
+    wakeable: false,
+    dispatchReady: false,
+    dispatchBlocker: 'chat_only',
+    connectUrl: null,
     ...overrides,
   };
 }

@@ -21,8 +21,9 @@ suite and the reporter agree on a single source of truth):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, List, Sequence
+from typing import Any
 
 from .schema import SystemResult
 from .stats import describe
@@ -42,26 +43,28 @@ class AggregatedSystemResult:
     """
 
     representative: SystemResult
-    runs: List[SystemResult]
-    overall_ratios: List[float]
-    category_ratios: Dict[str, List[float]]
-    ingest_ms: List[float]
-    flush_ms: List[float]
-    search_ms: List[float]
+    runs: list[SystemResult]
+    overall_ratios: list[float]
+    category_ratios: dict[str, list[float]]
+    ingest_ms: list[float]
+    flush_ms: list[float]
+    search_ms: list[float]
 
     @property
     def n_runs(self) -> int:
         return len(self.runs)
 
 
-def _category_ratios(runs: Sequence[SystemResult], categories: Sequence[str]) -> Dict[str, List[float]]:
+def _category_ratios(
+    runs: Sequence[SystemResult], categories: Sequence[str]
+) -> dict[str, list[float]]:
     """Per-category hit-ratio across runs.
 
     A category with zero questions in a given run contributes ``0.0`` so the
     list length always matches ``len(runs)`` — that keeps the downstream
     :func:`describe` call honest about how many runs it's summarising.
     """
-    out: Dict[str, List[float]] = {c: [] for c in categories}
+    out: dict[str, list[float]] = {c: [] for c in categories}
     for r in runs:
         for c in categories:
             hit, total = r.score_for_category(c)
@@ -109,7 +112,7 @@ def aggregated_to_json(
     agg: AggregatedSystemResult,
     *,
     categories: Sequence[str],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Render an :class:`AggregatedSystemResult` as a JSON-ready dict.
 
     This is the multi-run system entry in :func:`build_json_report` — the
@@ -117,7 +120,7 @@ def aggregated_to_json(
     """
     rep = agg.representative
     overall_stats = describe(agg.overall_ratios)
-    score: Dict[str, Any] = {
+    score: dict[str, Any] = {
         "hit": rep.questions_answered,
         "total": rep.total_questions,
         "ratio": rep.overall_score,
@@ -133,17 +136,25 @@ def aggregated_to_json(
         "score": score,
         "categories": {c: list(rep.score_for_category(c)) for c in categories},
         "category_stats": {
-            c: {k: describe(agg.category_ratios[c]).get(k, 0.0)
-                for k in ("median", "mean", "min", "max", "iqr", "stddev")}
+            c: {
+                k: describe(agg.category_ratios[c]).get(k, 0.0)
+                for k in ("median", "mean", "min", "max", "iqr", "stddev")
+            }
             for c in categories
         },
         "timings_ms": {
-            "ingest": {k: describe(agg.ingest_ms).get(k, 0.0)
-                       for k in ("median", "mean", "min", "max", "iqr", "stddev")},
-            "flush": {k: describe(agg.flush_ms).get(k, 0.0)
-                      for k in ("median", "mean", "min", "max", "iqr", "stddev")},
-            "search": {k: describe(agg.search_ms).get(k, 0.0)
-                       for k in ("median", "mean", "min", "max", "iqr", "stddev")},
+            "ingest": {
+                k: describe(agg.ingest_ms).get(k, 0.0)
+                for k in ("median", "mean", "min", "max", "iqr", "stddev")
+            },
+            "flush": {
+                k: describe(agg.flush_ms).get(k, 0.0)
+                for k in ("median", "mean", "min", "max", "iqr", "stddev")
+            },
+            "search": {
+                k: describe(agg.search_ms).get(k, 0.0)
+                for k in ("median", "mean", "min", "max", "iqr", "stddev")
+            },
         },
         "questions": [
             {

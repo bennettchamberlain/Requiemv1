@@ -16,7 +16,8 @@ without re-running the benchmark.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 from .aggregation import aggregate_runs, aggregated_to_json
 from .schema import SystemResult
@@ -26,7 +27,7 @@ from .stats import describe
 # legacy shape we MUST keep byte-identical) or a list-of-lists of SystemResult
 # (multi-run, one inner list per adapter). The reporter detects which shape
 # it has by peeking at the first non-empty element.
-ResultsArg = Union[Sequence[SystemResult], Sequence[Sequence[SystemResult]]]
+ResultsArg = Sequence[SystemResult] | Sequence[Sequence[SystemResult]]
 
 
 def _is_multi_run(results: ResultsArg) -> bool:
@@ -41,9 +42,9 @@ def _is_multi_run(results: ResultsArg) -> bool:
     return False
 
 
-def _ordered_categories(persona: Dict[str, Any]) -> List[str]:
+def _ordered_categories(persona: dict[str, Any]) -> list[str]:
     """Preserve first-seen order so new categories appear without code edits."""
-    seen: List[str] = []
+    seen: list[str] = []
     for q in persona.get("eval_questions", []):
         cat = q.get("category")
         if cat and cat not in seen:
@@ -56,7 +57,7 @@ def _fmt_score(hit: int, total: int) -> str:
 
 
 def build_markdown_report(
-    persona: Dict[str, Any],
+    persona: dict[str, Any],
     results: ResultsArg,
     *,
     scorer_label: str = "keyword",
@@ -64,7 +65,9 @@ def build_markdown_report(
 ) -> str:
     if _is_multi_run(results):
         return _build_markdown_multirun(
-            persona, results, scorer_label=scorer_label,
+            persona,
+            results,
+            scorer_label=scorer_label,
             include_question_detail=include_question_detail,
         )
     p = persona
@@ -75,7 +78,7 @@ def build_markdown_report(
         "llm": "LLM judge (hit if retrieved context supports the gold answer)",
     }.get(scorer_label, scorer_label)
 
-    lines: List[str] = [
+    lines: list[str] = [
         f"# Memory System Benchmark — {p.get('name', p.get('persona_id', '?'))}",
         "",
         f"> Persona: **{p.get('name', '?')}** — {p.get('description', '')}  ",
@@ -116,7 +119,10 @@ def build_markdown_report(
             if r.error:
                 continue
             lines += [f"### {r.system_name}", ""]
-            lines += ["| Q | Category | Hit | Latency | Reason |", "|---|---|---|---|---|"]
+            lines += [
+                "| Q | Category | Hit | Latency | Reason |",
+                "|---|---|---|---|---|",
+            ]
             for q in r.question_results:
                 reason = (q.reason or "").replace("\n", " ").replace("|", "\\|")
                 lines.append(
@@ -128,7 +134,7 @@ def build_markdown_report(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_json_report(persona: Dict[str, Any], results: ResultsArg) -> Dict[str, Any]:
+def build_json_report(persona: dict[str, Any], results: ResultsArg) -> dict[str, Any]:
     if _is_multi_run(results):
         return _build_json_multirun(persona, results)
     categories = _ordered_categories(persona)
@@ -176,9 +182,9 @@ def build_json_report(persona: Dict[str, Any], results: ResultsArg) -> Dict[str,
 
 
 def _build_json_multirun(
-    persona: Dict[str, Any],
+    persona: dict[str, Any],
     results: Sequence[Sequence[SystemResult]],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Emit the multi-run JSON shape locked by the orchestrator.
 
     The persona block is identical to the single-run shape; only the
@@ -186,7 +192,7 @@ def _build_json_multirun(
     exact contract.
     """
     categories = _ordered_categories(persona)
-    systems: List[Dict[str, Any]] = []
+    systems: list[dict[str, Any]] = []
     for runs in results:
         if not runs:
             continue
@@ -214,7 +220,7 @@ def _fmt_pp(ratio: float) -> str:
 
 
 def _build_markdown_multirun(
-    persona: Dict[str, Any],
+    persona: dict[str, Any],
     results: Sequence[Sequence[SystemResult]],
     *,
     scorer_label: str,
@@ -239,7 +245,7 @@ def _build_markdown_multirun(
     # empty the report degenerates to "no data" rather than crashing.
     n_runs = next((len(rs) for rs in results if rs), 0)
 
-    lines: List[str] = [
+    lines: list[str] = [
         f"# Memory System Benchmark — {p.get('name', p.get('persona_id', '?'))}",
         "",
         f"> Persona: **{p.get('name', '?')}** — {p.get('description', '')}  ",
@@ -260,7 +266,9 @@ def _build_markdown_multirun(
         agg = aggregate_runs(runs, categories=categories)
         rep = agg.representative
         if rep.error and all(r.error for r in runs):
-            cells = [rep.system_name, "ERROR"] + ["—"] * len(categories) + ["—", "—", "—"]
+            cells = (
+                [rep.system_name, "ERROR"] + ["—"] * len(categories) + ["—", "—", "—"]
+            )
             lines.append("| " + " | ".join(cells) + f" | _{rep.error}_")
             continue
         overall = describe(agg.overall_ratios)
@@ -292,7 +300,10 @@ def _build_markdown_multirun(
             if rep.error:
                 continue
             lines += [f"### {rep.system_name}", ""]
-            lines += ["| Q | Category | Hit | Latency | Reason |", "|---|---|---|---|---|"]
+            lines += [
+                "| Q | Category | Hit | Latency | Reason |",
+                "|---|---|---|---|---|",
+            ]
             for q in rep.question_results:
                 reason = (q.reason or "").replace("\n", " ").replace("|", "\\|")
                 lines.append(

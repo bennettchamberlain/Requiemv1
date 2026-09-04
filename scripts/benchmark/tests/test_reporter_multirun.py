@@ -22,13 +22,19 @@ def _persona() -> dict:
     }
 
 
-def _result(name: str, hits: tuple[bool, bool], ingest=100, flush=50, lat=(10.0, 20.0)) -> SystemResult:
+def _result(
+    name: str, hits: tuple[bool, bool], ingest=100, flush=50, lat=(10.0, 20.0)
+) -> SystemResult:
     qs = [
         QuestionResult("q1", "?", "flat-recall", ["x"], "ctx", hits[0], lat[0], ""),
         QuestionResult("q2", "?", "relational", ["y"], "ctx", hits[1], lat[1], ""),
     ]
-    return SystemResult(system_name=name, ingest_total_ms=ingest, flush_total_ms=flush,
-                        question_results=qs)
+    return SystemResult(
+        system_name=name,
+        ingest_total_ms=ingest,
+        flush_total_ms=flush,
+        question_results=qs,
+    )
 
 
 def test_multirun_json_has_runs_field_and_stats():
@@ -41,7 +47,7 @@ def test_multirun_json_has_runs_field_and_stats():
     sys0 = js["systems"][0]
     assert sys0["runs"] == 3
     # Score includes both run-0 scalar and stats fields.
-    assert sys0["score"]["hit"] == 1     # from run 0
+    assert sys0["score"]["hit"] == 1  # from run 0
     assert sys0["score"]["total"] == 2
     for key in ("median", "mean", "min", "max", "iqr", "stddev"):
         assert key in sys0["score"]

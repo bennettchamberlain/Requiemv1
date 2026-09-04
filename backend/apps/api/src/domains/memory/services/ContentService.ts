@@ -264,7 +264,10 @@ export class ContentService {
   private async ledgerArrival(
     context: UserServiceContext,
     recordId: string,
-    item: Pick<CreateContentDto, 'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'>,
+    item: Pick<
+      CreateContentDto,
+      'source_type' | 'source_system' | 'source_id' | 'source_platform' | 'connection_id'
+    >,
   ): Promise<void> {
     if (!item.source_type || !item.source_system || !item.source_id) {
       return;
