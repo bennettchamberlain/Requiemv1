@@ -2,7 +2,13 @@ import { UnauthorizedException, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
-import { FULL_CAPABILITY, REQUIRE_CAPABILITY_KEY, REQUIRE_SCOPES_KEY, WRITE_CAPABILITY } from '@ci/common/decorators';
+import { ContextService } from '@ci/common/context';
+import {
+  FULL_CAPABILITY,
+  REQUIRE_CAPABILITY_KEY,
+  REQUIRE_SCOPES_KEY,
+  WRITE_CAPABILITY,
+} from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
 import { JobControlsService } from '../../services/JobControlsService';
@@ -76,6 +82,16 @@ async function buildApp(
     .compile();
 
   const app = module.createNestApplication();
+
+  // Stands in for RequestContextMiddleware: `@Context()` reads the request
+  // context out of AsyncLocalStorage, so a handler that takes one 500s with
+  // "Request context not found" without it. Only `POST /jobs/clear` reaches a
+  // handler body here — every other case in this file is answered by a guard or
+  // read straight off route metadata — which is why the omission surfaced as
+  // one failing test rather than a whole red file.
+  app.use((_req: unknown, _res: unknown, next: () => void) => {
+    ContextService.run({ traceId: 'test-trace', userId: 'user-1' }, () => next());
+  });
 
   await app.init();
 
