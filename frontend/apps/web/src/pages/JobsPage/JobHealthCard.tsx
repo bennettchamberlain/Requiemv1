@@ -1,6 +1,7 @@
+import { useState } from 'react';
+
 import { Button, Card, Skeleton, cn } from '@ci/shadcn';
 import { AlertTriangle, CheckCircle2, Info, RefreshCcw } from '@ci/shadcn/icons';
-import { useState } from 'react';
 
 import { cardPad, usePhone } from './Fold';
 import { categoryChartColor, categoryLabel } from './jobCategories';
@@ -323,6 +324,7 @@ function VerdictRow({
   const onShow = () => {
     if (verdict.filter) {
       onSelect(verdict.filter);
+
       return;
     }
 
