@@ -435,7 +435,9 @@ main() {
 
     RESULT=$(curl $CURL_OPTS -w '\n%{http_code}' -X POST \
       "${PORTAL_API}/store/publish/${SLUG}" \
-      -H "x-admin-key: ${ADMIN_KEY}" 2>/dev/null) || RESULT=""
+      -H "x-admin-key: ${ADMIN_KEY}" \
+      -H "Content-Type: application/json" \
+      -d '{"channels":["prod"]}' 2>/dev/null) || RESULT=""
 
     HTTP_CODE=$(echo "$RESULT" | tail -1)
     BODY=$(echo "$RESULT" | sed '$d')
