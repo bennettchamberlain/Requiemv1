@@ -1,6 +1,10 @@
-import { expect, signUp, test, testAccount } from './fixtures/appliance';
+import { expect, isUnclaimed, signInAsTestAccount, test, TEST_ACCOUNT } from './fixtures/appliance';
 
 /**
+ * Numbered so the first-account spec runs before anything else claims the
+ * appliance: an appliance only ever permits one account, and this file is the
+ * one that needs it unclaimed.
+ *
  * The path a person who just installed the desktop app is on: the splash the
  * Tauri shell redirects into, the account they have to create because the
  * appliance has none, and the app they land in afterwards.
@@ -26,8 +30,16 @@ test.describe('desktop first-run', () => {
     await expect(page).toHaveURL(/\/signup/);
   });
 
-  test('the first account can be created without a signup code', async ({ page }) => {
-    const account = testAccount('form');
+  test('the first account can be created without a signup code', async ({ page, request, baseURL }) => {
+    // Only meaningful while the appliance is still unclaimed. Once an account
+    // exists the gate closes on purpose, and the code field is supposed to be
+    // back — asserting otherwise would be asserting the bug.
+    test.skip(
+      !(await isUnclaimed(request, baseURL!)),
+      'Appliance already has an account; the first-account path can only run once.',
+    );
+
+    const account = TEST_ACCOUNT;
 
     await page.goto('/signup');
 
@@ -51,9 +63,9 @@ test.describe('desktop first-run', () => {
     page,
     context,
     baseURL,
+    request,
   }) => {
-    const account = testAccount('session');
-    await signUp(context, baseURL!, account);
+    await signInAsTestAccount(context, baseURL!, request);
 
     await page.goto('/');
 

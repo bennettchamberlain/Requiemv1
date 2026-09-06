@@ -22,21 +22,38 @@ export async function applianceIsUp(request: APIRequestContext, baseURL: string)
 }
 
 /**
- * A unique account per run.
+ * The appliance's test account — one fixed identity, not one per spec.
  *
- * Reusing one address would pass on a fresh appliance and fail on the second
- * run with "Email already in use" — the specs would then only work against a
- * database nobody had touched, which is precisely the fragility this suite
- * exists to avoid.
+ * An appliance only ever lets a *first* account be created: the signup gate
+ * closes the moment one exists, and nothing in the product can mint a code to
+ * open it again. A unique address per spec therefore passes exactly once, on a
+ * database nobody has touched, and fails for every spec after it and every
+ * re-run — which is what the first version of this suite did.
+ *
+ * So the suite claims the appliance once and signs in from then on. That is
+ * also what a desktop appliance actually is: a single-user box.
  */
-export function testAccount(label: string) {
-  const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+export const TEST_ACCOUNT = {
+  name: process.env.DESKTOP_E2E_NAME || 'Desktop E2E',
+  email: process.env.DESKTOP_E2E_EMAIL || 'desktop-e2e@example.com',
+  password: process.env.DESKTOP_E2E_PASSWORD || 'desktop-e2e-password-1',
+};
 
-  return {
-    name: `Desktop Test ${label}`,
-    email: `desktop-e2e-${label}-${unique}@example.com`,
-    password: 'desktop-e2e-password-1',
-  };
+/** Whether this appliance still has no account on it. */
+export async function isUnclaimed(request: APIRequestContext, baseURL: string): Promise<boolean> {
+  try {
+    const response = await request.get(`${baseURL}/api/signup/requirements`, { timeout: 5_000 });
+
+    if (!response.ok()) {
+      // Older images have no such route; they always demanded a code, which is
+      // the bug this endpoint was added to fix.
+      return false;
+    }
+
+    return ((await response.json()) as { codeRequired?: boolean }).codeRequired === false;
+  } catch {
+    return false;
+  }
 }
 
 async function csrfToken(context: BrowserContext, baseURL: string): Promise<string> {
@@ -55,8 +72,8 @@ async function csrfToken(context: BrowserContext, baseURL: string): Promise<stri
 export async function signUp(
   context: BrowserContext,
   baseURL: string,
-  account: ReturnType<typeof testAccount>,
-): Promise<void> {
+  account: typeof TEST_ACCOUNT,
+): Promise<string> {
   const token = await csrfToken(context, baseURL);
   const response = await context.request.post(`${baseURL}/api/signup`, {
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
@@ -66,6 +83,8 @@ export async function signUp(
   if (!response.ok()) {
     throw new Error(`Signup failed (${response.status()}): ${await response.text()}`);
   }
+
+  return ((await response.json()) as { accessToken: string }).accessToken;
 }
 
 /** Sign in an existing account — the same two calls the web app makes. */
@@ -73,7 +92,7 @@ export async function signIn(
   context: BrowserContext,
   baseURL: string,
   account: { email: string; password: string },
-): Promise<void> {
+): Promise<string> {
   const token = await csrfToken(context, baseURL);
   const response = await context.request.post(`${baseURL}/api/authenticate`, {
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
@@ -83,6 +102,36 @@ export async function signIn(
   if (!response.ok()) {
     throw new Error(`Sign-in failed (${response.status()}): ${await response.text()}`);
   }
+
+  return ((await response.json()) as { accessToken: string }).accessToken;
+}
+
+/**
+ * Sign in as the test account, claiming the appliance first if nobody has.
+ *
+ * Idempotent by design: the first spec to run on a fresh appliance creates the
+ * account, every spec after it — and every later run — signs in to the same one.
+ */
+export async function signInAsTestAccount(
+  context: BrowserContext,
+  baseURL: string,
+  request: APIRequestContext,
+): Promise<string> {
+  try {
+    return await signIn(context, baseURL, TEST_ACCOUNT);
+  } catch {
+    // Not created yet, or the password no longer matches — fall through.
+  }
+
+  if (!(await isUnclaimed(request, baseURL))) {
+    throw new Error(
+      `Cannot sign in as ${TEST_ACCOUNT.email} and this appliance is already claimed by another ` +
+        `account, so a new one cannot be created. Point DESKTOP_E2E_BASE_URL at a fresh appliance, ` +
+        `or set DESKTOP_E2E_EMAIL/DESKTOP_E2E_PASSWORD to an account that exists on this one.`,
+    );
+  }
+
+  return signUp(context, baseURL, TEST_ACCOUNT);
 }
 
 /**
