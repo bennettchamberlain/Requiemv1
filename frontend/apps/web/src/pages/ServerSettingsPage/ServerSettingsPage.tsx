@@ -5,7 +5,11 @@ import { Button, Card, Input, Label, LoadingButton, PasswordInput } from '@ci/sh
 import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
-import { persistPortalUrl, readPersistedPortalUrl, DEFAULT_PORTAL_URL } from '@/pages/DeviceConnectPage/portal-client';
+import {
+  persistPortalUrl,
+  readPersistedPortalUrl,
+  DEFAULT_PORTAL_URL,
+} from '@/pages/DeviceConnectPage/portal-client';
 
 const TOUCH = 'min-h-[44px]';
 
