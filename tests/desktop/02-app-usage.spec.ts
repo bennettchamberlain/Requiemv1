@@ -1,4 +1,4 @@
-import { expect, signIn, signUp, test, testAccount } from './fixtures/appliance';
+import { expect, signIn, signInAsTestAccount, test, TEST_ACCOUNT } from './fixtures/appliance';
 
 /**
  * Using the appliance as a signed-in account: the surfaces a new user reaches
@@ -12,13 +12,27 @@ import { expect, signIn, signUp, test, testAccount } from './fixtures/appliance'
  * bounce the user back to the login page.
  */
 
-/** Finish onboarding over the API — the UI path is covered by tests/e2e. */
-async function completeOnboarding(context: Parameters<typeof signIn>[0], baseURL: string): Promise<void> {
+/**
+ * Finish onboarding over the API — the UI path is covered by tests/e2e.
+ *
+ * Takes the access token rather than relying on the session cookie: these
+ * routes authenticate off the bearer token the app holds in memory, so a
+ * cookie-only request is a 401.
+ */
+async function completeOnboarding(
+  context: Parameters<typeof signIn>[0],
+  baseURL: string,
+  accessToken: string,
+): Promise<void> {
   const { cookies } = await context.storageState();
   const csrf = cookies.find((cookie) => cookie.name === 'csrfToken')?.value;
 
   const response = await context.request.post(`${baseURL}/api/onboarding/onboard`, {
-    headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
+    },
     data: {},
   });
 
@@ -32,10 +46,10 @@ test.describe('desktop app usage', () => {
     page,
     context,
     baseURL,
+    request,
   }) => {
-    const account = testAccount('home');
-    await signUp(context, baseURL!, account);
-    await completeOnboarding(context, baseURL!);
+    const accessToken = await signInAsTestAccount(context, baseURL!, request);
+    await completeOnboarding(context, baseURL!, accessToken);
 
     await page.goto('/');
 
@@ -45,10 +59,14 @@ test.describe('desktop app usage', () => {
     await expect(page.getByRole('navigation').first()).toBeVisible();
   });
 
-  test('the main surfaces load on an appliance with no data yet', async ({ page, context, baseURL }) => {
-    const account = testAccount('surfaces');
-    await signUp(context, baseURL!, account);
-    await completeOnboarding(context, baseURL!);
+  test('the main surfaces load on an appliance with no data yet', async ({
+    page,
+    context,
+    baseURL,
+    request,
+  }) => {
+    const accessToken = await signInAsTestAccount(context, baseURL!, request);
+    await completeOnboarding(context, baseURL!, accessToken);
 
     // Each of these is reachable from the rail; an empty database must render
     // an empty state, not an error boundary or a redirect to login.
@@ -66,10 +84,10 @@ test.describe('desktop app usage', () => {
     page,
     context,
     baseURL,
+    request,
   }) => {
-    const account = testAccount('roundtrip');
-    await signUp(context, baseURL!, account);
-    await completeOnboarding(context, baseURL!);
+    const accessToken = await signInAsTestAccount(context, baseURL!, request);
+    await completeOnboarding(context, baseURL!, accessToken);
 
     // Signing out through the API rather than hunting the menu item: what this
     // test is about is that the session ends and the credential still works
@@ -85,7 +103,7 @@ test.describe('desktop app usage', () => {
 
     // The account outlives the session — a sign-out must not strand someone on
     // an appliance whose signup gate has since closed behind them.
-    await signIn(context, baseURL!, account);
+    await signIn(context, baseURL!, TEST_ACCOUNT);
     await page.goto('/');
     await expect(page.getByRole('link', { name: /get started/i })).toHaveCount(0);
   });
