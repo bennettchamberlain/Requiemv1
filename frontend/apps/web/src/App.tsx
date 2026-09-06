@@ -6,6 +6,7 @@ import {
   LoadingPage,
   OutboxQueueProvider,
   isNativePlatform,
+  isTauriPlatform,
   needsNativeCloudConnect,
   useDeviceLayout,
 } from '@ci/common';
@@ -39,6 +40,7 @@ import {
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import { CHAT_BASE, chatThreadPath } from '@/pages/ChatPage/chatPaths';
+import DesktopSignInPage from '@/pages/DesktopSignInPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
@@ -230,9 +232,18 @@ function AppRoutes() {
           path="/"
           element={
             <RedirectKnownUser>
-              {/* Native: Safari / cold start always reopens `/`. The marketing
-                  splash is web-only; the phone's first screen is cloud-connect. */}
-              {isNativePlatform() ? <Navigate to="/device-connect" replace /> : <SplashPage />}
+              {/* The marketing splash is for a browser visitor who has not decided
+                  yet. Someone inside the desktop app or the phone app has already
+                  installed the thing — they get a way in, not a pitch. Native goes
+                  to cloud-connect (it must find an appliance first); desktop is
+                  already looking at its own, so it goes straight to sign-in. */}
+              {isNativePlatform() ? (
+                <Navigate to="/device-connect" replace />
+              ) : isTauriPlatform() ? (
+                <DesktopSignInPage />
+              ) : (
+                <SplashPage />
+              )}
             </RedirectKnownUser>
           }
         />
