@@ -20,22 +20,41 @@ function RailMark({
   showName,
   truncateName = false,
   name = 'Companion Memory',
+  opticalNudge = true,
+  centerOnNavIcons = false,
 }: {
   showName: boolean;
   truncateName?: boolean;
   name?: string;
+  /**
+   * Desktop capsule only. The 1px shifts optically center the disc in that
+   * pill; in the phone drawer they pull the mark left of the nav icons.
+   */
+  opticalNudge?: boolean;
+  /**
+   * Phone drawer: the disc is 32px, the nav icons 24px. Shift 4px left so
+   * the icon column runs through the middle of the mark.
+   */
+  centerOnNavIcons?: boolean;
 }) {
   return (
     <>
       {/* Full-size mark on a white disc. `max-w-none` defeats Tailwind
           preflight `img { max-width: 100% }` so it stays round. */}
-      <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white -translate-x-px">
+      <span
+        className={cn(
+          'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white',
+          opticalNudge && '-translate-x-px',
+          centerOnNavIcons && '-translate-x-1',
+        )}
+      >
         <img src={logo} alt="" className="size-8 max-w-none rounded-full" />
       </span>
       <span
         aria-hidden={!showName}
         className={cn(
-          '-translate-y-px text-left text-sm font-semibold leading-tight',
+          'text-left text-sm font-semibold leading-tight',
+          opticalNudge && '-translate-y-px',
           // The dock capsule animates its own max-width and wipes the name as
           // it closes; a shrinkable span would put an ellipsis in the middle of
           // that. The drawer instead has a fixed 224px to share with the close
@@ -63,8 +82,10 @@ function RailMark({
  */
 export function PowerRailWordmark() {
   return (
+    // gap-2, not gap-3: the disc is 32px and the nav icons are 24px, so the
+    // tighter gap keeps "Memory" on the same column as Capture / Planning.
     <span className="flex min-w-0 items-center gap-2" data-testid="power-rail-wordmark">
-      <RailMark showName truncateName name="Memory" />
+      <RailMark showName truncateName name="Memory" opticalNudge={false} centerOnNavIcons />
     </span>
   );
 }
