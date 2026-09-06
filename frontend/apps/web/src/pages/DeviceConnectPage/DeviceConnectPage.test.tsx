@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DeviceConnectPage } from './DeviceConnectPage';
@@ -13,6 +14,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 const h = vi.hoisted(() => ({
   persistApiBaseUrl: vi.fn(),
+  getApiBaseUrl: vi.fn(() => ''),
   signInToPortal: vi.fn(),
   listMemoryServers: vi.fn(),
   loginWithPortalOidc: vi.fn(),
@@ -39,6 +41,11 @@ const h = vi.hoisted(() => ({
 vi.mock('@ci/common', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@ci/common')>()),
   persistApiBaseUrl: h.persistApiBaseUrl,
+  getApiBaseUrl: () => h.getApiBaseUrl(),
+}));
+
+vi.mock('@/components/ThemePicker', () => ({
+  ThemeToggle: () => null,
 }));
 
 vi.mock('@/hooks', () => ({
@@ -80,6 +87,8 @@ vi.mock('./oidc', async (importOriginal) => {
 beforeEach(() => {
   navigate.mockReset();
   h.persistApiBaseUrl.mockReset();
+  h.getApiBaseUrl.mockReset();
+  h.getApiBaseUrl.mockReturnValue('');
   h.signInToPortal.mockReset();
   h.listMemoryServers.mockReset();
   h.loginWithPortalOidc.mockReset();
@@ -96,33 +105,22 @@ beforeEach(() => {
 });
 
 describe('DeviceConnectPage', () => {
-  it('does not use the /connect Sources route and matches the Hub first screen', () => {
+  it('opens on the splash with Log in and an Advanced link', () => {
     render(<DeviceConnectPage />);
 
-    expect(screen.getByText('Connect to your Memory')).toBeInTheDocument();
-    expect(screen.getByTestId('oidc-login-btn')).toBeInTheDocument();
-    expect(screen.getByText(/or use email/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /enter a memory server url instead/i })).toBeInTheDocument();
+    expect(screen.getByText('Companion Memory')).toBeInTheDocument();
+    expect(screen.getByTestId('oidc-login-btn')).toHaveTextContent(/log in/i);
+    expect(screen.getByTestId('advanced-link')).toBeInTheDocument();
+    expect(screen.queryByText(/or use email/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('you@example.com')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /enter a memory server url instead/i })).not.toBeInTheDocument();
   });
 
-  it('lists Memory Servers after Portal email sign-in and persists a healthy origin', async () => {
-    h.signInToPortal.mockResolvedValue({ token: 't', cookie: null, kind: 'session' });
-    h.listMemoryServers.mockResolvedValue([
-      { id: 'home', name: 'Home', status: 'active', memoryUrl: 'https://memory.example.com/app' },
-    ]);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
-
+  it('opens Advanced from the splash', () => {
     render(<DeviceConnectPage />);
-    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'a@b.com' } });
-    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'secret' } });
-    fireEvent.submit(screen.getByRole('button', { name: /sign in with email/i }).closest('form')!);
+    fireEvent.click(screen.getByTestId('advanced-link'));
 
-    expect(await screen.findByText('Home')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('memory-row-home'));
-
-    expect(await screen.findByText(/sign in with companion intelligence first/i)).toBeInTheDocument();
-    expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true });
+    expect(navigate).toHaveBeenCalledWith('/device-connect/advanced');
   });
 
   it('lists Memory Servers after Portal OIDC', async () => {
@@ -223,50 +221,9 @@ describe('DeviceConnectPage', () => {
     expect(await screen.findByText('Home')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('memory-row-home'));
 
-    expect(await screen.findByText(/did not accept your Companion Intelligence token/i)).toBeInTheDocument();
-    expect(screen.getByTestId('memory-password-submit')).toBeInTheDocument();
+    expect(await screen.findByText(/did not accept your Companion account/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('memory-password-submit')).not.toBeInTheDocument();
     expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true });
     expect(navigate).not.toHaveBeenCalledWith('/', { replace: true });
-  });
-
-  it('after a Portal 401, Memory email/password mints against the picked origin', async () => {
-    h.loginWithPortalOidc.mockResolvedValue({
-      accessToken: 'oidc-at',
-      idToken: 'oidc-id',
-      tokenType: 'Bearer',
-      expiresIn: 3600,
-    });
-    h.listMemoryServers.mockResolvedValue([
-      { id: 'home', name: 'Home', status: 'active', memoryUrl: 'https://memory.example.com/app' },
-    ]);
-    h.completePortalMemoryConnect.mockRejectedValue(new Error('Unauthorized'));
-    h.completeMemoryPasswordConnect.mockImplementation(async () => {
-      h.authenticated = true;
-
-      return true;
-    });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
-
-    const { rerender } = render(<DeviceConnectPage />);
-    fireEvent.click(screen.getByTestId('oidc-login-btn'));
-    expect(await screen.findByText('Home')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('memory-row-home'));
-
-    expect(await screen.findByTestId('memory-password-submit')).toBeInTheDocument();
-    fireEvent.change(screen.getByTestId('memory-email'), { target: { value: 'me@example.com' } });
-    fireEvent.change(screen.getByTestId('memory-password'), { target: { value: 'memory-secret' } });
-    fireEvent.click(screen.getByTestId('memory-password-submit'));
-
-    await waitFor(() => {
-      expect(h.completeMemoryPasswordConnect).toHaveBeenCalledWith(
-        'me@example.com',
-        'memory-secret',
-        'https://memory.example.com',
-      );
-    });
-    rerender(<DeviceConnectPage />);
-    await waitFor(() => {
-      expect(navigate).toHaveBeenCalledWith('/', { replace: true });
-    });
   });
 });

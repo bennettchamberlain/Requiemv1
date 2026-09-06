@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { listMemoryServers, probeMemoryOrigin, signInToPortal } from './portal-client';
+import { listMemoryServers, persistPortalUrl, probeMemoryOrigin, readPersistedPortalUrl, signInToPortal } from './portal-client';
 
 describe('device-connect portal-client', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.removeItem('ci.deviceConnect.portalUrl');
   });
 
   it('signs in with email and returns a session token', async () => {
@@ -102,5 +103,11 @@ describe('device-connect portal-client', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 503 })));
 
     await expect(probeMemoryOrigin('https://memory.example.com')).rejects.toThrow(/503/);
+  });
+
+  it('persists the Companion Portal URL for the next OIDC hop', () => {
+    persistPortalUrl('https://hub.ci.computer/');
+
+    expect(readPersistedPortalUrl()).toBe('https://hub.ci.computer');
   });
 });

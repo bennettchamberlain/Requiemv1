@@ -181,11 +181,15 @@ function AppRoutes() {
   // the user has enabled it in Settings -> Location. Inert when disabled.
   useLocationTracking();
 
-  // Native pairing: `/device-connect` is Portal cloud-connect; `/server` is the
-  // Advanced URL fallback. iOS always uses cloud-connect (a leftover docker/LAN
-  // origin does not skip it). `/connect` is Sources and must not be used here.
+  // Native pairing: `/device-connect` is Portal cloud-connect; `/device-connect/advanced`
+  // (and the leftover `/server` alias) are Hub URL / offline-unlock settings. iOS always
+  // uses cloud-connect (a leftover docker/LAN origin does not skip it). `/connect` is
+  // Sources and must not be used here.
   useEffect(() => {
-    const pairing = location.pathname === '/device-connect' || location.pathname === '/server';
+    const pairing =
+      location.pathname === '/device-connect' ||
+      location.pathname === '/device-connect/advanced' ||
+      location.pathname === '/server';
 
     if (needsNativeCloudConnect() && !pairing) {
       navigate('/device-connect', { replace: true });
@@ -224,9 +228,13 @@ function AppRoutes() {
           }
         />
 
+        {/* Full-bleed splash on sign-in; the picker centers itself. Do not wrap
+            this in CenteredLayout — that card column is what hid the Lottie. */}
+        <Route path="/device-connect" element={<DeviceConnectPage />} />
+
         <Route element={<CenteredLayout />}>
-          <Route path="/device-connect" element={<DeviceConnectPage />} />
-          <Route path="/server" element={<ServerSettingsPage />} />
+          <Route path="/device-connect/advanced" element={<ServerSettingsPage />} />
+          <Route path="/server" element={<Navigate to="/device-connect/advanced" replace />} />
 
           <Route
             path="/login"

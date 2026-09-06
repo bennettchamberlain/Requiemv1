@@ -37,6 +37,30 @@ function portalUrlFromEnv(): string {
 }
 
 export const DEFAULT_PORTAL_URL = portalUrlFromEnv();
+const PORTAL_URL_STORAGE_KEY = 'ci.deviceConnect.portalUrl';
+
+/** Portal Hub URL for the next Safari OIDC hop. Independent of the Memory origin. */
+export function readPersistedPortalUrl(): string {
+  try {
+    const stored = typeof localStorage === 'undefined' ? null : localStorage.getItem(PORTAL_URL_STORAGE_KEY);
+
+    return normalizePortalUrl(stored || DEFAULT_PORTAL_URL);
+  } catch {
+    return DEFAULT_PORTAL_URL;
+  }
+}
+
+export function persistPortalUrl(url: string): string {
+  const next = normalizePortalUrl(url);
+
+  try {
+    localStorage.setItem(PORTAL_URL_STORAGE_KEY, next);
+  } catch {
+    /* private mode / quota */
+  }
+
+  return next;
+}
 
 export interface PortalAuth {
   token: string | null;
