@@ -111,9 +111,14 @@ describe('device-connect portal-client', () => {
     await expect(probeMemoryOrigin('https://memory.example.com')).rejects.toThrow(/503/);
   });
 
-  it('persists the Companion Portal URL for the next OIDC hop', () => {
+  it('persists the Companion URL for the next OIDC hop', () => {
     persistPortalUrl('https://hub.ci.computer/');
 
+    expect(readPersistedPortalUrl()).toBe('https://hub.ci.computer');
+  });
+
+  it('does not restore the internal dev cloud host as the Companion URL', () => {
+    localStorage.setItem('ci.deviceConnect.portalUrl', 'https://hub.companionintelligence.com');
     expect(readPersistedPortalUrl()).toBe('https://hub.ci.computer');
   });
 });
