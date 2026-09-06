@@ -13,7 +13,6 @@ import { apiFetch } from '@ci/common';
  */
 
 const PRODUCTION_PORTAL_URL = 'https://hub.ci.computer';
-const DEVELOPMENT_PORTAL_URL = 'https://hub.companionintelligence.com';
 
 function portalUrlFromEnv(): string {
   try {
@@ -21,18 +20,16 @@ function portalUrlFromEnv(): string {
     const baked = env?.VITE_CI_CLOUD_URL?.trim() || env?.CI_CLOUD_URL?.trim();
 
     if (baked) {
-      return baked.replace(/\/+$/, '');
+      const next = baked.replace(/\/+$/, '');
+      // Internal/dev cloud host is not the user-facing Companion URL.
+      if (next && !next.includes('companionintelligence.com')) {
+        return next;
+      }
     }
 
-    // Native simulator/device talks to CI cloud *dev* unless the web build was
-    // explicitly marked production. Prod is hub.ci.computer.
-    if (env?.VITE_CI_HUB_ENVIRONMENT === 'production') {
-      return PRODUCTION_PORTAL_URL;
-    }
-
-    return DEVELOPMENT_PORTAL_URL;
+    return PRODUCTION_PORTAL_URL;
   } catch {
-    return DEVELOPMENT_PORTAL_URL;
+    return PRODUCTION_PORTAL_URL;
   }
 }
 
@@ -44,7 +41,11 @@ export function readPersistedPortalUrl(): string {
   try {
     const stored = typeof localStorage === 'undefined' ? null : localStorage.getItem(PORTAL_URL_STORAGE_KEY);
 
-    return normalizePortalUrl(stored || DEFAULT_PORTAL_URL);
+    if (stored && !stored.includes('companionintelligence.com')) {
+      return normalizePortalUrl(stored);
+    }
+
+    return DEFAULT_PORTAL_URL;
   } catch {
     return DEFAULT_PORTAL_URL;
   }

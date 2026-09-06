@@ -40,13 +40,20 @@ beforeEach(() => {
 });
 
 describe('ServerSettingsPage', () => {
-  it('saves the Companion Portal URL and returns to Log in', () => {
+  it('defaults the Companion URL to production hub.ci.computer', () => {
     render(<ServerSettingsPage />);
 
-    fireEvent.change(screen.getByLabelText('Companion Portal URL'), {
+    expect(screen.getByLabelText('Companion URL')).toHaveValue('https://hub.ci.computer');
+    expect(screen.queryByText(/portal/i)).not.toBeInTheDocument();
+  });
+
+  it('saves the Companion URL and returns to Log in', () => {
+    render(<ServerSettingsPage />);
+
+    fireEvent.change(screen.getByLabelText('Companion URL'), {
       target: { value: 'https://hub.ci.computer' },
     });
-    fireEvent.submit(screen.getByRole('button', { name: /save portal url/i }).closest('form')!);
+    fireEvent.submit(screen.getByRole('button', { name: /^save url$/i }).closest('form')!);
 
     expect(localStorage.getItem('ci.deviceConnect.portalUrl')).toBe('https://hub.ci.computer');
     expect(navigate).toHaveBeenCalledWith('/device-connect');
