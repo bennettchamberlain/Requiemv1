@@ -318,7 +318,11 @@ export function DeviceConnectPage() {
             </LoadingButton>
 
             {signInError ? (
-              <p className="text-destructive text-center text-sm" data-testid="connect-signin-error" role="alert">
+              <p
+                className="text-destructive text-center text-sm"
+                data-testid="connect-signin-error"
+                role="alert"
+              >
                 {signInError}
               </p>
             ) : null}

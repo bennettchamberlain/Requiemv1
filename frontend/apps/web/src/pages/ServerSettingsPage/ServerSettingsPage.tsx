@@ -5,10 +5,7 @@ import { Button, Card, Input, Label, LoadingButton, PasswordInput } from '@ci/sh
 import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '@/hooks';
-import {
-  persistPortalUrl,
-  readPersistedPortalUrl,
-} from '@/pages/DeviceConnectPage/portal-client';
+import { persistPortalUrl, readPersistedPortalUrl } from '@/pages/DeviceConnectPage/portal-client';
 
 const TOUCH = 'min-h-[44px]';
 
@@ -68,9 +65,8 @@ export function ServerSettingsPage() {
         <Card.Header>
           <Card.Title>Advanced</Card.Title>
           <Card.Description>
-            Connecting a new phone requires Log in with your Companion account. These
-            settings only change which Hub that uses, or unlock a Memory this phone already
-            paired.
+            Connecting a new phone requires Log in with your Companion account. These settings only change
+            which Hub that uses, or unlock a Memory this phone already paired.
           </Card.Description>
         </Card.Header>
 
@@ -111,8 +107,8 @@ export function ServerSettingsPage() {
           {canOfflineUnlock ? (
             <form onSubmit={(event) => void handleUnlock(event)} className="flex flex-col gap-3">
               <p className="text-muted-foreground text-xs">
-                Sign in with email and pass unlocks this already-paired Memory when you are
-                offline. It does not connect a new device.
+                Sign in with email and pass unlocks this already-paired Memory when you are offline. It does
+                not connect a new device.
               </p>
               <Input
                 type="email"

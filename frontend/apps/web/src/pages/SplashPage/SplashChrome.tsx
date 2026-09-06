@@ -80,7 +80,15 @@ export function BrainMark({ sizeClass = SPLASH_MARK_SIZE }: { sizeClass?: string
 }
 
 /** Staggered entrance for the copy — skipped entirely under reduced motion. */
-export function Reveal({ delay, children, className }: { delay: number; children: ReactNode; className?: string }) {
+export function Reveal({
+  delay,
+  children,
+  className,
+}: {
+  delay: number;
+  children: ReactNode;
+  className?: string;
+}) {
   const reducedMotion = usePrefersReducedMotion();
 
   if (reducedMotion) {

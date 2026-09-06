@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { listMemoryServers, persistPortalUrl, probeMemoryOrigin, readPersistedPortalUrl, signInToPortal } from './portal-client';
+import {
+  listMemoryServers,
+  persistPortalUrl,
+  probeMemoryOrigin,
+  readPersistedPortalUrl,
+  signInToPortal,
+} from './portal-client';
 
 describe('device-connect portal-client', () => {
   afterEach(() => {

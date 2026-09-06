@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DeviceConnectPage } from './DeviceConnectPage';
@@ -113,7 +112,9 @@ describe('DeviceConnectPage', () => {
     expect(screen.getByTestId('advanced-link')).toBeInTheDocument();
     expect(screen.queryByText(/or use email/i)).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('you@example.com')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /enter a memory server url instead/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /enter a memory server url instead/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('opens Advanced from the splash', () => {
