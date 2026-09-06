@@ -20,8 +20,7 @@ jest.mock('@ci/configuration', () => {
   };
 });
 
-import { UnauthorizedException, type INestApplication } from '@nestjs/common';
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, UnauthorizedException, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import { type Request, type Response, type NextFunction } from 'express';
