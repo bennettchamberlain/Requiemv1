@@ -139,6 +139,9 @@ describe('MobileNavigation', () => {
     expect(within(wordmark).getByText('Memory')).toHaveAttribute('aria-hidden', 'false');
     expect(within(wordmark).queryByText('Companion Memory')).toBeNull();
     expect(wordmark.querySelector('img[src*="logo"]')).not.toBeNull();
+    // Same inset as Capture / Planning — without it the 32px disc sat on the
+    // pane edge while every row below had px-2 + a 2px active border.
+    expect(wordmark.parentElement).toHaveClass('border-l-2', 'px-2', 'py-2');
   });
 
   // The wordmark is a statement, not a second close button: the chevron beside
