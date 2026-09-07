@@ -18,9 +18,13 @@ day, and a forecaster can be scored before a line of serving code is written.
 ## Running it
 
 ```bash
+python -m ci.hbpe.evaluation --list-users          # which users have a corpus
 python -m ci.hbpe.evaluation --user <uuid>
 python -m ci.hbpe.evaluation --user <uuid> --with-hmt --json
 ```
+
+`--list-users` reports days, rows and date range per user, longest history
+first, so picking a UUID does not need a separate psql session.
 
 `--with-hmt` adds the deployed transformer; it needs a checkpoint and pulls in
 ONNX/torch. Everything else runs on numpy alone.
