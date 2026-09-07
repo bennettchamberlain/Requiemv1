@@ -471,6 +471,13 @@ fn start_stack_inner(paths: &StackPaths, progress: Option<&ProgressHandle>) -> R
         return start_stack_streaming(paths, progress);
     }
 
+    // The tray's Start lands here (no progress handle). It goes through the
+    // same self-heal as the splash: before this, a stale container left the
+    // menu item permanently dead while the splash could recover from it.
+    with_stale_container_retry(paths, None, || compose_up_blocking(paths))
+}
+
+fn compose_up_blocking(paths: &StackPaths) -> Result<(), String> {
     let output = compose_command(paths)
         // --scale powersync=0: powersync is in the "production" profile in
         // docker-compose.yml, so it's otherwise created by this `up`, but its
@@ -511,7 +518,105 @@ fn start_stack_inner(paths: &StackPaths, progress: Option<&ProgressHandle>) -> R
 /// reasoning behind it are documented at the buffered call site above.
 const UP_ARGS: [&str; 5] = ["up", "-d", "--remove-orphans", "--scale", "powersync=0"];
 
+/// Failures that mean "the previous containers are stale", not "this machine
+/// cannot run the stack".
+///
+/// Docker restarting — or the Mac sleeping — leaves containers pointing at a
+/// network id that no longer exists, and leaves one-shot containers holding
+/// names the next run needs. `docker compose up` then fails the same way every
+/// time, so the splash's Retry button could never clear it: the user was stuck
+/// on an app that refused to start until someone ran compose by hand. Both are
+/// fixed by tearing the project down first, which is safe here because `down`
+/// without `-v` keeps every volume, and volumes are where the memory lives.
+fn is_stale_container_failure(transcript: &str) -> bool {
+    let lower = transcript.to_lowercase();
+
+    lower.contains("failed to set up container networking")
+        || lower.contains("network") && lower.contains("not found")
+        || lower.contains("is already in use by container")
+}
+
+/// Run an `up`, and if it failed on a stale container or network, tear the
+/// project down once and run it again.
+///
+/// Shared by BOTH start paths deliberately. This retry lived inside the
+/// streaming path, so the splash could recover but the tray's "Start Stack"
+/// hit the identical conflict with no way out — the same dead end the retry
+/// exists to remove, reachable from a different button.
+///
+/// `down` without `-v` keeps every volume, and volumes are where the memory
+/// lives, so the recovery cannot cost the user data.
+fn with_stale_container_retry<F>(
+    paths: &StackPaths,
+    progress: Option<&ProgressHandle>,
+    attempt: F,
+) -> Result<(), String>
+where
+    F: FnMut() -> Result<(), String>,
+{
+    let teardown = || {
+        let down = compose_command(paths)
+            .args(["down", "--remove-orphans"])
+            .output()
+            .map_err(|e| format!("Failed to run docker compose down: {e}"))?;
+
+        // Log the whole result, not just stderr: a `down` that exits non-zero
+        // is why the retry is about to fail the same way, and stderr alone does
+        // not say whether it even ran.
+        append_desktop_log(paths, "self-heal", &describe_output(&down));
+
+        if !down.status.success() {
+            return Err(describe_output(&down));
+        }
+
+        Ok(())
+    };
+
+    with_stale_container_retry_using(progress, attempt, teardown)
+}
+
+/// The retry logic itself, with the teardown injected.
+///
+/// Split out so the decision — retry on a stale container, never on anything
+/// else — is testable without a Docker daemon. The production teardown is a
+/// real `docker compose down`; a test passes a closure.
+fn with_stale_container_retry_using<F, D>(
+    progress: Option<&ProgressHandle>,
+    mut attempt: F,
+    teardown: D,
+) -> Result<(), String>
+where
+    F: FnMut() -> Result<(), String>,
+    D: FnOnce() -> Result<(), String>,
+{
+    match attempt() {
+        Ok(()) => Ok(()),
+        Err(err) if is_stale_container_failure(&err) => {
+            log::warn!("compose up failed on stale containers, recreating the project: {err}");
+
+            if let Some(progress) = progress {
+                set_progress(progress, "starting", "Clearing a stale container from the last run…");
+            }
+
+            // A teardown that could not run is not fatal: retrying costs one
+            // more `up`, and the ORIGINAL conflict is the error worth showing
+            // the user — not "Failed to run docker compose down", which is
+            // what propagating this hid the first error behind.
+            if let Err(e) = teardown() {
+                log::warn!("self-heal teardown did not complete: {e}");
+            }
+
+            attempt()
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn start_stack_streaming(paths: &StackPaths, progress: &ProgressHandle) -> Result<(), String> {
+    with_stale_container_retry(paths, Some(progress), || run_compose_up(paths, progress))
+}
+
+fn run_compose_up(paths: &StackPaths, progress: &ProgressHandle) -> Result<(), String> {
     set_progress(progress, "pulling", "Starting Docker services…");
 
     let mut child = compose_command(paths)
@@ -687,8 +792,19 @@ fn describe_output(output: &Output) -> String {
     )
 }
 
-fn append_desktop_log(paths: &StackPaths, op: &str, message: &str) {
-    let log_path = paths.logs_dir.join("desktop.log");
+pub fn append_desktop_log(paths: &StackPaths, op: &str, message: &str) {
+    append_desktop_log_in(&paths.logs_dir, op, message);
+}
+
+/// Same as [`append_desktop_log`], addressed by logs directory rather than by
+/// [`StackPaths`].
+///
+/// The `log::` bridge and the panic hook both need to write before
+/// `initialize_stack` has returned a `StackPaths` — and the whole point of
+/// installing them early is to capture a failure *inside* that call. The logs
+/// dir is just `<data_dir>/logs`, which is knowable from the app handle alone.
+pub fn append_desktop_log_in(logs_dir: &Path, op: &str, message: &str) {
+    let log_path = logs_dir.join("desktop.log");
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
     let line = format!("[{timestamp}] {op}: {message}\n");
 
@@ -782,6 +898,95 @@ mod tests {
         assert!(contents.contains("OIDC_ISSUER_URL="));
         assert!(!contents.to_lowercase().contains("secret"));
         assert!(!contents.to_lowercase().contains("password"));
+    }
+
+    #[test]
+    fn stale_container_failures_are_told_apart_from_real_ones() {
+        // The two shapes Docker actually produces after it restarts or the Mac
+        // sleeps. Both used to leave the app failing identically on every
+        // launch, with a Retry button that could not clear either.
+        assert!(is_stale_container_failure(
+            "Error response from daemon: failed to set up container networking: network 0361b91e not found"
+        ));
+        assert!(is_stale_container_failure(
+            "Error response from daemon: Conflict. The container name \"/ci-server-desktop-generate-secrets-1\" is already in use by container \"b9a8df\"."
+        ));
+
+        // Anything a teardown would not fix must NOT trigger one — tearing the
+        // project down on a genuine failure would just add a slow retry of the
+        // same error.
+        assert!(!is_stale_container_failure("no space left on device"));
+        assert!(!is_stale_container_failure(
+            "manifest for ghcr.io/companionintelligence/companion/api:2026.9.9 not found: manifest unknown"
+        ));
+        assert!(!is_stale_container_failure("Cannot connect to the Docker daemon"));
+    }
+
+    /// The retry must be reachable from BOTH start paths, not just the splash.
+    ///
+    /// It used to live inside `start_stack_streaming`, so the tray's "Start
+    /// Stack" — which runs with no progress handle — hit the same stale
+    /// container and dead-ended, while the splash recovered from it. This
+    /// drives the shared helper the way the tray does (`progress: None`) and
+    /// asserts the second attempt actually happens.
+    #[test]
+    fn the_stale_container_retry_covers_the_tray_start_path_too() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = StackPaths {
+            data_dir: dir.path().to_path_buf(),
+            compose_dir: dir.path().join("compose"),
+            logs_dir: dir.path().join("logs"),
+            import_work_dir: dir.path().join("import-work"),
+        };
+        std::fs::create_dir_all(&paths.logs_dir).expect("logs dir");
+
+        let attempts = std::cell::Cell::new(0);
+        let teardowns = std::cell::Cell::new(0);
+        let result = with_stale_container_retry_using(None, || {
+            attempts.set(attempts.get() + 1);
+
+            if attempts.get() == 1 {
+                Err("Error response from daemon: Conflict. The container name \"/x\" is already in use by container \"y\".".to_string())
+            } else {
+                Ok(())
+            }
+        }, || {
+            teardowns.set(teardowns.get() + 1);
+            Ok(())
+        });
+
+        assert!(result.is_ok(), "the retry should have recovered: {result:?}");
+        assert_eq!(attempts.get(), 2, "the up should have been attempted twice");
+        assert_eq!(teardowns.get(), 1, "the project should have been torn down once");
+    }
+
+    /// The other half of the same contract: a failure a teardown cannot fix
+    /// must not be retried at all, or every genuine error costs a slow
+    /// `down` plus an identical second failure.
+    #[test]
+    fn an_unrelated_failure_is_not_retried() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let paths = StackPaths {
+            data_dir: dir.path().to_path_buf(),
+            compose_dir: dir.path().join("compose"),
+            logs_dir: dir.path().join("logs"),
+            import_work_dir: dir.path().join("import-work"),
+        };
+        std::fs::create_dir_all(&paths.logs_dir).expect("logs dir");
+
+        let attempts = std::cell::Cell::new(0);
+        let teardowns = std::cell::Cell::new(0);
+        let result = with_stale_container_retry_using(None, || {
+            attempts.set(attempts.get() + 1);
+            Err("no space left on device".to_string())
+        }, || {
+            teardowns.set(teardowns.get() + 1);
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        assert_eq!(attempts.get(), 1, "a non-stale failure must not be retried");
+        assert_eq!(teardowns.get(), 0, "and must not tear the project down");
     }
 
     #[test]
