@@ -112,6 +112,16 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
 
         if always {
             manager.requestAlwaysAuthorization()
+            // Escalating from When In Use often shows no second dialog (the
+            // user already picked While Using). The delegate then never
+            // fires and the JS Always path would hang. Resolve with the
+            // current status shortly; a real Always prompt still wins if
+            // the delegate fires first.
+            if current == .authorizedWhenInUse {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    self?.finishPendingAuthorizationIfWaiting()
+                }
+            }
         } else {
             manager.requestWhenInUseAuthorization()
         }
@@ -120,6 +130,14 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         finishPendingAuthorization()
         continueOneShotAfterAuthorization()
+    }
+
+    private func finishPendingAuthorizationIfWaiting() {
+        lock.lock()
+        let waiting = !authCompletions.isEmpty
+        lock.unlock()
+        guard waiting else { return }
+        finishPendingAuthorization()
     }
 
     private func finishPendingAuthorization() {

@@ -480,6 +480,24 @@ describe('useLocationTracking — native watcher is the only writer', () => {
     await waitFor(() => expect(settings.result.current.needsSettingsUpgrade).toBe(true));
   });
 
+  it('clears Open Settings on the settings page when tracking is turned off', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+    h.authenticated = true;
+    h.isNativePlatform.mockReturnValue(true);
+    h.isIosPlatform.mockReturnValue(true);
+    h.getNativeLocationAuthorization.mockResolvedValue('whenInUse');
+    h.requestNativeLocationAuthorization.mockResolvedValue('whenInUse');
+
+    const settings = renderHook(() => useLocationTracking({ watch: false }));
+    const watcher = renderHook(() => useLocationTracking());
+
+    act(() => watcher.result.current.setMode('always'));
+    await waitFor(() => expect(settings.result.current.needsSettingsUpgrade).toBe(true));
+
+    act(() => watcher.result.current.setMode('off'));
+    await waitFor(() => expect(settings.result.current.needsSettingsUpgrade).toBe(false));
+  });
+
   it('feeds a delivered location into captureLocationFix tagged as companion-mobile', async () => {
     localStorage.setItem(STORAGE_KEY, 'true');
     h.authenticated = true;

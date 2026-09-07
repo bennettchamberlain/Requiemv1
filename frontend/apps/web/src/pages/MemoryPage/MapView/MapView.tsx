@@ -32,8 +32,8 @@ import {
 } from '../Playback';
 import { TimelineView } from '../TimelineView';
 
-import { LocationAlwaysBanner } from './LocationAlwaysBanner';
 import { clusterDiameterPx, mergeCollidingClusters, type PixelCluster } from './clusterOverlap';
+import { LocationAlwaysBanner } from './LocationAlwaysBanner';
 import { readCoordinates, readGeoJsonPoint } from './mapCoordinates';
 import { fitSignature, pinsInBounds, routePoints } from './pinSet';
 import { PositionTraceLayer, TraceToggleControl } from './TraceLayer';

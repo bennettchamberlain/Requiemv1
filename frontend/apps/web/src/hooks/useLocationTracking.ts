@@ -179,7 +179,14 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
   // Native watcher — one writer for iOS + Android. Web never starts this; it uses
   // navigator.geolocation below instead.
   useEffect(() => {
-    if (!watch || mode === 'off' || !authenticated || !isNativePlatform()) {
+    if (!watch) {
+      return;
+    }
+
+    if (mode === 'off' || !authenticated || !isNativePlatform()) {
+      setNeedsSettingsUpgrade(false);
+      publishLocationNeedsSettingsUpgrade(false);
+
       return;
     }
 
