@@ -34,6 +34,15 @@ from ci.hbpe.tokenizer.vocab_registry import L0_CLASSES
 
 _L0_SET = frozenset(L0_CLASSES)
 
+# Default filler for ``densify``. The L0 taxonomy has no "nothing recorded"
+# member, and adding one would change N_CLASSES and every array shape scoring
+# depends on, so the densified corpus borrows UNKNOWN. That is a proxy, not a
+# synonym: UNKNOWN already means "the labeler could not tell from the title",
+# and after densifying it also means "no event covered this bucket". The two
+# are indistinguishable afterwards, so UNKNOWN's per-class recall is not
+# interpretable on a densified run. Every other class stays clean.
+DEFAULT_BACKGROUND = "UNKNOWN"
+
 
 def corpus_dates(rows: Sequence[dict]) -> list[datetime.date]:
     """Every distinct calendar date present in the token stream, ascending."""
@@ -107,4 +116,57 @@ def eval_dates(
         if not actuals_for_day(rows, day, n_buckets):
             continue
         out.append(day)
+    return out
+
+
+def densify(
+    rows: Sequence[dict],
+    background: str = DEFAULT_BACKGROUND,
+    n_buckets: int = BUCKETS_PER_DAY,
+) -> list[dict]:
+    """
+    Give every bucket of every observed day a label, filling gaps with
+    *background*.
+
+    The sparse corpus asks "given that something was recorded here, which class
+    was it?" — only observed buckets carry a target, so on a corpus at 2.6%
+    occupancy a forecaster is fit and scored on a handful of points per day and
+    is never asked what happens during the other 97%. That is not the question
+    a next-day forecast has to answer.
+
+    Densifying asks "what is happening in this bucket?" for all
+    ``n_buckets`` of them, which is the deployable question, and takes the
+    corpus from hundreds of labelled points to tens of thousands.
+
+    Only days already present in *rows* are filled. A day absent from the token
+    stream stays absent rather than becoming a fabricated day of background:
+    ingestion gaps are not evidence that nothing happened.
+
+    The filler is applied to history and actuals alike, because they are the
+    same rows. Densifying actuals alone would score every forecaster against a
+    class none of them had ever been fit on.
+    """
+    if background not in _L0_SET:
+        raise ValueError(f"background {background!r} is not an L0 class")
+
+    seen: dict[datetime.date, set[int]] = {}
+    out: list[dict] = []
+    for row in rows:
+        day = _as_date(row["date"])
+        seen.setdefault(day, set())
+        out.append(row)
+        token = str(row.get("token_id") or "")
+        if token not in _L0_SET:
+            continue
+        bucket = int(row["bucket_idx"])
+        if 0 <= bucket < n_buckets:
+            seen[day].add(bucket)
+
+    for day, occupied in seen.items():
+        for bucket in range(n_buckets):
+            if bucket in occupied:
+                continue
+            out.append({"date": day, "bucket_idx": bucket, "token_id": background})
+
+    out.sort(key=lambda r: (_as_date(r["date"]), int(r["bucket_idx"])))
     return out
