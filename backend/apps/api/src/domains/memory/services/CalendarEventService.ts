@@ -32,6 +32,9 @@ import { EventBaseEntity } from '../entities/EventBaseEntity';
 import { EventEntity, Event } from '../entities/EventEntity';
 import { PlaceEntity } from '../entities/PlaceEntity';
 import { ledgerPlatform } from '../identity';
+import { expandAll } from '../recurrence/expandAll';
+import { dropExistingOverrides, resolveExpansionZone } from '../recurrence/queries';
+import type { OccurrenceSpec } from '../recurrence/types';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
@@ -150,6 +153,25 @@ const DAY_MS = 86_400_000;
 const MAX_RANGE_EVENTS = 2000;
 
 /**
+ * Series masters the recurring leg of {@link CalendarEventService.findInRange}
+ * may load. That leg deliberately has NO lookback floor — a weekly standup
+ * whose DTSTART is in 2023 is exactly the row that has to be reached — so this
+ * cap and `events_user_recurring_idx` are what keep it from degenerating into
+ * the whole-history scan MAX_EVENT_LOOKBACK_DAYS was added to eliminate.
+ */
+export const MAX_RECURRING_MASTERS = 500;
+
+/**
+ * Synthetic occurrences one range read may add.
+ *
+ * Applied to the spec list BEFORE anything is materialized, so an over-eager
+ * expansion cannot crowd real rows out of MAX_RANGE_EVENTS. A quarter of a
+ * daily series is 92 occurrences; a thousand is roughly ten such series, which
+ * is well past the point where the grid is unreadable anyway.
+ */
+export const MAX_EXPANDED_OCCURRENCES = 1000;
+
+/**
  * Event types the schedule calendar renders, as an allowlist.
  *
  * `ci.events` is the timeline for everything an ETL connector can flatten, not
@@ -164,6 +186,50 @@ const MAX_RANGE_EVENTS = 2000;
  * which only covered the browser fold (itself reverted in 20260812144811).
  */
 const SCHEDULE_EVENT_TYPES = ['calendar_event', 'meeting', 'appointment', 'planned_block'] as const;
+
+/**
+ * "This event did not happen" — the one status vocabulary the calendar and the
+ * planner share.
+ *
+ * It is exported because it used to be duplicated, and the copies drifted:
+ * `findInRange` excluded ('cancelled', 'no_show') while the planner's own
+ * LIVE_BLOCK_SQL excluded ('cancelled', 'no_show', 'skipped'). A `skipped`
+ * block was therefore invisible to every planned-block read while still
+ * occupying its slot in the gap solver's occupancy set — the solver refused to
+ * place into a window that nothing would ever draw.
+ *
+ * Always compare through COALESCE: `ci.events.status` was nullable until
+ * 20260908000139 and `NULL NOT IN (...)` is UNKNOWN, not TRUE, so a bare
+ * `NOT IN` silently drops null-status rows.
+ */
+export const DEAD_EVENT_STATUSES = ['cancelled', 'no_show', 'skipped'] as const;
+
+/** SQL fragment for "this event still counts", for `event`-aliased builders. */
+export const LIVE_EVENT_SQL = `COALESCE(event.status, 'confirmed') NOT IN (${DEAD_EVENT_STATUSES.map(
+  (s) => `'${s}'`,
+).join(', ')})`;
+
+/**
+ * Whether a planned block is still one the calendar would draw.
+ *
+ * A block dies two ways and BOTH have to be recognised here, because the
+ * planning identity (`task:<uuid>`) is derived and therefore single-use:
+ * `unschedule` tombstones it, while an accepted `event_revise` confirmation
+ * leaves `is_deleted = false` and writes `status = 'cancelled'`. Matching only
+ * the tombstone meant a cancelled block was handed back verbatim by the dedup
+ * below — so the task reported itself placed, nothing rendered, and every retry
+ * re-matched the same dead row. That is the same permanent failure the
+ * tombstone branch was written for, reached through the status door.
+ */
+function isLivePlannedBlock(row: EventEntity): boolean {
+  if (row.isDeleted) {
+    return false;
+  }
+
+  const status = row.status ?? 'confirmed';
+
+  return !(DEAD_EVENT_STATUSES as readonly string[]).includes(status);
+}
 
 /**
  * Spanning-aggregate service for the events CTI split: an event is ONE logical
@@ -439,7 +505,7 @@ export class CalendarEventService {
         // Restore and retime it instead. The return-verbatim contract above is
         // unchanged for capture sources, where the identity comes from the
         // provider and a deletion must outlive the next sync.
-        if (existing.isDeleted && item.source_type === 'planning') {
+        if (item.source_type === 'planning' && !isLivePlannedBlock(existing)) {
           return this.restorePlannedBlock(context, existing.id, item);
         }
 
@@ -778,6 +844,21 @@ export class CalendarEventService {
    * EventResolver and events materialized by CandidateService when a schedule
    * suggestion is accepted both leave `event_type` unset, and dropping them
    * would empty the calendar of exactly the entries the user put there.
+   *
+   * ═══ RECURRING SERIES ARE EXPANDED HERE, AND ONLY HERE ═══
+   * `ci.events` holds one row per recurring SERIES, not one per occurrence —
+   * the Google connector fetches `singleEvents=false` deliberately
+   * (docs/design/cross-pipeline-identity.md) and the .ics importer does not
+   * expand either. Nothing else in the system walked an RRULE, so a weekly
+   * standup appeared on the grid once, the gap solver saw an empty morning
+   * every other week and booked straight over it, and peer free/busy answered
+   * FREE for every occurrence after the first.
+   *
+   * This method is the choke point that fixes all three at once: the schedule
+   * grid reads it and `PlannedBlockService` builds its occupied set from it.
+   * The occurrences are synthesized per-read and never persisted — see
+   * `recurrence/types.ts` for why writing them would collide with the override
+   * namespace.
    */
   async findInRange(context: ServiceContext, from: Date, to: Date): Promise<Event[]> {
     // Sargable floor for events_user_time_idx: the planner can now range-scan
@@ -793,7 +874,7 @@ export class CalendarEventService {
       // NULL, not TRUE — the event would exist, be returned by every other
       // read, and be missing from the calendar with nothing to explain why.
       // Same guard as dailyAggregateSql's meeting counts.
-      .andWhere("COALESCE(event.status, 'confirmed') NOT IN ('cancelled', 'no_show')")
+      .andWhere(LIVE_EVENT_SQL)
       .andWhere('event.start_time >= :lowerBound', { lowerBound })
       .andWhere('event.start_time < :to', { to })
       .andWhere('COALESCE(event.end_time, event.start_time) >= :from', { from })
@@ -809,8 +890,138 @@ export class CalendarEventService {
     }
 
     const result = await query.getMany();
+    const inWindow = await this.composeMany(result);
 
-    return this.composeMany(result);
+    // SYSTEM_USER reads the whole box, and both halves of expansion are
+    // per-user: the fallback zone comes from `ci.users.timezone`, and override
+    // suppression is scoped by user_id. Rather than guess a zone or leak one
+    // user's overrides into another's occurrences, the cross-user path keeps
+    // the old master-only behaviour.
+    if (context.userId === SYSTEM_USER) {
+      return inWindow;
+    }
+
+    const occurrences = await this.expandRecurring(context.userId, from, to, inWindow);
+
+    if (occurrences.length === 0) {
+      return inWindow;
+    }
+
+    return [...inWindow, ...occurrences]
+      .sort(
+        (left, right) =>
+          left.startTime.getTime() - right.startTime.getTime() ||
+          (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+      )
+      .slice(0, MAX_RANGE_EVENTS);
+  }
+
+  /**
+   * Series masters that could put an occurrence in the window.
+   *
+   * Two deliberate differences from the main query above:
+   *
+   *  1. **No `MAX_EVENT_LOOKBACK_DAYS` floor.** A series anchored in 2023 is
+   *     precisely the row whose occurrences are missing today; a floor would
+   *     silently expand only series younger than a quarter.
+   *  2. **No overlap predicate.** The main query also requires
+   *     `COALESCE(end_time, start_time) >= :from`, which a master's own DTSTART
+   *     almost never satisfies — that is why the masters have to be fetched
+   *     again rather than filtered out of `inWindow`.
+   *
+   * Everything else — the tombstone check, LIVE_EVENT_SQL and the event-type
+   * allowlist — is repeated verbatim so an occurrence can never appear on the
+   * grid under rules its own master would have been hidden by.
+   */
+  private recurringMasters(userId: string, to: Date): Promise<EventEntity[]> {
+    return this.dataSource
+      .getRepository(EventEntity)
+      .createQueryBuilder('event')
+      .where('event.is_deleted = false')
+      .andWhere(LIVE_EVENT_SQL)
+      .andWhere('event.is_recurring = true')
+      .andWhere('event.start_time < :to', { to })
+      .andWhere('(event.event_type IS NULL OR event.event_type IN (:...scheduleEventTypes))', {
+        scheduleEventTypes: [...SCHEDULE_EVENT_TYPES],
+      })
+      .andWhere('event.user_id = :userId', { userId })
+      .orderBy('event.start_time', 'DESC')
+      .take(MAX_RECURRING_MASTERS)
+      .getMany();
+  }
+
+  /**
+   * The synthetic occurrences to add to a range read.
+   *
+   * Masters already returned by the main query are reused rather than composed
+   * twice — `composeMany` is a second round-trip for the `ci.entities` base
+   * rows, and a master whose DTSTART falls inside the window is in BOTH result
+   * sets.
+   */
+  private async expandRecurring(
+    userId: string,
+    from: Date,
+    to: Date,
+    inWindow: readonly Event[],
+  ): Promise<Event[]> {
+    const alreadyComposed = new Set(inWindow.map((event) => event.id));
+    const extra = (await this.recurringMasters(userId, to)).filter((row) => !alreadyComposed.has(row.id));
+    const masters = [...(await this.composeMany(extra)), ...inWindow.filter((event) => event.isRecurring)];
+
+    if (masters.length === 0) {
+      return [];
+    }
+
+    const zone = await resolveExpansionZone(this.eventRepository, userId);
+    const specs = expandAll(
+      masters,
+      { from, to },
+      {
+        fallbackTimeZone: zone.timeZone,
+        fallbackTimeZoneSource: zone.source,
+        limits: { maxTotalOccurrences: MAX_EXPANDED_OCCURRENCES },
+      },
+    );
+    const kept = await dropExistingOverrides(this.eventRepository, userId, specs);
+    const byId = new Map(masters.map((master) => [master.id, master]));
+
+    return kept.flatMap((spec) => {
+      const master = byId.get(spec.seriesId);
+
+      return master ? [this.materializeOccurrence(master, spec)] : [];
+    });
+  }
+
+  /**
+   * One computed occurrence dressed as the event it stands for.
+   *
+   * It carries the master's whole payload — title, participants, location,
+   * tags — because to every reader it IS that meeting, just on another day.
+   * `parentEventId` is cleared rather than pointed at the master: that column
+   * means something else (a real FK to a real row) and the two must not be
+   * confused. `seriesMasterId` is the field that says where this came from, and
+   * it is what the GraphQL resolvers batch tags/content/media by, since the
+   * synthetic id backs no row.
+   */
+  private materializeOccurrence(master: Event, spec: OccurrenceSpec): Event {
+    return {
+      ...master,
+      id: spec.occurrenceId,
+      startTime: spec.startTime,
+      endTime: spec.endTime,
+      seriesMasterId: master.id,
+      recurrenceId: spec.recurrenceInstant,
+      parentEventId: null,
+      metadata: {
+        ...master.metadata,
+        occurrence: {
+          masterEventId: master.id,
+          recurrenceInstant: spec.recurrenceInstant,
+          timeZoneSource: spec.timeZoneSource,
+          synthetic: true,
+        },
+      },
+    };
   }
 
   /**
