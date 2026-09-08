@@ -8,8 +8,10 @@ import numpy as np
 import pytest
 
 from ci.hbpe.evaluation.corpus import densify
+from ci.hbpe.evaluation.discriminative import PriorCorrectedForecaster
 from ci.hbpe.evaluation.forecaster import CLASS_INDEX, N_CLASSES, DayFit
 from ci.hbpe.evaluation.report import macro_recall
+from ci.hbpe.evaluation.rhythm import background_by_bucket, sleep_buckets
 from ci.hbpe.evaluation.shrinkage import (
     ShrinkageForecaster,
     balanced_transitions,
@@ -196,3 +198,111 @@ def test_macro_recall_punishes_majority_class_collapse():
         }
     )
     assert macro_recall(collapsed, exclude="UNKNOWN") == pytest.approx(0.0)
+
+
+# ── declared rhythm ───────────────────────────────────────────────────────────
+
+
+def test_sleep_window_that_does_not_wrap_midnight():
+    """This user's real onboarding answer: 02:00 → 09:00, inside one day."""
+    got = sleep_buckets({"sleep_time": "02:00", "wake_time": "09:00"}, 96)
+    assert got == set(range(8, 36))
+    assert len(got) == 28
+
+
+def test_sleep_window_wraps_midnight():
+    got = sleep_buckets({"sleep_time": "22:00", "wake_time": "07:00"}, 96)
+    assert got == set(range(88, 96)) | set(range(0, 28))
+    assert len(got) == 36
+
+
+def test_sleep_window_absent_or_unusable():
+    assert sleep_buckets(None, 96) == set()
+    assert sleep_buckets({}, 96) == set()
+    assert sleep_buckets({"sleep_time": "nope", "wake_time": "07:00"}, 96) == set()
+    # Degenerate: bed and wake at the same minute is not a 24-hour sleep.
+    assert sleep_buckets({"sleep_time": "07:00", "wake_time": "07:00"}, 96) == set()
+
+
+def test_background_marks_sleep_and_leaves_the_rest_flat():
+    row = background_by_bucket(
+        {"sleep_time": "02:00", "wake_time": "09:00"}, "UNKNOWN", 96
+    )
+    assert row[8] == "SLEEP"
+    assert row[35] == "SLEEP"
+    assert row[36] == "UNKNOWN"
+    assert row[0] == "UNKNOWN"
+
+
+def test_densify_applies_a_per_bucket_background():
+    background = background_by_bucket(
+        {"sleep_time": "00:00", "wake_time": "01:00"}, "UNKNOWN", N_BUCKETS
+    )
+    rows = densify([_row(DAY, 5, "WORK")], background, N_BUCKETS)
+    by_bucket = {r["bucket_idx"]: r["token_id"] for r in rows}
+    assert by_bucket[5] == "WORK"  # an observed token always beats the filler
+    assert by_bucket[0] == "SLEEP"
+
+
+def test_densify_rejects_a_background_of_the_wrong_length():
+    with pytest.raises(ValueError, match="expected"):
+        densify([_row(DAY, 0, "WORK")], ["UNKNOWN"] * 3, N_BUCKETS)
+
+
+# ── decision rule ─────────────────────────────────────────────────────────────
+
+
+class _Fixed:
+    name = "fixed"
+
+    def __init__(self, probs):
+        self.probs = probs
+
+    def forecast(self, history, target_date, fit):
+        return self.probs
+
+
+def test_prior_correction_lifts_a_rare_class_over_a_common_one():
+    """
+    The posterior prefers UNKNOWN 0.6 to LEISURE 0.4, but history is 95%
+    UNKNOWN, so 0.4 on LEISURE is the more surprising claim.
+    """
+    unknown, leisure = CLASS_INDEX["UNKNOWN"], CLASS_INDEX["LEISURE"]
+    probs = np.zeros((N_BUCKETS, N_CLASSES))
+    probs[:, unknown] = 0.6
+    probs[:, leisure] = 0.4
+
+    history = [_row(DAY, b % N_BUCKETS, "UNKNOWN") for b in range(95)]
+    history += [_row(DAY, b % N_BUCKETS, "LEISURE") for b in range(5)]
+    fit = DayFit.build(history, n_buckets=N_BUCKETS)
+
+    out = PriorCorrectedForecaster(_Fixed(probs), power=1.0).forecast(history, DAY, fit)
+    assert out[0, leisure] > out[0, unknown]
+    assert np.allclose(out.sum(axis=1), 1.0)
+
+
+def test_prior_correction_with_zero_power_changes_nothing():
+    probs = np.full((N_BUCKETS, N_CLASSES), 1.0 / N_CLASSES)
+    probs[:, CLASS_INDEX["WORK"]] = 0.5
+    probs /= probs.sum(axis=1, keepdims=True)
+    history = [_row(DAY, 0, "WORK")] * 10
+    fit = DayFit.build(history, n_buckets=N_BUCKETS)
+    out = PriorCorrectedForecaster(_Fixed(probs), power=0.0).forecast(history, DAY, fit)
+    assert np.allclose(out, probs)
+
+
+def test_prior_correction_survives_a_class_absent_from_history():
+    """A zero-count class must not divide by zero and take every bucket."""
+    probs = np.full((N_BUCKETS, N_CLASSES), 1.0 / N_CLASSES)
+    history = [_row(DAY, 0, "WORK")] * 10
+    fit = DayFit.build(history, n_buckets=N_BUCKETS)
+    out = PriorCorrectedForecaster(_Fixed(probs), power=1.0).forecast(history, DAY, fit)
+    assert np.isfinite(out).all()
+    assert np.allclose(out.sum(axis=1), 1.0)
+
+
+def test_prior_correction_passes_through_empty_history():
+    probs = np.full((N_BUCKETS, N_CLASSES), 1.0 / N_CLASSES)
+    fit = DayFit.build([], n_buckets=N_BUCKETS)
+    out = PriorCorrectedForecaster(_Fixed(probs)).forecast([], DAY, fit)
+    assert np.allclose(out, probs)

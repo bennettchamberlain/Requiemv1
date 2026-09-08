@@ -92,6 +92,12 @@ def main(argv: list[str] | None = None) -> int:
         help=f"filler class for --dense (default {DEFAULT_BACKGROUND})",
     )
     parser.add_argument(
+        "--use-rhythm",
+        action="store_true",
+        help="with --dense, fill the onboarding-declared sleep window with "
+        "SLEEP instead of the flat filler",
+    )
+    parser.add_argument(
         "--baselines-only",
         action="store_true",
         help="skip the candidate forecasters (shrink, shrink+hmm, logit)",
@@ -124,13 +130,32 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.dense:
-        rows = densify(rows, args.background)
+        background: str | list[str] = args.background
+        if args.use_rhythm:
+            from ci.hbpe.evaluation.rhythm import background_by_bucket, fetch_rhythm
+
+            declared = fetch_rhythm(args.user)
+            if declared:
+                background = background_by_bucket(declared, args.background)
+                logging.info(
+                    "densifying with the declared rhythm: sleep %s→%s",
+                    declared.get("sleep_time"),
+                    declared.get("wake_time"),
+                )
+            else:
+                logging.warning(
+                    "--use-rhythm: no schedule on the self-entity; flat filler"
+                )
+        rows = densify(rows, background)
 
     forecasters: list[Forecaster] = list(DEFAULT_FORECASTERS)
     candidate = args.candidate
 
     if not args.baselines_only:
-        from ci.hbpe.evaluation.discriminative import LogisticForecaster
+        from ci.hbpe.evaluation.discriminative import (
+            LogisticForecaster,
+            PriorCorrectedForecaster,
+        )
         from ci.hbpe.evaluation.shrinkage import (
             ShrinkageForecaster,
             ShrinkageHmmForecaster,
@@ -146,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
         forecasters.append(
             LogisticForecaster(shrink, class_weight="balanced", name="logit-bal")
         )
+        # Same fit as `logit`, different operating point. Read its macro-R and
+        # per-class recall only; see PriorCorrectedForecaster.
+        forecasters.append(PriorCorrectedForecaster(LogisticForecaster(shrink)))
 
     if args.with_schedule:
         from ci.hbpe.evaluation.schedule import (

@@ -121,7 +121,7 @@ def eval_dates(
 
 def densify(
     rows: Sequence[dict],
-    background: str = DEFAULT_BACKGROUND,
+    background: str | Sequence[str] = DEFAULT_BACKGROUND,
     n_buckets: int = BUCKETS_PER_DAY,
 ) -> list[dict]:
     """
@@ -145,9 +145,25 @@ def densify(
     The filler is applied to history and actuals alike, because they are the
     same rows. Densifying actuals alone would score every forecaster against a
     class none of them had ever been fit on.
+
+    *background* is either one class for every bucket, or a per-bucket sequence
+    of length *n_buckets*. The sequence form is how a declared daily rhythm
+    enters the corpus — see ``rhythm.background_by_bucket``, which marks the
+    user's stated sleep window SLEEP and leaves the rest flat. An observed
+    token always beats the filler, so a night actually spent working still
+    reads WORK.
     """
-    if background not in _L0_SET:
-        raise ValueError(f"background {background!r} is not an L0 class")
+    if isinstance(background, str):
+        per_bucket = [background] * n_buckets
+    else:
+        per_bucket = list(background)
+        if len(per_bucket) != n_buckets:
+            raise ValueError(
+                f"background has {len(per_bucket)} entries, expected {n_buckets}"
+            )
+    unknown = sorted({c for c in per_bucket if c not in _L0_SET})
+    if unknown:
+        raise ValueError(f"background {unknown[0]!r} is not an L0 class")
 
     seen: dict[datetime.date, set[int]] = {}
     out: list[dict] = []
@@ -166,7 +182,9 @@ def densify(
         for bucket in range(n_buckets):
             if bucket in occupied:
                 continue
-            out.append({"date": day, "bucket_idx": bucket, "token_id": background})
+            out.append(
+                {"date": day, "bucket_idx": bucket, "token_id": per_bucket[bucket]}
+            )
 
     out.sort(key=lambda r: (_as_date(r["date"]), int(r["bucket_idx"])))
     return out

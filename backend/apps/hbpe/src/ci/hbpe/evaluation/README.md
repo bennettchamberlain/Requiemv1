@@ -25,6 +25,11 @@ python -m ci.hbpe.evaluation --user <uuid> --dense # score all 96 buckets, not
 python -m ci.hbpe.evaluation --user <uuid> --with-hmt --json
 ```
 
+`--use-rhythm` (with `--dense`) fills the onboarding-declared sleep window
+with SLEEP instead of the flat filler — see `rhythm.py`. On the corpus this was
+built against it gave SLEEP 1,968 rows of real support where it had none, and
+cut the meaningless filler from 97.5% of buckets to 70.5%.
+
 `--baselines-only` drops the candidate rows; `--with-schedule` adds the
 calendar reader (read `schedule.py` first, it is near-circular on a
 calendar-derived corpus); `--candidate <name>` chooses which row the D3
@@ -133,6 +138,7 @@ all three columns.
 | `shrinkage.py` | recency-weighted hierarchical shrinkage; balanced transitions |
 | `discriminative.py` | multinomial logistic head over per-bucket features |
 | `schedule.py` | tomorrow's calendar as an input (read its caveat) |
+| `rhythm.py` | the onboarding-declared wake/sleep window as a densification prior |
 | `__main__.py` | CLI |
 
 ## Known limitation

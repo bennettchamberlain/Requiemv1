@@ -256,3 +256,73 @@ class LogisticForecaster:
         out = np.zeros((n_buckets, N_CLASSES), dtype=np.float64)
         out[:, model.classes_] = partial
         return out / np.clip(out.sum(axis=1, keepdims=True), 1e-12, None)
+
+
+class PriorCorrectedForecaster:
+    """
+    A calibrated forecaster's probabilities, reweighted for the *decision*.
+
+    ``logit`` posts the best Brier and ECE in the table and mediocre per-class
+    recall; ``logit-bal`` inverts that. They are not two models to choose
+    between. Class weighting distorts the fit, so ``logit-bal``'s probabilities
+    are deliberately wrong and its Brier says so — the gate benches it, which
+    is the correct call on a proper scoring rule.
+
+    The recall gap is a *decision-rule* problem, not a probability problem.
+    ``argmax`` over a posterior on a 97%-background corpus answers the
+    background almost everywhere even when the posterior is exactly right,
+    because being right about a rare class still leaves it below the common
+    one. Dividing by the class prior before taking the argmax moves the
+    operating point without touching the fit:
+
+        p'(c) ∝ p(c) / prior(c) ** power
+
+    ``power=0`` is plain argmax, ``power=1`` full correction to a flat
+    effective prior. The prior is counted from *history only*, so this stays
+    walk-forward.
+
+    Deployed, this is one model: store what ``logit`` emits, and apply this
+    when choosing what to show. Here it has to be a separate row because
+    ``score_predictions`` derives top-1, Brier and ECE from the same vector,
+    so **read only this row's macro-R and per-class recall**. Its Brier and ECE
+    describe reweighted numbers that nothing would ever store.
+    """
+
+    name = "logit@rule"
+
+    def __init__(
+        self,
+        inner,
+        *,
+        power: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        self.inner = inner
+        self.power = power
+        if name:
+            self.name = name
+
+    def forecast(
+        self,
+        history: Sequence[datetime.date] | Sequence[dict],
+        target_date: datetime.date,
+        fit: DayFit,
+    ) -> np.ndarray:
+        probs = np.asarray(
+            self.inner.forecast(history, target_date, fit), dtype=np.float64
+        )
+
+        counts = np.zeros(N_CLASSES, dtype=np.float64)
+        for row in history:
+            idx = CLASS_INDEX.get(str(row.get("token_id") or ""))
+            if idx is not None:
+                counts[idx] += 1.0
+        total = counts.sum()
+        if total <= 0:
+            return probs
+
+        # Laplace the prior itself: a class absent from history would otherwise
+        # divide by zero and take every bucket.
+        prior = (counts + 1.0) / (total + N_CLASSES)
+        adjusted = probs / np.power(prior, self.power)[None, :]
+        return adjusted / np.clip(adjusted.sum(axis=1, keepdims=True), 1e-12, None)
