@@ -207,6 +207,11 @@ class InferenceEngine:
         # Memoised per-day model outputs
         self._output_cache: dict[datetime.date, dict | None] = {}
         self._occupancy: list[dict] | None = None
+        # (forecast_date) -> (emissions, densified history). The head is
+        # refit from scratch on each call and that costs seconds of CPU;
+        # api.py holds one engine per user across requests, so without this
+        # every poll of /histogram pays for the same fit again.
+        self._logit_cache: dict[datetime.date, tuple] = {}
         self._l1_l0: dict[str, str] = self._load_l1_l0()
         self.last_model_version = MODEL_HMT
         self.last_still_learning = False
@@ -718,7 +723,10 @@ class InferenceEngine:
         # rest defaults to UNKNOWN. An observed token always wins over both.
         logit_em = None
         dense_history: list[dict] = []
-        if not force_model or force_model == MODEL_LOGIT:
+        cached = self._logit_cache.get(forecast_date)
+        if cached is not None:
+            logit_em, dense_history = cached
+        elif not force_model or force_model == MODEL_LOGIT:
             try:
                 dense = densify(
                     occupancy,
@@ -733,6 +741,8 @@ class InferenceEngine:
                 logit_em = logit_emissions(
                     dense_history, forecast_date, n_buckets=N_BUCKETS
                 )
+                if logit_em is not None:
+                    self._logit_cache[forecast_date] = (logit_em, dense_history)
             except Exception as exc:
                 # Never let the new path take the histogram down; the baselines
                 # below are still a complete answer.
@@ -842,12 +852,16 @@ class InferenceEngine:
         """Evict one day from the output cache (call on new event arrival)."""
         self._output_cache.pop(date, None)
         self._occupancy = None
+        # Not just `date`: the head is fit over the whole history, so a new
+        # event on any day changes every future day's forecast.
+        self._logit_cache.clear()
         log.debug("Cache invalidated for %s", date)
 
     def invalidate_all(self) -> None:
         """Clear the entire cache (call after LoRA adapter update)."""
         self._output_cache.clear()
         self._occupancy = None
+        self._logit_cache.clear()
         log.info("Inference cache cleared (full invalidation)")
 
 
