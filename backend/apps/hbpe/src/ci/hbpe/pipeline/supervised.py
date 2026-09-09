@@ -219,11 +219,36 @@ def logit_emissions(
     return out / np.clip(out.sum(axis=1, keepdims=True), 1e-12, None)
 
 
+# Minimum calibrated probability the corrected class must still hold before the
+# correction is allowed to override the plain argmax. Without a floor, full
+# correction will relabel a bucket the model calls UNKNOWN at p=0.97 as
+# EXERCISE at p=0.004, purely because EXERCISE is rare. That maximises macro
+# recall, which counts a rare class hit regardless of confidence, and produces
+# a label no one should act on. 0.15 keeps the corrections that reflect real
+# signal and drops the ones that are only arithmetic on a tiny prior.
+#
+# Swept walk-forward on the 76-day densified corpus (macro-R / Brier):
+#
+#     0.00   0.789 / 0.1876      labels down to p=0.004
+#     0.02   0.739 / 0.1492
+#     0.05   0.693 / 0.1240
+#     0.10   0.696 / 0.1129
+#     0.15   0.697 / 0.1109
+#
+# Read that honestly: nearly all of the unfloored row's macro-recall advantage
+# is built from labels the model gives less than 5% probability. Macro recall
+# counts a rare-class hit regardless of confidence, so it rewards guessing; a
+# served label cannot. 0.15 dominates 0.05 and 0.10 on both axes, so there is
+# no trade being made inside the floored range — take the top of it.
+DECISION_FLOOR = 0.15
+
+
 def prior_correct(
     probs: np.ndarray,
     history: Sequence[dict],
     *,
     power: float = 1.0,
+    floor: float = DECISION_FLOOR,
 ) -> np.ndarray:
     """
     Reweight a calibrated posterior for the *decision*, without refitting.
@@ -253,4 +278,12 @@ def prior_correct(
     # divide by zero and take every bucket.
     prior = (counts + 1.0) / (total + N_CLASSES)
     adjusted = probs / np.power(prior, power)[None, :]
-    return adjusted / np.clip(adjusted.sum(axis=1, keepdims=True), 1e-12, None)
+    adjusted = adjusted / np.clip(adjusted.sum(axis=1, keepdims=True), 1e-12, None)
+
+    if floor > 0.0:
+        # Where the correction would promote a class the model barely believes
+        # in, keep the uncorrected row so the argmax stays the honest one.
+        promoted = np.argmax(adjusted, axis=1)
+        believed = probs[np.arange(probs.shape[0]), promoted]
+        adjusted = np.where((believed < floor)[:, None], probs, adjusted)
+    return adjusted
