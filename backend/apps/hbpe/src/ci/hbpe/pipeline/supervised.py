@@ -39,9 +39,9 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from ci.hbpe.evaluation.forecaster import CLASS_INDEX, N_CLASSES, DayFit
-from ci.hbpe.evaluation.shrinkage import DEFAULT_HALF_LIFE_DAYS
-from ci.hbpe.pipeline.baselines import _as_date
+from ci.hbpe.buckets import BUCKETS_PER_DAY
+from ci.hbpe.pipeline.baselines import CLASS_INDEX, N_CLASSES, _as_date
+from ci.hbpe.pipeline.shrinkage import DEFAULT_HALF_LIFE_DAYS
 
 N_HARMONICS = 3
 N_FEATURES = 2 * N_HARMONICS + 7 + 1 + (N_CLASSES + 1) * 2 + N_CLASSES
@@ -171,158 +171,86 @@ def _build(
     return np.vstack(blocks), np.concatenate(labels)
 
 
-class LogisticForecaster:
+def logit_emissions(
+    history: Sequence[dict],
+    target_date: datetime.date,
+    *,
+    n_buckets: int = BUCKETS_PER_DAY,
+    half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
+    c: float = 1.0,
+    max_iter: int = 300,
+    class_weight: str | None = None,
+) -> np.ndarray | None:
     """
-    Multinomial logistic regression refit on each eval day's history.
+    Fit the head on *history* and return ``(n_buckets, N_CLASSES)`` for
+    *target_date*, or None when history is too thin to fit.
 
-    Falls back to *prior* (the forecaster whose output it would otherwise
-    replace) when history is too thin to fit, so the row degrades to a known
-    quantity instead of to noise.
+    None rather than a fallback distribution: the caller already holds the
+    baselines and is better placed to decide what to serve instead.
     """
+    from sklearn.linear_model import LogisticRegression
 
-    name = "logit"
+    days, y = _day_matrix(history, n_buckets)
+    if not days:
+        return None
 
-    def __init__(
-        self,
-        prior,
-        *,
-        half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
-        c: float = 1.0,
-        max_iter: int = 300,
-        class_weight: str | None = None,
-        name: str | None = None,
-    ) -> None:
-        self.prior = prior
-        self.half_life_days = half_life_days
-        self.c = c
-        self.max_iter = max_iter
-        # ``"balanced"`` reweights each class by its inverse frequency. On the
-        # densified corpus the filler is 97% of rows, and an unweighted fit
-        # spends its capacity there: it posts a superb Brier by predicting
-        # "nothing recorded" accurately and loses recall on the classes anyone
-        # wants forecast. Weighting trades aggregate calibration for the rare
-        # classes, which is the trade the product wants.
-        self.class_weight = class_weight
-        if name:
-            self.name = name
+    x_all, y_all = _build(days, y, n_buckets, half_life_days, target_date=target_date)
+    x_target = x_all[-n_buckets:]
+    x_train, y_train = x_all[:-n_buckets], y_all[:-n_buckets]
 
-    def forecast(
-        self,
-        history: Sequence[dict],
-        target_date: datetime.date,
-        fit: DayFit,
-    ) -> np.ndarray:
-        from sklearn.linear_model import LogisticRegression
+    keep = y_train >= 0
+    x_train, y_train = x_train[keep], y_train[keep]
+    if x_train.shape[0] < MIN_TRAIN_ROWS or len(np.unique(y_train)) < 2:
+        return None
 
-        n_buckets = fit.b0.shape[0]
-        days, y = _day_matrix(history, n_buckets)
-        if not days:
-            return self.prior.forecast(history, target_date, fit)
+    # No multi_class argument: scikit-learn 1.7 deprecated it and 1.9 removed
+    # it. lbfgs is multinomial by default, which is what this wants.
+    model = LogisticRegression(
+        C=c, max_iter=max_iter, solver="lbfgs", class_weight=class_weight
+    )
+    with warnings.catch_warnings():
+        # An unconverged fit is still a usable probability vector.
+        warnings.simplefilter("ignore")
+        model.fit(x_train, y_train)
+        partial = model.predict_proba(x_target)
 
-        x_all, y_all = _build(
-            days,
-            y,
-            n_buckets,
-            self.half_life_days,
-            target_date=target_date,
-        )
-        x_target = x_all[-n_buckets:]
-        x_train, y_train = x_all[:-n_buckets], y_all[:-n_buckets]
-
-        keep = y_train >= 0
-        x_train, y_train = x_train[keep], y_train[keep]
-        if x_train.shape[0] < MIN_TRAIN_ROWS or len(np.unique(y_train)) < 2:
-            return self.prior.forecast(history, target_date, fit)
-
-        # No multi_class argument: scikit-learn 1.7 deprecated it and 1.9
-        # removed it. lbfgs is multinomial by default, which is what this
-        # wants — a single softmax over the eight classes, not eight
-        # one-vs-rest fits whose probabilities need renormalising.
-        model = LogisticRegression(
-            C=self.c,
-            max_iter=self.max_iter,
-            solver="lbfgs",
-            class_weight=self.class_weight,
-        )
-        with warnings.catch_warnings():
-            # An unconverged fit is still a usable probability vector, and the
-            # walk-forward loop would otherwise emit one warning per eval day.
-            warnings.simplefilter("ignore")
-            model.fit(x_train, y_train)
-            partial = model.predict_proba(x_target)
-
-        # predict_proba only spans the classes present in this day's training
-        # slice; scatter back into the fixed 8-class order.
-        out = np.zeros((n_buckets, N_CLASSES), dtype=np.float64)
-        out[:, model.classes_] = partial
-        return out / np.clip(out.sum(axis=1, keepdims=True), 1e-12, None)
+    out = np.zeros((n_buckets, N_CLASSES), dtype=np.float64)
+    out[:, model.classes_] = partial
+    return out / np.clip(out.sum(axis=1, keepdims=True), 1e-12, None)
 
 
-class PriorCorrectedForecaster:
+def prior_correct(
+    probs: np.ndarray,
+    history: Sequence[dict],
+    *,
+    power: float = 1.0,
+) -> np.ndarray:
     """
-    A calibrated forecaster's probabilities, reweighted for the *decision*.
+    Reweight a calibrated posterior for the *decision*, without refitting.
 
-    ``logit`` posts the best Brier and ECE in the table and mediocre per-class
-    recall; ``logit-bal`` inverts that. They are not two models to choose
-    between. Class weighting distorts the fit, so ``logit-bal``'s probabilities
-    are deliberately wrong and its Brier says so — the gate benches it, which
-    is the correct call on a proper scoring rule.
-
-    The recall gap is a *decision-rule* problem, not a probability problem.
-    ``argmax`` over a posterior on a 97%-background corpus answers the
+    ``argmax`` over a posterior on a background-dominated corpus answers the
     background almost everywhere even when the posterior is exactly right,
     because being right about a rare class still leaves it below the common
-    one. Dividing by the class prior before taking the argmax moves the
-    operating point without touching the fit:
+    one. Dividing by the class prior moves the operating point:
 
         p'(c) ∝ p(c) / prior(c) ** power
 
-    ``power=0`` is plain argmax, ``power=1`` full correction to a flat
-    effective prior. The prior is counted from *history only*, so this stays
-    walk-forward.
-
-    Deployed, this is one model: store what ``logit`` emits, and apply this
-    when choosing what to show. Here it has to be a separate row because
-    ``score_predictions`` derives top-1, Brier and ECE from the same vector,
-    so **read only this row's macro-R and per-class recall**. Its Brier and ECE
-    describe reweighted numbers that nothing would ever store.
+    The prior is counted from *history* only. Apply this when choosing what to
+    display; store the uncorrected probabilities, which are the calibrated
+    ones.
     """
+    probs = np.asarray(probs, dtype=np.float64)
+    counts = np.zeros(N_CLASSES, dtype=np.float64)
+    for row in history:
+        idx = CLASS_INDEX.get(str(row.get("token_id") or ""))
+        if idx is not None:
+            counts[idx] += 1.0
+    total = counts.sum()
+    if total <= 0:
+        return probs
 
-    name = "logit@rule"
-
-    def __init__(
-        self,
-        inner,
-        *,
-        power: float = 1.0,
-        name: str | None = None,
-    ) -> None:
-        self.inner = inner
-        self.power = power
-        if name:
-            self.name = name
-
-    def forecast(
-        self,
-        history: Sequence[datetime.date] | Sequence[dict],
-        target_date: datetime.date,
-        fit: DayFit,
-    ) -> np.ndarray:
-        probs = np.asarray(
-            self.inner.forecast(history, target_date, fit), dtype=np.float64
-        )
-
-        counts = np.zeros(N_CLASSES, dtype=np.float64)
-        for row in history:
-            idx = CLASS_INDEX.get(str(row.get("token_id") or ""))
-            if idx is not None:
-                counts[idx] += 1.0
-        total = counts.sum()
-        if total <= 0:
-            return probs
-
-        # Laplace the prior itself: a class absent from history would otherwise
-        # divide by zero and take every bucket.
-        prior = (counts + 1.0) / (total + N_CLASSES)
-        adjusted = probs / np.power(prior, self.power)[None, :]
-        return adjusted / np.clip(adjusted.sum(axis=1, keepdims=True), 1e-12, None)
+    # Laplace the prior itself: a class absent from history would otherwise
+    # divide by zero and take every bucket.
+    prior = (counts + 1.0) / (total + N_CLASSES)
+    adjusted = probs / np.power(prior, power)[None, :]
+    return adjusted / np.clip(adjusted.sum(axis=1, keepdims=True), 1e-12, None)

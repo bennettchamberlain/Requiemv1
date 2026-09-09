@@ -7,13 +7,15 @@ import datetime
 import numpy as np
 import pytest
 
+from ci.hbpe.evaluation.candidates import (
+    PriorCorrectedForecaster,
+    ShrinkageForecaster,
+)
 from ci.hbpe.evaluation.corpus import densify
-from ci.hbpe.evaluation.discriminative import PriorCorrectedForecaster
 from ci.hbpe.evaluation.forecaster import CLASS_INDEX, N_CLASSES, DayFit
 from ci.hbpe.evaluation.report import macro_recall
-from ci.hbpe.evaluation.rhythm import background_by_bucket, sleep_buckets
-from ci.hbpe.evaluation.shrinkage import (
-    ShrinkageForecaster,
+from ci.hbpe.pipeline.rhythm import background_by_bucket, sleep_buckets
+from ci.hbpe.pipeline.shrinkage import (
     balanced_transitions,
     shrunk_emissions,
     weighted_counts,
@@ -306,3 +308,34 @@ def test_prior_correction_passes_through_empty_history():
     fit = DayFit.build([], n_buckets=N_BUCKETS)
     out = PriorCorrectedForecaster(_Fixed(probs)).forecast([], DAY, fit)
     assert np.allclose(out, probs)
+
+
+def test_prior_correction_inverts_when_given_the_wrong_history():
+    """
+    Regression: the prior must be counted over the *same* history the emissions
+    were fit on.
+
+    The serving path fits on a densified history and once counted the prior
+    over the sparse token stream instead. The sparse view contains no SLEEP and
+    no background at all, so dividing by it boosted exactly the classes the
+    correction exists to discount, and every morning bucket came back SLEEP.
+    This pins the mechanism so the two can never drift apart silently again.
+    """
+    sleep, social = CLASS_INDEX["SLEEP"], CLASS_INDEX["SOCIAL"]
+    probs = np.zeros((N_BUCKETS, N_CLASSES))
+    probs[:, social] = 0.7
+    probs[:, sleep] = 0.3
+
+    dense = [_row(DAY, b % N_BUCKETS, "SLEEP") for b in range(90)]
+    dense += [_row(DAY, b % N_BUCKETS, "SOCIAL") for b in range(10)]
+    sparse = [_row(DAY, b % N_BUCKETS, "SOCIAL") for b in range(10)]
+    fit = DayFit.build(dense, n_buckets=N_BUCKETS)
+
+    right = PriorCorrectedForecaster(_Fixed(probs)).forecast(dense, DAY, fit)
+    wrong = PriorCorrectedForecaster(_Fixed(probs)).forecast(sparse, DAY, fit)
+
+    # Fit on the dense history, SLEEP is common and gets discounted further.
+    assert right[0, social] > right[0, sleep]
+    # Counted over the sparse history, SLEEP looks rare and overtakes SOCIAL —
+    # the exact inversion that produced an all-SLEEP morning.
+    assert wrong[0, sleep] > wrong[0, social]

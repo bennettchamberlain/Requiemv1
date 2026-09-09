@@ -43,9 +43,8 @@ from collections.abc import Sequence
 import numpy as np
 
 from ci.hbpe.buckets import BUCKETS_PER_DAY
-from ci.hbpe.evaluation.forecaster import CLASS_INDEX, N_CLASSES, DayFit
-from ci.hbpe.pipeline.baselines import _as_date
-from ci.hbpe.pipeline.hmm import N_DAYPARTS, daypart_of, forward_backward
+from ci.hbpe.pipeline.baselines import CLASS_INDEX, N_CLASSES, _as_date
+from ci.hbpe.pipeline.hmm import N_DAYPARTS, daypart_of
 
 # Half-life in days for recency weighting. Three weeks: long enough that a
 # weekday cell still accumulates ~3 same-weekday observations inside one
@@ -179,85 +178,3 @@ def balanced_transitions(
         for src in range(c.shape[1]):
             out[part, src] = _shrink(c[part, src], prior, k)
     return out
-
-
-class ShrinkageForecaster:
-    """Recency-weighted hierarchical shrinkage. Emissions only, no smoothing."""
-
-    name = "shrink"
-
-    def __init__(
-        self,
-        *,
-        half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
-        k: float = DEFAULT_K,
-        name: str | None = None,
-    ) -> None:
-        self.half_life_days = half_life_days
-        self.k = k
-        if name:
-            self.name = name
-
-    def forecast(
-        self,
-        history: Sequence[dict],
-        target_date: datetime.date,
-        fit: DayFit,
-    ) -> np.ndarray:
-        n_buckets = fit.b0.shape[0]
-        b0, b1, _ = weighted_counts(
-            history,
-            target_date,
-            n_buckets=n_buckets,
-            half_life_days=self.half_life_days,
-        )
-        return shrunk_emissions(b0, b1, target_date.weekday(), k=self.k)
-
-
-class ShrinkageHmmForecaster:
-    """
-    Shrinkage emissions smoothed by forward-backward over balanced transitions.
-
-    Carried alongside ``shrink`` rather than replacing it so the table shows
-    what the smoother contributes on its own. B2 pairs the old emissions with
-    the old transitions, so a single combined row could not say which half was
-    responsible for its collapse.
-    """
-
-    name = "shrink+hmm"
-
-    def __init__(
-        self,
-        *,
-        half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
-        k: float = DEFAULT_K,
-        transition_k: float = DEFAULT_TRANSITION_K,
-        name: str | None = None,
-    ) -> None:
-        self.half_life_days = half_life_days
-        self.k = k
-        self.transition_k = transition_k
-        if name:
-            self.name = name
-
-    def forecast(
-        self,
-        history: Sequence[dict],
-        target_date: datetime.date,
-        fit: DayFit,
-    ) -> np.ndarray:
-        n_buckets = fit.b0.shape[0]
-        b0, b1, trans = weighted_counts(
-            history,
-            target_date,
-            n_buckets=n_buckets,
-            half_life_days=self.half_life_days,
-        )
-        emissions = shrunk_emissions(b0, b1, target_date.weekday(), k=self.k)
-        smoothed = forward_backward(
-            emissions,
-            balanced_transitions(trans, k=self.transition_k),
-            n_buckets=n_buckets,
-        )
-        smoothed = np.asarray(smoothed, dtype=np.float64)
-        return smoothed / np.clip(smoothed.sum(axis=1, keepdims=True), 1e-12, None)

@@ -47,6 +47,7 @@ MODEL_HMT = "hmt"
 MODEL_B0 = "b0"
 MODEL_B1 = "b1"
 MODEL_B2 = "b2"
+MODEL_LOGIT = "logit"
 
 
 def _f(row: dict[str, Any] | None, key: str) -> float | None:

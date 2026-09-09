@@ -30,18 +30,21 @@ from collections.abc import Sequence
 
 from ci.hbpe.buckets import BUCKETS_PER_DAY
 from ci.hbpe.pipeline.baselines import _as_date
+from ci.hbpe.pipeline.rhythm import DEFAULT_BACKGROUND, densify
 from ci.hbpe.tokenizer.vocab_registry import L0_CLASSES
 
 _L0_SET = frozenset(L0_CLASSES)
 
-# Default filler for ``densify``. The L0 taxonomy has no "nothing recorded"
-# member, and adding one would change N_CLASSES and every array shape scoring
-# depends on, so the densified corpus borrows UNKNOWN. That is a proxy, not a
-# synonym: UNKNOWN already means "the labeler could not tell from the title",
-# and after densifying it also means "no event covered this bucket". The two
-# are indistinguishable afterwards, so UNKNOWN's per-class recall is not
-# interpretable on a densified run. Every other class stays clean.
-DEFAULT_BACKGROUND = "UNKNOWN"
+# Re-exported: densification moved to ``pipeline.rhythm`` so the serving
+# path can densify its own history without importing an evaluation module.
+__all__ = [
+    "DEFAULT_BACKGROUND",
+    "actuals_for_day",
+    "corpus_dates",
+    "densify",
+    "eval_dates",
+    "history_before",
+]
 
 
 def corpus_dates(rows: Sequence[dict]) -> list[datetime.date]:
@@ -116,75 +119,4 @@ def eval_dates(
         if not actuals_for_day(rows, day, n_buckets):
             continue
         out.append(day)
-    return out
-
-
-def densify(
-    rows: Sequence[dict],
-    background: str | Sequence[str] = DEFAULT_BACKGROUND,
-    n_buckets: int = BUCKETS_PER_DAY,
-) -> list[dict]:
-    """
-    Give every bucket of every observed day a label, filling gaps with
-    *background*.
-
-    The sparse corpus asks "given that something was recorded here, which class
-    was it?" — only observed buckets carry a target, so on a corpus at 2.6%
-    occupancy a forecaster is fit and scored on a handful of points per day and
-    is never asked what happens during the other 97%. That is not the question
-    a next-day forecast has to answer.
-
-    Densifying asks "what is happening in this bucket?" for all
-    ``n_buckets`` of them, which is the deployable question, and takes the
-    corpus from hundreds of labelled points to tens of thousands.
-
-    Only days already present in *rows* are filled. A day absent from the token
-    stream stays absent rather than becoming a fabricated day of background:
-    ingestion gaps are not evidence that nothing happened.
-
-    The filler is applied to history and actuals alike, because they are the
-    same rows. Densifying actuals alone would score every forecaster against a
-    class none of them had ever been fit on.
-
-    *background* is either one class for every bucket, or a per-bucket sequence
-    of length *n_buckets*. The sequence form is how a declared daily rhythm
-    enters the corpus — see ``rhythm.background_by_bucket``, which marks the
-    user's stated sleep window SLEEP and leaves the rest flat. An observed
-    token always beats the filler, so a night actually spent working still
-    reads WORK.
-    """
-    if isinstance(background, str):
-        per_bucket = [background] * n_buckets
-    else:
-        per_bucket = list(background)
-        if len(per_bucket) != n_buckets:
-            raise ValueError(
-                f"background has {len(per_bucket)} entries, expected {n_buckets}"
-            )
-    unknown = sorted({c for c in per_bucket if c not in _L0_SET})
-    if unknown:
-        raise ValueError(f"background {unknown[0]!r} is not an L0 class")
-
-    seen: dict[datetime.date, set[int]] = {}
-    out: list[dict] = []
-    for row in rows:
-        day = _as_date(row["date"])
-        seen.setdefault(day, set())
-        out.append(row)
-        token = str(row.get("token_id") or "")
-        if token not in _L0_SET:
-            continue
-        bucket = int(row["bucket_idx"])
-        if 0 <= bucket < n_buckets:
-            seen[day].add(bucket)
-
-    for day, occupied in seen.items():
-        for bucket in range(n_buckets):
-            if bucket in occupied:
-                continue
-            out.append(
-                {"date": day, "bucket_idx": bucket, "token_id": per_bucket[bucket]}
-            )
-
-    out.sort(key=lambda r: (_as_date(r["date"]), int(r["bucket_idx"])))
     return out

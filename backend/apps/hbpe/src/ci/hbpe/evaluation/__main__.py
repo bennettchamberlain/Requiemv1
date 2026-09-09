@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dense:
         background: str | list[str] = args.background
         if args.use_rhythm:
-            from ci.hbpe.evaluation.rhythm import background_by_bucket, fetch_rhythm
+            from ci.hbpe.pipeline.rhythm import background_by_bucket, fetch_rhythm
 
             declared = fetch_rhythm(args.user)
             if declared:
@@ -152,11 +152,9 @@ def main(argv: list[str] | None = None) -> int:
     candidate = args.candidate
 
     if not args.baselines_only:
-        from ci.hbpe.evaluation.discriminative import (
+        from ci.hbpe.evaluation.candidates import (
             LogisticForecaster,
             PriorCorrectedForecaster,
-        )
-        from ci.hbpe.evaluation.shrinkage import (
             ShrinkageForecaster,
             ShrinkageHmmForecaster,
         )
@@ -176,12 +174,12 @@ def main(argv: list[str] | None = None) -> int:
         forecasters.append(PriorCorrectedForecaster(LogisticForecaster(shrink)))
 
     if args.with_schedule:
+        from ci.hbpe.evaluation.candidates import ShrinkageForecaster
         from ci.hbpe.evaluation.schedule import (
             ScheduleForecaster,
             coverage_fraction,
             fetch_schedule,
         )
-        from ci.hbpe.evaluation.shrinkage import ShrinkageForecaster
 
         booked = fetch_schedule(args.user)
         forecasters.append(ScheduleForecaster(booked, ShrinkageForecaster()))
