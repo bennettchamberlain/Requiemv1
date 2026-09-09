@@ -46,6 +46,7 @@ import { AuthService } from './services/AuthService';
 import { ConnectCodeService } from './services/ConnectCodeService';
 import { ConnectService } from './services/ConnectService';
 import { CsrfService } from './services/CsrfService';
+import { HubForwardAuthBridgeService } from './services/HubForwardAuthBridgeService';
 import { JwtStrategy } from './services/JwtStrategy';
 import { LoginThrottleService } from './services/LoginThrottleService';
 import { OidcNativeCodeService } from './services/OidcNativeCodeService';
@@ -69,6 +70,7 @@ import { SignupCodeService } from './services/SignupCodeService';
   ],
   providers: [
     AuthService,
+    HubForwardAuthBridgeService,
     JwtStrategy,
     SignupCodeService,
     CsrfGuard,

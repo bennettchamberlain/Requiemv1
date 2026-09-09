@@ -164,6 +164,31 @@ async function postLogout(): Promise<void> {
  * signed with a rotated server secret — re-primes and retries exactly once.
  * A 401 (invalid session) is never retried: that must fall through to login.
  */
+/**
+ * If Traefik named a Hub person who does not match the Memory cookie, the
+ * server replaces the session. Call this before refresh so the SPA never
+ * hydrates the previous person's token / PowerSync replica.
+ */
+async function alignHubSession(): Promise<(AuthResponse & { replaced?: boolean }) | undefined> {
+  if (isNativePlatform()) {
+    return undefined;
+  }
+
+  try {
+    if (!getCsrfToken()) {
+      await primeCsrfCookie();
+    }
+
+    return await fetchJson<AuthResponse & { replaced?: boolean }>('/api/authenticate/hub-bridge', {
+      method: 'POST',
+      headers: withCsrfHeader(),
+      credentials: 'include',
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 async function refreshSession(): Promise<AuthResponse | undefined> {
   if (!getCsrfToken()) {
     await primeCsrfCookie();
@@ -575,9 +600,16 @@ function useAuth(): ReturnValue {
           return;
         }
 
-        const data = await refreshSession();
+        const bridged = await alignHubSession();
 
-        setAccessToken(data?.accessToken ?? null);
+        if (bridged?.replaced && bridged.accessToken) {
+          // Stale PowerSync replica belongs to the previous Memory person.
+          await disconnectAndClearPowerSyncForLogout();
+          setAccessToken(bridged.accessToken);
+        } else {
+          const data = await refreshSession();
+          setAccessToken(data?.accessToken ?? null);
+        }
       } catch {
         // No valid session cookie, user will need to log in
       } finally {

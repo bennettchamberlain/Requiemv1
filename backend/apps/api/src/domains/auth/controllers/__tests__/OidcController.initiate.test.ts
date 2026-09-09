@@ -27,6 +27,8 @@ function makeController() {
     {} as never, // featureService
     {} as never, // oidcNativeCodeService
     {} as never, // signupCodeService
+    {} as never, // federatedIdentityService
+    {} as never, // hubBridge
     logger as never,
   );
 

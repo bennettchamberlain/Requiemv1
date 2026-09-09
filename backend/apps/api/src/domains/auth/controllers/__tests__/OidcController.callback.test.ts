@@ -48,6 +48,7 @@ const TOKEN_OK = jsonResponse(true, 200, { access_token: 'portal-access-token', 
 function makeController() {
   const userService = {
     findByEmail: jest.fn(),
+    findById: jest.fn(),
     create: jest.fn(),
     // Default to an appliance that already has an account: these cases are
     // about the gates, not the one-account-wide exemption that lets someone
@@ -66,6 +67,12 @@ function makeController() {
   const featureService = { isFeatureEnabled: jest.fn().mockResolvedValue(false) };
   const oidcNativeCodeService = { issue: jest.fn().mockReturnValue('one-time-code'), redeem: jest.fn() };
   const signupCodeService = { findOne: jest.fn().mockResolvedValue(null), update: jest.fn() };
+  const federatedIdentityService = {
+    findUserId: jest.fn().mockResolvedValue(null),
+    listForUser: jest.fn().mockResolvedValue([]),
+    bind: jest.fn().mockResolvedValue(undefined),
+  };
+  const hubBridge = { verifyUsername: jest.fn().mockReturnValue(null) };
   const logger = { setContext: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() };
 
   const controller = new OidcController(
@@ -75,6 +82,8 @@ function makeController() {
     featureService as never,
     oidcNativeCodeService as never,
     signupCodeService as never,
+    federatedIdentityService as never,
+    hubBridge as never,
     logger as never,
   );
 
@@ -86,6 +95,8 @@ function makeController() {
     featureService,
     oidcNativeCodeService,
     signupCodeService,
+    federatedIdentityService,
+    hubBridge,
     logger,
   };
 }
@@ -379,5 +390,72 @@ describe('OidcController — OIDC callback (post-token-exchange path)', () => {
 
     expect(res.redirect).toHaveBeenCalledWith('/login?error=oidc_failed');
     expect(logger.error).toHaveBeenCalled();
+  });
+
+  describe('federated identity and Hub invitation', () => {
+    it('signs in the user bound to (iss, sub) even when emails differ', async () => {
+      const { controller, userService, federatedIdentityService, authService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(
+          jsonResponse(true, 200, {
+            sub: 'portal-sub-hello',
+            iss: 'https://hub.ci.computer',
+            email: 'hello@lifescope.io',
+          }),
+        );
+      federatedIdentityService.findUserId.mockResolvedValue('user-hello');
+      userService.findById.mockResolvedValue({ id: 'user-hello', email: 'hello@lifescope.io' });
+
+      await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+      expect(federatedIdentityService.findUserId).toHaveBeenCalledWith(
+        'https://hub.ci.computer',
+        'portal-sub-hello',
+      );
+      expect(userService.findByEmail).not.toHaveBeenCalled();
+      expect(authService.issueSessionToken).toHaveBeenCalledWith('user-hello', expect.any(Object));
+    });
+
+    it('does not sign in an existing email that is already bound to another subject', async () => {
+      const { controller, userService, federatedIdentityService, authService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(
+          jsonResponse(true, 200, { sub: 'portal-sub-2', email: 'shared@example.com' }),
+        );
+      userService.findByEmail.mockResolvedValue({ id: 'user-1' });
+      federatedIdentityService.listForUser.mockResolvedValue([{ id: 'fed-other' }]);
+
+      await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+      expect(authService.issueSessionToken).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledWith('/api/authenticate/oidc/confirm-account');
+    });
+
+    it('Hub-invited first login creates a Memory user without a signup code or confirm page', async () => {
+      const { controller, userService, hubBridge, featureService, authService } = makeController();
+      const res = makeRes();
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_OK)
+        .mockResolvedValueOnce(
+          jsonResponse(true, 200, { sub: 'portal-sub-hello', email: 'hello@lifescope.io', name: 'Hello' }),
+        );
+      userService.findByEmail.mockResolvedValue(null);
+      featureService.isFeatureEnabled.mockResolvedValue(true);
+      hubBridge.verifyUsername.mockReturnValue('hello@lifescope.io');
+      userService.create.mockResolvedValue({ id: 'user-hello', email: 'hello@lifescope.io' });
+
+      await controller.callback('code-x', 'match', undefined, webReq(), res as never);
+
+      expect(userService.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ email: 'hello@lifescope.io' }),
+      );
+      expect(authService.issueSessionToken).toHaveBeenCalledWith('user-hello', expect.any(Object));
+      expect(res.redirect).not.toHaveBeenCalledWith('/login?error=signup_code_required');
+    });
   });
 });

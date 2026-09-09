@@ -58,9 +58,34 @@ afterEach(() => {
   setApiBaseUrl('');
   // Drop the native runtime stub so the web-path tests aren't seen as native.
   delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+  bindPowerSyncDatabase(null);
 });
 
 describe('useAuth', () => {
+  it('replaces a stale Memory session when Hub forward-auth names someone else', async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    bindPowerSyncDatabase({
+      disconnectAndClear: disconnect,
+    } as never);
+
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/hub-bridge')) {
+        return jsonResponse({ accessToken: 'hello-token', replaced: true });
+      }
+
+      if (url.endsWith('/api/authenticate/refresh')) {
+        return jsonResponse({ accessToken: 'should-not-use' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].authToken).toBe('hello-token'));
+    expect(disconnect).toHaveBeenCalled();
+  });
+
   it('mints an access token from the session on mount', async () => {
     setFetch((url) =>
       url.endsWith('/api/authenticate/refresh')
