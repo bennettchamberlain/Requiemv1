@@ -78,8 +78,8 @@ DESKTOP_TAURI_DIR := frontend/apps/desktop/src-tauri
 # each module's build.gradle. They exist only so the precondition messages can
 # name the version they want and the sdkmanager line that installs it.
 ANDROID_JDK_MAJOR := 21
-ANDROID_COMPILE_SDK := 35
-ANDROID_BUILD_TOOLS := 35.0.0
+ANDROID_COMPILE_SDK := 36
+ANDROID_BUILD_TOOLS := 36.0.0
 
 # Where the Android SDK is, resolved the way every Android tool resolves it and
 # NEVER hard-coded: ANDROID_HOME, then the deprecated-but-still-common

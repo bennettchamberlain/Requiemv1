@@ -121,7 +121,7 @@ dependencies {
     testImplementation "org.json:json:20240303"
     // Needed only by the two tests that require a real Activity / merged manifest
     // (MainActivityPluginRegistrationTest, MergedManifestPermissionsTest). 4.14.x is the
-    // generation that supports compileSdk 35; it pulls the shadows framework and
+    // generation that supports compileSdk 35+; it pulls the shadows framework and
     // Robolectric.buildActivity transitively.
     testImplementation "org.robolectric:robolectric:4.14.1"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

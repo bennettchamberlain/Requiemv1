@@ -47,6 +47,28 @@ public class AndroidManifestContractTest {
      * in one file and not the others is how an AAB gets rejected at upload.
      */
     @Test
+    public void play_target_sdk_is_36() {
+        assertEquals(
+            "Play rejects uploads below target API 36. compileSdk and targetSdk move together.",
+            "36",
+            matchOne(
+                new File(ProjectFiles.appModuleDir(), "../variables.gradle"),
+                "targetSdkVersion\\s*=\\s*(\\d+)",
+                "targetSdkVersion"
+            )
+        );
+        assertEquals(
+            "compileSdkVersion must stay at 36 with targetSdk 36.",
+            "36",
+            matchOne(
+                new File(ProjectFiles.appModuleDir(), "../variables.gradle"),
+                "compileSdkVersion\\s*=\\s*(\\d+)",
+                "compileSdkVersion"
+            )
+        );
+    }
+
+    @Test
     public void play_application_id_is_com_ci_memory() {
         assertEquals(
             "Android applicationId must stay com.ci.memory (the Play Console package).",
