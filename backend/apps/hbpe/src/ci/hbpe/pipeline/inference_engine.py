@@ -82,9 +82,10 @@ from ci.hbpe.pipeline.metric_lifts import (
 )
 from ci.hbpe.pipeline.rhythm import (
     DEFAULT_BACKGROUND,
-    background_by_bucket,
+    background_factory,
     densify,
     fetch_rhythm,
+    fetch_timezone,
 )
 from ci.hbpe.pipeline.serve import (
     MODEL_B1,
@@ -730,8 +731,11 @@ class InferenceEngine:
             try:
                 dense = densify(
                     occupancy,
-                    background_by_bucket(
-                        fetch_rhythm(self.user_id), DEFAULT_BACKGROUND
+                    background_factory(
+                        fetch_rhythm(self.user_id),
+                        DEFAULT_BACKGROUND,
+                        N_BUCKETS,
+                        tz=fetch_timezone(self.user_id),
                     ),
                     N_BUCKETS,
                 )

@@ -130,13 +130,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.dense:
-        background: str | list[str] = args.background
+        background: object = args.background
         if args.use_rhythm:
-            from ci.hbpe.pipeline.rhythm import background_by_bucket, fetch_rhythm
+            from ci.hbpe.pipeline.rhythm import (
+                background_factory,
+                fetch_rhythm,
+                fetch_timezone,
+            )
 
             declared = fetch_rhythm(args.user)
             if declared:
-                background = background_by_bucket(declared, args.background)
+                background = background_factory(
+                    declared,
+                    args.background,
+                    tz=fetch_timezone(args.user),
+                )
                 logging.info(
                     "densifying with the declared rhythm: sleep %s→%s",
                     declared.get("sleep_time"),

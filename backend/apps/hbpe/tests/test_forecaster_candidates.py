@@ -339,3 +339,67 @@ def test_prior_correction_inverts_when_given_the_wrong_history():
     # Counted over the sparse history, SLEEP looks rare and overtakes SOCIAL —
     # the exact inversion that produced an all-SLEEP morning.
     assert wrong[0, sleep] > wrong[0, social]
+
+
+# ── declared rhythm is local, stored buckets are UTC ──────────────────────────
+
+
+def test_sleep_window_converts_local_to_utc():
+    """
+    The FTUE stores local clock times; token_stream buckets are UTC. A
+    New York user who sleeps 02:00-09:00 must land on 06:00-13:00 UTC in
+    summer, not on buckets 8-35.
+    """
+    rhythm = {"sleep_time": "02:00", "wake_time": "09:00"}
+    got = sleep_buckets(rhythm, 96, tz="America/New_York", on=datetime.date(2026, 7, 1))
+    assert min(got) == 24  # 06:00 UTC
+    assert max(got) == 51  # 12:45 UTC, window ends at 13:00
+    assert len(got) == 28
+
+
+def test_sleep_window_follows_dst():
+    rhythm = {"sleep_time": "02:00", "wake_time": "09:00"}
+    summer = sleep_buckets(
+        rhythm, 96, tz="America/New_York", on=datetime.date(2026, 7, 1)
+    )
+    winter = sleep_buckets(
+        rhythm, 96, tz="America/New_York", on=datetime.date(2026, 1, 15)
+    )
+    assert min(winter) - min(summer) == 4  # one hour later in UTC
+    assert len(summer) == len(winter) == 28
+
+
+def test_sleep_window_without_a_timezone_is_unshifted():
+    rhythm = {"sleep_time": "02:00", "wake_time": "09:00"}
+    assert sleep_buckets(rhythm, 96) == set(range(8, 36))
+    assert sleep_buckets(rhythm, 96, tz=None) == set(range(8, 36))
+
+
+def test_unknown_timezone_does_not_shift_or_raise():
+    rhythm = {"sleep_time": "02:00", "wake_time": "09:00"}
+    assert sleep_buckets(rhythm, 96, tz="Mars/Olympus") == set(range(8, 36))
+
+
+def test_conversion_can_wrap_the_window_past_midnight_utc():
+    """22:00-06:00 in Tokyo (UTC+9) is 13:00-21:00 UTC, no wrap; the same
+    window in Los Angeles (UTC-7) is 05:00-13:00 UTC. Neither loses buckets."""
+    rhythm = {"sleep_time": "22:00", "wake_time": "06:00"}
+    on = datetime.date(2026, 7, 1)
+    assert len(sleep_buckets(rhythm, 96, tz="Asia/Tokyo", on=on)) == 32
+    assert len(sleep_buckets(rhythm, 96, tz="America/Los_Angeles", on=on)) == 32
+
+
+def test_densify_accepts_a_per_day_background():
+    from ci.hbpe.pipeline.rhythm import background_factory
+
+    build = background_factory(
+        {"sleep_time": "02:00", "wake_time": "09:00"},
+        "UNKNOWN",
+        96,
+        tz="America/New_York",
+    )
+    rows = densify([_row(datetime.date(2026, 7, 1), 40, "WORK")], build, 96)
+    by_bucket = {r["bucket_idx"]: r["token_id"] for r in rows}
+    assert by_bucket[24] == "SLEEP"  # 06:00 UTC
+    assert by_bucket[40] == "WORK"  # observed beats the filler
+    assert by_bucket[0] == "UNKNOWN"
