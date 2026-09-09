@@ -280,12 +280,19 @@ export function Task({
   ) : null;
 
   const showStandaloneSchedule =
-    !proposed && !done && !delegated && !overdue && !task.placedOnCalendar && !pendingSchedule && Boolean(onSchedule);
+    !proposed &&
+    !done &&
+    !delegated &&
+    !overdue &&
+    !task.placedOnCalendar &&
+    !pendingSchedule &&
+    Boolean(onSchedule);
 
   const showReschedule = !proposed && !done && overdue && Boolean(onReschedule);
 
-  const showConfirmDismiss =
-    Boolean(pendingChangeId && !pendingSchedule && onAcceptPending && onDeclinePending);
+  const showConfirmDismiss = Boolean(
+    pendingChangeId && !pendingSchedule && onAcceptPending && onDeclinePending,
+  );
 
   const scheduleButton = showStandaloneSchedule ? (
     <Button
