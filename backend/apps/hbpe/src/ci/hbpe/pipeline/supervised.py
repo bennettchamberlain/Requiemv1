@@ -107,6 +107,8 @@ def _build(
     snapshots it *before* folding each day in, so row ``j`` sees only days
     ``< j``. When *target_date* is given the final snapshot is returned as an
     extra ``n_buckets`` rows at the end, carrying label -1.
+
+    Returns ``(features, labels, sample_weights)``.
     """
     cyc = _cyclical(n_buckets)
     index_of = {day: j for j, day in enumerate(days)}
@@ -119,6 +121,14 @@ def _build(
     plan: list[tuple[datetime.date, int]] = [(day, j) for j, day in enumerate(days)]
     if target_date is not None:
         plan.append((target_date, -1))
+
+    # Per-row recency weight, on the same half-life as the histogram feature.
+    # The fit itself used to weight every row equally, which was harmless on a
+    # 90-day corpus and wrong on a 527-day one: six years of history drowned
+    # the recent weeks, and WORK recall fell to 0.117 while `persistence` —
+    # literally the most recent matching weekday — led the table at 0.475.
+    anchor = target_date or (days[-1] if days else None)
+    weights: list[np.ndarray] = []
 
     previous: datetime.date | None = None
     for day, j in plan:
@@ -163,12 +173,16 @@ def _build(
             )
         )
         labels.append(y[j] if j >= 0 else np.full(n_buckets, -1, dtype=np.int64))
+        age = (anchor - day).days if anchor is not None else 0
+        weights.append(
+            np.full(n_buckets, 0.5 ** (max(age, 0) / max(half_life_days, 1e-6)))
+        )
 
         if j >= 0:
             observed = y[j] >= 0
             hist[observed, y[j][observed]] += 1.0
 
-    return np.vstack(blocks), np.concatenate(labels)
+    return np.vstack(blocks), np.concatenate(labels), np.concatenate(weights)
 
 
 def logit_emissions(
@@ -194,12 +208,15 @@ def logit_emissions(
     if not days:
         return None
 
-    x_all, y_all = _build(days, y, n_buckets, half_life_days, target_date=target_date)
+    x_all, y_all, w_all = _build(
+        days, y, n_buckets, half_life_days, target_date=target_date
+    )
     x_target = x_all[-n_buckets:]
     x_train, y_train = x_all[:-n_buckets], y_all[:-n_buckets]
+    w_train = w_all[:-n_buckets]
 
     keep = y_train >= 0
-    x_train, y_train = x_train[keep], y_train[keep]
+    x_train, y_train, w_train = x_train[keep], y_train[keep], w_train[keep]
     if x_train.shape[0] < MIN_TRAIN_ROWS or len(np.unique(y_train)) < 2:
         return None
 
@@ -211,7 +228,7 @@ def logit_emissions(
     with warnings.catch_warnings():
         # An unconverged fit is still a usable probability vector.
         warnings.simplefilter("ignore")
-        model.fit(x_train, y_train)
+        model.fit(x_train, y_train, sample_weight=w_train)
         partial = model.predict_proba(x_target)
 
     out = np.zeros((n_buckets, N_CLASSES), dtype=np.float64)
