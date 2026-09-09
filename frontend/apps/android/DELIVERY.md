@@ -3,7 +3,8 @@
 > **Private & Confidential — Property of Lifescope Inc. Do not distribute.**
 >
 > Delivery readiness + forward roadmap for the Capacitor app (`@ci/fe-android`,
-> `com.companionintelligence.app`). Companion to [`README.md`](./README.md), which
+> Android Play id `com.ci.memory`, iOS bundle `com.companionintelligence.app`).
+> Companion to [`README.md`](./README.md), which
 > covers how the shell is built and run. This file is the **submission checklist** and
 > **phased roadmap**. Derived from a multi-dimension audit (2026-07-15); re-verify
 > store policies at submission time — they move.

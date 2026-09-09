@@ -79,7 +79,7 @@ echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 yarn cap sync android
 (cd android && ./gradlew assembleDebug)
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.companionintelligence.app/.MainActivity
+adb shell am start -n com.ci.memory/com.companionintelligence.app.MainActivity
 ```
 
 (Debug builds need no release keystore. List AVDs with `emulator -list-avds`.)
