@@ -121,7 +121,7 @@ missing:
 
 | Target | Runs | Needs |
 |---|---|---|
-| `make test-android` | `./gradlew testDebugUnitTest` in `frontend/apps/android/android` — 100 JVM tests across `:app`, `:ci-capacitor-local-hub`, `:ci-capacitor-local-llm`, `:ci-capacitor-speech` | JDK 21, an Android SDK with `platforms;android-35` located via `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `local.properties`, and `yarn install` having been run inside `frontend/apps/android` |
+| `make test-android` | `./gradlew testDebugUnitTest` in `frontend/apps/android/android` — 100 JVM tests across `:app`, `:ci-capacitor-local-hub`, `:ci-capacitor-local-llm`, `:ci-capacitor-speech` | JDK 21, an Android SDK with `platforms;android-36` located via `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `local.properties`, and `yarn install` having been run inside `frontend/apps/android` |
 | `make test-desktop` | `cargo test` in `frontend/apps/desktop/src-tauri` — **42 `#[test]` declarations as counted 2026-09-07, but no single host compiles all 42.** Six are platform-gated: 4 macOS-only (`local_model/apple_bridge.rs`, whose whole module is `#[cfg(target_os = "macos")]` at `local_model/mod.rs:26`) and 2 Linux-only (the rootless-Docker tests in `stack_manager.rs`, each carrying its own `#[cfg(target_os = "linux")]`). So the count you should see is **36 cross-platform + gates: 38 on Linux, 40 on macOS, 36 on Windows.** A host-to-host disagreement is expected and those are the numbers it should land on — anything else is a lost test, not a `cfg`. This total moved twice in one afternoon — **recount, do not quote.** | A Rust toolchain, plus (Linux) the GTK/WebKit `-dev` packages `desktop-build.yml` installs |
 
 The **instrumented** Android suites (`src/androidTest`) are in neither the make

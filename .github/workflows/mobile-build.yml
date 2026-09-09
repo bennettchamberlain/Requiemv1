@@ -67,17 +67,10 @@ jobs:
           java-version: '21'
       - name: Android SDK
         uses: android-actions/setup-android@v3
-      # Pinned to 35 to match compileSdkVersion in frontend/apps/android/android/variables.gradle.
-      # These two move TOGETHER: Play has required target API 36 since 31 Aug 2026, but
-      # Capacitor forbids a custom target SDK (7.x is pinned to 35, 8.x to 36), so the bump
-      # is a Capacitor 8 migration rather than the AGP-only upgrade an earlier revision of
-      # this comment described — and that migration is blocked on the unmaintained
-      # @capacitor-community/background-geolocation (variables.gradle carries the full
-      # reasoning; DELIVERY.md §1a tracks it).
-      # When that lands, this line and the identical one in mobile-release.yml both need
-      # "platforms;android-36" "build-tools;36.0.0".
+      # Keep this pair in lockstep with compileSdkVersion in
+      # frontend/apps/android/android/variables.gradle.
       - name: Install SDK components
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       # The mobile project is a STANDALONE (non-workspace) Yarn project with a
       # node-modules linker — installed on its own so the root PnP install stays intact.
