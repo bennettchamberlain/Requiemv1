@@ -39,6 +39,7 @@ import { RetrievalQueryLogListener } from './listeners/RetrievalQueryLogListener
 import { CommunicationLinkBackfillService } from './services/CommunicationLinkBackfillService';
 import { DerivedRelationshipService } from './services/DerivedRelationshipService';
 import { DeterministicEdgeBackfillService } from './services/DeterministicEdgeBackfillService';
+import { EntityIdentifierBackfillService } from './services/EntityIdentifierBackfillService';
 import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetryService';
 import { EntityTypeAuditService } from './services/EntityTypeAuditService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
@@ -103,6 +104,7 @@ import { SummaryBackfillService } from './services/SummaryBackfillService';
     ExternalIdKindIntegrityService,
     IngestResetService,
     CommunicationLinkBackfillService,
+    EntityIdentifierBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
     DeterministicEdgeBackfillService,
@@ -139,6 +141,7 @@ import { SummaryBackfillService } from './services/SummaryBackfillService';
     IndexDeferralService,
     ExternalIdKindIntegrityService,
     CommunicationLinkBackfillService,
+    EntityIdentifierBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
     DeterministicEdgeBackfillService,
@@ -171,6 +174,11 @@ export {
   type OrchestrateSummary,
 } from './services/MaintenanceOrchestratorService';
 export { GraphEnrichmentService, type GraphEnrichmentOptions } from './services/GraphEnrichmentService';
+export {
+  EntityIdentifierBackfillService,
+  type EntityIdentifierBackfillOptions,
+  type EntityIdentifierBackfillResult,
+} from './services/EntityIdentifierBackfillService';
 export {
   GraphEnrichmentReviewService,
   type GraphEnrichmentProposalPage,
