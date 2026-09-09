@@ -34,6 +34,8 @@ env:
   # PWA off for the native build — the Workbox service worker fights Capacitor's local
   # asset serving inside the webview.
   VITE_DISABLE_PWA: 'true'
+  # Phone cloud-connect talks to production Portal, not the internal Hub appliance host.
+  VITE_CI_CLOUD_URL: 'https://hub.ci.computer'
 
 jobs:
   android:
