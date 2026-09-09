@@ -396,15 +396,13 @@ describe('OidcController — OIDC callback (post-token-exchange path)', () => {
     it('signs in the user bound to (iss, sub) even when emails differ', async () => {
       const { controller, userService, federatedIdentityService, authService } = makeController();
       const res = makeRes();
-      mockFetch
-        .mockResolvedValueOnce(TOKEN_OK)
-        .mockResolvedValueOnce(
-          jsonResponse(true, 200, {
-            sub: 'portal-sub-hello',
-            iss: 'https://hub.ci.computer',
-            email: 'hello@lifescope.io',
-          }),
-        );
+      mockFetch.mockResolvedValueOnce(TOKEN_OK).mockResolvedValueOnce(
+        jsonResponse(true, 200, {
+          sub: 'portal-sub-hello',
+          iss: 'https://hub.ci.computer',
+          email: 'hello@lifescope.io',
+        }),
+      );
       federatedIdentityService.findUserId.mockResolvedValue('user-hello');
       userService.findById.mockResolvedValue({ id: 'user-hello', email: 'hello@lifescope.io' });
 
@@ -423,9 +421,7 @@ describe('OidcController — OIDC callback (post-token-exchange path)', () => {
       const res = makeRes();
       mockFetch
         .mockResolvedValueOnce(TOKEN_OK)
-        .mockResolvedValueOnce(
-          jsonResponse(true, 200, { sub: 'portal-sub-2', email: 'shared@example.com' }),
-        );
+        .mockResolvedValueOnce(jsonResponse(true, 200, { sub: 'portal-sub-2', email: 'shared@example.com' }));
       userService.findByEmail.mockResolvedValue({ id: 'user-1' });
       federatedIdentityService.listForUser.mockResolvedValue([{ id: 'fed-other' }]);
 
