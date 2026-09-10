@@ -10,11 +10,9 @@
 ### [INSTALL FROM STORE](https://hub.ci.computer/store?category=companion-intelligence)
 
 
-#### COPYRIGHT COMPANION INTELLIGENCE - LIFESCOPE INC
+Companion Memory uses the [PolyForm Noncommercial License 1.0.0](LICENSE.md). For common questions, see the [License FAQ](docs/License-FAQ.md).
 
-#### DO NOT DISTRIBUTE
-
-## PRIVATE AND CONFIDENTIAL
+Required Notice: Copyright LifeScope INC, DBA Companion Intelligence (https://ci.computer)
 
 Front + Back End API + Web Monorepo
 
