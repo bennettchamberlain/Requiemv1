@@ -1,6 +1,6 @@
 import { setApiBaseUrl } from '@ci/common';
-import { screen, waitFor } from '@testing-library/react';
-import { Route, Routes, useLocation } from 'react-router-dom';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ONBOARDING_OAUTH_RESUME_KEY } from '@/pages/OnboardingPage/constants';
@@ -42,16 +42,19 @@ function LandedOn({ label }: { label: string }) {
   return <div data-testid={`landed-${label}`}>{JSON.stringify((location.state as unknown) ?? null)}</div>;
 }
 
-function renderCallback(entry: string) {
-  return renderWithProviders(
+function callbackRoutes() {
+  return (
     <Routes>
       <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
       <Route path="/sources/connect" element={<LandedOn label="sources" />} />
       <Route path="/onboarding" element={<LandedOn label="onboarding" />} />
       <Route path="/login" element={<LandedOn label="login" />} />
-    </Routes>,
-    { route: entry },
+    </Routes>
   );
+}
+
+function renderCallback(entry: string) {
+  return renderWithProviders(callbackRoutes(), { route: entry });
 }
 
 /**
@@ -186,6 +189,99 @@ describe('OAuthCallbackPage — CI Cloud proxy callback', () => {
     expect(lastRequest().body).not.toHaveProperty('accessToken');
     expect(toast.error).not.toHaveBeenCalled();
     expect(window.location.hash).toBe('');
+  });
+
+  it('scrubs the callback from the address bar before the completion request goes out', async () => {
+    // The server spends the proxy refresh token in the fragment (CI Portal rotates
+    // it on use), so a reload while the request is in flight must not find it
+    // there and post it a second time.
+    let hashWhenSent: string | undefined;
+    fetchMock.mockImplementation(async () => {
+      hashWhenSent = window.location.hash;
+
+      return okResponse();
+    });
+    setDocumentUrl('/oauth/callback#refresh_token=rt-6&user_provider_id=up-6');
+
+    renderCallback('/oauth/callback?connectionId=conn-6');
+
+    expect(await screen.findByTestId('landed-sources')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(hashWhenSent).toBe('');
+  });
+
+  it('keeps completing the callback it mounted with when it re-renders mid-request', async () => {
+    // With the fragment already scrubbed, a render that re-read the address bar
+    // would take this for a direct callback missing its code, and bounce the user
+    // with "Missing OAuth credentials" while the connection is being completed.
+    let respond: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          respond = resolve;
+        }),
+    );
+    setDocumentUrl('/oauth/callback#refresh_token=rt-7&user_provider_id=up-7');
+
+    const view = renderCallback('/oauth/callback?connectionId=conn-7');
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    view.rerender(callbackRoutes());
+    respond(okResponse());
+
+    expect(await screen.findByTestId('landed-sources')).toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith('Created connection');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not pull the user back when they leave while the completion is in flight', async () => {
+    // The request waits on CI Portal and the app's navigation stays usable around
+    // the spinner: a user who goes elsewhere meanwhile must stay where they went.
+    function GoElsewhere() {
+      const navigate = useNavigate();
+
+      return (
+        <button type="button" onClick={() => navigate('/elsewhere')}>
+          elsewhere
+        </button>
+      );
+    }
+
+    let respond: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          respond = resolve;
+        }),
+    );
+    setDocumentUrl('/oauth/callback#refresh_token=rt-8&user_provider_id=up-8');
+
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+          <Route path="/sources/connect" element={<LandedOn label="sources" />} />
+          <Route path="/elsewhere" element={<LandedOn label="elsewhere" />} />
+        </Routes>
+        <GoElsewhere />
+      </>,
+      { route: '/oauth/callback?connectionId=conn-8' },
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'elsewhere' }));
+    expect(await screen.findByTestId('landed-elsewhere')).toBeInTheDocument();
+
+    respond(okResponse());
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Created connection'));
+    // Let anything the settled request scheduled render before asserting where the user is.
+    await act(() => Promise.resolve());
+    expect(screen.getByTestId('landed-elsewhere')).toBeInTheDocument();
+    expect(screen.queryByTestId('landed-sources')).not.toBeInTheDocument();
   });
 
   it('refuses a proxy callback that carries neither an access nor a refresh token', async () => {
