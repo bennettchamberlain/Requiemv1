@@ -39,6 +39,7 @@ import urllib.request
 from typing import Protocol
 
 from ci.hbpe.config import settings
+from ci.hbpe.label_yield import wait_for_chat_idle
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +120,9 @@ class OpenAIChatLabeler:
             method="POST",
         )
         with self._gen_lock:
+            # The runner behind this endpoint is the one chat uses. Stand aside
+            # while a person is waiting on it; see label_yield.py for why.
+            wait_for_chat_idle()
             try:
                 with urllib.request.urlopen(
                     req, timeout=settings.label_http_timeout_seconds
