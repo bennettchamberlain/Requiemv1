@@ -4,7 +4,8 @@ export type CompleteConnectionDto =
   | {
       flow: 'proxy';
       state: string;
-      accessToken: string;
+      /** Only used when there is no `refreshToken`; see `ConnectionsController.proxyTokens`. */
+      accessToken?: string;
       refreshToken?: string;
       expiresIn?: number;
       userProviderId: string;

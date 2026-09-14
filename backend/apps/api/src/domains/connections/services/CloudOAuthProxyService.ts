@@ -51,7 +51,8 @@ export interface PortalUserApplication {
  *
  * Auth model (mirrors CI Cloud):
  *  - authorize: sends box_id + device_key in the request body
- *  - token/refresh: self-authenticating via refresh_token
+ *  - token/refresh: the device's Basic credentials plus the proxy refresh token,
+ *    which CI Portal rotates on every use (store the one it returns)
  *  - token/revoke:  self-authenticating via refresh_token
  */
 @Injectable()

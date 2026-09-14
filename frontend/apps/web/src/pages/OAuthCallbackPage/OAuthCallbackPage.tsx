@@ -37,7 +37,17 @@ export function OAuthCallbackPage() {
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
 
-  const isCloudProxyCallback = !!accessToken;
+  /*
+   * A proxied callback is recognised by what only CI Portal sends, not by the
+   * access token alone. The server now fetches the access token from CI Portal
+   * itself whenever there is a proxy refresh token (CI-Server#2676), so a Portal
+   * that stops putting the provider's access token in the fragment still lands
+   * here as a proxy callback instead of failing as a direct one. Providers
+   * CI Portal holds no refresh token for (Facebook, Instagram) still arrive with
+   * only an access token, and that is still accepted.
+   */
+  const isCloudProxyCallback = !!(refreshToken || userProviderId || accessToken);
+  const missingProxyCredentials = !connectionId || !userProviderId || (!refreshToken && !accessToken);
 
   const returnPath =
     localStorage.getItem(ONBOARDING_OAUTH_RESUME_KEY) != null ? '/onboarding' : '/sources/connect';
@@ -51,7 +61,7 @@ export function OAuthCallbackPage() {
       return;
     }
 
-    if (isCloudProxyCallback && (!connectionId || !userProviderId)) {
+    if (isCloudProxyCallback && missingProxyCredentials) {
       toast.error('Missing OAuth credentials from provider');
       navigate(returnPath);
 
@@ -68,8 +78,7 @@ export function OAuthCallbackPage() {
     error,
     errorDescription,
     isCloudProxyCallback,
-    connectionId,
-    userProviderId,
+    missingProxyCredentials,
     code,
     state,
     toast,
@@ -90,7 +99,7 @@ export function OAuthCallbackPage() {
 
   useEffect(() => {
     const hasError = !!(error || errorDescription);
-    const missingParams = isCloudProxyCallback ? !connectionId || !userProviderId : !code || !state;
+    const missingParams = isCloudProxyCallback ? missingProxyCredentials : !code || !state;
 
     if (!authToken || initialRequestRef.current || hasError || missingParams) {
       return;
@@ -104,7 +113,10 @@ export function OAuthCallbackPage() {
           ? {
               flow: 'proxy' as const,
               state: connectionId,
-              accessToken,
+              // Still sent when present, so this page keeps working against a
+              // server that predates fetching it; a current server ignores it
+              // whenever there is a refresh token to fetch a fresh one with.
+              accessToken: accessToken ?? undefined,
               refreshToken: refreshToken ?? undefined,
               expiresIn: expiresIn ? parseInt(expiresIn, 10) : undefined,
               userProviderId,
@@ -144,6 +156,7 @@ export function OAuthCallbackPage() {
     error,
     errorDescription,
     isCloudProxyCallback,
+    missingProxyCredentials,
     connectionId,
     accessToken,
     refreshToken,

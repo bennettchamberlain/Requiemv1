@@ -1,4 +1,6 @@
 import {
+  BadGatewayException,
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -25,7 +27,7 @@ import { EventService } from '@ci/domains/events';
 
 import { ClientFactory } from '../clients';
 import type { Connection } from '../entities/ConnectionEntity';
-import { CloudOAuthProxyService } from '../services/CloudOAuthProxyService';
+import { type CloudTokenResponse, CloudOAuthProxyService } from '../services/CloudOAuthProxyService';
 import { ConnectionService } from '../services/ConnectionService';
 import type { CompleteConnectionDto, CreateConnectionDto, UpdateConnectionDto } from '../types';
 
@@ -59,11 +61,13 @@ const updateConnectionSchema = z.object({
   endpoints: z.array(z.string()).optional(),
 });
 
-const completeConnectionSchema = z.discriminatedUnion('flow', [
+export const completeConnectionSchema = z.discriminatedUnion('flow', [
   z.object({
     flow: z.literal('proxy'),
     state: z.string(),
-    accessToken: z.string(),
+    // Optional: with a refresh token the access token is fetched from CI Portal,
+    // not taken from the browser. `proxyTokens` refuses a body with neither.
+    accessToken: z.string().optional(),
     refreshToken: z.string().optional(),
     expiresIn: z.number().int().positive().optional(),
     userProviderId: z.string(),
@@ -262,11 +266,14 @@ export class ConnectionsController {
         throw new ConflictException('A connection to that account already exists');
       }
 
-      const tokenExpiry = body.expiresIn ? new Date(Date.now() + body.expiresIn * 1000) : null;
+      // After the duplicate check, so a refused completion does not spend the
+      // proxy refresh token CI Portal rotates on use.
+      const tokens = await this.proxyTokens(connectionId, body);
+      const tokenExpiry = tokens.expiresIn ? new Date(Date.now() + tokens.expiresIn * 1000) : null;
 
       await this.update(context, connectionId, {
-        accessToken: body.accessToken,
-        refreshToken: body.refreshToken ?? null,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
         tokenExpiry,
         active: true,
         needsReauth: false,
@@ -446,6 +453,66 @@ export class ConnectionsController {
       needsReauth: false,
       externalId: steamId,
     });
+  }
+
+  /**
+   * The tokens a proxied connection is stored with.
+   *
+   * ⚠ NOT THE ACCESS TOKEN THE BROWSER CARRIED, whenever there is a better one
+   * (CI-Server#2676). CI Portal returns the provider's access token through the
+   * browser's URL fragment, so what reaches this handler is whatever the page
+   * was given and cannot be checked. With a proxy refresh token, the access
+   * token is fetched from CI Portal over the device-authenticated channel
+   * instead — which is also what lets CI Portal stop sending it to the browser.
+   *
+   * ⚠ CI PORTAL ROTATES THE PROXY REFRESH TOKEN ON EVERY USE. The one in the
+   * request is spent by this call, so the rotated one CI Portal returns is what
+   * must be stored; keeping the spent one would leave a connection that can
+   * never refresh.
+   *
+   * Providers CI Portal holds no refresh token for (Facebook, Instagram) arrive
+   * with only the access token, and that remains the only token there is.
+   */
+  private async proxyTokens(
+    connectionId: string,
+    body: Extract<CompleteConnectionDto, { flow: 'proxy' }>,
+  ): Promise<{ accessToken: string; refreshToken: string | null; expiresIn?: number }> {
+    if (body.refreshToken) {
+      let refreshed: CloudTokenResponse | undefined;
+
+      try {
+        refreshed = await this.cloudOAuthProxyService.refreshAccessToken(body.refreshToken);
+      } catch (error) {
+        this.logger.error('Could not fetch the access token for a proxied connection from CI Portal', {
+          connectionId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        throw new BadGatewayException('Could not complete the connection through CI Portal');
+      }
+
+      if (typeof refreshed?.access_token !== 'string' || refreshed.access_token === '') {
+        this.logger.error('CI Portal returned no access token for a proxied connection', { connectionId });
+        throw new BadGatewayException('Could not complete the connection through CI Portal');
+      }
+
+      return {
+        accessToken: refreshed.access_token,
+        refreshToken:
+          typeof refreshed.refresh_token === 'string' && refreshed.refresh_token !== ''
+            ? refreshed.refresh_token
+            : null,
+        expiresIn:
+          typeof refreshed.expires_in === 'number' && refreshed.expires_in > 0
+            ? refreshed.expires_in
+            : undefined,
+      };
+    }
+
+    if (body.accessToken) {
+      return { accessToken: body.accessToken, refreshToken: null, expiresIn: body.expiresIn };
+    }
+
+    throw new BadRequestException('Missing proxy credentials');
   }
 
   private async persistAccountLabel(context: UserServiceContext, connection: Connection): Promise<void> {

@@ -165,6 +165,39 @@ describe('OAuthCallbackPage — CI Cloud proxy callback', () => {
     });
   });
 
+  it('completes a proxy callback that carries no access token, leaving the server to fetch it', async () => {
+    // CI-Server#2676: with a proxy refresh token the server gets the access token
+    // from CI Portal itself, which is what lets CI Portal stop handing the
+    // provider's access token to the browser. This page used to key the whole
+    // proxy flow on that token, so its absence failed the connect as a "direct"
+    // callback with no code.
+    setDocumentUrl('/oauth/callback#refresh_token=rt-4&user_provider_id=up-4&expires_in=3600');
+
+    renderCallback('/oauth/callback?connectionId=conn-4');
+
+    expect(await screen.findByTestId('landed-sources')).toBeInTheDocument();
+    expect(lastRequest().body).toEqual({
+      flow: 'proxy',
+      state: 'conn-4',
+      refreshToken: 'rt-4',
+      expiresIn: 3600,
+      userProviderId: 'up-4',
+    });
+    expect(lastRequest().body).not.toHaveProperty('accessToken');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('');
+  });
+
+  it('refuses a proxy callback that carries neither an access nor a refresh token', async () => {
+    setDocumentUrl('/oauth/callback#user_provider_id=up-5');
+
+    renderCallback('/oauth/callback?connectionId=conn-5');
+
+    expect(await screen.findByTestId('landed-sources')).toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalledWith('Missing OAuth credentials from provider');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('refuses a proxy callback with a token but no connectionId', async () => {
     setDocumentUrl('/oauth/callback#access_token=at-3&user_provider_id=up-3');
 
