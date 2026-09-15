@@ -392,5 +392,32 @@
       "severity": "error",
       "name": "no-cross-domain-internals"
     }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/llm/services/ChatTurnService.ts",
+    "to": "src/domains/agent/services/RecallService.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/personalization/controllers/__tests__/PersonalizationController.test.ts",
+    "to": "src/domains/llm/browser-activity-insight-preference.module.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/domains/personalization/controllers/__tests__/PersonalizationController.test.ts",
+    "to": "src/domains/llm/image-description-preference.module.ts",
+    "rule": {
+      "severity": "error",
+      "name": "no-cross-domain-internals"
+    }
   }
 ]

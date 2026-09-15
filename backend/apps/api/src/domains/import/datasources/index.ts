@@ -53,6 +53,7 @@ import './last_fm';
 import './letterboxd';
 import './linkedin';
 import './lyft';
+import './macos_activity';
 import './mastodon';
 import './microsoft_account';
 import './myfitnesspal';

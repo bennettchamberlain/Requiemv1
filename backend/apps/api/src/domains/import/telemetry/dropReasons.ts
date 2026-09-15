@@ -164,6 +164,7 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   excluded_reply: 'filtered',
   excluded_retweet: 'filtered',
   outside_timeframe: 'filtered',
+  macos_unsupported_stream: 'unsupported_shape',
   non_message: 'filtered',
   // telegram.ts: a chat entry whose `type` is not 'message' (a service event —
   // "X joined the group", a call log) — the telegram-specific spelling of the
@@ -202,6 +203,7 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   empty_trans_code: 'empty_record',
 
   // Nothing to key it by.
+  no_title: 'no_identity',
   unnamed_product: 'no_identity',
   // A tweets.js/tweet.js row with neither id_str nor id — the export's own
   // primary key absent from its own row.
