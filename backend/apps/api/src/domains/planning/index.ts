@@ -33,6 +33,8 @@ import {
   PlanningPrefsEntity,
   type ResolvedPlanningPrefs,
 } from './entities/PlanningPrefsEntity';
+import { PushSubscriptionEntity, type PushSubscription } from './entities/PushSubscriptionEntity';
+import { ReminderEntity, type Reminder } from './entities/ReminderEntity';
 import { TaskDependencyEntity, type TaskDependency } from './entities/TaskDependencyEntity';
 import { TaskEntity, type Task } from './entities/TaskEntity';
 import {
@@ -48,8 +50,12 @@ import { PlannedBlockService } from './services/PlannedBlockService';
 import { PlanningPrefsService } from './services/PlanningPrefsService';
 import { PlanningTimeService } from './services/PlanningTimeService';
 import { ProposedTaskReconcileService } from './services/ProposedTaskReconcileService';
+import { PushSubscriptionService } from './services/PushSubscriptionService';
+import { ReminderDispatchService } from './services/ReminderDispatchService';
+import { ReminderService } from './services/ReminderService';
 import { EventNowService, TodoProcessService, VerifyDoneService } from './services/TodoProcessService';
 import { TodoScanService } from './services/TodoScanService';
+import { WebPushService } from './services/WebPushService';
 import { TaskModule, TaskService } from './task.module';
 
 /**
@@ -67,6 +73,8 @@ import { TaskModule, TaskService } from './task.module';
     TypeOrmModule.forFeature([
       PlanningPrefsEntity,
       TaskDependencyEntity,
+      ReminderEntity,
+      PushSubscriptionEntity,
       UserEntity,
       EventEntity,
       CommunicationEntity,
@@ -89,16 +97,43 @@ import { TaskModule, TaskService } from './task.module';
     InboxScanService,
     EventNowService,
     VerifyDoneService,
+    ReminderService,
+    PushSubscriptionService,
+    WebPushService,
+    ReminderDispatchService,
     PlanningJobsCron,
     PlanningJobsListener,
   ],
-  exports: [TaskModule, PlanningTimeService, PlannedBlockService, PlanningPrefsService],
+  exports: [
+    TaskModule,
+    PlanningTimeService,
+    PlannedBlockService,
+    PlanningPrefsService,
+    ReminderService,
+    PushSubscriptionService,
+    WebPushService,
+  ],
 })
 export class PlanningModule {}
 
-export { TaskEntity, TaskDependencyEntity, TaskPendingChangeEntity, PlanningPrefsEntity };
+export {
+  TaskEntity,
+  TaskDependencyEntity,
+  TaskPendingChangeEntity,
+  PlanningPrefsEntity,
+  ReminderEntity,
+  PushSubscriptionEntity,
+};
 
-export { TaskService, PlanningTimeService, PlannedBlockService, PlanningPrefsService };
+export {
+  TaskService,
+  PlanningTimeService,
+  PlannedBlockService,
+  PlanningPrefsService,
+  ReminderService,
+  PushSubscriptionService,
+  WebPushService,
+};
 
 // The status vocabulary and its named subsets. Cross-domain callers that filter
 // tasks by status (ChatTurnService's Plan snapshot, for one) take a subset from
@@ -119,6 +154,9 @@ export { PLANNING_PREFS_DEFAULTS };
 export { isValidTimezone, localDateInTZ, todayInTZ, zonedWallTimeToUTC } from '@ci/common/time/zoned';
 
 export type { TaskStatus } from './taskStatus';
+export type { ReminderStatus, ReminderSource } from './reminderStatus';
+export type { CreateReminderDto } from './services/ReminderService';
+export type { SubscribePushDto } from './services/PushSubscriptionService';
 export type {
   PlanningPrefs,
   ResolvedPlanningPrefs,
@@ -127,6 +165,8 @@ export type {
   TaskPendingChange,
   TaskPendingChangeKind,
   TaskPendingChangeStatus,
+  Reminder,
+  PushSubscription,
 };
 export type {
   CreateTaskDto,
