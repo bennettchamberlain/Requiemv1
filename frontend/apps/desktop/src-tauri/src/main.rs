@@ -63,10 +63,29 @@ fn dispatch_deep_link(app: &tauri::AppHandle, url: &str) {
         // string literal — the safe way to splice an arbitrary URL (OAuth `code`/
         // `state` params included) into an eval'd script.
         if let Ok(js_literal) = serde_json::to_string(url) {
-            let _ = window.eval(format!(
+            // Whether the eval reached the page is the other half of the answer:
+            // a delivered-but-not-dispatched link and a never-delivered one look
+            // identical from the frontend, and they have completely different fixes.
+            let dispatched = window.eval(format!(
                 "window.dispatchEvent(new CustomEvent('companion-deep-link', {{ detail: {js_literal} }}));"
             ));
+
+            if let Some(state) = app.try_state::<StackPathsState>() {
+                let outcome = match &dispatched {
+                    Ok(()) => "dispatched to the webview".to_string(),
+                    Err(e) => format!("FAILED to dispatch to the webview: {e}"),
+                };
+                stack_manager::append_desktop_log(&state.0, "deep-link", &outcome);
+            }
         }
+    } else if let Some(state) = app.try_state::<StackPathsState>() {
+        // The pending slot above still holds it, so this is recoverable rather
+        // than lost — take_pending_deep_link_command hands it over on mount.
+        stack_manager::append_desktop_log(
+            &state.0,
+            "deep-link",
+            "no main window yet; held for take_pending_deep_link_command",
+        );
     }
 }
 
@@ -545,14 +564,27 @@ fn is_openable_external_url(url: &str) -> bool {
 /// Restricted to http(s) so a compromised webview can't use this as a generic
 /// local-file/other-scheme open primitive.
 #[tauri::command]
-fn open_external_url_command(app: tauri::AppHandle, url: String) -> Result<(), String> {
+fn open_external_url_command(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StackPathsState>,
+    url: String,
+) -> Result<(), String> {
     if !is_openable_external_url(&url) {
         return Err("open_external_url_command only accepts http(s) URLs".to_string());
     }
 
-    app.opener()
-        .open_url(url, None::<String>)
-        .map_err(|e| e.to_string())
+    // Logged on both paths on purpose. This is the sign-in button: when it does
+    // nothing, the only question that matters is whether the command was reached
+    // and what the opener said — and the frontend can only console.error into a
+    // devtools nobody has open.
+    let result = app.opener().open_url(&url, None::<String>).map_err(|e| e.to_string());
+
+    match &result {
+        Ok(()) => stack_manager::append_desktop_log(&state.0, "open-url", &format!("opened {url}")),
+        Err(e) => stack_manager::append_desktop_log(&state.0, "open-url", &format!("FAILED {url}: {e}")),
+    }
+
+    result
 }
 
 /// Drain (return and clear) any deep-link URL that reached this process before the
