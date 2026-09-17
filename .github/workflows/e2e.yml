@@ -67,6 +67,50 @@ jobs:
       E2E_BASE_URL: http://localhost:5173
       AUTH_DEFAULT_USER_EMAIL: jsmith@example.com
       AUTH_DEFAULT_USER_PASSWORD: 'replace-me-pw-000000'
+      # The `Start Ollama` step below publishes it on the runner's own
+      # localhost. `services.ollama.host` defaults to
+      # `http://host.docker.internal:11434`, which does not resolve OUTSIDE a
+      # container — and the seed and Playwright's `webServer` api both run on
+      # the host, not in one. Without this they rely on the startup
+      # host-rewrite (`CI_LLM_HOST_REWRITE`) guessing right, which logs a
+      # warning on every boot; naming it here is the same answer, stated.
+      # `embedding.host` falls back to this, so the embedder follows it too.
+      #
+      # NOTE: OLLAMA_HOST is also the variable Ollama's OWN server reads to
+      # choose its bind address. That is not a conflict here — the server runs
+      # in a container, which does not inherit this job env — but do not
+      # "simplify" this by running ollama directly on the runner without
+      # re-reading that sentence.
+      OLLAMA_HOST: http://localhost:11434
+      # The import domain's writable directories. Their shipped defaults
+      # (`/var/lib/ci-import/...`, `/var/tmp/ci-import`) belong to the appliance
+      # CONTAINER, which runs as root; a host-run API on this runner cannot
+      # create the first, and tests/e2e/import.spec.ts died three times over with
+      # `EACCES: permission denied, mkdir '/var/lib/ci-import'` — surfaced to the
+      # browser as a bare 500 that names neither the directory nor the reason.
+      # `scripts/federation-harness/stack.ts` hit exactly this and pins the same
+      # set for the same reason; its README records the diagnosis.
+      #
+      # All three share one parent ON PURPOSE. configuration.ts requires
+      # uploadsDir and scratchDir to sit on the same filesystem, because
+      # consuming an upload is an atomic rename — moving only uploadsDir here
+      # and leaving scratchDir on /var/tmp would trade a loud EACCES for a
+      # cross-device EXDEV later.
+      #
+      # CI_IMPORT_INBOX_DIR is pinned although no spec runs the inbox: THE INBOX
+      # CONSUMES WHAT IT IMPORTS, BY RENAME, so the thing worth guaranteeing is
+      # that it can only ever point at a directory this job owns and discards.
+      #
+      # CI_IMPORT_ROOTS is deliberately NOT set — it already defaults to `[]`,
+      # nothing here stages files for the CLI to browse, and it is the one
+      # import variable declared `"__format": "json"`, so a bare path in it dies
+      # at startup with `invalid character 'p' at 1:2`. Leave it alone.
+      #
+      # Under `github.workspace` rather than the runner temp dir because the
+      # `runner` context is not available to a job-level `env:` block.
+      CI_IMPORT_UPLOADS_DIR: ${{ github.workspace }}/.e2e-import/uploads
+      CI_IMPORT_SCRATCH_DIR: ${{ github.workspace }}/.e2e-import/scratch
+      CI_IMPORT_INBOX_DIR: ${{ github.workspace }}/.e2e-import/inbox
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -113,16 +157,58 @@ jobs:
       #
       # `hbpe-service` is deliberately NOT started, even though
       # docs/qa/ci-gate-proposal.md §3.3 names it. Nothing in tests/e2e/ calls
-      # the sidecar, and the seed does not either — scripts/seed-database/
+      # the sidecar, and no seeder does either — scripts/seed-database/
       # seed-hbpe.ts writes hbpe.* rows over the same DataSource as every other
-      # seeder, and main.ts stubs FileService out of the seed's module graph
-      # entirely. Starting it would mean building backend/apps/hbpe/Dockerfile
+      # seeder. Starting it would mean building backend/apps/hbpe/Dockerfile
       # (a cmake llama-cpp-python compile) on the runner for a service no
       # assertion touches. Add it here the day a spec needs it.
+      #
+      # One thing DID reach for it, and this comment used to deny it:
+      # PythonFunctionCrons.onApplicationBootstrap arms a 30-second timer that
+      # fans out `ensure_bootstrap` to services.hbpe.host, and under
+      # LocalEventService the resulting `fetch failed` became an unhandled
+      # rejection that killed the seed. It went unseen because the seed used to
+      # die on its first person, well before T+30s; a real Ollama made seeding
+      # slow enough to reach the timer. seed-database/main.ts now overrides
+      # that cron provider, so the claim above is true again rather than merely
+      # asserted.
       - name: Start Postgres, object store (+ role/extension bootstrap)
         run: |
           docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local \
             up -d database setup-database object-store
+
+      # Embeddings are not optional in this lane, they were just never
+      # provided. `PersonSearchIndexListener.upsertPerson` (and its
+      # item/note/message/content siblings) calls
+      # `EmbeddingGenerationService.generateEmbedding` INLINE on every
+      # `*.created` event the seed emits, and `LocalEventService` rejects on a
+      # failed job — so with nothing answering on 11434 the seed died on its
+      # first person with `TypeError: fetch failed`, every run, back to at
+      # least 2026-07-17. It went unnoticed because the job carried
+      # `continue-on-error: true` until that flag was removed.
+      #
+      # Pinned to the SAME version the desktop sidecar downloads
+      # (`OLLAMA_VERSION` in local_model/ollama_sidecar.rs). Keep the two in
+      # step: a lane that embeds on a different build than the appliance ships
+      # is testing something nobody runs.
+      #
+      # Only the embedding model is pulled. `nomic-embed-text` is ~275 MB;
+      # the chat tag (`gemma4:e4b`) is multiple GB and this suite runs
+      # `--grep-invert @llm` precisely because nothing here exercises chat. If
+      # a spec ever needs it, pull it here and budget the runner disk.
+      - name: Start Ollama (embeddings for the seed)
+        run: |
+          docker run -d --name e2e-ollama -p 11434:11434 ollama/ollama:0.32.15
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:11434/api/version && break
+            echo "waiting for ollama ($i)…"; sleep 2
+          done
+          curl -sf http://localhost:11434/api/version > /dev/null || {
+            echo "::error::Ollama did not become ready; the seed cannot embed."
+            docker logs e2e-ollama || true
+            exit 1
+          }
+          docker exec e2e-ollama ollama pull nomic-embed-text
 
       - name: Wait for Postgres
         run: |
