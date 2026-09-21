@@ -34,6 +34,7 @@ import dotenv from 'dotenv';
 import { CaddyClient, routeId } from './caddy';
 import { keyFromArgv } from './key';
 import { fail, link, note, ok, step, table } from './log';
+import { removeStaleContainers } from './stale-containers';
 
 const ROOT = process.cwd();
 dotenv.config({ path: path.join(ROOT, '.env'), quiet: true });
@@ -357,7 +358,15 @@ function run(cmd: string, args: string[], env: NodeJS.ProcessEnv): void {
   }
 }
 
-function composeUp(env: NodeJS.ProcessEnv): void {
+function composeUp(key: string, env: NodeJS.ProcessEnv): void {
+  // A stopped stack's network is fair game for `docker network prune` (the Hub
+  // runs one at boot), and `up` cannot start a container whose network id is
+  // gone. Drop those containers first; `up` recreates them, volumes untouched.
+  const removed = removeStaleContainers(key);
+  if (removed.length > 0) {
+    note(`Removed ${removed.length} container(s) left on a deleted network: ${removed.join(', ')}`);
+  }
+
   step('Bringing up Docker services...\n');
 
   run(
@@ -530,7 +539,7 @@ async function up(key: string): Promise<void> {
   process.on('SIGTERM', onSignal);
 
   try {
-    composeUp(composeEnv);
+    composeUp(key, composeEnv);
 
     composeStarted = true;
 
