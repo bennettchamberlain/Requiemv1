@@ -368,9 +368,16 @@ Guards, all on every merge:
   LinkedIn URL sets remove a pair from every tier — including a shared email — and cap its score at
   0.8. A vetoed pair is *not* hidden: it stays on the review queue, labelled, so a person can reject
   it and the rejection is sticky (P5).
-- **Live re-check.** The same adjudicator runs on the live rows immediately before each merge; a pair
-  that no longer qualifies is rewritten to reviewable evidence (demoted) instead of merged on stale
-  evidence or hidden forever.
+- **Holder cap.** A LinkedIn URL stated by more than six live Persons (`PROFILE_URL_MAX_HOLDERS`,
+  pinned equal to `MAX_GROUP_MEMBERS`) is a page pasted into many cards, not anyone's profile. It is
+  removed from every holder's facts before *any* pair is graded — name and claim pairs included, not
+  only pairs the URL pass found — so it can neither lift a pair to 0.95 nor veto one. Both callers
+  count over the same population (`PROFILE_FACTS_CORPUS_SQL`) and grade through
+  `ProfileUrlHolders.adjudicate`.
+- **Live re-check.** The same adjudicator, and the same holder cap counted on the corpus as it is
+  now, runs on the live rows immediately before each merge; a pair that no longer qualifies —
+  including one whose URL became over-common after detection — is rewritten to reviewable evidence
+  (demoted) instead of merged on stale evidence or hidden forever.
 - **Self.** `users.entity_id` and any `is_self` row are always the target; a pair with two self
   endpoints is skipped.
 - **Name alone never merges.** No name clause exists in the auto-merge predicate.

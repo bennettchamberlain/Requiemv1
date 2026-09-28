@@ -1,6 +1,7 @@
 import type { UserServiceContext } from '@ci/common/context';
 
 import { PersonEntity } from '../entities/PersonEntity';
+import { PROFILE_FACTS_CORPUS_SQL, PROFILE_URL_MAX_HOLDERS } from '../utils/profileUrls';
 
 import {
   decodeMergeCandidateCursor,
@@ -258,6 +259,9 @@ describe('MergeCandidateService', () => {
     const ADA_URL = 'https://www.linkedin.com/in/ada-quillfeather-7x2';
     const OTHER_ADA_URL = 'https://www.linkedin.com/in/ada-quillfeather-9m4';
     const BO_URL = 'https://www.linkedin.com/in/bo-quillfeather-3k9';
+    /** A recruiter's profile pasted into every candidate's card. Invented. */
+    const DESK_URL = 'https://www.linkedin.com/in/acme-recruiter-desk';
+    const DESK_KEY = 'linkedin.com/in/acme-recruiter-desk';
 
     interface Endpoint {
       entity_id: string;
@@ -289,8 +293,10 @@ describe('MergeCandidateService', () => {
 
     /**
      * Routes each statement by its text: the self lookup, keyset pages (served
-     * in order, then empty), the live-endpoint read, demotions and the
-     * accepted-stamp. `endpoints` may be swapped mid-run to model a merge.
+     * in order, then empty), the corpus-wide holder read, the live-endpoint
+     * read, demotions and the accepted-stamp. `endpoints` may be swapped
+     * mid-run to model a merge; the corpus read serves every live endpoint
+     * that states anything, as the prefiltered query would.
      */
     function makeDrain(opts: {
       selfId?: string | null;
@@ -308,6 +314,7 @@ describe('MergeCandidateService', () => {
         evidence: Array<{ kind: string; score: number | null }>;
       }> = [];
       const accepted: string[][] = [];
+      const corpusCalls: unknown[][] = [];
 
       query.mockReset();
       query.mockImplementation(async (sql: string, params: unknown[] = []) => {
@@ -319,6 +326,12 @@ describe('MergeCandidateService', () => {
           pageCalls.push(params);
 
           return pages.shift() ?? [];
+        }
+
+        if (sql === PROFILE_FACTS_CORPUS_SQL) {
+          corpusCalls.push(params);
+
+          return state.endpoints.filter((row) => Object.keys(row.profile_props ?? {}).length > 0);
         }
 
         if (/profile_props/.test(sql)) {
@@ -347,7 +360,17 @@ describe('MergeCandidateService', () => {
         return [];
       });
 
-      return { service, query, personMerge, pageCalls, endpointCalls, demotions, accepted, state };
+      return {
+        service,
+        query,
+        personMerge,
+        pageCalls,
+        endpointCalls,
+        demotions,
+        accepted,
+        corpusCalls,
+        state,
+      };
     }
 
     const BUDGET = { budgetMs: 60_000 };
@@ -628,6 +651,121 @@ describe('MergeCandidateService', () => {
       expect(result.considered).toBe(0);
       expect(drain.pageCalls).toHaveLength(0);
       expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+    });
+
+    describe('the holder cap, on the live corpus', () => {
+      const HOLDER_IDS = Array.from(
+        { length: PROFILE_URL_MAX_HOLDERS + 1 },
+        (_, index) => `00000000-0000-0000-0000-0000000000d${index + 1}`,
+      );
+      const NAMES = [
+        'Zed',
+        'Zed Quimby',
+        'Cleo Varga',
+        'Dov Ellery',
+        'Esme Tarrant',
+        'Fitz Ormond',
+        'Gus Pellow',
+      ];
+
+      /** `count` people whose cards carry only the pasted URL; the first two are "Zed" and "Zed Quimby". */
+      function deskHolders(count: number): Endpoint[] {
+        return HOLDER_IDS.slice(0, count).map((id, index) =>
+          endpoint(id, NAMES[index], { Notes: [`URL: ${DESK_URL}`] }),
+        );
+      }
+
+      /** The pair the detector wrote while the URL was still under the cap. */
+      const zedRow = (overrides: Record<string, unknown> = {}) =>
+        pageRow({
+          merge_candidate_id: '00000000-0000-0000-0000-0000000000c2',
+          entity_id_a: HOLDER_IDS[0],
+          entity_id_b: HOLDER_IDS[1],
+          via_identifier: false,
+          evidence: [
+            { kind: 'profile_url', value: DESK_KEY, score: 0.95 },
+            { kind: 'name_cluster', value: 'zed', score: 0.5 },
+          ],
+          ...overrides,
+        });
+
+      it('demotes a pair whose URL became over-common after detection, and does not merge it', async () => {
+        // Graded exact at detection, when six people held the URL. A later
+        // import pasted it into a seventh card: it identifies nobody now,
+        // and the stored 0.95 must not carry the merge.
+        const drain = makeDrain({
+          pages: [[zedRow()]],
+          endpoints: deskHolders(PROFILE_URL_MAX_HOLDERS + 1),
+        });
+
+        const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+        expect(result).toMatchObject({ merged: 0, demoted: 1 });
+        expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+        expect(drain.demotions).toEqual([
+          {
+            id: '00000000-0000-0000-0000-0000000000c2',
+            score: 0.5,
+            evidence: [{ kind: 'name_cluster', value: 'zed', score: 0.5 }],
+          },
+        ]);
+        expect(drain.corpusCalls).toEqual([[USER]]);
+      });
+
+      it('merges the same pair while the URL is still under the cap', async () => {
+        const drain = makeDrain({
+          pages: [[zedRow()]],
+          endpoints: deskHolders(PROFILE_URL_MAX_HOLDERS),
+        });
+
+        const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+        expect(result).toMatchObject({ merged: 1, demoted: 0 });
+      });
+
+      it('counts a URL that a merge folded into the target', async () => {
+        // A (target) and B (source) share an email and Ada's own profile; B's
+        // card also carries the pasted URL, held by B and six others. The
+        // merge moves B's URL onto A, so seven people still hold it, and the
+        // (Zed, Zed Quimby) pair after it must still be refused. Counting B
+        // as gone without re-reading A would put the URL at six and merge it.
+        const drain = makeDrain({
+          pages: [[pageRow(), zedRow()]],
+          endpoints: [
+            endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL }),
+            endpoint(PERSON_B, 'Ada Quillfeather', { Notes: [`URL: ${ADA_URL}\nURL: ${DESK_URL}`] }),
+            ...deskHolders(PROFILE_URL_MAX_HOLDERS),
+          ],
+        });
+        drain.personMerge.mergePeople.mockImplementationOnce(async () => {
+          drain.state.endpoints = [
+            endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL, Notes: [`URL: ${DESK_URL}`] }),
+            ...deskHolders(PROFILE_URL_MAX_HOLDERS),
+          ];
+        });
+
+        const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+        expect(drain.personMerge.mergePeople).toHaveBeenCalledTimes(1);
+        expect(drain.personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_B], PERSON_A);
+        expect(result).toMatchObject({ merged: 1, demoted: 1 });
+        expect(drain.demotions.map((demotion) => demotion.id)).toEqual([
+          '00000000-0000-0000-0000-0000000000c2',
+        ]);
+        expect(drain.corpusCalls).toHaveLength(1);
+      });
+
+      it('does not read the corpus when one side of every pair states no URL', async () => {
+        const drain = makeDrain({
+          pages: [[pageRow()]],
+          endpoints: [endpoint(PERSON_A, 'Ada Q', { URL: ADA_URL }), endpoint(PERSON_B, 'Ada Quillfeather')],
+        });
+
+        const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+        expect(result.merged).toBe(1);
+        expect(drain.corpusCalls).toEqual([]);
+      });
     });
 
     it('re-reads an endpoint an earlier merge on the same page changed', async () => {

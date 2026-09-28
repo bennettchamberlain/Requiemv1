@@ -1,9 +1,12 @@
 import {
+  PROFILE_FACTS_CORPUS_SQL,
   PROFILE_FACT_PROPERTY_KEYS,
   PROFILE_URL_EVIDENCE,
+  PROFILE_URL_MAX_HOLDERS,
   PROFILE_URL_PREFILTER_TOKEN,
   PROFILE_URL_SCORES,
   PROFILE_URL_SQL_PREFILTER,
+  ProfileUrlHolders,
   adjudicateProfileUrls,
   applyProfileVerdict,
   canonicalConnectedOn,
@@ -450,6 +453,86 @@ describe('applyProfileVerdict', () => {
   });
 });
 
+describe('ProfileUrlHolders — the holder cap', () => {
+  const ADA = 'https://www.linkedin.com/in/ada-quillfeather-7x2';
+  const BO = 'https://www.linkedin.com/in/bo-quillfeather-3k9';
+  /** A recruiter's profile pasted into every candidate's card. Invented. */
+  const DESK = 'https://www.linkedin.com/in/acme-recruiter-desk';
+  const DESK_KEY = 'linkedin.com/in/acme-recruiter-desk';
+
+  /** `count` people whose cards carry only the pasted URL, keyed p1..pN. */
+  function pasted(count: number): Array<[string, ProfileFacts]> {
+    return Array.from({ length: count }, (_, index) => [
+      `p${index + 1}`,
+      vcardPerson(`Holder${index + 1} Surname${index + 1}`, { url: DESK }),
+    ]);
+  }
+
+  it('counts a URL as over-common only ABOVE the cap', () => {
+    expect(new ProfileUrlHolders(pasted(PROFILE_URL_MAX_HOLDERS)).isOverCommon(DESK_KEY)).toBe(false);
+    expect(new ProfileUrlHolders(pasted(PROFILE_URL_MAX_HOLDERS + 1)).isOverCommon(DESK_KEY)).toBe(true);
+  });
+
+  it('grades two people who share ONLY an over-common URL absent, not exact', () => {
+    // The regression: a bare given name ("Zed" / "Zed Quimby") is exactly
+    // the corroboration the adjudicator accepts, so without the cap this pair
+    // is graded exact and folded without review.
+    const zed = vcardPerson('Zed', { url: DESK });
+    const zedQuimby = vcardPerson('Zed Quimby', { url: DESK });
+    const holders = new ProfileUrlHolders([...pasted(6), ['zed', zed], ['zed-quimby', zedQuimby]]);
+
+    expect(adjudicateProfileUrls(zed, zedQuimby)).toMatchObject({ kind: 'exact' });
+    expect(holders.adjudicate(zed, zedQuimby)).toEqual({ kind: 'absent' });
+  });
+
+  it('does not let an over-common URL veto a pair either', () => {
+    // The pasted URL was never this person's own profile, so it cannot
+    // contradict the other person's.
+    const pastedOnly = vcardPerson('Ada Quillfeather', { url: DESK });
+    const own = csvPerson('Ada Quillfeather', ADA);
+    const holders = new ProfileUrlHolders([...pasted(7), ['a', pastedOnly], ['b', own]]);
+
+    expect(adjudicateProfileUrls(pastedOnly, own)).toMatchObject({ kind: 'conflict' });
+    expect(holders.adjudicate(pastedOnly, own)).toEqual({ kind: 'absent' });
+  });
+
+  it('still judges a card on its own profile when it also carries an over-common one', () => {
+    const both = vcardPerson('Ada Quillfeather', { url: DESK }, { url: ADA });
+    const own = csvPerson('Ada Quillfeather', ADA);
+    const holders = new ProfileUrlHolders([...pasted(7), ['a', both], ['b', own]]);
+
+    expect(adjudicateProfileUrls(both, own)).toMatchObject({ kind: 'partial' });
+    expect(holders.adjudicate(both, own)).toMatchObject({
+      kind: 'exact',
+      urls: ['linkedin.com/in/ada-quillfeather-7x2'],
+    });
+  });
+
+  it('returns the same facts when nothing is over-common', () => {
+    const own = csvPerson('Ada Quillfeather', ADA);
+    const holders = new ProfileUrlHolders([['a', own]]);
+
+    expect(holders.cap(own)).toBe(own);
+  });
+
+  it('keeps its counts current as holders change', () => {
+    const holders = new ProfileUrlHolders(pasted(PROFILE_URL_MAX_HOLDERS + 1));
+
+    // Merged away: one fewer holder, and the URL is back under the cap.
+    holders.delete('p1');
+    expect(holders.isOverCommon(DESK_KEY)).toBe(false);
+
+    // A merge folded the pasted URL into a card that did not state it.
+    holders.set('q', vcardPerson('Bo Quillfeather', { url: DESK }, { url: BO }).urls);
+    expect(holders.isOverCommon(DESK_KEY)).toBe(true);
+
+    // Re-read with the URL gone: `set` replaces, it does not accumulate.
+    holders.set('q', csvPerson('Bo Quillfeather', BO).urls);
+    expect(holders.isOverCommon(DESK_KEY)).toBe(false);
+    expect(holders.holdersOf('linkedin.com/in/bo-quillfeather-3k9')).toEqual(['q']);
+  });
+});
+
 describe('the SQL prefilter', () => {
   const accepted = [
     'https://www.linkedin.com/in/ada-quillfeather-7x2',
@@ -485,5 +568,18 @@ describe('the SQL prefilter', () => {
     }
 
     expect(projection).not.toContain('SocialProfiles');
+  });
+
+  it('counts holders over live Persons of one owner that pass the prefilter', () => {
+    // The holder cap's population. The detector and the auto-merger both
+    // load it with this text, so the two agree on what is over-common.
+    const sql = PROFILE_FACTS_CORPUS_SQL.replace(/\s+/g, ' ');
+
+    expect(sql).toContain('e.owner_user_id = $1::uuid');
+    expect(sql).toContain(`e.entity_type = 'Person'`);
+    expect(sql).toContain('COALESCE(e.is_active, true) = true');
+    expect(sql).toContain('e.merged_into_entity_id IS NULL');
+    expect(sql).toContain(PROFILE_URL_SQL_PREFILTER);
+    expect(sql).toContain(profileFactsSqlObject('e'));
   });
 });

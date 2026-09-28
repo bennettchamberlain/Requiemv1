@@ -5,15 +5,15 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import {
-  PROFILE_URL_SQL_PREFILTER,
-  adjudicateProfileUrls,
+  PROFILE_FACTS_CORPUS_SQL,
+  ProfileUrlHolders,
   applyProfileVerdict,
   compareTokenizedNames,
   extractProfileFacts,
   indexableTokens,
-  profileFactsSqlObject,
   tokenizePersonName,
   type ProfileFacts,
+  type ProfileFactsCorpusRow,
   type TokenizedPersonName,
 } from '@ci/domains/memory';
 
@@ -46,8 +46,9 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
 /**
  * Generation of the SCORING rule — {@link IDENTIFIER_KIND_SCORES},
  * {@link MAX_GROUP_MEMBERS}, which claim kinds count as evidence at all, and
- * the profile-URL rule in `memory/utils/profileUrls.ts` (its normaliser and
- * its adjudicator both change verdicts, so editing either is a bump).
+ * the profile-URL rule in `memory/utils/profileUrls.ts` (its normaliser, its
+ * adjudicator and its `PROFILE_URL_MAX_HOLDERS` cap all change verdicts, so
+ * editing any of them is a bump).
  *
  * Bump it in the same commit that edits any of them. A bump re-proposes: every
  * PENDING candidate is rescored, and every pair whose evidence no longer clears
@@ -62,7 +63,9 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
  * conflict is not. See {@link buildNameOverlapCandidates}.
  * 4 — profile_url evidence (LinkedIn /in/ URLs from URL/URLs/Notes `URL:`
  * lines): set-equal and corroborated gives 0.95; family-name, Connected On
- * or uncorroborated gives 0.8; partial or disjoint URLs veto every pair.
+ * or uncorroborated gives 0.8; partial or disjoint URLs veto every pair. A
+ * URL held by more than `PROFILE_URL_MAX_HOLDERS` people is removed before
+ * any of that, for every pair, so it neither lifts nor vetoes one.
  * See {@link buildProfileUrlCandidates} and {@link adjudicateCandidateProfiles}.
  */
 export const DUPLICATE_SCORING_GENERATION = 4;
@@ -276,6 +279,10 @@ export const PHONE_MATCH_SCORES = {
  * The over-large group is not silently dropped: it is counted, and the subject
  * is recorded `skipped: identifiers_too_common` so the operator can see that a
  * person was examined and deliberately not proposed for.
+ *
+ * Profile URLs are capped by `PROFILE_URL_MAX_HOLDERS` in
+ * `memory/utils/profileUrls.ts` instead, because the auto-merger applies that
+ * cap too and cannot import this file. The spec pins the two equal.
  */
 export const MAX_GROUP_MEMBERS = 6;
 
@@ -670,11 +677,7 @@ export function buildNameOverlapCandidates(
 }
 
 /** One live person's profile fields, as {@link DuplicateDetectStage.loadProfileFacts} reads them. */
-export interface ProfileFactsRow {
-  entity_id: string;
-  person_name: string | null;
-  profile_props: Record<string, unknown> | null;
-}
+export type ProfileFactsRow = ProfileFactsCorpusRow;
 
 /** Row → facts, keyed by entity id. A row whose fields hold no profile URL is dropped. */
 export function profileFactsByEntity(rows: readonly ProfileFactsRow[]): Map<string, ProfileFacts> {
@@ -699,11 +702,16 @@ export function profileFactsByEntity(rows: readonly ProfileFactsRow[]): Map<stri
  * one side is "Ada L." and the other "Ada Lovelace-King" — no name the
  * tokenizer would pair. They share the profile URL.
  *
- * A URL held by more than {@link MAX_GROUP_MEMBERS} people is not an identity,
- * it is a shared page someone pasted into many cards; the subject is marked
- * suppressed exactly as an over-common email is. Each surviving pair is
- * graded by `adjudicateProfileUrls` — the same function the auto-merger
- * re-runs on the live rows — and turned into evidence by `applyProfileVerdict`.
+ * A URL held by more than `PROFILE_URL_MAX_HOLDERS` people (equal to
+ * {@link MAX_GROUP_MEMBERS}) is not an identity, it is a shared page someone
+ * pasted into many cards; the subject is marked suppressed exactly as an
+ * over-common email is. Each surviving pair is graded by
+ * `ProfileUrlHolders.adjudicate` — the cap, then `adjudicateProfileUrls`, the
+ * same pair of steps the auto-merger re-runs on the live rows — and turned
+ * into evidence by `applyProfileVerdict`.
+ *
+ * `facts` must be the WHOLE corpus (`loadProfileFacts`), not the slice: the
+ * holder counts are taken from it.
  *
  * Only pairs touching the slice are returned, as {@link buildNameOverlapCandidates}.
  */
@@ -711,20 +719,7 @@ export function buildProfileUrlCandidates(
   facts: ReadonlyMap<string, ProfileFacts>,
   sliceIds: ReadonlySet<string>,
 ): { candidates: MergeCandidate[]; suppressed: Set<string> } {
-  const holders = new Map<string, string[]>();
-
-  for (const [entityId, fact] of facts) {
-    for (const url of fact.urls) {
-      const bucket = holders.get(url);
-
-      if (bucket == null) {
-        holders.set(url, [entityId]);
-      } else {
-        bucket.push(entityId);
-      }
-    }
-  }
-
+  const holders = new ProfileUrlHolders(facts);
   const byPair = new Map<string, MergeCandidate>();
   const suppressed = new Set<string>();
 
@@ -736,14 +731,12 @@ export function buildProfileUrlCandidates(
     }
 
     for (const url of subject.urls) {
-      const group = holders.get(url) ?? [];
-
-      if (group.length > MAX_GROUP_MEMBERS) {
+      if (holders.isOverCommon(url)) {
         suppressed.add(subjectId);
         continue;
       }
 
-      for (const otherId of group) {
+      for (const otherId of holders.holdersOf(url)) {
         if (otherId === subjectId) {
           continue;
         }
@@ -756,8 +749,9 @@ export function buildProfileUrlCandidates(
         }
 
         // Adjudicated in (a, b) order, so the evidence text is the same from
-        // whichever end of the pair the sweep found it.
-        const verdict = adjudicateProfileUrls(facts.get(entityIdA)!, facts.get(entityIdB)!);
+        // whichever end of the pair the sweep found it. Capped, so a card that
+        // also carries an over-common URL is judged on its own profile alone.
+        const verdict = holders.adjudicate(facts.get(entityIdA)!, facts.get(entityIdB)!);
         const graded = applyProfileVerdict({ score: 0, evidence: [] as CandidateEvidence[] }, verdict);
 
         if (graded.score < MIN_CANDIDATE_SCORE) {
@@ -786,11 +780,25 @@ export function buildProfileUrlCandidates(
  *
  * Only pairs whose BOTH people state a URL are touched — anything else is
  * `absent`, and applying `absent` would change nothing.
+ *
+ * ── The holder cap applies here too ────────────────────────────────────────
+ *
+ * Most of the pairs this sees were NOT found by {@link buildProfileUrlCandidates}
+ * — they are name and claim pairs — so the cap that pass applies has not
+ * touched them. Without it here, two people who share only a URL pasted into
+ * forty cards would be graded `exact` (their shared name token is the
+ * corroboration), and a 0.5 given-name match would leave at 0.95, hidden from
+ * review and folded by the drain. So every verdict goes through
+ * `ProfileUrlHolders.adjudicate`, whose counts are taken from `facts` — the
+ * WHOLE corpus — and a person whose only URLs are over-common is treated as
+ * stating none.
  */
 export function adjudicateCandidateProfiles(
   candidates: readonly MergeCandidate[],
   facts: ReadonlyMap<string, ProfileFacts>,
 ): MergeCandidate[] {
+  const holders = new ProfileUrlHolders(facts);
+
   return candidates.map((candidate) => {
     const left = facts.get(candidate.entityIdA);
     const right = facts.get(candidate.entityIdB);
@@ -799,7 +807,16 @@ export function adjudicateCandidateProfiles(
       return candidate;
     }
 
-    return { ...candidate, ...applyProfileVerdict(candidate, adjudicateProfileUrls(left, right)) };
+    const verdict = holders.adjudicate(left, right);
+
+    if (verdict.kind === 'absent') {
+      // Nothing to state, and nothing stale to strip: a pair carries
+      // `profile_url` evidence only when buildProfileUrlCandidates found it
+      // through a URL both people still hold under the cap.
+      return candidate;
+    }
+
+    return { ...candidate, ...applyProfileVerdict(candidate, verdict) };
   });
 }
 
@@ -1114,18 +1131,7 @@ export class DuplicateDetectStage implements Stage {
    * mistake this row set for {@link loadPersonNames}'.
    */
   private loadProfileFacts(userId: string): Promise<ProfileFactsRow[]> {
-    return this.dataSource.query<ProfileFactsRow[]>(
-      `SELECT e.entity_id,
-              e.name AS person_name,
-              ${profileFactsSqlObject('e')} AS profile_props
-         FROM ci.entities e
-        WHERE e.owner_user_id = $1::uuid
-          AND e.entity_type = '${CANDIDATE_ENTITY_TYPE}'
-          AND COALESCE(e.is_active, true) = true
-          AND e.merged_into_entity_id IS NULL
-          AND ${PROFILE_URL_SQL_PREFILTER}`,
-      [userId],
-    );
+    return this.dataSource.query<ProfileFactsRow[]>(PROFILE_FACTS_CORPUS_SQL, [userId]);
   }
 
   /**

@@ -17,8 +17,9 @@
  * {@link adjudicateProfileUrls} is the ONLY judgement of what two people's
  * profile URLs say about them. The duplicate detector calls it to write
  * evidence, and the auto-merger calls it again on the live rows immediately
- * before each merge. Two call sites, one rule: a merge can never be justified
- * by a verdict the detector would no longer give.
+ * before each merge, both through {@link ProfileUrlHolders.adjudicate}. Two
+ * call sites, one rule: a merge can never be justified by a verdict the
+ * detector would no longer give.
  *
  *  - URL SETS are compared, not single URLs. Some vCards carry two LinkedIn
  *    records in one NOTE; an overlap rule would chain two different people
@@ -30,6 +31,10 @@
  *  - DISJOINT sets are the strongest negative evidence the corpus has: two
  *    people with the same name and different profiles are different people,
  *    and that veto applies even to a pair that also shares an email.
+ *  - A URL stated by more than {@link PROFILE_URL_MAX_HOLDERS} people is not
+ *    anyone's profile. It is removed from every holder's facts BEFORE the
+ *    adjudicator sees them ({@link ProfileUrlHolders.cap}), by both callers,
+ *    so it can neither carry a pair to the auto-merge tier nor veto one.
  *
  * Pure: no database access. The SQL helpers at the bottom only BUILD text.
  * Changing anything here that alters a verdict requires a
@@ -427,6 +432,130 @@ export function adjudicateProfileUrls(left: ProfileFacts, right: ProfileFacts): 
 }
 
 // ---------------------------------------------------------------------------
+// The holder cap
+// ---------------------------------------------------------------------------
+
+/**
+ * How many people may state one profile URL before it stops being evidence
+ * about any of them.
+ *
+ * Above it the URL is not an identity, it is a shared page someone pasted
+ * into many cards: a recruiter's profile in every candidate's notes, the
+ * owner's own profile in every card they wrote. Treating it as identity
+ * would fold a bare given-name match into the auto-merge tier, and would
+ * fold contacts into the self Person when the pasted URL is the owner's.
+ *
+ * Six, the value of `MAX_GROUP_MEMBERS` in `DuplicateDetectStage` (its spec
+ * pins the two together). Defined here rather than there because the
+ * auto-merger applies the same cap to the live rows, and the memory domain
+ * does not import the pipeline. Changing it is a
+ * `DUPLICATE_SCORING_GENERATION` bump.
+ */
+export const PROFILE_URL_MAX_HOLDERS = 6;
+
+/**
+ * Who states each profile URL, across the owner's whole corpus. It holds
+ * the counts the {@link PROFILE_URL_MAX_HOLDERS} cap reads.
+ *
+ * The cap is applied by REMOVING an over-common URL from each person's facts
+ * ({@link cap}) before {@link adjudicateProfileUrls} sees them. Removal, not a
+ * downgrade, because the URL says nothing about the person:
+ *
+ *  - two people who share only an over-common URL are `absent`, so the pair
+ *    keeps whatever else it had (a 0.5 given-name match stays 0.5);
+ *  - one person's over-common URL against another's own profile is not a
+ *    `conflict` either, since the first card never stated its own profile;
+ *  - a person's own profile still counts when the card also carries an
+ *    over-common one.
+ *
+ * Callers go through {@link adjudicate}, so the cap and the verdict cannot be
+ * separated. It is built from the whole corpus, never from a slice or a
+ * page: a slice of 200 can hold two members of a 40-member group, and from
+ * inside the slice that looks like a pair.
+ *
+ * Mutable on purpose. The detector builds one per slice and never changes
+ * it. The auto-merger keeps one per drain and updates it as it merges (a
+ * merged-away source stops holding its URLs, and the target is re-read), so
+ * a cap decision late in a long drain uses the corpus as it is at that point.
+ */
+export class ProfileUrlHolders {
+  /** url → everyone who states it. */
+  private readonly holdersByUrl = new Map<string, Set<string>>();
+
+  /** entity → what it stated when last recorded, so {@link set} can replace rather than accumulate. */
+  private readonly urlsByEntity = new Map<string, ReadonlySet<string>>();
+
+  constructor(facts: Iterable<readonly [string, ProfileFacts]> = []) {
+    for (const [entityId, fact] of facts) {
+      this.set(entityId, fact.urls);
+    }
+  }
+
+  /** Record what `entityId` states NOW, replacing whatever it stated before. */
+  set(entityId: string, urls: ReadonlySet<string>): void {
+    this.delete(entityId);
+
+    if (urls.size === 0) {
+      return;
+    }
+
+    this.urlsByEntity.set(entityId, new Set(urls));
+
+    for (const url of urls) {
+      const holders = this.holdersByUrl.get(url);
+
+      if (holders == null) {
+        this.holdersByUrl.set(url, new Set([entityId]));
+      } else {
+        holders.add(entityId);
+      }
+    }
+  }
+
+  /** `entityId` states nothing any more: merged away, deactivated or deleted. */
+  delete(entityId: string): void {
+    const urls = this.urlsByEntity.get(entityId);
+
+    if (urls == null) {
+      return;
+    }
+
+    this.urlsByEntity.delete(entityId);
+
+    for (const url of urls) {
+      const holders = this.holdersByUrl.get(url);
+      holders?.delete(entityId);
+
+      if (holders?.size === 0) {
+        this.holdersByUrl.delete(url);
+      }
+    }
+  }
+
+  /** Everyone who states `url`, in the order they were recorded. */
+  holdersOf(url: string): string[] {
+    return [...(this.holdersByUrl.get(url) ?? [])];
+  }
+
+  /** True when more than {@link PROFILE_URL_MAX_HOLDERS} people state `url`. */
+  isOverCommon(url: string): boolean {
+    return (this.holdersByUrl.get(url)?.size ?? 0) > PROFILE_URL_MAX_HOLDERS;
+  }
+
+  /** `facts` without its over-common URLs. The same object when none is. */
+  cap(facts: ProfileFacts): ProfileFacts {
+    const kept = [...facts.urls].filter((url) => !this.isOverCommon(url));
+
+    return kept.length === facts.urls.size ? facts : { ...facts, urls: new Set(kept) };
+  }
+
+  /** {@link adjudicateProfileUrls} on both sides' {@link cap}ped facts. The only way either caller reaches a verdict. */
+  adjudicate(left: ProfileFacts, right: ProfileFacts): ProfileVerdict {
+    return adjudicateProfileUrls(this.cap(left), this.cap(right));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Verdict → evidence
 // ---------------------------------------------------------------------------
 
@@ -564,3 +693,33 @@ export function profileFactsSqlObject(alias: string): string {
     (key) => `'${key}', ${alias}.properties->'${key}'`,
   ).join(', ')})`;
 }
+
+/**
+ * One row of {@link PROFILE_FACTS_CORPUS_SQL}: a live Person's name and the
+ * fields {@link extractProfileFacts} reads.
+ */
+export interface ProfileFactsCorpusRow {
+  entity_id: string;
+  person_name: string | null;
+  profile_props: Record<string, unknown> | null;
+}
+
+/**
+ * Every live Person of the owner bound to `$1` that could state a profile
+ * URL, with only the fields {@link extractProfileFacts} reads.
+ *
+ * The population {@link ProfileUrlHolders} counts over. The detector and the
+ * auto-merger both load it with THIS text, so the holder cap means the same
+ * thing at detection and at merge time: a second copy of the WHERE clause
+ * that drifted (one counting deactivated people, say) would let a URL be
+ * over-common to one caller and not to the other.
+ */
+export const PROFILE_FACTS_CORPUS_SQL = `SELECT e.entity_id,
+              e.name AS person_name,
+              ${profileFactsSqlObject('e')} AS profile_props
+         FROM ci.entities e
+        WHERE e.owner_user_id = $1::uuid
+          AND e.entity_type = 'Person'
+          AND COALESCE(e.is_active, true) = true
+          AND e.merged_into_entity_id IS NULL
+          AND ${PROFILE_URL_SQL_PREFILTER}`;

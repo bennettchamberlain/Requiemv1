@@ -7,13 +7,15 @@ import { LoggerService } from '@ci/common/logging';
 
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 import {
+  PROFILE_FACTS_CORPUS_SQL,
   PROFILE_URL_EVIDENCE,
   PROFILE_URL_SCORES,
-  adjudicateProfileUrls,
+  ProfileUrlHolders,
   applyProfileVerdict,
   extractProfileFacts,
   profileFactsSqlObject,
   type ProfileFacts,
+  type ProfileFactsCorpusRow,
   type ProfileVerdict,
 } from '../utils/profileUrls';
 
@@ -61,6 +63,9 @@ const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 /** Rows per keyset page of the deterministic drain. */
 const AUTO_MERGE_PAGE_SIZE = 100;
+
+/** The verdict for a pair in which at least one side states no profile URL. */
+const ABSENT: ProfileVerdict = { kind: 'absent' };
 
 /**
  * The score a demoted row falls to when its live evidence no longer weighs
@@ -379,16 +384,34 @@ export class MergeCandidateService {
    * The stored evidence is as old as the detector's last sweep. Between that
    * sweep and this merge, earlier merges fold properties together and
    * re-imports rewrite them, so every pair is re-adjudicated with the same
-   * `adjudicateProfileUrls` the detector used, on the endpoints as they are
-   * NOW. A pair that no longer qualifies is DEMOTED — its row rewritten with
-   * the live verdict's evidence — so it becomes visible for review rather
-   * than hidden forever as "deterministic" and never merged:
+   * `ProfileUrlHolders.adjudicate` the detector used, on the endpoints as they
+   * are NOW. A pair that no longer qualifies is DEMOTED — its row rewritten
+   * with the live verdict's evidence — so it becomes visible for review
+   * rather than hidden forever as "deterministic" and never merged:
    *
    *  - disjoint or partial URL sets demote any pair, email pairs included;
    *  - a pair that qualified ONLY through its profile URL demotes unless the
    *    live verdict is still `exact`;
    *  - with `includeProfileUrl: false` (the kill switch), a profile-only pair
    *    is left exactly as it is.
+   *
+   * ── The holder cap, on the live corpus ─────────────────────────────────────
+   *
+   * A URL stated by more than `PROFILE_URL_MAX_HOLDERS` people is removed
+   * from both endpoints' facts before the verdict, exactly as the detector
+   * removes it. The detector will not have written `exact` on such a URL, but
+   * a URL can become over-common AFTER detection — a later import pastes it
+   * into more cards — and the stored 0.95 would then carry a merge on a URL
+   * that no longer identifies anyone. So the counts are read here, from the
+   * corpus as it is now (`PROFILE_FACTS_CORPUS_SQL`, the detector's own
+   * population), and such a pair's live verdict is `absent`: it demotes.
+   *
+   * The corpus is read at most once per call, and only when a pair's two
+   * endpoints both state a URL (otherwise the verdict is `absent` whatever the
+   * counts are), so draining email pairs between people with no profile costs
+   * nothing extra. After each merge attempt both endpoints are re-read into
+   * it, so a merged-away source stops counting and the target counts what the
+   * merge folded into it.
    *
    * ── The self person ────────────────────────────────────────────────────────
    *
@@ -422,6 +445,25 @@ export class MergeCandidateService {
     const userSelfId = userRow?.entity_id ?? null;
 
     let cursor: { score: number; id: string } | null = null;
+    /** Corpus-wide profile-URL holder counts. Loaded on first need; see "The holder cap". */
+    let holders: ProfileUrlHolders | null = null;
+
+    /** Read `ids` live into `endpoints`, keeping `holders` (once loaded) in step. */
+    const refresh = async (endpoints: Map<string, LiveEndpoint>, ids: string[]): Promise<void> => {
+      const fresh = await this.loadLiveEndpoints(context, ids);
+
+      for (const id of ids) {
+        const endpoint = fresh.get(id);
+
+        if (endpoint == null) {
+          endpoints.delete(id);
+          holders?.delete(id);
+        } else {
+          endpoints.set(id, endpoint);
+          holders?.set(id, endpoint.facts.urls);
+        }
+      }
+    };
 
     drain: while (Date.now() < deadline) {
       const rows: DeterministicRow[] = await manager.query(
@@ -449,8 +491,9 @@ export class MergeCandidateService {
       cursor = { score: Number(last.score), id: last.merge_candidate_id };
       result.considered += rows.length;
 
-      const endpoints = await this.loadLiveEndpoints(
-        context,
+      const endpoints = new Map<string, LiveEndpoint>();
+      await refresh(
+        endpoints,
         rows.flatMap((row) => [row.entity_id_a, row.entity_id_b]),
       );
 
@@ -463,9 +506,7 @@ export class MergeCandidateService {
         // tombstoned, one of this row's endpoints. Re-read what is stale.
         const stale = [row.entity_id_a, row.entity_id_b].filter((id) => !endpoints.has(id));
         if (stale.length > 0) {
-          for (const [id, endpoint] of await this.loadLiveEndpoints(context, stale)) {
-            endpoints.set(id, endpoint);
-          }
+          await refresh(endpoints, stale);
         }
 
         const a = endpoints.get(row.entity_id_a);
@@ -478,7 +519,13 @@ export class MergeCandidateService {
           continue;
         }
 
-        const verdict = adjudicateProfileUrls(a.facts, b.facts);
+        let verdict = ABSENT;
+
+        if (a.facts.urls.size > 0 && b.facts.urls.size > 0) {
+          holders ??= await this.loadProfileUrlHolders(context);
+          verdict = holders.adjudicate(a.facts, b.facts);
+        }
+
         const viaIdentifier = row.via_identifier === true;
 
         const demote =
@@ -529,9 +576,14 @@ export class MergeCandidateService {
         }
 
         // Both endpoints changed: the target's properties now hold the
-        // source's, and the source is a tombstone. Force a re-read.
+        // source's, and the source is a tombstone. Force a re-read — now,
+        // when the holder counts are in use, so the cap sees the merge.
         endpoints.delete(sourceId);
         endpoints.delete(targetId);
+
+        if (holders != null) {
+          await refresh(endpoints, [sourceId, targetId]);
+        }
       }
     }
 
@@ -540,6 +592,22 @@ export class MergeCandidateService {
     }
 
     return result;
+  }
+
+  /**
+   * Who states each profile URL across the owner's corpus: the counts the
+   * holder cap reads. `PROFILE_FACTS_CORPUS_SQL` is the detector's own
+   * population, so a URL is over-common to both callers or to neither.
+   */
+  private async loadProfileUrlHolders(context: UserServiceContext): Promise<ProfileUrlHolders> {
+    const rows: ProfileFactsCorpusRow[] = await this.personRepository.manager.query(
+      PROFILE_FACTS_CORPUS_SQL,
+      [context.userId],
+    );
+
+    return new ProfileUrlHolders(
+      rows.map((row) => [row.entity_id, extractProfileFacts(row.profile_props, row.person_name)] as const),
+    );
   }
 
   /**

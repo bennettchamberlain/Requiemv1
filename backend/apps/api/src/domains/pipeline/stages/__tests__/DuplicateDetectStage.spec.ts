@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource, type QueryRunner } from 'typeorm';
 
+import { PROFILE_URL_MAX_HOLDERS } from '@ci/domains/memory';
+
 import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
@@ -447,6 +449,23 @@ function vcardRow(
   return { entity_id: personId(n), person_name: name, profile_props: { Notes: [note] } };
 }
 
+/** A recruiter's profile pasted into every candidate's card. Invented. */
+const SLUG_DESK = 'https://www.linkedin.com/in/acme-recruiter-desk';
+
+/**
+ * `count` people, numbered from `from`, whose cards carry only {@link SLUG_DESK}.
+ * Their names share no token with each other or with "Zed".
+ */
+function pastedDeskRows(from: number, count: number): ProfileFactsRow[] {
+  const names = ['Cleo Varga', 'Dov Ellery', 'Esme Tarrant', 'Fitz Ormond', 'Gus Pellow', 'Hal Wyncote'];
+
+  return Array.from({ length: count }, (_, index) =>
+    vcardRow(from + index, names[index % names.length] + (index >= names.length ? ` ${index}` : ''), {
+      url: SLUG_DESK,
+    }),
+  );
+}
+
 function profileCandidates(rows: ProfileFactsRow[], slice: number[]) {
   return buildProfileUrlCandidates(profileFactsByEntity(rows), new Set(slice.map(personId)));
 }
@@ -535,6 +554,12 @@ describe('buildProfileUrlCandidates', () => {
     expect(candidates).toEqual([]);
   });
 
+  it('caps profile URLs at the same group size as every other shared value', () => {
+    // The URL cap lives in the memory domain because the auto-merger applies
+    // it too; it must not drift from this stage's cap.
+    expect(PROFILE_URL_MAX_HOLDERS).toBe(MAX_GROUP_MEMBERS);
+  });
+
   it('suppresses a URL pasted into more cards than the group cap', () => {
     const rows = Array.from({ length: MAX_GROUP_MEMBERS + 1 }, (_, index) =>
       vcardRow(index + 1, `Ada Quillfeather ${index}`, { url: SLUG_ADA }),
@@ -619,6 +644,59 @@ describe('adjudicateCandidateProfiles — the veto', () => {
     expect(kinds(capped)).toContain('profile_url_partial');
   });
 
+  it('never lifts a name-tier pair on a URL held by more people than the cap', () => {
+    // Regression: the URL pass suppresses an over-common URL, but name and
+    // claim pairs are graded here, and "Zed" / "Zed Quimby" share the name
+    // token the adjudicator takes as corroboration. Graded on the raw facts
+    // the pair left at profile_url 0.95 and was folded without review.
+    const facts = profileFactsByEntity([
+      vcardRow(1, 'Zed', { url: SLUG_DESK }),
+      vcardRow(2, 'Zed Quimby', { url: SLUG_DESK }),
+      ...pastedDeskRows(3, 6),
+    ]);
+    const zedPair: MergeCandidate = {
+      entityIdA: personId(1),
+      entityIdB: personId(2),
+      score: 0.5,
+      evidence: [{ kind: 'name_cluster', value: 'zed', score: 0.5 }],
+    };
+
+    const [graded] = adjudicateCandidateProfiles([zedPair], facts);
+
+    expect(graded).toEqual(zedPair);
+    expect(buildProfileUrlCandidates(facts, new Set([personId(1), personId(2)])).candidates).toEqual([]);
+  });
+
+  it('does not veto an email pair on a URL held by more people than the cap', () => {
+    // The pasted URL was never person 1's own profile, so it cannot
+    // contradict person 2's.
+    const facts = profileFactsByEntity([
+      vcardRow(1, 'Ada Quillfeather', { url: SLUG_DESK }),
+      csvRow(2, 'Ada Quillfeather', SLUG_ADA),
+      ...pastedDeskRows(3, 6),
+    ]);
+
+    expect(adjudicateCandidateProfiles([emailPair()], facts)).toEqual([emailPair()]);
+  });
+
+  it('judges a card on its own profile when it also carries an over-common URL', () => {
+    const facts = profileFactsByEntity([
+      vcardRow(1, 'Ada Quillfeather', { url: SLUG_DESK }, { url: SLUG_ADA }),
+      csvRow(2, 'Ada Quillfeather', SLUG_ADA),
+      ...pastedDeskRows(3, 6),
+    ]);
+
+    const [graded] = adjudicateCandidateProfiles([namePair()], facts);
+
+    expect(graded.score).toBe(0.95);
+    expect(graded.evidence).toContainEqual({
+      kind: 'profile_url',
+      value: 'linkedin.com/in/ada-quillfeather-7x2',
+      score: 0.95,
+    });
+    expect(kinds(graded)).not.toContain('profile_url_partial');
+  });
+
   it('leaves a name-only pair with no URLs exactly as it was', () => {
     const facts = profileFactsByEntity([csvRow(3, 'Someone Else', SLUG_BO)]);
 
@@ -650,6 +728,8 @@ function makeStage(
     claims?: SharedClaim[];
     /** Rows the corpus-wide profile-facts query returns. */
     profileRows?: ProfileFactsRow[];
+    /** Rows the corpus-wide person-name query returns. */
+    nameRows?: Array<{ entity_id: string; name: string | null }>;
     writeError?: Error;
   } = {},
 ): RunHarness {
@@ -674,7 +754,7 @@ function makeStage(
     }
 
     if (/e\.name/i.test(sql) && /FROM ci\.entities e/i.test(sql)) {
-      return [];
+      return opts.nameRows ?? [];
     }
 
     if (/identifier_claims/i.test(sql) && /^with/i.test(sql)) {
@@ -863,6 +943,34 @@ describe('run', () => {
       'email',
       'profile_url_conflict',
     ]);
+  });
+
+  it('writes a name pair whose people share only an over-common URL at its name score', async () => {
+    // The whole slice path, end to end: name pass, URL pass, veto, write.
+    const profileRows = [
+      vcardRow(1, 'Zed', { url: SLUG_DESK }),
+      vcardRow(2, 'Zed Quimby', { url: SLUG_DESK }),
+      ...pastedDeskRows(3, 6),
+    ];
+    const { stage, insert } = makeStage({
+      present: [personId(1)],
+      profileRows,
+      nameRows: profileRows.map((row) => ({ entity_id: row.entity_id, name: row.person_name })),
+    });
+
+    const results = await stage.run(CTX, [personId(1)]);
+
+    const params = insert()?.params ?? [];
+    expect(params[2]).toEqual([personId(1)]);
+    expect(params[3]).toEqual([personId(2)]);
+    expect(params[4]).toEqual([0.5]);
+    expect(JSON.parse((params[7] as string[])[0])).toEqual([
+      { kind: 'name_cluster', value: 'zed', score: 0.5 },
+    ]);
+    expect(results.get(personId(1))).toMatchObject({
+      outcome: 'done',
+      detail: { candidates: 1, suppressedCommonValues: true },
+    });
   });
 
   it('scopes every statement to the user', async () => {
