@@ -5,9 +5,15 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import {
+  PROFILE_URL_SQL_PREFILTER,
+  adjudicateProfileUrls,
+  applyProfileVerdict,
   compareTokenizedNames,
+  extractProfileFacts,
   indexableTokens,
+  profileFactsSqlObject,
   tokenizePersonName,
+  type ProfileFacts,
   type TokenizedPersonName,
 } from '@ci/domains/memory';
 
@@ -39,7 +45,9 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
 
 /**
  * Generation of the SCORING rule — {@link IDENTIFIER_KIND_SCORES},
- * {@link MAX_GROUP_MEMBERS}, and which claim kinds count as evidence at all.
+ * {@link MAX_GROUP_MEMBERS}, which claim kinds count as evidence at all, and
+ * the profile-URL rule in `memory/utils/profileUrls.ts` (its normaliser and
+ * its adjudicator both change verdicts, so editing either is a bump).
  *
  * Bump it in the same commit that edits any of them. A bump re-proposes: every
  * PENDING candidate is rescored, and every pair whose evidence no longer clears
@@ -52,8 +60,12 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
  * 3 — name evidence is no longer exact-string only. Token-subset overlap
  * ("mr broza" ⊂ "william d broza") is scored and proposed; a last-name
  * conflict is not. See {@link buildNameOverlapCandidates}.
+ * 4 — profile_url evidence (LinkedIn /in/ URLs from URL/URLs/Notes `URL:`
+ * lines): set-equal and corroborated gives 0.95; family-name, Connected On
+ * or uncorroborated gives 0.8; partial or disjoint URLs veto every pair.
+ * See {@link buildProfileUrlCandidates} and {@link adjudicateCandidateProfiles}.
  */
-export const DUPLICATE_SCORING_GENERATION = 3;
+export const DUPLICATE_SCORING_GENERATION = 4;
 
 /**
  * Generation of the CANDIDATE SET — which subjects are compared, i.e. the
@@ -657,6 +669,140 @@ export function buildNameOverlapCandidates(
   return { candidates, suppressed };
 }
 
+/** One live person's profile fields, as {@link DuplicateDetectStage.loadProfileFacts} reads them. */
+export interface ProfileFactsRow {
+  entity_id: string;
+  person_name: string | null;
+  profile_props: Record<string, unknown> | null;
+}
+
+/** Row → facts, keyed by entity id. A row whose fields hold no profile URL is dropped. */
+export function profileFactsByEntity(rows: readonly ProfileFactsRow[]): Map<string, ProfileFacts> {
+  const facts = new Map<string, ProfileFacts>();
+
+  for (const row of rows) {
+    const extracted = extractProfileFacts(row.profile_props, row.person_name);
+
+    if (extracted.urls.size > 0) {
+      facts.set(row.entity_id, extracted);
+    }
+  }
+
+  return facts;
+}
+
+/**
+ * Propose pairs that state the same LinkedIn profile.
+ *
+ * This is the pass the claim and name passes cannot be: the LinkedIn CSV copy
+ * and the vCard copy of one connection share no email, no phone and — when
+ * one side is "Ada L." and the other "Ada Lovelace-King" — no name the
+ * tokenizer would pair. They share the profile URL.
+ *
+ * A URL held by more than {@link MAX_GROUP_MEMBERS} people is not an identity,
+ * it is a shared page someone pasted into many cards; the subject is marked
+ * suppressed exactly as an over-common email is. Each surviving pair is
+ * graded by `adjudicateProfileUrls` — the same function the auto-merger
+ * re-runs on the live rows — and turned into evidence by `applyProfileVerdict`.
+ *
+ * Only pairs touching the slice are returned, as {@link buildNameOverlapCandidates}.
+ */
+export function buildProfileUrlCandidates(
+  facts: ReadonlyMap<string, ProfileFacts>,
+  sliceIds: ReadonlySet<string>,
+): { candidates: MergeCandidate[]; suppressed: Set<string> } {
+  const holders = new Map<string, string[]>();
+
+  for (const [entityId, fact] of facts) {
+    for (const url of fact.urls) {
+      const bucket = holders.get(url);
+
+      if (bucket == null) {
+        holders.set(url, [entityId]);
+      } else {
+        bucket.push(entityId);
+      }
+    }
+  }
+
+  const byPair = new Map<string, MergeCandidate>();
+  const suppressed = new Set<string>();
+
+  for (const subjectId of sliceIds) {
+    const subject = facts.get(subjectId);
+
+    if (subject == null) {
+      continue;
+    }
+
+    for (const url of subject.urls) {
+      const group = holders.get(url) ?? [];
+
+      if (group.length > MAX_GROUP_MEMBERS) {
+        suppressed.add(subjectId);
+        continue;
+      }
+
+      for (const otherId of group) {
+        if (otherId === subjectId) {
+          continue;
+        }
+
+        const [entityIdA, entityIdB] = subjectId < otherId ? [subjectId, otherId] : [otherId, subjectId];
+        const key = `${entityIdA}|${entityIdB}`;
+
+        if (byPair.has(key)) {
+          continue;
+        }
+
+        // Adjudicated in (a, b) order, so the evidence text is the same from
+        // whichever end of the pair the sweep found it.
+        const verdict = adjudicateProfileUrls(facts.get(entityIdA)!, facts.get(entityIdB)!);
+        const graded = applyProfileVerdict({ score: 0, evidence: [] as CandidateEvidence[] }, verdict);
+
+        if (graded.score < MIN_CANDIDATE_SCORE) {
+          continue;
+        }
+
+        byPair.set(key, { entityIdA, entityIdB, ...graded });
+      }
+    }
+  }
+
+  return { candidates: [...byPair.values()], suppressed };
+}
+
+/**
+ * The veto: re-state every candidate's profile-URL evidence under the verdict
+ * for its two people.
+ *
+ * Runs over the MERGED list, after {@link mergeCandidateLists}, for two
+ * reasons. A claim or name pair whose two people state different LinkedIn
+ * profiles has to carry that fact (`profile_url_conflict`) and lose any
+ * auto-merge-tier score, however strong its email match. And
+ * {@link mergeCandidateLists} rescores a folded pair to its strongest item,
+ * which would silently lift a capped `partial` pair back to 0.95 if an email
+ * joined it; re-applying the verdict afterwards restores the cap.
+ *
+ * Only pairs whose BOTH people state a URL are touched — anything else is
+ * `absent`, and applying `absent` would change nothing.
+ */
+export function adjudicateCandidateProfiles(
+  candidates: readonly MergeCandidate[],
+  facts: ReadonlyMap<string, ProfileFacts>,
+): MergeCandidate[] {
+  return candidates.map((candidate) => {
+    const left = facts.get(candidate.entityIdA);
+    const right = facts.get(candidate.entityIdB);
+
+    if (left == null || right == null) {
+      return candidate;
+    }
+
+    return { ...candidate, ...applyProfileVerdict(candidate, adjudicateProfileUrls(left, right)) };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // The stage
 // ---------------------------------------------------------------------------
@@ -667,7 +813,10 @@ export function buildNameOverlapCandidates(
  * ── The decision this stage encodes ────────────────────────────────────────
  *
  * Clean proposes; a human disposes. There is no merge path in this file, no
- * auto-merge floor to raise, and no configuration that would create one. That
+ * auto-merge floor to raise, and no configuration that would create one. (The
+ * deterministic tiers — a shared email, an E.164-exact phone, an exact
+ * `profile_url` — are folded by `MergeCandidateService`, which re-adjudicates
+ * the live rows before every merge; this stage only writes the evidence.) That
  * is not caution about the scoring being imperfect — it is that a merge is
  * IRREVERSIBLE IN PRACTICE: `PersonMergeService` repoints
  * `entity_identifiers`, `communications.from_entity_id` / `to_entity_ids[]`,
@@ -705,9 +854,10 @@ export function buildNameOverlapCandidates(
  *    were proposed, INCLUDING ZERO. Zero is a real answer — "this person has
  *    identifiers and no duplicate" — and it is the reason coverage is
  *    meaningful. It must never be confused with the next line.
- *  - `skipped: no_identifier_claims` — the person has NO claims at all, so there
- *    was nothing to compare on. Countable, and it is the number that says how
- *    much of the corpus `enrich.person_link` has not reached yet.
+ *  - `skipped: no_identifier_claims` — the person has NO claims at all and
+ *    neither the name pass nor the profile-URL pass proposed anything for
+ *    them, so there was nothing to compare on. Countable, and it is the number
+ *    that says how much of the corpus `enrich.person_link` has not reached yet.
  *  - `skipped: identifiers_too_common` — every shared value this person has is
  *    held by more than {@link MAX_GROUP_MEMBERS} subjects. Examined, and
  *    deliberately not guessed at.
@@ -786,11 +936,20 @@ export class DuplicateDetectStage implements Stage {
       new Set(examined),
     );
 
-    for (const id of nameSuppressed) {
+    const profileFacts = profileFactsByEntity(await this.loadProfileFacts(ctx.userId));
+    const { candidates: profileCandidates, suppressed: profileSuppressed } = buildProfileUrlCandidates(
+      profileFacts,
+      new Set(examined),
+    );
+
+    for (const id of [...nameSuppressed, ...profileSuppressed]) {
       suppressed.add(id);
     }
 
-    const candidates = mergeCandidateLists(exactCandidates, nameCandidates);
+    const candidates = adjudicateCandidateProfiles(
+      mergeCandidateLists(mergeCandidateLists(exactCandidates, nameCandidates), profileCandidates),
+      profileFacts,
+    );
 
     /** How many surviving pairs each swept subject appears in. */
     const proposedFor = new Map<string, number>();
@@ -833,6 +992,8 @@ export class DuplicateDetectStage implements Stage {
         continue;
       }
 
+      const proposed = proposedFor.get(id) ?? 0;
+
       // The claim COUNT — not the shared-claim rows — is what separates the two
       // very different silences. `loadEvidence` returns only claims another
       // subject also holds, so a person with a perfectly good email that nobody
@@ -840,13 +1001,15 @@ export class DuplicateDetectStage implements Stage {
       // `no_identifier_claims`. That is a lie about the healthy majority of the
       // corpus, and it would make the ledger read as "identity has not reached
       // these people" when identity has reached them and found nothing.
-      if ((subjects.get(id) ?? 0) === 0) {
+      //
+      // A person with no claims who was still PROPOSED — by name or by profile
+      // URL, neither of which needs a claim — was examined and answered, so it
+      // is `done`, not a coverage gap.
+      if ((subjects.get(id) ?? 0) === 0 && proposed === 0) {
         results.set(id, { outcome: 'skipped', reason: 'no_identifier_claims' });
 
         continue;
       }
-
-      const proposed = proposedFor.get(id) ?? 0;
 
       if (proposed === 0 && suppressed.has(id)) {
         // Examined, and deliberately not guessed at: every value this person
@@ -931,6 +1094,36 @@ export class DuplicateDetectStage implements Stage {
           AND e.merged_into_entity_id IS NULL
           AND e.name IS NOT NULL
           AND btrim(e.name) <> ''`,
+      [userId],
+    );
+  }
+
+  /**
+   * The profile-URL fields of every live Person that could hold a LinkedIn
+   * profile — the input to {@link buildProfileUrlCandidates} and
+   * {@link adjudicateCandidateProfiles}.
+   *
+   * Corpus-wide, like {@link loadPersonNames} and for the same reason: the
+   * other copy of a slice subject can be anyone in the corpus. The ILIKE is a
+   * superset prefilter only (a few thousand rows on a real corpus, not the
+   * whole Person table); `normalizeProfileUrl` decides in TypeScript. Only the
+   * handful of keys the extractor reads are loaded, never the whole
+   * `properties` bag.
+   *
+   * `person_name`, not `name`: the column is aliased so nothing downstream can
+   * mistake this row set for {@link loadPersonNames}'.
+   */
+  private loadProfileFacts(userId: string): Promise<ProfileFactsRow[]> {
+    return this.dataSource.query<ProfileFactsRow[]>(
+      `SELECT e.entity_id,
+              e.name AS person_name,
+              ${profileFactsSqlObject('e')} AS profile_props
+         FROM ci.entities e
+        WHERE e.owner_user_id = $1::uuid
+          AND e.entity_type = '${CANDIDATE_ENTITY_TYPE}'
+          AND COALESCE(e.is_active, true) = true
+          AND e.merged_into_entity_id IS NULL
+          AND ${PROFILE_URL_SQL_PREFILTER}`,
       [userId],
     );
   }

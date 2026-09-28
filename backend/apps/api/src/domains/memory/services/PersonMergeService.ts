@@ -132,7 +132,7 @@ export class PersonMergeService {
       // communications-participant stub) must never overwrite the target's
       // display name, especially when the target is the user's own self
       // person and the merge runs unattended (MergeCandidateService's
-      // autoMergePendingEmailPairs). Only fall back to a source's name when
+      // autoMergeDeterministicPairs). Only fall back to a source's name when
       // the target has none.
       const mergedName = firstNonEmpty([target.name, ...sources.map((id) => byId.get(id)?.name)]);
       const mergedDescription = firstNonEmpty([

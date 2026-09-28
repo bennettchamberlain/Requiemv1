@@ -8,6 +8,7 @@ import {
   hasEmailEvidence,
   hasExactPhoneEvidence,
   MergeCandidateService,
+  SHARES_DETERMINISTIC_IDENTITY,
 } from './MergeCandidateService';
 
 const USER = '00000000-0000-0000-0000-0000000000aa';
@@ -192,50 +193,461 @@ describe('MergeCandidateService', () => {
     expect(query).not.toHaveBeenCalled();
   });
 
-  describe('autoMergePendingEmailPairs', () => {
-    it('merges a same-email pair into the self person when they are in it', async () => {
+  describe('the deterministic predicate', () => {
+    /** Index of the paren that closes the one opened at `open`. */
+    function closingParen(text: string, open: number): number {
+      let depth = 0;
+
+      for (let index = open; index < text.length; index += 1) {
+        if (text[index] === '(') {
+          depth += 1;
+        } else if (text[index] === ')') {
+          depth -= 1;
+
+          if (depth === 0) {
+            return index;
+          }
+        }
+      }
+
+      return -1;
+    }
+
+    it('is one parenthesised expression, so `AND NOT` negates all of it', () => {
+      // `NOT a AND NOT b` is not `NOT (a AND NOT b)`. Unwrapped, hiding
+      // deterministic pairs would hide every VETOED pair too.
+      const predicate = SHARES_DETERMINISTIC_IDENTITY.trim();
+
+      expect(predicate.startsWith('(')).toBe(true);
+      expect(closingParen(predicate, 0)).toBe(predicate.length - 1);
+    });
+
+    it('adds the exact profile-URL tier and vetoes a partial or conflicting profile', () => {
+      expect(SHARES_DETERMINISTIC_IDENTITY).toMatch(/ev->>'kind' = 'profile_url'[\s\S]*>= 0\.95/);
+      expect(SHARES_DETERMINISTIC_IDENTITY).toMatch(
+        /AND NOT \(\s*mc\.evidence @> '\[\{"kind":"profile_url_conflict"\}\]'/,
+      );
+      expect(SHARES_DETERMINISTIC_IDENTITY).toContain(`'[{"kind":"profile_url_partial"}]'`);
+    });
+
+    it('never has a name clause', () => {
+      expect(SHARES_DETERMINISTIC_IDENTITY).not.toMatch(/name_overlap|name_cluster|'name'/);
+    });
+
+    it('hides deterministic pairs from the pending queue, vetoed ones excepted', async () => {
+      const { service, query } = makeService([], []);
+
+      await service.findCandidates(CONTEXT);
+
+      expect(query.mock.calls[0]?.[0]).toContain(`AND NOT ${SHARES_DETERMINISTIC_IDENTITY}`);
+    });
+
+    it('shows exact profile-URL pairs for review while their tier is switched off', async () => {
+      const { service, query } = makeService([], []);
+
+      await service.findCandidates(CONTEXT, { includeProfileUrl: false });
+
+      const sql = String(query.mock.calls[0]?.[0]);
+      expect(sql).not.toContain(`ev->>'kind' = 'profile_url'`);
+      expect(sql).toContain('profile_url_conflict');
+    });
+  });
+
+  describe('autoMergeDeterministicPairs', () => {
+    const PERSON_C = '00000000-0000-0000-0000-0000000000b3';
+    const ADA_URL = 'https://www.linkedin.com/in/ada-quillfeather-7x2';
+    const OTHER_ADA_URL = 'https://www.linkedin.com/in/ada-quillfeather-9m4';
+    const BO_URL = 'https://www.linkedin.com/in/bo-quillfeather-3k9';
+
+    interface Endpoint {
+      entity_id: string;
+      person_name: string | null;
+      profile_props: Record<string, unknown> | null;
+      is_self: boolean;
+    }
+
+    function endpoint(
+      id: string,
+      name: string,
+      props: Record<string, unknown> = {},
+      isSelf = false,
+    ): Endpoint {
+      return { entity_id: id, person_name: name, profile_props: props, is_self: isSelf };
+    }
+
+    function pageRow(overrides: Record<string, unknown> = {}) {
+      return {
+        merge_candidate_id: '00000000-0000-0000-0000-0000000000c1',
+        entity_id_a: PERSON_A,
+        entity_id_b: PERSON_B,
+        score: 0.95,
+        evidence: [{ kind: 'email', value: 'ada@example.com', score: 0.95 }],
+        via_identifier: true,
+        ...overrides,
+      };
+    }
+
+    /**
+     * Routes each statement by its text: the self lookup, keyset pages (served
+     * in order, then empty), the live-endpoint read, demotions and the
+     * accepted-stamp. `endpoints` may be swapped mid-run to model a merge.
+     */
+    function makeDrain(opts: {
+      selfId?: string | null;
+      pages?: Array<Array<Record<string, unknown>>>;
+      endpoints?: Endpoint[];
+    }) {
       const { service, query, personMerge } = makeService([], []);
+      const pages = [...(opts.pages ?? [])];
+      const state = { endpoints: opts.endpoints ?? [] };
+      const pageCalls: unknown[][] = [];
+      const endpointCalls: string[][] = [];
+      const demotions: Array<{
+        id: string;
+        score: number;
+        evidence: Array<{ kind: string; score: number | null }>;
+      }> = [];
+      const accepted: string[][] = [];
+
       query.mockReset();
-      query
-        .mockResolvedValueOnce([{ entity_id: PERSON_B }])
-        .mockResolvedValueOnce([{ merge_candidate_id: 'c1', entity_id_a: PERSON_A, entity_id_b: PERSON_B }])
-        .mockResolvedValueOnce([{ merge_candidate_id: 'c1' }]);
+      query.mockImplementation(async (sql: string, params: unknown[] = []) => {
+        if (/FROM ci\.users/.test(sql)) {
+          return [{ entity_id: opts.selfId ?? null }];
+        }
 
-      const merged = await service.autoMergePendingEmailPairs(CONTEXT);
+        if (/AS via_identifier/.test(sql)) {
+          pageCalls.push(params);
 
-      expect(merged).toBe(1);
-      expect(personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_A], PERSON_B);
-      expect(query.mock.calls[1]?.[0]).toMatch(/evidence @> '\[\{"kind":"email"\}\]'/);
-      expect(query.mock.calls[1]?.[0]).toMatch(/value_e164/);
+          return pages.shift() ?? [];
+        }
+
+        if (/profile_props/.test(sql)) {
+          const ids = params[1] as string[];
+          endpointCalls.push(ids);
+
+          return state.endpoints.filter((row) => ids.includes(row.entity_id));
+        }
+
+        if (/SET score = \$3, evidence/.test(sql)) {
+          demotions.push({
+            id: params[1] as string,
+            score: params[2] as number,
+            evidence: JSON.parse(params[3] as string),
+          });
+
+          return [];
+        }
+
+        if (/SET status = \$3/.test(sql)) {
+          accepted.push(params[1] as string[]);
+
+          return [{ merge_candidate_id: 'x' }];
+        }
+
+        return [];
+      });
+
+      return { service, query, personMerge, pageCalls, endpointCalls, demotions, accepted, state };
+    }
+
+    const BUDGET = { budgetMs: 60_000 };
+
+    it('merges a same-email pair into the self person when they are in it', async () => {
+      const drain = makeDrain({
+        selfId: PERSON_B,
+        pages: [[pageRow()]],
+        endpoints: [endpoint(PERSON_A, 'Ada Q'), endpoint(PERSON_B, 'Ada Quillfeather')],
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(result).toMatchObject({ merged: 1, skipped: 0, demoted: 0 });
+      expect(drain.personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_A], PERSON_B);
+      expect(drain.accepted).toEqual([[PERSON_A, PERSON_B]]);
+    });
+
+    it('selects on the email and E.164 tiers it always had', async () => {
+      const drain = makeDrain({ pages: [] });
+
+      await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      const pageSql = String(
+        drain.query.mock.calls.find((call) => /AS via_identifier/.test(String(call[0])))?.[0],
+      );
+      expect(pageSql).toMatch(/evidence @> '\[\{"kind":"email"\}\]'/);
+      expect(pageSql).toMatch(/value_e164/);
     });
 
     it('keeps entity_id_a when neither person is self', async () => {
-      const { service, query, personMerge } = makeService([], []);
-      query.mockReset();
-      query
-        .mockResolvedValueOnce([{ entity_id: null }])
-        .mockResolvedValueOnce([{ merge_candidate_id: 'c1', entity_id_a: PERSON_A, entity_id_b: PERSON_B }])
-        .mockResolvedValueOnce([{ merge_candidate_id: 'c1' }]);
+      const drain = makeDrain({
+        pages: [[pageRow()]],
+        endpoints: [endpoint(PERSON_A, 'Ada Q'), endpoint(PERSON_B, 'Ada Quillfeather')],
+      });
 
-      await service.autoMergePendingEmailPairs(CONTEXT);
+      await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
 
-      expect(personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_B], PERSON_A);
+      expect(drain.personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_B], PERSON_A);
     });
 
     it('leaves the pair pending when the merge throws', async () => {
-      const { service, query, personMerge } = makeService([], []);
-      query.mockReset();
-      personMerge.mergePeople.mockRejectedValueOnce(new Error('locked'));
-      query
-        .mockResolvedValueOnce([{ entity_id: null }])
-        .mockResolvedValueOnce([{ merge_candidate_id: 'c1', entity_id_a: PERSON_A, entity_id_b: PERSON_B }]);
+      const drain = makeDrain({
+        pages: [[pageRow()]],
+        endpoints: [endpoint(PERSON_A, 'Ada Q'), endpoint(PERSON_B, 'Ada Quillfeather')],
+      });
+      drain.personMerge.mergePeople.mockRejectedValueOnce(new Error('locked'));
 
-      const merged = await service.autoMergePendingEmailPairs(CONTEXT);
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
 
-      expect(merged).toBe(0);
-      expect(query.mock.calls.some((call) => String(call[0]).includes('UPDATE ci.merge_candidates'))).toBe(
-        false,
+      expect(result).toMatchObject({ merged: 0, skipped: 1 });
+      expect(drain.accepted).toEqual([]);
+      expect(drain.demotions).toEqual([]);
+    });
+
+    it('merges a pair whose only deterministic evidence is an exact profile URL', async () => {
+      const drain = makeDrain({
+        pages: [
+          [
+            pageRow({
+              via_identifier: false,
+              evidence: [{ kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.95 }],
+            }),
+          ],
+        ],
+        endpoints: [
+          endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL, ConnectedOn: '09 May 2014' }),
+          endpoint(PERSON_B, 'Ada Quillfeather', { Notes: [`URL: ${ADA_URL}\nConnected On: 09 May 2014`] }),
+        ],
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(result.merged).toBe(1);
+      expect(drain.personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_B], PERSON_A);
+    });
+
+    it('demotes an email pair whose live rows state different profiles, and does not merge it', async () => {
+      const drain = makeDrain({
+        pages: [[pageRow()]],
+        endpoints: [
+          endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL }),
+          endpoint(PERSON_B, 'Ada Quillfeather', { Notes: [`URL: ${OTHER_ADA_URL}`] }),
+        ],
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(result).toMatchObject({ merged: 0, demoted: 1 });
+      expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+      expect(drain.demotions).toHaveLength(1);
+      expect(drain.demotions[0].score).toBe(0.8);
+      expect(drain.demotions[0].evidence.map((item) => item.kind)).toEqual(['email', 'profile_url_conflict']);
+    });
+
+    it('demotes a pair whose live URL sets only overlap', async () => {
+      const drain = makeDrain({
+        pages: [
+          [
+            pageRow({
+              via_identifier: false,
+              evidence: [{ kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.95 }],
+            }),
+          ],
+        ],
+        endpoints: [
+          endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL }),
+          endpoint(PERSON_B, 'Ada Quillfeather', { Notes: [`URL: ${ADA_URL}\nURL: ${BO_URL}`] }),
+        ],
+      });
+
+      await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+      expect(drain.demotions[0].score).toBe(0.8);
+      expect(drain.demotions[0].evidence.map((item) => item.kind)).toEqual([
+        'profile_url',
+        'profile_url_partial',
+      ]);
+    });
+
+    it('demotes a profile-only pair whose live verdict is no longer exact', async () => {
+      // An earlier merge or a re-import renamed one side: the URL still agrees,
+      // the surname no longer does.
+      const drain = makeDrain({
+        pages: [
+          [
+            pageRow({
+              via_identifier: false,
+              evidence: [{ kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.95 }],
+            }),
+          ],
+        ],
+        endpoints: [
+          endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL }),
+          endpoint(PERSON_B, 'Ada Brightwater', { Notes: [`URL: ${ADA_URL}`] }),
+        ],
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(result.demoted).toBe(1);
+      expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+      expect(drain.demotions[0].evidence.map((item) => item.kind)).toEqual([
+        'profile_url',
+        'profile_url_check',
+      ]);
+    });
+
+    it('does not fail the drain when a demotion cannot be written', async () => {
+      const drain = makeDrain({
+        pages: [[pageRow()]],
+        endpoints: [
+          endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL }),
+          endpoint(PERSON_B, 'Ada Quillfeather', { Notes: [`URL: ${OTHER_ADA_URL}`] }),
+        ],
+      });
+      const route = drain.query.getMockImplementation()!;
+      drain.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+        if (/SET score = \$3, evidence/.test(sql)) {
+          throw new Error('lock timeout');
+        }
+
+        return route(sql, params);
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(result).toMatchObject({ merged: 0, demoted: 0, skipped: 1 });
+      expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+    });
+
+    it('floors a demoted row whose live evidence weighs nothing, instead of writing score 0', async () => {
+      const drain = makeDrain({
+        pages: [
+          [
+            pageRow({
+              via_identifier: false,
+              evidence: [{ kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.95 }],
+            }),
+          ],
+        ],
+        endpoints: [
+          endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL }),
+          endpoint(PERSON_B, 'Ada Quillfeather', { Notes: [`URL: ${OTHER_ADA_URL}`] }),
+        ],
+      });
+
+      await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(drain.demotions[0].score).toBeGreaterThan(0);
+      expect(drain.demotions[0].score).toBeLessThan(0.8);
+    });
+
+    it('with the profile tier off, skips a profile-only pair without merging or demoting it', async () => {
+      const drain = makeDrain({
+        pages: [
+          [
+            pageRow({
+              via_identifier: false,
+              evidence: [{ kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.95 }],
+            }),
+          ],
+        ],
+        endpoints: [
+          endpoint(PERSON_A, 'Ada Quillfeather', { URL: ADA_URL }),
+          endpoint(PERSON_B, 'Ada Quillfeather', { Notes: [`URL: ${ADA_URL}`] }),
+        ],
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, {
+        ...BUDGET,
+        includeProfileUrl: false,
+      });
+
+      expect(result).toMatchObject({ merged: 0, skipped: 1, demoted: 0 });
+      expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+      const pageSql = String(
+        drain.query.mock.calls.find((call) => /AS via_identifier/.test(String(call[0])))?.[0],
       );
+      expect(pageSql).not.toContain(`ev->>'kind' = 'profile_url'`);
+    });
+
+    it('merges into an is_self row even when users.entity_id points elsewhere', async () => {
+      const drain = makeDrain({
+        selfId: null,
+        pages: [[pageRow()]],
+        endpoints: [endpoint(PERSON_A, 'Ada Q'), endpoint(PERSON_B, 'Ada Quillfeather', {}, true)],
+      });
+
+      await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(drain.personMerge.mergePeople).toHaveBeenCalledWith(CONTEXT, [PERSON_A], PERSON_B);
+    });
+
+    it('skips a pair with two self endpoints', async () => {
+      const drain = makeDrain({
+        selfId: PERSON_A,
+        pages: [[pageRow()]],
+        endpoints: [endpoint(PERSON_A, 'Ada Q'), endpoint(PERSON_B, 'Ada Quillfeather', {}, true)],
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(result).toMatchObject({ merged: 0, skipped: 1 });
+      expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+    });
+
+    it('keyset-pages past a skipped row instead of re-reading it', async () => {
+      const drain = makeDrain({
+        // The endpoint of the first page's row is gone, so it is skipped.
+        pages: [[pageRow({ merge_candidate_id: '00000000-0000-0000-0000-0000000000c7', score: 0.95 })], []],
+        endpoints: [endpoint(PERSON_A, 'Ada Q')],
+      });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, { ...BUDGET, pageSize: 1 });
+
+      expect(result).toMatchObject({ skipped: 1, considered: 1 });
+      expect(drain.pageCalls).toHaveLength(2);
+      expect(drain.pageCalls[0]).toEqual([USER, null, null, 1]);
+      expect(drain.pageCalls[1]).toEqual([USER, 0.95, '00000000-0000-0000-0000-0000000000c7', 1]);
+    });
+
+    it('stops on the first empty page', async () => {
+      const drain = makeDrain({ pages: [] });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(result).toEqual({ merged: 0, skipped: 0, demoted: 0, considered: 0 });
+      expect(drain.pageCalls).toHaveLength(1);
+    });
+
+    it('stops when the budget is spent', async () => {
+      const drain = makeDrain({ pages: [[pageRow()]] });
+
+      const result = await drain.service.autoMergeDeterministicPairs(CONTEXT, { budgetMs: 0 });
+
+      expect(result.considered).toBe(0);
+      expect(drain.pageCalls).toHaveLength(0);
+      expect(drain.personMerge.mergePeople).not.toHaveBeenCalled();
+    });
+
+    it('re-reads an endpoint an earlier merge on the same page changed', async () => {
+      // A group of three: (A,B) folds B into A, then (A,C) must be judged on A
+      // as it is now — its properties folded — not on the page's first read.
+      const drain = makeDrain({
+        pages: [
+          [
+            pageRow({ merge_candidate_id: '00000000-0000-0000-0000-0000000000c1' }),
+            pageRow({ merge_candidate_id: '00000000-0000-0000-0000-0000000000c2', entity_id_b: PERSON_C }),
+          ],
+        ],
+        endpoints: [endpoint(PERSON_A, 'Ada Q'), endpoint(PERSON_B, 'Ada Q'), endpoint(PERSON_C, 'Ada Q')],
+      });
+
+      await drain.service.autoMergeDeterministicPairs(CONTEXT, BUDGET);
+
+      expect(drain.endpointCalls).toHaveLength(2);
+      expect(drain.endpointCalls[1]).toEqual([PERSON_A]);
+      expect(drain.personMerge.mergePeople).toHaveBeenNthCalledWith(2, CONTEXT, [PERSON_C], PERSON_A);
     });
   });
 });

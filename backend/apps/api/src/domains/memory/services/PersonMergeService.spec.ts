@@ -230,7 +230,7 @@ describe('PersonMergeService', () => {
   });
 
   it("keeps the target's name even when a merge source's name is fuller, including when the target is the self person", async () => {
-    // MergeCandidateService.autoMergePendingEmailPairs runs exactly this shape
+    // MergeCandidateService.autoMergeDeterministicPairs runs exactly this shape
     // unattended: self person as target, a communications stub as source.
     // pickFullerName's token-count comparison used to let the stub's longer
     // name win; the target must always win when it already has a name.

@@ -219,6 +219,27 @@ function isSubset(inner: Set<string>, outer: Set<string>): boolean {
 }
 
 /**
+ * "john smith" vs "john jones" — both names state a family token, the two
+ * disagree, and neither appears anywhere in the other name.
+ *
+ * "william david" vs "william david broza" is NOT a conflict: the shorter
+ * name's last token is a middle name in the longer form.
+ *
+ * Exported so a caller that already has stronger evidence than a name (the
+ * duplicate detector's profile-URL pass) refuses the same pairs this module
+ * refuses, rather than re-deriving a second definition of "different surname".
+ */
+export function hasFamilyConflict(left: TokenizedPersonName, right: TokenizedPersonName): boolean {
+  return (
+    left.family != null &&
+    right.family != null &&
+    left.family !== right.family &&
+    !left.set.has(right.family) &&
+    !right.set.has(left.family)
+  );
+}
+
+/**
  * Compare two tokenized names. Null means "not a question" — different last
  * names, a relational descriptor, or no subset relation.
  *
@@ -239,16 +260,7 @@ export function compareTokenizedNames(
     return null;
   }
 
-  // "john smith" vs "john jones" — last tokens disagree and neither appears
-  // in the other name. "william david" vs "william david broza" is NOT this:
-  // the shorter name's last token is a middle name in the longer form.
-  if (
-    left.family != null &&
-    right.family != null &&
-    left.family !== right.family &&
-    !left.set.has(right.family) &&
-    !right.set.has(left.family)
-  ) {
+  if (hasFamilyConflict(left, right)) {
     return null;
   }
 

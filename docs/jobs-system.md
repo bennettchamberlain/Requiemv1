@@ -22,8 +22,8 @@ PR list. Companion documents: [`jobs-schedule-review.md`](jobs-schedule-review.m
 | Listener bindings | **119** `@OnEvent` methods across 59 files |
 | Distinct event names consumed | **99** |
 | pg-boss queues created at boot | **42** (41 from listeners + `dead-letter`) |
-| Scheduled methods | **58** `@Cron` methods across 33 files — all via the `@ci/common/schedule` wrapper |
-| Crons pinned to the worker role | **13** |
+| Scheduled methods | **59** `@Cron` methods across 34 files — all via the `@ci/common/schedule` wrapper |
+| Crons pinned to the worker role | **14** |
 | Queues pinned to the worker role | **6** (5 import + `derivation-run`) |
 | Pipeline stages behind one `pipeline.slice` event | **43** |
 | Global in-flight ceiling | 10 jobs **per process**; 6 per queue |
@@ -406,7 +406,7 @@ process does not serve the role, the method never registers with the scheduler.
 ### 1.9 The `@Cron` wrapper
 
 `@ci/common/schedule` wraps `@nestjs/schedule` ([`Cron.ts`](../backend/apps/api/src/common/schedule/decorators/Cron.ts)).
-**All 58 decorator sites use it** — no non-test file imports the `Cron` symbol
+**All 59 decorator sites use it** — no non-test file imports the `Cron` symbol
 from `@nestjs/schedule`. It adds three things Nest's own wrapper does not:
 
 - a `ci.cron_runs` stamp keyed on the registry name — **twice**: an attempt stamp
@@ -415,13 +415,13 @@ from `@nestjs/schedule`. It adds three things Nest's own wrapper does not:
   indistinguishable from a healthy one on the dashboard.
 - a `traceId` in `ContextService` for the whole tick.
 - an error log that names the failing schedule. Nest catches one frame further
-  out and logs `SchedulerRegistry` with no schedule name; with 58 scheduled
+  out and logs `SchedulerRegistry` with no schedule name; with 59 scheduled
   methods, "something in the scheduler threw" is not a diagnosis.
 
 The tick is swallowed after logging, matching the framework's behaviour: the tick
 is lost, the schedule keeps running.
 
-> The wrapper's own docstring still says "~34 scheduled methods". It is 58.
+> The wrapper's own docstring still says "~34 scheduled methods". It is 59.
 
 ### 1.10 Observability
 
@@ -783,7 +783,7 @@ or `failStage` + rethrow.
 
 ## 4. Schedules
 
-58 `@Cron` methods. All use the wrapper. Expressions are 6-field (second-first)
+59 `@Cron` methods. All use the wrapper. Expressions are 6-field (second-first)
 unless marked **5f**, in which case they fire on second 0 — the crowded second
 the 6-field schedules were deliberately staggered off.
 
@@ -863,6 +863,7 @@ backlog exceeds 500.
 | `33 20 2 * * *` | `AgentMemoryRetentionCron.runOnSchedule` | Expire processed fragments >365 d, delete in batches of 500 |
 | `13 20 5 * * 0` | `RecallProbeCron.probeRecall` | Weekly recall probe — one user, ≤3 entity types, 50 sample vectors, 4 `ef_search` legs, 10 min deadline |
 | `23 35 5 * * 0` | `EntityTypeAuditCron.auditEntityTypes` | Weekly per-user audit of import-minted Person entities, window 1000 |
+| `53 17 * * * *` | `DeterministicPersonMergeCron.drain` | Hourly per-user drain of deterministic person merge candidates (shared email, E.164-exact phone, exact LinkedIn profile URL). Keyset-paged, re-adjudicates the live rows before every merge and demotes a pair that no longer qualifies. 10 min per user, 45 min per tick, `exclusive`. **Disabling it is the kill switch for the profile-URL tier** — the People page's on-read fold reads the same setting |
 | `20 15 * * * *` | `ConsumptionSweepCron.sweepOnSchedule` | Hourly reaper for `ci.consumption_windows` / `ci.consumed_nonces` — deletes rows idle past the rate-limit/nonce windows they serve (60× the 60 s rate-limit window, 12× the 5 min signature lifetime). In-process re-entrancy guard |
 | `20 40 3 * * *` | `SyncWindowSweepCron.sweepOnSchedule` | Daily PowerSync retention: clears `sync_period` on `ci.events` / `ci.entities` rows older than the 30-day device window. Ages rows out of sync, does not delete them. In-process re-entrancy guard |
 
@@ -949,7 +950,7 @@ never produce a job.
   metric.
 - **`last run` is not `last success`.** The wrapper stamps `ci.cron_runs` twice
   for exactly this reason; read the success column.
-- **`pgboss.schedule` is permanently empty** while ~58 real crons run beside it.
+- **`pgboss.schedule` is permanently empty** while ~59 real crons run beside it.
 
 ### Structural notes
 

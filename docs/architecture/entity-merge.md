@@ -353,8 +353,32 @@ source's **search-index** rows — deliberately, and re-derivable.
 **P4 — Auto-merge only on deterministic evidence.**
 Shared normalized email/phone could auto-merge; name similarity never does — it suggests. A wrong
 merge is far more expensive than a missed one, because it silently corrupts the behavioural corpus
-HBPE trains on. *Currently stronger than stated: nothing auto-merges at all. `DuplicateDetectStage`
-proposes into `ci.merge_candidates` and a human disposes.*
+HBPE trains on. *Holds, and is now exercised.* `DuplicateDetectStage` still only proposes into
+`ci.merge_candidates` (§1.3); `MergeCandidateService.autoMergeDeterministicPairs` folds the pending
+pairs in three deterministic tiers:
+
+| Tier | Evidence | Where it is graded |
+|------|----------|--------------------|
+| Email | a shared normalized mailbox (evidence, claims or `properties`) | `SHARES_EXACT_IDENTIFIER` |
+| Phone | an E.164-exact phone (0.95), never a last-ten-only match | `SHARES_EXACT_IDENTIFIER` |
+| Profile URL | equal LinkedIn `/in/` URL sets, corroborated by a shared name token or an agreeing "Connected On" date, contradicted by neither (`profile_url` 0.95) | `utils/profileUrls.ts` `adjudicateProfileUrls` |
+
+Guards, all on every merge:
+- **Veto.** Disjoint (`profile_url_conflict`) or overlapping-but-unequal (`profile_url_partial`)
+  LinkedIn URL sets remove a pair from every tier — including a shared email — and cap its score at
+  0.8. A vetoed pair is *not* hidden: it stays on the review queue, labelled, so a person can reject
+  it and the rejection is sticky (P5).
+- **Live re-check.** The same adjudicator runs on the live rows immediately before each merge; a pair
+  that no longer qualifies is rewritten to reviewable evidence (demoted) instead of merged on stale
+  evidence or hidden forever.
+- **Self.** `users.entity_id` and any `is_self` row are always the target; a pair with two self
+  endpoints is skipped.
+- **Name alone never merges.** No name clause exists in the auto-merge predicate.
+
+Two drains call it: the People review query folds for up to 5 s per load, and
+`DeterministicPersonMergeCron.drain` (hourly, worker) keyset-drains the backlog for up to 10 min per
+user. Disabling that cron on the Jobs page is the kill switch for the profile-URL tier in both.
+Every merge still writes its `ci.entity_merges` audit row.
 
 **P5 — Rejection is sticky.**
 *Shipped for Person (§3.4).*
@@ -504,7 +528,7 @@ Never compare all pairs. Candidates come only from a blocking key:
 
 | Type | Blocking key |
 |------|-------------|
-| Person | normalized email / phone / name — `ci.identifier_claims` *is* the block |
+| Person | normalized email / phone / name — `ci.identifier_claims` *is* the block; plus LinkedIn profile URL read from `properties` (`URL`/`URLs`/Notes `URL:` lines), which is not a claim kind |
 | Location | PostGIS `ST_DWithin` on a geohash-bucketed grid |
 | Object/Item | *Shipped* (§3.2): identifier rung over `ci.objects.identifier_codes` ∪ `ci.object_identifiers`, then product name, then brand+model |
 | Concept | `properties.type` + kNN over `ci_search.embeddings` (top-k, not all-pairs) |

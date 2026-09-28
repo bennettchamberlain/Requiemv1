@@ -6,6 +6,16 @@ import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 
 import { type Person, PersonEntity } from '../entities/PersonEntity';
+import {
+  PROFILE_URL_EVIDENCE,
+  PROFILE_URL_SCORES,
+  adjudicateProfileUrls,
+  applyProfileVerdict,
+  extractProfileFacts,
+  profileFactsSqlObject,
+  type ProfileFacts,
+  type ProfileVerdict,
+} from '../utils/profileUrls';
 
 import { PersonMergeService } from './PersonMergeService';
 
@@ -49,12 +59,47 @@ export interface MergeCandidatePage {
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+/** Rows per keyset page of the deterministic drain. */
+const AUTO_MERGE_PAGE_SIZE = 100;
+
 /**
- * Deterministic pairs (shared email, E.164-exact phone) are merged, not
- * reviewed. Bound one request so a backlog cannot hang the People page;
- * leftovers stay hidden from the queue and fold on the next load.
+ * The score a demoted row falls to when its live evidence no longer weighs
+ * anything — e.g. a pair proposed only on a profile URL whose two sides now
+ * state different profiles. The name floor: the weakest score any proposal
+ * carries, so the row sits at the bottom of the queue, labelled, instead of
+ * violating `merge_candidates_score_check (score > 0)`.
  */
-const AUTO_MERGE_DETERMINISTIC_LIMIT = 100;
+const DEMOTED_FLOOR_SCORE = 0.5;
+
+/**
+ * The scheduler name of `DeterministicPersonMergeCron.drain`.
+ *
+ * Also the KILL SWITCH for the profile-URL tier: disabling this schedule on
+ * the Jobs page stops the hourly drain, and the People page's on-read fold
+ * reads the same setting and stops folding profile-URL pairs too. Email and
+ * E.164-phone pairs keep folding on read, as they did before the cron existed.
+ */
+export const DETERMINISTIC_MERGE_CRON = 'DeterministicPersonMergeCron.drain';
+
+export interface AutoMergeOptions {
+  /** Wall-clock budget. The drain stops starting new merges once it is spent. */
+  budgetMs: number;
+  /** Fold pairs whose ONLY deterministic evidence is an exact profile URL. Default true. */
+  includeProfileUrl?: boolean;
+  /** Keyset page size. Default {@link AUTO_MERGE_PAGE_SIZE}. */
+  pageSize?: number;
+}
+
+export interface AutoMergeResult {
+  /** Pairs folded. */
+  merged: number;
+  /** Pairs left pending untouched: an endpoint gone, two self endpoints, a failed merge, the tier off. */
+  skipped: number;
+  /** Pairs whose live re-check failed and were rewritten to reviewable evidence. */
+  demoted: number;
+  /** Candidate rows read. */
+  considered: number;
+}
 
 export function hasEmailEvidence(evidence: readonly MergeCandidateEvidence[]): boolean {
   return evidence.some((item) => item.kind === 'email');
@@ -154,16 +199,14 @@ const LIVE_PAIR_PREDICATE = `EXISTS (
                AND blk.entity_id_b = mc.entity_id_b)`;
 
 /**
- * These two people already share an identity — a mailbox or an international
- * phone number. That is not a review question; it is a fold. Used both to
- * select auto-merge work and to keep leftovers off the People page if this
- * request's cap ran out.
+ * These two people already share an identifier — a mailbox or an
+ * international phone number.
  *
  * `ci.entity_identifiers` cannot answer this: it is unique on
  * `(owner, kind, value)`, so two live people cannot both hold the same email
  * there. Claims and properties still can, which is how the duplicates exist.
  */
-const SHARES_DETERMINISTIC_IDENTITY = `(
+const SHARES_EXACT_IDENTIFIER = `(
             mc.evidence @> '[{"kind":"email"}]'::jsonb
             OR EXISTS (
               SELECT 1
@@ -220,6 +263,70 @@ const SHARES_DETERMINISTIC_IDENTITY = `(
                       WHERE lower(btrim(a_email)) <> '')))
           )`;
 
+/**
+ * The detector graded this pair's LinkedIn profile URLs `exact`: equal sets,
+ * corroborated by a name token or a connection date, contradicted by neither.
+ * See `utils/profileUrls.ts`.
+ */
+const SHARES_EXACT_PROFILE_URL = `EXISTS (
+              SELECT 1
+                FROM jsonb_array_elements(mc.evidence) ev
+               WHERE ev->>'kind' = '${PROFILE_URL_EVIDENCE.match}'
+                 AND COALESCE((ev->>'score')::float, 0) >= ${PROFILE_URL_SCORES.exact})`;
+
+/**
+ * The two people state DIFFERENT LinkedIn profiles (disjoint sets), or one
+ * card lists a profile the other does not (overlapping, unequal sets). Either
+ * outranks a shared email: two same-name people with different profiles are
+ * two people, however they came to share a mailbox. A vetoed pair is NOT
+ * hidden — it stays on the review queue, labelled, so a human can reject it
+ * and make the rejection sticky.
+ */
+const PROFILE_URL_VETOED = `(
+            mc.evidence @> '[{"kind":"${PROFILE_URL_EVIDENCE.conflict}"}]'::jsonb
+            OR mc.evidence @> '[{"kind":"${PROFILE_URL_EVIDENCE.partial}"}]'::jsonb)`;
+
+/**
+ * These two people are the same person on deterministic evidence. That is
+ * not a review question; it is a fold. Used both to select auto-merge work
+ * and to keep leftovers off the People page while the drain catches up.
+ *
+ * Fully parenthesised on purpose: it is interpolated after `AND NOT`, and
+ * `NOT a AND NOT b` is not `NOT (a AND NOT b)`.
+ */
+function sharesDeterministicIdentity(includeProfileUrl: boolean): string {
+  const tiers = includeProfileUrl
+    ? `(${SHARES_EXACT_IDENTIFIER}) OR (${SHARES_EXACT_PROFILE_URL})`
+    : `(${SHARES_EXACT_IDENTIFIER})`;
+
+  return `((${tiers}) AND NOT ${PROFILE_URL_VETOED})`;
+}
+
+/** Every deterministic tier, the profile URL included. */
+export const SHARES_DETERMINISTIC_IDENTITY = sharesDeterministicIdentity(true);
+
+/** One endpoint as the live re-check reads it. */
+interface LiveEndpointRow {
+  entity_id: string;
+  person_name: string | null;
+  profile_props: Record<string, unknown> | null;
+  is_self: boolean | null;
+}
+
+interface LiveEndpoint {
+  facts: ProfileFacts;
+  isSelf: boolean;
+}
+
+interface DeterministicRow {
+  merge_candidate_id: string;
+  entity_id_a: string;
+  entity_id_b: string;
+  score: number | string;
+  evidence: unknown;
+  via_identifier: boolean | null;
+}
+
 interface CandidateRow {
   merge_candidate_id: string;
   entity_type: string;
@@ -259,60 +366,263 @@ export class MergeCandidateService {
   }
 
   /**
-   * Fold pending pairs that already share an identity.
+   * Fold pending pairs that already share an identity, re-checking each one
+   * against the LIVE rows immediately before it is merged.
    *
-   * A shared mailbox or an E.164-exact phone is not a review question — two
-   * stubs that use the same email are the same person, even when the detector
-   * filed them as a name-only pair because claims had not landed yet. Name
-   * overlap and last-ten-only phones stay on the queue for a human. Keep the
-   * self person when it is in the pair, otherwise the detector's ordered
-   * `entity_id_a`.
+   * Three deterministic tiers qualify (see {@link SHARES_DETERMINISTIC_IDENTITY}):
+   * a shared mailbox, an E.164-exact phone, and an exact LinkedIn profile URL.
+   * Name overlap and last-ten-only phones stay on the queue for a human, and
+   * no name clause exists in the predicate at all.
+   *
+   * ── The live re-check ──────────────────────────────────────────────────────
+   *
+   * The stored evidence is as old as the detector's last sweep. Between that
+   * sweep and this merge, earlier merges fold properties together and
+   * re-imports rewrite them, so every pair is re-adjudicated with the same
+   * `adjudicateProfileUrls` the detector used, on the endpoints as they are
+   * NOW. A pair that no longer qualifies is DEMOTED — its row rewritten with
+   * the live verdict's evidence — so it becomes visible for review rather
+   * than hidden forever as "deterministic" and never merged:
+   *
+   *  - disjoint or partial URL sets demote any pair, email pairs included;
+   *  - a pair that qualified ONLY through its profile URL demotes unless the
+   *    live verdict is still `exact`;
+   *  - with `includeProfileUrl: false` (the kill switch), a profile-only pair
+   *    is left exactly as it is.
+   *
+   * ── The self person ────────────────────────────────────────────────────────
+   *
+   * `users.entity_id` and any `is_self` row are always the merge TARGET, never
+   * the source. A pair with two self endpoints is skipped and logged: folding
+   * one "you" into another is a decision for the user, not a timer.
+   * `PersonMergeService` independently refuses `users.entity_id` as a source.
+   *
+   * ── Paging and budget ──────────────────────────────────────────────────────
+   *
+   * Keyset paging on the review order `(score DESC, merge_candidate_id ASC)`,
+   * so a pair that is skipped (or whose merge throws) is passed over for the
+   * rest of this run instead of being re-selected at the head of every page.
+   * The drain stops on an empty page or when `budgetMs` is spent; leftovers
+   * are picked up by the next run.
    */
-  async autoMergePendingEmailPairs(context: UserServiceContext): Promise<number> {
-    const [selfRow]: Array<{ entity_id: string | null }> = await this.personRepository.manager.query(
+  async autoMergeDeterministicPairs(
+    context: UserServiceContext,
+    options: AutoMergeOptions,
+  ): Promise<AutoMergeResult> {
+    const includeProfileUrl = options.includeProfileUrl ?? true;
+    const pageSize = Math.max(1, options.pageSize ?? AUTO_MERGE_PAGE_SIZE);
+    const deadline = Date.now() + Math.max(0, options.budgetMs);
+    const manager = this.personRepository.manager;
+    const result: AutoMergeResult = { merged: 0, skipped: 0, demoted: 0, considered: 0 };
+
+    const [userRow]: Array<{ entity_id: string | null }> = await manager.query(
       `SELECT entity_id FROM ci.users WHERE id = $1`,
       [context.userId],
     );
-    const selfId = selfRow?.entity_id ?? null;
+    const userSelfId = userRow?.entity_id ?? null;
 
-    const rows: Array<{ merge_candidate_id: string; entity_id_a: string; entity_id_b: string }> =
-      await this.personRepository.manager.query(
-        `SELECT mc.merge_candidate_id, mc.entity_id_a, mc.entity_id_b
+    let cursor: { score: number; id: string } | null = null;
+
+    drain: while (Date.now() < deadline) {
+      const rows: DeterministicRow[] = await manager.query(
+        `SELECT mc.merge_candidate_id, mc.entity_id_a, mc.entity_id_b, mc.score, mc.evidence,
+                (${SHARES_EXACT_IDENTIFIER}) AS via_identifier
            FROM ci.merge_candidates mc
           WHERE mc.owner_user_id = $1
             AND mc.entity_type = 'Person'
             AND mc.status = 'pending'
-            AND ${SHARES_DETERMINISTIC_IDENTITY}
+            AND ${sharesDeterministicIdentity(includeProfileUrl)}
             AND ${LIVE_PAIR_PREDICATE}
+            AND ($2::float8 IS NULL
+                 OR mc.score < $2::float8
+                 OR (mc.score = $2::float8 AND mc.merge_candidate_id > $3::uuid))
           ORDER BY mc.score DESC, mc.merge_candidate_id ASC
-          LIMIT $2`,
-        [context.userId, AUTO_MERGE_DETERMINISTIC_LIMIT],
+          LIMIT $4`,
+        [context.userId, cursor?.score ?? null, cursor?.id ?? null, pageSize],
       );
 
-    let merged = 0;
+      if (rows.length === 0) {
+        break;
+      }
 
-    for (const row of rows) {
-      const targetId = selfId === row.entity_id_b ? row.entity_id_b : row.entity_id_a;
-      const sourceId = targetId === row.entity_id_a ? row.entity_id_b : row.entity_id_a;
+      const last = rows[rows.length - 1];
+      cursor = { score: Number(last.score), id: last.merge_candidate_id };
+      result.considered += rows.length;
 
-      try {
-        await this.personMergeService.mergePeople(context, [sourceId], targetId);
-        await this.resolvePairs(context, [row.entity_id_a, row.entity_id_b], 'accepted');
-        merged += 1;
-      } catch (err: unknown) {
-        this.logger.warn('Deterministic auto-merge skipped a pair', {
-          err,
-          entityIdA: row.entity_id_a,
-          entityIdB: row.entity_id_b,
-        });
+      const endpoints = await this.loadLiveEndpoints(
+        context,
+        rows.flatMap((row) => [row.entity_id_a, row.entity_id_b]),
+      );
+
+      for (const row of rows) {
+        if (Date.now() >= deadline) {
+          break drain;
+        }
+
+        // Any merge earlier on this page may have folded properties into, or
+        // tombstoned, one of this row's endpoints. Re-read what is stale.
+        const stale = [row.entity_id_a, row.entity_id_b].filter((id) => !endpoints.has(id));
+        if (stale.length > 0) {
+          for (const [id, endpoint] of await this.loadLiveEndpoints(context, stale)) {
+            endpoints.set(id, endpoint);
+          }
+        }
+
+        const a = endpoints.get(row.entity_id_a);
+        const b = endpoints.get(row.entity_id_b);
+
+        if (a == null || b == null) {
+          // Merged away or deactivated since the page was read. The pair is
+          // moot, and LIVE_PAIR_PREDICATE drops it from every later read.
+          result.skipped += 1;
+          continue;
+        }
+
+        const verdict = adjudicateProfileUrls(a.facts, b.facts);
+        const viaIdentifier = row.via_identifier === true;
+
+        const demote =
+          verdict.kind === 'conflict' ||
+          verdict.kind === 'partial' ||
+          (!viaIdentifier && includeProfileUrl && verdict.kind !== 'exact');
+
+        if (demote) {
+          result[(await this.demote(context, row, verdict)) ? 'demoted' : 'skipped'] += 1;
+          continue;
+        }
+
+        if (!viaIdentifier && !includeProfileUrl) {
+          // The profile tier is switched off: leave the row exactly as it is.
+          result.skipped += 1;
+          continue;
+        }
+
+        const aSelf = a.isSelf || row.entity_id_a === userSelfId;
+        const bSelf = b.isSelf || row.entity_id_b === userSelfId;
+
+        if (aSelf && bSelf) {
+          this.logger.warn('Deterministic auto-merge skipped a pair with two self endpoints', {
+            entityIdA: row.entity_id_a,
+            entityIdB: row.entity_id_b,
+          });
+          result.skipped += 1;
+          continue;
+        }
+
+        const targetId = bSelf ? row.entity_id_b : row.entity_id_a;
+        const sourceId = targetId === row.entity_id_a ? row.entity_id_b : row.entity_id_a;
+
+        try {
+          await this.personMergeService.mergePeople(context, [sourceId], targetId);
+          await this.resolvePairs(context, [row.entity_id_a, row.entity_id_b], 'accepted');
+          result.merged += 1;
+        } catch (err: unknown) {
+          // A lock timeout, a deadlock with the other drain (cron vs on-read
+          // fold), or an endpoint merged away under us. Left pending; the
+          // keyset moves past it and the next run retries.
+          this.logger.warn('Deterministic auto-merge skipped a pair', {
+            err,
+            entityIdA: row.entity_id_a,
+            entityIdB: row.entity_id_b,
+          });
+          result.skipped += 1;
+        }
+
+        // Both endpoints changed: the target's properties now hold the
+        // source's, and the source is a tombstone. Force a re-read.
+        endpoints.delete(sourceId);
+        endpoints.delete(targetId);
       }
     }
 
-    if (merged > 0) {
-      this.logger.log('Auto-merged deterministic people', { merged, considered: rows.length });
+    if (result.merged > 0 || result.demoted > 0) {
+      this.logger.log('Auto-merged deterministic people', { ...result });
     }
 
-    return merged;
+    return result;
+  }
+
+  /**
+   * Live profile facts and self flags for `ids`, one query. Only live Persons
+   * are returned, so an id missing from the map is a pair that is moot.
+   */
+  private async loadLiveEndpoints(
+    context: UserServiceContext,
+    ids: string[],
+  ): Promise<Map<string, LiveEndpoint>> {
+    const unique = [...new Set(ids)];
+
+    if (unique.length === 0) {
+      return new Map();
+    }
+
+    const rows: LiveEndpointRow[] = await this.personRepository.manager.query(
+      `SELECT e.entity_id,
+              e.name AS person_name,
+              ${profileFactsSqlObject('e')} AS profile_props,
+              (e.is_self IS TRUE OR e.properties->>'is_self' = 'true') AS is_self
+         FROM ci.entities e
+        WHERE e.owner_user_id = $1
+          AND e.entity_id = ANY($2::uuid[])
+          AND e.entity_type = 'Person'
+          AND COALESCE(e.is_active, true) = true
+          AND e.merged_into_entity_id IS NULL`,
+      [context.userId, unique],
+    );
+
+    return new Map(
+      rows.map((row) => [
+        row.entity_id,
+        { facts: extractProfileFacts(row.profile_props, row.person_name), isSelf: row.is_self === true },
+      ]),
+    );
+  }
+
+  /**
+   * Rewrite a pending row's evidence under the LIVE verdict, so a pair that
+   * no longer qualifies becomes a visible review question instead of a
+   * "deterministic" row that is hidden and never merged. `status = 'pending'`
+   * guards a concurrent human decision.
+   *
+   * Never throws: a failed rewrite leaves the row as it was, to be re-checked
+   * on the next run, and must not fail the People page that triggered the
+   * on-read fold. Returns whether the row was rewritten.
+   */
+  private async demote(
+    context: UserServiceContext,
+    row: DeterministicRow,
+    verdict: ProfileVerdict,
+  ): Promise<boolean> {
+    const rewritten = applyProfileVerdict(
+      { score: Number(row.score), evidence: parseEvidence(row.evidence) },
+      verdict,
+    );
+    const score = rewritten.score > 0 ? rewritten.score : DEMOTED_FLOOR_SCORE;
+
+    try {
+      await this.personRepository.manager.query(
+        `UPDATE ci.merge_candidates
+            SET score = $3, evidence = $4::jsonb, updated_at = now()
+          WHERE owner_user_id = $1
+            AND merge_candidate_id = $2
+            AND status = 'pending'`,
+        [context.userId, row.merge_candidate_id, score, JSON.stringify(rewritten.evidence)],
+      );
+    } catch (err: unknown) {
+      this.logger.warn('Could not demote a deterministic merge candidate; it stays as it was', {
+        err,
+        mergeCandidateId: row.merge_candidate_id,
+      });
+
+      return false;
+    }
+
+    this.logger.log('Demoted a deterministic merge candidate after a live re-check', {
+      mergeCandidateId: row.merge_candidate_id,
+      verdict: verdict.kind,
+    });
+
+    return true;
   }
 
   /**
@@ -331,15 +641,23 @@ export class MergeCandidateService {
       entityType?: string;
       limit?: number;
       after?: string | null;
+      /**
+       * Whether the profile-URL tier is being folded. When the kill switch is
+       * off, exact profile-URL pairs are NOT merged, so they are shown for
+       * review instead of hidden. Default true.
+       */
+      includeProfileUrl?: boolean;
     } = {},
   ): Promise<MergeCandidatePage> {
     const status = options.status ?? 'pending';
     const entityType = options.entityType ?? 'Person';
     const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const cursor = options.after ? decodeMergeCandidateCursor(options.after) : null;
-    // Same-email / E.164-phone pairs are folded above; any the cap left behind
-    // must not appear as "are these the same person?" on the review queue.
-    const hideDeterministic = status === 'pending' ? `AND NOT ${SHARES_DETERMINISTIC_IDENTITY}` : '';
+    // Deterministic pairs are folded (on read, and by the hourly drain); any
+    // not yet folded must not appear as "are these the same person?" on the
+    // review queue. A VETOED pair is not deterministic, so it stays visible.
+    const hideDeterministic =
+      status === 'pending' ? `AND NOT ${sharesDeterministicIdentity(options.includeProfileUrl ?? true)}` : '';
 
     // One extra row answers hasNextPage without a second round-trip.
     const rows: CandidateRow[] = await this.personRepository.manager.query(

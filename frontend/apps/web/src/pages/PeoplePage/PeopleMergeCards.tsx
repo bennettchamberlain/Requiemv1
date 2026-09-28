@@ -66,8 +66,13 @@ export function groupMergeCandidates(candidates: readonly MergeCandidate[]): Mer
       continue;
     }
 
-    const clusterable = list.filter((candidate) =>
-      candidate.evidence.some((item) => item.kind === 'name_cluster' || item.kind === 'name_overlap'),
+    // A pair whose people state different LinkedIn profiles never joins a
+    // "which one is them?" picker: the picker shows no reason line, so the
+    // conflict would be invisible exactly where one click merges the pair.
+    const clusterable = list.filter(
+      (candidate) =>
+        !isProfileVetoed(candidate.evidence) &&
+        candidate.evidence.some((item) => item.kind === 'name_cluster' || item.kind === 'name_overlap'),
     );
 
     if (clusterable.length < 2 || clusterable.some((candidate) => used.has(candidate.id))) {
@@ -474,7 +479,41 @@ function HighlightedName({ name, shared }: { name: string | null | undefined; sh
   );
 }
 
-function humanReason(evidence: MergeCandidate['evidence']): string {
+/**
+ * The two people state different LinkedIn profiles (`profile_url_conflict`),
+ * or one card lists a profile the other does not (`profile_url_partial`). The
+ * server never auto-merges such a pair, whatever else it shares.
+ */
+function isProfileVetoed(evidence: MergeCandidate['evidence']): boolean {
+  return evidence.some((item) => item.kind === 'profile_url_conflict' || item.kind === 'profile_url_partial');
+}
+
+/**
+ * The one line that tells a reviewer why a pair is on the queue.
+ *
+ * Profile-URL verdicts are checked FIRST: a LinkedIn conflict outranks a
+ * shared email (it is why an email pair is on the queue at all instead of
+ * having been merged), and a contested profile match is the most specific
+ * thing that can be said about a pair.
+ */
+export function humanReason(evidence: MergeCandidate['evidence']): string {
+  if (evidence.some((item) => item.kind === 'profile_url_conflict')) {
+    return 'Different LinkedIn profiles — likely two people';
+  }
+
+  if (evidence.some((item) => item.kind === 'profile_url_partial')) {
+    return 'One card lists two LinkedIn profiles';
+  }
+
+  const profile = evidence.find((item) => item.kind === 'profile_url');
+  if (profile != null) {
+    if (evidence.some((item) => item.kind === 'profile_url_check') || (profile.score ?? 0) < 0.95) {
+      return 'Same LinkedIn profile, but names or connection dates differ';
+    }
+
+    return `Same LinkedIn profile: ${profile.value}`;
+  }
+
   const email = evidence.find((item) => item.kind === 'email');
   if (email != null) {
     return `Same email: ${email.value}`;

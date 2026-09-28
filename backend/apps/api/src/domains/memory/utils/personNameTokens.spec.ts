@@ -1,6 +1,7 @@
 import {
   NAME_OVERLAP_SCORES,
   compareTokenizedNames,
+  hasFamilyConflict,
   isRelationalDescriptor,
   pickFullerName,
   tokenizePersonName,
@@ -98,6 +99,43 @@ describe('compareTokenizedNames', () => {
   it('refuses a relational descriptor', () => {
     expect(isRelationalDescriptor("Priya's brother")).toBe(true);
     expect(compare("Priya's brother", 'Priya Sharma')).toBeNull();
+  });
+});
+
+describe('hasFamilyConflict', () => {
+  function conflict(a: string, b: string) {
+    return hasFamilyConflict(tokenizePersonName(a)!, tokenizePersonName(b)!);
+  }
+
+  it('flags two stated surnames that disagree and appear nowhere in the other name', () => {
+    expect(conflict('john smith', 'john jones')).toBe(true);
+  });
+
+  it('does not flag a surname that is a middle name in the longer form', () => {
+    expect(conflict('william david', 'william david broza')).toBe(false);
+  });
+
+  it('does not flag a side that states no surname at all', () => {
+    expect(conflict('william', 'william broza')).toBe(false);
+  });
+
+  it('does not flag the same surname', () => {
+    expect(conflict('Dr. Ada Lovelace', 'ada king lovelace')).toBe(false);
+  });
+
+  it('is exactly the refusal compareTokenizedNames applies', () => {
+    for (const [a, b] of [
+      ['john smith', 'john jones'],
+      ['mr broza', 'william d broza'],
+      ['william david', 'william david broza'],
+    ] as const) {
+      const left = tokenizePersonName(a)!;
+      const right = tokenizePersonName(b)!;
+
+      if (hasFamilyConflict(left, right)) {
+        expect(compareTokenizedNames(left, right)).toBeNull();
+      }
+    }
   });
 });
 
