@@ -3,6 +3,7 @@ import { Mutation, Parent, Query, ResolveField, Resolver, Args, ID, Int } from '
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { JobControlStore } from '@ci/common/job-controls';
 import { MaxArraySizePipe } from '@ci/common/pipes';
 import { EntityIdentifierService, type IdentifierKind } from '@ci/domains/graph';
 import { CreatePersonPayload } from '@ci/domains/graphql/types/CreatePersonPayload';
@@ -12,6 +13,7 @@ import {
   type DuplicateReason,
   type MergeCandidateStatus,
   type PersonAddress,
+  DETERMINISTIC_MERGE_CRON,
   encodeMergeCandidateCursor,
   EntityMergeBlockService,
   GraphQueryService,
@@ -53,6 +55,9 @@ import { UpdatePersonPayload } from '../types/UpdatePersonPayload';
 import { memoryRelToGql } from '../utils/lifeGraphRelationships';
 import { Paginator } from '../utils/Paginator';
 import { contactMethodsFromPersonProperties, mergePersonIdentifiers } from '../utils/personContactMethods';
+
+/** How long the review-queue query may spend folding deterministic pairs before it answers. */
+const ON_READ_FOLD_BUDGET_MS = 5_000;
 
 /** Map the structured input fields onto the established properties JSONB keys. */
 function structuredPropertiesPatch(
@@ -655,17 +660,31 @@ export class PersonResolver {
       parsedStatus = status;
     }
 
-    // Shared email or an E.164-exact phone is the same person. Fold those
-    // before the queue is shown so "95% match" on a shared mailbox never
-    // sits waiting for a click.
+    // Disabling the hourly drain on the Jobs page is the one kill switch for
+    // the profile-URL tier: it stops the cron AND this on-read fold, and the
+    // queue then shows exact profile-URL pairs for review instead of hiding
+    // them. Email and E.164-phone pairs fold here either way.
+    const includeProfileUrl = JobControlStore.cronMode(DETERMINISTIC_MERGE_CRON) !== 'disabled';
+
+    // A shared email, an E.164-exact phone or an exact LinkedIn profile URL is
+    // the same person. Fold those before the queue is shown so "95% match" on
+    // a shared mailbox never sits waiting for a click. Bounded by time, not
+    // by rows: a detector re-sweep can leave ~2k deterministic pairs at once,
+    // and draining them synchronously would turn one page load into minutes.
+    // Whatever is left is hidden from the queue and folded by
+    // `DeterministicPersonMergeCron` or the next load.
     if (parsedStatus === 'pending') {
-      await this.mergeCandidateService.autoMergePendingEmailPairs(serviceContext);
+      await this.mergeCandidateService.autoMergeDeterministicPairs(serviceContext, {
+        budgetMs: ON_READ_FOLD_BUDGET_MS,
+        includeProfileUrl,
+      });
     }
 
     const page = await this.mergeCandidateService.findCandidates(serviceContext, {
       status: parsedStatus,
       limit: first ?? undefined,
       after: after ?? null,
+      includeProfileUrl,
     });
 
     const edges = page.candidates.map((candidate) => ({

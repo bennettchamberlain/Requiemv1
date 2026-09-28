@@ -316,13 +316,15 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
   [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 2,
 
   /**
-   * v4 — DUPLICATE_SCORING_GENERATION bumped to 3: name evidence is token-
-   * subset overlap (honorifics stripped, last-name conflicts refused), not
-   * exact display-string only. v3 was phone E.164 adjudication; v2 was
-   * enrich.person_self_claim widening the evidence set. A bump rescores
-   * pending candidates; it never resurrects a rejected pair.
+   * v5 — DUPLICATE_SCORING_GENERATION bumped to 4: profile_url evidence
+   * (LinkedIn /in/ URLs from URL/URLs/Notes `URL:` lines). Equal, corroborated
+   * URL sets score 0.95 (folded by MergeCandidateService); a disjoint or
+   * partial set vetoes every pair, email pairs included. v4 was token-subset
+   * name overlap; v3 phone E.164 adjudication; v2 enrich.person_self_claim
+   * widening the evidence set. A bump rescores pending candidates; it never
+   * resurrects a rejected pair.
    */
-  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 4,
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 5,
 
   /**
    * v1 — initial owned-unit detector. A literal mirroring the derivation in

@@ -36,6 +36,7 @@ import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
+import { DeterministicPersonMergeCron } from './cron/DeterministicPersonMergeCron';
 import { BaseEntity } from './entities/BaseEntity';
 import { CommunicationBaseEntity } from './entities/CommunicationBaseEntity';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
@@ -163,6 +164,9 @@ import { UserContextService } from './services/UserContextService';
     EntityMergeBlockService,
     PersonDuplicateService,
     MergeCandidateService,
+    // Hourly, worker-role: drains the deterministic merge-candidate backlog
+    // (email / E.164 phone / exact profile URL) with a live re-check per pair.
+    DeterministicPersonMergeCron,
     PersonMergeService,
     PlaceMergeService,
     PlaceDuplicateService,
@@ -310,11 +314,13 @@ export type {
   MergeCandidateStatus,
 } from './services/MergeCandidateService';
 export {
+  DETERMINISTIC_MERGE_CRON,
   encodeMergeCandidateCursor,
   hasEmailEvidence,
   isMergeCandidateStatus,
   MERGE_CANDIDATE_STATUSES,
 } from './services/MergeCandidateService';
+export type { AutoMergeOptions, AutoMergeResult } from './services/MergeCandidateService';
 export type { PersonInteractionStats } from './services/PersonActivityService';
 export type { MergeCounts } from './services/PersonMergeService';
 export type { PlaceMergeCounts } from './services/PlaceMergeService';
@@ -485,8 +491,38 @@ export {
   type TokenizedPersonName,
   NAME_OVERLAP_SCORES,
   compareTokenizedNames,
+  hasFamilyConflict,
   indexableTokens,
   isRelationalDescriptor,
   pickFullerName,
   tokenizePersonName,
 } from './utils/personNameTokens';
+// LinkedIn profile URLs as duplicate evidence. One adjudicator, read by the
+// duplicate detector (pipeline domain) and the auto-merger here — a second
+// copy of the rule would be a second definition of "the same person".
+export {
+  type EvidenceLike,
+  type ProfileCheckReason,
+  type ProfileCorroboration,
+  type ProfileEvidenceItem,
+  type ProfileFacts,
+  type ProfileFactsCorpusRow,
+  type ProfileVerdict,
+  PROFILE_FACTS_CORPUS_SQL,
+  PROFILE_FACT_PROPERTY_KEYS,
+  PROFILE_URL_EVIDENCE,
+  PROFILE_URL_MAX_HOLDERS,
+  PROFILE_URL_PREFILTER_TOKEN,
+  PROFILE_URL_SCORES,
+  PROFILE_URL_SQL_PREFILTER,
+  ProfileUrlHolders,
+  adjudicateProfileUrls,
+  applyProfileVerdict,
+  canonicalConnectedOn,
+  extractProfileFacts,
+  isProfileUrlEvidenceKind,
+  normalizeProfileUrl,
+  profileEvidenceFor,
+  profileFactsSqlObject,
+  profileUrlSqlPrefilter,
+} from './utils/profileUrls';

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource, type QueryRunner } from 'typeorm';
 
+import { PROFILE_URL_MAX_HOLDERS } from '@ci/domains/memory';
+
 import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
 import { PipelineStateService } from '../../services/PipelineStateService';
@@ -16,12 +18,17 @@ import {
   MAX_NAME_CLUSTER,
   MIN_CANDIDATE_SCORE,
   PHONE_MATCH_SCORES,
+  type MergeCandidate,
+  type ProfileFactsRow,
   type SharedClaim,
+  adjudicateCandidateProfiles,
   buildCandidates,
   buildNameOverlapCandidates,
+  buildProfileUrlCandidates,
   claimScore,
   duplicateDetectStageVersion,
   mergeCandidateLists,
+  profileFactsByEntity,
   scorePair,
 } from '../clean/DuplicateDetectStage';
 
@@ -97,10 +104,10 @@ describe('the version', () => {
   it('is monotone in each generation, so a bump can only go up', () => {
     // A hash would be uniformly distributed and would move the version DOWN half
     // the time, which pins the corpus to the abandoned high-water mark forever.
-    // A sum cannot. 4 = DUPLICATE_SCORING_GENERATION (3, name token-subset
-    // overlap) + DUPLICATE_CANDIDATE_GENERATION (2, since enrich.person_self_claim
-    // widened the evidence set) - 1.
-    expect(DUPLICATE_DETECT_VERSION).toBe(4);
+    // A sum cannot. 5 = DUPLICATE_SCORING_GENERATION (4, profile_url evidence
+    // and its veto) + DUPLICATE_CANDIDATE_GENERATION (2, since
+    // enrich.person_self_claim widened the evidence set) - 1.
+    expect(DUPLICATE_DETECT_VERSION).toBe(5);
   });
 });
 
@@ -410,6 +417,300 @@ describe('mergeCandidateLists', () => {
 });
 
 /* ===================================================================== *
+ * Profile URLs — the cross-source pass and its veto
+ * ===================================================================== */
+
+/*
+ * The duplicate this pass exists for: one LinkedIn connection imported twice,
+ * once from Connections.csv (`properties.URL`) and once from a contacts vCard
+ * (the URL only as a NOTE `URL:` line). Every slug and name is invented.
+ */
+const SLUG_ADA = 'https://www.linkedin.com/in/ada-quillfeather-7x2';
+const SLUG_OTHER_ADA = 'https://www.linkedin.com/in/ada-quillfeather-9m4';
+const SLUG_BO = 'https://www.linkedin.com/in/bo-quillfeather-3k9';
+
+function csvRow(n: number, name: string, url: string, connectedOn?: string): ProfileFactsRow {
+  return {
+    entity_id: personId(n),
+    person_name: name,
+    profile_props: { URL: url, ConnectedOn: connectedOn ?? null },
+  };
+}
+
+function vcardRow(
+  n: number,
+  name: string,
+  ...records: Array<{ url: string; connectedOn?: string }>
+): ProfileFactsRow {
+  const note = records
+    .map(({ url, connectedOn }) => `URL: ${url}\n${connectedOn ? `Connected On: ${connectedOn}\n` : ''}`)
+    .join('');
+
+  return { entity_id: personId(n), person_name: name, profile_props: { Notes: [note] } };
+}
+
+/** A recruiter's profile pasted into every candidate's card. Invented. */
+const SLUG_DESK = 'https://www.linkedin.com/in/acme-recruiter-desk';
+
+/**
+ * `count` people, numbered from `from`, whose cards carry only {@link SLUG_DESK}.
+ * Their names share no token with each other or with "Zed".
+ */
+function pastedDeskRows(from: number, count: number): ProfileFactsRow[] {
+  const names = ['Cleo Varga', 'Dov Ellery', 'Esme Tarrant', 'Fitz Ormond', 'Gus Pellow', 'Hal Wyncote'];
+
+  return Array.from({ length: count }, (_, index) =>
+    vcardRow(from + index, names[index % names.length] + (index >= names.length ? ` ${index}` : ''), {
+      url: SLUG_DESK,
+    }),
+  );
+}
+
+function profileCandidates(rows: ProfileFactsRow[], slice: number[]) {
+  return buildProfileUrlCandidates(profileFactsByEntity(rows), new Set(slice.map(personId)));
+}
+
+function kinds(candidate: MergeCandidate | undefined): string[] {
+  return (candidate?.evidence ?? []).map((item) => item.kind);
+}
+
+describe('buildProfileUrlCandidates', () => {
+  it('proposes the CSV and vCard copies of one connection at the auto-merge tier', () => {
+    const { candidates } = profileCandidates(
+      [
+        csvRow(1, 'Ada Quillfeather', SLUG_ADA, '09 May 2014'),
+        vcardRow(2, 'Ada Quillfeather', { url: `${SLUG_ADA}/?trk=people`, connectedOn: '09 May 2014' }),
+      ],
+      [1],
+    );
+
+    expect(candidates).toEqual([
+      {
+        entityIdA: personId(1),
+        entityIdB: personId(2),
+        score: 0.95,
+        evidence: [{ kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.95 }],
+      },
+    ]);
+  });
+
+  it('finds a same-URL pair the name passes cannot pair at all', () => {
+    // "A. Q." shares no indexable name token with the CSV name, so neither
+    // name pass proposes it; agreeing Connected On dates corroborate the URL.
+    const { candidates } = profileCandidates(
+      [
+        csvRow(1, 'Ada Quillfeather', SLUG_ADA, '09 May 2014'),
+        vcardRow(2, 'A. Q.', { url: SLUG_ADA, connectedOn: '09 May 2014' }),
+      ],
+      [2],
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].score).toBe(0.95);
+  });
+
+  it.each([
+    ['a family-name conflict', vcardRow(2, 'Ada Brightwater', { url: SLUG_ADA }), 'family_name_conflict'],
+    [
+      'a Connected On conflict',
+      vcardRow(2, 'Ada Quillfeather', { url: SLUG_ADA, connectedOn: '02 Jan 2019' }),
+      'connected_on_conflict',
+    ],
+    ['no corroboration', vcardRow(2, 'Zed', { url: SLUG_ADA }), 'uncorroborated'],
+  ])('holds an equal URL with %s at 0.8 for review', (_label, other, reason) => {
+    const { candidates } = profileCandidates(
+      [csvRow(1, 'Ada Quillfeather', SLUG_ADA, '09 May 2014'), other],
+      [1],
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].score).toBe(0.8);
+    expect(candidates[0].evidence).toEqual([
+      { kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.8 },
+      { kind: 'profile_url_check', value: reason, score: 0 },
+    ]);
+  });
+
+  it('marks a partial overlap and keeps it at 0.8', () => {
+    const { candidates } = profileCandidates(
+      [
+        csvRow(1, 'Ada Quillfeather', SLUG_ADA),
+        vcardRow(2, 'Ada Quillfeather', { url: SLUG_ADA }, { url: SLUG_BO }),
+      ],
+      [1],
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].score).toBe(0.8);
+    expect(kinds(candidates[0])).toEqual(['profile_url', 'profile_url_partial']);
+  });
+
+  it('never proposes two people with different profiles', () => {
+    const { candidates } = profileCandidates(
+      [csvRow(1, 'Ada Quillfeather', SLUG_ADA), vcardRow(2, 'Ada Quillfeather', { url: SLUG_OTHER_ADA })],
+      [1, 2],
+    );
+
+    expect(candidates).toEqual([]);
+  });
+
+  it('caps profile URLs at the same group size as every other shared value', () => {
+    // The URL cap lives in the memory domain because the auto-merger applies
+    // it too; it must not drift from this stage's cap.
+    expect(PROFILE_URL_MAX_HOLDERS).toBe(MAX_GROUP_MEMBERS);
+  });
+
+  it('suppresses a URL pasted into more cards than the group cap', () => {
+    const rows = Array.from({ length: MAX_GROUP_MEMBERS + 1 }, (_, index) =>
+      vcardRow(index + 1, `Ada Quillfeather ${index}`, { url: SLUG_ADA }),
+    );
+
+    const { candidates, suppressed } = profileCandidates(rows, [1]);
+
+    expect(candidates).toEqual([]);
+    expect([...suppressed]).toEqual([personId(1)]);
+  });
+
+  it('collapses the two directions of one pair into one candidate', () => {
+    const { candidates } = profileCandidates(
+      [csvRow(1, 'Ada Quillfeather', SLUG_ADA), vcardRow(2, 'Ada Quillfeather', { url: SLUG_ADA })],
+      [1, 2],
+    );
+
+    expect(candidates).toHaveLength(1);
+  });
+
+  it('does not propose a pair that touches nobody in the slice', () => {
+    const { candidates } = profileCandidates(
+      [csvRow(1, 'Ada Quillfeather', SLUG_ADA), vcardRow(2, 'Ada Quillfeather', { url: SLUG_ADA })],
+      [9],
+    );
+
+    expect(candidates).toEqual([]);
+  });
+});
+
+describe('adjudicateCandidateProfiles — the veto', () => {
+  const namePair = (): MergeCandidate => ({
+    entityIdA: personId(1),
+    entityIdB: personId(2),
+    score: 0.62,
+    evidence: [{ kind: 'name_cluster', value: 'ada', score: 0.62 }],
+  });
+
+  const emailPair = (): MergeCandidate => ({
+    entityIdA: personId(1),
+    entityIdB: personId(2),
+    score: 0.95,
+    evidence: [{ kind: 'email', value: 'ada@example.com', score: 0.95 }],
+  });
+
+  it('marks a same-name pair with different profiles as a conflict, and never raises it', () => {
+    const facts = profileFactsByEntity([
+      csvRow(1, 'Ada Quillfeather', SLUG_ADA),
+      vcardRow(2, 'Ada Quillfeather', { url: SLUG_OTHER_ADA }),
+    ]);
+
+    const [vetoed] = adjudicateCandidateProfiles([namePair()], facts);
+
+    expect(vetoed.score).toBe(0.62);
+    expect(kinds(vetoed)).toEqual(['name_cluster', 'profile_url_conflict']);
+  });
+
+  it('caps an email pair whose people state different profiles below the auto-merge tier', () => {
+    const facts = profileFactsByEntity([
+      csvRow(1, 'Ada Quillfeather', SLUG_ADA),
+      vcardRow(2, 'Ada Quillfeather', { url: SLUG_OTHER_ADA }),
+    ]);
+
+    const [vetoed] = adjudicateCandidateProfiles([emailPair()], facts);
+
+    expect(vetoed.score).toBe(0.8);
+    expect(kinds(vetoed)).toEqual(['email', 'profile_url_conflict']);
+  });
+
+  it('restores the partial cap that mergeCandidateLists would otherwise lift', () => {
+    const facts = profileFactsByEntity([
+      csvRow(1, 'Ada Quillfeather', SLUG_ADA),
+      vcardRow(2, 'Ada Quillfeather', { url: SLUG_ADA }, { url: SLUG_BO }),
+    ]);
+    const { candidates: profile } = buildProfileUrlCandidates(facts, new Set([personId(1)]));
+
+    const folded = mergeCandidateLists([emailPair()], profile);
+    expect(folded[0].score).toBe(0.95);
+
+    const [capped] = adjudicateCandidateProfiles(folded, facts);
+    expect(capped.score).toBe(0.8);
+    expect(kinds(capped)).toContain('profile_url_partial');
+  });
+
+  it('never lifts a name-tier pair on a URL held by more people than the cap', () => {
+    // Regression: the URL pass suppresses an over-common URL, but name and
+    // claim pairs are graded here, and "Zed" / "Zed Quimby" share the name
+    // token the adjudicator takes as corroboration. Graded on the raw facts
+    // the pair left at profile_url 0.95 and was folded without review.
+    const facts = profileFactsByEntity([
+      vcardRow(1, 'Zed', { url: SLUG_DESK }),
+      vcardRow(2, 'Zed Quimby', { url: SLUG_DESK }),
+      ...pastedDeskRows(3, 6),
+    ]);
+    const zedPair: MergeCandidate = {
+      entityIdA: personId(1),
+      entityIdB: personId(2),
+      score: 0.5,
+      evidence: [{ kind: 'name_cluster', value: 'zed', score: 0.5 }],
+    };
+
+    const [graded] = adjudicateCandidateProfiles([zedPair], facts);
+
+    expect(graded).toEqual(zedPair);
+    expect(buildProfileUrlCandidates(facts, new Set([personId(1), personId(2)])).candidates).toEqual([]);
+  });
+
+  it('does not veto an email pair on a URL held by more people than the cap', () => {
+    // The pasted URL was never person 1's own profile, so it cannot
+    // contradict person 2's.
+    const facts = profileFactsByEntity([
+      vcardRow(1, 'Ada Quillfeather', { url: SLUG_DESK }),
+      csvRow(2, 'Ada Quillfeather', SLUG_ADA),
+      ...pastedDeskRows(3, 6),
+    ]);
+
+    expect(adjudicateCandidateProfiles([emailPair()], facts)).toEqual([emailPair()]);
+  });
+
+  it('judges a card on its own profile when it also carries an over-common URL', () => {
+    const facts = profileFactsByEntity([
+      vcardRow(1, 'Ada Quillfeather', { url: SLUG_DESK }, { url: SLUG_ADA }),
+      csvRow(2, 'Ada Quillfeather', SLUG_ADA),
+      ...pastedDeskRows(3, 6),
+    ]);
+
+    const [graded] = adjudicateCandidateProfiles([namePair()], facts);
+
+    expect(graded.score).toBe(0.95);
+    expect(graded.evidence).toContainEqual({
+      kind: 'profile_url',
+      value: 'linkedin.com/in/ada-quillfeather-7x2',
+      score: 0.95,
+    });
+    expect(kinds(graded)).not.toContain('profile_url_partial');
+  });
+
+  it('leaves a name-only pair with no URLs exactly as it was', () => {
+    const facts = profileFactsByEntity([csvRow(3, 'Someone Else', SLUG_BO)]);
+
+    expect(adjudicateCandidateProfiles([namePair()], facts)).toEqual([namePair()]);
+  });
+
+  it('leaves a pair alone when only one side states a URL', () => {
+    const facts = profileFactsByEntity([csvRow(1, 'Ada Quillfeather', SLUG_ADA)]);
+
+    expect(adjudicateCandidateProfiles([emailPair()], facts)).toEqual([emailPair()]);
+  });
+});
+
+/* ===================================================================== *
  * run() — the slice
  * ===================================================================== */
 
@@ -425,6 +726,10 @@ function makeStage(
     /** Claims per person. Defaults to 1 — i.e. identity HAS reached them. */
     claimCounts?: Record<string, number>;
     claims?: SharedClaim[];
+    /** Rows the corpus-wide profile-facts query returns. */
+    profileRows?: ProfileFactsRow[];
+    /** Rows the corpus-wide person-name query returns. */
+    nameRows?: Array<{ entity_id: string; name: string | null }>;
     writeError?: Error;
   } = {},
 ): RunHarness {
@@ -443,8 +748,13 @@ function makeStage(
         .map((entity_id) => ({ entity_id, claim_count: opts.claimCounts?.[entity_id] ?? 1 }));
     }
 
+    // Ahead of the name branch: the facts query selects `e.name` too.
+    if (/profile_props/i.test(sql) && /FROM ci\.entities e/i.test(sql)) {
+      return opts.profileRows ?? [];
+    }
+
     if (/e\.name/i.test(sql) && /FROM ci\.entities e/i.test(sql)) {
-      return [];
+      return opts.nameRows ?? [];
     }
 
     if (/identifier_claims/i.test(sql) && /^with/i.test(sql)) {
@@ -579,6 +889,88 @@ describe('run', () => {
     await stage.run(CTX, [personId(1)]);
 
     expect(statements.filter((statement) => /^WITH mine AS/i.test(statement.sql))).toHaveLength(0);
+  });
+
+  it('writes the profile-URL pair and records it for both people', async () => {
+    const { stage, insert } = makeStage({
+      present: [personId(1), personId(2)],
+      profileRows: [
+        csvRow(1, 'Ada Quillfeather', SLUG_ADA, '09 May 2014'),
+        vcardRow(2, 'Ada Quillfeather', { url: SLUG_ADA, connectedOn: '09 May 2014' }),
+      ],
+    });
+
+    const results = await stage.run(CTX, [personId(1), personId(2)]);
+
+    expect(results.get(personId(1))).toMatchObject({ outcome: 'done', detail: { candidates: 1 } });
+    const params = insert()?.params ?? [];
+    expect(params[4]).toEqual([0.95]);
+    expect(JSON.parse((params[7] as string[])[0])).toEqual([
+      { kind: 'profile_url', value: 'linkedin.com/in/ada-quillfeather-7x2', score: 0.95 },
+    ]);
+  });
+
+  it('records a claim-less person that WAS proposed on a profile URL as done, not as a coverage gap', async () => {
+    const { stage } = makeStage({
+      present: [personId(1)],
+      claimCounts: { [personId(1)]: 0 },
+      profileRows: [
+        csvRow(1, 'Ada Quillfeather', SLUG_ADA),
+        vcardRow(2, 'Ada Quillfeather', { url: SLUG_ADA }),
+      ],
+    });
+
+    const results = await stage.run(CTX, [personId(1)]);
+
+    expect(results.get(personId(1))).toMatchObject({ outcome: 'done', detail: { candidates: 1 } });
+  });
+
+  it('vetoes an email pair whose people state different profiles before writing it', async () => {
+    const { stage, insert } = makeStage({
+      present: [personId(1), personId(2)],
+      claims: [claim({ subject_id: personId(1), other_id: personId(2) })],
+      profileRows: [
+        csvRow(1, 'Ada Quillfeather', SLUG_ADA),
+        vcardRow(2, 'Ada Quillfeather', { url: SLUG_OTHER_ADA }),
+      ],
+    });
+
+    await stage.run(CTX, [personId(1), personId(2)]);
+
+    const params = insert()?.params ?? [];
+    expect(params[4]).toEqual([0.8]);
+    expect(JSON.parse((params[7] as string[])[0]).map((item: { kind: string }) => item.kind)).toEqual([
+      'email',
+      'profile_url_conflict',
+    ]);
+  });
+
+  it('writes a name pair whose people share only an over-common URL at its name score', async () => {
+    // The whole slice path, end to end: name pass, URL pass, veto, write.
+    const profileRows = [
+      vcardRow(1, 'Zed', { url: SLUG_DESK }),
+      vcardRow(2, 'Zed Quimby', { url: SLUG_DESK }),
+      ...pastedDeskRows(3, 6),
+    ];
+    const { stage, insert } = makeStage({
+      present: [personId(1)],
+      profileRows,
+      nameRows: profileRows.map((row) => ({ entity_id: row.entity_id, name: row.person_name })),
+    });
+
+    const results = await stage.run(CTX, [personId(1)]);
+
+    const params = insert()?.params ?? [];
+    expect(params[2]).toEqual([personId(1)]);
+    expect(params[3]).toEqual([personId(2)]);
+    expect(params[4]).toEqual([0.5]);
+    expect(JSON.parse((params[7] as string[])[0])).toEqual([
+      { kind: 'name_cluster', value: 'zed', score: 0.5 },
+    ]);
+    expect(results.get(personId(1))).toMatchObject({
+      outcome: 'done',
+      detail: { candidates: 1, suppressedCommonValues: true },
+    });
   });
 
   it('scopes every statement to the user', async () => {
