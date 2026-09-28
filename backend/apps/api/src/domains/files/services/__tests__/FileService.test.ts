@@ -198,6 +198,99 @@ describe('FileService.create — hash dedup', () => {
   });
 });
 
+describe('FileService.create — a write a unique index refuses', () => {
+  // At most one live PLAYBACK per original (files_one_playback_per_parent_uniq).
+  // The bytes are PUT before the row, so a refused insert strands them unless
+  // create() removes them — and a 23505 proves no row names that key.
+  it('deletes the object it just put, then rethrows the violation', async () => {
+    const repo = makeRepo();
+    const violation = Object.assign(new Error('duplicate key value'), { code: '23505' });
+    repo.save.mockRejectedValueOnce(violation);
+    const { service, s3Send } = makeService(repo);
+
+    await expect(
+      service.create(ownerCtx, {
+        buffer: Buffer.from('a rendition'),
+        contentType: 'video/mp4',
+        variant: FileVariant.PLAYBACK,
+        parentId: 'parent-1',
+      }),
+    ).rejects.toBe(violation);
+
+    const key = (repo.create.mock.results[0].value as { key: string }).key;
+
+    expect(s3Send).toHaveBeenCalledTimes(2);
+    expect(s3Send.mock.calls[1][0].input).toMatchObject({ Delete: { Objects: [{ Key: key }] } });
+  });
+
+  // Any other failure may have committed the row after all (a connection lost
+  // mid-commit); deleting its bytes then would leave a row naming nothing.
+  it('keeps the object when the save failed for any other reason', async () => {
+    const repo = makeRepo();
+    repo.save.mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    const { service, s3Send } = makeService(repo);
+
+    await expect(
+      service.create(ownerCtx, {
+        buffer: Buffer.from('a rendition'),
+        contentType: 'video/mp4',
+        variant: FileVariant.PLAYBACK,
+        parentId: 'parent-1',
+      }),
+    ).rejects.toThrow('Connection terminated unexpectedly');
+    expect(s3Send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FileService.findVariantsOfKindsByParentIds', () => {
+  it('fetches every kind in one query, each aligned with the parent ids and owner-scoped', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { find: jest.Mock };
+    repo.find = jest.fn().mockResolvedValue([
+      // The planner's order, not the caller's.
+      { id: 'play-b', parentId: 'b', variant: FileVariant.PLAYBACK, bucket: null, key: null },
+      { id: 'prev-a', parentId: 'a', variant: FileVariant.PREVIEW, bucket: null, key: null },
+      { id: 'prev-b', parentId: 'b', variant: FileVariant.PREVIEW, bucket: null, key: null },
+    ]);
+    const { service } = makeService(repo);
+
+    const byKind = await service.findVariantsOfKindsByParentIds(
+      ownerCtx,
+      ['a', 'b', 'c'],
+      [FileVariant.PREVIEW, FileVariant.PLAYBACK],
+    );
+
+    expect(repo.find).toHaveBeenCalledTimes(1);
+    expect(repo.find.mock.calls[0][0].where).toMatchObject({ userId: 'owner-1' });
+    expect(byKind[FileVariant.PREVIEW].map((file) => file?.id ?? null)).toEqual(['prev-a', 'prev-b', null]);
+    expect(byKind[FileVariant.PLAYBACK].map((file) => file?.id ?? null)).toEqual([null, 'play-b', null]);
+  });
+
+  it('asks nothing for an empty page', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { find: jest.Mock };
+    repo.find = jest.fn();
+    const { service } = makeService(repo);
+
+    await expect(
+      service.findVariantsOfKindsByParentIds(ownerCtx, [], [FileVariant.PREVIEW, FileVariant.PLAYBACK]),
+    ).resolves.toEqual({ [FileVariant.PREVIEW]: [], [FileVariant.PLAYBACK]: [] });
+    expect(repo.find).not.toHaveBeenCalled();
+  });
+
+  it('keeps the single-kind lookup’s shape', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { find: jest.Mock };
+    repo.find = jest
+      .fn()
+      .mockResolvedValue([
+        { id: 'prev-b', parentId: 'b', variant: FileVariant.PREVIEW, bucket: null, key: null },
+      ]);
+    const { service } = makeService(repo);
+
+    const previews = await service.findVariantsByParentIds(ownerCtx, ['a', 'b'], FileVariant.PREVIEW);
+
+    expect(previews.map((file) => file?.id ?? null)).toEqual([null, 'prev-b']);
+  });
+});
+
 describe('FileService.uploadWithDedupInfo', () => {
   it('reports deduped:true and skips create() when the hash already exists', async () => {
     const repo = makeRepo();
