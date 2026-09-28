@@ -17,7 +17,12 @@ jest.mock('@ci/configuration', () => {
   };
 });
 
-import { ConnectService, capabilityForApp, scopesForApp } from '../services/ConnectService';
+import {
+  ConnectService,
+  FULL_SURFACE_CONNECT_APPS,
+  capabilityForApp,
+  scopesForApp,
+} from '../services/ConnectService';
 
 /**
  * Unit tests for ConnectService — the connect-flow orchestration and its
@@ -171,7 +176,7 @@ describe('ConnectService.exchange', () => {
     });
   });
 
-  it('mints an empty-scope (full-access) key for the bulk importer', async () => {
+  it('mints the chat-agent tier for an app it has no specific knowledge of (the importer included)', async () => {
     const { service, apiKeyService, connectCodeService } = makeDeps();
     connectCodeService.consume.mockResolvedValue({
       userId: 'user-1',
@@ -182,9 +187,10 @@ describe('ConnectService.exchange', () => {
     await service.exchange('one-time-code');
 
     const [, data] = apiKeyService.createOrRotate.mock.calls[0];
-    expect(data.scopes).toEqual([]);
-    // Full SURFACE (empty scopes) still does not mean full authority — the
-    // importer is minted `write`, so it can never delete.
+    // Not `[]`: an unreviewed app is confined to the tier, never handed the whole surface.
+    expect(data.scopes).toEqual(['memory', 'intents', 'mcp']);
+    // Capability is the second axis and is chosen per app too: an unknown app is
+    // `write`, never `full`.
     expect(data.capability).toBe('write');
   });
 
@@ -269,6 +275,22 @@ describe('ConnectService.rotateByApp', () => {
     expect(data.scopes).toEqual(['memory', 'intents', 'mcp']);
     expect(data.capability).toBe('full');
     expect(result?.key).toBe('rotated-key');
+  });
+
+  it("re-mints Companion Scan's key on the capture tier, so a rotation keeps its uploads working", async () => {
+    // Scan's existing key predates per-app tiers (minted `[]`). The Hub rotates
+    // it without asking the user again, so whatever this derives is what Scan
+    // pushes with from then on: memory/intents/mcp would 403 /files/upload.
+    const { service, apiKeyService } = makeDeps();
+    apiKeyService.findUserIdByName.mockResolvedValue('user-1');
+    apiKeyService.createOrRotate.mockResolvedValue({ key: 'rotated-key' });
+
+    await service.rotateByApp('ci-web-xr-scan:ci-marketplace');
+
+    const [, data] = apiKeyService.createOrRotate.mock.calls[0];
+    expect(data.name).toBe('app:ci-web-xr-scan:ci-marketplace');
+    expect(data.scopes).toEqual(['capture']);
+    expect(data.capability).toBe('write');
   });
 
   it('returns null (no rotate) when the owner is unresolvable (unknown or multi-owner)', async () => {
@@ -360,15 +382,58 @@ describe('scopesForApp (two-tier least-privilege)', () => {
     expect(capabilityForApp('ci-ha-voice:ci-marketplace')).toBe('write');
   });
 
-  it('gives the bulk importer full access (empty scopes)', () => {
-    expect(scopesForApp('ci-import-tools:ci-marketplace')).toEqual([]);
+  it('SECURITY: confines an app it has no specific knowledge of to the same tier — never full access', () => {
+    // The default used to be an EMPTY scope list, which the guards read as
+    // "not scope-limited": every route, files, bulk ingest, the whole-account
+    // export, handed to any unreviewed marketplace app on Approve.
+    expect(scopesForApp('some-third-party-app:ci-marketplace')).toEqual(['memory', 'intents', 'mcp']);
+    expect(scopesForApp('ci-import-tools:ci-marketplace')).toEqual(['memory', 'intents', 'mcp']);
   });
 
-  it('defaults any unknown app to full access (never breaks an un-analyzed app)', () => {
-    expect(scopesForApp('some-third-party-app:ci-marketplace')).toEqual([]);
+  it('grants full access only to an app on the reviewed allowlist, which is empty', () => {
+    expect(FULL_SURFACE_CONNECT_APPS.size).toBe(0);
+    for (const name of ['ci-openclaw', 'ci-hermes', 'ci-import-tools', 'some-third-party-app']) {
+      expect(scopesForApp(`${name}:ci-marketplace`)).not.toEqual([]);
+    }
   });
 
   it('keys on the app name segment, ignoring the store', () => {
     expect(scopesForApp('ci-openclaw:some-other-store')).toEqual(['memory', 'intents', 'mcp']);
+  });
+
+  /**
+   * Every CI-Marketplace app that declares `hub_integration.memory`, and the
+   * scopes the routes it calls need. A change here is a change to a key those
+   * apps ALREADY hold: CI-Hub rotates connected keys on a timer and
+   * `rotateByApp` re-derives from `scopesForApp`, so a wrong entry breaks a
+   * working connection silently at its next rotation. That is how Companion
+   * Scan lost `capture` when the default became the chat-agent tier. Adding an
+   * app to the marketplace with a memory integration means adding a row here.
+   */
+  const MARKETPLACE_MEMORY_CONSUMERS: Record<string, string[]> = {
+    // /memory/*, /v1/agent/jobs, /intents (+ execute), /mcp
+    'ci-openclaw': ['memory', 'intents', 'mcp'],
+    'ci-hermes': ['memory', 'intents', 'mcp'],
+    // POST /files/upload + POST /v1/events (CI-Spatial server/memory_push.ts)
+    'ci-web-xr-scan': ['capture'],
+    // /files/upload, PATCH /files/:id, /v1/events
+    'ci-capture': ['capture'],
+    // POST /memory/recall + POST /memory/turn (CI-Even-Realities agent-hub)
+    'ci-glasses-bridge': ['memory'],
+    // Nothing reads the token yet; the default (chat-agent) tier, as for ci-hermes.
+    'hermes-agent': ['memory', 'intents', 'mcp'],
+  };
+
+  it.each(Object.entries(MARKETPLACE_MEMORY_CONSUMERS))('mints %s exactly %j', (appName, scopes) => {
+    expect(scopesForApp(`${appName}:ci-marketplace`)).toEqual(scopes);
+  });
+
+  it('never hands a capture app the chat-agent tier, which 403s both of its upload routes', () => {
+    // FilesController.upload and BulkIngestController both require `capture`;
+    // memory/intents/mcp reach neither.
+    for (const appName of ['ci-web-xr-scan', 'ci-capture']) {
+      expect(scopesForApp(`${appName}:ci-marketplace`)).toContain('capture');
+      expect(capabilityForApp(`${appName}:ci-marketplace`)).toBe('write');
+    }
   });
 });
