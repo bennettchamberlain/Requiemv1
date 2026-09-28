@@ -241,13 +241,6 @@ The order encodes real data dependencies: `extract_people` seeds the identifier 
 
 **One orchestration per user at a time — a second concurrent call → 409 Conflict** (`:1054-1056`, checked _before_ the stream headers are committed so the second caller gets a real 409 rather than a 200 that fails mid-stream). Non-stream response: `{ ok, legs[], totalDurationMs }`. Stream: NDJSON of `leg-start`/`leg-progress`/`leg-result`/`leg-error`/`tick`/`done` lines.
 
-### Index-deferral (bulk-load helper)
-
-| Verb | Path                                | Handler                     | Purpose                                                                                                                                                 |
-| ---- | ----------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST | `/api/maintenance/indexes/drop`     | `dropIndexes` (`:1083`)     | Drop deferrable secondary indexes before a huge load; returns each dropped index's exact recreate statement. Never drops PKs/provenance-unique indexes. |
-| POST | `/api/maintenance/indexes/recreate` | `recreateIndexes` (`:1093`) | Recreate them; body `{ dropped: {schema,name,definition}[] }` — the array from `/drop` verbatim.                                                        |
-
 ### Search-index hygiene & observability
 
 | Verb | Path                                            | Handler                                    | Purpose                                                                                                                                                                                        |
@@ -496,6 +489,18 @@ Class-level `JwtOrApiKeyAuthGuard` (`:56`). Export/import the caller's Memory da
 | GET  | `/account/export`        | `:63`   | Stream the full archive out.                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | POST | `/account/import/stream` | `:69`   | **NDJSON streaming import** — `Content-Type: application/x-ndjson` required (400 otherwise), confirmation via the **`X-Confirm-Email` header** (400 if absent). Neither side buffers the archive: the express body parsers skip `application/x-ndjson`, so the handler gets the raw stream. (The middleware's explicit bypass constant is `/api/account/import/stream` and never matches this mount — see the body-limit note above.) **200**. |
 | POST | `/account/import`        | `:91`   | Legacy small-archive JSON import: `{ confirmEmail, archive: { version: 1, exportedAt, userId, profile, tables, fileBlobs } }`, `@BodyLimit('500mb')`. **200**.                                                                                                                                                                                                                                                                                 |
+
+> **File keys are never taken from the archive.** Both import paths rewrite every `ci.files` row's
+> `bucket` to this appliance's configured bucket, and honour an archived `key` only if this account
+> already owned a file at that key on this box before the import began (a same-box restore rewrites
+> its own objects in place). Any other key is replaced by a freshly minted UUID, applied identically
+> to the row and to the bytes so the two agree whichever arrives first
+> (`UserDataPortabilityService.ts`, `FileKeyMap`). Before this, the archive's `bucket`/`key` went
+> straight to `putObject` — any object in the store could be overwritten — and a row carrying
+> someone else's key was served back as the importer's own file by every by-key reader, export
+> included. Those readers (`FileService.getFileContent` / `getFileStream`) now also refuse a key
+> unless the caller owns the `ci.files` row pointing at it (the system principal is exempt, as
+> for every other scoped lookup there), so a key learned from a share link is not enough either.
 
 ### `ConnectController` — `connect` · `domains/auth/controllers/ConnectController.ts:130`
 
