@@ -288,7 +288,12 @@ export function OnboardingPage() {
     return <Navigate to={appHomePath()} replace />;
   }
 
-  if (userLoading || progressLoading || !hydrated) {
+  // `userLoading` gates the first hydrate above, and then it has to stay out of
+  // this check. A later `me` refetch (the phone has no JWT, so the Apollo cache
+  // used to get cleared under an active API-key session) flipped it true, this
+  // page swapped for the loader, and the welcome typing mounted again from the
+  // first character.
+  if (!hydrated || progressLoading) {
     return <LoadingPage message="Loading your setup…" />;
   }
 
@@ -339,13 +344,13 @@ export function OnboardingPage() {
               ref={scrollRef}
               data-testid="onboarding-scroll"
               className={cn(
-                'relative flex-1 overflow-y-auto min-h-0 w-full mx-auto px-5 md:px-8',
+                'relative flex-1 overflow-x-hidden overflow-y-auto min-h-0 w-full min-w-0 mx-auto px-5 md:px-8',
                 contentMaxWidth,
               )}
             >
               <div
                 className={cn(
-                  'flex flex-col items-center text-center w-full py-2',
+                  'flex min-w-0 flex-col items-center text-center w-full py-2',
                   verticallyCenterStep ? 'justify-center min-h-full' : 'justify-start',
                 )}
               >
@@ -367,11 +372,14 @@ export function OnboardingPage() {
                   />
                 ))}
               </div>
-              {stepIndex === 0 && (
-                <p className="text-xs sm:text-sm text-muted-foreground text-center">
-                  Step {stepIndex + 1} of {stepKeys.length} — every step is skippable
-                </p>
-              )}
+              {/* The caption only has words on the first step. The line stays either
+                  way, so Next and Skip do not drop when the words go away. */}
+              <p
+                data-testid="onboarding-step-caption"
+                className="min-h-4 text-center text-xs text-muted-foreground sm:min-h-5 sm:text-sm"
+              >
+                {stepIndex === 0 ? `Step ${stepIndex + 1} of ${stepKeys.length} — every step is skippable` : null}
+              </p>
             </div>
           </div>
         </form>
