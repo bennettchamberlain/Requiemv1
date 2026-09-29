@@ -255,12 +255,37 @@ two audiences — `ci_import.import_runs` in a vocabulary the person who uploade
 the archive recognizes, and pg-boss under `/jobs` for whoever is asked why the
 queue is deep. This command is the first. The second is deliberately not wrapped.
 
-### `push [--run <id>] [--dry-run] [--wait] [--timeout] [--json]`
+### `push [--run <id>] [--dry-run] [--retry-failed] [--wait] [--timeout] [--json]`
 
 The wizard's Sync step: append a `push` stage to every run whose rows are staged
 and uncommitted. Same name as upstream's command, entirely different thing —
 see the drop table below. Exists for the case `--stages` creates. "Nothing to
 push" is a state, not an error.
+
+`--retry-failed` (with `--run <id>`, repeatable) is the other door, for a run
+whose push already ran: `POST /import/runs/:id/push/retry` moves that run's
+`failed` rows — items and entities — back to `pending` and re-queues the run's
+own push stage, which then pushes those rows and nothing else. It also re-drives
+a push stage that ran and failed — with rows still `pending` (how a push ends
+when the database stays away past its wait, or crashes under one of its
+statements), or with every row settled (it died closing out); the table shows
+`queued (stage re-run)` for those. The plain `push` cannot do either: it only
+offers a run that never had a push stage. Refused per run (409), with the reason,
+and the others go ahead: a run with a stage still working; a run whose stage
+ahead of the push did not complete (cancelled mid-parse — retry that stage
+first); a push that never ran (cancelled before a worker claimed it). `--wait`
+follows the re-queued runs to close-out, which is where the run's
+`completed`/`partial` is recomputed. A push stopped by
+`DatabaseCrashedDuringPushError` ("the database crashed while this push was …;
+rows are left pending") is re-driven the same way, once the database is healthy.
+The job system never re-runs it on its own — the stage is recorded `failed`, and
+neither a pg-boss redelivery nor the recovery sweep touches a failed stage — so
+each crash costs exactly one write, and only a person re-driving it costs
+another. If the re-drive crashes the database again, that batch's data is the
+suspect (the worker's log names its staged rows), and re-driving again only
+crashes it again: isolating the row is manual for now.
+Explicit run ids only, by design, and no `--dry-run` — `ci runs <id> --json`
+shows the push stage's `detail.failed` without changing anything.
 
 ### `stats [--json]`
 

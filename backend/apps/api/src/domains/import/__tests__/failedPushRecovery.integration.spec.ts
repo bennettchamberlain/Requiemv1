@@ -1,6 +1,9 @@
+import { ConflictException } from '@nestjs/common';
 import type { DataSource } from 'typeorm';
 
+import { ImportStageListener } from '../listeners/ImportStageListener';
 import type { ImportRunService } from '../services/ImportRunService';
+import { DatabaseCrashedDuringPushError } from '../stages/DatabaseCrashedDuringPushError';
 import { StagedWriter } from '../staging/StagedWriter';
 
 import { createStagingHarness, importDatabase, type StagingHarness } from './support/stagingHarness';
@@ -135,6 +138,44 @@ describeWithDatabase(`failed push rows (${importDatabase.target})`, () => {
     return row;
   }
 
+  /**
+   * A three-stage run with one staged message, its unpack completed and the
+   * rest untouched — the starting point for the cancelled-run cases.
+   */
+  async function runWithOnePendingRow(name: string) {
+    const dropId = await harness.stageDrop(name);
+    const { run, stages } = await harness.startRunForDrop(dropId, ['unpack', 'parse', 'push']);
+    const writer = new StagedWriter(dataSource.manager, {
+      userId,
+      runId: run.id,
+      dataSource: 'google_voice',
+    });
+
+    writer.push({
+      item: {
+        id: `sms-${run.id.slice(0, 8)}`,
+        classification: 'message',
+        timestamp: new Date('2019-03-01T09:00:00Z'),
+        metadata: { Text: 'see you at six' },
+      },
+    });
+    await writer.settled();
+
+    expect(await service.beginStage(stages[0].id)).toBe(true);
+    await service.completeStage(stages[0].id, { processed: 1, total: 1, detail: {} });
+
+    return { runId: run.id, unpack: stages[0], parse: stages[1], push: stages[2] };
+  }
+
+  async function runRow(runId: string): Promise<{ status: string; finished_at: string | null }> {
+    const [row] = await dataSource.query(
+      `SELECT status, finished_at FROM ci_import.import_runs WHERE id = $1::uuid`,
+      [runId],
+    );
+
+    return row;
+  }
+
   describe('the trap', () => {
     it('leaves the rows unreachable by every other route', async () => {
       const { runId, pushStageId } = await runWithFailedRows();
@@ -230,6 +271,206 @@ describeWithDatabase(`failed push rows (${importDatabase.target})`, () => {
       expect(events.send).not.toHaveBeenCalled();
     });
 
+    it('refuses while the push is running, and leaves the rows where they are', async () => {
+      const { runId, pushStageId } = await runWithFailedRows();
+
+      // A push in flight — its worker owns the stage and is reading `pending`.
+      await dataSource.query(
+        `UPDATE ci_import.import_stages SET status = 'running', finished_at = NULL WHERE id = $1::uuid`,
+        [pushStageId],
+      );
+
+      events.send.mockClear();
+
+      await expect(service.retryFailedPush({ userId }, runId)).rejects.toBeInstanceOf(ConflictException);
+      expect((await pushStatuses(runId)).items).toEqual(
+        expect.arrayContaining(['failed', 'failed', 'pushed']),
+      );
+      expect(await stageRow(pushStageId)).toMatchObject({ status: 'running' });
+      expect(events.send).not.toHaveBeenCalled();
+    });
+
+    it('re-drives a push that FAILED with its rows still pending', async () => {
+      // The shape PushStage now leaves when the database stays away past its
+      // wait: the stage fails, nothing is quarantined, every row is `pending`.
+      const dropId = await harness.stageDrop('outage.zip');
+      const { run, stages } = await harness.startRunForDrop(dropId, ['unpack', 'parse', 'push']);
+      const writer = new StagedWriter(dataSource.manager, {
+        userId,
+        runId: run.id,
+        dataSource: 'google_voice',
+      });
+
+      writer.push({
+        item: {
+          id: `sms-${run.id.slice(0, 8)}`,
+          classification: 'message',
+          timestamp: new Date('2019-03-01T09:00:00Z'),
+          metadata: { Text: 'see you at six' },
+        },
+      });
+      await writer.settled();
+
+      for (const stage of stages.slice(0, 2)) {
+        expect(await service.beginStage(stage.id)).toBe(true);
+        await service.completeStage(stage.id, { processed: 1, total: 1, detail: {} });
+      }
+
+      expect(await service.beginStage(stages[2].id)).toBe(true);
+      await service.failStage(
+        stages[2].id,
+        'the database was unavailable for 151s while reading the next batch',
+      );
+
+      events.send.mockClear();
+
+      expect(await service.retryFailedPush({ userId }, run.id)).toEqual({
+        items: 0,
+        entities: 0,
+        requeued: true,
+      });
+      expect(await stageRow(stages[2].id)).toMatchObject({ status: 'queued' });
+      expect(events.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the run `completed` once the re-driven push writes every row', async () => {
+      const { runId, pushStageId } = await runWithFailedRows();
+
+      await service.retryFailedPush({ userId }, runId);
+
+      // The re-driven push, as the worker would run it: every reset row lands.
+      expect(await service.beginStage(pushStageId)).toBe(true);
+      await dataSource.query(
+        `UPDATE ci_import.staged_items SET push_status = 'pushed', pushed_at = now()
+          WHERE run_id = $1::uuid AND push_status = 'pending'`,
+        [runId],
+      );
+      await dataSource.query(
+        `UPDATE ci_import.staged_entities SET push_status = 'pushed', pushed_at = now()
+          WHERE run_id = $1::uuid AND push_status = 'pending'`,
+        [runId],
+      );
+      await service.completeStage(pushStageId, {
+        processed: 4,
+        total: 4,
+        partial: false,
+        detail: { failed: 0 },
+      });
+
+      const [push] = await dataSource.query<Array<{ seq: number }>>(
+        `SELECT seq FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [pushStageId],
+      );
+
+      expect(await service.advance(userId, runId, push.seq)).toBeNull();
+
+      const [runAfter] = await dataSource.query<Array<{ status: string; finished_at: string | null }>>(
+        `SELECT status, finished_at FROM ci_import.import_runs WHERE id = $1::uuid`,
+        [runId],
+      );
+
+      // Recomputed by the ordinary close-out, which the reopen made run again.
+      expect(runAfter.status).toBe('completed');
+      expect(runAfter.finished_at).not.toBeNull();
+    });
+
+    it('refuses a run cancelled mid-parse, rather than push ahead of the unfinished parse', async () => {
+      // cancel() closes the run and cancels its QUEUED stages — the push among
+      // them — but not the parse that is running; that one's worker then dies
+      // with the archive half staged. Re-driving the push here would close the
+      // run over half an import.
+      const { runId, parse, push } = await runWithOnePendingRow('cancel-mid-parse.zip');
+
+      expect(await service.beginStage(parse.id)).toBe(true);
+      expect(await service.cancel({ userId }, runId)).toBe(true);
+      await service.failStage(parse.id, 'worker exited mid-parse');
+
+      events.send.mockClear();
+
+      await expect(service.retryFailedPush({ userId }, runId)).rejects.toThrow(
+        /did not finish staging: its parse stage is failed/,
+      );
+      expect(await stageRow(push.id)).toMatchObject({ status: 'cancelled' });
+      expect(await runRow(runId)).toMatchObject({ status: 'cancelled' });
+      expect((await pushStatuses(runId)).items).toEqual(['pending']);
+      expect(events.send).not.toHaveBeenCalled();
+    });
+
+    it('refuses a push that was cancelled before it ran', async () => {
+      const { runId, parse, push } = await runWithOnePendingRow('cancel-before-push.zip');
+
+      expect(await service.beginStage(parse.id)).toBe(true);
+      await service.completeStage(parse.id, { processed: 1, total: 1, detail: {} });
+      expect(await service.cancel({ userId }, runId)).toBe(true);
+
+      events.send.mockClear();
+
+      await expect(service.retryFailedPush({ userId }, runId)).rejects.toThrow(
+        /push stage is cancelled and never ran/,
+      );
+      expect(await stageRow(push.id)).toMatchObject({ status: 'cancelled' });
+      expect(await runRow(runId)).toMatchObject({ status: 'cancelled' });
+      expect(events.send).not.toHaveBeenCalled();
+    });
+
+    it('re-drives a push that failed after every row settled', async () => {
+      // The push died in its close-out: nothing pending, nothing failed, and
+      // the run `failed` until the push completes.
+      const { runId, parse, push } = await runWithOnePendingRow('closeout.zip');
+
+      expect(await service.beginStage(parse.id)).toBe(true);
+      await service.completeStage(parse.id, { processed: 1, total: 1, detail: {} });
+      expect(await service.beginStage(push.id)).toBe(true);
+      await dataSource.query(
+        `UPDATE ci_import.staged_items SET push_status = 'pushed', pushed_at = now() WHERE run_id = $1::uuid`,
+        [runId],
+      );
+      await service.failStage(push.id, 'the push stage died while summarizing');
+
+      events.send.mockClear();
+
+      expect(await service.retryFailedPush({ userId }, runId)).toEqual({
+        items: 0,
+        entities: 0,
+        requeued: true,
+      });
+      expect(await stageRow(push.id)).toMatchObject({ status: 'queued' });
+      expect(events.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not refuse forever a push left running when cancel() raced its worker dying', async () => {
+      const { runId, pushStageId } = await runWithFailedRows();
+
+      // The run is closed, and the push stage still says `running` — silent
+      // past the recovery sweep's window, which only reclaims stages of runs
+      // that are NOT finished. Nothing will ever move it but this.
+      await dataSource.query(
+        `UPDATE ci_import.import_stages
+            SET status = 'running', finished_at = NULL, updated_at = now() - interval '11 minutes'
+          WHERE id = $1::uuid`,
+        [pushStageId],
+      );
+
+      events.send.mockClear();
+
+      expect(await service.retryFailedPush({ userId }, runId)).toEqual({
+        items: 2,
+        entities: 1,
+        requeued: true,
+      });
+
+      const [stage] = await dataSource.query<Array<{ status: string; fresh: boolean }>>(
+        `SELECT status, updated_at > now() - interval '1 minute' AS fresh
+           FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [pushStageId],
+      );
+
+      // Re-queued, and FRESH: the recovery sweep must read it as a stage that
+      // was just queued, not as one whose job was lost ten minutes ago.
+      expect(stage).toEqual({ status: 'queued', fresh: true });
+      expect(events.send).toHaveBeenCalledTimes(1);
+    });
+
     it('is scoped to the caller — another user cannot revive this run', async () => {
       const { runId } = await runWithFailedRows();
 
@@ -237,6 +478,139 @@ describeWithDatabase(`failed push rows (${importDatabase.target})`, () => {
       expect((await pushStatuses(runId)).items).toEqual(
         expect.arrayContaining(['failed', 'failed', 'pushed']),
       );
+    });
+  });
+
+  /**
+   * A push whose write crashed the database fails its stage at once, rows
+   * `pending` (PushStage never resends a statement the database went down
+   * under). What must then NOT happen is the job system running it again on
+   * its own — each run of a poison write is another crash of the whole
+   * appliance's database. The way back is a person's: `--retry-failed`.
+   */
+  describe('a push the database crashed under', () => {
+    /** The sweep is appliance-wide; a parallel suite's runs can ride along. */
+    function sendsFor(runId: string): Array<Record<string, unknown>> {
+      return events.send.mock.calls
+        .map((call) => call[1] as Record<string, unknown>)
+        .filter((payload) => payload.runId === runId);
+    }
+
+    async function age(stageId: string): Promise<void> {
+      await dataSource.query(
+        `UPDATE ci_import.import_stages SET updated_at = now() - interval '20 minutes' WHERE id = $1::uuid`,
+        [stageId],
+      );
+    }
+
+    async function runReadyToPush(name: string) {
+      const run = await runWithOnePendingRow(name);
+
+      expect(await service.beginStage(run.parse.id)).toBe(true);
+      await service.completeStage(run.parse.id, { processed: 1, total: 1, detail: {} });
+
+      return run;
+    }
+
+    it('is recorded failed through the recovery, left alone by the sweep and a redelivery, and re-driven on request', async () => {
+      const { runId, push } = await runReadyToPush('crashed-push.zip');
+      const crash = new DatabaseCrashedDuringPushError(
+        runId,
+        'writing 1 communications record(s)',
+        new Error('Connection terminated unexpectedly'),
+      );
+      const pushRunner = {
+        kind: 'push' as const,
+        run: jest.fn(async () => {
+          throw crash;
+        }),
+      };
+      const idle = (kind: string) => ({ kind, run: jest.fn() });
+      const listener = new ImportStageListener(
+        service,
+        { ensureDir: jest.fn(async () => '/tmp/unused'), reclaim: jest.fn() } as never,
+        idle('unpack') as never,
+        idle('parse') as never,
+        idle('media') as never,
+        pushRunner as never,
+        {
+          setContext: jest.fn(),
+          log: jest.fn(),
+          warn: jest.fn(),
+          debug: jest.fn(),
+          error: jest.fn(),
+        } as never,
+      );
+
+      listener.failureRecordRetry = {
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        budgetMs: 5_000,
+        resendAfterCrash: true,
+      };
+
+      // The worker's next statement after the crash reaches a server still in
+      // crash recovery — twice — before it takes the record.
+      const recovering = () =>
+        Object.assign(new Error('the database system is in recovery mode'), { code: '57P03' });
+      const failStage = jest
+        .spyOn(service, 'failStage')
+        .mockRejectedValueOnce(recovering())
+        .mockRejectedValueOnce(recovering());
+      const payload = { runId, stageId: push.id, userId };
+
+      await expect(listener.runStage(payload)).rejects.toBe(crash);
+      expect(failStage).toHaveBeenCalledTimes(3);
+      failStage.mockRestore();
+
+      // Recorded, with the way back in it, and the row still `pending`.
+      const [stage] = await dataSource.query<Array<{ status: string; error: string }>>(
+        `SELECT status, error FROM ci_import.import_stages WHERE id = $1::uuid`,
+        [push.id],
+      );
+
+      expect(stage.status).toBe('failed');
+      expect(stage.error).toContain(`ci push --run ${runId} --retry-failed`);
+      expect(await runRow(runId)).toMatchObject({ status: 'failed' });
+      expect((await pushStatuses(runId)).items).toEqual(['pending']);
+
+      // The recovery sweep does not re-run it, however stale it reads…
+      await age(push.id);
+      events.send.mockClear();
+      await service.resumeInterrupted();
+
+      expect(sendsFor(runId)).toEqual([]);
+      expect(await stageRow(push.id)).toMatchObject({ status: 'failed' });
+
+      // …nor does pg-boss redelivering the job (retryLimit 3 on every queue).
+      await expect(listener.runStage(payload)).resolves.toBeUndefined();
+      expect(pushRunner.run).toHaveBeenCalledTimes(1);
+
+      // A person re-drives it once the database is healthy.
+      expect(await service.retryFailedPush({ userId }, runId)).toEqual({
+        items: 0,
+        entities: 0,
+        requeued: true,
+      });
+      expect(await stageRow(push.id)).toMatchObject({ status: 'queued' });
+      expect(sendsFor(runId).map((sent) => sent.stageId)).toEqual([push.id]);
+    });
+
+    it('is re-run by the sweep if the failure is never recorded — why the worker waits to record it', async () => {
+      // The shape the worker left before it waited: the failure write met the
+      // recovering database and was dropped, so the stage still says `running`.
+      const { runId, push } = await runReadyToPush('crashed-push-unrecorded.zip');
+
+      expect(await service.beginStage(push.id)).toBe(true);
+      await age(push.id);
+      events.send.mockClear();
+
+      await service.resumeInterrupted();
+
+      // Queued again with nobody asking: for a poison write, one more crash
+      // every sweep.
+      expect(await stageRow(push.id)).toMatchObject({ status: 'queued' });
+      expect(sendsFor(runId).map((sent) => sent.stageId)).toEqual([push.id]);
     });
   });
 });

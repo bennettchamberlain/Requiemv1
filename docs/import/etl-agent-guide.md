@@ -274,6 +274,7 @@ media and push legs proceed meanwhile; they do not make the parses overlap. So:
 | `STAGE_HEARTBEAT_MS` | 30,000 ms | `ImportStageListener.ts` | Keeps the claim fresh through silent stretches (a giant archive mid-extract says nothing for minutes) |
 | `STALE_STAGE_MINUTES` | 10 | `ImportRunService.ts` | A live stage is never silent this long, so silence *is* death — whoever the worker was |
 | `RESUME_SWEEP_CRON` | `30 */5 * * * *` | `ImportStageListener.ts` | Recovery is periodic, not boot-only, so a crash is picked up without a restart |
+| `STAGE_FAILURE_RECORD_RETRY` | 10 min budget, 1s → 30s | `ImportStageListener.ts` | A failure is recorded through a database that is away (not ready *or* crashed), so the sweep never re-runs a stage whose failure write was lost |
 
 Every recovery gate is a **staleness test on `updated_at`**, never an assumption
 about who else is running. The comment on `resumeInterrupted` records why: the
@@ -284,10 +285,94 @@ progress writes with different totals on the same stage.
 **Failure is recorded, not retried.** A throw fails the stage and is rethrown so
 pg-boss dead-letters it, but the redelivery is a deliberate no-op: `beginStage`
 only claims a `queued` stage, so a redelivered job for a `failed` stage logs and
-returns. Re-running a failed stage is a user action —
+returns (the queue's `retryLimit: 3` with backoff therefore re-runs nothing, and
+neither does the recovery sweep, which leaves a `failed` stage alone). That
+holds only if the failure is actually *recorded* — a stage left `running` is
+exactly what the recovery sweep re-queues after `STALE_STAGE_MINUTES` — so
+`ImportStageListener` records it through an absent database:
+`STAGE_FAILURE_RECORD_RETRY` waits up to ten minutes (1s → 30s backoff), through
+a crash as well as a not-ready server, since the record is bookkeeping by id that
+cannot be what crashed anything. The failure most likely to meet an absent
+database is one the database caused (a push that crashed Postgres, below), and
+unrecorded it would crash the database again every sweep. Past the wait the
+failure is logged unrecorded and the staleness rule applies as before.
+Re-running a failed stage is a user action —
 `POST /import/runs/:runId/stages/:stageId/retry`, or
-`POST /import/runs/:runId/push/retry` for individual rows the push could not
-write.
+`POST /import/runs/:runId/push/retry` (`ci push --run <id> --retry-failed`) for
+individual rows the push could not write. The push retry also re-drives a push
+stage that ran and failed — rows still `pending`, or all settled and it died in
+the close-out. It refuses (409) while any stage of the run is still working (a
+stage left `running` in a *finished* run and silent past `STALE_STAGE_MINUTES`
+does not count — `cancel()` closed the run while its worker died), while a stage
+ahead of the push did not complete (a run cancelled mid-parse is half staged;
+retry that stage first), and when the push itself never ran (cancelled or failed
+before a worker claimed it — the stage retry is the explicit way to run it). The
+push stage is reopened only from the status that was read, because `retryStage`
+and a claiming worker move stages without the run lock.
+
+**Inside the push, a database that is not ready is waited out, not recorded.**
+Every database step in `PushStage` goes through `retryOnTransientDatabaseError`
+(`common/persistence/transientDatabaseError.ts`), which classifies code-first. A
+server that never took the statement — SQLSTATE 57P03 ("in recovery mode", "not
+yet accepting connections"), 53300, 08001/08004, a refused or unreachable socket
+(ECONNREFUSED, EHOSTUNREACH, ENETUNREACH, EAI_AGAIN, a `connect` ETIMEDOUT), a
+pool connect timeout (`isDatabaseNotReadyError`) — is retried on a doubling
+backoff (1s → 30s cap, three-minute budget), batch as a batch. Past the budget the
+stage fails with every unwritten row still `pending`. No failure of the database
+being away (`isTransientDatabaseError`) ever degrades a batch to per-row or
+quarantines a row: a row is `failed` only for something the database said about
+that row. Before this, a Postgres crash-restart mid-push marked 437 good rows
+`failed` with "the database system is in recovery mode", on a run nothing would
+ever push again.
+
+**…but a database that crashed with a statement in flight stops the push.** A
+statement can *crash* Postgres (a TimescaleDB 2.28 segfault during a bulk upsert
+is the precedent), and from the client "met a crash" and "caused one" are the
+same error. So a failure that ended the session with the statement possibly in
+flight (`isDatabaseCrashError`: 57P01/57P02, 08000/08003/08006, ECONNRESET,
+EPIPE, an ETIMEDOUT on an open socket, pg's bare "Connection terminated
+unexpectedly" — which pg also raises for a socket closed during connect, and
+which is a crash because nothing on the error tells the two apart) is **never
+resent in-process and never written off against a row**. Wherever it lands — a
+destination write, the entity lane and the receipt place lookup (both read from
+the message half of ingest's `entity <key>: <message>` text — ingest catches a
+batch-level failure and returns it as data, so a crash there is not a throw), the
+shared-content edge write, a read, a ledger write — the stage fails at once with
+`DatabaseCrashedDuringPushError`:
+
+```text
+the database crashed while this push was writing 500 communications record(s);
+rows are left pending — re-drive with `ci push --run <id> --retry-failed` once
+the database is healthy (last error: Connection terminated unexpectedly)
+```
+
+One crash per stage attempt, whatever caused it; every unsettled row stays
+`pending`; an error log line (`The database crashed with these staged rows in
+flight; the push stops here`) names the first and last staged item id and the
+data sources of the batch in flight. Re-drive it with `--retry-failed` once the
+database is back. If the re-driven push crashes the database again at the same
+place, the data in that batch is the suspect — it costs one crash per re-drive,
+so do not loop it. **Automatic poison-row isolation is a known follow-up, not
+done here.** An in-process version (resend the batch once, then each row alone,
+quarantine the row that crashed it twice) was tried and withdrawn: it crashed the
+server four times per poison row, never isolated the row when crash recovery
+took more than about a minute, crashed it dozens of times and quarantined good
+rows when *every* write crashed the server, and left the entity lane resending
+a crashing batch ten times.
+
+**Known follow-up, pre-existing and not fixed here: `GraphIngestService.indexIdentifiers`
+swallows any error, a crash included.** After the entities are upserted, ingest indexes
+their email/phone/name identifiers in one more statement that only logs (`Failed to
+index entity identifiers`) and returns, so `ingest` still reports every entity as
+resolved and the push marks the staged row `pushed`. A crash in that statement is
+therefore not a stage failure and the push carries on — so it breaks the "one crash per
+stage attempt" promise above, and if the identifier insert is what takes the server
+down, every batch does it again. The rows' identifiers are silently missing rather
+than the run reporting anything; `EntityIdentifierBackfillService` (maintenance) can
+rebuild the index for Person rows from their `properties`. Making the swallow raise
+would have to distinguish a crash from a refusal there without failing an ingest whose
+entities did land — the same message-half reading the two lanes above use is the
+starting point.
 
 **The sweep re-enqueues waiting stages, and only `policy: 'short'` stops it.**
 `resumeInterrupted` judges staleness from `import_stages.updated_at`, which
@@ -413,7 +498,14 @@ of each destination "what does this row *render* as there?" — and note that a
 routed-nowhere row is now recorded rather than hidden: `PushStage` marks it
 skipped with `NO_DESTINATION_REASON` and the stage summary counts it under the
 `no_destination` drop reason, which is classified a **gap**, not an expected
-outcome.
+outcome. The exception is a row routed nowhere **by design because another lane
+carries it** — a contact card (its Person arrives on the entity lane) or a
+rolled-up subscription line (its order's itemised receipt holds it). Those are
+named by `push/canonical.ts isRepresentedElsewhere`, marked with
+`REPRESENTED_ELSEWHERE_REASON`, and counted under `represented_elsewhere`, which
+is **expected**: still visible in `dropsByReason`, not in `gaps`. Adding a new
+`[]` branch to `destinationsFor` reads as a gap until you list it there on
+purpose — that default is deliberate.
 
 **A purchase ALWAYS produces a receipt**, and that is the third scar. The
 receipt is what carries the merchant, the money and the moment; an
@@ -1203,6 +1295,7 @@ yarn workspace @ci/cli dev <command>          # or `ci <command>` once installed
 | `inbox [--start] [--only] [--skip] [--units]` | Scans the caller's inbox subtree; `--start` imports it, smallest unit first. `~3.0GB` / `49788+` mark a size the walk stopped measuring, and a unit listed with **no parsers** ran out of recognition budget — it will not match `--only` |
 | `runs [runId] [--wait]` | Runs and their stage bars |
 | `push [--run <id>] [--dry-run]` | Appends a `push` stage to every run whose rows are staged and uncommitted |
+| `push --run <id> --retry-failed [--wait]` | Re-drives a push that already **ran**: its `failed` rows (items and entities) go back to `pending` and its own push stage is re-queued; also re-runs a push stage that failed with nothing marked failed. Refused (409, per run) while a stage is working, when a stage ahead of the push did not complete, or when the push never ran. Explicit run ids only, no `--dry-run` |
 | `stats` | `ci.*` row counts, search-index coverage, queue depth, run rollup |
 | **`doctor [--list] [--check <id>] [--failures-only] [--timeout <ms>] [--json]`** | **The twenty-three data-quality checks over what the import actually wrote. See [§6](#6-what-to-measure--ci-doctor)** |
 | `backfill [stages…] [--list]` | The post-import enrichment chain via `POST /api/maintenance/orchestrate` (NDJSON-streamed, because a `search_index` backfill outlives undici's 300s headers timeout) |
@@ -1603,7 +1696,7 @@ Takeout's 56 parse entries read `0/0/{}` and the two were indistinguishable.
 **The drop vocabulary is closed and two-level** (`telemetry/dropReasons.ts`). The
 parsers' own slugs are kept verbatim as the human-facing detail — a few dozen of
 them across the datasource pack — and every slug is *also* classified through
-`DROP_SLUG_REASONS` into one of the **21** `DROP_REASONS` codes, which is what
+`DROP_SLUG_REASONS` into one of the **22** `DROP_REASONS` codes, which is what
 you group and compare by. Four parsers
 spell "the archive references bytes it does not contain" four different ways
 (`media_asset_missing`, `media_file_missing`, `missing_media`,
@@ -1613,9 +1706,9 @@ walks `datasources/` for `drop?.('…')` literals and fails on one this table ha
 not classified.
 
 Each reason is `expected` or a `gap` (`DROP_SEVERITY`). `cancelled`, `filtered`,
-`duplicate_in_run`, `already_present` and `entity_excluded` are expected; every
-other reason means the appliance was handed something it could not turn into a
-memory. `summary.gaps` is that subset, precomputed and sorted, and it is the one
+`duplicate_in_run`, `already_present`, `entity_excluded` and
+`represented_elsewhere` are expected; every other reason means the appliance was
+handed something it could not turn into a memory. `summary.gaps` is that subset, precomputed and sorted, and it is the one
 list to read first: a run that dropped 40,000 records under `filtered` worked, and
 a run that dropped 12 under `collapsed_ambiguous` lost twelve things nobody can
 name.

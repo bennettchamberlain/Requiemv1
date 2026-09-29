@@ -514,8 +514,17 @@ export class ImportRunsController {
    * skips a run that already has a push stage, and a stage retry refuses a
    * stage that completed. This resets those rows and re-queues the push.
    *
-   * `{ items: 0, entities: 0 }` is a fine answer, not an error: it means there
-   * was nothing stranded, which is what the caller wanted to be true.
+   * It also re-drives a push that ran and FAILED — with its rows still
+   * pending (how a push ends when the database stays away past its wait, or
+   * crashes under one of its statements), or after every row settled — so `ci push --run <id> --retry-failed` is one
+   * command for every shape of "this run's push did not finish".
+   *
+   * `{ items: 0, entities: 0, requeued: false }` is a fine answer, not an
+   * error: it means there was nothing stranded, which is what the caller
+   * wanted to be true. A 409, with the reason and the way forward, for a run
+   * with a stage still working (resetting rows under a running push would
+   * hand them to two writers), a run whose stages ahead of the push did not
+   * complete (cancelled mid-parse), and a push that never ran.
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('runs/:runId/push/retry')
