@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { isIosPlatform, persistApiBaseUrl, resolveHttpOrigin } from '@ci/common';
 import { Button, Card, LoadingButton } from '@ci/shadcn';
@@ -9,6 +9,7 @@ import { useAuth, useCurrentUser } from '@/hooks';
 import { BrainMark, CONNECT_MARK_SIZE, Reveal, SplashShell } from '@/pages/SplashPage/SplashChrome';
 
 import {
+  emailFromIdToken,
   loginWithPortalOidc,
   OidcCancelledError,
   resumePendingOidcLogin,
@@ -28,8 +29,32 @@ const TOUCH = 'min-h-[44px]';
 const PORTAL_AUTH_KEY = 'ci.deviceConnect.portalAuth';
 
 function writePortalAuth(auth: PortalAuth): void {
+  const raw = JSON.stringify(auth);
+
   try {
-    sessionStorage.setItem(PORTAL_AUTH_KEY, JSON.stringify(auth));
+    sessionStorage.setItem(PORTAL_AUTH_KEY, raw);
+  } catch {
+    /* ignore */
+  }
+
+  // sessionStorage dies when iOS reclaims the webview. The Portal token has to
+  // outlive that, or the next launch forgets who just signed in.
+  try {
+    localStorage.setItem(PORTAL_AUTH_KEY, raw);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearStoredPortalAuth(): void {
+  try {
+    sessionStorage.removeItem(PORTAL_AUTH_KEY);
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    localStorage.removeItem(PORTAL_AUTH_KEY);
   } catch {
     /* ignore */
   }
@@ -37,7 +62,7 @@ function writePortalAuth(auth: PortalAuth): void {
 
 function readStoredPortalAuth(): PortalAuth | null {
   try {
-    const raw = sessionStorage.getItem(PORTAL_AUTH_KEY);
+    const raw = sessionStorage.getItem(PORTAL_AUTH_KEY) ?? localStorage.getItem(PORTAL_AUTH_KEY);
 
     if (!raw) {
       return null;
@@ -65,7 +90,7 @@ function readStoredPortalAuth(): PortalAuth | null {
 export function DeviceConnectPage() {
   const navigate = useNavigate();
   const [{ authenticated, initializing }, { completePortalMemoryConnect }] = useAuth();
-  const { user, loading: userLoading, error: userError } = useCurrentUser();
+  const { user, loading: userLoading, error: userError, refetch } = useCurrentUser();
 
   // Do not leave this page until Memory has accepted the minted key and `me`
   // resolved. Navigating to `/` earlier makes RedirectKnownUser treat a missing
@@ -79,6 +104,10 @@ export function DeviceConnectPage() {
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
   const [awaitingProfile, setAwaitingProfile] = useState(false);
+  const accountEmail = emailFromIdToken(auth?.idToken);
+  // `me` can already be sitting on Unauthorized from the previous box's key.
+  // That object must not be reported as the result of this tap.
+  const profileErrorBeforeConnect = useRef<unknown>(null);
 
   useEffect(() => {
     if (!initializing && authenticated && user) {
@@ -87,7 +116,15 @@ export function DeviceConnectPage() {
   }, [authenticated, initializing, navigate, user]);
 
   useEffect(() => {
-    if (!awaitingProfile || connectingId == null || initializing || userLoading || !authenticated || user) {
+    if (
+      !awaitingProfile ||
+      connectingId == null ||
+      initializing ||
+      userLoading ||
+      !authenticated ||
+      user ||
+      (userError != null && userError === profileErrorBeforeConnect.current)
+    ) {
       return;
     }
 
@@ -184,6 +221,10 @@ export function DeviceConnectPage() {
   };
 
   const handleOidcLogin = async () => {
+    // The picker restores whatever Portal token is still in this tab. Drop it
+    // before the sheet opens so a cancelled switch cannot snap back to it.
+    clearStoredPortalAuth();
+    setAuth(null);
     const controller = new AbortController();
     setOidcController(controller);
     setBusy(true);
@@ -231,6 +272,7 @@ export function DeviceConnectPage() {
 
     setConnectingId(device.id);
     setSignInError(null);
+    profileErrorBeforeConnect.current = userError;
 
     try {
       const origin = resolveHttpOrigin(device.memoryUrl);
@@ -266,6 +308,7 @@ export function DeviceConnectPage() {
           await completePortalMemoryConnect(bearer, origin);
           persistApiBaseUrl(origin);
           setAwaitingProfile(true);
+          void refetch();
 
           return;
         } catch (err) {
@@ -366,6 +409,11 @@ export function DeviceConnectPage() {
       </div>
       <div className="flex flex-1 flex-col items-center justify-center">
         <div className="w-full max-w-md">
+          {accountEmail ? (
+            <p className="text-muted-foreground mb-3 text-center text-sm" data-testid="portal-account">
+              Signed in as {accountEmail}
+            </p>
+          ) : null}
           <Card>
             <Card.Header>
               <Card.Title>Pick a Memory Server</Card.Title>
@@ -423,7 +471,12 @@ export function DeviceConnectPage() {
                     variant="ghost"
                     size="sm"
                     className={TOUCH}
-                    onClick={() => setStep('sign-in')}
+                    onClick={() => {
+                      clearStoredPortalAuth();
+                      setAuth(null);
+                      setDevices([]);
+                      setStep('sign-in');
+                    }}
                     disabled={connectingId !== null}
                   >
                     Back
