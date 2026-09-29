@@ -1036,7 +1036,10 @@ function SortControl() {
         setSort(option?.sortBy || undefined, option?.sortOrder || undefined);
       }}
     >
-      <Select.Trigger className={cn('w-[150px]', reason && 'opacity-70')}>
+      {/* Hug the selected label. A fixed width either clipped it or left a
+          gap that `justify-between` used to center the word between the icon
+          and the caret. */}
+      <Select.Trigger className={cn('w-fit shrink-0 justify-start text-left', reason && 'opacity-70')}>
         <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
         <Select.Value placeholder="Sort" />
       </Select.Trigger>
