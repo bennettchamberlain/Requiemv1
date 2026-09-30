@@ -54,7 +54,11 @@ import { UpdatePersonInput } from '../types/UpdatePersonInput';
 import { UpdatePersonPayload } from '../types/UpdatePersonPayload';
 import { memoryRelToGql } from '../utils/lifeGraphRelationships';
 import { Paginator } from '../utils/Paginator';
-import { contactMethodsFromPersonProperties, mergePersonIdentifiers } from '../utils/personContactMethods';
+import {
+  contactMethodsFromPersonProperties,
+  contactsToReconcile,
+  mergePersonIdentifiers,
+} from '../utils/personContactMethods';
 
 /** How long the review-queue query may spend folding deterministic pairs before it answers. */
 const ON_READ_FOLD_BUDGET_MS = 5_000;
@@ -356,16 +360,24 @@ export class PersonResolver {
         return { success: false };
       }
 
+      // The form re-submits every contact it was seeded with, property-only
+      // ones included. Only what the user asserted reaches the index: see
+      // contactsToReconcile.
+      const indexed = await this.entityIdentifierService.listForEntities(serviceContext.userId, [id]);
+
       const { conflicts } = await this.entityIdentifierService.replaceForEntity(
         serviceContext.userId,
         id,
         ['email', 'phone'],
-        input.contacts.map((contact) => ({
-          kind: parseContactKind(contact.kind),
-          value: contact.value,
-          label: contact.label,
-          isPrimary: contact.isPrimary,
-        })),
+        contactsToReconcile(
+          input.contacts.map((contact) => ({
+            kind: parseContactKind(contact.kind),
+            value: contact.value,
+            label: contact.label,
+            isPrimary: contact.isPrimary,
+          })),
+          { indexed: indexed.get(id) ?? [], stated: contactMethodsFromPersonProperties(owned) },
+        ),
       );
 
       this.personIdentifiersLoader.clear(serviceContext, id);
