@@ -15,6 +15,10 @@ import { GraphDeltaWriter } from './GraphDeltaWriter';
 /** Per-table re-point counts recorded in the ci.entity_merges audit row. */
 export interface MergeCounts {
   identifiers: number;
+  /** `ci.identifier_claims` rows whose resolution moved from a source to the target. */
+  claims: number;
+  /** `ci.entity_merge_blocks` a source held against someone, newly recorded for the target. */
+  blocksCarried: number;
   communicationsFrom: number;
   communicationsTo: number;
   eventsOrganizer: number;
@@ -33,7 +37,10 @@ export interface MergeCounts {
  * ci.entity_identifiers is first-writer-wins.
  *
  * A merge, in one transaction:
- * 1. re-points ci.entity_identifiers claims to the target,
+ * 1. re-points ci.entity_identifiers claims to the target, and the
+ *    resolution (entity_id) of every ci.identifier_claims row that resolved
+ *    to a source; carries each source's ci.entity_merge_blocks over to the
+ *    target,
  * 2. re-points communications.from_entity_id / to_entity_ids[],
  * 3. re-points events.organizer_entity_id / participant_entity_ids[],
  * 4. re-points ci.relationships endpoints (dropping edges that would become
@@ -45,6 +52,13 @@ export interface MergeCounts {
  * 7. re-points any tombstone that already aimed at a source, so
  *    merged_into_entity_id stays exactly one hop deep,
  * 8. writes one ci.entity_merges audit row per source.
+ *
+ * The audit row is also what re-opens the pipeline's decisions about the
+ * target: the pipeline's IdentifierArrivalService re-opens its
+ * enrich.person_self_claim and clean.duplicate_detect rows decided before the
+ * merge, so the survivor is re-examined with the claims step 1 moved onto it.
+ * Nothing here writes ci.pipeline_state — PipelineStateService is its only
+ * writer, and the pipeline domain depends on this one, not the reverse.
  *
  * The user's self person may be a merge TARGET (folding a stub of yourself
  * into you) but never a SOURCE — users.entity_id must keep pointing at a live
@@ -307,6 +321,53 @@ export class PersonMergeService {
       [ownerUserId, sources, targetId],
     );
 
+    // The EVIDENCE behind those index rows. A claim's entity_id is WHO an
+    // observation resolved to, and after a merge that is the target; everything
+    // describing the observation stays put. Left on the tombstone, the source's
+    // claims stop counting: clean.duplicate_detect joins holders to live
+    // entities only. A plain UPDATE cannot collide: entity_id is not part of
+    // identifier_claims_observation_uniq. Rejected claims move too and stay
+    // rejected; every reader excludes them on both sides.
+    const claims = await countAffected(
+      em,
+      `WITH repointed AS (
+         UPDATE ci.identifier_claims SET entity_id = $3
+          WHERE owner_user_id = $1 AND entity_id = ANY($2::uuid[])
+          RETURNING 1
+       )
+       SELECT count(*)::int AS count FROM repointed`,
+      [ownerUserId, sources, targetId],
+    );
+
+    // A human's "these two are NOT the same person" about a source now holds
+    // for the target. Carried as a new (target, other) row; the source's own
+    // row stays for an unmerge replay, and a block between people this merge
+    // folds together is not carried.
+    const blocksCarried = await countAffected(
+      em,
+      `WITH carried AS (
+         INSERT INTO ci.entity_merge_blocks (owner_user_id, entity_id_a, entity_id_b, reason)
+         SELECT DISTINCT ON (LEAST($3::uuid, blocked.other_id), GREATEST($3::uuid, blocked.other_id))
+                $1::uuid, LEAST($3::uuid, blocked.other_id), GREATEST($3::uuid, blocked.other_id),
+                blocked.reason
+           FROM (
+             SELECT CASE WHEN b.entity_id_a = ANY($2::uuid[]) THEN b.entity_id_b ELSE b.entity_id_a END
+                      AS other_id,
+                    b.reason, b.created_at
+               FROM ci.entity_merge_blocks b
+              WHERE b.owner_user_id = $1
+                AND (b.entity_id_a = ANY($2::uuid[]) OR b.entity_id_b = ANY($2::uuid[]))
+           ) blocked
+          WHERE blocked.other_id <> $3::uuid AND NOT (blocked.other_id = ANY($2::uuid[]))
+          ORDER BY LEAST($3::uuid, blocked.other_id), GREATEST($3::uuid, blocked.other_id),
+                   blocked.created_at ASC
+         ON CONFLICT (owner_user_id, entity_id_a, entity_id_b) DO NOTHING
+         RETURNING 1
+       )
+       SELECT count(*)::int AS count FROM carried`,
+      [ownerUserId, sources, targetId],
+    );
+
     const communicationsFrom = await countAffected(
       em,
       `WITH repointed AS (
@@ -466,6 +527,8 @@ export class PersonMergeService {
 
     return {
       identifiers,
+      claims,
+      blocksCarried,
       communicationsFrom,
       communicationsTo,
       eventsOrganizer,
