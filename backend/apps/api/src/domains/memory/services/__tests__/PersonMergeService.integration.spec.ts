@@ -264,6 +264,8 @@ describeWithDb(`PersonMergeService — audit counts, in Postgres (${availability
 
     const expected: MergeCounts = {
       identifiers: 6,
+      claims: 0,
+      blocksCarried: 0,
       communicationsFrom: 3,
       communicationsTo: 5,
       eventsOrganizer: 1,
