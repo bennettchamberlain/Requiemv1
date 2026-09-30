@@ -67,6 +67,38 @@ const formats: FormatDef[] = [
   },
 ];
 
+/**
+ * `Phones`, the row's numbers as typed, accumulates across sightings — see
+ * `Entity.accumulate`. A contact listed twice (Google Contacts keeps duplicate
+ * rows until someone merges them) stages its second row onto the first one's
+ * whenever the two key on the same handle. Staging grows the normalized
+ * `phones` that way on its own (`withContactIdentifiers`); without this the
+ * typed list would keep only the first row's numbers.
+ */
+const ACCUMULATED_KEYS = ['Phones'];
+
+/**
+ * Google Contacts' CSV joins a label's several values into ONE cell —
+ * `Phone 1 - Value` reads `+1 415-555-0123 ::: +1 415-555-0145` for two
+ * numbers both filed as Mobile. Only ` ::: ` is split: a comma or semicolon
+ * inside a phone cell is a dialling pause or an extension (`555-0147;229`),
+ * and cutting there would turn one line with an extension into a line it is
+ * not.
+ */
+const MULTI_VALUE_SEPARATOR = /\s*:::\s*/;
+
+/**
+ * Every value in a column's cells, split on {@link MULTI_VALUE_SEPARATOR}:
+ * trimmed, de-duplicated in first-seen order, empties removed.
+ */
+function cellValues(cells: string[] | undefined): string[] {
+  const values = (cells ?? [])
+    .flatMap((cell) => cell.split(MULTI_VALUE_SEPARATOR))
+    .map((value) => value.trim());
+
+  return [...new Set(values.filter(Boolean))];
+}
+
 function bestColumnMapping(header: string[]): Record<string, number[]> {
   let best: Record<string, number[]> = {};
   for (const fmt of formats) {
@@ -208,6 +240,19 @@ export class ContactListFileImporter implements FileImporter {
         continue;
       }
 
+      // The row's numbers as typed, one entry per number. Staging indexes a
+      // contact under normalized last-ten keys (`withContactIdentifiers`,
+      // staging/identity.ts), and a last-ten has lost the country the typed
+      // form states; the phone adjudicator (`PHONE_FACT_PROPERTY_KEYS`,
+      // memory/utils/phoneIdentity.ts) and the merge union read `Phones` for
+      // it, as they do the vCard parser's.
+      //
+      // Split on ` ::: ` here and NOT in the attributes: the key is computed
+      // from the attributes, a row with a joined cell is already keyed with
+      // it, and splitting there would move that key and mint a second Person
+      // beside the first on the next import.
+      const phones = cellValues(vals[CANON.PHONE]);
+
       contacts.push({
         name,
         // `type` is declared for the same reason as in vcard.ts: a contact-list row
@@ -218,12 +263,14 @@ export class ContactListFileImporter implements FileImporter {
         metadata: {
           Source: 'ContactList',
           File: path.basename(full),
+          ...(phones.length ? { Phones: phones } : {}),
           // Lowercase, unlike the other keys here: this exact key is the contract
           // `push/entities.ts` spreads straight into `ci.entities.properties`, and
           // `PersonType.avatarUrl` (backend/.../types/PersonType.ts) reads it back
           // as `properties.avatar_url`.
           ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
         },
+        accumulate: ACCUMULATED_KEYS,
       });
     }
 

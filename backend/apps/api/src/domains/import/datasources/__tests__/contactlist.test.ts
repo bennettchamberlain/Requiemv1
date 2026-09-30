@@ -2,12 +2,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { entityIdentityKey } from '../../staging/identity';
+import { statedPhoneNumbers } from '@ci/domains/memory';
+
+import { toGraphEntity } from '../../push/entities';
+import { entityIdentityKey, hasContactIdentity, resolveEntityType } from '../../staging/identity';
 import { ContactListFileImporter } from '../contactlist';
 import type { DirEntry } from '../registry';
 import type { EntityAttribute, Graph, ImportParams } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
+import { stagedEntityStore } from './support/stagedEntities';
 
 function makeParams() {
   const collected: EmittedGraph[] = [];
@@ -236,5 +240,155 @@ describe('Contact List datasource', () => {
     expect(entities.map((e) => e.name)).toEqual(['Priya Natarajan', 'Tom Becker', 'Lena Ortiz']);
     expect(entities.map(entityIdentityKey)).toEqual(['priya@example.com', 'tom@example.com', '5550100142']);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+/**
+ * A row's numbers as typed, beside the normalized keys staging indexes.
+ *
+ * Staging records every email and phone a contact states under `emails` /
+ * `phones` (`withContactIdentifiers`), a phone as its last ten digits — which
+ * have lost the country the typed number states. `Phones` keeps the typed form
+ * for the phone adjudicator and the merge union, as the vCard parser's does.
+ * The staged tests go through the real writer (support/stagedEntities.ts), then
+ * the push's `toGraphEntity`.
+ */
+describe("a contact-list row's numbers as typed", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-contactlist-phones-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function writeCsv(lines: string[]): DirEntry {
+    const file = path.join(dir, 'contacts.csv');
+    fs.writeFileSync(file, lines.join('\n'));
+
+    return { fullPath: file } as DirEntry;
+  }
+
+  async function parse(entry: DirEntry): Promise<EmittedGraph[]> {
+    const { params, collected } = makeParams();
+    await new ContactListFileImporter().fileImport(undefined, entry, params as unknown as ImportParams);
+
+    return collected;
+  }
+
+  async function stage(entry: DirEntry) {
+    const store = stagedEntityStore('contact_list');
+    await new ContactListFileImporter().fileImport(undefined, entry, {
+      pipeline: store.writer,
+      timeframe: undefined,
+    } as unknown as ImportParams);
+    await store.writer.settled();
+
+    return store;
+  }
+
+  const sorted = (value: unknown): unknown =>
+    Array.isArray(value) ? [...(value as string[])].sort() : value;
+
+  // Google Contacts writes a label's several values into one cell, joined by
+  // ` ::: ` — two Mobile numbers in `Phone 1` — and `Phone 2` repeats one.
+  const GOOGLE_HEADER = 'Name,E-mail 1 - Value,Phone 1 - Type,Phone 1 - Value,Phone 2 - Type,Phone 2 - Value';
+  const ana = 'Ana Whitcombe,ana@example.org,Mobile,+1 415-555-0123 ::: +1 415-555-0145,Work,+1 415-555-0145';
+
+  it('splits ` ::: ` cells into one Phones entry per number, once each, as typed', async () => {
+    const [graph] = await parse(writeCsv([GOOGLE_HEADER, ana]));
+
+    expect(graph.entity?.metadata?.Phones).toEqual(['+1 415-555-0123', '+1 415-555-0145']);
+    expect(graph.entity?.accumulate).toEqual(['Phones']);
+    // Typed emails have no reader: staging's normalized `emails` is what is indexed.
+    expect(graph.entity?.metadata).not.toHaveProperty('Emails');
+  });
+
+  it('leaves a joined cell whole in the attributes, so the natural key does not move', async () => {
+    const [graph] = await parse(writeCsv([GOOGLE_HEADER, ana]));
+
+    expect(graph.entity?.attributes).toEqual(
+      expect.arrayContaining([
+        { name: 'phone', value: '+1 415-555-0123 ::: +1 415-555-0145', identity: true },
+        { name: 'phone', value: '+1 415-555-0145', identity: true },
+      ]),
+    );
+    // The joined cell's digits run together and the last ten win — the second
+    // number — exactly as this row keyed before the typed list existed.
+    expect(entityIdentityKey(graph.entity!)).toBe('4155550145');
+  });
+
+  it('keys and types rows exactly as before, with and without a number', async () => {
+    const [card, handleless] = (
+      await parse(
+        writeCsv([
+          'Full Name,Phone Number,Email Address,DOB',
+          'Omar Haddad,(212) 555-0199,,',
+          'Lena Park,,,1990-06-01',
+        ]),
+      )
+    ).map((graph) => graph.entity!);
+
+    expect(card.attributes).toEqual([{ name: 'phone', value: '(212) 555-0199', identity: true }]);
+    expect(card.metadata?.Phones).toEqual(['(212) 555-0199']);
+    expect(entityIdentityKey(card)).toBe('2125550199');
+    expect(hasContactIdentity(card)).toBe(true);
+    expect(resolveEntityType(card)).toBe('contact');
+
+    expect(handleless.metadata).not.toHaveProperty('Phones');
+    expect(entityIdentityKey(handleless)).toBeNull();
+    expect(hasContactIdentity(handleless)).toBe(false);
+    expect(resolveEntityType(handleless)).toBe('contact');
+  });
+
+  it('hands the phone adjudicator every number in a joined cell, with its country', async () => {
+    const store = await stage(writeCsv([GOOGLE_HEADER, ana]));
+    const [row] = store.staged();
+    const dto = toGraphEntity(row);
+
+    expect(dto?.key).toBe('contact:4155550145');
+    expect(dto?.properties?.Phones).toEqual(['+1 415-555-0123', '+1 415-555-0145']);
+    expect(sorted(statedPhoneNumbers(dto?.properties, dto?.name))).toEqual(['+14155550123', '+14155550145']);
+  });
+
+  it('lists every phone column of an Outlook row, as typed', async () => {
+    const store = await stage(
+      writeCsv([
+        'First Name,Last Name,E-mail Address,Mobile Phone,Home Phone',
+        'Omar,Haddad,omar@example.com,(212) 555-0161,+1 212 555 0104',
+      ]),
+    );
+    const [row] = store.staged();
+    const dto = toGraphEntity(row);
+
+    expect(row.identityKey).toBe('2125550104');
+    expect(dto?.properties?.Phones).toEqual(['(212) 555-0161', '+1 212 555 0104']);
+    expect(dto?.properties?.phones).toEqual(['2125550104', '2125550161']);
+    expect(statedPhoneNumbers(dto?.properties, dto?.name)).toEqual(['+12125550104']);
+  });
+
+  it('grows one staged row when the same contact is listed twice', async () => {
+    // Google keeps duplicate contacts as separate rows until someone merges
+    // them; both key on the shared number, and the second lists a number the
+    // first does not.
+    const store = await stage(
+      writeCsv([
+        'Name,E-mail 1 - Value,Phone 1 - Value,Phone 2 - Value',
+        'Dev Anand,dev@example.com,(415) 555-0150,',
+        'Dev Anand,dev.anand@example.org,+1 415 555 0150,+1 415 555 0190',
+      ]),
+    );
+
+    expect(store.writer.totals).toMatchObject({ entities: 1, entitiesGrown: 1 });
+
+    const [row] = store.staged();
+    expect(row.identityKey).toBe('4155550150');
+    expect(row.metadata.Phones).toEqual(['(415) 555-0150', '+1 415 555 0150', '+1 415 555 0190']);
+    expect(sorted(statedPhoneNumbers(toGraphEntity(row)?.properties, row.name))).toEqual([
+      '+14155550150',
+      '+14155550190',
+    ]);
   });
 });

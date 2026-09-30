@@ -4,11 +4,15 @@ import path from 'path';
 
 import Database from 'better-sqlite3';
 
-import { entityIdentityKey } from '../../staging/identity';
+import { statedPhoneNumbers } from '@ci/domains/memory';
+
+import { toGraphEntity } from '../../push/entities';
+import { entityIdentityKey, hasContactIdentity, resolveEntityType } from '../../staging/identity';
 import { AppleContactsFileImporter } from '../applecontacts';
 import type { EntityAttribute, ImportParams } from '../timeline';
 
 import type { EmittedGraph } from './support/emitted';
+import { stagedEntityStore } from './support/stagedEntities';
 
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
@@ -286,5 +290,198 @@ describe('Apple Contacts datasource', () => {
       ]),
     );
     fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+/**
+ * A card's numbers as typed, beside the normalized keys staging indexes.
+ *
+ * Staging records every email and phone a contact states under `emails` /
+ * `phones` (`withContactIdentifiers`), a phone as its last ten digits — and the
+ * last ten have lost what the typed number states: `+44 20 7946 0142` keys as
+ * `2079460142`. `Phones` keeps the typed form, which is what the phone
+ * adjudicator and the merge union read for it, as they do the vCard parser's.
+ * The staged tests go through the real writer (support/stagedEntities.ts), then
+ * the push's `toGraphEntity`. `+44 20 7946 0xxx` is Ofcom's drama range.
+ */
+describe("an Apple card's numbers as typed", () => {
+  interface Card {
+    pk: number;
+    first?: string;
+    last?: string;
+    phones?: string[];
+    emails?: string[];
+    urls?: string[];
+  }
+
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-phones-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  function makeDb(dbPath: string, cards: Card[]): void {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE ZABCDRECORD (Z_PK INTEGER PRIMARY KEY, ZFIRSTNAME TEXT, ZLASTNAME TEXT);
+      CREATE TABLE ZABCDPHONENUMBER (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZFULLNUMBER TEXT);
+      CREATE TABLE ZABCDEMAILADDRESS (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZADDRESS TEXT);
+      CREATE TABLE ZABCDURLADDRESS (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZURL TEXT);
+    `);
+    for (const card of cards) {
+      db.prepare('INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (?, ?, ?)').run(
+        card.pk,
+        card.first ?? null,
+        card.last ?? null,
+      );
+      for (const phone of card.phones ?? []) {
+        db.prepare('INSERT INTO ZABCDPHONENUMBER (ZOWNER, ZFULLNUMBER) VALUES (?, ?)').run(card.pk, phone);
+      }
+
+      for (const email of card.emails ?? []) {
+        db.prepare('INSERT INTO ZABCDEMAILADDRESS (ZOWNER, ZADDRESS) VALUES (?, ?)').run(card.pk, email);
+      }
+
+      for (const url of card.urls ?? []) {
+        db.prepare('INSERT INTO ZABCDURLADDRESS (ZOWNER, ZURL) VALUES (?, ?)').run(card.pk, url);
+      }
+    }
+
+    db.close();
+  }
+
+  async function importInto(pipeline: ImportParams['pipeline']): Promise<void> {
+    await new AppleContactsFileImporter().fileImport({}, { filename: path.basename(tmp), fullPath: tmp }, {
+      pipeline,
+      timeframe: {},
+      log: () => {},
+    } as unknown as ImportParams);
+  }
+
+  async function parse(): Promise<EmittedGraph[]> {
+    const pipeline: EmittedGraph[] = [];
+    await importInto(pipeline as unknown as ImportParams['pipeline']);
+
+    return pipeline;
+  }
+
+  async function stage() {
+    const store = stagedEntityStore('apple_contacts');
+    await importInto(store.writer);
+    await store.writer.settled();
+
+    return store;
+  }
+
+  // Nothing fixes the order of one contact's values: the query orders by Z_PK
+  // alone, and SQLite may walk an automatic index on the joined table in VALUE
+  // order. So one database's list compares as a set.
+  const sorted = (value: unknown): unknown =>
+    Array.isArray(value) ? [...(value as string[])].sort() : value;
+
+  // Two numbers, two emails and a URL: the LEFT JOINs return four rows for this
+  // one Z_PK, each number twice.
+  const rosa: Card = {
+    pk: 1,
+    first: 'Rosa',
+    last: 'Delgado',
+    phones: ['(415) 555-0112', '+44 20 7946 0142'],
+    emails: ['rosa.delgado@example.com', 'rosa@example.org'],
+    urls: ['https://example.org/rosa'],
+  };
+
+  it('lists each number once, as typed, and declares Phones accumulating', async () => {
+    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [rosa]);
+
+    const [graph] = await parse();
+
+    expect(sorted(graph.entity?.metadata?.Phones)).toEqual(sorted(['(415) 555-0112', '+44 20 7946 0142']));
+    expect(graph.entity?.accumulate).toEqual(['Phones']);
+    // Typed emails have no reader: staging's normalized `emails` is what is indexed.
+    expect(graph.entity?.metadata).not.toHaveProperty('Emails');
+  });
+
+  it('keys and types the card exactly as before: the typed list is metadata, not attributes', async () => {
+    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [
+      rosa,
+      { pk: 2, first: 'Ines', last: 'Moreau', urls: ['https://example.com/ines'] },
+    ]);
+
+    const [card, handleless] = (await parse()).map((graph) => graph.entity!);
+
+    expect(card.attributes?.filter((a) => a.identity).map((a) => a.value)).toEqual(
+      expect.arrayContaining([
+        '(415) 555-0112',
+        '+44 20 7946 0142',
+        'rosa.delgado@example.com',
+        'rosa@example.org',
+      ]),
+    );
+    expect(entityIdentityKey(card)).toBe('2079460142');
+    expect(hasContactIdentity(card)).toBe(true);
+    expect(resolveEntityType(card)).toBe('contact');
+
+    expect(handleless.metadata).not.toHaveProperty('Phones');
+    expect(entityIdentityKey(handleless)).toBeNull();
+    expect(hasContactIdentity(handleless)).toBe(false);
+    expect(resolveEntityType(handleless)).toBe('contact');
+  });
+
+  it('keeps the country a normalized key loses, through staging and the push', async () => {
+    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [rosa]);
+
+    const store = await stage();
+    const [row] = store.staged();
+    const dto = toGraphEntity(row);
+
+    expect(dto?.key).toBe('contact:2079460142');
+    expect(dto?.properties?.phones).toEqual(['2079460142', '4155550112']);
+    expect(sorted(dto?.properties?.Phones)).toEqual(sorted(['(415) 555-0112', '+44 20 7946 0142']));
+
+    // The typed form is the only one that says the number is British.
+    expect(statedPhoneNumbers(dto?.properties, dto?.name)).toEqual(['+442079460142']);
+    expect(statedPhoneNumbers({ ...dto?.properties, Phones: undefined }, dto?.name)).toEqual([]);
+  });
+
+  it('grows one staged row when the same card sits in two account databases', async () => {
+    // Same person, same number (typed differently), the second copy listing a
+    // number the first does not.
+    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [
+      {
+        pk: 1,
+        first: 'Marisol',
+        last: 'Vega',
+        phones: ['+1 (415) 555-0132'],
+        emails: ['marisol@example.com'],
+      },
+    ]);
+    makeDb(path.join(tmp, 'Sources', 'ACCOUNT-WORK', 'AddressBook-v22.abcddb'), [
+      {
+        pk: 7,
+        first: 'Marisol',
+        last: 'Vega',
+        phones: ['415-555-0132', '+1 415 555 0187'],
+        emails: ['m.vega@example.org'],
+      },
+    ]);
+
+    const store = await stage();
+
+    expect(store.writer.totals).toMatchObject({ entities: 1, entitiesGrown: 1 });
+
+    const [row] = store.staged();
+    expect(row.identityKey).toBe('4155550132');
+    expect(sorted(row.metadata.Phones)).toEqual(
+      sorted(['+1 (415) 555-0132', '415-555-0132', '+1 415 555 0187']),
+    );
+    expect(sorted(statedPhoneNumbers(toGraphEntity(row)?.properties, row.name))).toEqual([
+      '+14155550132',
+      '+14155550187',
+    ]);
   });
 });

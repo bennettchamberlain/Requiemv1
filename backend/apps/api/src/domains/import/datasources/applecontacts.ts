@@ -76,6 +76,18 @@ interface PragmaColumnRow {
   name: string;
 }
 
+/**
+ * `Phones`, the card's numbers as typed, accumulates across sightings — see
+ * `Entity.accumulate`. The same person routinely sits in two of a profile's
+ * databases (iCloud and an Exchange account both holding a colleague), and the
+ * second copy stages onto the first one's row whenever the two key on the same
+ * handle. Staging grows the normalized `phones` that way on its own
+ * (`withContactIdentifiers`); without this the typed list would keep only the
+ * first copy's numbers, and a number the second copy adds would have a key but
+ * no stated form.
+ */
+const ACCUMULATED_KEYS = ['Phones'];
+
 /** One contact accumulated across its joined phone/email/url rows. */
 interface ContactAccumulator {
   id?: number;
@@ -297,6 +309,16 @@ export class AppleContactsFileImporter implements FileImporter {
         ? path.basename(path.dirname(dbPath))
         : undefined;
 
+    // The card's numbers as typed, once each. Staging indexes a contact under
+    // normalized last-ten keys (`withContactIdentifiers`, staging/identity.ts),
+    // and a last-ten has lost what the typed form states: `+44 20 7946 0142`
+    // keys as `2079460142`, a Maine number to an owner in North America. The
+    // phone adjudicator (`PHONE_FACT_PROPERTY_KEYS`, memory/utils/phoneIdentity.ts)
+    // and the merge union read `Phones` for it, as they do the vCard parser's.
+    // De-duplicated because the JOINs repeat each number once per row of the
+    // other tables.
+    const phones = uniqueValues(c.phones);
+
     contacts.push({
       name,
       // See vcard.ts: an Address Book card is a contact regardless of which
@@ -307,9 +329,16 @@ export class AppleContactsFileImporter implements FileImporter {
         Source: 'AppleContacts',
         DB: path.basename(dbPath),
         ...(accountId ? { AccountID: accountId } : {}),
+        ...(phones.length ? { Phones: phones } : {}),
       },
+      accumulate: ACCUMULATED_KEYS,
     });
   }
+}
+
+/** Trimmed, de-duplicated in first-seen order, empties removed. */
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 registerDataSource({
