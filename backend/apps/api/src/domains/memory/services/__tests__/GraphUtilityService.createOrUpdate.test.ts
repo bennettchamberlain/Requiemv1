@@ -233,16 +233,129 @@ describe('GraphUtilityService.createOrUpdateRelationship', () => {
     expect(edges.get(EDGE)?.properties).toEqual({ since: '2019', context: 'dentist' });
   });
 
-  it('gives a new relationship the insert defaults for everything omitted', async () => {
-    const { service, edges } = setup();
+  // A brand-new relationship goes in through INSERT … ON CONFLICT, which this
+  // in-memory table cannot run; its insert defaults, the yield to a concurrent
+  // writer and the owner checks are pinned against Postgres in
+  // GraphUtilityService.createOrUpdateRelationship.integration.test.ts.
+});
 
-    await service.createOrUpdateRelationship(OWNER, {
-      relationshipId: EDGE,
+describe('GraphUtilityService.createOrUpdateRelationship — an edge already on the coordinate', () => {
+  // relationships_unique_directed_idx allows one active edge per (from, to,
+  // type). A write that names no row by id used to INSERT beside it and die on
+  // that index; it now lands on the edge that is there.
+
+  it.each([
+    ['no relationshipId', undefined],
+    ['a relationshipId that names no row', 'edge-never-written'],
+  ])('merges into the stored edge when the write carries %s', async (_label, relationshipId) => {
+    const { service, edges } = setup({ edges: [storedEdge({ is_bidirectional: false })] });
+
+    const { relationship, created } = await service.createOrUpdateRelationship(OWNER, {
+      relationshipId,
       fromEntityId: 'from-1',
       toEntityId: 'to-1',
       relationshipType: 'KNOWS',
+      properties: { context: 'dentist' },
     });
 
-    expect(edges.get(EDGE)).toMatchObject({ strength: 1, is_bidirectional: false, properties: {} });
+    expect(created).toBe(false);
+    expect(relationship.relationship_id).toBe(EDGE);
+    expect(edges.all()).toHaveLength(1);
+    expect(edges.get(EDGE)).toMatchObject({
+      strength: 0.4,
+      is_bidirectional: false,
+      properties: { since: '2019', source: 'google-contacts', context: 'dentist' },
+    });
+  });
+
+  it('applies the same write-time merge as an update by id: replace, removals, explicit fields', async () => {
+    const replaced = setup({ edges: [storedEdge()] });
+    await replaced.service.createOrUpdateRelationship(OWNER, {
+      fromEntityId: 'from-1',
+      toEntityId: 'to-1',
+      relationshipType: 'KNOWS',
+      properties: { only: 'this' },
+      mergeProperties: false,
+      strength: 0.9,
+    });
+    expect(replaced.edges.get(EDGE)).toMatchObject({ properties: { only: 'this' }, strength: 0.9 });
+
+    const pruned = setup({ edges: [storedEdge()] });
+    await pruned.service.createOrUpdateRelationship(OWNER, {
+      fromEntityId: 'from-1',
+      toEntityId: 'to-1',
+      relationshipType: 'KNOWS',
+      removeProperties: ['source'],
+    });
+    expect(pruned.edges.get(EDGE)?.properties).toEqual({ since: '2019' });
+  });
+
+  it('lands on a bidirectional edge written the other way round and keeps its stored orientation', async () => {
+    const { service, edges } = setup({ edges: [storedEdge()] });
+
+    const { created } = await service.createOrUpdateRelationship(OWNER, {
+      fromEntityId: 'to-1',
+      toEntityId: 'from-1',
+      relationshipType: 'KNOWS',
+      properties: { context: 'dentist' },
+    });
+
+    expect(created).toBe(false);
+    expect(edges.all()).toHaveLength(1);
+    expect(edges.get(EDGE)).toMatchObject({
+      from_entity_id: 'from-1',
+      to_entity_id: 'to-1',
+      is_bidirectional: true,
+      properties: { since: '2019', source: 'google-contacts', context: 'dentist' },
+    });
+  });
+});
+
+describe('GraphUtilityService.findActiveRelationship', () => {
+  const coordinate = { fromEntityId: 'from-1', toEntityId: 'to-1', relationshipType: 'KNOWS' };
+  const reversed = { fromEntityId: 'to-1', toEntityId: 'from-1', relationshipType: 'KNOWS' };
+
+  it('finds the active edge on the coordinate, and a bidirectional one stored the other way round', async () => {
+    const { service } = setup({ edges: [storedEdge()] });
+
+    expect((await service.findActiveRelationship(OWNER, coordinate))?.relationship_id).toBe(EDGE);
+    expect((await service.findActiveRelationship(OWNER, reversed))?.relationship_id).toBe(EDGE);
+  });
+
+  it('prefers the edge in the orientation asked for when both exist', async () => {
+    const { service } = setup({
+      edges: [
+        storedEdge(),
+        storedEdge({ relationship_id: 'edge-2', from_entity_id: 'to-1', to_entity_id: 'from-1' }),
+      ],
+    });
+
+    expect((await service.findActiveRelationship(OWNER, reversed))?.relationship_id).toBe('edge-2');
+  });
+
+  it('does not reverse a one-way edge, or a bidirectional one for a write that asks for one-way', async () => {
+    const oneWay = setup({ edges: [storedEdge({ is_bidirectional: false })] });
+    expect(await oneWay.service.findActiveRelationship(OWNER, reversed)).toBeNull();
+
+    const both = setup({ edges: [storedEdge()] });
+    expect(
+      await both.service.findActiveRelationship(OWNER, { ...reversed, isBidirectional: false }),
+    ).toBeNull();
+    expect(
+      await both.service.findActiveRelationship(OWNER, { ...coordinate, isBidirectional: false }),
+    ).not.toBeNull();
+  });
+
+  it("ignores a forgotten edge, another type, and another owner's edge", async () => {
+    const forgotten = setup({ edges: [storedEdge({ is_active: false })] });
+    expect(await forgotten.service.findActiveRelationship(OWNER, coordinate)).toBeNull();
+
+    const retyped = setup({ edges: [storedEdge()] });
+    expect(
+      await retyped.service.findActiveRelationship(OWNER, { ...coordinate, relationshipType: 'LIKES' }),
+    ).toBeNull();
+
+    const foreign = setup({ edges: [storedEdge({ owner_user_id: 'owner-2' })] });
+    expect(await foreign.service.findActiveRelationship(OWNER, coordinate)).toBeNull();
   });
 });

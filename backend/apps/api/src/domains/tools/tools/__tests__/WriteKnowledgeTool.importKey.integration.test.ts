@@ -366,4 +366,144 @@ describeWithDb(`WriteKnowledgeTool on an imported entity (${availability.target}
       properties: { source: 'google-contacts', context: 'dentist' },
     });
   });
+
+  describe('restating an edge without its id — how a model says a thing it was already told', () => {
+    // relationships_unique_directed_idx allows one active edge per (from, to,
+    // type). These writes used to mint a fresh id and INSERT beside the
+    // imported edge; flush() — the listener's write — threw
+    // `duplicate key value violates unique constraint
+    // "relationships_unique_directed_idx"`, which in production fails the
+    // job into the dead letter queue after the tool has answered "Created".
+    const SAM = { ...ALEX, key: 'google-contacts:contact:sam@example.com', name: 'Sam Lee', properties: {} };
+    const KNOWS_EDGE = { fromKey: ALEX.key, toKey: SAM.key, type: 'KNOWS', properties: { source: 'google-contacts' } };
+
+    /** Import Alex and Sam — with the KNOWS edge between them unless `withEdge` is false. */
+    const importPair = async (withEdge = true) => {
+      const result = await ingest.ingest(context, {
+        entities: [ALEX, SAM],
+        relationships: withEdge ? [KNOWS_EDGE] : [],
+      });
+      expect(result.errors).toEqual([]);
+      const [alexId, samId] = [ALEX.key, SAM.key].map((key) => result.entities.find((e) => e.key === key)!.entityId);
+
+      return { alexId, samId };
+    };
+
+    const knowsEdges = (alexId: string, samId: string) =>
+      runner.query(
+        `SELECT relationship_id, strength, is_bidirectional, properties
+           FROM ci.relationships
+          WHERE from_entity_id = $1 AND to_entity_id = $2 AND relationship_type = 'KNOWS' AND is_active`,
+        [alexId, samId],
+      ) as Promise<
+        Array<{ relationship_id: string; strength: number; is_bidirectional: boolean; properties: object }>
+      >;
+
+    it('relationship.create lands on the imported edge, keeps its strength, and merges its properties', async () => {
+      const { alexId, samId } = await importPair();
+      const [{ relationship_id: edgeId }] = await knowsEdges(alexId, samId);
+      await runner.query(`UPDATE ci.relationships SET strength = 0.4 WHERE relationship_id = $1`, [edgeId]);
+
+      const written = await tool.execute(context, {
+        operations: [
+          {
+            kind: 'relationship.create',
+            fromEntityId: alexId,
+            toEntityId: samId,
+            // What a model writes; ci.relationships' CHECK only stores upper snake case.
+            relationshipType: 'knows',
+            properties: { context: 'dentist' },
+          },
+        ],
+      });
+      await flush();
+
+      expect(written.data).toMatchObject({ updatedRelationships: 1, createdRelationships: 0, failures: 0 });
+      expect(written.data?.results[0]).toMatchObject({ status: 'updated', relationshipId: edgeId });
+      expect(await knowsEdges(alexId, samId)).toEqual([
+        {
+          relationship_id: edgeId,
+          strength: 0.4,
+          is_bidirectional: false,
+          properties: { source: 'google-contacts', context: 'dentist' },
+        },
+      ]);
+    });
+
+    it("an entity.create's relationships land on the imported edge the same way", async () => {
+      const { alexId, samId } = await importPair();
+      const [{ relationship_id: edgeId }] = await knowsEdges(alexId, samId);
+      await runner.query(`UPDATE ci.relationships SET strength = 0.4 WHERE relationship_id = $1`, [edgeId]);
+
+      const written = await tool.execute(context, {
+        operations: [
+          {
+            kind: 'entity.create',
+            entityId: alexId,
+            entityType: 'Person',
+            relationships: [{ toEntityId: samId, relationshipType: 'KNOWS', properties: { context: 'dentist' } }],
+          },
+        ],
+      });
+      await flush();
+
+      expect(written.data).toMatchObject({ updatedNodes: 1, updatedRelationships: 1, createdRelationships: 0 });
+      expect(await knowsEdges(alexId, samId)).toEqual([
+        {
+          relationship_id: edgeId,
+          strength: 0.4,
+          is_bidirectional: false,
+          properties: { source: 'google-contacts', context: 'dentist' },
+        },
+      ]);
+    });
+
+    it('an edge the import writes while the restatement is still queued is merged into, not duplicated', async () => {
+      const { alexId, samId } = await importPair(false);
+
+      const written = await tool.execute(context, {
+        operations: [
+          {
+            kind: 'relationship.create',
+            fromEntityId: alexId,
+            toEntityId: samId,
+            relationshipType: 'KNOWS',
+            properties: { context: 'dentist' },
+          },
+        ],
+      });
+      // Nothing was on the coordinate when the tool looked.
+      expect(written.data?.results[0].status).toBe('created');
+
+      await importPair();
+      const [{ relationship_id: importedId }] = await knowsEdges(alexId, samId);
+      await flush();
+
+      expect(await knowsEdges(alexId, samId)).toEqual([
+        expect.objectContaining({
+          relationship_id: importedId,
+          properties: { source: 'google-contacts', context: 'dentist' },
+        }),
+      ]);
+    });
+
+    it('a relationship with nothing on its coordinate is inserted with the defaults', async () => {
+      const { alexId, samId } = await importPair(false);
+
+      const written = await tool.execute(context, {
+        operations: [{ kind: 'relationship.create', fromEntityId: alexId, toEntityId: samId, relationshipType: 'KNOWS' }],
+      });
+      await flush();
+
+      expect(written.data).toMatchObject({ createdRelationships: 1, updatedRelationships: 0, failures: 0 });
+      expect(await knowsEdges(alexId, samId)).toEqual([
+        {
+          relationship_id: written.data?.results[0].relationshipId,
+          strength: 1,
+          is_bidirectional: false,
+          properties: {},
+        },
+      ]);
+    });
+  });
 });

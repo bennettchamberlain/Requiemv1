@@ -166,6 +166,11 @@ function makePipeline(seed: { nodes?: GraphNodeEntity[]; edges?: RelationshipEnt
           .map((id) => edges.get(id))
           .filter((row) => visible(row, options.includeInactive)),
     ),
+    // The real coordinate lookup — the same one the write makes when it lands.
+    findActiveRelationship: jest.fn(
+      (owner: string, edge: Parameters<GraphUtilityService['findActiveRelationship']>[1]) =>
+        graphUtility.findActiveRelationship(owner, edge),
+    ),
   };
 
   const tool = new WriteKnowledgeTool(
@@ -535,15 +540,277 @@ describe('memory.remember — relationship.create with a relationshipId that alr
     expect(graph.edges.get(EDGE)).toMatchObject({ from_entity_id: PERSON, to_entity_id: OTHER });
   });
 
-  it('gives a brand-new relationship the same defaults as before', async () => {
+  it('queues a brand-new relationship with nothing for the insert defaults to lose', async () => {
+    // What the insert then makes of it — strength 1, one-way, `{}` — needs the
+    // INSERT … ON CONFLICT this table cannot run; it is pinned against Postgres
+    // in WriteKnowledgeTool.importKey.integration.test.ts.
     const graph = makePipeline({ nodes: endpoints() });
 
-    const result = await graph.run({
+    const result = await graph.tool.execute(CONTEXT, {
       operations: [{ kind: 'relationship.create', fromEntityId: PERSON, toEntityId: OTHER, relationshipType: 'KNOWS' }],
     });
 
     expect(result.data).toMatchObject({ createdRelationships: 1, updatedRelationships: 0, failures: 0 });
-    expect(graph.edges.all()[0]).toMatchObject({ strength: 1, is_bidirectional: false, properties: {} });
+    expect(graph.queue).toHaveLength(1);
+    expect(graph.queue[0].body.relationship).toEqual({
+      relationshipId: result.data?.results[0].relationshipId,
+      fromEntityId: PERSON,
+      toEntityId: OTHER,
+      relationshipType: 'KNOWS',
+      mergeProperties: true,
+    });
+  });
+});
+
+describe('memory.remember — restating a relationship that already exists, without its id', () => {
+  // How a model restates a fact: it has no relationshipId, only the two ends and
+  // the type. The edge on that coordinate is often an importer's, so each of
+  // these used to mint a fresh id, INSERT, and dead-letter on
+  // relationships_unique_directed_idx — after the tool had said "Created".
+  const endpoints = () => [importedPerson(), entityRow({ entity_id: OTHER, entity_type: 'Person', name: 'Sam' })];
+
+  it('lands on the stored edge, reports it updated under its own id, and merges what it sent', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge()] });
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'relationship.create',
+          fromEntityId: PERSON,
+          toEntityId: OTHER,
+          relationshipType: 'KNOWS',
+          properties: { context: 'dentist' },
+        },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ createdRelationships: 0, updatedRelationships: 1, failures: 0 });
+    expect(result.data?.results[0]).toMatchObject({ status: 'updated', relationshipId: EDGE });
+    expect(graph.edges.all()).toHaveLength(1);
+    expect(graph.edges.get(EDGE)).toMatchObject({
+      strength: 0.4,
+      is_bidirectional: false,
+      properties: { since: '2019', source: 'google-contacts', context: 'dentist' },
+    });
+  });
+
+  it('reads a relationship type in any case or spacing as the stored spelling', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge({ relationship_type: 'WORKS_WITH' })] });
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'relationship.create',
+          fromEntityId: PERSON,
+          toEntityId: OTHER,
+          relationshipType: ' works with ',
+          properties: { team: 'billing' },
+        },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
+    expect(graph.edges.all()).toHaveLength(1);
+    expect(graph.edges.get(EDGE)).toMatchObject({ relationship_type: 'WORKS_WITH', properties: { team: 'billing' } });
+  });
+
+  it('matches a bidirectional edge restated the other way round, and keeps the stored orientation', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge({ is_bidirectional: true })] });
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'relationship.create',
+          fromEntityId: OTHER,
+          toEntityId: PERSON,
+          relationshipType: 'KNOWS',
+          properties: { met: 'school' },
+        },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
+    expect(graph.edges.get(EDGE)).toMatchObject({
+      from_entity_id: PERSON,
+      to_entity_id: OTHER,
+      is_bidirectional: true,
+      properties: { since: '2019', source: 'google-contacts', met: 'school' },
+    });
+  });
+
+  it('treats the reverse of a one-way edge, or a one-way restatement of a bidirectional one, as a new edge', async () => {
+    const oneWay = makePipeline({ nodes: endpoints(), edges: [knowsEdge()] });
+    const reversed = await oneWay.tool.execute(CONTEXT, {
+      operations: [{ kind: 'relationship.create', fromEntityId: OTHER, toEntityId: PERSON, relationshipType: 'KNOWS' }],
+    });
+    expect(reversed.data).toMatchObject({ createdRelationships: 1, updatedRelationships: 0 });
+    expect(oneWay.queue[0].body.relationship).toMatchObject({ fromEntityId: OTHER, toEntityId: PERSON });
+    expect(oneWay.queue[0].body.relationship?.relationshipId).not.toBe(EDGE);
+
+    // Merging `OTHER -> PERSON, one-way` into the stored PERSON <-> OTHER would
+    // leave it one-way PERSON -> OTHER: the opposite of what was said.
+    const both = makePipeline({ nodes: endpoints(), edges: [knowsEdge({ is_bidirectional: true })] });
+    const narrowed = await both.tool.execute(CONTEXT, {
+      operations: [
+        {
+          kind: 'relationship.create',
+          fromEntityId: OTHER,
+          toEntityId: PERSON,
+          relationshipType: 'KNOWS',
+          isBidirectional: false,
+        },
+      ],
+    });
+    expect(narrowed.data).toMatchObject({ createdRelationships: 1, updatedRelationships: 0 });
+    expect(both.queue[0].body.relationship?.relationshipId).not.toBe(EDGE);
+  });
+
+  it('merges into the stored edge when the relationshipId it sends names no row', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge()] });
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'relationship.create',
+          relationshipId: FRESH,
+          fromEntityId: PERSON,
+          toEntityId: OTHER,
+          relationshipType: 'KNOWS',
+          properties: { context: 'dentist' },
+        },
+      ],
+    });
+
+    expect(result.data?.results[0]).toMatchObject({ status: 'updated', relationshipId: EDGE });
+    expect(graph.edges.all().map((edge) => edge.relationship_id)).toEqual([EDGE]);
+    expect(graph.edges.get(EDGE)?.properties).toMatchObject({ context: 'dentist' });
+  });
+
+  it('still merges when the edge only exists by the time the write lands', async () => {
+    // The tool's read can miss an edge whose own write is still queued. The
+    // write resolves the coordinate again when it lands, so it merges anyway.
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge()] });
+    graph.graphQuery.findActiveRelationship.mockResolvedValueOnce(null);
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'relationship.create',
+          fromEntityId: PERSON,
+          toEntityId: OTHER,
+          relationshipType: 'KNOWS',
+          properties: { context: 'dentist' },
+        },
+      ],
+    });
+
+    expect(result.data?.results[0].status).toBe('created');
+    expect(graph.edges.all().map((edge) => edge.relationship_id)).toEqual([EDGE]);
+    expect(graph.edges.get(EDGE)).toMatchObject({
+      strength: 0.4,
+      properties: { since: '2019', source: 'google-contacts', context: 'dentist' },
+    });
+  });
+
+  it('dry run reports the update of the stored edge and writes nothing', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge()] });
+
+    const result = await graph.run({
+      dryRun: true,
+      operations: [{ kind: 'relationship.create', fromEntityId: PERSON, toEntityId: OTHER, relationshipType: 'KNOWS' }],
+    });
+
+    expect(result.data).toMatchObject({ dryRun: true, updatedRelationships: 1, createdRelationships: 0 });
+    expect(result.data?.results[0]).toMatchObject({ status: 'updated', relationshipId: EDGE });
+    expect(graph.queue).toHaveLength(0);
+  });
+
+  it("does the same for an entity.create's relationships, keeping the edge's strength, direction and properties", async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge({ is_bidirectional: true })] });
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'entity.create',
+          entityId: PERSON,
+          entityType: 'Person',
+          relationships: [{ toEntityId: OTHER, relationshipType: 'knows', properties: { context: 'dentist' } }],
+        },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ updatedNodes: 1, createdRelationships: 0, updatedRelationships: 1 });
+    expect(graph.edges.all()).toHaveLength(1);
+    // The nested write used to send strength 1, one-way and `mergeProperties:
+    // false` over the model's bag — every one of these would have been reset.
+    expect(graph.edges.get(EDGE)).toMatchObject({
+      relationship_type: 'KNOWS',
+      strength: 0.4,
+      is_bidirectional: true,
+      properties: { since: '2019', source: 'google-contacts', context: 'dentist' },
+    });
+  });
+});
+
+describe('memory.remember — relationship writes the table would refuse', () => {
+  const endpoints = () => [importedPerson(), entityRow({ entity_id: OTHER, entity_type: 'Person', name: 'Sam' })];
+
+  it('fails a type no spelling can store instead of reporting it saved', async () => {
+    const graph = makePipeline({ nodes: endpoints() });
+
+    const result = await graph.run({
+      operations: [
+        { kind: 'relationship.create', fromEntityId: PERSON, toEntityId: OTHER, relationshipType: 'likes!' },
+        { kind: 'relationship.create', fromEntityId: PERSON, toEntityId: OTHER, relationshipType: '2nd_cousin' },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ createdRelationships: 0, failures: 2 });
+    expect(result.data?.results[0].message).toContain('cannot be stored');
+    expect(graph.queue).toHaveLength(0);
+  });
+
+  it('fails a relationship whose two ends resolve to the same entity', async () => {
+    const graph = makePipeline({ nodes: endpoints() });
+
+    const result = await graph.run({
+      operations: [{ kind: 'relationship.create', fromEntityId: PERSON, toEntityId: PERSON, relationshipType: 'KNOWS' }],
+    });
+
+    expect(result.data).toMatchObject({ createdRelationships: 0, failures: 1 });
+    expect(result.data?.results[0].message).toContain('two different entities');
+    expect(graph.queue).toHaveLength(0);
+  });
+
+  it("checks an entity.create's relationships before queueing the entity, so a failure writes nothing", async () => {
+    // Checked after, the entity was queued while the result said "failed" —
+    // and a retried create without an entityId minted a second one.
+    const graph = makePipeline({ nodes: endpoints() });
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'entity.create',
+          entityType: 'Concept',
+          name: 'Pilates',
+          relationships: [
+            { toEntityId: OTHER, relationshipType: 'INTERESTS' },
+            { toEntityId: FRESH, relationshipType: 'INTERESTS' },
+          ],
+        },
+        {
+          kind: 'entity.create',
+          entityId: PERSON,
+          entityType: 'Person',
+          relationships: [{ toEntityId: PERSON, relationshipType: 'KNOWS' }],
+        },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ createdNodes: 0, updatedNodes: 0, createdRelationships: 0, failures: 2 });
+    expect(result.data?.results[0].message).toContain('target entity is missing');
+    expect(result.data?.results[1].message).toContain('to itself');
+    expect(graph.queue).toHaveLength(0);
   });
 });
 
