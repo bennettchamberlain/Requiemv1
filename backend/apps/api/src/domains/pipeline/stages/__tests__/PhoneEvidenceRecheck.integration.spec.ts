@@ -594,4 +594,65 @@ describeWithDb(`phone evidence on the review queue holds, or leaves it (${availa
       ).toBe(false);
     });
   });
+
+  /**
+   * The owner's own contact cards are ordinary Persons — the self Person is
+   * minted from the account, not from a card — so a friend's card listing the
+   * owner's address meets them as two contacts, and the self-endpoint hold
+   * never sees it. Their names share nothing; a mailbox alone must not
+   * overrule that. The real export's friend card sits beside two of the
+   * owner's cards exactly like this.
+   */
+  describe("the owner's address on a friend's card, against the owner's own cards", () => {
+    const kaiCard = randomUUID();
+    const kaiCardToo = randomUUID();
+    const lumiCard = randomUUID();
+
+    it("holds the friend for review, and the owner's two cards still fold", async () => {
+      const kai = { Emails: ['kai@mori.example'], emails: ['kai@mori.example'], email: 'kai@mori.example' };
+      await seedPerson(kaiCard, 'Kai D Mori', kai);
+      await seedPerson(kaiCardToo, 'Kai Mori', kai);
+      await seedPerson(lumiCard, 'Lumi Park', {
+        Emails: ['lumi@park.example', 'kai@mori.example'],
+        emails: ['lumi@park.example', 'kai@mori.example'],
+        email: 'lumi@park.example',
+      });
+
+      await detect([kaiCard, kaiCardToo, lumiCard]);
+
+      const held = { kind: 'email_check', value: 'name_conflict', score: 0 };
+
+      for (const card of [kaiCard, kaiCardToo]) {
+        expect(await candidateFor(card, lumiCard)).toMatchObject({
+          score: 0.85,
+          evidence: expect.arrayContaining([{ kind: 'email', value: 'kai@mori.example', score: 0.85 }, held]),
+        });
+      }
+
+      const ownCards = await candidateFor(kaiCard, kaiCardToo);
+      expect(ownCards).toMatchObject({
+        score: 0.95,
+        evidence: expect.arrayContaining([{ kind: 'email', value: 'kai@mori.example', score: 0.95 }]),
+      });
+      expect(ownCards?.evidence.some((item) => item.kind === 'email_check')).toBe(false);
+
+      // The queue shows the friend, labelled; the owner's cards are the drain's to fold.
+      const page = await merges.findCandidates(ctx, { includePhone: true, includeProfileUrl: true });
+      const withLumi = page.candidates.filter((candidate) =>
+        candidate.people.some((person) => person.id === lumiCard),
+      );
+      expect(withLumi.length).toBeGreaterThan(0);
+      for (const candidate of withLumi) {
+        expect(candidate.evidence).toEqual(expect.arrayContaining([held]));
+      }
+
+      expect(
+        page.candidates.some(
+          (candidate) =>
+            candidate.people.length === 2 &&
+            candidate.people.every((person) => person.id === kaiCard || person.id === kaiCardToo),
+        ),
+      ).toBe(false);
+    });
+  });
 });

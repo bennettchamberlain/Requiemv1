@@ -359,7 +359,7 @@ pairs in three deterministic tiers:
 
 | Tier | Evidence | Where it is graded |
 |------|----------|--------------------|
-| Email | a shared normalized mailbox (evidence, claims or `properties`) — held for review, never folded, when one side is the owner and the other's name contradicts theirs (`email_check: self_endpoint`) | `SHARES_EXACT_EMAIL`; `utils/emailIdentity.ts` `emailHoldReason` |
+| Email | a shared normalized mailbox (evidence, claims or `properties`) — held for review, never folded, when one side is the owner and the other's name contradicts theirs (`email_check: self_endpoint`), or when two contacts' full names share nothing (`email_check: name_conflict`) | `SHARES_EXACT_EMAIL`; `utils/emailIdentity.ts` `emailHoldReason` |
 | Phone | one equal, valid, ordinary number in both people's own `properties`, names compatible, line not shared (`phone` 0.95) — see the rule table below | `utils/phoneIdentity.ts` `PhoneHolders.adjudicate` |
 | Profile URL | equal LinkedIn `/in/` URL sets, corroborated by a shared name token or an agreeing "Connected On" date, contradicted by neither (`profile_url` 0.95) | `utils/profileUrls.ts` `adjudicateProfileUrls` |
 
@@ -421,11 +421,18 @@ Guards, all on every merge:
   some is rewritten, a row left with nothing is deleted (pending rows only; the detector re-proposes
   if evidence returns). It never reads `ci.entity_identifiers` (unique per value, so two people can
   never both hold a number there) and never re-grades, so it needs no corpus read.
-- **Owner on a shared email.** A card that lists the owner's address under someone else's name
-  would fold that someone into "you", with their other addresses. The detector writes such a pair
-  held (`email_check: self_endpoint`, 0.85), the drain re-checks live names before every email fold,
-  and the marker keeps the pair off every tier and on the queue. The owner's own mail stubs
-  (placeholder names) still fold.
+- **Two people on one mailbox.** A card that lists one person's address under another person's
+  name would fold the two, and carry the card's other addresses along. The detector writes such a
+  pair held (0.85, with an `email_check` marker), the drain re-checks live names before every email
+  fold, and the marker keeps the pair off every tier and on the queue. Two holds:
+  `self_endpoint` when one side is the self Person and the other's real name contradicts the
+  owner's (the owner's own mail stubs, named by the address, still fold), and `name_conflict` when
+  two contacts' full names share nothing (a different given name AND surname, no nickname prefix,
+  not one token in common). The second is the one that matters in practice: the owner's own contact
+  cards are ordinary Persons (the self Person is minted from `ci.users`), so a friend's card listing
+  the owner's work address meets them as two contacts. In one real 4,927-card export, it holds that
+  friend card against the owner's two cards and one double-typo pair, and folds the other 20
+  differently spelled pairs among the 63 addresses shared across cards.
 - **Self.** `users.entity_id` and any `is_self` row are always the target; a pair with two self
   endpoints is skipped. Otherwise the target is a real name over a placeholder, then the fuller name
   (`chooseMergeTarget`), because `PersonMergeService` keeps the target's display name.

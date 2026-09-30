@@ -351,9 +351,10 @@ const PROFILE_URL_VETOED = `(
 
 /**
  * A shared-mailbox pair held for a human (`utils/emailIdentity.ts`): one side
- * is the owner and the other's name contradicts theirs. Folding it would take
- * that person into "you", so, like a profile veto, it blocks every fold and
- * keeps the pair visible on the queue, labelled.
+ * is the owner and the other's name contradicts theirs, or two contacts'
+ * names share nothing. Folding it would join two people on one card's say-so,
+ * so, like a profile veto, it blocks every fold and keeps the pair visible on
+ * the queue, labelled.
  */
 const EMAIL_HELD = `mc.evidence @> '[{"kind":"${EMAIL_EVIDENCE.check}"}]'::jsonb`;
 
@@ -774,8 +775,9 @@ export class MergeCandidateService {
         }
 
         if (row.via_email === true) {
-          // The one guard a shared mailbox needs, on the rows as they are now:
-          // never fold a differently named person into the owner.
+          // The guards a shared mailbox needs, on the rows as they are now:
+          // never fold a differently named person into the owner, nor two
+          // contacts whose names share nothing.
           const hold = emailHoldReason(
             { name: a.name, isSelf: a.isSelf },
             { name: b.name, isSelf: b.isSelf },
@@ -1205,10 +1207,10 @@ export class MergeCandidateService {
   }
 
   /**
-   * Hold a shared-mailbox pair for review instead of folding it into the self
-   * Person: its email item capped and an `email_check` marker added
-   * ({@link holdEmailEvidence}), which {@link EMAIL_HELD} keeps out of every
-   * later fold. Never throws, like {@link demote}.
+   * Hold a shared-mailbox pair for review instead of folding it: its email
+   * item capped and an `email_check` marker added ({@link holdEmailEvidence}),
+   * which {@link EMAIL_HELD} keeps out of every later fold. Never throws, like
+   * {@link demote}.
    */
   private async holdEmail(
     context: UserServiceContext,
@@ -1226,7 +1228,7 @@ export class MergeCandidateService {
       return 'skipped';
     }
 
-    this.logger.log('Held a shared-email pair for review instead of folding it into the self Person', {
+    this.logger.log('Held a shared-email pair for review instead of folding it', {
       mergeCandidateId: row.merge_candidate_id,
       reason,
     });

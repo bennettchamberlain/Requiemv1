@@ -97,9 +97,10 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
  * `Faxes` (the vCard parser's `TEL;TYPE=FAX`) is refused by the phone
  * adjudicator whatever else states it, so colleagues who share an office fax
  * are no longer "the same phone number". See `FAX_FACT_PROPERTY_KEYS` in
- * `memory/utils/phoneIdentity.ts`. And a shared EMAIL between the owner and a
- * differently named person is held for review (`email_check: self_endpoint`)
- * instead of being folded into the self Person. See {@link holdSelfEmailPairs}.
+ * `memory/utils/phoneIdentity.ts`. And a shared EMAIL is held for review
+ * (`email_check`) instead of folded when it would take a differently named
+ * person into the owner (`self_endpoint`) or join two contacts whose names
+ * share nothing (`name_conflict`). See {@link holdEmailPairs}.
  */
 export const DUPLICATE_SCORING_GENERATION = 6;
 
@@ -990,14 +991,15 @@ export function adjudicateCandidatePhones(
 }
 
 /**
- * Hold for review every shared-email pair that would fold a differently named
- * person into the owner.
+ * Hold for review every shared-email pair whose names say it is two people:
+ * a differently named person against the owner, or two contacts whose names
+ * share nothing.
  *
  * A shared email is the deterministic tier: `MergeCandidateService` folds it
  * without asking, into the self Person when one side is the owner. A contact
- * card that lists the owner's address beside someone else's name would take
- * that someone into "you" — and carry their other addresses along, for the
- * next sweep to fold whoever owns those. `emailHoldReason`
+ * card that lists one person's address beside another person's name would
+ * fold the two — and carry the card's other addresses along, for the next
+ * sweep to fold whoever owns those. `emailHoldReason`
  * (`memory/utils/emailIdentity.ts`) decides; `holdEmailEvidence` caps the
  * email item below the auto-merge tier and marks it `email_check`, which the
  * fold refuses.
@@ -1006,7 +1008,7 @@ export function adjudicateCandidatePhones(
  * veto, which keeps the last word. `names` and `selfIds` are corpus-wide: an
  * endpoint of a slice pair can be anyone.
  */
-export function holdSelfEmailPairs(
+export function holdEmailPairs(
   candidates: readonly MergeCandidate[],
   names: ReadonlyMap<string, string | null>,
   selfIds: ReadonlySet<string>,
@@ -1178,12 +1180,12 @@ export class DuplicateDetectStage implements Stage {
     const selfIds = await this.loadSelfIds(ctx.userId);
     const nameById = new Map(names.map((row) => [row.entity_id, row.name] as const));
 
-    // Phone, then the self-email hold, then profile: the profile veto has the
+    // Phone, then the email hold, then profile: the profile veto has the
     // last word on the score. The floor is re-applied because the phone
     // verdict can REMOVE evidence — a claim pair whose only shared number
     // turns out to be toll-free, say.
     const candidates = adjudicateCandidateProfiles(
-      holdSelfEmailPairs(
+      holdEmailPairs(
         adjudicateCandidatePhones(
           mergeCandidateLists(
             mergeCandidateLists(mergeCandidateLists(exactCandidates, nameCandidates), profileCandidates),

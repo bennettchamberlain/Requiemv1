@@ -613,14 +613,23 @@ export function humanReason(evidence: MergeCandidate['evidence']): string {
 
   const email = evidence.find((item) => item.kind === 'email');
 
-  // The server holds a shared email back from its automatic merge when one
-  // side is you and the other side's name is someone else's (`email_check`,
-  // written by `memory/utils/emailIdentity.ts`): a card that lists your
-  // address under another person's name.
-  if (evidence.some((item) => item.kind === 'email_check')) {
+  // The server holds a shared email back from its automatic merge when the
+  // names say two people (`email_check`, written by
+  // `memory/utils/emailIdentity.ts`): one side is you and the other side's
+  // name is someone else's (`self_endpoint`), or two names share nothing
+  // (`name_conflict`) — a card that lists one person's address under
+  // another person's name.
+  const emailCheck = evidence.find((item) => item.kind === 'email_check');
+  if (emailCheck != null) {
+    if (emailCheck.value === 'self_endpoint') {
+      return email != null
+        ? `Same email ${email.value}, but one side is you and the names differ`
+        : 'Shares an email with you, but the names differ';
+    }
+
     return email != null
-      ? `Same email ${email.value}, but one side is you and the names differ`
-      : 'Shares an email with you, but the names differ';
+      ? `Same email ${email.value}, but the names differ`
+      : 'Same email, but the names differ';
   }
 
   if (email != null) {

@@ -1,4 +1,10 @@
-import { EMAIL_EVIDENCE, EMAIL_HELD_SCORE, emailHoldReason, holdEmailEvidence } from './emailIdentity';
+import {
+  EMAIL_EVIDENCE,
+  EMAIL_HELD_SCORE,
+  emailHoldReason,
+  holdEmailEvidence,
+  namesShareNothing,
+} from './emailIdentity';
 
 /*
  * Every name and address here is invented. The shape is a real export's: a
@@ -33,11 +39,47 @@ describe('emailHoldReason', () => {
     ).toBeNull();
   });
 
-  it('leaves two contacts, and two self endpoints, to the ordinary rule', () => {
-    expect(
-      emailHoldReason({ name: 'Bo Brightwater', isSelf: false }, { name: 'Cy Quill', isSelf: false }),
-    ).toBeNull();
+  it('leaves two self endpoints to the drain, which skips them', () => {
     expect(emailHoldReason(owner, { name: 'Bo Brightwater', isSelf: true })).toBeNull();
+  });
+
+  it("holds two contacts whose names share nothing: a friend's card listing the owner's address", () => {
+    // The owner's own cards are ordinary Persons; the self Person is minted
+    // from the account. So the friend's card meets them here, not as self.
+    expect(
+      emailHoldReason({ name: 'Cy Brightwater', isSelf: false }, { name: 'Ada D Quill', isSelf: false }),
+    ).toBe('name_conflict');
+  });
+
+  it('folds two contacts with any name in common, or a mail stub', () => {
+    const contact = { name: 'Ada Quill', isSelf: false };
+
+    expect(emailHoldReason(contact, { name: 'Adaline Quill-Moss', isSelf: false })).toBeNull();
+    expect(emailHoldReason(contact, { name: 'ada@quill.example', isSelf: false })).toBeNull();
+    expect(emailHoldReason(contact, { name: null, isSelf: false })).toBeNull();
+  });
+});
+
+describe('namesShareNothing', () => {
+  it('is true only for two full names with no thread in common', () => {
+    expect(namesShareNothing('Cy Brightwater', 'Ada Quill')).toBe(true);
+    expect(namesShareNothing('Ada (Adaline) D Quill-Moss', 'Bo Brightwater')).toBe(true);
+    // A typo in both halves is held — one click, where a wrong fold costs a person.
+    expect(namesShareNothing('Issac Brightwatr', 'Isaac Brightwater')).toBe(true);
+  });
+
+  it('is false for a typo, a nickname, a maiden or married name, or a shared token anywhere', () => {
+    expect(namesShareNothing('Cy Brightwater', 'Cy Brightwatr')).toBe(false);
+    expect(namesShareNothing('Dani Quill', 'Danielle Moss')).toBe(false);
+    expect(namesShareNothing('Ida Quill', 'Ada Moss Quill')).toBe(false);
+    expect(namesShareNothing('Bo Brightwater', 'Cy Bo')).toBe(false);
+  });
+
+  it('is false unless both sides are full names', () => {
+    expect(namesShareNothing('Alpesh', 'Bo Brightwater')).toBe(false);
+    expect(namesShareNothing('A. Quill', 'Bo Brightwater')).toBe(false);
+    expect(namesShareNothing("Ada's brother", 'Bo Brightwater')).toBe(false);
+    expect(namesShareNothing(null, 'Bo Brightwater')).toBe(false);
   });
 });
 

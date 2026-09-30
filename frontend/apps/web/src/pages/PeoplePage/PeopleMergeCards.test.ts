@@ -106,6 +106,15 @@ describe('humanReason', () => {
     );
   });
 
+  it("says why two contacts' shared email was not merged automatically", () => {
+    expect(
+      humanReason(evidence(['email', 'ada@example.com', 0.85], ['email_check', 'name_conflict', 0])),
+    ).toBe('Same email ada@example.com, but the names differ');
+    expect(humanReason(evidence(['email_check', 'name_conflict', 0]))).toBe(
+      'Same email, but the names differ',
+    );
+  });
+
   it('leaves the older reasons alone when there is no profile evidence', () => {
     expect(humanReason(evidence(['email', 'ada@example.com', 0.95]))).toBe('Same email: ada@example.com');
     expect(humanReason(evidence(['name_overlap', 'lovelace', 0.62]))).toBe('Names share “lovelace”');

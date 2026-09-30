@@ -39,7 +39,7 @@ import {
   buildProfileUrlCandidates,
   claimScore,
   duplicateDetectStageVersion,
-  holdSelfEmailPairs,
+  holdEmailPairs,
   mergeCandidateLists,
   profileFactsByEntity,
   scorePair,
@@ -964,7 +964,7 @@ describe('adjudicateCandidatePhones', () => {
   });
 });
 
-describe('holdSelfEmailPairs — the owner, on a shared email', () => {
+describe('holdEmailPairs — names that say two people, on a shared email', () => {
   const OWNER = '00000000-0000-4000-8000-00000000000a';
   const FRIEND = '00000000-0000-4000-8000-00000000000b';
   const STUB = '00000000-0000-4000-8000-00000000000c';
@@ -982,7 +982,7 @@ describe('holdSelfEmailPairs — the owner, on a shared email', () => {
 
   it("holds a card that lists the owner's address under someone else's name", () => {
     // Folded, the friend would become the owner — and their address with them.
-    expect(holdSelfEmailPairs([emailPair(OWNER, FRIEND)], names, new Set([OWNER]))).toEqual([
+    expect(holdEmailPairs([emailPair(OWNER, FRIEND)], names, new Set([OWNER]))).toEqual([
       {
         entityIdA: OWNER,
         entityIdB: FRIEND,
@@ -995,7 +995,25 @@ describe('holdSelfEmailPairs — the owner, on a shared email', () => {
     ]);
   });
 
-  it("leaves the owner's own mail stub, two contacts, and non-email pairs alone", () => {
+  it("holds two contacts whose names share nothing: a friend's card against the owner's own card", () => {
+    // The owner's contact cards are ordinary Persons, not the self Person.
+    const CARD = '00000000-0000-4000-8000-00000000000d';
+    const withCard = new Map(names).set(CARD, 'Ada D Quill');
+
+    expect(holdEmailPairs([emailPair(CARD, FRIEND)], withCard, new Set([OWNER]))).toEqual([
+      {
+        entityIdA: CARD,
+        entityIdB: FRIEND,
+        score: 0.85,
+        evidence: [
+          { kind: 'email', value: 'ada@quill.example', score: 0.85 },
+          { kind: 'email_check', value: 'name_conflict', score: 0 },
+        ],
+      },
+    ]);
+  });
+
+  it("leaves the owner's own mail stub, a contact against a stub, and non-email pairs alone", () => {
     const stub = emailPair(OWNER, STUB);
     const contacts = emailPair(FRIEND, STUB);
     const phone: MergeCandidate = {
@@ -1003,11 +1021,7 @@ describe('holdSelfEmailPairs — the owner, on a shared email', () => {
       evidence: [{ kind: 'phone', value: '+12025550142', score: 0.85 }],
     };
 
-    expect(holdSelfEmailPairs([stub, contacts, phone], names, new Set([OWNER]))).toEqual([
-      stub,
-      contacts,
-      phone,
-    ]);
+    expect(holdEmailPairs([stub, contacts, phone], names, new Set([OWNER]))).toEqual([stub, contacts, phone]);
   });
 });
 
