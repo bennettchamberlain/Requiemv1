@@ -793,13 +793,16 @@ class InferenceEngine:
             # Stored probabilities stay calibrated; only the displayed argmax is
             # prior-corrected. A plain argmax over a background-dominated
             # posterior answers the background almost everywhere even when the
-            # posterior is exactly right — measured, the correction lifts macro
-            # recall 0.675 → 0.789 and LEISURE recall 0.000 → 0.812 without
-            # touching the fit.
+            # posterior is exactly right. The correction is floored so it can
+            # only promote a class the model still gives real probability to;
+            # see DECISION_FLOOR in supervised.py for what that floor costs.
             predicted_l0 = l0_classes[int(np.argmax(decision_arr[b]))]
             l1_probs = self._decode_l1(bucket_l1_sum[b], predicted_l0)
-            samples = bucket_conf_samples[b]
-            q10, q50, q90 = _quantiles(samples) if samples else (0.0, 0.0, 0.0)
+            q10, q50, q90 = confidence_quantiles(
+                served,
+                bucket_conf_samples[b],
+                float(class_arr[l0_classes.index(predicted_l0)]),
+            )
             results.append(
                 {
                     "bucket_index": b,
@@ -879,6 +882,31 @@ def _softmax(x: np.ndarray) -> np.ndarray:
 
 def _probs_to_arr(probs: dict[str, float]) -> np.ndarray:
     return np.array([float(probs.get(c, 0.0)) for c in L0_CLASSES], dtype=np.float64)
+
+
+def confidence_quantiles(
+    served: str,
+    samples: list[float],
+    shown_probability: float,
+) -> tuple[float, float, float]:
+    """
+    ``(q10, q50, q90)`` of confidence in the label being shown for one bucket.
+
+    The transformer path has a real spread: one top-class probability per
+    history window it averaged over. The supervised head has a single fit and
+    therefore a single number, so it reports the probability of the class
+    actually shown with no spread (q10 = q50 = q90).
+
+    This matters because consumers read ``q50`` as the bucket's weight. The
+    calendar paints a bin only when it clears 0.05, and ForecastStrip sets
+    opacity from it. Reading the transformer's window confidences while the
+    head is being served leaves that weight describing a different model from
+    the label — and with no checkpoint at all it is zero, so nothing paints.
+    """
+    if served == MODEL_LOGIT:
+        p = float(shown_probability)
+        return p, p, p
+    return _quantiles(samples) if samples else (0.0, 0.0, 0.0)
 
 
 def _quantiles(values: list[float]) -> tuple[float, float, float]:

@@ -403,3 +403,42 @@ def test_densify_accepts_a_per_day_background():
     assert by_bucket[24] == "SLEEP"  # 06:00 UTC
     assert by_bucket[40] == "WORK"  # observed beats the filler
     assert by_bucket[0] == "UNKNOWN"
+
+
+# ── confidence quantiles ──────────────────────────────────────────────────────
+
+
+def test_logit_reports_the_probability_of_the_shown_class():
+    from ci.hbpe.pipeline.inference_engine import confidence_quantiles
+    from ci.hbpe.pipeline.serve import MODEL_LOGIT
+
+    # Transformer-window confidences exist but describe a different model; they
+    # must not leak into a bucket the head is labelling.
+    assert confidence_quantiles(MODEL_LOGIT, [0.9, 0.95, 0.99], 0.31) == (
+        0.31,
+        0.31,
+        0.31,
+    )
+
+
+def test_logit_quantiles_are_nonzero_with_no_transformer_samples():
+    """No checkpoint means no window samples; the wash must still have weight."""
+    from ci.hbpe.pipeline.inference_engine import confidence_quantiles
+    from ci.hbpe.pipeline.serve import MODEL_LOGIT
+
+    assert confidence_quantiles(MODEL_LOGIT, [], 0.74)[1] == 0.74
+
+
+def test_other_models_keep_the_window_spread():
+    from ci.hbpe.pipeline.inference_engine import confidence_quantiles
+    from ci.hbpe.pipeline.serve import MODEL_B1
+
+    q10, q50, q90 = confidence_quantiles(MODEL_B1, [0.2, 0.4, 0.6, 0.8], 0.5)
+    assert q10 < q50 < q90
+
+
+def test_baselines_without_samples_stay_zero():
+    from ci.hbpe.pipeline.inference_engine import confidence_quantiles
+    from ci.hbpe.pipeline.serve import MODEL_B1
+
+    assert confidence_quantiles(MODEL_B1, [], 0.5) == (0.0, 0.0, 0.0)
