@@ -6,8 +6,9 @@ import Database from 'better-sqlite3';
 
 import { statedPhoneNumbers } from '@ci/domains/memory';
 
+import type { StagedEntity } from '../../entities/StagedEntityEntity';
 import { toGraphEntity } from '../../push/entities';
-import { entityIdentityKey, hasContactIdentity, resolveEntityType } from '../../staging/identity';
+import { entityIdentityKey, resolveEntityType } from '../../staging/identity';
 import { AppleContactsFileImporter } from '../applecontacts';
 import type { EntityAttribute, ImportParams } from '../timeline';
 
@@ -105,6 +106,107 @@ describe('Apple Contacts datasource', () => {
     expect(carolEmails).toEqual(expect.arrayContaining(['carol@example.com', 'carol.chen@example.org']));
     expect(carolEmails).toHaveLength(2);
     expect(carol!.attributes?.some((a: EntityAttribute) => a.name === 'phone')).toBe(false);
+  });
+
+  /**
+   * The identity attributes are read once, for `identity_key`, and never
+   * persisted — so a card's numbers used to survive only as its one derived key.
+   * When the key rule changed (an office line `(212) 555-0147;229` had keyed as
+   * the truncation `5550147229`), no Apple Contacts row could be re-keyed: the
+   * typed line was gone. `Phones` / `Emails` keep it, as vcard.ts always did.
+   */
+  describe('typed handles kept in metadata', () => {
+    const OFFICE_EXT = '(212) 555-0147;229';
+
+    async function importContacts(
+      contacts: Array<{ pk: number; name: string; phones?: string[]; emails?: string[]; urls?: string[] }>,
+    ) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-typed-'));
+      const dbPath = path.join(dir, 'AddressBook-v22.abcddb');
+      const db = new Database(dbPath);
+      db.exec(`
+        CREATE TABLE ZABCDRECORD (Z_PK INTEGER PRIMARY KEY, ZFIRSTNAME TEXT, ZLASTNAME TEXT);
+        CREATE TABLE ZABCDPHONENUMBER (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZFULLNUMBER TEXT);
+        CREATE TABLE ZABCDEMAILADDRESS (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZADDRESS TEXT);
+        CREATE TABLE ZABCDURLADDRESS (Z_PK INTEGER PRIMARY KEY, ZOWNER INTEGER, ZURL TEXT);
+      `);
+      for (const c of contacts) {
+        const [first, ...rest] = c.name.split(' ');
+        db.prepare('INSERT INTO ZABCDRECORD (Z_PK, ZFIRSTNAME, ZLASTNAME) VALUES (?, ?, ?)').run(
+          c.pk,
+          first,
+          rest.join(' ') || null,
+        );
+        for (const [table, column, values] of [
+          ['ZABCDPHONENUMBER', 'ZFULLNUMBER', c.phones ?? []],
+          ['ZABCDEMAILADDRESS', 'ZADDRESS', c.emails ?? []],
+          ['ZABCDURLADDRESS', 'ZURL', c.urls ?? []],
+        ] as const) {
+          for (const value of values) {
+            db.prepare(`INSERT INTO ${table} (ZOWNER, ${column}) VALUES (?, ?)`).run(c.pk, value);
+          }
+        }
+      }
+
+      db.close();
+      const pipeline: EmittedGraph[] = [];
+      await new AppleContactsFileImporter().fileImport(
+        {},
+        { filename: 'AddressBook-v22.abcddb', fullPath: dbPath },
+        { pipeline, timeframe: {}, log: () => {} } as unknown as ImportParams,
+      );
+      fs.rmSync(dir, { recursive: true, force: true });
+
+      return pipeline.filter((p) => p.entity).map((p) => p.entity!);
+    }
+
+    it('keeps every number and address as typed, once each, the extension line included', async () => {
+      // Two phones × two emails × one URL: the LEFT JOINs return four rows,
+      // and every value used to be accumulated once per row.
+      const [dana] = await importContacts([
+        {
+          pk: 1,
+          name: 'Dana Quill',
+          phones: [OFFICE_EXT, '+1 (212) 555-0199'],
+          emails: ['dana.quill@example.com', 'dq@example.org'],
+          urls: ['https://example.invalid/dana'],
+        },
+      ]);
+
+      expect(dana.metadata?.Names).toEqual(['Dana Quill']);
+      expect(dana.metadata?.Phones).toEqual(expect.arrayContaining([OFFICE_EXT, '+1 (212) 555-0199']));
+      expect(dana.metadata?.Phones).toHaveLength(2);
+      expect(dana.metadata?.Emails).toEqual(
+        expect.arrayContaining(['dana.quill@example.com', 'dq@example.org']),
+      );
+      expect(dana.metadata?.Emails).toHaveLength(2);
+      expect(dana.metadata?.URLs).toEqual(['https://example.invalid/dana']);
+      expect(dana.accumulate).toEqual(expect.arrayContaining(['Names', 'Emails', 'Phones', 'URLs']));
+      expect(dana.attributes?.filter((a) => a.name === 'phone')).toHaveLength(2);
+      expect(dana.attributes?.filter((a) => a.name === 'email')).toHaveLength(2);
+    });
+
+    it('keys an office line on the next handle while the typed line survives into properties', async () => {
+      const [rae] = await importContacts([
+        { pk: 1, name: 'Rae Holt', phones: [OFFICE_EXT], emails: ['rae.holt@example.com'] },
+      ]);
+
+      // The fixed rule refuses the extension, so the email is the key — the
+      // old rule's `5550147229` sorted first and became it.
+      expect(entityIdentityKey(rae)).toBe('rae.holt@example.com');
+
+      const graph = toGraphEntity({
+        type: resolveEntityType(rae),
+        name: rae.name ?? null,
+        identityKey: entityIdentityKey(rae),
+        metadata: rae.metadata ?? {},
+        dataSource: 'apple_contacts',
+      } as unknown as StagedEntity);
+
+      expect(graph?.key).toBe('contact:rae.holt@example.com');
+      expect(graph?.properties).toMatchObject({ Phones: [OFFICE_EXT], email: 'rae.holt@example.com' });
+      expect(graph?.properties).not.toHaveProperty('phones');
+    });
   });
 
   /**
@@ -294,17 +396,16 @@ describe('Apple Contacts datasource', () => {
 });
 
 /**
- * A card's numbers as typed, beside the normalized keys staging indexes.
+ * A card's numbers survive staging with their country.
  *
- * Staging records every email and phone a contact states under `emails` /
- * `phones` (`withContactIdentifiers`), a phone as its last ten digits — and the
- * last ten have lost what the typed number states: `+44 20 7946 0142` keys as
- * `2079460142`. `Phones` keeps the typed form, which is what the phone
- * adjudicator and the merge union read for it, as they do the vCard parser's.
- * The staged tests go through the real writer (support/stagedEntities.ts), then
- * the push's `toGraphEntity`. `+44 20 7946 0xxx` is Ofcom's drama range.
+ * `Phones` keeps each number as typed (ACCUMULATED_KEYS in applecontacts.ts).
+ * Past staging everything else holds a phone as its last ten digits, which
+ * have lost the country: `+44 20 7946 0142` keys as `2079460142`. These go
+ * through the real `StagedWriter` (support/stagedEntities.ts), then the push's
+ * `toGraphEntity`, and ask the phone adjudicator's `statedPhoneNumbers` what it
+ * can read. `+44 20 7946 0xxx` is Ofcom's drama range.
  */
-describe("an Apple card's numbers as typed", () => {
+describe('Apple Contacts numbers through staging', () => {
   interface Card {
     pk: number;
     first?: string;
@@ -317,7 +418,7 @@ describe("an Apple card's numbers as typed", () => {
   let tmp: string;
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-phones-'));
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-staged-'));
   });
 
   afterEach(() => {
@@ -355,24 +456,13 @@ describe("an Apple card's numbers as typed", () => {
     db.close();
   }
 
-  async function importInto(pipeline: ImportParams['pipeline']): Promise<void> {
+  async function stage() {
+    const store = stagedEntityStore('apple_contacts');
     await new AppleContactsFileImporter().fileImport({}, { filename: path.basename(tmp), fullPath: tmp }, {
-      pipeline,
+      pipeline: store.writer,
       timeframe: {},
       log: () => {},
     } as unknown as ImportParams);
-  }
-
-  async function parse(): Promise<EmittedGraph[]> {
-    const pipeline: EmittedGraph[] = [];
-    await importInto(pipeline as unknown as ImportParams['pipeline']);
-
-    return pipeline;
-  }
-
-  async function stage() {
-    const store = stagedEntityStore('apple_contacts');
-    await importInto(store.writer);
     await store.writer.settled();
 
     return store;
@@ -384,56 +474,18 @@ describe("an Apple card's numbers as typed", () => {
   const sorted = (value: unknown): unknown =>
     Array.isArray(value) ? [...(value as string[])].sort() : value;
 
-  // Two numbers, two emails and a URL: the LEFT JOINs return four rows for this
-  // one Z_PK, each number twice.
-  const rosa: Card = {
-    pk: 1,
-    first: 'Rosa',
-    last: 'Delgado',
-    phones: ['(415) 555-0112', '+44 20 7946 0142'],
-    emails: ['rosa.delgado@example.com', 'rosa@example.org'],
-    urls: ['https://example.org/rosa'],
-  };
-
-  it('lists each number once, as typed, and declares Phones accumulating', async () => {
-    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [rosa]);
-
-    const [graph] = await parse();
-
-    expect(sorted(graph.entity?.metadata?.Phones)).toEqual(sorted(['(415) 555-0112', '+44 20 7946 0142']));
-    expect(graph.entity?.accumulate).toEqual(['Phones']);
-    // Typed emails have no reader: staging's normalized `emails` is what is indexed.
-    expect(graph.entity?.metadata).not.toHaveProperty('Emails');
-  });
-
-  it('keys and types the card exactly as before: the typed list is metadata, not attributes', async () => {
-    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [
-      rosa,
-      { pk: 2, first: 'Ines', last: 'Moreau', urls: ['https://example.com/ines'] },
-    ]);
-
-    const [card, handleless] = (await parse()).map((graph) => graph.entity!);
-
-    expect(card.attributes?.filter((a) => a.identity).map((a) => a.value)).toEqual(
-      expect.arrayContaining([
-        '(415) 555-0112',
-        '+44 20 7946 0142',
-        'rosa.delgado@example.com',
-        'rosa@example.org',
-      ]),
-    );
-    expect(entityIdentityKey(card)).toBe('2079460142');
-    expect(hasContactIdentity(card)).toBe(true);
-    expect(resolveEntityType(card)).toBe('contact');
-
-    expect(handleless.metadata).not.toHaveProperty('Phones');
-    expect(entityIdentityKey(handleless)).toBeNull();
-    expect(hasContactIdentity(handleless)).toBe(false);
-    expect(resolveEntityType(handleless)).toBe('contact');
-  });
-
   it('keeps the country a normalized key loses, through staging and the push', async () => {
-    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [rosa]);
+    // Two numbers, two emails and a URL: four JOIN rows for this one Z_PK.
+    makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [
+      {
+        pk: 1,
+        first: 'Rosa',
+        last: 'Delgado',
+        phones: ['(415) 555-0112', '+44 20 7946 0142'],
+        emails: ['rosa.delgado@example.com', 'rosa@example.org'],
+        urls: ['https://example.org/rosa'],
+      },
+    ]);
 
     const store = await stage();
     const [row] = store.staged();
@@ -449,8 +501,8 @@ describe("an Apple card's numbers as typed", () => {
   });
 
   it('grows one staged row when the same card sits in two account databases', async () => {
-    // Same person, same number (typed differently), the second copy listing a
-    // number the first does not.
+    // Same person, same number (typed differently), the second copy listing an
+    // address and a number the first does not.
     makeDb(path.join(tmp, 'AddressBook-v22.abcddb'), [
       {
         pk: 1,
@@ -474,8 +526,11 @@ describe("an Apple card's numbers as typed", () => {
 
     expect(store.writer.totals).toMatchObject({ entities: 1, entitiesGrown: 1 });
 
+    // The top-level database is read first, so its copy is the row and the
+    // account's copy is what grows it.
     const [row] = store.staged();
     expect(row.identityKey).toBe('4155550132');
+    expect(row.metadata.Emails).toEqual(['marisol@example.com', 'm.vega@example.org']);
     expect(sorted(row.metadata.Phones)).toEqual(
       sorted(['+1 (415) 555-0132', '415-555-0132', '+1 415 555 0187']),
     );

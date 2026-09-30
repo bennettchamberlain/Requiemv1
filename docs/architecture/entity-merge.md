@@ -24,7 +24,11 @@ Section **2.1(b)** is cited from `GraphIngestService.ts`. Do not renumber it.
 - `ci.entities.merged_into_entity_id` — tombstone pointer, indexed.
 - `ci.entity_merges` — audit log, one row per `(source_entity_id → target_entity_id)`, with
   per-table re-point counts and the source's pre-merge properties in
-  `details` (`{ counts, sourceProperties }`).
+  `details` (`{ counts, sourceProperties }`). **The Person and Location `counts` were constants
+  until the `countAffected` fix** (2026-09-29): each was `….length` of a bare
+  `UPDATE/DELETE … RETURNING`, which TypeORM resolves to the pair `[rows, rowCount]`, so every
+  Person count read 2 and `relationshipsDropped` 6, and every Location count 2, 4 or 6, whatever
+  moved. Rows written before the fix still carry those numbers — see §5.4.
 - `ci.entity_identifiers` grew from a bare lookup into a real contact-method table:
   `raw_value`, `label`, `is_primary`, `source`, `verified_at`.
 - `PersonDuplicateService` — candidate groups by shared normalized email / phone / name.
@@ -39,9 +43,11 @@ The hard parts are handled well and should not be re-litigated: the self person 
 *target* but never a *source*; relationship re-points are guarded against both the
 `no_self_references` CHECK and the `relationships_unique_directed_idx` partial unique index, with a
 `DISTINCT ON` so two duplicates carrying the same edge cannot collapse onto the index mid-UPDATE;
-the hypertable re-point lifts `timescaledb.max_tuples_decompressed_per_dml_transaction` for the
-transaction; tombstones are removed from *both* search stores (`ci_search.embeddings` and
-`ci_search.vectors`).
+tombstones are removed from *both* search stores (`ci_search.embeddings` and
+`ci_search.vectors`). The merge used to lift `timescaledb.max_tuples_decompressed_per_dml_transaction`
+for its `ci.communications` re-points; that table stopped being a hypertable in
+`20260807072321_dehypertable_communications`, and the dead lift was removed. `PlaceMergeService`
+keeps it, because `ci.position` is still a compressed hypertable.
 
 ### 1.2 Object identity — schema (`20260803223013`–`20260803223025`), services since #2176
 
@@ -84,6 +90,37 @@ as open:
     candidate generation rescores pending pairs without resurrecting rejected ones.
 
   `DuplicateDetectStage` currently covers `entity_type = 'Person'` only.
+
+  **A merge carries the claims with it** (2026-09-29). Until then `PersonMergeService` re-pointed
+  `ci.entity_identifiers` but not `ci.identifier_claims.entity_id`, so a source's claims — its
+  `enrich.person_self_claim` self claims included — stayed on the tombstone. The detector's holder
+  join admits live people only, so they stopped being evidence, and the source~third pair it had
+  already proposed went moot with the source. Nothing re-examined the survivor either: the ledger
+  re-runs a stage only on a version bump. A third copy sharing only the merged-away card's address
+  or number was therefore never proposed against the survivor. Two halves now close it:
+  - **In the merge transaction**, every claim that resolved to a source is re-pointed to the target.
+    Only `entity_id` moves — the observation (`subject_type`/`subject_id`, role, value), its
+    `method`/`confidence` and a human's `disposition` stay. It cannot collide, because
+    `identifier_claims_observation_uniq` does not include `entity_id`. A `rejected` claim moves
+    too and stays rejected: every reader excludes rejected claims on both sides, and
+    `enrich.person_link`'s own upsert would move it the same way. The count is
+    `details.counts.claims`. In the same transaction each source's `ci.entity_merge_blocks` row is
+    carried to the target as a new (target, X) row (`details.counts.blocksCarried`). Without it,
+    the re-examination below would re-find a pair a human had ruled out; one evidenced by a shared
+    address would then be folded by the deterministic drain.
+  - **On the ledger**, `IdentifierArrivalService` (called by the control tick) re-opens a live
+    survivor's `enrich.person_self_claim` and `clean.duplicate_detect` decisions recorded before a
+    `ci.entity_merges` row into it, with a `CLAIM_LEASE_SECONDS` margin. The merge does not write
+    the ledger itself: `PipelineStateService` is its only writer, and memory does not depend on the
+    pipeline domain. The merge's audit row, committed with the claims, is the signal. It counts only
+    if it records `counts.blocksCarried`. A merge from before this change moved no claims and
+    carried no blocks, so its survivor waits for the next version bump, as before. That bump is
+    where the old merges' uncarried blocks bite: a survivor whose self claims are re-derived from
+    its folded card can be proposed against someone a human ruled out for the source.
+
+  Proven against Postgres in `pipeline/__tests__/mergeSurvivorEvidence.integration.spec.ts`. Take
+  away either half and the third copy is never proposed; take away the block carry and the
+  ruled-out stranger is.
 
 ### 1.4 The promotion paths
 
@@ -336,8 +373,9 @@ Carried from the design draft, annotated with where they now stand.
 **P1 — The ledger is the merge; re-pointing is a projection.**
 A merge takes effect the instant its ledger row commits; rewriting the ~20 referrer columns can be
 an asynchronous, resumable sweep. *Today `PersonMergeService` does both synchronously in one
-transaction, which is fine at current corpus sizes and is the reason the hypertable re-point has to
-lift `max_tuples_decompressed_per_dml_transaction`. §5.3 is what P1 would buy.*
+transaction, which is fine at current corpus sizes; `PlaceMergeService` does the same, and its
+`ci.position` re-point is why it has to lift `max_tuples_decompressed_per_dml_transaction`. §5.3 is
+what P1 would buy.*
 
 **P2 — Canonicalisation should be a SQL-level primitive, not only a service method.**
 The HBPE sidecar reads `ci.*` directly as its training corpus. Resolution that lives only in
@@ -539,6 +577,9 @@ export const ENTITY_REFERRERS = [
   { table: 'ci.activities',     column: 'participant_entity_ids', kind: 'array' },
   { table: 'ci_search.embeddings', column: 'entity_id', kind: 'scalar', onCollision: 'delete_loser' },
   { table: 'ci_search.entity_tag', column: 'entity_id', kind: 'scalar', onCollision: 'delete_loser' },
+  // Re-pointed by PersonMergeService since 2026-09-29 (§1.3). Never collides: its unique key
+  // is the observation, and entity_id is not part of it.
+  { table: 'ci.identifier_claims', column: 'entity_id', kind: 'scalar' },
   // … position, documents, files, devices, sensors, agents, goals, document_chunks
 ] as const;
 ```
@@ -552,6 +593,14 @@ The list above is a starting point, not a survey — it must be derived, which i
 An earlier draft of it carried `ci.objects.object_entity_id`, which
 `20260811061402_convert_inventory_to_cti.sql` had already dropped as "a dead precursor of this link
 (no writer anywhere, all NULL)". A hand-maintained registry rots in both directions.
+
+`ci.identifier_claims.entity_id` is the latest case: an unregistered referrer for seven weeks, and a
+stranded claim fails silently, because the detector simply stops seeing it (§1.3). The guard's
+pattern needs widening too. `%entity_id` / `%entity_ids` misses the ordered pairs
+`ci.merge_candidates.entity_id_a/_b` and `ci.entity_merge_blocks.entity_id_a/_b`. Since 2026-09-29
+`PersonMergeService` carries a source's blocks to the target; otherwise the survivor's
+re-examination would re-propose, as (target, X), a (source, X) pair a human rejected. It leaves the
+source's pending candidates moot, for that re-examination to re-derive against the survivor.
 
 **The sweep**, driven off the ledger, resumable, idempotent (re-running finds zero rows):
 
@@ -567,9 +616,14 @@ An earlier draft of it carried `ci.objects.object_entity_id`, which
 - **Unique-constrained** (`ci_search.embeddings` is `UNIQUE (entity_type, entity_id)`;
   `entity_tag` is `UNIQUE (entity_type, entity_id, tag_id)`): a plain UPDATE throws on collision.
   Delete the loser's row, keep the survivor's, then enqueue re-embed.
-- **Hypertable** (`ci.communications`): window by `time` in `DEFAULT_WINDOW_DAYS` slices exactly as
-  `CommunicationLinkBackfillService` does, so Postgres can exclude chunks. Never an unbounded scan —
-  that is the all-chunk Append that segfaulted TSDB 2.28.
+- **Hypertable** (`ci.position`, the one referrer still a compressed hypertable;
+  `ci.communications` stopped being one in `20260807072321_dehypertable_communications`): window by
+  `time` in `DEFAULT_WINDOW_DAYS` slices, the way `CommunicationLinkBackfillService` windowed
+  communications, so Postgres can exclude chunks. Never an unbounded scan — that is the all-chunk
+  Append that segfaulted TSDB 2.28. A counting CTE (`WITH x AS (UPDATE … RETURNING 1) SELECT
+  count(*) …`) is safe here: it decompresses and counts rows in compressed and partially compressed
+  chunks exactly as a bare UPDATE does, and honours the decompression cap
+  (`PlaceMergeService.integration.spec.ts`; checked on TimescaleDB 2.30.1).
 
 Splitting the sweep out of the merge transaction is only safe once reads resolve through a
 canonical primitive (P2): a half-swept merge is then *correct*, just not yet compact.
@@ -585,6 +639,13 @@ things are missing before a replay is exact:
   the target approximately — and say which in the API.
 - There is no `reverted_at` / `reverted_reason` column, so a reverted merge is indistinguishable
   from a live one. Add them, or unmerge cannot be idempotent.
+
+**Do not trust `details.counts` on rows written before the `countAffected` fix** (2026-09-29,
+§1.1). Those rows hold the constants TypeORM's `[rows, rowCount]` pair produced — for a Person
+merge every count 2 and `relationshipsDropped` 6 — and no field marks a row as pre- or post-fix. A
+replay must not size or verify anything from them. If it needs to tell the two apart, stamp a
+marker on new rows first; the constant signature is only a heuristic. Even an exact count says how
+many rows moved, not which ones, so the reverse sweep has to find its referrers either way.
 
 The replay itself:
 

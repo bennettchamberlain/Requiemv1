@@ -66,6 +66,10 @@ export class UpdatePersonInput {
    * relabels, and DROPS what is missing. Omit to leave contact methods
    * untouched; send an empty list to clear them.
    *
+   * A dropped value also leaves the person's own `email`/`emails`/`phone`/
+   * `phones` properties, which the contact list is shown from too. An import's
+   * typed record of a contact card (`Emails`, `Phones`, ...) is never edited.
+   *
    * A value another person already holds fails the whole update (CONFLICT)
    * before anything is written, the other fields included: the fix is a merge,
    * not a re-point.

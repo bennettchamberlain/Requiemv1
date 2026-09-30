@@ -77,16 +77,25 @@ interface PragmaColumnRow {
 }
 
 /**
- * `Phones`, the card's numbers as typed, accumulates across sightings — see
- * `Entity.accumulate`. The same person routinely sits in two of a profile's
- * databases (iCloud and an Exchange account both holding a colleague), and the
- * second copy stages onto the first one's row whenever the two key on the same
- * handle. Staging grows the normalized `phones` that way on its own
- * (`withContactIdentifiers`); without this the typed list would keep only the
- * first copy's numbers, and a number the second copy adds would have a key but
- * no stated form.
+ * The accumulating entity-metadata keys, as vcard.ts declares its own (see
+ * Entity.accumulate): a card that resolves to a row an earlier sighting created
+ * GROWS it instead of vanishing into it.
+ *
+ * `Phones` and `Emails` are the ones that matter most. They are every number
+ * and address on the card AS TYPED, and they are the only durable copy: the
+ * identity attributes are read once for `identity_key` and never persisted, and
+ * the staged run they describe is retention-swept. A row that keeps nothing but
+ * its derived key cannot be re-keyed when the key rule changes — the phone
+ * extension fix could prove a truncated `(212) 555-0147;229` key for vCard rows
+ * and for no Apple Contacts row, because vcard.ts kept `Phones` and this parser
+ * did not (migration 20260930020117).
  */
-const ACCUMULATED_KEYS = ['Phones'];
+const ACCUMULATED_KEYS = ['Names', 'Emails', 'Phones', 'URLs'];
+
+/** Unique, order-preserving, empties removed. */
+function uniq(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
 
 /** One contact accumulated across its joined phone/email/url rows. */
 interface ContactAccumulator {
@@ -271,16 +280,22 @@ export class AppleContactsFileImporter implements FileImporter {
       ?.filter((p): p is string => !!p)
       .join(' ')
       .trim();
+    // The query LEFT JOINs three tables, so a contact with two phones and two
+    // emails comes back as four rows and each value was accumulated once per row
+    // it rode in on. A card's numbers are a set.
+    const phones = uniq(c.phones);
+    const emails = uniq(c.emails);
+    const urls = uniq(c.urls);
     const attributes: EntityAttribute[] = [];
-    for (const p of c.phones) {
+    for (const p of phones) {
       attributes.push({ name: 'phone', value: p, identity: true });
     }
 
-    for (const e of c.emails) {
+    for (const e of emails) {
       attributes.push({ name: 'email', value: e, identity: true });
     }
 
-    for (const u of c.urls) {
+    for (const u of urls) {
       attributes.push({ name: 'url', value: u });
     }
 
@@ -309,36 +324,27 @@ export class AppleContactsFileImporter implements FileImporter {
         ? path.basename(path.dirname(dbPath))
         : undefined;
 
-    // The card's numbers as typed, once each. Staging indexes a contact under
-    // normalized last-ten keys (`withContactIdentifiers`, staging/identity.ts),
-    // and a last-ten has lost what the typed form states: `+44 20 7946 0142`
-    // keys as `2079460142`, a Maine number to an owner in North America. The
-    // phone adjudicator (`PHONE_FACT_PROPERTY_KEYS`, memory/utils/phoneIdentity.ts)
-    // and the merge union read `Phones` for it, as they do the vCard parser's.
-    // De-duplicated because the JOINs repeat each number once per row of the
-    // other tables.
-    const phones = uniqueValues(c.phones);
-
     contacts.push({
       name,
       // See vcard.ts: an Address Book card is a contact regardless of which
       // optional fields it happens to fill.
       type: 'contact',
       attributes,
+      // Every handle as typed, not only the one `identity_key` keeps — see
+      // ACCUMULATED_KEYS. `push/entities.ts` spreads this bag into
+      // `ci.entities.properties`.
       metadata: {
         Source: 'AppleContacts',
         DB: path.basename(dbPath),
         ...(accountId ? { AccountID: accountId } : {}),
+        ...(name ? { Names: [name] } : {}),
+        ...(emails.length ? { Emails: emails } : {}),
         ...(phones.length ? { Phones: phones } : {}),
+        ...(urls.length ? { URLs: urls } : {}),
       },
       accumulate: ACCUMULATED_KEYS,
     });
   }
-}
-
-/** Trimmed, de-duplicated in first-seen order, empties removed. */
-function uniqueValues(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 registerDataSource({

@@ -46,8 +46,15 @@ const ENTITY_TYPE = 'Person';
  * gives (`import/staging/identity.ts` `contactIdentifiers`), and migration
  * 20260930022046 wrote them into existing rows' `emails` / `phones`, so every
  * Person is re-read.
+ *
+ * 3 — `normalizePhone` refuses a value carrying an extension. Generation 2
+ * already shipped for the tracking change above, so an appliance that finished
+ * it would leave every self claim on a truncated key (`5550147229` from
+ * `(212) 555-0147;229`) in place. Migration
+ * `20260930020117_refuse_phone_extension_join_keys` deletes those, and this
+ * bump re-derives the rest from the repaired `properties`.
  */
-export const PERSON_SELF_CLAIM_GENERATION = 2;
+export const PERSON_SELF_CLAIM_GENERATION = 3;
 
 export function personSelfClaimStageVersion(versions: Record<string, StageVersion> = STAGE_VERSIONS): number {
   const declared = versions[ENRICH_PERSON_SELF_CLAIM_STAGE_ID];
