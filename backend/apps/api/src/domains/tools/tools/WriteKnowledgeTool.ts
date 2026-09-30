@@ -724,6 +724,41 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               relationshipType = stored;
             }
 
+            // A retype moves the edge to another (from, to, type) coordinate,
+            // and relationships_unique_directed_idx allows one active edge on
+            // each: when another is already there the write fails after this
+            // tool has answered, and the job dead-letters. The two are not
+            // merged here — that would retire this edge, which is
+            // memory.forget's to do, behind its own confirmation — so say
+            // which edge is in the way and leave the choice to the caller.
+            // The coordinate is matched as relationship.create matches it, so
+            // a bidirectional edge the other way round counts when the
+            // retyped edge is bidirectional too.
+            const nextType = keepStoredSpelling(existingRel.relationship_type, relationshipType);
+            if (nextType !== existingRel.relationship_type) {
+              const occupant = await this.graphQuery.findActiveRelationship(ownerId, {
+                fromEntityId: existingRel.from_entity_id,
+                toEntityId: existingRel.to_entity_id,
+                relationshipType: nextType,
+                isBidirectional: operation.isBidirectional ?? existingRel.is_bidirectional,
+              });
+
+              if (occupant) {
+                results.push({
+                  kind: operation.kind,
+                  status: 'failed',
+                  message:
+                    `Relationship ${existingRel.relationship_id} cannot become ${nextType}: relationship ` +
+                    `${occupant.relationship_id} already is one between the same entities. Update ` +
+                    `${occupant.relationship_id} instead, and forget ${existingRel.relationship_id} ` +
+                    `(memory.forget) if the ${existingRel.relationship_type} relationship no longer holds.`,
+                  relationshipId: operation.relationshipId,
+                });
+                failures += 1;
+                break;
+              }
+            }
+
             if (dryRun) {
               results.push({
                 kind: operation.kind,
@@ -741,7 +776,7 @@ export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowl
               relationshipId: operation.relationshipId,
               fromEntityId: existingRel.from_entity_id,
               toEntityId: existingRel.to_entity_id,
-              relationshipType: keepStoredSpelling(existingRel.relationship_type, relationshipType),
+              relationshipType: nextType,
               properties: operation.properties,
               mergeProperties: operation.mergeProperties !== false,
               removeProperties: operation.removeProperties,

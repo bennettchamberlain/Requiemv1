@@ -823,6 +823,9 @@ export class GraphUtilityService {
    * `mergeProperties` / `removeProperties` behave as in {@link createOrUpdateNode}.
    * An edge found by its coordinate also keeps its stored endpoints and type
    * spelling; only a row named by id is moved or retyped by a write that says so.
+   * That write fails, before anything is written, when another active edge
+   * already holds the coordinate it is moving the row to — see
+   * {@link assertCoordinateFree}.
    */
   async createOrUpdateRelationship(
     ownerUserId: string,
@@ -877,9 +880,17 @@ export class GraphUtilityService {
     }
 
     if (byId) {
-      relationship.from_entity_id = payload.fromEntityId ?? relationship.from_entity_id;
-      relationship.to_entity_id = payload.toEntityId ?? relationship.to_entity_id;
-      relationship.relationship_type = payload.relationshipType ?? relationship.relationship_type;
+      const target = {
+        fromEntityId: payload.fromEntityId ?? byId.from_entity_id,
+        toEntityId: payload.toEntityId ?? byId.to_entity_id,
+        relationshipType: payload.relationshipType ?? byId.relationship_type,
+      };
+
+      await this.assertCoordinateFree(ownerUserId, byId, target);
+
+      relationship.from_entity_id = target.fromEntityId;
+      relationship.to_entity_id = target.toEntityId;
+      relationship.relationship_type = target.relationshipType;
     }
 
     if (payload.properties || payload.removeProperties?.length) {
@@ -924,6 +935,63 @@ export class GraphUtilityService {
         is_active: true,
       },
     });
+  }
+
+  /**
+   * Throw when a write by id would put `row` on a coordinate another active
+   * edge already holds. Moving the row, retyping it, or bringing a forgotten
+   * one back puts it on a `(from, to, type)` coordinate it does not hold yet,
+   * and `relationships_unique_directed_idx` allows one active edge there: the
+   * UPDATE used to violate it, GraphEventListener threw, and the job
+   * dead-lettered — after `memory.remember` had reported the relationship
+   * updated. Checking first names the edge in the way and fails no statement,
+   * so a surrounding transaction survives it. A writer that lands on the
+   * coordinate between this read and the save still meets the index.
+   *
+   * The two edges are not merged instead. That would retire the row the write
+   * names — what `memory.forget` does, behind its own confirmation — and pick
+   * between two edges' properties with nobody to ask. WriteKnowledgeTool
+   * refuses a retype onto a held coordinate before queueing it; this is for an
+   * edge that lands there after the tool looked, and for any other writer.
+   *
+   * Every owner's edges count: the index is not scoped to an owner.
+   */
+  private async assertCoordinateFree(
+    ownerUserId: string,
+    row: RelationshipEntity,
+    target: { fromEntityId: string; toEntityId: string; relationshipType: string },
+  ): Promise<void> {
+    // An active row already holds its own coordinate, so no other row can.
+    const staysPut =
+      row.is_active &&
+      row.from_entity_id === target.fromEntityId &&
+      row.to_entity_id === target.toEntityId &&
+      row.relationship_type === target.relationshipType;
+
+    if (staysPut) {
+      return;
+    }
+
+    const holder = await this.relationshipRepo.findOne({
+      where: {
+        from_entity_id: target.fromEntityId,
+        to_entity_id: target.toEntityId,
+        relationship_type: target.relationshipType,
+        is_active: true,
+      },
+    });
+
+    if (!holder) {
+      return;
+    }
+
+    throw new Error(
+      `Relationship ${row.relationship_id} cannot become ${target.fromEntityId} ` +
+        `-[${target.relationshipType}]-> ${target.toEntityId}: ` +
+        (holder.owner_user_id === ownerUserId
+          ? `relationship ${holder.relationship_id} is already the active edge there`
+          : `the active edge there does not belong to owner ${ownerUserId}`),
+    );
   }
 
   /**

@@ -837,3 +837,150 @@ describe('memory.remember — relationship.update', () => {
     expect(graph.edges.get(EDGE)?.properties).not.toHaveProperty('source');
   });
 });
+
+describe('memory.remember — relationship.update retyping onto a type the two entities already have', () => {
+  // A retype moves the edge to another (from, to, type) coordinate. When an
+  // active edge already held it, the queued write died on
+  // relationships_unique_directed_idx and the job dead-lettered — after the tool
+  // had answered "Updated relationship". This table enforces no index; the
+  // Postgres half is in WriteKnowledgeTool.importKey.integration.test.ts.
+  const FRIENDS = '0199a1b2-0000-7000-8000-0000000000e2';
+  const endpoints = () => [importedPerson(), entityRow({ entity_id: OTHER, entity_type: 'Person', name: 'Sam' })];
+  const friendsEdge = (overrides: Partial<RelationshipEntity> = {}) =>
+    knowsEdge({
+      relationship_id: FRIENDS,
+      relationship_type: 'FRIENDS_WITH',
+      properties: { met: 'school' },
+      strength: 0.8,
+      ...overrides,
+    });
+
+  it('refuses the retype, names the edge already there and what to do instead, and queues nothing', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge(), friendsEdge()] });
+
+    const result = await graph.tool.execute(CONTEXT, {
+      operations: [
+        {
+          kind: 'relationship.update',
+          relationshipId: EDGE,
+          relationshipType: 'friends with',
+          properties: { context: 'dentist' },
+        },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ updatedRelationships: 0, failures: 1 });
+    expect(result.data?.results[0]).toEqual({
+      kind: 'relationship.update',
+      status: 'failed',
+      message:
+        `Relationship ${EDGE} cannot become FRIENDS_WITH: relationship ${FRIENDS} already is one between the ` +
+        `same entities. Update ${FRIENDS} instead, and forget ${EDGE} (memory.forget) if the KNOWS ` +
+        'relationship no longer holds.',
+      relationshipId: EDGE,
+    });
+    expect(graph.queue).toHaveLength(0);
+    expect(graph.edges.get(EDGE)).toEqual(knowsEdge());
+    expect(graph.edges.get(FRIENDS)).toEqual(friendsEdge());
+  });
+
+  it('dry run reports the refusal, not an update', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge(), friendsEdge()] });
+
+    const result = await graph.tool.execute(CONTEXT, {
+      dryRun: true,
+      operations: [{ kind: 'relationship.update', relationshipId: EDGE, relationshipType: 'FRIENDS_WITH' }],
+    });
+
+    expect(result.data).toMatchObject({ dryRun: true, updatedRelationships: 0, failures: 1 });
+    expect(result.data?.results[0].message).toContain(`relationship ${FRIENDS} already is one`);
+  });
+
+  it('counts a bidirectional edge stored the other way round only when the retyped edge is bidirectional too', async () => {
+    // The same match relationship.create makes when it looks for the edge a
+    // restatement lands on.
+    const reversed = friendsEdge({ from_entity_id: OTHER, to_entity_id: PERSON, is_bidirectional: true });
+
+    const both = makePipeline({ nodes: endpoints(), edges: [knowsEdge({ is_bidirectional: true }), reversed] });
+    const refused = await both.run({
+      operations: [{ kind: 'relationship.update', relationshipId: EDGE, relationshipType: 'FRIENDS_WITH' }],
+    });
+    expect(refused.data).toMatchObject({ updatedRelationships: 0, failures: 1 });
+    expect(both.edges.get(EDGE)?.relationship_type).toBe('KNOWS');
+
+    // One-way PERSON -> OTHER is not the OTHER <-> PERSON stored, and it is on a
+    // coordinate of its own, so the index has nothing to refuse either.
+    const oneWay = makePipeline({ nodes: endpoints(), edges: [knowsEdge(), reversed] });
+    const retyped = await oneWay.run({
+      operations: [{ kind: 'relationship.update', relationshipId: EDGE, relationshipType: 'FRIENDS_WITH' }],
+    });
+    expect(retyped.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
+    expect(oneWay.edges.get(EDGE)).toMatchObject({ relationship_type: 'FRIENDS_WITH', is_bidirectional: false });
+    expect(oneWay.edges.get(FRIENDS)).toEqual(reversed);
+  });
+
+  it('retypes onto a type only a forgotten edge has, and leaves that edge forgotten', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge(), friendsEdge({ is_active: false })] });
+
+    const result = await graph.run({
+      operations: [
+        {
+          kind: 'relationship.update',
+          relationshipId: EDGE,
+          relationshipType: 'FRIENDS_WITH',
+          properties: { context: 'dentist' },
+        },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
+    expect(graph.edges.get(EDGE)).toMatchObject({
+      relationship_type: 'FRIENDS_WITH',
+      strength: 0.4,
+      properties: { since: '2019', source: 'google-contacts', context: 'dentist' },
+    });
+    expect(graph.edges.get(FRIENDS)).toEqual(friendsEdge({ is_active: false }));
+  });
+
+  it('only looks for an edge in the way when the type really changes', async () => {
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge(), friendsEdge()] });
+
+    const result = await graph.run({
+      operations: [
+        { kind: 'relationship.update', relationshipId: EDGE, relationshipType: 'knows', strength: 0.5 },
+        { kind: 'relationship.update', relationshipId: EDGE, properties: { context: 'dentist' } },
+      ],
+    });
+
+    expect(result.data).toMatchObject({ updatedRelationships: 2, failures: 0 });
+    expect(graph.graphQuery.findActiveRelationship).not.toHaveBeenCalled();
+    expect(graph.edges.get(EDGE)).toMatchObject({ relationship_type: 'KNOWS', strength: 0.5 });
+  });
+
+  it('an edge that takes the type after the tool looked stops the write with a legible error, not the index', async () => {
+    // The tool's check and the write are on either side of the queue. An edge
+    // landing in between is caught by the write's own check, which names it
+    // and saves nothing.
+    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge()] });
+
+    const result = await graph.tool.execute(CONTEXT, {
+      operations: [
+        {
+          kind: 'relationship.update',
+          relationshipId: EDGE,
+          relationshipType: 'FRIENDS_WITH',
+          properties: { context: 'dentist' },
+        },
+      ],
+    });
+    expect(result.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
+
+    graph.edges.seed(friendsEdge());
+    await expect(graph.flush()).rejects.toThrow(
+      `Relationship ${EDGE} cannot become ${PERSON} -[FRIENDS_WITH]-> ${OTHER}: ` +
+        `relationship ${FRIENDS} is already the active edge there`,
+    );
+    expect(graph.edges.get(EDGE)).toEqual(knowsEdge());
+    expect(graph.edges.get(FRIENDS)).toEqual(friendsEdge());
+  });
+});

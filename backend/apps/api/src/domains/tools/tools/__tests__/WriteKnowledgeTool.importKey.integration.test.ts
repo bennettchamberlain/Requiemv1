@@ -506,4 +506,138 @@ describeWithDb(`WriteKnowledgeTool on an imported entity (${availability.target}
       ]);
     });
   });
+
+  describe('relationship.update retyping an edge onto a type the two entities already have', () => {
+    // Retyping the imported KNOWS to FRIENDS_WITH moves it onto the coordinate the
+    // imported FRIENDS_WITH holds, and relationships_unique_directed_idx allows
+    // one active edge there. The tool used to queue that write and report
+    // "Updated relationship"; flush() — the listener's write — then threw
+    // `duplicate key value violates unique constraint
+    // "relationships_unique_directed_idx"`, which in production dead-letters.
+    const SAM = { ...ALEX, key: 'google-contacts:contact:sam@example.com', name: 'Sam Lee', properties: {} };
+
+    /** Import Alex and Sam with an edge of each type from Alex to Sam. */
+    const importPair = async (types: string[]) => {
+      const result = await ingest.ingest(context, {
+        entities: [ALEX, SAM],
+        relationships: types.map((type) => ({
+          fromKey: ALEX.key,
+          toKey: SAM.key,
+          type,
+          properties: { source: 'google-contacts' },
+        })),
+      });
+      expect(result.errors).toEqual([]);
+      const [alexId, samId] = [ALEX.key, SAM.key].map((key) => result.entities.find((e) => e.key === key)!.entityId);
+
+      return { alexId, samId };
+    };
+
+    /** Alex's active edges to Sam by type — sorted here: the database's collation is not the test's. */
+    const edgesByType = async (alexId: string, samId: string) => {
+      const rows: Array<{ relationship_id: string; relationship_type: string; strength: number; properties: object }> =
+        await runner.query(
+          `SELECT relationship_id, relationship_type, strength, properties
+             FROM ci.relationships
+            WHERE from_entity_id = $1 AND to_entity_id = $2 AND is_active`,
+          [alexId, samId],
+        );
+
+      return Object.fromEntries(rows.map((edge) => [edge.relationship_type, edge]));
+    };
+
+    it('refuses the retype, names the FRIENDS_WITH edge already there, and writes nothing', async () => {
+      const { alexId, samId } = await importPair(['KNOWS', 'FRIENDS_WITH']);
+      const before = await edgesByType(alexId, samId);
+
+      const written = await tool.execute(context, {
+        operations: [
+          {
+            kind: 'relationship.update',
+            relationshipId: before.KNOWS.relationship_id,
+            relationshipType: 'friends with',
+            properties: { context: 'dentist' },
+          },
+        ],
+      });
+      await flush();
+
+      expect(written.data).toMatchObject({ updatedRelationships: 0, failures: 1 });
+      expect(written.data?.results[0].message).toContain(
+        `relationship ${before.FRIENDS_WITH.relationship_id} already is one between the same entities`,
+      );
+      expect(await edgesByType(alexId, samId)).toEqual(before);
+    });
+
+    it('the write the tool used to queue for that call now stops when it lands — named, not on the index', async () => {
+      // Field for field the payload relationship.update sent before the check.
+      const { alexId, samId } = await importPair(['KNOWS', 'FRIENDS_WITH']);
+      const before = await edgesByType(alexId, samId);
+
+      await graphEvents.upsertRelationship(owner, {
+        relationshipId: before.KNOWS.relationship_id,
+        fromEntityId: alexId,
+        toEntityId: samId,
+        relationshipType: 'FRIENDS_WITH',
+        properties: { context: 'dentist' },
+        mergeProperties: true,
+      });
+
+      await expect(flush()).rejects.toThrow(
+        `Relationship ${before.KNOWS.relationship_id} cannot become ${alexId} -[FRIENDS_WITH]-> ${samId}: ` +
+          `relationship ${before.FRIENDS_WITH.relationship_id} is already the active edge there`,
+      );
+      // Reading at all proves the transaction survived: the index would have aborted it.
+      expect(await edgesByType(alexId, samId)).toEqual(before);
+    });
+
+    it('an import that lands FRIENDS_WITH while the retype is still queued stops the write the same way', async () => {
+      const { alexId, samId } = await importPair(['KNOWS']);
+      const { KNOWS: knows } = await edgesByType(alexId, samId);
+
+      const written = await tool.execute(context, {
+        operations: [{ kind: 'relationship.update', relationshipId: knows.relationship_id, relationshipType: 'FRIENDS_WITH' }],
+      });
+      // Nothing held FRIENDS_WITH when the tool looked.
+      expect(written.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
+
+      await importPair(['KNOWS', 'FRIENDS_WITH']);
+      const before = await edgesByType(alexId, samId);
+
+      await expect(flush()).rejects.toThrow(
+        `relationship ${before.FRIENDS_WITH.relationship_id} is already the active edge there`,
+      );
+      expect(await edgesByType(alexId, samId)).toEqual(before);
+    });
+
+    it('retypes the edge when nothing holds the new type, keeping its strength and properties', async () => {
+      const { alexId, samId } = await importPair(['KNOWS']);
+      const { KNOWS: knows } = await edgesByType(alexId, samId);
+      await runner.query(`UPDATE ci.relationships SET strength = 0.4 WHERE relationship_id = $1`, [
+        knows.relationship_id,
+      ]);
+
+      const written = await tool.execute(context, {
+        operations: [
+          {
+            kind: 'relationship.update',
+            relationshipId: knows.relationship_id,
+            relationshipType: 'friends_with',
+            properties: { context: 'dentist' },
+          },
+        ],
+      });
+      await flush();
+
+      expect(written.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
+      expect(await edgesByType(alexId, samId)).toEqual({
+        FRIENDS_WITH: {
+          relationship_id: knows.relationship_id,
+          relationship_type: 'FRIENDS_WITH',
+          strength: 0.4,
+          properties: { source: 'google-contacts', context: 'dentist' },
+        },
+      });
+    });
+  });
 });

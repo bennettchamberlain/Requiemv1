@@ -311,6 +311,110 @@ describe('GraphUtilityService.createOrUpdateRelationship — an edge already on 
   });
 });
 
+describe('GraphUtilityService.createOrUpdateRelationship — a write by id onto a coordinate another edge holds', () => {
+  // A write by id moved, retyped or reactivated its row whatever was already on
+  // the (from, to, type) it named. relationships_unique_directed_idx allows one
+  // active edge there, so the UPDATE died on it — against Postgres, in
+  // GraphUtilityService.createOrUpdateRelationship.integration.test.ts. This
+  // table enforces no index: it shows the write stops before it saves anything.
+  const holder = (overrides: Partial<RelationshipEntity> = {}) =>
+    storedEdge({
+      relationship_id: 'edge-2',
+      relationship_type: 'FRIENDS_WITH',
+      properties: { met: 'school' },
+      strength: 0.8,
+      ...overrides,
+    });
+
+  it.each([
+    [
+      'retypes it',
+      storedEdge(),
+      holder(),
+      { fromEntityId: 'from-1', toEntityId: 'to-1', relationshipType: 'FRIENDS_WITH' },
+    ],
+    [
+      'moves it to other endpoints',
+      storedEdge(),
+      holder({ relationship_type: 'KNOWS', to_entity_id: 'to-2' }),
+      { fromEntityId: 'from-1', toEntityId: 'to-2', relationshipType: 'KNOWS' },
+    ],
+    [
+      'brings a forgotten row back',
+      storedEdge({ is_active: false }),
+      holder({ relationship_type: 'KNOWS' }),
+      { fromEntityId: 'from-1', toEntityId: 'to-1', relationshipType: 'KNOWS' },
+    ],
+  ])(
+    'refuses a write that %s, names the edge in the way, and saves nothing',
+    async (_label, before, held, target) => {
+      const { service, edges } = setup({ edges: [before, held] });
+
+      await expect(
+        service.createOrUpdateRelationship(OWNER, {
+          relationshipId: EDGE,
+          ...target,
+          properties: { context: 'dentist' },
+        }),
+      ).rejects.toThrow(
+        `Relationship ${EDGE} cannot become ${target.fromEntityId} -[${target.relationshipType}]-> ` +
+          `${target.toEntityId}: relationship edge-2 is already the active edge there`,
+      );
+
+      expect(edges.get(EDGE)).toEqual(before);
+      expect(edges.get('edge-2')).toEqual(held);
+    },
+  );
+
+  it("refuses the coordinate when another owner's edge holds it, since the index is not scoped to an owner", async () => {
+    const held = holder({ owner_user_id: 'owner-2' });
+    const { service, edges } = setup({ edges: [storedEdge(), held] });
+
+    await expect(
+      service.createOrUpdateRelationship(OWNER, {
+        relationshipId: EDGE,
+        fromEntityId: 'from-1',
+        toEntityId: 'to-1',
+        relationshipType: 'FRIENDS_WITH',
+      }),
+    ).rejects.toThrow(`the active edge there does not belong to owner ${OWNER}`);
+
+    expect(edges.get(EDGE)).toEqual(storedEdge());
+    expect(edges.get('edge-2')).toEqual(held);
+  });
+
+  it('retypes, moves and reactivates a row whose coordinate only a forgotten edge holds', async () => {
+    const forgotten = holder({ is_active: false });
+    const retype = setup({ edges: [storedEdge(), forgotten] });
+    await retype.service.createOrUpdateRelationship(OWNER, {
+      relationshipId: EDGE,
+      fromEntityId: 'from-1',
+      toEntityId: 'to-1',
+      relationshipType: 'FRIENDS_WITH',
+    });
+    expect(retype.edges.get(EDGE)).toMatchObject({ relationship_type: 'FRIENDS_WITH', is_active: true });
+    expect(retype.edges.get('edge-2')).toEqual(forgotten);
+
+    const move = setup({ edges: [storedEdge()] });
+    await move.service.createOrUpdateRelationship(OWNER, {
+      relationshipId: EDGE,
+      fromEntityId: 'from-1',
+      toEntityId: 'to-2',
+      relationshipType: 'KNOWS',
+    });
+    expect(move.edges.get(EDGE)).toMatchObject({ to_entity_id: 'to-2', relationship_type: 'KNOWS' });
+
+    const revive = setup({ edges: [storedEdge({ is_active: false })] });
+    await revive.service.createOrUpdateRelationship(OWNER, {
+      relationshipId: EDGE,
+      fromEntityId: 'from-1',
+      toEntityId: 'to-1',
+      relationshipType: 'KNOWS',
+    });
+    expect(revive.edges.get(EDGE)?.is_active).toBe(true);
+  });
+});
+
 describe('GraphUtilityService.findActiveRelationship', () => {
   const coordinate = { fromEntityId: 'from-1', toEntityId: 'to-1', relationshipType: 'KNOWS' };
   const reversed = { fromEntityId: 'to-1', toEntityId: 'from-1', relationshipType: 'KNOWS' };
