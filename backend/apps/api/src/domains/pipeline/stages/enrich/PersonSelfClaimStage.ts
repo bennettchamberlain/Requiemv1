@@ -250,9 +250,12 @@ export class PersonSelfClaimStage implements Stage {
    * over a number one of the two people no longer had. The claim set is a
    * copy of the record, so it must shrink with it.
    *
-   * Only this stage's rows (`subject_type = 'person'`, `role = 'self'`), only
-   * for the subjects just read (live Persons of this slice), and never a claim
-   * a human disposed: a confirmation or a rejection is a decision about the
+   * Only this stage's rows — `stage` is its id, which it has written on every
+   * row since it first ran; `subject_type = 'person'`, `role = 'self'` alone is
+   * also the shape the claims table reserves for a contact importer's own
+   * assertions, and those are not this stage's to take back. Only for the
+   * subjects just read (live Persons of this slice), and never a claim a human
+   * disposed: a confirmation or a rejection is a decision about the
    * identifier, and outlives the record that first stated it.
    */
   private async retractStale(userId: string, subjectIds: string[], kept: ClaimRow[]): Promise<void> {
@@ -266,6 +269,7 @@ export class PersonSelfClaimStage implements Stage {
           AND ic.subject_type = $2
           AND ic.role = $3
           AND ic.subject_id = ANY($4::uuid[])
+          AND ic.stage = $8
           AND ic.disposition IS NULL
           AND NOT EXISTS (
                 SELECT 1
@@ -281,6 +285,7 @@ export class PersonSelfClaimStage implements Stage {
         kept.map((claim) => claim.entityId),
         kept.map((claim) => claim.kind),
         kept.map((claim) => claim.valueNormalized),
+        this.id,
       ],
     );
   }

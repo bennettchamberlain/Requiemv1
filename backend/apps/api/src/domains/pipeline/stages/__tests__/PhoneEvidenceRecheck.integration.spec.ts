@@ -491,6 +491,21 @@ describeWithDb(`phone evidence on the review queue holds, or leaves it (${availa
 
       expect(await selfClaims(elyStub)).toEqual(['2025550111', '2025550199']);
     });
+
+    it('never retracts a claim another producer wrote in the same person/self shape', async () => {
+      // The claims table reserves `person` / `self` for a contact importer's
+      // own assertions too; only this stage's rows are this stage's to take back.
+      await q(
+        `INSERT INTO ci.identifier_claims
+           (owner_user_id, subject_type, subject_id, role, kind, value_normalized, entity_id, confidence, stage)
+         VALUES ($1, 'person', $2, 'self', 'phone', '2025550112', $2, 1.0, 'import:contacts')`,
+        [ctx.userId, elyStub],
+      );
+
+      await new PersonSelfClaimStage(transactional(), logger()).run(ctx, [elyStub]);
+
+      expect(await selfClaims(elyStub)).toEqual(['2025550111', '2025550112', '2025550199']);
+    });
   });
 
   /**

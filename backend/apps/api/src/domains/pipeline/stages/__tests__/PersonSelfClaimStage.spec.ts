@@ -208,8 +208,10 @@ describe('PersonSelfClaimStage', () => {
 
       const retract = retraction(statements);
       expect(retract).toBeDefined();
-      // Never a claim a human confirmed or rejected.
+      // Never a claim a human confirmed or rejected, nor one another producer
+      // wrote in the same person/self shape (a contact importer's).
       expect(retract!.sql).toContain('ic.disposition IS NULL');
+      expect(retract!.sql).toContain('ic.stage = $8');
       expect(retract!.params).toEqual([
         USER,
         'person',
@@ -218,6 +220,7 @@ describe('PersonSelfClaimStage', () => {
         [id, id],
         ['name', 'phone'],
         ['ada quill', '2025550142'],
+        'enrich.person_self_claim',
       ]);
     });
 
@@ -227,7 +230,7 @@ describe('PersonSelfClaimStage', () => {
 
       await stage.run(CONTEXT, [id]);
 
-      expect(retraction(statements)!.params.slice(3)).toEqual([[id], [], [], []]);
+      expect(retraction(statements)!.params.slice(3)).toEqual([[id], [], [], [], 'enrich.person_self_claim']);
     });
 
     it('touches no claim of a subject it could not read', async () => {
