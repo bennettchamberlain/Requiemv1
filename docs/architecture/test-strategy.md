@@ -123,7 +123,7 @@ Every suite that needs Postgres resolves the connection through
 3. then the discrete `DATABASE_HOST/PORT/USERNAME/NAME/PASSWORD`.
 
 Each domain has a variable of its own — `ASKS_`, `AUTH_`, `BROWSER_ACTIVITY_`,
-`CONNECTIONS_`, `EVENTS_`, `IMPORT_`, `MEMORY_`, `NOTES_`, `PEERS_`,
+`CONNECTIONS_`, `EVENTS_`, `GEOCODE_`, `IMPORT_`, `MEMORY_`, `NOTES_`, `PEERS_`,
 `PERSISTENCE_`, `PERSONALIZATION_`, `PIPELINE_`, `PLANNING_`, `PORTABILITY_`,
 `SCHEDULE_`, `SEARCH_INGRESS_`, `SEARCH_NEXT_` (each `…_TEST_DATABASE_URL`), plus
 `MACOS_`, which only the Python summary suite reads and which must name an

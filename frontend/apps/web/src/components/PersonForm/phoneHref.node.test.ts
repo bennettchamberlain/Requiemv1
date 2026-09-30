@@ -91,10 +91,15 @@ describe('phoneHref', () => {
 describe('PHONE_EXTENSION_PATTERN', () => {
   it('is the pattern the server refuses extension numbers by, verbatim', () => {
     const source = fs.readFileSync(
-      path.resolve(__dirname, '../../../../../../backend/apps/api/src/domains/graph/utils/normalizeIdentifier.ts'),
+      path.resolve(
+        __dirname,
+        '../../../../../../backend/apps/api/src/domains/graph/utils/normalizeIdentifier.ts',
+      ),
       'utf8',
     );
 
-    expect(source).toContain(`export const PHONE_EXTENSION_PATTERN = String.raw\`${PHONE_EXTENSION_PATTERN}\`;`);
+    expect(source).toContain(
+      `export const PHONE_EXTENSION_PATTERN = String.raw\`${PHONE_EXTENSION_PATTERN}\`;`,
+    );
   });
 });
