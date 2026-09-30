@@ -84,6 +84,20 @@ const GENERIC_SOURCE_KEYS = ['import:importer', 'importer', 'import:'];
 const NODE_SEARCH_MAX_LIMIT = 500;
 
 /**
+ * A node's place in `entities_linked_uniq`, less the owner: the index is on
+ * `(owner_user_id, entity_type, linked_table, linked_id)`.
+ */
+export interface LinkedKey {
+  entityType: string;
+  linkedTable: string | null;
+  linkedId: string | null;
+}
+
+function linkedKeyOf(node: GraphNodeEntity): LinkedKey {
+  return { entityType: node.entity_type, linkedTable: node.linked_table, linkedId: node.linked_id };
+}
+
+/**
  * The properties bag a node or relationship write leaves behind: `properties`
  * merged over `stored` (or replacing it when `mergeProperties === false`), then
  * each `removeProperties` key deleted. With no `properties` at all there is
@@ -182,6 +196,33 @@ export class GraphUtilityService {
         linked_table: linkedTable,
         linked_id: linkedId,
         is_active: true,
+      },
+    });
+  }
+
+  /**
+   * The owner's row holding this linked key, active or not. `entities_linked_uniq`
+   * allows one row per `(owner_user_id, entity_type, linked_table, linked_id)` and
+   * is partial on `linked_table IS NOT NULL` alone, so a forgotten or merged-away
+   * row still holds its key. Unlike {@link getNodeByLinkedRecord} the type is part
+   * of the match: a row of another type on the same linked record is on a key of
+   * its own.
+   *
+   * Nothing holds a key the index does not: one with no `linked_table` is outside
+   * its predicate, and one with no `linked_id` never equals another, since a
+   * unique index treats NULLs as distinct.
+   */
+  async findLinkedKeyHolder(ownerUserId: string, key: LinkedKey): Promise<GraphNodeEntity | null> {
+    if (key.linkedTable == null || key.linkedId == null) {
+      return null;
+    }
+
+    return this.entityRepo.findOne({
+      where: {
+        owner_user_id: ownerUserId,
+        entity_type: key.entityType,
+        linked_table: key.linkedTable,
+        linked_id: key.linkedId,
       },
     });
   }
@@ -628,6 +669,10 @@ export class GraphUtilityService {
    * `properties` merges over the stored bag unless `mergeProperties === false`,
    * which replaces it; `removeProperties` keys are deleted afterwards. Both are
    * applied to the row as read here, not to a copy a caller read earlier.
+   *
+   * A write that would put the row on a linked key another row already holds —
+   * by retyping it, re-keying it, or inserting it there — fails before anything
+   * is written. See {@link assertLinkedKeyFree}.
    */
   async createOrUpdateNode(
     ownerUserId: string,
@@ -650,6 +695,7 @@ export class GraphUtilityService {
     });
 
     const created = !node;
+    const heldKey = node && linkedKeyOf(node);
     if (!node) {
       if (!payload.entityType) {
         throw new Error('entityType is required when creating a graph node');
@@ -701,9 +747,62 @@ export class GraphUtilityService {
       node.is_archived = false;
     }
 
+    await this.assertLinkedKeyFree(ownerUserId, node, heldKey);
+
     const saved = await this.entityRepo.save(node);
 
     return { node: saved, created };
+  }
+
+  /**
+   * Throw when saving `node` would put it on a linked key another row holds.
+   * Retyping a row, re-keying it or inserting one moves it onto a
+   * `(entity_type, linked_table, linked_id)` it does not hold yet, and
+   * `entities_linked_uniq` allows one of an owner's rows there: the statement
+   * used to violate it, GraphEventListener threw, and the job dead-lettered —
+   * after `memory.remember` had reported the entity updated or created. Checking
+   * first names the row in the way and fails no statement, so a surrounding
+   * transaction survives it. A writer that lands on the key between this read
+   * and the save still meets the index.
+   *
+   * The two rows are not merged instead. That would retire one of them — what
+   * `memory.forget` does, behind its own confirmation — and pick between two
+   * rows' names and properties with nobody to ask. WriteKnowledgeTool refuses a
+   * write onto a held key before queueing it; this is for a row that lands there
+   * after the tool looked, and for any other writer.
+   *
+   * `heldKey` is the key the row held before this write, or `null` for an
+   * insert. A row that keeps its key needs no check, active or not: the index is
+   * not partial on `is_active`, so no other row can be on it, and bringing a
+   * forgotten row back moves it nowhere.
+   */
+  private async assertLinkedKeyFree(
+    ownerUserId: string,
+    node: GraphNodeEntity,
+    heldKey: LinkedKey | null,
+  ): Promise<void> {
+    const target = linkedKeyOf(node);
+    const staysPut =
+      heldKey !== null &&
+      heldKey.entityType === target.entityType &&
+      heldKey.linkedTable === target.linkedTable &&
+      heldKey.linkedId === target.linkedId;
+
+    if (staysPut) {
+      return;
+    }
+
+    const holder = await this.findLinkedKeyHolder(ownerUserId, target);
+
+    if (!holder) {
+      return;
+    }
+
+    throw new Error(
+      `Entity ${node.entity_id} cannot become the ${target.entityType} linked to ${target.linkedTable} record ` +
+        `${target.linkedId}: entity ${holder.entity_id} already is` +
+        (holder.is_active ? '' : ', although it is no longer active'),
+    );
   }
 
   async softDeleteNode(entityId: string, ownerUserId: string): Promise<void> {

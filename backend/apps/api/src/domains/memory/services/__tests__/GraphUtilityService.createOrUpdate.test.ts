@@ -200,6 +200,124 @@ describe('GraphUtilityService.createOrUpdateNode — inserting a new row', () =>
   });
 });
 
+describe('GraphUtilityService.createOrUpdateNode — a write onto a linked key another row holds', () => {
+  // entities_linked_uniq allows one row per (owner, entity_type, linked_table,
+  // linked_id), and it is partial on linked_table alone, so a forgotten or
+  // merged-away row still holds its key. A write that retyped or re-keyed its row
+  // onto a key another row held, or inserted a row there, died on that index —
+  // against Postgres, in WriteKnowledgeTool.importKey.integration.test.ts. This
+  // table enforces no index: it shows the write stops before it saves anything.
+  const LINKED_ID = storedNode().linked_id;
+  const HELD = `the Person linked to import:google-contacts record ${LINKED_ID}`;
+
+  /** The Concept an older parser filed the same contact card as, on the same linked key. */
+  const concept = (overrides: Partial<GraphNodeEntity> = {}) =>
+    storedNode({ entity_type: 'Concept', properties: { source: 'vcard' }, ...overrides });
+  /** The Person already on that key. */
+  const holder = (overrides: Partial<GraphNodeEntity> = {}) =>
+    storedNode({ entity_id: 'node-2', ...overrides });
+
+  it.each([
+    ['retypes its row', [concept(), holder()], { entityId: NODE, entityType: 'Person' }],
+    [
+      're-keys its row',
+      [storedNode({ linked_table: null, linked_id: null }), holder()],
+      { entityId: NODE, linkedTable: 'import:google-contacts', linkedId: LINKED_ID },
+    ],
+    [
+      'inserts a row',
+      [holder()],
+      {
+        entityId: 'node-new',
+        entityType: 'Person',
+        name: 'Alex R.',
+        linkedTable: 'import:google-contacts',
+        linkedId: LINKED_ID,
+      },
+    ],
+  ])(
+    'refuses a write that %s onto the key, names the row holding it, and saves nothing',
+    async (_label, seeded, write) => {
+      const { service, nodes } = setup({ nodes: seeded });
+
+      await expect(
+        service.createOrUpdateNode(OWNER, { ...write, properties: { occupation: 'dentist' } }),
+      ).rejects.toThrow(`Entity ${write.entityId} cannot become ${HELD}: entity node-2 already is`);
+
+      expect(nodes.all()).toEqual(seeded);
+    },
+  );
+
+  it('refuses the key while a forgotten or merged-away row holds it, and says the holder is inactive', async () => {
+    const inactive = holder({ is_active: false });
+    const { service, nodes } = setup({ nodes: [concept(), inactive] });
+
+    await expect(service.createOrUpdateNode(OWNER, { entityId: NODE, entityType: 'Person' })).rejects.toThrow(
+      `Entity ${NODE} cannot become ${HELD}: entity node-2 already is, although it is no longer active`,
+    );
+
+    expect(nodes.get(NODE)).toEqual(concept());
+    expect(nodes.get('node-2')).toEqual(inactive);
+  });
+
+  it('retypes, re-keys and inserts onto a key no other row holds', async () => {
+    const retype = setup({ nodes: [concept()] });
+    await retype.service.createOrUpdateNode(OWNER, { entityId: NODE, entityType: 'Person' });
+    expect(retype.nodes.get(NODE)).toMatchObject({ entity_type: 'Person', linked_id: LINKED_ID });
+
+    // Another type on the same linked_table and linked_id is a different key.
+    const rekey = setup({
+      nodes: [storedNode({ linked_table: null, linked_id: null }), concept({ entity_id: 'node-2' })],
+    });
+    await rekey.service.createOrUpdateNode(OWNER, {
+      entityId: NODE,
+      linkedTable: 'import:google-contacts',
+      linkedId: LINKED_ID,
+    });
+    expect(rekey.nodes.get(NODE)).toMatchObject({ entity_type: 'Person', linked_id: LINKED_ID });
+
+    const insert = setup({ nodes: [concept({ entity_id: 'node-2' })] });
+    const { created } = await insert.service.createOrUpdateNode(OWNER, {
+      entityId: 'node-new',
+      entityType: 'Person',
+      linkedTable: 'import:google-contacts',
+      linkedId: LINKED_ID,
+    });
+    expect(created).toBe(true);
+    expect(insert.nodes.all()).toHaveLength(2);
+  });
+
+  it('never counts a key the index does not hold: no linked_table, or no linked_id', async () => {
+    // Outside the index's predicate, or NULL — and in a unique index one NULL
+    // never equals another, so rows like these can share everything else.
+    const noLinkedId = setup({ nodes: [concept({ linked_id: null }), holder({ linked_id: null })] });
+    await noLinkedId.service.createOrUpdateNode(OWNER, { entityId: NODE, entityType: 'Person' });
+    expect(noLinkedId.nodes.get(NODE)?.entity_type).toBe('Person');
+
+    const noLinkedTable = setup({ nodes: [concept({ linked_table: null }), holder({ linked_table: null })] });
+    await noLinkedTable.service.createOrUpdateNode(OWNER, { entityId: NODE, entityType: 'Person' });
+    expect(noLinkedTable.nodes.get(NODE)?.entity_type).toBe('Person');
+  });
+
+  it('looks up no holder for a row that keeps its key — not even one it brings back from forgotten', async () => {
+    // The index is not partial on is_active, so unlike an edge, a node coming
+    // back to life is on a key it already held.
+    const { service, nodes } = setup({ nodes: [storedNode({ is_active: false })] });
+    const findOne = jest.spyOn(nodes, 'findOne');
+
+    await service.createOrUpdateNode(OWNER, {
+      entityId: NODE,
+      entityType: 'Person',
+      linkedTable: 'import:google-contacts',
+      linkedId: LINKED_ID,
+      properties: { occupation: 'dentist' },
+    });
+
+    expect(findOne).toHaveBeenCalledTimes(1);
+    expect(nodes.get(NODE)).toMatchObject({ is_active: true, properties: { occupation: 'dentist' } });
+  });
+});
+
 describe('GraphUtilityService.createOrUpdateRelationship', () => {
   it('keeps the stored strength, direction and properties a write leaves undefined', async () => {
     const { service, edges } = setup({ edges: [storedEdge()] });
