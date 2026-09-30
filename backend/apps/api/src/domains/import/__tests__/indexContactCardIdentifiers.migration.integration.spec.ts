@@ -68,6 +68,12 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     chat: randomUUID(),
     /** A card whose only number carries an extension, and a user confirmed it anyway. */
     eve: randomUUID(),
+    /** Kai's card, and a friend's card that lists Kai's address beside her own. */
+    kai: randomUUID(),
+    lumi: randomUUID(),
+    /** Two copies of one person's card, under one name. */
+    sam: randomUUID(),
+    samToo: randomUUID(),
   };
 
   function q<T>(text: string, params?: unknown[]): Promise<T> {
@@ -208,6 +214,12 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     });
     await seed(ids.chat, 'Dee Park', { phones: ['2025550177'] }, '2026-01-06');
 
+    // The friend's card is the OLDER one: first writer wins would hand her Kai's address.
+    await seed(ids.lumi, 'Lumi Park', { Emails: ['lumi@park.example', 'kai@mori.example'] }, '2026-01-08');
+    await seed(ids.kai, 'Kai Mori', { Emails: ['kai@mori.example'] }, '2026-01-09');
+    await seed(ids.sam, 'Sam Tully', { Emails: ['sam@tully.example'] }, '2026-01-10');
+    await seed(ids.samToo, 'Sam Tully', { Emails: ['sam@tully.example'] }, '2026-01-11');
+
     await q(migrationUp());
   });
 
@@ -261,6 +273,16 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     expect(await indexed('email', 'info@quill-legal.example')).toBeUndefined();
     expect(await indexed('phone', '5550110229')).toBeUndefined();
     expect(await indexed('phone', '2025550151')).toBeUndefined();
+  });
+
+  it('never indexes a value another card lists under a different name, and keeps it on the record', async () => {
+    // Under the older card, Kai's address would resolve Kai's mail to his friend.
+    expect(await indexed('email', 'kai@mori.example')).toBeUndefined();
+    expect(await indexed('email', 'lumi@park.example')).toBe(ids.lumi);
+    expect((await propertiesOf(ids.lumi)).emails).toEqual(['lumi@park.example', 'kai@mori.example']);
+    expect((await propertiesOf(ids.kai)).emails).toEqual(['kai@mori.example']);
+    // One person's two cards: the older one claims it, as at import.
+    expect(await indexed('email', 'sam@tully.example')).toBe(ids.sam);
   });
 
   it('keeps the typed form beside the key, as EntityIdentifierService does', async () => {

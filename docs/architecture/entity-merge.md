@@ -378,8 +378,10 @@ every email and phone a contact states as `emails` / `phones` (`import/staging/i
 lists under a name that describes someone else — `markSharedContactHandles`, the same rule that
 keeps them from keying the card), a fax, a number with an extension and a role inbox (`info@`),
 and the push indexes them all; migration `20260930022046` repaired the vCard rows already
-imported, from their own `Emails` / `Phones`, and dropped the fake numbers extensions had left in
-`phones` and in the index ("(310) 447-8675;229" keyed as 4478675229). `enrich.person_self_claim`
+imported, from their own `Emails` / `Phones` — indexing a value only when no other card lists it
+under a different name, since first writer wins would hand an office line or the owner's address
+to whichever card is older — and dropped the fake numbers extensions had left in `phones` and in
+the index ("(310) 447-8675;229" keyed as 4478675229). `enrich.person_self_claim`
 (v2) turns them into claims and retracts the ones a record no longer states.
 
 | Rule | Detail |

@@ -57,10 +57,16 @@
 -- 2. `ci.entity_identifiers` loses the phone rows those fakes put under the
 --    same Person — never a row a user entered or verified — and gains a row
 --    per new method, `ON CONFLICT DO NOTHING`: first writer wins, exactly as at
---    import, and the earliest Person claims a value two of them state (the
---    losing pair is what the duplicate detector's claim pass exists to find).
---    `source` NULL and `raw_value` the card's typed form, as
---    `EntityIdentifierService` writes them.
+--    import, and the earliest of two same-named Persons claims a value both
+--    state (the losing pair is what the duplicate detector exists to find).
+--    NOT a value another card here lists under a different name: an office
+--    line on colleagues' cards, or the owner's work address on a friend's
+--    card, indexed under whichever card is older, would resolve every call or
+--    message from it to that card. The import leaves those out the same way
+--    (`markSharedContactHandles`, from the whole export; only the names
+--    survive here, so this reads them strictly). They stay in `properties`,
+--    where the merge queue can see them. `source` NULL and `raw_value` the
+--    card's typed form, as `EntityIdentifierService` writes them.
 --
 -- Claims follow from the code, not from here: `enrich.person_self_claim`
 -- (PERSON_SELF_CLAIM_GENERATION 2) re-reads every Person's `emails` / `phones`
@@ -77,6 +83,7 @@ CREATE TEMP TABLE contact_card AS
 SELECT e.entity_id,
        e.owner_user_id,
        e.created_at,
+       lower(btrim(COALESCE(e.name, ''))) AS name_key,
        CASE WHEN jsonb_typeof(e.properties -> 'Emails') = 'array'
             THEN e.properties -> 'Emails' ELSE '[]'::jsonb END AS card_emails,
        CASE WHEN jsonb_typeof(e.properties -> 'Phones') = 'array'
@@ -223,11 +230,20 @@ DELETE FROM ci.entity_identifiers ei
    AND ei.verified_at IS NULL
    AND ei.source IS DISTINCT FROM 'user';
 
--- 2b. Every method the card states, first writer wins.
+-- 2b. Every method the card states, first writer wins — unless another card
+--     lists it under a different name.
 INSERT INTO ci.entity_identifiers (entity_id, owner_user_id, kind, value_normalized, raw_value)
 SELECT m.entity_id, c.owner_user_id, m.kind, m.value, NULLIF(btrim(m.raw_value), m.value)
   FROM contact_card_method m
   JOIN contact_card c ON c.entity_id = m.entity_id
+ WHERE NOT EXISTS (
+         SELECT 1
+           FROM contact_card_method o
+           JOIN contact_card oc ON oc.entity_id = o.entity_id
+          WHERE oc.owner_user_id = c.owner_user_id
+            AND o.kind = m.kind
+            AND o.value = m.value
+            AND oc.name_key <> c.name_key)
  ORDER BY c.created_at, m.entity_id, m.kind, m.ord
 ON CONFLICT (owner_user_id, kind, value_normalized) DO NOTHING;
 
