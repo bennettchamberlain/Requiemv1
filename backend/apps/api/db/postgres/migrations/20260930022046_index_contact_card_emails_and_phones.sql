@@ -44,6 +44,13 @@
 --  - never a number the card files under `Faxes`. Rows imported before faxes
 --    were filed apart have none, and keep their fax among `Phones`; the next
 --    import of the card files it apart, and the phone adjudicator refuses it.
+--  - nothing at all from a row that is SEVERAL people. Staging collapsed
+--    sightings on their identity key, so a household on one home line, or an
+--    office on its switchboard before #2795, is one row whose `Emails` /
+--    `Phones` hold every member's. Its `Names` say so: more than one distinct
+--    first name, or a name that is no name (a number, an address) among
+--    several. Stricter than the push's `describesSeveralPeople` (it cannot
+--    tell a nickname from a sibling), which only costs such a row its repair.
 --
 -- Postgres regex word boundaries are `\y` (`\b` is a BACKSPACE here — see
 -- 20260818220833, which learned it the hard way).
@@ -95,6 +102,13 @@ SELECT e.entity_id,
        e.owner_user_id,
        e.created_at,
        lower(btrim(COALESCE(e.name, ''))) AS name_key,
+       COALESCE((
+         SELECT count(DISTINCT lower(btrim(n.value))) > 1
+                AND (count(DISTINCT lower(regexp_replace(split_part(btrim(n.value), ' ', 1), '[^[:alpha:]]', '', 'g'))) > 1
+                     OR bool_or(regexp_replace(split_part(btrim(n.value), ' ', 1), '[^[:alpha:]]', '', 'g') = ''))
+           FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(e.properties -> 'Names') = 'array'
+                                               THEN e.properties -> 'Names' ELSE '[]'::jsonb END) AS n(value)
+          WHERE btrim(n.value) <> ''), false) AS several_people,
        CASE WHEN jsonb_typeof(e.properties -> 'Emails') = 'array'
             THEN e.properties -> 'Emails' ELSE '[]'::jsonb END AS card_emails,
        CASE WHEN jsonb_typeof(e.properties -> 'Phones') = 'array'
@@ -188,7 +202,7 @@ WITH listed AS (
                           UNION ALL
                           SELECT m.value, 1000000 + m.ord
                             FROM contact_card_method m
-                           WHERE m.entity_id = c.entity_id AND m.kind = 'email') u
+                           WHERE m.entity_id = c.entity_id AND m.kind = 'email' AND NOT c.several_people) u
                    ORDER BY u.value, u.pos) x) AS emails,
          (SELECT COALESCE(jsonb_agg(x.value ORDER BY x.pos), '[]'::jsonb)
             FROM (SELECT DISTINCT ON (u.value) u.value, u.pos
@@ -200,7 +214,7 @@ WITH listed AS (
                           UNION ALL
                           SELECT m.value, 1000000 + m.ord
                             FROM contact_card_method m
-                           WHERE m.entity_id = c.entity_id AND m.kind = 'phone') u
+                           WHERE m.entity_id = c.entity_id AND m.kind = 'phone' AND NOT c.several_people) u
                    ORDER BY u.value, u.pos) x) AS phones
     FROM contact_card c
 )
@@ -242,13 +256,14 @@ DELETE FROM ci.entity_identifiers ei
    AND ei.value_normalized = f.value
    AND ei.raw_value IS NULL;
 
--- 2b. Every method the card states, first writer wins — unless another card
---     lists it under a different name.
+-- 2b. Every method the card states, first writer wins — unless the row is
+--     several people, or another card lists it under a different name.
 INSERT INTO ci.entity_identifiers (entity_id, owner_user_id, kind, value_normalized, raw_value)
 SELECT m.entity_id, c.owner_user_id, m.kind, m.value, NULLIF(btrim(m.raw_value), m.value)
   FROM contact_card_method m
   JOIN contact_card c ON c.entity_id = m.entity_id
- WHERE NOT EXISTS (
+ WHERE NOT c.several_people
+   AND NOT EXISTS (
          SELECT 1
            FROM contact_card_method o
            JOIN contact_card oc ON oc.entity_id = o.entity_id

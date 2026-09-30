@@ -293,6 +293,28 @@ export const FAX_ATTRIBUTE_NAME = 'fax';
  */
 export const CONTACT_IDENTIFIER_KEYS = ['emails', 'phones'] as const;
 
+/**
+ * The staged-metadata key that records the display name of EVERY sighting of a
+ * contact, accumulated like {@link CONTACT_IDENTIFIER_KEYS}. Staging-only: the
+ * push reads it and strips it (`push/entities.ts`).
+ *
+ * Needed because staging collapses sightings on their identity key, and not
+ * every collapse is one person. #2795 deliberately keeps a household together
+ * ("Ana Ruiz" and "Luis Ruiz" on one home line: a shared surname cannot be told
+ * from a nickname or a typo), so both cards stage as ONE row and its
+ * accumulated `emails` hold both people's. The row's own `name` is only the
+ * first sighting's, so this is the only record that the row is several people,
+ * and the push indexes nothing but its handle for such a row.
+ */
+export const CONTACT_NAMES_KEY = 'contactNames';
+
+/**
+ * Google's contacts CSV joins every value of one label into one cell
+ * ("a@example.com ::: b@example.org"); read whole, it is neither an address nor
+ * a number.
+ */
+const JOINED_VALUES = /\s*:::\s*/;
+
 /** Staged types that become a `Person` at push — the only ones given contact identifiers. */
 const PERSON_STAGED_TYPES: ReadonlySet<string> = new Set([CONTACT_STAGED_TYPE, 'person']);
 
@@ -363,28 +385,30 @@ export function contactIdentifiers(entity: Entity): { emails: string[]; phones: 
       continue;
     }
 
-    const raw = String(attribute.value).trim();
+    for (const part of String(attribute.value).split(JOINED_VALUES)) {
+      const raw = part.trim();
 
-    if (raw.includes('@')) {
-      const email = normalizeEmail(raw.replace(/^mailto:/i, ''));
+      if (raw.includes('@')) {
+        const email = normalizeEmail(raw.replace(/^mailto:/i, ''));
 
-      if (email != null && EMAIL_SHAPE.test(email) && !isOrganizationalAddress(email)) {
-        emails.add(email);
+        if (email != null && EMAIL_SHAPE.test(email) && !isOrganizationalAddress(email)) {
+          emails.add(email);
+        }
+
+        continue;
       }
 
-      continue;
-    }
+      const value = raw.replace(/^tel:/i, '').trim();
 
-    const value = raw.replace(/^tel:/i, '').trim();
+      if (hasPhoneExtension(value) || !PHONE_VALUE_SHAPE.test(value)) {
+        continue;
+      }
 
-    if (hasPhoneExtension(value) || !PHONE_VALUE_SHAPE.test(value)) {
-      continue;
-    }
+      const digits = normalizeHandle(value);
 
-    const digits = normalizeHandle(value);
-
-    if (digits) {
-      phones.add(digits);
+      if (digits) {
+        phones.add(digits);
+      }
     }
   }
 
@@ -397,8 +421,9 @@ export function contactIdentifiers(entity: Entity): { emails: string[]; phones: 
  * empty arrays included, for an entity that becomes a Person, so the push can
  * tell "this contact states no phone of its own" (its handle is a fax or an
  * extension, and must not be indexed) from a row staged before the keys
- * existed — and those keys accumulating across sightings, whatever the parser
- * declared. Any other entity is returned unchanged.
+ * existed — and this sighting's display name under {@link CONTACT_NAMES_KEY},
+ * all three accumulating across sightings, whatever the parser declared. Any
+ * other entity is returned unchanged.
  */
 export function withContactIdentifiers(entity: Entity): Entity {
   if (!becomesPerson(entity)) {
@@ -406,11 +431,17 @@ export function withContactIdentifiers(entity: Entity): Entity {
   }
 
   const { emails, phones } = contactIdentifiers(entity);
+  const name = entity.name?.trim();
 
   return {
     ...entity,
-    metadata: { ...(entity.metadata ?? {}), emails, phones } as Metadata,
-    accumulate: [...new Set([...(entity.accumulate ?? []), ...CONTACT_IDENTIFIER_KEYS])],
+    metadata: {
+      ...(entity.metadata ?? {}),
+      emails,
+      phones,
+      [CONTACT_NAMES_KEY]: name ? [name] : [],
+    } as Metadata,
+    accumulate: [...new Set([...(entity.accumulate ?? []), ...CONTACT_IDENTIFIER_KEYS, CONTACT_NAMES_KEY])],
   };
 }
 

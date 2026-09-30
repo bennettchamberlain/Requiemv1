@@ -75,6 +75,9 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     gusStub: randomUUID(),
     /** An extension the old pattern missed: not at the end of the value. */
     hal: randomUUID(),
+    /** A household staging collapsed onto one row, and one person under two spellings. */
+    ruiz: randomUUID(),
+    kit: randomUUID(),
     /** Kai's card, and a friend's card that lists Kai's address beside her own. */
     kai: randomUUID(),
     lumi: randomUUID(),
@@ -261,6 +264,24 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     await seed(ids.sam, 'Sam Tully', { Emails: ['sam@tully.example'] }, '2026-01-10');
     await seed(ids.samToo, 'Sam Tully', { Emails: ['sam@tully.example'] }, '2026-01-11');
 
+    await seed(
+      ids.ruiz,
+      'Ana Ruiz',
+      {
+        Names: ['Ana Ruiz', 'Luis Ruiz'],
+        Emails: ['ana.ruiz@example.com', 'luis.ruiz@example.org'],
+        Phones: ['(415) 555-0100', '(415) 555-0111', '(415) 555-0122'],
+        phones: ['4155550100'],
+      },
+      '2026-01-16',
+    );
+    await seed(
+      ids.kit,
+      'Kit Moss',
+      { Names: ['Kit Moss', 'Kit A. Moss'], Emails: ['kit@moss.example'] },
+      '2026-01-17',
+    );
+
     await q(migrationUp());
   });
 
@@ -341,6 +362,16 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     expect((await propertiesOf(ids.kai)).emails).toEqual(['kai@mori.example']);
     // One person's two cards: the older one claims it, as at import.
     expect(await indexed('email', 'sam@tully.example')).toBe(ids.sam);
+  });
+
+  it('repairs nothing on a row that is several people — it cannot say whose address is whose', async () => {
+    expect(await propertiesOf(ids.ruiz)).toMatchObject({ phones: ['4155550100'] });
+    expect(await propertiesOf(ids.ruiz)).not.toHaveProperty('emails');
+    expect(await indexed('email', 'luis.ruiz@example.org')).toBeUndefined();
+    expect(await indexed('email', 'ana.ruiz@example.com')).toBeUndefined();
+    // One person under two spellings is still one person.
+    expect((await propertiesOf(ids.kit)).emails).toEqual(['kit@moss.example']);
+    expect(await indexed('email', 'kit@moss.example')).toBe(ids.kit);
   });
 
   it('keeps the typed form beside the key, as EntityIdentifierService does', async () => {

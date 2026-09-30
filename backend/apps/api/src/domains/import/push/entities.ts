@@ -1,7 +1,12 @@
 import { type GraphEntityInputDto, isNonNameParticipant, isPlaceholderPersonName } from '@ci/domains/graph';
+import {
+  type GivenNameRelation,
+  givenNameRelation,
+  isPlaceholderPersonName as isPlaceholderName,
+} from '@ci/domains/memory';
 
 import type { StagedEntity } from '../entities/StagedEntityEntity';
-import { stagedNaturalKey } from '../staging/identity';
+import { CONTACT_NAMES_KEY, stagedNaturalKey } from '../staging/identity';
 
 /**
  * The `ci.entities.entity_type` a staged type resolves to.
@@ -87,10 +92,49 @@ function statedList(metadata: Record<string, unknown> | null | undefined, key: s
   return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '');
 }
 
+/** Relations under which two display names can be one person under two spellings. */
+const ONE_PERSON: ReadonlySet<GivenNameRelation> = new Set(['same', 'initial', 'prefix']);
+
+/**
+ * Whether the display names of a staged row's sightings describe more than one
+ * person: two of them disagree on the first given name (not the same, not an
+ * initial, not a nickname prefix — `givenNameRelation`), or one is a
+ * placeholder (a number or an address standing in for a name says nothing
+ * about who it is), among two or more names.
+ *
+ * Deliberately quick to say yes. A wrong yes costs the row its extra contact
+ * methods (it is indexed on its handle, as every row was before); a wrong no
+ * indexes one person's address as another's.
+ */
+export function describesSeveralPeople(names: readonly string[]): boolean {
+  const distinct = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+
+  for (let i = 0; i < distinct.length; i++) {
+    for (let j = i + 1; j < distinct.length; j++) {
+      if (
+        isPlaceholderName(distinct[i]) ||
+        isPlaceholderName(distinct[j]) ||
+        !ONE_PERSON.has(givenNameRelation(distinct[i], distinct[j]))
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
  * The emails and phones a staged entity is indexed under: every one staging
  * recorded as the contact's own (`staging/identity.ts` `contactIdentifiers`,
  * under `emails` / `phones`), with the entity's handle heading its list.
+ *
+ * Unless the row is several people. Staging collapses sightings on their
+ * identity key, and a household on one home line stays together (#2795
+ * cannot tell a shared surname from a nickname), so the row's lists hold every
+ * member's addresses. Its sightings' names ({@link CONTACT_NAMES_KEY}, or the
+ * vCard parser's `Names` for a row staged before that key) say so, and such a
+ * row is indexed on its handle alone, as every row was before these lists.
  *
  * The handle is NOT always one of them. A phone handle that staging recorded
  * lists and left out is an extension number ("(310) 447-8675;229" keys as
@@ -109,8 +153,11 @@ export function contactMethodsFor(
 ): { emails: string[]; phones: string[] } {
   const statedEmails = statedList(metadata, 'emails');
   const statedPhones = statedList(metadata, 'phones');
-  let emails = [...new Set(statedEmails ?? [])];
-  let phones = [...new Set(statedPhones ?? [])];
+  const several = describesSeveralPeople(
+    statedList(metadata, CONTACT_NAMES_KEY) ?? statedList(metadata, 'Names') ?? [],
+  );
+  let emails = several ? [] : [...new Set(statedEmails ?? [])];
+  let phones = several ? [] : [...new Set(statedPhones ?? [])];
   const key = handle?.trim();
 
   if (key) {
@@ -166,9 +213,10 @@ export function toGraphEntity(staged: StagedEntity): GraphEntityInputDto | null 
   const { emails, phones } = contactMethodsFor(staged.metadata, handle);
 
   // Re-set from the merged lists below, so an empty staged list never reaches
-  // the row as `[]`.
+  // the row as `[]`. The sightings' names are staging's own bookkeeping.
   delete properties.emails;
   delete properties.phones;
+  delete properties[CONTACT_NAMES_KEY];
 
   // The first of each list is the entity's primary: its handle when that is
   // one of them (the handle is the identity, so it is worth having as a

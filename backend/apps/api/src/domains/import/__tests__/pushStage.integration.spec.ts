@@ -17,6 +17,7 @@ import { GraphDeltaWriter } from '@ci/domains/memory';
 
 import { buildContact, parseContentLine, unfoldContentLines, type ContentLine } from '../datasources/vcard';
 import { PushStage } from '../stages/PushStage';
+import { markSharedContactHandles } from '../staging/identity';
 import { StagedWriter } from '../staging/StagedWriter';
 import type { StageRunContext } from '../types';
 
@@ -1074,11 +1075,91 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
       { kind: 'phone', value_normalized: '6465550142' },
     ]);
 
-    // The key did not move: it is still the smallest handle, the fax.
+    // `buildContact` alone marks nothing shared — the importer's file-level
+    // pass does (`markSharedContactHandles`) — so here the key is still the
+    // smallest handle, the fax. What is indexed does not depend on the key.
     const [staged] = await harness.dataSource.query<Array<{ identity_key: string }>>(
       `SELECT identity_key FROM ci_import.staged_entities WHERE run_id = $1::uuid`,
       [runId],
     );
     expect(staged.identity_key).toBe('2125550118');
+  });
+
+  /**
+   * A household on one home line, through the importer's own file-level pass:
+   * "Ana Ruiz" and "Luis Ruiz" share a surname, which #2795 deliberately
+   * cannot tell from a nickname, so the line is not marked shared, both cards
+   * key on it, and staging collapses them onto ONE row that accumulates both
+   * people's addresses. Indexed whole, Luis's mail would resolve to "Ana Ruiz",
+   * and the email tier would fold Ana into any Luis it met. The row is
+   * indexed on its handle alone. Invented throughout.
+   */
+  it("never indexes one household member's address as another's", async () => {
+    const parse = (raw: string[]) => {
+      const lines = unfoldContentLines(raw.join('\r\n'))
+        .filter((line) => !/^(BEGIN|END):VCARD$/i.test(line.trim()))
+        .map((line) => parseContentLine(line))
+        .filter((line): line is ContentLine => line != null);
+
+      return buildContact(lines, 'contacts.vcf')!;
+    };
+
+    const ana = parse([
+      'BEGIN:VCARD',
+      'FN:Ana Ruiz',
+      'EMAIL;type=INTERNET:ana.ruiz@example.com',
+      'TEL;type=HOME:(415) 555-0100',
+      'TEL;type=CELL:(415) 555-0111',
+      'END:VCARD',
+    ]);
+    const luis = parse([
+      'BEGIN:VCARD',
+      'FN:Luis Ruiz',
+      'EMAIL;type=INTERNET:luis.ruiz@example.org',
+      'TEL;type=HOME:(415) 555-0100',
+      'TEL;type=CELL:(415) 555-0122',
+      'END:VCARD',
+    ]);
+    const entities = markSharedContactHandles([ana.entity, luis.entity]);
+
+    const runId = await harness.startRun();
+    const writer = new StagedWriter(harness.dataSource.manager, {
+      userId: harness.userId,
+      runId,
+      dataSource: 'vcard',
+    });
+    writer.push({ item: ana.item, edges: [{ relation: 'contact', to: { entity: entities[0] } }] });
+    writer.push({ item: luis.item, edges: [{ relation: 'contact', to: { entity: entities[1] } }] });
+    await writer.settled();
+
+    const staged = await harness.dataSource.query<
+      Array<{ identity_key: string; metadata: Record<string, unknown> }>
+    >(`SELECT identity_key, metadata FROM ci_import.staged_entities WHERE run_id = $1::uuid`, [runId]);
+    expect(staged).toHaveLength(1);
+    expect(staged[0].metadata).toMatchObject({
+      contactNames: ['Ana Ruiz', 'Luis Ruiz'],
+      emails: ['ana.ruiz@example.com', 'luis.ruiz@example.org'],
+    });
+
+    const { stage } = makeStage();
+    await stage.run(contextFor(runId));
+
+    const [person] = await harness.dataSource.query<
+      Array<{ entity_id: string; properties: Record<string, unknown> }>
+    >(
+      `SELECT entity_id, properties FROM ci.entities
+        WHERE owner_user_id = $1::uuid AND entity_type = 'Person' AND name = 'Ana Ruiz'`,
+      [harness.userId],
+    );
+    expect(person.properties).toMatchObject({ phones: ['4155550100'], phone: '4155550100' });
+    expect(person.properties).not.toHaveProperty('emails');
+    expect(person.properties).not.toHaveProperty('contactNames');
+
+    const emailsIndexed = await harness.dataSource.query<Array<{ value_normalized: string }>>(
+      `SELECT value_normalized FROM ci.entity_identifiers
+        WHERE owner_user_id = $1::uuid AND kind = 'email'`,
+      [harness.userId],
+    );
+    expect(emailsIndexed.map((row) => row.value_normalized)).not.toContain('luis.ruiz@example.org');
   });
 });

@@ -377,16 +377,24 @@ every email and phone a contact states as `emails` / `phones` (`import/staging/i
 `contactIdentifiers`), less a shared handle (a fax anywhere in the export, or a line another card
 lists under a name that describes someone else — `markSharedContactHandles`, the same rule that
 keeps them from keying the card), a fax, a number with an extension and a role inbox (`info@`),
-and the push indexes them all; migration `20260930022046` repaired the vCard rows already
-imported, from their own `Emails` / `Phones` — indexing a value only when no other card lists it
-under a different name, since first writer wins would hand an office line or the owner's address
-to whichever card is older — and dropped the fake numbers extensions had left in `phones` and in
-the index ("(310) 447-8675;229" keyed as 4478675229): any key the card's own typed `Phones` proves
-(one extension rule, `PHONE_EXTENSION_PATTERN`, for the TypeScript and the SQL), even when a form
-save had marked it verified — `replaceForEntity` promotes every row it round-trips — but never a
-row a user typed (it keeps its `raw_value`), and never on a merge survivor, whose ten digits can be
-a merged-in record's real line. `enrich.person_self_claim`
-(v2) turns them into claims and retracts the ones a record no longer states.
+reading a Google CSV cell joined with ` ::: ` value by value, and the push indexes them all —
+except on a row that is several people: staging collapses sightings on their identity key, and a
+household on one home line stays together (#2795 cannot tell a shared surname from a nickname), so
+its lists hold every member's addresses. The sightings' names (`contactNames`) show it, and such a
+row is indexed on its handle alone (`describesSeveralPeople`).
+
+Migration `20260930022046` repaired the vCard rows already imported, from their own `Emails` /
+`Phones`. It skips a row whose `Names` are several people, and indexes a value only when no other
+card lists it under a different name: first writer wins would hand an office line, or the owner's
+address, to whichever card is older. It also dropped the fake numbers extensions had left in
+`phones` and in the index ("(310) 447-8675;229" keyed as 4478675229): any key the card's own typed
+`Phones` proves, by one extension rule (`PHONE_EXTENSION_PATTERN`) shared by the TypeScript and the
+SQL. That includes a fake a form save marked verified, because `replaceForEntity` promotes every
+row it round-trips. It never removes a row a user typed (those keep their `raw_value`), and never
+touches a merge survivor, whose ten digits can be a merged-in record's real line.
+
+`enrich.person_self_claim` (v2) turns a record's `emails` / `phones` into claims, and retracts the
+ones it no longer states (its own rows only).
 
 | Rule | Detail |
 |------|--------|

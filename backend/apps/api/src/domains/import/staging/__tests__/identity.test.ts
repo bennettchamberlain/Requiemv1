@@ -1,6 +1,7 @@
 import type { Entity, Item } from '../../datasources/timeline';
 import {
   CONTACT_IDENTIFIER_KEYS,
+  CONTACT_NAMES_KEY,
   contactIdentifiers,
   entityIdentityKey,
   entityKey,
@@ -454,8 +455,8 @@ describe('contactIdentifiers — every method a contact states as its own', () =
     const faxOnly = card([{ name: FAX_ATTRIBUTE_NAME, value: '(212) 555-0118', identity: true }]);
     const staged = withContactIdentifiers({ ...faxOnly, accumulate: ['Names'] });
 
-    expect(staged.metadata).toEqual({ emails: [], phones: [] });
-    expect(staged.accumulate).toEqual(['Names', ...CONTACT_IDENTIFIER_KEYS]);
+    expect(staged.metadata).toEqual({ emails: [], phones: [], [CONTACT_NAMES_KEY]: ['Ada Quill'] });
+    expect(staged.accumulate).toEqual(['Names', ...CONTACT_IDENTIFIER_KEYS, CONTACT_NAMES_KEY]);
     expect(entityIdentityKey(staged)).toBe(entityIdentityKey(faxOnly));
   });
 
@@ -471,6 +472,44 @@ describe('contactIdentifiers — every method a contact states as its own', () =
     expect(mergeAccumulatedMetadata(first.metadata as Record<string, unknown>, second)).toEqual({
       emails: ['ada@example.com'],
       phones: ['2025550142'],
+      [CONTACT_NAMES_KEY]: ['Ada Quill'],
+    });
+  });
+
+  it("records every sighting's name, so the push can see a row that is two people", () => {
+    // A household on one home line: #2795 keeps them together, and staging
+    // collapses them onto one row that only knows the first sighting's name.
+    const ana = withContactIdentifiers({
+      ...card([
+        { name: 'phone', value: '(415) 555-0100', identity: true },
+        { name: 'email', value: 'ana.ruiz@example.com', identity: true },
+      ]),
+      name: 'Ana Ruiz',
+    });
+    const luis = withContactIdentifiers({
+      ...card([
+        { name: 'phone', value: '(415) 555-0100', identity: true },
+        { name: 'email', value: 'luis.ruiz@example.org', identity: true },
+      ]),
+      name: 'Luis Ruiz',
+    });
+
+    expect(entityIdentityKey(ana)).toBe(entityIdentityKey(luis));
+    expect(mergeAccumulatedMetadata(ana.metadata as Record<string, unknown>, luis)).toMatchObject({
+      emails: ['ana.ruiz@example.com', 'luis.ruiz@example.org'],
+      [CONTACT_NAMES_KEY]: ['Ana Ruiz', 'Luis Ruiz'],
+    });
+  });
+
+  it('reads each value of a Google CSV cell that joins them with :::', () => {
+    const entity = card([
+      { name: 'email', value: 'ada@example.com ::: Ada.Q@Example.org', identity: true },
+      { name: 'phone', value: '+1 202-555-0142 ::: +1 202-555-0177', identity: true },
+    ]);
+
+    expect(contactIdentifiers(entity)).toEqual({
+      emails: ['ada@example.com', 'ada.q@example.org'],
+      phones: ['2025550142', '2025550177'],
     });
   });
 });
