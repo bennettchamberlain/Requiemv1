@@ -161,15 +161,29 @@ deliberately unset — a cost decision the workflow states in a comment rather
 than hides. `consent-path-gate.yml` remains the stronger guarantee for the
 consent path: it fails if any suite in scope skips.
 
-Two things now close most of that gap without a hosted runner:
+Since 2026-09-30 a skip needs *proof*, and only an unasked-for database may
+skip: the suite skips when nothing is configured, or when only `.env`'s discrete
+`DATABASE_*` values are set and the connection is refused (the dev stack is
+down). A URL you set for the run — the suite's `<DOMAIN>_TEST_DATABASE_URL` or
+`DATABASE_URL` — that refuses the connection **fails** the suite, naming the
+variable; so does a host that never answers, a URL that does not parse, and a
+probe that could not finish, however the database was configured. That last one
+is the hole this closed: the probe is a child process, and on a loaded machine
+(load ~300) a probe killed by its time limit read as "nothing listening", so a
+suite pointed at a healthy Postgres skipped in silence. The full table is in the
+header of `databaseConnection.ts`.
 
-- **`CI_REQUIRE_DB=1`** makes the availability helpers throw instead of
-  returning "unavailable", so a run that means to have a database fails when it
-  does not (and the probe retries before it believes "nothing is listening").
-- **`make test-db`** starts a throwaway Postgres, sets `CI_REQUIRE_DB=1`, runs the
-  `be-api` suite against it and fails on any skip the allow-list does not forgive
-  and on any database crash in the container's log. See
-  [`../CI.md`](../CI.md#running-the-database-backed-suites-locally-make-test-db).
+`CI_REQUIRE_DB=1` turns those two remaining skips into failures too. `make
+test-db` starts a throwaway Postgres, sets that variable, runs the `be-api`
+suite against it and fails on any skip the allow-list does not forgive and on
+any database crash in the container's log. See
+[`../CI.md`](../CI.md#running-the-database-backed-suites-locally-make-test-db).
+
+Every file whose tests were *all* skipped is now listed, with the reason it
+gave, just above jest's totals (`skippedSuitesReporter.js`, wired in
+`jest.config.mjs`). Jest's own reporter drops such a file's console output, so
+until then a multi-file run showed a count — `Test Suites: 1 skipped` — and
+nothing else.
 
 **Trap 2 — a database without the migrations FAILS, and looks like your bug.**
 "Port open" and "schema correct" are different questions, and only the first is
