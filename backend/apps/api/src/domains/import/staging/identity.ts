@@ -7,7 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 
-import { normalizeEmail } from '@ci/domains/graph';
+import { hasPhoneExtension, normalizeEmail } from '@ci/domains/graph';
 import { tokenizePersonName } from '@ci/domains/memory';
 
 import type { Entity, EntityAttribute, Item, Metadata } from '../datasources/timeline';
@@ -303,9 +303,6 @@ function becomesPerson(entity: Entity): boolean {
   return type != null && PERSON_STAGED_TYPES.has(type.trim().toLowerCase());
 }
 
-/** `x123`, `ext. 123`, `extension 123` at the end, or a `;`/`,`/`#` dial-string suffix. */
-const PHONE_EXTENSION = /(?:\b(?:ext|x|extension)\.?\s*\d+\s*$)|[;,#]/i;
-
 /** What a phone value is written with, once a `tel:` URI scheme is stripped. */
 const PHONE_VALUE_SHAPE = /^\+?[\d\s().\-/]+$/;
 
@@ -380,7 +377,7 @@ export function contactIdentifiers(entity: Entity): { emails: string[]; phones: 
 
     const value = raw.replace(/^tel:/i, '').trim();
 
-    if (PHONE_EXTENSION.test(value) || !PHONE_VALUE_SHAPE.test(value)) {
+    if (hasPhoneExtension(value) || !PHONE_VALUE_SHAPE.test(value)) {
       continue;
     }
 

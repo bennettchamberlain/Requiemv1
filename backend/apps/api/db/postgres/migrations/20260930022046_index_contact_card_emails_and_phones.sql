@@ -38,7 +38,9 @@
 --    message the office sends.
 --  - a phone: `tel:` dropped, written like a number (`^\+?[0-9 ().\-/]+$`),
 --    at least seven digits, keyed on its last ten — and NOT a number with an
---    extension (`x12`, `ext 12`, or a `;` `,` `#` dial suffix).
+--    extension: `PHONE_EXTENSION_PATTERN` (`graph/utils/normalizeIdentifier.ts`,
+--    embedded below verbatim and pinned by its spec — `x229`, `ext: 229`,
+--    `extn`, a `;` `,` `#` dial suffix, Android `p`/`w` between digits).
 --  - never a number the card files under `Faxes`. Rows imported before faxes
 --    were filed apart have none, and keep their fax among `Phones`; the next
 --    import of the card files it apart, and the phone adjudicator refuses it.
@@ -53,9 +55,18 @@
 --    and `phones` loses every key that only an extension number produced;
 --    `email` / `phone` are set where missing, and `phone` is replaced where it
 --    was such a fake. Only live, unmerged Persons whose lists change are
---    touched.
+--    touched — and a merge SURVIVOR (a row another row is merged into) keeps
+--    its fakes: `PersonMergeService` unions `phones` / `Phones`, so on a
+--    survivor the same ten digits can be a merged-in record's real number.
 -- 2. `ci.entity_identifiers` loses the phone rows those fakes put under the
---    same Person — never a row a user entered or verified — and gains a row
+--    same Person, whatever their `source` / `verified_at`: saving the person
+--    form round-trips every identifier row it shows, and `replaceForEntity`
+--    promotes each one to `source = 'user'`, `verified_at = now()` — the fake
+--    included — so "verified" says nothing about who typed it. What does is
+--    `raw_value`: an import's fake has none, and a round-trip never writes one,
+--    while a row a user typed keeps the typed form. Only `raw_value IS NULL`
+--    rows go; a typed one is the user's, and a typed extension is left for
+--    the repair that can copy it onto the card before removing it. It gains a row
 --    per new method, `ON CONFLICT DO NOTHING`: first writer wins, exactly as at
 --    import, and the earliest of two same-named Persons claims a value both
 --    state (the losing pair is what the duplicate detector exists to find).
@@ -141,7 +152,7 @@ SELECT p.entity_id, 'phone', right(regexp_replace(p.written, '\D', '', 'g'), 10)
   FROM phone_value p
   JOIN contact_card c ON c.entity_id = p.entity_id
  WHERE p.written ~ '^\+?[0-9[:space:]().\-/]+$'
-   AND p.written !~* '(\y(ext|x|extension)\.?\s*[0-9]+\s*$)|[;,#]'
+   AND p.written !~* '[;,#]|(?:^|[^a-z])(?:ext(?:ension|n)?|x)\.?\s*:?\s*\d|\d\s*[pw]\s*\d'
    AND length(regexp_replace(p.written, '\D', '', 'g')) >= 7
    AND NOT EXISTS (
          SELECT 1
@@ -150,14 +161,16 @@ SELECT p.entity_id, 'phone', right(regexp_replace(p.written, '\D', '', 'g'), 10)
                 = right(regexp_replace(p.written, '\D', '', 'g'), 10));
 
 -- The keys only an extension number produced: its last ten digits are no
--- number. A key a real line of the same card also produces is not a fake.
+-- number. A key a real line of the same card also produces is not a fake, and
+-- a merge survivor's keys are not judged at all (see 1. above).
 CREATE TEMP TABLE contact_card_fake_phone AS
 SELECT DISTINCT c.entity_id,
        right(regexp_replace(btrim(regexp_replace(btrim(raw.value), '^tel:', '', 'i')), '\D', '', 'g'), 10) AS value
   FROM contact_card c
   CROSS JOIN LATERAL jsonb_array_elements_text(c.card_phones) AS raw(value)
- WHERE btrim(regexp_replace(btrim(raw.value), '^tel:', '', 'i')) ~* '(\y(ext|x|extension)\.?\s*[0-9]+\s*$)|[;,#]'
-   AND length(regexp_replace(raw.value, '\D', '', 'g')) >= 7;
+ WHERE btrim(regexp_replace(btrim(raw.value), '^tel:', '', 'i')) ~* '[;,#]|(?:^|[^a-z])(?:ext(?:ension|n)?|x)\.?\s*:?\s*\d|\d\s*[pw]\s*\d'
+   AND length(regexp_replace(raw.value, '\D', '', 'g')) >= 7
+   AND NOT EXISTS (SELECT 1 FROM ci.entities s WHERE s.merged_into_entity_id = c.entity_id);
 
 DELETE FROM contact_card_fake_phone f
  USING contact_card_method m
@@ -220,15 +233,14 @@ UPDATE ci.entities e
         OR EXISTS (SELECT 1 FROM contact_card_fake_phone f
                     WHERE f.entity_id = e.entity_id AND f.value = e.properties ->> 'phone'));
 
--- 2a. The index: a fake is no one's number. Never a row a user entered or
---     verified — that is a person's decision, not an import artifact.
+-- 2a. The index: a fake is no one's number — verified or not, since a form
+--     save verifies what it round-trips. Never a row a user typed (see 2.).
 DELETE FROM ci.entity_identifiers ei
  USING contact_card_fake_phone f
  WHERE ei.entity_id = f.entity_id
    AND ei.kind = 'phone'
    AND ei.value_normalized = f.value
-   AND ei.verified_at IS NULL
-   AND ei.source IS DISTINCT FROM 'user';
+   AND ei.raw_value IS NULL;
 
 -- 2b. Every method the card states, first writer wins — unless another card
 --     lists it under a different name.

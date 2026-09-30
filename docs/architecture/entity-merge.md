@@ -381,7 +381,11 @@ and the push indexes them all; migration `20260930022046` repaired the vCard row
 imported, from their own `Emails` / `Phones` — indexing a value only when no other card lists it
 under a different name, since first writer wins would hand an office line or the owner's address
 to whichever card is older — and dropped the fake numbers extensions had left in `phones` and in
-the index ("(310) 447-8675;229" keyed as 4478675229). `enrich.person_self_claim`
+the index ("(310) 447-8675;229" keyed as 4478675229): any key the card's own typed `Phones` proves
+(one extension rule, `PHONE_EXTENSION_PATTERN`, for the TypeScript and the SQL), even when a form
+save had marked it verified — `replaceForEntity` promotes every row it round-trips — but never a
+row a user typed (it keeps its `raw_value`), and never on a merge survivor, whose ten digits can be
+a merged-in record's real line. `enrich.person_self_claim`
 (v2) turns them into claims and retracts the ones a record no longer states.
 
 | Rule | Detail |

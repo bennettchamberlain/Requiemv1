@@ -66,8 +66,15 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     tombstone: randomUUID(),
     /** Not from a contact card at all. */
     chat: randomUUID(),
-    /** A card whose only number carries an extension, and a user confirmed it anyway. */
+    /** A card whose only number carries an extension, and a user TYPED that number into the form. */
     eve: randomUUID(),
+    /** A card whose fake a form save round-tripped: "verified", yet no one typed it. */
+    fin: randomUUID(),
+    /** A merge survivor with an extension fake, and the record merged into it. */
+    gus: randomUUID(),
+    gusStub: randomUUID(),
+    /** An extension the old pattern missed: not at the end of the value. */
+    hal: randomUUID(),
     /** Kai's card, and a friend's card that lists Kai's address beside her own. */
     kai: randomUUID(),
     lumi: randomUUID(),
@@ -160,8 +167,8 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
       [ids.stub, userId],
     );
 
-    // Ada absorbed a second card of hers whose only number was the office
-    // line at her extension: its key, 5550110229, came along as a "phone".
+    // A card of Ada's whose only number was the office line at her extension
+    // left its key, 5550110229, on her row as a "phone".
     await seed(
       ids.ada,
       'Ada Quill',
@@ -186,9 +193,43 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     );
     await seed(ids.eve, 'Eve Quill', { Phones: ['(202) 555-0199 x5'], phones: ['0255501995'] }, '2026-01-07');
     await q(
-      `INSERT INTO ci.entity_identifiers (entity_id, owner_user_id, kind, value_normalized, source, verified_at)
-       VALUES ($1, $2, 'phone', '0255501995', 'user', now())`,
+      `INSERT INTO ci.entity_identifiers
+         (entity_id, owner_user_id, kind, value_normalized, raw_value, source, verified_at)
+       VALUES ($1, $2, 'phone', '0255501995', '(202) 555-0199 x5', 'user', now())`,
       [ids.eve, userId],
+    );
+    // replaceForEntity promotes every row a form save round-trips — the fake
+    // included — and never writes a raw_value for it.
+    await seed(ids.fin, 'Fin Quill', { Phones: ['(212) 555-0162;4'], phones: ['1255501624'] }, '2026-01-12');
+    await q(
+      `INSERT INTO ci.entity_identifiers (entity_id, owner_user_id, kind, value_normalized, source, verified_at)
+       VALUES ($1, $2, 'phone', '1255501624', 'user', now())`,
+      [ids.fin, userId],
+    );
+    await seed(
+      ids.gus,
+      'Gus Quill',
+      { Phones: ['(212) 555-0147 x229'], phones: ['5550147229'] },
+      '2026-01-13',
+    );
+    await q(
+      `INSERT INTO ci.entity_identifiers (entity_id, owner_user_id, kind, value_normalized)
+       VALUES ($1, $2, 'phone', '5550147229')`,
+      [ids.gus, userId],
+    );
+    await seed(ids.gusStub, '+1 (555) 014-7229', { phones: ['5550147229'] }, '2026-01-14', {
+      mergedInto: ids.gus,
+    });
+    await seed(
+      ids.hal,
+      'Hal Quill',
+      { Phones: ['(646) 555-0170 x31 (office)', '(646) 555-0171'], phones: ['6555017031'] },
+      '2026-01-15',
+    );
+    await q(
+      `INSERT INTO ci.entity_identifiers (entity_id, owner_user_id, kind, value_normalized)
+       VALUES ($1, $2, 'phone', '6555017031')`,
+      [ids.hal, userId],
     );
 
     await seed(
@@ -210,7 +251,7 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     );
 
     await seed(ids.tombstone, 'Ada Q', { Emails: ['ada.q@example.com'] }, '2026-01-05', {
-      mergedInto: ids.ada,
+      mergedInto: ids.gus,
     });
     await seed(ids.chat, 'Dee Park', { phones: ['2025550177'] }, '2026-01-06');
 
@@ -246,10 +287,27 @@ describeWithDb(`indexing a contact card's own emails and phones (${availability.
     });
   });
 
-  it('takes the fake out of the index, but never a number a user entered', async () => {
+  it('takes the fake out of the index, but never a number a user typed', async () => {
     expect(await indexed('phone', '5550110229')).toBeUndefined();
-    // Eve's only number carries an extension too — and a person confirmed it.
+    // Eve typed her extension number into the form: the row keeps the typed
+    // form, and it is hers to change, not this migration's.
     expect(await indexed('phone', '0255501995')).toBe(ids.eve);
+  });
+
+  it('takes out a fake a form save marked verified — no one typed it', async () => {
+    expect(await indexed('phone', '1255501624')).toBeUndefined();
+    expect((await propertiesOf(ids.fin)).phones).toBeUndefined();
+  });
+
+  it("leaves a merge survivor's numbers alone: they can be a merged-in record's real line", async () => {
+    expect((await propertiesOf(ids.gus)).phones).toEqual(['5550147229']);
+    expect(await indexed('phone', '5550147229')).toBe(ids.gus);
+  });
+
+  it('recognises an extension anywhere in the value, not only at its end', async () => {
+    expect((await propertiesOf(ids.hal)).phones).toEqual(['6465550171']);
+    expect(await indexed('phone', '6555017031')).toBeUndefined();
+    expect(await indexed('phone', '6465550171')).toBe(ids.hal);
   });
 
   it('never adds a number the card files as a fax', async () => {
