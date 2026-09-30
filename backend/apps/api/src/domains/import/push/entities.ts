@@ -76,6 +76,53 @@ export function naturalKeyFor(staged: StagedEntity): string | null {
   return stagedNaturalKey(staged.type, staged.identityKey, staged.name);
 }
 
+/** The string entries of a staged metadata list, or null when staging did not record the key at all. */
+function statedList(metadata: Record<string, unknown> | null | undefined, key: string): string[] | null {
+  const value = metadata?.[key];
+
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '');
+}
+
+/**
+ * The emails and phones a staged entity is indexed under: every one staging
+ * recorded as the contact's own (`staging/identity.ts` `contactIdentifiers`,
+ * under `emails` / `phones`), with the entity's handle heading its list.
+ *
+ * The handle is NOT always one of them. A phone handle that staging recorded
+ * lists and left out is a fax or an extension number — the smallest handle,
+ * and so the natural key, but no one's line — and it stays out: indexing the
+ * office fax under whichever colleague sorts first is how two colleagues came
+ * to "share a phone number". A row staged before those lists existed (no
+ * `phones` key at all) keeps the old behaviour: its handle is its identifier.
+ *
+ * An email handle is always kept, as before, even an organizational one
+ * staging would not have recorded: it is the only thing such a contact is.
+ */
+export function contactMethodsFor(
+  metadata: Record<string, unknown> | null | undefined,
+  handle: string | null | undefined,
+): { emails: string[]; phones: string[] } {
+  const statedEmails = statedList(metadata, 'emails');
+  const statedPhones = statedList(metadata, 'phones');
+  let emails = [...new Set(statedEmails ?? [])];
+  let phones = [...new Set(statedPhones ?? [])];
+  const key = handle?.trim();
+
+  if (key) {
+    if (key.includes('@')) {
+      emails = [key, ...emails.filter((email) => email !== key)];
+    } else if (statedPhones == null || statedPhones.includes(key)) {
+      phones = [key, ...phones.filter((phone) => phone !== key)];
+    }
+  }
+
+  return { emails, phones };
+}
+
 /**
  * Turn a staged entity into the graph entity to resolve-or-create.
  *
@@ -101,9 +148,10 @@ export function naturalKeyFor(staged: StagedEntity): string | null {
  * ## Identifiers are plural
  *
  * `emails` / `phones` / `names` are the arrays `GraphIngestService` reads to
- * populate `ci.entity_identifiers`. A staged entity carries one normalized
- * handle, so at most one of them has an element — but the shape is the batch
- * shape, not a special case for this caller.
+ * populate `ci.entity_identifiers`. They are every contact method staging
+ * recorded for the entity ({@link contactMethodsFor}), not just the one
+ * handle its natural key was built from: a card keyed on its phone number
+ * used to reach the index without its email at all.
  */
 export function toGraphEntity(staged: StagedEntity): GraphEntityInputDto | null {
   const key = naturalKeyFor(staged);
@@ -114,17 +162,24 @@ export function toGraphEntity(staged: StagedEntity): GraphEntityInputDto | null 
 
   const handle = staged.identityKey?.trim();
   const properties: Record<string, unknown> = { ...(staged.metadata ?? {}) };
+  const { emails, phones } = contactMethodsFor(staged.metadata, handle);
 
-  if (handle) {
-    // The handle is the identity, so it is worth having as a first-class
-    // property and not only inside the derived linked id.
-    if (handle.includes('@')) {
-      properties.email = handle;
-      properties.emails = [handle];
-    } else {
-      properties.phone = handle;
-      properties.phones = [handle];
-    }
+  // Re-set from the merged lists below, so an empty staged list never reaches
+  // the row as `[]`.
+  delete properties.emails;
+  delete properties.phones;
+
+  // The first of each list is the entity's primary: its handle when that is
+  // one of them (the handle is the identity, so it is worth having as a
+  // first-class property and not only inside the derived linked id).
+  if (emails.length > 0) {
+    properties.email = emails[0];
+    properties.emails = emails;
+  }
+
+  if (phones.length > 0) {
+    properties.phone = phones[0];
+    properties.phones = phones;
   }
 
   const entityType = entityTypeFor(staged);

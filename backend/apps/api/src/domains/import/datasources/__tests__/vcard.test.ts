@@ -3,7 +3,12 @@ import os from 'node:os';
 import path from 'path';
 
 import { entityTypeFor, naturalKeyFor } from '../../push/entities';
-import { entityIdentityKey, resolveEntityType } from '../../staging/identity';
+import {
+  contactIdentifiers,
+  entityIdentityKey,
+  FAX_ATTRIBUTE_NAME,
+  resolveEntityType,
+} from '../../staging/identity';
 import type { EntityAttribute, ImportParams } from '../timeline';
 import {
   VCardFileImporter,
@@ -487,6 +492,87 @@ describe('handles recovered from a NOTE-embedded export record', () => {
 
     expect(contact!.entity.metadata?.Emails).toBeUndefined();
     expect(contact!.entity.attributes?.some((a) => a.identity)).toBe(false);
+  });
+});
+
+describe('fax numbers are filed apart from the person’s lines', () => {
+  // Invented: an office in the 212 fiction range — main line 555-0110 (this
+  // colleague at extension 229), fax 555-0118. The shape is a real export's:
+  // every card from one office lists the office fax, and filed among `Phones`
+  // it made two colleagues "the same phone number" to the duplicate detector.
+  const office = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    'N:Quill;Ada;;;',
+    'FN:Ada Quill',
+    'TEL;type=pref:(212) 555-0110\\;229',
+    'TEL;type=OTHER;type=FAX:(212) 555-0118',
+    'END:VCARD',
+  ].join('\r\n');
+
+  it('files a TYPE=FAX number under Faxes, not Phones', () => {
+    const contact = buildContact(contentLines(office), 'office.vcf');
+
+    expect(contact!.entity.metadata?.Phones).toEqual(['(212) 555-0110;229']);
+    expect(contact!.entity.metadata?.Faxes).toEqual(['(212) 555-0118']);
+    expect(contact!.item.metadata?.Faxes).toEqual(['(212) 555-0118']);
+    expect(contact!.entity.accumulate).toContain('Faxes');
+  });
+
+  it('keeps the fax an identity attribute, so no natural key moves', () => {
+    // The key is the card's smallest handle, and here that is the FAX: the
+    // extension line truncates to 5550110229. Filing the fax apart must not
+    // change it — a key that moves on re-import mints a duplicate contact.
+    const contact = buildContact(contentLines(office), 'office.vcf');
+
+    expect(contact!.entity.attributes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: FAX_ATTRIBUTE_NAME, value: '(212) 555-0118', identity: true }),
+      ]),
+    );
+    expect(entityIdentityKey(contact!.entity)).toBe('2125550118');
+  });
+
+  it('gives staging no line of the colleague’s own to index: the fax is office equipment, the extension no number', () => {
+    const contact = buildContact(contentLines(office), 'office.vcf');
+
+    expect(contactIdentifiers(contact!.entity)).toEqual({ emails: [], phones: [] });
+  });
+
+  it.each([
+    ['an Apple built-in label', ['item1.TEL:(212) 555-0118', 'item1.X-ABLabel:_$!<WorkFAX>!$_']],
+    ['a vCard 2.1 bare type', ['TEL;WORK;FAX:(212) 555-0118']],
+    ['a comma-joined TYPE', ['TEL;TYPE="work,fax":(212) 555-0118']],
+  ])('recognises a fax written with %s', (_label, lines) => {
+    const contact = buildContact(
+      contentLines(['BEGIN:VCARD', 'FN:Ada Quill', ...lines, 'END:VCARD'].join('\r\n')),
+      'fax.vcf',
+    );
+
+    expect(contact!.entity.metadata?.Faxes).toEqual(['(212) 555-0118']);
+    expect(contact!.entity.metadata?.Phones).toBeUndefined();
+  });
+
+  it('does not recover note phones onto a card whose only TEL is a fax', () => {
+    // Before faxes were filed apart, the fax sat in `phones` and the note
+    // fallback did not run. It still must not: recovered phones are identity
+    // attributes, and adding one would move the card's natural key.
+    const contact = buildContact(
+      contentLines(
+        [
+          'BEGIN:VCARD',
+          'FN:Ada Quill',
+          'TEL;type=FAX:(212) 555-0118',
+          'NOTE:Source: MOBILE_CONTACTS\\nPhoneNumbers: 202-555-0142\\n',
+          'END:VCARD',
+        ].join('\r\n'),
+      ),
+      'fax-only.vcf',
+    );
+
+    expect(contact!.entity.metadata?.Phones).toBeUndefined();
+    expect(contact!.entity.metadata?.Faxes).toEqual(['(212) 555-0118']);
+    expect(entityIdentityKey(contact!.entity)).toBe('2125550118');
   });
 });
 

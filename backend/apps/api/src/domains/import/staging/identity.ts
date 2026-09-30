@@ -8,7 +8,9 @@
  */
 import { createHash } from 'node:crypto';
 
-import type { Entity, Item, Metadata } from '../datasources/timeline';
+import { normalizeEmail } from '@ci/domains/graph';
+
+import type { Entity, EntityAttribute, Item, Metadata } from '../datasources/timeline';
 
 const PHONE_ATTR_NAMES = new Set(['phone', 'tel', 'mobile', 'cell', 'sms']);
 const EMAIL_ATTR_NAMES = new Set(['email', 'mail', 'e-mail']);
@@ -225,24 +227,37 @@ export function stagedNaturalKey(
 }
 
 /**
+ * An attribute that carries an identity handle — exactly the attributes
+ * {@link hasContactIdentity} treats as a contact signal: named as a phone or an
+ * email, or flagged `identity`, and shaped like a handle.
+ */
+function isIdentityAttribute(attribute: EntityAttribute | undefined): boolean {
+  const name = (attribute?.name ?? '').toLowerCase();
+  const named =
+    PHONE_ATTR_NAMES.has(name) ||
+    EMAIL_ATTR_NAMES.has(name) ||
+    name.includes('phone') ||
+    name.includes('email') ||
+    name.includes('tel');
+
+  return (named || attribute?.identity === true) && looksLikeHandle(attribute?.value);
+}
+
+/**
  * The normalized identity handles an entity carries — drawn from exactly the
  * attributes {@link hasContactIdentity} treats as a contact signal. Kept in
  * lockstep with it so every entity that resolves to 'contact' via an identity
  * also produces a key.
+ *
+ * EVERY handle, faxes and extension numbers included: this picks the natural
+ * key, and a key must never move — see {@link contactIdentifiers} for the
+ * narrower set that is a person's own contact methods.
  */
 function identityHandles(entity: Entity): string[] {
   const out: string[] = [];
 
   for (const attribute of entity.attributes ?? []) {
-    const name = (attribute?.name ?? '').toLowerCase();
-    const named =
-      PHONE_ATTR_NAMES.has(name) ||
-      EMAIL_ATTR_NAMES.has(name) ||
-      name.includes('phone') ||
-      name.includes('email') ||
-      name.includes('tel');
-
-    if ((named || attribute?.identity) && looksLikeHandle(attribute.value)) {
+    if (isIdentityAttribute(attribute)) {
       const handle = normalizeHandle(attribute.value);
 
       if (handle) {
@@ -252,6 +267,141 @@ function identityHandles(entity: Entity): string[] {
   }
 
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Contact identifiers — every method a contact states, for the identity index
+// ---------------------------------------------------------------------------
+
+/**
+ * The attribute name a parser gives a number it knows is a FAX line — the
+ * vCard parser's `TEL;TYPE=FAX`. Still an identity handle (flagged `identity`,
+ * so the natural key is unchanged), never a person's own contact method: one
+ * office's fax is on every card from that office.
+ */
+export const FAX_ATTRIBUTE_NAME = 'fax';
+
+/**
+ * The staged-metadata keys {@link contactIdentifiers} are recorded under —
+ * the same keys `GraphIngestService` indexes into `ci.entity_identifiers` and
+ * `enrich.person_self_claim` turns into claims once they reach
+ * `ci.entities.properties`. Always accumulated across sightings.
+ */
+export const CONTACT_IDENTIFIER_KEYS = ['emails', 'phones'] as const;
+
+/** Staged types that become a `Person` at push — the only ones given contact identifiers. */
+const PERSON_STAGED_TYPES: ReadonlySet<string> = new Set([CONTACT_STAGED_TYPE, 'person']);
+
+/** Whether the entity will be a `Person` — `push/entities.ts` lower-cases the staged type the same way. */
+function becomesPerson(entity: Entity): boolean {
+  const type = resolveEntityType(entity);
+
+  return type != null && PERSON_STAGED_TYPES.has(type.trim().toLowerCase());
+}
+
+/** `x123`, `ext. 123`, `extension 123` at the end, or a `;`/`,`/`#` dial-string suffix. */
+const PHONE_EXTENSION = /(?:\b(?:ext|x|extension)\.?\s*\d+\s*$)|[;,#]/i;
+
+/** What a phone value is written with, once a `tel:` URI scheme is stripped. */
+const PHONE_VALUE_SHAPE = /^\+?[\d\s().\-/]+$/;
+
+/** A mailbox, once normalized: something@domain.tld with no spaces. */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Every email and phone a contact states as its OWN, normalized the way the
+ * identity index keys them (a mailbox lower-cased, a phone's last ten digits).
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ *
+ * A staged entity used to keep exactly one handle — {@link entityIdentityKey},
+ * the lexicographically smallest — and `push/entities.ts` indexed only that.
+ * Digits sort before letters, so a card with any phone number NEVER had its
+ * email indexed: 600 of the 1,018 cards with an email in one real 4,927-card
+ * export. Mail from those addresses could not resolve to the contact (it
+ * minted a stub Person instead), the email tier of the duplicate detector
+ * never saw them, and their other numbers were invisible too. The attributes
+ * that carried them are gone after staging, so this is the one place they can
+ * be kept.
+ *
+ * ── What is NOT a contact method ───────────────────────────────────────────
+ *
+ *  - a FAX ({@link FAX_ATTRIBUTE_NAME}): office equipment;
+ *  - a number with an EXTENSION: its last ten digits are not a number at all —
+ *    "(310) 447-8675;229" keys as 4478675229;
+ *  - anything not written like a phone number (letters, notes);
+ *  - an organizational mailbox ({@link isOrganizationalAddress}): `info@` on a
+ *    colleague's card is the office's, and indexed under the first colleague it
+ *    would claim every message the office sends.
+ *
+ * All of them still count toward the natural key — this does not touch
+ * {@link identityHandles}, and must not: a key that moves mints a duplicate of
+ * every existing contact on the next import.
+ *
+ * Only for entities that become a Person; empty otherwise.
+ */
+export function contactIdentifiers(entity: Entity): { emails: string[]; phones: string[] } {
+  const emails = new Set<string>();
+  const phones = new Set<string>();
+
+  if (!becomesPerson(entity)) {
+    return { emails: [], phones: [] };
+  }
+
+  for (const attribute of entity.attributes ?? []) {
+    if (!isIdentityAttribute(attribute) || (attribute.name ?? '').toLowerCase() === FAX_ATTRIBUTE_NAME) {
+      continue;
+    }
+
+    const raw = String(attribute.value).trim();
+
+    if (raw.includes('@')) {
+      const email = normalizeEmail(raw.replace(/^mailto:/i, ''));
+
+      if (email != null && EMAIL_SHAPE.test(email) && !isOrganizationalAddress(email)) {
+        emails.add(email);
+      }
+
+      continue;
+    }
+
+    const value = raw.replace(/^tel:/i, '').trim();
+
+    if (PHONE_EXTENSION.test(value) || !PHONE_VALUE_SHAPE.test(value)) {
+      continue;
+    }
+
+    const digits = normalizeHandle(value);
+
+    if (digits) {
+      phones.add(digits);
+    }
+  }
+
+  return { emails: [...emails], phones: [...phones] };
+}
+
+/**
+ * The entity as staging should store it: its metadata carrying
+ * {@link contactIdentifiers} under {@link CONTACT_IDENTIFIER_KEYS} — BOTH keys,
+ * empty arrays included, for an entity that becomes a Person, so the push can
+ * tell "this contact states no phone of its own" (its handle is a fax or an
+ * extension, and must not be indexed) from a row staged before the keys
+ * existed — and those keys accumulating across sightings, whatever the parser
+ * declared. Any other entity is returned unchanged.
+ */
+export function withContactIdentifiers(entity: Entity): Entity {
+  if (!becomesPerson(entity)) {
+    return entity;
+  }
+
+  const { emails, phones } = contactIdentifiers(entity);
+
+  return {
+    ...entity,
+    metadata: { ...(entity.metadata ?? {}), emails, phones } as Metadata,
+    accumulate: [...new Set([...(entity.accumulate ?? []), ...CONTACT_IDENTIFIER_KEYS])],
+  };
 }
 
 /**

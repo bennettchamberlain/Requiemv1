@@ -1,5 +1,5 @@
 import type { StagedEntity } from '../../entities/StagedEntityEntity';
-import { entityTypeFor, isGraphExcluded, naturalKeyFor, toGraphEntity } from '../entities';
+import { contactMethodsFor, entityTypeFor, isGraphExcluded, naturalKeyFor, toGraphEntity } from '../entities';
 
 /**
  * The entity lane, tested at the mapper.
@@ -154,6 +154,60 @@ describe('toGraphEntity', () => {
 
   it('returns null only for an entity with nothing to key on', () => {
     expect(toGraphEntity(staged({ name: null, identityKey: null }))).toBeNull();
+  });
+
+  it('indexes every email and phone staging recorded, not only the key', () => {
+    // A contact keyed on its phone used to reach ci.entity_identifiers with
+    // that one number: its email never did, so mail from it minted a stub.
+    const input = toGraphEntity(
+      staged({
+        identityKey: '2025550142',
+        metadata: { emails: ['ada@example.com'], phones: ['2125550199', '2025550142'] },
+      }),
+    );
+
+    expect(input?.key).toBe('contact:2025550142');
+    expect(input?.properties).toMatchObject({
+      email: 'ada@example.com',
+      emails: ['ada@example.com'],
+      phone: '2025550142',
+      phones: ['2025550142', '2125550199'],
+    });
+  });
+
+  it('keys on a fax or an extension handle but never indexes it as a line', () => {
+    // Staging recorded the contact's own numbers and the handle is not one of
+    // them: it is the office fax (or a number with an extension).
+    const input = toGraphEntity(staged({ identityKey: '2125550118', metadata: { emails: [], phones: [] } }));
+
+    expect(input?.key).toBe('contact:2125550118');
+    expect(input?.properties).not.toHaveProperty('phone');
+    expect(input?.properties).not.toHaveProperty('phones');
+    expect(input?.properties).not.toHaveProperty('emails');
+  });
+});
+
+describe('contactMethodsFor', () => {
+  it('puts the handle first when it is one of the contact’s own', () => {
+    expect(contactMethodsFor({ emails: ['bo@example.com', 'ada@example.com'] }, 'ada@example.com')).toEqual({
+      emails: ['ada@example.com', 'bo@example.com'],
+      phones: [],
+    });
+  });
+
+  it('keeps a row staged before the lists existed exactly as it was: its handle is its identifier', () => {
+    expect(contactMethodsFor({ Source: 'vCard' }, '2025550142')).toEqual({
+      emails: [],
+      phones: ['2025550142'],
+    });
+  });
+
+  it('always keeps an email handle, even one staging would not record', () => {
+    // A role-mailbox contact is nothing but its address.
+    expect(contactMethodsFor({ emails: [], phones: [] }, 'support@acme.example')).toEqual({
+      emails: ['support@acme.example'],
+      phones: [],
+    });
   });
 });
 

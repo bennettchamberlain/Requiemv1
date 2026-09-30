@@ -53,6 +53,8 @@ import fs from 'node:fs';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
+import { FAX_ATTRIBUTE_NAME } from '../staging/identity';
+
 import { unescapeIcsText as unescapeVCardText } from './calendar';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
@@ -699,6 +701,25 @@ function isPreferred(line: ContentLine): boolean {
 }
 
 /**
+ * A TEL line that files its number as a FAX: `TYPE=FAX` in any case, alone or
+ * beside WORK/HOME/OTHER (vCard 2.1's bare `;FAX` lands in TYPE too), or a
+ * label that says so — Apple's built-in `_$!<WorkFAX>!$_` and a custom
+ * `X-ABLabel:Office fax` alike.
+ *
+ * Why it matters: a fax is office equipment, and every card from one office
+ * lists the office fax. Filed among a contact's `Phones`, it made two
+ * colleagues "the same phone number" to the duplicate detector — see
+ * `FAX_FACT_PROPERTY_KEYS` in `memory/utils/phoneIdentity.ts`.
+ */
+function isFaxLine(line: ContentLine, label: string | undefined): boolean {
+  if ((line.params.TYPE ?? []).some((t) => t.toUpperCase() === 'FAX')) {
+    return true;
+  }
+
+  return label != null && /fax/i.test(label);
+}
+
+/**
  * Display name from the structured N property (family;given;additional;prefix;
  * suffix). The components are stored family-first, so joining them in file
  * order produced "Broza Liam" for every card whose export omitted FN (152 of
@@ -951,6 +972,7 @@ const ACCUMULATED_KEYS = [
   'Names',
   'Emails',
   'Phones',
+  'Faxes',
   'URLs',
   'Organizations',
   'JobTitles',
@@ -990,6 +1012,7 @@ export function buildContact(lines: ContentLine[], file: string, photo?: CardPho
   const attributes: ContactAttribute[] = [];
   const emails: string[] = [];
   const phones: string[] = [];
+  const faxes: string[] = [];
   const urls: string[] = [];
   const orgs: string[] = [];
   const titles: string[] = [];
@@ -1034,8 +1057,21 @@ export function buildContact(lines: ContentLine[], file: string, photo?: CardPho
           break;
         }
 
-        phones.push(v);
-        attributes.push({ name: 'phone', value: v, identity: true, ...labelled, ...preferred });
+        // A fax is filed apart from the person's lines (`Faxes`, not `Phones`)
+        // so the phone adjudicator can refuse it, and named `fax` so staging
+        // never records it among the contact's own numbers. It stays an
+        // identity ATTRIBUTE exactly as before: the attributes decide the
+        // entity's natural key (entityIdentityKey takes the smallest handle),
+        // and a key that moves on re-import mints a duplicate of every
+        // contact whose smallest handle is a fax.
+        if (isFaxLine(line, label)) {
+          faxes.push(v);
+          attributes.push({ name: FAX_ATTRIBUTE_NAME, value: v, identity: true, ...labelled, ...preferred });
+        } else {
+          phones.push(v);
+          attributes.push({ name: 'phone', value: v, identity: true, ...labelled, ...preferred });
+        }
+
         break;
       }
 
@@ -1189,7 +1225,12 @@ export function buildContact(lines: ContentLine[], file: string, photo?: CardPho
   // and phones into NOTE instead of into properties, and a card whose ONLY
   // content is such a note has nothing for entity resolution to key on at all.
   // Per kind and fallback-only — structured properties always win.
-  if (notes.length > 0 && (emails.length === 0 || phones.length === 0)) {
+  // A fax TEL counts as "the card has a number" here, as it did when faxes
+  // were filed in `phones`: recovering note phones onto a fax-only card would
+  // add identity attributes, and so move its natural key.
+  const hasTel = phones.length > 0 || faxes.length > 0;
+
+  if (notes.length > 0 && (emails.length === 0 || !hasTel)) {
     const recovered = handlesFromNote(notes.join('\n'));
 
     if (emails.length === 0) {
@@ -1199,7 +1240,7 @@ export function buildContact(lines: ContentLine[], file: string, photo?: CardPho
       }
     }
 
-    if (phones.length === 0) {
+    if (!hasTel) {
       for (const value of recovered.phones) {
         phones.push(value);
         attributes.push({ name: 'phone', value, identity: true });
@@ -1241,6 +1282,7 @@ export function buildContact(lines: ContentLine[], file: string, photo?: CardPho
       ...(titles.length ? { JobTitle: titles[0] } : {}),
       ...(emails.length ? { Emails: uniq(emails) } : {}),
       ...(phones.length ? { Phones: uniq(phones) } : {}),
+      ...(faxes.length ? { Faxes: uniq(faxes) } : {}),
       ...(urls.length ? { URLs: uniq(urls) } : {}),
       ...(addresses.length ? { Addresses: uniq(addresses) } : {}),
       ...(categories.length ? { Categories: uniq(categories) } : {}),
@@ -1269,6 +1311,7 @@ export function buildContact(lines: ContentLine[], file: string, photo?: CardPho
       ...(name ? { Names: [name] } : {}),
       ...(emails.length ? { Emails: uniq(emails) } : {}),
       ...(phones.length ? { Phones: uniq(phones) } : {}),
+      ...(faxes.length ? { Faxes: uniq(faxes) } : {}),
       ...(urls.length ? { URLs: uniq(urls) } : {}),
       ...(orgs.length ? { Organizations: uniq(orgs) } : {}),
       ...(titles.length ? { JobTitles: uniq(titles) } : {}),

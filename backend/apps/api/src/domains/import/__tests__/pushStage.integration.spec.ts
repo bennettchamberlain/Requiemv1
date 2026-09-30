@@ -15,7 +15,9 @@ import {
 } from '@ci/domains/maintenance/events';
 import { GraphDeltaWriter } from '@ci/domains/memory';
 
+import { buildContact, parseContentLine, unfoldContentLines, type ContentLine } from '../datasources/vcard';
 import { PushStage } from '../stages/PushStage';
+import { StagedWriter } from '../staging/StagedWriter';
 import type { StageRunContext } from '../types';
 
 import { createStagingHarness, importDatabase, type StagingHarness } from './support/stagingHarness';
@@ -997,5 +999,86 @@ describeWithDatabase(`the push stage (${importDatabase.target})`, () => {
     const options = (positions.create.mock.calls[0] as unknown[])[2];
 
     expect(options).toEqual({ emitCreated: false });
+  });
+
+  /**
+   * The whole chain a contact card takes — the real vCard parser, the real
+   * writer and the real push into Postgres — because the handles this is about
+   * exist only as parser ATTRIBUTES, and are gone from the staged row unless
+   * staging records them.
+   *
+   * The card is keyed on its office FAX, exactly as a real one was: the
+   * extension line truncates to 5550110229, the cell number sorts after the
+   * fax, and digits sort before every email. Before, that fax was the one
+   * identifier the card had: its own email and cell number never reached
+   * `ci.entity_identifiers`, and the fax was indexed as its phone. Invented
+   * throughout: 555-01XX numbers, `.example` mail.
+   */
+  it('indexes every email and phone a contact card states, and never its office fax', async () => {
+    const card = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'N:Quill;Ada;;;',
+      'FN:Ada Quill',
+      'EMAIL;type=INTERNET;type=pref:ada@quill-legal.example',
+      'EMAIL;type=INTERNET:info@quill-legal.example',
+      'TEL;type=pref:(212) 555-0110\\;229',
+      'TEL;type=OTHER;type=FAX:(212) 555-0118',
+      'TEL;type=CELL:(646) 555-0142',
+      'END:VCARD',
+    ].join('\r\n');
+    const lines = unfoldContentLines(card)
+      .filter((line) => !/^(BEGIN|END):VCARD$/i.test(line.trim()))
+      .map((line) => parseContentLine(line))
+      .filter((line): line is ContentLine => line != null);
+    const contact = buildContact(lines, 'contacts.vcf');
+
+    const runId = await harness.startRun();
+    const writer = new StagedWriter(harness.dataSource.manager, {
+      userId: harness.userId,
+      runId,
+      dataSource: 'vcard',
+    });
+    writer.push({ item: contact!.item, edges: [{ relation: 'contact', to: { entity: contact!.entity } }] });
+    await writer.settled();
+
+    const { stage } = makeStage();
+    await stage.run(contextFor(runId));
+
+    const [person] = await harness.dataSource.query<
+      Array<{ entity_id: string; linked_id: string; properties: Record<string, unknown> }>
+    >(
+      `SELECT entity_id, linked_id, properties FROM ci.entities
+        WHERE owner_user_id = $1::uuid AND entity_type = 'Person' AND name = 'Ada Quill'`,
+      [harness.userId],
+    );
+
+    expect(person.properties).toMatchObject({
+      email: 'ada@quill-legal.example',
+      emails: ['ada@quill-legal.example'],
+      phone: '6465550142',
+      phones: ['6465550142'],
+      Faxes: ['(212) 555-0118'],
+    });
+
+    const indexed = await harness.dataSource.query<Array<{ kind: string; value_normalized: string }>>(
+      `SELECT kind, value_normalized FROM ci.entity_identifiers
+        WHERE owner_user_id = $1::uuid AND entity_id = $2::uuid
+        ORDER BY kind, value_normalized`,
+      [harness.userId, person.entity_id],
+    );
+
+    expect(indexed).toEqual([
+      { kind: 'email', value_normalized: 'ada@quill-legal.example' },
+      { kind: 'name', value_normalized: 'ada quill' },
+      { kind: 'phone', value_normalized: '6465550142' },
+    ]);
+
+    // The key did not move: it is still the smallest handle, the fax.
+    const [staged] = await harness.dataSource.query<Array<{ identity_key: string }>>(
+      `SELECT identity_key FROM ci_import.staged_entities WHERE run_id = $1::uuid`,
+      [runId],
+    );
+    expect(staged.identity_key).toBe('2125550118');
   });
 });
