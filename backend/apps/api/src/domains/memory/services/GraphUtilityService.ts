@@ -83,6 +83,29 @@ const GENERIC_SOURCE_KEYS = ['import:importer', 'importer', 'import:'];
  */
 const NODE_SEARCH_MAX_LIMIT = 500;
 
+/**
+ * The properties bag a node or relationship write leaves behind: `properties`
+ * merged over `stored` (or replacing it when `mergeProperties === false`), then
+ * each `removeProperties` key deleted. With no `properties` at all there is
+ * nothing to merge or replace with, so `stored` survives and only the removals
+ * apply — `mergeProperties: false` alone never empties a bag.
+ */
+function nextProperties(
+  stored: Record<string, unknown> | null | undefined,
+  write: { properties?: Record<string, unknown>; mergeProperties?: boolean; removeProperties?: string[] },
+): Record<string, unknown> {
+  const next =
+    write.properties && write.mergeProperties === false
+      ? { ...write.properties }
+      : { ...(stored ?? {}), ...(write.properties ?? {}) };
+
+  for (const key of write.removeProperties ?? []) {
+    delete next[key];
+  }
+
+  return next;
+}
+
 @Injectable()
 export class GraphUtilityService {
   constructor(
@@ -591,6 +614,21 @@ export class GraphUtilityService {
       .getMany();
   }
 
+  /**
+   * Insert a node, or update the one `entityId` already names.
+   *
+   * On update, a field left `undefined` keeps its stored value and `null`
+   * clears it — so a caller relaying a partial write must pass omitted fields
+   * through as `undefined`, never `?? null`. That matters most for
+   * `linkedTable`/`linkedId`: an importer upserts on
+   * `(owner, entity_type, linked_table, linked_id)`, so clearing either one (or
+   * changing `entityType`) detaches the row, and the next import of the same
+   * source mints a duplicate beside it.
+   *
+   * `properties` merges over the stored bag unless `mergeProperties === false`,
+   * which replaces it; `removeProperties` keys are deleted afterwards. Both are
+   * applied to the row as read here, not to a copy a caller read earlier.
+   */
   async createOrUpdateNode(
     ownerUserId: string,
     payload: {
@@ -603,6 +641,7 @@ export class GraphUtilityService {
       linkedTable?: string | null;
       linkedId?: string | null;
       mergeProperties?: boolean;
+      removeProperties?: string[];
     },
   ): Promise<{ node: GraphNodeEntity; created: boolean }> {
     const entityId = payload.entityId ?? uuidv7();
@@ -620,7 +659,7 @@ export class GraphUtilityService {
         entity_type: payload.entityType,
         name: payload.name ?? null,
         description: payload.description ?? payload.name ?? null,
-        properties: payload.properties ?? {},
+        properties: nextProperties({}, payload),
         search_content: payload.searchContent ?? payload.name ?? null,
         linked_table: payload.linkedTable ?? null,
         linked_id: payload.linkedId ?? null,
@@ -652,11 +691,8 @@ export class GraphUtilityService {
         node.linked_id = payload.linkedId;
       }
 
-      if (payload.properties) {
-        node.properties =
-          payload.mergeProperties === false
-            ? payload.properties
-            : { ...(node.properties ?? {}), ...payload.properties };
+      if (payload.properties || payload.removeProperties?.length) {
+        node.properties = nextProperties(node.properties, payload);
       }
 
       node.is_active = true;
@@ -771,6 +807,63 @@ export class GraphUtilityService {
     return query.getMany();
   }
 
+  /**
+   * The active relationship a write of this edge lands on when no row is named
+   * by id: the one on its `(from, to, type)` coordinate — the columns of
+   * `relationships_unique_directed_idx`, which allows one active edge there —
+   * or, failing that, a bidirectional edge stored the other way round, which
+   * states the same fact. `isBidirectional: false` asks for this orientation
+   * only: a one-way B→A is not the A↔B already stored, and merging it in would
+   * make that edge one-way A→B.
+   *
+   * Only the owner's own edges match. Every edge writer stamps `owner_user_id`
+   * with the owner of both endpoints, so an edge between the owner's entities
+   * that belongs to someone else is not something to write onto.
+   */
+  async findActiveRelationship(
+    ownerUserId: string,
+    edge: { fromEntityId: string; toEntityId: string; relationshipType: string; isBidirectional?: boolean },
+  ): Promise<RelationshipEntity | null> {
+    const directed = await this.findActiveDirectedRelationship(
+      ownerUserId,
+      edge.fromEntityId,
+      edge.toEntityId,
+      edge.relationshipType,
+    );
+
+    if (directed || edge.isBidirectional === false) {
+      return directed;
+    }
+
+    return this.relationshipRepo.findOne({
+      where: {
+        owner_user_id: ownerUserId,
+        from_entity_id: edge.toEntityId,
+        to_entity_id: edge.fromEntityId,
+        relationship_type: edge.relationshipType,
+        is_bidirectional: true,
+        is_active: true,
+      },
+    });
+  }
+
+  /**
+   * Insert a relationship, or update the one it already is: the row
+   * `relationshipId` names, or — when it names none, or none is given — the
+   * active edge {@link findActiveRelationship} finds on the write's coordinate.
+   *
+   * The coordinate is the half that used to be missing. A producer re-asserting
+   * an edge that already exists (an agent restating what an import wrote, a
+   * retried write, a sync pass) sends no id, or a fresh one, and a plain INSERT
+   * of that violates `relationships_unique_directed_idx`: GraphEventListener
+   * threw, the job dead-lettered, and every property the write carried was lost
+   * — after `memory.remember` had already reported the relationship created.
+   *
+   * On update an `undefined` field keeps its stored value, and `properties` /
+   * `mergeProperties` / `removeProperties` behave as in {@link createOrUpdateNode}.
+   * An edge found by its coordinate also keeps its stored endpoints and type
+   * spelling; only a row named by id is moved or retyped by a write that says so.
+   */
   async createOrUpdateRelationship(
     ownerUserId: string,
     payload: {
@@ -784,62 +877,136 @@ export class GraphUtilityService {
       startDate?: Date;
       endDate?: Date;
       mergeProperties?: boolean;
+      removeProperties?: string[];
     },
   ): Promise<{ relationship: RelationshipEntity; created: boolean }> {
-    const relationshipId = payload.relationshipId ?? uuidv7();
-    let relationship = await this.relationshipRepo.findOne({
-      where: { relationship_id: relationshipId, owner_user_id: ownerUserId },
-    });
+    const byId = payload.relationshipId
+      ? await this.relationshipRepo.findOne({
+          where: { relationship_id: payload.relationshipId, owner_user_id: ownerUserId },
+        })
+      : null;
 
-    const created = !relationship;
+    let relationship = byId ?? (await this.findActiveRelationship(ownerUserId, payload));
+
     if (!relationship) {
-      relationship = this.relationshipRepo.create({
-        relationship_id: relationshipId,
-        owner_user_id: ownerUserId,
-        from_entity_id: payload.fromEntityId,
-        to_entity_id: payload.toEntityId,
-        relationship_type: payload.relationshipType,
-        properties: payload.properties ?? {},
-        strength: payload.strength ?? 1,
-        is_bidirectional: payload.isBidirectional ?? false,
-        start_date: payload.startDate ?? null,
-        end_date: payload.endDate ?? null,
-        is_active: true,
-      });
-    } else {
+      const inserted = await this.insertRelationshipUnlessActive(
+        ownerUserId,
+        payload.relationshipId ?? uuidv7(),
+        payload,
+      );
+
+      if (inserted) {
+        return { relationship: inserted, created: true };
+      }
+
+      // The insert yielded: another writer put an active edge on exactly this
+      // coordinate between the read above and the INSERT. Merge into that one.
+      relationship = await this.findActiveDirectedRelationship(
+        ownerUserId,
+        payload.fromEntityId,
+        payload.toEntityId,
+        payload.relationshipType,
+      );
+
+      if (!relationship) {
+        throw new Error(
+          `An active ${payload.relationshipType} relationship from ${payload.fromEntityId} to ` +
+            `${payload.toEntityId} exists but does not belong to owner ${ownerUserId}`,
+        );
+      }
+    }
+
+    if (byId) {
       relationship.from_entity_id = payload.fromEntityId ?? relationship.from_entity_id;
       relationship.to_entity_id = payload.toEntityId ?? relationship.to_entity_id;
       relationship.relationship_type = payload.relationshipType ?? relationship.relationship_type;
-
-      if (payload.properties) {
-        relationship.properties =
-          payload.mergeProperties === false
-            ? payload.properties
-            : { ...(relationship.properties ?? {}), ...payload.properties };
-      }
-
-      if (payload.strength !== undefined) {
-        relationship.strength = payload.strength;
-      }
-
-      if (payload.isBidirectional !== undefined) {
-        relationship.is_bidirectional = payload.isBidirectional;
-      }
-
-      if (payload.startDate !== undefined) {
-        relationship.start_date = payload.startDate;
-      }
-
-      if (payload.endDate !== undefined) {
-        relationship.end_date = payload.endDate;
-      }
-
-      relationship.is_active = true;
     }
+
+    if (payload.properties || payload.removeProperties?.length) {
+      relationship.properties = nextProperties(relationship.properties, payload);
+    }
+
+    if (payload.strength !== undefined) {
+      relationship.strength = payload.strength;
+    }
+
+    if (payload.isBidirectional !== undefined) {
+      relationship.is_bidirectional = payload.isBidirectional;
+    }
+
+    if (payload.startDate !== undefined) {
+      relationship.start_date = payload.startDate;
+    }
+
+    if (payload.endDate !== undefined) {
+      relationship.end_date = payload.endDate;
+    }
+
+    relationship.is_active = true;
 
     const saved = await this.relationshipRepo.save(relationship);
 
-    return { relationship: saved, created };
+    return { relationship: saved, created: false };
+  }
+
+  private findActiveDirectedRelationship(
+    ownerUserId: string,
+    fromEntityId: string,
+    toEntityId: string,
+    relationshipType: string,
+  ): Promise<RelationshipEntity | null> {
+    return this.relationshipRepo.findOne({
+      where: {
+        owner_user_id: ownerUserId,
+        from_entity_id: fromEntityId,
+        to_entity_id: toEntityId,
+        relationship_type: relationshipType,
+        is_active: true,
+      },
+    });
+  }
+
+  /**
+   * INSERT the edge unless an active one already holds its coordinate; returns
+   * the new row, or `null` when the insert yielded. The conflict target names
+   * the columns of `relationships_unique_directed_idx` and repeats its
+   * predicate (the shape GraphIngestService and KnownPlacesService use), so it
+   * absorbs a clash on that index and nothing else: a `relationship_id` that is
+   * already taken still raises. Not raising matters beyond the log line — a
+   * failed statement would abort a surrounding transaction.
+   */
+  private async insertRelationshipUnlessActive(
+    ownerUserId: string,
+    relationshipId: string,
+    payload: Parameters<GraphUtilityService['createOrUpdateRelationship']>[1],
+  ): Promise<RelationshipEntity | null> {
+    const relationship = this.relationshipRepo.create({
+      relationship_id: relationshipId,
+      owner_user_id: ownerUserId,
+      from_entity_id: payload.fromEntityId,
+      to_entity_id: payload.toEntityId,
+      relationship_type: payload.relationshipType,
+      properties: nextProperties({}, payload),
+      strength: payload.strength ?? 1,
+      is_bidirectional: payload.isBidirectional ?? false,
+      start_date: payload.startDate ?? null,
+      end_date: payload.endDate ?? null,
+      is_active: true,
+    });
+
+    const result = await this.relationshipRepo
+      .createQueryBuilder()
+      .insert()
+      // `metadata.target`, as in PlaceService: the entity class would narrow
+      // `.values()` to `_QueryDeepPartialEntity`, which rejects jsonb `properties`.
+      .into(this.relationshipRepo.metadata.target)
+      .values(relationship)
+      .onConflict('(from_entity_id, to_entity_id, relationship_type) WHERE is_active = TRUE DO NOTHING')
+      .returning(['relationship_id'])
+      .execute();
+
+    // Postgres hands back the RETURNING rows, and a yielded insert returns none.
+    return (result.raw as unknown[]).length > 0 ? relationship : null;
   }
 
   async softDeleteRelationship(relationshipId: string, ownerUserId: string): Promise<void> {
