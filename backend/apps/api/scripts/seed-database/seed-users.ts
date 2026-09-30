@@ -38,6 +38,7 @@ export async function seedUsers(module: TestingModule, multibar: MultiBar) {
           name: user.name,
           email: user.email,
           password: user.password!,
+          timezone: user.timezone,
         },
       );
 

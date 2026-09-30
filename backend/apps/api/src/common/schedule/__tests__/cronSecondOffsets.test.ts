@@ -34,8 +34,9 @@ import { AnswerInferenceCron } from '@ci/domains/smart-rotation/cron/AnswerInfer
  * an off-grid one. 8, 18, 28, 38 and 48 are claimed below, as are 13
  * (`RecallProbeCron`) and 23 (`EntityTypeAuditCron`); 3 is claimed below by
  * `TurnFragmentCron`, 33 is claimed by `AgentMemoryRetentionCron`
- * (02:20:33, `role: 'worker'`), and 43 is claimed by `AgentDispatchStaleCron`,
- * leaving 53 and 58 as the next tidy ones free.
+ * (02:20:33, `role: 'worker'`), 43 is claimed by `AgentDispatchStaleCron`,
+ * and 53 by `DeterministicPersonMergeCron.drain` (hourly at xx:17:53,
+ * `role: 'worker'`), leaving 58 as the next tidy one free.
  *
  * Not listed, deliberately: `DerivationCron.deriveNightly` (`25 40 4 * * *`)
  * and `OrphanCleanupCron.sweepOnSchedule` (`35 50 2 * * *`) reuse seconds 25
@@ -49,6 +50,7 @@ const PREEXISTING_OFFSETS: Record<string, string> = {
   '30': 'ImportStageListener.sweepOnSchedule',
   '40': 'DeadLetterReaperListener.reapOnSchedule',
   '50': 'RetrievalHealthCron.captureRetrievalHealth, ImportRetentionCron.runOnSchedule',
+  '53': 'DeterministicPersonMergeCron.drain',
 };
 
 function registeredExpression(method: unknown): string {

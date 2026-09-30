@@ -1,10 +1,20 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Fragment,
+  type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import { useApolloClient } from '@apollo/client';
 import { GlobalUID } from '@ci/common';
-import { Button, Card, IconButton, Label, Sheet, cn, useToast } from '@ci/shadcn';
-import { ImageOff, Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
+import { Button, Card, IconButton, Label, Sheet, Tooltip, cn, useToast } from '@ci/shadcn';
+import { FileSymlink, ImageOff, Loader2, Pencil, Trash2 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
+import { Link, useInRouterContext } from 'react-router-dom';
 
 import { useTagEntityService } from '@/api';
 import { ChatWithAgentMenu } from '@/components/ChatWithAgent';
@@ -34,6 +44,66 @@ import { useReadOnly } from './readOnly';
 // The field/meta contract now lives with the shared editor so the full-page
 // entity views can render the very same field set (see components/EntityFields).
 export type { EditField, MetaItem };
+
+/**
+ * The standalone page for each resource type the drawer can show, by raw id.
+ * Types absent here (a file, a browser visit, a thread) have no page and get no
+ * link. Kept in step with the routes in App.tsx and with `ITEM_PAGES` in the
+ * API's DatabaseSearchTool, which hands the chat the same paths.
+ */
+const FULL_PAGE_PATHS: Readonly<Record<string, string>> = {
+  communication: '/communications',
+  concept: '/concepts',
+  content: '/content',
+  event: '/events',
+  item: '/items',
+  note: '/notes',
+  person: '/people',
+  place: '/places',
+  receipt: '/receipts',
+};
+
+export function fullPagePath(resourceType: string | null, rawId: string | null): string | null {
+  if (resourceType == null || rawId == null) {
+    return null;
+  }
+
+  const base = FULL_PAGE_PATHS[resourceType];
+
+  return base ? `${base}/${rawId}` : null;
+}
+
+/**
+ * The header's "open full page" control. An in-app `Link`, never
+ * `target="_blank"`: the old escape hatch opened a new tab, which on the
+ * Capacitor build (WKWebView) left the app for the system browser (issue
+ * #2311). Routing in place keeps the drawer's page in history, so Back returns
+ * to the list with its filters intact. Outside a router (stories, unit tests)
+ * it degrades to a plain anchor.
+ */
+function FullPageLink({ to, label }: { to: string; label: string }) {
+  const inRouter = useInRouterContext();
+  const className =
+    '-mt-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground';
+  const link = inRouter ? (
+    <Link to={to} aria-label={label} className={className}>
+      <FileSymlink className="size-4" />
+    </Link>
+  ) : (
+    <a href={to} aria-label={label} className={className}>
+      <FileSymlink className="size-4" />
+    </a>
+  );
+
+  // The same bubble (and delay) IconButton gives its neighbours, so the four
+  // header controls read as one row rather than three tooltips and a `title`.
+  return (
+    <Tooltip delayDuration={600}>
+      <Tooltip.Content>{label}</Tooltip.Content>
+      <Tooltip.Trigger asChild>{link}</Tooltip.Trigger>
+    </Tooltip>
+  );
+}
 
 interface EntityDetailScaffoldProps {
   entity: MemoryEntity;
@@ -195,13 +265,56 @@ function useProgressiveSrc(src?: string | null, previewSrc?: string | null): str
 }
 
 /**
+ * Re-fetches the drawer's node from the server so its media links are fresh.
+ *
+ * Every media URL the drawer shows is a signed object-store link that expires
+ * an hour after it was minted (`staticfiles.auth.signatureTTL`). The links
+ * ride in whatever query put the entity in the cache — the search page, the
+ * timeline — and stay there for as long as the tab does. A photo hides this:
+ * its preview was fetched (and browser-cached) when the list rendered, and
+ * the original's failure leaves the preview in place. A video is fetched
+ * only when its drawer opens, so an hour after the search the object store
+ * answers 403 and the element reports an error — "media couldn't be loaded"
+ * for a file that is fine. Measured 2026-09-22: a tampered or expired
+ * signature returns 403 through the gateway; nothing else about the file
+ * changes.
+ *
+ * Resolves true when a fresh node was fetched and handed to the drawer (the
+ * details re-render with the new links and the media retries by itself),
+ * false when nothing could be fetched. Null outside a scaffold (stories,
+ * unit tests).
+ */
+const MediaRefreshContext = createContext<(() => Promise<boolean>) | null>(null);
+
+export function MediaRefreshProvider({
+  refresh,
+  children,
+}: {
+  refresh: (() => Promise<boolean>) | null;
+  children: ReactNode;
+}) {
+  return <MediaRefreshContext.Provider value={refresh}>{children}</MediaRefreshContext.Provider>;
+}
+
+/**
  * Render image/video media for a media-bearing entity. `src` should already be
  * resolved to a loadable URL (callers add the `/static` prefix where needed).
  * Falls back to treating an unknown content type as an image.
  *
  * For images, pass `previewSrc` alongside the full-size `src` to paint the
  * preview while the original downloads (see {@link useProgressiveSrc}).
- * Videos ignore `previewSrc` — they stream and paint their own poster frame.
+ * Videos stream `src` and use `previewSrc`, when given, as the poster — and
+ * as the still that stays up when the browser cannot decode the stream.
+ *
+ * That last case is common, not exotic: phone recordings since ~2023 are
+ * HEVC (H.265), which Chrome on Linux does not decode at all (measured
+ * 2026-09-22: every 4K 2023–2026 clip in the library is HEVC Main/Main 10;
+ * the older and messaging-app clips are H.264 and play). The bytes arrive
+ * fine — a range request through the gateway answers 206 video/mp4 — the
+ * element just fires `error` with MEDIA_ERR_SRC_NOT_SUPPORTED. So a video
+ * that fails the way a codec does is not "couldn't be loaded": it is the
+ * poster, a sentence saying the browser cannot play this format, and the
+ * original to open or save. A network failure keeps "couldn't be loaded".
  */
 export function EntityMedia({
   src,
@@ -229,7 +342,58 @@ export function EntityMedia({
   // block degrades to a link instead; keyed by src so a new entity retries.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const shownSrc = isVideo ? src : imageSrc;
+  // At most ONE refresh per mount, and only for a failure a fresh link can
+  // cure: a network error (MediaError 2 — the object store answered 403 for an
+  // expired signature) or a source the element rejected outright (4). A DECODE
+  // error (3) is the codec, not the link — measured 2026-09-22: every 4K HEVC
+  // clip on the 7900 XTX dies with PIPELINE_ERROR_DECODE in Chrome's VA-API
+  // path, with or without Chrome's acceleration flags, while ffmpeg decodes
+  // the same bytes through the same driver — and refreshing on it produced a
+  // refetch on every play click while the player did nothing. A successful
+  // refresh re-renders with the re-minted `src` and remounts the element
+  // (`attempt`) so the retry does not depend on the link's text changing (two
+  // mints in one second are identical). Anything else, and any second
+  // failure, is the unavailable state.
+  const refreshMedia = useContext(MediaRefreshContext);
+  const [refreshed, setRefreshed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  // What the notice blames once a video gives up. DECODE (3) and
+  // SRC_NOT_SUPPORTED (4) are how an unplayable codec surfaces; a network
+  // error, or no reason at all, is the link or the connection, and "the file
+  // itself is fine" would be a guess there.
+  const [codecFailure, setCodecFailure] = useState(false);
+  const handleError = useCallback(
+    (failing: string, error: MediaError | null) => {
+      const linkMayHaveExpired =
+        error == null ||
+        error.code === MediaError.MEDIA_ERR_NETWORK ||
+        error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED;
+      const fail = () => {
+        setCodecFailure(
+          error != null &&
+            (error.code === MediaError.MEDIA_ERR_DECODE ||
+              error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED),
+        );
+        setFailedSrc(failing);
+      };
 
+      if (refreshMedia && !refreshed && linkMayHaveExpired) {
+        setRefreshed(true);
+        void refreshMedia().then((ok) => {
+          if (ok) {
+            setAttempt((n) => n + 1);
+          } else {
+            fail();
+          }
+        });
+
+        return;
+      }
+
+      fail();
+    },
+    [refreshMedia, refreshed],
+  );
   if (!shownSrc) {
     return null;
   }
@@ -239,21 +403,35 @@ export function EntityMedia({
   }
 
   if (failedSrc === shownSrc) {
+    const originalHref = fallbackHref ?? (isVideo ? src : null);
+
     return (
       <div
         role="status"
         className="flex shrink-0 flex-col items-center justify-center gap-2 rounded-md border bg-muted/40 p-6 text-sm text-muted-foreground"
       >
-        <ImageOff className="size-8" aria-hidden />
-        <span>Media couldn&apos;t be loaded</span>
-        {fallbackHref && (
+        {isVideo && previewSrc ? (
+          <img
+            src={previewSrc}
+            alt={alt ?? ''}
+            className="max-h-[max(30vh,12rem)] w-full rounded object-contain"
+          />
+        ) : (
+          <ImageOff className="size-8" aria-hidden />
+        )}
+        <span>
+          {isVideo && codecFailure
+            ? "This browser can't play this video (usually HEVC from a recent phone whose playable copy hasn't been made yet). The file itself is fine."
+            : "Media couldn't be loaded"}
+        </span>
+        {originalHref && (
           <a
-            href={fallbackHref}
+            href={originalHref}
             target="_blank"
             rel="noopener noreferrer"
             className="break-all text-primary hover:underline"
           >
-            Open original <span aria-hidden>↗</span>
+            {isVideo ? 'Open or save the original' : 'Open original'} <span aria-hidden>↗</span>
           </a>
         )}
       </div>
@@ -278,17 +456,20 @@ export function EntityMedia({
     <div className="flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
       {isVideo ? (
         <video
+          key={attempt}
           src={shownSrc}
+          poster={previewSrc ?? undefined}
           controls
           className="max-h-[max(45vh,16rem)] w-full object-contain"
-          onError={() => setFailedSrc(shownSrc)}
+          onError={(event) => handleError(shownSrc, event.currentTarget.error)}
         />
       ) : (
         <img
+          key={attempt}
           src={shownSrc}
           alt={alt ?? ''}
           className="max-h-[max(45vh,16rem)] w-full object-contain"
-          onError={() => setFailedSrc(shownSrc)}
+          onError={() => handleError(shownSrc, null)}
         />
       )}
     </div>
@@ -344,7 +525,7 @@ export function EntityDetailScaffold({
   const ref = useMemo(() => resolveEntityRef(entity), [entity]);
   const currentTags = useMemo(() => readTags(entity), [entity]);
   const { tagEntities, untagEntities } = useTagEntityService();
-  const { refetch, setActiveEntity } = useEntityDrawerHost();
+  const { refetch, setActiveEntity, refreshActiveEntity } = useEntityDrawerHost();
   const apolloClient = useApolloClient();
   const { toast } = useToast();
   // Shared-search viewer: the drawer is display-only. Suppress every mutation /
@@ -410,6 +591,38 @@ export function EntityDetailScaffold({
   // the entity's own resource type — so it reaches search results and graph
   // nodes alike, without each *Details body having to opt in.
   const deleteTarget = ref.resourceType ? (DELETE_TARGETS[ref.resourceType] ?? null) : null;
+  // Fresh media links for the block above — see MediaRefreshContext. The same
+  // node query the related-card click uses, forced to the network so the
+  // signed URLs are re-minted. The cache write reaches a drawer whose entity
+  // is a live query result (an explorer row, the content library's routed
+  // row). It does not reach one holding a snapshot — a graph node, a map pin,
+  // a related card, a row paged out of the results — because `useFragment`
+  // here is a plain cast, not a cache subscription. So the fresh node also
+  // goes to the host, which swaps it in only if this entity is still shown.
+  const refreshMedia = useCallback(async (): Promise<boolean> => {
+    if (!ref.globalId) {
+      return false;
+    }
+
+    try {
+      const { data } = await apolloClient.query({
+        query: GET_DRAWER_NODE,
+        variables: { id: ref.globalId },
+        fetchPolicy: 'network-only',
+      });
+      const node = data?.node ?? null;
+
+      if (node && isDetailNode(node)) {
+        refreshActiveEntity?.(node);
+      }
+
+      return node != null;
+    } catch {
+      return false;
+    }
+  }, [apolloClient, ref.globalId, refreshActiveEntity]);
+
+  const fullPage = fullPagePath(ref.resourceType, ref.rawId);
   const canDelete = !readOnly && Boolean(deleteTarget && ref.globalId);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -483,6 +696,7 @@ export function EntityDetailScaffold({
         <div className="flex items-start justify-between gap-2">
           <Sheet.Title className="text-xl leading-tight tracking-tight">{title}</Sheet.Title>
           <div className="flex shrink-0 items-center gap-1">
+            {fullPage != null && <FullPageLink to={fullPage} label={t('ENTITY_DETAILS_OPEN_PAGE')} />}
             {!readOnly && <ChatWithAgentMenu context={chatContext} className="-mt-1 size-8 shrink-0" />}
             {canEnterEditMode && !editing && (
               <IconButton
@@ -523,7 +737,12 @@ export function EntityDetailScaffold({
       </Sheet.Header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-        {media}
+        {/* Keyed per entity: a related card swaps the entity under the same
+            *Details body, and EntityMedia's once-per-mount refresh must not
+            carry over to the next entity's media. */}
+        <MediaRefreshProvider refresh={refreshMedia}>
+          <Fragment key={entityKey}>{media}</Fragment>
+        </MediaRefreshProvider>
 
         {children}
 
@@ -593,12 +812,12 @@ export function EntityDetailScaffold({
 
         {rawData != null && <RawDataDetails data={rawData} />}
 
-        {/* There is deliberately no "Open full page" escape hatch here. The
-            drawer IS the object: it carries the media, the editable fields, the
-            metadata, the tags and the relationships. The old control was a
-            `target="_blank"` Link, which on the Capacitor build (WKWebView)
-            left the app for the system browser instead of routing in-app —
-            see issue #2311. Anything the user needs belongs in this body. */}
+        {/* The "open full page" control lives in the header (FullPageLink), as
+            an in-app route. It used to be omitted on purpose: the earlier
+            control was a `target="_blank"` Link, which on the Capacitor build
+            (WKWebView) left the app for the system browser (issue #2311). The
+            drawer still carries everything — media, editable fields, metadata,
+            tags, relationships — the link only gives the object its address. */}
       </div>
 
       {editing && (

@@ -13,6 +13,7 @@ import {
 } from '@ci/domains/memory';
 import { UserEntity } from '@ci/domains/user';
 
+import { databaseAvailability, dataSourceConnection } from '../../../__tests__/support/databaseConnection';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { PLANNING_PREFS_DEFAULTS } from '../../entities/PlanningPrefsEntity';
 import { TASK_STATUSES, TaskEntity } from '../../entities/TaskEntity';
@@ -29,9 +30,11 @@ import { TaskService } from '../TaskService';
  * unit test catches a dropped `.where()` at review time, this one catches a
  * predicate that is present but wrong.
  *
- * Opt-in: set `PLANNING_TEST_DATABASE_URL` to a database with the migrations
- * applied. The rest of the suite mocks its repositories, so this must not be a
- * hard dependency of `yarn test`.
+ * Needs a database with the migrations applied: `PLANNING_TEST_DATABASE_URL`,
+ * else `DATABASE_URL`, else `.env`'s `DATABASE_*` values. `databaseAvailability()`
+ * decides whether that means run, skip or fail. The rest of the suite mocks its
+ * repositories, so with no database configured this skips (and says why) rather
+ * than failing `yarn test`.
  *
  *   docker run -d --name ci-test-db -e PASSWORD=pw -p 55433:5432 ci/database
  *   # create the companion role/db, enable extensions, then:
@@ -40,8 +43,16 @@ import { TaskService } from '../TaskService';
  *   PLANNING_TEST_DATABASE_URL=postgres://companion:pw@localhost:55433/companion \
  *     yarn test TaskService.tenancy
  */
-const DATABASE_URL = process.env.PLANNING_TEST_DATABASE_URL;
-const describeWithDb = DATABASE_URL ? describe : describe.skip;
+const DATABASE_ENV = {
+  urlEnvVar: 'PLANNING_TEST_DATABASE_URL',
+  probeTimeoutEnvVar: 'PLANNING_TEST_PROBE_TIMEOUT_MS',
+};
+const availability = databaseAvailability(DATABASE_ENV);
+const describeWithDb = availability.available ? describe : describe.skip;
+
+if (!availability.available) {
+  console.warn(`[planning/TaskService.tenancy] SKIPPED — ${availability.reason}`);
+}
 
 describeWithDb('TaskService — tenant isolation (integration)', () => {
   let dataSource: DataSource;
@@ -61,7 +72,7 @@ describeWithDb('TaskService — tenant isolation (integration)', () => {
   beforeAll(async () => {
     dataSource = new DataSource({
       type: 'postgres',
-      url: DATABASE_URL,
+      ...dataSourceConnection(DATABASE_ENV),
       entities: [TaskEntity],
       synchronize: false,
       extra: { options: '-c search_path=ci,public' },
@@ -86,10 +97,15 @@ describeWithDb('TaskService — tenant isolation (integration)', () => {
       );
     }
 
+    // `ci.events` is stubbed out here: this DataSource maps TaskEntity alone,
+    // and the suite is about the `user_id` predicate. The block cleanup
+    // `remove` now does is proved against real rows in the second suite below.
     service = new TaskService(
       dataSource.getRepository(TaskEntity),
       dataSource.getRepository(TaskPendingChangeEntity),
+      { find: async () => [] } as never,
       noopEvents,
+      { remove: async () => true } as never,
       noopLogger,
     );
   });
@@ -238,7 +254,7 @@ describeWithDb('TaskService — tenant isolation (integration)', () => {
  * block, accepts a real pending change, and reads `ci.events.status` back with
  * SQL, so a rejected status value or a broken aggregate update fails the suite.
  *
- * Same opt-in as the suite above (`PLANNING_TEST_DATABASE_URL`).
+ * Same database, and the same run-or-skip decision, as the suite above.
  */
 describeWithDb('PlannedBlockService — accepted event_revise (integration)', () => {
   let dataSource: DataSource;
@@ -287,7 +303,7 @@ describeWithDb('PlannedBlockService — accepted event_revise (integration)', ()
   beforeAll(async () => {
     dataSource = new DataSource({
       type: 'postgres',
-      url: DATABASE_URL,
+      ...dataSourceConnection(DATABASE_ENV),
       // EventBaseEntity is a @ChildEntity of the ci.entities STI tree, so its
       // root has to be mapped alongside it; UserEntity because EventEntity.user
       // and PlanningTimeService both resolve against it.
@@ -322,7 +338,9 @@ describeWithDb('PlannedBlockService — accepted event_revise (integration)', ()
     taskService = new TaskService(
       dataSource.getRepository(TaskEntity),
       dataSource.getRepository(TaskPendingChangeEntity),
+      dataSource.getRepository(EventEntity),
       { send: async () => undefined } as unknown as EventService,
+      eventService,
       noopLogger,
     );
 
@@ -427,5 +445,49 @@ describeWithDb('PlannedBlockService — accepted event_revise (integration)', ()
     ).toBeNull();
 
     expect(await storedStatus(event.id)).toBe('planned');
+  });
+
+  /**
+   * Deleting the task used to strand its block. `ci.events.task_id` is
+   * `ON DELETE SET NULL`, so the row survived the delete with a null task_id:
+   * it kept rendering under the dead task's title, kept occupying the slot
+   * `propose()` reads as busy, and `findActiveForTask` — the only way anything
+   * in the product reaches a block — could never match it again.
+   *
+   * Only a real database can show this one, because the orphan is made by the
+   * FK's own ON DELETE action rather than by any line of TypeScript.
+   */
+  it('takes the planned block with the task when the task is deleted', async () => {
+    const { task, event } = await placeBlock(owner, 'Deleted while scheduled');
+
+    expect(await taskService.remove(owner, task.id)).toBe(true);
+
+    const [row] = await dataSource.query<Array<{ is_deleted: boolean; task_id: string | null }>>(
+      'SELECT is_deleted, task_id FROM ci.events WHERE event_id = $1',
+      [event.id],
+    );
+
+    // Tombstoned, not orphaned: is_deleted keeps it out of every read path,
+    // and CalendarEventService.restore can still bring it back.
+    expect(row.is_deleted).toBe(true);
+    expect(await taskService.findById(owner, task.id)).toBeNull();
+
+    const onCalendar = await plannedBlocks.list(owner, new Date(0), new Date('2100-01-01T00:00:00.000Z'));
+
+    expect(onCalendar.map((block) => block.id)).not.toContain(event.id);
+  });
+
+  it("will not let another user's delete take a block off the calendar", async () => {
+    const { task, event } = await placeBlock(owner, 'Still mine');
+
+    expect(await taskService.remove(stranger, task.id)).toBe(false);
+
+    const [row] = await dataSource.query<Array<{ is_deleted: boolean }>>(
+      'SELECT is_deleted FROM ci.events WHERE event_id = $1',
+      [event.id],
+    );
+
+    expect(row.is_deleted).toBe(false);
+    expect(await taskService.findById(owner, task.id)).not.toBeNull();
   });
 });

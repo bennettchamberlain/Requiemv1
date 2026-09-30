@@ -15,7 +15,6 @@ import {
 
 import {
   databaseAvailability as testDatabaseAvailability,
-  isPortOpen,
   resolveConnection as resolveTestConnection,
   type DatabaseAvailability,
   type TestDatabaseConnection,
@@ -134,24 +133,15 @@ export function resolveConnection(): HarnessConnection | null {
 }
 
 /**
- * Whether a Postgres is reachable for this test run. Cached by the shared
- * helper — the probe spawns a process, and a suite may consult it more than
- * once.
+ * Whether a Postgres is reachable for this test run — or a THROW, when a URL
+ * set for the run (`PIPELINE_TEST_DATABASE_URL`, else `DATABASE_URL`) names a
+ * database that is not there, or the probe could not answer. Cached by the
+ * shared helper — the probe spawns a process, and a suite may consult it more
+ * than once.
  */
 export function databaseAvailability(): DatabaseAvailability {
   return testDatabaseAvailability(PIPELINE_DATABASE_ENV);
 }
-
-/**
- * TCP reachability, SYNCHRONOUSLY — re-exported, not reimplemented.
- *
- * The probe itself moved to the shared helper with the rest of the connection
- * machinery. The NAME stays here because `scratchDatabase.ts` imports it from
- * this module to ask the same question about a server it reaches with different
- * (administrative) credentials, and a second copy of a `net.connect` probe is
- * precisely what moving it was undoing.
- */
-export { isPortOpen };
 
 // ---------------------------------------------------------------------------
 // The in-memory queue
@@ -246,11 +236,16 @@ export class HarnessQueue extends EventService {
     );
   }
 
-  async failJob(queue: string, jobId: string): Promise<void> {
+  async failJob(queue: string, jobId: string): Promise<boolean> {
     throw new Error(
       `HarnessQueue.failJob(${queue}, ${jobId}) — no pipeline stage defers its job. ` +
         `Stage failure is recorded through PipelineStateService.fail, not the queue.`,
     );
+  }
+
+  /** Nothing in the pipeline reads a job back; there is no row to report. */
+  async getJob(): Promise<null> {
+    return null;
   }
 
   async sendMany(
@@ -319,12 +314,19 @@ export class HarnessQueue extends EventService {
     const job: QueuedJob = {
       queue,
       name,
-      // Copied, and stamped with `jobId` — the envelope key the real bus adds
-      // when it hands `pgboss.job.data` to a listener. Carrying it is not
-      // cosmetic: it is what exercises the payload schemas' non-strictness,
-      // the property that lets a new field ship without old workers rejecting
-      // new jobs.
-      data: { ...data, jobId: `harness-job-${this.seq}` },
+      // Copied, and stamped with one clearly synthetic extra key.
+      //
+      // This used to stamp `jobId`, emulating an envelope key the bus added on
+      // delivery — the bus no longer adds ANY key (it strips `name`, the
+      // routing key, and nothing else), and `jobId` is now an ordinary domain
+      // field name. Keeping the old stamp would have this harness quietly
+      // emulating a contract that no longer exists, and no test would fail.
+      //
+      // An extra key still belongs here, because what it exercises is real: the
+      // payload schemas' non-strictness, which is what lets a new field ship
+      // without old workers rejecting new jobs — and what lets a replayed dead
+      // letter written by an older release still parse.
+      data: { ...data, __harnessForwardCompat: `harness-job-${this.seq}` },
       priority: options?.priority ?? DEFAULT_JOB_PRIORITY,
       seq: this.seq,
     };

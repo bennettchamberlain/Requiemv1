@@ -64,6 +64,7 @@ export const PLATFORM_SYSTEMS: readonly string[] = [
   'coinbase',
   'contact_list',
   'discord',
+  'disney_plus',
   'evernote',
   'firefox', // places.sqlite importer AND the Firefox build of the browser extension — see identity/browser.ts
   'fitbit',
@@ -94,6 +95,7 @@ export const PLATFORM_SYSTEMS: readonly string[] = [
   'letterboxd',
   'linkedin',
   'lyft',
+  'macos_activity', // macOS activity export (scripts/macos/export_activity.py) — no connection counterpart
   'mastodon',
   'microsoft_account',
   'myfitnesspal',

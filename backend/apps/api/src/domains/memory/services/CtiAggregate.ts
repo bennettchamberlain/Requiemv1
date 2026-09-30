@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import {
   In,
   type DeepPartial,
@@ -9,7 +10,7 @@ import {
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 
 import type { ServiceContext } from '@ci/common/context';
-import { chunkedConflictInsert } from '@ci/common/persistence';
+import { chunkedConflictInsert, withoutUndefined } from '@ci/common/persistence';
 
 import type { BaseEntity } from '../entities/BaseEntity';
 
@@ -116,13 +117,50 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
    * STI child metadata emits the discriminator for every row. The caller names
    * the ON CONFLICT action (DO NOTHING for insert-only aggregates, a guarded
    * DO UPDATE where the base label must follow detail refreshes).
+   *
+   * Throws — rolling the caller's transaction back — when any id is held by a
+   * base row another owner holds; see {@link assertBaseRowsOwned}.
    */
   async insertBaseRows(manager: RepositoryProvider, rows: TBase[], onConflict: string): Promise<void> {
     if (rows.length === 0) {
       return;
     }
 
-    await chunkedConflictInsert(manager.getRepository(this.options.baseEntity), rows, onConflict);
+    const repository = manager.getRepository(this.options.baseEntity);
+
+    await chunkedConflictInsert(repository, rows, onConflict);
+    await this.assertBaseRowsOwned(repository, rows);
+  }
+
+  /**
+   * Refuse base rows whose id another owner's entity already held — or no
+   * owner's, once its user was deleted.
+   *
+   * `ci.entities`' primary key is `entity_id` alone and every caller's conflict
+   * target is that key, so an id another owner's entity holds is not an error
+   * to the INSERT but a conflict it resolves: DO NOTHING leaves the detail row
+   * the caller just wrote hanging off that entity, and a DO UPDATE rewrites its
+   * label as well. The detail tables' deferred `(id, entity_type)` keys reject
+   * another TYPE's entity at COMMIT; nothing rejected another owner's entity of
+   * the same type with no detail row of its own. Read after the INSERT, in the
+   * same transaction, so a row that took the id after any earlier read is
+   * caught too.
+   */
+  private async assertBaseRowsOwned(repository: Repository<TBase>, rows: TBase[]): Promise<void> {
+    const [foreign] = (await repository.query(
+      `SELECT held.entity_id, written.owner_user_id
+         FROM ci.entities held
+         JOIN unnest($1::uuid[], $2::uuid[]) AS written (entity_id, owner_user_id) USING (entity_id)
+        WHERE held.owner_user_id IS DISTINCT FROM written.owner_user_id
+        LIMIT 1`,
+      [rows.map((row) => row.id), rows.map((row) => row.userId ?? null)],
+    )) as Array<{ entity_id: string; owner_user_id: string | null }>;
+
+    if (foreign) {
+      throw new ForbiddenException(
+        `Entity ${foreign.entity_id} is not owned by ${foreign.owner_user_id}; refusing to write it`,
+      );
+    }
   }
 
   /**
@@ -222,10 +260,15 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
 
       // Before-state merged with the patch — what the detail row now holds —
       // without waiting on the reload, so base derivation sees real values.
+      // withoutUndefined() guards this the same way RelationshipService.update
+      // and TaskService.update do (#2703, #2713): an untouched field arriving
+      // as `key: undefined` must not clobber `before`'s real value here, since
+      // `after` (unlike the `repository.update()` call above, which TypeORM
+      // already normalizes) is built with a plain Object.assign.
       const after = Object.assign(
         Object.create(Object.getPrototypeOf(before) as object),
         before,
-        detailPatch,
+        withoutUndefined(detailPatch),
       ) as TDetail;
 
       const basePatch = typeof patches.base === 'function' ? patches.base(after) : (patches.base ?? null);

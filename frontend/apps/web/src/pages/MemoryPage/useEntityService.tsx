@@ -11,8 +11,8 @@ import { gql } from '@/graphql';
 const PAGE_SIZE = 30;
 
 const SEARCH_QUERY = gql(`
-  query Search($query: String!, $includeTypes: [String!], $excludeTypes: [String!], $eventTypes: [String!], $tags: [String!], $startTime: String, $endTime: String, $sortBy: String, $sortOrder: String, $connectors: [String!], $people: [String!], $places: [String!], $hasLocation: Boolean, $bbox: [Float!], $semantic: Boolean, $shareToken: String, $first: Int, $after: String) {
-    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes, eventTypes: $eventTypes, tags: $tags, startTime: $startTime, endTime: $endTime, sortBy: $sortBy, sortOrder: $sortOrder, connectors: $connectors, people: $people, places: $places, hasLocation: $hasLocation, bbox: $bbox, semantic: $semantic, shareToken: $shareToken, first: $first, after: $after }) {
+  query Search($query: String!, $includeTypes: [String!], $excludeTypes: [String!], $eventTypes: [String!], $tags: [String!], $startTime: String, $endTime: String, $sortBy: String, $sortOrder: String, $connectors: [String!], $people: [String!], $places: [String!], $hasLocation: Boolean, $bbox: [Float!], $semantic: Boolean, $direction: String, $shareToken: String, $first: Int, $after: String) {
+    search(input: { query: $query, includeTypes: $includeTypes, excludeTypes: $excludeTypes, eventTypes: $eventTypes, tags: $tags, startTime: $startTime, endTime: $endTime, sortBy: $sortBy, sortOrder: $sortOrder, connectors: $connectors, people: $people, places: $places, hasLocation: $hasLocation, bbox: $bbox, semantic: $semantic, direction: $direction, shareToken: $shareToken, first: $first, after: $after }) {
       totalCount
       pageInfo {
         hasNextPage
@@ -41,6 +41,7 @@ const SEARCH_QUERY = gql(`
             galleryFilename: filename
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: sourceUrl
+            galleryPlaybackUrl: playbackUrl
             # Original byte size, so a tile can decline to use a huge original
             # as its thumbnail when no PREVIEW variant has been generated.
             galleryMediaSize: size
@@ -57,6 +58,7 @@ const SEARCH_QUERY = gql(`
             # EventType media aliases below).
             galleryPreviewUrl: previewUrl
             galleryFileUrl: mediaUrl
+            galleryPlaybackUrl: playbackUrl
             galleryMediaSize: mediaSize
             # Provider-hosted player derived server-side from url/externalId
             # (YouTube, Spotify, …). Null for anything without one. The tile
@@ -158,6 +160,7 @@ const SEARCH_QUERY = gql(`
             galleryMediaContentType: mediaContentType
             galleryPreviewUrl: previewUrl
             gallerySourceUrl: mediaUrl
+            galleryPlaybackUrl: playbackUrl
             galleryMediaSize: mediaSize
             galleryTitle: title
             galleryLocationName: locationName
@@ -261,6 +264,31 @@ export function resolveLiveEntity<TEntity extends MemoryEntity>(
 }
 
 /**
+ * `fresh` in place of `current` when both are the same record (same type and
+ * id), otherwise `current` untouched — including when nothing is open.
+ *
+ * For handing a re-fetched copy of the open entity to a drawer that holds a
+ * snapshot (a graph node, a map pin, a related card, a row paged out of the
+ * results), which nothing else re-reads: the drawer's expired media links are
+ * the case (EntityDetailScaffold's refreshMedia). The fetch can land after
+ * the drawer moved on or closed, and must then change nothing. Fields only
+ * the snapshot carries (a map pin's `bucketStartTime`, …) are kept; every
+ * field the fresh node has wins.
+ */
+export function withFresherEntity<TEntity extends MemoryEntity>(
+  current: TEntity | null,
+  fresh: MemoryEntity,
+): TEntity | null {
+  const key = entityCacheKey(current);
+
+  if (current == null || key == null || key !== entityCacheKey(fresh)) {
+    return current;
+  }
+
+  return { ...current, ...fresh } as TEntity;
+}
+
+/**
  * The filter half of the search variables — everything except paging.
  *
  * Exposed so a view that needs its own read of the SAME filtered set can issue
@@ -288,6 +316,8 @@ type ReturnType = [
   },
   {
     setActiveEntity: (entity: MemoryEntity | null) => void;
+    /** Swap a re-fetched copy into the drawer if it is still open on that entity (see {@link withFresherEntity}). */
+    refreshActiveEntity: (entity: MemoryEntity) => void;
   },
 ];
 
@@ -307,6 +337,7 @@ function useEntityService({
   hasLocation,
   bbox,
   semantic,
+  direction,
   shareToken,
   skip = false,
 }: {
@@ -325,6 +356,8 @@ function useEntityService({
   hasLocation?: boolean;
   bbox?: number[];
   semantic?: boolean;
+  /** Sent / received message direction (`inbound` / `outbound`); pins the browse to communications. */
+  direction?: string;
   // Shared-search capability token. When set, the server runs the referenced
   // public saved search as its owner and ignores every other filter above —
   // this drives the read-only /shared viewer with the same view components.
@@ -362,6 +395,7 @@ function useEntityService({
     hasLocation: hasLocation || undefined,
     bbox: bbox && bbox.length === 4 ? bbox : undefined,
     semantic: semantic || undefined,
+    direction: direction || undefined,
     shareToken: shareToken || undefined,
   };
 
@@ -429,6 +463,10 @@ function useEntityService({
   // so a save made in the drawer is reflected in the drawer and not only in the
   // list behind it.
   const activeEntity = useMemo(() => resolveLiveEntity(selectedEntity, results), [selectedEntity, results]);
+  const refreshActiveEntity = useCallback(
+    (fresh: MemoryEntity) => setActiveEntity((current) => withFresherEntity(current, fresh)),
+    [],
+  );
 
   const refetchSearch = useCallback(() => {
     // Retry clears the stuck fetchMore failure too — a fresh refetch (or the
@@ -453,6 +491,7 @@ function useEntityService({
     },
     {
       setActiveEntity,
+      refreshActiveEntity,
     },
   ];
 }

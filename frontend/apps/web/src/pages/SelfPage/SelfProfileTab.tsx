@@ -10,14 +10,18 @@ import {
   PersonForm,
   composedName,
   emptyPersonDraft,
+  pendingRefusals,
   personDraftFrom,
   personDraftToInput,
+  refusedContactsFrom,
   type PersonDraft,
+  type RefusedContact,
 } from '@/components/PersonForm';
 import { gql, useFragment } from '@/graphql';
 import { useCurrentUser } from '@/hooks';
 import { AboutYouSection } from '@/pages/SettingsPage/sections/AboutYouSection';
 import { AccountSection } from '@/pages/SettingsPage/sections/AccountSection';
+import { InvitesSection } from '@/pages/SettingsPage/sections/InvitesSection';
 
 import { ConnectionsSection } from './sections/ConnectionsSection';
 import { LifeDetailsSection } from './sections/LifeDetailsSection';
@@ -34,6 +38,16 @@ const GET_SELF_PROFILE = gql(`
 const AUTOSAVE_DEBOUNCE_MS = 900;
 
 /**
+ * A `setRefused` updater that leaves the SAME empty array in place when a save
+ * result refuses nothing. `refused` is a dependency of the autosave effect, and
+ * a fresh `[]` after, say, a dropped connection would re-run it and retry the
+ * failed save in a loop.
+ */
+function refusedUpdate(next: RefusedContact[]) {
+  return (current: RefusedContact[]) => (next.length === 0 && current.length === 0 ? current : next);
+}
+
+/**
  * Name, birthday, gender, pronouns and "about" all live on the Person entity
  * every user is already linked to (`me.entity`) — the same record `PersonForm`
  * edits for everyone else in the graph. It sits inline here rather than
@@ -42,7 +56,7 @@ const AUTOSAVE_DEBOUNCE_MS = 900;
  * call sites are visiting someone else's record and keep the modal.
  */
 export function SelfProfileTab() {
-  usePageTitle('Self - Companion Intelligence');
+  usePageTitle('Self - Companion Memory');
 
   const { user } = useCurrentUser();
   const entityId = user?.entity?.id ?? null;
@@ -63,6 +77,7 @@ export function SelfProfileTab() {
   const [draft, setDraft] = useState<PersonDraft>(emptyPersonDraft);
   const [nameError, setNameError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [refused, setRefused] = useState<RefusedContact[]>([]);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   // Seed the editor once the persisted values are available, not on every
@@ -85,6 +100,7 @@ export function SelfProfileTab() {
     lastSavedRef.current = JSON.stringify(personDraftToInput(seeded));
     setNameError(null);
     setSubmitError(null);
+    setRefused([]);
   }
 
   const [updatePerson] = useMutation(UPDATE_PERSON);
@@ -113,6 +129,13 @@ export function SelfProfileTab() {
       return;
     }
 
+    // The server has already refused a value this draft still holds (a number
+    // with an extension, say): sending it again would only fail the same way,
+    // on every keystroke elsewhere in the form. Its row says what to do.
+    if (pendingRefusals(draft, refused).length > 0) {
+      return;
+    }
+
     const timer = setTimeout(() => {
       setSaveState('saving');
       setSubmitError(null);
@@ -127,16 +150,23 @@ export function SelfProfileTab() {
           }
 
           lastSavedRef.current = key;
+          setRefused(refusedUpdate([]));
           setSaveState('saved');
         })
         .catch((error: unknown) => {
           setSubmitError(error instanceof Error ? error.message : 'Failed to save changes.');
+          setRefused(refusedUpdate(refusedContactsFrom(error)));
           setSaveState('idle');
         });
     }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [draft, entityId, seededFor, updatePerson]);
+  }, [draft, entityId, seededFor, updatePerson, refused]);
+
+  // Same rule as EditPersonModal: once every refused row has been dealt with,
+  // the error that named them no longer describes the form.
+  const showSubmitError =
+    submitError != null && (refused.length === 0 || pendingRefusals(draft, refused).length > 0);
 
   // Fades the "Saved" note back to nothing rather than leaving it stuck once
   // the next edit doesn't happen to change `saveState` again.
@@ -167,9 +197,15 @@ export function SelfProfileTab() {
                     just part of the page. Grabbing focus on mount scrolled
                     the phone past the heading into the middle of the form
                     and opened the keyboard over it. */}
-                <PersonForm value={draft} onChange={setDraft} nameError={nameError} autoFocusName={false} />
+                <PersonForm
+                  value={draft}
+                  onChange={setDraft}
+                  nameError={nameError}
+                  autoFocusName={false}
+                  refusedContacts={refused}
+                />
 
-                {submitError && (
+                {showSubmitError && (
                   <p role="alert" className="text-sm text-destructive">
                     {submitError}
                   </p>
@@ -184,6 +220,8 @@ export function SelfProfileTab() {
         {rawEntityId && <ConnectionsSection entityId={rawEntityId} />}
 
         <AboutYouSection />
+
+        <InvitesSection />
 
         <AccountSection />
       </div>

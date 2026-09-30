@@ -1,5 +1,5 @@
 /**
- * The data-quality check registry — `ci-import doctor`'s whole vocabulary.
+ * The data-quality check registry — `ci doctor`'s whole vocabulary.
  *
  * ## Why this exists
  *
@@ -13,7 +13,7 @@
  *
  * So these are REGRESSION DETECTORS, not hypotheticals. Each one is the
  * question "did the defect we just fixed come back?", asked in a form that both
- * a person and an agent can run: `ci-import doctor` for a table, `--json` for a
+ * a person and an agent can run: `ci doctor` for a table, `--json` for a
  * loop, and a non-zero exit when anything HIGH is non-zero so a loop can gate
  * on it.
  *
@@ -78,7 +78,7 @@
 /**
  * How much a non-zero count matters.
  *
- * `high` is the gate: `ci-import doctor` exits non-zero when any high check is
+ * `high` is the gate: `ci doctor` exits non-zero when any high check is
  * non-zero, so it can sit in an agent's loop or a release check. Reserve it for
  * "this is provably wrong and there is a known fix" — a guard being violated, a
  * row that cannot be reached from anywhere, a job that will never run again.
@@ -192,7 +192,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'These rows cannot be attributed to a person, so they are invisible to every people-centric view ' +
       'and contribute nothing to entity resolution. The participant edges are filled by the ' +
       '`extract_people` / `link_communications` enrichment legs — run ' +
-      '`ci-import backfill extract_people link_communications` before concluding the parser is at fault. ' +
+      '`ci backfill extract_people link_communications` before concluding the parser is at fault. ' +
       'That backfill resolves handles out of `participants_metadata`, so it can only help a row that ' +
       'HAS one: a row whose participants_metadata is empty names nobody to resolve, and no leg will ' +
       'ever fill it. On the reference corpus that is 16,325 outbound iMessages whose chat.db row has ' +
@@ -406,11 +406,13 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     //
     // KNOWN BLIND SPOT, stated because a silent one is the failure mode this file
     // exists to prevent: the 2 mis-typed `contact_list` rows are invisible here.
-    // Their parser stamps only {Source, File}, so nothing in the row's own data
-    // says "contact" — only a source-scoped sweep could catch them, and this
-    // check cannot. A datasource whose contact entities carry no contact metadata at all
-    // is only reachable by a source list, which is exactly what this check is
-    // built to avoid needing.
+    // Their parser stamped only {Source, File} when it wrote them, so nothing in
+    // those rows' own data says "contact" — only a source-scoped sweep could catch
+    // them, and this check cannot. (It now also keeps `Names` / `Emails` / `Phones`,
+    // as does `applecontacts.ts`, so rows written since would be visible.) A
+    // datasource whose contact entities carry no contact metadata at all is only
+    // reachable by a source list, which is exactly what this check is built to
+    // avoid needing.
     sql: String.raw`
       WITH bad AS (
         SELECT entity_id, name, linked_table, owner_user_id
@@ -439,7 +441,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'The count is ROWS in duplicate groups, not the number of groups: three "Chris Czaplak" rows ' +
       'count as three. Identical names are the cheapest possible duplicate signal and the one entity ' +
       'resolution should never miss, so a large number means the identifier-claim path did not run — ' +
-      'try `ci-import backfill extract_people heal_self_collation`. It is MEDIUM because two different ' +
+      'try `ci backfill extract_people heal_self_collation`. It is MEDIUM because two different ' +
       'people really can share a name, so a machine must not merge on this alone.',
     mirrors: null,
     // Grouped on (owner_user_id, name) rather than name alone: two accounts on
@@ -462,6 +464,99 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
         FROM dupe
     `,
   },
+  {
+    id: 'contact-person-merges-several-people',
+    severity: 'medium',
+    title:
+      'Imported Person rows whose card names are different people — colleagues collapsed onto one shared line',
+    scope: 'ci.entities',
+    remedy:
+      'A contact import used to key each card on its smallest handle, and digits sort before letters, so ' +
+      "every card from one office keyed on the switchboard (or the fax) and staged as ONE entity: the row's " +
+      '`properties.Names` lists all of them, its Emails/Phones mix their details, and it feeds the ' +
+      "duplicate detector every colleague's number. The parsers now pass over shared handles " +
+      '(`markSharedContactHandles`). To repair a row, RE-IMPORT the same export: the push moves the row ' +
+      'onto the new key of the colleague it is named after and rewrites it with that one card, and mints ' +
+      'the others fresh (push/legacyKeys.ts). A row that survives a re-import was kept deliberately — no ' +
+      'card claiming it bears its name — and needs a person to split it by hand; there is no unmerge. ' +
+      'MEDIUM because a name is a poor identity: a typo in both parts of one person’s name reads as two people.',
+    mirrors: 'src/domains/import/staging/identity.ts',
+    // The SQL twin of `namesDescribeDifferentPeople`: two names are different
+    // people when both carry a name element — a letter token of 2+ characters,
+    // honorifics, suffixes and connectives aside — and no element of one equals,
+    // or is a 3+ letter prefix of, an element of the other. A relation ("Tom's
+    // mom") and a handle written into the name field are no evidence either way.
+    //
+    // Two translation notes. The TypeScript side folds accents with NFKD, which
+    // Postgres cannot do without `unaccent` (not installed), so `translate`
+    // folds the Latin accents a real address book carries; a name in another
+    // script has no ASCII elements and, as in TypeScript, is no evidence. And it
+    // strips honorifics/suffixes wherever they sit, where the tokenizer strips
+    // them only at the ends, so a name using one as a middle name ("Md") can
+    // read as different here and not there — close enough for a MEDIUM count,
+    // which is all this is.
+    //
+    // `Names` is the accumulating key only vCard declares, so in practice this
+    // watches `import:vcard`; applecontacts and contactlist declare none, and a
+    // collapse there left no trace to count — the second person simply vanished.
+    sql: String.raw`
+      WITH names AS (
+        SELECT e.entity_id, n.ord, n.value AS card_name
+          FROM ci.entities e
+          CROSS JOIN LATERAL jsonb_array_elements_text(e.properties->'Names') WITH ORDINALITY AS n(value, ord)
+         WHERE e.entity_type = 'Person'
+           AND e.linked_table LIKE 'import:%'
+           AND e.merged_into_entity_id IS NULL
+           AND jsonb_typeof(e.properties->'Names') = 'array'
+           AND jsonb_array_length(e.properties->'Names') > 1
+           AND n.value !~* '[''’]s(\s|$)'
+           AND position('@' in n.value) = 0
+      ),
+      elements AS (
+        SELECT DISTINCT names.entity_id, names.ord, t AS element
+          FROM names,
+               regexp_split_to_table(
+                 translate(regexp_replace(lower(names.card_name), '[''’]', '', 'g'),
+                           'àáâãäåāèéêëēìíîïīòóôõöøōùúûüūñçýÿ',
+                           'aaaaaaaeeeeeiiiiiooooooouuuuuncyy'),
+                 '[^a-z]+') AS t
+         WHERE length(t) >= 2
+           AND t NOT IN ('and', 'at', 'da', 'de', 'del', 'della', 'der', 'di', 'du', 'for', 'from',
+                         'la', 'le', 'of', 'the', 'van', 'von',
+                         'mr', 'mrs', 'ms', 'miss', 'mz', 'mx', 'dr', 'prof', 'professor', 'sir', 'madam',
+                         'lady', 'lord', 'rev', 'reverend', 'hon', 'honorable', 'dame', 'fr', 'father', 'rabbi',
+                         'jr', 'sr', 'ii', 'iii', 'iv', 'phd', 'md', 'esq', 'jd')
+      ),
+      named AS (
+        SELECT DISTINCT entity_id, ord FROM elements
+      ),
+      collapsed AS (
+        SELECT DISTINCT a.entity_id
+          FROM named a
+          JOIN named b ON b.entity_id = a.entity_id AND b.ord > a.ord
+         WHERE NOT EXISTS (
+                 SELECT 1
+                   FROM elements x
+                   JOIN elements y ON y.entity_id = x.entity_id
+                  WHERE x.entity_id = a.entity_id
+                    AND x.ord = a.ord
+                    AND y.ord = b.ord
+                    AND (x.element = y.element
+                         OR (least(length(x.element), length(y.element)) >= 3
+                             AND (left(x.element, length(y.element)) = y.element
+                                  OR left(y.element, length(x.element)) = x.element))))
+      ),
+      bad AS (
+        SELECT e.entity_id, e.name, e.linked_table, e.owner_user_id, e.properties->'Names' AS names
+          FROM ci.entities e
+          JOIN collapsed c USING (entity_id)
+      )
+      SELECT count(*)::bigint AS count,
+             ${breakdownBy('linked_table')} AS breakdown,
+             ${SAMPLE} AS sample
+        FROM bad
+    `,
+  },
 
   // ───────────────────────────────────────────────────────────────────────────
   // Events and content
@@ -475,7 +570,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'The source told us where this happened and the column that displays it is empty, so the event ' +
       'shows as placeless in the timeline and the map. Usually a mapping gap in the parser for the ' +
       'source named in the breakdown. Fix the mapping, then re-import — or run ' +
-      '`ci-import backfill geocode` if the name is present but the coordinates are what is missing.',
+      '`ci backfill geocode` if the name is present but the coordinates are what is missing.',
     mirrors: 'src/domains/geocode/util/virtualLocations.ts isUriLocation (the exclusion)',
     // Two exclusions, and neither is incidental — both stop this check firing
     // on rows that are CORRECT.
@@ -760,7 +855,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
       'running for that stage, or the whole backlog is larger than the tick can drain. 172 of these ' +
       'were sitting on `enrich.geocode` with reason `provider_unavailable` during the live import. ' +
       'Check the stage named in the breakdown has a running consumer, then re-drive it with ' +
-      '`ci-import backfill <leg>`.',
+      '`ci backfill <leg>`.',
     mirrors: null,
     // Cheap regardless of table size: 20260809032723 creates a partial index on
     // (status, next_attempt_at) WHERE status = 'failed', which is exactly this
@@ -903,7 +998,7 @@ export const DOCTOR_CHECKS: readonly DoctorCheck[] = [
     title: 'Events with no ci_search.vectors row and no skip marker — unfindable by search',
     scope: 'ci.events, ci_search.vectors, ci_search.index_skips',
     remedy:
-      'Run `ci-import backfill search_index`. If the number does not move, the listener is not writing ' +
+      'Run `ci backfill search_index`. If the number does not move, the listener is not writing ' +
       'vectors at all — check for quarantined pipeline_state rows and dead letters on the index stage ' +
       'first (this doctor has a check for each), because a quarantined row makes the backfill report ' +
       'success while writing nothing.',

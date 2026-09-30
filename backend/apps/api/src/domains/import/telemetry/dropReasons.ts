@@ -77,6 +77,12 @@ export const DROP_REASONS = [
   'already_present',
   /** Routing produced no destination at all — the record was never offered to anything. */
   'no_destination',
+  /**
+   * Routed to no destination ON PURPOSE, because another lane already carries
+   * what the record says — a contact card whose Person arrived on the entity
+   * lane. Expected: the thing is in the memory, by another route.
+   */
+  'represented_elsewhere',
   /** An exception quarantined this one row; the rest of the batch went. */
   'row_failed',
   /** An entity with neither a handle nor a name. It will not resolve on a retry either. */
@@ -119,6 +125,7 @@ const DROP_SEVERITY: Readonly<Record<DropReason, DropSeverity>> = {
   duplicate_in_run: 'expected',
   already_present: 'expected',
   entity_excluded: 'expected',
+  represented_elsewhere: 'expected',
   // Everything below here means the appliance was handed something it could
   // not turn into a memory. Some are the export's fault and some are ours;
   // both are worth a person's attention, and neither should be summed into a
@@ -164,6 +171,7 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   excluded_reply: 'filtered',
   excluded_retweet: 'filtered',
   outside_timeframe: 'filtered',
+  macos_unsupported_stream: 'unsupported_shape',
   non_message: 'filtered',
   // telegram.ts: a chat entry whose `type` is not 'message' (a service event —
   // "X joined the group", a call log) — the telegram-specific spelling of the
@@ -210,6 +218,9 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
   // is keyed by url, so there is nothing to file it under.
   download_no_url: 'no_identity',
   unnamed_track: 'no_identity',
+  // hulu.ts: a watch-history row carrying neither an Episode Name nor a Series
+  // Name — the title is the only thing that identifies what was watched.
+  no_title: 'no_identity',
   // A Connections.csv row with no First Name and no Last Name.
   unnamed_connection: 'no_identity',
   grok_unknown_sender: 'no_identity',
@@ -296,6 +307,12 @@ export const DROP_SLUG_REASONS: Readonly<Record<string, DropReason>> = {
    * PushStage summary comment.
    */
   no_destination: 'no_destination',
+  /**
+   * PushStage: `destinationsFor` returned an empty list BY DESIGN, because the
+   * record is carried by another lane (`isRepresentedElsewhere`) — a contact
+   * card, whose Person the entity lane resolves.
+   */
+  represented_elsewhere: 'represented_elsewhere',
   /** PushStage: the row threw and was quarantined; the batch continued. */
   row_push_failed: 'row_failed',
   /** PushStage: an entity with neither a handle nor a name to resolve by. */

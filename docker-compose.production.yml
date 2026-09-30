@@ -2,7 +2,7 @@ services:
   api:
     image: ci/api
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-api:/run/secrets:ro
       # ONE bind mount holding the importer's three working areas — uploads/
       # (staged uploads, TTL'd), inbox/ (the user's drop-in folder), and
       # scratch/ (per-run working trees). Sharing a filesystem is what lets a
@@ -58,6 +58,27 @@ services:
       CI_TELEMETRY: ${CI_TELEMETRY:-}
       CI_LOCAL_ONLY: ${CI_LOCAL_ONLY:-}
       CI_SERVER_VERSION: ${CI_SERVER_VERSION:-}
+      # Where clients should reach the sync engine. /api/powersync/token returns
+      # this verbatim as `powersync_url`, and refuses to issue a token at all
+      # while it is empty — so without it sync is a permanent 503 no matter what
+      # else is running. Only this web role needs it; the worker serves no HTTP.
+      #
+      # The gateway proxies the engine at /powersync on the app's own origin
+      # (infrastructure/gateway/nginx.conf), which is not a convenience: the CSP
+      # served with the app pins connect-src to 'self', so a client cannot reach
+      # sync on any other origin.
+      #
+      # `:+` and not `:-` — this stays EMPTY unless APP_BASE_URL is set, rather
+      # than defaulting to a bare "/powersync" that would read as configured and
+      # hand every client a host-less URL. Sync stays off until the deployment
+      # says where it is, which is the honest failure. Override POWERSYNC_URL
+      # directly for a sync service on its own hostname — which then also needs
+      # that origin added to the CSP.
+      POWERSYNC_URL: ${POWERSYNC_URL:-${APP_BASE_URL:+${APP_BASE_URL}/powersync}}
+      # POWERSYNC_JWT_SECRET is deliberately absent here: it is a generated
+      # secret, so it arrives from /run/secrets/.env.secrets the way
+      # DATABASE_PASSWORD does. generate-secrets mints it and the powersync
+      # container derives its base64url JWKS key from that same value.
     networks:
       - ci
     extra_hosts:
@@ -96,7 +117,7 @@ services:
   worker:
     image: ci/api
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-api:/run/secrets:ro
       # The same working-area mount as the api: the worker MOVES staged
       # sources into run scratch, so both halves must see one filesystem.
       - ${CI_IMPORT_WORK_DIR:-./import-work}:/var/lib/ci-import
@@ -127,7 +148,7 @@ services:
 
   database:
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-database:/run/secrets:ro
     depends_on:
       generate-secrets:
         condition: service_completed_successfully
@@ -136,6 +157,11 @@ services:
     image: ci/gateway
     ports:
       - 8642:8642
+    environment:
+      # Reverse proxies allowed to vouch for the client address (see
+      # infrastructure/gateway/entrypoint.sh). Leave empty on an install whose
+      # clients reach this port directly.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
     networks:
       - ci
     depends_on:
@@ -155,26 +181,37 @@ services:
     environment:
       API_URL: http://api:3030
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-hbpe:/run/secrets:ro
     depends_on:
       generate-secrets:
         condition: service_completed_successfully
-    devices:
-      - /dev/kfd
-      - /dev/dri
-    group_add:
-      - video
+    # NO `devices:`/`group_add:` here on purpose. This file used to pass
+    # /dev/kfd + /dev/dri and group_add: [video] through unconditionally, which
+    # meant `make production` could only ever start on an AMD ROCm host: a
+    # `devices:` entry whose node does not exist is a hard start failure, not a
+    # graceful degradation, so every Intel/NVIDIA/macOS host was refused before
+    # the container ran. GPU passthrough lives in docker-compose.rocm.yml, the
+    # opt-in overlay built for exactly this (it carries the same two device
+    # nodes plus the numeric AMD_RENDER_GID/AMD_VIDEO_GID groups and
+    # seccomp:unconfined, which literal `video` never did):
+    #
+    #   docker compose -f docker-compose.yml -f docker-compose.production.yml \
+    #                  -f docker-compose.rocm.yml --profile production up -d
+    #
+    # Without the overlay hbpe-service still starts and still answers — it just
+    # finds no HSA agent and runs on the CPU. See the README's "GPU
+    # acceleration (HBPE)" section.
 
   object-store:
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-object-store:/run/secrets:ro
     depends_on:
       generate-secrets:
         condition: service_completed_successfully
 
   summary-service:
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-summary:/run/secrets:ro
     depends_on:
       generate-secrets:
         condition: service_completed_successfully
@@ -187,13 +224,25 @@ services:
     image: ci/setup-secrets
     restart: "no"
     volumes:
+      # The master, read-write, and the only place it is mounted.
       - secrets:/run/secrets
+      # One projection volume per service, at the path the entrypoint
+      # projects into (SECRETS_PROJECTION_ROOT/<service>). Each service
+      # above mounts its own at /run/secrets.
+      - secrets-api:/run/secrets/services/api
+      - secrets-database:/run/secrets/services/database
+      - secrets-setup-database:/run/secrets/services/setup-database
+      - secrets-object-store:/run/secrets/services/object-store
+      - secrets-hbpe:/run/secrets/services/hbpe
+      - secrets-summary:/run/secrets/services/summary
+      - secrets-powersync:/run/secrets/services/powersync
+      - secrets-tooling:/run/secrets/services/tooling
     profiles: [ "production" ]
 
   migrate-database:
     image: ci/api
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-api:/run/secrets:ro
     networks:
       - ci
     command: ["yarn", "migrate"]
@@ -207,7 +256,7 @@ services:
 
   setup-database:
     volumes:
-      - secrets:/run/secrets:ro
+      - secrets-setup-database:/run/secrets:ro
 
 volumes:
   db-data:

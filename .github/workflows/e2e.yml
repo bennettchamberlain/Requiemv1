@@ -1,10 +1,16 @@
 name: E2E
 
 # Full-stack Playwright E2E against a real backend + seeded Postgres. Heavy
-# (builds the DB image, runs 147 migrations, seeds, boots api+web), so it runs
-# nightly and on-demand rather than per-PR. It lives in its own workflow and is
-# non-blocking (continue-on-error) — promote to `pull_request` (path-filtered)
-# and required once it is reliably green.
+# (builds the DB + object-store images, runs the migrations, seeds, boots
+# api+web), so it runs on-demand rather than per-PR. It lives in its own
+# workflow — promote to `pull_request` (path-filtered) and required once it is
+# reliably green.
+#
+# It USED to carry `continue-on-error: true` on the job, which meant the run
+# reported green whatever Playwright did. That is worse than not running it:
+# `docs/qa/ci-gate-proposal.md` §3.3 makes this workflow one of the five
+# dispatches a `v*` tag is gated on, and a gate that cannot report failure is a
+# rubber stamp. The flag is gone — see the job below for the full reasoning.
 # GATED TO MANUAL. Every trigger except workflow_dispatch was removed so this
 # workflow no longer runs on push, pull_request or a schedule — CI silence here
 # means "nobody dispatched it", NOT "everything passed". Run it deliberately:
@@ -12,6 +18,13 @@ name: E2E
 # Restore a trigger by re-adding it to the `on:` block below.
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
+  # The root `yarn install` below resolves @companionintelligence/tokens from
+  # GitHub Packages, which is private. Without this scope GITHUB_TOKEN reads as
+  # an anonymous user and the fetch step dies with YN0041 Invalid authentication.
+  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,7 +36,23 @@ jobs:
     runs-on: ubuntu-latest
     # Runs on the host runner (not a node:22 container) so Docker + Playwright's
     # `--with-deps` browser install work.
-    continue-on-error: true
+    #
+    # NO `continue-on-error`. It was here, and combined with the incomplete
+    # service list below (`database` + `setup-database` only, which is why
+    # `docs/qa/baseline-2026-08-26.md` records this suite as "structurally
+    # unable to run") it made the job report success unconditionally — the
+    # release gate in `docs/qa/ci-gate-proposal.md` §3.3 was reading a check
+    # that could not fail. Both halves are fixed together on purpose: adding
+    # the missing services without removing the flag would still hide the
+    # result, and removing the flag without the services would just be red.
+    #
+    # This is `workflow_dispatch`-only and `main` carries no
+    # `required_status_checks`, so a red run here blocks no merge on its own —
+    # it is visible to whoever dispatched it, which is the whole point.
+    #
+    # Bounded so a hung `webServer` (the api or Vite dev server failing to
+    # bind) burns 45 minutes rather than the 6-hour runner default.
+    timeout-minutes: 45
     env:
       # Throwaway dev credentials from .env.default; fine for an ephemeral CI DB.
       DATABASE_HOST: localhost
@@ -38,6 +67,50 @@ jobs:
       E2E_BASE_URL: http://localhost:5173
       AUTH_DEFAULT_USER_EMAIL: jsmith@example.com
       AUTH_DEFAULT_USER_PASSWORD: 'replace-me-pw-000000'
+      # The `Start Ollama` step below publishes it on the runner's own
+      # localhost. `services.ollama.host` defaults to
+      # `http://host.docker.internal:11434`, which does not resolve OUTSIDE a
+      # container — and the seed and Playwright's `webServer` api both run on
+      # the host, not in one. Without this they rely on the startup
+      # host-rewrite (`CI_LLM_HOST_REWRITE`) guessing right, which logs a
+      # warning on every boot; naming it here is the same answer, stated.
+      # `embedding.host` falls back to this, so the embedder follows it too.
+      #
+      # NOTE: OLLAMA_HOST is also the variable Ollama's OWN server reads to
+      # choose its bind address. That is not a conflict here — the server runs
+      # in a container, which does not inherit this job env — but do not
+      # "simplify" this by running ollama directly on the runner without
+      # re-reading that sentence.
+      OLLAMA_HOST: http://localhost:11434
+      # The import domain's writable directories. Their shipped defaults
+      # (`/var/lib/ci-import/...`, `/var/tmp/ci-import`) belong to the appliance
+      # CONTAINER, which runs as root; a host-run API on this runner cannot
+      # create the first, and tests/e2e/import.spec.ts died three times over with
+      # `EACCES: permission denied, mkdir '/var/lib/ci-import'` — surfaced to the
+      # browser as a bare 500 that names neither the directory nor the reason.
+      # `scripts/federation-harness/stack.ts` hit exactly this and pins the same
+      # set for the same reason; its README records the diagnosis.
+      #
+      # All three share one parent ON PURPOSE. configuration.ts requires
+      # uploadsDir and scratchDir to sit on the same filesystem, because
+      # consuming an upload is an atomic rename — moving only uploadsDir here
+      # and leaving scratchDir on /var/tmp would trade a loud EACCES for a
+      # cross-device EXDEV later.
+      #
+      # CI_IMPORT_INBOX_DIR is pinned although no spec runs the inbox: THE INBOX
+      # CONSUMES WHAT IT IMPORTS, BY RENAME, so the thing worth guaranteeing is
+      # that it can only ever point at a directory this job owns and discards.
+      #
+      # CI_IMPORT_ROOTS is deliberately NOT set — it already defaults to `[]`,
+      # nothing here stages files for the CLI to browse, and it is the one
+      # import variable declared `"__format": "json"`, so a bare path in it dies
+      # at startup with `invalid character 'p' at 1:2`. Leave it alone.
+      #
+      # Under `github.workspace` rather than the runner temp dir because the
+      # `runner` context is not available to a job-level `env:` block.
+      CI_IMPORT_UPLOADS_DIR: ${{ github.workspace }}/.e2e-import/uploads
+      CI_IMPORT_SCRATCH_DIR: ${{ github.workspace }}/.e2e-import/scratch
+      CI_IMPORT_INBOX_DIR: ${{ github.workspace }}/.e2e-import/inbox
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,19 +126,89 @@ jobs:
       - name: Provide .env (dev defaults)
         run: cp .env.default .env
 
+      # NODE_AUTH_TOKEN is not optional: .yarnrc.yml points the
+      # `companionintelligence` scope at npm.pkg.github.com, so the canon
+      # tokens package cannot be fetched anonymously.
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # The Postgres image bundles TimescaleDB + PostGIS + pgvector and the role
       # bootstrap, which a stock pgvector image lacks — build the project's own.
-      - name: Build database images
+      # object-store is RustFS + infrastructure/object-store/entrypoint.sh (which
+      # maps OBJECT_STORE_USERNAME/PASSWORD onto RUSTFS_ACCESS_KEY/SECRET_KEY), so it is a
+      # seconds-long build, not a real one. Same three `docker build` lines the
+      # Makefile's `build` target runs for ENV=local.
+      - name: Build database and object-store images
         run: |
           make distribute-license
           docker build -f infrastructure/database/Dockerfile -t ci/database:latest infrastructure/database
           docker build -f infrastructure/setup-database/Dockerfile -t ci/setup-database:latest infrastructure/setup-database
+          docker build -f infrastructure/object-store/Dockerfile -t ci/object-store:latest infrastructure/object-store
 
-      - name: Start Postgres (+ role/extension bootstrap)
-        run: docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local up -d database setup-database
+      # `object-store` is the service this workflow was missing, and it is not
+      # optional: tests/e2e/import.spec.ts drives the import wizard end-to-end,
+      # whose MediaStage (backend/apps/api/src/domains/import/stages/MediaStage.ts)
+      # injects FileService, and FileService talks S3 to OBJECT_STORE_URL
+      # (http://localhost:9000 in .env.default). docker-compose.local.yml already
+      # publishes it on host 9000, and FileService creates its own bucket at
+      # first use, so nothing else has to be provisioned here.
+      #
+      # `hbpe-service` is deliberately NOT started, even though
+      # docs/qa/ci-gate-proposal.md §3.3 names it. Nothing in tests/e2e/ calls
+      # the sidecar, and no seeder does either — scripts/seed-database/
+      # seed-hbpe.ts writes hbpe.* rows over the same DataSource as every other
+      # seeder. Starting it would mean building backend/apps/hbpe/Dockerfile
+      # (a cmake llama-cpp-python compile) on the runner for a service no
+      # assertion touches. Add it here the day a spec needs it.
+      #
+      # One thing DID reach for it, and this comment used to deny it:
+      # PythonFunctionCrons.onApplicationBootstrap arms a 30-second timer that
+      # fans out `ensure_bootstrap` to services.hbpe.host, and under
+      # LocalEventService the resulting `fetch failed` became an unhandled
+      # rejection that killed the seed. It went unseen because the seed used to
+      # die on its first person, well before T+30s; a real Ollama made seeding
+      # slow enough to reach the timer. seed-database/main.ts now overrides
+      # that cron provider, so the claim above is true again rather than merely
+      # asserted.
+      - name: Start Postgres, object store (+ role/extension bootstrap)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.local.yml --profile local \
+            up -d database setup-database object-store
+
+      # Embeddings are not optional in this lane, they were just never
+      # provided. `PersonSearchIndexListener.upsertPerson` (and its
+      # item/note/message/content siblings) calls
+      # `EmbeddingGenerationService.generateEmbedding` INLINE on every
+      # `*.created` event the seed emits, and `LocalEventService` rejects on a
+      # failed job — so with nothing answering on 11434 the seed died on its
+      # first person with `TypeError: fetch failed`, every run, back to at
+      # least 2026-07-17. It went unnoticed because the job carried
+      # `continue-on-error: true` until that flag was removed.
+      #
+      # Pinned to the SAME version the desktop sidecar downloads
+      # (`OLLAMA_VERSION` in local_model/ollama_sidecar.rs). Keep the two in
+      # step: a lane that embeds on a different build than the appliance ships
+      # is testing something nobody runs.
+      #
+      # Only the embedding model is pulled. `nomic-embed-text` is ~275 MB;
+      # the chat tag (`gemma4:e4b`) is multiple GB and this suite runs
+      # `--grep-invert @llm` precisely because nothing here exercises chat. If
+      # a spec ever needs it, pull it here and budget the runner disk.
+      - name: Start Ollama (embeddings for the seed)
+        run: |
+          docker run -d --name e2e-ollama -p 11434:11434 ollama/ollama:0.32.15
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:11434/api/version && break
+            echo "waiting for ollama ($i)…"; sleep 2
+          done
+          curl -sf http://localhost:11434/api/version > /dev/null || {
+            echo "::error::Ollama did not become ready; the seed cannot embed."
+            docker logs e2e-ollama || true
+            exit 1
+          }
+          docker exec e2e-ollama ollama pull nomic-embed-text
 
       - name: Wait for Postgres
         run: |
@@ -73,6 +216,22 @@ jobs:
             docker compose exec -T database pg_isready -U postgres && break
             echo "waiting for postgres ($i)…"; sleep 2
           done
+
+      # Fails the job rather than letting the suite discover it: without the
+      # object store the import spec dies deep inside the wizard with a UI-level
+      # timeout that reads as a frontend regression. `up -d` returns as soon as
+      # the container is created, which is well before it is answering.
+      - name: Wait for the object store
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/health >/dev/null 2>&1; then
+              echo "object store is live"; exit 0
+            fi
+            echo "waiting for object store ($i)…"; sleep 2
+          done
+          echo "::error::object-store never answered on http://localhost:9000 — the import spec cannot pass without it"
+          docker compose logs object-store || true
+          exit 1
 
       - name: Run migrations
         run: yarn workspace @ci/be-api migrate

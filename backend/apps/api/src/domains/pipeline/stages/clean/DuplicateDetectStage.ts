@@ -5,9 +5,28 @@ import { DataSource } from 'typeorm';
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import {
+  EMAIL_EVIDENCE,
+  PHONE_CLAIM_E164_SQL,
+  PHONE_FACTS_CORPUS_SQL,
+  PROFILE_FACTS_CORPUS_SQL,
+  PhoneHolders,
+  ProfileUrlHolders,
+  applyPhoneVerdict,
+  applyProfileVerdict,
+  capUnadjudicatedPhones,
   compareTokenizedNames,
+  emailHoldReason,
+  extractProfileFacts,
+  holdEmailEvidence,
   indexableTokens,
+  phoneCorpusFacts,
+  sharedPhoneLines,
   tokenizePersonName,
+  type PhoneClaimE164Row,
+  type PhoneFacts,
+  type PhoneFactsCorpusRow,
+  type ProfileFacts,
+  type ProfileFactsCorpusRow,
   type TokenizedPersonName,
 } from '@ci/domains/memory';
 
@@ -39,7 +58,13 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
 
 /**
  * Generation of the SCORING rule — {@link IDENTIFIER_KIND_SCORES},
- * {@link MAX_GROUP_MEMBERS}, and which claim kinds count as evidence at all.
+ * {@link MAX_GROUP_MEMBERS}, which claim kinds count as evidence at all, the
+ * profile-URL rule in `memory/utils/profileUrls.ts` (its normaliser, its
+ * adjudicator and its `PROFILE_URL_MAX_HOLDERS` cap all change verdicts, so
+ * editing any of them is a bump) and the phone rule in
+ * `memory/utils/phoneIdentity.ts` (its parser, its NANP tables, its time-zone
+ * list, its name and line-census guards and its `PHONE_MAX_HOLDERS` cap —
+ * likewise).
  *
  * Bump it in the same commit that edits any of them. A bump re-proposes: every
  * PENDING candidate is rescored, and every pair whose evidence no longer clears
@@ -52,8 +77,32 @@ const CANDIDATE_ENTITY_TYPE = 'Person';
  * 3 — name evidence is no longer exact-string only. Token-subset overlap
  * ("mr broza" ⊂ "william d broza") is scored and proposed; a last-name
  * conflict is not. See {@link buildNameOverlapCandidates}.
+ * 4 — profile_url evidence (LinkedIn /in/ URLs from URL/URLs/Notes `URL:`
+ * lines): set-equal and corroborated gives 0.95; family-name, Connected On
+ * or uncorroborated gives 0.8; partial or disjoint URLs veto every pair. A
+ * URL held by more than `PROFILE_URL_MAX_HOLDERS` people is removed before
+ * any of that, for every pair, so it neither lifts nor vetoes one.
+ * See {@link buildProfileUrlCandidates} and {@link adjudicateCandidateProfiles}.
+ * 5 — properties phone tier: Person `Phones`/`phones`/`phone` and numeric
+ * display names are parsed to E.164 (stated forms, or a valid geographic NANP
+ * number under a derived, corpus-corroborated owner region; never toll-free,
+ * premium, service, invalid or an extension), and a shared number is graded
+ * 0.95 only on the same first given name or a placeholder side with a clean
+ * line census, 0.85 + `phone_check` otherwise, `phone_country_conflict` on
+ * disagreeing countries. The adjudicator is the only producer of a 0.95 phone
+ * item — the claim pass's unguarded E.164 tier is capped at 0.85 — and the
+ * profile veto still runs last. See {@link buildPhoneCandidates} and
+ * {@link adjudicateCandidatePhones}.
+ * 6 — fax lines are not evidence: a number a Person's record files under
+ * `Faxes` (the vCard parser's `TEL;TYPE=FAX`) is refused by the phone
+ * adjudicator whatever else states it, so colleagues who share an office fax
+ * are no longer "the same phone number". See `FAX_FACT_PROPERTY_KEYS` in
+ * `memory/utils/phoneIdentity.ts`. And a shared EMAIL is held for review
+ * (`email_check`) instead of folded when it would take a differently named
+ * person into the owner (`self_endpoint`) or join two contacts whose names
+ * share nothing (`name_conflict`). See {@link holdEmailPairs}.
  */
-export const DUPLICATE_SCORING_GENERATION = 3;
+export const DUPLICATE_SCORING_GENERATION = 6;
 
 /**
  * Generation of the CANDIDATE SET — which subjects are compared, i.e. the
@@ -70,8 +119,13 @@ export const DUPLICATE_SCORING_GENERATION = 3;
  * Contacts Person that never resolved from a communication or event now has
  * evidence too (loadEvidence groups on `entity_id` regardless of
  * `subject_type`, so no query here changed — only the claim producers did).
+ * 3 — those self claims now carry EVERY email and phone a contact card states
+ * (staging's `contactIdentifiers`; migration 20260930022046 for rows already
+ * imported) where they used to carry one handle — a card with any phone never
+ * had an email claim — and stale ones are retracted. Again no query here
+ * changed; the population did.
  */
-export const DUPLICATE_CANDIDATE_GENERATION = 2;
+export const DUPLICATE_CANDIDATE_GENERATION = 3;
 
 /**
  * The stage version, derived so that improving EITHER re-runs history.
@@ -244,6 +298,17 @@ export const IDENTIFIER_KIND_SCORES: Readonly<Record<string, number>> = {
  *    is the one case where reading the column REMOVES a proposal rather than
  *    reordering one. {@link claimScore} returns null, exactly as it does for an
  *    uncalibrated kind.
+ *
+ * ── `e164Exact` no longer reaches the auto-merge tier on its own ───────────
+ *
+ * An equal E.164 on two claims says nothing about whether the two people are
+ * one person or two people on one household line, and this table has no name
+ * guard. Since scoring generation 5 the properties phone adjudicator
+ * (`memory/utils/phoneIdentity.ts`, via {@link adjudicateCandidatePhones})
+ * re-states the phone evidence of every pair whose two people carry phone
+ * properties, and caps any other phone item at 0.95 to 0.85 with a
+ * `phone_check: unadjudicated` marker. The claim pass still FINDS pairs with
+ * these scores; only the adjudicator can keep one at 0.95.
  */
 export const PHONE_MATCH_SCORES = {
   e164Exact: 0.95,
@@ -264,6 +329,12 @@ export const PHONE_MATCH_SCORES = {
  * The over-large group is not silently dropped: it is counted, and the subject
  * is recorded `skipped: identifiers_too_common` so the operator can see that a
  * person was examined and deliberately not proposed for.
+ *
+ * Profile URLs are capped by `PROFILE_URL_MAX_HOLDERS` in
+ * `memory/utils/profileUrls.ts` instead, and property phone numbers by
+ * `PHONE_MAX_HOLDERS` in `memory/utils/phoneIdentity.ts`, because the
+ * auto-merger applies those caps too and cannot import this file. The spec
+ * pins all three equal.
  */
 export const MAX_GROUP_MEMBERS = 6;
 
@@ -657,6 +728,305 @@ export function buildNameOverlapCandidates(
   return { candidates, suppressed };
 }
 
+/** One live person's profile fields, as {@link DuplicateDetectStage.loadProfileFacts} reads them. */
+export type ProfileFactsRow = ProfileFactsCorpusRow;
+
+/** Row → facts, keyed by entity id. A row whose fields hold no profile URL is dropped. */
+export function profileFactsByEntity(rows: readonly ProfileFactsRow[]): Map<string, ProfileFacts> {
+  const facts = new Map<string, ProfileFacts>();
+
+  for (const row of rows) {
+    const extracted = extractProfileFacts(row.profile_props, row.person_name);
+
+    if (extracted.urls.size > 0) {
+      facts.set(row.entity_id, extracted);
+    }
+  }
+
+  return facts;
+}
+
+/**
+ * Propose pairs that state the same LinkedIn profile.
+ *
+ * This is the pass the claim and name passes cannot be: the LinkedIn CSV copy
+ * and the vCard copy of one connection share no email, no phone and — when
+ * one side is "Ada L." and the other "Ada Lovelace-King" — no name the
+ * tokenizer would pair. They share the profile URL.
+ *
+ * A URL held by more than `PROFILE_URL_MAX_HOLDERS` people (equal to
+ * {@link MAX_GROUP_MEMBERS}) is not an identity, it is a shared page someone
+ * pasted into many cards; the subject is marked suppressed exactly as an
+ * over-common email is. Each surviving pair is graded by
+ * `ProfileUrlHolders.adjudicate` — the cap, then `adjudicateProfileUrls`, the
+ * same pair of steps the auto-merger re-runs on the live rows — and turned
+ * into evidence by `applyProfileVerdict`.
+ *
+ * `facts` must be the WHOLE corpus (`loadProfileFacts`), not the slice: the
+ * holder counts are taken from it.
+ *
+ * Only pairs touching the slice are returned, as {@link buildNameOverlapCandidates}.
+ */
+export function buildProfileUrlCandidates(
+  facts: ReadonlyMap<string, ProfileFacts>,
+  sliceIds: ReadonlySet<string>,
+): { candidates: MergeCandidate[]; suppressed: Set<string> } {
+  const holders = new ProfileUrlHolders(facts);
+  const byPair = new Map<string, MergeCandidate>();
+  const suppressed = new Set<string>();
+
+  for (const subjectId of sliceIds) {
+    const subject = facts.get(subjectId);
+
+    if (subject == null) {
+      continue;
+    }
+
+    for (const url of subject.urls) {
+      if (holders.isOverCommon(url)) {
+        suppressed.add(subjectId);
+        continue;
+      }
+
+      for (const otherId of holders.holdersOf(url)) {
+        if (otherId === subjectId) {
+          continue;
+        }
+
+        const [entityIdA, entityIdB] = subjectId < otherId ? [subjectId, otherId] : [otherId, subjectId];
+        const key = `${entityIdA}|${entityIdB}`;
+
+        if (byPair.has(key)) {
+          continue;
+        }
+
+        // Adjudicated in (a, b) order, so the evidence text is the same from
+        // whichever end of the pair the sweep found it. Capped, so a card that
+        // also carries an over-common URL is judged on its own profile alone.
+        const verdict = holders.adjudicate(facts.get(entityIdA)!, facts.get(entityIdB)!);
+        const graded = applyProfileVerdict({ score: 0, evidence: [] as CandidateEvidence[] }, verdict);
+
+        if (graded.score < MIN_CANDIDATE_SCORE) {
+          continue;
+        }
+
+        byPair.set(key, { entityIdA, entityIdB, ...graded });
+      }
+    }
+  }
+
+  return { candidates: [...byPair.values()], suppressed };
+}
+
+/**
+ * The veto: re-state every candidate's profile-URL evidence under the verdict
+ * for its two people.
+ *
+ * Runs over the MERGED list, after {@link mergeCandidateLists}, for two
+ * reasons. A claim or name pair whose two people state different LinkedIn
+ * profiles has to carry that fact (`profile_url_conflict`) and lose any
+ * auto-merge-tier score, however strong its email match. And
+ * {@link mergeCandidateLists} rescores a folded pair to its strongest item,
+ * which would silently lift a capped `partial` pair back to 0.95 if an email
+ * joined it; re-applying the verdict afterwards restores the cap.
+ *
+ * Only pairs whose BOTH people state a URL are touched — anything else is
+ * `absent`, and applying `absent` would change nothing.
+ *
+ * ── The holder cap applies here too ────────────────────────────────────────
+ *
+ * Most of the pairs this sees were NOT found by {@link buildProfileUrlCandidates}
+ * — they are name and claim pairs — so the cap that pass applies has not
+ * touched them. Without it here, two people who share only a URL pasted into
+ * forty cards would be graded `exact` (their shared name token is the
+ * corroboration), and a 0.5 given-name match would leave at 0.95, hidden from
+ * review and folded by the drain. So every verdict goes through
+ * `ProfileUrlHolders.adjudicate`, whose counts are taken from `facts` — the
+ * WHOLE corpus — and a person whose only URLs are over-common is treated as
+ * stating none.
+ */
+export function adjudicateCandidateProfiles(
+  candidates: readonly MergeCandidate[],
+  facts: ReadonlyMap<string, ProfileFacts>,
+): MergeCandidate[] {
+  const holders = new ProfileUrlHolders(facts);
+
+  return candidates.map((candidate) => {
+    const left = facts.get(candidate.entityIdA);
+    const right = facts.get(candidate.entityIdB);
+
+    if (left == null || right == null) {
+      return candidate;
+    }
+
+    const verdict = holders.adjudicate(left, right);
+
+    if (verdict.kind === 'absent') {
+      // Nothing to state, and nothing stale to strip: a pair carries
+      // `profile_url` evidence only when buildProfileUrlCandidates found it
+      // through a URL both people still hold under the cap.
+      return candidate;
+    }
+
+    return { ...candidate, ...applyProfileVerdict(candidate, verdict) };
+  });
+}
+
+/**
+ * Propose pairs whose Person records carry the same phone number.
+ *
+ * The pass the claim pass cannot be: a Google Voice participant stub is
+ * named by its number and usually has no identifier claim, and the vCard
+ * copy of the same contact shares no name token with "+1 (202) 555-0142".
+ * They share the number in their own `properties`.
+ *
+ * A number whose digits more than `PHONE_MAX_HOLDERS` people carry (equal to
+ * {@link MAX_GROUP_MEMBERS}) is a switchboard, not an identity; the subject
+ * is marked suppressed exactly as an over-common email is. Every other pair
+ * sharing digits is graded by `PhoneHolders.adjudicate` — the same call the
+ * auto-merger re-runs on the live rows — and kept when its evidence clears
+ * the floor. Unusable numbers (toll-free, invalid, the owner's) and country
+ * conflicts weigh nothing, so they propose nothing.
+ *
+ * `facts` and `holders` must be the WHOLE corpus (`loadPhoneCorpus`), not the
+ * slice. Only pairs touching the slice are returned.
+ */
+export function buildPhoneCandidates(
+  facts: ReadonlyMap<string, PhoneFacts>,
+  holders: PhoneHolders,
+  sliceIds: ReadonlySet<string>,
+): { candidates: MergeCandidate[]; suppressed: Set<string> } {
+  const byPair = new Map<string, MergeCandidate>();
+  const seen = new Set<string>();
+  const suppressed = new Set<string>();
+
+  for (const subjectId of sliceIds) {
+    const subject = facts.get(subjectId);
+
+    if (subject == null) {
+      continue;
+    }
+
+    for (const line of subject.lines.keys()) {
+      if (holders.isOverCommon(line)) {
+        suppressed.add(subjectId);
+        continue;
+      }
+
+      for (const otherId of holders.holdersOf(line)) {
+        if (otherId === subjectId) {
+          continue;
+        }
+
+        const [entityIdA, entityIdB] = subjectId < otherId ? [subjectId, otherId] : [otherId, subjectId];
+        const key = `${entityIdA}|${entityIdB}`;
+
+        if (seen.has(key)) {
+          continue;
+        }
+
+        seen.add(key);
+
+        const left = facts.get(entityIdA);
+        const right = facts.get(entityIdB);
+
+        if (left == null || right == null) {
+          continue;
+        }
+
+        // Adjudicated in (a, b) order, so the evidence text is the same from
+        // whichever end of the pair the sweep found it.
+        const graded = applyPhoneVerdict(
+          { score: 0, evidence: [] as CandidateEvidence[] },
+          holders.adjudicate(left, right),
+        );
+
+        if (graded.score >= MIN_CANDIDATE_SCORE) {
+          byPair.set(key, { entityIdA, entityIdB, ...graded });
+        }
+      }
+    }
+  }
+
+  return { candidates: [...byPair.values()], suppressed };
+}
+
+/**
+ * Re-state every candidate's phone evidence under the verdict for its two
+ * people, and hold every phone item the adjudicator did not write below the
+ * auto-merge tier.
+ *
+ * Runs over the MERGED list, after {@link mergeCandidateLists} and BEFORE
+ * {@link adjudicateCandidateProfiles}, for three reasons:
+ *
+ *  - A claim pair graded `e164Exact` (0.95) by {@link claimScore} has passed
+ *    no name guard at all. Where both people carry phone properties, the
+ *    adjudicator's verdict replaces it (a household line with two given names
+ *    becomes review); where they do not, it is capped at 0.85 and marked
+ *    `unadjudicated`. So the ONLY 0.95 phone item that can reach the
+ *    auto-merger is one `PhoneHolders.adjudicate` wrote.
+ *  - {@link mergeCandidateLists} rescores a folded pair to its strongest item,
+ *    which would lift a reviewed phone pair back to 0.95 if the claim pass
+ *    found the same number; re-applying the verdict afterwards restores it.
+ *  - The profile veto must have the last word: a phone match can never lift a
+ *    pair past `profile_url_conflict`.
+ *
+ * `facts` and `holders` are the whole corpus, as {@link buildPhoneCandidates}.
+ */
+export function adjudicateCandidatePhones(
+  candidates: readonly MergeCandidate[],
+  facts: ReadonlyMap<string, PhoneFacts>,
+  holders: PhoneHolders,
+): MergeCandidate[] {
+  return candidates.map((candidate) => {
+    const left = facts.get(candidate.entityIdA);
+    const right = facts.get(candidate.entityIdB);
+    const graded =
+      left != null && right != null
+        ? applyPhoneVerdict(candidate, holders.adjudicate(left, right))
+        : capUnadjudicatedPhones(candidate);
+
+    return { ...candidate, ...graded };
+  });
+}
+
+/**
+ * Hold for review every shared-email pair whose names say it is two people:
+ * a differently named person against the owner, or two contacts whose names
+ * share nothing.
+ *
+ * A shared email is the deterministic tier: `MergeCandidateService` folds it
+ * without asking, into the self Person when one side is the owner. A contact
+ * card that lists one person's address beside another person's name would
+ * fold the two — and carry the card's other addresses along, for the next
+ * sweep to fold whoever owns those. `emailHoldReason`
+ * (`memory/utils/emailIdentity.ts`) decides; `holdEmailEvidence` caps the
+ * email item below the auto-merge tier and marks it `email_check`, which the
+ * fold refuses.
+ *
+ * Runs over the MERGED list, after the phone verdict and before the profile
+ * veto, which keeps the last word. `names` and `selfIds` are corpus-wide: an
+ * endpoint of a slice pair can be anyone.
+ */
+export function holdEmailPairs(
+  candidates: readonly MergeCandidate[],
+  names: ReadonlyMap<string, string | null>,
+  selfIds: ReadonlySet<string>,
+): MergeCandidate[] {
+  return candidates.map((candidate) => {
+    if (!candidate.evidence.some((item) => item.kind === EMAIL_EVIDENCE.match)) {
+      return candidate;
+    }
+
+    const reason = emailHoldReason(
+      { name: names.get(candidate.entityIdA) ?? null, isSelf: selfIds.has(candidate.entityIdA) },
+      { name: names.get(candidate.entityIdB) ?? null, isSelf: selfIds.has(candidate.entityIdB) },
+    );
+
+    return reason == null ? candidate : { ...candidate, ...holdEmailEvidence(candidate, reason) };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // The stage
 // ---------------------------------------------------------------------------
@@ -667,7 +1037,10 @@ export function buildNameOverlapCandidates(
  * ── The decision this stage encodes ────────────────────────────────────────
  *
  * Clean proposes; a human disposes. There is no merge path in this file, no
- * auto-merge floor to raise, and no configuration that would create one. That
+ * auto-merge floor to raise, and no configuration that would create one. (The
+ * deterministic tiers — a shared email, an adjudicated exact phone, an exact
+ * `profile_url` — are folded by `MergeCandidateService`, which re-adjudicates
+ * the live rows before every merge; this stage only writes the evidence.) That
  * is not caution about the scoring being imperfect — it is that a merge is
  * IRREVERSIBLE IN PRACTICE: `PersonMergeService` repoints
  * `entity_identifiers`, `communications.from_entity_id` / `to_entity_ids[]`,
@@ -705,9 +1078,10 @@ export function buildNameOverlapCandidates(
  *    were proposed, INCLUDING ZERO. Zero is a real answer — "this person has
  *    identifiers and no duplicate" — and it is the reason coverage is
  *    meaningful. It must never be confused with the next line.
- *  - `skipped: no_identifier_claims` — the person has NO claims at all, so there
- *    was nothing to compare on. Countable, and it is the number that says how
- *    much of the corpus `enrich.person_link` has not reached yet.
+ *  - `skipped: no_identifier_claims` — the person has NO claims at all and
+ *    none of the name, profile-URL and phone passes proposed anything for
+ *    them, so there was nothing to compare on. Countable, and it is the number
+ *    that says how much of the corpus `enrich.person_link` has not reached yet.
  *  - `skipped: identifiers_too_common` — every shared value this person has is
  *    held by more than {@link MAX_GROUP_MEMBERS} subjects. Examined, and
  *    deliberately not guessed at.
@@ -786,11 +1160,45 @@ export class DuplicateDetectStage implements Stage {
       new Set(examined),
     );
 
-    for (const id of nameSuppressed) {
+    const profileFacts = profileFactsByEntity(await this.loadProfileFacts(ctx.userId));
+    const { candidates: profileCandidates, suppressed: profileSuppressed } = buildProfileUrlCandidates(
+      profileFacts,
+      new Set(examined),
+    );
+
+    const phoneCorpus = await this.loadPhoneCorpus(ctx.userId);
+    const { candidates: phoneCandidates, suppressed: phoneSuppressed } = buildPhoneCandidates(
+      phoneCorpus.facts,
+      phoneCorpus.holders,
+      new Set(examined),
+    );
+
+    for (const id of [...nameSuppressed, ...profileSuppressed, ...phoneSuppressed]) {
       suppressed.add(id);
     }
 
-    const candidates = mergeCandidateLists(exactCandidates, nameCandidates);
+    const selfIds = await this.loadSelfIds(ctx.userId);
+    const nameById = new Map(names.map((row) => [row.entity_id, row.name] as const));
+
+    // Phone, then the email hold, then profile: the profile veto has the
+    // last word on the score. The floor is re-applied because the phone
+    // verdict can REMOVE evidence — a claim pair whose only shared number
+    // turns out to be toll-free, say.
+    const candidates = adjudicateCandidateProfiles(
+      holdEmailPairs(
+        adjudicateCandidatePhones(
+          mergeCandidateLists(
+            mergeCandidateLists(mergeCandidateLists(exactCandidates, nameCandidates), profileCandidates),
+            phoneCandidates,
+          ),
+          phoneCorpus.facts,
+          phoneCorpus.holders,
+        ),
+        nameById,
+        selfIds,
+      ),
+      profileFacts,
+    ).filter((candidate) => candidate.score >= MIN_CANDIDATE_SCORE);
 
     /** How many surviving pairs each swept subject appears in. */
     const proposedFor = new Map<string, number>();
@@ -833,6 +1241,8 @@ export class DuplicateDetectStage implements Stage {
         continue;
       }
 
+      const proposed = proposedFor.get(id) ?? 0;
+
       // The claim COUNT — not the shared-claim rows — is what separates the two
       // very different silences. `loadEvidence` returns only claims another
       // subject also holds, so a person with a perfectly good email that nobody
@@ -840,13 +1250,15 @@ export class DuplicateDetectStage implements Stage {
       // `no_identifier_claims`. That is a lie about the healthy majority of the
       // corpus, and it would make the ledger read as "identity has not reached
       // these people" when identity has reached them and found nothing.
-      if ((subjects.get(id) ?? 0) === 0) {
+      //
+      // A person with no claims who was still PROPOSED — by name, by profile
+      // URL or by a phone in their own properties, none of which needs a
+      // claim — was examined and answered, so it is `done`, not a coverage gap.
+      if ((subjects.get(id) ?? 0) === 0 && proposed === 0) {
         results.set(id, { outcome: 'skipped', reason: 'no_identifier_claims' });
 
         continue;
       }
-
-      const proposed = proposedFor.get(id) ?? 0;
 
       if (proposed === 0 && suppressed.has(id)) {
         // Examined, and deliberately not guessed at: every value this person
@@ -936,6 +1348,92 @@ export class DuplicateDetectStage implements Stage {
   }
 
   /**
+   * Every Person that IS the owner: `users.entity_id`, and any live Person
+   * flagged `is_self` (column or property) — the same two tests the phone
+   * corpus and the drain apply.
+   */
+  private async loadSelfIds(userId: string): Promise<Set<string>> {
+    const rows = await this.dataSource.query<Array<{ entity_id: string }>>(
+      `SELECT u.entity_id FROM ci.users u WHERE u.id = $1::uuid AND u.entity_id IS NOT NULL
+       UNION
+       SELECT e.entity_id
+         FROM ci.entities e
+        WHERE e.owner_user_id = $1::uuid
+          AND e.entity_type = '${CANDIDATE_ENTITY_TYPE}'
+          AND COALESCE(e.is_active, true) = true
+          AND e.merged_into_entity_id IS NULL
+          AND (e.is_self IS TRUE OR e.properties->>'is_self' = 'true')`,
+      [userId],
+    );
+
+    return new Set(rows.map((row) => row.entity_id));
+  }
+
+  /**
+   * The profile-URL fields of every live Person that could hold a LinkedIn
+   * profile — the input to {@link buildProfileUrlCandidates} and
+   * {@link adjudicateCandidateProfiles}.
+   *
+   * Corpus-wide, like {@link loadPersonNames} and for the same reason: the
+   * other copy of a slice subject can be anyone in the corpus. The ILIKE is a
+   * superset prefilter only (a few thousand rows on a real corpus, not the
+   * whole Person table); `normalizeProfileUrl` decides in TypeScript. Only the
+   * handful of keys the extractor reads are loaded, never the whole
+   * `properties` bag.
+   *
+   * `person_name`, not `name`: the column is aliased so nothing downstream can
+   * mistake this row set for {@link loadPersonNames}'.
+   */
+  private loadProfileFacts(userId: string): Promise<ProfileFactsRow[]> {
+    return this.dataSource.query<ProfileFactsRow[]>(PROFILE_FACTS_CORPUS_SQL, [userId]);
+  }
+
+  /**
+   * The phone facts of every live Person that carries a phone value or is
+   * named by a number, the owner's region derived from them, and the holder
+   * index over them — the input to {@link buildPhoneCandidates} and
+   * {@link adjudicateCandidatePhones}.
+   *
+   * Corpus-wide, like {@link loadProfileFacts}: the other copy of a slice
+   * subject can be anyone, and the holder cap, the owner's lines and the line
+   * census are all corpus counts. Three statements, none per-row:
+   *
+   *  - `ci.users` for the time zone and `users.entity_id` (a self Person that
+   *    is not flagged `is_self` is still the owner);
+   *  - `PHONE_FACTS_CORPUS_SQL`, the auto-merger's population too;
+   *  - `PHONE_CLAIM_E164_SQL` for the stated forms claims carry, asked only
+   *    about digits two or more people share (the only ones a pair can form
+   *    on), so the foreign-stated guard sees `value_e164` as well.
+   */
+  private async loadPhoneCorpus(userId: string): Promise<{
+    facts: Map<string, PhoneFacts>;
+    holders: PhoneHolders;
+  }> {
+    const [owner] = await this.dataSource.query<Array<{ timezone: string | null; entity_id: string | null }>>(
+      `SELECT u.timezone, u.entity_id FROM ci.users u WHERE u.id = $1::uuid`,
+      [userId],
+    );
+    const rows = await this.dataSource.query<PhoneFactsCorpusRow[]>(PHONE_FACTS_CORPUS_SQL, [userId]);
+    const { facts } = phoneCorpusFacts(rows, {
+      timezone: owner?.timezone ?? null,
+      selfEntityId: owner?.entity_id ?? null,
+    });
+    const shared = sharedPhoneLines(facts);
+    const claims =
+      shared.length === 0
+        ? []
+        : await this.dataSource.query<PhoneClaimE164Row[]>(PHONE_CLAIM_E164_SQL, [userId, shared]);
+
+    return {
+      facts,
+      holders: new PhoneHolders(
+        facts,
+        claims.map((row) => [row.l10, row.e164] as const),
+      ),
+    };
+  }
+
+  /**
    * Every identifier the slice's people share with another person.
    *
    * ── Grouped on `entity_id`, NOT on `subject_id` ───────────────────────────
@@ -985,11 +1483,33 @@ export class DuplicateDetectStage implements Stage {
    * pair from inside the slice. The window function counts the whole group, so
    * the cap means what it says regardless of how the sweep happened to page.
    *
-   * The self-join is bounded on both sides by `owner_user_id`, `kind` and
-   * `value_normalized` — the leading columns of `identifier_claims_lookup_idx`,
-   * the index the migration created for precisely this query — and the outer
-   * side by the slice's ids, so the plan is an index lookup per claim rather
-   * than a corpus cross-product.
+   * ── Why it is SET-BASED, not a correlated subquery ─────────────────────
+   *
+   * An earlier revision computed `group_size` and the other side's E.164 form
+   * as correlated subqueries — `(SELECT count(DISTINCT o.entity_id) …)` per
+   * row — on the theory that each would ride `identifier_claims_lookup_idx`.
+   * Measured against a real corpus (1.57M claims, 183-id slice, 2026-09-15)
+   * that revision did not finish in SIX HOURS, and three retries of the same
+   * slice ran concurrently on eight backends. Two things went wrong at once:
+   *
+   *  1. TimescaleDB's skip-scan planner (`enable_skipscan_for_distinct_aggregates`,
+   *     on by default since 2.20) rewrote the `count(DISTINCT entity_id)`
+   *     subquery as a skip scan over `identifier_claims_entity_idx` — the index
+   *     ordered by the DISTINCT column — with `kind` and `value_normalized`
+   *     demoted to a heap FILTER. One evaluation therefore walked most of the
+   *     table; the subquery alone timed out at 60 s for 364 rows.
+   *  2. Because the subqueries appeared in the `SELECT DISTINCT` list, the
+   *     planner evaluated them once per JOINED row (142k for that slice —
+   *     one shared name held 4,468 claims), not once per `mine` row.
+   *
+   * So the query now materialises the small sets and joins them. `mine` is the
+   * slice's identifiers; `holders` is every entity holding one of those
+   * identifiers, grouped to one row per (entity, kind, value) with its E.164
+   * form aggregated in the same pass; `sized` counts holders per value with a
+   * window function. The final join is then one row per (subject, other) pair
+   * with no correlated work and no DISTINCT. `MATERIALIZED` is deliberate:
+   * without it Postgres inlines the CTEs and is free to plan its way back into
+   * the correlated shape. Same slice, same rows, 0.4 s.
    *
    * ── Why the E.164 form is AGGREGATED, not selected ────────────────────────
    *
@@ -1007,12 +1527,9 @@ export class DuplicateDetectStage implements Stage {
    * not have a settled international form", which {@link claimScore} reads as
    * exactly that rather than picking a winner.
    *
-   * The other side is a correlated aggregate rather than a fourth CTE for the
-   * reason `group_size` is: it rides `identifier_claims_lookup_idx` per row
-   * instead of materialising the corpus. It is gated on `s.kind = 'phone'`
-   * because no other kind ever sets the column, and the majority of any real
-   * corpus's claims are emails — paying an index lookup each to learn NULL is
-   * the whole cost of the widening and it is avoidable.
+   * The other side's form comes from the same `holders` aggregate, so it costs
+   * nothing extra; `CASE WHEN s.kind = 'phone'` keeps the column NULL for every
+   * other kind, as the previous per-row lookup did.
    *
    * ── Why the block check probes ONE order, not two ─────────────────────────
    *
@@ -1030,7 +1547,7 @@ export class DuplicateDetectStage implements Stage {
    */
   private loadEvidence(userId: string, ids: string[]): Promise<SharedClaim[]> {
     return this.dataSource.query<SharedClaim[]>(
-      `WITH mine AS (
+      `WITH mine AS MATERIALIZED (
          SELECT c.entity_id AS subject_id,
                 c.kind,
                 c.value_normalized,
@@ -1042,45 +1559,41 @@ export class DuplicateDetectStage implements Stage {
             AND c.disposition IS DISTINCT FROM 'rejected'
           GROUP BY c.entity_id, c.kind, c.value_normalized
        ),
-       sized AS (
-         SELECT m.subject_id,
-                m.kind,
-                m.value_normalized,
-                m.subject_e164,
-                (SELECT count(DISTINCT o.entity_id)
-                   FROM ci.identifier_claims o
-                  WHERE o.owner_user_id = $2::uuid
-                    AND o.entity_id IS NOT NULL
-                    AND o.disposition IS DISTINCT FROM 'rejected'
-                    AND o.kind = m.kind
-                    AND o.value_normalized = m.value_normalized) AS group_size
-           FROM mine m
+       holders AS MATERIALIZED (
+         SELECT o.entity_id,
+                o.kind,
+                o.value_normalized,
+                CASE WHEN count(DISTINCT o.value_e164) = 1
+                     THEN min(o.value_e164) END AS e164
+           FROM (SELECT kind, value_normalized FROM mine GROUP BY kind, value_normalized) v
+           JOIN ci.identifier_claims o
+             ON o.owner_user_id = $2::uuid
+            AND o.kind = v.kind
+            AND o.value_normalized = v.value_normalized
+          WHERE o.entity_id IS NOT NULL
+            AND o.disposition IS DISTINCT FROM 'rejected'
+          GROUP BY o.entity_id, o.kind, o.value_normalized
+       ),
+       sized AS MATERIALIZED (
+         SELECT h.entity_id,
+                h.kind,
+                h.value_normalized,
+                h.e164,
+                count(*) OVER (PARTITION BY h.kind, h.value_normalized) AS group_size
+           FROM holders h
        )
-       SELECT DISTINCT
-              s.subject_id,
+       SELECT s.subject_id,
               o.entity_id AS other_id,
               s.kind,
               s.value_normalized,
               s.subject_e164,
-              CASE WHEN s.kind = 'phone' THEN
-                (SELECT CASE WHEN count(DISTINCT x.value_e164) = 1
-                             THEN min(x.value_e164) END
-                   FROM ci.identifier_claims x
-                  WHERE x.owner_user_id = $2::uuid
-                    AND x.entity_id = o.entity_id
-                    AND x.kind = s.kind
-                    AND x.value_normalized = s.value_normalized
-                    AND x.disposition IS DISTINCT FROM 'rejected')
-              END AS other_e164,
-              s.group_size::int AS group_size
-         FROM sized s
-         JOIN ci.identifier_claims o
-           ON o.owner_user_id = $2::uuid
-          AND o.kind = s.kind
+              CASE WHEN s.kind = 'phone' THEN o.e164 END AS other_e164,
+              o.group_size::int AS group_size
+         FROM mine s
+         JOIN sized o
+           ON o.kind = s.kind
           AND o.value_normalized = s.value_normalized
-          AND o.entity_id IS NOT NULL
           AND o.entity_id <> s.subject_id
-          AND o.disposition IS DISTINCT FROM 'rejected'
          JOIN ci.entities e
            ON e.entity_id = o.entity_id
           AND e.owner_user_id = $2::uuid
@@ -1119,7 +1632,15 @@ export class DuplicateDetectStage implements Stage {
    * own prior proposal, and a review queue whose contents change under the
    * reviewer is worse than a stale row: `detector_version` says which generation
    * produced each row, so a stale proposal is identifiable and reapable by a
-   * deliberate `clean.fact_reap`, which is where that decision belongs.
+   * deliberate pass, which is where that decision belongs.
+   *
+   * For PHONE evidence that pass exists: `MergeCandidateService.revalidatePhoneEvidence`
+   * re-checks every pending pair's phone items against the live records before
+   * the People page shows the queue, rewrites a row to what still holds, and
+   * retires one left with nothing. Stale phone evidence was not hypothetical —
+   * a re-import rewrites `properties` from the source's own card, so a number
+   * a merge had folded in can vanish from one side while the card still said
+   * "Same phone number".
    *
    * `evidence` is written as one jsonb array per pair rather than as rows,
    * matching `ci.promotion_candidates.evidence`, the shape the review UI in this

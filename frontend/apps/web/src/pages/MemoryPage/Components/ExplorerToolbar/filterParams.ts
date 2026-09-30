@@ -25,6 +25,7 @@ export const FILTER_PARAMS = [
   'hasLocation',
   'semantic',
   'bbox',
+  'direction',
 ] as const;
 
 /**
@@ -58,6 +59,11 @@ export function narrowedEntityTypes(params: URLSearchParams): string[] | null {
  */
 export function hasWhenFilter(params: URLSearchParams): boolean {
   return Boolean(params.get('from') || params.get('to') || isRollingDatePreset(params.get('when')));
+}
+
+/** Whether an Activity filter (`?eventTypes=`) names at least one kind of event. */
+export function hasActivityFilter(params: URLSearchParams): boolean {
+  return (params.get('eventTypes')?.split(',') ?? []).some(Boolean);
 }
 
 /**
@@ -127,6 +133,25 @@ export interface ExplorerTypeResolution {
  * clipped to them — never widened back to everything, and never emptied. That
  * clipping happens before the When override, and every one of those kinds
  * is dated, so the two never fight.
+ *
+ * An Activity filter (`?eventTypes=`) then pins the browse to events. The
+ * server applies that filter to event rows only and lets every other kind
+ * through untouched (SearchResolver's eventTypes post-filter, and the timed
+ * browse's per-type queries), so asking for the events-browse kinds alongside
+ * "sale" returned no sales and every browser visit and message there is.
+ * Nobody means that by picking an activity; the graph endpoint already reads
+ * it as events-only and the heatmap counts only events under it. The pin
+ * applies only while events were in play: a What bar that has left events
+ * out keeps its selection, and the toolbar marks the Activity chip as one
+ * that can never match (see {@link eventsInPlay}). It also applies only to
+ * a browse whose kinds were not really chosen — an un-narrowed What bar, or
+ * one narrowed to the events-browse kinds. A selection that names another
+ * kind alongside events is kept whole: those rows were asked for, not let
+ * through, and the server already narrows the events among them by
+ * activity. The seeded "Trophy Case" search is exactly that (Event + Content
+ * + an activity + a query), and it is what a shared link of the same saved
+ * search returns. The pin comes before the When override, and events are
+ * dated, so the two never fight either.
  */
 export function resolveExplorerTypes(params: URLSearchParams, pathname?: string): ExplorerTypeResolution {
   let narrowed = narrowedEntityTypes(params);
@@ -135,6 +160,14 @@ export function resolveExplorerTypes(params: URLSearchParams, pathname?: string)
     const kept = (narrowed ?? EVENTS_EXPLORER_TYPES).filter((type) => EVENTS_EXPLORER_TYPES.includes(type));
 
     narrowed = kept.length > 0 ? kept : [...EVENTS_EXPLORER_TYPES];
+  }
+
+  if (
+    hasActivityFilter(params) &&
+    (narrowed == null ||
+      (narrowed.includes('Event') && narrowed.every((type) => EVENTS_EXPLORER_TYPES.includes(type))))
+  ) {
+    narrowed = ['Event'];
   }
 
   if (!hasWhenFilter(params)) {
@@ -177,6 +210,45 @@ export function explorerSearchTypeFilters(
   };
 }
 
+/**
+ * Whether events are among the kinds the explorer will search, and so whether
+ * an event-scoped control has anything to act on. The Activity picker
+ * (`?eventTypes=`) only narrows rows of kind `event` — SearchInput.eventTypes
+ * is documented as event-only — so offering it while the What bar has left
+ * events out (say `/memory` narrowed to Content) would be a filter that can
+ * never match. Follows the same resolution the search sends, including the
+ * events-browse clip and the When override.
+ */
+export function eventsInPlay(params: URLSearchParams, pathname?: string): boolean {
+  return kindsInPlay(params, pathname, ['Event']);
+}
+
+/**
+ * Whether any kind that links to people is among the kinds the explorer will
+ * search — the Who picker's (`?people=`) precondition. The backend narrows
+ * events (participants / organizer) and communications (sender / recipients)
+ * by Who and sets every other kind aside, so the picker is offered while
+ * either of those two is in play.
+ */
+export function peopleInPlay(params: URLSearchParams, pathname?: string): boolean {
+  return kindsInPlay(params, pathname, ['Event', 'Communication']);
+}
+
+/** Whether at least one of `kinds` (display names) survives the current type resolution. */
+function kindsInPlay(params: URLSearchParams, pathname: string | undefined, kinds: string[]): boolean {
+  const { includeTypes, excludeTypes, nothingLeft } = resolveExplorerTypes(params, pathname);
+
+  if (nothingLeft) {
+    return false;
+  }
+
+  if (includeTypes) {
+    return kinds.some((kind) => includeTypes.includes(kind));
+  }
+
+  return kinds.some((kind) => !(excludeTypes ?? []).includes(kind));
+}
+
 export function normalizeFilterValue(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
 }
@@ -198,6 +270,24 @@ export function writeCsvFilterParam(params: URLSearchParams, key: string, next: 
   } else {
     params.set(key, normalized.join(','));
   }
+}
+
+/**
+ * Validation for the exact-match list dimensions (How / Activity): a value is
+ * one of the backend's own names, so only the CSV framing can go wrong.
+ */
+export function validateExactFilterValue(value: string): string | null {
+  const normalized = normalizeFilterValue(value);
+
+  if (!normalized) {
+    return 'Enter a value first.';
+  }
+
+  if (normalized.includes(',')) {
+    return 'Values cannot include commas.';
+  }
+
+  return null;
 }
 
 function validatePersonFilterValue(value: string): string | null {
@@ -329,6 +419,10 @@ export function countActiveFilters(params: URLSearchParams): number {
   }
 
   if (params.get('from') || params.get('to')) {
+    count += 1;
+  }
+
+  if (params.get('direction')) {
     count += 1;
   }
 

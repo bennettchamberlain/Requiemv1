@@ -142,6 +142,81 @@ describe('Calendar datasource', () => {
     }
   });
 
+  it('imports a Google Calendar HTML description as text, keeping its lines and links', async () => {
+    // The shape Google writes into DESCRIPTION (RFC 5545 says plain TEXT): its
+    // appointment-booking body, with markup and real `\n` escapes mixed. 194 of
+    // the 1,260 descriptions in the reference exports carried tags, and they
+    // were displayed, indexed and embedded as raw markup.
+    const icsPath = icsFile('ci-ics-html-', 'google.ics', [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Google Inc//Google Calendar 70.9054//EN',
+      'BEGIN:VEVENT',
+      'UID:html-1@google.com',
+      'DTSTART:20260704T150000Z',
+      'DTEND:20260704T160000Z',
+      'SUMMARY:Intro call',
+      'DESCRIPTION:<b>Booked by</b>\\nAda Lovelace\\nada@example.com\\n\\nQuestions? Answers <a href="https://exam',
+      ' ple.com/faq">here</a>&nbsp\\;&amp\\; more.<br><br>Join with Google Meet: https://meet.example/abc',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ]);
+
+    try {
+      const [event] = await importIcs(icsPath);
+      const text =
+        'Booked by\nAda Lovelace\nada@example.com\n\nQuestions? Answers here (https://example.com/faq) & more.\n\n' +
+        'Join with Google Meet: https://meet.example/abc';
+
+      // Metadata `Description` is what the push stores as the event's
+      // description: shown in Memory, indexed for search, and embedded.
+      expect(event.item.metadata.Description).toBe(text);
+    } finally {
+      fs.rmSync(path.dirname(icsPath), { recursive: true, force: true });
+    }
+  });
+
+  it('leaves a plain-text description exactly as written, angle brackets and all', () => {
+    // No HTML tag, so no HTML parser: one would delete `<ada@example.com>` as
+    // an unknown element and decode a literal `&amp;`.
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:plain-1@x',
+      'DTSTART:20260101T090000Z',
+      'SUMMARY:Sync',
+      'DESCRIPTION:Organizer: Ada <ada@example.com>\\nQ&amp\\;A if 2 < 3',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    const [event] = parseIcsEvents(ics, 'plain.ics');
+
+    expect(event.description).toBe('Organizer: Ada <ada@example.com>\nQ&amp;A if 2 < 3');
+  });
+
+  it('keeps the UID-less event id stable: the sig hashes the raw HTML, not the text', () => {
+    const rawDescription = '<b>Booked by</b>\\nAda';
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'DTSTART:20260101T090000Z',
+      'SUMMARY:Call',
+      `DESCRIPTION:${rawDescription}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\n');
+
+    const [event] = parseIcsEvents(ics, 'noUidHtml.ics');
+    const expectedSig = crypto
+      .createHash('sha1')
+      .update(['20260101T090000Z', '', 'Call', '', rawDescription].join('\0'))
+      .digest('hex');
+
+    expect(event.description).toBe('Booked by\nAda');
+    expect(event.id).toBe(`ics:noUidHtml.ics:${expectedSig}`);
+  });
+
   it('keeps the UID-less event id (sig) stable across the unescape fix', () => {
     // The sig hash seeding the id for UID-less events is computed from the RAW
     // (still-escaped) text, not the unescaped display text. Otherwise every
@@ -174,7 +249,7 @@ describe('Calendar datasource', () => {
     expect(event.id).toBe(`ics:noUidEscaped.ics:${expectedSig}`);
   });
 
-  it('detects DTSTART;VALUE=DATE all-day and RRULE recurring from iCal params', async () => {
+  it('reads all-day, recurring and the event zone from iCal params', async () => {
     // These populate is_all_day / is_recurring downstream, so they must survive
     // the line-param parse — an earlier `^([^:;]+)(?:;[^:]*)?:` regex stripped
     // the params and left both false for every imported event.
@@ -194,6 +269,7 @@ describe('Calendar datasource', () => {
         'BEGIN:VEVENT',
         'UID:once@x',
         'DTSTART;TZID=America/Los_Angeles:20260120T140000',
+        'DTEND;TZID=America/Los_Angeles:20260120T150000',
         'SUMMARY:Timed one-off',
         'END:VEVENT',
         'END:VCALENDAR',
@@ -213,6 +289,22 @@ describe('Calendar datasource', () => {
       expect(series?.metadata.isRecurring).toBe(true);
       expect(once?.metadata.isAllDay).toBe(false);
       expect(once?.metadata.isRecurring).toBe(false);
+
+      // The TZID is part of the value, not decoration: 14:00 America/Los_Angeles
+      // on 2026-01-20 (PST, UTC-8) is 22:00Z. The parser used to drop the param
+      // and read the wall clock as SERVER-local, so on the appliance's UTC
+      // container this event was stored eight hours early — and permanently,
+      // since the .ics and the Google ETL converge on one identity whose
+      // find-or-create never revisits start_time.
+      //
+      // Asserted as absolute instants (`toISOString`), so the expectation holds
+      // whatever TZ the machine running the suite is in.
+      expect(once?.timestamp?.toISOString()).toBe('2026-01-20T22:00:00.000Z');
+      expect(once?.timespanEnd?.toISOString()).toBe('2026-01-20T23:00:00.000Z');
+
+      // The DATE-only series master is unaffected: no TZID to resolve, so it
+      // stays the UTC midnight of its date.
+      expect(series?.timestamp?.toISOString()).toBe('2026-01-17T00:00:00.000Z');
     } finally {
       fs.rmSync(path.dirname(icsPath), { recursive: true, force: true });
     }
@@ -241,9 +333,10 @@ describe('Calendar datasource', () => {
     expect(items.map((item) => item.id)).not.toContain('04AACD36-CF84-4420-AA2A-D25CB8B9C662');
 
     // The body is the event's, not the reminder boilerplate. `\n` is a real
-    // RFC 5545 TEXT escape, decoded like everywhere else.
+    // RFC 5545 TEXT escape, decoded like everywhere else, and Google's `<b>` is
+    // converted to text (see icsDescriptionText).
     expect(booked?.metadata.Description).toBe(
-      '<b>Booked by</b>\nAva Booker\nava@example.com\n\nJoin with Google Meet: https://meet.example.com/fby-pwgg-pff',
+      'Booked by\nAva Booker\nava@example.com\n\nJoin with Google Meet: https://meet.example.com/fby-pwgg-pff',
     );
     expect(metaText(booked?.metadata.Description)).not.toContain('This is an event reminder');
     expect(booked?.metadata.Summary).toBe('Meet w/ Liam (Ava Booker)');

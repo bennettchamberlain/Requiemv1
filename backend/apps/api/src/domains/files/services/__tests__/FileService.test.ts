@@ -1,6 +1,8 @@
 import { createHash } from 'crypto';
 
-import { type UserServiceContext } from '@ci/common/context';
+import { NotFoundException } from '@nestjs/common';
+
+import { SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 
 import { FileUploadedEvent } from '../../events';
 import { FileVariant } from '../../types';
@@ -196,6 +198,99 @@ describe('FileService.create — hash dedup', () => {
   });
 });
 
+describe('FileService.create — a write a unique index refuses', () => {
+  // At most one live PLAYBACK per original (files_one_playback_per_parent_uniq).
+  // The bytes are PUT before the row, so a refused insert strands them unless
+  // create() removes them — and a 23505 proves no row names that key.
+  it('deletes the object it just put, then rethrows the violation', async () => {
+    const repo = makeRepo();
+    const violation = Object.assign(new Error('duplicate key value'), { code: '23505' });
+    repo.save.mockRejectedValueOnce(violation);
+    const { service, s3Send } = makeService(repo);
+
+    await expect(
+      service.create(ownerCtx, {
+        buffer: Buffer.from('a rendition'),
+        contentType: 'video/mp4',
+        variant: FileVariant.PLAYBACK,
+        parentId: 'parent-1',
+      }),
+    ).rejects.toBe(violation);
+
+    const key = (repo.create.mock.results[0].value as { key: string }).key;
+
+    expect(s3Send).toHaveBeenCalledTimes(2);
+    expect(s3Send.mock.calls[1][0].input).toMatchObject({ Delete: { Objects: [{ Key: key }] } });
+  });
+
+  // Any other failure may have committed the row after all (a connection lost
+  // mid-commit); deleting its bytes then would leave a row naming nothing.
+  it('keeps the object when the save failed for any other reason', async () => {
+    const repo = makeRepo();
+    repo.save.mockRejectedValueOnce(new Error('Connection terminated unexpectedly'));
+    const { service, s3Send } = makeService(repo);
+
+    await expect(
+      service.create(ownerCtx, {
+        buffer: Buffer.from('a rendition'),
+        contentType: 'video/mp4',
+        variant: FileVariant.PLAYBACK,
+        parentId: 'parent-1',
+      }),
+    ).rejects.toThrow('Connection terminated unexpectedly');
+    expect(s3Send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FileService.findVariantsOfKindsByParentIds', () => {
+  it('fetches every kind in one query, each aligned with the parent ids and owner-scoped', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { find: jest.Mock };
+    repo.find = jest.fn().mockResolvedValue([
+      // The planner's order, not the caller's.
+      { id: 'play-b', parentId: 'b', variant: FileVariant.PLAYBACK, bucket: null, key: null },
+      { id: 'prev-a', parentId: 'a', variant: FileVariant.PREVIEW, bucket: null, key: null },
+      { id: 'prev-b', parentId: 'b', variant: FileVariant.PREVIEW, bucket: null, key: null },
+    ]);
+    const { service } = makeService(repo);
+
+    const byKind = await service.findVariantsOfKindsByParentIds(
+      ownerCtx,
+      ['a', 'b', 'c'],
+      [FileVariant.PREVIEW, FileVariant.PLAYBACK],
+    );
+
+    expect(repo.find).toHaveBeenCalledTimes(1);
+    expect(repo.find.mock.calls[0][0].where).toMatchObject({ userId: 'owner-1' });
+    expect(byKind[FileVariant.PREVIEW].map((file) => file?.id ?? null)).toEqual(['prev-a', 'prev-b', null]);
+    expect(byKind[FileVariant.PLAYBACK].map((file) => file?.id ?? null)).toEqual([null, 'play-b', null]);
+  });
+
+  it('asks nothing for an empty page', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { find: jest.Mock };
+    repo.find = jest.fn();
+    const { service } = makeService(repo);
+
+    await expect(
+      service.findVariantsOfKindsByParentIds(ownerCtx, [], [FileVariant.PREVIEW, FileVariant.PLAYBACK]),
+    ).resolves.toEqual({ [FileVariant.PREVIEW]: [], [FileVariant.PLAYBACK]: [] });
+    expect(repo.find).not.toHaveBeenCalled();
+  });
+
+  it('keeps the single-kind lookup’s shape', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { find: jest.Mock };
+    repo.find = jest
+      .fn()
+      .mockResolvedValue([
+        { id: 'prev-b', parentId: 'b', variant: FileVariant.PREVIEW, bucket: null, key: null },
+      ]);
+    const { service } = makeService(repo);
+
+    const previews = await service.findVariantsByParentIds(ownerCtx, ['a', 'b'], FileVariant.PREVIEW);
+
+    expect(previews.map((file) => file?.id ?? null)).toEqual([null, 'prev-b']);
+  });
+});
+
 describe('FileService.uploadWithDedupInfo', () => {
   it('reports deduped:true and skips create() when the hash already exists', async () => {
     const repo = makeRepo();
@@ -259,5 +354,103 @@ describe('FileService.uploadWithDedupInfo', () => {
       skipDescription: true,
       model: undefined,
     });
+  });
+});
+
+describe('FileService.describedImageCoverage', () => {
+  it('counts original images and how many carry a non-blank description, for the one user', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { query: jest.Mock };
+    repo.query = jest.fn().mockResolvedValue([{ images: '22870', described: '5393' }]);
+    const { service } = makeService(repo);
+
+    const coverage = await service.describedImageCoverage(ownerCtx);
+
+    expect(coverage).toEqual({ images: 22_870, described: 5_393 });
+
+    const [sql, params] = repo.query.mock.calls[0];
+
+    // ORIGINALs only — previews and thumbnails are derived copies of the same
+    // picture — and a blank description is "not described", the same predicate
+    // the description sweep uses to decide what is still owed one.
+    expect(params).toEqual(['owner-1', 'ORIGINAL']);
+    expect(sql).toContain("content_type LIKE 'image/%'");
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain("btrim(description) <> ''");
+  });
+
+  it('a user with no images is zero of zero, not NaN', async () => {
+    const repo = makeRepo() as ReturnType<typeof makeRepo> & { query: jest.Mock };
+    repo.query = jest.fn().mockResolvedValue([{ images: '0', described: '0' }]);
+
+    expect(await makeService(repo).service.describedImageCoverage(ownerCtx)).toEqual({
+      images: 0,
+      described: 0,
+    });
+  });
+});
+
+describe('FileService by-key readers — getFileContent / getFileStream', () => {
+  // Keys are minted UUIDs (`uuidv4()` in create); the column is `uuid`.
+  const OWNED_KEY = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const stranger = { userId: 'someone-else' } as UserServiceContext;
+  const system = { userId: SYSTEM_USER } as unknown as UserServiceContext;
+
+  function makeReadable(bytes: string) {
+    return {
+      transformToByteArray: async () => new TextEncoder().encode(bytes),
+      [Symbol.asyncIterator]: async function* () {
+        yield new TextEncoder().encode(bytes);
+      },
+    };
+  }
+
+  it('serves the bytes to the account that owns the row pointing at the key', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValue({ id: 'file-1' });
+    const { service, s3Send } = makeService(repo);
+    s3Send.mockResolvedValue({ Body: makeReadable('hello') });
+
+    const bytes = await service.getFileContent(ownerCtx, OWNED_KEY);
+
+    expect(Buffer.from(bytes).toString('utf8')).toBe('hello');
+    // The lookup is by (key, owner) — and includes soft-deleted rows, because a
+    // deleted row still names its owner and export reads deleted files too.
+    expect(repo.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { key: OWNED_KEY, userId: 'owner-1' }, withDeleted: true }),
+    );
+  });
+
+  it('refuses another account, before the object store is ever asked', async () => {
+    const repo = makeRepo();
+    repo.findOne.mockResolvedValue(null);
+    const { service, s3Send } = makeService(repo);
+
+    await expect(service.getFileContent(stranger, OWNED_KEY)).rejects.toThrow(NotFoundException);
+    await expect(service.getFileStream(stranger, OWNED_KEY)).rejects.toThrow(NotFoundException);
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  it('refuses a key that is not even UUID-shaped without touching the database', async () => {
+    const repo = makeRepo();
+    const { service, s3Send } = makeService(repo);
+
+    await expect(service.getFileStream(ownerCtx, 'user-1/f1')).rejects.toThrow(NotFoundException);
+    expect(repo.findOne).not.toHaveBeenCalled();
+    expect(s3Send).not.toHaveBeenCalled();
+  });
+
+  it('exempts the system principal, like every other scoped lookup in this service', async () => {
+    const repo = makeRepo();
+    const { service, s3Send } = makeService(repo);
+    s3Send.mockResolvedValue({ Body: makeReadable('x') });
+
+    const stream = await service.getFileStream(system, OWNED_KEY);
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk as Uint8Array));
+    }
+
+    expect(Buffer.concat(chunks).toString('utf8')).toBe('x');
+    expect(repo.findOne).not.toHaveBeenCalled();
   });
 });

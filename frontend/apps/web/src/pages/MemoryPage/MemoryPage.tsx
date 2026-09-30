@@ -51,7 +51,7 @@ export const DEFAULT_MEMORY_EVENTS_SEARCH = 'view=list';
  * are marked as such in the toolbar — see Components/ExplorerToolbar/viewFilterSupport.
  */
 export function MemoryPage() {
-  usePageTitle('Memory - Companion Intelligence');
+  usePageTitle('Memory - Companion Memory');
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
 
@@ -72,9 +72,11 @@ export function MemoryPage() {
     return <Navigate to={{ search }} replace />;
   }
 
-  // Type filters with the route's scope and the When override applied: the
-  // events browse only asks for its three kinds, and a date range only asks
-  // for kinds that have a date (see resolveExplorerTypes). When that leaves
+  // Type filters with the route's scope, the Activity pin and the When
+  // override applied: the events browse only asks for its three kinds, an
+  // Activity filter asks for events alone (unless the What bar picked another
+  // kind alongside them), and a date range only asks for kinds that have a
+  // date (see resolveExplorerTypes). When that leaves
   // nothing to ask for, the query is skipped outright — an empty include list
   // would read as "everything" — and the view explains why instead.
   const typeFilters = resolveExplorerTypes(searchParams, pathname);
@@ -100,6 +102,7 @@ export function MemoryPage() {
           hasLocation: searchParams.get('hasLocation') === '1' || undefined,
           bbox: parseBbox(searchParams.get('bbox')),
           semantic: searchParams.get('semantic') === '1' || undefined,
+          direction: searchParams.get('direction') || undefined,
         },
       ]}
     >

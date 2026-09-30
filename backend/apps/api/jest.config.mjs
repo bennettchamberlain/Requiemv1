@@ -17,8 +17,24 @@ export default {
     '\\.pnp\\.cjs$',
   ],
 
+  // Mirrors the `paths` block in tsconfig.json — enumerated for the same
+  // reason: '^@ci/(.*)$' swallowed the whole @ci scope, so a real workspace
+  // dependency named @ci/<anything> would have been redirected into src/ and
+  // failed to resolve. Keep the two lists in sync.
   moduleNameMapper: {
-    '^@ci/(.*)$': '<rootDir>/src/$1',
+    '^@ci/common$': '<rootDir>/src/common',
+    '^@ci/common/(.*)$': '<rootDir>/src/common/$1',
+    '^@ci/domains$': '<rootDir>/src/domains',
+    '^@ci/domains/(.*)$': '<rootDir>/src/domains/$1',
+    '^@ci/application$': '<rootDir>/src/application',
+    '^@ci/configuration$': '<rootDir>/src/configuration',
+    '^@ci/instrument$': '<rootDir>/src/instrument',
+    // A real workspace package rather than a path alias, so this is not part of
+    // the tsconfig `paths` mirror above. It is mapped anyway, at its SOURCE:
+    // package.json points `main` at dist/, which jest would otherwise resolve —
+    // running the suite against whatever was last built, or failing outright on
+    // a clean checkout.
+    '^@ci/tool-core$': '<rootDir>/../../packages/tool-core/src/index.ts',
   },
 
   testMatch: ['**/__tests__/**/*.test.ts', '**/?(*.)+(spec|test).ts'],
@@ -30,8 +46,9 @@ export default {
   // new domains land with a real floor from day one instead of inheriting it.
   //
   // The planning floor is set just under what the suite achieves WITHOUT a
-  // database, since TaskService.tenancy.integration.test.ts skips unless
-  // PLANNING_TEST_DATABASE_URL is set.
+  // database, since TaskService.tenancy.integration.test.ts and the other
+  // DB-backed planning suites skip unless a database is configured
+  // (PLANNING_TEST_DATABASE_URL or the DATABASE_URL fallback).
   coverageThreshold: {
     './src/domains/planning/': {
       statements: 88,
@@ -73,4 +90,10 @@ export default {
   workerIdleMemoryLimit: '768MB',
 
   setupFilesAfterEnv: ['reflect-metadata'],
+
+  // `default` is what jest uses when this is unset. The second one exists
+  // because the default drops the console output of any file whose tests were
+  // ALL skipped — which is exactly where a database-backed spec prints why it
+  // did not run. It lists those files, with their reasons, above the totals.
+  reporters: ['default', '<rootDir>/src/domains/__tests__/support/skippedSuitesReporter.js'],
 };

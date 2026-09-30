@@ -28,17 +28,33 @@ function signedFile(partial: Partial<SignedFile> & { id: string }): SignedFile {
   } as SignedFile;
 }
 
-function makeServices(opts: { links: MediaLink[]; originals: SignedFile[]; previews: SignedFile[] }) {
+function makeServices(opts: {
+  links: MediaLink[];
+  originals: SignedFile[];
+  previews: SignedFile[];
+  playbacks?: SignedFile[];
+}) {
   const findMediaFilesByEventIds = jest.fn(async () => opts.links);
   const findByIds = jest.fn(async (_ctx: unknown, ids: string[]) =>
     ids.map((id) => opts.originals.find((f) => f.id === id) ?? null),
   );
-  const findVariantsByParentIds = jest.fn(async (_ctx: unknown, parentIds: string[]) =>
-    parentIds.map((pid) => opts.previews.find((f) => f.parentId === pid) ?? null),
+  const findVariantsOfKindsByParentIds = jest.fn(
+    async (_ctx: unknown, parentIds: string[], variants: readonly FileVariant[]) =>
+      Object.fromEntries(
+        variants.map((variant) => [
+          variant,
+          parentIds.map(
+            (pid) =>
+              (variant === FileVariant.PLAYBACK ? (opts.playbacks ?? []) : opts.previews).find(
+                (f) => f.parentId === pid,
+              ) ?? null,
+          ),
+        ]),
+      ),
   );
 
   const contentService = { findMediaFilesByEventIds } as unknown as ContentService;
-  const fileService = { findByIds, findVariantsByParentIds } as unknown as FileService;
+  const fileService = { findByIds, findVariantsOfKindsByParentIds } as unknown as FileService;
   const logger = {
     setContext: jest.fn(),
     log: jest.fn(),
@@ -48,7 +64,7 @@ function makeServices(opts: { links: MediaLink[]; originals: SignedFile[]; previ
 
   const loader = new EventMediaLoader(contentService, fileService, logger);
 
-  return { loader, findMediaFilesByEventIds, findByIds, findVariantsByParentIds };
+  return { loader, findMediaFilesByEventIds, findByIds, findVariantsOfKindsByParentIds };
 }
 
 const CTX = { userId: 'user-1' } as UserServiceContext;
@@ -68,6 +84,8 @@ describe('EventMediaLoader', () => {
     expect(media).toEqual({
       previewUrl: '/companion/prev?sig',
       mediaUrl: '/companion/orig?sig',
+      playbackUrl: null,
+      playbackContentType: null,
       // The original file's content type wins over the content row's mimetype.
       contentType: 'image/png',
       width: null,
@@ -96,6 +114,36 @@ describe('EventMediaLoader', () => {
     expect(media?.contentType).toBe('video/mp4');
   });
 
+  it('carries the PLAYBACK rendition beside the original for a video that has one', async () => {
+    const { loader, findVariantsOfKindsByParentIds } = makeServices({
+      links: [{ eventId: 'evt-hevc', fileId: 'file-3', mimetype: 'video/quicktime' }],
+      originals: [signedFile({ id: 'file-3', contentType: 'video/quicktime', url: '/companion/hevc?sig' })],
+      previews: [],
+      playbacks: [
+        signedFile({
+          id: 'play-3',
+          parentId: 'file-3',
+          variant: FileVariant.PLAYBACK,
+          contentType: 'video/mp4',
+          url: '/companion/h264?sig',
+        }),
+      ],
+    });
+
+    const media = await loader.load(CTX, 'evt-hevc');
+
+    // The original stays the download; the rendition is what the player uses.
+    expect(media?.mediaUrl).toBe('/companion/hevc?sig');
+    expect(media?.contentType).toBe('video/quicktime');
+    expect(media?.playbackUrl).toBe('/companion/h264?sig');
+    expect(media?.playbackContentType).toBe('video/mp4');
+    expect(findVariantsOfKindsByParentIds).toHaveBeenCalledWith(
+      CTX,
+      ['file-3'],
+      [FileVariant.PREVIEW, FileVariant.PLAYBACK],
+    );
+  });
+
   it('falls back to the content row mimetype when the original is unresolvable', async () => {
     // Link points at a file the user can't see (deleted / other user) but a
     // preview survives — content type still comes through from the content row.
@@ -113,7 +161,7 @@ describe('EventMediaLoader', () => {
   });
 
   it('batches a page of events into one query per hop', async () => {
-    const { loader, findMediaFilesByEventIds, findByIds, findVariantsByParentIds } = makeServices({
+    const { loader, findMediaFilesByEventIds, findByIds, findVariantsOfKindsByParentIds } = makeServices({
       links: [
         { eventId: 'a', fileId: 'fa', mimetype: 'image/jpeg' },
         { eventId: 'b', fileId: 'fb', mimetype: 'image/jpeg' },
@@ -141,7 +189,8 @@ describe('EventMediaLoader', () => {
     // One round-trip each, not one per event.
     expect(findMediaFilesByEventIds).toHaveBeenCalledTimes(1);
     expect(findByIds).toHaveBeenCalledTimes(1);
-    expect(findVariantsByParentIds).toHaveBeenCalledTimes(1);
+    // PREVIEW and PLAYBACK share the one variants query.
+    expect(findVariantsOfKindsByParentIds).toHaveBeenCalledTimes(1);
     expect(findMediaFilesByEventIds).toHaveBeenCalledWith(CTX, ['a', 'b', 'c']);
   });
 });

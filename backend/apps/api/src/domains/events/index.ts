@@ -88,7 +88,7 @@ export { EventService, LocalEventService, PGBossEventService };
 export { OnEvent } from './decorators/OnEvent';
 export { Events, type EventPayloads } from './event-registry';
 export type { EventRegistry } from './registry';
-export type { Acknowledgement, EventSendOptions, QueueOptions } from './types';
+export type { Acknowledgement, EventSendOptions, QueuedJob, QueuedJobState, QueueOptions } from './types';
 // The priority tiers are part of the events domain's public surface: any domain
 // that enqueues work has to be able to say whether it is interactive or a
 // backfill. Exporting them here keeps callers off `events/constants` directly,
@@ -103,3 +103,4 @@ export { defineEvent, EventListenerRegistry } from './event-registration';
 // is interactive. Exported because the Jobs surface and its tests need it and
 // must not reach into `events/queueInventory` directly (no-cross-domain-internals).
 export { queueInventory, type QueueInventoryEntry } from './queueInventory';
+export { YieldGateRegistry, type YieldGate } from './yieldGates';

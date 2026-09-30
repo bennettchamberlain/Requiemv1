@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import { SYSTEM_USER } from '@ci/common/context';
 import {
+  CAPTURE_SCOPE,
+  FULL_CAPABILITY,
   INTENTS_SCOPE,
   MCP_SCOPE,
   MEMORY_SCOPE,
@@ -22,6 +24,18 @@ import { ConnectCodeService } from './ConnectCodeService';
 const CONNECT_KEY_TTL_DAYS = 90;
 
 /**
+ * Apps that are minted a FULL-SURFACE key (an empty scope list, which the
+ * api-key guards treat as "not scope-limited"): every route, GraphQL, files,
+ * bulk ingest, maintenance, the whole-account export. Empty today: the bulk
+ * importer that once needed it was folded into CI-Server itself. An app earns a
+ * place here by review, never by being unknown — see {@link scopesForApp}.
+ */
+export const FULL_SURFACE_CONNECT_APPS: ReadonlySet<string> = new Set<string>([]);
+
+/** What an app the server has no specific knowledge of is confined to. */
+export const DEFAULT_CONNECT_SCOPES: readonly string[] = [MEMORY_SCOPE, INTENTS_SCOPE, MCP_SCOPE];
+
+/**
  * The least-privilege scope set a connect key is minted with, per app.
  *
  * This is the SINGLE source of truth for both what the key can do (enforced
@@ -29,29 +43,76 @@ const CONNECT_KEY_TTL_DAYS = 90;
  * user it will do — they read this same function so they can never drift.
  *
  * App URNs are `<appName>:<store>` (e.g. `ci-openclaw:ci-marketplace`); we key
- * on the app name. The chat agents are confined to exactly what they use; the
- * bulk importer and any app we haven't explicitly narrowed get an EMPTY scope
- * set = full access (grandfathered), so enforcement never breaks an app whose
- * real needs we didn't enumerate.
+ * on the app name. The default is the chat-agent tier: long-term memory, the
+ * intent catalog and the MCP endpoint, and nothing on the raw data plane. It
+ * used to be the other way round — an app the switch did not name got an EMPTY
+ * scope set, i.e. full access, "so enforcement never breaks an app whose real
+ * needs we didn't enumerate" — which handed every unreviewed marketplace app
+ * the whole account (export included) the moment its user clicked Approve.
+ * Now a broader grant is an explicit, reviewed entry in
+ * {@link FULL_SURFACE_CONNECT_APPS}; an app that genuinely needs more than the
+ * tier fails visibly at its first out-of-scope call, and the fix is a line of
+ * review here rather than a default that quietly trusts everyone.
+ *
+ * "Fails visibly" is only true for a NEW connect. {@link ConnectService.rotateByApp}
+ * re-derives scopes from here, and CI-Hub rotates every connected app's key on a
+ * timer, so changing an app's case narrows (or widens) the key it already holds
+ * at its next rotation, with no re-consent. So every marketplace app that
+ * declares `hub_integration.memory` gets its tier from the routes it actually
+ * calls (named below, or left on the default on purpose), and
+ * ConnectService.test pins each one. The `ci-mentra` glasses bridge and the
+ * `ci-ha-voice` Home Assistant voice facade are confined to memory alone.
  */
 export function scopesForApp(appUrn: string): string[] {
   const appName = appUrn.split(':')[0];
+
+  if (FULL_SURFACE_CONNECT_APPS.has(appName)) {
+    return [];
+  }
 
   switch (appName) {
     case 'ci-openclaw':
     case 'ci-hermes':
       // Chat-agent tier: the three capabilities these agents use — long-term
-      // memory (`/memory/*`), the agent intent catalog (`/api/intents`), and the
-      // MCP endpoint (`/mcp`). Deliberately confined OFF the raw data plane
-      // (GraphQL, `/files`, `/v1` bulk ingest, `/maintenance`) — that confinement
-      // is the whole point of scoping these apps. Kept as a single tier (rather
-      // than per-agent) so it can't break whichever of intents/mcp each agent
-      // actually exercises.
-      return [MEMORY_SCOPE, INTENTS_SCOPE, MCP_SCOPE];
+      // memory (`/memory/*`, and `/v1/agent/jobs` dispatch), the agent intent
+      // catalog (`/intents`, `/agent/intents`, `POST /intents/:name/execute`),
+      // and the MCP endpoint (`/mcp`). Deliberately confined OFF the raw data
+      // plane (GraphQL, `/files`, `/v1` bulk ingest, `/maintenance`) — that
+      // confinement is the whole point of scoping these apps. Kept as a single
+      // tier (rather than per-agent) so it can't break whichever of intents/mcp
+      // each agent actually exercises.
+      return [...DEFAULT_CONNECT_SCOPES];
+    case 'ci-web-xr-scan':
+    case 'ci-capture':
+      // Capture tier: write observations in, read nothing back. Companion Scan
+      // (CI-Spatial `server/memory_push.ts`) pushes a finished scan with
+      // `POST /files/upload` then `POST /v1/events`, and calls nothing else on
+      // this server — the chat-agent tier would 403 both. Companion Capture is
+      // the agent `capture` was designed for (see CAPTURE_SCOPE): its ingest is
+      // `/files/upload`, `PATCH /files/:id` and `/v1/events`. Its container does
+      // not read the brokered token yet (it signs in and mints its own key), so
+      // its GraphQL parse-status poll is not covered here and would need a
+      // reviewed widening before it moves onto this key.
+      return [CAPTURE_SCOPE];
+    // Memory-only tier. The labels stay adjacent so `no-fallthrough` reads them
+    // as one group (a comment between two cases makes it report each one).
+    //  - ci-glasses-bridge (CI-Even-Realities `agent-hub`) augments chat with
+    //    `POST /memory/recall` and writes the turn back with `POST /memory/turn`.
+    //  - ci-mentra (Mentra smart-glasses bridge) only reads context/recall and
+    //    records turns/fragments through `/memory/*`: no intents, no MCP, no
+    //    raw data plane.
+    //  - ci-ha-voice (CI-Home-Assistant-Voice-PE) grounds each spoken answer in
+    //    `/memory/context` + `/memory/recall` and saves the exchange with
+    //    `/memory/turn`. It runs no tools and reads no raw data.
+    case 'ci-glasses-bridge':
+    case 'ci-mentra':
+    case 'ci-ha-voice':
+      return [MEMORY_SCOPE];
     default:
-      // e.g. ci-import-tools (a bulk importer needing graphql/ingest/files/
-      // maintenance) and any unknown consumer → full access.
-      return [];
+      // Includes `hermes-agent`: the upstream Hermes image declares the memory
+      // integration but nothing in its listing reads the token yet. When it
+      // does, it is the same agent as `ci-hermes`, so the chat-agent tier fits.
+      return [...DEFAULT_CONNECT_SCOPES];
   }
 }
 
@@ -66,17 +127,35 @@ export function scopesForApp(appUrn: string): string[] {
  * `DEFAULT_API_KEY_CAPABILITY` — an authority level nobody had picked for these
  * apps, and one that would move under them if that default ever changed.
  *
- * Every app currently lands on `write`, deliberately — but chosen, not inherited:
+ * The chat agents (`ci-openclaw`, `ci-hermes`) are on `full`; everything else
+ * (including the memory-scoped `ci-mentra` glasses bridge) on `write`. Both chosen, not inherited:
  *
- * - the chat agents (`ci-openclaw`, `ci-hermes`) record as well as recall, so
- *   `read` would break them (`POST /memory/write` and `/memory/turn` are
- *   `@RequireCapability(write)`), while `full` would hand a chat agent the
- *   ability to DELETE memories — the one thing worth asking a user about
- *   separately.
- * - the default branch (the bulk importer `ci-import-tools`, and any app whose
- *   needs we have not enumerated) already gets full *surface* from `scopesForApp`;
- *   it does not also need destructive authority. Bulk ingest is
- *   `@RequireCapability(write)`.
+ * - the chat agents record as well as recall, so `read` would break them
+ *   (`POST /memory/write` and `/memory/turn` are `@RequireCapability(write)`).
+ *
+ *   They were on `write` for the reason this comment used to give: `full` would
+ *   hand a chat agent the ability to DELETE memories, "the one thing worth
+ *   asking a user about separately". That reasoning was right and its conclusion
+ *   is now wrong, because the missing half arrived. At `write` the harness did
+ *   not get asked about — it got a flat `TOOL_FORBIDDEN` from `capabilityAllows`
+ *   BEFORE the gate, and a deny is deliberately never laundered into a queue
+ *   (see toolGate). So there was no card, no audit trail, and no way for the
+ *   owner to say yes; "ask the user separately" had nowhere to happen.
+ *
+ *   `resolveToolGate` now queues any `needsConfirmation` intent from a
+ *   `managed-app` principal regardless of the owner's trust dial and regardless
+ *   of the pending-actions feature flag. So `full` here does not mean the
+ *   harness may delete a memory; it means the harness may ASK to, and the owner
+ *   answers. That is the separate asking this comment wanted.
+ *
+ *   The two are a pair. Reverting one without the other is unsafe in both
+ *   directions: `full` without the gate rule is unattended deletion, and the gate
+ *   rule without `full` is the flat refusal that made cards unreachable.
+ * - the default branch (the capture apps, the glasses bridge, and any app whose
+ *   needs we have not enumerated) is confined by `scopesForApp` to a tier and
+ *   does not need destructive authority inside it. `write` is what the capture
+ *   tier's routes require (`/files/upload` and `/v1` bulk ingest are
+ *   `@RequireCapability(write)`) and what `POST /memory/turn` requires.
  *
  * Pinned to the literal rather than tracking `DEFAULT_API_KEY_CAPABILITY`: these
  * are agent credentials minted on a user's consent, so raising the default for
@@ -88,10 +167,22 @@ export function capabilityForApp(appUrn: string): ApiKeyCapability {
   switch (appName) {
     case 'ci-openclaw':
     case 'ci-hermes':
-      // Chat-agent tier: recall AND remember, never delete.
+      // Chat-agent tier: recall, remember, and ASK to delete — the gate turns a
+      // destructive attempt into an approval card rather than running it. Paired
+      // with the `managed-app` rule in resolveToolGate; see the docblock above.
+      return FULL_CAPABILITY;
+    case 'ci-mentra':
+      // Glasses bridge: reads context/recall and writes turns/fragments
+      // (`POST /memory/turn` and `/memory/write` need `write`). Not paired with
+      // the confirmation gate, so never `full`. Stated explicitly rather than
+      // riding the default so a change there cannot move it.
+      return WRITE_CAPABILITY;
+    case 'ci-ha-voice':
+      // Home Assistant voice: `/memory/turn` needs `write`, and a speaker in the
+      // kitchen has no business deleting memories. Explicit for the same reason.
       return WRITE_CAPABILITY;
     default:
-      // Bulk importer / un-enumerated app: writes a lot, still destroys nothing.
+      // Capture apps, glasses bridge, un-enumerated apps: write, destroy nothing.
       return WRITE_CAPABILITY;
   }
 }
@@ -254,7 +345,9 @@ export class ConnectService {
    * consented to the connection — this only refreshes the same grant. The fresh
    * key's scopes and capability are re-derived from {@link scopesForApp} and
    * {@link capabilityForApp}, so a rotate also heals a key minted under a
-   * previous policy. Assumes the single-owner appliance;
+   * previous policy — and equally narrows one, without re-consent, which is why
+   * every memory-consuming marketplace app's tier is pinned by test.
+   * Assumes the single-owner appliance;
    * {@link ApiKeyService.findUserIdByName} returns null (no rotate) if multiple
    * owners hold the same `app:<urn>` name.
    */

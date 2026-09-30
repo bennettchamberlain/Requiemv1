@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   Brackets,
+  In,
   IsNull,
   Repository,
   type FindOptionsWhere,
@@ -33,6 +34,14 @@ import { classifyExternalId } from '../externalIdKind';
 import { ledgerPlatform } from '../identity';
 import { CreateContentDto, SearchContentDto, UpdateContentDto } from '../types';
 
+import {
+  MEDIA_KINDS_SQL,
+  PLATFORMS_SQL,
+  UNLEDGERED_SOURCE_SYSTEMS_SQL,
+  contentTypeFilterSql,
+  contentTypeOptions,
+  distinctColumnSql,
+} from './contentFacetsSql';
 import { CtiAggregate } from './CtiAggregate';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 
@@ -41,7 +50,12 @@ import { GraphDeltaWriter } from './GraphDeltaWriter';
 export interface FindContentsFilter {
   /** Free text: a case-insensitive substring of the title, the text or the URL. */
   query?: string;
-  /** `ci.content.type` values to keep (image, post, note, …). */
+  /**
+   * Content type options to keep — the values `contentFacets.types` offers:
+   * raw `ci.content.type` values (post, note, like, …) and, for `media` rows,
+   * the kind their mimetype says (image, video, audio, or `media` for the
+   * rest). See contentFacetsSql.contentTypeFilterSql.
+   */
   types?: string[];
   /** `ci.content.mimetype` values to keep. */
   mimetypes?: string[];
@@ -85,9 +99,39 @@ export interface HourlyContentCount {
  * reads compose the egress {@link Content} from the pair with one batched
  * base-row fetch.
  */
+/**
+ * `WHERE` fragment matching rows whose EFFECTIVE source system is in the named
+ * `IN` parameter — the same value {@link ContentService.getFacets} offers.
+ *
+ * A row's effective systems are the platforms the `ci.record_sources` ledger
+ * recorded for it, and only when the ledger recorded none, its own
+ * `source_system`. The two arms are exclusive on purpose: a Google Photos
+ * photo is `file` in the column and `google_photos` in the ledger, and picking
+ * "file" must not sweep it in — "file" is the honest bucket only for a row no
+ * platform claims. Both EXISTS probes hit `record_sources_record_idx`
+ * `(user_id, record_table, record_id)`.
+ */
+function effectiveSourceSystemSql(alias: string, param: string): string {
+  const ledger = `SELECT 1 FROM ci.record_sources rs WHERE rs.user_id = ${alias}.user_id AND rs.record_table = 'content' AND rs.record_id = ${alias}.id`;
+
+  return (
+    `(EXISTS (${ledger} AND rs.platform IN (:...${param}))` +
+    ` OR (${alias}.source_system IN (:...${param}) AND NOT EXISTS (${ledger} AND rs.platform IS NOT NULL)))`
+  );
+}
+
+/**
+ * How long one user's unledgered-source-system arm is remembered. Long enough
+ * that a library browse (every page load asks) pays the anti-join once, short
+ * enough that a re-import that ledgers legacy rows shows up within minutes.
+ */
+const UNLEDGERED_TTL_MS = 5 * 60_000;
+
 @Injectable()
 export class ContentService {
   private readonly aggregate: CtiAggregate<ContentEntity, ContentBaseEntity>;
+
+  private readonly unledgeredCache = new Map<string, { values: string[]; expiresAt: number }>();
 
   constructor(
     @InjectRepository(ContentEntity)
@@ -637,35 +681,84 @@ export class ContentService {
   }
 
   /**
-   * The content library's filter facets: every distinct `type`, `mimetype`
-   * and `source_system` the user's rows carry, each sorted. Built the way the
-   * explorer's How list is (SourceSystemService) — from what is actually in
-   * the column, not a fixed vocabulary — over the same rows the library
+   * The content library's filter facets: every distinct type (with `media`
+   * rows offered by kind — image, video, audio — see contentFacetsSql),
+   * `mimetype` and delivering platform the user's rows carry, each sorted. Built the way
+   * the explorer's How list is (SourceSystemService) — from what is actually
+   * in the rows, not a fixed vocabulary — over the same rows the library
    * pages, so every option offered matches something.
+   *
+   * "Platform", not `source_system`: for a platform-keyed row the two are the
+   * same word, but a federated row (docs/design/cross-pipeline-identity.md
+   * §3.2) carries the KIND there — every imported photo is `file`, whether it
+   * came from Google Photos, WhatsApp or a folder — and the platform that
+   * delivered it lives in the `ci.record_sources` ledger (§5). Measured live
+   * 2026-09-21: 19,135 Google Photos rows, 172 WhatsApp rows and 1,713 folder
+   * rows all offered as one `file` option. See {@link effectiveSourceSystemSql}.
+   *
+   * Read along indexes, not by scanning (contentFacetsSql.ts has the
+   * measurements): three loose index scans that cost one probe per distinct
+   * value and touch no shared memory. The one arm with no index to walk —
+   * rows the ledger never saw, an anti-join over the library — runs serially
+   * and is kept per user for {@link UNLEDGERED_TTL_MS}, because its answer
+   * is about legacy rows and changes only when an import re-delivers them.
    */
   async getFacets(context: UserServiceContext): Promise<ContentFacets> {
-    const distinct = async (column: 'type' | 'mimetype' | 'source_system'): Promise<string[]> => {
-      const rows = await this.excludeDeletedEventMedia(
-        this.contentRepository
-          .createQueryBuilder('content')
-          .select(`DISTINCT content.${column}`, 'value')
-          .where('content.user_id = :userId', { userId: context.userId })
-          .andWhere(`content.${column} IS NOT NULL`),
-        'content',
-      )
-        .orderBy('value', 'ASC')
-        .getRawMany<{ value: string }>();
+    const params = [context.userId];
+    const values = async (sql: string, extra: unknown[] = []): Promise<string[]> => {
+      const rows: Array<{ v: string }> = await this.contentRepository.manager.query(sql, [
+        ...params,
+        ...extra,
+      ]);
 
-      return rows.map((row) => row.value);
+      return rows.map((row) => row.v);
     };
 
-    const [types, mimetypes, sourceSystems] = await Promise.all([
-      distinct('type'),
-      distinct('mimetype'),
-      distinct('source_system'),
+    const unledgered = await this.unledgeredSourceSystems(context.userId);
+    const [rawTypes, mediaKinds, mimetypes, sourceSystems] = await Promise.all([
+      values(distinctColumnSql('type')),
+      values(MEDIA_KINDS_SQL),
+      values(distinctColumnSql('mimetype')),
+      values(PLATFORMS_SQL, [unledgered]),
     ]);
 
-    return { types, mimetypes, sourceSystems };
+    return { types: contentTypeOptions(rawTypes, mediaKinds), mimetypes, sourceSystems };
+  }
+
+  /**
+   * {@link UNLEDGERED_SOURCE_SYSTEMS_SQL} for one user, remembered for
+   * {@link UNLEDGERED_TTL_MS}. Serial on purpose: `SET LOCAL` inside the
+   * transaction keeps the anti-join's hash table in process-local memory
+   * rather than the container's /dev/shm, which is what the parallel plan
+   * would use and what ran out. A converged library answers `[]` here.
+   */
+  private async unledgeredSourceSystems(userId: string): Promise<string[]> {
+    const cached = this.unledgeredCache.get(userId);
+
+    if (cached != null && cached.expiresAt > Date.now()) {
+      return cached.values;
+    }
+
+    const values = await this.contentRepository.manager.transaction(async (manager) => {
+      await manager.query('SET LOCAL max_parallel_workers_per_gather = 0');
+
+      const rows: Array<{ v: string }> = await manager.query(UNLEDGERED_SOURCE_SYSTEMS_SQL, [userId]);
+
+      return rows.map((row) => row.v);
+    });
+
+    this.unledgeredCache.set(userId, { values, expiresAt: Date.now() + UNLEDGERED_TTL_MS });
+
+    return values;
+  }
+
+  /** Drop the remembered unledgered arm for a user (or everyone), so the next facet read recomputes it. */
+  forgetUnledgeredSourceSystems(userId?: string): void {
+    if (userId == null) {
+      this.unledgeredCache.clear();
+    } else {
+      this.unledgeredCache.delete(userId);
+    }
   }
 
   /** The library's explicit filters, each an IN list over its column. */
@@ -690,7 +783,10 @@ export class ContentService {
     }
 
     if (filter.types && filter.types.length > 0) {
-      scoped = scoped.andWhere(`${alias}.type IN (:...contentTypes)`, { contentTypes: filter.types });
+      // Kinds, not raw column values — see contentTypeFilterSql.
+      const { sql, parameters } = contentTypeFilterSql(alias, filter.types);
+
+      scoped = scoped.andWhere(sql, parameters);
     }
 
     if (filter.mimetypes && filter.mimetypes.length > 0) {
@@ -700,7 +796,7 @@ export class ContentService {
     }
 
     if (filter.sourceSystems && filter.sourceSystems.length > 0) {
-      scoped = scoped.andWhere(`${alias}.source_system IN (:...contentSources)`, {
+      scoped = scoped.andWhere(effectiveSourceSystemSql(alias, 'contentSources'), {
         contentSources: filter.sourceSystems,
       });
     }
@@ -764,6 +860,144 @@ export class ContentService {
     const map = new Map(contents.map((content) => [content.id, content]));
 
     return ids.map((id) => map.get(id) ?? null);
+  }
+
+  /**
+   * Carry a file's generated label onto the content row(s) that wrap it.
+   *
+   * An imported photo is two rows: `ci.files` holds the bytes, and a `ci.content`
+   * row of type `media` points at it through `external_id` (kind `'file'`). The
+   * image describer writes its title and description onto the FILE only, and the
+   * content row keeps the name the importer gave it — for a Takeout photo that
+   * is the bare filename, `20251128_162850.jpg`, with a NULL text. The content
+   * library's search (`findPage`) matches the base name, the text and the URL,
+   * so measured live on 2026-09-21: 820 photos labelled "squirrel", every one
+   * with a content row, and the library's "squirrel" search found none of them.
+   *
+   * The title becomes the base name (the filename is still on the file row, and
+   * a timestamp name says nothing a label does not say better) and the
+   * description becomes the text, so the same ILIKE that finds a YouTube title
+   * finds a photo. Goes through {@link update} so the graph delta and the
+   * search re-index fire exactly as they do for any other edit.
+   *
+   * Unclassified rows (`external_id_kind IS NULL`) whose external_id is this
+   * file id are included: they predate the kind column and are files by shape.
+   *
+   * @returns The ids of the content rows updated (empty when the file has none).
+   */
+  async applyFileLabel(
+    context: ServiceContext,
+    fileId: string,
+    label: { title: string; description: string },
+  ): Promise<string[]> {
+    const rows = (await this.findIdsByFileIds(context, [fileId])).get(fileId) ?? [];
+
+    const updated: string[] = [];
+
+    for (const row of rows) {
+      const after = await this.update(context, row, { title: label.title, text: label.description });
+
+      if (after) {
+        updated.push(row);
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * The content row(s) wrapping each of `fileIds`, as `file id -> content ids`.
+   *
+   * There is no FK from files to content; the link is `content.external_id`
+   * holding a `ci.files` id with `external_id_kind = 'file'`. Unclassified rows
+   * (`external_id_kind IS NULL`) are included — they predate the kind column and
+   * a uuid-shaped external_id is a file by shape (see `classifyExternalId`).
+   * Rows explicitly marked `'external_uri'` are never files, whatever they hold.
+   *
+   * Two callers: {@link applyFileLabel} writes a label onto every row of one
+   * file; the search tool turns a page of file hits into `/content/<id>` links
+   * for the model (a file has no page of its own) — one query per page, not one
+   * per hit. Files with no row are absent from the map.
+   */
+  async findIdsByFileIds(context: ServiceContext, fileIds: string[]): Promise<Map<string, string[]>> {
+    const byFile = new Map<string, string[]>();
+
+    if (fileIds.length === 0) {
+      return byFile;
+    }
+
+    const scope = context.userId !== SYSTEM_USER ? { userId: context.userId } : {};
+    const rows = await this.contentRepository.find({
+      select: ['id', 'externalId'],
+      where: [
+        { ...scope, externalId: In(fileIds), externalIdKind: 'file' },
+        { ...scope, externalId: In(fileIds), externalIdKind: IsNull() },
+      ],
+      order: { createdAt: 'ASC' },
+    });
+
+    for (const row of rows) {
+      if (row.externalId == null) {
+        continue;
+      }
+
+      const ids = byFile.get(row.externalId) ?? [];
+      ids.push(row.id);
+      byFile.set(row.externalId, ids);
+    }
+
+    return byFile;
+  }
+
+  /**
+   * The events behind a set of media search hits.
+   *
+   * A photo's searchable text (the labeler's title and description) lives on
+   * its `file` row and, since {@link applyFileLabel}, on its `content` row —
+   * never on the event that says WHEN it was taken. The event is what the
+   * explorer's timeline shows, so "squirrel" between two dates found only
+   * messages containing the word, while the heatmap (which buckets file hits
+   * by their own timestamp) lit up for every photo. This is the bridge: content
+   * ids map to their event through `content.event_id`; file ids first to the
+   * content row(s) wrapping them (`external_id`, kind `'file'` or unclassified)
+   * and then to that event. Rows with no event contribute nothing.
+   *
+   * @returns Distinct event ids, in no particular order.
+   */
+  async findEventIdsForMedia(
+    context: ServiceContext,
+    hits: { contentIds: readonly string[]; fileIds: readonly string[] },
+  ): Promise<string[]> {
+    if (hits.contentIds.length === 0 && hits.fileIds.length === 0) {
+      return [];
+    }
+
+    let query = this.contentRepository
+      .createQueryBuilder('content')
+      .select('DISTINCT content.event_id', 'eventId')
+      .where('content.event_id IS NOT NULL');
+
+    if (context.userId !== SYSTEM_USER) {
+      query = query.andWhere('content.user_id = :userId', { userId: context.userId });
+    }
+
+    const arms: string[] = [];
+
+    if (hits.contentIds.length > 0) {
+      arms.push('content.id IN (:...mediaContentIds)');
+      query = query.setParameter('mediaContentIds', [...hits.contentIds]);
+    }
+
+    if (hits.fileIds.length > 0) {
+      arms.push(
+        "(content.external_id IN (:...mediaFileIds) AND (content.external_id_kind = 'file' OR content.external_id_kind IS NULL))",
+      );
+      query = query.setParameter('mediaFileIds', [...hits.fileIds]);
+    }
+
+    const rows = await query.andWhere(`(${arms.join(' OR ')})`).getRawMany<{ eventId: string }>();
+
+    return rows.map((row) => row.eventId);
   }
 
   /**

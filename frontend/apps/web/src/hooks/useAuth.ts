@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   addAppUrlOpenListener,
+  clearPersistedApiBaseUrl,
   createHookContext,
   fetchJson,
   FetchJsonError,
@@ -33,6 +34,33 @@ const authChannel = new BroadcastChannel('auth');
 // raw key (sent as x-api-key) and its server id (for reference/future revocation).
 const API_KEY_STORAGE = 'ci.apiKey';
 const API_KEY_ID_STORAGE = 'ci.apiKeyId';
+// What the stored key was minted with. Absent on a key issued before the app
+// started asking, which is exactly the signal `storedApiKeyCapability` reports.
+const API_KEY_CAPABILITY_STORAGE = 'ci.apiKeyCapability';
+
+/**
+ * The authority this device asks for, and why it is the widest one.
+ *
+ * A phone key is the user acting on their own appliance, not a delegated agent:
+ * the app issues sixteen of the schema's destructive mutations (deleteNote,
+ * deleteEvent, deleteTask, deletePerson, deleteTag, ...), and `capabilityAllows`
+ * refuses every one of them below `full`. Minting at the inherited
+ * DEFAULT_API_KEY_CAPABILITY of `write` meant the app worked only because the
+ * GraphQL plane asks about capability nowhere — the gap CI-Server#1780 is about.
+ * Closing that gap without this change would break deletes on every phone.
+ *
+ * Stated explicitly rather than inherited, for the reason ConnectService pins
+ * its own literals: a default nobody chose should not decide what a device may
+ * do, and should not move under it if the default changes.
+ *
+ * The cost is real and was accepted deliberately: these keys carry NO scopes, so
+ * scope enforcement is skipped for them entirely and `full` is full authority
+ * across the whole API — including the destructive intents and
+ * `POST /maintenance/ingest/reset`. Narrowing that needs the GraphQL plane to
+ * carry a scope so the key can be confined to it; until then the surface is the
+ * whole API either way, and only the verb tier changes here.
+ */
+const NATIVE_KEY_CAPABILITY = 'full';
 
 const CSRF_COOKIE_NAME = 'csrfToken';
 
@@ -164,6 +192,31 @@ async function postLogout(): Promise<void> {
  * signed with a rotated server secret — re-primes and retries exactly once.
  * A 401 (invalid session) is never retried: that must fall through to login.
  */
+/**
+ * If Traefik named a Hub person who does not match the Memory cookie, the
+ * server replaces the session. Call this before refresh so the SPA never
+ * hydrates the previous person's token / PowerSync replica.
+ */
+async function alignHubSession(): Promise<(AuthResponse & { replaced?: boolean }) | undefined> {
+  if (isNativePlatform()) {
+    return undefined;
+  }
+
+  try {
+    if (!getCsrfToken()) {
+      await primeCsrfCookie();
+    }
+
+    return await fetchJson<AuthResponse & { replaced?: boolean }>('/api/authenticate/hub-bridge', {
+      method: 'POST',
+      headers: withCsrfHeader(),
+      credentials: 'include',
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 async function refreshSession(): Promise<AuthResponse | undefined> {
   if (!getCsrfToken()) {
     await primeCsrfCookie();
@@ -213,6 +266,15 @@ interface CreateApiKeyResponse {
   key: string;
 }
 
+// Keystore restore is async. Logout and a new device connect have to win if
+// they finish while that read is still in flight, or the previous box's key
+// comes back and the next `me` is Unauthorized.
+let nativeCredentialEpoch = 0;
+
+function bumpNativeCredentialEpoch(): void {
+  nativeCredentialEpoch += 1;
+}
+
 // Exchange a freshly-issued JWT for a long-lived API key (the /api/keys endpoint is
 // JWT-guarded, so this must run while we still hold the login JWT), persist it to the
 // keystore, and activate it for subsequent requests. Returns the raw key, or null.
@@ -228,6 +290,7 @@ async function mintAndStoreApiKey(jwt: string, memoryOrigin?: string): Promise<s
     },
     body: JSON.stringify({
       name: `Companion mobile · ${new Date().toISOString().slice(0, 10)}`,
+      capability: NATIVE_KEY_CAPABILITY,
     }),
   });
 
@@ -237,6 +300,7 @@ async function mintAndStoreApiKey(jwt: string, memoryOrigin?: string): Promise<s
 
   await secureStorageSet(API_KEY_STORAGE, created.key);
   await secureStorageSet(API_KEY_ID_STORAGE, created.id);
+  await secureStorageSet(API_KEY_CAPABILITY_STORAGE, NATIVE_KEY_CAPABILITY);
   setApiKey(created.key);
 
   return created.key;
@@ -384,16 +448,13 @@ function useAuth(): ReturnValue {
 
   const completePortalMemoryConnect = useCallback(
     async (portalBearer: string, memoryOrigin?: string): Promise<boolean> => {
-      // CapacitorHttp cannot follow relative `/api/...` paths. Point the
-      // in-memory origin at the picked server *before* minting so the `me`
-      // query and feature flags that fire on `setNativeApiKey` have an
-      // absolute URL. Persist only after a key comes back — a leftover origin
-      // with no key used to skip cloud-connect and dump Safari returns on /login.
+      // Do not point the app at the picked server until its key is stored.
+      // The picker can still be "authenticated" by the previous box's key
+      // (a keystore read that landed after logout). Setting the origin first
+      // makes `me` run with that key, and the new server answers Unauthorized
+      // even though minting a key for this account succeeded.
+      bumpNativeCredentialEpoch();
       const previousOrigin = getApiBaseUrl();
-
-      if (memoryOrigin) {
-        setApiBaseUrl(memoryOrigin);
-      }
 
       try {
         const key = await mintAndStoreApiKey(portalBearer, memoryOrigin);
@@ -460,6 +521,15 @@ function useAuth(): ReturnValue {
   );
 
   const logout = useCallback(async () => {
+    // Drop the in-memory key before the replica wipe. A late keystore restore
+    // must not put the previous box's key back under the next account.
+    bumpNativeCredentialEpoch();
+
+    if (isNativePlatform()) {
+      setApiKey(null);
+      setNativeApiKey(null);
+    }
+
     // Bounded: a replica that cannot be dropped (worker never came up) must not
     // leave the user stuck signed in. Everything below still runs on timeout.
     await disconnectAndClearPowerSyncForLogout();
@@ -471,6 +541,12 @@ function useAuth(): ReturnValue {
       setApiKey(null);
       await secureStorageRemove(API_KEY_STORAGE);
       await secureStorageRemove(API_KEY_ID_STORAGE);
+      await secureStorageRemove(API_KEY_CAPABILITY_STORAGE);
+      // A saved public origin makes iOS skip the device picker, so the next
+      // Companion login would still talk to the previous box and never list
+      // the new account's Memory servers. Drop the pairing with the key.
+      clearPersistedApiBaseUrl();
+      await syncNativeIntentConfig();
       setNativeApiKey(null);
       setAccessToken(null);
       setLoginLoading(false);
@@ -559,13 +635,22 @@ function useAuth(): ReturnValue {
           // Native restore: origin first, then the API key. A key without an
           // origin makes every `/api/...` call relative, which CapacitorHttp
           // rejects — the cloud-connect picker then looks like a failed mint.
+          const epoch = nativeCredentialEpoch;
           const storedOrigin = await secureStorageGet('ci.apiBaseUrl');
+
+          if (epoch !== nativeCredentialEpoch) {
+            return;
+          }
 
           if (storedOrigin) {
             persistApiBaseUrl(storedOrigin);
           }
 
           const storedKey = await secureStorageGet(API_KEY_STORAGE);
+
+          if (epoch !== nativeCredentialEpoch) {
+            return;
+          }
 
           if (storedKey) {
             setApiKey(storedKey);
@@ -575,9 +660,16 @@ function useAuth(): ReturnValue {
           return;
         }
 
-        const data = await refreshSession();
+        const bridged = await alignHubSession();
 
-        setAccessToken(data?.accessToken ?? null);
+        if (bridged?.replaced && bridged.accessToken) {
+          // Stale PowerSync replica belongs to the previous Memory person.
+          await disconnectAndClearPowerSyncForLogout();
+          setAccessToken(bridged.accessToken);
+        } else {
+          const data = await refreshSession();
+          setAccessToken(data?.accessToken ?? null);
+        }
       } catch {
         // No valid session cookie, user will need to log in
       } finally {

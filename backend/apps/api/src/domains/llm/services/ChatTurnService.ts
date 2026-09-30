@@ -22,7 +22,7 @@ import { ACTIVE_TASK_STATUSES, TaskService } from '@ci/domains/planning';
 import { HbpeService } from '@ci/domains/predictions';
 import { SummaryService } from '@ci/domains/summaries';
 
-import { LLM_QUEUE, type ThreadGenerationStatus } from '../constants';
+import { LLM_BACKGROUND_QUEUE, LLM_QUEUE, type ThreadGenerationStatus } from '../constants';
 import {
   MAX_CONTEXT_SHRINK_LEVEL,
   MAX_INLINE_IMAGES_PER_MESSAGE,
@@ -30,12 +30,15 @@ import {
   attachmentStub,
   isContextOverflowError,
   messageBytes,
+  NUM_CTX_ENV_VAR,
+  parseNumCtx,
   planContextAdmission,
   planInlineAttachments,
   resolveContextBudget,
   type ContextBudget,
 } from '../contextBudget';
 import { ChatGenerateEvent, type ChatGeneratePayload } from '../events';
+import { isFirstResponseTimeout } from '../firstResponseDeadline';
 import { foldHistory } from '../foldHistory';
 import { THREAD_TITLE_SYSTEM_PROMPT, sidebarTitleFromModel } from '../threadTitle';
 
@@ -121,6 +124,19 @@ function latestUserText(messages: readonly Message[]): string | null {
 export function persistedAssistantContent(thinking: string, text: string): string {
   return thinking ? `<think>${thinking}</think>${text}` : text;
 }
+
+/**
+ * How many times one turn asks the backend before giving up on it, when the
+ * backend sends NO response at all (`LlmFirstResponseTimeoutError`). A fresh
+ * request re-enters the backend's queue at the back with nothing lost —
+ * nothing was emitted — so retrying inside the job is cheap, and it rides
+ * out a runner that was merely busy (a single-slot Ollama behind a two-minute
+ * sidecar generation) without failing the job. Past this the job FAILS, so
+ * pg-boss's retry/backoff and dead-letter policy apply and the thread reads
+ * `failed` — never the fallback prose, which would tell the person the model
+ * answered when it never started.
+ */
+export const MAX_FIRST_RESPONSE_ATTEMPTS = 3;
 
 /**
  * Published and persisted when a turn otherwise ends with no user-visible
@@ -211,6 +227,7 @@ export class ChatTurnService {
     let generated: OllamaMessage[] = [];
     let model = payload.model;
     let shrinkLevel = 0;
+    let firstResponseAttempts = 0;
 
     try {
       for (;;) {
@@ -286,6 +303,27 @@ export class ChatTurnService {
           continue;
         }
 
+        // The backend never started answering. Nothing reached the viewer, so
+        // asking again costs nothing but the wait; a turn that keeps getting
+        // no answer is a failed turn, not an empty one.
+        if (streamError && nothingEmitted && !signal.aborted && isFirstResponseTimeout(streamError)) {
+          firstResponseAttempts += 1;
+
+          if (firstResponseAttempts < MAX_FIRST_RESPONSE_ATTEMPTS) {
+            this.logger.warn('LLM backend sent no response in time; asking again', {
+              threadId: payload.threadId,
+              model: prepared.model,
+              attempt: firstResponseAttempts,
+              maxAttempts: MAX_FIRST_RESPONSE_ATTEMPTS,
+              error: streamError.message,
+            });
+
+            continue;
+          }
+
+          throw streamError;
+        }
+
         generated = stream.messages;
 
         break;
@@ -341,10 +379,10 @@ export class ChatTurnService {
               ownerId: payload.ownerId,
               threadId: thread.id,
             },
-            // LLM_QUEUE_OPTIONS is `policy: 'short'`, which is queue-wide —
-            // a keyless send here would collapse with every other thread's
-            // summarization under COALESCE(singleton_key,'').
-            { queue: LLM_QUEUE, singletonKey: `chat-summarize:${thread.id}` },
+            // LLM_BACKGROUND_QUEUE_OPTIONS is `policy: 'short'`, which is
+            // queue-wide — a keyless send here would collapse with every other
+            // thread's summarization under COALESCE(singleton_key,'').
+            { queue: LLM_BACKGROUND_QUEUE, singletonKey: `chat-summarize:${thread.id}` },
           );
         }
       }
@@ -495,7 +533,17 @@ export class ChatTurnService {
     // stale tool-call payloads the fold would have dropped anyway.
     const foldedMessages = foldHistory(seededMessages);
 
-    const budget = resolveContextBudget({ shrinkLevel: options.shrinkLevel });
+    // CI-Hub's exported window is authoritative. Without one, the machine
+    // decides: the planner returns the loaded window of a resident chat model
+    // or the largest ladder rung that fits the card, and null when nothing can
+    // be proven — which leaves the static tier profile as the last resort. The
+    // optional call is for unit tests that build this service on a partial
+    // OllamaService; production always has the method.
+    const measuredContextTokens =
+      parseNumCtx(process.env[NUM_CTX_ENV_VAR]) == null
+        ? ((await this.ollamaService.resolveChatContextTokens?.(payload.model)) ?? null)
+        : null;
+    const budget = resolveContextBudget({ shrinkLevel: options.shrinkLevel, measuredContextTokens });
     const plan = planContextAdmission(
       foldedMessages.map((message) => ({
         role: message.role,
@@ -712,7 +760,9 @@ Live snapshots:
 Your capabilities:
 - You can query Memory (memory.recall, knowledge.search) for preferences, family, and relationships
 - You can compose multiple tool calls in sequence to answer complex questions
+- For "how many" questions about Memory, call knowledge.search or media.findPhotos with countOnly: true and report that number. A search result whose truncated flag is true is only the top of the match set — say "at least", never an exact figure
 - You have access to various tools — use them when the latest "Live snapshots" message is not enough
+- Search results carry a \`link\` — a site-relative path such as /content/<id> (photos, videos, documents), /events/<id>, /people/<id> or /places/<id>. When you point the user at a specific item, include that link as a markdown link, e.g. "Here's the photo: [Squirrel on the fence](/content/…)". Copy \`link\` exactly as the tool returned it — never build a path from an id, and never invent one for an item that has no \`link\`
 - When the user asks about Memory, Plan, Forecast, Brief, Schedule, or Sources, use those words and the matching tools or snapshots
 - Forecast details: forecast.read. Forecast quality: forecast.calibration. Brief inbox query: brief.list.
 - Next place: places.next. Associations: insights.explain. Recent anomalies: anomalies.recent. Suggestions: suggestions.list / suggestions.feedback.

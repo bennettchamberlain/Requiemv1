@@ -59,6 +59,47 @@ function expectCollapsed(label: HTMLElement) {
   expect(label).toHaveClass('group-hover:max-w-[7rem]');
 }
 
+describe('MemoryEntityTypeNav — alignment', () => {
+  it('keeps the What strip on the top edge when the other filters wrap to a second line', () => {
+    renderNav();
+
+    const nav = screen.getByRole('navigation', { name: 'What to show in Memory' });
+
+    // `items-center` sat the one-line What strip in the middle of a filter
+    // block that had wrapped onto two rows. Top alignment keeps What on the
+    // first line with When / How / the rest.
+    expect(nav).toHaveClass('items-start');
+    expect(nav).not.toHaveClass('items-center');
+  });
+});
+
+describe('MemoryEntityTypeNav — phone accordion', () => {
+  it('keeps the filter bar collapsed until the chevron opens it', () => {
+    renderNav();
+
+    const toggle = screen.getByRole('button', { name: 'Filters' });
+    const nav = screen.getByRole('navigation', { name: 'What to show in Memory' });
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', 'memory-filter-bar');
+    expect(nav).toHaveClass('max-device:hidden');
+    expect(nav).toHaveClass('device:flex');
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(nav).toHaveClass('flex');
+    expect(nav).not.toHaveClass('max-device:hidden');
+    expect(nav).toHaveClass('device:flex');
+  });
+
+  it('reports how many filters are active while the bar is collapsed', () => {
+    renderNav('/memory?hasLocation=1&semantic=1');
+
+    expect(screen.getByRole('button', { name: 'Filters, 2 active' })).toBeInTheDocument();
+  });
+});
+
 describe('MemoryEntityTypeNav — label reveal', () => {
   it('keeps a selected category readable without hover', () => {
     renderNav(narrowedRoute(['Person']));
@@ -157,5 +198,34 @@ describe('MemoryEntityTypeNav — dropdown values', () => {
 
     expect(trigger).toHaveAccessibleName('Things: Products');
     expectRevealed(within(trigger).getByText('Products'));
+  });
+});
+
+describe('the What strip shares its line with the filter controls without being squeezed out', () => {
+  // From `xl` up the When / How / Who controls sit beside the strip. They used
+  // to sit at their natural width (~1,280 px, wider than most windows), so
+  // their own wrapping never engaged: at 1,400 px the strip was a 57 px sliver
+  // scrolling behind them, and below ~1,350 px they dropped to a second line
+  // and ran off the right edge. The controls are the flexible item now.
+  it('floors the strip at 16rem from xl up and never lets it grow past its content', () => {
+    const { container } = renderNav();
+
+    const strip = container.querySelector('.overflow-x-auto');
+
+    expect(strip).not.toBeNull();
+    expect(strip).toHaveClass('flex-1', 'basis-0', 'min-w-0');
+    expect(strip).toHaveClass('xl:min-w-[16rem]', 'xl:max-w-max');
+    expect(strip).not.toHaveClass('md:basis-auto', 'md:min-w-[16rem]');
+  });
+
+  it('gives the filter controls their own line below xl, and a floored share of the line from xl up', () => {
+    const { container } = renderNav();
+    const nav = screen.getByRole('navigation', { name: 'What to show in Memory' });
+    const controls = nav.lastElementChild;
+
+    expect(nav).toHaveClass('flex-wrap');
+    expect(controls).toHaveClass('basis-full', 'min-w-0', 'xl:flex-1', 'xl:basis-[24rem]');
+    expect(controls).not.toHaveClass('md:basis-auto', 'md:flex-1');
+    expect(container.querySelector('.w-max')).not.toBeNull();
   });
 });

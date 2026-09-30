@@ -93,6 +93,35 @@ export interface StageSource {
    * literal. Never build it from request input.
    */
   predicate?: string;
+
+  /**
+   * A `timestamptz` column on the source row that every writer of the stage's
+   * INPUTS bumps — `updated_at`, in practice. Declaring it re-opens a decided
+   * row whose source row changed after the decision was recorded
+   * (`PipelineStateService.reopenChangedSources`, called by the control tick
+   * when the leg is due).
+   *
+   * The version answers "did the RULE change since this was decided?"; this
+   * answers "did the INPUT?". Without it a stage whose output mirrors a mutable
+   * row keeps its first answer until the next version bump, however the row
+   * changes — `enrich.person_self_claim` kept a self claim for every number a
+   * re-import, merge or edit had dropped from a Person.
+   *
+   * It is an INPUT column, never the one the stage writes, so it re-creates no
+   * ratchet: nothing the stage does moves it, and a re-opened row goes through
+   * THE ONE RULE like any other. Declare it only when all three hold:
+   *
+   *  - every writer of the fields the stage reads stamps it (a writer that
+   *    does not is invisible to this, and the stale answer survives until the
+   *    next bump);
+   *  - nothing bumps it at a high rate for reasons the stage does not care
+   *    about, or every such write buys a pointless re-run;
+   *  - a re-run is cheap. A change re-runs ONE row, but a bulk re-import
+   *    changes thousands at once.
+   *
+   * Interpolated as an identifier, so it must be a plain in-repo column name.
+   */
+  changedAtColumn?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +302,17 @@ export interface StageSchedule {
    * rather than a quota.
    */
   perRunCap?: number;
+
+  /**
+   * Ids per slice for this stage, overriding `DEFAULT_SLICE_SIZE`. The default
+   * is sized for a slice that finishes in about a minute; a stage whose
+   * per-id cost is minutes (a software video transcode runs at about the
+   * clip's own length) would turn one slice into a job of hours, during which
+   * a pause or cancel cannot take effect and a process restart re-runs the
+   * whole slice. Such a stage declares a small number here so its jobs stay
+   * shallow; the sweep still covers every id, just across more hops.
+   */
+  sliceSize?: number;
 }
 
 /**
@@ -364,9 +404,12 @@ export type StageRef = Pick<Stage, 'id' | 'version'>;
  * which dead-letters it with the payload intact rather than letting `undefined`
  * flow into a SQL parameter and fail somewhere unrecognisable.
  *
- * The schemas are non-strict on purpose: the job envelope adds keys of its own
- * (`jobId`, and `name` is stripped by the dispatcher), and a future field must
- * not make old workers reject new jobs.
+ * The schemas are non-strict on purpose. The dispatcher strips `name` (the
+ * routing key) and adds nothing — the delivered payload is the domain's,
+ * verbatim. Non-strictness is for time, not for the envelope: a future field
+ * must not make old workers reject new jobs, and a replayed dead letter written
+ * by an older release may still carry keys this build has never heard of —
+ * including a stale `jobId` from before the bus stopped injecting one.
  */
 
 /** One slice: a bounded set of entity ids for one stage, for one user. */

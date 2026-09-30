@@ -1,3 +1,5 @@
+import { Suspense, lazy } from 'react';
+
 import { useApolloClient } from '@apollo/client';
 import { DropdownMenu, IconButton, Tooltip, useToast } from '@ci/shadcn';
 import {
@@ -23,8 +25,12 @@ import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModa
 import { CaptureModal } from '@/components/modals/CaptureModal';
 import { ScanBarcodeModal } from '@/components/modals/ScanBarcodeModal';
 import { ThingModal } from '@/components/modals/ThingModal';
-import { UploadModal } from '@/components/modals/UploadModal';
 import { useModalControls } from '@/hooks';
+
+/** Loaded when the dialog is first opened — see the mount site below. */
+const UploadModal = lazy(() =>
+  import('@/components/modals/UploadModal').then((m) => ({ default: m.UploadModal })),
+);
 
 /**
  * Primary Add control: plus button, grid menu, and the modals it opens.
@@ -287,14 +293,24 @@ export function AddMenu() {
         </DropdownMenu>
       </div>
 
-      <UploadModal
-        open={isUploadModalOpen}
-        onClose={() => {
-          resetUploader();
-          closeUploadModal();
-        }}
-        onSubmit={handleUpload}
-      />
+      {/* Same reasoning as CaptureModal below, plus a bundle cost: UploadModal
+          calls `useDropzone` unconditionally in its body, so an always-mounted
+          copy ran that hook on every authenticated page load AND pulled
+          react-dropzone + file-selector (~63 KB) into the chunk served before
+          first paint. AddMenu sits in the desktop header and the phone top bar,
+          so everyone paid for a dialog nobody had opened. */}
+      {isUploadModalOpen && (
+        <Suspense fallback={null}>
+          <UploadModal
+            open
+            onClose={() => {
+              resetUploader();
+              closeUploadModal();
+            }}
+            onSubmit={handleUpload}
+          />
+        </Suspense>
+      )}
 
       {/* Rendered conditionally, not merely `open={false}`. `open` guards the
           modal's OUTPUT, not its hooks: DesktopCaptureModal mounts
@@ -315,10 +331,32 @@ export function AddMenu() {
 
       <AddPersonModal open={isAddPersonModalOpen} onClose={closeAddPersonModal} />
 
-      {/* No onCreated here: the nav has no list of its own to refresh, and the
-          Memory/Places pages refetch when they mount or when their own button
-          creates one. */}
-      <AddEventModal open={isAddEventModalOpen} onClose={closeAddEventModal} />
+      {/* The Memory explorer used to carry its own "New event" button, which
+          passed the page's `refetch` straight in. That button is gone — this
+          entry is the only way to create an event now — so the refresh has to
+          happen from here. It cannot reuse that `refetch`: AddMenu renders in
+          the layout header, ABOVE `EntityServiceProvider` (mounted in
+          MemoryPage), so `useOptionalEntityService` is null here on every page.
+
+          Hence the same eviction the Thing modal below uses: the explorer reads
+          a `search` connection the server composes per query, and the map reads
+          `mapPins`, so neither has a cache entry a new event could be appended
+          to. Evicting the two root fields and letting `refetchQueries` re-run
+          whichever were active keeps the nav from having to know which surface
+          the user is looking at. */}
+      <AddEventModal
+        open={isAddEventModalOpen}
+        onClose={closeAddEventModal}
+        onCreated={() =>
+          client.refetchQueries({
+            updateCache: (cache) => {
+              cache.evict({ id: 'ROOT_QUERY', fieldName: 'search' });
+              cache.evict({ id: 'ROOT_QUERY', fieldName: 'mapPins' });
+              cache.gc();
+            },
+          })
+        }
+      />
       <AddPlaceModal open={isAddPlaceModalOpen} onClose={closeAddPlaceModal} />
 
       <AddConceptModal open={isAddConceptModalOpen} onClose={closeAddConceptModal} />

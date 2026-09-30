@@ -35,7 +35,7 @@ function TaskColumn<T extends SectionedTask>({
   const overdue = section.overdueCount;
 
   return (
-    <section className={cn('flex min-h-0 min-w-[11rem] flex-col', className)}>
+    <section className={cn('flex min-h-0 min-w-0 flex-col', className)}>
       {showHeading ? (
         <h2 className="shrink-0 px-1 pb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           {section.label}
@@ -47,7 +47,8 @@ function TaskColumn<T extends SectionedTask>({
       )}
       <div
         className={cn(
-          'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto',
+          'flex min-h-0 flex-1 flex-col overflow-y-auto',
+          isMobile ? 'gap-2' : 'gap-3',
           // Phone: space after the last card so the list end is obvious and
           // the home indicator does not cover it.
           isMobile && 'pb-[calc(1.5rem+var(--safe-area-bottom))]',
@@ -125,7 +126,7 @@ export function TaskBoard<T extends SectionedTask>({
     }
 
     return (
-      <Tabs value={activeTab} onValueChange={setTab} className="flex h-full min-h-0 flex-1 flex-col gap-3">
+      <Tabs value={activeTab} onValueChange={setTab} className="flex h-full min-h-0 flex-1 flex-col gap-2">
         <Tabs.List className="h-auto max-w-full justify-start overflow-x-auto">
           {columns.map((section) => (
             <Tabs.Trigger key={section.key} value={section.key} className="shrink-0">
@@ -144,14 +145,29 @@ export function TaskBoard<T extends SectionedTask>({
     );
   }
 
+  /**
+   * ═══ THE COLUMNS USED TO SHRINK TO 11rem ═══
+   *
+   * Four `flex-1` columns share whatever the window leaves. Just past the
+   * phone breakpoint — a ~1024px window — that is 180-220px a column, and the
+   * floor under it was 11rem. The card now lays itself out by its own width
+   * (see `task-head` in Task.tsx), so it survives a narrow column; this floor
+   * is what keeps the column from getting narrower than that card can use.
+   *
+   * 13rem is the narrowest column whose card still gives a title ~17
+   * characters a line, and four of them still fit side by side at 1024px with
+   * the rail collapsed. Below that the board scrolls sideways — the next
+   * column peeks in at the edge so it is plain there is more — rather than
+   * squeezing every card. Below the phone breakpoint the tabs above take over.
+   */
   return (
-    <div className="flex h-full min-h-0 flex-1 gap-3 overflow-x-auto">
+    <div className="flex h-full min-h-0 flex-1 gap-3 overflow-x-auto" data-testid="plan-board">
       {columns.map((section) => (
         <TaskColumn
           key={section.key}
           section={section}
           renderTask={renderTask}
-          className="min-w-[11rem] flex-1 rounded-lg border border-border bg-muted/30 px-2 py-2"
+          className="min-w-[13rem] flex-1 rounded-lg border border-border bg-muted/30 px-2 py-2"
         />
       ))}
     </div>

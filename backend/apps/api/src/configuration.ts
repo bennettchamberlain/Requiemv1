@@ -5,6 +5,7 @@ import path from 'node:path';
 import config from 'config';
 import { z } from 'zod';
 
+import { isDeclaredEmbedModel } from './common/embeddings/embedModelIdentity';
 import { resolveLlmUrlForRuntime } from './domains/llm/services/llmEndpointShared';
 
 /**
@@ -72,6 +73,28 @@ const booleanStringSchema = z.preprocess((val) => {
 
   return val;
 }, z.boolean());
+
+/**
+ * Is this URL empty, or unambiguously on this machine?
+ *
+ * Hostname-only, and an allowlist rather than a pattern: `127.0.0.1.evil.com`
+ * and `localhost.attacker.net` both CONTAIN a loopback string and resolve
+ * wherever their owner points them. A URL that does not parse is not loopback
+ * either.
+ */
+export function isEmptyOrLoopback(value: string): boolean {
+  if (value === '') {
+    return true;
+  }
+
+  try {
+    const { hostname } = new URL(value);
+
+    return ['127.0.0.1', '::1', '[::1]', 'localhost', 'host.docker.internal'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
 
 export const ConfigSchema = z.object({
   host: z.string(),
@@ -247,6 +270,38 @@ export const ConfigSchema = z.object({
       // public CI_HUB_ORIGINS list is for browser redirects; this is the
       // appliance-local hop. Override with CI_HUB_INTERNAL_URL.
       hubInternalUrl: z.string().optional().default('http://ci-os-hub:3000'),
+
+      /**
+       * DEV ONLY. Ring OpenClaw's `/hooks/wake` directly, skipping Hub.
+       *
+       * A local dev stack cannot reach Hub — `CI_HUB_INTERNAL_URL` names a
+       * Docker alias no CI-Server compose file defines, and
+       * `CI_HUB_FORWARD_AUTH_SECRET` is empty — so dispatch could not be
+       * exercised at all without a full Hub install: a private-registry token,
+       * a source build, Postgres + RabbitMQ, and OpenClaw installed THROUGH
+       * Hub, because Hub resolves wake targets only from installed app files.
+       *
+       * Skipping Hub is safe here because the wake is a DOORBELL, not a grant.
+       * The body carries no secret; all authority lives in the packet fetch the
+       * harness then makes with its own user-scoped key, and `getPacket` scopes
+       * the row by `{ id, userId }`. Hub's own leg to OpenClaw is already a
+       * plain shared bearer rather than a signature, so nothing cryptographic
+       * is given up. What IS given up is Hub's policy point — it decides which
+       * apps may be woken at all — and its sole custody of the wake token.
+       * That is why this is dev-only.
+       *
+       * LOOPBACK-ENFORCED AT PARSE TIME, deliberately. The one way this could
+       * weaken anything real is misactivation: an appliance that somehow had it
+       * set would POST a bearer to whatever host it named. Refusing to boot
+       * beats warning about it.
+       */
+      devDirectWakeUrl: z.string().optional().default('').refine(isEmptyOrLoopback, {
+        message:
+          'CI_DEV_DIRECT_WAKE_URL must be loopback (127.0.0.1, ::1, localhost or host.docker.internal). It exists to exercise dispatch on a dev stack and must never point off-box.',
+      }),
+
+      /** The static bearer OpenClaw's `/hooks/wake` compares — its `HUB_WAKE_SECRET`. */
+      devDirectWakeToken: z.string().optional().default(''),
     }),
   }),
   db: z.object({
@@ -288,6 +343,18 @@ export const ConfigSchema = z.object({
       chatModel: z.string().default(DEFAULT_CHAT_MODEL),
       /** Background extraction/classification model. See {@link DEFAULT_UTILITY_MODEL}. */
       utilityModel: z.string().default(DEFAULT_UTILITY_MODEL),
+      /**
+       * How long one model request may go without ANY response — no headers,
+       * no first token — before it is torn down (`firstResponseDeadline.ts`).
+       * Bounds the wait for a runner that never comes (a model swap the
+       * scheduler cannot make, a wedged backend), not the generation: once the
+       * backend starts answering the deadline no longer applies. Before this
+       * the only bound was undici's five-minute headers timeout, and pg-boss's
+       * 15-minute job expiry did the rest. Sized above the longest legitimate
+       * wait for a busy single-slot runner; a request cut here is retried, so
+       * too short costs churn, too long costs a person's patience.
+       */
+      firstResponseTimeoutMs: z.coerce.number().int().positive().default(90_000),
       chat: z
         .object({
           groundedRecall: z
@@ -334,6 +401,68 @@ export const ConfigSchema = z.object({
           onDeviceContextTokens: z.number().int().nonnegative().default(0),
         })
         .default({}),
+      /**
+       * GPU co-residency planning for the utility model
+       * (`domains/llm/services/ResidencyPlannerService.ts`).
+       *
+       * Before this existed every background call asked Ollama to load
+       * `utilityModel` at Ollama's default context, and Ollama decided whether
+       * it fit from its own prediction. When it did not, Ollama tried to evict
+       * the chat model — which a busy appliance never lets go idle — and every
+       * request for a non-resident model queued behind that wait, silently.
+       * The planner reads live GPU memory and refuses to start a load it cannot
+       * prove fits, routing that call to the resident chat model instead.
+       */
+      residency: z
+        .object({
+          /** `off` restores the old behaviour: the configured utility model, unplanned, no `num_ctx`. */
+          mode: z.enum(['auto', 'off']).default('auto'),
+          /**
+           * Total GPU memory, in bytes, for machines where neither the AMD sysfs
+           * counters nor `nvidia-smi` are readable from this process. 0 = unknown,
+           * and an unknown total routes every utility call to the chat model
+           * unless the utility model is already resident.
+           */
+          vramTotalBytes: z.coerce.number().int().nonnegative().default(0),
+          /** Headroom always left unallocated. Covers the compositor, HBPE's scratch, estimate error. */
+          safetyMarginBytes: z.coerce
+            .number()
+            .int()
+            .nonnegative()
+            .default(1024 ** 3),
+          /** Top rung of the utility model's context ladder (32K → 16K → 8K → 4K). */
+          maxUtilityContextTokens: z.coerce.number().int().positive().default(32_768),
+          /**
+           * How many requests the Ollama server runs concurrently per loaded model
+           * (`OLLAMA_NUM_PARALLEL` on the HOST — a server setting this process cannot
+           * read back, so whoever provisions the host says it: CI-Hub via the app env,
+           * or the operator via `LLM_OLLAMA_NUM_PARALLEL`). Every slot holds its own KV
+           * cache, so the planners divide the card by this before sizing a window, and
+           * the image-description queue admits this many jobs at once. `1` is always
+           * safe: a wrong `1` only leaves a slot idle, a wrong `2` reloads at twice the
+           * KV it can afford.
+           */
+          parallelSlots: z.coerce.number().int().min(1).max(8).default(1),
+          /**
+           * After the planner asks Ollama to load the utility model, how long
+           * it may stay absent from `/api/ps` before the planner concludes the
+           * load is stuck behind an eviction that cannot happen. A cold load of
+           * a ~10 GB model finishes in 10–20 s; the first-response deadline is
+           * 90 s. 0 disables the watchdog.
+           */
+          loadWatchdogMs: z.coerce.number().int().nonnegative().default(120_000),
+          /**
+           * How long co-residency stays off after the watchdog fires (or a
+           * planned load times out). Utility calls run on the chat model
+           * meanwhile. Long enough for the wedge to clear or be noticed.
+           */
+          cooldownMs: z.coerce
+            .number()
+            .int()
+            .positive()
+            .default(15 * 60_000),
+        })
+        .default({}),
     })
     .default({}),
   // Local-first sync (PowerSync). The server issues short-lived client tokens via
@@ -370,6 +499,14 @@ export const ConfigSchema = z.object({
     summary: z.object({
       host: z.string().default('http://summary-service:8001'),
     }),
+    /**
+     * Bearer the API presents on every request to the HBPE and Summary
+     * sidecars (and the document parser), which refuse requests without it.
+     * Minted by setup-secrets as SIDECAR_AUTH_SECRET. Required in production —
+     * see the check below the schema — because an API without it cannot
+     * dispatch a single function run.
+     */
+    sidecarAuthSecret: z.string().default(''),
   }),
   signalCli: z.object({
     restUrl: z.string(),
@@ -903,6 +1040,31 @@ export const ConfigSchema = z.object({
         .default({}),
     })
     .default({}),
+  // Derived media the appliance makes from what the owner stores. Today that is
+  // the browser-playable H.264 rendition of every video whose own codec
+  // browsers cannot be relied on to decode (HEVC from every phone since ~2023;
+  // Chrome on Linux fails it outright). Consumed by
+  // `domains/files/services/VideoPlaybackService`.
+  media: z
+    .object({
+      videoPlayback: z
+        .object({
+          /**
+           * Longest edge of the rendition, in pixels; the original is never
+           * upscaled. `0` keeps the original's resolution. Measured 2026-09-22
+           * on an 11 s 4K HDR phone clip: 1920 → 7.7 MB, native 4K → 34 MB
+           * (about 4.5× the storage, ~26 Mbit/s to stream), and for SDR
+           * sources about 2.5× the encode time. 1080p is what the drawer and
+           * lightbox display at on anything but a 4K monitor full-screen;
+           * the original stays the download at full resolution either way.
+           * Changing this affects renditions made from then on — existing
+           * ones are kept, not re-encoded.
+           */
+          maxEdge: z.coerce.number().int().min(0).default(1920),
+        })
+        .default({}),
+    })
+    .default({}),
   features: z.object({
     'scheduled.answer.inferencing': booleanStringSchema,
     /**
@@ -1043,17 +1205,36 @@ export const ConfigSchema = z.object({
      */
     'solid.protocol': booleanStringSchema,
     /**
+     * Serve the GraphiQL IDE at `GET /graphiql`. The page is static HTML that
+     * authenticates per request with a pasted API key (see docs/graphql-api.md),
+     * so it cannot sit behind the auth guard — which is why it was served
+     * unauthenticated in every environment, loading its scripts from unpkg.com.
+     * Introspection is already off in production; this makes the IDE match.
+     * On by default, off in `production.json`, and ENABLE_GRAPHQL_IDE=true turns
+     * it back on for a deployment that wants it. The Settings link follows the
+     * flag.
+     */
+    'graphql.ide': booleanStringSchema,
+    /**
      * The dispatch gate: `ToolRegistry.executeTool` consults `resolveToolGate`
      * and parks a destructive/external/not-locally-permitted intent in
      * `ci.pending_actions` instead of running it, returning `TOOL_QUEUED`.
      *
-     * OFF by default, and off is byte-identical to the pre-gate behaviour —
-     * `PendingActionService.evaluate` pins the tier to `appliance` and skips the
-     * trust dial, so the only ruling it can produce is the `execute` every call
-     * already got. Turn it on with ENABLE_PENDING_ACTIONS=true; what changes
-     * then is `cautious` trust mode (destructive/external intents ask first) and
-     * `?tier=local` execute calls (queued rather than run). `hands_off` and
-     * `balanced` behave exactly as they do today either way.
+     * ON by default since 2026-09-25 (it shipped dark while the queue had no
+     * UI). With it on, a destructive intent, or an external one that is not
+     * a plain read (every connected-MCP tool is labelled this way), from the
+     * owner's own chat is queued as an approval card under the `balanced` and
+     * `cautious` dials and runs unattended only under `hands_off`; an external
+     * read (`messaging.listMessages`) asks only under `cautious`. See
+     * `PendingActionService.trustForToolCall` for the mapping and for why the
+     * dial is read directly rather than through the inference scorer.
+     * `?tier=local` execute calls are queued rather than run.
+     *
+     * ENABLE_PENDING_ACTIONS=false is the kill switch, and off is
+     * byte-identical to the pre-gate behaviour: `PendingActionService.evaluate`
+     * pins the tier to `appliance` and skips the dial, so the owner's every
+     * call executes. An installed app's destructive intent is queued
+     * regardless of this flag (the `managed-app` rule in `resolveToolGate`).
      */
     'tools.pendingActions': booleanStringSchema,
   }),
@@ -1211,6 +1392,37 @@ export const ConfigSchema = z.object({
      */
     portalBaseUrl: z.string().default(''),
   }),
+  // Web Push (VAPID) for planning reminders — see docs/architecture/planning-roadmap.md
+  // M5 and WebPushService. Deliberately config-only, not a stored/generated
+  // keypair: the roadmap's "Deliberately not doing" table rules out a generic
+  // `app_config` table, and unlike CI-Planning's SQLite server (which
+  // generates and PERSISTS a keypair on first boot because it has nowhere
+  // else to put one), this appliance already has the operator-provisioned
+  // secret convention every other cryptographic key here follows —
+  // AUTH_TOKEN_SECRET, AUTH_FIELD_ENCRYPTION_KEY, AUTH_CSRF_TOKEN_SECRET — so
+  // VAPID keys follow it too rather than inventing a new persistence
+  // mechanism for one feature. Both empty (the default) means push is simply
+  // OFF: `WebPushService.isConfigured()` returns false, reminders still fire
+  // (the record still moves to 'fired'), and the resolver's `pushPublicKey`
+  // query returns null so the client never shows a "turn on push" control.
+  //
+  // Generate a pair with `npx web-push generate-vapid-keys` and set both
+  // VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY — a HALF-set pair is refused the same
+  // way an operator-supplied env keypair is refused elsewhere in this file
+  // (see the field-encryption warning above): `WebPushService` treats
+  // "exactly one of the two set" as a misconfiguration and leaves push
+  // dormant rather than guessing. Never rotate an existing pair without
+  // clearing `ci.push_subscriptions` first — a subscription is
+  // cryptographically bound to the public key it was created against, so
+  // rotating breaks push for every existing subscriber at once.
+  push: z.object({
+    vapid: z.object({
+      publicKey: z.string().default(''),
+      privateKey: z.string().default(''),
+      /** `mailto:` contact a push service may use if it needs to reach the sender. Cosmetic. */
+      subject: z.string().default('mailto:admin@companion.local'),
+    }),
+  }),
 });
 
 const parsed = ConfigSchema.parse(config);
@@ -1260,6 +1472,31 @@ if (!parsed.embedding.host) {
   parsed.embedding.host = parsed.services.ollama.host;
 }
 
+// CI-Hub names the embedder it installed in LLM_DEFAULT_EMBEDDING_MODEL (its `embedding_model` handout,
+// which the Summary sidecar already reads). This process used to read only CI_EMBED_MODEL, so it asked
+// Hub's endpoint for `nomic-embed-text` whatever Hub had installed: fine beside Ollama, a failed embed
+// on every row on a Lemonade-only node, whose embedder is `nomic-embed-text-v1.5-GGUF` (the same
+// weights; see embedModelIdentity.ts). An operator's CI_EMBED_MODEL still wins, and is still held to
+// the declared generations at boot. A handed-out name with no declared generation is refused here
+// with an error line instead of failing boot: an older Hub hands out Lemonade's v1
+// (`nomic-embed-text-v1-GGUF`), a different vector space from every existing index, and embedding
+// with it would scramble search rather than fix it.
+if (!process.env.CI_EMBED_MODEL?.trim()) {
+  const handedOut = process.env.LLM_DEFAULT_EMBEDDING_MODEL?.trim();
+
+  if (handedOut && handedOut !== parsed.embedding.model) {
+    if (isDeclaredEmbedModel(handedOut)) {
+      parsed.embedding.model = handedOut;
+    } else {
+      console.error(
+        `[config] LLM_DEFAULT_EMBEDDING_MODEL=${handedOut} has no declared embedding generation ` +
+          `(EMBED_MODEL_GENERATIONS in common/embeddings/embedModelIdentity.ts); embedding with ` +
+          `${parsed.embedding.model} instead. Update CI-Hub, or set CI_EMBED_MODEL deliberately.`,
+      );
+    }
+  }
+}
+
 if (!parsed.llm.apiBase) {
   parsed.llm.apiBase = undefined;
 }
@@ -1271,6 +1508,19 @@ if (!parsed.llm.apiKey) {
 if (!parsed.llm.chatModel) {
   parsed.llm.chatModel = DEFAULT_CHAT_MODEL;
 }
+
+// Captured BEFORE the default below overwrites it: whether an operator (or
+// the Hub installer) actually set LLM_UTILITY_MODEL, as distinct from it
+// having fallen back to the compiled-in DEFAULT_UTILITY_MODEL. `config.has`
+// reads the raw merged sources (env + config/*.json) ahead of this file's own
+// normalization, so it sees "absent" exactly when the env var was never set —
+// default.json carries no `llm.utilityModel` key at all, only
+// custom-environment-variables.json's LLM_UTILITY_MODEL mapping can put one
+// there. Exists so a vision-capable utility model is only ever used for
+// vision work when an operator asked for it: see UTILITY_MODEL_EXPLICITLY_CONFIGURED
+// in OllamaService, which is what actually reads this.
+export const UTILITY_MODEL_EXPLICITLY_CONFIGURED =
+  config.has('llm.utilityModel') && Boolean(config.get('llm.utilityModel'));
 
 // An empty LLM_UTILITY_MODEL means "not configured", not "use the empty
 // string" — same normalization chatModel gets just above. Falling back to the
@@ -1371,6 +1621,21 @@ if (/^0{64}$/i.test(parsed.auth.encryption.fieldKey)) {
   const msg =
     '[configuration] FIELD_ENCRYPTION_KEY is the all-zero default — OAuth tokens and ' +
     'provider client secrets would be encrypted with a well-known key. Set a real 256-bit key.';
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(msg);
+  }
+
+  console.warn(msg);
+}
+
+// The sidecars refuse every request without this bearer, so an API that lacks it
+// is one whose imports never summarise and whose forecasts never train — and a
+// sidecar it could still reach would be one anyone could reach. Refuse to boot
+// outside dev rather than run half an appliance.
+if (!parsed.services.sidecarAuthSecret) {
+  const msg =
+    '[configuration] SIDECAR_AUTH_SECRET is not set — the HBPE/Summary sidecars refuse requests ' +
+    'without it. setup-secrets mints it; on an existing appliance it is added on the next boot.';
   if (process.env.NODE_ENV === 'production') {
     throw new Error(msg);
   }

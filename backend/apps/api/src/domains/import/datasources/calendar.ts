@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { normalizeIcsRecurrenceId } from '@ci/domains/memory';
 
+import { htmlToText } from './htmlToText';
 import type { FileImporter, Recognition, DirEntry } from './registry';
 import { registerDataSource } from './registry';
 import type { ImportParams } from './timeline';
@@ -77,6 +78,39 @@ export function unescapeIcsText(value: string): string {
         return ch;
     }
   });
+}
+
+/**
+ * A tag only HTML would write. Deliberately a closed list, not `<[a-z]…>`: a
+ * plain-text DESCRIPTION may hold `Bob <bob@example.com>`, and an HTML parser
+ * handed that would delete the address as an unknown element.
+ *
+ * Migration 20260930021227_convert_ics_html_descriptions_to_text selects the
+ * rows it repairs with this same list — change the two together.
+ */
+const ICS_HTML_TAG =
+  /<\/?(?:a|b|body|br|div|em|font|h[1-6]|hr|html|i|img|li|ol|p|span|strong|table|tbody|td|th|thead|tr|u|ul)\b[^>]*>/i;
+
+/**
+ * An .ics DESCRIPTION as plain text.
+ *
+ * RFC 5545 §3.8.1.5 makes DESCRIPTION plain TEXT, but Google Calendar writes
+ * the event's rich-text body into it as HTML — `<b>Booked by</b>`, `<br>`,
+ * `<a href>`, lists, tables — and mixes real newlines in with the markup. 194 of
+ * the 1,260 descriptions in the reference Apple + Takeout exports carry tags,
+ * and they reached the Memory UI, the search index and the embeddings as raw
+ * markup.
+ *
+ * Only a description with a real HTML tag is converted: a plain one keeps its
+ * `<`, `&` and `<address@host>` exactly as written. Newlines survive
+ * (`<b>Booked by</b>\nName` is two lines, not one) and a link keeps its
+ * destination (`here (https://…)`) — in an invitation the link is often the
+ * one thing worth keeping.
+ */
+export function icsDescriptionText(description: string): string {
+  return ICS_HTML_TAG.test(description)
+    ? htmlToText(description, { preserveNewlines: true, keepLinkUrls: true })
+    : description;
 }
 
 /**
@@ -166,10 +200,12 @@ export function parseIcsEvents(raw: string, fpath: string): ParsedIcsEvent[] {
       : rawDescription;
     const rawLocation = map['LOCATION'];
     const summary = unescapeIcsText(rawSummary);
-    const description = unescapeIcsText(descriptionNoCid);
+    // Unescaped FIRST: `\n` is an RFC 5545 escape, and htmlToText only keeps a
+    // newline it can see.
+    const description = icsDescriptionText(unescapeIcsText(descriptionNoCid));
     const location = rawLocation !== undefined ? unescapeIcsText(rawLocation) : undefined;
-    const dtStart = parseICSDate(map['DTSTART']);
-    const dtEnd = parseICSDate(map['DTEND']);
+    const dtStart = parseICSDate(map['DTSTART'], paramsMap['DTSTART']);
+    const dtEnd = parseICSDate(map['DTEND'], paramsMap['DTEND']);
     // VALUE=DATE on DTSTART is the iCal signal for an all-day event (vs the
     // DATE-TIME default). Numeric YYYYMMDD without the param is also accepted
     // since real calendars sometimes omit it.
@@ -365,12 +401,36 @@ export class CalendarFileImporter implements FileImporter {
 // Its parser-side tests ARE restored, in `__tests__/calendar.test.ts`; only the
 // backfill describe block stayed behind.
 
-function parseICSDate(val?: string): Date | undefined {
+/**
+ * Parse one DATE / DATE-TIME property value. `params` is the property's own
+ * `;KEY=VAL;…` segment (the `paramsMap` entry), which is where RFC 5545 §3.2.19
+ * spells the zone a local date-time is written in.
+ */
+function parseICSDate(val?: string, params?: string): Date | undefined {
   if (!val) {
     return undefined;
   }
 
-  const v = val.trim();
+  const raw = val.trim();
+  // Resolve the property's `;TZID=...` BEFORE the shape branches below, so a
+  // zoned local date-time reaches them already spelled as a UTC instant.
+  //
+  // An earlier note in the floating branch claimed the line parser strips the
+  // params — it does not (`paramsMap`, read two lines from this call for
+  // VALUE=DATE), and on that false premise every TZID-bearing DTSTART was read
+  // as SERVER-local. On the appliance's UTC container
+  // `DTSTART;TZID=America/Los_Angeles:20221006T010000` landed seven hours early,
+  // and permanently: the .ics and the Google ETL converge on one identity
+  // (`calendarEventIdentity`), and the find-or-create on that identity never
+  // revisits start_time, so whichever pipeline runs first owns the wrong value.
+  //
+  // `normalizeIcsRecurrenceId` is the conversion this repo already uses for the
+  // same input shape on RECURRENCE-ID — same IANA lookup, and the same
+  // deliberate non-guesses: a DATE-only value, an already-`Z` value, a floating
+  // value with no TZID, or a TZID the runtime does not recognize all come back
+  // untouched and fall through to the branches below unchanged.
+  const tzid = params?.match(/(?:^|;)TZID=([^;]+)/)?.[1];
+  const v = tzid ? normalizeIcsRecurrenceId(raw, tzid) : raw;
   // All-day DATE: YYYYMMDD
   if (/^\d{8}$/.test(v)) {
     const y = +v.slice(0, 4);
@@ -392,13 +452,16 @@ function parseICSDate(val?: string): Date | undefined {
     return new Date(Date.UTC(y, m, d, hh, mm, ss));
   }
 
-  // Local/"floating" date-time: YYYYMMDDTHHMMSS with no zone. The line parser
-  // strips the `;TZID=...` param before this point, so the original zone is no
-  // longer available — treat the wall-clock as local time. This is the common
-  // shape (e.g. `DTSTART;TZID=America/Grand_Turk:20091130T140000`) the old
-  // two-pattern parser failed to match, leaving the event with no timestamp and
-  // falling back to ingest-time `now` — which collapsed every such event onto a
-  // single instant and broke the timeline ordering.
+  // Genuinely floating date-time: YYYYMMDDTHHMMSS that still has no zone after
+  // the TZID resolution above — either the property carried no TZID (RFC 5545
+  // floating time, which by definition names no instant) or it named a zone the
+  // runtime does not know. The wall clock is read as server-local, the same
+  // non-guess `normalizeIcsRecurrenceId` makes for those two cases.
+  //
+  // Matching this shape at all is what stopped such events (e.g.
+  // `DTSTART;TZID=America/Grand_Turk:20091130T140000`, which the old two-pattern
+  // parser failed to match) from falling back to ingest-time `now` — which
+  // collapsed every one of them onto a single instant and broke timeline order.
   if (/^\d{8}T\d{6}$/.test(v)) {
     const y = +v.slice(0, 4);
     const m = +v.slice(4, 6) - 1;

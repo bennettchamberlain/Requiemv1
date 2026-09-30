@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-import { setApiBaseUrl } from '@ci/common';
+import { getApiBaseUrl, needsNativeCloudConnect, setApiBaseUrl } from '@ci/common';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { jwtDecode } from 'jwt-decode';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
@@ -58,9 +58,34 @@ afterEach(() => {
   setApiBaseUrl('');
   // Drop the native runtime stub so the web-path tests aren't seen as native.
   delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+  bindPowerSyncDatabase(null);
 });
 
 describe('useAuth', () => {
+  it('replaces a stale Memory session when Hub forward-auth names someone else', async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    bindPowerSyncDatabase({
+      disconnectAndClear: disconnect,
+    } as never);
+
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/hub-bridge')) {
+        return jsonResponse({ accessToken: 'hello-token', replaced: true });
+      }
+
+      if (url.endsWith('/api/authenticate/refresh')) {
+        return jsonResponse({ accessToken: 'should-not-use' });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current[0].authToken).toBe('hello-token'));
+    expect(disconnect).toHaveBeenCalled();
+  });
+
   it('mints an access token from the session on mount', async () => {
     setFetch((url) =>
       url.endsWith('/api/authenticate/refresh')
@@ -182,6 +207,22 @@ describe('useAuth', () => {
     // The JWT was traded for a durable API key, minted via /api/keys and stored.
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/keys'))).toBe(true);
     expect(secureStore.get('ci.apiKey')).toBe('stored-api-key');
+
+    // Minted at `full`, ASKED FOR rather than inherited.
+    //
+    // The app issues sixteen of the schema's destructive mutations, and
+    // `capabilityAllows` refuses all of them below `full`. It worked at the
+    // inherited `write` only because the GraphQL plane asks about capability
+    // nowhere — the gap CI-Server#1780 closes. Enforcing that without this would
+    // 403 deletes on every phone, and a phone cannot promote its own key
+    // (`/api/keys` is JwtOrPortalAuthGuard, "never an api key"). So this
+    // assertion is the ordering constraint, not a preference.
+    const keyCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/api/keys'));
+    expect(JSON.parse(String(keyCall?.[1]?.body))).toMatchObject({ capability: 'full' });
+
+    // Recorded, so a key minted before this change is distinguishable from one
+    // that asked. Absent here would mean "legacy, upgrade at next sign-in".
+    expect(secureStore.get('ci.apiKeyCapability')).toBe('full');
   });
 
   it('completePortalMemoryConnect mints a Memory API key from a portal bearer', async () => {
@@ -209,6 +250,10 @@ describe('useAuth', () => {
 
     const fetchMock = setFetch((url) => {
       if (url.endsWith('/api/keys')) {
+        // The picked origin must not be live until the new key exists, or `me`
+        // races the mint and the previous box's key is what demo1 rejects.
+        expect(getApiBaseUrl()).not.toBe('https://memory.example.com');
+
         return jsonResponse({ id: 'key-portal', key: 'portal-minted-key' });
       }
 
@@ -422,6 +467,55 @@ describe('useAuth', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/api/authenticate/logout'))).toBe(
       true,
     );
+  });
+
+  it('native logout forgets the paired Memory origin so the next account can pick a device', async () => {
+    const secureStore = new Map<string, string>([
+      ['ci.apiKey', 'stored-api-key'],
+      ['ci.apiBaseUrl', 'https://core7.example.com'],
+    ]);
+    (window as unknown as { Capacitor?: unknown }).Capacitor = {
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: {
+        SecureStoragePlugin: {
+          get: vi.fn(async ({ key }: { key: string }) => {
+            if (!secureStore.has(key)) {
+              throw new Error('not found');
+            }
+
+            return { value: secureStore.get(key) };
+          }),
+          set: vi.fn(async ({ key, value }: { key: string; value: string }) => {
+            secureStore.set(key, value);
+
+            return { value: true };
+          }),
+          remove: vi.fn(async ({ key }: { key: string }) => {
+            secureStore.delete(key);
+
+            return { value: true };
+          }),
+        },
+      },
+    };
+
+    setFetch(() => emptyResponse());
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].authenticated).toBe(true));
+    expect(getApiBaseUrl()).toBe('https://core7.example.com');
+
+    await act(async () => {
+      await result.current[1].logout();
+    });
+
+    expect(result.current[0].authenticated).toBe(false);
+    expect(getApiBaseUrl()).toBe('');
+    expect(localStorage.getItem('ci.apiBaseUrl')).toBeNull();
+    expect(secureStore.has('ci.apiBaseUrl')).toBe(false);
+    expect(secureStore.has('ci.apiKey')).toBe(false);
+    expect(needsNativeCloudConnect()).toBe(true);
   });
 
   it('still logs out when dropping the local PowerSync replica fails', async () => {
@@ -787,7 +881,14 @@ describe('useAuth', () => {
     await waitFor(() => expect(result.current[0].authToken).toBe('tok-1'));
     expect(refreshCalls).toBe(1);
 
-    vi.mocked(jwtDecode).mockReturnValue({ sub: 'u1', iat: 0, exp: pastExp() });
+    // Only the token already in hand is expired. The refreshed token has to
+    // decode as still-valid, or the scheduler treats delay 0 as "due now" and
+    // refreshes in a loop.
+    vi.mocked(jwtDecode).mockImplementation((token) => ({
+      sub: 'u1',
+      iat: 0,
+      exp: token === 'tok-1' ? pastExp() : futureExp(),
+    }));
 
     await act(async () => {
       document.dispatchEvent(new Event('visibilitychange'));

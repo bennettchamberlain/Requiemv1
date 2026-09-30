@@ -14,6 +14,14 @@ import { Loader } from './Loader';
 export interface EventMedia {
   previewUrl: string | null;
   mediaUrl: string | null;
+  /**
+   * The PLAYBACK variant's URL when one exists: the H.264 rendition made for
+   * videos whose own codec (HEVC, mostly) browsers cannot be relied on to
+   * decode. Null for photos and for videos that need none. The player uses
+   * it in place of `mediaUrl`; `mediaUrl` stays the original for download.
+   */
+  playbackUrl: string | null;
+  playbackContentType: string | null;
   contentType: string | null;
   width: number | null;
   height: number | null;
@@ -26,8 +34,9 @@ export interface EventMedia {
  * Photo/video events store their binary out-of-band: the importer's media pass
  * writes a `ci.content` row (type='media', external_id = the ORIGINAL `ci.files`
  * id) alongside the timeline event, and a thumbnail lives in that file's PREVIEW
- * variant (`parent_id` = original id). This loader walks
- *   event -> content -> ORIGINAL file -> PREVIEW file
+ * variant (`parent_id` = original id), beside a video's PLAYBACK rendition.
+ * This loader walks
+ *   event -> content -> ORIGINAL file -> PREVIEW + PLAYBACK files
  * with each hop batched once per request, so a page of N events costs three
  * queries, not 3N. Mirrors {@link PreviewLoader} but starts from an event id.
  */
@@ -62,14 +71,23 @@ export class EventMediaLoader extends Loader<EventMedia | null, string> {
 
     const originalIds = [...new Set(fileIdByEvent.values())];
 
-    const [originals, previews] = await Promise.all([
-      this.fileService.findByIds(context, originalIds),
-      this.fileService.findVariantsByParentIds(context, originalIds, FileVariant.PREVIEW),
-    ]);
+    // PREVIEW and PLAYBACK in one variants query, so the page stays three
+    // queries: one more call per kind is one more query per page.
+    const [originals, { [FileVariant.PREVIEW]: previews, [FileVariant.PLAYBACK]: playbacks }] =
+      await Promise.all([
+        this.fileService.findByIds(context, originalIds),
+        this.fileService.findVariantsOfKindsByParentIds(context, originalIds, [
+          FileVariant.PREVIEW,
+          FileVariant.PLAYBACK,
+        ]),
+      ]);
 
     const originalById = new Map(originals.filter((file) => file != null).map((file) => [file.id, file]));
     const previewByParent = new Map(
       previews.filter((file) => file != null).map((file) => [file.parentId, file]),
+    );
+    const playbackByParent = new Map(
+      playbacks.filter((file) => file != null).map((file) => [file.parentId, file]),
     );
 
     return eventIds.map((eventId) => {
@@ -81,6 +99,7 @@ export class EventMediaLoader extends Loader<EventMedia | null, string> {
 
       const original = originalById.get(fileId) ?? null;
       const preview = previewByParent.get(fileId) ?? null;
+      const playback = playbackByParent.get(fileId) ?? null;
 
       // A content link with neither a resolvable original nor a preview (e.g. the
       // file was deleted) carries no displayable media.
@@ -91,6 +110,8 @@ export class EventMediaLoader extends Loader<EventMedia | null, string> {
       return {
         previewUrl: preview?.url ?? null,
         mediaUrl: original?.url ?? null,
+        playbackUrl: playback?.url ?? null,
+        playbackContentType: playback?.contentType ?? null,
         contentType: original?.contentType ?? mimetypeByEvent.get(eventId) ?? null,
         width: original?.width ?? null,
         height: original?.height ?? null,

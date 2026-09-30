@@ -34,18 +34,19 @@ import { RetrievalQueryLogEntity } from './entities/RetrievalQueryLogEntity';
 import { CommunicationParticipantLinkListener } from './listeners/CommunicationParticipantLinkListener';
 import { DerivationRunListener } from './listeners/DerivationRunListener';
 import { EstimateLocationBatchListener } from './listeners/EstimateLocationBatchListener';
+import { PersonStubBackfillRequestListener } from './listeners/PersonStubBackfillRequestListener';
 import { RetrievalQueryLogListener } from './listeners/RetrievalQueryLogListener';
 import { CommunicationLinkBackfillService } from './services/CommunicationLinkBackfillService';
 import { DerivedRelationshipService } from './services/DerivedRelationshipService';
 import { DeterministicEdgeBackfillService } from './services/DeterministicEdgeBackfillService';
 import { EmbedCoverageTelemetryService } from './services/EmbedCoverageTelemetryService';
+import { EntityIdentifierBackfillService } from './services/EntityIdentifierBackfillService';
 import { EntityTypeAuditService } from './services/EntityTypeAuditService';
 import { EventParticipantBackfillService } from './services/EventParticipantBackfillService';
 import { ExternalIdKindIntegrityService } from './services/ExternalIdKindIntegrityService';
 import { GraphEnrichmentReviewService } from './services/GraphEnrichmentReviewService';
 import { GraphEnrichmentService } from './services/GraphEnrichmentService';
 import { HealSelfCollationService } from './services/HealSelfCollationService';
-import { IndexDeferralService } from './services/IndexDeferralService';
 import { IngestResetService } from './services/IngestResetService';
 import { LocationEstimateService } from './services/LocationEstimateService';
 import { MaintenanceOrchestratorService } from './services/MaintenanceOrchestratorService';
@@ -98,10 +99,10 @@ import { SummaryBackfillService } from './services/SummaryBackfillService';
   ],
   controllers: [MaintenanceController],
   providers: [
-    IndexDeferralService,
     ExternalIdKindIntegrityService,
     IngestResetService,
     CommunicationLinkBackfillService,
+    EntityIdentifierBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
     DeterministicEdgeBackfillService,
@@ -127,14 +128,17 @@ import { SummaryBackfillService } from './services/SummaryBackfillService';
     ObjectReverseService,
     EstimateLocationBatchListener,
     CommunicationParticipantLinkListener,
+    // The post-push people pass (PersonStubBackfillRequestEvent, emitted by the
+    // import domain's PushStage after it bulk-writes communications).
+    PersonStubBackfillRequestListener,
     OrphanCleanupCron,
     DerivationRunListener,
     DerivationCron,
   ],
   exports: [
-    IndexDeferralService,
     ExternalIdKindIntegrityService,
     CommunicationLinkBackfillService,
+    EntityIdentifierBackfillService,
     PersonStubBackfillService,
     EventParticipantBackfillService,
     DeterministicEdgeBackfillService,
@@ -167,6 +171,11 @@ export {
   type OrchestrateSummary,
 } from './services/MaintenanceOrchestratorService';
 export { GraphEnrichmentService, type GraphEnrichmentOptions } from './services/GraphEnrichmentService';
+export {
+  EntityIdentifierBackfillService,
+  type EntityIdentifierBackfillOptions,
+  type EntityIdentifierBackfillResult,
+} from './services/EntityIdentifierBackfillService';
 export {
   GraphEnrichmentReviewService,
   type GraphEnrichmentProposalPage,

@@ -48,11 +48,20 @@ interface LocalHubPlugin {
   secureRemove(options: { key: string }): Promise<void>;
   openUrl(options: { url: string }): Promise<void>;
   /**
+   * iOS only. In-app Safari authentication sheet. Resolves when the sheet
+   * finishes and rejects with `code: 'CANCELLED'` if the user dismisses it.
+   */
+  startAuthSession?(options: { url: string; callbackScheme?: string }): Promise<void>;
+  /**
    * iOS only. One high-accuracy fix for placing a pin — does not write the
    * tracking outbox. Rejects when permission is denied or a fix times out.
    */
   getCurrentLocation?(): Promise<NativeCurrentLocation>;
   openAppSettings?(): Promise<void>;
+  getLocationAuthorization?(): Promise<{ status: NativeLocationAuthorization }>;
+  requestLocationAuthorization?(options: {
+    always: boolean;
+  }): Promise<{ status: NativeLocationAuthorization }>;
 }
 
 export interface BackgroundGeolocationError {
@@ -92,6 +101,15 @@ export interface NativeCurrentLocation {
   longitude: number;
   accuracy?: number;
 }
+
+/** Core Location authorization — iOS Always two-step. `unsupported` on web/Android. */
+export type NativeLocationAuthorization =
+  | 'notDetermined'
+  | 'denied'
+  | 'restricted'
+  | 'whenInUse'
+  | 'always'
+  | 'unsupported';
 
 export type DeviceLocationErrorCode = 'denied' | 'unavailable' | 'timeout';
 
@@ -154,12 +172,14 @@ interface LocalNotificationsPlugin {
 }
 
 /**
- * On-device LLM plugin (Android only; see `frontend/packages/capacitor-local-llm`).
+ * On-device LLM plugin (Android + iOS; see `frontend/packages/capacitor-local-llm`).
  * Declared locally rather than imported from that package — same reason every other
  * plugin interface here is: it keeps the web bundle free of `@capacitor/*` deps.
  */
 interface LocalLlmPlugin {
   isAvailable(): Promise<{ available: boolean; reason?: string }>;
+  /** Absent on a native build older than the model-management contract; treated as "loaded". */
+  getLoadedModel?(): Promise<{ loaded: boolean }>;
   generate(options: { prompt: string }): Promise<{ text: string }>;
   generateStream(options: { prompt: string }): Promise<void>;
   addListener(
@@ -476,12 +496,13 @@ async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): 
 }
 
 /**
- * Open a URL outside the app's webview: the system browser on native (so OAuth/OIDC
- * runs in Safari / Chrome, not the in-app webview), or a normal navigation on web.
+ * Open a sign-in URL outside the app webview, or navigate normally on web.
  *
- * iOS uses LocalHub.openUrl (`UIApplication.shared.open`) — never Capacitor Browser.
- * Browser presents SFSafariViewController, which swallows `companion://` and breaks
- * OIDC token handoff (and never appears under our UIScene SceneDelegate).
+ * Android LocalHub.openUrl presents Chrome Auth Tab (in-app sheet, shared Chrome
+ * cookies, `companion://` returned into `appUrlOpen`). iOS uses
+ * `UIApplication.shared.open` — never Capacitor Browser. Browser presents
+ * SFSafariViewController, which swallows `companion://` and breaks OIDC token
+ * handoff (and never appears under our UIScene SceneDelegate).
  *
  * Desktop (Tauri) is a third, distinct native shell — see isTauriPlatform's doc
  * comment for why it isn't folded into the isNativePlatform() checks above. Same
@@ -512,6 +533,50 @@ export async function openExternalUrl(url: string): Promise<void> {
   }
 }
 
+/** User dismissed the in-app sign-in sheet. Callers should stay quiet. */
+export class AuthSessionCancelledError extends Error {
+  constructor() {
+    super('Sign-in cancelled');
+    this.name = 'AuthSessionCancelledError';
+  }
+}
+
+function isAuthSessionCancel(err: unknown): boolean {
+  return Boolean(
+    err && typeof err === 'object' && 'code' in err && (err as { code?: unknown }).code === 'CANCELLED',
+  );
+}
+
+/**
+ * Sign-in / registration in an in-app sheet on iOS (`ASWebAuthenticationSession`).
+ * The sheet returns `companion://` to the app, which the existing deep-link
+ * listener finishes. Android falls through to {@link openExternalUrl}, which
+ * presents Chrome Auth Tab. Desktop and web open the system browser.
+ */
+export async function openAuthSession(url: string, callbackScheme = 'companion'): Promise<void> {
+  if (!isIosPlatform()) {
+    await openExternalUrl(url);
+
+    return;
+  }
+
+  const hub = resolveLocalHub();
+
+  if (!hub?.startAuthSession) {
+    throw new Error('Could not open the sign-in sheet.');
+  }
+
+  try {
+    await hub.startAuthSession({ url, callbackScheme });
+  } catch (err: unknown) {
+    if (isAuthSessionCancel(err)) {
+      throw new AuthSessionCancelledError();
+    }
+
+    throw err;
+  }
+}
+
 /**
  * Starts a `@capacitor-community/background-geolocation` watcher — the one writer for
  * both iOS and Android native location. No-op (`null`) on web, which keeps using
@@ -524,7 +589,7 @@ export async function openExternalUrl(url: string): Promise<void> {
  * `null` if no watcher was started.
  */
 export async function addBackgroundLocationWatcher(
-  options: { background: boolean; distanceFilter?: number },
+  options: { background: boolean; distanceFilter?: number; requestPermissions?: boolean },
   onLocation: (location: BackgroundGeolocationLocation) => void,
   onError: (error: BackgroundGeolocationError) => void,
 ): Promise<string | null> {
@@ -536,7 +601,7 @@ export async function addBackgroundLocationWatcher(
 
   return plugin.addWatcher(
     {
-      requestPermissions: true,
+      requestPermissions: options.requestPermissions ?? true,
       distanceFilter: options.distanceFilter,
       ...(options.background
         ? {
@@ -606,6 +671,63 @@ export async function getNativeCurrentLocation(): Promise<NativeCurrentLocation 
   }
 
   return hub.getCurrentLocation();
+}
+
+const LOCATION_AUTH_STATUSES: readonly NativeLocationAuthorization[] = [
+  'notDetermined',
+  'denied',
+  'restricted',
+  'whenInUse',
+  'always',
+  'unsupported',
+];
+
+function asLocationAuthorization(status: string | undefined): NativeLocationAuthorization {
+  if (status && (LOCATION_AUTH_STATUSES as readonly string[]).includes(status)) {
+    return status as NativeLocationAuthorization;
+  }
+
+  return 'unsupported';
+}
+
+/** iOS Core Location authorization. `unsupported` on web and Android. */
+export async function getNativeLocationAuthorization(): Promise<NativeLocationAuthorization> {
+  const hub = plugins()?.LocalHub;
+
+  if (!isIosPlatform() || !hub?.getLocationAuthorization) {
+    return 'unsupported';
+  }
+
+  try {
+    const result = await hub.getLocationAuthorization();
+
+    return asLocationAuthorization(result.status);
+  } catch {
+    return 'unsupported';
+  }
+}
+
+/**
+ * Prompt When In Use (`always: false`) or Always (`always: true`).
+ * iOS 13+ shows When In Use first when status is still not determined; call
+ * again with `always: true` after that grant. `unsupported` on web/Android.
+ */
+export async function requestNativeLocationAuthorization(options: {
+  always: boolean;
+}): Promise<NativeLocationAuthorization> {
+  const hub = plugins()?.LocalHub;
+
+  if (!isIosPlatform() || !hub?.requestLocationAuthorization) {
+    return 'unsupported';
+  }
+
+  try {
+    const result = await hub.requestLocationAuthorization(options);
+
+    return asLocationAuthorization(result.status);
+  } catch {
+    return 'unsupported';
+  }
 }
 
 /**
@@ -1198,7 +1320,9 @@ export async function generateOffline(
     try {
       const { available } = await llm.isAvailable();
 
-      if (available) {
+      // `available` is a capability probe (RAM, OS version), not "a model is loaded" — a device that
+      // clears the floor with nothing downloaded would otherwise fail here and only then fall back.
+      if (available && (await isModelResident(llm))) {
         const text = options.onToken
           ? await generateLocalStreaming(llm, prompt, options.onToken)
           : (await llm.generate({ prompt })).text;
@@ -1213,6 +1337,15 @@ export async function generateOffline(
   const text = await generateRemote(prompt, options);
 
   return { text, source: 'remote' };
+}
+
+/** Whether a model is loaded. A native build without `getLoadedModel` predates it, so we cannot tell and try. */
+async function isModelResident(llm: LocalLlmPlugin): Promise<boolean> {
+  if (!llm.getLoadedModel) {
+    return true;
+  }
+
+  return (await llm.getLoadedModel()).loaded;
 }
 
 /** Drives `generateStream` + the `llmToken` event into a single buffered result, forwarding partials. */

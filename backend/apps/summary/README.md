@@ -12,6 +12,9 @@ CI-Summary is a Python sidecar that creates intelligent, multi-layered summaries
 
 - **Hourly Summaries**: Detailed hour-by-hour activity digests
 - **Daily Summaries**: Day-level synthesis from hourly summaries
+- **macOS activity**: App/device observations use their original occurrence
+  windows; [snapshot import and HBPE refresh](../../../docs/import/macos-activity.md)
+  documents acquisition and historical backfill.
 - **Weekly Summaries**: Week-level insights from daily summaries
 - **Monthly Summaries**: Month-level rollups from the weekly layer
 
@@ -86,7 +89,7 @@ EMBEDDING_MODEL=nomic-embed-text   # or LLM_DEFAULT_EMBEDDING_MODEL
 # Function runner
 FUNCTION_RUNNER_CONCURRENCY=2
 API_URL=http://api:3030            # where run-completion callbacks POST
-API_JWT_SECRET=                    # entrypoint.sh reads AUTH_TOKEN_SECRET
+SIDECAR_AUTH_SECRET=               # entrypoint.sh reads it from the secrets file; every inbound request must carry it as a bearer
 ```
 
 ### 3. Run with Docker Compose
@@ -138,7 +141,10 @@ job here:
 
 The runner accepts the run into a bounded worker pool
 (`FUNCTION_RUNNER_CONCURRENCY`, default 2), returns immediately, and POSTs the
-outcome to `{API_URL}/function-runs/callback` with a self-signed service JWT.
+outcome to `{API_URL}/function-runs/callback`, presenting the per-run token the API
+attached to the run request (`access_token`). The service signs nothing itself: that token is
+scoped by the API to the job's user, job id and queue, and the callback route accepts only a
+body naming that job.
 If the runner dies mid-run, the queue's `expireInSeconds` (30 minutes for
 summary) elapses and pg-boss retries — that is the durability story.
 
@@ -532,7 +538,7 @@ The web Jobs page (`/jobs`) shows the same queue with its dead letters.
    ```
 
 4. If runs start but never complete on the API side, the callback is failing —
-   confirm `API_URL` is reachable from the container and `API_JWT_SECRET` matches
+   confirm `API_URL` is reachable from the container and `SIDECAR_AUTH_SECRET` matches
    the API's `AUTH_TOKEN_SECRET`. pg-boss recovers on its own after
    `expireInSeconds` (30 minutes).
 
