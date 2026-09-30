@@ -93,11 +93,12 @@ function statedList(metadata: Record<string, unknown> | null | undefined, key: s
  * under `emails` / `phones`), with the entity's handle heading its list.
  *
  * The handle is NOT always one of them. A phone handle that staging recorded
- * lists and left out is a fax or an extension number — the smallest handle,
- * and so the natural key, but no one's line — and it stays out: indexing the
- * office fax under whichever colleague sorts first is how two colleagues came
- * to "share a phone number". A row staged before those lists existed (no
- * `phones` key at all) keeps the old behaviour: its handle is its identifier.
+ * lists and left out is an extension number ("(310) 447-8675;229" keys as
+ * 4478675229) — the smallest of the card's own handles, and so the natural
+ * key, but no one's line — and it stays out of the index. (A fax or a shared
+ * office line no longer keys anyone: staging passes over shared handles.) A
+ * row staged before those lists existed (no `phones` key at all) keeps the
+ * old behaviour: its handle is its identifier.
  *
  * An email handle is always kept, as before, even an organizational one
  * staging would not have recorded: it is the only thing such a contact is.

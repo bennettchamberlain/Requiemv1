@@ -1,14 +1,14 @@
 /**
  * Identity and content hashing for staged rows.
  *
- * Ported from CI-Import-Tools' `persistence.ts`, unchanged in behaviour and
- * separated out because all of it is pure: these functions decide what collapses
- * into what, which is the part of staging worth testing directly rather than
- * through a database.
+ * Ported from CI-Import-Tools' `persistence.ts` and separated out because all of
+ * it is pure: these functions decide what collapses into what, which is the part
+ * of staging worth testing directly rather than through a database.
  */
 import { createHash } from 'node:crypto';
 
 import { normalizeEmail } from '@ci/domains/graph';
+import { tokenizePersonName } from '@ci/domains/memory';
 
 import type { Entity, EntityAttribute, Item, Metadata } from '../datasources/timeline';
 
@@ -227,11 +227,16 @@ export function stagedNaturalKey(
 }
 
 /**
- * An attribute that carries an identity handle — exactly the attributes
- * {@link hasContactIdentity} treats as a contact signal: named as a phone or an
- * email, or flagged `identity`, and shaped like a handle.
+ * True for an attribute that carries a handle: one named like a phone or email
+ * field, or one a source tagged `identity` without a recognisable name
+ * (apple_contacts emits `{ name: '', value: '+1…', identity: true }`) — and in
+ * either case holding a value that looks like a handle.
+ *
+ * The single definition behind both {@link identityHandles} and
+ * {@link hasContactIdentity}, so an entity typed 'contact' because of a handle
+ * is always an entity with that handle to key on.
  */
-function isIdentityAttribute(attribute: EntityAttribute | undefined): boolean {
+function isHandleAttribute(attribute: EntityAttribute | null | undefined): attribute is EntityAttribute {
   const name = (attribute?.name ?? '').toLowerCase();
   const named =
     PHONE_ATTR_NAMES.has(name) ||
@@ -240,29 +245,26 @@ function isIdentityAttribute(attribute: EntityAttribute | undefined): boolean {
     name.includes('email') ||
     name.includes('tel');
 
-  return (named || attribute?.identity === true) && looksLikeHandle(attribute?.value);
+  return (named || Boolean(attribute?.identity)) && looksLikeHandle(attribute?.value);
 }
 
 /**
- * The normalized identity handles an entity carries — drawn from exactly the
- * attributes {@link hasContactIdentity} treats as a contact signal. Kept in
- * lockstep with it so every entity that resolves to 'contact' via an identity
- * also produces a key.
- *
- * EVERY handle, faxes and extension numbers included: this picks the natural
- * key, and a key must never move — see {@link contactIdentifiers} for the
- * narrower set that is a person's own contact methods.
+ * The normalized identity handles an entity carries, in attribute order — every
+ * one of them, or only the entity's OWN when `withShared` is false (see
+ * {@link EntityAttribute.shared}).
  */
-function identityHandles(entity: Entity): string[] {
+function identityHandles(entity: Entity, { withShared }: { withShared: boolean }): string[] {
   const out: string[] = [];
 
   for (const attribute of entity.attributes ?? []) {
-    if (isIdentityAttribute(attribute)) {
-      const handle = normalizeHandle(attribute.value);
+    if (!isHandleAttribute(attribute) || (attribute.shared === true && !withShared)) {
+      continue;
+    }
 
-      if (handle) {
-        out.push(handle);
-      }
+    const handle = normalizeHandle(attribute.value);
+
+    if (handle) {
+      out.push(handle);
     }
   }
 
@@ -274,10 +276,12 @@ function identityHandles(entity: Entity): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * The attribute name a parser gives a number it knows is a FAX line — the
- * vCard parser's `TEL;TYPE=FAX`. Still an identity handle (flagged `identity`,
- * so the natural key is unchanged), never a person's own contact method: one
- * office's fax is on every card from that office.
+ * The attribute name a parser gives a number the CARD itself files as a FAX
+ * line — the vCard parser's `TEL;TYPE=FAX`. Never a person's own contact
+ * method: one office's fax is on every card from that office. Still an
+ * identity handle (flagged `identity`), so {@link legacyEntityIdentityKey}
+ * finds the row an older import keyed on it; the file-level pass marks it
+ * {@link EntityAttribute.shared}, so it never keys the card now.
  */
 export const FAX_ATTRIBUTE_NAME = 'fax';
 
@@ -326,6 +330,11 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *
  * ── What is NOT a contact method ───────────────────────────────────────────
  *
+ *  - a SHARED handle ({@link EntityAttribute.shared}): a fax anywhere in the
+ *    export, or a line another card lists under a name that describes someone
+ *    else ({@link markSharedContactHandles}). Indexed under the first
+ *    colleague to arrive, the office switchboard would claim every call the
+ *    office makes — the reason it no longer keys anyone either;
  *  - a FAX ({@link FAX_ATTRIBUTE_NAME}): office equipment;
  *  - a number with an EXTENSION: its last ten digits are not a number at all —
  *    "(310) 447-8675;229" keys as 4478675229;
@@ -334,9 +343,9 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *    colleague's card is the office's, and indexed under the first colleague it
  *    would claim every message the office sends.
  *
- * All of them still count toward the natural key — this does not touch
- * {@link identityHandles}, and must not: a key that moves mints a duplicate of
- * every existing contact on the next import.
+ * This is only what the contact is indexed under. The natural key is
+ * {@link entityIdentityKey}'s, which passes over shared handles too but still
+ * reads the rest — an extension, an organizational mailbox — exactly as before.
  *
  * Only for entities that become a Person; empty otherwise.
  */
@@ -349,7 +358,11 @@ export function contactIdentifiers(entity: Entity): { emails: string[]; phones: 
   }
 
   for (const attribute of entity.attributes ?? []) {
-    if (!isIdentityAttribute(attribute) || (attribute.name ?? '').toLowerCase() === FAX_ATTRIBUTE_NAME) {
+    if (
+      !isHandleAttribute(attribute) ||
+      attribute.shared === true ||
+      (attribute.name ?? '').toLowerCase() === FAX_ATTRIBUTE_NAME
+    ) {
       continue;
     }
 
@@ -404,55 +417,258 @@ export function withContactIdentifiers(entity: Entity): Entity {
   };
 }
 
+/** The lexicographically-smallest handle, or null for none. */
+function smallestHandle(handles: string[]): string | null {
+  return handles.length > 0 ? [...handles].sort()[0] : null;
+}
+
 /**
- * A stable identity key for an entity: its lexicographically-smallest normalized
- * handle, or null when it carries none.
+ * A stable identity key for an entity: the lexicographically-smallest of the
+ * normalized handles that are its OWN, or null when it has none.
  *
  * Sorting makes the key independent of attribute order, so one real person
  * always keys the same way regardless of which message field (from/to/cc) or
  * which source surfaced them. This — not the mutable display name — is what
  * contacts dedup on.
+ *
+ * ## A shared handle is never the key
+ *
+ * Handles a parser marked {@link EntityAttribute.shared} — a fax, or a line
+ * another person's card in the same export also lists — are passed over. Until
+ * they were, the smallest handle won whatever it was, and digits sort before
+ * letters, so an office's main line beat every colleague's own address: three
+ * cards from one firm, each listing the switchboard and a personal email, all
+ * keyed on the switchboard, staged as ONE entity, and pushed as one Person whose
+ * accumulated `Names` listed all three of them. A fax sorting below someone's
+ * direct line keyed them on office equipment.
+ *
+ * An entity with no handle of its own keys on nothing here, and therefore on
+ * its NAME (see {@link stagedNaturalKey}): two different people cannot collide
+ * there without sharing a name as well. Only a NAMELESS one falls back to its
+ * smallest shared handle — a key it may share still beats no key, which is
+ * what `PushStage` drops an entity for.
+ *
+ * {@link legacyEntityIdentityKey} is the rule this replaced. It stays, because
+ * every row already in `ci.entities` was minted under it.
  */
 export function entityIdentityKey(entity: Entity): string | null {
-  const handles = identityHandles(entity);
+  const own = smallestHandle(identityHandles(entity, { withShared: false }));
 
-  if (!handles.length) {
+  if (own != null) {
+    return own;
+  }
+
+  if (entity.name?.trim()) {
     return null;
   }
 
-  handles.sort();
+  return legacyEntityIdentityKey(entity);
+}
 
-  return handles[0];
+/**
+ * The key {@link entityIdentityKey} gave this entity before shared handles were
+ * passed over: the smallest of ALL its handles.
+ *
+ * Kept for exactly one job. Changing which handle keys a contact MOVES its
+ * natural key, and `GraphIngestService` resolves an existing row by nothing
+ * else — so without help, the next import of the same export mints a second
+ * Person beside every contact whose key moved. The row cannot be re-keyed by a
+ * migration either: the choice depends on TEL types and on the other cards in
+ * the export, and neither is stored anywhere after staging. The parser, though,
+ * still has both keys in hand, so `StagedWriter` records this one beside the
+ * new one and `PushStage` moves the old row onto the new key in place. See
+ * `push/legacyKeys.ts`.
+ */
+export function legacyEntityIdentityKey(entity: Entity): string | null {
+  return smallestHandle(identityHandles(entity, { withShared: true }));
+}
+
+/**
+ * Words that join a name rather than being one. Two cards sharing "de" or
+ * "and" share no name.
+ */
+const NAME_CONNECTIVES = new Set([
+  'and',
+  'at',
+  'da',
+  'de',
+  'del',
+  'della',
+  'der',
+  'di',
+  'du',
+  'for',
+  'from',
+  'la',
+  'le',
+  'of',
+  'the',
+  'van',
+  'von',
+]);
+
+/**
+ * The elements of a display name worth comparing across cards, or null when the
+ * name can say nothing about who someone is: missing, only honorifics, a
+ * relation rather than a name ("Priya's brother" may well be the card beside
+ * it), or a handle written into the name field.
+ */
+function nameElements(name: string | null | undefined): string[] | null {
+  if (!name || name.includes('@')) {
+    return null;
+  }
+
+  const tokens = tokenizePersonName(name);
+
+  if (tokens == null || tokens.isRelational) {
+    return null;
+  }
+
+  const elements = tokens.values.filter(
+    (value) => value.length >= 2 && /[a-z]/.test(value) && !NAME_CONNECTIVES.has(value),
+  );
+
+  return elements.length > 0 ? elements : null;
+}
+
+/** Equal, or one a 3+ letter prefix of the other — "matt" / "matthew", "alex" / "alexander". */
+function sameNameElement(left: string, right: string): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
+
+  return shorter.length >= 3 && longer.startsWith(shorter);
+}
+
+function elementsDescribeDifferentPeople(left: string[] | null, right: string[] | null): boolean {
+  if (left == null || right == null) {
+    return false;
+  }
+
+  return !left.some((element) => right.some((other) => sameNameElement(element, other)));
+}
+
+/**
+ * True when two display names are EVIDENCE that their cards describe different
+ * people: both are real names, and they have no name element in common.
+ *
+ * Deliberately the narrowest reading of "different". A name is a poor identity
+ * — one person is filed as "Matt Okafor" and "Matthew Okafor", as "Dana Reyes"
+ * and (married) "Dana Whitfield", as "Sam Tulley" and "Sam Tully" — so ANY
+ * shared element, a nickname prefix included, reads as possibly the same
+ * person. What is left is the case this exists for: colleagues on one office
+ * line, whose names share nothing at all.
+ *
+ * Family members on one home line ("Ana Ruiz" and "Luis Ruiz") are NOT told
+ * apart, and stay one entity as they always were: a shared surname cannot be
+ * separated from the nickname-and-typo population above by the name alone.
+ *
+ * Measured on a real 4,922-card address book: 37 keys moved, and all five
+ * groups of cards that had shared a key under names with nothing in common came
+ * apart — a three-person office among them, and one pair that is really one
+ * person with a typo in BOTH names: a duplicate the merge flow can offer back,
+ * where the collapse had no way back at all.
+ *
+ * Never evidence either way — so never "different" — for a missing name, a
+ * relational description, or a handle written into the name field.
+ */
+export function namesDescribeDifferentPeople(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  return elementsDescribeDifferentPeople(nameElements(left), nameElements(right));
+}
+
+/**
+ * The contacts of ONE export, each with the handles that are not its own
+ * marked {@link EntityAttribute.shared}: any number the export types as a fax
+ * anywhere in it, and any handle another contact in the export also lists under
+ * a name that {@link namesDescribeDifferentPeople | describes someone else}.
+ *
+ * A contact parser calls this once per export, after reading every card and
+ * before emitting any, because that is the only point where anything can see
+ * that two cards share a line: staging collapses entities on their key and
+ * never compares what else the cards said.
+ *
+ * Both marks are decided for the export, not the card, because one person's
+ * duplicate cards disagree. A real export files the same firm number as
+ * `TEL;TYPE=FAX` on one copy of a card and as an untyped `TEL` on the other; a
+ * per-card rule gave those two copies different keys and split one person. Seen
+ * from the whole export they agree.
+ *
+ * Per export, not per run: a run spans every file it was handed, and each file
+ * is parsed by a fresh importer. Colleagues filed into two different Google
+ * Takeout label files are not seen together, and can still collapse.
+ *
+ * Contacts with nothing to mark are returned as the same objects.
+ */
+export function markSharedContactHandles<T extends Entity>(
+  contacts: readonly T[],
+  faxHandles: Iterable<string> = [],
+): T[] {
+  const fax = new Set<string>();
+
+  for (const value of faxHandles) {
+    const handle = normalizeHandle(value);
+
+    if (handle) {
+      fax.add(handle);
+    }
+  }
+
+  const handlesOf = contacts.map((contact) => new Set(identityHandles(contact, { withShared: true })));
+  const namesOf = contacts.map((contact) => nameElements(contact.name));
+  const holders = new Map<string, number[]>();
+
+  handlesOf.forEach((handles, index) => {
+    for (const handle of handles) {
+      const list = holders.get(handle);
+
+      if (list) {
+        list.push(index);
+      } else {
+        holders.set(handle, [index]);
+      }
+    }
+  });
+
+  return contacts.map((contact, index) => {
+    const shared = new Set<string>();
+
+    for (const handle of handlesOf[index]) {
+      const heldByAnother = (holders.get(handle) ?? []).some(
+        (other) => other !== index && elementsDescribeDifferentPeople(namesOf[index], namesOf[other]),
+      );
+
+      if (fax.has(handle) || heldByAnother) {
+        shared.add(handle);
+      }
+    }
+
+    if (shared.size === 0) {
+      return contact;
+    }
+
+    return {
+      ...contact,
+      attributes: (contact.attributes ?? []).map((attribute) =>
+        isHandleAttribute(attribute) && shared.has(normalizeHandle(attribute.value))
+          ? { ...attribute, shared: true }
+          : attribute,
+      ),
+    };
+  });
 }
 
 /**
  * True when an entity carries a phone/email identity — i.e. it is really a
- * person even when the datasource forgot to set `type`.
+ * person even when the datasource forgot to set `type`. A shared handle counts:
+ * the office line is still how to reach them.
  */
 export function hasContactIdentity(entity: Entity): boolean {
-  for (const attribute of entity.attributes ?? []) {
-    const name = (attribute?.name ?? '').toLowerCase();
-
-    if (
-      PHONE_ATTR_NAMES.has(name) ||
-      EMAIL_ATTR_NAMES.has(name) ||
-      name.includes('phone') ||
-      name.includes('email') ||
-      name.includes('tel')
-    ) {
-      if (looksLikeHandle(attribute.value)) {
-        return true;
-      }
-    }
-
-    // Some sources tag an attribute as an identity without a recognisable name
-    // (apple_contacts emits `{ name: '', value: '+1…', identity: true }`).
-    if (attribute?.identity && looksLikeHandle(attribute.value)) {
-      return true;
-    }
-  }
-
-  return false;
+  return (entity.attributes ?? []).some(isHandleAttribute);
 }
 
 /**
@@ -463,7 +679,7 @@ export function hasContactIdentity(entity: Entity): boolean {
  * left alone: the other identity is still a real way to reach a person.
  */
 function hasOnlyOrganizationalIdentity(entity: Entity): boolean {
-  const handles = identityHandles(entity);
+  const handles = identityHandles(entity, { withShared: true });
 
   return (
     handles.length > 0 && handles.every((handle) => handle.includes('@') && isOrganizationalAddress(handle))

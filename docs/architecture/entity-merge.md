@@ -374,15 +374,17 @@ What a contact states reaches both tiers whole. Staging used to keep ONE handle 
 smallest, which is also its natural key — so a card with any phone never indexed its email (600 of
 1,018 cards with an email in one real export) and mail from it minted a stub. Staging now records
 every email and phone a contact states as `emails` / `phones` (`import/staging/identity.ts`
-`contactIdentifiers`), less a fax, a number with an extension and a role inbox (`info@`), and the
-push indexes them all; migration `20260930022046` repaired the vCard rows already imported, from
-their own `Emails` / `Phones`, and dropped the fake numbers extensions had left in `phones` and in
-the index ("(310) 447-8675;229" keyed as 4478675229). The natural key is untouched. `enrich.person_self_claim` (v2) turns
-them into claims and retracts the ones a record no longer states.
+`contactIdentifiers`), less a shared handle (a fax anywhere in the export, or a line another card
+lists under a name that describes someone else — `markSharedContactHandles`, the same rule that
+keeps them from keying the card), a fax, a number with an extension and a role inbox (`info@`),
+and the push indexes them all; migration `20260930022046` repaired the vCard rows already
+imported, from their own `Emails` / `Phones`, and dropped the fake numbers extensions had left in
+`phones` and in the index ("(310) 447-8675;229" keyed as 4478675229). `enrich.person_self_claim`
+(v2) turns them into claims and retracts the ones a record no longer states.
 
 | Rule | Detail |
 |------|--------|
-| Fax | A number either record files under `Faxes` (the vCard parser's `TEL;TYPE=FAX`) is never evidence, whatever else states it: one office's fax is on every card from that office. |
+| Fax | A number either record files under `Faxes` is never evidence, whatever else states it: one office's fax is on every card from that office. The vCard parser files a number under `Faxes` on every card of an export once any card in it types that number FAX (`TEL;TYPE=FAX`, or a fax label): one person's duplicate cards type it on one copy and leave it bare on the next. |
 | Parsing | Stated when the value says its country: `+`, `00`, `011` (NANP only), or eleven digits led by `1`. A national value is read as `+1` only under a NANP owner region and only when it is a valid geographic number. Toll-free (800/833/844/855/866/877/888, reserved 822/880–887/889), premium (900, NXX 976), personal/non-geographic (456, 500, 521–529, 533, 544, 566, 577, 588, 600, 622, 700, 710), N11 and 950/958/959 exchanges, reserved area codes (N11, N9X, 37X, 96X, 555), extensions, short codes and anything invalid are never evidence. |
 | Region | The owner's own stated numbers if unanimous, else an explicit list of North American IANA zones (`UTC` and `America/Mexico_City` give none). Once the corpus states ≥ 20 numbers, ≥ 50% must be `+1` or no region is used. No region: national numbers match at most as "country not confirmed" (0.75). |
 | Stated vs inferred | Per last ten digits a stated form beats an inferred one, two stated forms that disagree are unresolved, a refused raw value (a UK "020 …" number, an extension) beats the inferred reading of its own truncated `phones` key, and digits any person or claim states under another country are never read as `+1`. |

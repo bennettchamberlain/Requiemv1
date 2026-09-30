@@ -119,6 +119,9 @@ export type {
   GraphEntityMappingDto,
   GraphRelationshipInputDto,
   GraphIngestResult,
+  ImportedEntityMatch,
+  ImportedEntityRef,
+  ImportedEntityRekey,
 } from './services/GraphIngestService';
 export type {
   ItemRelationshipInputDto,
