@@ -238,6 +238,20 @@ describe('PersonResolver.updatePerson — contacts the form was seeded with', ()
     expect(personService.patch).not.toHaveBeenCalled();
   });
 
+  it('never re-creates an extension fake from a number the card keeps as typed', async () => {
+    // "(212) 555-0147 x229" keys as 5550147229 under the truncating join key —
+    // the fake the contact-card migration removes. A save that round-trips the
+    // typed string must not put it back: untouched, it is dropped here, and
+    // under a join key that refuses extensions it cannot be keyed at all.
+    const { save, heldBy } = makeHarness({ properties: { phones: ['(212) 555-0147 x229'] } });
+
+    await expect(
+      save([{ kind: 'phone', value: '(212) 555-0147 x229', label: '', isPrimary: true }]),
+    ).resolves.toMatchObject({ success: true });
+
+    expect(heldBy('phone', '5550147229')).toBeUndefined();
+  });
+
   it('still removes an indexed value the user deleted from the form', async () => {
     const { save, heldBy } = makeHarness({
       seed: [indexedEmail, { ...indexedEmail, kind: 'phone', valueNormalized: '4155550142' }],
