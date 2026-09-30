@@ -171,8 +171,12 @@ function makeTool(graph: ReturnType<typeof makeGraph>) {
 
 const OWNER = { userId: 'user-1' };
 
+// The doubles above record what the tool SENDS; they do not model what
+// createOrUpdateNode does with it. What a write leaves behind on a populated
+// row — merge, keep-if-unset, removal — is asserted against the real write in
+// WriteKnowledgeTool.idReuse.test.ts.
 describe('WriteKnowledgeTool entity.update', () => {
-  it('merges incoming properties onto existing ones by default and fills in the rest from the existing row', async () => {
+  it('sends only the fields it was given and asks for the properties to be merged at write time', async () => {
     const graph = makeGraph([
       node({
         entity_id: E1,
@@ -180,6 +184,8 @@ describe('WriteKnowledgeTool entity.update', () => {
         name: 'Yoga',
         description: 'A practice',
         properties: { category: 'fitness', level: 'beginner' },
+        linked_table: 'import:notes',
+        linked_id: E2,
       }),
     ]);
     const tool = makeTool(graph);
@@ -192,19 +198,19 @@ describe('WriteKnowledgeTool entity.update', () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ updatedNodes: 1, failures: 0 });
-    expect(graph.graphEvents.upsertNode).toHaveBeenCalledWith(
-      'user-1',
-      expect.objectContaining({
-        entityId: E1,
-        entityType: 'Concept',
-        name: 'Yoga',
-        description: 'A practice',
-        properties: { category: 'fitness', level: 'intermediate', pace: 'slow' },
-      }),
-    );
+    // toEqual: every other field — name, description, search content, the
+    // linked key — must be absent, not re-sent from the read above. Re-sending
+    // it would revert anything another writer changed while this write queued.
+    const [, sent] = graph.graphEvents.upsertNode.mock.calls[0];
+    expect(sent).toEqual({
+      entityId: E1,
+      entityType: 'Concept',
+      properties: { level: 'intermediate', pace: 'slow' },
+      mergeProperties: true,
+    });
   });
 
-  it('replaces properties wholesale when mergeProperties is false', async () => {
+  it('asks for a wholesale replace when mergeProperties is false', async () => {
     const graph = makeGraph([
       node({ entity_id: E1, entity_type: 'Concept', name: 'Yoga', properties: { category: 'fitness' } }),
     ]);
@@ -221,13 +227,16 @@ describe('WriteKnowledgeTool entity.update', () => {
       ],
     });
 
-    expect(graph.graphEvents.upsertNode).toHaveBeenCalledWith(
-      'user-1',
-      expect.objectContaining({ properties: { level: 'intermediate' } }),
-    );
+    const [, sent] = graph.graphEvents.upsertNode.mock.calls[0];
+    expect(sent).toEqual({
+      entityId: E1,
+      entityType: 'Concept',
+      properties: { level: 'intermediate' },
+      mergeProperties: false,
+    });
   });
 
-  it('applies removeProperties after merging', async () => {
+  it('forwards removeProperties for the write to apply after merging', async () => {
     const graph = makeGraph([
       node({
         entity_id: E1,
@@ -249,10 +258,14 @@ describe('WriteKnowledgeTool entity.update', () => {
       ],
     });
 
-    expect(graph.graphEvents.upsertNode).toHaveBeenCalledWith(
-      'user-1',
-      expect.objectContaining({ properties: { category: 'fitness', level: 'intermediate' } }),
-    );
+    const [, sent] = graph.graphEvents.upsertNode.mock.calls[0];
+    expect(sent).toEqual({
+      entityId: E1,
+      entityType: 'Concept',
+      properties: { level: 'intermediate' },
+      mergeProperties: true,
+      removeProperties: ['stale'],
+    });
   });
 
   it('fails the operation without writing when the entity is not found or not owned by the user', async () => {
@@ -297,7 +310,7 @@ describe('WriteKnowledgeTool relationship.update', () => {
     expect(graph.graphEvents.upsertRelationship).not.toHaveBeenCalled();
   });
 
-  it('keeps the existing endpoints and merges properties, falling back to existing type/strength when omitted', async () => {
+  it('keeps the stored endpoints and type, and sends only the properties to merge', async () => {
     const graph = makeGraph(
       [],
       [
@@ -320,18 +333,17 @@ describe('WriteKnowledgeTool relationship.update', () => {
     });
 
     expect(result.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
-    expect(graph.graphEvents.upsertRelationship).toHaveBeenCalledWith(
-      'user-1',
-      expect.objectContaining({
-        relationshipId: R1,
-        fromEntityId: FROM,
-        toEntityId: TO,
-        relationshipType: 'KNOWS',
-        properties: { since: '2020', closeness: 'high' },
-        strength: 0.6,
-        isBidirectional: false,
-      }),
-    );
+    // Strength and direction were not given, so they are not re-sent: the write
+    // keeps whatever the row holds when it lands.
+    const [, sent] = graph.graphEvents.upsertRelationship.mock.calls[0];
+    expect(sent).toEqual({
+      relationshipId: R1,
+      fromEntityId: FROM,
+      toEntityId: TO,
+      relationshipType: 'KNOWS',
+      properties: { closeness: 'high' },
+      mergeProperties: true,
+    });
   });
 
   it('dry-run reports the update without persisting it', async () => {

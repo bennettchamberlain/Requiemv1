@@ -83,6 +83,29 @@ const GENERIC_SOURCE_KEYS = ['import:importer', 'importer', 'import:'];
  */
 const NODE_SEARCH_MAX_LIMIT = 500;
 
+/**
+ * The properties bag a node or relationship write leaves behind: `properties`
+ * merged over `stored` (or replacing it when `mergeProperties === false`), then
+ * each `removeProperties` key deleted. With no `properties` at all there is
+ * nothing to merge or replace with, so `stored` survives and only the removals
+ * apply — `mergeProperties: false` alone never empties a bag.
+ */
+function nextProperties(
+  stored: Record<string, unknown> | null | undefined,
+  write: { properties?: Record<string, unknown>; mergeProperties?: boolean; removeProperties?: string[] },
+): Record<string, unknown> {
+  const next =
+    write.properties && write.mergeProperties === false
+      ? { ...write.properties }
+      : { ...(stored ?? {}), ...(write.properties ?? {}) };
+
+  for (const key of write.removeProperties ?? []) {
+    delete next[key];
+  }
+
+  return next;
+}
+
 @Injectable()
 export class GraphUtilityService {
   constructor(
@@ -591,6 +614,21 @@ export class GraphUtilityService {
       .getMany();
   }
 
+  /**
+   * Insert a node, or update the one `entityId` already names.
+   *
+   * On update, a field left `undefined` keeps its stored value and `null`
+   * clears it — so a caller relaying a partial write must pass omitted fields
+   * through as `undefined`, never `?? null`. That matters most for
+   * `linkedTable`/`linkedId`: an importer upserts on
+   * `(owner, entity_type, linked_table, linked_id)`, so clearing either one (or
+   * changing `entityType`) detaches the row, and the next import of the same
+   * source mints a duplicate beside it.
+   *
+   * `properties` merges over the stored bag unless `mergeProperties === false`,
+   * which replaces it; `removeProperties` keys are deleted afterwards. Both are
+   * applied to the row as read here, not to a copy a caller read earlier.
+   */
   async createOrUpdateNode(
     ownerUserId: string,
     payload: {
@@ -603,6 +641,7 @@ export class GraphUtilityService {
       linkedTable?: string | null;
       linkedId?: string | null;
       mergeProperties?: boolean;
+      removeProperties?: string[];
     },
   ): Promise<{ node: GraphNodeEntity; created: boolean }> {
     const entityId = payload.entityId ?? uuidv7();
@@ -622,7 +661,7 @@ export class GraphUtilityService {
         entity_type: payload.entityType,
         name: payload.name ?? null,
         description: payload.description ?? payload.name ?? null,
-        properties: payload.properties ?? {},
+        properties: nextProperties({}, payload),
         search_content: payload.searchContent ?? payload.name ?? null,
         linked_table: payload.linkedTable ?? null,
         linked_id: payload.linkedId ?? null,
@@ -654,11 +693,8 @@ export class GraphUtilityService {
         node.linked_id = payload.linkedId;
       }
 
-      if (payload.properties) {
-        node.properties =
-          payload.mergeProperties === false
-            ? payload.properties
-            : { ...(node.properties ?? {}), ...payload.properties };
+      if (payload.properties || payload.removeProperties?.length) {
+        node.properties = nextProperties(node.properties, payload);
       }
 
       node.is_active = true;
@@ -731,6 +767,11 @@ export class GraphUtilityService {
     return query.getMany();
   }
 
+  /**
+   * Insert a relationship, or update the one `relationshipId` already names.
+   * On update an `undefined` field keeps its stored value, and `properties` /
+   * `mergeProperties` / `removeProperties` behave as in {@link createOrUpdateNode}.
+   */
   async createOrUpdateRelationship(
     ownerUserId: string,
     payload: {
@@ -744,6 +785,7 @@ export class GraphUtilityService {
       startDate?: Date;
       endDate?: Date;
       mergeProperties?: boolean;
+      removeProperties?: string[];
     },
   ): Promise<{ relationship: RelationshipEntity; created: boolean }> {
     const relationshipId = payload.relationshipId ?? uuidv7();
@@ -759,7 +801,7 @@ export class GraphUtilityService {
         from_entity_id: payload.fromEntityId,
         to_entity_id: payload.toEntityId,
         relationship_type: payload.relationshipType,
-        properties: payload.properties ?? {},
+        properties: nextProperties({}, payload),
         strength: payload.strength ?? 1,
         is_bidirectional: payload.isBidirectional ?? false,
         start_date: payload.startDate ?? null,
@@ -771,11 +813,8 @@ export class GraphUtilityService {
       relationship.to_entity_id = payload.toEntityId ?? relationship.to_entity_id;
       relationship.relationship_type = payload.relationshipType ?? relationship.relationship_type;
 
-      if (payload.properties) {
-        relationship.properties =
-          payload.mergeProperties === false
-            ? payload.properties
-            : { ...(relationship.properties ?? {}), ...payload.properties };
+      if (payload.properties || payload.removeProperties?.length) {
+        relationship.properties = nextProperties(relationship.properties, payload);
       }
 
       if (payload.strength !== undefined) {
