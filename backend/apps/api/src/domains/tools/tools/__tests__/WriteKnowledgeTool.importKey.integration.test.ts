@@ -562,20 +562,26 @@ describeWithDb(`WriteKnowledgeTool on an imported entity (${availability.target}
         })),
       });
       expect(result.errors).toEqual([]);
-      const [alexId, samId] = [ALEX.key, SAM.key].map((key) => result.entities.find((e) => e.key === key)!.entityId);
+      const [alexId, samId] = [ALEX.key, SAM.key].map(
+        (key) => result.entities.find((e) => e.key === key)!.entityId,
+      );
 
       return { alexId, samId };
     };
 
     /** Alex's active edges to Sam by type — sorted here: the database's collation is not the test's. */
     const edgesByType = async (alexId: string, samId: string) => {
-      const rows: Array<{ relationship_id: string; relationship_type: string; strength: number; properties: object }> =
-        await runner.query(
-          `SELECT relationship_id, relationship_type, strength, properties
+      const rows: Array<{
+        relationship_id: string;
+        relationship_type: string;
+        strength: number;
+        properties: object;
+      }> = await runner.query(
+        `SELECT relationship_id, relationship_type, strength, properties
              FROM ci.relationships
             WHERE from_entity_id = $1 AND to_entity_id = $2 AND is_active`,
-          [alexId, samId],
-        );
+        [alexId, samId],
+      );
 
       return Object.fromEntries(rows.map((edge) => [edge.relationship_type, edge]));
     };
@@ -630,7 +636,13 @@ describeWithDb(`WriteKnowledgeTool on an imported entity (${availability.target}
       const { KNOWS: knows } = await edgesByType(alexId, samId);
 
       const written = await tool.execute(context, {
-        operations: [{ kind: 'relationship.update', relationshipId: knows.relationship_id, relationshipType: 'FRIENDS_WITH' }],
+        operations: [
+          {
+            kind: 'relationship.update',
+            relationshipId: knows.relationship_id,
+            relationshipType: 'FRIENDS_WITH',
+          },
+        ],
       });
       // Nothing held FRIENDS_WITH when the tool looked.
       expect(written.data).toMatchObject({ updatedRelationships: 1, failures: 0 });

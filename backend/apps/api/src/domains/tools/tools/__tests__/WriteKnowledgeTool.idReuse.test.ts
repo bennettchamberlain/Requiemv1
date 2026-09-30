@@ -977,7 +977,10 @@ describe('memory.remember — relationship.update retyping onto a type the two e
   // had answered "Updated relationship". This table enforces no index; the
   // Postgres half is in WriteKnowledgeTool.importKey.integration.test.ts.
   const FRIENDS = '0199a1b2-0000-7000-8000-0000000000e2';
-  const endpoints = () => [importedPerson(), entityRow({ entity_id: OTHER, entity_type: 'Person', name: 'Sam' })];
+  const endpoints = () => [
+    importedPerson(),
+    entityRow({ entity_id: OTHER, entity_type: 'Person', name: 'Sam' }),
+  ];
   const friendsEdge = (overrides: Partial<RelationshipEntity> = {}) =>
     knowsEdge({
       relationship_id: FRIENDS,
@@ -1033,7 +1036,10 @@ describe('memory.remember — relationship.update retyping onto a type the two e
     // restatement lands on.
     const reversed = friendsEdge({ from_entity_id: OTHER, to_entity_id: PERSON, is_bidirectional: true });
 
-    const both = makePipeline({ nodes: endpoints(), edges: [knowsEdge({ is_bidirectional: true }), reversed] });
+    const both = makePipeline({
+      nodes: endpoints(),
+      edges: [knowsEdge({ is_bidirectional: true }), reversed],
+    });
     const refused = await both.run({
       operations: [{ kind: 'relationship.update', relationshipId: EDGE, relationshipType: 'FRIENDS_WITH' }],
     });
@@ -1047,12 +1053,18 @@ describe('memory.remember — relationship.update retyping onto a type the two e
       operations: [{ kind: 'relationship.update', relationshipId: EDGE, relationshipType: 'FRIENDS_WITH' }],
     });
     expect(retyped.data).toMatchObject({ updatedRelationships: 1, failures: 0 });
-    expect(oneWay.edges.get(EDGE)).toMatchObject({ relationship_type: 'FRIENDS_WITH', is_bidirectional: false });
+    expect(oneWay.edges.get(EDGE)).toMatchObject({
+      relationship_type: 'FRIENDS_WITH',
+      is_bidirectional: false,
+    });
     expect(oneWay.edges.get(FRIENDS)).toEqual(reversed);
   });
 
   it('retypes onto a type only a forgotten edge has, and leaves that edge forgotten', async () => {
-    const graph = makePipeline({ nodes: endpoints(), edges: [knowsEdge(), friendsEdge({ is_active: false })] });
+    const graph = makePipeline({
+      nodes: endpoints(),
+      edges: [knowsEdge(), friendsEdge({ is_active: false })],
+    });
 
     const result = await graph.run({
       operations: [
