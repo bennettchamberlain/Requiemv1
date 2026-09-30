@@ -120,7 +120,7 @@ Every suite that needs Postgres resolves the connection through
 1. **the suite's own** `<DOMAIN>_TEST_DATABASE_URL` (a few suites accept a
    sibling domain's as a second choice, e.g. `SCHEDULE_` then `PLANNING_`),
 2. then `DATABASE_URL`,
-3. then the discrete `DATABASE_HOST/PORT/USERNAME/DATABASE/PASSWORD`.
+3. then the discrete `DATABASE_HOST/PORT/USERNAME/NAME/PASSWORD`.
 
 Each domain has a variable of its own — `ASKS_`, `AUTH_`, `BROWSER_ACTIVITY_`,
 `CONNECTIONS_`, `EVENTS_`, `IMPORT_`, `MEMORY_`, `NOTES_`, `PEERS_`,
@@ -131,6 +131,14 @@ Each domain has a variable of its own — `ASKS_`, `AUTH_`, `BROWSER_ACTIVITY_`,
 a scratch database without moving the whole app. The list is checked against the
 source tree by the unit tests of `scripts/xtask/lib/testDb.ts`, which is why this
 paragraph states no count.
+
+Two suites also answer to a sibling domain's variable, which they pass to the
+helper as a list — the first one that is set wins, before `DATABASE_URL`:
+
+| Suite | Reads, in order |
+| --- | --- |
+| `schedule/services/__tests__/CandidateService.lifecycle.integration.test.ts` | `SCHEDULE_TEST_DATABASE_URL`, `PLANNING_TEST_DATABASE_URL`, then the fallback above |
+| `memory/services/__tests__/CalendarEventService.plannedBlockRestore.integration.test.ts` | `MEMORY_TEST_DATABASE_URL`, `PLANNING_TEST_DATABASE_URL`, then the fallback above |
 
 That fallback used to have exceptions: the planning, notes, schedule, calendar
 and auth suites read their variable straight off `process.env` and gated
@@ -192,9 +200,9 @@ coverageThreshold: {
 ```
 
 Note the planning floor is set just under what that suite achieves **without** a database,
-because `TaskService.tenancy.integration.test.ts` skips unless a database is configured
-(`PLANNING_TEST_DATABASE_URL`, or the `DATABASE_URL` fallback). A floor that assumed the
-DB-backed run would fail every laptop.
+because `TaskService.tenancy.integration.test.ts` and the other DB-backed planning suites
+skip unless a database is configured (`PLANNING_TEST_DATABASE_URL`, or the `DATABASE_URL`
+fallback). A floor that assumed the DB-backed run would fail every laptop without one.
 
 The ratchet rule is unchanged; apply it per path. Every PR that adds tests should:
 
