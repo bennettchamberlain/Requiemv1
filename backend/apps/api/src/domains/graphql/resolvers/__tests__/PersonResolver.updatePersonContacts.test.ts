@@ -94,7 +94,33 @@ function makeIdentifierService(seed: Row[]) {
 
       return { affected: keys.length };
     },
-    manager: { query: jest.fn() },
+    // findConflicts looks holders up with one owner-scoped IN query. Answer it
+    // from this table; anything else is a query the fake does not know.
+    manager: {
+      query: async (sql: string, params: unknown[] = []) => {
+        if (!sql.includes('FROM ci.entity_identifiers') || params.length < 1) {
+          throw new Error(`in-memory identifiers cannot answer: ${sql}`);
+        }
+
+        const ownerUserId = String(params[0]);
+        const asked: Array<[string, string]> = [];
+        for (let i = 1; i + 1 < params.length; i += 2) {
+          asked.push([String(params[i]), String(params[i + 1])]);
+        }
+
+        return rows
+          .filter(
+            (row) =>
+              row.ownerUserId === ownerUserId &&
+              asked.some(([kind, value]) => row.kind === kind && row.valueNormalized === value),
+          )
+          .map((row) => ({
+            kind: row.kind,
+            value_normalized: row.valueNormalized,
+            entity_id: row.entityId,
+          }));
+      },
+    },
     metadata: { columns: { length: 5 } },
   };
 
