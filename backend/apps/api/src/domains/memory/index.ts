@@ -303,6 +303,9 @@ export type { MapPin } from './services/CalendarEventService';
 // objects and then could not delete its records.
 export { StoredObjectsDeletedError, type PurgedFiles } from './services/filePurge';
 export { DEAD_EVENT_STATUSES, LIVE_EVENT_SQL } from './services/CalendarEventService';
+// "This `ci.events` row happened" (alias `event`): the calendar's LIVE_EVENT_SQL plus deleted, predicted
+// and cancelled-reservation. What a place's visit count, the Places date browse and Known places apply.
+export { EVENT_HAPPENED_SQL } from './services/eventHappened';
 export { MAX_EXPANDED_OCCURRENCES, MAX_RECURRING_MASTERS } from './services/CalendarEventService';
 // Read-time RRULE expansion. Exported so `peers` can expand the same series for
 // free/busy without routing that read through findInRange, which would silently
