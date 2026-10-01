@@ -974,7 +974,8 @@ export class PlaceService {
   /**
    * Date-windowed Places browse: one row per place, timestamped at MIN(event
    * start_time in the window) where this place is `location_entity_id`. Ingest
-   * wall-clock events are excluded. Places with no real visit in the window
+   * wall-clock events are excluded, and so are events that did not happen
+   * ({@link EVENT_HAPPENED_SQL}). Places with no real visit in the window
    * drop out. See appearanceBrowse.ts.
    */
   private async listPlacesByAppearance(
