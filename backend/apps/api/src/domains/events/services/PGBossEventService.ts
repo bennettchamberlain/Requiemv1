@@ -1635,8 +1635,7 @@ export class PGBossEventService
    */
   async failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<boolean> {
     const result = (await this.boss.fail(queue, jobId, output)) as unknown as
-      | { affected?: number }
-      | undefined;
+      { affected?: number } | undefined;
     const failed = (result?.affected ?? 0) > 0;
 
     if (failed) {
