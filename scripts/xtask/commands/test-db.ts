@@ -35,7 +35,6 @@ import {
   dockerReachable,
   imageState,
   justCreated,
-  listOurContainers,
   psql,
   removeContainers,
   startContainer,
@@ -68,32 +67,40 @@ import {
   type JestReport,
   type NoSkipsResult,
 } from '../lib/noSkips';
+import { reapStaleContainers } from '../lib/reaper';
 import {
   APP_DATABASE,
+  DEFAULT_KEEP_FOR_MS,
   LOCAL_IMAGE,
   LOOPBACK,
+  MAX_KEEP_FOR_MS,
   STALE_AFTER_MS,
   assertOnlyThrowaway,
   buildTestEnv,
   chooseImage,
+  formatAge,
   formatDuration,
   jestChoosesWorkers,
   jestFiltersByName,
+  keptNotice,
   newContainerName,
   parseCiDatabaseImage,
   parseTestDbArgs,
   randomPassword,
-  selectStale,
   type TestDbArgs,
 } from '../lib/testDb';
 
-const HELP = `Usage: xtask test-db [flags] [jest path patterns...] [-- jest args...]
+export const HELP = `Usage: xtask test-db [flags] [jest path patterns...] [-- jest args...]
 
 Run the database-backed jest suites against a throwaway Postgres container.
 
 Flags:
   --keep           Leave the container running afterwards (prints how to connect).
-                   The next run removes it once it is more than two hours old.
+                   Later runs leave it alone for ${formatAge(DEFAULT_KEEP_FOR_MS)} (change it with --keep-for),
+                   and for as long as anything is connected to it.
+  --keep-for <t>   Like --keep, and sets how long later runs must leave the container
+                   alone: a whole number and one unit, m, h or d (30m, 12h, 2d), at
+                   most ${formatAge(MAX_KEEP_FOR_MS)}. It is fixed when the container is created.
   --image <ref>    Database image. Default: the local ci/database:latest when present
                    (what 'make dev' runs), else the pin in .github/workflows/ci.yml.
   --workers <n>    Jest worker processes (default 4; the machine is often shared).
@@ -109,13 +116,20 @@ after '--' is passed verbatim.
   make test-db ARGS='src/domains/import'           # one directory
   make test-db ARGS='-t revocation'                # a jest flag (the no-skip check is then off)
   make test-db KEEP=1 WORKERS=2 DB_IMAGE=my/db:1   # the flags above, as make variables
+  make test-db KEEP_FOR=12h                        # keep it for 12h (implies KEEP=1)
   make test-db NO_RETRY=1                          # a failing file fails the run at once
 
 Every connection variable the suites read is pointed at the container, and
 CI_REQUIRE_DB=1 is set, so a suite that cannot reach it fails rather than skips.
 The run fails on: any jest failure that survives the serial retry, any skipped
 test that scripts/test-db/allowed-skips.json does not forgive, and any crash
-signature in the database's own log. Docker must be running.`;
+signature in the database's own log. Docker must be running.
+
+Every run first removes the test databases earlier runs left behind, but only a
+container that is named ci-testdb-*, carries the ci.test-db=1 label, is more than
+${formatAge(STALE_AFTER_MS)} old, is outside its --keep window and has nothing connected to it. One that
+is in use is left alone and named in the output. Renaming a container (docker
+rename <name> <new name>) protects it from every later run.`;
 
 const READY_TIMEOUT_MS = 120_000;
 /**
@@ -197,39 +211,6 @@ export async function withThrowaway<H, T>(
 
 function firstLine(text: string): string {
   return text.trim().split('\n')[0] ?? '';
-}
-
-async function reapStale(): Promise<void> {
-  const listing = listOurContainers();
-
-  // A lookup that failed is not "there are none": say so instead of a green tick that checked nothing.
-  if (listing.problem !== undefined) {
-    note(
-      `Could not check for stale test databases (${listing.problem}) — carrying on; the next run will look again`,
-    );
-  }
-
-  const stale = selectStale(listing.containers, Date.now(), STALE_AFTER_MS);
-
-  if (stale.length === 0) {
-    if (listing.problem === undefined) {
-      ok('No stale test databases to reap');
-    }
-
-    return;
-  }
-
-  const { removed, failed, unknown } = removeContainers(stale);
-
-  note(
-    `Removed ${removed.length} stale test database container(s) older than ${formatDuration(STALE_AFTER_MS)}: ${removed.join(', ')}`,
-  );
-
-  if (failed.length > 0) {
-    note(
-      `Could not remove: ${failed.join(', ')}${unknown.length > 0 ? ` (docker would not confirm ${unknown.join(', ')})` : ''} — run: docker rm -f -v <name>`,
-    );
-  }
 }
 
 /**
@@ -320,7 +301,7 @@ export async function runTestDb(root: string, args: TestDbArgs): Promise<void> {
 
     ok(`Docker ${reachable.detail} is up`);
 
-    await reapStale();
+    reapStaleContainers();
 
     const image = pickImage(args, root);
 
@@ -338,6 +319,8 @@ export async function runTestDb(root: string, args: TestDbArgs): Promise<void> {
     const db = { appPassword: randomPassword(), adminPassword: randomPassword() };
     const name = newContainerName();
     const noDotenv = path.join(workDir, 'no-such.env');
+    // The reaper's protection for a kept container is a label, and a label is fixed when the container is created.
+    const keepUntil = args.keep ? Date.now() + (args.keepFor ?? DEFAULT_KEEP_FOR_MS) : undefined;
 
     await withThrowaway<StartedContainer, void>(
       {
@@ -345,6 +328,7 @@ export async function runTestDb(root: string, args: TestDbArgs): Promise<void> {
           step(`Starting a throwaway database (${name})`);
 
           const started = startContainer(image.ref, name, db.adminPassword, {
+            keepUntil,
             onCreated: (c) => backstop.created(c),
             onRemoved: (c) => backstop.released(c),
             onUncertain: (n) => backstop.uncertainName(n),
@@ -567,8 +551,8 @@ export async function runTestDb(root: string, args: TestDbArgs): Promise<void> {
           }
         }
 
-        if (args.keep) {
-          printKept(started, db.appPassword);
+        if (keepUntil !== undefined) {
+          printKept(started, db.appPassword, keepUntil);
         }
       },
     );
@@ -632,15 +616,12 @@ export async function runTestDb(root: string, args: TestDbArgs): Promise<void> {
   }
 }
 
-function printKept(started: StartedContainer, appPassword: string): void {
+function printKept(started: StartedContainer, appPassword: string, keepUntil: number): void {
   console.log('');
-  info(`Kept ${started.name} on ${LOOPBACK}:${started.port} (throwaway; loopback only).`);
-  info(`  psql as superuser:  docker exec -it ${started.name} psql -U postgres -d ${APP_DATABASE}`);
-  info(
-    `  application URL:    postgres://companion:${appPassword}@${LOOPBACK}:${started.port}/${APP_DATABASE}?sslmode=disable`,
-  );
-  info(`  remove it:          docker rm -f -v ${started.name}`);
-  info('  (the next `make test-db` removes it anyway once it is more than two hours old)');
+
+  for (const line of keptNotice(started.name, started.port, appPassword, keepUntil, Date.now())) {
+    info(line);
+  }
 }
 
 /** One line for the table: what the retry did. */
@@ -785,7 +766,7 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   if (underTsxRelay()) {
-    // Not a refusal: it works, and the 2-hour reaper covers a leak. But say so BEFORE a container exists.
+    // Not a refusal: it works, and the stale-container reaper covers a leak. But say so BEFORE a container exists.
     note(TSX_RELAY_WARNING);
   }
 

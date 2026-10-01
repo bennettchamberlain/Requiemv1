@@ -238,12 +238,14 @@ started as `node --import tsx` (which is what the Makefile runs), 27 of 27 signa
 were handled cleanly. `scripts/xtask/makefile.test.ts` fails if a recipe goes
 back, and the command prints a warning when it finds itself under the wrapper.
 Anything a leak does leave is removed by the stale-container reaper on the next
-run (a `ci-testdb-*` container older than two hours that also carries the label).
+run — see [Stale containers and `--keep`](#stale-containers-and---keep) for what
+it removes and, as importantly, what it leaves alone.
 
 ```bash
 make test-db                                  # the whole be-api suite
 make test-db ARGS='src/domains/import'        # jest path patterns; any jest flag works too
 make test-db KEEP=1                           # leave the container up (prints how to connect)
+make test-db KEEP_FOR=12h                     # ...and say how long later runs must leave it alone (implies KEEP=1)
 make test-db WORKERS=2 DB_IMAGE=my/db:tag     # jest workers (default 4); another image
 make test-db NO_RETRY=1                       # a failing test file fails the run at once (see below)
 ```
@@ -270,8 +272,44 @@ bugs in the code under test, and the rest pass. Its evidence is only in the
 container's log. If it trips, the fault is the database or the harness, not
 (usually) the tests: look at the reported log lines first.
 
-Kept containers (`KEEP=1`) and the leftovers of a killed run are removed by the
-next `make test-db` once they are more than two hours old.
+#### Stale containers and `--keep`
+
+Every `make test-db` starts by removing what earlier runs left behind: a run that
+was `SIGKILL`ed, a machine that went to sleep mid-run, a `KEEP=1` database nobody
+came back to. But a database is not stale just because it is old — a `KEEP=1`
+container is exactly what a session runs jest against, in a loop, for hours — so a
+container named `ci-testdb-*` that carries the `ci.test-db=1` label is removed only
+when **all three** of these hold:
+
+1. **It is more than two hours old.**
+2. **It is outside its `--keep` window.** A container made with `--keep` is labelled
+   `ci.test-db.keep-until=<ISO time>` when it is created — 24 hours ahead by
+   default; `--keep-for 12h` (`KEEP_FOR=12h`) sets it, to at most 7 days, and
+   implies `--keep`. The reaper leaves it alone until that instant whether or not
+   anything is connected, because between two jest runs nothing is.
+3. **Nothing is connected to it.** The reaper counts the client backends in
+   `pg_stat_activity` from inside the container, so a database a sibling session is
+   running jest against survives even when it has no window (the TimescaleDB
+   workers, the checkpointer and the like are other backend types and do not
+   count). A container with nothing running in it (created, exited) has no
+   clients and is removed. One the reaper could not ask — a timeout, a database
+   still starting up, a paused container — is left alone and named, with the
+   `docker rm -f -v` to run by hand: *could not tell* is never read as *idle*.
+
+A container left alone is said so, with its name, its age and why.
+
+- **The window is a label, and a label cannot be changed on a running container.**
+  Choose `--keep-for` when you start it. To protect a container for longer than the
+  cap, or one that was made without `--keep`, `docker rename` it to anything that
+  does not start with `ci-testdb-`: the reaper only ever touches `ci-testdb-*`
+  names, and a rename keeps the same container, port and live connections. Remove it
+  yourself afterwards, by its new name.
+- **A container made by a checkout older than this has no window**, so only the
+  client count protects it — and an older checkout's `make test-db` still removes by
+  age alone. Rebase before relying on any of this.
+- **What it cannot see:** a run that has itself been going for more than two hours (a
+  badly overloaded machine) and happens, at that instant, to have no connection open
+  — between jest's first run and its serial retry, say. Only `--keep` covers that.
 
 **If Docker itself misbehaves**, the command says what it does and does not know.
 Every docker call on the start-up and clean-up path has a time limit — a daemon

@@ -6,6 +6,12 @@
  * daemon and not by the assertion. Every call is recorded, with the options it
  * carried, so a test can assert that each one had a timeout.
  *
+ * It also answers what the stale-container reaper asks: `ps -q`, `inspect` (the
+ * four-field listing format and `{{.State.Status}}`), and `exec` of the client
+ * count, from a container's `createdAt`, `status` and `clients`. The wording of
+ * the failures is the real daemon's (`container X is not running`, `No such
+ * container`), checked against the real image.
+ *
  * Test support only; nothing in the command imports it.
  */
 import { LABEL_KEY, LABEL_VALUE } from './testDb';
@@ -24,6 +30,12 @@ export interface FakeContainer {
   id: string;
   name: string;
   labels: Record<string, string>;
+  /** Epoch ms, as `docker inspect` reports `.Created`. Only the reaper's tests read it. */
+  createdAt?: number;
+  /** `docker inspect`'s `.State.Status`. Default `running`. */
+  status?: string;
+  /** What the client-count query returns inside it. Default 0. */
+  clients?: number;
 }
 
 export interface Call {
@@ -79,9 +91,68 @@ export class FakeDaemon {
       case 'ps':
         return this.ps(args);
 
+      case 'inspect':
+        return this.inspect(args);
+
+      case 'exec':
+        return this.exec(args);
+
       default:
         return ok();
     }
+  }
+
+  private find(target: string): FakeContainer | undefined {
+    return this.containers.find((c) => c.id === target || c.name === target);
+  }
+
+  /** `inspect --format <f> <id>...`: the listing format for any number of ids, `.State.Status` for one. */
+  private inspect(args: string[]): DockerResult {
+    const format = args[args.indexOf('--format') + 1] ?? '';
+    const targets = args.slice(args.indexOf('--format') + 2);
+
+    if (format.includes('.State.Status')) {
+      const c = this.find(targets[0] ?? '');
+
+      return c ? ok(`${c.status ?? 'running'}\n`) : failed(`error: no such object: ${targets[0]}`);
+    }
+
+    const found = targets.map((t) => this.find(t));
+    const lines = found
+      .filter((c): c is FakeContainer => c !== undefined)
+      .map(
+        (c) => `${c.id}|/${c.name}|${new Date(c.createdAt ?? 0).toISOString()}|${JSON.stringify(c.labels)}\n`,
+      );
+    const missing = targets.filter((_, i) => found[i] === undefined);
+
+    // Like the real one: what it found on stdout, and exit 1 if anything was missing.
+    return missing.length === 0
+      ? ok(lines.join(''))
+      : { status: 1, stdout: lines.join(''), stderr: `Error: No such object: ${missing.join(' ')}` };
+  }
+
+  /** `exec <id> psql ...`: the client count, or the daemon's reason it could not run. */
+  private exec(args: string[]): DockerResult {
+    const target = args[1] ?? '';
+    const c = this.find(target);
+
+    if (!c) {
+      return failed(`Error response from daemon: No such container: ${target}`);
+    }
+
+    const status = c.status ?? 'running';
+
+    if (status === 'paused') {
+      return failed(
+        `Error response from daemon: Container ${c.id} is paused, unpause the container before exec`,
+      );
+    }
+
+    if (status !== 'running') {
+      return failed(`Error response from daemon: container ${c.id} is not running`);
+    }
+
+    return ok(`${c.clients ?? 0}\n`);
   }
 
   private ps(args: string[]): DockerResult {
@@ -117,6 +188,10 @@ export class FakeDaemon {
             return true;
           }),
     );
+
+    if (args.includes('-q')) {
+      return ok(matches.map((c) => `${c.id}\n`).join(''));
+    }
 
     return ok(matches.map((c) => `${c.id}|${c.name}|${c.labels[LABEL_KEY] ?? ''}\n`).join(''));
   }

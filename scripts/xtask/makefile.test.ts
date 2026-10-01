@@ -15,6 +15,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 
+import { HELP } from './commands/test-db';
+
 /** The recipe lines (tab-indented, not comments) of one target. */
 function recipe(makefile: string, target: string): string[] {
   const lines = makefile.split('\n');
@@ -61,3 +63,33 @@ for (const command of ['test', 'test-db']) {
     assert.match(xtask[0], /\bnode --import tsx\b/, `'${command}' must run xtask as \`node --import tsx\``);
   });
 }
+
+test('every make variable `test-db --help` shows is passed on by the Makefile, as the flag it stands for', () => {
+  const line = recipe(makefile, 'test-db').find((l) => l.includes('scripts/xtask/index.ts')) ?? '';
+  // `make test-db KEEP=1 WORKERS=2 DB_IMAGE=my/db:1   # ...`: the NAME=value words of the make examples.
+  const variables = new Set(
+    [...HELP.matchAll(/^ {2}make test-db ([^#\n]*)/gm)].flatMap((m) =>
+      [...m[1].matchAll(/\b([A-Z][A-Z_]*)=/g)].map((v) => v[1]),
+    ),
+  );
+
+  // ARGS rides after `--`; the rest each become one flag.
+  for (const name of ['KEEP', 'KEEP_FOR', 'WORKERS', 'DB_IMAGE', 'NO_RETRY']) {
+    assert.ok(variables.has(name), `${name} is not in --help's make examples`);
+  }
+
+  for (const name of [...variables].filter((v) => v !== 'ARGS')) {
+    assert.match(
+      line,
+      new RegExp(`\\$\\(if \\$\\(${name}\\),--[a-z-]+`),
+      `${name} is shown in --help but not wired in the Makefile`,
+    );
+  }
+
+  assert.match(
+    line,
+    /\$\(if \$\(KEEP_FOR\),--keep-for \$\(KEEP_FOR\)\)/,
+    'KEEP_FOR becomes --keep-for <value>',
+  );
+  assert.match(line, /\$\(if \$\(KEEP\),--keep\)/, 'KEEP is still the bare flag');
+});

@@ -54,6 +54,10 @@ cd backend/apps/api && yarn test
 # FAILS instead of skipping), and fails on any unexplained skip or DB crash.
 # Never uses .env. See docs/CI.md.
 make test-db                                  # or ARGS='src/domains/import', KEEP=1
+# KEEP=1 leaves the container up, and later runs leave it alone for 24h and while
+# anything is connected (KEEP_FOR=12h sets the window). Without that, every run
+# removes any ci-testdb-* container older than 2h that nothing is connected to.
+# docs/CI.md#stale-containers-and---keep
 
 # The native suites, which `make test` does NOT cover (each checks its own
 # toolchain first — JDK 21 + an Android SDK via ANDROID_HOME; cargo + GTK/WebKit)
