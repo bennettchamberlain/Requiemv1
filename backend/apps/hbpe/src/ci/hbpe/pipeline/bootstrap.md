@@ -91,6 +91,14 @@ serialize to zero event tokens: the fix no-ops on exactly the shape it targets.
 Such a day is also wrongly kept out of tier C, so its stale rows can never be
 purged. `_TOKEN_DATE_BOUNDS_SQL` carries the predicate for the same reason.
 
+The status predicate, `event_status.LIVE_EVENT_SQL`, is shared the same way.
+Both reads leave out events that did not happen (`cancelled`, `no_show`,
+`skipped`, the calendar's own `DEAD_EVENT_STATUSES`), so `event_days` does too.
+Here the purge side matters most: a day whose last live event is cancelled after
+it was serialized has to drop out of `event_days`, or tier C never sees it. On a
+day older than the content budget nothing else rewrites it, so the cancelled
+meeting's tokens would stay for good.
+
 The three predicates the reads carry and `event_days` deliberately does **not**:
 the serializer's `JOIN hbpe.l1_event_cluster` (requiring the label here would be
 circular — the drain aims at this list, so no day could ever become labeled),
