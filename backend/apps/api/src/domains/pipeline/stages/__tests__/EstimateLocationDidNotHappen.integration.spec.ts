@@ -33,13 +33,13 @@ import {
  * AN EVENT THAT DID NOT HAPPEN NEITHER LENDS A COORDINATE NOR RECEIVES ONE.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * `enrich.estimate_location` v1 refused only a DELETED donor. A cancelled
+ * `enrich.estimate_location` v1 and v2 refused only a DELETED donor. A cancelled
  * meeting whose venue `enrich.geocode` had resolved, a no-show, a skipped
  * block, a prediction, or a Takeout reservation cancelled in its metadata
  * could each lend its coordinate to the nearest unlocated event. The target
  * side refused deleted and predicted rows but estimated a cancelled one.
  *
- * v2 applies one rule, `eventHappenedSql`, on both sides. What only a real
+ * v3 applies one rule, `eventHappenedSql`, on both sides. What only a real
  * database can show, and a stubbed `query` agrees with unconditionally:
  *
  *  1. every status `ci.events` allows is classified (the shared case table is
@@ -51,9 +51,9 @@ import {
  *  3. as a target, the sweep does not offer it, and a slice that carries it
  *     anyway (called off between sweep and slice) records a skip and writes
  *     nothing;
- *  4. the bump re-derives a v1 estimate that was copied from a cancelled
+ *  4. the bump re-derives an earlier estimate that was copied from a cancelled
  *     donor, through the real ledger;
- *  5. where no donor that happened is left, the v1 estimate stays. This stage
+ *  5. where no donor that happened is left, the earlier estimate stays. This stage
  *     never withdraws a coordinate. The test pins that, so the limit is
  *     visible rather than assumed.
  *
@@ -88,7 +88,7 @@ function declineReason({ lifecycle }: SeededLifecycleCase['case']): string {
   return lifecycle.isPredicted === true ? 'predicted_event' : 'event_did_not_happen';
 }
 
-describeWithDb(`enrich.estimate_location v2: events that did not happen (${availability.target})`, () => {
+describeWithDb(`enrich.estimate_location v3: events that did not happen (${availability.target})`, () => {
   let dataSource: DataSource;
   let runner: QueryRunner;
   let schemaLock: SchemaLock | null = null;
@@ -248,10 +248,10 @@ describeWithDb(`enrich.estimate_location v2: events that did not happen (${avail
 
   describe('the bump', () => {
     /**
-     * A v1 estimate, as v1 wrote it: copied from a cancelled meeting's
+     * An estimate as an earlier generation wrote it: copied from a cancelled meeting's
      * geocoded venue, and recorded `done` at the version before this one.
      */
-    async function seedV1Estimate(args: { withFallback: boolean; at: string }) {
+    async function seedEarlierEstimate(args: { withFallback: boolean; at: string }) {
       const ids = { estimated: randomUUID(), cancelled: randomUUID(), fallback: randomUUID() };
       const at = Date.parse(args.at);
       const minute = 60_000;
@@ -293,10 +293,10 @@ describeWithDb(`enrich.estimate_location v2: events that did not happen (${avail
         });
       }
 
-      const v1 = { id: ENRICH_ESTIMATE_LOCATION_STAGE_ID, version: ESTIMATE_LOCATION_VERSION - 1 };
-      await ledger().claim(v1, 'event', [ids.estimated], ctx.userId);
+      const earlier = { id: ENRICH_ESTIMATE_LOCATION_STAGE_ID, version: ESTIMATE_LOCATION_VERSION - 1 };
+      await ledger().claim(earlier, 'event', [ids.estimated], ctx.userId);
       await ledger().complete(
-        v1,
+        earlier,
         'event',
         new Map<string, StageResult>([[ids.estimated, { outcome: 'done', confidence: 0.4 }]]),
       );
@@ -328,8 +328,8 @@ describeWithDb(`enrich.estimate_location v2: events that did not happen (${avail
       return row;
     }
 
-    it('re-derives a v1 estimate copied from a cancelled donor', async () => {
-      const ids = await seedV1Estimate({ withFallback: true, at: '2021-03-02T16:00:00Z' });
+    it('re-derives an earlier estimate copied from a cancelled donor', async () => {
+      const ids = await seedEarlierEstimate({ withFallback: true, at: '2021-03-02T16:00:00Z' });
 
       expect(await sweepAndRun(ids.estimated)).toMatchObject({
         outcome: 'done',
@@ -347,14 +347,14 @@ describeWithDb(`enrich.estimate_location v2: events that did not happen (${avail
       });
     });
 
-    it('keeps a v1 estimate when no donor that happened is left, and records no donor', async () => {
+    it('keeps an earlier estimate when no donor that happened is left, and records no donor', async () => {
       // THE RESIDUE, pinned so it is a known limit rather than an assumption.
       // The stage only ever writes a donor's coordinate; it never clears one,
-      // so a row whose only donor was refused keeps what v1 copied. On the
+      // so a row whose only donor was refused keeps what was copied. On the
       // reference corpus no estimate had an event donor, so no row was left
       // like this. A change that withdraws such estimates has to change this
       // test, deliberately.
-      const ids = await seedV1Estimate({ withFallback: false, at: '2021-03-16T16:00:00Z' });
+      const ids = await seedEarlierEstimate({ withFallback: false, at: '2021-03-16T16:00:00Z' });
 
       expect(await sweepAndRun(ids.estimated)).toEqual({ outcome: 'skipped', reason: 'no_donor_in_window' });
       expect((await readEventLocations(query, [ids.estimated])).get(ids.estimated)).toMatchObject({

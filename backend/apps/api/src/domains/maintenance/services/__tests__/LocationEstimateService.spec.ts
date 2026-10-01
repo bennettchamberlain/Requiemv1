@@ -46,6 +46,21 @@ describe('LocationEstimateService.countCandidates', () => {
     expect(sql).toContain("metadata->>'location_source' = 'estimated'");
   });
 
+  it('never counts an event that names its own location — forced or not', async () => {
+    // Its coordinate is the geocoder's to resolve. A neighbour's fix pinned a
+    // calendar flight "Bangkok BKK" to the user's home (enrich.estimate_location
+    // v2 records the same rows as `skipped: has_location_name`). The clause sits
+    // OUTSIDE the forced-aware OR, so `forced` cannot re-admit them either.
+    const { service, dataSource } = makeService(async () => [{ count: '0' }]);
+
+    await service.countCandidates(USER, ['calendar'], 86400, true);
+
+    const [sql] = dataSource.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(
+      /\)\s*AND \(e\.location_name IS NULL OR btrim\(e\.location_name\) = ''\)\s*AND COALESCE\(e\.is_deleted, false\) = false/,
+    );
+  });
+
   it('with forced=true, widens the candidate predicate to include prior estimates', async () => {
     const { service, dataSource } = makeService(async () => [{ count: '7' }]);
 
@@ -74,7 +89,9 @@ describe('LocationEstimateService — an event that did not happen neither lends
 
   it('refuses a donor that did not happen in the LATERAL that picks it, not only in the count', async () => {
     let call = 0;
-    const { service, dataSource } = makeService(async () => (++call === 1 ? [{ count: '1' }] : []));
+    const { service, dataSource } = makeService(async () =>
+      ++call === 1 ? [{ count: '1' }] : [{ count: 0 }],
+    );
 
     await service.estimateBatch(USER, { limit: 10, maxGapHours: 24, sourceSystems: ['calendar'] });
 
@@ -109,7 +126,10 @@ describe('LocationEstimateService.estimateBatch', () => {
         return [{ count: '5' }];
       } // countCandidates
 
-      return [{ event_id: 'a' }, { event_id: 'b' }]; // UPDATE ... RETURNING
+      // The UPDATE's counting CTE, answered the way the driver answers a
+      // SELECT. Not 2: that is the constant `.length` of TypeORM's
+      // `[rows, rowCount]` pair, which is what a bare UPDATE used to report.
+      return [{ count: 3 }];
     });
 
     const res = await service.estimateBatch(USER, {
@@ -118,9 +138,13 @@ describe('LocationEstimateService.estimateBatch', () => {
       sourceSystems: ['calendar', 'uber'],
     });
 
-    expect(res).toEqual({ candidates: 5, estimated: 2 });
+    expect(res).toEqual({ candidates: 5, estimated: 3 });
 
     const [sql, params] = dataSource.query.mock.calls[1] as [string, unknown[]];
+    // The UPDATE sits inside a CTE and the OUTER command is the SELECT that
+    // counts it; with the UPDATE outermost the count reads TypeORM's pair.
+    expect(sql).toMatch(/estimated AS \(\s*UPDATE ci\.events tgt/);
+    expect(sql).toMatch(/RETURNING 1\s*\)\s*SELECT count\(\*\)::int AS count FROM estimated$/);
     // params: [userId, sourceSystems, limit, maxGapSeconds, ESTIMATED_CONFIDENCE, maxGapHours, forced]
     expect(params[0]).toBe(USER);
     expect(params[1]).toEqual(['calendar', 'uber']);
@@ -132,6 +156,7 @@ describe('LocationEstimateService.estimateBatch', () => {
 
     // Safety invariants encoded in the SQL.
     expect(sql).toContain('location_coordinates IS NULL'); // candidate predicate (NULL coords admitted)
+    expect(sql).toContain("(e.location_name IS NULL OR btrim(e.location_name) = '')"); // named rows are the geocoder's
     expect(sql).toContain("|| jsonb_build_object('location_source', 'estimated')");
     expect(sql).toContain('is_inferred = true');
     expect(sql).toContain('COALESCE(e.is_predicted, false) = false'); // never abort batch on a predicted row
@@ -152,7 +177,7 @@ describe('LocationEstimateService.estimateBatch', () => {
         return [{ count: '3' }];
       }
 
-      return [{ event_id: 'x' }];
+      return [{ count: 1 }];
     });
 
     const res = await service.estimateBatch(USER, {
@@ -175,7 +200,9 @@ describe('LocationEstimateService.estimateBatch', () => {
 
   it('converts a fractional maxGapHours to whole seconds', async () => {
     let call = 0;
-    const { service, dataSource } = makeService(async () => (++call === 1 ? [{ count: '1' }] : []));
+    const { service, dataSource } = makeService(async () =>
+      ++call === 1 ? [{ count: '1' }] : [{ count: 0 }],
+    );
 
     await service.estimateBatch(USER, { limit: 10, maxGapHours: 1.5, sourceSystems: ['calendar'] });
 

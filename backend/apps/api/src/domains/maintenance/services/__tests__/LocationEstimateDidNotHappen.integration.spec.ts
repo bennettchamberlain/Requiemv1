@@ -25,7 +25,7 @@ import {
 /**
  * The legacy sweep (`POST /api/maintenance/estimate-locations`, the
  * `estimate_locations` self-heal leg) held to the rule `enrich.estimate_location`
- * v2 follows: an event that did not happen neither lends a coordinate nor
+ * v3 follows: an event that did not happen neither lends a coordinate nor
  * receives one. Same cases, same fixtures, from
  * `domains/__tests__/support/eventLifecycleFixtures.ts`. See
  * `pipeline/stages/__tests__/EstimateLocationDidNotHappen.integration.spec.ts`

@@ -348,12 +348,7 @@ export function derivePhoneRegion(input: {
 
 /** What kind of North American number ten digits are. Only `geographic` is ever evidence. */
 export type NanpNumberClass =
-  | 'geographic'
-  | 'toll_free'
-  | 'premium'
-  | 'non_geographic'
-  | 'service'
-  | 'invalid';
+  'geographic' | 'toll_free' | 'premium' | 'non_geographic' | 'service' | 'invalid';
 
 /** Toll-free, and the NPAs NANPA reserves for toll-free expansion. */
 const TOLL_FREE_NPAS: ReadonlySet<string> = new Set([
@@ -463,14 +458,7 @@ export function nanpNumberClass(ten: string): NanpNumberClass {
  * and it outranks every other reading of them ({@link PhoneHolders.resolve}).
  */
 export type PhoneParseStatus =
-  | 'ok'
-  | 'invalid'
-  | 'service'
-  | 'no_region'
-  | 'extension'
-  | 'short'
-  | 'letters'
-  | 'fax';
+  'ok' | 'invalid' | 'service' | 'no_region' | 'extension' | 'short' | 'letters' | 'fax';
 
 /** One raw phone value, read. */
 export interface ParsedPhone {
@@ -483,6 +471,11 @@ export interface ParsedPhone {
    * The last ten digits (all of them when fewer) — `normalizePhone`'s join
    * key, for every status, so a refused value can still be matched to the
    * lines it collides with. Empty when the value has no digits.
+   *
+   * For a value carrying an extension this is the key the join key USED to
+   * give it: `normalizePhone` now refuses such a value outright, but records
+   * written before it did hold the truncation in `phones`, and this is what
+   * lets {@link PhoneHolders.resolve} see the refusal on that same line.
    */
   l10: string;
 }
@@ -996,13 +989,7 @@ export type PhoneCheckReason =
 
 /** Why shared digits are not evidence at all. */
 export type PhoneUnusableReason =
-  | 'over_common'
-  | 'owner_number'
-  | 'service'
-  | 'invalid'
-  | 'extension'
-  | 'short'
-  | 'fax';
+  'over_common' | 'owner_number' | 'service' | 'invalid' | 'extension' | 'short' | 'fax';
 
 /** Where the country of an exact match came from. */
 export type PhoneBasis = 'stated_both' | 'stated_one' | 'inferred_both';

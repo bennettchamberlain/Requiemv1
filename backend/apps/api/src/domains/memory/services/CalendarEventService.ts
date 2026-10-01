@@ -24,7 +24,12 @@ import {
   INGEST_REFRESH_COLUMNS,
 } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
-import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
+import {
+  ContentRemovedEvent,
+  EventCreatedEvent,
+  EventRemovedEvent,
+  EventUpdatedEvent,
+} from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { BaseEntity } from '../entities/BaseEntity';
@@ -38,6 +43,7 @@ import type { OccurrenceSpec } from '../recurrence/types';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
+import { purgeEventAggregates } from './eventPurge';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 interface Options {
@@ -1469,12 +1475,21 @@ export class CalendarEventService {
    * disappears from the explorer exactly as a physical delete would — but
    * nothing that referenced it is cascaded away and {@link restore} can bring it
    * back verbatim.
+   *
+   * The tombstone covers BOTH halves of the aggregate. Readers of `ci.events`
+   * decide liveness from `is_deleted`, but graph readers only ever see the
+   * `ci.entities` base row and decide it from `is_active` — node reads and
+   * counts in GraphUtilityService, and the deterministic edge matrix, whose
+   * endpoint join would otherwise keep deriving fresh edges onto a deleted
+   * event. Flipping one flag without the other leaves an event that is gone
+   * from one family of readers and present in the other.
    */
   async remove(context: ServiceContext, id: string): Promise<boolean> {
     let removedAt: { userId: string; time: Date | null } | undefined;
     const removed = await this.aggregate.remove(context, id, {
       withinTx: async ({ manager, before }) => {
         removedAt = { userId: before.userId, time: before.startTime };
+        await manager.getRepository(EventBaseEntity).update({ id }, { isActive: false });
         const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
         await this.graphDeltaWriter.entityDeleted({
           entityId: id,
@@ -1507,12 +1522,17 @@ export class CalendarEventService {
    * accidental deletion is recoverable (this is what the "Undo" affordance on
    * the delete toast calls). A no-op for an event that was never deleted.
    *
+   * Reactivates the base row too, the mirror of {@link remove}. A tombstone
+   * written before `remove` deactivated it has an active base row already, so
+   * the write changes nothing there.
+   *
    * @returns the restored event, or `null` when the caller has no tombstoned
    *   event with that id.
    */
   async restore(context: ServiceContext, id: string): Promise<Event | null> {
     const restored = await this.aggregate.restore(context, id, {
       withinTx: async ({ manager, after }) => {
+        await manager.getRepository(EventBaseEntity).update({ id }, { isActive: true });
         const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
         await this.graphDeltaWriter.entityCreated({
           entityId: id,
@@ -1537,6 +1557,58 @@ export class CalendarEventService {
     await this.hbpeNotify?.notifyEvents(restored.userId, restored.startTime);
 
     return this.composeOne(restored);
+  }
+
+  /**
+   * Permanently deletes events, with their attached content and everything that
+   * only exists because of them. This is the other end from {@link remove}:
+   * that moves an event to the trash and {@link restore} brings it back, this
+   * cannot be undone. See {@link purgeEventAggregates} for what goes, and for
+   * what a plain delete of the base row would have left behind, or failed on.
+   *
+   * It works on an event in any state, including one already in the trash, so
+   * "empty the trash" is the same call. An event that arrived from a source that
+   * syncs again will arrive again: only the tombstone, which this removes, stood
+   * in the way of that.
+   *
+   * Everything is one transaction. Search is told afterwards, HBPE is told to
+   * re-serialise the days the events were on, and the ids that were not the
+   * caller's, or no longer exist, are simply left out of the result.
+   *
+   * @returns the ids that were purged, and the content that went with them.
+   */
+  async purge(
+    context: UserServiceContext,
+    ids: string[],
+  ): Promise<{ eventIds: string[]; contentIds: string[] }> {
+    const requested = Array.from(new Set(ids));
+
+    if (requested.length === 0) {
+      return { eventIds: [], contentIds: [] };
+    }
+
+    const purged = await this.eventRepository.manager.transaction((manager) =>
+      purgeEventAggregates(manager, context.userId, requested),
+    );
+
+    // The index rows were deleted in the transaction. These tell anything else
+    // that listens, and are what announces a removal everywhere else in the app.
+    for (const event of purged.events) {
+      await this.signallingEventService.send(EventRemovedEvent, { eventId: event.id });
+    }
+
+    for (const contentId of purged.contentIds) {
+      await this.signallingEventService.send(ContentRemovedEvent, { contentId });
+    }
+
+    if (purged.events.length > 0) {
+      await this.hbpeNotify?.notifyEvents(
+        context.userId,
+        purged.events.map((event) => event.startTime),
+      );
+    }
+
+    return { eventIds: purged.events.map((event) => event.id), contentIds: purged.contentIds };
   }
 
   async search(context: ServiceContext, query: SearchEventDto): Promise<Event[]> {
