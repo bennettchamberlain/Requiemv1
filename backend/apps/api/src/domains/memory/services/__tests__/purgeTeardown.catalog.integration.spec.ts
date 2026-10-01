@@ -22,10 +22,13 @@ import { HBPE_LINKS } from '../purgeTeardown';
  * appliance the first time it meets a row in it. A table in the list and not in
  * the catalog is a delete that has been dead code since the constraint changed.
  *
- * Items and communications have no purge of their own. They go through the generic
- * node delete, which fails the same way on the same kind of table, so the guard
- * covers their detail tables too and names, one by one, what it has accepted: the
- * only foreign keys that refuse such a delete today.
+ * Items and communications have purges of their own (`ItemService.purge`,
+ * `CommunicationService.purge`), and the same hazard: a foreign key onto
+ * `ci.objects` or `ci.communications` with no `ON DELETE` action refuses the delete
+ * of every row it holds. So the guard covers their detail tables too, and names,
+ * one by one, what it has accepted: the only foreign keys that refuse such a delete
+ * today. A key that is `ON DELETE SET NULL` never refuses, so it is not seen here:
+ * what each of those does to an item is decided, and tested, in `itemPurge.ts`.
  *
  * The same goes for `ci.entities` itself. A foreign key onto the base row with no
  * `ON DELETE` action refuses the delete of every node it holds, whatever its type,
@@ -57,7 +60,7 @@ const DETAIL_TABLES = ['ci.events', 'ci.content', 'ci.objects', 'ci.communicatio
  */
 const ACCEPTED_ON_DETAIL_TABLES: Record<string, string> = {
   'ci.objects <- ci.objects.parent_object_id':
-    'An item that is another item’s parent is refused, as it is by `ItemService.remove`. The tool reports it as CONSTRAINT_VIOLATION, and the delete changes nothing.',
+    'A DECISION, not an oversight: the purge refuses an item that is another item’s parent when a child would be left behind, as `ItemService.remove` does, and was told to. The tool reports CONSTRAINT_VIOLATION and nothing changes, and naming the parts in the same call is what lets the kit go. Detaching the parts instead would make this key one the purge clears, not one it accepts.',
 };
 
 /**

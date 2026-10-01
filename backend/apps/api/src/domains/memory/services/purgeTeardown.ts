@@ -116,27 +116,72 @@ export async function clearHbpeLinks(
 }
 
 /**
- * Deletes every row that names one of these event or content ids and has no
- * foreign key to say so, in the caller's transaction.
+ * What a kind of node is called in the rows that name it by id and have no
+ * foreign key to say so. Two of those tables key a row by something other than
+ * the node's id alone, so {@link deleteBareReferences} has to be told which kind
+ * it is clearing, and a caller cannot leave it out.
+ */
+export interface BareReferenceKind {
+  /**
+   * The `ci.record_sources.record_table` its provenance is ledgered under: the
+   * name of its detail table, which is not always the name of the node
+   * (`objects` for an item).
+   */
+  ledgerTable: 'events' | 'content' | 'communications' | 'objects';
+  /**
+   * The `ci.identifier_claims.subject_type` the person-link stages write its
+   * participants' claims under. Only an event and a communication have
+   * participants, and the claims are keyed by the subject's id, so they name it
+   * with no foreign key and carry the very email addresses and phone numbers a
+   * forget is meant to erase.
+   */
+  claimSubjectType?: 'event' | 'communication';
+}
+
+export const EVENT_REFERENCES: BareReferenceKind = { ledgerTable: 'events', claimSubjectType: 'event' };
+export const CONTENT_REFERENCES: BareReferenceKind = { ledgerTable: 'content' };
+export const COMMUNICATION_REFERENCES: BareReferenceKind = {
+  ledgerTable: 'communications',
+  claimSubjectType: 'communication',
+};
+export const ITEM_REFERENCES: BareReferenceKind = { ledgerTable: 'objects' };
+
+/**
+ * Deletes every row that names one of these event, content, communication or
+ * item ids and has no foreign key to say so, in the caller's transaction.
  *
  * `ci.relationships` has no foreign key to `ci.entities`, and neither do the
  * provenance ledger, the pipeline bookkeeping, the tags and categories, the
- * search index or the graph deltas. Deleting the node leaves each of them
- * pointing at nothing, and the nightly orphan sweep only reaches three of the
- * search tables. The deltas matter most: a node's `created` delta carries its
- * title, and a `deleted` one its old name.
+ * search index, the graph deltas or the identifier claims. Deleting the node
+ * leaves each of them pointing at nothing, and the nightly orphan sweep only
+ * reaches three of the search tables. The deltas matter most: a node's `created`
+ * delta carries its title, and a `deleted` one its old name.
  *
- * `ci.relationships` is cleaned in BOTH directions.
+ * `ci.relationships` is cleaned in BOTH directions, and the deltas that recorded
+ * those edges go with them. A delta names an edge's endpoints and carries its
+ * properties, so once the edge is deleted it describes something that no longer
+ * exists. They are found by the relationship id the delete returns, which
+ * `graph_deltas_relationship_idx` serves, and not by endpoint, which nothing
+ * indexes: a scan of every delta ever written, once per forget.
  *
- * The ledger is cleaned for the two record tables the callers purge, `events`
- * and `content`. Raw SQL for the search tables because this domain cannot import
- * the search domains (they import this one), as
+ * The ledger is cleaned for the one record table `kind` names, and the identifier
+ * claims for the one subject type, so that a caller says what it is clearing and
+ * cannot clear another kind's rows by accident. Raw SQL for the search tables
+ * because this domain cannot import the search domains (they import this one), as
  * `GraphUtilityService.dropStalePersonIndex` and the merge services do for their
  * own `ci_search` rows. Done here, in the transaction, rather than left to the
  * removal events the caller announces afterwards, so the index is clean when the
  * transaction commits and not whenever a queue gets round to it.
+ *
+ * A pipeline stage that is mid-flight for one of these ids can still write a row
+ * for it after this commits: none of these tables has a foreign key to hold it
+ * off, and the nightly sweep reaches only three of them.
  */
-export async function deleteBareReferences(manager: EntityManager, ids: string[]): Promise<void> {
+export async function deleteBareReferences(
+  manager: EntityManager,
+  ids: string[],
+  kind: BareReferenceKind,
+): Promise<void> {
   if (ids.length === 0) {
     return;
   }
@@ -144,13 +189,28 @@ export async function deleteBareReferences(manager: EntityManager, ids: string[]
   const exec = (sql: string) => manager.query(sql, [ids]);
 
   await exec(
-    `DELETE FROM ci.relationships
-      WHERE from_entity_id = ANY($1::uuid[]) OR to_entity_id = ANY($1::uuid[])`,
+    `WITH gone AS (
+       DELETE FROM ci.relationships
+        WHERE from_entity_id = ANY($1::uuid[]) OR to_entity_id = ANY($1::uuid[])
+       RETURNING relationship_id
+     )
+     DELETE FROM ci.graph_deltas
+      WHERE relationship_id IN (SELECT relationship_id FROM gone)`,
   );
-  await exec(
+  await manager.query(
     `DELETE FROM ci.record_sources
-      WHERE record_table IN ('events', 'content') AND record_id = ANY($1::uuid[])`,
+      WHERE record_table = $2 AND record_id = ANY($1::uuid[])`,
+    [ids, kind.ledgerTable],
   );
+
+  if (kind.claimSubjectType !== undefined) {
+    await manager.query(
+      `DELETE FROM ci.identifier_claims
+        WHERE subject_type = $2 AND subject_id = ANY($1::uuid[])`,
+      [ids, kind.claimSubjectType],
+    );
+  }
+
   await exec('DELETE FROM ci.pipeline_state WHERE entity_id = ANY($1::uuid[])');
   await exec('DELETE FROM ci.pipeline_dead_letters WHERE entity_id = ANY($1::uuid[])');
   await exec('DELETE FROM ci.graph_deltas WHERE entity_id = ANY($1::uuid[])');

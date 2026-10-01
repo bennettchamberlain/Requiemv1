@@ -24,6 +24,7 @@ import type {
 
 import { CtiAggregate } from './CtiAggregate';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
+import { type PurgedItems, purgeItemAggregates } from './itemPurge';
 
 /** Page size {@link ItemService.findPage} uses when the caller names none. */
 const DEFAULT_ITEM_PAGE_SIZE = 50;
@@ -895,5 +896,39 @@ export class ItemService {
     });
 
     return true;
+  }
+
+  /**
+   * Permanently deletes items, with everything that only exists because of them.
+   * This is `memory.forget`'s `archive_and_delete` for an `Item` node, and the
+   * other end from {@link remove}: see {@link purgeItemAggregates} for what goes,
+   * for what is refused (an item that is another item's parent), and for how it
+   * differs from `remove`.
+   *
+   * The duplicates that were merged into an item go with it, and are named in the
+   * result separately because nobody asked for them.
+   *
+   * Everything is one transaction. Search is told afterwards, once for every item
+   * that went, and the ids that were not the caller's, or no longer exist, are
+   * simply left out of the result.
+   */
+  async purge(context: UserServiceContext, ids: string[]): Promise<PurgedItems> {
+    const requested = Array.from(new Set(ids));
+
+    if (requested.length === 0) {
+      return { itemIds: [], duplicateIds: [] };
+    }
+
+    const purged = await this.itemRepository.manager.transaction((manager) =>
+      purgeItemAggregates(manager, context.userId, requested),
+    );
+
+    // The index rows were deleted in the transaction. This tells anything else
+    // that listens, and is what announces a removal everywhere else in the app.
+    for (const itemId of [...purged.itemIds, ...purged.duplicateIds]) {
+      await this.eventService.send(ItemRemovedEvent, { itemId });
+    }
+
+    return purged;
   }
 }
