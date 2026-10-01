@@ -7,20 +7,25 @@
  * Every function that could touch a container takes the container's NAME or ID
  * from a caller that got it from {@link listOurContainers} or from creating it
  * itself. Nothing here lists, inspects, execs into or removes a container by
- * pattern, and `removeContainers` refuses an id it was not told is ours.
+ * pattern, and `removeContainers` and `probeClients` (which execs into a
+ * listed candidate to count its clients before the reaper decides) both refuse
+ * a container that is not ours.
  */
 import { spawnSync } from 'node:child_process';
 
 import {
   CONTAINER_PREFIX,
+  KEEP_UNTIL_LABEL_KEY,
   LABEL_KEY,
   LABEL_VALUE,
   PS_FORMAT,
   escapeRegex,
   isOurs,
+  keepUntilLabelValue,
   parseDockerPort,
   parseInspectContainers,
   parsePsRows,
+  type ClientProbe,
   type ContainerInfo,
 } from './testDb';
 
@@ -208,6 +213,98 @@ export function listOurContainers(run: DockerFn = docker): OurContainers {
   }
 
   return { containers };
+}
+
+/**
+ * What the daemon says about a container's lifecycle (`State.Status`: running, paused, created, exited, …).
+ * `gone` is the daemon's own "no such object": the container went between the listing and now.
+ */
+export type ContainerStatus =
+  { state: 'known'; status: string } | { state: 'gone' } | { state: 'unknown'; detail: string };
+
+/** One container's `State.Status`, asked by id. Only the daemon's own answer is "gone"; a timeout that merely mentions it is `unknown`. */
+export function containerStatus(c: ContainerInfo, run: DockerFn = docker): ContainerStatus {
+  const res = run(['inspect', '--format', '{{.State.Status}}', c.id], { timeoutMs: DOCKER_QUERY_TIMEOUT_MS });
+
+  if (res.status === 0) {
+    const status = res.stdout.trim();
+
+    return status === ''
+      ? { state: 'unknown', detail: 'docker inspect printed nothing' }
+      : { state: 'known', status };
+  }
+
+  if (res.status !== null && /no such (object|container)/i.test(`${res.stderr}${res.stdout}`)) {
+    return { state: 'gone' };
+  }
+
+  return { state: 'unknown', detail: firstLineOf(res) };
+}
+
+/**
+ * The count of connected clients, as the superuser inside the container over its local socket.
+ *
+ *  - `backend_type = 'client backend'` is a real connection: the TimescaleDB launcher and scheduler, the
+ *    autovacuum launcher, the checkpointer and the rest are other types, and counting them would make
+ *    every database look busy for ever.
+ *  - `pid <> pg_backend_pid()` leaves out the probe's own session, which is a client backend too: a count
+ *    that included it would never be zero.
+ *  - It is connected to `postgres`, not `companion`: `pg_stat_activity` covers every database, and
+ *    `postgres` exists from the first moment (a container killed before bootstrap has no `companion`).
+ */
+export const CLIENT_COUNT_SQL =
+  "select count(*) from pg_stat_activity where backend_type = 'client backend' and pid <> pg_backend_pid()";
+
+/** States in which nothing is running in a container, so nothing can be connected to it. `paused` and `restarting` are NOT among them: connections survive a pause. */
+const NO_PROCESS_STATES: ReadonlySet<string> = new Set(['created', 'exited', 'dead', 'removing']);
+
+/**
+ * How many clients are connected to the database in a CANDIDATE for reaping — asked from inside it, so a
+ * client on the published port, one on the docker network and one in the container itself all count.
+ *
+ * `unknown` is a first-class answer, exactly as it is for a removal: a probe that timed out, found the
+ * database starting up, or printed something unreadable says nothing about whether anyone is connected,
+ * and the caller must leave the container alone. The one failure that IS an answer is a container with
+ * nothing running in it (or none at all any more): it has no clients, and a reaper that could not remove
+ * those would stop cleaning up the leaks it exists for.
+ *
+ * Refuses a container that is not ours, like {@link removeContainers}, and execs by id.
+ */
+export function probeClients(c: ContainerInfo, run: DockerFn = docker): ClientProbe {
+  if (!isOurs(c)) {
+    throw new Error(
+      `refusing to look inside '${c.name}': it is not a ci-testdb container carrying the ci.test-db label`,
+    );
+  }
+
+  // A psql forks in the container and connects to Postgres: more work than a lookup, so the listing's budget.
+  const res = run(
+    ['exec', c.id, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-At', '-c', CLIENT_COUNT_SQL],
+    { timeoutMs: DOCKER_LIST_TIMEOUT_MS },
+  );
+
+  if (res.status === 0) {
+    const printed = res.stdout.trim();
+
+    return /^\d+$/.test(printed)
+      ? { state: 'counted', clients: Number(printed) }
+      : { state: 'unknown', detail: `psql printed ${JSON.stringify(printed.slice(0, 60))}, not a count` };
+  }
+
+  const why = firstLineOf(res);
+  const status = containerStatus(c, run);
+
+  if (status.state === 'gone' || (status.state === 'known' && NO_PROCESS_STATES.has(status.status))) {
+    return { state: 'no-process' };
+  }
+
+  return {
+    state: 'unknown',
+    detail:
+      status.state === 'known'
+        ? `${why}; the container is ${status.status}`
+        : `${why}; its state could not be read either (${status.detail})`,
+  };
 }
 
 /** What we know about a container the moment `docker run` has returned its id. */
@@ -456,6 +553,12 @@ export interface StartOptions {
    * which would also remove a stranger's container of that name.
    */
   onUncertain?: (name: string) => void;
+  /**
+   * `--keep`: the instant (epoch ms) before which the stale-container reaper must leave this container
+   * alone. Written into its labels here, at creation, because a running container's labels cannot be
+   * changed afterwards. Absent for a container that is removed at the end of its own run.
+   */
+  keepUntil?: number;
   /** The docker CLI. Tests substitute a fake. */
   run?: DockerFn;
   /** Blocking sleep between attempts to read the published port, and between removal attempts. Tests substitute a no-op. */
@@ -523,6 +626,9 @@ export function startContainer(
       name,
       '--label',
       `${LABEL_KEY}=${LABEL_VALUE}`,
+      ...(opts.keepUntil === undefined
+        ? []
+        : ['--label', `${KEEP_UNTIL_LABEL_KEY}=${keepUntilLabelValue(opts.keepUntil)}`]),
       '--shm-size=1g',
       '-e',
       'PASSWORD',
