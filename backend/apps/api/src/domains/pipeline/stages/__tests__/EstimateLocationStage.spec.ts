@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { DataSource } from 'typeorm';
 
+import { DEAD_EVENT_STATUSES, LIVE_EVENT_SQL } from '@ci/domains/memory';
+
 import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
 import { databaseAvailability, resolveConnection } from '../../__tests__/harness/pipelineHarness';
@@ -16,6 +18,9 @@ import {
   ESTIMATED_CONFIDENCE,
   EstimateLocationStage,
   estimateLocationStageVersion,
+  eventHappenedSql,
+  liveEventStatusSql,
+  RESERVATION_CANCELED_KEY,
 } from '../enrich/EstimateLocationStage';
 import { FORWARD_GEOCODE_PROVIDER_GENERATION } from '../enrich/GeocodeStage';
 
@@ -72,6 +77,8 @@ interface SourceRow {
   source_system: string;
   is_deleted: boolean | null;
   is_predicted: boolean | null;
+  status: string | null;
+  metadata: Record<string, unknown>;
   /** The stage's OUTPUT columns. Nothing in selection may ever read these. */
   has_coordinates: boolean;
   location_source: string | null;
@@ -84,6 +91,8 @@ function eventRow(n: number, overrides: Partial<SourceRow> = {}): SourceRow {
     source_system: 'calendar',
     is_deleted: false,
     is_predicted: false,
+    status: 'confirmed',
+    metadata: {},
     has_coordinates: false,
     location_source: null,
     ...overrides,
@@ -115,6 +124,7 @@ interface LoadedRow {
   has_location_name: boolean;
   is_deleted: boolean | null;
   is_predicted: boolean | null;
+  did_not_happen: boolean;
 }
 
 function loadedRow(n: number, overrides: Partial<LoadedRow> = {}): LoadedRow {
@@ -125,6 +135,7 @@ function loadedRow(n: number, overrides: Partial<LoadedRow> = {}): LoadedRow {
     has_location_name: false,
     is_deleted: false,
     is_predicted: false,
+    did_not_happen: false,
     ...overrides,
   };
 }
@@ -207,15 +218,19 @@ function ledgerKey(entityType: string, entityId: string, stage: string): string 
 /**
  * The stage's applicability predicate, mirrored in TypeScript.
  *
- * Kept faithful to `ESTIMATE_LOCATION_SOURCE.predicate`: a live, non-predicted
- * physical-presence event. Note what it does NOT consult —
- * `location_coordinates` or `metadata->>'location_source'`, the two columns the
- * service's predicate is built out of.
+ * Kept faithful to `ESTIMATE_LOCATION_SOURCE.predicate`: a physical-presence
+ * event that happened — not deleted, not predicted, not called off. Note what
+ * it does NOT consult — `location_coordinates` or
+ * `metadata->>'location_source'`, the two columns the service's predicate is
+ * built out of. Postgres evaluates the real one in
+ * `EstimateLocationDidNotHappen.integration.spec.ts`.
  */
 function isApplicable(row: SourceRow): boolean {
   return (
     (row.is_deleted ?? false) === false &&
     (row.is_predicted ?? false) === false &&
+    !(DEAD_EVENT_STATUSES as readonly string[]).includes(row.status ?? 'confirmed') &&
+    String(row.metadata[RESERVATION_CANCELED_KEY] ?? '') !== 'true' &&
     ESTIMATE_SOURCE_SYSTEMS.includes(row.source_system)
   );
 }
@@ -385,6 +400,26 @@ describe('EstimateLocationStage — candidate selection asks the LEDGER, not loc
     expect(ids).toEqual([eventId(1), eventId(6)]);
   });
 
+  it('excludes events that did not happen, and keeps the near misses (v3)', async () => {
+    const { stage } = makeStage();
+    const reservation = { Kind: 'reservation', Source: 'Google' };
+    const h = makeLedgerHarness([
+      eventRow(1, { status: 'cancelled' }),
+      eventRow(2, { status: 'no_show' }),
+      eventRow(3, { status: 'skipped' }),
+      eventRow(4, { source_system: 'google_purchases', metadata: { ...reservation, Canceled: true } }),
+      // Still live on the calendar, so still estimable.
+      eventRow(5, { status: 'tentative' }),
+      eventRow(6, { status: 'rescheduled' }),
+      eventRow(7, { is_predicted: null }),
+      eventRow(8, { source_system: 'google_purchases', metadata: { ...reservation, Canceled: false } }),
+    ]);
+
+    const ids = await h.service.selectStale(stage as never, USER, null, 10);
+
+    expect(ids).toEqual([eventId(5), eventId(6), eventId(7), eventId(8)]);
+  });
+
   it('stops re-selecting a row with no donor, and re-opens it on a bump', async () => {
     // The service has no way to express this: a candidate with no donor is simply
     // not filled, so it is counted again on every single run forever.
@@ -485,6 +520,75 @@ describe('EstimateLocationStage — the version derives from the geocoder its do
     expect(estimateLocationStageVersion({ [ENRICH_ESTIMATE_LOCATION_STAGE_ID]: () => 99 })).toBe(
       ESTIMATE_LOCATION_VERSION,
     );
+  });
+});
+
+describe('EstimateLocationStage — an event that did not happen neither lends nor receives (v3)', () => {
+  // Proven against Postgres, case by case, in
+  // EstimateLocationDidNotHappen.integration.spec.ts. These pin the text, which
+  // is what catches an equivalent mutant: dropping a COALESCE from a column
+  // that is NOT NULL today changes nothing Postgres can show.
+  const ctx = { userId: USER };
+
+  /**
+   * The rule for a donor aliased `n`, as both estimators must interpolate it.
+   * `LocationEstimateService.spec.ts` pins its copy to this same text.
+   */
+  const HAPPENED_N =
+    'COALESCE(n.is_deleted, false) = false ' +
+    'AND COALESCE(n.is_predicted, false) = false ' +
+    `AND ${LIVE_EVENT_SQL.replace('event.status', 'n.status')} ` +
+    "AND COALESCE(n.metadata->>'Canceled', '') <> 'true'";
+
+  it("reads status through the calendar's own LIVE_EVENT_SQL, re-aliased and nothing else", () => {
+    expect(liveEventStatusSql('event')).toBe(LIVE_EVENT_SQL);
+  });
+
+  it('states the rule in the text the legacy service states it in', () => {
+    expect(eventHappenedSql('n')).toBe(HAPPENED_N);
+    expect(RESERVATION_CANCELED_KEY).toBe('Canceled');
+  });
+
+  it('applies the one rule to the sweep, the donor branch and the load', async () => {
+    const h = makeStage([loadedRow(1)]);
+
+    await h.stage.run(ctx, [eventId(1)]);
+
+    expect(h.stage.source.predicate).toContain(eventHappenedSql('s'));
+    expect(h.update()!.sql).toContain(`AND ${eventHappenedSql('n')} AND`);
+    expect(h.statements[0].sql).toContain(`NOT (${eventHappenedSql('e')}) AS did_not_happen`);
+  });
+
+  it('SKIPS a row called off between the sweep and the slice, and writes nothing', async () => {
+    const h = makeStage([loadedRow(1, { did_not_happen: true })]);
+
+    const results = await h.stage.run(ctx, [eventId(1)]);
+
+    expect(results.get(eventId(1))).toEqual({ outcome: 'skipped', reason: 'event_did_not_happen' });
+    expect(h.update()).toBeUndefined();
+  });
+
+  it('keeps the more specific reason for a deleted or predicted row', async () => {
+    // `did_not_happen` covers both, since it is NOT eventHappenedSql.
+    const h = makeStage([
+      loadedRow(1, { is_deleted: true, did_not_happen: true }),
+      loadedRow(2, { is_predicted: true, did_not_happen: true }),
+    ]);
+
+    const results = await h.stage.run(ctx, [eventId(1), eventId(2)]);
+
+    expect(results.get(eventId(1))).toMatchObject({ outcome: 'skipped', reason: 'event_deleted' });
+    expect(results.get(eventId(2))).toMatchObject({ outcome: 'skipped', reason: 'predicted_event' });
+  });
+
+  it('refuses to interpolate an alias that is not a plain token', () => {
+    expect(() => eventHappenedSql('n; DROP TABLE ci.events')).toThrow(/plain/);
+    expect(() => liveEventStatusSql('n.status')).toThrow(/plain/);
+  });
+
+  it('is rule generation 3 or later, so the sweep re-offers every row decided before the rule', () => {
+    // Generations 1 and 2 took any undeleted located event as a donor.
+    expect(ESTIMATE_RULE_GENERATION).toBeGreaterThanOrEqual(3);
   });
 });
 

@@ -281,8 +281,14 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * The bump re-decides every row under the new rule; the estimates v1 wrote
    * onto named events, and the place links built on them, are withdrawn by
    * migration 20260930035044_clear_estimates_on_events_with_own_location.
+   *
+   * v3 — ESTIMATE_RULE_GENERATION 3: donors and targets must be events that
+   * happened (`eventHappenedSql`). A cancelled, no_show or skipped event, a
+   * prediction, or a Takeout reservation marked cancelled no longer lends its
+   * coordinate, and no longer receives an estimate. The bump re-derives every
+   * earlier estimate from the donors that are left.
    */
-  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 2,
+  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 3,
 
   /**
    * v1 — initial conversion of the three participant backfills.
