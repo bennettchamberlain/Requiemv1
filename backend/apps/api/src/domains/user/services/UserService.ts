@@ -49,12 +49,17 @@ export class UserService {
     private readonly eventService: EventService,
   ) {}
 
-  async create(context: ServiceContext, data: CreateUserDto): Promise<User> {
+  /**
+   * @param alongside work the account must not exist without — redeeming the invitation that
+   *   admitted it (`SignupCodeService.consume`) — run in the transaction that inserts the row. If it
+   *   throws, the account is rolled back and its error reaches the caller as thrown.
+   */
+  async create(context: ServiceContext, data: CreateUserDto, alongside?: WithNewAccount): Promise<User> {
     if (context.userId !== SYSTEM_USER) {
       throw new Error('Unauthorized');
     }
 
-    const user = await this.insertAccount(data, { onlyIfFirst: false });
+    const user = await this.insertAccount(data, { onlyIfFirst: false, alongside });
 
     // Unreachable: only an `onlyIfFirst` insert can decline. Thrown rather than asserted away, so a
     // change that breaks that is a loud failure instead of a `null` typed as a User.
