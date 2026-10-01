@@ -338,6 +338,44 @@ export class CtiAggregate<TDetail extends ObjectLiteral & { id: string }, TBase 
   }
 
   /**
+   * Destroys the aggregate outright, tombstoned or not: the BASE row is deleted
+   * and the deferred FK's ON DELETE CASCADE removes the detail in the same
+   * statement. Nothing is left to {@link restore}.
+   *
+   * {@link remove} cannot be pointed at this. For an aggregate configured with
+   * {@link CtiAggregateOptions.softDeleteFlag} it only ever tombstones, and its
+   * user-scoped load skips tombstones, so a row already in the trash is
+   * invisible to it. Here the same scoped load authorizes the purge, minus the
+   * liveness filter, so a purge can be asked for after a delete as well as
+   * instead of one.
+   *
+   * `withinTx` runs immediately before the base-row delete, in the same
+   * transaction, and is where the caller clears whatever the cascade cannot
+   * (references with no `ON DELETE` action, rows that name the id without a
+   * foreign key). If it throws, nothing has been deleted.
+   *
+   * @returns `true` if a matching aggregate was found and destroyed.
+   */
+  async purge(context: ServiceContext, id: string, hooks?: CtiWriteHooks<TDetail>): Promise<boolean> {
+    const where = this.options.scopedWhere(context, id);
+
+    return this.options.detailRepository.manager.transaction(async (manager) => {
+      const before = await manager.getRepository(this.options.detailEntity).findOne({ where });
+      if (!before) {
+        return false;
+      }
+
+      if (hooks?.withinTx) {
+        await hooks.withinTx({ manager, before, after: null });
+      }
+
+      await manager.getRepository(this.options.baseEntity).delete({ id } as FindOptionsWhere<TBase>);
+
+      return true;
+    });
+  }
+
+  /**
    * Clears a tombstone written by {@link remove}, bringing the aggregate back
    * exactly as it was. Only available to aggregates configured with
    * {@link CtiAggregateOptions.softDeleteFlag}; a physically deleted aggregate

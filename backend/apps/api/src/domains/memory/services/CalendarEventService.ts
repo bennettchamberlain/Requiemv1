@@ -24,7 +24,12 @@ import {
   INGEST_REFRESH_COLUMNS,
 } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
-import { EventCreatedEvent, EventUpdatedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
+import {
+  ContentRemovedEvent,
+  EventCreatedEvent,
+  EventUpdatedEvent,
+  EventRemovedEvent,
+} from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { BaseEntity } from '../entities/BaseEntity';
@@ -38,7 +43,15 @@ import type { OccurrenceSpec } from '../recurrence/types';
 import { CreateEventDto, UpdateEventDto, SearchEventDto } from '../types';
 
 import { CtiAggregate } from './CtiAggregate';
+import { purgeEventDependents } from './eventPurge';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
+
+/** What {@link CalendarEventService.purge} destroyed. */
+export interface PurgedEvent {
+  id: string;
+  /** The content attached to the event (`ci.content.event_id`), deleted along with it. */
+  contentIds: string[];
+}
 
 interface Options {
   limit?: number;
@@ -1551,6 +1564,89 @@ export class CalendarEventService {
     await this.hbpeNotify?.notifyEvents(restored.userId, restored.startTime);
 
     return this.composeOne(restored);
+  }
+
+  /**
+   * Destroys an event for good: both rows, the content attached to it, and
+   * everything that points at them. The counterpart of {@link remove} for the
+   * caller who has been asked to delete rather than to put in the trash, and
+   * the one thing here {@link restore} cannot undo.
+   *
+   * Events are tombstoned rather than destroyed because deleting one from the
+   * app is a click on irreplaceable imported history. This is not that click:
+   * its one caller is `memory.forget` in `archive_and_delete` mode, a
+   * destructive tool call the user or an agent made on purpose, and a physical
+   * delete is what that mode has always meant. The trash stays the default.
+   *
+   * It works on a tombstoned event as well as a live one, so an event can be
+   * purged from the trash. Everything happens in one transaction, which is also
+   * what {@link purgeEventDependents} explains: HBPE's cluster membership
+   * blocks a plain delete, and edges, ledgers and provenance would otherwise be
+   * left pointing at a row that is gone. A failure anywhere leaves the event
+   * exactly as it was.
+   *
+   * Announced after the commit, the way {@link remove} does: search un-indexes
+   * the event and each piece of content, and HBPE is told the day changed.
+   *
+   * @returns what was destroyed, or `null` when the caller has no event with
+   *   that id.
+   */
+  async purge(context: ServiceContext, id: string): Promise<PurgedEvent | null> {
+    let purged: { userId: string; time: Date | null; contentIds: string[] } | undefined;
+
+    const found = await this.aggregate.purge(context, id, {
+      withinTx: async ({ manager, before }) => {
+        const owner = before.userId;
+        const base = await manager.getRepository(EventBaseEntity).findOne({ where: { id } });
+        const { contents } = await purgeEventDependents(manager, { ownerUserId: owner, eventIds: [id] });
+
+        // After the clean-up, so a failure here rolls all of it back. The log is
+        // the audit trail and outlives the rows, as it does for every other
+        // physical delete.
+        await this.graphDeltaWriter.entityDeleted({
+          entityId: id,
+          entityType: 'Event',
+          name: base?.name ?? null,
+          ownerUserId: owner,
+          changeSource: 'CalendarEventService.purge',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+          manager,
+        });
+
+        for (const content of contents) {
+          await this.graphDeltaWriter.entityDeleted({
+            entityId: content.id,
+            entityType: 'Content',
+            name: content.name,
+            ownerUserId: owner,
+            changeSource: 'CalendarEventService.purge',
+            changeReason: `attached to purged event ${id}`,
+            changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+            manager,
+          });
+        }
+
+        purged = { userId: owner, time: before.startTime, contentIds: contents.map((content) => content.id) };
+      },
+    });
+
+    if (!found || !purged) {
+      return null;
+    }
+
+    await this.signallingEventService.send(EventRemovedEvent, {
+      eventId: id,
+    });
+
+    for (const contentId of purged.contentIds) {
+      await this.signallingEventService.send(ContentRemovedEvent, {
+        contentId,
+      });
+    }
+
+    await this.hbpeNotify?.notifyEvents(purged.userId, [purged.time]);
+
+    return { id, contentIds: purged.contentIds };
   }
 
   async search(context: ServiceContext, query: SearchEventDto): Promise<Event[]> {
