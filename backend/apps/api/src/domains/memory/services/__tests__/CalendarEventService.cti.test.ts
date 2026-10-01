@@ -9,6 +9,7 @@ import { EventService } from '@ci/domains/events';
 import { EventBaseEntity } from '../../entities/EventBaseEntity';
 import { EventEntity } from '../../entities/EventEntity';
 import { CalendarEventService } from '../CalendarEventService';
+import { EVENT_TIME_REOPENER } from '../eventTimeReopener';
 import { GraphDeltaWriter } from '../GraphDeltaWriter';
 
 import { noopGraphDeltaWriter } from './harness/noopGraphDeltaWriter';
@@ -37,6 +38,8 @@ describe('CalendarEventService CTI aggregate', () => {
     delete: jest.Mock;
   };
   let hbpeNotify: { notifyEvents: jest.Mock };
+  /** What PipelineModule binds to EVENT_TIME_REOPENER. */
+  let timeReopener: { reopenTimeDecisions: jest.Mock };
 
   const ctx = { userId: 'user-1' } as UserServiceContext;
 
@@ -62,12 +65,15 @@ describe('CalendarEventService CTI aggregate', () => {
         transaction: jest.fn(async (cb: (m: unknown) => unknown) =>
           cb({
             getRepository: (cls: unknown): unknown => (cls === EventBaseEntity ? baseRepo : repo),
+            // A retime clears what the clean stage recorded about the old time.
+            query: jest.fn(async () => []),
           }),
         ),
       },
     };
 
     hbpeNotify = { notifyEvents: jest.fn(async () => undefined) };
+    timeReopener = { reopenTimeDecisions: jest.fn(async () => 0) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -78,6 +84,7 @@ describe('CalendarEventService CTI aggregate', () => {
         { provide: DataSource, useValue: {} },
         { provide: GraphDeltaWriter, useValue: noopGraphDeltaWriter() },
         { provide: HbpeNotifyService, useValue: hbpeNotify },
+        { provide: EVENT_TIME_REOPENER, useValue: timeReopener },
       ],
     }).compile();
     service = moduleRef.get(CalendarEventService);
@@ -125,7 +132,14 @@ describe('CalendarEventService CTI aggregate', () => {
   });
 
   it('update routes title/description to the base row and detail fields to the detail row', async () => {
-    const row = Object.assign(new EventEntity(), { id: 'e1', userId: 'user-1' });
+    // The stored time and status are what `update` judges a move, or a call-off, against.
+    const row = Object.assign(new EventEntity(), {
+      id: 'e1',
+      userId: 'user-1',
+      startTime: new Date('2026-01-01T09:00:00Z'),
+      endTime: null,
+      status: 'confirmed',
+    });
     repo.findOne.mockResolvedValue(row);
     baseRepo.find.mockResolvedValue([
       Object.assign(new EventBaseEntity(), { id: 'e1', name: 'Renamed', description: null }),
@@ -164,6 +178,8 @@ describe('CalendarEventService CTI aggregate', () => {
 
     expect(hbpeNotify.notifyEvents).toHaveBeenCalledTimes(1);
     expect(hbpeNotify.notifyEvents).toHaveBeenCalledWith('user-1', [left, moved]);
+    // The same retime takes back what the pipeline decided about the old time.
+    expect(timeReopener.reopenTimeDecisions).toHaveBeenCalledWith(['e1'], expect.anything());
   });
 
   it('remove tombstones the detail row instead of destroying the aggregate', async () => {
