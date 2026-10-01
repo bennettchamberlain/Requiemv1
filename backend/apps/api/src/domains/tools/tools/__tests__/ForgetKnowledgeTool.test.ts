@@ -3,6 +3,7 @@ import type { LoggerService } from '@ci/common/logging';
 import type { EventService } from '@ci/domains/events';
 import type {
   CalendarEventService,
+  CommunicationService,
   ContentService,
   GraphNodeEntity,
   GraphUtilityService,
@@ -178,17 +179,33 @@ function makeContents(purgeableContentIds: string[] = []) {
   return { purge };
 }
 
+/**
+ * Stand-in for `CommunicationService`. `purge` takes every id that has a `ci.communications` row
+ * (`purgeableCommunicationIds`) and answers with the ones it took; a `Communication` node with no
+ * detail row is not among them, as for the real one.
+ */
+function makeCommunications(purgeableCommunicationIds: string[] = []) {
+  const purgeable = new Set(purgeableCommunicationIds);
+  const purge = jest.fn(async (_context: { userId: string }, ids: string[]) => ({
+    communicationIds: ids.filter((id) => purgeable.has(id)),
+  }));
+
+  return { purge };
+}
+
 function makeTool(
   graphUtility: ReturnType<typeof makeGraphUtility>,
   search: ReturnType<typeof makeSearchIndex> = makeSearchIndex(),
   calendarEvents: ReturnType<typeof makeCalendarEvents> = makeCalendarEvents(),
   contents: ReturnType<typeof makeContents> = makeContents(),
+  communications: ReturnType<typeof makeCommunications> = makeCommunications(),
 ) {
   return new ForgetKnowledgeTool(
     graphUtility as unknown as GraphUtilityService,
     search.eventService,
     calendarEvents as unknown as CalendarEventService,
     contents as unknown as ContentService,
+    communications as unknown as CommunicationService,
     logger(),
   );
 }
@@ -371,7 +388,8 @@ describe('ForgetKnowledgeTool search index removal', () => {
   it.each([
     ['Item', 'item'],
     ['Communication', 'communication'],
-    // A `Content` node with no `ci.content` row reaches the generic path; one with a row is purged.
+    // A `Content` node with no `ci.content` row, or a `Communication` with no `ci.communications` row,
+    // reaches the generic path; one with a row is purged and announced by its own service.
     ['Content', 'content'],
   ])(
     'announces a deleted %s as removed, so its index rows go now and not at the nightly sweep',
@@ -409,22 +427,19 @@ describe('ForgetKnowledgeTool search index removal', () => {
 describe('ForgetKnowledgeTool, what delete leaves behind', () => {
   const LEFT_BEHIND = /rows that name it only by id were left in place/;
 
-  it.each(['Item', 'Communication'])(
-    'says that a deleted %s left rows that name it by id, so the caller does not claim a clean erase',
-    async (entityType) => {
-      const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType } } });
-      const tool = makeTool(graphUtility);
+  it('says that a deleted Item left rows that name it by id, so the caller does not claim a clean erase', async () => {
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Item' } } });
+    const tool = makeTool(graphUtility);
 
-      const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
 
-      expect(result.success).toBe(true);
-      expect(result.data?.warnings).toEqual([expect.stringMatching(LEFT_BEHIND)]);
-      expect(result.data?.warnings?.[0]).toContain(`${entityType} ${E1}`);
-    },
-  );
+    expect(result.success).toBe(true);
+    expect(result.data?.warnings).toEqual([expect.stringMatching(LEFT_BEHIND)]);
+    expect(result.data?.warnings?.[0]).toContain(`Item ${E1}`);
+  });
 
-  it.each(['Item', 'Communication'])('says nothing of the kind for an archived %s', async (entityType) => {
-    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType } } });
+  it('says nothing of the kind for an archived Item', async () => {
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Item' } } });
     const tool = makeTool(graphUtility);
 
     const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive' });
@@ -432,8 +447,8 @@ describe('ForgetKnowledgeTool, what delete leaves behind', () => {
     expect(result.data?.warnings).toBeUndefined();
   });
 
-  it.each(['Concept', 'Person', 'Place', 'Content'])(
-    'says nothing of the kind for a deleted %s, which is not one of the two it has not purged',
+  it.each(['Concept', 'Person', 'Place', 'Content', 'Communication'])(
+    'says nothing of the kind for a deleted %s, which is not the one type it has not purged',
     async (entityType) => {
       const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType } } });
       const tool = makeTool(graphUtility);
@@ -446,7 +461,7 @@ describe('ForgetKnowledgeTool, what delete leaves behind', () => {
 
   it('says it once for each such node, alongside the warnings it already has', async () => {
     const graphUtility = makeGraphUtility({
-      nodes: { [E1]: { entityType: 'Item' }, [E2]: { entityType: 'Communication' } },
+      nodes: { [E1]: { entityType: 'Item' }, [E2]: { entityType: 'Item' } },
     });
     const tool = makeTool(graphUtility);
 
@@ -458,7 +473,7 @@ describe('ForgetKnowledgeTool, what delete leaves behind', () => {
     expect(result.data?.warnings).toEqual([
       `Entity ${E_MISSING} not found or not owned by user`,
       expect.stringContaining(`Item ${E1} was deleted`),
-      expect.stringContaining(`Communication ${E2} was deleted`),
+      expect.stringContaining(`Item ${E2} was deleted`),
     ]);
   });
 
@@ -845,6 +860,160 @@ describe('ForgetKnowledgeTool content, archive_and_delete', () => {
   });
 });
 
+describe('ForgetKnowledgeTool communications, archive_and_delete', () => {
+  it('purges a Communication node instead of deleting its node, and announces nothing itself', async () => {
+    const communications = makeCommunications([E1]);
+    const graphUtility = makeGraphUtility({
+      nodes: { [E1]: { entityType: 'Communication', relationships: [fakeRel(R1)] } },
+    });
+    const search = makeSearchIndex();
+    const tool = makeTool(graphUtility, search, makeCalendarEvents(), makeContents(), communications);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(result.success).toBe(true);
+    expect(communications.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E1]);
+    // The purge removed the node, its detail row, the participants' identifier claims and every row that
+    // names it, and `CommunicationService.purge` announces its own removal and tells HBPE. The tool adds
+    // nothing, and above all does not go on to delete the node the generic way, which would leave the claims.
+    expect(graphUtility.deactivateEntities).not.toHaveBeenCalled();
+    expect(graphUtility.deactivateRelationships).not.toHaveBeenCalled();
+    expect(search.send).not.toHaveBeenCalled();
+    expect(result.data?.archivedEntityIds).toEqual([E1]);
+    expect(result.data?.restorableEventIds).toBeUndefined();
+    // It is gone, and nothing it names by id is left behind, so there is nothing to warn of.
+    expect(result.data?.warnings).toBeUndefined();
+  });
+
+  it('purges every Communication node in a batch with one call and deletes the other nodes the generic way', async () => {
+    const communications = makeCommunications([E1, E2]);
+    const graphUtility = makeGraphUtility({
+      nodes: {
+        [E1]: { entityType: 'Communication' },
+        [E2]: { entityType: 'Communication' },
+        [E3]: { entityType: 'Concept', relationships: [fakeRel(R_CASCADE)] },
+      },
+    });
+    const tool = makeTool(
+      graphUtility,
+      makeSearchIndex(),
+      makeCalendarEvents(),
+      makeContents(),
+      communications,
+    );
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1, E2, E3], mode: 'archive_and_delete' });
+
+    expect(communications.purge).toHaveBeenCalledTimes(1);
+    expect(communications.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E1, E2]);
+    expect(graphUtility.deactivateEntities).toHaveBeenCalledWith([E3], CONTEXT.userId, true);
+    expect(result.data?.archivedEntityIds).toEqual([E1, E2, E3]);
+  });
+
+  it('sends a Communication node with no ci.communications row down the generic path, where there is nothing to cascade', async () => {
+    // Graph ingest writes `Communication` nodes with no detail row behind them. `purge` answers with only
+    // the communications it found, and this one has to be deleted too. Nothing references a row that is
+    // not there, so the delete is not refused, and the generic path announces the removal itself.
+    const communications = makeCommunications();
+    const search = makeSearchIndex([`communication:${E1}`]);
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Communication' } } });
+    const tool = makeTool(graphUtility, search, makeCalendarEvents(), makeContents(), communications);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(communications.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E1]);
+    expect(graphUtility.deactivateEntities).toHaveBeenCalledWith([E1], CONTEXT.userId, true);
+    expect(search.lookup('communication', E1)).toBe(false);
+    expect(result.data?.archivedEntityIds).toEqual([E1]);
+  });
+
+  it('never asks the communication service to purge anything when the batch holds no communication', async () => {
+    const communications = makeCommunications([E1]);
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Person' } } });
+    const tool = makeTool(
+      graphUtility,
+      makeSearchIndex(),
+      makeCalendarEvents(),
+      makeContents(),
+      communications,
+    );
+
+    await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(communications.purge).not.toHaveBeenCalled();
+    expect(graphUtility.deactivateEntities).toHaveBeenCalledWith([E1], CONTEXT.userId, true);
+  });
+
+  it('never purges a communication in archive mode, which only deactivates its node', async () => {
+    const communications = makeCommunications([E1]);
+    const graphUtility = makeGraphUtility({
+      nodes: { [E1]: { entityType: 'Communication', relationships: [fakeRel(R1)] } },
+    });
+    const tool = makeTool(
+      graphUtility,
+      makeSearchIndex(),
+      makeCalendarEvents(),
+      makeContents(),
+      communications,
+    );
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive' });
+
+    expect(communications.purge).not.toHaveBeenCalled();
+    expect(graphUtility.deactivateEntities).toHaveBeenCalledWith([E1], CONTEXT.userId, false);
+    expect(result.data?.restorableEventIds).toBeUndefined();
+  });
+
+  it('purges each kind in its own call, events and content before communications', async () => {
+    const calendarEvents = makeCalendarEvents([E1]);
+    const contents = makeContents([E2]);
+    const communications = makeCommunications([E3]);
+    const graphUtility = makeGraphUtility({
+      nodes: {
+        [E1]: { entityType: 'Event' },
+        [E2]: { entityType: 'Content' },
+        [E3]: { entityType: 'Communication' },
+      },
+    });
+    const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents, contents, communications);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1, E2, E3], mode: 'archive_and_delete' });
+
+    expect(calendarEvents.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E1]);
+    expect(contents.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E2]);
+    expect(communications.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E3]);
+    expect(communications.purge.mock.invocationCallOrder[0]).toBeGreaterThan(
+      contents.purge.mock.invocationCallOrder[0],
+    );
+    expect(graphUtility.deactivateEntities).not.toHaveBeenCalled();
+    expect(result.data?.archivedEntityIds).toEqual([E1, E2, E3]);
+  });
+
+  it('still removes the relationships it was asked to remove by id', async () => {
+    const communications = makeCommunications([E1]);
+    const graphUtility = makeGraphUtility({
+      nodes: { [E1]: { entityType: 'Communication' } },
+      relationshipsById: { [R_EXPLICIT]: fakeRel(R_EXPLICIT) },
+    });
+    const tool = makeTool(
+      graphUtility,
+      makeSearchIndex(),
+      makeCalendarEvents(),
+      makeContents(),
+      communications,
+    );
+
+    const result = await tool.execute(CONTEXT, {
+      entityIds: [E1],
+      relationshipIds: [R_EXPLICIT],
+      mode: 'archive_and_delete',
+    });
+
+    expect(graphUtility.deactivateRelationships).toHaveBeenCalledWith([R_EXPLICIT], CONTEXT.userId, true);
+    expect(result.data?.archivedRelationshipIds).toEqual([R_EXPLICIT]);
+  });
+});
+
 describe('ForgetKnowledgeTool edges', () => {
   it('collects a node’s outgoing edges only to archive it, never to delete it', async () => {
     const archiveGraph = makeGraphUtility({ nodes: { [E1]: {} } });
@@ -1133,6 +1302,89 @@ describe('ForgetKnowledgeTool failures', () => {
         retryable: true,
         details: { deletedEntityIds: [E1, NAMED_PHOTO, E3] },
       });
+    });
+  });
+
+  describe('with communications', () => {
+    it('refuses a communication purge whole, and says nothing was destroyed, when it is the first thing to be purged', async () => {
+      const communications = makeCommunications([E1, E2]);
+      communications.purge.mockRejectedValueOnce(pgFailure('23503', FK));
+      const graphUtility = makeGraphUtility({
+        nodes: {
+          [E1]: { entityType: 'Communication' },
+          [E2]: { entityType: 'Communication' },
+          [E3]: { entityType: 'Concept' },
+        },
+      });
+      const tool = makeTool(
+        graphUtility,
+        makeSearchIndex(),
+        makeCalendarEvents(),
+        makeContents(),
+        communications,
+      );
+
+      const result = await tool.execute(CONTEXT, { entityIds: [E1, E2, E3], mode: 'archive_and_delete' });
+
+      expect(result.error).toMatchObject({ code: 'CONSTRAINT_VIOLATION', retryable: false });
+      expect(result.error?.details).not.toHaveProperty('deletedEntityIds');
+      expect(result.error?.message).not.toContain('Already deleted');
+      expect(graphUtility.deactivateEntities).not.toHaveBeenCalled();
+    });
+
+    it('names the events and content already destroyed when it is the communication purge that is refused', async () => {
+      // Each of those committed in its own transaction, and cannot be undone.
+      const calendarEvents = makeCalendarEvents([E1]);
+      const contents = makeContents([E2]);
+      const communications = makeCommunications([E3]);
+      communications.purge.mockRejectedValueOnce(pgFailure('23503', FK));
+      const graphUtility = makeGraphUtility({
+        nodes: {
+          [E1]: { entityType: 'Event' },
+          [E2]: { entityType: 'Content' },
+          [E3]: { entityType: 'Communication' },
+        },
+      });
+      const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents, contents, communications);
+
+      const result = await tool.execute(CONTEXT, { entityIds: [E1, E2, E3], mode: 'archive_and_delete' });
+
+      expect(result.error).toMatchObject({
+        code: 'CONSTRAINT_VIOLATION',
+        retryable: false,
+        details: { constraint: 'users_entity_id_fkey', deletedEntityIds: [E1, E2] },
+      });
+      expect(result.error?.message).toContain(`Already deleted: ${E1}, ${E2}.`);
+      // Nothing after the refused purge was touched.
+      expect(graphUtility.deactivateEntities).not.toHaveBeenCalled();
+    });
+
+    it('names the communications already destroyed when it is the rest of the call that is refused', async () => {
+      const communications = makeCommunications([E1, E2]);
+      const graphUtility = makeGraphUtility({
+        nodes: {
+          [E1]: { entityType: 'Communication' },
+          [E2]: { entityType: 'Communication' },
+          [E3]: { entityType: 'Person' },
+        },
+      });
+      graphUtility.deactivateEntities.mockRejectedValueOnce(pgFailure('23503', FK));
+      const tool = makeTool(
+        graphUtility,
+        makeSearchIndex(),
+        makeCalendarEvents(),
+        makeContents(),
+        communications,
+      );
+
+      const result = await tool.execute(CONTEXT, { entityIds: [E1, E2, E3], mode: 'archive_and_delete' });
+
+      expect(result.error).toMatchObject({
+        code: 'CONSTRAINT_VIOLATION',
+        retryable: false,
+        details: { deletedEntityIds: [E1, E2] },
+      });
+      expect(result.error?.message).toContain(`Already deleted: ${E1}, ${E2}.`);
     });
   });
 });

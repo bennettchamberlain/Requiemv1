@@ -18,6 +18,7 @@ import {
   GraphUtilityService,
   KnownPlacesService,
   RelationshipEntity,
+  type CommunicationService,
   type CreateEventDto,
 } from '@ci/domains/memory';
 import { ConceptRemovedEvent, EventRemovedEvent, EventUpdatedEvent } from '@ci/domains/memory/events';
@@ -204,6 +205,8 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
         signalling,
         deltaWriter,
       ),
+      // No case here names a communication, so the tool never reaches for it.
+      {} as unknown as CommunicationService,
       logger(),
     );
   });

@@ -7,6 +7,7 @@ import type { EventService } from '@ci/domains/events';
 import {
   BaseEntity,
   CalendarEventService,
+  type CommunicationService,
   ContentBaseEntity,
   ContentEntity,
   ContentService,
@@ -18,7 +19,6 @@ import {
   RelationshipEntity,
 } from '@ci/domains/memory';
 import {
-  CommunicationRemovedEvent,
   ConceptRemovedEvent,
   ContentRemovedEvent,
   EventRemovedEvent,
@@ -47,10 +47,10 @@ import { ForgetKnowledgeTool } from '../ForgetKnowledgeTool';
  * against doubles. A double cannot say whether a clustered row is then really
  * gone, so this file drives the real thing and asks Postgres.
  *
- * It also holds the tool to what it says about the two types that have no purge
- * of their own, an item and a communication: the node and its detail row are
- * deleted, and the rows that name them by id are left, which is what the tool's
- * warning says.
+ * It also holds the tool to what it says about the one type that has no purge of
+ * its own, an item: the node and its detail row are deleted, and the rows that
+ * name it by id are left, which is what the tool's warning says. A communication
+ * is purged, and `ForgetKnowledgeTool.communication.integration.test.ts` drives that.
  *
  * Opt-in like its neighbours: set `MEMORY_TEST_DATABASE_URL` to a migrated
  * database of your OWN, or run `make test-db`, which provides one.
@@ -162,7 +162,15 @@ describeWithDb(`memory.forget on a Content node, against Postgres (${availabilit
       dataSource.getRepository(RelationshipEntity),
       logger(),
     );
-    tool = new ForgetKnowledgeTool(graph, signalling, calendar, contents, logger());
+    // No case here names a communication, so the tool never reaches for it.
+    tool = new ForgetKnowledgeTool(
+      graph,
+      signalling,
+      calendar,
+      contents,
+      {} as unknown as CommunicationService,
+      logger(),
+    );
   });
 
   async function wipe(userId: string): Promise<void> {
@@ -643,24 +651,7 @@ describeWithDb(`memory.forget on a Content node, against Postgres (${availabilit
 
   // ── Item and Communication: the generic delete, and what the tool says it left ──────────
 
-  describe('an item and a communication, which go through the generic delete', () => {
-    async function seedCommunication(title: string): Promise<string> {
-      const id = uuidv7();
-
-      await dataSource.query(
-        `INSERT INTO ci.entities (entity_id, entity_type, name, properties, owner_user_id, linked_table, linked_id)
-         VALUES ($1, 'Communication', $2, '{}'::jsonb, $3, 'communications', $1)`,
-        [id, title, ownerId],
-      );
-      await dataSource.query(
-        `INSERT INTO ci.communications (id, time, user_id, communication_type, direction, content)
-         VALUES ($1, now(), $2, 'email', 'inbound', 'hello')`,
-        [id, ownerId],
-      );
-
-      return id;
-    }
-
+  describe('an item, which goes through the generic delete', () => {
     async function seedItem(title: string, parent?: string): Promise<string> {
       const id = uuidv7();
 
@@ -677,39 +668,11 @@ describeWithDb(`memory.forget on a Content node, against Postgres (${availabilit
       return id;
     }
 
-    async function detailExists(table: 'communications' | 'objects', column: 'id' | 'object_id', id: string) {
+    async function detailExists(table: 'objects', column: 'object_id', id: string) {
       return (await dataSource.query(`SELECT 1 FROM ci.${table} WHERE ${column} = $1`, [id])).length === 1;
     }
 
-    it('deletes a communication, announces it, and says that the rows that name it by id were left', async () => {
-      const id = await seedCommunication('A mail from Dana');
-
-      await seedEdge(id, await seedNode('Person', 'Dana'), 'FROM');
-      await seedTrail(id, 'communications', 'Communication', 'A mail from Dana');
-
-      expect(await nodeExists(id)).toBe(true);
-      expect(await detailExists('communications', 'id', id)).toBe(true);
-      expect((await remains(id)).relationships).toBe(1);
-
-      const result = await forget([id]);
-
-      expect(result.success).toBe(true);
-      // The node, its detail row (by cascade) and its edges.
-      expect(await nodeExists(id)).toBe(false);
-      expect(await detailExists('communications', 'id', id)).toBe(false);
-      expect((await remains(id)).relationships).toBe(0);
-      // Its search rows are announced as gone, now, and not at the nightly sweep.
-      expect(publishedOf(CommunicationRemovedEvent)).toEqual([{ communicationId: id }]);
-
-      // What the warning says is true: the ledger entry and the delta, which carries the title, are
-      // still there. If that changes, the warning has to change with it.
-      expect(result.data?.warnings).toEqual([
-        `Communication ${id} was deleted, but rows that name it only by id were left in place: its provenance entries, pipeline state, tags and change history.`,
-      ]);
-      expect(await remains(id)).toMatchObject({ recordSources: 1, graphDeltas: 1 });
-    });
-
-    it('deletes an item the same way', async () => {
+    it('deletes an item, announces it, and says that the rows that name it by id were left', async () => {
       const id = await seedItem('A kettle');
 
       await seedTrail(id, 'objects', 'Item', 'A kettle');

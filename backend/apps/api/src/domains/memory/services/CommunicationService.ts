@@ -34,6 +34,7 @@ import { CommunicationCreatedEvent, CommunicationUpdatedEvent, CommunicationRemo
 import { ledgerPlatform } from '../identity';
 import { CreateCommunicationDto, UpdateCommunicationDto } from '../types';
 
+import { purgeCommunicationAggregates } from './communicationPurge';
 import { CtiAggregate, type RepositoryProvider } from './CtiAggregate';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 
@@ -732,6 +733,46 @@ export class CommunicationService {
     }
 
     return true;
+  }
+
+  /**
+   * Permanently deletes communications, with everything that only exists because
+   * of them. This is `memory.forget`'s `archive_and_delete` for a `Communication`
+   * node, and the other end from {@link remove}: see
+   * {@link purgeCommunicationAggregates} for what goes, and for how it differs
+   * from `remove`.
+   *
+   * Everything is one transaction. Search is told afterwards, and so is HBPE,
+   * which re-serialises the days the messages fell on. The ids that were not the
+   * caller's, or no longer exist, are simply left out of the result.
+   *
+   * @returns the ids that were purged.
+   */
+  async purge(context: UserServiceContext, ids: string[]): Promise<{ communicationIds: string[] }> {
+    const requested = Array.from(new Set(ids));
+
+    if (requested.length === 0) {
+      return { communicationIds: [] };
+    }
+
+    const purged = await this.communicationRepository.manager.transaction((manager) =>
+      purgeCommunicationAggregates(manager, context.userId, requested),
+    );
+
+    // The index rows were deleted in the transaction. This tells anything else
+    // that listens, and is what announces a removal everywhere else in the app.
+    for (const { id } of purged.communications) {
+      await this.eventService.send(CommunicationRemovedEvent, { communicationId: id });
+    }
+
+    if (purged.communications.length > 0) {
+      await this.hbpeNotify?.notifyCommunications(
+        context.userId,
+        purged.communications.map((communication) => communication.time),
+      );
+    }
+
+    return { communicationIds: purged.communications.map((communication) => communication.id) };
   }
 
   /**
