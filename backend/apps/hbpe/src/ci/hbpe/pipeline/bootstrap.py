@@ -20,6 +20,8 @@ import asyncio
 import logging
 from datetime import UTC, date, datetime, timedelta
 
+from ci.hbpe.event_status import LIVE_EVENT_SQL
+
 log = logging.getLogger(__name__)
 
 # Serialize budget, in *days that actually hold data* — not in calendar span.
@@ -190,6 +192,14 @@ PURGE_DAY_CAP = SERIALIZE_WINDOW_DAYS + 1
 # exactly the bimodal shape tier A exists for. It also keeps such a day out of
 # the purge tier, so its stale rows would never be removed either.
 #
+# The status predicate (``LIVE_EVENT_SQL``: not cancelled, no_show or skipped)
+# is here for the same two reasons. Both reads leave out events that did not
+# happen, so a day holding only those serializes to zero event tokens and has
+# nothing to label. The purge half matters most. When a day's last live event
+# is cancelled, the day has to leave this branch or it can never reach the
+# purge tier, and a day older than the content budget has no other way back:
+# the cancelled meeting's tokens would stay in hbpe.token_stream for good.
+#
 # The two reads carry three more predicates this CTE does not, and each is
 # deliberate rather than an oversight:
 #
@@ -207,13 +217,14 @@ PURGE_DAY_CAP = SERIALIZE_WINDOW_DAYS + 1
 # ``is_deleted = FALSE`` and the ``>= '2010-01-01'`` sentinel bound are shared
 # by all three and are present here. The ``< today + 1 day`` clamp is this
 # query's alone; see the docstring for why.
-_TOKEN_SOURCE_DAYS_SQL = """
+_TOKEN_SOURCE_DAYS_SQL = f"""
     WITH event_days AS (
         SELECT DISTINCT e.start_time::date AS source_date
         FROM ci.events e
         WHERE e.user_id = %s::uuid
           AND e.is_deleted = FALSE
           AND e.event_type IS DISTINCT FROM 'planned_block'
+          AND {LIVE_EVENT_SQL}
           AND e.start_time >= '2010-01-01'::timestamptz
           AND e.start_time < (%s::date + INTERVAL '1 day')
     ),
@@ -333,10 +344,10 @@ _TOKEN_SOURCE_DAYS_SQL = """
 
 # Same event predicates as the day query's event_days branch, and for the same
 # reason: this is the fallback answer to "what can the serializer publish", so
-# counting a day whose only events are planned blocks would hand the label drain
-# a cutoff for a day that yields no tokens, and would report a planning-only
-# appliance as having a corpus.
-_TOKEN_DATE_BOUNDS_SQL = """
+# counting a day whose only events are planned blocks, or did not happen, would
+# hand the label drain a cutoff for a day that yields no tokens, and would
+# report a planning-only appliance as having a corpus.
+_TOKEN_DATE_BOUNDS_SQL = f"""
     SELECT MIN(source_date), MAX(source_date)
     FROM (
         SELECT e.start_time::date AS source_date
@@ -344,6 +355,7 @@ _TOKEN_DATE_BOUNDS_SQL = """
         WHERE e.user_id = %s::uuid
           AND e.is_deleted = FALSE
           AND e.event_type IS DISTINCT FROM 'planned_block'
+          AND {LIVE_EVENT_SQL}
           AND e.start_time >= '2010-01-01'::timestamptz
 
         UNION ALL
