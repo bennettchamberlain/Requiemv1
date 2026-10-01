@@ -344,10 +344,11 @@ describeWithDb(`PlaceService.getVisitStats against Postgres (${availability.targ
     it('still reads work left on an event that did not happen as outstanding, because it is per user', async () => {
       // THE LIMIT, pinned so it is a known one rather than an assumption. The
       // outstanding-work test does not ask which event the work is for, and the
-      // sweep stops offering an event once it is deleted or cancelled, so a row
-      // that failed first stays failed. It errs towards not stating a zero that
-      // is not yet known. Narrowing it to events that happened would be a
-      // decision, and has to change this test.
+      // `promote.place` sweep gates every arm, the retry arm included, on the
+      // event having happened, so a row that failed before the event was
+      // cancelled is never retried and stays failed. It errs towards not
+      // stating a zero that is not yet known. Narrowing it to events that
+      // happened would be a decision, and has to change this test.
       const placeId = await seedPlace(ctx.userId, 'Status: failed before it was called off');
       const calledOff = await seedLinkedEvent(ctx.userId, placeId, 'Called off', day(450), {
         ...HAPPENED,
