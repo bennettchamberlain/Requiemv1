@@ -429,6 +429,9 @@ Rules:
    `-f base_ref=<branch>` and `-f mode=fix` when reissuing or renaming a migration.
 5. The dbmate wrapper (`bin/dbmate.js`) builds the connection URL from the same
    `node-config` `db` block the API uses, and refuses destructive `--execute-file` scripts
-   without confirmation.
+   without confirmation. It spawns a bare `dbmate`, which is the `dbmate` npm package's
+   binary: yarn puts it on the PATH of the scripts it runs, and the production image
+   carries no other copy. Inside the image run `yarn dbmate …`; a bare
+   `node bin/dbmate.js` finds no dbmate. `make smoke-api` runs the former.
 6. Destructive resets during development: `make dbclear` (data only) / `make dbdestroy`
    (tables too) from the repo root.
