@@ -1,7 +1,7 @@
 import type { EntityManager } from 'typeorm';
 
 import { teardownContent } from './contentPurge';
-import { clearHbpeLinks, deleteBareReferences } from './purgeTeardown';
+import { clearHbpeLinks, deleteBareReferences, EVENT_REFERENCES } from './purgeTeardown';
 
 /** What one purge removed, for the caller to announce once the transaction has committed. */
 export interface PurgedEventAggregates {
@@ -28,8 +28,9 @@ export interface PurgedEventAggregates {
  *     on as a node with no content behind it.
  *  3. **It leaves rows that point at nothing.** `ci.relationships` has no foreign
  *     key to `ci.entities`, and neither do the provenance ledger, the pipeline
- *     state, the tags and categories, the search index or the graph deltas. The
- *     deltas matter most: a node's `created` delta carries its title.
+ *     state, the tags and categories, the search index, the graph deltas or the
+ *     identifier claims, which are the organizer's and the participants' raw
+ *     addresses. The deltas matter most: a node's `created` delta carries its title.
  *
  * So the steps run in dependency order: the links that block the delete, then
  * everything that only points at the event, then the content ({@link teardownContent}),
@@ -90,7 +91,7 @@ export async function purgeEventAggregates(
   // 1. What blocks the delete, and what only points at the events, with no
   // foreign key to say so.
   await clearHbpeLinks(manager, 'ci.events', eventIds);
-  await deleteBareReferences(manager, eventIds);
+  await deleteBareReferences(manager, eventIds, EVENT_REFERENCES);
 
   // A sub-event's `parent_event_id` has no foreign key, so it would dangle. Make
   // it what `recurrence_parent_id` already does when its parent goes.

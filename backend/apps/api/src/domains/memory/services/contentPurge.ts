@@ -1,6 +1,6 @@
 import type { EntityManager } from 'typeorm';
 
-import { clearHbpeLinks, deleteBareReferences } from './purgeTeardown';
+import { clearHbpeLinks, CONTENT_REFERENCES, deleteBareReferences } from './purgeTeardown';
 
 /**
  * Permanently deletes these content rows, and everything that has no meaning
@@ -35,7 +35,7 @@ export async function teardownContent(manager: EntityManager, contentIds: string
   }
 
   await clearHbpeLinks(manager, 'ci.content', contentIds);
-  await deleteBareReferences(manager, contentIds);
+  await deleteBareReferences(manager, contentIds, CONTENT_REFERENCES);
   await manager.query(
     `DELETE FROM ci.entities WHERE entity_type = 'Content' AND entity_id = ANY($1::uuid[])`,
     [contentIds],

@@ -120,6 +120,17 @@ const FOOTPRINT: Array<[label: string, subject: Subject, sql: string]> = [
     `SELECT count(*) FROM ci.pipeline_dead_letters WHERE entity_id IN ($1, $2)`,
   ],
   ['ci.graph_deltas', 'both', `SELECT count(*) FROM ci.graph_deltas WHERE entity_id IN ($1, $2)`],
+  [
+    'ci.graph_deltas (of its edges)',
+    'both',
+    `SELECT count(*) FROM ci.graph_deltas
+      WHERE node_type = 'relationship' AND (from_entity_id IN ($1, $2) OR to_entity_id IN ($1, $2))`,
+  ],
+  [
+    'ci.identifier_claims',
+    'event',
+    `SELECT count(*) FROM ci.identifier_claims WHERE subject_type = 'event' AND subject_id = $1`,
+  ],
   ['ci_search.entity_tag', 'both', `SELECT count(*) FROM ci_search.entity_tag WHERE entity_id IN ($1, $2)`],
   [
     'ci_search.entity_categories',
@@ -223,6 +234,7 @@ describeWithDb(`CalendarEventService.purge against Postgres (${availability.targ
     await dataSource.query('DELETE FROM ci.pipeline_dead_letters WHERE entity_id = ANY($1::uuid[])', [
       seeded,
     ]);
+    await dataSource.query('DELETE FROM ci.identifier_claims WHERE owner_user_id = ANY($1::uuid[])', [users]);
     await dataSource.query('DELETE FROM ci.record_sources WHERE user_id = ANY($1::uuid[])', [users]);
     await dataSource.query('DELETE FROM ci.receipts WHERE user_id = ANY($1::uuid[])', [users]);
     await dataSource.query('DELETE FROM ci.relationships WHERE owner_user_id = ANY($1::uuid[])', [users]);
@@ -263,11 +275,20 @@ describeWithDb(`CalendarEventService.purge against Postgres (${availability.targ
     return id;
   }
 
+  /** An edge, and the delta that recorded its creation, which names its two endpoints. */
   async function edge(from: string, to: string, type: string): Promise<void> {
-    await dataSource.query(
+    const [{ relationship_id: relationshipId }] = await dataSource.query(
       `INSERT INTO ci.relationships (from_entity_id, to_entity_id, relationship_type, owner_user_id)
-       VALUES ($1, $2, $3, $4)`,
+       VALUES ($1, $2, $3, $4)
+       RETURNING relationship_id`,
       [from, to, type, ownerId],
+    );
+
+    await dataSource.query(
+      `INSERT INTO ci.graph_deltas
+         (node_type, relationship_id, relationship_type, from_entity_id, to_entity_id, change_type, changed_fields, owner_user_id)
+       VALUES ('relationship', $1, $2, $3, $4, 'created', '{}'::jsonb, $5)`,
+      [relationshipId, type, from, to, ownerId],
     );
   }
 
@@ -317,6 +338,14 @@ describeWithDb(`CalendarEventService.purge against Postgres (${availability.targ
         [forUser, table, recordId, `${table}-${recordId}`],
       );
     }
+
+    // The person-link stage's claims about the event: its organizer and a participant, as written.
+    await dataSource.query(
+      `INSERT INTO ci.identifier_claims (owner_user_id, subject_type, subject_id, role, kind, value_normalized)
+       VALUES ($1, 'event', $2, 'organizer', 'email', $3),
+              ($1, 'event', $2, 'participant', 'email', $4)`,
+      [forUser, eventId, `organizer-${eventId}@example.invalid`, `guest-${eventId}@example.invalid`],
+    );
 
     // Pipeline bookkeeping.
     for (const [entityType, entityId] of [

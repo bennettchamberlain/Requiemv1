@@ -106,6 +106,11 @@ const FOOTPRINT: Array<[label: string, sql: string]> = [
   ['ci.pipeline_state', `SELECT count(*) FROM ci.pipeline_state WHERE entity_id = $1`],
   ['ci.pipeline_dead_letters', `SELECT count(*) FROM ci.pipeline_dead_letters WHERE entity_id = $1`],
   ['ci.graph_deltas', `SELECT count(*) FROM ci.graph_deltas WHERE entity_id = $1`],
+  [
+    'ci.graph_deltas (of its edges)',
+    `SELECT count(*) FROM ci.graph_deltas
+      WHERE node_type = 'relationship' AND (from_entity_id = $1 OR to_entity_id = $1)`,
+  ],
   ['ci_search.entity_tag', `SELECT count(*) FROM ci_search.entity_tag WHERE entity_id = $1`],
   ['ci_search.entity_categories', `SELECT count(*) FROM ci_search.entity_categories WHERE entity_id = $1`],
   ['ci_search.vectors', `SELECT count(*) FROM ci_search.vectors WHERE entity_id = $1`],
@@ -237,11 +242,20 @@ describeWithDb(`ContentService.purge and remove against Postgres (${availability
     return id;
   }
 
+  /** An edge, and the delta that recorded its creation, which names its two endpoints. */
   async function edge(from: string, to: string, type: string): Promise<void> {
-    await dataSource.query(
+    const [{ relationship_id: relationshipId }] = await dataSource.query(
       `INSERT INTO ci.relationships (from_entity_id, to_entity_id, relationship_type, owner_user_id)
-       VALUES ($1, $2, $3, $4)`,
+       VALUES ($1, $2, $3, $4)
+       RETURNING relationship_id`,
       [from, to, type, ownerId],
+    );
+
+    await dataSource.query(
+      `INSERT INTO ci.graph_deltas
+         (node_type, relationship_id, relationship_type, from_entity_id, to_entity_id, change_type, changed_fields, owner_user_id)
+       VALUES ('relationship', $1, $2, $3, $4, 'created', '{}'::jsonb, $5)`,
+      [relationshipId, type, from, to, ownerId],
     );
   }
 
