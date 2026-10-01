@@ -11,6 +11,7 @@ import {
   ContentService,
   GraphUtilityService,
   GraphNodeEntity,
+  ItemService,
   RelationshipEntity,
 } from '@ci/domains/memory';
 import {
@@ -56,9 +57,9 @@ export interface ForgetKnowledgeOutput {
 }
 
 /**
- * A delete that failed after it had already destroyed something. Events, content and communications
- * are purged first, each in its own transaction, and a purge cannot be undone, so when the rest of
- * the call is refused what was purged is gone and stays gone. This says which, rather than leaving
+ * A delete that failed after it had already destroyed something. Events, content, communications and
+ * items are purged first, each in its own transaction, and a purge cannot be undone, so when the rest
+ * of the call is refused what was purged is gone and stays gone. This says which, rather than leaving
  * the caller to find out by trying again.
  */
 class PartialForgetError extends Error {
@@ -110,7 +111,7 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
           enum: ['archive', 'archive_and_delete'],
           default: 'archive',
           description:
-            'Archive marks nodes/relationships inactive (an event is moved to the trash, where it can be restored). archive_and_delete permanently deletes them and cannot be undone: an event goes with its attached content, and anything that came from a source that syncs again can arrive again.',
+            "Archive marks nodes/relationships inactive (an event is moved to the trash, where it can be restored). archive_and_delete permanently deletes them and cannot be undone: an event goes with its attached content, an item goes with the duplicates that were merged into it, and anything that came from a source that syncs again can arrive again. An item that is another item's parent is refused until its children are named too.",
         },
         reason: {
           type: 'string',
@@ -142,6 +143,7 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
     private readonly calendarEvents: CalendarEventService,
     private readonly contents: ContentService,
     private readonly communications: CommunicationService,
+    private readonly items: ItemService,
     protected readonly logger: LoggerService,
   ) {
     super();
@@ -210,14 +212,15 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
         })
       : [];
 
-    // An Event is two rows, a Content node has HBPE's links hanging off it, and a
-    // Communication leaves its participants' claims behind, so none of them can be
-    // treated like any other node. Archive moves an event to the trash; delete
-    // purges events, content and communications. Each announces its own removal,
-    // and what is left is generic.
+    // An Event is two rows, a Content node has HBPE's links hanging off it, a
+    // Communication leaves its participants' claims behind, and an Item leaves its
+    // identifiers and merge history, so none of them can be treated like any other
+    // node. Archive moves an event to the trash; delete purges events, content,
+    // communications and items. Each announces its own removal, and what is left
+    // is generic.
     const nodes = uniqueEntitySnapshots.map((entry) => entry.node);
     const handledIds = hardDelete
-      ? await this.purgeAggregates(nodes, ownerId)
+      ? await this.purgeAggregates(nodes, ownerId, warnings)
       : await this.trashEvents(nodes, ownerId);
     const graphSnapshots = uniqueEntitySnapshots.filter((entry) => !handledIds.has(entry.node.entity_id));
 
@@ -236,12 +239,6 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
 
         for (const entry of graphSnapshots) {
           await this.unindexEntity(entry.node, hardDelete);
-
-          const leftBehind = hardDelete ? this.leftBehindWarning(entry.node) : null;
-
-          if (leftBehind) {
-            warnings.push(leftBehind);
-          }
         }
       }
 
@@ -313,8 +310,8 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
   }
 
   /**
-   * Delete the events, content and communications among `nodes` for good, and
-   * answer with the ids of the nodes that are gone, which are no longer the
+   * Delete the events, content, communications and items among `nodes` for good,
+   * and answer with the ids of the nodes that are gone, which are no longer the
    * generic path's.
    *
    * The generic path, `deactivateEntities` with `hardDelete`, deletes the node's
@@ -331,14 +328,22 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
    *
    * Each is a separate transaction, and none can be undone. When a later one is
    * refused after an earlier one has committed, the error says what is already gone.
+   *
+   * What went that nobody named goes in `warnings`, so the caller does not tell
+   * the user less than happened.
    */
-  private async purgeAggregates(nodes: GraphNodeEntity[], ownerId: string): Promise<Set<string>> {
+  private async purgeAggregates(
+    nodes: GraphNodeEntity[],
+    ownerId: string,
+    warnings: string[],
+  ): Promise<Set<string>> {
     const destroyed = new Set<string>();
 
     try {
       await this.purgeEvents(nodes, ownerId, destroyed);
       await this.purgeContent(nodes, ownerId, destroyed);
       await this.purgeCommunications(nodes, ownerId, destroyed);
+      await this.purgeItems(nodes, ownerId, destroyed, warnings);
     } catch (error) {
       throw destroyed.size ? new PartialForgetError(Array.from(destroyed), error) : error;
     }
@@ -434,6 +439,47 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
   }
 
   /**
+   * Delete items for good, through {@link ItemService.purge}: the node, its
+   * `ci.objects` row, its identifiers and merge history, and every row that names
+   * it.
+   *
+   * An item that is another item's parent is refused unless its children are named
+   * in the same call, and the refusal is the foreign key's, reported like any other
+   * as a `CONSTRAINT_VIOLATION` that retrying will not change.
+   *
+   * The duplicates that were merged into an item go with it, and nobody named them,
+   * so they are said here: they are hidden tombstones the user never saw, and they
+   * were destroyed.
+   *
+   * An `Item` node `purge` does not take, because there is no `ci.objects` row
+   * behind it (graph ingest writes those), goes on to the generic path. Nothing
+   * references a row that does not exist, so there is nothing for the delete to be
+   * refused over.
+   */
+  private async purgeItems(
+    nodes: GraphNodeEntity[],
+    ownerId: string,
+    destroyed: Set<string>,
+    warnings: string[],
+  ): Promise<void> {
+    const itemIds = nodes.filter((node) => node.entity_type === 'Item').map((node) => node.entity_id);
+
+    if (itemIds.length === 0) {
+      return;
+    }
+
+    const purged = await this.items.purge({ userId: ownerId }, itemIds);
+
+    purged.itemIds.forEach((id) => destroyed.add(id));
+
+    if (purged.duplicateIds.length > 0) {
+      warnings.push(
+        `Also deleted, because each had been merged into an item named here: ${purged.duplicateIds.join(', ')}.`,
+      );
+    }
+  }
+
+  /**
    * An integrity violation is not worth another try. `BaseTool` marks every failure retryable,
    * which is right for a timeout or a deadlock and wrong here: a foreign key that still references
    * the row refuses the same delete the same way every time, and an agent told otherwise will keep
@@ -497,10 +543,11 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
    * own. The detail row (`ci.content`, `ci.objects`, `ci.communications`) goes
    * with the node, by cascade, so the record IS gone and announcing it is true.
    * Without it their search rows would wait for the nightly orphan sweep. When
-   * delete is the mode, a `Content` node that has a `ci.content` row, or a
-   * `Communication` node that has a `ci.communications` row, never reaches here:
-   * {@link purgeContent} and {@link purgeCommunications} delete it and announce
-   * it themselves.
+   * delete is the mode, a `Content` node that has a `ci.content` row, a
+   * `Communication` node that has a `ci.communications` row, or an `Item` node
+   * that has a `ci.objects` row never reaches here: {@link purgeContent},
+   * {@link purgeCommunications} and {@link purgeItems} delete it and announce it
+   * themselves.
    */
   private async unindexEntity(node: GraphNodeEntity, hardDelete: boolean): Promise<void> {
     // Reuses the canonical graph→search alias table rather than restating
@@ -553,28 +600,5 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
       entityType: node.entity_type ?? null,
       searchType,
     });
-  }
-
-  /**
-   * What `archive_and_delete` leaves behind for an item, said to the caller, so
-   * that it does not tell the user the record is gone without a trace.
-   *
-   * An item goes through the generic delete: the node, its detail row (by
-   * cascade) and its edges. Only an item that is another item's parent is
-   * refused, which is reported as `CONSTRAINT_VIOLATION`. But the rows that name
-   * it by id with no foreign key are not deleted the way a purge deletes them for
-   * an event, content or a communication: its provenance ledger entries, pipeline
-   * state, tags and categories, and graph deltas, which carry its title. Its
-   * search rows are announced as removed. Closing the rest is a purge of its own,
-   * not done here.
-   */
-  private leftBehindWarning(node: GraphNodeEntity): string | null {
-    const searchType = normalizeEmbeddableType(node.entity_type);
-
-    if (searchType !== 'item') {
-      return null;
-    }
-
-    return `${node.entity_type} ${node.entity_id} was deleted, but rows that name it only by id were left in place: its provenance entries, pipeline state, tags and change history.`;
   }
 }

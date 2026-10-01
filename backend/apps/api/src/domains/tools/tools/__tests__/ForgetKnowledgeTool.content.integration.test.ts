@@ -16,14 +16,10 @@ import {
   GraphDeltaWriter,
   GraphNodeEntity,
   GraphUtilityService,
+  type ItemService,
   RelationshipEntity,
 } from '@ci/domains/memory';
-import {
-  ConceptRemovedEvent,
-  ContentRemovedEvent,
-  EventRemovedEvent,
-  ItemRemovedEvent,
-} from '@ci/domains/memory/events';
+import { ConceptRemovedEvent, ContentRemovedEvent, EventRemovedEvent } from '@ci/domains/memory/events';
 import { UserEntity } from '@ci/domains/user';
 
 import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
@@ -47,10 +43,9 @@ import { ForgetKnowledgeTool } from '../ForgetKnowledgeTool';
  * against doubles. A double cannot say whether a clustered row is then really
  * gone, so this file drives the real thing and asks Postgres.
  *
- * It also holds the tool to what it says about the one type that has no purge of
- * its own, an item: the node and its detail row are deleted, and the rows that
- * name it by id are left, which is what the tool's warning says. A communication
- * is purged, and `ForgetKnowledgeTool.communication.integration.test.ts` drives that.
+ * A communication and an item are purged too, and their own files drive that:
+ * `ForgetKnowledgeTool.communication.integration.test.ts` and
+ * `ForgetKnowledgeTool.item.integration.test.ts`.
  *
  * Opt-in like its neighbours: set `MEMORY_TEST_DATABASE_URL` to a migrated
  * database of your OWN, or run `make test-db`, which provides one.
@@ -162,13 +157,14 @@ describeWithDb(`memory.forget on a Content node, against Postgres (${availabilit
       dataSource.getRepository(RelationshipEntity),
       logger(),
     );
-    // No case here names a communication, so the tool never reaches for it.
+    // No case here names a communication or an item, so the tool never reaches for either.
     tool = new ForgetKnowledgeTool(
       graph,
       signalling,
       calendar,
       contents,
       {} as unknown as CommunicationService,
+      {} as unknown as ItemService,
       logger(),
     );
   });
@@ -646,71 +642,6 @@ describeWithDb(`memory.forget on a Content node, against Postgres (${availabilit
       content: 1,
       l2ContentCluster: 1,
       contentContext: 1,
-    });
-  });
-
-  // ── Item and Communication: the generic delete, and what the tool says it left ──────────
-
-  describe('an item, which goes through the generic delete', () => {
-    async function seedItem(title: string, parent?: string): Promise<string> {
-      const id = uuidv7();
-
-      await dataSource.query(
-        `INSERT INTO ci.entities (entity_id, entity_type, name, properties, owner_user_id, linked_table, linked_id)
-         VALUES ($1, 'Item', $2, '{}'::jsonb, $3, 'objects', $1)`,
-        [id, title, ownerId],
-      );
-      await dataSource.query(
-        `INSERT INTO ci.objects (object_id, user_id, parent_object_id) VALUES ($1, $2, $3)`,
-        [id, ownerId, parent ?? null],
-      );
-
-      return id;
-    }
-
-    async function detailExists(table: 'objects', column: 'object_id', id: string) {
-      return (await dataSource.query(`SELECT 1 FROM ci.${table} WHERE ${column} = $1`, [id])).length === 1;
-    }
-
-    it('deletes an item, announces it, and says that the rows that name it by id were left', async () => {
-      const id = await seedItem('A kettle');
-
-      await seedTrail(id, 'objects', 'Item', 'A kettle');
-
-      expect(await nodeExists(id)).toBe(true);
-      expect(await detailExists('objects', 'object_id', id)).toBe(true);
-
-      const result = await forget([id]);
-
-      expect(result.success).toBe(true);
-      expect(await nodeExists(id)).toBe(false);
-      expect(await detailExists('objects', 'object_id', id)).toBe(false);
-      expect(publishedOf(ItemRemovedEvent)).toEqual([{ itemId: id }]);
-      expect(result.data?.warnings).toEqual([expect.stringContaining(`Item ${id} was deleted`)]);
-      expect((await remains(id)).graphDeltas).toBe(1);
-    });
-
-    it('refuses an item that is another item’s parent, and changes nothing', async () => {
-      const kit = await seedItem('A tool kit');
-      const part = await seedItem('A screwdriver', kit);
-
-      const result = await forget([kit]);
-
-      // The one foreign key that stops an item being deleted.
-      expect(result.success).toBe(false);
-      expect(result.error).toMatchObject({
-        code: 'CONSTRAINT_VIOLATION',
-        retryable: false,
-        details: { constraint: 'objects_parent_object_id_fkey', table: 'objects' },
-      });
-      expect(await nodeExists(kit)).toBe(true);
-      expect(await nodeExists(part)).toBe(true);
-      expect(publishedOf(ItemRemovedEvent)).toEqual([]);
-
-      // Taking the part first is what lets the kit go.
-      expect((await forget([part])).success).toBe(true);
-      expect((await forget([kit])).success).toBe(true);
-      expect(await nodeExists(kit)).toBe(false);
     });
   });
 });
