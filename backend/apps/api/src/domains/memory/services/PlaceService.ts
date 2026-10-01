@@ -23,6 +23,7 @@ import {
   placeAppearanceCountSql,
   placeAppearanceListSql,
 } from './appearanceBrowse';
+import { EVENT_HAPPENED_SQL } from './eventHappened';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 
 /** One Google-style address component ({long_name, short_name, types[]}). */
@@ -32,7 +33,12 @@ interface AddressComponent {
   types?: string[];
 }
 
-/** Aggregated event stats for a place (PlaceType.visitStats). */
+/**
+ * Aggregated event stats for a place (PlaceType.visitStats). Only events that
+ * happened are visits (see {@link EVENT_HAPPENED_SQL}): a deleted, predicted or
+ * cancelled event linked to the place is neither counted nor a first or last
+ * visit date.
+ */
 export interface PlaceVisitStats {
   visitCount: number;
   firstVisitAt: Date | null;
@@ -43,7 +49,9 @@ export interface PlaceVisitStats {
    * promotion for this user has work outstanding, so an event that WILL
    * eventually count as a visit here just hasn't been linked yet. A place
    * with a non-zero visitCount is always `confirmed` — enrichment being
-   * behind cannot make an already-counted visit less real.
+   * behind cannot make an already-counted visit less real. A place whose
+   * only linked events did not happen has a visitCount of 0 and is judged
+   * like any other zero.
    */
   status: 'confirmed' | 'pending_enrichment';
 }
@@ -666,6 +674,23 @@ export class PlaceService {
   /**
    * Aggregated visit stats for a batch of places from events.location_entity_id
    * (indexed by events_location_entity_idx). One grouped query per batch.
+   *
+   * Only an event that happened is a visit ({@link EVENT_HAPPENED_SQL}), and
+   * that is decided here, on the read, rather than left to whoever wrote the
+   * link. `promote.place` refuses such events and withdrew its own earlier
+   * links, but the legacy GeocodeBatchListener and the importers link them
+   * anyway, and an event cancelled after it was linked keeps its link, which
+   * the sweep no longer offers. Counted, they added visits that never took
+   * place and moved the first and last visit dates.
+   *
+   * `status` follows from the count and is not changed by that. A place whose
+   * only linked events did not happen is a zero like any other: `confirmed`
+   * when no enrichment is outstanding for the user, `pending_enrichment` while
+   * some is. The outstanding-work test below is per user and does not look at
+   * which event the work is for, so a ledger row left on an event that was
+   * deleted or cancelled after it failed can hold every zero of that user at
+   * `pending_enrichment`. That errs towards not stating a zero that is not yet
+   * known, and it was already so for deleted events.
    */
   async getVisitStats(context: ServiceContext, placeIds: string[]): Promise<Map<string, PlaceVisitStats>> {
     const out = new Map<string, PlaceVisitStats>();
@@ -704,13 +729,15 @@ export class PlaceService {
 
     const rows: Array<{ place_id: string; n: string; first_at: Date | null; last_at: Date | null }> =
       await this.placeRepository.manager.query(
-        `SELECT location_entity_id AS place_id,
+        `SELECT event.location_entity_id AS place_id,
                 COUNT(*) AS n,
-                MIN(start_time) AS first_at,
-                MAX(start_time) AS last_at
-           FROM ci.events
-          WHERE user_id = $1 AND location_entity_id = ANY($2::uuid[])
-          GROUP BY location_entity_id`,
+                MIN(event.start_time) AS first_at,
+                MAX(event.start_time) AS last_at
+           FROM ci.events event
+          WHERE event.user_id = $1
+            AND event.location_entity_id = ANY($2::uuid[])
+            AND ${EVENT_HAPPENED_SQL}
+          GROUP BY event.location_entity_id`,
         [context.userId, placeIds],
       );
 
