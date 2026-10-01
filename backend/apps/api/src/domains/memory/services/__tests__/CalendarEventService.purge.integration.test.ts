@@ -59,6 +59,28 @@ const logger = () =>
     debug: jest.fn(),
   }) as unknown as LoggerService;
 
+/**
+ * Polls until `probe` finds something. For waiting on Postgres to show a state, where a fixed sleep is
+ * either too short under load or a slow test everywhere else.
+ */
+async function until<T>(probe: () => Promise<T | null>, what: string, timeoutMs = 30_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const found = await probe();
+
+    if (found !== null) {
+      return found;
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for ${what}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 /** One event, the content hanging off it, and everything that points at either. */
 interface Aggregate {
   eventId: string;
@@ -576,6 +598,63 @@ describeWithDb(`CalendarEventService.purge against Postgres (${availability.targ
   it('does nothing for an empty request', async () => {
     expect(await calendar.purge(owner, [])).toEqual({ eventIds: [], contentIds: [] });
     expect(notified).toEqual([]);
+  });
+
+  it('waits for HBPE when it labels the event from another connection at the same moment', async () => {
+    const doomed = await photoEvent('Beach day');
+
+    // The fixture is already clustered. Take that back, so the membership that matters is the one
+    // HBPE writes below, from its own connection, while the purge is running.
+    await dataSource.query('DELETE FROM hbpe.l1_event_cluster WHERE event_id = $1', [doomed.eventId]);
+
+    const hbpeConnection = dataSource.createQueryRunner();
+
+    await hbpeConnection.connect();
+    await hbpeConnection.startTransaction();
+
+    let purging: Promise<unknown> | undefined;
+
+    try {
+      const [{ pid }] = await hbpeConnection.query('SELECT pg_backend_pid() AS pid');
+
+      // What HBPE does to an event it labels. The insert takes a key-share lock on the event's row, and
+      // the membership is invisible to everyone else until this commits.
+      await hbpeConnection.query(
+        'INSERT INTO hbpe.l1_event_cluster (event_id, cluster_id, similarity) VALUES ($1, $2, 0.9)',
+        [doomed.eventId, doomed.l1ClusterId],
+      );
+
+      purging = calendar.purge(owner, [doomed.eventId]);
+
+      // Ask Postgres who is waiting on that connection, rather than sleeping, and WHERE: the purge has to
+      // be held at the statement that locks the event rows, before it has deleted anything. Held anywhere
+      // later, it would have cleared the memberships it could see and then tripped over this one.
+      const blocked = await until(async () => {
+        const rows: Array<{ query: string }> = await dataSource.query(
+          'SELECT query FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))',
+          [pid],
+        );
+
+        return rows.length > 0 ? rows : null;
+      }, 'the purge to block on the HBPE connection');
+
+      expect(blocked).toHaveLength(1);
+      expect(blocked[0].query).toMatch(/\bFOR UPDATE\b/);
+
+      await hbpeConnection.commitTransaction();
+    } catch (error) {
+      await hbpeConnection.rollbackTransaction().catch(() => undefined);
+      // Let a purge that was released by the rollback finish, so it cannot run into the next test's clean-up.
+      await purging?.catch(() => undefined);
+
+      throw error;
+    } finally {
+      await hbpeConnection.release();
+    }
+
+    // Having waited, the purge sees the membership that just committed and clears it with the rest.
+    expect(await purging).toEqual({ eventIds: [doomed.eventId], contentIds: [doomed.contentId] });
+    expect(await footprint(doomed)).toEqual(EMPTY);
   });
 
   it('is all or nothing when something it does not know about blocks the delete', async () => {

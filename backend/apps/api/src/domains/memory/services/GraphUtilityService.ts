@@ -1412,15 +1412,47 @@ export class GraphUtilityService {
    * ========================================================================
    */
 
+  /**
+   * Archives entities (`is_active = false`), or with `hardDelete` deletes them.
+   *
+   * A hard delete takes every edge that touches the node with it, in BOTH directions, in the same
+   * transaction. `ci.relationships` has no foreign key to `ci.entities`, so nothing else would: the
+   * node's outbound edges used to be deleted in a second step and its inbound ones not at all, which
+   * left ghosts pointing at a node that no longer exists. If the delete is refused (a foreign key still
+   * references the node) nothing changes, edges included.
+   *
+   * Only nodes the caller owns are touched, edges included.
+   */
   async deactivateEntities(entityIds: string[], ownerUserId: string, hardDelete = false): Promise<number> {
     if (entityIds.length === 0) {
       return 0;
     }
 
     if (hardDelete) {
-      const result = await this.entityRepo.delete({ entity_id: In(entityIds), owner_user_id: ownerUserId });
+      return this.entityRepo.manager.transaction(async (manager) => {
+        const repository = manager.getRepository(GraphNodeEntity);
+        const owned = await repository.find({
+          select: ['entity_id'],
+          where: { entity_id: In(entityIds), owner_user_id: ownerUserId },
+        });
 
-      return result.affected ?? 0;
+        if (owned.length === 0) {
+          return 0;
+        }
+
+        const ownedIds = owned.map((node) => node.entity_id);
+
+        await manager.query(
+          `DELETE FROM ci.relationships
+            WHERE owner_user_id = $1
+              AND (from_entity_id = ANY($2::uuid[]) OR to_entity_id = ANY($2::uuid[]))`,
+          [ownerUserId, ownedIds],
+        );
+
+        const result = await repository.delete({ entity_id: In(ownedIds), owner_user_id: ownerUserId });
+
+        return result.affected ?? 0;
+      });
     }
 
     const result = await this.entityRepo.update(

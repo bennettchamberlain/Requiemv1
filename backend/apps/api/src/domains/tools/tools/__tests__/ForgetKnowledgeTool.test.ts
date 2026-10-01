@@ -95,17 +95,21 @@ function makeGraphUtility(
   const nodes = options.nodes ?? {};
   const relationshipsById = options.relationshipsById ?? {};
 
-  const collectEntitySnapshot = jest.fn(async (entityId: string, _ownerId?: string, _options?: object) => {
-    const entry = nodes[entityId];
-    if (!entry) {
-      return { node: null, relationships: [] };
-    }
+  // Edges come back only when asked for, as the real snapshot has it: a double that ignored the
+  // option would hide exactly what the tool decides about them.
+  const collectEntitySnapshot = jest.fn(
+    async (entityId: string, _ownerId?: string, snapshotOptions: { includeRelationships?: boolean } = {}) => {
+      const entry = nodes[entityId];
+      if (!entry) {
+        return { node: null, relationships: [] };
+      }
 
-    return {
-      node: fakeNode(entityId, entry.entityType),
-      relationships: entry.relationships ?? [],
-    };
-  });
+      return {
+        node: fakeNode(entityId, entry.entityType),
+        relationships: snapshotOptions.includeRelationships ? (entry.relationships ?? []) : [],
+      };
+    },
+  );
 
   const getRelationships = jest.fn(async (_ownerId: string, opts: { relationshipIds?: string[] }) =>
     (opts.relationshipIds ?? [])
@@ -225,7 +229,9 @@ describe('ForgetKnowledgeTool', () => {
     const deleteTool = makeTool(graphUtility2);
     await deleteTool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
     expect(graphUtility2.deactivateEntities).toHaveBeenLastCalledWith([E1], CONTEXT.userId, true);
-    expect(graphUtility2.deactivateRelationships).toHaveBeenLastCalledWith([R1], CONTEXT.userId, true);
+    // A delete takes the node's edges itself, in both directions and in the same transaction as the
+    // node (`deactivateEntities`), so no edge ids are collected for a second step.
+    expect(graphUtility2.deactivateRelationships).not.toHaveBeenCalled();
   });
 
   it('skips the deactivate calls entirely when nothing resolved (no entities found, no relationships)', async () => {
@@ -479,8 +485,8 @@ describe('ForgetKnowledgeTool events, archive_and_delete', () => {
     expect(calendarEvents.purge).toHaveBeenCalledTimes(1);
     expect(calendarEvents.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E1, E2]);
     expect(graphUtility.deactivateEntities).toHaveBeenCalledWith([E3], CONTEXT.userId, true);
-    // Only the node the generic path took has edges for it to delete.
-    expect(graphUtility.deactivateRelationships).toHaveBeenCalledWith([R_CASCADE], CONTEXT.userId, true);
+    // The generic delete takes its node's edges with it, so there is no second step for them.
+    expect(graphUtility.deactivateRelationships).not.toHaveBeenCalled();
     expect(result.data?.archivedEntityIds).toEqual([E1, E2, E3]);
   });
 
@@ -497,7 +503,7 @@ describe('ForgetKnowledgeTool events, archive_and_delete', () => {
 
     expect(calendarEvents.purge).toHaveBeenCalledWith({ userId: CONTEXT.userId }, [E1]);
     expect(graphUtility.deactivateEntities).toHaveBeenCalledWith([E1], CONTEXT.userId, true);
-    expect(graphUtility.deactivateRelationships).toHaveBeenCalledWith([R1], CONTEXT.userId, true);
+    expect(graphUtility.deactivateRelationships).not.toHaveBeenCalled();
     expect(result.data?.archivedEntityIds).toEqual([E1]);
   });
 
@@ -528,5 +534,197 @@ describe('ForgetKnowledgeTool events, archive_and_delete', () => {
 
     expect(graphUtility.deactivateRelationships).toHaveBeenCalledWith([R_EXPLICIT], CONTEXT.userId, true);
     expect(result.data?.archivedRelationshipIds).toEqual([R_EXPLICIT]);
+  });
+});
+
+describe('ForgetKnowledgeTool edges', () => {
+  it('collects a node’s outgoing edges only to archive it, never to delete it', async () => {
+    const archiveGraph = makeGraphUtility({ nodes: { [E1]: {} } });
+    await makeTool(archiveGraph).execute(CONTEXT, { entityIds: [E1], mode: 'archive' });
+
+    expect(archiveGraph.collectEntitySnapshot).toHaveBeenCalledWith(
+      E1,
+      CONTEXT.userId,
+      expect.objectContaining({ includeRelationships: true }),
+    );
+
+    const deleteGraph = makeGraphUtility({ nodes: { [E1]: {} } });
+    await makeTool(deleteGraph).execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(deleteGraph.collectEntitySnapshot).toHaveBeenCalledWith(
+      E1,
+      CONTEXT.userId,
+      expect.objectContaining({ includeRelationships: false }),
+    );
+  });
+});
+
+/**
+ * What the pg driver, and TypeORM on top of it, hand back. TypeORM's `QueryFailedError` copies the
+ * driver's fields onto itself and keeps the original as `driverError`; both shapes are covered
+ * because callers read either.
+ */
+function pgFailure(code: string, fields: { constraint?: string; table?: string } = {}, nested = false) {
+  const message = `update or delete on table "${fields.table ?? 'events'}" violates foreign key constraint "${fields.constraint ?? 'l1_event_cluster_event_id_fkey'}"`;
+
+  return nested
+    ? Object.assign(new Error(message), { driverError: { code, ...fields } })
+    : Object.assign(new Error(message), { code, ...fields });
+}
+
+describe('ForgetKnowledgeTool failures', () => {
+  const FK = { constraint: 'users_entity_id_fkey', table: 'users' };
+
+  it.each([
+    ['on the error', false],
+    ['on its driverError', true],
+  ])('does not call a foreign-key violation retryable (%s)', async (_where, nested) => {
+    const calendarEvents = makeCalendarEvents([E1]);
+    calendarEvents.purge.mockRejectedValueOnce(pgFailure('23503', FK, nested));
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Event' } } });
+    const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatchObject({
+      code: 'CONSTRAINT_VIOLATION',
+      retryable: false,
+      details: { constraint: 'users_entity_id_fkey', table: 'users' },
+    });
+    // Says what is in the way, that trying again will not help, and what to do instead.
+    expect(result.error?.message).toContain('constraint "users_entity_id_fkey" on table "users"');
+    expect(result.error?.message).toContain('Retrying will not change that');
+    expect(result.error?.message).toContain('mode "archive"');
+  });
+
+  it.each(['23001', '23505', '23502', '23514'])(
+    'treats SQLSTATE %s, the rest of the integrity class, the same way',
+    async (code) => {
+      const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Concept' } } });
+      graphUtility.deactivateEntities.mockRejectedValueOnce(pgFailure(code));
+      const tool = makeTool(graphUtility);
+
+      const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+      expect(result.error).toMatchObject({ code: 'CONSTRAINT_VIOLATION', retryable: false });
+    },
+  );
+
+  it('reports a violation without a constraint name', async () => {
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Person' } } });
+    graphUtility.deactivateEntities.mockRejectedValueOnce(
+      Object.assign(new Error('boom'), { code: '23503' }),
+    );
+    const tool = makeTool(graphUtility);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(result.error).toMatchObject({ code: 'CONSTRAINT_VIOLATION', retryable: false });
+    expect(result.error?.message).toContain('another record still references one of the entities');
+  });
+
+  it.each([
+    ['a deadlock', pgFailure('40P01')],
+    ['a serialization failure', pgFailure('40001')],
+    ['a lock timeout', pgFailure('55P03')],
+    ['a dropped connection', Object.assign(new Error('Connection terminated'), { code: 'ECONNRESET' })],
+    ['an ordinary error', new Error('boom')],
+  ])('still calls %s retryable, as BaseTool does', async (_name, failure) => {
+    const calendarEvents = makeCalendarEvents([E1]);
+    calendarEvents.purge.mockRejectedValueOnce(failure);
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Event' } } });
+    const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatchObject({ code: 'EXECUTION_ERROR', retryable: true });
+  });
+
+  it('stops where a purge failed: nothing before it was destroyed, and nothing after it is touched', async () => {
+    // `purge` is one transaction for the whole batch, so a refusal leaves every event as it was.
+    const calendarEvents = makeCalendarEvents([E1, E2]);
+    calendarEvents.purge.mockRejectedValueOnce(pgFailure('23503', FK));
+    const graphUtility = makeGraphUtility({
+      nodes: {
+        [E1]: { entityType: 'Event' },
+        [E2]: { entityType: 'Event' },
+        [E3]: { entityType: 'Concept' },
+      },
+    });
+    const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1, E2, E3], mode: 'archive_and_delete' });
+
+    expect(result.error).toMatchObject({ code: 'CONSTRAINT_VIOLATION', retryable: false });
+    expect(result.error?.details).not.toHaveProperty('deletedEntityIds');
+    expect(result.error?.message).not.toContain('Already deleted');
+    expect(graphUtility.deactivateEntities).not.toHaveBeenCalled();
+  });
+
+  it('names the events already destroyed when it is the rest of the call that is refused', async () => {
+    // The purge commits first and cannot be undone, so a later refusal has to say what is gone.
+    const calendarEvents = makeCalendarEvents([E1, E2]);
+    const graphUtility = makeGraphUtility({
+      nodes: { [E1]: { entityType: 'Event' }, [E2]: { entityType: 'Event' }, [E3]: { entityType: 'Person' } },
+    });
+    graphUtility.deactivateEntities.mockRejectedValueOnce(pgFailure('23503', FK));
+    const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1, E2, E3], mode: 'archive_and_delete' });
+
+    expect(result.error).toMatchObject({
+      code: 'CONSTRAINT_VIOLATION',
+      retryable: false,
+      details: { constraint: 'users_entity_id_fkey', table: 'users', deletedEntityIds: [E1, E2] },
+    });
+    expect(result.error?.message).toContain('still references one of the entities.');
+    expect(result.error?.message).toContain(`Already deleted: ${E1}, ${E2}.`);
+  });
+
+  it('carries that progress on a retryable failure too', async () => {
+    const calendarEvents = makeCalendarEvents([E1]);
+    const graphUtility = makeGraphUtility({
+      nodes: { [E1]: { entityType: 'Event' }, [E3]: { entityType: 'Concept' } },
+    });
+    graphUtility.deactivateEntities.mockRejectedValueOnce(pgFailure('40P01'));
+    const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1, E3], mode: 'archive_and_delete' });
+
+    expect(result.error).toMatchObject({
+      code: 'EXECUTION_ERROR',
+      retryable: true,
+      details: { deletedEntityIds: [E1] },
+    });
+    expect(result.error?.message).toContain(`Already deleted: ${E1}.`);
+  });
+
+  it('says nothing of progress when nothing was destroyed before the failure', async () => {
+    const graphUtility = makeGraphUtility({ nodes: { [E1]: { entityType: 'Person' } } });
+    graphUtility.deactivateEntities.mockRejectedValueOnce(pgFailure('23503'));
+    const tool = makeTool(graphUtility);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1], mode: 'archive_and_delete' });
+
+    expect(result.error?.details).not.toHaveProperty('deletedEntityIds');
+    expect(result.error?.message).not.toContain('Already deleted');
+  });
+
+  it('does not call an event it only moved to the trash deleted, when archiving then fails', async () => {
+    // A trashed event comes back with `restore`, so "already deleted" would be false.
+    const calendarEvents = makeCalendarEvents([E1]);
+    const graphUtility = makeGraphUtility({
+      nodes: { [E1]: { entityType: 'Event' }, [E3]: { entityType: 'Concept' } },
+    });
+    graphUtility.deactivateEntities.mockRejectedValueOnce(new Error('boom'));
+    const tool = makeTool(graphUtility, makeSearchIndex(), calendarEvents);
+
+    const result = await tool.execute(CONTEXT, { entityIds: [E1, E3], mode: 'archive' });
+
+    expect(calendarEvents.remove).toHaveBeenCalledTimes(1);
+    expect(result.error).toMatchObject({ code: 'EXECUTION_ERROR', retryable: true, message: 'boom' });
+    expect(result.error?.details).not.toHaveProperty('deletedEntityIds');
   });
 });

@@ -110,6 +110,17 @@ const GONE: Visibility = {
   inKnownPlaces: false,
 };
 
+/** What `remains` reads once every row of an aggregate is gone. */
+const NOTHING = {
+  entities: 0,
+  events: 0,
+  content: 0,
+  relationships: 0,
+  l1EventCluster: 0,
+  l2ContentCluster: 0,
+  contentContext: 0,
+};
+
 describeWithDb(`memory.forget on an Event, against Postgres (${availability.target})`, () => {
   let dataSource: DataSource;
   let schemaLock: SchemaLock | null = null;
@@ -174,6 +185,7 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
   });
 
   async function wipe(userId: string): Promise<void> {
+    await dataSource.query('UPDATE ci.users SET entity_id = NULL WHERE id = $1', [userId]);
     await dataSource.query(
       `DELETE FROM hbpe.l1_event_cluster WHERE event_id IN (SELECT event_id FROM ci.events WHERE user_id = $1)`,
       [userId],
@@ -583,16 +595,6 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
   // ── Archive-and-delete mode ───────────────────────────────────────────────
 
   describe('archive_and_delete mode', () => {
-    const NOTHING = {
-      entities: 0,
-      events: 0,
-      content: 0,
-      relationships: 0,
-      l1EventCluster: 0,
-      l2ContentCluster: 0,
-      contentContext: 0,
-    };
-
     it('removes an unclustered event outright, rather than moving it to the trash', async () => {
       const dana = await seedNode('Person', 'Dana');
       const id = await seedEvent('Dinner with Dana');
@@ -700,6 +702,124 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
       expect(result.data?.archivedEntityIds).toEqual([]);
       expect(result.data?.warnings).toEqual([`Entity ${id} not found or not owned by user`]);
       expect(await remains(id)).toEqual({ ...NOTHING, entities: 1, events: 1, l1EventCluster: 1 });
+    });
+  });
+
+  describe('archive_and_delete mode, for every other type', () => {
+    it('takes a node’s edges in both directions, not just the ones leaving it', async () => {
+      const dana = await seedNode('Person', 'Dana');
+      const jazz = await seedNode('Concept', 'Jazz');
+      const outbound = await seedEdge(jazz, dana, 'RELATED_TO');
+      // This one points AT the node. Nothing used to delete it, and `ci.relationships` has no
+      // foreign key to `ci.entities` to do it instead, so it stayed, pointing at nothing.
+      const inbound = await seedEdge(dana, jazz, 'LIKES');
+      const unrelated = await seedEdge(dana, await seedNode('Concept', 'Blues'), 'LIKES');
+
+      const result = await forget([jazz], 'archive_and_delete');
+
+      expect(result.success).toBe(true);
+      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [jazz])).toEqual([]);
+      expect(
+        await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = ANY($1::uuid[])', [
+          [outbound, inbound],
+        ]),
+      ).toEqual([]);
+      // Somebody else's edge is somebody else's: only the deleted node's own are taken.
+      expect(
+        await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = $1', [unrelated]),
+      ).toHaveLength(1);
+    });
+
+    it('does not touch the edges of a node it does not own', async () => {
+      const mine = await seedNode('Concept', 'Jazz');
+      const theirs = await seedNode('Concept', 'Jazz', strangerId);
+
+      // An edge of the stranger's that happens to name my node's id is the stranger's to keep.
+      const [{ relationship_id }] = await dataSource.query(
+        `INSERT INTO ci.relationships (from_entity_id, to_entity_id, relationship_type, owner_user_id)
+         VALUES ($1, $2, 'SAME_AS', $3) RETURNING relationship_id`,
+        [theirs, mine, strangerId],
+      );
+
+      const result = await forget([mine], 'archive_and_delete');
+
+      expect(result.success).toBe(true);
+      expect(
+        await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = $1', [
+          relationship_id,
+        ]),
+      ).toHaveLength(1);
+      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [theirs])).toHaveLength(
+        1,
+      );
+    });
+
+    it('deletes a node that was archived earlier, where archiving it again finds nothing', async () => {
+      const jazz = await seedNode('Concept', 'Jazz');
+
+      await forget([jazz]);
+
+      expect(await forget([jazz])).toMatchObject({
+        success: true,
+        data: { archivedEntityIds: [], warnings: [`Entity ${jazz} not found or not owned by user`] },
+      });
+
+      const result = await forget([jazz], 'archive_and_delete');
+
+      expect(result.data?.archivedEntityIds).toEqual([jazz]);
+      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [jazz])).toEqual([]);
+    });
+
+    it('is refused whole by a foreign key, and says that trying again will not help', async () => {
+      // `ci.users.entity_id` references the user's own Person with no ON DELETE action.
+      const me = await seedNode('Person', 'Me');
+      const dana = await seedNode('Person', 'Dana');
+      const outbound = await seedEdge(me, dana, 'KNOWS');
+      const inbound = await seedEdge(dana, me, 'KNOWS');
+
+      await dataSource.query('UPDATE ci.users SET entity_id = $1 WHERE id = $2', [me, ownerId]);
+
+      const result = await forget([me], 'archive_and_delete');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatchObject({
+        code: 'CONSTRAINT_VIOLATION',
+        retryable: false,
+        details: { constraint: 'users_entity_id_fkey', table: 'users' },
+      });
+      expect(result.error?.message).toContain('mode "archive"');
+      expect(result.error?.details).not.toHaveProperty('deletedEntityIds');
+
+      // Nothing changed: the node and both edges are as they were. The edges were deleted first,
+      // in the same transaction, and the refused delete took that back.
+      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [me])).toHaveLength(1);
+      expect(
+        await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = ANY($1::uuid[])', [
+          [outbound, inbound],
+        ]),
+      ).toHaveLength(2);
+    });
+
+    it('names the events it had already destroyed when it is the rest of the call that is refused', async () => {
+      const event = await seedEvent('Dinner with Dana');
+      const me = await seedNode('Person', 'Me');
+
+      await clusterAtHbpe(event);
+      await dataSource.query('UPDATE ci.users SET entity_id = $1 WHERE id = $2', [me, ownerId]);
+
+      // The purge commits first, and cannot be undone. Then the node the foreign key protects is refused.
+      const result = await forget([event, me], 'archive_and_delete');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatchObject({
+        code: 'CONSTRAINT_VIOLATION',
+        retryable: false,
+        details: { constraint: 'users_entity_id_fkey', deletedEntityIds: [event] },
+      });
+      expect(result.error?.message).toContain(`Already deleted: ${event}.`);
+
+      expect(await remains(event)).toEqual(NOTHING);
+      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [me])).toHaveLength(1);
     });
   });
 });

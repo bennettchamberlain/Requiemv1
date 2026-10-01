@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
+import { isIntegrityConstraintViolation } from '@ci/common/constants';
 import { normalizeEmbeddableType } from '@ci/common/embeddings';
 import { LoggerService } from '@ci/common/logging';
 import { EventService } from '@ci/domains/events';
@@ -13,7 +14,7 @@ import {
 import { ConceptRemovedEvent, PersonRemovedEvent, PlaceRemovedEvent } from '@ci/domains/memory/events';
 
 import { BaseTool } from '../core/BaseTool';
-import type { IntentDefinition, ToolExecutionContext } from '../core/types';
+import type { IntentDefinition, ToolError, ToolExecutionContext } from '../core/types';
 
 const ForgetKnowledgeInputBaseSchema = z.object({
   entityIds: z.array(z.string().uuid()).optional(),
@@ -43,6 +44,28 @@ export interface ForgetKnowledgeOutput {
   restorableEventIds?: string[];
   mode: 'archive' | 'archive_and_delete';
   warnings?: string[];
+}
+
+/**
+ * A delete that failed after it had already destroyed something. Events are purged first, in
+ * their own transaction, and a purge cannot be undone, so when the rest of the call is refused
+ * the events are gone and stay gone. This says which, rather than leaving the caller to find
+ * out by trying again.
+ */
+class PartialForgetError extends Error {
+  constructor(
+    readonly deletedEntityIds: string[],
+    cause: unknown,
+  ) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+
+    super(`The delete failed: ${reason}.${alreadyDeleted(deletedEntityIds)}`, { cause });
+    this.name = 'PartialForgetError';
+  }
+}
+
+function alreadyDeleted(ids: string[]): string {
+  return ids.length ? ` Already deleted: ${ids.join(', ')}.` : '';
 }
 
 @Injectable()
@@ -146,7 +169,10 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
 
     for (const entityId of entityIds) {
       const snapshot = await this.graphUtility.collectEntitySnapshot(entityId, ownerId, {
-        includeRelationships: true,
+        // Archive deactivates the node's outgoing edges along with it, so it needs them. A delete
+        // takes every edge of the node, in both directions, in the same transaction as the node
+        // (`deactivateEntities`), so there is nothing to collect for it.
+        includeRelationships: !hardDelete,
         // Delete takes whatever is there. A node that archive already deactivated,
         // which is what an event in the trash is, is still a node to delete: without
         // this the second step of "archive, then delete" answers "not found".
@@ -189,24 +215,31 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
     );
     explicitRelationships.forEach((rel) => relationshipIdsToDisable.add(rel.relationship_id));
 
-    if (graphSnapshots.length) {
-      await this.graphUtility.deactivateEntities(
-        graphSnapshots.map((entry) => entry.node.entity_id),
-        ownerId,
-        hardDelete,
-      );
+    try {
+      if (graphSnapshots.length) {
+        await this.graphUtility.deactivateEntities(
+          graphSnapshots.map((entry) => entry.node.entity_id),
+          ownerId,
+          hardDelete,
+        );
 
-      for (const entry of graphSnapshots) {
-        await this.unindexEntity(entry.node);
+        for (const entry of graphSnapshots) {
+          await this.unindexEntity(entry.node);
+        }
       }
-    }
 
-    if (relationshipIdsToDisable.size > 0) {
-      await this.graphUtility.deactivateRelationships(
-        Array.from(relationshipIdsToDisable),
-        ownerId,
-        hardDelete,
-      );
+      if (relationshipIdsToDisable.size > 0) {
+        await this.graphUtility.deactivateRelationships(
+          Array.from(relationshipIdsToDisable),
+          ownerId,
+          hardDelete,
+        );
+      }
+    } catch (error) {
+      // A trashed event comes back with `restore`. A purged one does not, so say which are gone.
+      throw hardDelete && handledEventIds.size
+        ? new PartialForgetError(Array.from(handledEventIds), error)
+        : error;
     }
 
     return {
@@ -290,6 +323,39 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
     const purged = await this.calendarEvents.purge({ userId: ownerId }, eventIds);
 
     return new Set(purged.eventIds);
+  }
+
+  /**
+   * An integrity violation is not worth another try. `BaseTool` marks every failure retryable,
+   * which is right for a timeout or a deadlock and wrong here: a foreign key that still references
+   * the row refuses the same delete the same way every time, and an agent told otherwise will keep
+   * asking. So it says so, and says what to do instead. Everything else is left as `BaseTool`
+   * has it.
+   */
+  protected handleError(error: unknown): ToolError {
+    const partial = error instanceof PartialForgetError ? error : null;
+    const cause = partial ? partial.cause : error;
+    const progress = partial ? { deletedEntityIds: partial.deletedEntityIds } : {};
+
+    if (!isIntegrityConstraintViolation(cause)) {
+      const base = super.handleError(error);
+
+      return { ...base, details: { ...base.details, ...progress } };
+    }
+
+    const driver = cause as { constraint?: string; table?: string; driverError?: Record<string, string> };
+    const constraint = driver.constraint ?? driver.driverError?.constraint;
+    const table = driver.table ?? driver.driverError?.table;
+    const blocker = constraint
+      ? `constraint "${constraint}"${table ? ` on table "${table}"` : ''}`
+      : 'another record';
+
+    return {
+      code: 'CONSTRAINT_VIOLATION',
+      message: `Cannot delete: ${blocker} still references one of the entities. Retrying will not change that. Use mode "archive" to forget without erasing.${alreadyDeleted(partial?.deletedEntityIds ?? [])}`,
+      retryable: false,
+      details: { constraint, table, ...progress },
+    };
   }
 
   /**
