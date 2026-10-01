@@ -149,9 +149,11 @@ export class PersonStubBackfillService {
     }
 
     const { start, end } = bounds;
-    const identity = await readSelfIdentity(this.dataSource, userId).catch(
-      (): SelfIdentity => ({ names: [], email: null, phones: [] }),
-    );
+    const identity = await readSelfIdentity(this.dataSource, userId).catch((): SelfIdentity => ({
+      names: [],
+      email: null,
+      phones: [],
+    }));
     const trustMode = await this.personalization.getTrustMode(userId);
     const selfEntityId = await this.resolveSelfEntityId(userId);
 

@@ -50,8 +50,8 @@ function makeListener(
         : overrides.stage,
     ),
     isFinished: jest.fn(async () => overrides.finished ?? false),
-    claimStage: jest.fn(
-      async (): Promise<string | null> => ((overrides.claimed ?? true) ? CLAIM_TOKEN : null),
+    claimStage: jest.fn(async (): Promise<string | null> =>
+      (overrides.claimed ?? true) ? CLAIM_TOKEN : null,
     ),
     touchStage: jest.fn(async () => true),
     completeStage: jest.fn(async () => true),
