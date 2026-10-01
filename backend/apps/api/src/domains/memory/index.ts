@@ -293,6 +293,11 @@ export type { Content } from './entities/ContentEntity';
 // How a graph write spells `entity_type`; `memory.remember` sends the model's type through these.
 export { canonicalEntityType, isStorableEntityType, sameEntityType } from './graph.types';
 export { SELF_ENTITY_PROVISIONER, type SelfEntityProvisioner } from './services/selfEntityProvisioner';
+export {
+  EVENT_TIME_REOPENER,
+  type EventTimeReopener,
+  resolveEventTimeReopener,
+} from './services/eventTimeReopener';
 export type { MapPin } from './services/CalendarEventService';
 // What `FileService.purge` answers with, and the error that says a purge deleted a file's stored
 // objects and then could not delete its records.
@@ -335,7 +340,13 @@ export type {
   PlaceDuplicatePage,
   PlaceDuplicateReason,
 } from './services/PlaceDuplicateService';
-export type { CreateEventDto, UpdateEventDto, CreateContentDto, UpdateContentDto } from './types';
+export type {
+  CreateEventDto,
+  UpdateEventDto,
+  CreateContentDto,
+  UpdateContentDto,
+  SourceAssertedField,
+} from './types';
 // Cross-pipeline identity: the ONLY constructors of source_system/source_id.
 // Every domain that stamps a provenance pair imports the builders from here —
 // see docs/design/cross-pipeline-identity.md.
