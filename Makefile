@@ -847,17 +847,30 @@ smoke-api: ## Verify the API image can run `migrate` with production-only depend
 # migrate-database runs `yarn migrate`, so both halves of it must resolve inside
 # the image, which installs dependencies only: a devDependency in either exits
 # non-zero at startup and rolls back every app install. Neither half needs a
-# database here — check:migrations only reads the migration files, and dbmate's
-# --help resolves bin/dbmate.js's imports without connecting. entrypoint.sh is
-# bypassed because it demands the eight runtime secrets. A missing image is an
-# error, not a pass: a gate that verified nothing must not report green.
+# database here — check:migrations only reads the migration files, and the dbmate
+# half runs `--no-wait` in a container with no network, so the wrapper's ownership
+# check finds nothing to connect to and steps aside. entrypoint.sh is bypassed
+# because it demands the eight runtime secrets. A missing image is an error, not
+# a pass: a gate that verified nothing must not report green.
+#
+# The dbmate half goes through yarn, the way migrate does, and asks the binary for
+# its `--version`:
+#   - bin/dbmate.js spawns a bare `dbmate`, and the only one in the image is the
+#     npm package's, which yarn puts first on the PATH of the scripts it runs. A
+#     bare `node bin/dbmate.js` skips yarn, so it would test a different
+#     resolution than production uses — it once reached a curl-installed 2.27.0
+#     that migrate never ran.
+#   - `--help` is answered by the wrapper's own argument parser, which exits before
+#     it spawns anything, so it passes with no dbmate in the image at all.
+#     `--version` is forwarded to the binary, so a missing or wrong-architecture
+#     one fails here rather than in migrate-database on an appliance.
 	@docker image inspect $(API_REPO):latest >/dev/null 2>&1 || { \
 		printf "  ✗ $(API_REPO):latest not found — run 'make build' first.\n\n"; \
 		exit 1; \
 	}
 
-	@docker run --rm --entrypoint sh $(API_REPO):latest -c \
-		'yarn check:migrations && node bin/dbmate.js --help >/dev/null'
+	@docker run --rm --network none --entrypoint sh $(API_REPO):latest -c \
+		'yarn check:migrations && yarn dbmate --no-wait --version'
 
 	@printf "\nAPI image can migrate. ✅\n\n"
 
