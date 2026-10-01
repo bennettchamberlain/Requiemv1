@@ -1,4 +1,6 @@
-import { ESTIMATED_CONFIDENCE, LocationEstimateService } from '../LocationEstimateService';
+import { LIVE_EVENT_SQL } from '@ci/domains/memory';
+
+import { ESTIMATED_CONFIDENCE, eventHappenedSql, LocationEstimateService } from '../LocationEstimateService';
 
 function makeLogger() {
   return { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -28,7 +30,9 @@ describe('LocationEstimateService.countCandidates', () => {
     const [sql, params] = dataSource.query.mock.calls[0] as [string, unknown[]];
     expect(sql).toContain('location_coordinates IS NULL');
     expect(sql).toContain('source_system = ANY($2)');
-    expect(sql).toContain('is_deleted = false');
+    // Candidate and donor alike must be events that happened.
+    expect(sql).toContain(`AND ${eventHappenedSql('e')}`);
+    expect(sql).toContain(`AND ${eventHappenedSql('n')}`);
     expect(sql).toContain("<> 'estimated'");
     // Blocker guard: never count/estimate a predicted event (CHECK constraint).
     expect(sql).toContain('COALESCE(e.is_predicted, false) = false');
@@ -50,6 +54,36 @@ describe('LocationEstimateService.countCandidates', () => {
     expect(n).toBe(7);
     const [, params] = dataSource.query.mock.calls[0] as [string, unknown[]];
     expect(params[3]).toBe(true);
+  });
+});
+
+describe('LocationEstimateService — an event that did not happen neither lends nor receives', () => {
+  // Proven against Postgres, case by case, in
+  // LocationEstimateDidNotHappen.integration.spec.ts. These pin the text.
+
+  it('states the rule in the text enrich.estimate_location states it in', () => {
+    // EstimateLocationStage.spec.ts pins the pipeline's copy to this same
+    // text. The status half is the calendar's LIVE_EVENT_SQL, re-aliased.
+    expect(eventHappenedSql('n')).toBe(
+      'COALESCE(n.is_deleted, false) = false ' +
+        'AND COALESCE(n.is_predicted, false) = false ' +
+        `AND ${LIVE_EVENT_SQL.replace('event.status', 'n.status')} ` +
+        "AND COALESCE(n.metadata->>'Canceled', '') <> 'true'",
+    );
+  });
+
+  it('refuses a donor that did not happen in the LATERAL that picks it, not only in the count', async () => {
+    let call = 0;
+    const { service, dataSource } = makeService(async () => (++call === 1 ? [{ count: '1' }] : []));
+
+    await service.estimateBatch(USER, { limit: 10, maxGapHours: 24, sourceSystems: ['calendar'] });
+
+    const sql = dataSource.query.mock.calls[1][0] as string;
+
+    // Twice for donors (the candidate CTE's EXISTS and the LATERAL), once for
+    // the candidate itself.
+    expect(sql.split(eventHappenedSql('n')).length - 1).toBe(2);
+    expect(sql.split(eventHappenedSql('e')).length - 1).toBe(1);
   });
 });
 

@@ -275,8 +275,14 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * coordinate, so improving the geocoder makes every estimate stale. Bumping
    * the provider generation therefore bumps BOTH stages — which is the point,
    * and means this line moves whenever `enrich.geocode`'s does.
+   *
+   * v2 — ESTIMATE_RULE_GENERATION 2: donors and targets must be events that
+   * happened (`eventHappenedSql`). A cancelled, no_show or skipped event, a
+   * prediction, or a Takeout reservation marked cancelled no longer lends its
+   * coordinate, and no longer receives an estimate. The bump re-derives every
+   * v1 estimate from the donors that are left.
    */
-  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 1,
+  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 2,
 
   /**
    * v1 — initial conversion of the three participant backfills.
