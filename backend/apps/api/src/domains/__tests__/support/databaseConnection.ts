@@ -274,8 +274,7 @@ export function resolveConnection(
  * share it.
  */
 export type DataSourceConnectionFields =
-  | { url: string }
-  | { host: string; port: number; username: string; password: string; database: string };
+  { url: string } | { host: string; port: number; username: string; password: string; database: string };
 
 export function dataSourceConnection(options: TestDatabaseOptions = {}): DataSourceConnectionFields {
   const connection = resolveConnection(options);

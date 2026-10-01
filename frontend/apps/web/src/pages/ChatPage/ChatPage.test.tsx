@@ -143,7 +143,9 @@ vi.mock('@/components/Chat', () => ({
         Stop
       </button>
       <ul data-testid="thread-messages">
-        {messages?.map((message) => <li key={message.id}>{`${message.role}: ${message.content}`}</li>)}
+        {messages?.map((message) => (
+          <li key={message.id}>{`${message.role}: ${message.content}`}</li>
+        ))}
       </ul>
       {emptyState}
     </>

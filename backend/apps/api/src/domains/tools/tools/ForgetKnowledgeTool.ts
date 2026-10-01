@@ -10,7 +10,6 @@ import {
   GraphUtilityService,
   GraphNodeEntity,
   RelationshipEntity,
-  type PurgedEvent,
 } from '@ci/domains/memory';
 import { ConceptRemovedEvent, PersonRemovedEvent, PlaceRemovedEvent } from '@ci/domains/memory/events';
 
@@ -39,38 +38,28 @@ export interface ForgetKnowledgeOutput {
   /**
    * The events among `archivedEntityIds` that archive mode moved to the trash
    * (the same tombstone `deleteEvent` writes) rather than just deactivating a
-   * graph node. `restoreEvent` brings each one back as it was.
+   * graph node. `restoreEvent` brings each one back as it was. Never set for
+   * `archive_and_delete`, which cannot be undone.
    */
   restorableEventIds?: string[];
-  /**
-   * The content that was attached to the events `archive_and_delete` destroyed,
-   * and went with them. It is not in `archivedEntityIds`: the caller named the
-   * events, not this.
-   */
-  purgedContentIds?: string[];
   mode: 'archive' | 'archive_and_delete';
   warnings?: string[];
 }
 
 /**
- * A delete that stopped partway. Events are purged one at a time, each in its own
- * transaction, and before the rest of the call, so when something fails the events
- * already purged are gone and stay gone. This says which, rather than leaving the
- * caller to find out by trying again.
- *
- * `entityId` is the event whose purge failed, or absent when it was the rest of the
- * call that did (a batch of graph nodes deleted together, so no single one is to blame).
+ * A delete that failed after it had already destroyed something. Events are purged first, in
+ * their own transaction, and a purge cannot be undone, so when the rest of the call is refused
+ * the events are gone and stay gone. This says which, rather than leaving the caller to find
+ * out by trying again.
  */
 class PartialForgetError extends Error {
   constructor(
     readonly deletedEntityIds: string[],
     cause: unknown,
-    readonly entityId?: string,
   ) {
     const reason = cause instanceof Error ? cause.message : String(cause);
-    const what = entityId ? `Entity ${entityId} could not be deleted` : 'The delete failed';
 
-    super(`${what}: ${reason}.${alreadyDeleted(deletedEntityIds)}`, { cause });
+    super(`The delete failed: ${reason}.${alreadyDeleted(deletedEntityIds)}`, { cause });
     this.name = 'PartialForgetError';
   }
 }
@@ -112,7 +101,7 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
           enum: ['archive', 'archive_and_delete'],
           default: 'archive',
           description:
-            'Archive marks nodes/relationships inactive (an event is moved to the trash, where it can be restored). archive_and_delete erases them permanently and cannot be undone; an event goes together with the content attached to it. Use archive unless the user asked for the data to be erased.',
+            'Archive marks nodes/relationships inactive (an event is moved to the trash, where it can be restored). archive_and_delete permanently deletes them: an event goes with its attached content and cannot be restored, and one that came from a source that syncs again can arrive again.',
         },
         reason: {
           type: 'string',
@@ -168,6 +157,7 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
 
     const warnings: string[] = [];
 
+    // Deactivate or delete entities and relationships according to mode
     const hardDelete = mode === 'archive_and_delete';
 
     const entitySnapshots = [] as Array<{
@@ -179,12 +169,13 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
 
     for (const entityId of entityIds) {
       const snapshot = await this.graphUtility.collectEntitySnapshot(entityId, ownerId, {
-        // Archiving deactivates the node's own outgoing edges with it. A delete
-        // takes every edge, both directions, in the same transaction as the node
-        // (see `deactivateEntities`), so there is nothing to collect for it, and
-        // it has to find nodes that are already inactive: an event in the trash,
-        // or anything archived earlier, is exactly what a delete is asked for.
+        // Archive deactivates the node's outgoing edges along with it, so it needs them. A delete
+        // takes every edge of the node, in both directions, in the same transaction as the node
+        // (`deactivateEntities`), so there is nothing to collect for it.
         includeRelationships: !hardDelete,
+        // Delete takes whatever is there. A node that archive already deactivated,
+        // which is what an event in the trash is, is still a node to delete: without
+        // this the second step of "archive, then delete" answers "not found".
         includeInactive: hardDelete,
       });
 
@@ -208,14 +199,15 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
         })
       : [];
 
-    // Deactivate or delete entities and relationships according to mode
+    // An Event is two rows, so neither mode can treat its node like any other.
+    // Archive moves it to the trash and delete purges it; each announces its own
+    // removal, and what is left is generic.
     const nodes = uniqueEntitySnapshots.map((entry) => entry.node);
-    const trashedEventIds = hardDelete ? new Set<string>() : await this.trashEvents(nodes, ownerId);
-    const purged = hardDelete
+    const handledEventIds = hardDelete
       ? await this.purgeEvents(nodes, ownerId)
-      : { eventIds: new Set<string>(), contentIds: [] as string[] };
+      : await this.trashEvents(nodes, ownerId);
     const graphSnapshots = uniqueEntitySnapshots.filter(
-      (entry) => !trashedEventIds.has(entry.node.entity_id) && !purged.eventIds.has(entry.node.entity_id),
+      (entry) => !handledEventIds.has(entry.node.entity_id),
     );
 
     graphSnapshots.forEach((entry) =>
@@ -244,15 +236,16 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
         );
       }
     } catch (error) {
-      // Events purged above cannot be taken back, so a failure here has to say so.
-      throw purged.eventIds.size ? new PartialForgetError(Array.from(purged.eventIds), error) : error;
+      // A trashed event comes back with `restore`. A purged one does not, so say which are gone.
+      throw hardDelete && handledEventIds.size
+        ? new PartialForgetError(Array.from(handledEventIds), error)
+        : error;
     }
 
     return {
       archivedEntityIds: uniqueEntitySnapshots.map((entry) => entry.node.entity_id),
       archivedRelationshipIds: Array.from(new Set(explicitRelationships.map((rel) => rel.relationship_id))),
-      restorableEventIds: trashedEventIds.size ? Array.from(trashedEventIds) : undefined,
-      purgedContentIds: purged.contentIds.length ? purged.contentIds : undefined,
+      restorableEventIds: !hardDelete && handledEventIds.size ? Array.from(handledEventIds) : undefined,
       mode,
       warnings: warnings.length ? warnings : undefined,
     };
@@ -304,59 +297,40 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
   }
 
   /**
-   * Delete events the way {@link trashEvents} archives them: through the event's
-   * own aggregate, {@link CalendarEventService.purge}, rather than by deleting
-   * its `ci.entities` row and hoping.
+   * Delete events for good, through {@link CalendarEventService.purge}.
    *
-   * That delete cannot work. It cascades to `ci.events`, where HBPE's cluster
-   * membership (`hbpe.l1_event_cluster`, no `ON DELETE` action) refuses it for
-   * any event HBPE has clustered, which on the reference corpus is 194,203 of
-   * 198,747. `purge` clears what blocks it and what would be left dangling,
-   * takes the attached content with the event, and does it all in one
-   * transaction, so it either happens or it does not.
+   * The generic path, `deactivateEntities` with `hardDelete`, deletes the node's
+   * `ci.entities` row and trusts the foreign keys. For an event that cannot work.
+   * HBPE has clustered nearly every event, its cluster tables reference the event
+   * with no `ON DELETE` action, and the delete fails outright. When it does go
+   * through it strands the event's content's graph nodes and leaves edges,
+   * ledger rows, tags and search rows pointing at nothing. `purge` does the
+   * whole teardown in one transaction, and in both directions of
+   * `ci.relationships`, which this tool never did.
    *
-   * It answers null for an `Event` node with no `ci.events` row behind it
-   * (graph ingest writes those). That node takes the generic path, whose delete
-   * has nothing to cascade into.
-   *
-   * Each event is its own transaction. When one fails, the events before it
-   * are already gone, and the error says which.
+   * It takes an event in any state, so an event already in the trash is purged
+   * by the same call that would have purged a live one. As with the trash, a
+   * node `purge` does not take (an `Event` node with no `ci.events` row behind
+   * it) goes on to the generic path, where there is nothing to cascade.
    */
-  private async purgeEvents(
-    nodes: GraphNodeEntity[],
-    ownerId: string,
-  ): Promise<{ eventIds: Set<string>; contentIds: string[] }> {
-    const eventIds = new Set<string>();
-    const contentIds: string[] = [];
+  private async purgeEvents(nodes: GraphNodeEntity[], ownerId: string): Promise<Set<string>> {
+    const eventIds = nodes.filter((node) => node.entity_type === 'Event').map((node) => node.entity_id);
 
-    for (const node of nodes) {
-      if (node.entity_type !== 'Event') {
-        continue;
-      }
-
-      let purged: PurgedEvent | null;
-
-      try {
-        purged = await this.calendarEvents.purge({ userId: ownerId }, node.entity_id);
-      } catch (error) {
-        throw new PartialForgetError(Array.from(eventIds), error, node.entity_id);
-      }
-
-      if (purged) {
-        eventIds.add(purged.id);
-        contentIds.push(...purged.contentIds);
-      }
+    if (eventIds.length === 0) {
+      return new Set();
     }
 
-    return { eventIds, contentIds };
+    const purged = await this.calendarEvents.purge({ userId: ownerId }, eventIds);
+
+    return new Set(purged.eventIds);
   }
 
   /**
-   * An integrity violation is not worth another try. `BaseTool` marks every
-   * failure retryable, which is right for a timeout or a deadlock and wrong here:
-   * a foreign key that still references the row refuses the same delete the same
-   * way every time, and an agent told otherwise will keep asking. So it says
-   * so, and says what to do instead.
+   * An integrity violation is not worth another try. `BaseTool` marks every failure retryable,
+   * which is right for a timeout or a deadlock and wrong here: a foreign key that still references
+   * the row refuses the same delete the same way every time, and an agent told otherwise will keep
+   * asking. So it says so, and says what to do instead. Everything else is left as `BaseTool`
+   * has it.
    */
   protected handleError(error: unknown): ToolError {
     const partial = error instanceof PartialForgetError ? error : null;
@@ -372,15 +346,13 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
     const driver = cause as { constraint?: string; table?: string; driverError?: Record<string, string> };
     const constraint = driver.constraint ?? driver.driverError?.constraint;
     const table = driver.table ?? driver.driverError?.table;
-    // Names the entity only when it knows which one: a batch of graph nodes is deleted in one go.
-    const subject = partial?.entityId ? `entity ${partial.entityId}` : 'one of the entities';
     const blocker = constraint
       ? `constraint "${constraint}"${table ? ` on table "${table}"` : ''}`
       : 'another record';
 
     return {
       code: 'CONSTRAINT_VIOLATION',
-      message: `Cannot delete: ${blocker} still references ${subject}. Retrying will not change that. Use mode "archive" to forget without erasing.${alreadyDeleted(partial?.deletedEntityIds ?? [])}`,
+      message: `Cannot delete: ${blocker} still references one of the entities. Retrying will not change that. Use mode "archive" to forget without erasing.${alreadyDeleted(partial?.deletedEntityIds ?? [])}`,
       retryable: false,
       details: { constraint, table, ...progress },
     };
@@ -409,9 +381,9 @@ export class ForgetKnowledgeTool extends BaseTool<ForgetKnowledgeInput, ForgetKn
    * mirror half of a pair whose detail row `deactivateEntities` does not touch,
    * so `event.deleted` for an event that still exists in `ci.events` would be
    * false to every future consumer of that event, and unindexing it would
-   * desync search from a record the rest of the app still lists. (An archived
-   * Event aggregate never reaches here: {@link trashEvents} tombstones it, and
-   * `CalendarEventService.remove` un-indexes it itself.)
+   * desync search from a record the rest of the app still lists. (An Event
+   * aggregate never reaches here: {@link trashEvents} tombstones it and
+   * {@link purgeEvents} deletes it, and both un-index it themselves.)
    */
   private async unindexEntity(node: GraphNodeEntity): Promise<void> {
     // Reuses the canonical graph→search alias table rather than restating

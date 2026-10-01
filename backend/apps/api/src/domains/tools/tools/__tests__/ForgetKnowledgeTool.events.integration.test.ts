@@ -17,12 +17,7 @@ import {
   RelationshipEntity,
   type CreateEventDto,
 } from '@ci/domains/memory';
-import {
-  ConceptRemovedEvent,
-  ContentRemovedEvent,
-  EventRemovedEvent,
-  EventUpdatedEvent,
-} from '@ci/domains/memory/events';
+import { ConceptRemovedEvent, EventRemovedEvent, EventUpdatedEvent } from '@ci/domains/memory/events';
 import { UserEntity } from '@ci/domains/user';
 
 import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
@@ -46,12 +41,9 @@ import { ForgetKnowledgeTool } from '../ForgetKnowledgeTool';
  *
  * Archive mode now moves an event to the trash through
  * `CalendarEventService.remove`, the call `deleteEvent` makes, and `remove`
- * writes both flags. `archive_and_delete` destroys one through
- * `CalendarEventService.purge`, because deleting its graph node outright is
- * refused for any event HBPE has clustered. The unit suite for the tool proves
- * the routing against doubles. A double cannot say whether each reader then
- * agrees, or whether Postgres will let the delete through, so this file drives
- * the real thing and asks.
+ * writes both flags. The unit suite for the tool proves the routing against
+ * doubles. A double cannot say whether each reader then agrees, so this file
+ * drives the real thing and asks each of them.
  *
  * Opt-in like its neighbours: set `MEMORY_TEST_DATABASE_URL` to a migrated
  * database of your OWN, or run `make test-db`, which provides one.
@@ -118,6 +110,17 @@ const GONE: Visibility = {
   inKnownPlaces: false,
 };
 
+/** What `remains` reads once every row of an aggregate is gone. */
+const NOTHING = {
+  entities: 0,
+  events: 0,
+  content: 0,
+  relationships: 0,
+  l1EventCluster: 0,
+  l2ContentCluster: 0,
+  contentContext: 0,
+};
+
 describeWithDb(`memory.forget on an Event, against Postgres (${availability.target})`, () => {
   let dataSource: DataSource;
   let schemaLock: SchemaLock | null = null;
@@ -182,15 +185,21 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
   });
 
   async function wipe(userId: string): Promise<void> {
-    // HBPE's references to an event have no ON DELETE action: they go before it does.
+    await dataSource.query('UPDATE ci.users SET entity_id = NULL WHERE id = $1', [userId]);
     await dataSource.query(
-      'DELETE FROM hbpe.l1_event_cluster WHERE event_id IN (SELECT event_id FROM ci.events WHERE user_id = $1)',
+      `DELETE FROM hbpe.l1_event_cluster WHERE event_id IN (SELECT event_id FROM ci.events WHERE user_id = $1)`,
       [userId],
     );
+    await dataSource.query(
+      `DELETE FROM hbpe.l2_content_cluster WHERE content_id IN (SELECT id FROM ci.content WHERE user_id = $1)`,
+      [userId],
+    );
+    await dataSource.query('DELETE FROM hbpe.content_context WHERE user_id = $1', [userId]);
+    await dataSource.query('DELETE FROM hbpe.l2_clusters WHERE user_id = $1', [userId]);
     await dataSource.query('DELETE FROM hbpe.l1_clusters WHERE user_id = $1', [userId]);
-    await dataSource.query('UPDATE ci.users SET entity_id = NULL WHERE id = $1', [userId]);
     await dataSource.query('DELETE FROM ci.relationships WHERE owner_user_id = $1', [userId]);
     await dataSource.query('DELETE FROM ci.graph_deltas WHERE owner_user_id = $1', [userId]);
+    await dataSource.query('DELETE FROM ci.content WHERE user_id = $1', [userId]);
     await dataSource.query('DELETE FROM ci.events WHERE user_id = $1', [userId]);
     await dataSource.query('DELETE FROM ci.entities WHERE owner_user_id = $1', [userId]);
   }
@@ -252,37 +261,84 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
     return relationship_id;
   }
 
-  /** An HBPE L1 cluster with a member count, for an event to be assigned to. */
-  async function seedCluster(memberCount: number): Promise<string> {
-    const id = uuidv7();
+  /** A photo on the event, the way the importer attaches one: a `Content` node and its `media` row. */
+  async function attachPhoto(eventId: string, title: string): Promise<string> {
+    const contentId = uuidv7();
 
     await dataSource.query(
-      `INSERT INTO hbpe.l1_clusters (cluster_id, user_id, l0_class, label, member_count, naming_method)
-       VALUES ($1, $2, 'SOCIAL', 'DINNER', $3, 'STATIC')`,
-      [id, ownerId, memberCount],
+      `INSERT INTO ci.entities (entity_id, entity_type, name, properties, owner_user_id, linked_table, linked_id)
+       VALUES ($1, 'Content', $2, '{}'::jsonb, $3, 'content', $1)`,
+      [contentId, title, ownerId],
+    );
+    await dataSource.query(
+      `INSERT INTO ci.content (id, type, url, mimetype, user_id, event_id)
+       VALUES ($1, 'media', 'file:///photo.jpg', 'image/jpeg', $2, $3)`,
+      [contentId, ownerId, eventId],
     );
 
-    return id;
+    return contentId;
   }
 
-  /** What HBPE does to every event it labels, and what then refuses the event's delete. */
-  async function assignToCluster(eventId: string, clusterId: string): Promise<void> {
-    await dataSource.query(
-      'INSERT INTO hbpe.l1_event_cluster (event_id, cluster_id, similarity) VALUES ($1, $2, 0.9)',
-      [eventId, clusterId],
+  /**
+   * What HBPE does to nearly every event: cluster it, and cluster and contextualise
+   * its content. Each of these tables references the row with no `ON DELETE`
+   * action, which is what stopped a delete.
+   */
+  async function clusterAtHbpe(eventId: string, contentId?: string): Promise<void> {
+    const [{ cluster_id: l1 }] = await dataSource.query(
+      `INSERT INTO hbpe.l1_clusters (user_id, l0_class, label) VALUES ($1, 'x', 'dinners') RETURNING cluster_id`,
+      [ownerId],
     );
+
+    await dataSource.query(
+      `INSERT INTO hbpe.l1_event_cluster (event_id, cluster_id, similarity) VALUES ($1, $2, 0.9)`,
+      [eventId, l1],
+    );
+
+    if (contentId != null) {
+      const [{ cluster_id: l2 }] = await dataSource.query(
+        `INSERT INTO hbpe.l2_clusters (user_id, l0_class, l1_cluster_id, label) VALUES ($1, 'x', $2, 'photos') RETURNING cluster_id`,
+        [ownerId, l1],
+      );
+
+      await dataSource.query(
+        `INSERT INTO hbpe.l2_content_cluster (content_id, cluster_id, similarity) VALUES ($1, $2, 0.9)`,
+        [contentId, l2],
+      );
+      await dataSource.query(
+        `INSERT INTO hbpe.content_context (content_id, user_id, l0_class, l1_cluster_id) VALUES ($1, $2, 'x', $3)`,
+        [contentId, ownerId, l1],
+      );
+    }
   }
 
-  /** A `ci.content` aggregate hanging off an event, the way a photo's content row does. */
-  async function seedContent(eventId: string, name: string): Promise<string> {
-    const id = await seedNode('Content', name);
+  /** Rows of an aggregate that are still there, by table, for the ids given. */
+  async function remains(eventId: string, contentId?: string): Promise<Record<string, number>> {
+    const ids = contentId == null ? [eventId] : [eventId, contentId];
+    const count = async (sql: string): Promise<number> => {
+      const [{ count: n }] = await dataSource.query(sql, [ids]);
 
-    await dataSource.query(
-      `INSERT INTO ci.content (id, type, user_id, event_id) VALUES ($1, 'media', $2, $3)`,
-      [id, ownerId, eventId],
-    );
+      return Number(n);
+    };
 
-    return id;
+    return {
+      entities: await count('SELECT count(*) FROM ci.entities WHERE entity_id = ANY($1::uuid[])'),
+      events: await count('SELECT count(*) FROM ci.events WHERE event_id = ANY($1::uuid[])'),
+      content: await count('SELECT count(*) FROM ci.content WHERE id = ANY($1::uuid[])'),
+      relationships: await count(
+        `SELECT count(*) FROM ci.relationships
+          WHERE from_entity_id = ANY($1::uuid[]) OR to_entity_id = ANY($1::uuid[])`,
+      ),
+      l1EventCluster: await count(
+        'SELECT count(*) FROM hbpe.l1_event_cluster WHERE event_id = ANY($1::uuid[])',
+      ),
+      l2ContentCluster: await count(
+        'SELECT count(*) FROM hbpe.l2_content_cluster WHERE content_id = ANY($1::uuid[])',
+      ),
+      contentContext: await count(
+        'SELECT count(*) FROM hbpe.content_context WHERE content_id = ANY($1::uuid[])',
+      ),
+    };
   }
 
   // ── Probes ────────────────────────────────────────────────────────────────
@@ -539,171 +595,113 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
   // ── Archive-and-delete mode ───────────────────────────────────────────────
 
   describe('archive_and_delete mode', () => {
-    it('destroys an event outright, rather than moving it to the trash', async () => {
+    it('removes an unclustered event outright, rather than moving it to the trash', async () => {
       const dana = await seedNode('Person', 'Dana');
       const id = await seedEvent('Dinner with Dana');
       const outbound = await seedEdge(id, dana, 'HOSTED_BY');
-      const inbound = await seedEdge(dana, id, 'ATTENDED');
 
       const result = await forget([id], 'archive_and_delete');
 
       expect(result.success).toBe(true);
       expect(result.data).toMatchObject({ archivedEntityIds: [id], mode: 'archive_and_delete' });
       expect(result.data?.restorableEventIds).toBeUndefined();
-      expect(result.data?.purgedContentIds).toBeUndefined();
 
-      // Both rows are gone, not tombstoned, so there is nothing for restore to find, and
-      // the event's edges went with it, the one pointing AT it as well as the one leaving it.
+      // Both rows are gone, not tombstoned, so there is nothing for restore to
+      // find, and the event's outbound edge was deleted with it.
       expect(await flags(id)).toBeUndefined();
       expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [id])).toEqual([]);
       expect(await dataSource.query('SELECT 1 FROM ci.events WHERE event_id = $1', [id])).toEqual([]);
       expect(
-        await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = ANY($1::uuid[])', [
-          [outbound, inbound],
-        ]),
+        await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = $1', [outbound]),
       ).toEqual([]);
       expect(await calendar.restore(owner, id)).toBeNull();
-
-      // The deletion went through the aggregate, so search was told once and the audit
-      // trail has it.
-      expect(publishedOf(EventRemovedEvent)).toEqual([{ eventId: id }]);
-      expect(await deltasOf(id)).toEqual([
-        { change_type: 'created', change_source: 'CalendarEventService.create' },
-        { change_type: 'deleted', change_source: 'CalendarEventService.purge' },
-      ]);
     });
 
-    it('destroys an event HBPE has clustered, which deleting its graph node cannot', async () => {
-      const cluster = await seedCluster(5);
-      const id = await seedEvent('Dinner with Dana');
-      await assignToCluster(id, cluster);
+    it('removes an event HBPE has clustered, with its photo, which used to fail on a foreign key', async () => {
+      const dana = await seedNode('Person', 'Dana');
+      const id = await seedEvent('Dinner with Dana', { participant_entity_ids: [dana] });
+      const photo = await attachPhoto(id, 'Photo of the dinner');
 
-      expect(
-        await dataSource.query('SELECT 1 FROM hbpe.l1_event_cluster WHERE event_id = $1', [id]),
-      ).toHaveLength(1);
+      await clusterAtHbpe(id, photo);
+      await seedEdge(dana, id, 'PARTICIPATED_IN');
+      await seedEdge(id, dana, 'HOSTED_BY');
+      await seedEdge(photo, id, 'DOCUMENTS');
+
+      // Every table that can hold a row for the event holds one.
+      expect(await remains(id, photo)).toEqual({
+        entities: 2,
+        events: 1,
+        content: 1,
+        relationships: 3,
+        l1EventCluster: 1,
+        l2ContentCluster: 1,
+        contentContext: 1,
+      });
 
       const result = await forget([id], 'archive_and_delete');
 
-      // This is the case that used to fail with
-      //   update or delete on table "events" violates foreign key constraint
-      //   "l1_event_cluster_event_id_fkey" on table "l1_event_cluster"
-      // and call itself retryable.
+      // It raised `l1_event_cluster_event_id_fkey` here, for every event HBPE had clustered.
       expect(result.error).toBeUndefined();
       expect(result.success).toBe(true);
       expect(result.data).toMatchObject({ archivedEntityIds: [id], mode: 'archive_and_delete' });
-      expect(await flags(id)).toBeUndefined();
-      expect(await dataSource.query('SELECT 1 FROM hbpe.l1_event_cluster WHERE event_id = $1', [id])).toEqual(
-        [],
-      );
 
-      // The cluster is the user's HBPE vocabulary, not the event's: it stays, one member lighter.
-      expect(
-        await dataSource.query('SELECT member_count FROM hbpe.l1_clusters WHERE cluster_id = $1', [cluster]),
-      ).toEqual([{ member_count: 4 }]);
+      // The event, its photo's node and the photo itself, and every edge in either direction.
+      expect(await remains(id, photo)).toEqual(NOTHING);
+      expect(publishedOf(EventRemovedEvent)).toEqual([{ eventId: id }]);
     });
 
-    it('is why events do not take the generic delete: deleting a clustered event’s node is still refused', async () => {
-      const cluster = await seedCluster(1);
-      const dana = await seedNode('Person', 'Dana');
+    it('removes an event that is already in the trash, which is what archive then delete means', async () => {
       const id = await seedEvent('Dinner with Dana');
-      await assignToCluster(id, cluster);
-      const edge = await seedEdge(dana, id, 'ATTENDED');
 
-      await expect(graph.deactivateEntities([id], ownerId, true)).rejects.toMatchObject({
-        driverError: { code: '23503', constraint: 'l1_event_cluster_event_id_fkey' },
-      });
+      await clusterAtHbpe(id);
+      await forget([id]);
 
-      // Refused, and refused whole: the edge that was about to go with the node is still there.
-      expect(await flags(id)).toEqual({ is_deleted: false, is_active: true });
-      expect(
-        await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = $1', [edge]),
-      ).toHaveLength(1);
-    });
-
-    it('destroys an event that is already in the trash', async () => {
-      const cluster = await seedCluster(3);
-      const id = await seedEvent('Dinner with Dana');
-      // Clustered, so only `purge` can delete it. An unclustered event in the trash would be deleted by
-      // the generic path just the same, and the test would pass without proving that `purge` reaches it.
-      await assignToCluster(id, cluster);
-
-      const archived = await forget([id]);
-
-      expect(archived.data?.restorableEventIds).toEqual([id]);
       expect(await flags(id)).toEqual({ is_deleted: true, is_active: false });
 
-      // Its graph node is inactive now, so this is only reachable if a delete looks for
-      // inactive nodes: the usual order is "forget it, and later erase it".
       const result = await forget([id], 'archive_and_delete');
 
+      // The node is inactive by now. It used to answer "not found" here.
       expect(result.success).toBe(true);
-      expect(result.data?.archivedEntityIds).toEqual([id]);
       expect(result.data?.warnings).toBeUndefined();
-      expect(await flags(id)).toBeUndefined();
-      expect(await calendar.restore(owner, id)).toBeNull();
-      expect(
-        await dataSource.query('SELECT member_count FROM hbpe.l1_clusters WHERE cluster_id = $1', [cluster]),
-      ).toEqual([{ member_count: 2 }]);
-    });
-
-    it('takes the content attached to the event with it, and says which', async () => {
-      const id = await seedEvent('Dinner with Dana');
-      const photo = await seedContent(id, 'Photo of dinner');
-      const other = await seedEvent('Lunch with Dana');
-      const otherPhoto = await seedContent(other, 'Photo of lunch');
-
-      const result = await forget([id], 'archive_and_delete');
-
-      expect(result.success).toBe(true);
-      // The caller named one event. The content is reported apart from it.
       expect(result.data?.archivedEntityIds).toEqual([id]);
-      expect(result.data?.purgedContentIds).toEqual([photo]);
-
-      // Gone as a whole aggregate: no `Content` node left behind without a record.
-      expect(await dataSource.query('SELECT 1 FROM ci.content WHERE id = $1', [photo])).toEqual([]);
-      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [photo])).toEqual([]);
-      expect(publishedOf(ContentRemovedEvent)).toEqual([{ contentId: photo }]);
-
-      // Another event's content is not.
-      expect(await dataSource.query('SELECT 1 FROM ci.content WHERE id = $1', [otherPhoto])).toHaveLength(1);
-      expect(await flags(other)).toEqual({ is_deleted: false, is_active: true });
+      expect(await remains(id)).toEqual(NOTHING);
     });
 
-    it('sends an event and a concept down their own paths, in one call', async () => {
-      const dana = await seedNode('Person', 'Dana');
-      const cluster = await seedCluster(2);
+    it('removes an event and a concept in one call', async () => {
       const event = await seedEvent('Dinner with Dana');
-      await assignToCluster(event, cluster);
       const concept = await seedNode('Concept', 'Jazz');
-      await seedEdge(concept, dana, 'RELATED_TO');
-      await seedEdge(dana, concept, 'LIKES');
+
+      await clusterAtHbpe(event);
 
       const result = await forget([event, concept], 'archive_and_delete');
 
       expect(result.success).toBe(true);
       expect(result.data?.archivedEntityIds).toEqual([event, concept]);
-      expect(await flags(event)).toBeUndefined();
+      expect(await remains(event)).toEqual(NOTHING);
       expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [concept])).toEqual([]);
-      expect(publishedOf(ConceptRemovedEvent)).toEqual([{ conceptId: concept }]);
-      expect(
-        await dataSource.query(
-          'SELECT 1 FROM ci.relationships WHERE from_entity_id = $1 OR to_entity_id = $1',
-          [concept],
-        ),
-      ).toEqual([]);
     });
 
-    it('refuses to destroy somebody else’s event', async () => {
+    it('removes an Event node that has no ci.events row behind it', async () => {
+      // Graph ingest writes these. There is nothing to purge, so it is deleted like any node.
+      const node = await seedNode('Event', 'Imported without a detail row');
+
+      const result = await forget([node], 'archive_and_delete');
+
+      expect(result.success).toBe(true);
+      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [node])).toEqual([]);
+    });
+
+    it('refuses to delete somebody else’s event, and leaves its HBPE rows alone', async () => {
       const id = await seedEvent('Dinner with Dana');
+
+      await clusterAtHbpe(id);
 
       const result = await forget([id], 'archive_and_delete', asStranger);
 
       expect(result.success).toBe(true);
       expect(result.data?.archivedEntityIds).toEqual([]);
       expect(result.data?.warnings).toEqual([`Entity ${id} not found or not owned by user`]);
-      expect(await flags(id)).toEqual({ is_deleted: false, is_active: true });
-      expect(publishedOf(EventRemovedEvent)).toEqual([]);
-      expect(publishedOf(ContentRemovedEvent)).toEqual([]);
+      expect(await remains(id)).toEqual({ ...NOTHING, entities: 1, events: 1, l1EventCluster: 1 });
     });
   });
 
@@ -726,6 +724,7 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
           [outbound, inbound],
         ]),
       ).toEqual([]);
+      // Somebody else's edge is somebody else's: only the deleted node's own are taken.
       expect(
         await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = $1', [unrelated]),
       ).toHaveLength(1);
@@ -755,7 +754,7 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
       );
     });
 
-    it('deletes a node that was archived earlier', async () => {
+    it('deletes a node that was archived earlier, where archiving it again finds nothing', async () => {
       const jazz = await seedNode('Concept', 'Jazz');
 
       await forget([jazz]);
@@ -789,15 +788,38 @@ describeWithDb(`memory.forget on an Event, against Postgres (${availability.targ
         details: { constraint: 'users_entity_id_fkey', table: 'users' },
       });
       expect(result.error?.message).toContain('mode "archive"');
+      expect(result.error?.details).not.toHaveProperty('deletedEntityIds');
 
-      // Nothing changed: the node and both edges are as they were. The edges were deleted
-      // first, in the same transaction, and the refused delete took that back.
+      // Nothing changed: the node and both edges are as they were. The edges were deleted first,
+      // in the same transaction, and the refused delete took that back.
       expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [me])).toHaveLength(1);
       expect(
         await dataSource.query('SELECT 1 FROM ci.relationships WHERE relationship_id = ANY($1::uuid[])', [
           [outbound, inbound],
         ]),
       ).toHaveLength(2);
+    });
+
+    it('names the events it had already destroyed when it is the rest of the call that is refused', async () => {
+      const event = await seedEvent('Dinner with Dana');
+      const me = await seedNode('Person', 'Me');
+
+      await clusterAtHbpe(event);
+      await dataSource.query('UPDATE ci.users SET entity_id = $1 WHERE id = $2', [me, ownerId]);
+
+      // The purge commits first, and cannot be undone. Then the node the foreign key protects is refused.
+      const result = await forget([event, me], 'archive_and_delete');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatchObject({
+        code: 'CONSTRAINT_VIOLATION',
+        retryable: false,
+        details: { constraint: 'users_entity_id_fkey', deletedEntityIds: [event] },
+      });
+      expect(result.error?.message).toContain(`Already deleted: ${event}.`);
+
+      expect(await remains(event)).toEqual(NOTHING);
+      expect(await dataSource.query('SELECT 1 FROM ci.entities WHERE entity_id = $1', [me])).toHaveLength(1);
     });
   });
 });

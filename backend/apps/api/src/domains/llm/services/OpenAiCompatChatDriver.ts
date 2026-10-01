@@ -459,12 +459,10 @@ export function toOpenAiMessages(messages: OllamaMessage[]): ChatCompletionMessa
     if (message.images && message.images.length > 0 && message.role === 'user') {
       const parts: ChatCompletionContentPart[] = [
         { type: 'text', text: message.content ?? '' },
-        ...message.images.map(
-          (image): ChatCompletionContentPart => ({
-            type: 'image_url',
-            image_url: { url: toDataUrl(image) },
-          }),
-        ),
+        ...message.images.map((image): ChatCompletionContentPart => ({
+          type: 'image_url',
+          image_url: { url: toDataUrl(image) },
+        })),
       ];
 
       converted.push({ role: 'user', content: parts });

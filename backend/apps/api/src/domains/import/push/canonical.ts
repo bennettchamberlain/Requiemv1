@@ -430,13 +430,7 @@ export function backfillEntityTypesFor(destinations: Iterable<Destination>): Bac
  * it does not recognise.
  */
 export type EdgeProjectionSource =
-  | 'communications'
-  | 'events'
-  | 'content'
-  | 'objects'
-  | 'positions'
-  | 'receipts'
-  | 'observations';
+  'communications' | 'events' | 'content' | 'objects' | 'positions' | 'receipts' | 'observations';
 
 /**
  * Map an import {@link Destination} to the edge-projection source its rows land

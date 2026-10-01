@@ -602,11 +602,30 @@ test('formatDuration', () => {
 
 // -- drift guard --------------------------------------------------------------
 
+// The probe helper's own spec drives `databaseAvailability` / `dataSourceConnection` with
+// variable names it invents (`PROBE_SPEC_*`, `NOTES_ABSENT_*`), one per case, so each gets a
+// clean cache key. They are test inputs, not variables any suite reads. Listing them would be
+// wrong, not just noisy: `buildTestEnv` sets every listed name to the throwaway URL, and the
+// "no database configured" cases need theirs unset.
+const INVENTED_NAMES_SPEC =
+  'backend/apps/api/src/domains/__tests__/support/__tests__/databaseConnection.spec.ts';
+
 test('TEST_DATABASE_URL_VARS is exactly the set of *_TEST_DATABASE_URL variables the source tree reads', () => {
-  const res = spawnSync('git', ['grep', '-ohE', '[A-Z][A-Z_]*_TEST_(ADMIN_)?DATABASE_URL', '--', 'backend'], {
-    encoding: 'utf8',
-    cwd: process.cwd(),
-  });
+  const res = spawnSync(
+    'git',
+    [
+      'grep',
+      '-ohE',
+      '[A-Z][A-Z_]*_TEST_(ADMIN_)?DATABASE_URL',
+      '--',
+      'backend',
+      `:(exclude)${INVENTED_NAMES_SPEC}`,
+    ],
+    {
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    },
+  );
 
   assert.equal(res.status, 0, `git grep failed: ${res.stderr}`);
 

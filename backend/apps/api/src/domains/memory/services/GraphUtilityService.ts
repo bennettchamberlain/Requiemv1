@@ -1415,12 +1415,11 @@ export class GraphUtilityService {
   /**
    * Archives entities (`is_active = false`), or with `hardDelete` deletes them.
    *
-   * A hard delete takes every edge that touches the node with it, in BOTH
-   * directions, in the same transaction. `ci.relationships` has no foreign key
-   * to `ci.entities`, so nothing else would: the node's outbound edges used to
-   * be deleted in a second step and its inbound ones not at all, which left
-   * ghosts pointing at a node that no longer exists. If the delete is refused
-   * (a foreign key still references the node) nothing changes, edges included.
+   * A hard delete takes every edge that touches the node with it, in BOTH directions, in the same
+   * transaction. `ci.relationships` has no foreign key to `ci.entities`, so nothing else would: the
+   * node's outbound edges used to be deleted in a second step and its inbound ones not at all, which
+   * left ghosts pointing at a node that no longer exists. If the delete is refused (a foreign key still
+   * references the node) nothing changes, edges included.
    *
    * Only nodes the caller owns are touched, edges included.
    */

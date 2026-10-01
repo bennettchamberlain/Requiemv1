@@ -229,11 +229,7 @@ export class GraphQueryService {
     return this.graphUtility.searchNodesByPrefix(ownerId, query, options);
   }
 
-  collectEntitySnapshot(
-    entityId: string,
-    ownerId: string,
-    options: { includeRelationships?: boolean; includeInactive?: boolean } = {},
-  ) {
+  collectEntitySnapshot(entityId: string, ownerId: string, options: { includeRelationships?: boolean } = {}) {
     return this.graphUtility.collectEntitySnapshot(entityId, ownerId, options);
   }
 
