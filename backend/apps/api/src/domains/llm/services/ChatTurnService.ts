@@ -256,6 +256,10 @@ export class ChatTurnService {
         // ("add a task…", "forget…") is answered here, in code, not by a model
         // that will say "Okay." The model is never asked.
         if (!prepared.enableTools && isWriteRequest(latestUserText(seededMessages))) {
+          this.logger.log('Refused a request to change data on a turn with no tools', {
+            threadId: payload.threadId,
+            model: prepared.model,
+          });
           latestText = TOOLS_OFF_REFUSAL;
           this.broker.publish(payload.threadId, { channel: Channel.TEXT, text: TOOLS_OFF_REFUSAL });
 

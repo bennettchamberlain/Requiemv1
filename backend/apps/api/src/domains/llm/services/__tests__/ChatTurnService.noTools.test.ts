@@ -340,17 +340,18 @@ describe('ChatTurnService keeps the fence markers out of what a person reads', (
 
     await service.execute(payload);
 
-    expect(published.map((frame) => frame.channel)).toEqual([
-      Channel.TEXT,
-      Channel.TEXT,
-      Channel.TOOL,
-      Channel.TEXT,
-    ]);
-    expect(
-      published
+    // The scrubber holds back a trailing "u" (it could start a marker) and must
+    // release it BEFORE the tool frame, so the text on either side of the tool
+    // call is exactly what the model said on either side of it.
+    const toolAt = published.findIndex((frame) => frame.channel === Channel.TOOL);
+    const textOf = (frames: typeof published) =>
+      frames
         .filter((frame) => frame.channel === Channel.TEXT)
         .map((frame) => frame.text)
-        .join(''),
-    ).toBe('Let me check, uFound it.');
+        .join('');
+
+    expect(toolAt).toBeGreaterThan(0);
+    expect(textOf(published.slice(0, toolAt))).toBe('Let me check, u');
+    expect(textOf(published.slice(toolAt + 1))).toBe('Found it.');
   });
 });
