@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import ChatPage from './ChatPage';
-import { STARTER_PROMPTS } from './starterPrompts';
+import { STARTER_PROMPTS, TOOL_STARTER_PROMPTS } from './starterPrompts';
 import type { Message, Thread } from './types';
 
 const navigate = vi.fn();
@@ -35,6 +35,10 @@ const h = vi.hoisted(() => ({
   deleteThread: vi.fn(),
   reset: vi.fn(async () => {}),
   selectedModel: 'llama3' as string | null,
+  /** What `useModel` reports about tools; the starters list follows it. */
+  activeModels: [{ model: 'llama3', tools: true }] as Array<{ model: string; tools: boolean }>,
+  toolsSupported: true,
+  toolsEnabled: true,
   local: null as null | { modelId: string; stats: Record<string, unknown> | null },
   threads: [
     { id: 't1', name: 'First', description: null },
@@ -98,7 +102,16 @@ vi.mock('@/hooks', async (importOriginal) => {
         },
       ];
     },
-    useModel: () => [{ selectedModel: h.selectedModel }, {}],
+    useModel: () => [
+      {
+        selectedModel: h.selectedModel,
+        activeModels: h.activeModels,
+        toolsSupported: h.toolsSupported,
+        toolsEnabled: h.toolsEnabled,
+        loading: false,
+      },
+      {},
+    ],
     useCounter: () => [{ count: 0 }, { increment: vi.fn() }],
     // #2558 added `useAuth()` to ChatPageContent so a dispatch thread can call
     // /v1/agent/jobs. `renderWithProviders` deliberately provides no Auth
@@ -199,6 +212,9 @@ describe('ChatPage', () => {
     h.isMobile = false;
     h.seed = null;
     h.selectedModel = 'llama3';
+    h.activeModels = [{ model: 'llama3', tools: true }];
+    h.toolsSupported = true;
+    h.toolsEnabled = true;
     h.local = null;
     localStorage.clear();
     resetLocalLlmPrefsCache();
@@ -735,6 +751,76 @@ describe('ChatPage', () => {
       fireEvent.click(screen.getByRole('button', { name: STARTER_PROMPTS[1] }));
 
       expect(screen.getByText(`user: ${STARTER_PROMPTS[1]}`)).toBeInTheDocument();
+    });
+
+    /**
+     * Five of the ten need a tool: "Where do I usually go next" answered by a
+     * model with none came back as a made-up place, a literal `tool_code` block,
+     * or the bare word "Brief.list". With tools off the page offers the ones the
+     * snapshots can answer, and nothing the model cannot.
+     */
+    describe('when chat has no tools', () => {
+      const noTools = () => {
+        h.toolsSupported = false;
+        h.toolsEnabled = false;
+        h.activeModels = [{ model: 'llama3', tools: false }];
+      };
+
+      it('names exactly the starters that need a tool, and they are real starters', () => {
+        expect(TOOL_STARTER_PROMPTS.size).toBe(5);
+
+        for (const prompt of TOOL_STARTER_PROMPTS) {
+          expect(STARTER_PROMPTS).toContain(prompt);
+        }
+      });
+
+      it('offers only the starters the snapshots can answer when the model has no tools', () => {
+        noTools();
+        renderEmpty();
+
+        for (const prompt of STARTER_PROMPTS) {
+          const button = screen.queryByRole('button', { name: prompt });
+
+          if (TOOL_STARTER_PROMPTS.has(prompt)) {
+            expect(button, prompt).toBeNull();
+          } else {
+            expect(button, prompt).toBeInTheDocument();
+          }
+        }
+      });
+
+      it('does the same when the person switched the wrench off on a model that has tools', () => {
+        h.toolsEnabled = false;
+        renderEmpty();
+
+        expect(screen.queryByRole('button', { name: 'Where do I usually go next' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'What is on Brief' })).toBeInTheDocument();
+      });
+
+      it('offers every starter while the model list is still loading, rather than flashing a short one', () => {
+        noTools();
+        h.selectedModel = null;
+        h.activeModels = [];
+        renderEmpty();
+
+        for (const prompt of STARTER_PROMPTS) {
+          expect(screen.getByRole('button', { name: prompt })).toBeInTheDocument();
+        }
+      });
+
+      it('offers every starter when the phone’s own model answers, whatever the appliance model can do', () => {
+        noTools();
+        localStorage.setItem(
+          'ci.localLlm.prefs',
+          JSON.stringify({ mode: 'device', modelId: 'qwen3-0.6b-int4' }),
+        );
+        resetLocalLlmPrefsCache();
+        renderEmpty();
+
+        for (const prompt of STARTER_PROMPTS) {
+          expect(screen.getByRole('button', { name: prompt })).toBeInTheDocument();
+        }
+      });
     });
   });
 });

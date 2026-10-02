@@ -31,6 +31,27 @@ function mockResponse() {
 }
 
 describe('ChatGenerationBroker', () => {
+  // The appliance gateway's generic `/api/` location buffers a proxied response
+  // by default, which turns a token stream into bursts. `/api/llm/generate` is
+  // unbuffered by config, but re-attaching to a turn in flight
+  // (`GET /llm/threads/:id/stream`) is not — the response has to say so itself.
+  it('tells a buffering proxy to pass the stream through, and exposes the thread id', () => {
+    const broker = new ChatGenerationBroker();
+    const { res } = mockResponse();
+
+    broker.pipeToResponse(res as never, 'thread-1');
+
+    expect(res.writeHead).toHaveBeenCalledWith(
+      200,
+      expect.objectContaining({
+        'Content-Type': 'text/event-stream',
+        'X-Accel-Buffering': 'no',
+        'X-Thread-Id': 'thread-1',
+      }),
+    );
+    expect(res.flushHeaders).toHaveBeenCalled();
+  });
+
   it('does not abort the generation signal when an HTTP viewer disconnects', () => {
     const broker = new ChatGenerationBroker();
     const signal = broker.signal('thread-1');

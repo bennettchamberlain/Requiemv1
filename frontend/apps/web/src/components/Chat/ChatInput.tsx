@@ -28,7 +28,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import type { File as FileData } from '@/api/types';
 import { useUploadFile } from '@/api/useUploadFile';
-import { ModelSelector } from '@/components/ModelSelector';
+import { ModelSelector, ToolsOffNotice } from '@/components/ModelSelector';
 
 const FormSchema = s.object({
   message: s.string(),
@@ -401,6 +401,8 @@ function ChatInput(
                 ))}
               </ul>
             )}
+
+            {showModelControls ? <ToolsOffNotice /> : null}
 
             <div className="flex items-center justify-between gap-2">
               {showModelControls ? <ModelSelector withToggles variant="composer" /> : <span />}

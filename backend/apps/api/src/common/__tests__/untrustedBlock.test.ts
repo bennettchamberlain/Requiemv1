@@ -3,8 +3,10 @@ import {
   UNTRUSTED_GUARD,
   UNTRUSTED_OPEN,
   UNTRUSTED_TOOL_RESULTS_GUARD,
+  UntrustedMarkerScrubber,
   fenceUntrusted,
   guardToolResultRound,
+  stripUntrustedMarkers,
   unguardToolResult,
   untrustedBlock,
 } from '../prompt/untrustedBlock';
@@ -124,5 +126,106 @@ describe('unguardToolResult', () => {
     const content = `{"note":"${UNTRUSTED_TOOL_RESULTS_GUARD}\n"}`;
 
     expect(unguardToolResult(content)).toBe(content);
+  });
+});
+
+describe('stripUntrustedMarkers', () => {
+  it('drops the closing marker a small model echoes at the start of its reply', () => {
+    // The shape from the iOS QA run: the assistant message began with the closing
+    // delimiter, then the snapshot text it was repeating.
+    const reply = `${UNTRUSTED_CLOSE}\nSummaries:\n- [day] Quiet Thursday`;
+
+    expect(stripUntrustedMarkers(reply)).toBe('\nSummaries:\n- [day] Quiet Thursday');
+  });
+
+  it('drops the opening marker too, and only the marker: the whitespace around it stays', () => {
+    expect(stripUntrustedMarkers(`Here you go.\n${UNTRUSTED_OPEN}\n## Plan`)).toBe('Here you go.\n\n## Plan');
+  });
+
+  it('keeps everything that is not a delimiter, snapshot lines included', () => {
+    const reply = 'Open to-dos:\n- [open] Buy milk due 2026-10-05';
+
+    expect(stripUntrustedMarkers(reply)).toBe(reply);
+  });
+
+  it('catches the mangled spellings a 1B model produces, and the soft-hyphen form fenceUntrusted plants', () => {
+    expect(stripUntrustedMarkers('UnTRUSTED_CONTENT>>>')).toBe('');
+    expect(stripUntrustedMarkers('UN TRUSTED_CONTENT>>>Hello')).toBe('Hello');
+    expect(stripUntrustedMarkers('<<< untrusted content Hello')).toBe(' Hello');
+    expect(stripUntrustedMarkers('UNTRUSTED_CONTENT\u00ad>>>Hello')).toBe('Hello');
+  });
+
+  it('leaves a bare mention of the word alone: the angle brackets are what make it a marker', () => {
+    expect(stripUntrustedMarkers('The UNTRUSTED_CONTENT label marks data.')).toBe(
+      'The UNTRUSTED_CONTENT label marks data.',
+    );
+  });
+
+  it('is idempotent', () => {
+    const once = stripUntrustedMarkers(`a ${UNTRUSTED_CLOSE} b ${UNTRUSTED_OPEN} c`);
+
+    expect(stripUntrustedMarkers(once)).toBe(once);
+  });
+});
+
+describe('UntrustedMarkerScrubber', () => {
+  /** Feed `chunks` one at a time, as a model streams them, and return what a viewer would have seen. */
+  function stream(chunks: string[]): string[] {
+    const scrubber = new UntrustedMarkerScrubber();
+
+    return [...chunks.map((chunk) => scrubber.push(chunk)), scrubber.flush()];
+  }
+
+  it('removes a closing marker that arrives in several tokens', () => {
+    const shown = stream(['UN', 'TRUSTED', '_CONTENT', '>>>', '\nSummaries:', '\n- a']);
+
+    expect(shown.join('')).toBe('\nSummaries:\n- a');
+  });
+
+  it('removes an opening marker split across chunks', () => {
+    expect(stream(['Here:\n<<', '<UNTRUSTED_', 'CONTENT\n## Plan']).join('')).toBe('Here:\n\n## Plan');
+  });
+
+  it('never releases a partial marker, only the text before it', () => {
+    const scrubber = new UntrustedMarkerScrubber();
+
+    expect(scrubber.push('Sure. UNTRUSTED_CONT')).toBe('Sure. ');
+    expect(scrubber.push('ENT>>> Done')).toBe(' Done');
+  });
+
+  it('passes ordinary text straight through with nothing held back', () => {
+    const scrubber = new UntrustedMarkerScrubber();
+
+    expect(scrubber.push('Hello')).toBe('Hello');
+    expect(scrubber.push(', world.')).toBe(', world.');
+    expect(scrubber.flush()).toBe('');
+  });
+
+  it('holds back a lone "u" or "<" only until the next chunk shows it is not a marker', () => {
+    const scrubber = new UntrustedMarkerScrubber();
+
+    expect(scrubber.push('Thank yo')).toBe('Thank yo');
+    expect(scrubber.push('u')).toBe('');
+    expect(scrubber.push(' very much')).toBe('u very much');
+    expect(scrubber.push('1 <')).toBe('1 ');
+    expect(scrubber.flush()).toBe('<');
+  });
+
+  it('releases whatever it held on flush, so a reply that ends in a partial match is not truncated', () => {
+    const scrubber = new UntrustedMarkerScrubber();
+
+    expect(scrubber.push('See you')).toBe('See yo');
+    expect(scrubber.flush()).toBe('u');
+    expect(scrubber.flush()).toBe('');
+  });
+
+  it('agrees with stripUntrustedMarkers on the finished text, however it is chunked', () => {
+    const text = `Intro ${UNTRUSTED_OPEN}\nBody ${UNTRUSTED_CLOSE}\nOutro`;
+
+    for (let size = 1; size <= 8; size += 1) {
+      const chunks = text.match(new RegExp(`[\\s\\S]{1,${size}}`, 'g')) ?? [];
+
+      expect(stream(chunks).join('')).toBe(stripUntrustedMarkers(text));
+    }
   });
 });

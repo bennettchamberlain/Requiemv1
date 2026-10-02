@@ -300,7 +300,13 @@ export { canonicalEntityType, isStorableEntityType, sameEntityType } from './gra
 // Which nodes are a Person, a Place or a Concept, under every spelling `ci.entities` holds them in;
 // `memory.forget` sends each to its own purge.
 export { GRAPH_ENTITY_TYPES, graphEntityKindOf, type GraphEntityKind } from './graph.types';
-export { SELF_ENTITY_PROVISIONER, type SelfEntityProvisioner } from './services/selfEntityProvisioner';
+export {
+  SELF_ENTITY_PROVISIONER,
+  ensureSelfEntityId,
+  resolveSelfEntityProvisioner,
+  type SelfEntityProvisioner,
+  type SelfIdentityLookup,
+} from './services/selfEntityProvisioner';
 export {
   EVENT_TIME_REOPENER,
   type EventTimeReopener,
