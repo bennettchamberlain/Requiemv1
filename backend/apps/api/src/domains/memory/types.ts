@@ -40,6 +40,12 @@ export const updateContentSchema = z.object({
   event_id: z.string().optional(),
 });
 
+/**
+ * A field a source owns on a stored event, and refreshes when it re-delivers
+ * the event — see {@link CreateEventDto.source_asserts}.
+ */
+export type SourceAssertedField = 'status' | 'time' | 'title' | 'location';
+
 export interface CreateEventDto {
   id?: string;
   title: string;
@@ -119,6 +125,23 @@ export interface CreateEventDto {
     id: string;
   };
   content?: CreateContentDto[];
+  /**
+   * Which of this delivery's values are its SOURCE's word, for the refresh of
+   * an event already stored under its identity (CalendarEventService
+   * `refreshFromSource`). Omitted: all of them. A delivery that has to fill in
+   * fields its source did not send — a cancelled occurrence rebuilt from its
+   * series, whose time and title are the series' — names only the ones it
+   * does know, so a stored row's own time and title are not replaced by the
+   * filler. A new row is written with everything either way.
+   *
+   * `location` is the name and the point together (sourceLocationMerge.ts).
+   * Unlike the time and the title it can be genuinely absent, so a delivery
+   * that does not name `source_asserts` and sends no `location_name` is a
+   * source that says the event has no place, and clears one the source gave it
+   * earlier; a delivery that has no word on the place at all must leave
+   * `location` out of the list.
+   */
+  source_asserts?: readonly SourceAssertedField[];
 }
 
 export interface UpdateEventDto {

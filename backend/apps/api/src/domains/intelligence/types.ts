@@ -160,7 +160,7 @@ export interface UpdateAnswerDto {
 /**
  * `ci.questions.answer_tier` — which half of the catalogue a reflection belongs
  * to. Mirrors the `questions_answer_tier_check` constraint; selection orders by
- * it (see TIER_RANK_SQL in QuestionService).
+ * it (see TIER_RANK_SQL in questionOrder.ts).
  */
 export const ANSWER_TIERS = ['factual', 'preference', 'narrative'] as const;
 export type AnswerTier = (typeof ANSWER_TIERS)[number];
@@ -192,6 +192,30 @@ export interface UpdateQuestionDto {
   timesAsked?: number;
   timesAnswered?: number;
   isPrivateTo?: string;
+}
+
+/**
+ * What `ci.questions` says, right now, about whether inference may still write
+ * to a question on a caller's behalf — see
+ * {@link QuestionService.findInferenceStanding}.
+ *
+ * The three things both inference selectors filter on, kept apart rather than
+ * folded into one verdict so the job acting on them can say WHICH one stopped it.
+ */
+export interface QuestionInferenceStanding {
+  /** `ci.questions.is_active`. A retired row is neither asked nor inferred. */
+  isActive: boolean;
+  /**
+   * `ci.questions.evidence_class`: `'traceable'` (the owner's corpus may answer
+   * it) or `'hand_entry'` (only the owner can). It is not on `QuestionEntity`.
+   */
+  evidenceClass: string;
+  /**
+   * The caller holds a private fork of this row, so the row is hidden from them
+   * and the fork stands in its place (see `excludeForkedOriginsSql`). Never true
+   * for a system caller, who owns no forks.
+   */
+  forkedByCaller: boolean;
 }
 
 const questionTextSchema = z
