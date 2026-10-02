@@ -66,6 +66,7 @@ beforeEach(() => {
 afterEach(() => {
   setApiKey(null);
   setApiBaseUrl('');
+  delete (window as unknown as { Capacitor?: unknown }).Capacitor;
   vi.unstubAllGlobals();
 });
 
@@ -93,6 +94,8 @@ describe('BlueBubblesSection', () => {
       h.auth.authToken = null;
       setApiKey('device-key');
       setApiBaseUrl('https://memory.example.com');
+      // `getWebOrigin()` (the webhook address) is the Memory server only inside the native shell.
+      (window as unknown as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
     });
 
     it('loads the saved connection with the device key and no bearer', async () => {

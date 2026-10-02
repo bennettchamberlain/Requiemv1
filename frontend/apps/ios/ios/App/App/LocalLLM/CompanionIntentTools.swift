@@ -66,6 +66,8 @@ enum CompanionToolContext {
         },
         uniquingKeysWith: { first, _ in first })
 
+      let executable = allTools.filter { rulings[type(of: $0).name]?.isExecutable == true }
+
       if manifest.tier == nil {
         // Pre-1.2.0 appliance: it ignored `?tier=local`, so no rulings came back and every tool
         // will refuse. Say so — silently toolless is indistinguishable from "no intents exist".
@@ -73,9 +75,15 @@ enum CompanionToolContext {
           "[LocalLLM] Appliance returned no per-tier dispatch rulings (manifest %@); "
             + "no tools will be offered. Upgrade CI-Server to 1.2.0+ for on-device tool calling.",
           manifest.version)
+      } else {
+        // The success line: without it a working catalog is only the absence of the failure line
+        // below. Android logs the same count from `IntentToolProvider`.
+        NSLog(
+          "[LocalLLM] Offering %ld of this app's %ld tools to the local model (the appliance publishes %ld intents)",
+          executable.count, allTools.count, manifest.intents.count)
       }
 
-      return allTools.filter { rulings[type(of: $0).name]?.isExecutable == true }
+      return executable
     } catch {
       NSLog("[LocalLLM] Intent catalog unavailable; the local model will run without tools: %@",
             error.localizedDescription)

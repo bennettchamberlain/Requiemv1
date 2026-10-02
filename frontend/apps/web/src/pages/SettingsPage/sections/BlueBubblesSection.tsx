@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { fetchJson, getApiBaseUrl } from '@ci/common';
+import { fetchJson, getWebOrigin } from '@ci/common';
 import { Button, Card, Checkbox, Input, Label, Switch } from '@ci/shadcn';
 import {
   AlertCircle,
@@ -238,11 +238,9 @@ export function BlueBubblesSection() {
     }
   };
 
-  // The Memory server's own address. In the native app `window.location.origin` is the shell's
-  // `capacitor://localhost`, which is no use pasted into BlueBubbles Server on another machine.
-  const webhookUrl = config?.webhookPath
-    ? `${getApiBaseUrl() || window.location.origin}${config.webhookPath}`
-    : null;
+  // getWebOrigin(), not window.location.origin: on the phone that is the app's own
+  // `capacitor://localhost`, which BlueBubbles Server could never call.
+  const webhookUrl = config?.webhookPath ? `${getWebOrigin()}${config.webhookPath}` : null;
 
   const handleCopyWebhookUrl = async () => {
     if (!webhookUrl) {
