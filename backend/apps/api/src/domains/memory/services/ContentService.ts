@@ -1511,6 +1511,132 @@ export class ContentService {
     return content ?? null;
   }
 
+  /**
+   * Moves this user's content rows from one `source_system` to another, in
+   * place, for a producer whose key changed system and kept its id. Each row
+   * keeps its uuid, so the message that names it, its graph node and edges, its
+   * search rows and HBPE's labels all still name it. The ledger rows that
+   * recorded the old identity move too, `platform` included: the content
+   * library's How filter reads the ledger before the column
+   * ({@link effectiveSourceSystemSql}).
+   *
+   * Called ahead of an insert, it makes the insert find the moved row instead of
+   * writing a second one beside it. That is how a Messenger attachment
+   * catalogued under `facebook` (before #2912) converges when it arrives again:
+   * migration 20261002005332 moved the rows present when it ran, and this
+   * catches one that comes back later, from a portability archive exported
+   * before it (an archive carries no schema version, so no migration reaches
+   * its rows) or from a writer still running the old code.
+   *
+   * A row moves only while its new key is free. When both keys are taken, the
+   * pair is a twin for that migration's teardown, and an import leaves it alone.
+   *
+   * `updated_at` is not touched: the explorer's chronological browse places
+   * content by it ({@link getEntitiesForContents}), and a corrected label is
+   * not a content change.
+   *
+   * @returns the ids of the rows that moved.
+   */
+  async rekeySourceSystem(
+    context: UserServiceContext,
+    rekey: { from: string; to: string; sourceIds: readonly string[] },
+  ): Promise<string[]> {
+    const sourceIds = Array.from(new Set(rekey.sourceIds));
+
+    if (sourceIds.length === 0 || rekey.from === rekey.to) {
+      return [];
+    }
+
+    // The platform each system's arrivals are ledgered under when the producer
+    // names none, which is how `ledgerArrival` and `createManyDetailed` stamp it.
+    const fromPlatform = ledgerPlatform(rekey.from);
+    const toPlatform = ledgerPlatform(rekey.to);
+
+    return this.contentRepository.manager.transaction(async (manager) => {
+      const moved: Array<{ id: string; source_id: string }> = await manager.query(
+        `WITH moved AS (
+           UPDATE ci.content c
+              SET source_system = $3
+            WHERE c.user_id = $1
+              AND c.source_system = $2
+              AND c.source_id = ANY($4::text[])
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM ci.content taken
+                 WHERE taken.user_id = c.user_id
+                   AND taken.source_system = $3
+                   AND taken.source_id = c.source_id)
+           RETURNING c.id, c.source_id
+         )
+         SELECT id, source_id FROM moved`,
+        [context.userId, rekey.from, rekey.to, sourceIds],
+      );
+
+      if (moved.length === 0) {
+        return [];
+      }
+
+      const movedSourceIds = moved.map((row) => row.source_id);
+      const params = [
+        context.userId,
+        rekey.from,
+        rekey.to,
+        moved.map((row) => row.id),
+        movedSourceIds,
+        fromPlatform,
+        toPlatform,
+      ];
+
+      // The ledger's unique key leaves out `record_id`, so a row already holding
+      // the new key would make the re-key collide. One that names a record that
+      // is gone (`remove` leaves ledger rows behind) evidences nothing.
+      await manager.query(
+        `DELETE FROM ci.record_sources stale
+          WHERE stale.user_id = $1
+            AND stale.record_table = 'content'
+            AND stale.source_system = $2
+            AND stale.source_id = ANY($3::text[])
+            AND NOT EXISTS (SELECT 1 FROM ci.content c WHERE c.id = stale.record_id)`,
+        [context.userId, rekey.to, movedSourceIds],
+      );
+      // Anything else still holding it makes the old-key arrival redundant.
+      await manager.query(
+        `DELETE FROM ci.record_sources rs
+          USING unnest($4::uuid[], $5::text[]) AS m(id, source_id)
+          WHERE rs.user_id = $1
+            AND rs.record_table = 'content'
+            AND rs.record_id = m.id
+            AND rs.source_system = $2
+            AND rs.source_id = m.source_id
+            AND EXISTS (
+              SELECT 1
+                FROM ci.record_sources held
+               WHERE held.user_id = rs.user_id
+                 AND held.record_table = 'content'
+                 AND held.source_type = rs.source_type
+                 AND held.source_system = $3
+                 AND held.source_id = rs.source_id
+                 AND held.platform IS NOT DISTINCT FROM
+                       (CASE WHEN rs.platform IS NOT DISTINCT FROM $6::text THEN $7::text ELSE rs.platform END))`,
+        params,
+      );
+      await manager.query(
+        `UPDATE ci.record_sources rs
+            SET source_system = $3,
+                platform = CASE WHEN rs.platform IS NOT DISTINCT FROM $6::text THEN $7::text ELSE rs.platform END
+           FROM unnest($4::uuid[], $5::text[]) AS m(id, source_id)
+          WHERE rs.user_id = $1
+            AND rs.record_table = 'content'
+            AND rs.record_id = m.id
+            AND rs.source_system = $2
+            AND rs.source_id = m.source_id`,
+        params,
+      );
+
+      return moved.map((row) => row.id);
+    });
+  }
+
   async search(context: ServiceContext, filters: SearchContentDto): Promise<Content[]> {
     // title lives on the CTI base row; join ci.entities so title filters and
     // egress composition share one query.
