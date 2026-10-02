@@ -4,6 +4,7 @@ import { fetchJson, FetchJsonError } from '@ci/common';
 import { Button, Card, Dialog, Input, Label, PasswordInput } from '@ci/shadcn';
 import { TriangleAlert } from '@ci/shadcn/icons';
 
+import { useNeedsWebSignIn, WebSignInRequired } from '@/components/WebSignInRequired';
 import { useAuth, useCurrentUser } from '@/hooks';
 
 /**
@@ -50,6 +51,11 @@ const PURGE_GRACE_DESCRIPTION = '30 days';
 export function AccountSection() {
   const [{ authToken }, { logout }] = useAuth();
   const { user, refetch: refetchUser } = useCurrentUser();
+  // The native shell holds only a device key. Reading the account and changing its email or password
+  // take a session JWT (`JwtAuthGuard`) — never a key — so there they can only answer "Unauthorized",
+  // after the person has typed their current password. `DELETE /account` is the one route that takes
+  // a key (at `full`), and it stays below.
+  const needsWebSignIn = useNeedsWebSignIn();
 
   const [open, setOpen] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
@@ -76,6 +82,10 @@ export function AccountSection() {
   const signInAgain = emailManagedByHub ? HUB_SIGN_IN_AGAIN : 'Sign in again to make this change.';
 
   useEffect(() => {
+    if (needsWebSignIn) {
+      return;
+    }
+
     fetchJson<{ email: string; hasOwnPassword: boolean; emailManagedByHub: boolean }>('/api/account', {
       headers: { ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
     })
@@ -84,7 +94,7 @@ export function AccountSection() {
         setEmailManagedByHub(result?.emailManagedByHub ?? false);
       })
       .catch(() => {});
-  }, [authToken]);
+  }, [authToken, needsWebSignIn]);
 
   const [newEmail, setNewEmail] = useState('');
   const [emailCurrentPassword, setEmailCurrentPassword] = useState('');
@@ -206,126 +216,136 @@ export function AccountSection() {
         </p>
       </div>
 
-      <Card className="py-0">
-        <Card.Content>
-          {emailManagedByHub ? (
-            <div className="space-y-1">
-              <h3 className="text-sm font-medium">Email</h3>
-              <p className="text-sm text-muted-foreground">
-                Your Hub signs you in to Memory with this address, so it can't be changed here.
-              </p>
-            </div>
-          ) : (
-            <form className="space-y-4" onSubmit={handleChangeEmail}>
-              <div className="space-y-1">
-                <h3 className="text-sm font-medium">Change email</h3>
-                <p className="text-sm text-muted-foreground">You'll use this address to sign in.</p>
-              </div>
+      {needsWebSignIn ? (
+        <WebSignInRequired>
+          Your email and password can only be changed from a web sign-in; this app signs in with its own
+          device key, which cannot change them. Open Companion Memory in a web browser and sign in to change
+          them. Deleting your account works from here.
+        </WebSignInRequired>
+      ) : (
+        <>
+          <Card className="py-0">
+            <Card.Content>
+              {emailManagedByHub ? (
+                <div className="space-y-1">
+                  <h3 className="text-sm font-medium">Email</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Your Hub signs you in to Memory with this address, so it can't be changed here.
+                  </p>
+                </div>
+              ) : (
+                <form className="space-y-4" onSubmit={handleChangeEmail}>
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-medium">Change email</h3>
+                    <p className="text-sm text-muted-foreground">You'll use this address to sign in.</p>
+                  </div>
 
-              {asksCurrentPassword && (
+                  {asksCurrentPassword && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="emailCurrentPassword">Current password</Label>
+                      <PasswordInput
+                        id="emailCurrentPassword"
+                        autoComplete="current-password"
+                        value={emailCurrentPassword}
+                        onChange={(e) => setEmailCurrentPassword(e.target.value)}
+                        disabled={emailSaving}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="newEmail">New email</Label>
+                    <Input
+                      id="newEmail"
+                      type="email"
+                      autoComplete="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      disabled={emailSaving}
+                      required
+                    />
+                  </div>
+
+                  {emailError && <p className="text-sm text-destructive">{emailError}</p>}
+                  {emailSavedNote && <p className="text-sm text-muted-foreground">{emailSavedNote}</p>}
+
+                  <Button type="submit" size="sm" disabled={emailSaving || newEmail.trim().length === 0}>
+                    {emailSaving ? 'Saving…' : 'Update email'}
+                  </Button>
+                </form>
+              )}
+            </Card.Content>
+          </Card>
+
+          <Card className="py-0">
+            <Card.Content>
+              <form className="space-y-4" onSubmit={handleChangePassword}>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-medium">
+                    {asksCurrentPassword ? 'Change password' : 'Set a password'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {asksCurrentPassword
+                      ? 'Changing your password signs out every other device.'
+                      : 'This account has no password yet — set one to also sign in with your email and password.'}
+                  </p>
+                </div>
+
+                {asksCurrentPassword && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="passwordCurrentPassword">Current password</Label>
+                    <PasswordInput
+                      id="passwordCurrentPassword"
+                      autoComplete="current-password"
+                      value={passwordCurrentPassword}
+                      onChange={(e) => setPasswordCurrentPassword(e.target.value)}
+                      disabled={passwordSaving}
+                      required
+                    />
+                  </div>
+                )}
+
                 <div className="grid gap-2">
-                  <Label htmlFor="emailCurrentPassword">Current password</Label>
+                  <Label htmlFor="newPassword">New password</Label>
                   <PasswordInput
-                    id="emailCurrentPassword"
-                    autoComplete="current-password"
-                    value={emailCurrentPassword}
-                    onChange={(e) => setEmailCurrentPassword(e.target.value)}
-                    disabled={emailSaving}
+                    id="newPassword"
+                    autoComplete="new-password"
+                    minLength={6}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    disabled={passwordSaving}
                     required
                   />
                 </div>
-              )}
 
-              <div className="grid gap-2">
-                <Label htmlFor="newEmail">New email</Label>
-                <Input
-                  id="newEmail"
-                  type="email"
-                  autoComplete="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  disabled={emailSaving}
-                  required
-                />
-              </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="confirmNewPassword">Confirm new password</Label>
+                  <PasswordInput
+                    id="confirmNewPassword"
+                    autoComplete="new-password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    disabled={passwordSaving}
+                    required
+                  />
+                </div>
 
-              {emailError && <p className="text-sm text-destructive">{emailError}</p>}
-              {emailSavedNote && <p className="text-sm text-muted-foreground">{emailSavedNote}</p>}
+                {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
+                {passwordSavedNote && <p className="text-sm text-muted-foreground">{passwordSavedNote}</p>}
 
-              <Button type="submit" size="sm" disabled={emailSaving || newEmail.trim().length === 0}>
-                {emailSaving ? 'Saving…' : 'Update email'}
-              </Button>
-            </form>
-          )}
-        </Card.Content>
-      </Card>
-
-      <Card className="py-0">
-        <Card.Content>
-          <form className="space-y-4" onSubmit={handleChangePassword}>
-            <div className="space-y-1">
-              <h3 className="text-sm font-medium">
-                {asksCurrentPassword ? 'Change password' : 'Set a password'}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {asksCurrentPassword
-                  ? 'Changing your password signs out every other device.'
-                  : 'This account has no password yet — set one to also sign in with your email and password.'}
-              </p>
-            </div>
-
-            {asksCurrentPassword && (
-              <div className="grid gap-2">
-                <Label htmlFor="passwordCurrentPassword">Current password</Label>
-                <PasswordInput
-                  id="passwordCurrentPassword"
-                  autoComplete="current-password"
-                  value={passwordCurrentPassword}
-                  onChange={(e) => setPasswordCurrentPassword(e.target.value)}
-                  disabled={passwordSaving}
-                  required
-                />
-              </div>
-            )}
-
-            <div className="grid gap-2">
-              <Label htmlFor="newPassword">New password</Label>
-              <PasswordInput
-                id="newPassword"
-                autoComplete="new-password"
-                minLength={6}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                disabled={passwordSaving}
-                required
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="confirmNewPassword">Confirm new password</Label>
-              <PasswordInput
-                id="confirmNewPassword"
-                autoComplete="new-password"
-                value={confirmNewPassword}
-                onChange={(e) => setConfirmNewPassword(e.target.value)}
-                disabled={passwordSaving}
-                required
-              />
-            </div>
-
-            {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
-            {passwordSavedNote && <p className="text-sm text-muted-foreground">{passwordSavedNote}</p>}
-
-            <Button
-              type="submit"
-              size="sm"
-              disabled={passwordSaving || newPassword.length === 0 || confirmNewPassword.length === 0}
-            >
-              {passwordSaving ? 'Saving…' : asksCurrentPassword ? 'Update password' : 'Set password'}
-            </Button>
-          </form>
-        </Card.Content>
-      </Card>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={passwordSaving || newPassword.length === 0 || confirmNewPassword.length === 0}
+                >
+                  {passwordSaving ? 'Saving…' : asksCurrentPassword ? 'Update password' : 'Set password'}
+                </Button>
+              </form>
+            </Card.Content>
+          </Card>
+        </>
+      )}
 
       <Card className="border-destructive/40 mb-[max(1rem,var(--safe-area-bottom))]">
         <Card.Header>

@@ -6,10 +6,15 @@ import { BlueBubblesSection } from './BlueBubblesSection';
 const h = vi.hoisted(() => ({
   fetchJson: vi.fn(),
   scrollIntoView: vi.fn(),
+  // One object, not a literal per call: the real `useSessionAuth` hands back the same `headers` for
+  // as long as the token is the same, and the section reloads whenever that identity changes.
+  session: { ready: true, authToken: 'token', headers: { Authorization: 'Bearer token' } },
 }));
 
 vi.mock('@/hooks', () => ({
   useAuth: () => [{ authToken: 'token' }, {}],
+  // The section gates on the session (a web JWT or a native device key), not on the token alone.
+  useSessionAuth: () => h.session,
   useCurrentUser: () => ({ user: { isAdmin: true } }),
 }));
 

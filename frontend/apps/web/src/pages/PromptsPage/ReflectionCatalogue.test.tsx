@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CatalogueEntry, CataloguePage } from './catalogue';
 import { ReflectionCatalogue } from './ReflectionCatalogue';
 
-vi.mock('@/hooks', () => ({
-  useAuth: () => [{ authToken: 'tok', expired: false, loading: false, error: null }, {}],
+// The real `useSessionAuth` runs on top of this (the catalogue hook gates on it).
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => [{ authToken: 'tok', authenticated: true, expired: false, loading: false, error: null }, {}],
 }));
 
 function entry(overrides: Partial<CatalogueEntry> = {}): CatalogueEntry {

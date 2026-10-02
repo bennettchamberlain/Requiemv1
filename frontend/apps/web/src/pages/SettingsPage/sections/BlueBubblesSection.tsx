@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { fetchJson, getWebOrigin } from '@ci/common';
 import { Button, Card, Checkbox, Input, Label, Switch } from '@ci/shadcn';
@@ -12,7 +12,7 @@ import {
   Pencil,
 } from '@ci/shadcn/icons';
 
-import { useAuth, useCurrentUser } from '@/hooks';
+import { useCurrentUser, useSessionAuth } from '@/hooks';
 import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
 import type { DateTimeFormatter } from '@/lib/dateTimeFormat';
 
@@ -89,7 +89,11 @@ function useRevealWhenSet(value: unknown) {
  * other imported source does (Memory, Import Runs).
  */
 export function BlueBubblesSection() {
-  const [{ authToken }] = useAuth();
+  // `ready`, not `authToken`: the token is the web JWT, which the native shell never has — its
+  // credential is a keystore API key that `fetchJson` attaches as `x-api-key`. Gating on the token
+  // meant the saved connection never filled the form on the phone, and `dirty` (which needs a loaded
+  // config) kept Save disabled for good. The controller is `JwtOrApiKeyAuthGuard`.
+  const { ready, headers: authHeaders } = useSessionAuth();
   const fmt = useDateTimeFormat();
   // The BlueBubbles connection is one configuration for the whole appliance, and "test
   // connection" makes the appliance dial an arbitrary host. Both are administrator actions on
@@ -130,16 +134,6 @@ export function BlueBubblesSection() {
   const syncMessageRef = useRevealWhenSet(syncMessage);
   const saveErrorRef = useRevealWhenSet(saveError);
 
-  const authHeaders = useMemo<Record<string, string>>(() => {
-    const headers: Record<string, string> = {};
-
-    if (authToken) {
-      headers.Authorization = `Bearer ${authToken}`;
-    }
-
-    return headers;
-  }, [authToken]);
-
   const applyConfig = useCallback((next: BlueBubblesConfigResponse) => {
     setConfig(next);
     setHost(next.host);
@@ -152,7 +146,7 @@ export function BlueBubblesSection() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!authToken) {
+    if (!ready) {
       setLoading(false);
 
       return;
@@ -174,7 +168,7 @@ export function BlueBubblesSection() {
     } finally {
       setLoading(false);
     }
-  }, [authToken, authHeaders, applyConfig]);
+  }, [ready, authHeaders, applyConfig]);
 
   useEffect(() => {
     void load();
