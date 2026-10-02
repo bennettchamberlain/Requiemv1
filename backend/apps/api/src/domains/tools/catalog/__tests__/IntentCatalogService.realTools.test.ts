@@ -155,6 +155,26 @@ describe('IntentCatalogService broadcast (real tools)', () => {
   });
 
   /**
+   * What a phone can bind. The iOS app hand-writes one struct per intent (`CompanionIntentTools.swift`) and looks each
+   * one's ruling up in this manifest by its executable name, so a rename — or a flip to `queue` — here silently leaves
+   * the on-device model without that tool; Android binds whatever is `execute` and follows on its own. Asserted by name,
+   * like the list above: changing what the on-device tier may run is a decision, not a side effect.
+   */
+  it('tells the on-device tier it may run the four intents the iOS app binds, and to queue memory.forget', async () => {
+    const manifest = (await buildCatalog()).getManifest({ tier: 'local' });
+    const decisions = Object.fromEntries(manifest.intents.map((i) => [i.tool, i.dispatch?.decision]));
+
+    expect(manifest.tier).toBe('local');
+    expect(decisions).toMatchObject({
+      knowledge_search: 'execute',
+      memory_recall: 'execute',
+      people_find: 'execute',
+      memory_remember: 'execute',
+      memory_forget: 'queue',
+    });
+  });
+
+  /**
    * The invariant ToolsRegistrationService fails the boot on. Asserted against the real catalog
    * too, because the boot check only protects a running appliance — this protects the manifest a
    * device may have cached from a build that never booted here.
