@@ -6,6 +6,7 @@ import { useLocation } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
 import { MEMORY_HUB_SECTIONS, isMemoryHubPath } from '@/components/MemoryHub/memoryHubSections';
+import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
 import { CHAT_BASE, chatThreadPath } from '@/pages/ChatPage/chatPaths';
 import type { Thread } from '@/pages/ChatPage/types';
 import { threadLabel, useRecentThreads } from '@/pages/ChatPage/useRecentThreads';
@@ -28,8 +29,9 @@ const RAIL_THREAD_PREVIEW = 3;
  *
  * "All chats" opens the rest of the list in place rather than linking to the
  * Chat page: on a phone that page is a composer, not a list (its sidebar
- * portals to a slot the phone layout never renders), so this list is the only
- * way to reach an older thread there.
+ * portals to a slot the phone layout never renders; the page's own "Chats"
+ * button, `PhoneChatBar`, opens the same threads in a sheet), so this list is
+ * the way to reach an older thread from anywhere in the app.
  *
  * The thread you are in always shows, even when it is older than the preview.
  */
@@ -43,6 +45,7 @@ function RecentThreads({
   pathname: string;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const fmt = useDateTimeFormat();
 
   if (threads.length === 0) {
     return loading ? (
@@ -65,7 +68,12 @@ function RecentThreads({
         const to = chatThreadPath(thread.id);
 
         return (
-          <RailSubmenuLeaf key={thread.id} to={to} label={threadLabel(thread)} active={pathname === to} />
+          <RailSubmenuLeaf
+            key={thread.id}
+            to={to}
+            label={threadLabel(thread, fmt)}
+            active={pathname === to}
+          />
         );
       })}
 
@@ -98,9 +106,10 @@ function RecentThreads({
  * Power Rail Memory entry with hub section children.
  *
  * Chat's recent threads render nested under its own row here (moved from the
- * old, now-removed ChatSubmenu) — the phone drawer is the only way to change
- * conversation there, since `ChatSidebar` portals to `tertiary-navigation`, a
- * slot the mobile layout never renders.
+ * old, now-removed ChatSubmenu) — the phone drawer is how you change
+ * conversation from outside Chat, since `ChatSidebar` portals to
+ * `tertiary-navigation`, a slot the mobile layout never renders. Inside Chat,
+ * the phone has `PhoneChatBar`.
  */
 export function MemorySubmenu() {
   const { expanded } = usePowerRail();
