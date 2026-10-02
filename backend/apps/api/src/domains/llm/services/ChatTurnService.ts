@@ -5,7 +5,12 @@ import { type Message as OllamaMessage, type ToolCall } from 'ollama';
 import { type RequestContext, type ServiceContext, toServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
-import { fenceUntrusted, untrustedBlock } from '@ci/common/prompt/untrustedBlock';
+import {
+  UntrustedMarkerScrubber,
+  fenceUntrusted,
+  stripUntrustedMarkers,
+  untrustedBlock,
+} from '@ci/common/prompt/untrustedBlock';
 import { Channel } from '@ci/common/rpc';
 import config from '@ci/configuration';
 // Deep import, not the `@ci/domains/agent` barrel: AgentModule already imports
@@ -41,6 +46,13 @@ import { ChatGenerateEvent, type ChatGeneratePayload } from '../events';
 import { isFirstResponseTimeout } from '../firstResponseDeadline';
 import { foldHistory } from '../foldHistory';
 import { THREAD_TITLE_SYSTEM_PROMPT, sidebarTitleFromModel } from '../threadTitle';
+import {
+  TOOLS_OFF_BASE_PROMPT,
+  TOOLS_OFF_GUARD,
+  TOOLS_OFF_REFUSAL,
+  TOOLS_OFF_TURN_REMINDER,
+  isWriteRequest,
+} from '../toolsOff';
 
 import { ChatGenerationBroker } from './ChatGenerationBroker';
 import { OllamaService, type ChatRequestContext } from './OllamaService';
@@ -51,6 +63,8 @@ interface TurnContextOptions {
   recallQuery?: string | null;
   /** Bytes the conversation left unspent, which the recall block may use. */
   recallBudgetBytes?: number;
+  /** Whether this turn has tools; when it has none the block ends with {@link TOOLS_OFF_TURN_REMINDER}. */
+  toolsEnabled?: boolean;
 }
 
 /**
@@ -238,6 +252,16 @@ export class ChatTurnService {
 
         model = prepared.model;
 
+        // A turn with no tools cannot change anything, so a plain instruction to
+        // ("add a task…", "forget…") is answered here, in code, not by a model
+        // that will say "Okay." The model is never asked.
+        if (!prepared.enableTools && isWriteRequest(latestUserText(seededMessages))) {
+          latestText = TOOLS_OFF_REFUSAL;
+          this.broker.publish(payload.threadId, { channel: Channel.TEXT, text: TOOLS_OFF_REFUSAL });
+
+          break;
+        }
+
         const stream = await this.ollamaService.chatStream(requestContext, prepared.messages, {
           model: prepared.model,
           signal,
@@ -247,20 +271,32 @@ export class ChatTurnService {
           maxOutputTokens: prepared.budget.reservedOutputTokens,
         });
 
+        // The fence markers are markup for the model; a small one echoes them
+        // into its reply. Held-back text is released before anything else is
+        // published, so what a person sees stays in the order it was produced.
+        const scrubber = new UntrustedMarkerScrubber();
+        const showText = (text: string) => {
+          if (text) {
+            latestText += text;
+            this.broker.publish(payload.threadId, { channel: Channel.TEXT, text });
+          }
+        };
+
         for await (const chunk of stream) {
           // Native Ollama can put thinking and content on the same chunk; vLLM
           // (OpenAI-compat) yields them as separate deltas. Handle both.
           if (chunk.message?.content) {
-            latestText += chunk.message.content;
-            this.broker.publish(payload.threadId, { channel: Channel.TEXT, text: chunk.message.content });
+            showText(scrubber.push(chunk.message.content));
           }
 
           if (chunk.message?.thinking) {
+            showText(scrubber.flush());
             latestThink += chunk.message.thinking;
             this.broker.publish(payload.threadId, { channel: Channel.THINK, text: chunk.message.thinking });
           }
 
           if (chunk.message?.tool_calls?.length) {
+            showText(scrubber.flush());
             this.broker.publish(payload.threadId, {
               channel: Channel.TOOL,
               text: JSON.stringify(chunk.message.tool_calls),
@@ -276,6 +312,8 @@ export class ChatTurnService {
             });
           }
         }
+
+        showText(scrubber.flush());
 
         // `chatStream` logs and swallows backend failures rather than throwing,
         // so an overflow reaches us as `stream.error` on an empty stream. Only
@@ -324,7 +362,13 @@ export class ChatTurnService {
           throw streamError;
         }
 
-        generated = stream.messages;
+        // What is stored is what was shown: the same echoed fence markers come
+        // out of the accumulated rows the live stream already had them removed from.
+        generated = stream.messages.map((message) =>
+          message.role === 'assistant' && message.content
+            ? { ...message, content: stripUntrustedMarkers(message.content) }
+            : message,
+        );
 
         break;
       }
@@ -583,11 +627,12 @@ export class ChatTurnService {
     // preamble) goes into `turnContext` instead, which is injected just before
     // the newest user turn — see `insertTurnContext`.
     const systemPrompt = options.systemPromptEnabled
-      ? await this.buildSystemPrompt(requestContext)
-      : await this.buildL0OnlySystemPrompt(requestContext);
+      ? await this.buildSystemPrompt(requestContext, enableTools)
+      : await this.buildL0OnlySystemPrompt(requestContext, enableTools);
 
     const turnContext = options.systemPromptEnabled
       ? await this.buildTurnContext(requestContext, {
+          toolsEnabled: enableTools,
           leadingAssistantMessages,
           recallQuery: latestUserText(admittedMessages),
           // The recall block is the only part of the turn context whose size is
@@ -711,7 +756,18 @@ export class ChatTurnService {
     return [syntheticActionMessage, ...messages];
   }
 
-  private async buildL0OnlySystemPrompt(context: RequestContext): Promise<string | null> {
+  private async buildL0OnlySystemPrompt(
+    context: RequestContext,
+    toolsEnabled = true,
+  ): Promise<string | null> {
+    const l0 = await this.buildL0Context(context);
+
+    // The minimal prompt has no base instructions to rewrite, but a turn with no
+    // tools must still say so: this is the only text that can tell the model.
+    return toolsEnabled ? l0 : [l0, TOOLS_OFF_GUARD].filter(Boolean).join('\n\n---\n\n');
+  }
+
+  private async buildL0Context(context: RequestContext): Promise<string | null> {
     if (!context.userId) {
       return null;
     }
@@ -738,7 +794,7 @@ export class ChatTurnService {
    * L0 dossier. Nothing that changes between turns of the same conversation
    * belongs here — see {@link buildTurnContext}.
    */
-  private async buildSystemPrompt(context: RequestContext): Promise<string> {
+  private async buildSystemPrompt(context: RequestContext, toolsEnabled = true): Promise<string> {
     const basePrompt = `You are Companion, a helpful AI assistant with access to various tools and information about the user.
     You are designed to take in various data sources that the user connects you to (via Sources) and help the user with not just everyday tasks, but with their pursuit of happiness.
 
@@ -775,27 +831,33 @@ Communication style:
 - Please be as concise as possible while still conveying substantially all information relevant to any question.
 - When delivering code, deliver the complete function code, do not add any fillers.`;
 
+    // A turn with no tools gets the tool-less twin of the base prompt, so
+    // nothing in it advertises a toolbox the turn does not have, and ends on
+    // the rules for answering without one — after the user's context, where a
+    // small model attends to them best. With tools the prompt is unchanged.
+    const head = toolsEnabled ? basePrompt : TOOLS_OFF_BASE_PROMPT;
+    const assemble = (...sections: string[]): string =>
+      (toolsEnabled ? sections : [...sections, TOOLS_OFF_GUARD]).join('\n\n---\n\n');
+
     if (!context.userId) {
-      return basePrompt;
+      return assemble(head);
     }
 
     try {
       const userContext = await this.userContextService.getUserContextForLLM(context.userId);
 
       if (!userContext) {
-        return basePrompt;
+        return assemble(head);
       }
 
-      return [basePrompt, this.userContextService.formatContextForSystemPrompt(userContext)].join(
-        '\n\n---\n\n',
-      );
+      return assemble(head, this.userContextService.formatContextForSystemPrompt(userContext));
     } catch (error) {
       this.logger.warn('Failed to fetch user context for system prompt', {
         userId: context.userId,
         error: error instanceof Error ? error.message : String(error),
       });
 
-      return basePrompt;
+      return assemble(head);
     }
   }
 
@@ -822,6 +884,12 @@ Communication style:
 
     if (sections.length === 0) {
       return null;
+    }
+
+    // Last, after the fence: the final words a tool-less model reads before the
+    // question, and our own instruction rather than data, so outside the region.
+    if (options?.toolsEnabled === false) {
+      sections.push(TOOLS_OFF_TURN_REMINDER);
     }
 
     return [TURN_CONTEXT_HEADER, ...sections].join('\n\n');

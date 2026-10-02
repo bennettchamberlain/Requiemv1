@@ -8,6 +8,7 @@ import { Channel, FrameEncoder } from './utils';
 
 vi.mock('@/components/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector" />,
+  ToolsOffNotice: () => <div data-testid="tools-off-notice" />,
 }));
 
 vi.mock('@/api/useUploadFile', () => ({

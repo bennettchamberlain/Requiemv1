@@ -1,7 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 
 import { type UserServiceContext } from '@ci/common/context';
-import { PersonService, UserContextService } from '@ci/domains/memory';
+import {
+  PersonService,
+  SELF_ENTITY_PROVISIONER,
+  UserContextService,
+  type SelfEntityProvisioner,
+} from '@ci/domains/memory';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -42,6 +48,13 @@ export class ChatModelPreferenceService {
   constructor(
     private readonly personService: PersonService,
     private readonly userContextService: UserContextService,
+    /**
+     * For {@link SELF_ENTITY_PROVISIONER}, resolved lazily — see its doc for why
+     * it cannot be injected. Optional so a hand-built service (the unit tests)
+     * still constructs; without it a user who has no self entity gets the old
+     * error rather than a new one.
+     */
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   invalidate(userId: string): void {
@@ -86,22 +99,58 @@ export class ChatModelPreferenceService {
     value: string | boolean | null,
   ): Promise<void> {
     const userId = context.userId!;
-    const selfIdentity = await this.userContextService.getSelfIdentity(userId);
-
-    if (!selfIdentity) {
-      throw new Error('Self entity not found');
-    }
+    const selfEntityId = await this.selfEntityIdFor(context);
 
     // A single-leaf write, like ImageDescriptionPreferenceService — never a
     // rebuilt `planner` object, which would clobber trust_mode or the other
     // two preferences this service itself owns if a concurrent write lands
     // between our read and our write.
-    await this.personService.patchPropertyLeaves(context, selfIdentity.entityId, [
+    await this.personService.patchPropertyLeaves(context, selfEntityId, [
       { path: ['planner', leaf], value },
       { path: ['planner', 'source'], value: 'settings' },
     ]);
 
     this.invalidate(userId);
+  }
+
+  /**
+   * The self entity these preferences live on, provisioned when the user has
+   * none yet.
+   *
+   * `ci.users.entity_id` stays NULL until something self-anchored is ingested,
+   * and nothing guarantees that ever happens — an account whose data came from
+   * an import never gets one. That account could not pick a model at all:
+   * `POST /personalization/chat-model` threw "Self entity not found" (a 500) on
+   * every try — an iOS QA run logged six in a row — and the picker, which reverts
+   * an optimistic selection when the write fails, snapped back to the default
+   * each time. Reads are unaffected (no self entity reads as "no override"); this
+   * is the write half. Provisioning is what graph ingest and the Places page
+   * already do for the same gap.
+   */
+  private async selfEntityIdFor(context: UserServiceContext): Promise<string> {
+    const selfIdentity = await this.userContextService.getSelfIdentity(context.userId!);
+
+    if (selfIdentity) {
+      return selfIdentity.entityId;
+    }
+
+    const provisioned = await this.selfEntityProvisioner()?.ensureSelfEntityForOwner(context);
+
+    if (!provisioned) {
+      throw new Error('Self entity not found');
+    }
+
+    return provisioned.id;
+  }
+
+  private selfEntityProvisioner(): SelfEntityProvisioner | null {
+    try {
+      return this.moduleRef?.get<SelfEntityProvisioner>(SELF_ENTITY_PROVISIONER, { strict: false }) ?? null;
+    } catch {
+      // No binding (a container without GraphModule): fall through to the
+      // "no self entity" error, which names the actual problem.
+      return null;
+    }
   }
 
   private async getPreferences(userId: string): Promise<ChatModelPreferences> {

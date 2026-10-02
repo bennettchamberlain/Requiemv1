@@ -148,6 +148,12 @@ export class ChatGenerationBroker {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      // Tells nginx — the appliance gateway, whose `/api/` location buffers by
+      // default — not to hold this response back. Its `/api/llm/generate`
+      // location turns buffering off by config, but `GET /llm/threads/:id/stream`
+      // (re-attaching to a turn in flight) goes through the generic one, where a
+      // reply would otherwise arrive in bursts when a buffer fills.
+      'X-Accel-Buffering': 'no',
       'X-Thread-Id': threadId,
     });
     res.flushHeaders?.();

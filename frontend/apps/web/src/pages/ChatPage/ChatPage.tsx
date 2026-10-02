@@ -17,13 +17,14 @@ import { steerDispatchJob, useDispatchJob } from '@/api/useDispatchJob';
 import { Chat, type FormData } from '@/components/Chat';
 import { ErrorState } from '@/components/ErrorState';
 import { MemoryHubShell } from '@/components/MemoryHub';
+import { useToolsOffReason } from '@/components/ModelSelector';
 import { useAuth, useChatRequester, useCounter, useModel } from '@/hooks';
 import { useLocalLlmPrefs } from '@/hooks/useOnDeviceModel';
 import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } from '@/lib/agentChat';
 
 import { CHAT_BASE, chatThreadPath } from './chatPaths';
 import { ChatSidebar } from './ChatSidebar';
-import { STARTER_PROMPTS } from './starterPrompts';
+import { STARTER_PROMPTS, TOOL_STARTER_PROMPTS } from './starterPrompts';
 import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
 
@@ -64,6 +65,7 @@ function ChatPageContent() {
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [chatDraft, setChatDraft] = useState('');
   const [{ selectedModel }] = useModel();
+  const toolsOff = useToolsOffReason() !== null;
   const [localPrefs] = useLocalLlmPrefs();
   // With a phone model chosen and routing on, chat works with no appliance model at all — the case where
   // the appliance is unreachable and `useModel` has nothing to select.
@@ -288,6 +290,12 @@ function ChatPageContent() {
       ? 'Ask about Memory, Plan, Forecast, Brief…'
       : 'Continue — Memory, Plan, Forecast, Brief…';
 
+  // With no tools, only the starters the snapshots can answer: a tool-only one
+  // would be answered with an invented place or a literal tool call.
+  const starterPrompts = toolsOff
+    ? STARTER_PROMPTS.filter((prompt) => !TOOL_STARTER_PROMPTS.has(prompt))
+    : STARTER_PROMPTS;
+
   let emptyState: ReactNode;
 
   if (threadError && initialMessages.length === 0) {
@@ -345,7 +353,7 @@ function ChatPageContent() {
         </p>
 
         <ul aria-label="Suggested asks" className="w-full space-y-1.5 pb-1 text-left">
-          {STARTER_PROMPTS.map((prompt) => (
+          {starterPrompts.map((prompt) => (
             <li key={prompt}>
               <button
                 type="button"

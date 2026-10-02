@@ -7,6 +7,7 @@ const upload = vi.hoisted(() => vi.fn());
 
 vi.mock('@/components/ModelSelector', () => ({
   ModelSelector: () => <div data-testid="model-selector" />,
+  ToolsOffNotice: () => <div data-testid="tools-off-notice" />,
 }));
 
 vi.mock('@/api/useUploadFile', async () => {
@@ -53,6 +54,20 @@ describe('ChatInput', () => {
 
     expect(screen.getByTestId('model-selector')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Attach files or images' })).toBeInTheDocument();
+  });
+
+  // The line that says chat has no tools sits with the model controls it is about,
+  // and goes with them where the composer has none (the Capture modal has its own).
+  it('shows the tools-off notice with the model controls, and not without them', () => {
+    const { unmount } = render(<ChatInput />);
+
+    expect(screen.getByTestId('tools-off-notice')).toBeInTheDocument();
+    unmount();
+
+    render(<ChatInput showModelControls={false} />);
+
+    expect(screen.queryByTestId('tools-off-notice')).toBeNull();
+    expect(screen.queryByTestId('model-selector')).toBeNull();
   });
 
   it('submits the trimmed message on Enter and clears on success', async () => {
