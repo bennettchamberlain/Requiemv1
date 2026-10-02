@@ -75,12 +75,13 @@
 -- exactly what this did and nothing else. The ledger is also the audit trail
 -- for "why is my answer on a different question id".
 --
--- NOT COVERED: an `infer.question.answer` job already queued for a twin when
--- this runs can still write an inferred answer to it afterwards, because
--- AnswerInferenceListener resolves its question with findById, which checks
--- visibility but not `is_active`. The window is one job's lifetime. The same
--- gap applies to every question ever deactivated, so it wants a fix in the
--- listener, not a migration.
+-- QUEUED INFERENCE JOBS. An `infer.question.answer` job already queued for a
+-- twin when this runs is dropped when it starts: since #2891,
+-- AnswerInferenceListener re-reads is_active, evidence_class and the owner's
+-- forks before it calls the model (QuestionService.findInferenceStanding).
+-- What is left is a job whose model call is already in flight, up to 60 s: it
+-- can still write an inferred answer to the retired row, which the Self page
+-- and the feed no longer read.
 --
 -- Idempotent: once a twin is retired it is no longer an active twin, so a
 -- second run finds nothing to do, and the ledger's primary key absorbs a
