@@ -28,9 +28,11 @@ const ANSWER_MAX_LENGTH = 5000;
  * answer already longer than the cap is being cut down — the cap must never eat
  * the tail of text the person did not choose to delete).
  *
- * The `maxLength` attribute on the fields is not enough by itself: on an iPhone
- * a 5,003-character run typed into the editor was accepted whole, so the cap is
- * also applied to the value the field reports, whatever put the text there.
+ * The `maxLength` attribute on the fields is not relied on alone: a QA run saw a
+ * 5,003-character run accepted whole on an iPhone (a short run of the same kind
+ * stops at the attribute on iOS Safari, so what let that one through is not
+ * established). The cap is also applied to the value the field reports, whatever
+ * put the text there, so nothing over it is ever autosaved or sent.
  * A surrogate pair is never left half-cut: a lone half of an emoji is not text.
  */
 function clampAnswer(value: string, previous = ''): string {
