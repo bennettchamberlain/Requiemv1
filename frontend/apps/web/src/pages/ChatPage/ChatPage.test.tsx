@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 
 import { resetLocalLlmPrefsCache } from '@ci/common/src/utils/localLlmPrefs';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { Link } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -21,6 +22,13 @@ vi.mock('react-router-dom', async (importOriginal) => {
 const h = vi.hoisted(() => ({
   stop: vi.fn(),
   detach: vi.fn(),
+  /** `useChatRequester().reset` — leaving a conversation (drops the stream and the on-device badge). */
+  resetChat: vi.fn(),
+  /** The options the page last handed `useChatRequester`, so a test can play the part of the first reply. */
+  requesterOpts: null as null | { threadId: string | null; onNewThread?: (id: string) => void },
+  isMobile: false,
+  /** What `readAgentChatContext` hands the page once, as when "Chat about this" sent the person here. */
+  seed: null as null | { title: string; body?: string },
   attach: vi.fn(async () => true),
   submit: vi.fn(async () => true),
   cancel: vi.fn(),
@@ -48,6 +56,7 @@ vi.mock('@ci/common', async (importOriginal) => {
   return {
     ...actual,
     usePageTitle: () => undefined,
+    useDeviceLayout: () => ({ isMobile: h.isMobile }),
     resetLocalLlmConversation: (...args: unknown[]) => h.reset(...(args as [])),
     Portal: { Slot: ({ children }: { children: unknown }) => children },
   };
@@ -67,17 +76,28 @@ vi.mock('@/hooks', async (importOriginal) => {
 
   return {
     ...actual,
-    useChatRequester: () => [
-      {
-        stream: null,
-        loading: false,
-        error: null,
-        streaming: false,
-        hasStartedReceiving: null,
-        local: h.local,
-      },
-      { submit: h.submit, attach: h.attach, detach: h.detach, stop: h.stop, cancel: h.cancel },
-    ],
+    useChatRequester: (opts: { threadId: string | null; onNewThread?: (id: string) => void }) => {
+      h.requesterOpts = opts;
+
+      return [
+        {
+          stream: null,
+          loading: false,
+          error: null,
+          streaming: false,
+          hasStartedReceiving: null,
+          local: h.local,
+        },
+        {
+          submit: h.submit,
+          attach: h.attach,
+          detach: h.detach,
+          reset: h.resetChat,
+          stop: h.stop,
+          cancel: h.cancel,
+        },
+      ];
+    },
     useModel: () => [{ selectedModel: h.selectedModel }, {}],
     useCounter: () => [{ count: 0 }, { increment: vi.fn() }],
     // #2558 added `useAuth()` to ChatPageContent so a dispatch thread can call
@@ -114,7 +134,13 @@ vi.mock('@/lib/agentChat', async (importOriginal) => {
 
   return {
     ...actual,
-    readAgentChatContext: () => null,
+    readAgentChatContext: () => {
+      const seed = h.seed;
+
+      h.seed = null; // the page clears the stash after reading it, so a second read finds nothing
+
+      return seed;
+    },
     clearAgentChatContext: vi.fn(),
   };
 });
@@ -129,16 +155,22 @@ vi.mock('@/components/Chat', () => ({
     messages,
     disabled,
     localImages,
+    blockUploads,
+    initialDraft,
   }: {
     onStop?: () => void;
     emptyState?: ReactNode;
     messages?: Message[];
     disabled?: boolean;
     localImages?: boolean;
+    blockUploads?: boolean;
+    initialDraft?: string;
   }) => (
     <>
+      <span data-testid="chat-draft">{initialDraft}</span>
       <span data-testid="chat-disabled">{String(Boolean(disabled))}</span>
       <span data-testid="chat-local-images">{String(Boolean(localImages))}</span>
+      <span data-testid="chat-block-uploads">{String(Boolean(blockUploads))}</span>
       <button type="button" onClick={() => onStop?.()}>
         Stop
       </button>
@@ -162,6 +194,10 @@ describe('ChatPage', () => {
     h.cancel.mockClear();
     h.deleteThread.mockClear();
     h.reset.mockClear();
+    h.resetChat.mockClear();
+    h.requesterOpts = null;
+    h.isMobile = false;
+    h.seed = null;
     h.selectedModel = 'llama3';
     h.local = null;
     localStorage.clear();
@@ -181,8 +217,11 @@ describe('ChatPage', () => {
 
     fireEvent.click(screen.getByText('Second'));
 
+    // Leaving drops the stream (`reset` detaches, and clears the phone badge too) but must not cancel the job:
+    // the server keeps generating and the thread shows the finished reply when it is opened again.
     expect(h.stop).not.toHaveBeenCalled();
-    expect(h.detach).toHaveBeenCalled();
+    expect(h.cancel).not.toHaveBeenCalled();
+    expect(h.resetChat).toHaveBeenCalled();
   });
 
   it('attaches to a running thread when opening it', async () => {
@@ -396,6 +435,249 @@ describe('ChatPage', () => {
       fireEvent.click(screen.getByText('Second'));
 
       expect(h.reset).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The "Answered on this phone" badge lives in the requester's state, so leaving the chat has to clear it
+     * there — it used to sit over the empty new chat and over an appliance thread the phone never answered.
+     */
+    it('drops the on-device badge and stream when a new chat is started', () => {
+      renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
+
+      fireEvent.click(screen.getAllByText('New Thread')[0]);
+
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops the on-device badge and stream when another thread is opened', () => {
+      renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
+
+      fireEvent.click(screen.getByText('Second'));
+
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The phone drawer's thread rows are plain router links, not the sidebar's `onSelectThread`, so nothing
+     * but the route change itself says the conversation changed.
+     */
+    it('leaves the previous conversation behind when the route moves to another thread', () => {
+      renderWithProviders(
+        <>
+          <Link to="/memory/chat/t2">drawer: Second</Link>
+          <ChatPage />
+        </>,
+        { route: '/memory/chat/t1', path: '/memory/chat/:id?' },
+      );
+      expect(h.resetChat).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByText('drawer: Second'));
+
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+      expect(h.reset).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not reset anything just because the page mounted', () => {
+      renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id?' });
+
+      expect(h.resetChat).not.toHaveBeenCalled();
+      expect(h.reset).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The first message of a new chat moves the address bar to its thread WITHOUT telling the router (so the
+     * stream is not torn down). The router therefore still believes it is on the bare chat path, and a link to
+     * that path — the Chat row in the drawer, the Chat tab on every Memory page — landed on "where it already
+     * was": nothing happened, and the chat kept its thread.
+     */
+    it('starts a new chat when the Chat link is followed after the first message', () => {
+      renderWithProviders(
+        <>
+          <Link to="/memory/chat">drawer: Chat</Link>
+          <ChatPage />
+        </>,
+        { route: '/memory/chat', path: '/memory/chat/:id?' },
+      );
+
+      // The first reply creates a thread; the page records it without a router navigation.
+      act(() => h.requesterOpts?.onNewThread?.('t9'));
+      expect(h.resetChat).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByText('drawer: Chat'));
+
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+      expect(h.reset).toHaveBeenCalledTimes(1);
+      // …and the composer is now talking to no thread at all.
+      expect(h.requesterOpts?.threadId).toBeNull();
+      expect(screen.getByRole('button', { name: STARTER_PROMPTS[0] })).toBeInTheDocument();
+    });
+
+    // "Always answer on this phone" never creates a server thread, so there is no thread id to go on — the
+    // on-device badge is what says a turn has happened in this chat.
+    it('starts a new chat when the Chat link is followed after an on-device turn, which has no thread', () => {
+      h.local = { modelId: 'qwen3-0.6b-int4', stats: null };
+      renderWithProviders(
+        <>
+          <Link to="/memory/chat">drawer: Chat</Link>
+          <ChatPage />
+        </>,
+        { route: '/memory/chat', path: '/memory/chat/:id?' },
+      );
+
+      fireEvent.click(screen.getByText('drawer: Chat'));
+
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+      expect(h.reset).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * "Chat about this" seeds the composer once. That seed belongs to the chat it opened: the next new chat must
+     * start with an empty composer, not the old ask coming back.
+     */
+    it('does not bring a seeded draft back into the next new chat', () => {
+      h.seed = { title: 'Picnic', body: 'Bring snacks' };
+      renderWithProviders(
+        <>
+          <Link to="/memory/chat">drawer: Chat</Link>
+          <ChatPage />
+        </>,
+        { route: '/memory/chat', path: '/memory/chat/:id?' },
+      );
+
+      expect(screen.getByTestId('chat-draft')).toHaveTextContent('Picnic');
+
+      act(() => h.requesterOpts?.onNewThread?.('t9'));
+      fireEvent.click(screen.getByText('drawer: Chat'));
+
+      expect(screen.getByTestId('chat-draft')).toBeEmptyDOMElement();
+    });
+
+    it('leaves an empty chat alone when the Chat link is followed (there is nothing to start over)', () => {
+      renderWithProviders(
+        <>
+          <Link to="/memory/chat">drawer: Chat</Link>
+          <ChatPage />
+        </>,
+        { route: '/memory/chat', path: '/memory/chat/:id?' },
+      );
+
+      fireEvent.click(screen.getByText('drawer: Chat'));
+
+      expect(h.resetChat).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A tapped starter is echoed into the page's own message list, so starting over has to empty that too — it
+     * is not part of the chat component that remounts.
+     */
+    it('does not carry a tapped starter into the next new chat', () => {
+      renderWithProviders(
+        <>
+          <Link to="/memory/chat">drawer: Chat</Link>
+          <ChatPage />
+        </>,
+        { route: '/memory/chat', path: '/memory/chat/:id?' },
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: STARTER_PROMPTS[2] }));
+      expect(screen.getByText(`user: ${STARTER_PROMPTS[2]}`)).toBeInTheDocument();
+
+      act(() => h.requesterOpts?.onNewThread?.('t9'));
+      fireEvent.click(screen.getByText('drawer: Chat'));
+
+      expect(screen.queryByText(`user: ${STARTER_PROMPTS[2]}`)).not.toBeInTheDocument();
+    });
+
+    /**
+     * "Always answer on this phone" promises nothing leaves the device, yet attach uploads at once. Only a
+     * phone model that can read photos has anything to do with an attachment (it reads them locally); with any
+     * other mode the appliance is a legitimate destination, or the mode does not apply.
+     */
+    it('blocks uploads only when the phone alone answers and its model cannot read photos', () => {
+      const cases: Array<[string, string, string]> = [
+        ['device', 'qwen3-0.6b-int4', 'true'], // nothing local can read a file: attach would only upload
+        ['device', 'gemma-4-e2b-it', 'false'], // photos are read on the phone, never uploaded
+        ['auto', 'qwen3-0.6b-int4', 'false'], // the appliance may answer, so attach uploads there on purpose
+        ['appliance', 'qwen3-0.6b-int4', 'false'],
+      ];
+
+      for (const [mode, modelId, expected] of cases) {
+        localStorage.setItem('ci.localLlm.prefs', JSON.stringify({ mode, modelId }));
+        resetLocalLlmPrefsCache();
+
+        const view = renderNew();
+
+        expect(screen.getByTestId('chat-block-uploads'), `${mode}/${modelId}`).toHaveTextContent(expected);
+        view.unmount();
+      }
+    });
+
+    /**
+     * Time to first token is the last thing on the line and the one number that says whether the phone is coping,
+     * and on a 402pt screen it ended in an ellipsis. It wraps instead.
+     */
+    it('lets the speed readout wrap rather than cutting it off with an ellipsis', () => {
+      h.local = {
+        modelId: 'qwen3-0.6b-int4',
+        stats: {
+          timeToFirstTokenMs: 1200,
+          totalMs: 4000,
+          outputTokens: 60,
+          decodeTokensPerSecond: 13,
+          tokensEstimated: true,
+        },
+      };
+      renderNew();
+
+      const badge = screen.getByTestId('on-device-badge');
+
+      expect(badge).toHaveTextContent('1.2s to first token');
+      expect(badge.querySelector('.truncate')).toBeNull();
+    });
+  });
+
+  /**
+   * The desktop gets `ChatSidebar`, portaled into a slot the phone layout never renders — so the phone had no
+   * New Thread control at all, and its only list of past chats was nested in the drawer.
+   */
+  describe('on a phone', () => {
+    beforeEach(() => {
+      h.isMobile = true;
+    });
+
+    it('offers New chat and a list of past chats in the page itself', () => {
+      renderWithProviders(<ChatPage />, { route: '/memory/chat', path: '/memory/chat' });
+
+      expect(screen.getByRole('button', { name: /new chat/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^chats$/i })).toBeInTheDocument();
+    });
+
+    it('starts over from New chat, from any point in a conversation', () => {
+      renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
+
+      fireEvent.click(screen.getByRole('button', { name: /new chat/i }));
+
+      expect(navigate).toHaveBeenCalledWith('/memory/chat');
+      expect(h.reset).toHaveBeenCalledTimes(1);
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens a past chat from the list', () => {
+      renderWithProviders(<ChatPage />, { route: '/memory/chat/t1', path: '/memory/chat/:id' });
+
+      fireEvent.click(screen.getByRole('button', { name: /^chats$/i }));
+      // The desktop sidebar is rendered inline by this file's Slot stub, so scope to the phone's list.
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Second' }));
+
+      expect(navigate).toHaveBeenCalledWith('/memory/chat/t2');
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not drawn on the desktop layout, which has the sidebar', () => {
+      h.isMobile = false;
+      renderWithProviders(<ChatPage />, { route: '/memory/chat', path: '/memory/chat' });
+
+      expect(screen.queryByRole('button', { name: /new chat/i })).not.toBeInTheDocument();
     });
   });
 

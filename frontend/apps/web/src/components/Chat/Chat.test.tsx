@@ -1,4 +1,4 @@
-import { fireEvent, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -49,6 +49,83 @@ describe('Chat', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' });
 
     await waitFor(() => expect(getByText('what is up')).toBeInTheDocument());
+  });
+
+  /**
+   * A refused send leaves its text in the composer (ChatInput only clears on `true`), so the transcript must not
+   * also claim it was sent: each refused try added a user bubble with no reply, two tries gave two bubbles.
+   */
+  describe('a refused send', () => {
+    // The composer's own text node would match too — React mirrors a textarea's value into its default value.
+    const bubbles = (text: string) => screen.queryAllByText(text, { ignore: 'textarea, script, style' });
+
+    const typeAndSend = (text: string) => {
+      const textbox = screen.getByRole('textbox');
+
+      fireEvent.change(textbox, { target: { value: text } });
+      fireEvent.keyDown(textbox, { key: 'Enter' });
+    };
+
+    it('shows the bubble while the send is still pending', async () => {
+      renderWithProviders(<Chat onSubmit={() => new Promise<boolean>(() => undefined)} />);
+
+      typeAndSend('what is up');
+
+      await waitFor(() => expect(bubbles('what is up')).toHaveLength(1));
+    });
+
+    it('takes its user bubble back, and the empty state returns with it', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(false);
+
+      renderWithProviders(<Chat onSubmit={onSubmit} emptyState={<div>Start the conversation</div>} />);
+      typeAndSend('what is up');
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(bubbles('what is up')).toHaveLength(0));
+      expect(screen.getByText('Start the conversation')).toBeInTheDocument();
+      // Still in the box, so it can be fixed and sent again.
+      expect(screen.getByRole('textbox')).toHaveValue('what is up');
+    });
+
+    it('leaves no bubble however many times it is tried', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(false);
+
+      renderWithProviders(<Chat onSubmit={onSubmit} />);
+
+      typeAndSend('try again');
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(bubbles('try again')).toHaveLength(0));
+
+      typeAndSend('try again!');
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(bubbles('try again!')).toHaveLength(0));
+    });
+
+    it('shows exactly one bubble once the retry is accepted', async () => {
+      const onSubmit = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+
+      renderWithProviders(<Chat onSubmit={onSubmit} />);
+
+      typeAndSend('hello');
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(bubbles('hello')).toHaveLength(0));
+
+      typeAndSend('hello!');
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(bubbles('hello!')).toHaveLength(1));
+      expect(bubbles('hello')).toHaveLength(0);
+    });
+
+    it('keeps the bubble of an accepted send', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(true);
+
+      renderWithProviders(<Chat onSubmit={onSubmit} />);
+      typeAndSend('what is up');
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(bubbles('what is up')).toHaveLength(1);
+    });
   });
 
   it('never loads a remote image while a reply streams in', async () => {
