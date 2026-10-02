@@ -51,9 +51,11 @@ export type { EditField, MetaItem };
  * The standalone page for each resource type the drawer can show, by raw id.
  * Types absent here (a file, a browser visit, a thread) have no page and get no
  * link. Kept in step with the routes in App.tsx and with `ITEM_PAGES` in the
- * API's DatabaseSearchTool, which hands the chat the same paths.
+ * API's DatabaseSearchTool, which hands the chat the same paths. Exported for
+ * the phone header's Back row (`EntityBackBar`), which must cover every page
+ * listed here.
  */
-const FULL_PAGE_PATHS: Readonly<Record<string, string>> = {
+export const FULL_PAGE_PATHS: Readonly<Record<string, string>> = {
   communication: '/communications',
   concept: '/concepts',
   content: '/content',
