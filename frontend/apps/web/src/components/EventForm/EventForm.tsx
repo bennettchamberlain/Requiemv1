@@ -66,6 +66,13 @@ function Field({
         list={listId}
         value={value}
         placeholder={placeholder}
+        // WebKit sizes a native date or time control's `width: 100%` as the
+        // CONTENT box and adds its padding and border on top — 28pt too wide
+        // for the cell it sits in on iOS, so Starts/Ends ran under the clock
+        // beside them and the clock ran off the row's edge. Neither `min-w-0`
+        // nor the flex cell can help; an ordinary box can. The native picker
+        // still opens on tap.
+        className={type === 'date' || type === 'time' ? 'pointer-coarse:appearance-none' : undefined}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>
