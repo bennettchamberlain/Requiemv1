@@ -611,6 +611,8 @@ Import stage work is dispatched over **per-kind pg-boss queues** — `import-unp
 |                                                                                                                                               | POST `/context-prompts/:id/respond` (`:28`)       | Answer one.                            |
 |                                                                                                                                               | POST `/context-prompts/:id/skip` (`:48`)          | Skip one.                              |
 
+The `POST /personalization/*` settings (`trust-mode`, `image-description`, `chat-model`, `tools`, `thinking`, `browser-activity-insight`) store their value on the caller's **self person**. An account whose data came from an import may have none (`ci.users.entity_id` NULL); the write then provisions it for that caller (`ensureSelfEntityId`, via the `SELF_ENTITY_PROVISIONER` binding) instead of answering 500 `Self entity not found`. The `GET`s never provision: a user with no self person reads each setting's default.
+
 ---
 
 ## Jobs / Audit / Onboarding / Feature flags / Health
