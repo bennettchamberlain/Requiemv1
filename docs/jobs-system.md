@@ -765,7 +765,7 @@ reaper ending the delivery with `defer`.
 | Event | Queue | What it does | Triggered by |
 |---|---|---|---|
 | `chat.generate` | `llm` | One chat turn. Flips `generation_status` to running, builds the turn, streams from Ollama, persists. **Survives leaving the page; Stop cancels it.** `INTERACTIVE_JOB_PRIORITY`, `singletonKey chat-generate:<threadId>` | `POST /llm/generate` |
-| `chat.summarization` | `llm-background` | Sidebar title for an unnamed thread. Try/caught and only logged — never retried | Chained from a successful `chat.generate`, only when the thread has no name |
+| `chat.summarization` | `llm-background` | Sidebar title for an unnamed thread. `INTERACTIVE_JOB_PRIORITY`, so it is not served behind the answer-inference backlog on this queue; `singletonKey chat-summarize:<threadId>`. A failure fails the job: retried 3× with backoff (~10–20 s, 20–40 s, 40–80 s), then the dead-letter queue | Chained from a successful `chat.generate`, only when the thread has no name |
 | `infer.question.answer` | `llm-background` | Infer a first-person answer to an unanswered profile question from what the appliance knows, rather than asking. Embedding call + `ci_search` query + generation, 60 s timeout | `AnswerInferenceCron` (flag off) or `SmartRotationListener` (flag on) |
 | `python.function.run` | `py-fn-summary` | POST to the Summary sidecar (`/functions/run`, 30 s *accept* timeout only), then `ack.defer()`. Completed by the callback webhook | The `PythonFunctionCrons` fan-outs, `SmartRotationListener` |
 | `python.function.run` | `py-fn-hbpe` | Same, aimed at HBPE. 4 h expiry because bootstrap trains models for hours | `hbpeNightly`, `hbpeBootstrapSweep`, `ForecastResolver.triggerHbpe` |
