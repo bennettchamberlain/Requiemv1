@@ -478,6 +478,18 @@ That asymmetry is structural, not an oversight: the LiteRT-LM Swift surface has 
 equivalent (verified against the vendored source — 18 public types, one tool protocol, no
 schema-string entry point), so iOS cannot construct tools dynamically at all.
 
+**What iOS binds today.** Three hand-written structs in `CompanionIntentTools.swift`: `knowledge_search`
+(the tool for "what do I know about X", "when did I …", "how many …"), `people_find`, and `memory_recall`,
+which is a graph lookup of a *person* and who they are connected to — it takes `personName` and nothing
+else, because the appliance's `memory.recall` has no free-text or date-range parameter. Each `@ToolParam` must
+be a same-named property of the intent's published schema and each `run()` must send exactly those;
+`IntentCatalogService.realTools.test.ts` (backend) reads the Swift file against the real tool classes and fails
+when they drift (the app used to send `query` / `startDate` / `endDate` to `memory_recall`, which the server
+silently dropped, and `content` to `memory_remember`, which it rejected). `memory.remember` is **not** offered on
+iOS: it writes graph entities (`operations: [{ kind: "entity.create", … }]`), not a Note, and no intent the local
+tier may run creates a Note. Android still binds it, with the published schema, because it binds every
+`execute` intent.
+
 Execution goes over MCP `tools/call` (`POST /mcp`) — there is no REST "execute this intent"
 endpoint — authenticated with the same `x-api-key` the App Intents already use.
 
