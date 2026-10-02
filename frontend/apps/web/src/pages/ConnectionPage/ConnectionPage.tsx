@@ -287,7 +287,10 @@ export function ConnectionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [{ authToken }] = useAuth();
+  // `authenticated`, not `authToken`: the token is the web JWT, which the native shell never has — its
+  // credential is a keystore API key. The edit below is a GraphQL mutation that authenticates through the
+  // Apollo link and never reads the token, so gating on it only stopped the phone from saving.
+  const [{ authToken, authenticated }] = useAuth();
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -365,8 +368,8 @@ export function ConnectionPage() {
       setModalLoading(true);
       setModalError(null);
 
-      if (!authToken || !connection) {
-        throw new Error('Authentication token or connection not found');
+      if (!authenticated || !connection) {
+        throw new Error('You are not signed in, or this connection was not found');
       }
 
       if (!editFormData.name) {
@@ -439,7 +442,7 @@ export function ConnectionPage() {
           method: 'GET',
           headers: {
             ...apiKeyHeaders(),
-            Authorization: `Bearer ${authToken}`,
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
         },
       );
