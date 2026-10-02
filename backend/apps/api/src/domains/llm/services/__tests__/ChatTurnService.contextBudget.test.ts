@@ -53,7 +53,11 @@ function buildService(options: {
     resolveModel: jest.fn(async () => ({
       model: payload.model,
       enableThinking: true,
-      enableTools: false,
+      // With tools the minimal prompt of a user with no context is no system
+      // message at all, which is what these index-based assertions assume. A
+      // turn without tools gets the tool-less guard as a system message even then
+      // (see ChatTurnService.noTools.test.ts), and this suite is not about that.
+      enableTools: true,
     })),
     chatStream: options.chatStream,
     ...(options.resolveChatContextTokens && { resolveChatContextTokens: options.resolveChatContextTokens }),

@@ -1407,6 +1407,17 @@ export class OllamaService implements OnModuleInit {
     } else {
       resolvedModel = await this.resolveServedChatModel(context, requestedModel, messages);
       resolvedModel = await this.applyTierRouting(resolvedModel, messages, resolvedThinking);
+
+      // Tools are the caller's request AND the model's ability. The web app
+      // already sends `enableTools: false` for a model that lacks them, but
+      // `POST /llm/generate` defaults the flag to TRUE, so any other client
+      // handed a no-tools model (the compiled-in default `gemma3:1b` is one) got
+      // a 400 from the backend and an empty turn — or, where the flag was right
+      // and the prompt was not, a model told to use tools it did not have. The
+      // turn runs without them, and `ChatTurnService` says so in its prompt.
+      if (resolvedTools && !(await this.modelSupportsTools(resolvedModel))) {
+        resolvedTools = false;
+      }
     }
 
     return {
@@ -1414,6 +1425,30 @@ export class OllamaService implements OnModuleInit {
       enableThinking: resolvedThinking,
       enableTools: resolvedTools,
     };
+  }
+
+  /**
+   * Whether `model` can be offered tools.
+   *
+   * Only a POSITIVE answer that it cannot turns them off. An OpenAI-compatible
+   * backend has no per-model probe (the model list advertises `tools: true` for
+   * everything it serves, so this agrees with it), an Ollama too old to report
+   * capabilities returns none at all — "none reported" is not "no tools" — and a
+   * probe that fails leaves the caller's request standing: the backend is the
+   * authority, and it will say so if it disagrees.
+   */
+  private async modelSupportsTools(model: string): Promise<boolean> {
+    if (this.llmEndpointService.getOpenAiDriver()) {
+      return true;
+    }
+
+    try {
+      const capabilities = await this.fetchModelCapabilities(model);
+
+      return capabilities.length === 0 || capabilities.includes('tools');
+    } catch {
+      return true;
+    }
   }
 
   /**
