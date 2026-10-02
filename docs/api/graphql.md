@@ -302,7 +302,7 @@ The high-throughput write paths. **Shape:** `mutation(input: [CreateXInput!]!): 
 
 **Idempotency — the provenance triple.** Each record carries `(sourceType, sourceSystem, sourceId)`; re-ingesting the same triple is a **no-op find-or-return**, enforced by set-based `INSERT … ON CONFLICT <arbiter> DO NOTHING`. A row is dedupable only when it carries the triple.
 
-**Deferred indexing (`emitCreated:false`).** The list paths **do not emit** per-row `*CreatedEvent`s (at ~1M rows the per-row PGBoss fan-out was the dominant cost). Search embedding is deferred to `POST /v1/ingest/finish` (or the older `POST /api/maintenance/search-index/backfill`). The single-row `createX` mutations **still** emit, so interactive creates index live.
+**Deferred indexing (`emitCreated:false`).** The list paths **do not emit** per-row `*CreatedEvent`s (at ~1M rows the per-row PGBoss fan-out was the dominant cost). Search embedding is deferred to `POST /v1/ingest/finish` (or the older `POST /maintenance/search-index/backfill`). The single-row `createX` mutations **still** emit, so interactive creates index live.
 
 | Mutation | Service path | Mechanism | ON CONFLICT arbiter | Scope col | Refresh on conflict |
 |---|---|---|---|---|---|
