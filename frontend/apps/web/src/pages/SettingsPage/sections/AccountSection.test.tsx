@@ -20,6 +20,9 @@ import { AccountSection } from './AccountSection';
  */
 const h = vi.hoisted(() => ({
   authToken: null as string | null,
+  // Only set where a test is about the native shell: a device API key and no web JWT, which
+  // `useAuth` reports as `authenticated` with a null `authToken`.
+  authenticated: false,
   logout: vi.fn(),
   refetch: vi.fn(),
   email: 'jsmith@example.com',
@@ -29,7 +32,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/hooks', () => ({
-  useAuth: () => [{ authToken: h.authToken }, { logout: h.logout }],
+  useAuth: () => [{ authToken: h.authToken, authenticated: h.authenticated }, { logout: h.logout }],
   useCurrentUser: () => ({
     user: { id: 'u1', email: h.email },
     loading: false,
@@ -84,6 +87,7 @@ function confirmButton() {
 
 beforeEach(() => {
   h.authToken = 'jwt-abc';
+  h.authenticated = false;
   h.email = 'jsmith@example.com';
   h.hasFederatedIdentity = false;
   h.hasOwnPassword = true;
@@ -531,5 +535,65 @@ describe('AccountSection — change password', () => {
     expect(screen.getByText('Change password')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Update password' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Set password' })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * ═══ CREDENTIAL FORMS A PHONE CAN NEVER USE ═══
+ *
+ * `GET /account` and `PATCH /account/email|password` are `JwtAuthGuard`, deliberately never an
+ * API key. The native shell holds only a device key (no web JWT), so Change email and Change
+ * password could only answer "Unauthorized" — after the person had typed their current password.
+ * Say so up front instead. `DELETE /account` is the exception that has to keep working: it takes a
+ * key at `full`, and both stores require in-app deletion.
+ */
+describe('AccountSection on the native shell (device key, no web JWT)', () => {
+  beforeEach(() => {
+    h.authToken = null;
+    h.authenticated = true;
+  });
+
+  it('says plainly that changing email or password needs a web sign-in', () => {
+    render(<AccountSection />);
+
+    expect(screen.getByText('Needs a web sign-in')).toBeInTheDocument();
+    expect(
+      screen.getByText(/email and password can only be changed from a web sign-in/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('New email')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Update email' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('New password')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /update password|set password/i })).not.toBeInTheDocument();
+  });
+
+  it('does not send the account read that can only 401', async () => {
+    render(<AccountSection />);
+
+    await waitFor(() => expect(screen.getByText('Needs a web sign-in')).toBeInTheDocument());
+
+    expect(fetchJson).not.toHaveBeenCalled();
+  });
+
+  it('keeps account deletion, which takes the device key', async () => {
+    render(<AccountSection />);
+    openDialog();
+
+    fireEvent.change(screen.getByLabelText(/to confirm/i), { target: { value: 'jsmith@example.com' } });
+    fireEvent.click(confirmButton());
+
+    await waitFor(() => expect(h.logout).toHaveBeenCalled());
+
+    const [url, init] = findCall('DELETE');
+    expect(url).toBe('/api/account');
+    expect(init.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('keeps the change forms for a web session', async () => {
+    h.authToken = 'jwt-abc';
+
+    render(<AccountSection />);
+
+    expect(await screen.findByRole('button', { name: 'Update email' })).toBeInTheDocument();
+    expect(screen.queryByText('Needs a web sign-in')).not.toBeInTheDocument();
   });
 });

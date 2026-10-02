@@ -30,6 +30,7 @@ import {
 } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
+import { useNeedsWebSignIn, WebSignInRequired } from '@/components/WebSignInRequired';
 import { useAuth, useCurrentUser } from '@/hooks';
 import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
 import type { DateTimeFormatter } from '@/lib/dateTimeFormat';
@@ -682,6 +683,9 @@ export function McpSection() {
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set only by the list load failing. `error` is shared with enable/disable/approve, so it cannot say
+  // whether an empty list is real or just what a failed load left behind.
+  const [serversLoadFailed, setServersLoadFailed] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -715,6 +719,11 @@ export function McpSection() {
   const [highRiskSaving, setHighRiskSaving] = useState(false);
   const [highRiskError, setHighRiskError] = useState<string | null>(null);
 
+  // The native shell holds only a device key, and every `/api/mcp/servers` and `/api/mcp/catalog`
+  // route takes a session JWT or a Portal bearer — never a key: a stdio server is arbitrary command
+  // execution on the appliance, more than a key should ever reach.
+  const needsWebSignIn = useNeedsWebSignIn();
+
   const headers = useCallback(
     () => ({
       Authorization: `Bearer ${authToken}`,
@@ -727,10 +736,12 @@ export function McpSection() {
     try {
       setLoading(true);
       setError(null);
+      setServersLoadFailed(false);
       const data = await fetchJson<McpServerConfig[]>('/api/mcp/servers', { headers: headers() });
       setServers(data ?? []);
     } catch {
       setError('Failed to load MCP servers');
+      setServersLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -749,13 +760,18 @@ export function McpSection() {
     }
   }, [headers]);
 
+  // Requests that can only 401 are not worth sending; the notice below says why.
   useEffect(() => {
-    fetchServers();
-  }, [fetchServers]);
+    if (!needsWebSignIn) {
+      fetchServers();
+    }
+  }, [fetchServers, needsWebSignIn]);
 
   useEffect(() => {
-    fetchCatalog();
-  }, [fetchCatalog]);
+    if (!needsWebSignIn) {
+      fetchCatalog();
+    }
+  }, [fetchCatalog, needsWebSignIn]);
 
   const toggleToolsExpanded = (id: string) => {
     setExpandedTools((prev) => {
@@ -1056,6 +1072,25 @@ export function McpSection() {
     }
   };
 
+  if (needsWebSignIn) {
+    return (
+      <>
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold">MCP Servers</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Connect Model Context Protocol servers to give the assistant more tools.
+          </p>
+        </div>
+
+        <WebSignInRequired>
+          MCP servers are listed and changed from a web sign-in only. A server can run commands on your
+          appliance, so a device key — which is all this app signs in with — is never allowed to manage them.
+          Open Companion Memory in a web browser and sign in to manage them.
+        </WebSignInRequired>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="mb-6">
@@ -1105,11 +1140,15 @@ export function McpSection() {
               Loading…
             </div>
           ) : servers.length === 0 ? (
-            <Card>
-              <Card.Content className="flex flex-col items-center justify-center py-12 text-center">
-                <p className="text-sm text-muted-foreground">No MCP servers configured yet.</p>
-              </Card.Content>
-            </Card>
+            // A failed load leaves the list empty. The banner above already says so; "No MCP servers
+            // configured yet." under it would contradict it.
+            serversLoadFailed ? null : (
+              <Card>
+                <Card.Content className="flex flex-col items-center justify-center py-12 text-center">
+                  <p className="text-sm text-muted-foreground">No MCP servers configured yet.</p>
+                </Card.Content>
+              </Card>
+            )
           ) : (
             <div className="space-y-3">
               {servers.map((server) => {
@@ -1276,7 +1315,7 @@ export function McpSection() {
           ) : (
             <div className="space-y-6">
               <div className="space-y-3">
-                {catalog.normal.length === 0 && (
+                {catalog.normal.length === 0 && !catalogError && (
                   <p className="text-sm text-muted-foreground">No suggested servers yet.</p>
                 )}
                 {catalog.normal.map((entry) => (

@@ -78,7 +78,7 @@ function ChatPageContent() {
     { refetch: refetchThreads, delete: deleteThread },
   ] = useThreadListService();
 
-  const [{ authToken }] = useAuth();
+  const [{ authToken, authenticated }] = useAuth();
   const [{ thread, loading: threadLoading, error: threadError }, { refetch: refetchThread }] =
     useThreadService(resolvedThreadId.current);
   const isDispatch = thread?.kind === 'dispatch';
@@ -209,8 +209,9 @@ function ChatPageContent() {
     async (data: FormData, e?: FormEvent) => {
       e?.preventDefault();
 
-      if (isDispatch && dispatchJob && authToken) {
-        await steerDispatchJob(authToken, dispatchJob.id, {
+      // `authenticated`, not `authToken`: the token is the web JWT, which the native shell never has.
+      if (isDispatch && dispatchJob && authenticated) {
+        await steerDispatchJob(authToken ?? null, dispatchJob.id, {
           action: 'continue',
           message: data.message,
         });
@@ -221,7 +222,7 @@ function ChatPageContent() {
 
       return submitChatRequest(data);
     },
-    [authToken, dispatchJob, isDispatch, refetchThread, submitChatRequest],
+    [authToken, authenticated, dispatchJob, isDispatch, refetchThread, submitChatRequest],
   );
 
   useEffect(() => {
