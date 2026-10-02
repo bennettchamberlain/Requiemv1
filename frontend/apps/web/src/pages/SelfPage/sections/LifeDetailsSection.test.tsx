@@ -707,9 +707,9 @@ describe('LifeDetailsSection — the 5,000-character cap', () => {
     ['a single-line answer', BLOOD_TYPE_KEY, 'Answer…'],
     ['a narrative answer', HOBBY_KEY, 'Your answer…'],
   ])('stops %s at 5,000 characters, however the text got there', async (_name, key, placeholder) => {
-    // REFL-07: on an iPhone the field took a 5,003-character run whole. The
-    // `maxLength` attribute is not what this asserts — jsdom ignores it, as did
-    // the device — the value the component keeps is.
+    // REFL-07: a QA run saw a 5,003-character run accepted whole on an iPhone.
+    // The `maxLength` attribute is not what this asserts — jsdom ignores it —
+    // the value the component keeps is.
     fetchJson.mockResolvedValue(fullCataloguePage());
 
     render(<LifeDetailsSection />);
