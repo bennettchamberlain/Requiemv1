@@ -8,9 +8,6 @@ import {
   NodeEntity,
   RelationshipEntity as IngestRelationshipEntity,
 } from '@ci/domains/graph';
-import { BrowserActivityInsightPreferenceService } from '@ci/domains/llm/browser-activity-insight-preference.module';
-import { ChatModelPreferenceService } from '@ci/domains/llm/chat-model-preference.module';
-import { ImageDescriptionPreferenceService } from '@ci/domains/llm/image-description-preference.module';
 import {
   BaseEntity,
   GraphDeltaWriter,
@@ -23,12 +20,15 @@ import {
   SELF_ENTITY_PROVISIONER,
   UserContextService,
 } from '@ci/domains/memory';
+import { PersonalizationService } from '@ci/domains/personalization';
 import { UserEntity } from '@ci/domains/user';
 
 import { createSyntheticTestUser } from '../../../__tests__/support/applianceUser';
 import { databaseAvailability, dataSourceConnection } from '../../../__tests__/support/databaseConnection';
 import { acquireSchemaWriteLock, type SchemaLock } from '../../../__tests__/support/schemaLock';
-import { PersonalizationService } from '../PersonalizationService';
+import { BrowserActivityInsightPreferenceService } from '../BrowserActivityInsightPreferenceService';
+import { ChatModelPreferenceService } from '../ChatModelPreferenceService';
+import { ImageDescriptionPreferenceService } from '../ImageDescriptionPreferenceService';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -49,6 +49,12 @@ import { PersonalizationService } from '../PersonalizationService';
  * and the vision model. Every test runs inside one transaction on one connection
  * and rolls back, so nothing is committed.
  *
+ * Lives in the llm domain because most of what it exercises is llm's (the chat-model,
+ * image-description and browser-activity preference services), and the
+ * `no-cross-domain-internals` rule (`yarn depcheck`) forbids reaching into another
+ * domain's files. Those three are imported directly; the one service that is not
+ * llm's, `PersonalizationService` (Autonomy), comes through its domain's public barrel.
+ *
  * Opt-in like the other DB-backed suites: skips with the reason when nothing
  * listens at `MEMORY_TEST_DATABASE_URL` / `DATABASE_URL`, and `make test-db`
  * provides one.
@@ -58,7 +64,7 @@ const availability = databaseAvailability(ENV);
 const describeWithDb = availability.available ? describe : describe.skip;
 
 if (!availability.available) {
-  console.warn(`[personalization/SettingsWrites.noSelfEntity.integration] SKIPPED — ${availability.reason}`);
+  console.warn(`[llm/SettingsWrites.noSelfEntity.integration] SKIPPED — ${availability.reason}`);
 }
 
 jest.setTimeout(60_000);
@@ -208,7 +214,7 @@ describeWithDb(`Settings writes for an account with no self entity (${availabili
 
     // SHARED: these tests row-lock ci.entities / ci.users inside their
     // transaction. See domains/__tests__/support/schemaLock.ts.
-    schemaLock = await acquireSchemaWriteLock(dataSource, 'personalization/SettingsWrites.noSelfEntity');
+    schemaLock = await acquireSchemaWriteLock(dataSource, 'llm/SettingsWrites.noSelfEntity');
   });
 
   afterAll(async () => {
