@@ -321,6 +321,25 @@ describe('useChatRequester — device mode', () => {
     expect((result.current[0].error as Error).message).toMatch(/memory/);
     expect(result.current[0].stream).toBeNull();
     expect(llm.stream).not.toHaveBeenCalled();
+    // …and the person is told, since a refused send leaves nothing in the transcript to show it was tried.
+    expect(h.toastError).toHaveBeenCalledWith(expect.stringContaining('Not enough memory'));
+  });
+
+  it('says so when no on-device model has been chosen yet', async () => {
+    llm.prefs.modelId = null;
+    vi.stubGlobal('fetch', vi.fn());
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    let returned: boolean | undefined;
+
+    await act(async () => {
+      returned = await result.current[1].submit({ message: 'hi', fileIds: [] });
+    });
+
+    expect(returned).toBe(false);
+    expect(llm.stream).not.toHaveBeenCalled();
+    expect(h.toastError).toHaveBeenCalledWith(expect.stringContaining('Choose an on-device model'));
   });
 
   it('does not require an appliance model to be selected — that is the whole point when offline', async () => {
@@ -458,6 +477,129 @@ describe('useChatRequester — device mode', () => {
         'thermally',
       );
     });
+  });
+});
+
+/**
+ * The "Answered on this phone" badge describes the LAST turn on screen. Leaving that conversation — a new chat,
+ * another thread — has to take it away, or it sits over an empty chat and over a thread the phone never
+ * answered.
+ */
+describe('useChatRequester — leaving a conversation (reset)', () => {
+  beforeEach(() => {
+    llm.prefs.mode = 'device';
+  });
+
+  it('drops the on-device badge and the stream of the turn that was showing', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    await act(async () => {
+      await result.current[1].submit({ message: 'hello', fileIds: [] });
+    });
+    await waitFor(() => expect(result.current[0].stream).not.toBeNull());
+    await act(async () => {
+      await drain(result.current[0].stream as ReadableStream<Uint8Array>);
+    });
+    await waitFor(() => expect(result.current[0].local?.stats).toEqual(STATS));
+
+    act(() => result.current[1].reset());
+
+    expect(result.current[0].local).toBeNull();
+    expect(result.current[0].stream).toBeNull();
+    expect(result.current[0].streaming).toBe(false);
+  });
+
+  it('leaves no badge behind when the chat is left while a cold model is still loading', async () => {
+    let finishLoading!: (value: { alreadyLoaded: boolean; accelerator: string }) => void;
+
+    llm.ensureLoaded.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishLoading = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', vi.fn());
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+    let turn!: Promise<boolean>;
+
+    act(() => {
+      turn = result.current[1].submit({ message: 'hello', fileIds: [] });
+    });
+    await waitFor(() => expect(llm.ensureLoaded).toHaveBeenCalled());
+
+    // New chat, mid-load.
+    act(() => result.current[1].reset());
+
+    await act(async () => {
+      finishLoading({ alreadyLoaded: false, accelerator: 'cpu' });
+      await turn;
+    });
+
+    // The load finished into a chat nobody is in any more: nothing is generated, and nothing is claimed.
+    expect(llm.stream).not.toHaveBeenCalled();
+    expect(result.current[0].local).toBeNull();
+    expect(result.current[0].stream).toBeNull();
+  });
+
+  /**
+   * Stop cancels the SERVER job of the thread being watched. After leaving a thread, an on-device turn in the new
+   * chat has no thread of its own, so Stop there must not reach back and cancel the one that was left (it may
+   * well still be generating — leaving does not stop it).
+   */
+  it('does not let Stop in a new on-device chat cancel the thread that was left', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(applianceStream('t-left')));
+
+    vi.stubGlobal('fetch', fetchMock);
+    llm.prefs.mode = 'auto';
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    await act(async () => {
+      await result.current[1].submit({ message: 'first', fileIds: [] });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    act(() => result.current[1].reset());
+
+    llm.prefs.mode = 'device';
+    llm.stream.mockImplementationOnce(async (_prompt: string, opts: { signal: AbortSignal }) => {
+      await new Promise((resolve) => opts.signal.addEventListener('abort', resolve));
+
+      return { text: '', thought: '', stats: undefined, cancelled: true };
+    });
+    await act(async () => {
+      await result.current[1].submit({ message: 'second', fileIds: [] });
+    });
+    await act(async () => {
+      result.current[1].stop();
+    });
+
+    // Still just the one POST /generate — no POST /threads/t-left/cancel.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not take the badge away when the person only presses Stop', async () => {
+    llm.stream.mockImplementationOnce(async (_prompt: string, opts: { signal: AbortSignal }) => {
+      await new Promise((resolve) => opts.signal.addEventListener('abort', resolve));
+
+      return { text: '', thought: '', stats: undefined, cancelled: true };
+    });
+    vi.stubGlobal('fetch', vi.fn());
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    await act(async () => {
+      await result.current[1].submit({ message: 'hi', fileIds: [] });
+    });
+    await act(async () => {
+      result.current[1].stop();
+    });
+
+    // A stopped reply is still on screen, and still came from the phone.
+    expect(result.current[0].local).not.toBeNull();
   });
 });
 

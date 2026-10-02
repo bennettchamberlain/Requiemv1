@@ -156,7 +156,7 @@ export function Chat({
   const contentPadding = useMemo(() => (isMobile ? 'p-2' : 'p-4'), [isMobile]);
   const threadPadding = useMemo(() => (isMobile ? 'pb-0 gap-2' : 'pb-0 gap-4'), [isMobile]);
 
-  const flushStream = useCallback((node?: ReactNode) => {
+  const flushStream = useCallback((node?: ReactNode): ReactNode => {
     // We need to cut off the flow of streaming text to the current stream blocks.
     // We will be creating new stream blocks below to accept subsequently streamed
     // characters, but if this function has been invoked we are logically at the end
@@ -182,6 +182,8 @@ export function Chat({
     );
 
     setAccumulatedMessages((prev) => (node ? [...prev, node, newStreamNodes] : [...prev, newStreamNodes]));
+
+    return newStreamNodes;
   }, []);
 
   const handleFrameChunk = useCallback(
@@ -270,16 +272,28 @@ export function Chat({
         return false;
       }
 
+      // What this send added to the transcript: the bubble, and the empty reply blocks that were started after it.
+      let echoed: ReactNode[] = [];
+
       try {
         const block = <UserMessage key={uuid7()} content={data.message} createdAt={new Date().toJSON()} />;
 
-        flushStream(block);
+        echoed = [block, flushStream(block)];
         maybeAutoScroll(true);
       } catch (err) {
         console.error('Error inserting user block', err);
       }
 
-      return (await onSubmit?.(data, e)) ?? false;
+      const result = await onSubmit?.(data, e);
+
+      // The bubble goes up the moment the send starts, so a slow model load or request still reads as sent. But an
+      // explicit refusal leaves the text in the composer, and the transcript must not also say it went out — each
+      // try added a bubble with no reply. Taking the reply blocks back too restores the empty state.
+      if (result === false && echoed.length > 0) {
+        setAccumulatedMessages((prev) => prev.filter((node) => !echoed.includes(node)));
+      }
+
+      return result ?? false;
     },
     [onSubmit, flushStream, maybeAutoScroll],
   );

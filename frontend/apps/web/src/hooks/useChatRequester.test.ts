@@ -265,4 +265,68 @@ describe('useChatRequester', () => {
     expect(returned).toBe(false);
     await waitFor(() => expect(result.current[0].error).toBeTruthy());
   });
+
+  /**
+   * `Chat` takes the user's bubble back when a send returns false (the text stays in the composer), so a send that
+   * fails must say why — nothing in the transcript is left to show it was even tried.
+   */
+  it('says why when the appliance refuses the request', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('nope', { status: 500 }))),
+    );
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    await act(async () => {
+      await result.current[1].submit({ message: 'hello', fileIds: [] });
+    });
+
+    expect(h.toastError).toHaveBeenCalledTimes(1);
+    expect(h.toastError).toHaveBeenCalledWith(expect.stringContaining('could not answer'));
+  });
+
+  it('says why when the appliance cannot be reached and nothing on the phone can answer', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    );
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    await act(async () => {
+      await result.current[1].submit({ message: 'hello', fileIds: [] });
+    });
+
+    expect(h.toastError).toHaveBeenCalledTimes(1);
+    expect(h.toastError).toHaveBeenCalledWith(expect.stringContaining('Could not reach your Companion'));
+    // The raw fetch error is for the log, not for a person.
+    expect(h.toastError).not.toHaveBeenCalledWith(expect.stringContaining('Failed to fetch'));
+  });
+
+  it('stays quiet when the person stops a request themselves', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+          );
+        });
+      }),
+    );
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+    let turn!: Promise<boolean>;
+
+    act(() => {
+      turn = result.current[1].submit({ message: 'hello', fileIds: [] });
+    });
+    await act(async () => {
+      result.current[1].detach();
+      await turn;
+    });
+
+    expect(h.toastError).not.toHaveBeenCalled();
+  });
 });

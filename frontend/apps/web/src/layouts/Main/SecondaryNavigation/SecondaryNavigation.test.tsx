@@ -27,7 +27,9 @@ vi.mock('@/common/feature', async () => {
 vi.mock('./useFeedBadgeCount', () => ({ useFeedBadgeCount: () => 0 }));
 vi.mock('./usePlanBadgeCount', () => ({ usePlanBadgeCount: () => 0 }));
 
-const recentThreads = vi.hoisted(() => ({ current: [] as { id: string; name: string | null }[] }));
+const recentThreads = vi.hoisted(() => ({
+  current: [] as { id: string; name: string | null; createdAt?: string }[],
+}));
 // One stable function, so a test can say whether the account row actually signed anyone out.
 const logout = vi.hoisted(() => vi.fn());
 
@@ -530,8 +532,9 @@ describe('SecondaryNavigation', () => {
 
   // The point of the submenu: pick a conversation from the menu, not from a
   // second chat UI nested in it. Threads render under Chat's own row, inside
-  // Memory's list — the phone drawer is the only way to change conversation
-  // there, since ChatSidebar portals to a slot the mobile layout never renders.
+  // Memory's list — the phone drawer is how you change conversation from
+  // outside Chat, since ChatSidebar portals to a slot the mobile layout never
+  // renders (inside Chat the phone has PhoneChatBar).
   it('lists recent threads as links under Chat, inside the Memory group', () => {
     recentThreads.current = [
       { id: 't1', name: 'Dinner plans' },
@@ -542,6 +545,23 @@ describe('SecondaryNavigation', () => {
 
     expect(screen.getByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/memory/chat/t1');
     expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/memory/chat/t2');
+  });
+
+  // Titles arrive late, and "Thread 01a0fd3b" reads the same for every chat started in the same minute.
+  it('names untitled threads by when they started, so the rows can be told apart', () => {
+    recentThreads.current = [
+      { id: '01a0fd3b-aaaa', name: null, createdAt: '2026-10-02T16:24:00Z' },
+      { id: '01a0fd3b-bbbb', name: null, createdAt: '2026-10-02T17:31:00Z' },
+    ];
+
+    renderRail('/memory/chat', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: /^Thread / })).not.toBeInTheDocument();
+
+    const labels = screen.getAllByRole('link', { name: /^Chat · / }).map((link) => link.textContent);
+
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2);
   });
 
   it('opens the Memory group on a thread deep-link and marks the thread current', () => {

@@ -48,6 +48,9 @@ const handleEnterSubmit = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 
 const ATTACH_ACCEPT = 'image/*,application/pdf,text/plain,text/markdown,text/csv,.txt,.md,.pdf,.json';
 
+const UPLOADS_BLOCKED_MESSAGE =
+  'Attachments need your Companion server. Switch off on-device-only mode to attach files.';
+
 /** A phone photo is 3–12 MB; the native side downsizes before the vision encoder, so this is only a sanity cap. */
 const MAX_LOCAL_IMAGES = 4;
 const MAX_LOCAL_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -88,6 +91,13 @@ interface Props {
    * instead of uploading files to the appliance — nothing leaves the phone, and it works offline.
    */
   localImages?: boolean;
+  /**
+   * The chat is answered on this phone only, which promises nothing leaves the device. Attaching a file uploads it
+   * to the appliance the moment it is picked — before any send is checked, and removing the chip never takes it
+   * back — so while this is set "attach" explains itself and uploads nothing. Does not apply to `localImages`,
+   * which never uploads.
+   */
+  blockUploads?: boolean;
   onStop?: (e: MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onSubmit?: (data: FormData, e?: FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>;
 }
@@ -101,6 +111,7 @@ function ChatInput(
     initialDraft = '',
     showModelControls = true,
     localImages: localImagesMode = false,
+    blockUploads = false,
     onSubmit,
     onStop,
   }: Props,
@@ -113,6 +124,8 @@ function ChatInput(
   const [attachments, setAttachments] = useState<FileData[]>([]);
   const [localImages, setLocalImages] = useState<LocalImage[]>([]);
   const [{ files: uploadedFiles, loading: uploading }, { upload }] = useUploadFile();
+  // What was picked, in order. `POST /api/files/upload` answers with ids only, so a chip's name has to come from here.
+  const pickedNames = useRef<string[]>([]);
 
   const form = useForm<FormData>({
     resolver: formDataResolver(FormSchema),
@@ -129,9 +142,19 @@ function ChatInput(
       return;
     }
 
+    // The ids come back in the order the files went up — unless the server folded identical files into one, and
+    // then nothing says which name belongs to which id. A generic name beats a wrong one.
+    const picked = pickedNames.current;
+    const aligned = picked.length === uploadedFiles.length;
+
     setAttachments((current) => {
       const seen = new Set(current.map((file) => file.id));
-      const next = uploadedFiles.filter((file) => !seen.has(file.id));
+      const next = uploadedFiles
+        .map((file, index) => ({
+          ...file,
+          name: file.name || (aligned ? picked[index] : '') || 'Attachment',
+        }))
+        .filter((file) => !seen.has(file.id));
 
       return next.length === 0 ? current : [...current, ...next];
     });
@@ -147,8 +170,15 @@ function ChatInput(
   );
 
   const handleAttachClick = useCallback(() => {
+    // Refused before the picker opens, so it never offers what it cannot do without breaking the on-device promise.
+    if (blockUploads && !localImagesMode) {
+      toast.error(UPLOADS_BLOCKED_MESSAGE);
+
+      return;
+    }
+
     fileInputRef.current?.click();
-  }, []);
+  }, [blockUploads, localImagesMode, toast]);
 
   const handleFilesSelected = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -196,13 +226,22 @@ function ChatInput(
         return;
       }
 
+      // The click guard above is the usual stop; this is the one that holds when a file arrives some other way.
+      if (blockUploads) {
+        toast.error(UPLOADS_BLOCKED_MESSAGE);
+
+        return;
+      }
+
+      pickedNames.current = selected.map((file) => file.name);
+
       const success = await upload(selected);
 
       if (!success) {
         toast.error('Could not attach that file. Try again.');
       }
     },
-    [localImages.length, localImagesMode, toast, upload],
+    [blockUploads, localImages.length, localImagesMode, toast, upload],
   );
 
   const handleRemoveLocalImage = useCallback((imageId: string) => {
