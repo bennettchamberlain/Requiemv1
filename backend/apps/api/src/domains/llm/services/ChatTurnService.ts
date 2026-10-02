@@ -382,7 +382,22 @@ export class ChatTurnService {
             // LLM_BACKGROUND_QUEUE_OPTIONS is `policy: 'short'`, which is
             // queue-wide — a keyless send here would collapse with every other
             // thread's summarization under COALESCE(singleton_key,'').
-            { queue: LLM_BACKGROUND_QUEUE, singletonKey: `chat-summarize:${thread.id}` },
+            //
+            // The interactive tier, because pg-boss serves equal priorities in
+            // arrival order and this queue also carries the answer-inference
+            // cron's jobs — one per unanswered question, hundreds at a time, at
+            // the default tier. A title is one short call and the only job here
+            // a person is looking at (the thread list reads "Chat · <time>"
+            // until it lands); without this it waited behind every one of them.
+            // Priority only reorders THIS queue: the lane it shares with
+            // image-description and the other background queues is still
+            // first come, first served, so a title can still wait out the one
+            // job already running there.
+            {
+              queue: LLM_BACKGROUND_QUEUE,
+              singletonKey: `chat-summarize:${thread.id}`,
+              priority: INTERACTIVE_JOB_PRIORITY,
+            },
           );
         }
       }

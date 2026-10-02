@@ -83,6 +83,8 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
   const modelVisionSupportCacheRef = useRef<Map<string, boolean>>(new Map());
 
   const [{ files: fileData }, { upload, reset: resetUploader }] = useUploadFile();
+  // `POST /api/files/upload` answers `[{ id }]`, so the header names the file from what was picked (as ChatInput does).
+  const [pickedName, setPickedName] = useState<string>();
 
   const [
     { stream, loading, streaming, hasStartedReceiving },
@@ -206,6 +208,9 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
       }
 
       const thingCapture = isImage && mode === 'thing';
+
+      setPickedName(file.name);
+
       const uploaded = await upload([file], {
         thingCapture,
         model: selectedModel ?? undefined,
@@ -225,6 +230,9 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
       }
 
       const thingCapture = mode === 'thing';
+
+      setPickedName(file.name);
+
       const uploaded = await upload([file], {
         thingCapture,
         model: selectedModel ?? undefined,
@@ -379,7 +387,7 @@ function DesktopCaptureModal({ open = false, onClose }: Props) {
             </Popover>
           </div>
 
-          <div className="flex items-center justify-center font-bold">{fileData[0]?.name}</div>
+          <div className="flex items-center justify-center font-bold">{fileData[0]?.name ?? pickedName}</div>
 
           <div className="flex items-center justify-end flex-1">
             <IconButton label={t('COMMON_CLOSE')} variant="ghost" size="icon" onClick={handleClose}>
