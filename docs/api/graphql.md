@@ -273,6 +273,8 @@ Many newer writes return a `*Payload` wrapper; note also that several entities n
 ### 4.3 Intelligence writes
 `createQuestion`/`createQuestions`/`updateQuestion`/`removeQuestion`, `createAnswer`/`createAnswers`/`updateAnswer`/`removeAnswer`, `markActionAsSeen`/`markActionAsDismissed`, `markSummaryAsSeen`/`markSummaryAsDismissed`, `refreshDailyMetrics`, `triggerHbpe` (→ `String!`, `"disabled"` if flag off).
 
+> **Answer text.** `createAnswer`/`createAnswers`/`updateAnswer` hold the text to the same rule as `POST /api/answers` and `PATCH /api/answers/:id` — not blank, at most 5,000 characters (UTF-16 code units) — and answer a violation with a 400. An answer created without a method is recorded as `answerMethod: "user"`, the same value an edit stamps.
+
 > **Shared-catalogue write scope.** Seed reflection rows are read-only: editing one **forks a private copy** rather than mutating the shared row. Any new user-scoped selector over `ci.questions` must carry the forked-origin exclusion or retired reflections reappear.
 
 ### 4.3b Planning & schedule writes
