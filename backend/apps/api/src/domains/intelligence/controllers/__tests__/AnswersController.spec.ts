@@ -14,10 +14,9 @@ import { AnswersController } from '../AnswersController';
  * driven through a real Nest HTTP stack.
  *
  * The web editor stops at 5,000 characters, but a client that does not is the
- * case the server's rule exists for — on an iPhone a 5,003-character run was
- * accepted by the field whole — so the rule is pinned here, at the edge, rather
- * than assumed from the schema's source. `JwtOrApiKeyAuthGuard` is overridden to
- * pass: whether a caller is signed in is that guard's own contract.
+ * case the server's rule exists for, so the rule is pinned here, at the edge,
+ * rather than assumed from the schema's source. `JwtOrApiKeyAuthGuard` is
+ * overridden to pass: whether a caller is signed in is that guard's own contract.
  */
 
 const USER = '00000000-0000-4000-8000-0000000000aa';

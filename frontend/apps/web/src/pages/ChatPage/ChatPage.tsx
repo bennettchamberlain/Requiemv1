@@ -4,12 +4,13 @@ import {
   findLocalLlmModel,
   Portal,
   resetLocalLlmConversation,
+  useDeviceLayout,
   usePageTitle,
   type LocalLlmGenerationStats,
 } from '@ci/common';
 import { Button, Card } from '@ci/shadcn';
 import { RefreshCw, Send, Smartphone, Sparkles, X } from '@ci/shadcn/icons';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { v7 as uuid7 } from 'uuid';
 
 import { useThreadService } from '@/api';
@@ -24,6 +25,7 @@ import { clearAgentChatContext, formatAgentChatDraft, readAgentChatContext } fro
 
 import { CHAT_BASE, chatThreadPath } from './chatPaths';
 import { ChatSidebar } from './ChatSidebar';
+import { PhoneChatBar } from './PhoneChatBar';
 import { STARTER_PROMPTS, TOOL_STARTER_PROMPTS } from './starterPrompts';
 import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
@@ -32,6 +34,9 @@ import { useThreadListService } from './useThreadListService';
  * Says the last reply came from this phone rather than the Companion, and how fast. The speed is the same
  * time-to-first-token / decode-rate pair Google AI Edge Gallery shows under a reply; it is the one honest
  * signal of whether this device is coping with the model it chose.
+ *
+ * It wraps rather than truncating: time to first token is the last thing on the line, and on a 402pt phone
+ * the line ended in an ellipsis just before it.
  */
 function OnDeviceBadge({ modelId, stats }: { modelId: string; stats: LocalLlmGenerationStats | null }) {
   const label = findLocalLlmModel(modelId)?.label ?? modelId;
@@ -40,10 +45,10 @@ function OnDeviceBadge({ modelId, stats }: { modelId: string; stats: LocalLlmGen
     <p
       role="status"
       data-testid="on-device-badge"
-      className="text-muted-foreground border-border mx-auto mb-2 flex w-full max-w-xl items-center gap-2 rounded-md border px-3 py-1.5 text-xs"
+      className="text-muted-foreground border-border mx-auto mb-2 flex w-full max-w-xl items-start gap-2 rounded-md border px-3 py-1.5 text-xs"
     >
-      <Smartphone className="h-3.5 w-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">
+      <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 break-words">
         Answered on this phone · {label}
         {stats
           ? ` · ${stats.decodeTokensPerSecond.toFixed(1)} tok/s${stats.tokensEstimated ? ' (est.)' : ''} · ${(stats.timeToFirstTokenMs / 1000).toFixed(1)}s to first token`
@@ -60,6 +65,8 @@ function ChatPageContent() {
   const threadTitleRefreshTimeoutRef = useRef<number | null>(null);
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isMobile } = useDeviceLayout();
 
   const { id: initialThreadId } = useParams<{ id?: string }>();
   const [initialMessages, setInitialMessages] = useState<Message[]>([]);
@@ -74,6 +81,9 @@ function ChatPageContent() {
   const localImages =
     localPrefs.mode === 'device' &&
     Boolean(localPrefs.modelId && findLocalLlmModel(localPrefs.modelId)?.capabilities.includes('vision'));
+  // The phone alone answers but nothing on it can read a file: attaching could only upload it to the appliance,
+  // which "Always answer on this phone" promises never happens.
+  const blockUploads = localPrefs.mode === 'device' && !localImages;
 
   const [
     { threads, loading: threadsLoading, error: threadsError },
@@ -105,6 +115,7 @@ function ChatPageContent() {
       stop: stopChatRequest,
       attach: attachChatStream,
       detach: detachChatStream,
+      reset: resetChatStream,
       cancel: cancelGeneration,
     },
   ] = useChatRequester({
@@ -112,20 +123,67 @@ function ChatPageContent() {
     onNewThread: handleNewThread,
   });
 
-  const navigateToChatList = useCallback(() => {
+  /**
+   * Back to an empty chat. A new chat must not inherit the previous one's turns — the native conversation keeps
+   * them — or its stream, or the "answered on this phone" badge, or the starter ask that was echoed into the
+   * message list, or the draft "Chat about this" seeded the composer with.
+   */
+  const startNewChat = useCallback(() => {
     incrementNewThreadCount();
-    detachChatStream();
-    // A new chat must not inherit the previous one's turns, which the native conversation keeps.
+    resetChatStream();
     void resetLocalLlmConversation();
     resolvedThreadId.current = null;
+    setInitialMessages([]);
+    setChatDraft('');
+  }, [incrementNewThreadCount, resetChatStream]);
+
+  const navigateToChatList = useCallback(() => {
+    startNewChat();
     navigate(CHAT_BASE);
-  }, [incrementNewThreadCount, detachChatStream, navigate]);
+  }, [startNewChat, navigate]);
 
   useEffect(() => {
     setInitialMessages([]);
     hasSetInitialMessages.current = initialThreadId ? false : true;
     resolvedThreadId.current = initialThreadId ?? null;
   }, [initialThreadId]);
+
+  // The sidebar's `onSelectThread` resets the conversation it is leaving, but the phone drawer's thread rows (and
+  // the browser's back button) are plain router navigations that never pass through it — so the route change
+  // itself has to say the conversation changed. Skipped on mount: nothing has been left yet.
+  const routedThreadId = useRef(initialThreadId);
+
+  useEffect(() => {
+    if (routedThreadId.current === initialThreadId) {
+      return;
+    }
+
+    routedThreadId.current = initialThreadId;
+    resetChatStream();
+    void resetLocalLlmConversation();
+    // Declared before the seeding effect below, so a fresh "Chat about this" seed still lands after this clears.
+    setChatDraft('');
+  }, [initialThreadId, resetChatStream]);
+
+  // The first message of a new chat moves the address bar to its thread without telling the router (see
+  // `handleNewThread`), so the router still believes it is on the bare chat path. A link to that path — the Chat
+  // row in the phone drawer, the Chat tab on every Memory page — then lands "where it already is", and the chat
+  // kept its conversation. A fresh navigation to the bare path with something to start over from has to mean a
+  // new chat: a thread, or an on-device turn (which never has one — the badge is what says it happened). Declared
+  // after the effect above: when the route itself dropped the thread, that one has already cleared it.
+  const seenLocationKey = useRef(location.key);
+
+  useEffect(() => {
+    if (seenLocationKey.current === location.key) {
+      return;
+    }
+
+    seenLocationKey.current = location.key;
+
+    if (!initialThreadId && (resolvedThreadId.current != null || local != null)) {
+      startNewChat();
+    }
+  }, [location.key, initialThreadId, local, startNewChat]);
 
   useEffect(() => {
     if (initialThreadId) {
@@ -167,12 +225,12 @@ function ChatPageContent() {
   const handleSelectThread = useCallback(
     (threadId: string) => {
       if (resolvedThreadId.current !== threadId) {
-        detachChatStream();
+        resetChatStream();
         void resetLocalLlmConversation();
         navigate(chatThreadPath(threadId));
       }
     },
-    [navigate, detachChatStream],
+    [navigate, resetChatStream],
   );
 
   const handleDeleteThread = useCallback(
@@ -392,6 +450,17 @@ function ChatPageContent() {
         </Portal.Slot>
 
         <div className="flex min-h-0 flex-1 flex-col">
+          {isMobile ? (
+            <PhoneChatBar
+              threads={threads}
+              loading={threadsLoading}
+              selectedThreadId={resolvedThreadId.current}
+              onSelectThread={handleSelectThread}
+              onNewThread={navigateToChatList}
+              onDeleteThread={handleDeleteThread}
+              onRefresh={refetchThreads}
+            />
+          ) : null}
           {local ? <OnDeviceBadge modelId={local.modelId} stats={local.stats} /> : null}
           <Chat
             key={initialThreadId ?? `new-thread-${newThreadCount}`}
@@ -400,6 +469,7 @@ function ChatPageContent() {
             hasStartedReceiving={hasStartedReceiving}
             disabled={isSubmitDisabled}
             localImages={localImages}
+            blockUploads={blockUploads}
             placeholder={inputPlaceholder}
             initialDraft={chatDraft}
             messages={initialMessages}
