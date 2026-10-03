@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { FetchJsonError } from '@ci/common';
 import { resetLocalLlmPrefsCache } from '@ci/common/src/utils/localLlmPrefs';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Link } from 'react-router-dom';
@@ -51,7 +52,11 @@ const h = vi.hoisted(() => ({
     description: null,
     generationStatus: 'idle',
     messages: [],
-  } as unknown as Thread,
+  } as unknown as Thread | null,
+  /** What `useThreadService` says went wrong loading the open thread (`null`: nothing). */
+  threadError: null as unknown,
+  /** `useThreadService().refetch` — what Try again calls. */
+  refetchThread: vi.fn(),
 }));
 
 vi.mock('@ci/common', async (importOriginal) => {
@@ -131,7 +136,10 @@ vi.mock('@/api', async (importOriginal) => {
 
   return {
     ...actual,
-    useThreadService: () => [{ thread: h.thread, loading: false }, { refetch: vi.fn() }],
+    useThreadService: () => [
+      { thread: h.thread, loading: false, error: h.threadError },
+      { refetch: h.refetchThread },
+    ],
   };
 });
 
@@ -216,6 +224,8 @@ describe('ChatPage', () => {
     h.toolsSupported = true;
     h.toolsEnabled = true;
     h.local = null;
+    h.threadError = null;
+    h.refetchThread.mockClear();
     localStorage.clear();
     resetLocalLlmPrefsCache();
     h.thread = {
@@ -319,6 +329,64 @@ describe('ChatPage', () => {
     expect(h.cancel).toHaveBeenCalledWith('t2');
     expect(h.deleteThread).toHaveBeenCalledWith('t2');
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A chat the server no longer has — deleted on another device, a stale link, the browser's Back button after a
+   * delete — said "Could not load this conversation. Your messages are still here", which is untrue, with a Try
+   * again that can only 404 again. A 404 is the one failure that is final, so it gets its own message and a way
+   * back; anything else is still a failed fetch of a chat that exists.
+   */
+  describe('when the open chat cannot be loaded', () => {
+    beforeEach(() => {
+      h.thread = null;
+    });
+
+    const renderOpen = () =>
+      renderWithProviders(<ChatPage />, { route: '/memory/chat/gone', path: '/memory/chat/:id' });
+
+    it('says a chat the server no longer has was deleted, instead of blaming the connection', () => {
+      h.threadError = new FetchJsonError(404, 'Not Found');
+      renderOpen();
+
+      const alert = screen.getByRole('alert');
+
+      expect(within(alert).getByText('This chat was deleted.')).toBeInTheDocument();
+      expect(within(alert).queryByText(/still here/i)).not.toBeInTheDocument();
+      expect(within(alert).queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Could not load this conversation')).not.toBeInTheDocument();
+    });
+
+    it('offers New chat as the way back, and locks the composer a send could only 404 into', () => {
+      h.threadError = new FetchJsonError(404, 'Not Found');
+      renderOpen();
+
+      expect(screen.getByTestId('chat-disabled')).toHaveTextContent('true');
+
+      fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: /new chat/i }));
+
+      expect(navigate).toHaveBeenCalledWith('/memory/chat');
+      expect(h.resetChat).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['the network is down', new TypeError('Failed to fetch')],
+      ['the server errors', new FetchJsonError(500, 'Internal Server Error')],
+      ['the session is not accepted', new FetchJsonError(401, 'Unauthorized')],
+    ])('still blames the fetch, and offers Try again, when %s', (_label, error) => {
+      h.threadError = error;
+      renderOpen();
+
+      const alert = screen.getByRole('alert');
+
+      expect(within(alert).getByText('Could not load this conversation')).toBeInTheDocument();
+      expect(screen.queryByText('This chat was deleted.')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-disabled')).toHaveTextContent('false');
+
+      fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
+
+      expect(h.refetchThread).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('on-device model', () => {

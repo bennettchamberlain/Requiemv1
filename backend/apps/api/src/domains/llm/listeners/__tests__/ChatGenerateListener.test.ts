@@ -4,25 +4,33 @@ import { ChatGenerateListener } from '../ChatGenerateListener';
 
 const titlePayload = { ownerId: 'user-1', threadId: 'thread-1' } as never;
 
-function makeListener(summarizeThread: jest.Mock = jest.fn(async () => undefined)) {
-  const chatTurnService = { execute: jest.fn(async () => undefined), summarizeThread };
-  const logger = { setContext: jest.fn(), error: jest.fn() };
-  const listener = new ChatGenerateListener(chatTurnService as never, logger as never);
+function makeListener(
+  opts: {
+    summarizeThread?: jest.Mock;
+    nameThreadFromFirstMessage?: jest.Mock;
+    getJob?: jest.Mock;
+  } = {},
+) {
+  const chatTurnService = {
+    execute: jest.fn(async () => undefined),
+    summarizeThread: opts.summarizeThread ?? jest.fn(async () => undefined),
+    nameThreadFromFirstMessage: opts.nameThreadFromFirstMessage ?? jest.fn(async () => true),
+  };
+  const eventService = { getJob: opts.getJob ?? jest.fn(async () => ({ retryCount: 0, retryLimit: 3 })) };
+  const logger = { setContext: jest.fn(), error: jest.fn(), warn: jest.fn() };
+  const listener = new ChatGenerateListener(chatTurnService as never, logger as never, eventService as never);
 
-  return { listener, chatTurnService, logger };
+  return { listener, chatTurnService, eventService, logger };
 }
 
 function makeAck(): Acknowledgement {
   return { jobId: 'job-1', done: jest.fn(), fail: jest.fn(), defer: jest.fn() };
 }
 
-/** How the queue worker drives a decorated listener: payload plus an acknowledgement to settle. */
-function withAck(listener: ChatGenerateListener) {
-  return listener.handleSummarization.bind(listener) as unknown as (
-    payload: unknown,
-    ack: Acknowledgement,
-  ) => Promise<void>;
-}
+const failing = (message = 'model down') =>
+  jest.fn(async () => {
+    throw new Error(message);
+  });
 
 describe('ChatGenerateListener', () => {
   it('runs the chat turn', async () => {
@@ -43,49 +51,94 @@ describe('ChatGenerateListener', () => {
   });
 
   /**
-   * A title that fails (the model busy or timing out under load, Ollama down) used to be swallowed here "so
-   * retries are not burned on naming" — back when titles shared the interactive slot and a retried title held up a
-   * person's chat turn. On llm-background that cost is gone (the queue yields to chat), and swallowing meant a
-   * title that failed once was never retried: nothing re-enqueues it until the thread's NEXT turn, so a one-turn
-   * thread stayed untitled for good. The error has to reach the queue, which retries it a bounded number of times
-   * and then dead-letters it.
+   * A title that fails — the model busy, Ollama down, or a reply with nothing usable — fails the job so the queue
+   * retries it a bounded number of times (3 retries, backed off, see LLM_BACKGROUND_QUEUE_OPTIONS). Only on the
+   * LAST attempt does the thread settle for the person's own first words instead of staying untitled for good.
    */
   describe('the title job', () => {
-    it('names the thread from the payload it was given', async () => {
+    it('names the thread from the payload it was given, and completes', async () => {
       const { listener, chatTurnService } = makeListener();
       const ack = makeAck();
 
-      await withAck(listener)(titlePayload, ack);
+      await listener.handleSummarization(titlePayload, ack);
 
       expect(chatTurnService.summarizeThread).toHaveBeenCalledWith(
         expect.objectContaining({ ownerId: 'user-1', threadId: 'thread-1' }),
       );
       expect(ack.done).toHaveBeenCalledTimes(1);
       expect(ack.fail).not.toHaveBeenCalled();
+      expect(chatTurnService.nameThreadFromFirstMessage).not.toHaveBeenCalled();
     });
 
-    it('fails the job when naming throws, so the queue retries it instead of marking it done', async () => {
-      const { listener } = makeListener(
-        jest.fn(async () => {
-          throw new Error('model down');
-        }),
-      );
+    it('fails the job on an attempt the queue will retry, with no stand-in title yet', async () => {
+      const { listener, chatTurnService, eventService } = makeListener({
+        summarizeThread: failing(),
+        getJob: jest.fn(async () => ({ retryCount: 1, retryLimit: 3 })),
+      });
       const ack = makeAck();
 
-      await withAck(listener)(titlePayload, ack);
+      await listener.handleSummarization(titlePayload, ack);
 
+      expect(eventService.getJob).toHaveBeenCalledWith('llm-background', 'job-1');
       expect(ack.fail).toHaveBeenCalledWith(expect.objectContaining({ message: 'model down' }));
       expect(ack.done).not.toHaveBeenCalled();
+      expect(chatTurnService.nameThreadFromFirstMessage).not.toHaveBeenCalled();
     });
 
-    it('rejects a direct call as well, rather than resolving over the failure', async () => {
-      const { listener } = makeListener(
-        jest.fn(async () => {
-          throw new Error('model down');
-        }),
-      );
+    it('falls back to the first message on the last attempt, and completes rather than dead-lettering', async () => {
+      const { listener, chatTurnService } = makeListener({
+        summarizeThread: failing(),
+        getJob: jest.fn(async () => ({ retryCount: 3, retryLimit: 3 })),
+      });
+      const ack = makeAck();
 
-      await expect(listener.handleSummarization(titlePayload)).rejects.toThrow('model down');
+      await listener.handleSummarization(titlePayload, ack);
+
+      expect(chatTurnService.nameThreadFromFirstMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: 'user-1', threadId: 'thread-1' }),
+      );
+      expect(ack.done).toHaveBeenCalledTimes(1);
+      expect(ack.fail).not.toHaveBeenCalled();
+    });
+
+    it('falls back at once when there is no queue row to retry (nothing will retry it)', async () => {
+      const { listener, chatTurnService } = makeListener({
+        summarizeThread: failing(),
+        getJob: jest.fn(async () => null),
+      });
+      const ack = makeAck();
+
+      await listener.handleSummarization(titlePayload, ack);
+
+      expect(chatTurnService.nameThreadFromFirstMessage).toHaveBeenCalledTimes(1);
+      expect(ack.done).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets the queue retry when it cannot tell whether this is the last attempt', async () => {
+      const { listener, chatTurnService } = makeListener({
+        summarizeThread: failing(),
+        getJob: failing('db blip'),
+      });
+      const ack = makeAck();
+
+      await listener.handleSummarization(titlePayload, ack);
+
+      expect(ack.fail).toHaveBeenCalledWith(expect.objectContaining({ message: 'model down' }));
+      expect(chatTurnService.nameThreadFromFirstMessage).not.toHaveBeenCalled();
+    });
+
+    it('fails the job when even the fallback cannot be written', async () => {
+      const { listener } = makeListener({
+        summarizeThread: failing(),
+        nameThreadFromFirstMessage: failing('db down'),
+        getJob: jest.fn(async () => ({ retryCount: 3, retryLimit: 3 })),
+      });
+      const ack = makeAck();
+
+      await listener.handleSummarization(titlePayload, ack);
+
+      expect(ack.fail).toHaveBeenCalledWith(expect.objectContaining({ message: 'db down' }));
+      expect(ack.done).not.toHaveBeenCalled();
     });
   });
 });
