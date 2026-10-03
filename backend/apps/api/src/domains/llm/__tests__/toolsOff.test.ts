@@ -2,6 +2,7 @@ import {
   TOOLS_OFF_BASE_PROMPT,
   TOOLS_OFF_GUARD,
   TOOLS_OFF_REFUSAL,
+  TOOLS_OFF_TURN_CONTEXT_HEADER,
   TOOLS_OFF_TURN_REMINDER,
   isWriteRequest,
 } from '../toolsOff';
@@ -119,9 +120,16 @@ describe('isWriteRequest', () => {
 describe('the tool-less prompts', () => {
   const TOOL_NAMES =
     /\b(?:memory|knowledge|forecast|brief|places|insights|anomalies|suggestions|calendar|media)\.\w+/;
+  // Everything the model reads that we wrote for a tool-less turn, bar the refusal the code itself says.
+  const PROMPTS = [
+    TOOLS_OFF_BASE_PROMPT,
+    TOOLS_OFF_GUARD,
+    TOOLS_OFF_TURN_REMINDER,
+    TOOLS_OFF_TURN_CONTEXT_HEADER,
+  ];
 
   it('names no tool anywhere, so nothing in them advertises a toolbox the turn does not have', () => {
-    for (const text of [TOOLS_OFF_BASE_PROMPT, TOOLS_OFF_GUARD, TOOLS_OFF_TURN_REMINDER, TOOLS_OFF_REFUSAL]) {
+    for (const text of [...PROMPTS, TOOLS_OFF_REFUSAL]) {
       expect(text).not.toMatch(TOOL_NAMES);
       expect(text).not.toMatch(
         /tool calls? in sequence|use the available tools|You have access to various tools/i,
@@ -129,25 +137,74 @@ describe('the tool-less prompts', () => {
     }
   });
 
-  it('keeps the surface names the base prompt and the snapshots rely on', () => {
-    for (const surface of ['Memory', 'Plan', 'Forecast', 'Brief', 'Live snapshots']) {
+  it('keeps the surface names the base prompt relies on', () => {
+    for (const surface of ['Memory', 'Plan', 'Forecast', 'Brief']) {
       expect(TOOLS_OFF_BASE_PROMPT).toContain(surface);
     }
   });
 
-  it('puts no live snapshot heading in the system prompt: they arrive in the turn context', () => {
+  it('points each surface at its own section of what the model is given, by the name the person uses', () => {
+    expect(TOOLS_OFF_BASE_PROMPT).toContain('Answer from the Plan section');
+    expect(TOOLS_OFF_BASE_PROMPT).toContain('Answer from the Forecast section');
+    expect(TOOLS_OFF_BASE_PROMPT).toContain('Answer from the Brief section');
+  });
+
+  it('puts no live data heading in the system prompt: the data arrives with the question', () => {
     for (const marker of ['## Plan', '## Forecast', '## Brief', '## Stats']) {
       expect(TOOLS_OFF_BASE_PROMPT).not.toContain(marker);
       expect(TOOLS_OFF_GUARD).not.toContain(marker);
     }
   });
 
+  it('uses none of our own names for the data: a model this small repeats the words it is given', () => {
+    // "Live snapshots" came back in replies ("From your Plan: the open to-dos listed in the Live
+    // snapshots"), and so did "the content between the markers".
+    for (const text of PROMPTS) {
+      expect(text).not.toMatch(/live snapshots?|snapshot|untrusted|markers?|system prompt/i);
+    }
+  });
+
+  it('teaches by rule and not by worked example, which a 1B model copies back as the answer', () => {
+    for (const text of PROMPTS) {
+      expect(text).not.toMatch(/^\s*(?:User|Assistant)\s*:/im);
+      expect(text).not.toMatch(/\bexamples?\b/i);
+    }
+
+    // The one sentence that is quoted is the refusal, and it is asked for only after "if you are asked to".
+    expect(TOOLS_OFF_TURN_REMINDER.match(/"[^"]+"/g)).toHaveLength(1);
+    expect(TOOLS_OFF_TURN_REMINDER).toMatch(
+      /If you are asked to add[^"]*delete anything, reply: "I can't do that here/,
+    );
+
+    for (const text of [TOOLS_OFF_BASE_PROMPT, TOOLS_OFF_GUARD, TOOLS_OFF_TURN_CONTEXT_HEADER]) {
+      expect(text).not.toContain("I can't do that here");
+    }
+  });
+
   it('tells the model it cannot act, cannot look things up, and must not say it did', () => {
-    expect(TOOLS_OFF_GUARD).toMatch(/NO TOOLS/);
+    expect(TOOLS_OFF_GUARD).toMatch(/You cannot take actions in this chat/);
     expect(TOOLS_OFF_GUARD).toMatch(/cannot search Memory/);
     expect(TOOLS_OFF_GUARD).toMatch(/forget/);
     expect(TOOLS_OFF_GUARD).toMatch(/Never write tool names, function calls, code blocks or JSON/);
-    expect(TOOLS_OFF_TURN_REMINDER).toMatch(/Do not invent/);
+    expect(TOOLS_OFF_TURN_REMINDER).toMatch(/You cannot do things in this chat/);
+    expect(TOOLS_OFF_TURN_REMINDER).toMatch(/nothing was changed/);
+  });
+
+  it('says plainly what to do when the answer is not in what it was given, and that the world is still fair game', () => {
+    expect(TOOLS_OFF_TURN_REMINDER).toMatch(/answer from the information above/i);
+    expect(TOOLS_OFF_TURN_REMINDER).toMatch(
+      /If the answer about the user is not there, say you do not have it/,
+    );
+    expect(TOOLS_OFF_TURN_REMINDER).toMatch(/questions about the world you can answer normally/);
+  });
+
+  it('heads the data with what it is, not with its own name or with a list of its sections', () => {
+    expect(TOOLS_OFF_TURN_CONTEXT_HEADER).toMatch(/^# /);
+    expect(TOOLS_OFF_TURN_CONTEXT_HEADER).toMatch(/information about the user/i);
+    // A heading that listed Plan, Forecast, Brief and stats read as the whole of what the model knew.
+    for (const surface of ['Plan', 'Forecast', 'Brief', 'Stats']) {
+      expect(TOOLS_OFF_TURN_CONTEXT_HEADER).not.toContain(surface);
+    }
   });
 
   it('tells the person nothing was changed, and how to get out of a false positive', () => {

@@ -7,6 +7,7 @@ import {
   TOOLS_OFF_BASE_PROMPT,
   TOOLS_OFF_GUARD,
   TOOLS_OFF_REFUSAL,
+  TOOLS_OFF_TURN_CONTEXT_HEADER,
   TOOLS_OFF_TURN_REMINDER,
 } from '../../toolsOff';
 import { ChatGenerationBroker } from '../ChatGenerationBroker';
@@ -168,12 +169,40 @@ describe('ChatTurnService prompt when the turn has no tools', () => {
     const offContext = off.sent[0].at(-2)?.content ?? '';
     const onContext = on.sent[0].at(-2)?.content ?? '';
 
-    expect(offContext.startsWith(TURN_CONTEXT_HEADER)).toBe(true);
+    // Each turn kind has its own heading: our name for it with tools, the person's words without.
+    expect(offContext.startsWith(TOOLS_OFF_TURN_CONTEXT_HEADER)).toBe(true);
+    expect(onContext.startsWith(TURN_CONTEXT_HEADER)).toBe(true);
     expect(offContext.endsWith(TOOLS_OFF_TURN_REMINDER)).toBe(true);
     // Our own words, not data: after the closing marker, never inside the region.
     expect(offContext.indexOf(UNTRUSTED_CLOSE)).toBeLessThan(offContext.indexOf(TOOLS_OFF_TURN_REMINDER));
     expect(offContext).toContain(UNTRUSTED_OPEN);
     expect(onContext).not.toContain(TOOLS_OFF_TURN_REMINDER);
+  });
+
+  it('never says "Live snapshots" to a model with no tools, which then says it back to the person', async () => {
+    const off = buildService({ enableTools: false, userText: 'What tasks do I have?' });
+    const on = buildService({ enableTools: true, userText: 'What tasks do I have?' });
+
+    await off.service.execute(payload);
+    await on.service.execute(payload);
+
+    // Nothing the tool-less turn is sent carries our name for the data: not the system prompt, not the
+    // message with the data in it, not the question.
+    expect(JSON.stringify(off.sent[0])).not.toMatch(/live snapshots?/i);
+    // The tools-on prompt is as it was, and still names it.
+    expect(JSON.stringify(on.sent[0])).toContain('Live snapshots');
+  });
+
+  it('carries no worked question and answer for the model to copy back', async () => {
+    const { service, sent } = buildService({ enableTools: false, userText: 'What tasks do I have?' });
+
+    await service.execute(payload);
+
+    const prompt = sent[0].map((message) => message.content).join('\n');
+
+    expect(prompt).not.toMatch(/^\s*(?:User|Assistant)\s*:/im);
+    expect(prompt).not.toMatch(/Examples of how to answer/i);
+    expect(prompt).not.toContain('the open to-dos listed in');
   });
 
   it('keeps that system prompt byte-identical from turn to turn', async () => {
