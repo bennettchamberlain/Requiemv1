@@ -118,6 +118,29 @@ describe('PersonForm', () => {
     expect(row?.className).toContain('w-full');
     expect(row?.className).toContain('sm:flex-1');
   });
+
+  // "Add home", "Add work" and "Add other" are nowrap and ~368px wide together.
+  // In a 337px card on a 390pt phone the third button hung out of the card and
+  // the page behind it scrolled sideways by ~5pt; the row has to be able to wrap.
+  it('lets the add-address buttons wrap instead of overflowing a phone-width card', () => {
+    render(<Harness />);
+
+    for (const name of [/Add home/, /Add work/, /Add other/]) {
+      expect(screen.getByRole('button', { name }).parentElement?.className).toContain('flex-wrap');
+    }
+  });
+
+  // iOS WebKit lays a native date input out as content-box with a forced min-width, so a
+  // `w-full` one came out ~28px wider than its 337px card on a phone (the field stuck out of
+  // the card and the page panned sideways). `appearance-none` gives it an ordinary box back.
+  it('drops the native appearance on the Birthday input so it stays inside a phone-width card', () => {
+    render(<Harness />);
+
+    const birthday = screen.getByLabelText('Birthday');
+
+    expect(birthday).toHaveAttribute('type', 'date');
+    expect(birthday.className).toContain('appearance-none');
+  });
 });
 
 describe('PersonForm — a contact the server refused', () => {
