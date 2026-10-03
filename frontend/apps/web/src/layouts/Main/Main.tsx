@@ -8,7 +8,7 @@ import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { MemoryContractStrip } from '@/components/MemoryContractStrip/MemoryContractStrip';
 import { useBackground, useTheme } from '@/components/ThemePicker';
-import { useUnsyncedImportsNotice } from '@/components/UnsyncedImports/useUnsyncedImportsNotice';
+import { UnsyncedImportsBanner } from '@/components/UnsyncedImports/UnsyncedImportsBanner';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
 import { MobileTopBar } from './MobileNavigation/MobileTopBar';
@@ -22,26 +22,34 @@ export function Main() {
   const { themeState } = useTheme();
   const { glowEnabled } = useBackground();
 
-  // Every authenticated page passes through this layout, which makes it the
-  // one place a page-load check reaches "across all pages".
-  useUnsyncedImportsNotice();
-
   if (isMobile) {
     return (
       <PowerRailProvider variant="overlay">
+        {/* Viewport-fixed; default 16px top sits under the status bar /
+            Dynamic Island. Offset past safe-area + the phone header so the
+            toast is in the content well, not the notch.
+
+            A sibling of the column below, not a child of it, on purpose. While
+            the drawer is open `MobileNavigation` makes every other child of
+            that column `inert`, and an inert toast is still painted over the
+            drawer (z-index 999999999) but cannot be hit — so a tap on it fell
+            through to the drawer row beneath. Out here it stays tappable. */}
+        <Toaster
+          position="top-center"
+          offset={{ top: 'calc(var(--safe-area-top) + 3.5rem)' }}
+          mobileOffset={{ top: 'calc(var(--safe-area-top) + 3.5rem)' }}
+          theme={themeState.mode}
+        />
         {/* Top padding is the status-bar tap target (see useStatusBarScrollToTop). */}
         <div className="flex h-[var(--vv-height,100dvh)] max-h-[var(--vv-height,100dvh)] flex-col pt-[var(--safe-area-top)]">
-          {/* Viewport-fixed; default 16px top sits under the status bar /
-              Dynamic Island. Offset past safe-area + the phone header so the
-              toast is in the content well, not the notch. */}
-          <Toaster
-            position="top-center"
-            offset={{ top: 'calc(var(--safe-area-top) + 3.5rem)' }}
-            mobileOffset={{ top: 'calc(var(--safe-area-top) + 3.5rem)' }}
-            theme={themeState.mode}
-          />
           <MobileTopBar />
           <MemoryContractStrip />
+          {/* A row of this column, not an overlay: the page starts below it, every
+              modal slot after it paints over it, and while the drawer is open it is
+              page content, inert behind the scrim like the rest. Every authenticated
+              page passes through this layout, which makes it the one place the
+              page-load check reaches "across all pages". */}
+          <UnsyncedImportsBanner />
           <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
             {/* Boundary INSIDE Suspense so a failed lazy chunk is caught too,
                 and around the outlet ALONE so the bottom bar and the modal
@@ -100,6 +108,8 @@ export function Main() {
 
         <div className="overflow-hidden min-w-0 min-h-0 flex flex-col">
           <MemoryContractStrip />
+          {/* Same notice as the phone's, in the same slot: above the page, in flow. */}
+          <UnsyncedImportsBanner />
           <Suspense fallback={<LoadingPage />}>
             <Toaster theme={themeState.mode} />
             <div className="flex flex-row h-full min-h-0">
