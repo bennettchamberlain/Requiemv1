@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { keysetSeek } from '@ci/common/persistence';
 import { type EntityIdentifier, type IndexableEntity } from '@ci/domains/search-next';
 
 import { FileChunkEntity, type FileChunk } from '../entities/FileChunkEntity';
@@ -102,9 +103,10 @@ export class DocumentChunkService {
   /**
    * Time-ordered chunk identifiers for the Memory browse/timed search path.
    * Mirrors the other entity services' `getEntitiesFor*` contract: orders by
-   * created_at (DESC by default) with an id tiebreak, and honours the composite
-   * (afterTime, afterId) keyset so pagination is stable across the large
-   * same-timestamp clusters a single document's chunks produce.
+   * updated_at (DESC by default) with an id tiebreak running the same way, and
+   * honours the composite (afterTime, afterId) keyset in that direction so
+   * pagination is stable across the large same-timestamp clusters a single
+   * document's chunks produce.
    */
   async getEntitiesForFileChunks(
     context: ServiceContext,
@@ -130,14 +132,15 @@ export class DocumentChunkService {
       query = query.andWhere('chunk.updated_at <= :endTime', { endTime: options.endTime });
     }
 
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(chunk.updated_at < :afterTime OR (chunk.updated_at = :afterTime AND chunk.id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('chunk.updated_at', 'chunk.id', order, options.afterTime, options.afterId),
       );
     }
 
-    query = query.orderBy('chunk.updated_at', options.order ?? 'DESC').addOrderBy('chunk.id', 'DESC');
+    query = query.orderBy('chunk.updated_at', order).addOrderBy('chunk.id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);

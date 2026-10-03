@@ -21,7 +21,9 @@ import {
   type BulkInsertResult,
   appendRecordSources,
   bulkInsertIdempotent,
+  keysetOrderOf,
   keysetPaginate,
+  keysetSeek,
   type KeysetPageArgs,
   type KeysetPage,
 } from '@ci/common/persistence';
@@ -895,20 +897,29 @@ export class CommunicationService {
       query = query.limit(options.limit);
     }
 
+    // The direction `order` asks for (its first key, as for the primary sort); the tiebreak and the
+    // keyset below run the same way, so a page is always the rows PAST the cursor in that direction.
+    const direction = keysetOrderOf(options.order);
+
     if (options.order) {
-      for (const [field, direction] of Object.entries(options.order)) {
-        query = query.orderBy(`communications.${field}`, direction as 'ASC' | 'DESC');
+      for (const [field, fieldDirection] of Object.entries(options.order)) {
+        query = query.orderBy(`communications.${field}`, fieldDirection as 'ASC' | 'DESC');
       }
 
       // Deterministic tiebreak so same-timestamp rows page consistently.
-      query = query.addOrderBy('communications.id', 'DESC');
+      query = query.addOrderBy('communications.id', direction);
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId) in (time DESC, id DESC).
+    // Composite keyset: page strictly past (afterTime, afterId) in (time, id), in `order` — see keysetSeek.
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(communications.time < :afterTime OR (communications.time = :afterTime AND communications.id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek(
+          'communications.time',
+          'communications.id',
+          direction,
+          options.afterTime,
+          options.afterId,
+        ),
       );
     }
 
