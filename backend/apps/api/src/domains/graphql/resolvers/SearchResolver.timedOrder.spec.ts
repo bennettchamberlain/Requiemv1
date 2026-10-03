@@ -342,6 +342,22 @@ describe('SearchResolver timed browse, oldest first', () => {
     expect(months.at(-1)).toBe('2026-05');
   });
 
+  it('reads upwards for sortOrder asc with no sortBy: a browse with no query sorts by time by default', async () => {
+    const { resolver, calls } = makeResolver();
+
+    // The web client always names `sortBy: time`, but the API documents it as defaulting to time when
+    // there is no query, so a caller that sends only `sortOrder` must get the same oldest-first walk.
+    const { rows } = await walk(resolver, { ...WINDOW, first: 30, sortOrder: 'asc' });
+
+    expect(rows.map(stamp)).toEqual(ASCENDING.map(stamp));
+
+    for (const type of TYPES) {
+      for (const options of calls[type]!) {
+        expect(directionOf(options.order)).toBe('ASC');
+      }
+    }
+  });
+
   it('reports the same totalCount on every page, in either direction, equal to the rows that exist', async () => {
     const { resolver } = makeResolver();
 
