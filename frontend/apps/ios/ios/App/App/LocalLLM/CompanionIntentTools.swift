@@ -31,6 +31,11 @@ enum CompanionToolContext {
   /// tokens), so a result is bounded even if nothing did. See ``ToolResultShaper`` for why.
   static var resultBudgetBytes = LocalLLMPolicy.toolResultByteBudget(contextTokens: 1024)
 
+  /// Hand a JSON result back to the model as a parsed value rather than as text. LiteRT-LM writes a
+  /// `String` response into the chat template as an escaped JSON string — every quote becomes `\"` —
+  /// which costs tokens and is harder for a small model to read than the JSON itself.
+  static var structuredResults = false
+
   /// Runs an intent after re-checking the server's ruling.
   ///
   /// The re-check is not redundant with registration: registration and invocation are separated by
@@ -40,7 +45,7 @@ enum CompanionToolContext {
   /// The result is shaped to ``resultBudgetBytes`` before it goes back: the appliance returns the
   /// whole of it — tens of kilobytes for a search — which is far more than the model's context
   /// window can take in.
-  static func execute(_ toolName: String, arguments: [String: Any]) async -> String {
+  static func execute(_ toolName: String, arguments: [String: Any]) async -> Any {
     guard let ruling = rulings[toolName], ruling.isExecutable else {
       return errorPayload(rulings[toolName]?.explanation ?? "\"\(toolName)\" may not run on this device")
     }
@@ -57,7 +62,7 @@ enum CompanionToolContext {
         "[LocalLLM] %@ returned %ld bytes; passing %ld to the model (budget %ld)",
         toolName, result.utf8.count, shaped.utf8.count, resultBudgetBytes)
 
-      return shaped
+      return structuredResults ? asJSONValue(shaped) : shaped
     } catch {
       // Returned as content, not thrown: the model can then tell the user what failed or try a
       // different intent, whereas a thrown error aborts the whole generation.
@@ -65,6 +70,17 @@ enum CompanionToolContext {
 
       return errorPayload(error.localizedDescription)
     }
+  }
+
+  /// The parsed JSON object or array, or `text` itself when it is neither (an error message, a cut-off
+  /// string): only a container is worth handing over as a value.
+  private static func asJSONValue(_ text: String) -> Any {
+    guard
+      let value = try? JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed]),
+      value is [String: Any] || value is [Any]
+    else { return text }
+
+    return value
   }
 
   /// Refreshes the catalog and reports which of the known tools the appliance says may run here.
@@ -162,7 +178,10 @@ struct SearchMemoryTool: Tool {
     "Search the user's own memory (notes, messages, documents, people, places) for a word or phrase. "
     + "Use this for any question about what the user knows, did or saw."
 
-  @ToolParam(description: "What to search for, in the user's own words")
+  // Key words, not the question. Described as "in the user's own words" this parameter was filled with the
+  // whole instruction ("search my memory for blue heron") in 87 of 101 on-device calls, and a keyword search
+  // for that sentence matches `search`, `my`, `memory` and `for`.
+  @ToolParam(description: "The key words to look for: a name, a place or a thing. Not the whole question")
   var query: String
 
   func run() async throws -> Any {

@@ -51,15 +51,20 @@ public class Conversation {
 
   private var handle: CConversationHandle?
   private let toolManager: ToolManager
+  /// CI PATCH (conversation-owns-engine). The native conversation refers to the native engine, so the
+  /// engine must not be deleted first. Nothing in the wrapper held it: an app that dropped its `Engine`
+  /// while a stream's context still held this conversation deleted the engine out from under it.
+  private let owner: Engine?
 
   /// Whether the conversation is alive and ready to be used.
   public var isAlive: Bool {
     return handle != nil
   }
 
-  init(handle: CConversationHandle, toolManager: ToolManager) {
+  init(handle: CConversationHandle, toolManager: ToolManager, owner: Engine? = nil) {
     self.handle = handle
     self.toolManager = toolManager
+    self.owner = owner
   }
 
   deinit {
@@ -187,16 +192,29 @@ public class Conversation {
   ///
   /// - Parameter message: The message to send.
   /// - Parameter extraContext: The extra context to send to the model.
+  /// - Parameter maxOutputTokens: CI PATCH (output-cap). Caps the tokens decoded for each request
+  ///   of this stream (the message itself, and each tool-result continuation). `nil` leaves the
+  ///   runtime's default, which is only the room left in the context window.
+  /// - Parameter carryContextThroughToolCalls: CI PATCH (continuation-context). Upstream sent
+  ///   `extraContext` with the first request only, so the request that carries a tool's result back
+  ///   to the model rendered the chat template with no `enable_thinking` at all — which Qwen3's
+  ///   template reads as "thinking on", whatever the first request asked for. `sendMessage` (the
+  ///   non-streaming call above) has always passed it on every round; this makes the stream do the
+  ///   same. Pass `false` to get the upstream behaviour back (the on-device bench uses that to
+  ///   measure what the fix is worth).
   /// - Returns: An async throwing stream of `Message` chunks.
   public func sendMessageStream(
-    _ message: Message, extraContext: [String: Any]? = nil
+    _ message: Message, extraContext: [String: Any]? = nil,
+    maxOutputTokens: Int? = nil, carryContextThroughToolCalls: Bool = true
   ) -> AsyncThrowingStream<Message, Error> {
     return AsyncThrowingStream { continuation in
       do {
         let handle = try self.checkIsAlive()
         let messageJson: [String: Any] = message.toJson
         let context = StreamContext(
-          continuation: continuation, conversation: self)
+          continuation: continuation, conversation: self,
+          continuationExtraContext: carryContextThroughToolCalls ? extraContext : nil,
+          maxOutputTokens: maxOutputTokens)
 
         try self.sendToStream(
           handle: handle, messageJson: messageJson, extraContext: extraContext, context: context)
@@ -241,6 +259,11 @@ public class Conversation {
     if let visualTokenBudget = ExperimentalFlags.visualTokenBudget {
       litert_lm_conversation_optional_args_set_visual_token_budget(
         optionalArgs, Int32(visualTokenBudget))
+    }
+    // CI PATCH (output-cap)
+    if let maxOutputTokens = context.maxOutputTokens, maxOutputTokens > 0 {
+      litert_lm_conversation_optional_args_set_max_output_tokens(
+        optionalArgs, Int32(maxOutputTokens))
     }
     defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
 
@@ -403,16 +426,38 @@ public class Conversation {
   class StreamContext {
     let continuation: AsyncThrowingStream<Message, Error>.Continuation
     let conversation: Conversation
+    /// CI PATCH (continuation-context): sent with every tool-result request of this stream.
+    let continuationExtraContext: [String: Any]?
+    /// CI PATCH (output-cap): applied to every request of this stream.
+    let maxOutputTokens: Int?
     var toolCallCount: Int = 0
     var pendingToolCalls: [[String: Any]] = []
 
     init(
       continuation: AsyncThrowingStream<Message, Error>.Continuation,
-      conversation: Conversation
+      conversation: Conversation,
+      continuationExtraContext: [String: Any]? = nil,
+      maxOutputTokens: Int? = nil
     ) {
       self.continuation = continuation
       self.conversation = conversation
+      self.continuationExtraContext = continuationExtraContext
+      self.maxOutputTokens = maxOutputTokens
     }
+  }
+}
+
+/// CI PATCH (release-off-callback). `StreamContext` holds the stream's `Conversation`. When the app has
+/// already dropped its own reference (a reset, an unload, a replaced conversation right after a reply),
+/// the callback's release of the context is the LAST one: it runs `Conversation.deinit`, which calls
+/// `litert_lm_conversation_delete`, which waits for the session to finish — from the thread that has to
+/// finish it. A self-deadlock, seen as an app sitting at 0% CPU with the callback thread inside
+/// `SessionAdvanced::WaitUntilDone`. Releasing on another queue lets the callback return first.
+private func releaseStreamContext(_ userData: UnsafeMutableRawPointer) {
+  nonisolated(unsafe) let pointer = userData
+
+  DispatchQueue.global(qos: .utility).async {
+    Unmanaged<Conversation.StreamContext>.fromOpaque(pointer).release()
   }
 }
 
@@ -432,7 +477,7 @@ private func streamCallback(
     let error = LiteRTLMError.conversation(.invalidResponse(errorString))
     context.continuation.finish(throwing: error)
 
-    Unmanaged<Conversation.StreamContext>.fromOpaque(userData).release()
+    releaseStreamContext(userData)
     return
   }
 
@@ -456,7 +501,7 @@ private func streamCallback(
     } catch {
       logger.error("Failed to parse response JSON: \(error.localizedDescription)")
       context.continuation.finish(throwing: error)
-      Unmanaged<Conversation.StreamContext>.fromOpaque(userData).release()
+      releaseStreamContext(userData)
       return
     }
   }
@@ -467,7 +512,7 @@ private func streamCallback(
         context.continuation.finish(
           throwing: LiteRTLMError.conversation(
             .recurringToolCallLimitExceeded(limit: recurringToolCallLimit)))
-        Unmanaged<Conversation.StreamContext>.fromOpaque(userData).release()
+        releaseStreamContext(userData)
         return
       }
 
@@ -481,6 +526,7 @@ private func streamCallback(
           try context.conversation.sendToStream(
             handle: context.conversation.checkIsAlive(),
             messageJson: toolResponseJson,
+            extraContext: context.continuationExtraContext,  // CI PATCH (continuation-context)
             context: context
           )
         } catch {
@@ -492,7 +538,7 @@ private func streamCallback(
       }
     } else {
       context.continuation.finish()
-      Unmanaged<Conversation.StreamContext>.fromOpaque(userData).release()
+      releaseStreamContext(userData)
     }
   }
 }

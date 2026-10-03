@@ -181,6 +181,17 @@ actor LocalLLMEngine {
   var loadedModelId: String? { loaded?.modelId }
   var loadedAccelerator: LocalLLMAccelerator? { loaded?.accelerator }
   var isLoaded: Bool { engine != nil && loaded != nil }
+
+  /// The window the resident engine was sized with: input plus output tokens.
+  var contextWindowTokens: Int? { loaded?.key.maxTokens }
+
+  /// Tokens the resident conversation holds right now (prefill and decode), read from the runtime — not
+  /// estimated. `nil` with nothing loaded, or when the runtime cannot say.
+  func contextTokensUsed() -> Int? {
+    guard let conversation, let count = try? conversation.getTokenCount(), count >= 0 else { return nil }
+
+    return count
+  }
   /// Exposed for the harness that checks the stale-conversation bookkeeping.
   var isConversationStale: Bool { conversationStale }
 
@@ -507,6 +518,15 @@ actor LocalLLMEngine {
           continuation.yield(.delta(answer: tail.answer, thought: tail.thought))
         }
 
+        // How full the window is, in the runtime's own count. A conversation that fills its window
+        // answers every later message with nothing (see `isContextExhausted` in the web layer), and
+        // until this line nothing on a device said how close a turn had come. Counts only.
+        if failure == nil, !cancelled, let used = self.contextTokensUsed(),
+          let window = self.contextWindowTokens
+        {
+          NSLog("[LocalLLM] reply finished: %ld of %ld context tokens in use", used, window)
+        }
+
         // Stats only for a run that went the distance. A cancelled one, a thermally cut one and a
         // failed one all end here without them.
         let finished = failure == nil && !cancelled
@@ -630,7 +650,8 @@ actor LocalLLMEngine {
   /// still parse correctly.
   private static let enableExperimentalConstrainedDecoding = false
 
-  private static let toolSystemInstruction =
+  /// Internal, not private, so the device bench (`tests/local-llm-device`) measures this exact text.
+  static let toolSystemInstruction =
     "You are Companion, answering questions about the user's own memory on their device. "
     + "Use the provided tools to look things up rather than guessing, and cite what you found. "
     + "If a tool reports an error or says an action must be confirmed on the appliance, tell the "
