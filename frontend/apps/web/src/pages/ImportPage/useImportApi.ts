@@ -888,6 +888,9 @@ export function useRunsProgress(
 export function useActiveImports(
   activeIntervalMs = 2_000,
   idleIntervalMs = 30_000,
+  // Lets a caller that only sometimes wants the poll (the getting-started banner
+  // on an appliance with importing switched off) call the hook unconditionally.
+  enabled = true,
 ): { snapshot: ActiveImportSnapshot | null; error: string | null; refresh: () => void } {
   const { getActiveImports, ready } = useImportApi();
   const [snapshot, setSnapshot] = useState<ActiveImportSnapshot | null>(null);
@@ -898,7 +901,7 @@ export function useActiveImports(
   const kick = useRef<() => void>(() => {});
 
   useEffect(() => {
-    if (!ready) {
+    if (!ready || !enabled) {
       return;
     }
 
@@ -971,7 +974,7 @@ export function useActiveImports(
       window.clearTimeout(timer.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [activeIntervalMs, getActiveImports, idleIntervalMs, ready]);
+  }, [activeIntervalMs, enabled, getActiveImports, idleIntervalMs, ready]);
 
   const refresh = useCallback(() => kick.current(), []);
 

@@ -70,13 +70,16 @@ export interface UnsyncedImportsNotice {
  * long as there is an unsynced import sat over open dialogs, over the first row
  * of every page, and — inert but still painted — over the phone drawer.
  */
-export function useUnsyncedImportsNotice(): UnsyncedImportsNotice {
+export function useUnsyncedImportsNotice({ suppressed = false }: { suppressed?: boolean } = {}): UnsyncedImportsNotice {
   const api = useImportApi();
   const { toast } = useToast();
   const isVisible = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   useEffect(() => {
-    if (!api.ready || checkedThisLoad) {
+    // Suppressed does NOT claim the once-per-load flag: if the getting-started
+    // banner that suppresses this is dismissed and the shell remounts, the check
+    // is still owed.
+    if (!api.ready || checkedThisLoad || suppressed) {
       return;
     }
 
@@ -96,7 +99,7 @@ export function useUnsyncedImportsNotice(): UnsyncedImportsNotice {
         // wizard's Sync card remains the fallback surface.
       }
     })();
-  }, [api]);
+  }, [api, suppressed]);
 
   const dismiss = useCallback(() => setVisible(false), []);
 

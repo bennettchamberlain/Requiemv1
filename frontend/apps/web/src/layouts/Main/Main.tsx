@@ -6,9 +6,12 @@ import { Outlet } from 'react-router-dom';
 
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { GettingStartedBanner } from '@/components/GettingStarted/GettingStartedBanner';
 import { MemoryContractStrip } from '@/components/MemoryContractStrip/MemoryContractStrip';
 import { useBackground, useTheme } from '@/components/ThemePicker';
 import { UnsyncedImportsBanner } from '@/components/UnsyncedImports/UnsyncedImportsBanner';
+import { useCurrentUser } from '@/hooks';
+import { isGettingStartedActive } from '@/lib/gettingStarted';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
 import { MobileTopBar } from './MobileNavigation/MobileTopBar';
@@ -21,6 +24,8 @@ export function Main() {
   const { isMobile } = useDeviceLayout();
   const { themeState } = useTheme();
   const { glowEnabled } = useBackground();
+  const { user } = useCurrentUser();
+  const gettingStartedActive = isGettingStartedActive(user?.id);
 
   if (isMobile) {
     return (
@@ -49,7 +54,8 @@ export function Main() {
               page content, inert behind the scrim like the rest. Every authenticated
               page passes through this layout, which makes it the one place the
               page-load check reaches "across all pages". */}
-          <UnsyncedImportsBanner />
+          <GettingStartedBanner />
+          <UnsyncedImportsBanner suppressed={gettingStartedActive} />
           <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
             {/* Boundary INSIDE Suspense so a failed lazy chunk is caught too,
                 and around the outlet ALONE so the bottom bar and the modal
@@ -109,7 +115,8 @@ export function Main() {
         <div className="overflow-hidden min-w-0 min-h-0 flex flex-col">
           <MemoryContractStrip />
           {/* Same notice as the phone's, in the same slot: above the page, in flow. */}
-          <UnsyncedImportsBanner />
+          <GettingStartedBanner />
+          <UnsyncedImportsBanner suppressed={gettingStartedActive} />
           <Suspense fallback={<LoadingPage />}>
             <Toaster theme={themeState.mode} />
             <div className="flex flex-row h-full min-h-0">

@@ -33,6 +33,10 @@ vi.mock('@/components/ThemePicker', () => ({
   useTheme: () => ({ themeState: { mode: 'light' } }),
   useBackground: () => ({ glowEnabled: false }),
 }));
+// The shell reads the signed-in user to hold the unsynced-imports row back while
+// the getting-started banner is up; neither is under test here.
+vi.mock('@/hooks', () => ({ useCurrentUser: () => ({ user: null }) }));
+vi.mock('@/components/GettingStarted/GettingStartedBanner', () => ({ GettingStartedBanner: () => null }));
 vi.mock('@/components/AnimatedBackground', () => ({ AnimatedBackground: () => null }));
 vi.mock('@/components/AppErrorBoundary', () => ({
   AppErrorBoundary: ({ children }: { children: ReactNode }) => children,
