@@ -82,6 +82,19 @@
  * turns the `OR` into one index range. Without it Postgres walks the user's
  * index from the newest row and discards every row newer than the cursor, on
  * every page.
+ *
+ * ── When the index carries the id too: a row-value comparison ───────────────
+ * That range is on the TIME column alone. Postgres still reads every row of the
+ * cursor's instant that was already served, and discards it, on every page: a
+ * cursor halfway through a batch import stamped to one instant reads half the
+ * batch each time. Where the index is `(owner, time DESC, id DESC)`, as
+ * `objects_live_keyset_idx` is, `(t, id) < (:afterTime, :afterId)` is ONE index
+ * condition on both columns and reads none of them (50,001 rows against none,
+ * for a cursor 50,000 deep in a 100,000-item same-instant batch, on a clone of
+ * `ci.objects` holding 1,300,000 rows). It takes the same exact text, so it is
+ * the same cure with a different predicate: `ItemService.findPage` uses it, and
+ * `FileService.findPage` always has. Where the index holds the time alone the
+ * two have the same range to work with.
  */
 
 export type KeysetOrder = 'ASC' | 'DESC';

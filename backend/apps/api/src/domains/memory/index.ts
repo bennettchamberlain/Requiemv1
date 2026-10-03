@@ -469,6 +469,7 @@ export type {
   FindItemsFilter,
   ItemKeyset,
   ItemPage,
+  ItemPosition,
 } from './types';
 export { FIND_OR_CREATE_IDENTITY_CONFIDENCE } from './services/ProductModelService';
 export type { ReceiptExtractionResult, ReceiptPage, ReceiptWithLines } from './services/ReceiptService';
