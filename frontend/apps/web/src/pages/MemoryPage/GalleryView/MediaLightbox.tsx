@@ -124,10 +124,21 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
   const canDownload = !current.pageUrl && isSameOriginUrl(current.fullUrl);
   const isBroken = brokenUrl === current.fullUrl;
 
+  // A full-bleed overlay owns its own safe areas: on a phone the status bar /
+  // Dynamic Island (top), the home indicator (bottom) and, in landscape, the
+  // sensor housing (sides) sit ON the page, not beside it — and a touch there
+  // never reaches the page, so a control under them cannot be tapped (iOS QA,
+  // MEM-07: counter, Open original and ✕ were all under the island).
+  //
+  // The tokens are the ones every other full-screen surface uses (Main, the
+  // sheets, CaptureModal's shell): `html.ci-native` pins `--safe-area-top/bottom`
+  // to the notch / indicator height because WKWebView can report `env()` as 0.
+  // `max()` keeps the old 0.75rem / 1rem wherever they are 0, so desktop is
+  // unchanged. The sides use `env()` directly, as `.safe-area-inset` does.
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex flex-col bg-black/90 pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)] backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Media viewer"
@@ -135,7 +146,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
     >
       {/* Top bar */}
       <div
-        className="flex items-center justify-between gap-2 p-3 text-white"
+        className="flex items-center justify-between gap-2 p-3 pt-[max(0.75rem,var(--safe-area-top))] text-white"
         onClick={(e) => e.stopPropagation()}
       >
         <span className="text-sm tabular-nums text-white/70">
@@ -254,7 +265,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
 
       {/* Caption */}
       <div
-        className="truncate px-4 pb-4 text-center text-sm text-white/80"
+        className="truncate px-4 pb-[max(1rem,var(--safe-area-bottom))] text-center text-sm text-white/80"
         onClick={(e) => e.stopPropagation()}
       >
         {current.title}
