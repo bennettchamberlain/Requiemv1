@@ -113,11 +113,17 @@ export function CommunicationPage() {
     content = (
       <PageContent>
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CommunicationIcon />
+          {/* `min-w-0` and `break-words` on the title: a chat message whose preview
+              is a URL has no break point, and without them the heading kept its
+              full width and pushed the edit control off the right edge — the same
+              overflow the drawer's header had (see EntityDetailScaffold). Once the
+              title can shrink, so can the icon beside it, down to a 4px sliver;
+              `shrink-0` keeps it whole. */}
+          <div className="flex min-w-0 items-center gap-2">
+            <CommunicationIcon className="shrink-0" />
             {/* No subject (chat-style sources): the preview stands in as the
                 heading rather than a synthesized "<Type>" subject. */}
-            <h1 className="text-2xl font-bold">
+            <h1 className="min-w-0 break-words text-2xl font-bold">
               {communication.subject || communication.preview || renderTypeSubject(communication.type)}
             </h1>
           </div>

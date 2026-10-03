@@ -718,7 +718,15 @@ export function EntityDetailScaffold({
     >
       <Sheet.Header className="gap-2 border-b border-border/60 bg-background/45 p-5 pr-12 backdrop-blur-xl">
         <div className="flex items-start justify-between gap-2">
-          <Sheet.Title className="text-xl leading-tight tracking-tight">{title}</Sheet.Title>
+          {/* `min-w-0` + `break-words`, together: a flex item will not shrink below
+              its longest unbreakable word, so a title holding a long URL (an
+              Instagram message whose "title" is its text) kept its full width,
+              ran under the close button, and shoved the four action icons off the
+              right edge, out of reach. Allowed to shrink, the title wraps the URL
+              at the width the icons leave it. */}
+          <Sheet.Title className="min-w-0 break-words text-xl leading-tight tracking-tight">
+            {title}
+          </Sheet.Title>
           <div className="flex shrink-0 items-center gap-1">
             {fullPage != null && <FullPageLink to={fullPage} label={t('ENTITY_DETAILS_OPEN_PAGE')} />}
             {!readOnly && <ChatWithAgentMenu context={chatContext} className="-mt-1 size-8 shrink-0" />}
