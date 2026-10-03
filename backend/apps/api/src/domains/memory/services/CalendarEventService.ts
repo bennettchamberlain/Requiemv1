@@ -24,7 +24,9 @@ import {
   appendRecordSources,
   bulkInsertIdempotent,
   countAffected,
+  keysetOrderOf,
   keysetPaginate,
+  keysetSeek,
   INGEST_REFRESH_COLUMNS,
 } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
@@ -2864,23 +2866,26 @@ export class CalendarEventService {
       query = query.limit(options.limit);
     }
 
+    // The direction `order` asks for (its first key, as for the primary sort); the tiebreak and the
+    // keyset below run the same way, so a page is always the rows PAST the cursor in that direction.
+    const direction = keysetOrderOf(options.order);
+
     if (options.order) {
-      for (const [field, direction] of Object.entries(options.order)) {
-        query = query.orderBy(`event.${field}`, direction as 'ASC' | 'DESC');
+      for (const [field, fieldDirection] of Object.entries(options.order)) {
+        query = query.orderBy(`event.${field}`, fieldDirection as 'ASC' | 'DESC');
       }
 
       // Deterministic tiebreak so same-timestamp rows have a stable total order
       // that the keyset cursor below can page through.
-      query = query.addOrderBy('event.event_id', 'DESC');
+      query = query.addOrderBy('event.event_id', direction);
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId). Matches the
-    // (start_time DESC, event_id DESC) order so a same-timestamp cluster larger
-    // than one fetch is walked through instead of re-returning its top rows.
+    // Composite keyset: page strictly past (afterTime, afterId) in (start_time, event_id), in
+    // `order` — see keysetSeek. A same-timestamp cluster larger than one fetch is walked through
+    // instead of re-returning its top rows.
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(event.start_time < :afterTime OR (event.start_time = :afterTime AND event.event_id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('event.start_time', 'event.event_id', direction, options.afterTime, options.afterId),
       );
     }
 

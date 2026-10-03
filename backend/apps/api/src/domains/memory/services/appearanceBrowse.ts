@@ -139,14 +139,28 @@ function appearanceCte(hitsSql: string): string {
     )`;
 }
 
+/**
+ * The seek past the cursor ($4 time, $5 id), in `order`. The same rule as
+ * `keysetSeek` (common/persistence), written against this query's positional
+ * parameters: `$4` is the MILLISECOND the driver read the cursor row's time as,
+ * while `appeared_at` is microseconds, so `$4` is a bucket, `[$4, $4 + 1 ms)`,
+ * and not a point. Equality on it would match nothing, and `>` on it would
+ * match the cursor row's own bucket. The id tiebreak runs the way the time does,
+ * in the seek and in the ORDER BY.
+ */
 function keysetPredicate(order: 'ASC' | 'DESC'): string {
-  // SearchResolver always pages people/places DESC; honour ASC if a caller
-  // ever asks so the cursor comparison matches ORDER BY.
-  const cmp = order === 'ASC' ? '>' : '<';
+  const end = `$4::timestamptz + interval '1 millisecond'`;
+  const inBucket = `appearance.appeared_at >= $4 AND appearance.appeared_at < ${end}`;
+
+  if (order === 'ASC') {
+    return `($4::timestamptz IS NULL
+           OR appearance.appeared_at >= ${end}
+           OR (${inBucket} AND entity.entity_id > $5))`;
+  }
 
   return `($4::timestamptz IS NULL
-           OR appearance.appeared_at ${cmp} $4
-           OR (appearance.appeared_at = $4 AND entity.entity_id ${cmp} $5))`;
+           OR appearance.appeared_at < $4
+           OR (${inBucket} AND entity.entity_id < $5))`;
 }
 
 function personEntityPredicate(): string {
@@ -171,7 +185,7 @@ export function personAppearanceListSql(order: 'ASC' | 'DESC' = 'DESC'): string 
       INNER JOIN appearance ON appearance.pid = entity.entity_id
      WHERE ${personEntityPredicate()}
        AND ${keysetPredicate(order)}
-     ORDER BY appearance.appeared_at ${dir}, entity.entity_id DESC
+     ORDER BY appearance.appeared_at ${dir}, entity.entity_id ${dir}
      LIMIT $6`;
 }
 
@@ -194,7 +208,7 @@ export function placeAppearanceListSql(order: 'ASC' | 'DESC' = 'DESC'): string {
       INNER JOIN appearance ON appearance.pid = entity.entity_id
      WHERE ${placeEntityPredicate()}
        AND ${keysetPredicate(order)}
-     ORDER BY appearance.appeared_at ${dir}, entity.entity_id DESC
+     ORDER BY appearance.appeared_at ${dir}, entity.entity_id ${dir}
      LIMIT $6`;
 }
 

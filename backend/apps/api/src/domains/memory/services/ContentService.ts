@@ -19,6 +19,7 @@ import {
   bulkInsertIdempotent,
   INGEST_REFRESH_COLUMNS,
   keysetPaginate,
+  keysetSeek,
   type KeysetPageArgs,
   type KeysetPage,
 } from '@ci/common/persistence';
@@ -1071,18 +1072,19 @@ export class ContentService {
       query = query.andWhere('content.updated_at <= :endTime', { endTime: options.endTime });
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId) in
-    // (updated_at DESC, id DESC). Without it the search feed re-fetched the same
+    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at, id), in
+    // `order` — see keysetSeek. Without it the search feed re-fetched the same
     // top-N rows every page and dead-ended at `first * FETCH_MULTIPLIER` rows.
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(content.updated_at < :afterTime OR (content.updated_at = :afterTime AND content.id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('content.updated_at', 'content.id', order, options.afterTime, options.afterId),
       );
     }
 
-    // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query.orderBy('content.updated_at', options.order ?? 'DESC').addOrderBy('content.id', 'DESC');
+    // Deterministic tiebreak so same-timestamp rows page consistently: the id runs the way the time does.
+    query = query.orderBy('content.updated_at', order).addOrderBy('content.id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);

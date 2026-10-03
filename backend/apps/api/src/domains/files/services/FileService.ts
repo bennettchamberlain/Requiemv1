@@ -20,6 +20,7 @@ import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 import { isUniqueViolation } from '@ci/common/constants';
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { keysetSeek } from '@ci/common/persistence';
 import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
@@ -409,16 +410,17 @@ export class FileService implements OnModuleInit {
       query = query.andWhere('file.updated_at <= :endTime', { endTime: options.endTime });
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at DESC, id DESC).
+    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at, id), in `order`.
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(file.updated_at < :afterTime OR (file.updated_at = :afterTime AND file.id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('file.updated_at', 'file.id', order, options.afterTime, options.afterId),
       );
     }
 
-    // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query.orderBy('file.updated_at', options.order ?? 'DESC').addOrderBy('file.id', 'DESC');
+    // Deterministic tiebreak so same-timestamp rows page consistently: the id runs the way the time does.
+    query = query.orderBy('file.updated_at', order).addOrderBy('file.id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);
