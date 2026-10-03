@@ -1,12 +1,14 @@
 import { TIER_PROFILES } from '@ci/domains/model-routing';
 
 import {
+  INLINE_TEXT_BUDGET_SHARE,
   MAX_INLINE_IMAGE_MESSAGES,
   NUM_CTX_ENV_VAR,
   attachmentStub,
   isContextOverflowError,
   messageBytes,
   parseNumCtx,
+  planAttachmentTextAllowance,
   planContextAdmission,
   planInlineAttachments,
   resolveContextBudget,
@@ -281,6 +283,49 @@ describe('attachmentStub', () => {
     expect(attachmentStub(0)).toBe('');
     expect(attachmentStub(1)).toContain('1 attachment');
     expect(attachmentStub(3)).toContain('3 attachments');
+  });
+});
+
+describe('planAttachmentTextAllowance', () => {
+  it('lets the newest message claim what it needs first, and an older one have what is left', () => {
+    const share = Math.floor(4096 * INLINE_TEXT_BUDGET_SHARE);
+
+    expect(planAttachmentTextAllowance([0, 2000, 0, 2000], 4096)).toStrictEqual([0, share - 2000, 0, 2000]);
+  });
+
+  it('never grants more than a message asked for', () => {
+    expect(planAttachmentTextAllowance([0, 100, 0, 200], 100_000)).toStrictEqual([0, 100, 0, 200]);
+  });
+
+  it('never grants more, in all, than the share of the prompt budget set aside for attachment text', () => {
+    for (const budget of [2048, 4096, 8192, 20_480, 131_072]) {
+      const total = planAttachmentTextAllowance([5000, 40_000, 0, 9000, 70_000], budget).reduce(
+        (sum, bytes) => sum + bytes,
+        0,
+      );
+
+      expect(total).toBeLessThanOrEqual(Math.floor(budget * INLINE_TEXT_BUDGET_SHARE));
+    }
+  });
+
+  it('gives nothing to a message that asks for nothing, nor to anything when there is no budget', () => {
+    expect(planAttachmentTextAllowance([0, 0, 0], 4096)).toStrictEqual([0, 0, 0]);
+    expect(planAttachmentTextAllowance([500, 500], 0)).toStrictEqual([0, 0]);
+    expect(planAttachmentTextAllowance([500, -5], 4096)).toStrictEqual([500, 0]);
+    expect(planAttachmentTextAllowance([], 4096)).toStrictEqual([]);
+  });
+
+  it('shrinks with the budget, so a retry after a context overflow makes room', () => {
+    const first = planAttachmentTextAllowance(
+      [9000],
+      resolveContextBudget({ env: { [NUM_CTX_ENV_VAR]: '8192' } }).promptBudgetBytes,
+    );
+    const second = planAttachmentTextAllowance(
+      [9000],
+      resolveContextBudget({ env: { [NUM_CTX_ENV_VAR]: '8192' }, shrinkLevel: 1 }).promptBudgetBytes,
+    );
+
+    expect(second[0]).toBeLessThan(first[0]);
   });
 });
 

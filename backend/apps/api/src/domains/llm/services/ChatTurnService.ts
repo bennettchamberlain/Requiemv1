@@ -23,20 +23,39 @@ import { Events, EventService, INTERACTIVE_JOB_PRIORITY } from '@ci/domains/even
 import { FileService } from '@ci/domains/files';
 import { ActionService } from '@ci/domains/intelligence';
 import { UserContextService } from '@ci/domains/memory';
+import { FileChunkService } from '@ci/domains/parsing';
 import { ACTIVE_TASK_STATUSES, TaskService } from '@ci/domains/planning';
 import { HbpeService } from '@ci/domains/predictions';
 import { SummaryService } from '@ci/domains/summaries';
 
+import {
+  ATTACHMENT_NOTES,
+  attachmentContentBudget,
+  attachmentNoRoomStub,
+  attachmentTextDemand,
+  classifyAttachment,
+  decodeAttachmentText,
+  documentTextDemand,
+  keptDocuments,
+  planDocument,
+  quoteDocumentText,
+  renderAttachmentBlock,
+  type AttachmentEntry,
+} from '../attachmentText';
 import { LLM_BACKGROUND_QUEUE, LLM_QUEUE, type ThreadGenerationStatus } from '../constants';
 import {
   MAX_CONTEXT_SHRINK_LEVEL,
   MAX_INLINE_IMAGES_PER_MESSAGE,
   MAX_INLINE_IMAGE_BYTES,
+  MAX_INLINE_TEXT_BYTES_PER_FILE,
+  MAX_PARSED_CHUNKS_PER_FILE,
+  MIN_INLINE_TEXT_BYTES,
   attachmentStub,
   isContextOverflowError,
   messageBytes,
   NUM_CTX_ENV_VAR,
   parseNumCtx,
+  planAttachmentTextAllowance,
   planContextAdmission,
   planInlineAttachments,
   resolveContextBudget,
@@ -56,6 +75,9 @@ import {
 
 import { ChatGenerationBroker } from './ChatGenerationBroker';
 import { OllamaService, type ChatRequestContext } from './OllamaService';
+
+/** A file attached to a chat message that has bytes behind it. */
+type AttachedFile = NonNullable<Message['files']>[number] & { key: string };
 
 interface TurnContextOptions {
   leadingAssistantMessages?: OllamaMessage[];
@@ -196,6 +218,14 @@ export class ChatTurnService {
      * today's behaviour, not to a crash, when it is missing.
      */
     @Optional() private readonly moduleRef?: ModuleRef,
+    /**
+     * The text the parse pipeline extracted from a PDF or an Office document, which is how a file the
+     * model cannot read as bytes reaches it. Optional for the same reason as `moduleRef`: a caller
+     * that builds this service by hand has no container, and a document then reads as having no text
+     * available rather than crashing the turn. The app gets it from `ParsingModule`, which
+     * `LLMModule` imports; `ChatTurnService.di.test.ts` is what proves that stays true.
+     */
+    @Optional() private readonly fileChunkService?: FileChunkService,
   ) {
     this.logger.setContext(ChatTurnService.name);
   }
@@ -607,21 +637,40 @@ export class ChatTurnService {
         ? ((await this.ollamaService.resolveChatContextTokens?.(payload.model)) ?? null)
         : null;
     const budget = resolveContextBudget({ shrinkLevel: options.shrinkLevel, measuredContextTokens });
+
+    // Which messages re-send their attachments is settled over the whole thread, BEFORE admission,
+    // because the text of an attachment (unlike an image) costs what it weighs and so has to be
+    // counted when the thread is fitted to the budget. The newest messages that carry attachments
+    // are the newest the window can hold, so deciding here and then dropping what admission drops
+    // picks the same messages as deciding afterwards did. Only the file ROWS are read here — sizes
+    // and types — never the bytes: those are still fetched after admission, and only for a message
+    // that survived it.
+    const inlineAttachments = planInlineAttachments(
+      foldedMessages.map((message) => message.files?.length ?? 0),
+    );
+    const attachmentTextBytes = planAttachmentTextAllowance(
+      foldedMessages.map((message, index) =>
+        inlineAttachments[index] ? attachmentTextDemand(message.files) : 0,
+      ),
+      budget.promptBudgetBytes,
+    );
     const plan = planContextAdmission(
-      foldedMessages.map((message) => ({
+      foldedMessages.map((message, index) => ({
         role: message.role,
-        bytes: messageBytes(message.content, message.toolCalls),
+        bytes: messageBytes(message.content, message.toolCalls) + attachmentTextBytes[index],
       })),
       budget.promptBudgetBytes,
     );
 
     const admittedMessages = plan.admitted.map((index) => foldedMessages[index]);
-    const inlineAttachments = planInlineAttachments(
-      admittedMessages.map((message) => message.files?.length ?? 0),
-    );
     const inputMessages: OllamaMessage[] = await Promise.all(
-      admittedMessages.map((message, index) =>
-        this.resolveMessage(requestContext, message, inlineAttachments[index]),
+      plan.admitted.map((index) =>
+        this.resolveMessage(
+          requestContext,
+          foldedMessages[index],
+          inlineAttachments[index],
+          attachmentTextBytes[index],
+        ),
       ),
     );
 
@@ -687,7 +736,8 @@ export class ChatTurnService {
       admittedBytes: plan.admittedBytes,
       systemPromptBytes,
       systemPromptOverReserve: systemPromptBytes > budget.reservedSystemTokens,
-      inlineAttachmentMessages: inlineAttachments.filter(Boolean).length,
+      inlineAttachmentMessages: plan.admitted.filter((index) => inlineAttachments[index]).length,
+      attachmentTextBytes: plan.admitted.reduce((total, index) => total + attachmentTextBytes[index], 0),
       estimatedPromptTokensUpperBound: systemPromptBytes + plan.admittedBytes,
       overBudget: plan.overBudget,
     });
@@ -698,46 +748,196 @@ export class ChatTurnService {
   /**
    * Hydrate one persisted row into a model message.
    *
-   * `inlineImages` is the attachment policy talking. When it is false the file
+   * `inlineAttachments` is the attachment policy talking. When it is false the file
    * bytes are NOT fetched — the message says in text that attachments exist
    * instead. This is what stops a thread with three photos from re-uploading
    * three full images from Minio on every single turn, forever.
+   *
+   * What an attachment becomes depends on what it is (`classifyAttachment`). An
+   * image goes to the model as image bytes, which is also what makes a turn a
+   * vision turn. Everything else goes in as TEXT, in the message, inside the
+   * untrusted-content fence, bounded by `textAllowanceBytes`: a model backend
+   * rejects bytes that are not an image, and that rejection used to surface as
+   * an empty turn and the generic fallback reply, with the file never read.
    */
   private async resolveMessage(
     context: RequestContext,
     message: Message,
-    inlineImages = true,
+    inlineAttachments = true,
+    textAllowanceBytes = 0,
   ): Promise<OllamaMessage> {
     const serviceContext = toServiceContext(context);
-    const attachments = (message.files ?? []).filter(
-      (file): file is typeof file & { key: string } => file.key != null,
-    );
+    const attachments = (message.files ?? []).filter((file): file is AttachedFile => file.key != null);
 
     let images: Uint8Array[] = [];
     let omitted = attachments.length;
+    let attachmentBlock = '';
+    let noRoom = 0;
 
-    if (inlineImages && attachments.length > 0) {
+    if (inlineAttachments && attachments.length > 0) {
       // Newest-last ordering: keep the most recent attachments on the message,
       // and skip anything over the per-image cap WITHOUT fetching it — `size`
       // is on the row, so an oversized photo costs no object read.
       const selected = attachments
+        .filter((file) => classifyAttachment(file) === 'image')
         .slice(-MAX_INLINE_IMAGES_PER_MESSAGE)
         .filter((file) => (file.size ?? 0) <= MAX_INLINE_IMAGE_BYTES);
 
       images = await Promise.all(
         selected.map((file) => this.fileService.getFileContent(serviceContext, file.key)),
       );
-      omitted = attachments.length - images.length;
+
+      // A file that is not an image is either given as text or, when its text is
+      // not to be had, SAID not to be: either way the model is told about it, so
+      // it counts as shown. Only what is over the per-message cap is "omitted".
+      const documents = keptDocuments(attachments);
+      let documentsShown = 0;
+
+      if (documents.length > 0) {
+        const entries = await this.readDocumentEntries(serviceContext, documents, textAllowanceBytes);
+
+        if (entries) {
+          attachmentBlock = renderAttachmentBlock(entries);
+          documentsShown = documents.length;
+        } else {
+          noRoom = documents.length;
+        }
+      }
+
+      omitted = attachments.length - images.length - documentsShown - noRoom;
     }
 
-    const stub = attachmentStub(omitted);
-    const content = stub ? [message.content, stub].filter(Boolean).join('\n\n') : message.content;
+    // The files come BEFORE the person's own words, so the last thing the model reads is what the
+    // person typed and not a document somebody else wrote — the order the Live snapshots message
+    // already keeps relative to the newest question.
+    const stubs = [attachmentStub(omitted), attachmentNoRoomStub(noRoom)].filter(Boolean);
+    const content =
+      attachmentBlock || stubs.length > 0
+        ? [attachmentBlock, message.content, ...stubs].filter(Boolean).join('\n\n')
+        : message.content;
 
     return {
       role: message.role,
       content,
       ...(images.length > 0 && { images }),
       ...(message.toolCalls && { tool_calls: message.toolCalls as unknown as ToolCall[] }),
+    };
+  }
+
+  /**
+   * The text of a message's non-image attachments, one entry per file, for the
+   * message's prompt; or null when `allowanceBytes` does not even cover the fence
+   * and a header for each file, so there is no block to put them in.
+   *
+   * It never throws. A file that cannot be read becomes an entry that says so,
+   * because an attachment must not be able to end a turn: not by a storage
+   * hiccup, not by a parse that is still running, not by a file that is not
+   * text. The model is then told what the person attached and why it has no
+   * text, and can say so.
+   */
+  private async readDocumentEntries(
+    context: ServiceContext,
+    documents: readonly AttachedFile[],
+    allowanceBytes: number,
+  ): Promise<AttachmentEntry[] | null> {
+    let remaining = attachmentContentBudget(documents, allowanceBytes);
+
+    if (remaining < 0) {
+      return null;
+    }
+
+    const entries: AttachmentEntry[] = [];
+
+    for (const file of documents) {
+      const source = planDocument(file, classifyAttachment(file) === 'text' ? 'text' : 'other');
+
+      if (source.from === 'none') {
+        entries.push({ file, note: source.note });
+
+        continue;
+      }
+
+      // Too little room to be worth starting on, unless the whole file is smaller than that.
+      if (remaining < Math.min(MIN_INLINE_TEXT_BYTES, documentTextDemand(file))) {
+        entries.push({ file, note: ATTACHMENT_NOTES.noRoom });
+
+        continue;
+      }
+
+      try {
+        const read =
+          source.from === 'object'
+            ? await this.readObjectText(context, file)
+            : await this.readParsedText(context, file);
+
+        if ('note' in read) {
+          entries.push({ file, note: read.note });
+
+          continue;
+        }
+
+        const quoted = quoteDocumentText(read.text, Math.min(MAX_INLINE_TEXT_BYTES_PER_FILE, remaining));
+
+        if (quoted.lines.length === 0) {
+          entries.push({ file, note: ATTACHMENT_NOTES.empty });
+
+          continue;
+        }
+
+        remaining -= quoted.bytes;
+        entries.push({
+          file,
+          lines: quoted.lines,
+          ...((quoted.truncated || read.more) && { note: ATTACHMENT_NOTES.truncated }),
+        });
+      } catch (error) {
+        this.logger.warn('Could not read an attachment for the prompt; telling the model so', {
+          fileId: file.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        entries.push({ file, note: ATTACHMENT_NOTES.unavailable });
+      }
+    }
+
+    return entries;
+  }
+
+  /** A text file, read out of object storage. {@link planDocument} has already checked its size. */
+  private async readObjectText(
+    context: ServiceContext,
+    file: AttachedFile,
+  ): Promise<{ text: string; more: boolean } | { note: string }> {
+    const text = decodeAttachmentText(await this.fileService.getFileContent(context, file.key));
+
+    return text === null ? { note: ATTACHMENT_NOTES.binary } : { text, more: false };
+  }
+
+  /** What the parse pipeline extracted from a file: its first chunks, in reading order. */
+  private async readParsedText(
+    context: ServiceContext,
+    file: AttachedFile,
+  ): Promise<{ text: string; more: boolean } | { note: string }> {
+    if (!this.fileChunkService) {
+      return { note: ATTACHMENT_NOTES.unavailable };
+    }
+
+    // One more than is used, to know whether the file goes on past what was read.
+    const chunks = await this.fileChunkService.findLeadingByFileId(
+      context,
+      file.id,
+      MAX_PARSED_CHUNKS_PER_FILE + 1,
+    );
+
+    if (chunks.length === 0) {
+      return { note: ATTACHMENT_NOTES.noText };
+    }
+
+    return {
+      text: chunks
+        .slice(0, MAX_PARSED_CHUNKS_PER_FILE)
+        .map((chunk) => chunk.content)
+        .join('\n\n'),
+      more: chunks.length > MAX_PARSED_CHUNKS_PER_FILE,
     };
   }
 
