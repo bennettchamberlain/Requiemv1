@@ -64,7 +64,11 @@ import {
 import { ChatGenerateEvent, type ChatGeneratePayload } from '../events';
 import { isFirstResponseTimeout } from '../firstResponseDeadline';
 import { foldHistory } from '../foldHistory';
-import { THREAD_TITLE_SYSTEM_PROMPT, sidebarTitleFromModel } from '../threadTitle';
+import {
+  THREAD_TITLE_SYSTEM_PROMPT,
+  provisionalTitleFromMessage,
+  sidebarTitleFromModel,
+} from '../threadTitle';
 import {
   TOOLS_OFF_BASE_PROMPT,
   TOOLS_OFF_GUARD,
@@ -524,13 +528,38 @@ export class ChatTurnService {
 
     const name = sidebarTitleFromModel(result.message.content);
 
+    // A reply with nothing usable in it (empty, only a thinking trace, only punctuation) is a FAILURE, not a quiet
+    // success: returning here completed the job, so the queue never retried and the thread stayed untitled — 5 of 8
+    // title jobs on the iOS QA re-test, each "done" in about 0.15 s. Throwing hands it back to the queue's bounded
+    // retries; the listener falls back to the person's first words only once those are spent.
     if (!name) {
-      return;
+      throw new Error(
+        `The model returned no usable thread title (reply: ${JSON.stringify((result.message.content ?? '').slice(0, 80))})`,
+      );
     }
 
     await this.threadService.update(context, thread.id, { name });
 
     this.logger.log('Processed chat summarization event', { payload, name });
+  }
+
+  /**
+   * The title of last resort: the person's own first message, cut at a word boundary (see
+   * `provisionalTitleFromMessage`). Written only if the thread is STILL unnamed — `nameIfUnnamed` is one conditional
+   * UPDATE, so a real title that lands meanwhile always wins. Returns whether it wrote.
+   */
+  async nameThreadFromFirstMessage(payload: { ownerId: string; threadId: string }): Promise<boolean> {
+    const context = toServiceContext({ userId: payload.ownerId });
+    const messages = await this.messageService.findByThreadId(context, payload.threadId);
+    const name = provisionalTitleFromMessage(
+      messages.find((message) => message.role === 'user' && message.content?.trim())?.content,
+    );
+
+    if (!name) {
+      return false;
+    }
+
+    return this.threadService.nameIfUnnamed(context, payload.threadId, name);
   }
 
   enqueueGenerate(payload: ChatGeneratePayload): Promise<string[]> {

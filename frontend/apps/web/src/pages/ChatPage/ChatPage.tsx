@@ -1,6 +1,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  FetchJsonError,
   findLocalLlmModel,
   Portal,
   resetLocalLlmConversation,
@@ -29,6 +30,15 @@ import { PhoneChatBar } from './PhoneChatBar';
 import { STARTER_PROMPTS, TOOL_STARTER_PROMPTS } from './starterPrompts';
 import { type Message } from './types';
 import { useThreadListService } from './useThreadListService';
+
+/**
+ * The server answers 404 for a thread this person no longer has: deleted from this device or another, or never
+ * theirs. Nothing the page does later changes that. Every other failure (offline, a timeout, a 5xx) is a failed
+ * FETCH of a thread that is still there.
+ */
+function isThreadGone(error: unknown): boolean {
+  return error instanceof FetchJsonError && error.status === 404;
+}
 
 /**
  * Says the last reply came from this phone rather than the Companion, and how fast. The speed is the same
@@ -355,6 +365,9 @@ function ChatPageContent() {
     ? STARTER_PROMPTS.filter((prompt) => !TOOL_STARTER_PROMPTS.has(prompt))
     : STARTER_PROMPTS;
 
+  // Nothing can be sent into a thread the server no longer has: the reply would only 404 and the message be lost.
+  const threadGone = initialMessages.length === 0 && isThreadGone(threadError);
+
   let emptyState: ReactNode;
 
   if (threadError && initialMessages.length === 0) {
@@ -365,7 +378,19 @@ function ChatPageContent() {
     // /chat/:id while the API is failing therefore looked exactly like a thread
     // whose history had been deleted, and typing into it would start appending
     // to a conversation whose real contents were never shown.
-    emptyState = (
+    //
+    // A thread the server no longer has is the one failure where "your messages are still here" is false and Try
+    // again can only fail again, so it says so and offers the way back instead.
+    emptyState = threadGone ? (
+      <ErrorState
+        title="This chat was deleted."
+        description="It is no longer on your Companion, so there is nothing left to open. Start a new chat to carry on."
+      >
+        <Button size="sm" onClick={navigateToChatList}>
+          New chat
+        </Button>
+      </ErrorState>
+    ) : (
       <ErrorState
         title="Could not load this conversation"
         description="Your messages are still here — this device could not reach them just now."
@@ -468,7 +493,7 @@ function ChatPageContent() {
             loading={loading}
             streaming={chatRequestStreaming}
             hasStartedReceiving={hasStartedReceiving}
-            disabled={isSubmitDisabled}
+            disabled={isSubmitDisabled || threadGone}
             localImages={localImages}
             blockUploads={blockUploads}
             placeholder={inputPlaceholder}
