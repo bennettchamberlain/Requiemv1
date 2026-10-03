@@ -489,12 +489,19 @@ goes through byte for byte. Otherwise JSON is pruned and re-emitted compactly: u
 / `link` / `title`, then when, then what it says, the rest, bookkeeping last) and loses its last members first; strings
 are capped; and every list — the `items` of a search, the `nodes` and `edges` of `memory_recall` — gets an equal share
 of what the object's other members leave, in which the first three hits share the room and a closing note says how
-many were left out. Anything that is not JSON is cut at the budget and ends `…[truncated]`, and so is JSON whose
-budget is too small for that (under about 800 bytes: at Qwen3-0.6B's 512 the synthetic dentist and graph results end
-that way). A refusal or a failed call is a sentence and is not shaped; an error response's body is cut to its first 200
-characters before it becomes one. This is a port of iOS's `ToolResultShaper` (`LocalLLMPolicy.swift`, which is in turn
-the device twin of the appliance's `toolResultBudget.ts`) and is written to give the same text for the same input:
-`SwiftParityTest` checks it against answers the Swift shaper gave for ~360 inputs, and fails when the Swift
+many were left out. That closing note's own size is held back exactly, for the count it ends up carrying: every hit
+is tried first with nothing held back, and only once some have to be left out is room reserved for a note sized for
+that. (An earlier version guessed the reserve as a share of the budget, `min(96, budget / 6)`, which a small list's
+note could still overshoot — a cut at ~800 bytes on the synthetic dentist and graph results, and invalid JSON at
+roughly 9–15% of the budgets between 300 and 2,048. The exact sizing fixed that: those results are now valid JSON
+from about 400 bytes up.) A container nested more than 16 levels deep is dropped at that depth, and anything nested
+past 64 — far below where either platform's own recursive descent risks its stack — never reaches the parser at all
+and is cut as text instead, which is also what anything that is not JSON gets, and what JSON gets when its budget is
+too small even for a header, one hit and the note. A refusal or a failed call is a sentence and is not shaped; an
+error response's body is cut to its first 200 characters before it becomes one. This is a port of iOS's
+`ToolResultShaper` (`LocalLLMPolicy.swift`, which is in turn the device twin of the appliance's
+`toolResultBudget.ts`) and is written to give the same text for the same input: `SwiftParityTest` checks it against
+answers the Swift shaper gave for ~370 inputs, and fails when the Swift
 shaper's code is no longer the one those answers were recorded from; after a change to either side,
 `frontend/packages/capacitor-local-llm/android/scripts/regenerate-swift-parity.sh` (it needs `swiftc`) records them
 again. `IntentTool` logs sizes only (`knowledge_search returned 45598 bytes; passing 482 to the model

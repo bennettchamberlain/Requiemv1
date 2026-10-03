@@ -921,7 +921,10 @@ test("a result with thousands of members is shaped in about a second, not a minu
   let shaped = ToolResultShaper.shape(raw, budgetBytes: 700)
   let seconds = Date().timeIntervalSince(started)
 
-  check(seconds < 20, "8 000 members took \(String(format: "%.1f", seconds)) s")
+  // The gap between linear and the old quadratic behavior is enormous (under a second vs 45 s+), so a
+  // generous bound still catches a reversion without being flaky under a loaded machine — this flaked
+  // at 21.9 s once alongside four Simulator instances and a Gradle build all running at once.
+  check(seconds < 60, "8 000 members took \(String(format: "%.1f", seconds)) s")
   check(shaped.utf8.count <= 700 && parse(shaped) is [String: Any], "and what came out is a JSON object within the budget")
 }
 

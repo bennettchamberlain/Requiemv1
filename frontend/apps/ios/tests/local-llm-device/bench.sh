@@ -42,15 +42,20 @@ PY
   rm -f "$json"
 }
 
+# `devicectl` has no option of its own to time out, and a flaky connection can leave one hanging
+# indefinitely — observed hung on `device copy from` for 4+ hours, blocking the whole plan. Every
+# call to the phone goes through this.
+DEVICECTL_TIMEOUT="${BENCH_DEVICECTL_TIMEOUT:-60}"
+
 to_device() { # <local file> <path inside Documents or Library>
-  xcrun devicectl device copy to --device "$(device)" --source "$1" --destination "$2" \
-    --domain-type appDataContainer --domain-identifier "$bundle_id" >/dev/null
+  timeout "$DEVICECTL_TIMEOUT" xcrun devicectl device copy to --device "$(device)" --source "$1" \
+    --destination "$2" --domain-type appDataContainer --domain-identifier "$bundle_id" >/dev/null
 }
 
 from_device() { # <path inside the container> <local dir>
   mkdir -p "$2"
-  xcrun devicectl device copy from --device "$(device)" --source "$1" --destination "$2" \
-    --domain-type appDataContainer --domain-identifier "$bundle_id" >/dev/null 2>&1
+  timeout "$DEVICECTL_TIMEOUT" xcrun devicectl device copy from --device "$(device)" --source "$1" \
+    --destination "$2" --domain-type appDataContainer --domain-identifier "$bundle_id" >/dev/null 2>&1
 }
 
 app_path() { echo "$derived/Build/Products/Release-iphoneos/LocalLLMBench.app"; }
@@ -102,9 +107,19 @@ cmd_pull() {
   done
 }
 
+# Tri-state, because a flaky connection (observed: a Wi-Fi-paired phone's devicectl tunnel dropping
+# for minutes at a time) must not look like a crash. Exit 0: confirmed running. 1: confirmed not
+# running (devicectl answered and the process is absent). 2: devicectl itself did not answer, so
+# nothing is known either way — never a reason to force a relaunch, which would interrupt an app
+# that is actually still running and just unreachable for a moment.
 app_running() {
-  xcrun devicectl device info processes --device "$(device)" 2>/dev/null |
-    grep -q "LocalLLMBench.app/LocalLLMBench"
+  local out status
+  out="$(timeout "$DEVICECTL_TIMEOUT" xcrun devicectl device info processes --device "$(device)" 2>/dev/null)"
+  status=$?
+
+  [ "$status" -eq 0 ] || return 2
+  echo "$out" | grep -q "LocalLLMBench.app/LocalLLMBench" && return 0
+  return 1
 }
 
 # Starts the app. A locked phone and a dropped connection are waited out: a plan can be started hours
@@ -113,9 +128,13 @@ launch_app() {
   local log="$out/launch.log" attempts=0
   mkdir -p "$out"
   while true; do
-    if xcrun devicectl device process launch --device "$(device)" --terminate-existing \
-      "$bundle_id" >"$log" 2>&1; then
+    if timeout "$DEVICECTL_TIMEOUT" xcrun devicectl device process launch --device "$(device)" \
+      --terminate-existing "$bundle_id" >"$log" 2>&1; then
       return 0
+    fi
+
+    if [ $? -eq 124 ]; then
+      echo "the phone did not answer within ${DEVICECTL_TIMEOUT}s, retrying… ($(date +%T))" >"$log"
     fi
 
     if grep -q "Locked" "$log"; then
@@ -178,12 +197,16 @@ cmd_run() {
       echo "[$(date +%T)] $(tr -d '\n' <"$out/status-$id.json")"
     fi
 
-    # Two sightings in a row, so the moment between an exit and a relaunch is not mistaken for a crash.
-    if app_running; then
-      gone=0
-    else
-      gone=$((gone + 1))
-    fi
+    # Two CONFIRMED absences in a row, so the moment between an exit and a relaunch is not mistaken
+    # for a crash — and a devicectl query that fails to answer at all counts toward neither: it says
+    # nothing about whether the app is still running, and relaunching on it risks killing real progress
+    # over a connectivity blip.
+    app_running
+    case $? in
+      0) gone=0 ;;
+      1) gone=$((gone + 1)) ;;
+      2) echo "[$(date +%T)] the phone did not answer the process check; not counted as a crash" ;;
+    esac
     if [ "$gone" -ge 2 ]; then
       echo "[$(date +%T)] the app is not running and the plan is not finished: starting it again"
       launch_app || exit 1
