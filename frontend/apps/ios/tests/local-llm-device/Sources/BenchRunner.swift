@@ -268,8 +268,11 @@ final class BenchRunner {
     // against the room the window has at the moment the tool runs.
     CompanionToolContext.resultBudgetBytes =
       cell.toolBudget ?? LocalLLMPolicy.toolResultByteBudget(contextTokens: request.maxTokens)
-    CompanionToolContext.windowTokensLeft =
-      cell.toolBudget == nil ? { [engine] in await engine.contextTokensLeft() } : nil
+    if cell.toolBudget == nil {
+      CompanionToolContext.windowTokensLeft = { [engine] in await engine.contextTokensLeft() }
+    } else {
+      CompanionToolContext.windowTokensLeft = nil
+    }
     CompanionToolContext.structuredResults = cell.responseAs == "object"
 
     let before = DeviceProbe.snapshot()
