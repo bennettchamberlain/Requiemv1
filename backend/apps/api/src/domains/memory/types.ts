@@ -756,19 +756,36 @@ export interface FindItemsFilter {
   acquiredTo?: Date;
 }
 
-/** Keyset cursor for {@link ItemService.findPage}: `(createdAt, id)` DESC. */
+/**
+ * Where a row sits in the things list: its `(created_at, object_id)`.
+ *
+ * `createdAt` is TEXT, to the microsecond, in UTC: `2026-05-01T00:00:00.123456Z`. It is never a
+ * `Date`. `ci.objects.created_at` is `timestamptz(6)` and the driver reads it at milliseconds
+ * (`.123456` comes back as `.123`), so a position built from the entity's `Date` names the
+ * millisecond that contains its row, not the row's instant, and a seek past it skips every row of
+ * that instant that sorts after the page boundary. Postgres formats the text itself (see
+ * `ItemService.findPage`) and parses it back as the column's own type, so nothing rounds.
+ */
+export interface ItemPosition {
+  createdAt: string;
+  id: string;
+}
+
+/** Keyset cursor for {@link ItemService.findPage}: `(createdAt, id)` DESC. Pass both halves of an {@link ItemPosition}. */
 export interface ItemKeyset {
   limit?: number;
-  afterCreatedAt?: Date | null;
+  afterCreatedAt?: string | null;
   afterId?: string | null;
 }
 
 /** One page of owned units, newest first. */
 export interface ItemPage {
   items: Item[];
+  /** Where each of {@link items} sits, index for index: a client may resume from any row, not only the last. */
+  positions: ItemPosition[];
   hasMore: boolean;
   /** Cursor to pass back as `afterCreatedAt`/`afterId`; null when the page is the last. */
-  nextCursor: { createdAt: Date; id: string } | null;
+  nextCursor: ItemPosition | null;
 }
 
 export interface CreatePersonDto {
