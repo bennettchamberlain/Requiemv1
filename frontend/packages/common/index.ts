@@ -101,6 +101,7 @@ export {
   ensureLocalLlmLoaded,
   isContextExhausted,
   isLocalLlmReady,
+  LocalLlmGenerationError,
   localLlmPlatform,
   localLlmPlugin,
   onLocalLlmDownloadProgress,

@@ -7,6 +7,7 @@ import {
   ensureLocalLlmLoaded,
   isContextExhausted,
   isLocalLlmReady,
+  LocalLlmGenerationError,
   localLlmPlatform,
   onLocalLlmDownloadProgress,
   probeLocalLlm,
@@ -742,6 +743,71 @@ describe('streamLocalLlm', () => {
 
     await expect(streamLocalLlm('one')).rejects.toThrow('boom');
     await expect(streamLocalLlm('two')).resolves.toMatchObject({ text: 'fine', cancelled: false });
+  });
+
+  describe('a native failure', () => {
+    const failWith = (rejection: unknown) => {
+      const { plugin } = fakeLlm({ generateStream: vi.fn().mockRejectedValue(rejection) });
+
+      nativeWindow('ios', plugin);
+
+      return streamLocalLlm('hi').then(
+        () => {
+          throw new Error('expected the turn to fail');
+        },
+        (error: unknown) => error,
+      );
+    };
+
+    it('rejects as a LocalLlmGenerationError carrying the runtime’s own words as its reason', async () => {
+      const native = 'Generation failed: Invalid response from native layer: Input token ids are too long.';
+      const error = await failWith(new Error(native));
+
+      expect(error).toBeInstanceOf(LocalLlmGenerationError);
+      // The message is what the plugin said, unchanged; the reason is the part worth showing.
+      expect(error).toMatchObject({
+        message: native,
+        reason: 'Invalid response from native layer: Input token ids are too long.',
+      });
+    });
+
+    it('reads the plain { message, code } object the bridge rejects with, not only an Error', async () => {
+      const error = await failWith({
+        message: 'Generation failed: Device is thermally throttled',
+        code: 'X',
+      });
+
+      expect(error).toBeInstanceOf(LocalLlmGenerationError);
+      expect(error).toMatchObject({ reason: 'Device is thermally throttled' });
+    });
+
+    it('keeps a reason that has no “Generation failed:” lead-in as it is (Android rejects some failures bare)', async () => {
+      const error = await failWith(
+        new Error('A generation is already in progress and did not stop in time.'),
+      );
+
+      expect(error).toMatchObject({
+        reason: 'A generation is already in progress and did not stop in time.',
+      });
+    });
+
+    it('bounds the reason to one short line, however much the runtime wrote', async () => {
+      const error = (await failWith(
+        new Error(`Generation failed: ${'x'.repeat(5000)}\n\nsecond paragraph`),
+      )) as LocalLlmGenerationError;
+
+      expect(error.reason.length).toBeLessThanOrEqual(201);
+      expect(error.reason).not.toMatch(/\s{2,}|\n/);
+      expect(error.reason.endsWith('…')).toBe(true);
+    });
+
+    it('has no reason when the plugin said nothing more than the generic wording', async () => {
+      const bare = await failWith(new Error('Generation failed'));
+      const nothing = await failWith(undefined);
+
+      expect(bare).toMatchObject({ reason: '' });
+      expect(nothing).toMatchObject({ reason: '' });
+    });
   });
 });
 

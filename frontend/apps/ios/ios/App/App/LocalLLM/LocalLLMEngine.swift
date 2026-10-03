@@ -492,7 +492,12 @@ actor LocalLLMEngine {
           id, removing: thermalObserver, failed: failure != nil)
 
         if let failure, !cancelled {
-          continuation.finish(throwing: failure)
+          // Wrapped so the plugin can say how far it got: a failure with no chunk at all, soon after
+          // the request, is a different thing from one a hundred tokens in.
+          continuation.finish(
+            throwing: GenerationStreamFailure(
+              underlying: failure, chunksReceived: tracker.chunkCount,
+              elapsedMs: tracker.elapsedMs(at: ProcessInfo.processInfo.systemUptime)))
 
           return
         }

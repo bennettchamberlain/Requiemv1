@@ -26,11 +26,20 @@ enum CompanionToolContext {
   /// The server's ruling per executable tool name, refreshed with the catalog.
   static var rulings: [String: DispatchRuling] = [:]
 
+  /// The most bytes of one tool result handed back to the model. `loadModel` sets it from the context
+  /// window it just configured; until then it assumes the smallest window shipped (Qwen3-0.6B's 1024
+  /// tokens), so a result is bounded even if nothing did. See ``ToolResultShaper`` for why.
+  static var resultBudgetBytes = LocalLLMPolicy.toolResultByteBudget(contextTokens: 1024)
+
   /// Runs an intent after re-checking the server's ruling.
   ///
   /// The re-check is not redundant with registration: registration and invocation are separated by
   /// the whole lifetime of a loaded model, and this is the last chokepoint before a destructive or
   /// third-party-touching call would actually leave the device.
+  ///
+  /// The result is shaped to ``resultBudgetBytes`` before it goes back: the appliance returns the
+  /// whole of it — tens of kilobytes for a search — which is far more than the model's context
+  /// window can take in.
   static func execute(_ toolName: String, arguments: [String: Any]) async -> String {
     guard let ruling = rulings[toolName], ruling.isExecutable else {
       return errorPayload(rulings[toolName]?.explanation ?? "\"\(toolName)\" may not run on this device")
@@ -40,10 +49,20 @@ enum CompanionToolContext {
     }
 
     do {
-      return try await client.callTool(toolName, arguments: arguments)
+      let result = try await client.callTool(toolName, arguments: arguments)
+      let shaped = ToolResultShaper.shape(result, budgetBytes: resultBudgetBytes)
+
+      // Sizes and the tool's name only: what a tool returned is the user's data, not log material.
+      NSLog(
+        "[LocalLLM] %@ returned %ld bytes; passing %ld to the model (budget %ld)",
+        toolName, result.utf8.count, shaped.utf8.count, resultBudgetBytes)
+
+      return shaped
     } catch {
       // Returned as content, not thrown: the model can then tell the user what failed or try a
       // different intent, whereas a thrown error aborts the whole generation.
+      NSLog("[LocalLLM] %@ failed (%@)", toolName, String(describing: type(of: error)))
+
       return errorPayload(error.localizedDescription)
     }
   }

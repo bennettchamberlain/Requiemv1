@@ -1,3 +1,4 @@
+import { LocalLlmGenerationError } from '@ci/common';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -476,6 +477,24 @@ describe('useChatRequester — device mode', () => {
       await expect(drain(result.current[0].stream as ReadableStream<Uint8Array>)).rejects.toThrow(
         'thermally',
       );
+    });
+  });
+
+  it('hands the chat the native failure itself, so its reason can reach the notice', async () => {
+    const failure = new LocalLlmGenerationError('Generation failed: Input token ids are too long.');
+
+    llm.stream.mockRejectedValueOnce(failure);
+    vi.stubGlobal('fetch', vi.fn());
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    await act(async () => {
+      await result.current[1].submit({ message: 'hi', fileIds: [] });
+    });
+
+    await waitFor(() => expect(result.current[0].stream).not.toBeNull());
+    await act(async () => {
+      await expect(drain(result.current[0].stream as ReadableStream<Uint8Array>)).rejects.toBe(failure);
     });
   });
 });

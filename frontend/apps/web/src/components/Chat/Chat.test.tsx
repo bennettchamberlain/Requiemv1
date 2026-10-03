@@ -1,3 +1,4 @@
+import { LocalLlmGenerationError } from '@ci/common';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -152,6 +153,57 @@ describe('Chat', () => {
 
     await waitFor(() => expect(container.querySelector('a[data-remote-image]')).toHaveAttribute('href', src));
     expect(container.querySelector('img')).toBeNull();
+  });
+
+  /**
+   * A turn whose stream dies — the on-device model failing right after a tool call was the case that motivated this.
+   * The notice always says the reply is incomplete; it adds the reason only when the failure carries one.
+   */
+  describe('a reply whose stream dies', () => {
+    const dying = (error: unknown) =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(error);
+        },
+      });
+
+    const renderDying = (error: unknown) => {
+      // Chat logs the failure for whoever has the console open; the log is not what is under test.
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      return renderWithProviders(
+        <Chat messages={[{ role: 'user', content: 'search my memory' }]} readable={dying(error)} />,
+      );
+    };
+
+    it('keeps the generic wording, and adds nothing, for a failure with no reason of its own', async () => {
+      renderDying(new Error('socket hang up'));
+
+      expect(await screen.findByText(/The response stream was interrupted/)).toBeInTheDocument();
+      expect(screen.queryByText(/Reason:/)).not.toBeInTheDocument();
+      // An arbitrary error's text is not the user's business: only a native model failure is explained.
+      expect(screen.queryByText(/socket hang up/)).not.toBeInTheDocument();
+    });
+
+    it('says why an on-device turn failed, under the generic wording', async () => {
+      renderDying(
+        new LocalLlmGenerationError(
+          'Generation failed: Invalid response from native layer: Input token ids are too long.',
+        ),
+      );
+
+      expect(await screen.findByText(/The response stream was interrupted/)).toBeInTheDocument();
+      expect(
+        screen.getByText('Reason: Invalid response from native layer: Input token ids are too long.'),
+      ).toBeInTheDocument();
+    });
+
+    it('keeps the generic wording alone when the on-device failure had no reason to give', async () => {
+      renderDying(new LocalLlmGenerationError('Generation failed'));
+
+      expect(await screen.findByText(/The response stream was interrupted/)).toBeInTheDocument();
+      expect(screen.queryByText(/Reason:/)).not.toBeInTheDocument();
+    });
   });
 
   it('submits a typed message through ChatInput', async () => {
