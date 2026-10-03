@@ -73,6 +73,7 @@ import {
   TOOLS_OFF_BASE_PROMPT,
   TOOLS_OFF_GUARD,
   TOOLS_OFF_REFUSAL,
+  TOOLS_OFF_TURN_CONTEXT_HEADER,
   TOOLS_OFF_TURN_REMINDER,
   isWriteRequest,
 } from '../toolsOff';
@@ -1140,7 +1141,10 @@ Communication style:
       sections.push(TOOLS_OFF_TURN_REMINDER);
     }
 
-    return [TURN_CONTEXT_HEADER, ...sections].join('\n\n');
+    return [
+      options?.toolsEnabled === false ? TOOLS_OFF_TURN_CONTEXT_HEADER : TURN_CONTEXT_HEADER,
+      ...sections,
+    ].join('\n\n');
   }
 
   /**
