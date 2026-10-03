@@ -431,6 +431,13 @@ photo input on Gemma 4, and memory headroom (iOS `physicalMemory` reports below 
 Agent Skills, Mobile Actions (FunctionGemma), audio input, the benchmark screen, importing a model file,
 and NPU backends.
 
+**Checking the iOS pure logic on a Mac.** `bash scripts/test-local-llm-pure.sh` (from this directory; needs only
+`swiftc`) compiles the app's own `LocalLLMStreaming.swift`, `LocalLLMPolicy.swift` and `LocalLLMModels.swift`, plus
+the vendored `LiteRTLMError.swift`, together with `tests/local-llm-pure/main.swift`, and runs it — reply assembly
+(including the stripping of leaked chat-template markers such as `<|endoftext|>`), how a failed generation is worded
+for the log and for JS, and the shaping of tool results. The project has no XCTest target, so these are plain
+assertions that exit non-zero; anything that needs the engine, Capacitor or the xcframework is out of reach there.
+
 - **Android:** minSdk stays 23; the plugin itself gates on `Build.VERSION.SDK_INT >= 31`
   (LiteRT-LM's AAR requires Android 12), so older devices keep the rest of the app.
 - **iOS:** the LiteRT-LM Swift package is vendored, not consumed via SPM — Apple blocks
@@ -465,6 +472,17 @@ the plugin then fetches the intent catalog with `?tier=local` and binds what the
 Neither Kotlin nor Swift re-derives the policy — `dispatchPolicy.ts` says why ("two copies of a
 security rule are two rules"), and it means a policy change ships with the appliance instead of
 waiting on two app-store releases. Destructive and external intents always queue on-device.
+
+**A tool's result is bounded before the model sees it (iOS).** The appliance answers a tool call with the whole
+result, pretty-printed — 25 hits from `knowledge_search` is ~45 KB — and a small model's context window cannot hold
+it: Qwen3-0.6B's is 1,024 tokens, and its system prompt and tool declarations already take ~500 of them. Left alone,
+that is many times the window. `ToolResultShaper` (in `LocalLLMPolicy.swift`) cuts it to half the window in bytes
+(`toolResultByteBudget(contextTokens:)` — 512 for Qwen3-0.6B): a result that fits goes through untouched; otherwise
+JSON is re-emitted compactly with long strings capped, each hit's `type`/`link`/`title` first, the search header
+whole and as many whole hits as fit, and a closing note saying how many were left out. It is the device twin of the
+appliance's own `toolResultBudget.ts`, and the budget is an estimate to tune on a device. `CompanionToolContext`
+logs sizes only (`[LocalLLM] knowledge_search returned 45598 bytes; passing 482 …`), never the result. The Android
+adapter returns the result unbounded and does not yet do this.
 
 **The binding is per-platform, because the runtimes genuinely differ:**
 

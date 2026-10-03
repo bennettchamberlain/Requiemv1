@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react';
 
-import { useDeviceLayout } from '@ci/common';
+import { LocalLlmGenerationError, useDeviceLayout } from '@ci/common';
 import { cn } from '@ci/shadcn';
 import * as smd from 'streaming-markdown';
 import { type Parser as StreamingParser } from 'streaming-markdown';
@@ -348,6 +348,10 @@ export function Chat({
     (err: unknown) => {
       console.error('Chat stream processing failed', err);
 
+      // A turn the phone's own model failed knows why — the runtime's error text rides on the error. It goes under
+      // the generic wording, which stays the whole message for every other kind of failure.
+      const reason = err instanceof LocalLlmGenerationError ? err.reason : '';
+
       flushStream(
         <div
           key={uuid7()}
@@ -355,6 +359,9 @@ export function Chat({
         >
           The response stream was interrupted, so this reply may be incomplete. Try sending your message
           again.
+          {reason ? (
+            <span className="mt-1 block break-words text-xs opacity-80">Reason: {reason}</span>
+          ) : null}
         </div>,
       );
 

@@ -1,0 +1,481 @@
+import Foundation
+
+// Checks the pure logic behind the on-device LLM plugin — reply assembly (control-token stripping),
+// failure wording, and tool-result shaping — with no device, no model, no Capacitor and no LiteRT-LM
+// framework. `scripts/test-local-llm-pure.sh` compiles the app's own LocalLLMStreaming.swift,
+// LocalLLMPolicy.swift, LocalLLMModels.swift and the vendored LiteRTLMError.swift together with this
+// file and runs it; the project has no XCTest target to host them.
+//
+// Plain assertions, not XCTest: a failing check prints its line and the run exits non-zero.
+
+var checks = 0
+var failures = 0
+
+func check(_ condition: @autoclosure () -> Bool, _ message: String, line: UInt = #line) {
+  checks += 1
+
+  if !condition() {
+    failures += 1
+    print("  FAIL (line \(line)): \(message)")
+  }
+}
+
+func expectEqual<T: Equatable>(_ actual: T, _ expected: T, _ message: String, line: UInt = #line) {
+  checks += 1
+
+  if actual != expected {
+    failures += 1
+    print("  FAIL (line \(line)): \(message)\n    expected: \(expected)\n    actual:   \(actual)")
+  }
+}
+
+func test(_ name: String, _ body: () -> Void) {
+  print("- \(name)")
+  body()
+}
+
+// MARK: - Reply assembly
+
+/// Feeds `chunks` through a `ReplyAssembler` the way the engine does and returns everything it
+/// emitted, concatenated.
+func assemble(
+  _ chunks: [String], thoughts: [String]? = nil, thinking: Bool = false
+) -> (answer: String, thought: String) {
+  var assembler = ReplyAssembler(enableThinking: thinking)
+  var answer = ""
+  var thought = ""
+
+  for (index, chunk) in chunks.enumerated() {
+    let delta = assembler.ingest(text: chunk, thoughtChannel: thoughts?[index] ?? "")
+    answer += delta.answer
+    thought += delta.thought
+  }
+
+  let tail = assembler.finish()
+  answer += tail.answer
+  thought += tail.thought
+
+  return (answer, thought)
+}
+
+test("a leaked <|endoftext|> at the start of an answer never reaches the bubble") {
+  // The turn after a tool call, observed on a device build: the bubble opened with the marker.
+  expectEqual(
+    assemble(["<|endoftext|>This is a test of the tool. Please wait"]).answer,
+    "This is a test of the tool. Please wait",
+    "marker stripped from a single chunk")
+
+  expectEqual(
+    assemble(["<|endoftext|>", "This", " is", " a test"]).answer,
+    "This is a test",
+    "marker stripped when it arrives as a chunk of its own")
+}
+
+test("the chat-template markers a model can emit are all stripped") {
+  for marker in [
+    "<|im_end|>", "<|im_start|>", "<|endoftext|>", "<|eot_id|>", "<|end|>", "<|vision_start|>",
+  ] {
+    expectEqual(assemble(["Hi \(marker)there"]).answer, "Hi there", "\(marker) is stripped")
+  }
+}
+
+test("a marker split across two chunks is held back, then dropped") {
+  var assembler = ReplyAssembler(enableThinking: false)
+
+  let first = assembler.ingest(text: "Hello <|im_", thoughtChannel: "")
+  expectEqual(first.answer, "Hello ", "half a marker is held back, not shown and retracted")
+
+  let second = assembler.ingest(text: "end|> world", thoughtChannel: "")
+  expectEqual(second.answer, " world", "the completed marker adds nothing")
+  check(assembler.finish().isEmpty, "nothing was left held back")
+}
+
+test("a marker is dropped wherever the chunk boundary falls, one chunk or one character at a time")
+{
+  let raw = "A<|im_end|>B<|im_start|>assistant\nC<|endoftext|>"
+  let expected = "ABassistant\nC"
+  let characters = Array(raw)
+
+  var wrongCuts: [Int] = []
+
+  for cut in 1..<characters.count {
+    let chunks = [String(characters[..<cut]), String(characters[cut...])]
+    if assemble(chunks).answer != expected { wrongCuts.append(cut) }
+  }
+
+  check(wrongCuts.isEmpty, "two chunks, split after character(s) \(wrongCuts)")
+  expectEqual(assemble(characters.map { String($0) }).answer, expected, "one character per chunk")
+}
+
+test("text that only looks like a marker is kept, including at the very end of the stream") {
+  expectEqual(assemble(["Haskell: a <|> b"]).answer, "Haskell: a <|> b", "<|> has no name")
+  expectEqual(assemble(["x <|| y"]).answer, "x <|| y", "no name between the bars")
+  expectEqual(assemble(["a <| b"]).answer, "a <| b", "no closing bar")
+  expectEqual(assemble(["if a < b"]).answer, "if a < b", "a bare less-than")
+  expectEqual(
+    assemble(["x <", " y"]).answer, "x < y", "a held-back < is released with the next chunk")
+
+  let tooLong = "<|" + String(repeating: "a", count: SpecialTokenStripper.maxNameLength + 8) + "|>"
+  expectEqual(
+    assemble(["see \(tooLong) here"]).answer, "see \(tooLong) here",
+    "a name too long to be a marker")
+
+  expectEqual(
+    assemble(["Use <|"]).answer, "Use <|", "a stream that ends inside a candidate flushes it")
+  expectEqual(assemble(["tail <|abc"]).answer, "tail <|abc", "…also after a name")
+  expectEqual(assemble(["tail <|abc|"]).answer, "tail <|abc|", "…also after the closing bar")
+}
+
+test("the held-back part of an unfinished marker is bounded") {
+  // Anything that cannot become a marker is released at once, so a stream is never stalled on it.
+  var assembler = ReplyAssembler(enableThinking: false)
+  let delta = assembler.ingest(
+    text: "price <|" + String(repeating: "z", count: 80), thoughtChannel: "")
+
+  check(delta.answer.hasPrefix("price <|zzz"), "an over-long candidate is shown, not held")
+}
+
+test("markers are stripped from the reasoning channel and from inside <think> too") {
+  let channel = assemble(
+    ["Answer"], thoughts: ["Considering <|im_end|>the options"], thinking: true)
+  expectEqual(channel.thought, "Considering the options", "reasoning channel")
+  expectEqual(channel.answer, "Answer", "answer untouched")
+
+  let tagged = assemble(["<think>hmm<|im_end|></think><|endoftext|>Answer"], thinking: true)
+  expectEqual(tagged.thought, "hmm", "reasoning inside <think>")
+  expectEqual(tagged.answer, "Answer", "answer after </think>")
+}
+
+test("characters outside ASCII survive around a marker") {
+  expectEqual(
+    assemble(["héllo<|im_end|>wörld 😀<|endoftext|>"]).answer, "héllowörld 😀",
+    "multi-byte text intact")
+}
+
+test("SpecialTokenStripper, directly") {
+  expectEqual(SpecialTokenStripper.strip("<|im_start|>", final: true), "", "a lone marker")
+  expectEqual(
+    SpecialTokenStripper.strip("no markers at all", final: false), "no markers at all", "no change")
+  expectEqual(
+    SpecialTokenStripper.strip("a<|b|>c<|d", final: false), "ac", "partial held back mid-stream")
+  expectEqual(
+    SpecialTokenStripper.strip("a<|b|>c<|d", final: true), "ac<|d", "partial kept at the end")
+  expectEqual(SpecialTokenStripper.strip("<", final: false), "", "a lone < is held back")
+  expectEqual(SpecialTokenStripper.strip("<", final: true), "<", "…and kept at the end")
+  expectEqual(SpecialTokenStripper.strip("<|a|><|b|>", final: false), "", "adjacent markers")
+}
+
+// MARK: - Failure wording
+
+/// An error whose description is whatever it was given — a stand-in for a runtime error.
+struct DescribedError: LocalizedError {
+  let text: String
+  var errorDescription: String? { text }
+}
+
+test("a native failure is worded with the runtime's own error text") {
+  let native = LiteRTLMError.conversation(
+    .invalidResponse(
+      "INVALID_ARGUMENT: Input token ids are too long. Exceeding the maximum number of tokens allowed: 1413 >= 1024"
+    ))
+  let failure = GenerationStreamFailure(underlying: native, chunksReceived: 0, elapsedMs: 91)
+
+  let reason =
+    "Invalid response from native layer: INVALID_ARGUMENT: Input token ids are too long. "
+    + "Exceeding the maximum number of tokens allowed: 1413 >= 1024"
+
+  expectEqual(
+    failure.localizedDescription, native.localizedDescription,
+    "the wrapper reads as the error it wraps")
+  expectEqual(GenerationFailure.reason(for: failure), reason, "reason")
+  expectEqual(
+    GenerationFailure.rejectionMessage(for: failure), "Generation failed: " + reason,
+    "the rejection keeps the wording JS has always seen, with the reason after it")
+  expectEqual(
+    GenerationFailure.logLine(for: failure, method: "generateStream"),
+    "[LocalLLM] generateStream failed (LiteRTLMError): " + reason + " [after 0 chunks, 91 ms]",
+    "log line: prefix, method, error type, reason, progress")
+}
+
+test("a failure before any stream existed is logged without progress counters") {
+  let refusal = LocalLLMError.imageInputUnsupported(modelId: "qwen3-0.6b-int4")
+
+  expectEqual(
+    GenerationFailure.logLine(for: refusal, method: "generate"),
+    "[LocalLLM] generate failed (LocalLLMError): Image input is not supported by qwen3-0.6b-int4 on iOS",
+    "no [after …] suffix")
+  expectEqual(
+    GenerationFailure.rejectionMessage(for: refusal),
+    "Generation failed: Image input is not supported by qwen3-0.6b-int4 on iOS", "rejection")
+}
+
+test("the reason is one bounded line, however much the runtime wrote") {
+  let long = DescribedError(text: String(repeating: "x", count: 5_000) + "\n\nsecond paragraph")
+  let reason = GenerationFailure.reason(for: long)
+
+  check(reason.count <= GenerationFailure.maxReasonLength + 1, "bounded (got \(reason.count))")
+  check(!reason.contains("\n"), "one line")
+  check(reason.hasSuffix("…"), "says it was cut")
+
+  expectEqual(
+    GenerationFailure.reason(for: DescribedError(text: "line one\n   line two\t\tend")),
+    "line one line two end", "whitespace runs collapse to one space")
+}
+
+test("an error with nothing to say falls back to the generic wording") {
+  expectEqual(
+    GenerationFailure.rejectionMessage(for: DescribedError(text: "")), "Generation failed",
+    "no trailing colon, no empty reason")
+}
+
+test("the elapsed time of a failed generation is read off the same clock as its stats") {
+  let tracker = GenerationStatsTracker(startedAt: 10)
+
+  expectEqual(tracker.elapsedMs(at: 10.091), 91, "milliseconds since the request")
+  expectEqual(tracker.elapsedMs(at: 9), 0, "never negative")
+}
+
+// MARK: - Tool results
+
+func pretty(_ object: Any) -> String {
+  let data = try! JSONSerialization.data(
+    withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+
+  return String(decoding: data, as: UTF8.self)
+}
+
+/// What the appliance's `knowledge.search` sends back through MCP: `JSON.stringify(result, null, 2)`
+/// of a header — `summary` first — and up to 25 hydrated entities, each with a long `content`.
+func searchResult(items count: Int, contentLength: Int = 900) -> String {
+  let items: [[String: Any]] = (0..<count).map { n in
+    let id = "0198a3f2-7c1e-7b3a-9d41-\(String(format: "%012d", n))"
+
+    return [
+      "id": id,
+      "type": "communication",
+      "link": "/communications/\(id)",
+      "title": "Zephyr marmalade note \(n)",
+      "content": String(repeating: "zephyr marmalade ", count: contentLength / 17),
+      "time": "2026-09-2\(n % 10)T10:00:00.000Z",
+      "createdAt": "2026-09-2\(n % 10)T10:00:01.000Z",
+      "updatedAt": "2026-09-2\(n % 10)T10:00:02.000Z",
+      "metadata": ["source": "takeout", "labels": ["a", "b", "c"], "score": 0.8123],
+    ]
+  }
+
+  return "{\n  \"summary\": \"Showing the top \(count) of at least \(count) matches.\",\n"
+    + "  \"totalMatches\": null,\n  \"truncated\": true,\n  \"limit\": 25,\n  \"mode\": \"hybrid\",\n"
+    + "  \"items\": [\n" + items.map(pretty).joined(separator: ",\n") + "\n  ]\n}"
+}
+
+func parse(_ text: String) -> Any? {
+  try? JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed])
+}
+
+test("the context-window share a tool result may take") {
+  expectEqual(LocalLLMPolicy.toolResultByteBudget(contextTokens: 1024), 512, "Qwen3-0.6B's window")
+  expectEqual(LocalLLMPolicy.toolResultByteBudget(contextTokens: 4096), 2048, "a 4k window")
+  expectEqual(LocalLLMPolicy.toolResultByteBudget(contextTokens: 8192), 4096, "an 8k window")
+  expectEqual(
+    LocalLLMPolicy.toolResultByteBudget(contextTokens: 1_000_000), 16_384,
+    "capped like the appliance's")
+  expectEqual(
+    LocalLLMPolicy.toolResultByteBudget(contextTokens: 100), 256, "a tiny window keeps a floor")
+  expectEqual(
+    LocalLLMPolicy.toolResultByteBudget(contextTokens: -5), 256, "nonsense keeps the floor")
+}
+
+test("a result that already fits is passed on untouched") {
+  let small = "{\n  \"error\": \"Companion is not connected\"\n}"
+
+  expectEqual(
+    ToolResultShaper.shape(small, budgetBytes: 512), small, "byte-identical, whitespace and all")
+  expectEqual(ToolResultShaper.shape("", budgetBytes: 512), "", "empty")
+}
+
+test("a 25-hit knowledge.search result is cut to the budget and stays valid, informative JSON") {
+  let raw = searchResult(items: 25)
+  let budget = LocalLLMPolicy.toolResultByteBudget(contextTokens: 1024)
+
+  check(
+    raw.utf8.count > 20_000, "the fixture is as big as the real thing (\(raw.utf8.count) bytes)")
+
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: budget)
+
+  check(shaped.utf8.count <= budget, "within the budget (\(shaped.utf8.count) of \(budget) bytes)")
+  check(shaped.utf8.count > 200, "…but not emptied (\(shaped.utf8.count) bytes)")
+  check(!shaped.contains("\n"), "compact: pretty-printing whitespace is gone")
+  check(
+    shaped.hasPrefix("{\"summary\":\"Showing the top 25 of at least 25 matches.\","),
+    "the summary leads: \(shaped.prefix(80))")
+
+  guard let object = parse(shaped) as? [String: Any] else {
+    check(false, "output parses as a JSON object: \(shaped)")
+
+    return
+  }
+
+  check(object["totalMatches"] is NSNull, "header kept: totalMatches")
+  expectEqual(object["truncated"] as? Bool, true, "header kept: truncated")
+  expectEqual(object["limit"] as? Int, 25, "header kept: limit")
+  expectEqual(object["mode"] as? String, "hybrid", "header kept: mode")
+
+  let items = object["items"] as? [Any] ?? []
+  check(items.count >= 2, "something of the list survives, and the omission note after it")
+
+  let note = items.last as? String ?? ""
+  check(
+    note.hasSuffix("more results omitted — refine the query to narrow them down]"),
+    "closing note: \(note)")
+}
+
+test("a roomier budget keeps whole items and counts the ones it dropped") {
+  let raw = searchResult(items: 25, contentLength: 200)
+  let budget = LocalLLMPolicy.toolResultByteBudget(contextTokens: 8192)
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: budget)
+
+  check(shaped.utf8.count <= budget, "within the budget (\(shaped.utf8.count) of \(budget))")
+
+  guard let object = parse(shaped) as? [String: Any], let items = object["items"] as? [Any] else {
+    check(false, "output parses: \(shaped.prefix(120))")
+
+    return
+  }
+
+  let whole = items.compactMap { $0 as? [String: Any] }.filter { $0["preview"] == nil }
+  check(whole.count >= 3, "several whole items survive (\(whole.count))")
+
+  let omitted =
+    (items.last as? String).flatMap { Int($0.dropFirst().prefix(while: \.isNumber)) } ?? -1
+  expectEqual(omitted, 25 - whole.count, "the note counts exactly the dropped items")
+  expectEqual(
+    whole.first?["id"] as? String, "0198a3f2-7c1e-7b3a-9d41-000000000000",
+    "best hit first, id whole")
+  expectEqual(
+    whole.first?["link"] as? String, "/communications/0198a3f2-7c1e-7b3a-9d41-000000000000",
+    "link whole, and its slashes are not escaped")
+  check(!shaped.contains("\\/"), "no escaped slashes eating the budget")
+}
+
+test("one oversized item is previewed rather than dropped, and the result still fits and parses") {
+  let raw = searchResult(items: 1, contentLength: 20_000)
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 512)
+
+  check(shaped.utf8.count <= 512, "within the budget (\(shaped.utf8.count))")
+
+  guard let object = parse(shaped) as? [String: Any], let items = object["items"] as? [Any] else {
+    check(false, "output parses: \(shaped)")
+
+    return
+  }
+
+  let preview = items.first as? [String: Any]
+  expectEqual(preview?["truncated"] as? Bool, true, "flagged as cut")
+  expectEqual(items.count, 1, "nothing was dropped, so there is no omission note")
+
+  // What is lost to the cut is the long prose, not the identifiers: short values are written first.
+  let cut = preview?["preview"] as? String ?? ""
+  check(
+    cut.hasPrefix(
+      "{\"type\":\"communication\",\"link\":\"/communications/0198a3f2-7c1e-7b3a-9d41-000000000000\""
+    ), "type and link lead the item: \(cut.prefix(120))")
+  check(
+    cut.contains("\"title\":\"Zephyr marmalade note 0\""),
+    "the title survives the cut: \(cut.prefix(200))")
+  check(!cut.contains("zephyr marmalade zephyr"), "the long content is what was lost")
+}
+
+test(
+  "what identifies an object is written first, then short values, so a cut loses prose before identifiers"
+) {
+  let raw = pretty([
+    "content": String(repeating: "lorem ipsum ", count: 100), "id": "abc", "title": "Short title",
+    "type": "note",
+  ])
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 256)
+
+  check(shaped.utf8.count <= 256, "within the budget (\(shaped.utf8.count))")
+  check(
+    shaped.hasPrefix(
+      "{\"type\":\"note\",\"title\":\"Short title\",\"id\":\"abc\",\"content\":\"lorem"),
+    "order: \(shaped.prefix(90))")
+}
+
+test("numbers are written the short way, and a boolean is told from a 1") {
+  let padding = String(repeating: "p", count: 600)
+  let raw = pretty([
+    "score": 0.8123, "count": 1, "flag": true, "zero": 0, "off": false, "none": NSNull(),
+    "pad": padding,
+  ])
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 512)
+
+  check(
+    shaped.contains("\"score\":0.8123"), "0.8123 stays 0.8123, not 0.81230000000000002: \(shaped)")
+  check(shaped.contains("\"count\":1"), "an integer stays an integer")
+  check(shaped.contains("\"zero\":0"), "0 is a number, not false")
+  check(shaped.contains("\"flag\":true"), "true stays true")
+  check(shaped.contains("\"off\":false"), "false stays false")
+  check(shaped.contains("\"none\":null"), "null stays null")
+}
+
+test("a top-level array is bounded the same way") {
+  let list = (0..<40).map {
+    ["id": $0, "name": "person number \($0)", "notes": String(repeating: "n", count: 400)]
+      as [String: Any]
+  }
+  let raw = pretty(list)
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 1024)
+
+  check(shaped.utf8.count <= 1024, "within the budget (\(shaped.utf8.count))")
+
+  let parsed = parse(shaped) as? [Any]
+  check(parsed != nil, "still a JSON array: \(shaped.prefix(80))")
+  check((parsed?.last as? String)?.contains("more results omitted") == true, "closing note")
+}
+
+test("every string is capped, so one long message cannot take the budget") {
+  let raw = pretty(["content": String(repeating: "word ", count: 2_000), "id": "abc"])
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 2048)
+
+  check(shaped.utf8.count <= 2048, "within the budget (\(shaped.utf8.count))")
+
+  let object = parse(shaped) as? [String: Any]
+  check((object?["content"] as? String)?.hasSuffix("…") == true, "long string cut and marked")
+  expectEqual(object?["id"] as? String, "abc", "short string untouched")
+}
+
+test("text that is not JSON is cut at the budget, on a character boundary, and says so") {
+  let raw = String(repeating: "plain words. ", count: 400)
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 300)
+
+  check(shaped.utf8.count <= 300, "within the budget (\(shaped.utf8.count))")
+  check(shaped.hasSuffix(ToolResultShaper.truncationMarker), "ends in the marker")
+  check(shaped.hasPrefix("plain words. plain words."), "keeps the start")
+
+  let cjk = String(repeating: "記憶の検索結果", count: 200)
+  let cjkShaped = ToolResultShaper.shape(cjk, budgetBytes: 301)
+
+  check(cjkShaped.utf8.count <= 301, "multi-byte text within the budget (\(cjkShaped.utf8.count))")
+  check(!cjkShaped.contains("\u{FFFD}"), "no character cut in half")
+}
+
+test("JSON a serializer cannot write back never crashes the turn") {
+  // 1e999 parses to infinity, which JSONSerialization refuses to emit — by raising an Objective-C
+  // exception that Swift cannot catch. It must be noticed first and the text cut instead.
+  let raw = "{\"items\":[" + String(repeating: "1e999,", count: 200) + "1]}"
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 256)
+
+  check(shaped.utf8.count <= 256, "within the budget (\(shaped.utf8.count))")
+}
+
+test("a budget too small to hold the markers is raised, not trusted") {
+  let shaped = ToolResultShaper.shape(String(repeating: "x", count: 1_000), budgetBytes: 3)
+
+  check(
+    shaped.utf8.count <= ToolResultShaper.minimumBudgetBytes,
+    "bounded by the floor (\(shaped.utf8.count))")
+  check(shaped.hasSuffix(ToolResultShaper.truncationMarker), "still says it was cut")
+}
+
+print("\n\(checks - failures) of \(checks) checks passed")
+exit(failures == 0 ? 0 : 1)

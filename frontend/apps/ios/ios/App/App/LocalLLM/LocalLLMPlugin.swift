@@ -216,13 +216,19 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
         let tools = LocalLLMPolicy.toolsToBind(
           CompanionToolContext.executableTools(), capabilities: info.capabilities)
 
-        let outcome = try await engine.load(
-          LocalLLMLoadRequest(
-            path: file.path, info: info, tools: tools,
-            requestedAccelerator: requestedAccelerator,
-            wantsSpeculativeDecoding: call.getBool("enableSpeculativeDecoding") ?? false,
-            maxTokens: call.getInt("maxTokens"), topK: call.getInt("topK"),
-            topP: call.getDouble("topP"), temperature: call.getDouble("temperature")))
+        let request = LocalLLMLoadRequest(
+          path: file.path, info: info, tools: tools,
+          requestedAccelerator: requestedAccelerator,
+          wantsSpeculativeDecoding: call.getBool("enableSpeculativeDecoding") ?? false,
+          maxTokens: call.getInt("maxTokens"), topK: call.getInt("topK"),
+          topP: call.getDouble("topP"), temperature: call.getDouble("temperature"))
+
+        // What a tool may hand back is a share of the window just configured: a result bigger than
+        // the window cannot be taken in (see `ToolResultShaper`).
+        CompanionToolContext.resultBudgetBytes = LocalLLMPolicy.toolResultByteBudget(
+          contextTokens: request.maxTokens)
+
+        let outcome = try await engine.load(request)
 
         call.resolve([
           "toolCount": outcome.toolCount,
@@ -310,7 +316,7 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
   /// `enableThinking` produced some; `stats` only when the generation ran to completion.
   @objc func generate(_ call: CAPPluginCall) {
     guard let prompt = call.getString("prompt") else {
-      call.reject("prompt is required")
+      rejectMissingPrompt(call, method: "generate")
 
       return
     }
@@ -346,7 +352,7 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
 
         call.resolve(result)
       } catch {
-        call.reject("Generation failed: \(error.localizedDescription)")
+        rejectGeneration(call, method: "generate", error: error)
       }
     }
   }
@@ -356,7 +362,7 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
   /// terminal `done: true` event also carries `stats`, unless the generation was cancelled.
   @objc func generateStream(_ call: CAPPluginCall) {
     guard let prompt = call.getString("prompt") else {
-      call.reject("prompt is required")
+      rejectMissingPrompt(call, method: "generateStream")
 
       return
     }
@@ -400,7 +406,7 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
           notifyListeners("llmToken", data: terminalEvent(stats: nil))
           call.resolve()
         } else {
-          call.reject("Generation failed: \(error.localizedDescription)")
+          rejectGeneration(call, method: "generateStream", error: error)
         }
       }
     }
@@ -413,6 +419,21 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
     if let stats { data["stats"] = stats.asDictionary }
 
     return data
+  }
+
+  /// Rejects a failed generation — and writes it to the device log first, which nothing did before:
+  /// the JS promise rejected, the chat showed only "interrupted", and the cause was visible nowhere.
+  /// The log line and the rejection carry the runtime's own error text (bounded) and how far the
+  /// generation had got (``GenerationFailure``). Nothing here adds the prompt or a tool's result to
+  /// either: those are the user's data.
+  private func rejectGeneration(_ call: CAPPluginCall, method: String, error: Error) {
+    NSLog("%@", GenerationFailure.logLine(for: error, method: method))
+    call.reject(GenerationFailure.rejectionMessage(for: error))
+  }
+
+  private func rejectMissingPrompt(_ call: CAPPluginCall, method: String) {
+    NSLog("[LocalLLM] %@ rejected: prompt is required", method)
+    call.reject("prompt is required")
   }
 
   /// Rejects a call that carries `images`. No iOS model has the `vision` capability and this port

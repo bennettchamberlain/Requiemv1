@@ -449,6 +449,49 @@ export function isContextExhausted(result: StreamLocalLlmResult): boolean {
   return !result.cancelled && result.text === '' && result.thought === '' && result.stats?.outputTokens === 0;
 }
 
+/** The longest reason the chat shows: a native error that echoes its input must not fill a bubble. */
+const MAX_FAILURE_REASON_LENGTH = 200;
+
+/**
+ * A turn the native side failed. `message` is what the plugin rejected with, unchanged; `reason` is the part worth
+ * showing — the runtime's own words, on one line, bounded, without the plugin's generic "Generation failed:"
+ * lead-in. It is empty when the plugin had nothing more to say, and callers then keep their generic wording.
+ *
+ * Both platforms reject a failed generation as `Generation failed: <runtime error>`; the iOS plugin also writes that
+ * error to the device log (`[LocalLLM] … failed`), which is where the rest of the detail — how far the turn got — is.
+ */
+export class LocalLlmGenerationError extends Error {
+  readonly reason: string;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'LocalLlmGenerationError';
+    this.reason = failureReason(message);
+  }
+}
+
+function failureReason(message: string): string {
+  const line = message
+    .replace(/^\s*generation failed:?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return line.length > MAX_FAILURE_REASON_LENGTH ? `${line.slice(0, MAX_FAILURE_REASON_LENGTH)}…` : line;
+}
+
+/** What a rejected plugin call carries: an `Error`, or the plain `{ message, code }` object the bridge rejects with. */
+function toGenerationError(error: unknown): LocalLlmGenerationError {
+  if (error instanceof LocalLlmGenerationError) {
+    return error;
+  }
+
+  const message = (error as { message?: unknown } | null | undefined)?.message;
+
+  return new LocalLlmGenerationError(
+    typeof message === 'string' ? message : typeof error === 'string' ? error : '',
+  );
+}
+
 /** One native generation at a time: the plugin has a single conversation and a single `llmToken` stream. */
 let generationQueue: Promise<unknown> = Promise.resolve();
 
@@ -513,6 +556,9 @@ async function runStream(prompt: string, options: StreamLocalLlmOptions): Promis
       enableThinking: options.enableThinking,
       images: options.images && options.images.length > 0 ? options.images : undefined,
     });
+  } catch (error) {
+    // Said as what it is, so the chat can show why a turn died instead of only that it did.
+    throw toGenerationError(error);
   } finally {
     signal?.removeEventListener('abort', onAbort);
     void handle.remove();
