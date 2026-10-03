@@ -181,4 +181,26 @@ object LocalLlmPolicy {
         val tenths = Math.round(gib * 10) / 10.0
         return if (tenths == Math.floor(tenths)) "${tenths.toLong()} GB" else String.format(Locale.US, "%.1f GB", tenths)
     }
+
+    // ---- tool results ---------------------------------------------------------------------------
+
+    /**
+     * The most bytes of one tool result that go back into the model's context window.
+     *
+     * [contextTokens] is the KV cache (`LoadSpec.maxTokens`), and everything shares it: the system prompt and
+     * tool declarations (~500 tokens on Qwen3-0.6B), the question, the model's own tool call, this result, and
+     * the reply — reasoning included. A result that leaves no room for the reply leaves the model nothing to
+     * answer with.
+     *
+     * Half the window **in bytes**. JSON and English run ~3 bytes a token, so that is about a sixth of the
+     * window in tokens (≈170 of 1024): the fixed prompt keeps about half and the reply a quarter. An estimate,
+     * not a measurement — there is no tokenizer here and no device run has measured it — so it errs small; tune
+     * it on a device. The floor keeps a tiny window from rounding to nothing, the ceiling is the appliance's own
+     * cap on a tool result (`toolResultBudget.ts`).
+     *
+     * This is the only place a tool-result budget is written down: `IntentTool` and `ToolResultShaper` take the
+     * number they are given. iOS has the same function (`LocalLLMPolicy.toolResultByteBudget`), and the two are
+     * retuned together.
+     */
+    fun toolResultByteBudget(contextTokens: Int): Int = minOf(maxOf(contextTokens / 2, 256), 16_384)
 }

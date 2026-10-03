@@ -380,13 +380,12 @@ class LocalLlmPlugin : Plugin() {
                         // is unreachable or intent tools were never configured, leaving a toolless — but
                         // working — local model. A model whose chat template has no tool slot (no `tools`
                         // capability) gets none, and no system instruction either.
-                        val tools =
-                            if (info.supportsTools) {
-                                intentClient?.let { IntentToolProvider.buildProviders(it) } ?: emptyList()
-                            } else {
-                                emptyList()
-                            }
-                        engine.load(spec, tools)
+                        //
+                        // A tool's answer goes back into the window the engine is sized with, so each tool's
+                        // budget is derived from `spec.maxTokens` — the effective value, not the model's default
+                        // (see `providersForLoad`). `maxTokens` is part of the reuse key (`LoadSpec`), so a load
+                        // with another window gets tools with its own budget rather than being short-circuited above.
+                        engine.load(spec, IntentToolProvider.providersForLoad(spec, intentClient))
                     }
 
                 val result = JSObject()

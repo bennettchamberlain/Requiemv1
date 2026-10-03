@@ -6,6 +6,7 @@ import com.companionintelligence.localllm.TestHttpServer
 import com.companionintelligence.localllm.respond
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -187,6 +188,81 @@ class CompanionIntentClientTest {
             // A JSON-RPC error is HTTP 200, so nothing else in the stack would notice it.
             assertTrue(error.message!!.contains("intent blew up"))
         }
+    }
+
+    // ---- what an error response's body may cost -----------------------------------------
+
+    @Test
+    fun a_catalogue_error_body_is_cut_to_its_first_200_characters() {
+        // A real 5xx is a stack trace or a whole HTML page, and the message goes to the model as it is. iOS's
+        // `ensureOK` keeps `prefix(200)` of it for the same reason.
+        val page = "<html><body>" + "line of a stack trace\n".repeat(5_000)
+
+        TestHttpServer { exchange, _ -> exchange.respond(500, page) }.use { server ->
+            val error = assertThrows(IOException::class.java) { CompanionIntentClient(server.baseUrl, "k").fetchManifest() }
+
+            assertEquals("GET /api/intents?tier=local failed (HTTP 500) ${page.take(200)}".trim(), error.message)
+        }
+    }
+
+    @Test
+    fun a_tool_call_error_body_is_cut_the_same_way() {
+        val page = "<html>" + "y".repeat(50_000)
+
+        mcpServer { exchange, _ -> exchange.respond(500, page) }.use { server ->
+            val error = assertThrows(IOException::class.java) { CompanionIntentClient(server.baseUrl, "k").callTool("memory_recall", JSONObject()) }
+
+            assertEquals("MCP call failed (HTTP 500) ${page.take(200)}", error.message)
+        }
+    }
+
+    @Test
+    fun the_cut_counts_characters_not_bytes_and_never_splits_one() {
+        // One, two, three and four bytes a character: 200 of each is kept, whole.
+        for (character in listOf("e", "\u00e9", "記", "😀")) {
+            TestHttpServer { exchange, _ -> exchange.respond(500, character.repeat(2_000)) }.use { server ->
+                val error = assertThrows(IOException::class.java) { CompanionIntentClient(server.baseUrl, "k").fetchManifest() }
+
+                assertEquals("GET /api/intents?tier=local failed (HTTP 500) ${character.repeat(200)}", error.message)
+            }
+        }
+    }
+
+    @Test
+    fun a_failure_without_a_body_is_just_its_status() {
+        TestHttpServer { exchange, _ -> exchange.respond(503, "") }.use { server ->
+            val error = assertThrows(IOException::class.java) { CompanionIntentClient(server.baseUrl, "k").fetchManifest() }
+
+            assertEquals("GET /api/intents?tier=local failed (HTTP 503)", error.message)
+        }
+    }
+
+    @Test
+    fun an_error_body_that_never_ends_is_not_read_to_the_end() {
+        val written = AtomicLong(0)
+        val chunk = ByteArray(8_192) { 'z'.code.toByte() }
+
+        // Sent with no length, so nothing says where it stops. 128 MB of it, if anyone keeps reading.
+        TestHttpServer { exchange, _ ->
+            exchange.sendResponseHeaders(500, 0)
+
+            try {
+                repeat(16_384) {
+                    exchange.responseBody.write(chunk)
+                    exchange.responseBody.flush()
+                    written.addAndGet(chunk.size.toLong())
+                }
+            } catch (e: IOException) {
+                // The client hung up, which is the point.
+            }
+        }.use { server ->
+            val error = assertThrows(IOException::class.java) { CompanionIntentClient(server.baseUrl, "k").fetchManifest() }
+
+            assertEquals("GET /api/intents?tier=local failed (HTTP 500) ${"z".repeat(200)}", error.message)
+        }
+
+        // What got onto the wire before the client hung up is what the sockets could hold: a few MB at most.
+        assertTrue("the client read an endless body to its end (${written.get()} bytes sent)", written.get() < 64L * 1024 * 1024)
     }
 
     // ---- harness ----------------------------------------------------------------------
