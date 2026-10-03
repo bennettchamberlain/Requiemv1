@@ -53,6 +53,35 @@
  * different microseconds that sort against their ids, and only matter if more
  * than `first * 4` of them straddle a page: the per-type over-fetch absorbs
  * anything smaller.
+ *
+ * ── When the cursor's time can be read EXACTLY: `keysetSeekExact` ───────────
+ * All of the above is forced by a cursor a client holds: a `(Date, id)` pair
+ * that cannot spell a microsecond. `keysetPaginate` has no such cursor. Its
+ * cursor is a row id, the server looks that row up itself, and nothing has to
+ * pass through a `Date`: the lookup reads the ordering column as TEXT
+ * (`CAST(col AS text)`), which Postgres prints to the microsecond, and the seek
+ * binds that string back, so Postgres parses it as the column's own type. The
+ * cursor is then the row's exact `(col, id)`.
+ *
+ * That is not only tidier, it is the only form that is right there.
+ * `keysetPaginate` orders in SQL by `(col, id)` at full precision, and nothing
+ * sorts its page again, so its seek has to agree with THAT order. A millisecond
+ * bucket does not: it puts every row of one millisecond in id order, so rows
+ * that share a millisecond at different microseconds, with ids running against
+ * their times, are skipped and repeated at a page boundary (the "one
+ * millisecond" cases of `keysetPaginate.subMillisecond.integration.spec.ts` fail
+ * under the bucket and pass here). The bucket gets away with it above only
+ * because the browse merges the types and re-sorts the merge by
+ * `(millisecond, id)`, over-fetching `first * 4` rows of each to absorb the
+ * difference. Nothing absorbs it in `keysetPaginate`.
+ *
+ *   DESC   t <= :afterTime  AND (t < :afterTime  OR (t = :afterTime AND id < :afterId))
+ *   ASC    t >= :afterTime  AND (t > :afterTime  OR (t = :afterTime AND id > :afterId))
+ *
+ * The first conjunct is redundant here too, and for the same reason: it is what
+ * turns the `OR` into one index range. Without it Postgres walks the user's
+ * index from the newest row and discards every row newer than the cursor, on
+ * every page.
  */
 
 export type KeysetOrder = 'ASC' | 'DESC';
@@ -106,6 +135,44 @@ export function keysetSeek(
 
   return [
     `(${timeExpr} < :afterTimeEnd AND (${timeExpr} < :afterTime OR (${inBucket} AND ${idExpr} < :afterId)))`,
+    params,
+  ];
+}
+
+/** What {@link keysetSeekExact} binds. `afterTime` is the database's own spelling of the cursor's instant. */
+export interface KeysetSeekExactParams {
+  afterTime: string;
+  afterId: string;
+}
+
+/**
+ * The `andWhere` arguments that page strictly past `(afterTime, afterId)` in `order`, for a cursor
+ * whose time was read from the database as text, microseconds and all.
+ *
+ * Spread it: `query.andWhere(...keysetSeekExact('c.created_at', 'c.id', order, afterTime, afterId))`.
+ * `afterTime` is what Postgres printed for the cursor row's ordering column (`CAST(col AS text)`).
+ * The placeholders carry no cast of their own, so Postgres reads the string as the column's type and
+ * the comparison is exact. `timeExpr` and `idExpr` are the column expressions the query orders by,
+ * exactly as the ORDER BY writes them.
+ */
+export function keysetSeekExact(
+  timeExpr: string,
+  idExpr: string,
+  order: KeysetOrder,
+  afterTime: string,
+  afterId: string,
+): [sql: string, params: KeysetSeekExactParams] {
+  const params: KeysetSeekExactParams = { afterTime, afterId };
+
+  if (order === 'ASC') {
+    return [
+      `(${timeExpr} >= :afterTime AND (${timeExpr} > :afterTime OR (${timeExpr} = :afterTime AND ${idExpr} > :afterId)))`,
+      params,
+    ];
+  }
+
+  return [
+    `(${timeExpr} <= :afterTime AND (${timeExpr} < :afterTime OR (${timeExpr} = :afterTime AND ${idExpr} < :afterId)))`,
     params,
   ];
 }
