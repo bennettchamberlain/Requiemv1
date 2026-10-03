@@ -64,6 +64,22 @@ const LEADING_ORDERED_LIST = /^\d+[.)]/;
 const LINE_BREAKS = /[\r\n\u2028\u2029]+/g;
 
 /**
+ * Defang the region delimiters in a piece of untrusted text, so that text cannot close or reopen the
+ * region it is quoted inside.
+ *
+ * A soft hyphen (U+00AD) splits the delimiter for any parser looking for it
+ * while staying invisible to a reader, so a value quoting a marker cannot
+ * terminate the region it is quoted inside.
+ */
+function defangDelimiters(text: string): string {
+  let value = text;
+  value = value.split(UNTRUSTED_OPEN).join('<<<\u00adUNTRUSTED_CONTENT');
+  value = value.split(UNTRUSTED_CLOSE).join('UNTRUSTED_CONTENT\u00ad>>>');
+
+  return value;
+}
+
+/**
  * Neutralise one interpolated value so it cannot escape the slot it sits in.
  *
  * Three things happen, in order:
@@ -90,17 +106,77 @@ export function fenceUntrusted(text: string | null | undefined): string {
     return '';
   }
 
-  // A soft hyphen (U+00AD) splits the delimiter for any parser looking for it
-  // while staying invisible to a reader, so a value quoting a marker cannot
-  // terminate the region it is quoted inside.
-  value = value.split(UNTRUSTED_OPEN).join('<<<\u00adUNTRUSTED_CONTENT');
-  value = value.split(UNTRUSTED_CLOSE).join('UNTRUSTED_CONTENT\u00ad>>>');
+  value = defangDelimiters(value);
 
   if (LEADING_STRUCTURE.test(value) || LEADING_ORDERED_LIST.test(value)) {
     value = `\\${value}`;
   }
 
   return value;
+}
+
+/**
+ * What goes in front of every line of a document fenced by {@link fenceUntrustedLines}.
+ * Exported so a test can assert that none of a document's own text ever starts a line.
+ */
+export const UNTRUSTED_LINE_PREFIX = '> ';
+
+/**
+ * Every way a document may end a line, longest first. Strings rather than a regex so that none of
+ * them has to be a regex escape: the Unicode separators are built from their code points, which
+ * keeps them visible in a diff.
+ */
+const LINE_BREAK_SPELLINGS = [
+  '\r\n',
+  '\r',
+  String.fromCharCode(0x0b),
+  String.fromCharCode(0x0c),
+  String.fromCharCode(0x85),
+  String.fromCharCode(0x2028),
+  String.fromCharCode(0x2029),
+];
+
+/** Control characters other than the tab. They have no business in a prompt. */
+const CONTROL_EXCEPT_TAB = /(?!\t)\p{Cc}/gu;
+
+/**
+ * {@link fenceUntrusted} for a whole DOCUMENT: a text file the user attached, the parsed text of a
+ * PDF.
+ *
+ * `fenceUntrusted` collapses a value to one line. That is the structural half of the fence for a
+ * title or a clip and ruinous for a file: a CSV's rows would run together and a list would become
+ * one sentence. For a document the slot a value must not escape is the LINE, so the same guarantee
+ * is kept at that grain:
+ *
+ *  - every spelling of a line break is normalised and the text is split into lines;
+ *  - the region delimiters are defanged, exactly as `fenceUntrusted` does;
+ *  - control characters other than the tab are dropped, so a NUL or an escape sequence cannot reach
+ *    the prompt;
+ *  - every line is prefixed with {@link UNTRUSTED_LINE_PREFIX}, so no character of the document can
+ *    start a line of the prompt: a `## System` heading, a role declaration or a code fence inside the
+ *    file is quoted text on a quoted line, never structure. A blank line is the bare prefix and the
+ *    indentation inside a line is kept, so the text stays readable and a number stays a number
+ *    (`fenceUntrusted` would write a leading `-5` as `\-5`).
+ *
+ * Returns the lines rather than one string so a caller can spend a byte budget a whole line at a
+ * time. As with `fenceUntrusted`, fence once, at the point of interpolation.
+ */
+export function fenceUntrustedLines(text: string | null | undefined): string[] {
+  if (text === null || text === undefined) {
+    return [];
+  }
+
+  let normalised = defangDelimiters(String(text));
+
+  for (const spelling of LINE_BREAK_SPELLINGS) {
+    normalised = normalised.split(spelling).join('\n');
+  }
+
+  return normalised.split('\n').map((line) => {
+    const clean = line.replace(CONTROL_EXCEPT_TAB, '').trimEnd();
+
+    return clean ? `${UNTRUSTED_LINE_PREFIX}${clean}` : UNTRUSTED_LINE_PREFIX.trimEnd();
+  });
 }
 
 /**

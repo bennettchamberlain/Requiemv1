@@ -58,6 +58,36 @@ export class DocumentChunkService {
     });
   }
 
+  /**
+   * The first `limit` chunks of one file, in reading order, for a prompt.
+   *
+   * Scoped to the caller, which {@link findByFileId} is not: that one is a purge helper and takes
+   * the file id on the caller's word. Here the chunk row names its owner and the query names the
+   * caller, so a file id that is not theirs reads as a file with nothing parsed. The condition is a
+   * bound parameter rather than a `find({ where })` object on purpose: an object whose `userId` is
+   * undefined silently loses that condition, and this is the read that must never cross owners.
+   */
+  async findLeadingByFileId(
+    context: ServiceContext,
+    fileId: string,
+    limit: number,
+  ): Promise<Pick<FileChunk, 'chunkIndex' | 'content'>[]> {
+    if (!context.userId || !fileId || limit < 1) {
+      return [];
+    }
+
+    const rows = await this.chunkRepository
+      .createQueryBuilder('chunk')
+      .select(['chunk.chunkIndex', 'chunk.content'])
+      .where('chunk.fileId = :fileId', { fileId })
+      .andWhere('chunk.userId = :userId', { userId: context.userId })
+      .orderBy('chunk.chunkIndex', 'ASC')
+      .limit(limit)
+      .getMany();
+
+    return rows.map((row) => ({ chunkIndex: row.chunkIndex, content: row.content }));
+  }
+
   async findByIds(ids: string[]): Promise<FileChunk[]> {
     if (ids.length === 0) {
       return [];
