@@ -68,6 +68,20 @@ enum LocalLLMModels {
   /// Qwen3-0.6B's embedded chat template carries the `{%- if tools %}` / `<tool_call>` slots, so it
   /// works with the intent tools, and defaults **thinking on** — ``LocalLLMEngine`` passes
   /// `enable_thinking` per message and separates the reasoning from the answer.
+  ///
+  /// **`defaultMaxTokens` is 2048, not 1024.** Measured on a device and the Simulator
+  /// (`tests/local-llm-device`, the `roomtest` plan): the request that carries a tool's result back
+  /// comes out garbled — reasoning-channel markers repeated to the end of the window, or a loop of
+  /// "what is the user's question?" — whenever fewer than about 700 tokens of the window remain once
+  /// the result is in, at every window size tried (1024 through 3072). The three intent tools' own
+  /// declarations cost ~450 of this model's tokens before a question is even asked
+  /// (`toolSystemInstruction` plus their JSON Schemas), so at 1024 there was never enough room left for
+  /// *any* tool result, however small — this is why the on-device tool turn could not produce a
+  /// grounded answer before. 2048 clears the threshold with room to spare for a real search result;
+  /// the exact ceiling device memory allows above that is unmeasured (`minDeviceMemoryBytes` already
+  /// gates this model to a 4 GB floor, and a KV cache twice the size costs proportionally more
+  /// footprint) — raise further only after a device run of the `fill`/`matrix` plans confirms the
+  /// headroom.
   static let qwen3_0_6b_int4 = LocalLLMModelInfo(
     modelId: "qwen3-0.6b-int4",
     fileName: "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
@@ -80,7 +94,7 @@ enum LocalLLMModels {
     minDeviceMemoryBytes: 4_294_967_296,
     capabilities: [.thinking, .tools],
     accelerators: [.cpu],
-    defaultMaxTokens: 1024,
+    defaultMaxTokens: 2048,
     defaultTopK: 64,
     defaultTopP: 0.95,
     defaultTemperature: 1.0

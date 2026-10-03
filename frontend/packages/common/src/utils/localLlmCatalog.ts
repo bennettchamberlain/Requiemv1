@@ -74,7 +74,11 @@ export const LOCAL_LLM_CATALOG = {
     capabilities: ['thinking', 'tools'],
     accelerators: ['cpu'],
     platforms: ['android', 'ios'],
-    defaultConfig: { topK: 64, topP: 0.95, temperature: 1.0, maxTokens: 1024 },
+    // 2048, not 1024: at 1024 there was never enough of the window left, after the tool catalogue and
+    // a result, for a post-tool reply not to come back garbled (tests/local-llm-device, the `roomtest`
+    // plan — a ~700-token floor measured at every window size tried). Raise iOS's and Android's
+    // LocalLLMModels.swift / LocalLlmModels.kt together with this.
+    defaultConfig: { topK: 64, topP: 0.95, temperature: 1.0, maxTokens: 2048 },
   },
   'qwen2.5-1.5b-instruct': {
     modelId: 'qwen2.5-1.5b-instruct',

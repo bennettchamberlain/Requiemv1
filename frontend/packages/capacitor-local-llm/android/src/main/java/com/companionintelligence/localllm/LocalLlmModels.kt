@@ -99,6 +99,15 @@ object LocalLlmModels {
      * the last revision that loads on 0.14.0 (exercised on an arm64 emulator). Bumping LiteRT-LM is what
      * unlocks `main`; change the commit and the size together, never one alone.
      */
+    /**
+     * `defaultMaxTokens` is 2048, not 1024, matching iOS's `LocalLLMModels.swift`. Measured there
+     * (`tests/local-llm-device`, the `roomtest` plan — the same LiteRT-LM 0.14.0 runtime and model file,
+     * not independently re-measured on an Android device): the reply that follows a tool's result comes
+     * back garbled whenever fewer than ~700 tokens of the window remain once the result is in, at every
+     * window size tried. The three intent tools' own declarations already cost ~450 tokens, so at 1024
+     * there was never enough room left for any result — raise this only together with iOS's, and recheck
+     * the room threshold on an actual Android device before trusting it blindly.
+     */
     val QWEN3_0_6B_INT4 = LocalLlmModelInfo(
         modelId = "qwen3-0.6b-int4",
         hfRepo = "litert-community/Qwen3-0.6B",
@@ -106,7 +115,7 @@ object LocalLlmModels {
         sizeBytes = 344_437_808L,
         commitHash = "154c5de0fc0fc5002a7da570ba8c67edffa32ca2",
         minDeviceMemoryBytes = 4_294_967_296L,
-        defaultMaxTokens = 1024,
+        defaultMaxTokens = 2048,
         defaultTopK = 64,
         defaultTopP = 0.95,
         defaultTemperature = 1.0,
