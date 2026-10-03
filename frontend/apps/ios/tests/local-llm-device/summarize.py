@@ -5,6 +5,9 @@
     summarize.py results/*.jsonl --by shaper,toolBudget --where maxTokens=1024
     summarize.py results/results-load.jsonl --load
     summarize.py results/results-think.jsonl --answers --where prompt=p3 --limit 12
+    summarize.py results/*.jsonl --queries --by plan,prompt
+
+`plan` is also a field: the plan a result line came from (the `results-<plan>.jsonl` file name).
 
 Rates are over the first question of each cell unless --turn says otherwise. `useful` means the answer
 is non-empty, carries at least one of the prompt's facts, names nothing only a decoy hit contains, and
@@ -16,6 +19,8 @@ import argparse
 import collections
 import glob
 import json
+import os
+import re
 import statistics
 import sys
 
@@ -30,13 +35,25 @@ def load(paths):
                 for line in handle:
                     line = line.strip()
                     if line:
-                        rows.append(json.loads(line))
+                        row = json.loads(line)
+                        row.setdefault(
+                            "plan",
+                            os.path.basename(path)[len("results-") : -len(".jsonl")],
+                        )
+                        rows.append(row)
     return rows
+
+
+def field(row, name):
+    """A cell field, or a field of the result line itself (`plan`)."""
+    cell = row["cell"]
+
+    return cell[name] if name in cell else row.get(name)
 
 
 def matches(row, wheres):
     for key, want in wheres:
-        got = row["cell"].get(key)
+        got = field(row, key)
         if str(got).lower() != want.lower():
             return False
     return True
@@ -83,7 +100,7 @@ def table(headers, rows):
 
 
 def group_key(row, fields):
-    return tuple(str(row["cell"].get(f)) for f in fields)
+    return tuple(str(field(row, f)) for f in fields)
 
 
 def summarize(rows, fields, turn):
@@ -132,6 +149,42 @@ def summarize(rows, fields, turn):
             ]
         )
     return out
+
+
+# Words that carry nothing to a keyword search: what is left of the user's request around the thing it asks
+# about. A query containing one is the instruction (or the question) passed through, not key words.
+FILLER_WORDS = {
+    "a", "about", "an", "appointment", "do", "for", "i", "is", "know", "me", "memory", "my", "search",
+    "tell", "the", "to", "what", "when",
+}  # fmt: skip
+
+
+def query_of(call):
+    try:
+        return str(json.loads(call["arguments"] or "{}").get("query", ""))
+    except (ValueError, AttributeError):
+        return ""
+
+
+def show_queries(rows, fields):
+    """What the model passes as `knowledge_search`'s query, counted by whether it is key words or the instruction."""
+    groups = collections.defaultdict(list)
+    for row in rows:
+        for turn in row["turns"]:
+            for call in turn["toolCalls"]:
+                if call["tool"] == "knowledge_search":
+                    groups[group_key(row, fields)].append(query_of(call))
+
+    out = []
+    for key in sorted(groups):
+        queries = groups[key]
+        filler = sum(
+            1 for q in queries if FILLER_WORDS & set(re.findall(r"[a-z']+", q.lower()))
+        )
+        words = statistics.mean(len(q.split()) for q in queries)
+        out.append([*key, len(queries), filler, len(queries) - filler, f"{words:.1f}"])
+
+    table([*fields, "calls", "instruction", "key words", "mean words"], out)
 
 
 def show_load(rows):
@@ -225,6 +278,11 @@ def main():
         help="one line per cell: load time, memory, first-token time",
     )
     parser.add_argument("--answers", action="store_true", help="print the answers")
+    parser.add_argument(
+        "--queries",
+        action="store_true",
+        help="what the model passes to knowledge_search, as key words or as the instruction",
+    )
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument(
         "--counts", action="store_true", help="show rates as k/n instead of percentages"
@@ -249,6 +307,10 @@ def main():
         return 0
 
     fields = [f for f in args.by.split(",") if f]
+    if args.queries:
+        show_queries(rows, fields)
+        return 0
+
     headers = [
         *fields,
         "n",

@@ -53,20 +53,35 @@ behind it — the next generation's output included — waits too.
 
 Seen on a Simulator bench run under heavy host load, which widens the race: two consecutive cells of a
 `mode: prod` plan took **683 s** and **606 s** for 128 and 46 tokens (≈ 600 s each, plus the real work);
-every other cell of that plan took 10–100 s. `sample` of the stalled process showed LiteRT-LM's `callback_thread` in
-`StreamContext.deinit → Conversation.deinit → litert_lm_conversation_delete → ~SessionAdvanced →
-WaitUntilSessionDone → absl::Mutex::AwaitWithTimeout`, every other runtime thread idle.
+every other cell of that plan took 10–100 s. `sample` of the stalled process showed LiteRT-LM's
+`callback_thread` in `StreamContext.deinit → Conversation.deinit → litert_lm_conversation_delete →
+~SessionAdvanced → WaitUntilSessionDone → absl::Mutex::AwaitWithTimeout`, every other runtime thread idle.
 
-The callback now releases the context on a global queue (`releaseStreamContext`), so it returns first and
-the destructor's wait is satisfied at once. The release inside the tool-call `Task` already runs off the
-callback thread and is unchanged.
+The fix is not "release the context on another queue": that was tried first and stalled the same way,
+because `streamCallback`'s own local `context` (a strong reference from `takeUnretainedValue()`) is released
+at the end of the function, after the queue's release has had time to run, and is then the last one. What
+holds is that **no code on the callback thread touches the conversation's reference count**:
+
+- `StreamContext` keeps its conversation as an `Unmanaged<Conversation>`, retained by hand;
+- `retireConversation()` takes it out of the context and releases it on a global queue — the only release of
+  it, with no local strong reference made on the way (ARC would drop that one on the callback thread, after
+  the queue's);
+- every path that ends a stream (`finishStream`, and the tool-call `Task`'s `catch`) retires the
+  conversation before it lets go of the context, so a `StreamContext` that is freed on the callback thread
+  no longer holds anything a destructor waits on.
+
+Whoever else holds the conversation (the app) can still be last, and then the destructor runs on that
+thread and waits for the final callback to return — which it does, because nothing on the callback thread is
+waiting for it. The release inside the tool-call `Task` already ran off the callback thread and is unchanged.
 
 ## `conversation-owns-engine` — `Conversation.swift`, `Engine.swift`
 
 The native conversation refers to the native engine, so the engine must be deleted second. Nothing in the
 wrapper enforced it: `LocalLLMEngine.teardown()` drops the conversation and then the engine, and if a stream's
-context still held the conversation the engine was deleted underneath it. `Conversation` now keeps a strong
-reference to the `Engine` that created it (`owner`), so the engine outlives every conversation.
+context still held the conversation the engine was deleted underneath it. With `release-off-callback` the
+conversation can now be deleted a moment after the app let go of it, on a queue, so this is no longer a rare
+case. `Conversation` keeps a strong reference to the `Engine` that created it (`owner`), so the engine
+outlives every conversation.
 
 ## Not patched, but worth knowing
 

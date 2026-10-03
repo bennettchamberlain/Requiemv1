@@ -425,7 +425,11 @@ public class Conversation {
   /// Context object to bridge the C callback to the Swift AsyncThrowingStream.
   class StreamContext {
     let continuation: AsyncThrowingStream<Message, Error>.Continuation
-    let conversation: Conversation
+    /// CI PATCH (release-off-callback): the context's reference to its conversation is held by hand, so
+    /// the one place it is let go — ``retireConversation()`` — can be somewhere other than the runtime's
+    /// callback thread. `nil` once retired.
+    private var heldConversation: Unmanaged<Conversation>?
+    var conversation: Conversation? { heldConversation?.takeUnretainedValue() }
     /// CI PATCH (continuation-context): sent with every tool-result request of this stream.
     let continuationExtraContext: [String: Any]?
     /// CI PATCH (output-cap): applied to every request of this stream.
@@ -440,25 +444,43 @@ public class Conversation {
       maxOutputTokens: Int? = nil
     ) {
       self.continuation = continuation
-      self.conversation = conversation
+      self.heldConversation = Unmanaged.passRetained(conversation)
       self.continuationExtraContext = continuationExtraContext
       self.maxOutputTokens = maxOutputTokens
+    }
+
+    deinit {
+      heldConversation?.release()
+    }
+
+    /// CI PATCH (release-off-callback). Lets go of the conversation on a global queue, never on the
+    /// calling thread.
+    ///
+    /// When the app has already dropped its own reference (`LocalLLMEngine.resetConversation()` right
+    /// after a reply does), this is the **last** one, and the last release runs `Conversation.deinit` →
+    /// `litert_lm_conversation_delete` → `~SessionAdvanced` → `WaitUntilDone()`. Run on the runtime's
+    /// callback thread — which is where a stream ends — that wait is for a task that is only marked
+    /// finished once the callback it is running returns: a self-wait, ended by the runtime's 10 minute
+    /// timeout, on the thread every other callback shares. See PATCHES.md.
+    ///
+    /// The release is the only thing that touches the reference count here: no local strong reference is
+    /// made, because ARC would drop that one on this thread, possibly after the queue's release.
+    func retireConversation() {
+      guard let held = heldConversation else { return }
+      heldConversation = nil
+
+      nonisolated(unsafe) let pending = held
+      DispatchQueue.global(qos: .utility).async { pending.release() }
     }
   }
 }
 
-/// CI PATCH (release-off-callback). `StreamContext` holds the stream's `Conversation`. When the app has
-/// already dropped its own reference (a reset, an unload, a replaced conversation right after a reply),
-/// the callback's release of the context is the LAST one: it runs `Conversation.deinit`, which calls
-/// `litert_lm_conversation_delete`, which waits for the session to finish — from the thread that has to
-/// finish it. A self-deadlock, seen as an app sitting at 0% CPU with the callback thread inside
-/// `SessionAdvanced::WaitUntilDone`. Releasing on another queue lets the callback return first.
-private func releaseStreamContext(_ userData: UnsafeMutableRawPointer) {
-  nonisolated(unsafe) let pointer = userData
-
-  DispatchQueue.global(qos: .utility).async {
-    Unmanaged<Conversation.StreamContext>.fromOpaque(pointer).release()
-  }
+/// CI PATCH (release-off-callback). The end of a stream, on the callback thread: the conversation goes
+/// first (see `StreamContext.retireConversation()`), then the context's own reference. The context
+/// itself holds nothing a destructor waits on, so releasing it here is harmless.
+private func finishStream(_ context: Conversation.StreamContext, _ userData: UnsafeMutableRawPointer) {
+  context.retireConversation()
+  Unmanaged<Conversation.StreamContext>.fromOpaque(userData).release()
 }
 
 /// A callback function to bridge the C callback to the Swift AsyncThrowingStream.
@@ -477,7 +499,7 @@ private func streamCallback(
     let error = LiteRTLMError.conversation(.invalidResponse(errorString))
     context.continuation.finish(throwing: error)
 
-    releaseStreamContext(userData)
+    finishStream(context, userData)
     return
   }
 
@@ -501,7 +523,7 @@ private func streamCallback(
     } catch {
       logger.error("Failed to parse response JSON: \(error.localizedDescription)")
       context.continuation.finish(throwing: error)
-      releaseStreamContext(userData)
+      finishStream(context, userData)
       return
     }
   }
@@ -512,7 +534,7 @@ private func streamCallback(
         context.continuation.finish(
           throwing: LiteRTLMError.conversation(
             .recurringToolCallLimitExceeded(limit: recurringToolCallLimit)))
-        releaseStreamContext(userData)
+        finishStream(context, userData)
         return
       }
 
@@ -522,15 +544,20 @@ private func streamCallback(
 
       Task {
         do {
-          let toolResponseJson = try await context.conversation.handleToolCalls(toolCalls)
-          try context.conversation.sendToStream(
-            handle: context.conversation.checkIsAlive(),
+          guard let conversation = context.conversation else {
+            throw LiteRTLMError.conversation(.notAlive)
+          }
+
+          let toolResponseJson = try await conversation.handleToolCalls(toolCalls)
+          try conversation.sendToStream(
+            handle: conversation.checkIsAlive(),
             messageJson: toolResponseJson,
             extraContext: context.continuationExtraContext,  // CI PATCH (continuation-context)
             context: context
           )
         } catch {
           context.continuation.finish(throwing: error)
+          context.retireConversation()  // CI PATCH (release-off-callback)
         }
         // Release the reference for the current (finished) call.
         // The new call from sendToStream created its own retained reference.
@@ -538,7 +565,7 @@ private func streamCallback(
       }
     } else {
       context.continuation.finish()
-      releaseStreamContext(userData)
+      finishStream(context, userData)
     }
   }
 }

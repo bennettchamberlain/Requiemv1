@@ -200,18 +200,85 @@ enum LocalLLMPolicy {
 
   // MARK: Tool results
 
-  /// The most bytes of one tool result that go back into the model's context window.
+  /// What a tool result is sized against, and what the rest of a tool turn takes of the window.
   ///
-  /// `contextTokens` is the KV cache (`LocalLLMLoadRequest.maxTokens`), and everything shares it: the
-  /// system prompt and tool declarations (~500 tokens on Qwen3-0.6B), the question, the model's own
-  /// tool call, this result, and the reply — reasoning included. A result that leaves no room for the
-  /// reply leaves the model nothing to answer with.
+  /// The numbers are measured, not guessed: `tests/local-llm-device` tokenizes with the model's own
+  /// tokenizer (`Engine.tokenCount`) and reads the KV cache from the runtime.
+  struct ToolResultProfile: Equatable {
+    /// UTF-8 bytes per model token in a shaped result (JSON and English). Qwen3's tokenizer makes 2.3 to
+    /// 3.0 of the shaped results the bench produced, depending on the budget they were cut to (2.6 over
+    /// all of them); the low end is used so a result is never bigger than the room counted for it.
+    var bytesPerToken = 2.3
+    /// What carrying a result back costs besides the result itself: the `tool_response` wrapper of the
+    /// chat template (18 tokens measured) and a little slack.
+    var wrapperTokens = 24
+    /// What the window must still have left **once the result is in**. It is not what the reply needs
+    /// (a grounded one is 50 to 130 tokens) but what the runtime needs: the request that carries a tool's
+    /// result back comes out garbled — `</think>` repeated to the end of the window, or "What is the
+    /// user's question?" — when fewer than about 700 tokens remain after it. That held at every window
+    /// measured, 1024 to 3072, while plain chat turns with 200 to 400 tokens left were fine. Garbled with
+    /// 673 left, sound with 735 (`tests/local-llm-device`, Simulator); 768 is the margin.
+    var reserveTokens = 768
+    /// The user's question and the model's own tool call: in the cache by the time a tool runs, not yet
+    /// when a new question arrives.
+    var turnTokens = 80
+    /// The most a result is ever allowed to be, however much room there is: the appliance's own cap on a
+    /// tool result (`toolResultBudget.ts`).
+    var maxBytes = 16_384
+    /// The least. Under this the shaper has no room for the markers that say the result was cut.
+    var minBytes = 128
+    /// The smallest result still worth a tool call.
+    var usefulResultBytes = 256
+
+    static let standard = ToolResultProfile()
+  }
+
+  /// The most bytes of one tool result that go back into the model's context window, **given how much of
+  /// the window is left right now**.
   ///
-  /// Half the window **in bytes**. JSON and English run ~3 bytes a token, so that is about a sixth of
-  /// the window in tokens (≈170 of 1024): the fixed prompt keeps about half and the reply a quarter.
-  /// An estimate, not a measurement — there is no tokenizer here and no device run has measured it —
-  /// so it errs small; tune it on a device. The floor keeps a tiny window from rounding to nothing,
-  /// the ceiling is the appliance's own cap on a tool result (`toolResultBudget.ts`).
+  /// `tokensLeft` is the window less what the KV cache holds at the moment the tool runs (see
+  /// `LocalLLMEngine.contextTokensLeft`): the system instruction and the tool declarations
+  /// (~430 tokens on Qwen3-0.6B with the three intent tools), every earlier turn, this question and the
+  /// model's own tool call are already in it. What is left has to take the wrapper the result travels in
+  /// and the profile's reserve, and the result gets what remains.
+  ///
+  /// Reading the cache instead of estimating means a long conversation shrinks the results it can take,
+  /// and a larger tool catalogue (a bigger preface) does too, without anyone having to know either.
+  static func toolResultByteBudget(
+    tokensLeft: Int, profile: ToolResultProfile = .standard
+  ) -> Int {
+    // No room, or less than none, is the floor: a stub that says the result did not fit.
+    let room = tokensLeft - profile.wrapperTokens - profile.reserveTokens
+
+    return min(max(Int(Double(room) * profile.bytesPerToken), profile.minBytes), profile.maxBytes)
+  }
+
+  /// What a window must have left when a question arrives for a tool call in that turn to work: the
+  /// question and the call, a result worth sending, its wrapper, and the reserve.
+  static func toolTurnMinimumTokens(profile: ToolResultProfile = .standard) -> Int {
+    let result = Int((Double(profile.usefulResultBytes) / profile.bytesPerToken).rounded(.up))
+
+    return profile.turnTokens + result + profile.wrapperTokens + profile.reserveTokens
+  }
+
+  /// Whether a conversation that offers tools should start afresh before it takes another question.
+  ///
+  /// Below ``toolTurnMinimumTokens(profile:)`` a tool call in the next turn cannot work: the reply that
+  /// follows it is garbled whatever the result says, however small. Forgetting the earlier turns is a
+  /// better answer than that. A conversation with no history is never renewed — a fresh one is as roomy as
+  /// it will get; if that is not enough, the window is too small for tools and a renewal cannot help.
+  static func shouldRenewToolConversation(
+    tokensLeft: Int?, hasHistory: Bool, profile: ToolResultProfile = .standard
+  ) -> Bool {
+    guard hasHistory, let tokensLeft else { return false }
+
+    return tokensLeft < toolTurnMinimumTokens(profile: profile)
+  }
+
+  /// The same, when the cache cannot be read: half the window **in bytes**. JSON and English run ~2.3
+  /// bytes a token, so that is about a fifth of the window in tokens (≈ 220 of 1024) — the fixed prompt
+  /// takes about 430 of it and the reply a quarter. An estimate, so it errs small. The floor keeps a tiny
+  /// window from rounding to nothing, the ceiling is the appliance's own cap on a tool result.
   static func toolResultByteBudget(contextTokens: Int) -> Int {
     min(max(contextTokens / 2, 256), 16_384)
   }

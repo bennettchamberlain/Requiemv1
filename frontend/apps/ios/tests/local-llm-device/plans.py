@@ -437,6 +437,81 @@ def stage_calls(reps=8, **_):
     )
 
 
+def stage_constrained(reps=8, **_):
+    """LiteRT-LM's grammar path for tool calls, which the app leaves off until someone has run it on a device:
+    does it change whether the model calls the tool, and does what it calls still parse and answer?"""
+    yield from grid(
+        _w2048(sampler="card"),
+        constrained=[False, True],
+        prompt=PROMPTS,
+        seed=seeds(reps),
+    )
+
+
+def stage_roomtest(reps=4, **_):
+    """Is the post-tool failure about the window, or about the room left once the result is in? Every tool turn that
+    failed so far had a small window AND little room (the two were never separated). Here they are:
+    - a big window made to have little room: a filler system text pushes the cache up to the call, so
+      window - (cache at the call + result + wrapper) is 350 to 1000 tokens;
+    - a small window made to have plenty: one tool, no system text, a tiny result."""
+    for window in [2048, 3072]:
+        for room in [350, 500, 650, 800, 1000]:
+            for rep in range(reps):
+                c = cell(
+                    model=Q3,
+                    maxTokens=window,
+                    toolBudget=512,
+                    sampler="card",
+                    system="custom",
+                    seed=rep,
+                    prompt="p1",
+                )
+                # ~631 tokens are there without the filler (tools 368, question, the call, a 186-token result)
+                c["systemText"] = filler(window - room - 631)
+                c["note"] = f"w{window} room~{room}"
+                c["id"] += f"-rm{room}"
+                yield c
+
+    for window in [1024, 1280]:
+        for budget in [128, 256, 384, 512]:
+            for rep in range(reps):
+                c = cell(
+                    model=Q3,
+                    maxTokens=window,
+                    toolBudget=budget,
+                    sampler="card",
+                    system="custom",
+                    toolNames=["knowledge_search"],
+                    seed=rep,
+                    prompt="p1",
+                )
+                c["systemText"] = ""
+                c["note"] = f"w{window} lean b{budget}"
+                yield c
+
+
+def stage_multichat(reps=4, **_):
+    """Is the post-tool failure at small windows a tool effect, or a second-request effect? Plain chat, no tools, three
+    questions in one conversation, behind a system text as long as the tool preface, at windows either side of
+    the point where the tool turn stops working."""
+    for window in [1024, 1280, 1536, 2048]:
+        for rep in range(reps):
+            c = cell(
+                model=Q3,
+                mode="tool",
+                maxTokens=window,
+                bindTools=False,
+                turns=3,
+                sampler="card",
+                system="custom",
+                seed=rep,
+                prompt="p1",
+            )
+            c["systemText"] = filler(430)
+            c["note"] = f"plain chat w{window}"
+            yield c
+
+
 def stage_inject3(reps=6, **_):
     """Qwen3 without the tool round trip: the shaped result placed in the question, no tools bound (so no
     368-token tool preface and no tool-result continuation). Against the same questions through the tool."""
@@ -474,6 +549,64 @@ def stage_tools(reps=8, **_):
                 yield c
 
 
+def stage_matrix(reps=4, **_):
+    """The task's matrix: the two fixed prompts at result budgets of 256, 512 and 1024 bytes. Qwen3 as the app
+    ships it (window 1024, today's shaper and sampler); Qwen3 with the settings the experiments chose, at windows
+    raised up to what the phone allows; Qwen2.5, which has no tool slots, with the result in its prompt."""
+    budgets = [256, 512, 1024]
+    ship = {
+        "model": Q3,
+        "maxTokens": 1024,
+        "sampler": "cat",
+        "carry": False,
+        "shaper": "legacy",
+        "responseAs": "string",
+    }
+    best = {
+        "model": Q3,
+        "sampler": "card",
+        "carry": True,
+        "shaper": "prod",
+        "responseAs": "object",
+    }
+
+    for budget in budgets:
+        for prompt in ["p1", "p2"]:
+            for rep in range(reps):
+                c = cell(
+                    **{**ship, "toolBudget": budget, "prompt": prompt, "seed": rep}
+                )
+                c["note"] = f"ship w1024 b{budget}"
+                yield c
+
+    for window in [1024, 2048, 4096, 8192]:
+        for budget in budgets:
+            for prompt in ["p1", "p2"]:
+                for rep in range(reps):
+                    fields = {**best, "maxTokens": window, "toolBudget": budget}
+                    c = cell(**{**fields, "prompt": prompt, "seed": rep})
+                    c["note"] = f"best w{window} b{budget}"
+                    yield c
+
+    for accelerator in ["gpu", "cpu"]:
+        for budget in budgets:
+            for prompt in ["p1", "p2"]:
+                for rep in range(reps):
+                    c = cell(
+                        mode="inject",
+                        model=Q25,
+                        maxTokens=4096,
+                        sampler="cat",
+                        accelerator=accelerator,
+                        shaper="prod",
+                        toolBudget=budget,
+                        prompt=prompt,
+                        seed=rep,
+                    )
+                    c["note"] = f"q25 {accelerator} b{budget}"
+                    yield c
+
+
 def stage_smoke(**_):
     yield cell(mode="load", model=Q3)
     yield cell(mode="account", model=Q3, maxTokens=4096)
@@ -500,8 +633,11 @@ def stage_load(**_):
 
 
 def stage_account(**_):
+    """What the fixed part of the window is, in the model's own tokens: system text, each tool's declaration, and
+    what the chat template makes of a user message and of a tool message."""
     yield cell(mode="account", model=Q3, maxTokens=4096)
     yield cell(mode="account", model=Q25, maxTokens=4096, forceTools=True)
+    yield cell(mode="render", model=Q3, maxTokens=4096, toolBudget=512, shaper="lean2")
 
 
 def stage_think(n_seeds=5, window=1024, budget=512, **_):
@@ -591,9 +727,13 @@ def stage_replycap(n_seeds=3, window=1024, budget=512, carry=True, sampler="card
 
 
 STAGES = {
+    "matrix": stage_matrix,
     "smoke": stage_smoke,
     "tools": stage_tools,
     "query": stage_query,
+    "constrained": stage_constrained,
+    "roomtest": stage_roomtest,
+    "multichat": stage_multichat,
     "inject3": stage_inject3,
     "calls": stage_calls,
     "chunk": stage_chunk,

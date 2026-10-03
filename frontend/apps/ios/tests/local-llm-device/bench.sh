@@ -122,7 +122,7 @@ launch_app() {
       echo "waiting for the phone to be unlocked… ($(date +%T))"
     elif grep -q "not been explicitly trusted" "$log"; then
       echo "on the phone: Settings › General › VPN & Device Management › trust the developer ($(date +%T))"
-    elif grep -qE "could not be established|XPC connection|unavailable" "$log"; then
+    elif grep -qE "could not be established|XPC connection|unavailable|NWError|timed out" "$log"; then
       echo "lost the connection to the phone, retrying… ($(date +%T))"
     else
       cat "$log" >&2
@@ -138,13 +138,30 @@ launch_app() {
   done
 }
 
+# Runs a command that talks to the phone until it succeeds: a plan lasts hours, and the connection to the
+# phone drops (a network timeout, the phone going to sleep) without anything being wrong with the run.
+retry() { # <attempts> <command…>
+  local attempts="$1" tries=0
+  shift
+
+  until "$@"; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge "$attempts" ]; then
+      echo "gave up after $tries attempts: $*" >&2
+      return 1
+    fi
+    echo "the phone did not answer, retrying… ($(date +%T))"
+    sleep 15
+  done
+}
+
 cmd_run() {
   local plan="${1:?usage: bench.sh run <plan.json>}"
   local id poll="${BENCH_POLL_SECONDS:-20}"
   id="$(plan_id "$plan")"
   mkdir -p "$out"
 
-  to_device "$plan" "Documents/bench/plan.json"
+  retry "${BENCH_COPY_ATTEMPTS:-480}" to_device "$plan" "Documents/bench/plan.json" || exit 1
 
   # The app exits when the plan is finished, on purpose between cells that ask for a clean process
   # (`restartAfter`), and when it crashes. So: poll; if the DONE marker is there, collect and stop; if

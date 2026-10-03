@@ -264,8 +264,12 @@ final class BenchRunner {
       wantsSpeculativeDecoding: false, maxTokens: cell.maxTokens, topK: cell.topK,
       topP: cell.topP, temperature: cell.temperature)
 
+    // A cell that names a budget holds it; one that does not gets what the app gets: the result sized
+    // against the room the window has at the moment the tool runs.
     CompanionToolContext.resultBudgetBytes =
       cell.toolBudget ?? LocalLLMPolicy.toolResultByteBudget(contextTokens: request.maxTokens)
+    CompanionToolContext.windowTokensLeft =
+      cell.toolBudget == nil ? { [engine] in await engine.contextTokensLeft() } : nil
     CompanionToolContext.structuredResults = cell.responseAs == "object"
 
     let before = DeviceProbe.snapshot()
@@ -410,6 +414,7 @@ final class BenchRunner {
 
     // What the appliance answers a tool call with — and what is recorded about it.
     CompanionToolContext.resultBudgetBytes = budget
+    CompanionToolContext.windowTokensLeft = nil  // the budget is the experiment's, so it is held fixed
     CompanionToolContext.structuredResults = cell.responseAs == "object"
     FakeAppliance.shared.handler = { name, arguments in
       let raw = Corpus.result(tool: name, arguments: arguments)

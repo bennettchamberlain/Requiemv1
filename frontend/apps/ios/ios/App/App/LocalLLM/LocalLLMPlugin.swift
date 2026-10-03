@@ -223,10 +223,12 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
           maxTokens: call.getInt("maxTokens"), topK: call.getInt("topK"),
           topP: call.getDouble("topP"), temperature: call.getDouble("temperature"))
 
-        // What a tool may hand back is a share of the window just configured: a result bigger than
-        // the window cannot be taken in (see `ToolResultShaper`).
+        // What a tool may hand back is the room the window has when it runs: a result bigger than that
+        // cannot be taken in (see `ToolResultShaper`). The engine is asked at that moment; the share of
+        // the window as configured is the fallback for when it cannot say.
         CompanionToolContext.resultBudgetBytes = LocalLLMPolicy.toolResultByteBudget(
           contextTokens: request.maxTokens)
+        CompanionToolContext.windowTokensLeft = { [engine] in await engine.contextTokensLeft() }
 
         let outcome = try await engine.load(request)
 

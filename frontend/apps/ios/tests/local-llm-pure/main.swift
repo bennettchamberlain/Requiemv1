@@ -285,6 +285,105 @@ test("the context-window share a tool result may take") {
     LocalLLMPolicy.toolResultByteBudget(contextTokens: -5), 256, "nonsense keeps the floor")
 }
 
+test("a tool result is sized against the room the window has left") {
+  let profile = LocalLLMPolicy.ToolResultProfile.standard
+  let budget = { LocalLLMPolicy.toolResultByteBudget(tokensLeft: $0) }
+
+  // The tokenizer's measured median over the shaped results is 2.6 bytes a token (2.3 at the low end):
+  // counting more than that would hand the model a result bigger than the room it was sized for.
+  check(profile.bytesPerToken <= 2.6, "bytes per token is no more than the measured median")
+
+  // What the runtime needs left once the result is in: the turn that carries a result back garbles below
+  // ~700 tokens (673 garbled, 735 sound on the bench). The reserve must clear that, with a margin.
+  check(profile.reserveTokens >= 735 + 16, "the reserve clears the highest room that still garbled")
+
+  // Qwen3-0.6B with the three intent tools: the preface (434), a question (~20) and the model's tool call
+  // (~39) are in the cache when the tool runs.
+  let at2048 = 2048 - 493
+  let room = at2048 - profile.wrapperTokens - profile.reserveTokens
+  expectEqual(budget(at2048), Int(Double(room) * profile.bytesPerToken), "the room that remains, in bytes")
+  check(budget(at2048) > 1024, "a 2048 window takes a kilobyte and more")
+
+  // At 1024 there is not that much room even for nothing: the preface alone is 42% of it. The budget says
+  // so with the floor rather than promise bytes the window cannot take.
+  let at1024 = 1024 - 493
+  expectEqual(budget(at1024), profile.minBytes, "a 1024 window with the three tools gets the stub")
+
+  expectEqual(budget(0), profile.minBytes, "a spent window still gets the stub that says so")
+  expectEqual(budget(-40), profile.minBytes, "nonsense gets the floor")
+  expectEqual(
+    budget(profile.wrapperTokens + profile.reserveTokens), profile.minBytes, "nothing left over for a result")
+  expectEqual(budget(10_000_000), profile.maxBytes, "capped like the appliance's")
+
+  // Swept over every window left from nothing to 20 000 tokens: one verdict per property, not one per step.
+  var notMonotone: [Int] = []
+  var outOfBounds: [Int] = []
+  var doesNotFit: [Int] = []
+  var previous = 0
+
+  for left in stride(from: -10, through: 20_000, by: 7) {
+    let bytes = budget(left)
+    if bytes < previous { notMonotone.append(left) }
+    if bytes < profile.minBytes || bytes > profile.maxBytes { outOfBounds.append(left) }
+
+    // The promise behind the number: once it is above the floor, the tokens it may cost, the wrapper
+    // and the reserve together fit in what is left.
+    if bytes > profile.minBytes && bytes < profile.maxBytes {
+      let tokens = Int((Double(bytes) / profile.bytesPerToken).rounded(.up))
+      if tokens + profile.wrapperTokens + profile.reserveTokens > left + 1 { doesNotFit.append(left) }
+    }
+    previous = bytes
+  }
+
+  check(notMonotone.isEmpty, "more room never means less: \(notMonotone.prefix(3))")
+  check(outOfBounds.isEmpty, "always inside its floor and cap: \(outOfBounds.prefix(3))")
+  check(doesNotFit.isEmpty, "the result, its wrapper and the reserve fit in what is left: \(doesNotFit.prefix(3))")
+
+  // A conversation that has used more of the window leaves less for a result.
+  check(budget(1500) < budget(3000), "a fuller window takes a smaller result")
+
+  let roomier = LocalLLMPolicy.ToolResultProfile(
+    bytesPerToken: 3, wrapperTokens: 0, reserveTokens: 100, turnTokens: 0, maxBytes: 1000, minBytes: 50,
+    usefulResultBytes: 0)
+  expectEqual(LocalLLMPolicy.toolResultByteBudget(tokensLeft: 200, profile: roomier), 300, "a profile's own numbers")
+  expectEqual(LocalLLMPolicy.toolResultByteBudget(tokensLeft: 900, profile: roomier), 1000, "a profile's own cap")
+  expectEqual(LocalLLMPolicy.toolResultByteBudget(tokensLeft: 90, profile: roomier), 50, "a profile's own floor")
+}
+
+test("a conversation that offers tools starts afresh when a tool call could no longer work") {
+  let profile = LocalLLMPolicy.ToolResultProfile.standard
+  let minimum = LocalLLMPolicy.toolTurnMinimumTokens()
+
+  // The pieces that make it up: the question and the call, a result worth sending, its wrapper, the reserve.
+  expectEqual(
+    minimum,
+    profile.turnTokens + Int((Double(profile.usefulResultBytes) / profile.bytesPerToken).rounded(.up))
+      + profile.wrapperTokens + profile.reserveTokens,
+    "what the next turn needs")
+  check(minimum > profile.reserveTokens, "more than the reserve alone")
+
+  let renew = { (left: Int?, history: Bool) in
+    LocalLLMPolicy.shouldRenewToolConversation(tokensLeft: left, hasHistory: history)
+  }
+
+  check(renew(minimum - 1, true), "one token short, with history: renew")
+  check(!renew(minimum, true), "exactly enough: carry on")
+  check(!renew(minimum + 500, true), "plenty left: carry on")
+  check(!renew(0, false), "a conversation with no history is never renewed, however small the window")
+  check(!renew(minimum - 1, false), "nor one that is merely short of room")
+  check(!renew(nil, true), "unknown room is not a reason to forget the conversation")
+  check(renew(0, true), "a spent window with history: renew")
+  check(renew(-3, true), "nonsense counts as spent")
+
+  // The window as shipped must not renew a fresh tool conversation before its first question but it
+  // must leave room for more than one tool turn once it is large enough: after the first turn at 2048
+  // the cache holds ~850 (preface 434, question, call, a 400-token result and a reply), so there is room.
+  let afterOneTurn2048 = 2048 - 850
+  check(!renew(afterOneTurn2048, true), "a second tool turn fits at 2048")
+  let afterOneTurn1024 = 1024 - 850
+  check(renew(afterOneTurn1024, true), "at 1024 nothing is left for a second one")
+}
+
 test("a result that already fits is passed on untouched") {
   let small = "{\n  \"error\": \"Companion is not connected\"\n}"
 

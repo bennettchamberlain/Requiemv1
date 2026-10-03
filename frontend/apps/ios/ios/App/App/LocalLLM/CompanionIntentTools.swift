@@ -26,10 +26,18 @@ enum CompanionToolContext {
   /// The server's ruling per executable tool name, refreshed with the catalog.
   static var rulings: [String: DispatchRuling] = [:]
 
-  /// The most bytes of one tool result handed back to the model. `loadModel` sets it from the context
-  /// window it just configured; until then it assumes the smallest window shipped (Qwen3-0.6B's 1024
-  /// tokens), so a result is bounded even if nothing did. See ``ToolResultShaper`` for why.
+  /// The most bytes of one tool result handed back to the model when the window's room cannot be read
+  /// (``windowTokensLeft``). `loadModel` sets it from the context window it just configured; until then it
+  /// assumes the smallest window shipped (Qwen3-0.6B's 1024 tokens), so a result is bounded even if
+  /// nothing did. See ``ToolResultShaper`` for why.
   static var resultBudgetBytes = LocalLLMPolicy.toolResultByteBudget(contextTokens: 1024)
+
+  /// How many tokens the window has left right now, asked of the engine at the moment a tool runs. A
+  /// result is then sized against the room there really is — earlier turns, the tool catalogue and the
+  /// model's own call included — instead of a share of the window as configured. Set by the plugin; while
+  /// it is `nil`, or answers `nil`, ``resultBudgetBytes`` applies. The on-device bench clears it to hold a
+  /// budget fixed.
+  static var windowTokensLeft: (@Sendable () async -> Int?)?
 
   /// Hand a JSON result back to the model as a parsed value rather than as text. LiteRT-LM writes a
   /// `String` response into the chat template as an escaped JSON string — every quote becomes `\"` —
@@ -55,12 +63,14 @@ enum CompanionToolContext {
 
     do {
       let result = try await client.callTool(toolName, arguments: arguments)
-      let shaped = ToolResultShaper.shape(result, budgetBytes: resultBudgetBytes)
+      let tokensLeft = await windowTokensLeft?()
+      let budget = tokensLeft.map { LocalLLMPolicy.toolResultByteBudget(tokensLeft: $0) } ?? resultBudgetBytes
+      let shaped = ToolResultShaper.shape(result, budgetBytes: budget)
 
       // Sizes and the tool's name only: what a tool returned is the user's data, not log material.
       NSLog(
-        "[LocalLLM] %@ returned %ld bytes; passing %ld to the model (budget %ld)",
-        toolName, result.utf8.count, shaped.utf8.count, resultBudgetBytes)
+        "[LocalLLM] %@ returned %ld bytes; passing %ld to the model (budget %ld, window left %ld tokens)",
+        toolName, result.utf8.count, shaped.utf8.count, budget, tokensLeft ?? -1)
 
       return structuredResults ? asJSONValue(shaped) : shaped
     } catch {
@@ -178,9 +188,10 @@ struct SearchMemoryTool: Tool {
     "Search the user's own memory (notes, messages, documents, people, places) for a word or phrase. "
     + "Use this for any question about what the user knows, did or saw."
 
-  // Key words, not the question. Described as "in the user's own words" this parameter was filled with the
-  // whole instruction ("search my memory for blue heron") in 87 of 101 on-device calls, and a keyword search
-  // for that sentence matches `search`, `my`, `memory` and `for`.
+  // Key words, not the question. Described as "in the user's own words" this parameter came back with filler
+  // from the instruction ("search my memory for blue heron") in 94 of 134 Simulator calls, and a keyword
+  // search for that sentence matches `search`, `my`, `memory` and `for`. With this description: 0 of 27
+  // (`tests/local-llm-device/summarize.py --queries`).
   @ToolParam(description: "The key words to look for: a name, a place or a thing. Not the whole question")
   var query: String
 

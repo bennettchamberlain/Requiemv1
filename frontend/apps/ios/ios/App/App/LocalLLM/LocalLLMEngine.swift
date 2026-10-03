@@ -160,6 +160,8 @@ actor LocalLLMEngine {
   private var conversationConfig: ConversationConfig?
   /// Set when the conversation was cancelled or a turn failed on it; see the type doc.
   private var conversationStale = false
+  /// Turns the resident conversation has answered. Zero for a fresh one, which is never renewed for want of room.
+  private var turnsInConversation = 0
   private var loaded: LoadedModel?
 
   private var pendingLoad: PendingLoad?
@@ -192,6 +194,16 @@ actor LocalLLMEngine {
 
     return count
   }
+
+  /// What the window has left: its size less what the resident conversation holds now. A tool uses this
+  /// to size its result against the room there really is (`LocalLLMPolicy.toolResultByteBudget`). `nil`
+  /// when either number is unknown.
+  func contextTokensLeft() -> Int? {
+    guard let window = contextWindowTokens, let used = contextTokensUsed() else { return nil }
+
+    return max(window - used, 0)
+  }
+
   /// Exposed for the harness that checks the stale-conversation bookkeeping.
   var isConversationStale: Bool { conversationStale }
 
@@ -286,6 +298,7 @@ actor LocalLLMEngine {
     conversation = newConversation
     conversationConfig = config
     conversationStale = false
+    turnsInConversation = 0
     loaded = LoadedModel(
       path: request.modelPath, modelId: request.modelId, capabilities: request.capabilities,
       accelerator: accelerator, key: key, outcome: outcome)
@@ -356,6 +369,7 @@ actor LocalLLMEngine {
       do {
         conversation = try await engine.createConversation(with: config)
         conversationStale = false
+        turnsInConversation = 0
 
         return
       } catch {
@@ -401,6 +415,7 @@ actor LocalLLMEngine {
     conversation = nil
     conversationConfig = nil
     conversationStale = false
+    turnsInConversation = 0
     engine = nil
     loaded = nil
     activeGeneration = nil
@@ -444,6 +459,21 @@ actor LocalLLMEngine {
     let id = nextGenerationID
     activeGeneration = id
     cancelRequested = false
+
+    // A tool call needs about 700 tokens of the window left once its result is in, or the reply that follows
+    // it comes out garbled whatever the result says (`LocalLLMPolicy.ToolResultProfile.reserveTokens`).
+    // When a conversation that offers tools has too little left for one, forgetting the earlier turns is
+    // a better answer than that.
+    if !conversationStale, conversation != nil, loaded.outcome.toolCount > 0 {
+      let left = contextTokensLeft()
+
+      if LocalLLMPolicy.shouldRenewToolConversation(tokensLeft: left, hasHistory: turnsInConversation > 0) {
+        NSLog(
+          "[LocalLLM] %ld tokens of the window are left, too few for a tool call: starting a new conversation",
+          left ?? -1)
+        conversationStale = true
+      }
+    }
 
     if conversationStale || conversation == nil {
       do {
@@ -560,7 +590,7 @@ actor LocalLLMEngine {
     guard activeGeneration == id else { return true }
 
     let cancelled = cancelRequested
-    if cancelled || failed { conversationStale = true }
+    if cancelled || failed { conversationStale = true } else { turnsInConversation += 1 }
     activeGeneration = nil
     cancelRequested = false
 
