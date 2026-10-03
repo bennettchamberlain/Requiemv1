@@ -802,5 +802,146 @@ test("a budget too small to hold the markers is raised, not trusted") {
   check(shaped.hasSuffix(ToolResultShaper.truncationMarker), "still says it was cut")
 }
 
+/// How deep the containers of a parsed JSON value go (a scalar is 0).
+func depth(of value: Any) -> Int {
+  switch value {
+  case let array as [Any]: return 1 + (array.map(depth(of:)).max() ?? 0)
+  case let object as [String: Any]: return 1 + (object.values.map(depth(of:)).max() ?? 0)
+  default: return 0
+  }
+}
+
+test("JSON in is JSON out at every budget from 400 bytes up, on the realistic results") {
+  // The closing "N more omitted" element used to be reserved as a share of the budget, which for a small
+  // list was less than the element: one hit too many was kept and the final guard cut valid JSON in the
+  // middle. At the budget the app shipped (512) the dentist and the graph came out cut; across 300...2048
+  // 152, 170 and 199 budgets did. The element is held back exactly now, and what is left is a budget too
+  // small for a header, one hit and the note (the largest invalid one measured was 336 bytes, a graph with
+  // two lists; 400 is the line these tests hold).
+  let results = [
+    ("heron", Corpus.result(tool: "knowledge_search", arguments: ["query": "heron"])),
+    ("dentist", Corpus.result(tool: "knowledge_search", arguments: ["query": "dentist"])),
+    ("graph", Corpus.result(tool: "memory_recall", arguments: ["personName": "Maria Alvarez"])),
+    ("graph of the user", Corpus.result(tool: "memory_recall", arguments: [:])),
+  ]
+
+  for (name, raw) in results {
+    var notJSON: [Int] = []
+    var overBudget: [Int] = []
+    var unmarked: [Int] = []
+
+    for budget in 128...2048 {
+      let shaped = ToolResultShaper.shape(raw, budgetBytes: budget)
+
+      if shaped.utf8.count > budget { overBudget.append(budget) }
+      if parse(shaped) == nil {
+        if budget >= 400 { notJSON.append(budget) }
+        // Below that it is a cut of the compact text, and says so.
+        if !shaped.hasSuffix(ToolResultShaper.truncationMarker) { unmarked.append(budget) }
+      }
+    }
+
+    check(overBudget.isEmpty, "\(name): never over the budget: \(overBudget.prefix(3))")
+    check(notJSON.isEmpty, "\(name): valid JSON from 400 bytes up: \(notJSON.prefix(5))")
+    check(unmarked.isEmpty, "\(name): a cut that is not JSON says so: \(unmarked.prefix(3))")
+  }
+}
+
+test("an array of plain values is one member of an object, not a list: the object still loses members") {
+  // A single entity with `tags: ["a","b"]` used to count as a list carrier, so its other members were written
+  // whole and the result was cut mid-JSON at every budget from 100 to 700.
+  var entity: [String: Any] = [
+    "type": "person", "link": "/people/maria", "name": "Maria Alvarez", "tags": ["friend", "baker"],
+  ]
+  for n in 0..<28 { entity["attribute\(n)"] = "value number \(n) " + String(repeating: "x", count: 30) }
+  let raw = pretty(entity)
+
+  var failures: [Int] = []
+  for budget in 200...700 {
+    let shaped = ToolResultShaper.shape(raw, budgetBytes: budget)
+
+    if shaped.utf8.count > budget || !(parse(shaped) is [String: Any]) { failures.append(budget) }
+  }
+  check(failures.isEmpty, "valid JSON object within the budget at every budget from 200 to 700: \(failures.prefix(5))")
+
+  let tight = ToolResultShaper.shape(raw, budgetBytes: 300)
+  let kept = parse(tight) as? [String: Any] ?? [:]
+  check(kept["name"] as? String == "Maria Alvarez", "what the entity is called survives")
+  check(kept["link"] as? String == "/people/maria", "and where it lives")
+}
+
+test("nesting deeper than the cap is dropped, and a very deep result cannot overflow a small stack") {
+  check(ToolResultShaper.maximumDepth >= 8, "real results (a hit with its metadata) are never cut short by the cap")
+
+  // Written as text: building (and freeing) a dictionary 5 000 levels deep is recursive itself.
+  func nest(_ levels: Int) -> String {
+    let label = String(repeating: "y", count: 40)
+    let leaf = "{\"leaf\":\"the deepest value \(String(repeating: "x", count: 50))\"}"
+
+    return "{\"type\":\"note\",\"link\":\"/notes/n\",\"title\":\"deep\",\"nest\":"
+      + String(repeating: "{\"label\":\"\(label)\",\"level\":", count: levels) + leaf
+      + String(repeating: "}", count: levels) + "}"
+  }
+
+  // A document of moderate depth is parsed, and what lies below the cap is dropped.
+  let moderate = ToolResultShaper.shape(nest(40), budgetBytes: 1500)
+  if let parsed = parse(moderate) {
+    check(depth(of: parsed) <= ToolResultShaper.maximumDepth + 1, "no deeper than the cap: \(depth(of: parsed))")
+    check((parsed as? [String: Any])?["title"] as? String == "deep", "the shallow part is untouched")
+  } else {
+    check(false, "a 40-level document comes back as JSON")
+  }
+
+  // A very deep one never reaches Foundation's recursive parser: 512 levels overflowed a 512 KB stack and
+  // 400 a 256 KB one, which is what a background thread gets. It is cut as text, within the budget.
+  for levels in [400, 5_000] {
+    let raw = nest(levels)
+    var shaped = ""
+    let finished = DispatchSemaphore(value: 0)
+    let thread = Thread {
+      shaped = ToolResultShaper.shape(raw, budgetBytes: 4096)
+      finished.signal()
+    }
+    thread.stackSize = 256 * 1024
+    thread.start()
+
+    check(finished.wait(timeout: .now() + 60) == .success, "\(levels) levels came back, on a 256 KB stack")
+    check(shaped.utf8.count <= 4096, "within the budget (\(shaped.utf8.count))")
+    check(shaped.hasSuffix(ToolResultShaper.truncationMarker), "and says it was cut")
+  }
+}
+
+test("a result with thousands of members is shaped in about a second, not a minute") {
+  // Dropping members used to rebuild and measure every prefix of the object: quadratic, 45 s for 8 000.
+  var object: [String: Any] = ["type": "note", "link": "/notes/n", "title": "wide"]
+  for n in 0..<8_000 { object["column\(n)"] = "value \(n) " + String(repeating: "z", count: 20) }
+  let raw = pretty(object)
+
+  let started = Date()
+  let shaped = ToolResultShaper.shape(raw, budgetBytes: 700)
+  let seconds = Date().timeIntervalSince(started)
+
+  check(seconds < 20, "8 000 members took \(String(format: "%.1f", seconds)) s")
+  check(shaped.utf8.count <= 700 && parse(shaped) is [String: Any], "and what came out is a JSON object within the budget")
+}
+
+test("an id stays when the link beside it is empty, and an entityType when the type is null") {
+  // Both used to vanish with the empty one: the id because ANY string link made it redundant, the entityType
+  // because ANY `type` key did. A link and a type that are pruned themselves leave the other one standing.
+  let filler = String(repeating: "padding ", count: 60)
+  let emptyLink = ToolResultShaper.shape(
+    pretty(["id": "note-17", "link": "", "title": "kept", "body": filler]), budgetBytes: 120)
+  let nullType = ToolResultShaper.shape(
+    "{\"entityType\":\"person\",\"type\":null,\"name\":\"kept\",\"body\":\"\(filler)\"}", budgetBytes: 120)
+
+  check(emptyLink.contains("\"id\":\"note-17\""), "the id is the address when the link is empty: \(emptyLink)")
+  check(nullType.contains("\"entityType\":\"person\""), "the entityType is the type when `type` is null: \(nullType)")
+
+  // And they still go beside a link and a type that are there.
+  let linked = ToolResultShaper.shape(
+    pretty(["id": "note-17", "link": "/notes/note-17", "title": "kept", "body": filler]), budgetBytes: 160)
+  check(!linked.contains("\"id\""), "the id beside a real link is redundant: \(linked)")
+}
+
 print("\n\(checks - failures) of \(checks) checks passed")
 exit(failures == 0 ? 0 : 1)

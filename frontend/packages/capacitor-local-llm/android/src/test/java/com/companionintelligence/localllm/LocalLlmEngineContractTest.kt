@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -65,6 +66,32 @@ class LocalLlmEngineContractTest {
 
         // And the thermal / lifecycle route, which arrives as `finished(stopRequested = true)`.
         assertNull(LocalLlmEngine.StreamEvent.terminal(LocalLlmEngine.Completion.finished("x", "", stats, stopRequested = true)).stats)
+    }
+
+    // ---- the reuse key ------------------------------------------------------------------------------
+
+    @Test
+    fun the_window_a_tools_result_budget_comes_from_is_part_of_what_decides_whether_a_load_is_reused() {
+        // loadModel builds the intent tools — and with them each tool's result budget, from maxTokens — only when
+        // the resident model cannot be reused, and reuse is decided by LoadSpec equality. So a load with another
+        // window must be another spec, or its tools would keep the old window's budget.
+        val spec =
+            LocalLlmEngine.LoadSpec(
+                info = LocalLlmModels.QWEN3_0_6B_INT4,
+                modelPath = "/models/qwen3.litertlm",
+                maxTokens = 1024,
+                topK = 64,
+                topP = 0.95,
+                temperature = 1.0,
+                accelerator = LocalLlmAccelerator.CPU,
+                enableSpeculativeDecoding = false,
+                toolsGeneration = 0,
+            )
+
+        assertEquals("the same load again is reusable", spec, spec.copy())
+        assertNotEquals(spec, spec.copy(maxTokens = 4096))
+        assertNotEquals(LocalLlmPolicy.toolResultByteBudget(spec.maxTokens), LocalLlmPolicy.toolResultByteBudget(4096))
+        assertNotEquals("a reconfigured appliance is another spec too", spec, spec.copy(toolsGeneration = 1))
     }
 
     // ---- releasing resources ----------------------------------------------------------------------

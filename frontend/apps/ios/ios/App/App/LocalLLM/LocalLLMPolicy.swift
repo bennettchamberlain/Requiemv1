@@ -297,7 +297,7 @@ enum LocalLLMPolicy {
 ///
 /// - **An unset column is most of a hit.** The appliance writes every column of an entity, so a typical
 ///   hit is `null`, `false`, `[]`, `{}` and foreign-key UUIDs around a few readable fields. They cost
-///   bytes and tell the model nothing, so they go first (``prune(_:)``).
+///   bytes and tell the model nothing, so they go first (``prune(_:depth:)``).
 /// - **What is left is written answer-first.** Identity (`type`, `link`, `title`…), then when, then what
 ///   it says, then everything else shortest-first, then bookkeeping (`sourceId`, scores…). A hit that
 ///   has to lose members loses them from the end, so the cut takes bookkeeping before the date.
@@ -313,18 +313,30 @@ enum LocalLLMPolicy {
 /// - a result that already fits is returned untouched;
 /// - the output is never longer than the budget, in UTF-8 bytes (those are what a token budget is
 ///   estimated from);
-/// - JSON in is JSON out — valid, never cut mid-token — and a search envelope (`{summary, …, items:[…]}`)
-///   keeps its header and closes its list with an element that says how many results were left out, so
-///   the model knows the list was cut rather than exhaustive;
-/// - anything that is not JSON is cut at the budget on a character boundary and says so.
+/// - JSON in is JSON out — valid, never cut mid-token — from a budget big enough for a header, one hit and
+///   the closing note (about 340 bytes on the realistic results; the tests hold 400). A search envelope
+///   (`{summary, …, items:[…]}`) keeps its header and closes its list with an element that says how many
+///   results were left out, so the model knows the list was cut rather than exhaustive;
+/// - anything that is not JSON — or is nested deeper than ``maximumParseDepth``, which Foundation's own
+///   recursive parser cannot be trusted with on a small stack — is cut at the budget on a character
+///   boundary and says so, as is JSON under that budget.
 enum ToolResultShaper {
   /// Below this a budget cannot hold the markers, so it is raised to it.
   static let minimumBudgetBytes = 64
   static let truncationMarker = "…[truncated]"
-  /// Held back from a list's budget so the closing "N more omitted" element cannot itself overflow: the
-  /// element is ~70 bytes, and a small budget cannot spare all of that, so the reserve is a share of it.
-  private static let omissionReserveBytes = 96
-  private static func omissionReserve(for budget: Int) -> Int { min(omissionReserveBytes, budget / 6) }
+  /// The closing element of a list that lost hits, and its size: held back, exactly, so it cannot itself overflow.
+  private static func omissionNote(_ omitted: Int) -> String? {
+    quoted("[\(omitted) more results omitted — refine the query to narrow them down]")
+  }
+
+  /// The deepest a value is kept. Real results are under ten levels deep; a nested object is written by
+  /// recursion, and a deep one overflowed the 512 KB stack of a background thread (400 levels), which Swift
+  /// cannot catch. Anything deeper is dropped, so nothing the shaper recurses into is deeper than this.
+  static let maximumDepth = 16
+  /// The deepest a document may be and still be handed to Foundation's parser, which is recursive too and
+  /// overflowed a 512 KB stack at 512 levels (and a 256 KB one at 400) before any of this code ran. A
+  /// deeper one is cut as text, which is what anything that is not JSON gets.
+  static let maximumParseDepth = 64
   /// How many leading hits share the room at most, and the least one is given before fewer share it.
   static let maximumBreadth = 3
   private static let minimumShareBytes = 220
@@ -341,13 +353,14 @@ enum ToolResultShaper {
     guard text.utf8.count > budget else { return text }
 
     guard
+      nests(text, atMost: maximumParseDepth),
       let value = try? JSONSerialization.jsonObject(
         with: Data(text.utf8), options: [.fragmentsAllowed])
     else { return truncated(text, to: budget) }
 
     let shaped: String?
 
-    switch prune(value) {
+    switch prune(value, depth: 0) {
     case let items as [Any]:
       shaped = bound(items, lead: "[", tail: "]", budget: budget)
     case let object as [String: Any]:
@@ -365,9 +378,35 @@ enum ToolResultShaper {
     return shaped.utf8.count <= budget ? shaped : truncated(shaped, to: budget)
   }
 
+  /// Whether the brackets of `text` nest no deeper than `limit`, counted without parsing: a string's contents
+  /// (and an escaped quote in it) are skipped, everything else that opens or closes a container is counted.
+  private static func nests(_ text: String, atMost limit: Int) -> Bool {
+    var depth = 0
+    var inString = false
+    var escaped = false
+
+    for byte in text.utf8 {
+      if inString {
+        if escaped { escaped = false } else if byte == 0x5C { escaped = true } else if byte == 0x22 { inString = false }
+        continue
+      }
+
+      switch byte {
+      case 0x22: inString = true
+      case 0x7B, 0x5B:
+        depth += 1
+        if depth > limit { return false }
+      case 0x7D, 0x5D: depth -= 1
+      default: break
+      }
+    }
+
+    return true
+  }
+
   /// The pruned value as compact JSON, or nil when there is none to write.
   private static func compact(_ value: Any) -> String? {
-    prune(value).flatMap { json($0) }
+    prune(value, depth: 0).flatMap { json($0) }
   }
 
   /// Cuts `text` to `budget` bytes, at a character boundary, ending in ``truncationMarker``.
@@ -397,28 +436,36 @@ enum ToolResultShaper {
   ///   (`threadId`, `connectionId`, `userId`…). The model cannot read one and no tool it has takes an id.
   /// - `id` when the hit has a `link`, which already carries it, and `entityType` next to a `type`.
   ///
-  /// Numbers, `true` and every non-empty string stay, and so does the order of an array.
-  private static func prune(_ value: Any) -> Any? {
+  /// Numbers, `true` and every non-empty string stay, and so does the order of an array. A container
+  /// deeper than ``maximumDepth`` goes.
+  private static func prune(_ value: Any, depth: Int) -> Any? {
     switch value {
     case let string as String:
       return string.isEmpty ? nil : string
     case let array as [Any]:
+      guard depth < maximumDepth else { return nil }
+
       let kept = array.compactMap { element -> Any? in
         if let string = element as? String, isUUID(string) { return nil }
 
-        return prune(element)
+        return prune(element, depth: depth + 1)
       }
 
       return kept.isEmpty ? nil : kept
     case let object as [String: Any]:
-      let linked = object["link"] is String
+      guard depth < maximumDepth else { return nil }
+
+      // Only a link and a type that survive make the id and the entityType redundant: an empty `link` and a
+      // null `type` are pruned themselves, and dropping the id or entityType beside them left nothing at all.
+      let linked = (object["link"] as? String).map { !$0.isEmpty } ?? false
+      let typed = object["type"].flatMap { prune($0, depth: depth + 1) } != nil
       var kept: [String: Any] = [:]
 
       for (key, member) in object {
-        if key == "entityType", object["type"] != nil { continue }
+        if key == "entityType", typed { continue }
         if key == "id", linked { continue }
         if let string = member as? String, key != "id", key != "link", isUUID(string) { continue }
-        guard let pruned = prune(member) else { continue }
+        guard let pruned = prune(member, depth: depth + 1) else { continue }
 
         kept[key] = pruned
       }
@@ -448,7 +495,7 @@ enum ToolResultShaper {
   /// node and no edge, because the edges are what says how the people relate. An object with no list is
   /// ``fit(_:into:)``.
   private static func lists(in object: [String: Any], budget: Int) -> String? {
-    let listKeys = object.filter { ($0.value as? [Any])?.count ?? 0 > 1 }.map(\.key).sorted { lhs, rhs in
+    let listKeys = object.filter { isList($0.value) }.map(\.key).sorted { lhs, rhs in
       // `items` first, then the rest by the order `members(of:)` writes them in, then by name.
       let (left, right) = (lhs == "items" ? (-1, 0) : rank(lhs), rhs == "items" ? (-1, 0) : rank(rhs))
       if left.0 != right.0 { return left.0 < right.0 }
@@ -484,12 +531,44 @@ enum ToolResultShaper {
     return text + "}"
   }
 
+  /// A list is an array of two or more things with parts of their own — hits, nodes, edges. An array of
+  /// plain values (`tags`, `labels`) is one member of the object it is in, and is dropped like one when the
+  /// object has to lose members: treating it as a list left the object's other members written whole.
+  private static func isList(_ value: Any) -> Bool {
+    guard let array = value as? [Any], array.count > 1 else { return false }
+
+    return array.contains { $0 is [String: Any] }
+  }
+
   /// Leading hits written in `lead … tail`, each held to an equal share of the room (the first
   /// ``maximumBreadth`` of them; the rest take what is left), then a closing element saying how many
   /// were left out. Nil when not even the first hit can be made to fit. `lead` and `tail` are the list's
   /// own text, brackets included: `[` and `]` for a bare list, `"items":[` and `]` inside an object.
   private static func bound(_ items: [Any], lead: String, tail: String, budget: Int) -> String? {
-    var room = budget - lead.utf8.count - tail.utf8.count - omissionReserve(for: budget)
+    let frame = lead.utf8.count + tail.utf8.count
+
+    // First every hit, with nothing held back: when all of them fit there is no note to make room for.
+    if let everything = take(items, room: budget - frame), everything.count == items.count {
+      return lead + everything.joined(separator: ",") + tail
+    }
+
+    // Otherwise some are left out, and the closing note has to fit as well: room for it (and the comma
+    // before it) is held back, sized for the largest count it could carry, so it cannot overflow.
+    guard
+      let note = omissionNote(items.count),
+      let kept = take(items, room: budget - frame - note.utf8.count - 1),
+      !kept.isEmpty || items.isEmpty
+    else { return nil }
+
+    guard items.count > kept.count else { return lead + kept.joined(separator: ",") + tail }
+    guard let closing = omissionNote(items.count - kept.count) else { return nil }
+
+    return lead + (kept + [closing]).joined(separator: ",") + tail
+  }
+
+  /// The leading hits that fit in `room`, each as JSON, the first ``maximumBreadth`` held to an equal share.
+  private static func take(_ items: [Any], room: Int) -> [String]? {
+    var room = room
     let breadth = breadth(of: items.count, room: room)
     var kept: [String] = []
 
@@ -503,20 +582,7 @@ enum ToolResultShaper {
       room -= text.utf8.count + separator
     }
 
-    guard !kept.isEmpty || items.isEmpty else { return nil }
-
-    var elements = kept
-    let omitted = items.count - kept.count
-
-    if omitted > 0 {
-      guard
-        let note = quoted("[\(omitted) more results omitted — refine the query to narrow them down]")
-      else { return nil }
-
-      elements.append(note)
-    }
-
-    return lead + elements.joined(separator: ",") + tail
+    return kept
   }
 
   /// How many hits share `room`: ``maximumBreadth``, fewer when a share would be under
@@ -545,15 +611,21 @@ enum ToolResultShaper {
       let ordered = members(of: capStrings(in: object, to: stringCaps.last ?? 24) as? [String: Any] ?? object)
     else { return nil }
 
-    var keep = ordered.count
+    // The longest run of leading members that fits, in one pass: measuring every prefix afresh is
+    // quadratic, and 8 000 members took 45 seconds.
+    var size = 2  // the braces
+    var keep = 0
 
-    while keep > minimumMembers {
-      keep -= 1
-      let text = "{" + ordered.prefix(keep).joined(separator: ",") + "}"
-      if text.utf8.count <= limit { return text }
+    for (index, member) in ordered.enumerated() {
+      size += member.utf8.count + (index > 0 ? 1 : 0)
+      if size > limit { break }
+
+      keep = index + 1
     }
 
-    return nil
+    guard keep >= minimumMembers else { return nil }
+
+    return "{" + ordered.prefix(keep).joined(separator: ",") + "}"
   }
 
   /// Caps every string in `value` at `cap` characters. A communication's `content` is unbounded; the
@@ -657,7 +729,12 @@ enum ToolResultShaper {
       if left.group != right.group { return left.group < right.group }
       if left.index != right.index { return left.index < right.index }
 
-      return (lhs.size, lhs.key) < (rhs.size, rhs.key)
+      if lhs.size != rhs.size { return lhs.size < rhs.size }
+      if lhs.key != rhs.key { return lhs.key < rhs.key }
+
+      // Two keys that are canonically equivalent compare equal as Strings; the code points settle it, so the
+      // order does not depend on the dictionary's.
+      return lhs.key.unicodeScalars.lexicographicallyPrecedes(rhs.key.unicodeScalars)
     }
 
     return entries.map(\.member)

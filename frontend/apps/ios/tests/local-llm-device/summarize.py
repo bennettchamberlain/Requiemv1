@@ -6,6 +6,7 @@
     summarize.py results/results-load.jsonl --load
     summarize.py results/results-think.jsonl --answers --where prompt=p3 --limit 12
     summarize.py results/*.jsonl --queries --by plan,prompt
+    summarize.py results/*.jsonl --rooms
 
 `plan` is also a field: the plan a result line came from (the `results-<plan>.jsonl` file name).
 
@@ -187,6 +188,60 @@ def show_queries(rows, fields):
     table([*fields, "calls", "instruction", "key words", "mean words"], out)
 
 
+def turn_ran_away(turn, window):
+    """The reply is not clean (control markers, foreign script, runaway repetition) or went on until the window was full."""
+    return (not turn["score"]["clean"]) or (turn.get("kvAfter") or 0) >= window - 8
+
+
+def show_rooms(rows):
+    """Tool turns by the room the window had left once the tool's result was in: window - (cache at the call +
+    the result + the 18-token wrapper). The reply that follows a tool result comes out garbled below about 700
+    tokens, whatever the window."""
+    buckets = collections.defaultdict(lambda: [set(), 0, 0, 0])
+
+    for row in rows:
+        cell = row["cell"]
+        window = cell.get("maxTokens")
+        if (
+            cell.get("mode") != "tool"
+            or not cell.get("bindTools", True)
+            or not window
+            or not row["turns"]
+        ):
+            continue
+
+        turn = row["turns"][0]
+        calls = [
+            c
+            for c in turn["toolCalls"]
+            if c["tool"] != "inject" and c.get("kvAtCall") is not None
+        ]
+        if not calls:
+            continue
+
+        room = window - (calls[-1]["kvAtCall"] + calls[-1]["shapedTokens"] + 18)
+        bucket = buckets[room // 100 * 100]
+        bucket[0].add(window)
+        bucket[1] += 1
+        bucket[2] += turn_ran_away(turn, window)
+        bucket[3] += turn["score"]["useful"]
+
+    out = []
+    for low in sorted(buckets):
+        windows, turns, ran_away, useful = buckets[low]
+        out.append(
+            [
+                f"{low}..{low + 99}",
+                ",".join(map(str, sorted(windows))),
+                turns,
+                ran_away,
+                useful,
+            ]
+        )
+
+    table(["room left (tokens)", "windows", "turns", "garbled", "useful"], out)
+
+
 def show_load(rows):
     out = []
     for row in rows:
@@ -279,6 +334,11 @@ def main():
     )
     parser.add_argument("--answers", action="store_true", help="print the answers")
     parser.add_argument(
+        "--rooms",
+        action="store_true",
+        help="tool turns by the room the window had left once the result was in, and how many came out garbled",
+    )
+    parser.add_argument(
         "--queries",
         action="store_true",
         help="what the model passes to knowledge_search, as key words or as the instruction",
@@ -309,6 +369,9 @@ def main():
     fields = [f for f in args.by.split(",") if f]
     if args.queries:
         show_queries(rows, fields)
+        return 0
+    if args.rooms:
+        show_rooms(rows)
         return 0
 
     headers = [
