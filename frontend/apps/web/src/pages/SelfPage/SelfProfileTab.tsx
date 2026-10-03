@@ -79,6 +79,9 @@ export function SelfProfileTab() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [refused, setRefused] = useState<RefusedContact[]>([]);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  // Life details writes answers that About you lists under "Recent answers";
+  // bumping this tells About you to refetch, so an edit shows up there too.
+  const [answersVersion, setAnswersVersion] = useState(0);
 
   // Seed the editor once the persisted values are available, not on every
   // render: cache-and-network hands back a fresh object each time, and
@@ -215,11 +218,11 @@ export function SelfProfileTab() {
           </Card>
         )}
 
-        <LifeDetailsSection />
+        <LifeDetailsSection onAnswersChanged={() => setAnswersVersion((version) => version + 1)} />
 
         {rawEntityId && <ConnectionsSection entityId={rawEntityId} />}
 
-        <AboutYouSection />
+        <AboutYouSection refreshToken={answersVersion} />
 
         <InvitesSection />
 

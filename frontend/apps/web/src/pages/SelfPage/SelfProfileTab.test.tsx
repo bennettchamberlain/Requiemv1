@@ -8,7 +8,7 @@
  * file and its own unrelated data dependencies.
  */
 import type { MockedResponse } from '@apollo/client/testing';
-import { fireEvent, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { GraphQLError } from 'graphql';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -18,10 +18,27 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { SelfProfileTab } from './SelfProfileTab';
 
-vi.mock('./sections/LifeDetailsSection', () => ({ LifeDetailsSection: () => <div>LifeDetailsSection</div> }));
+// The two sections that share answers keep the props the page hands them, so a
+// test can play the part of one and read what the other was told.
+const sections = vi.hoisted(() => ({
+  lifeDetails: null as null | { onAnswersChanged?: () => void },
+  aboutYou: null as null | { refreshToken?: number },
+}));
+
+vi.mock('./sections/LifeDetailsSection', () => ({
+  LifeDetailsSection: (props: { onAnswersChanged?: () => void }) => {
+    sections.lifeDetails = props;
+
+    return <div>LifeDetailsSection</div>;
+  },
+}));
 vi.mock('./sections/ConnectionsSection', () => ({ ConnectionsSection: () => <div>ConnectionsSection</div> }));
 vi.mock('@/pages/SettingsPage/sections/AboutYouSection', () => ({
-  AboutYouSection: () => <div>AboutYouSection</div>,
+  AboutYouSection: (props: { refreshToken?: number }) => {
+    sections.aboutYou = props;
+
+    return <div>AboutYouSection</div>;
+  },
 }));
 vi.mock('@/pages/SettingsPage/sections/AccountSection', () => ({
   AccountSection: () => <div>AccountSection</div>,
@@ -277,5 +294,30 @@ describe('SelfProfileTab — a number the server will not store', () => {
     );
     await settle();
     expect(calls).toBe(1);
+  });
+});
+
+describe('SelfProfileTab — keeping About you in step with Life details', () => {
+  it('tells About you to refresh each time Life details writes an answer', async () => {
+    // "Recent answers" under About you lists the answers Life details edits, and
+    // used to keep the old words until the page was reloaded.
+    await renderTab();
+
+    const initial = sections.aboutYou?.refreshToken ?? 0;
+
+    act(() => sections.lifeDetails?.onAnswersChanged?.());
+    expect(sections.aboutYou?.refreshToken).toBe(initial + 1);
+
+    act(() => sections.lifeDetails?.onAnswersChanged?.());
+    expect(sections.aboutYou?.refreshToken).toBe(initial + 2);
+  });
+
+  it('does not refresh About you on its own', async () => {
+    await renderTab();
+
+    const initial = sections.aboutYou?.refreshToken;
+    fireEvent.change(screen.getByLabelText('Job title'), { target: { value: 'Engineer' } });
+
+    expect(sections.aboutYou?.refreshToken).toBe(initial);
   });
 });

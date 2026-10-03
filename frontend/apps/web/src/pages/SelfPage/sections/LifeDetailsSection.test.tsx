@@ -790,6 +790,166 @@ describe('LifeDetailsSection — the 5,000-character cap', () => {
   });
 });
 
+describe('LifeDetailsSection — the page after the editor closes', () => {
+  // A long answer is as tall as its text, so cancelling a long draft collapses
+  // the editor in one step. WebKit has no scroll anchoring: the scroller kept its
+  // scrollTop and the page landed on whatever used to sit below the row — on an
+  // iPhone ~1,400pt past it at 2,500 characters, the end of the page at 5,000.
+  // jsdom has no layout, so these pin the mechanism: once the editor is gone, the
+  // row is brought back into view.
+
+  /** What `scrollIntoView` was asked to reveal, and whether the row still had its editor at that moment. */
+  function trackReveals() {
+    const revealed: Array<{ target: Element; options: unknown; editorStillOpen: boolean }> = [];
+
+    vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
+      this: Element,
+      options?: boolean | ScrollIntoViewOptions,
+    ) {
+      revealed.push({
+        target: this,
+        options,
+        editorStillOpen: document.querySelector('[data-question-key] textarea') !== null,
+      });
+    });
+
+    return revealed;
+  }
+
+  /** The question cell: the top of the row (the row wrapper itself has no box). */
+  const rowTop = (questionKey: string) => rowFor(questionKey).firstElementChild;
+
+  const LONG_DRAFT = 'lorem ipsum dolor sit amet '.repeat(100);
+
+  async function openEditor() {
+    fetchJson.mockResolvedValue(cataloguePage([catalogueEntry(BLOOD_TYPE_KEY, 'AB positive')]));
+
+    render(<LifeDetailsSection />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit your answer to/ }));
+
+    return within(rowFor(BLOOD_TYPE_KEY));
+  }
+
+  it('brings the row back into view when a long draft is cancelled', async () => {
+    const revealed = trackReveals();
+    const row = await openEditor();
+
+    fireEvent.change(row.getByRole('textbox'), { target: { value: LONG_DRAFT } });
+
+    // Opening the editor and typing never scroll the page: the browser follows the caret.
+    expect(revealed).toEqual([]);
+
+    fireEvent.click(row.getByRole('button', { name: 'Cancel' }));
+
+    expect(revealed).toHaveLength(1);
+    expect(revealed[0]!.target).toBe(rowTop(BLOOD_TYPE_KEY));
+    expect(revealed[0]!.options).toEqual({ block: 'nearest' });
+    // After the collapse, not before it: revealing a row whose tall editor is
+    // still in place would measure the wrong layout.
+    expect(revealed[0]!.editorStillOpen).toBe(false);
+  });
+
+  it('does the same when the editor is dismissed with Escape', async () => {
+    const revealed = trackReveals();
+    const row = await openEditor();
+
+    fireEvent.keyDown(row.getByRole('textbox'), { key: 'Escape' });
+
+    expect(revealed).toHaveLength(1);
+    expect(revealed[0]!.target).toBe(rowTop(BLOOD_TYPE_KEY));
+  });
+
+  it('does the same once a saved answer has replaced the editor', async () => {
+    const revealed = trackReveals();
+    const row = await openEditor();
+
+    fireEvent.change(row.getByRole('textbox'), { target: { value: LONG_DRAFT } });
+    fireEvent.click(row.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(revealed).toHaveLength(1));
+
+    expect(revealed[0]!.target).toBe(rowTop(BLOOD_TYPE_KEY));
+    expect(revealed[0]!.editorStillOpen).toBe(false);
+  });
+
+  it('leaves the page alone while a save is still in flight, or when it fails', async () => {
+    const revealed = trackReveals();
+    const row = await openEditor();
+
+    fetchJson.mockRejectedValue(new Error('offline'));
+    fireEvent.change(row.getByRole('textbox'), { target: { value: LONG_DRAFT } });
+    fireEvent.click(row.getByRole('button', { name: 'Save' }));
+
+    // The editor stays open with the draft, so there is nothing to bring back.
+    expect(await row.findByRole('alert')).toHaveTextContent("Couldn't save that. Try again.");
+    expect(revealed).toEqual([]);
+  });
+
+  it('does not scroll at all on first render, or when an answer is merely saved from its field', async () => {
+    const revealed = trackReveals();
+    fetchJson.mockResolvedValue(fullCataloguePage());
+
+    render(<LifeDetailsSection />);
+
+    await screen.findByText('Do you volunteer for any organization?');
+    fireEvent.click(within(rowFor(VOLUNTEER_KEY)).getByRole('radio', { name: 'Yes' }));
+    await waitFor(() => expect(callsWithMethod('POST')).toHaveLength(1));
+
+    expect(revealed).toEqual([]);
+  });
+});
+
+describe('LifeDetailsSection — telling the page an answer changed', () => {
+  it('reports a saved answer, once the section has refreshed', async () => {
+    const onAnswersChanged = vi.fn();
+    fetchJson.mockResolvedValue(fullCataloguePage());
+
+    render(<LifeDetailsSection onAnswersChanged={onAnswersChanged} />);
+
+    await screen.findByText('Do you volunteer for any organization?');
+    fireEvent.click(within(rowFor(VOLUNTEER_KEY)).getByRole('radio', { name: 'Yes' }));
+
+    await waitFor(() => expect(onAnswersChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it('reports an edited answer', async () => {
+    const onAnswersChanged = vi.fn();
+    fetchJson.mockResolvedValue(cataloguePage([catalogueEntry(BLOOD_TYPE_KEY, 'AB positive')]));
+
+    render(<LifeDetailsSection onAnswersChanged={onAnswersChanged} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit your answer to/ }));
+    const row = within(rowFor(BLOOD_TYPE_KEY));
+    fireEvent.change(row.getByRole('textbox'), { target: { value: 'O negative' } });
+    fireEvent.click(row.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onAnswersChanged).toHaveBeenCalledTimes(1));
+    expect(callsWithMethod('PATCH')).toHaveLength(1);
+  });
+
+  it('says nothing when the write failed, or the edit was cancelled', async () => {
+    const onAnswersChanged = vi.fn();
+    fetchJson.mockResolvedValue(cataloguePage([catalogueEntry(BLOOD_TYPE_KEY, 'AB positive')]));
+
+    render(<LifeDetailsSection onAnswersChanged={onAnswersChanged} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit your answer to/ }));
+    const row = within(rowFor(BLOOD_TYPE_KEY));
+
+    fireEvent.change(row.getByRole('textbox'), { target: { value: 'O negative' } });
+    fireEvent.click(row.getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Edit your answer to/ }));
+    fetchJson.mockRejectedValue(new Error('offline'));
+    fireEvent.change(row.getByRole('textbox'), { target: { value: 'O negative' } });
+    fireEvent.click(row.getByRole('button', { name: 'Save' }));
+
+    expect(await row.findByRole('alert')).toBeInTheDocument();
+    expect(onAnswersChanged).not.toHaveBeenCalled();
+  });
+});
+
 describe('LifeDetailsSection — the provenance drawer', () => {
   /**
    * The section plus the ONE provider the drawer adds: it is a

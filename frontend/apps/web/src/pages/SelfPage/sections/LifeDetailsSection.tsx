@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { fetchJson } from '@ci/common';
 import { Button, Input, Textarea, ToggleGroup, cn } from '@ci/shadcn';
@@ -417,8 +417,18 @@ function AnswerPrompt({
   );
 }
 
+interface LifeDetailsSectionProps {
+  /**
+   * Called after an answer has been written (saved or edited) and the section
+   * has refreshed, so a page that lists the same answers elsewhere — About you's
+   * "Recent answers" — can refresh too instead of showing the old words until a
+   * reload.
+   */
+  onAnswersChanged?: () => void;
+}
+
 /** A fixed, hand-curated slice of your Reflections answers — see lifeDetails.ts for why these questions and not a generic category browse. */
-export function LifeDetailsSection() {
+export function LifeDetailsSection({ onAnswersChanged }: LifeDetailsSectionProps) {
   const [{ authToken }] = useAuth();
   const stacked = useStacked();
   const [rows, setRows] = useState<CuratedAnswers>({});
@@ -434,6 +444,35 @@ export function LifeDetailsSection() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
+
+  const sectionRef = useRef<HTMLElement>(null);
+  const lastEditedKey = useRef<string | null>(null);
+
+  // A long answer makes a tall editor, and a cancelled draft (or one saved much
+  // shorter than it was) collapses it to the saved answer in one step. WebKit has
+  // no scroll anchoring, so the scroller keeps its scrollTop and the page lands on
+  // whatever used to be below the row — a screenful or the whole page away (QA:
+  // 2,500 characters left the page ~1,400pt past the row, 5,000 at the very end).
+  // Once the editor is gone, bring the row back into view; `nearest` leaves the
+  // page alone when the row is still on screen, so a short edit moves nothing.
+  useLayoutEffect(() => {
+    if (editingKey !== null) {
+      lastEditedKey.current = editingKey;
+
+      return;
+    }
+
+    const closedKey = lastEditedKey.current;
+    lastEditedKey.current = null;
+
+    if (closedKey !== null) {
+      sectionRef.current
+        ?.querySelector<HTMLElement>(`[data-question-key="${closedKey}"]`)
+        // The row wrapper is `display: contents` and has no box of its own; its
+        // first child is the question cell, the top of the row.
+        ?.firstElementChild?.scrollIntoView?.({ block: 'nearest' });
+    }
+  }, [editingKey]);
 
   const authHeaders = useCallback(
     () => ({
@@ -523,6 +562,7 @@ export function LifeDetailsSection() {
       // screen for the length of the fetch.
       await loadAnswers({ background: true });
       setDrafts((prev) => ({ ...prev, [questionKey]: '' }));
+      onAnswersChanged?.();
     } catch {
       // Draft (if any) survives on failure so the user doesn't retype it.
     } finally {
@@ -595,6 +635,7 @@ export function LifeDetailsSection() {
       await loadAnswers({ background: true });
       setEditingKey(null);
       setEditDraft('');
+      onAnswersChanged?.();
     } catch {
       // Stay in the editor with the typed text intact so it can be retried.
       setEditError("Couldn't save that. Try again.");
@@ -609,7 +650,7 @@ export function LifeDetailsSection() {
   };
 
   return (
-    <section>
+    <section ref={sectionRef}>
       <div className="mb-3 flex items-center gap-2">
         <NotebookPen className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
         <h2 className="text-lg font-semibold">Life details</h2>
