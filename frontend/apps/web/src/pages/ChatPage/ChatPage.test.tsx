@@ -824,8 +824,10 @@ describe('ChatPage', () => {
     /**
      * Five of the ten need a tool: "Where do I usually go next" answered by a
      * model with none came back as a made-up place, a literal `tool_code` block,
-     * or the bare word "Brief.list". With tools off the page offers the ones the
-     * snapshots can answer, and nothing the model cannot.
+     * or the bare word "Brief.list". A sixth, "What is on Brief", is in the
+     * snapshots but is still invented on a 1B model. With tools off the page
+     * offers the ones the snapshots can answer reliably, and nothing the model
+     * cannot.
      */
     describe('when chat has no tools', () => {
       const noTools = () => {
@@ -835,7 +837,7 @@ describe('ChatPage', () => {
       };
 
       it('names exactly the starters that need a tool, and they are real starters', () => {
-        expect(TOOL_STARTER_PROMPTS.size).toBe(5);
+        expect(TOOL_STARTER_PROMPTS.size).toBe(6);
 
         for (const prompt of TOOL_STARTER_PROMPTS) {
           expect(STARTER_PROMPTS).toContain(prompt);
@@ -862,7 +864,8 @@ describe('ChatPage', () => {
         renderEmpty();
 
         expect(screen.queryByRole('button', { name: 'Where do I usually go next' })).toBeNull();
-        expect(screen.getByRole('button', { name: 'What is on Brief' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'What is on Brief' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Who is my family' })).toBeInTheDocument();
       });
 
       it('offers every starter while the model list is still loading, rather than flashing a short one', () => {

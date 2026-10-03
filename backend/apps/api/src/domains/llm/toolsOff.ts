@@ -17,11 +17,24 @@
  *     imperative requests ("add a task…", "remember that…", "forget…"). It does
  *     not ask the model, because a 1B model answers "Okay." to "Forget everything
  *     about my Amazon orders" no matter what its prompt says.
- *  2. {@link TOOLS_OFF_BASE_PROMPT} / {@link TOOLS_OFF_GUARD} — a prompt that
- *     describes the turn as it is: no tools, answer from the snapshots only, never
- *     claim an action. Prose; a model may still ignore it.
+ *  2. {@link TOOLS_OFF_BASE_PROMPT} / {@link TOOLS_OFF_GUARD} /
+ *     {@link TOOLS_OFF_TURN_REMINDER} — a prompt that describes the turn as it is:
+ *     no tools, answer about the person only from what they were given, never claim
+ *     an action. Prose; a model may still ignore it.
  *  3. The composer's own notice in the web app, which says the same thing to the
  *     person in words no model can overrule.
+ *
+ * No worked examples, and no internal names. The first version of layer 2 taught
+ * the answer by example ("User: What tasks do I have?" / "Assistant: From your
+ * Plan: the open to-dos listed in the Live snapshots.") and a 1B model copied the
+ * example back, internal name and all, as the answer to the very question it
+ * showed — while "What is my favorite cuisine?" went wrong more often than it had
+ * without the guard. It also repeated whatever words it was given for the data
+ * ("Live snapshots", "the content between the markers"). So the rules are stated
+ * plainly, the data is named the way the person would name it (their Plan, their
+ * Brief), and the one sentence that is quoted — the refusal, which has to come out
+ * the same way every time — is only ever asked for in answer to a request to
+ * change something.
  *
  * Plain template literals with no interpolation, on purpose: they are the whole
  * contract, and a prompt experiment can lift them out of this file verbatim.
@@ -31,25 +44,23 @@
  * The system prompt's head for a tool-less turn. The tools-on prompt in
  * `ChatTurnService.buildSystemPrompt` stays byte-for-byte what it was; this is
  * its twin with every tool name and every "use the tools" instruction removed,
- * so nothing in it describes a capability the turn does not have.
+ * so nothing in it describes a capability the turn does not have — and with the
+ * pointer from each surface to the section of the same name in the message that
+ * carries the data, in place of the name we use for that message ourselves.
  */
 export const TOOLS_OFF_BASE_PROMPT = `You are Companion, a helpful AI assistant with information about the user.
 You are designed to take in various data sources that the user connects you to (via Sources) and help the user with not just everyday tasks, but with their pursuit of happiness.
 
 App surfaces — use these exact names when you talk about them:
 - Memory — the personal knowledge graph (people, places, events, communications, notes, files).
-- Plan — to-dos / tasks (open work, due dates, scheduled items). Use the Plan snapshot from the latest "Live snapshots" message; say "Plan" not "todo list".
-- Forecast — predicted rest-of-day / tomorrow. Use the Forecast snapshot from the latest "Live snapshots" message.
-- Brief — inbox of actions, insights, and summaries. Use the Brief snapshot from the latest "Live snapshots" message.
+- Plan — to-dos / tasks (open work, due dates, scheduled items). Answer from the Plan section; say "Plan", not "todo list".
+- Forecast — predicted rest-of-day / tomorrow. Answer from the Forecast section.
+- Brief — inbox of actions, insights, and summaries. Answer from the Brief section.
 - Schedule — calendar and planned blocks.
 - Sources — connected services and imports that feed Memory.
 - Saved Searches — stored Memory queries.
 - Chat — this conversation. The user can attach files or images; look at attachments when present.
 - Stats / Jobs — analytics and background work.
-
-Live snapshots:
-- Plan, Forecast, Brief, and Stats snapshots are NOT in this system prompt. They arrive in a single "Live snapshots" message placed immediately before the newest user turn.
-- Only the latest such message is current. Snapshots quoted earlier in the conversation are stale — do not reuse them.
 
 Communication style:
 - Be natural, warm, and conversational
@@ -59,36 +70,41 @@ Communication style:
 - When delivering code, deliver the complete function code, do not add any fillers.`;
 
 /**
- * The last thing in a tool-less system prompt, AFTER the user's context.
+ * The last thing in a tool-less system prompt, AFTER the user's context: what
+ * cannot be done in this chat, and what must never be written. How to answer is
+ * in {@link TOOLS_OFF_TURN_REMINDER}, which sits right before the question.
  *
  * Position matters for a model this small: the same rules placed up front were
  * followed measurably less often than when they were the final block before the
- * conversation. The worked examples are there because they moved the needle more
- * than the rules did — a 1B model imitates an answer far more reliably than it
- * obeys "do not pretend". They are abstract on purpose (no invented names or
- * amounts a model could parrot back as the user's data) and word the cause
- * neutrally: tools are "not available here" whether the person turned them off or
- * the model has none.
+ * conversation. The wording is neutral about the cause — tools are "not
+ * available here" whether the person turned them off or the model has none.
  */
-export const TOOLS_OFF_GUARD = `NO TOOLS IN THIS CHAT. You cannot search Memory, open files, read the calendar, or change anything: you cannot add, edit, complete, delete, schedule, send, save, remember or forget anything. You know only what is written in the User Context above and in the "Live snapshots" message placed before the newest user message (Plan, Forecast, Brief, Stats, Recalled memory). Never write tool names, function calls, code blocks or JSON.
-
-Examples of how to answer:
-User: Add a task to call the dentist.
-Assistant: I can't add tasks in this chat: tools are not available here, so nothing was changed. Use a model with a wrench icon in the model picker, with tools switched on, and ask again.
-User: What did I buy last week?
-Assistant: I don't have that: I can't search your Memory in this chat, and it isn't in what I was given.
-User: What is the capital of Italy?
-Assistant: Rome.
-User: What tasks do I have?
-Assistant: From your Plan: the open to-dos listed in the Live snapshots.`;
+export const TOOLS_OFF_GUARD = `You cannot take actions in this chat: you cannot add, change, complete, delete, schedule, send, save, remember or forget anything, and you cannot search Memory, open files or read the calendar. Never write tool names, function calls, code blocks or JSON.`;
 
 /**
- * Appended to the in-flight "Live snapshots" message of a tool-less turn, after
- * the fence, so it is the last text the model reads before the question. Our own
- * words, not data — which is why it sits outside the untrusted region.
+ * Heading of the in-flight message that carries the person's Plan, Forecast, Brief
+ * and stats on a tool-less turn. The tools-on heading ({@link TURN_CONTEXT_HEADER},
+ * "Live snapshots") is our own word for that message, and a model this small repeats
+ * whatever words it is given; this one says only what the message is.
+ *
+ * Deliberately generic. A heading that listed the sections ("Your Plan, Forecast,
+ * Brief and stats") read to the model as the whole of what it knew, and it answered
+ * "capital of Italy" and "favorite cuisine" worse for it.
+ */
+export const TOOLS_OFF_TURN_CONTEXT_HEADER = '# Information about the user, current as of this question';
+
+/**
+ * Appended to the in-flight message of a tool-less turn, after the fence, so it is
+ * the last text the model reads before the question. Our own words, not data —
+ * which is why it sits outside the untrusted region.
+ *
+ * It carries the answering rules rather than the system prompt because that is
+ * where a 1B model obeys them: what to do with a request to change something,
+ * what to do when the answer is not in what it was given, and that a question
+ * about the world is still just a question.
  */
 export const TOOLS_OFF_TURN_REMINDER =
-  'Reminder: no tools in this chat. Answer only from the text above. If the answer is not in it, say you do not have it. Do not invent anything.';
+  'You cannot do things in this chat. If you are asked to add, save, note, set, remind, schedule, send, remember, forget, change or delete anything, reply: "I can\'t do that here: tools aren\'t available in this chat, so nothing was changed." Otherwise answer from the information above. If the answer about the user is not there, say you do not have it; questions about the world you can answer normally.';
 
 /**
  * What the person is told when they ask a tool-less turn to change something.
