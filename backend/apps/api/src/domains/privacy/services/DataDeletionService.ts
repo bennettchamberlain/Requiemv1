@@ -321,13 +321,17 @@ export class DataDeletionService {
     }
 
     try {
-      // revoke() reads only { id, accessToken, refreshToken }; pass those
-      // directly rather than routing through ConnectionEntity.toEgressType (which
-      // would require the provider/user relations to be fully hydrated).
+      // revoke() reads only { id, accessToken, refreshToken }, plus { userId,
+      // providerId } where the provider requires client auth to revoke (Reddit
+      // looks up the user's own app keys); pass those directly rather than
+      // routing through ConnectionEntity.toEgressType (which would require the
+      // provider/user relations to be fully hydrated).
       const { revoked } = await client.revoke({
         id: connection.id,
         accessToken: connection.accessToken,
         refreshToken: connection.refreshToken,
+        userId: connection.userId,
+        providerId: connection.providerId,
       } as Connection);
 
       return revoked;
