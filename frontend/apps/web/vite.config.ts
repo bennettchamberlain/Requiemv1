@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react-swc';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 function getAllowedHosts(): string[] {
@@ -24,6 +26,42 @@ function getAllowedHosts(): string[] {
   }
 }
 
+/**
+ * Publish the canon's vanilla stylesheet at a stable same-origin URL.
+ *
+ * `@companionintelligence/tokens/tokens.css` is the canon for pages that run no
+ * bundler. The API's GraphiQL page is one (`backend/apps/api/src/domains/
+ * graphql/controllers/graphiql.html.ts`): it is a string served by NestJS, and
+ * the API image cannot install the package — its Docker build has no GitHub
+ * Packages credential — so this build, which already has the package, serves
+ * the file and that page links `/brand/tokens.css`. The canon rule is consume,
+ * never copy (CI-Common UI-STYLE-GUIDE §11); reading it from the package here
+ * is what keeps a token change reaching that page with a version bump.
+ *
+ * Emitted as `brand/tokens.css` (not `assets/`) on purpose: the name is stable
+ * across releases, and the gateway's `/assets/` location marks everything
+ * under it immutable.
+ */
+const BRAND_TOKENS_PATH = 'brand/tokens.css';
+
+function brandTokens(): Plugin {
+  const tokensCss = () =>
+    readFileSync(createRequire(import.meta.url).resolve('@companionintelligence/tokens/tokens.css'), 'utf8');
+
+  return {
+    name: 'ci:brand-tokens',
+    configureServer(server) {
+      server.middlewares.use(`/${BRAND_TOKENS_PATH}`, (_req, res) => {
+        res.setHeader('Content-Type', 'text/css; charset=utf-8');
+        res.end(tokensCss());
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: BRAND_TOKENS_PATH, source: tokensCss() });
+    },
+  };
+}
+
 // In a Capacitor native build the web assets are served from the local app bundle,
 // where the Workbox service worker fights Capacitor's own asset serving and the
 // now cross-origin `/api` calls. The mobile build sets VITE_DISABLE_PWA=true to
@@ -35,6 +73,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    brandTokens(),
     !disablePwa &&
       VitePWA({
         registerType: 'autoUpdate',
@@ -149,11 +188,12 @@ export default defineConfig({
     // Host to <stack>.localhost, but this also permits preserving the public host.
     allowedHosts: ['.localhost', '.companionintelligence.com', ...getAllowedHosts()],
     // Dev-only: the app calls `/api/*` (and `/api/graphql`) as same-origin paths.
-    // Under `make dev`, the Caddy proxy strips the `/api` prefix and forwards to
-    // the API, so this block is never exercised there. When the Vite dev server
-    // is run standalone (e.g. the Claude preview), bridge `/api` to the local API
-    // the same way Caddy does — strip `/api`. Override the target per session with
-    // API_PROXY_TARGET (e.g. this worktree's API on its assigned port).
+    // On `make dev`'s Caddy route, Caddy strips the `/api` prefix and forwards to
+    // the API, so this block is not involved there. Whenever the Vite port is
+    // opened directly — under `make dev` too, or with the dev server run
+    // standalone (e.g. the Claude preview) — bridge `/api` to the local API the
+    // same way Caddy does: strip `/api`. `make dev` sets API_PROXY_TARGET to this
+    // worktree's API on its assigned port; set it yourself when running Vite alone.
     proxy: {
       '/api': {
         target: process.env.API_PROXY_TARGET || 'http://localhost:64669',
@@ -164,19 +204,28 @@ export default defineConfig({
         xfwd: true,
         rewrite: (requestPath) => requestPath.replace(/^\/api/, ''),
       },
-      // Dev-only: the app renders object-store media (photo previews, file
-      // downloads) via same-origin `/static/...` URLs — signed MinIO paths with
-      // the `/static` prefix the app adds (see resolveStaticUrl / MediaTile).
-      // Under `make dev`, Caddy strips `/static` and proxies to MinIO, REWRITING
-      // the Host to the object store's signing host so the presigned SigV4
-      // signature still validates (presigned URLs are host-specific). When Vite
-      // runs standalone (accessed directly on :5173, e.g. over the tailnet), that
-      // Caddy hop is absent, so `/static/*` fell through to the SPA fallback and
-      // returned index.html — every <img> got HTML instead of bytes (broken
-      // thumbnails). Mirror Caddy here: strip `/static`, forward to MinIO, and
-      // force Host to the signing host so the signature matches.
+      // Dev-only: the app renders object-store media (photo previews, video
+      // posters, file downloads) via same-origin `/static/...` URLs — presigned
+      // object-store paths with the `/static` prefix the app adds (see
+      // resolveStaticUrl / MediaTile). On the Caddy route, Caddy strips
+      // `/static` and proxies to the object store, REWRITING the Host to its
+      // signing host so the presigned SigV4 signature still validates
+      // (presigned URLs are host-specific). Opened directly on its own port
+      // (e.g. over the tailnet) Vite has no Caddy hop in front of it, so
+      // `/static/*` fell through to the SPA fallback and returned index.html —
+      // every <img> got HTML instead of bytes (broken thumbnails). Mirror Caddy
+      // here: strip `/static`, forward to the object store, and force Host to
+      // the signing host so the signature matches.
+      //
+      // `make dev` always sets STATIC_PROXY_TARGET, to the port Caddy's
+      // `/static` route dials (scripts/dev-stack/overmind-env.ts). The fallback
+      // is for launchers that set nothing — a bare `yarn dev`, the Claude
+      // preview, Playwright's webServer (e2e.yml publishes the store on 9000):
+      // compose's default port, which is this checkout's store only while no
+      // other worktree's stack holds it. 127.0.0.1, not `localhost`: compose
+      // publishes the object store on IPv4 loopback only.
       '/static': {
-        target: process.env.STATIC_PROXY_TARGET || 'http://localhost:9000',
+        target: process.env.STATIC_PROXY_TARGET || 'http://127.0.0.1:9000',
         changeOrigin: false,
         rewrite: (requestPath) => requestPath.replace(/^\/static/, ''),
         configure: (proxy) => {

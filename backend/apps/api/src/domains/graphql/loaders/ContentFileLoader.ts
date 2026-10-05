@@ -14,6 +14,9 @@ import { Loader } from './Loader';
 export interface ContentFileMedia {
   previewUrl: string | null;
   mediaUrl: string | null;
+  /** The PLAYBACK variant's URL when one exists — see EventMedia.playbackUrl. */
+  playbackUrl: string | null;
+  playbackContentType: string | null;
   contentType: string | null;
   filename: string | null;
   size: number | null;
@@ -21,7 +24,8 @@ export interface ContentFileMedia {
 
 /**
  * Batch-resolves `ci.content.external_id -> ci.files` (plus that file's PREVIEW
- * variant) for GraphQL, keyed by the file id the content row carries.
+ * and PLAYBACK variants) for GraphQL, keyed by the file id the content row
+ * carries.
  *
  * Media content rows store no `url`/`source_url` at all — the binary is only
  * reachable through `external_id`, which for `external_id_kind = 'file'` holds a
@@ -49,10 +53,16 @@ export class ContentFileLoader extends Loader<ContentFileMedia | null, string> {
   ): Promise<readonly (ContentFileMedia | null)[]> {
     const ids = [...fileIds];
 
-    const [originals, previews] = await Promise.all([
-      this.fileService.findByIds(context, ids),
-      this.fileService.findVariantsByParentIds(context, ids, FileVariant.PREVIEW),
-    ]);
+    // Both derivatives in the one variants query: a second call per kind is
+    // a third query per page (ContentResolver.batching.test.ts holds this).
+    const [originals, { [FileVariant.PREVIEW]: previews, [FileVariant.PLAYBACK]: playbacks }] =
+      await Promise.all([
+        this.fileService.findByIds(context, ids),
+        this.fileService.findVariantsOfKindsByParentIds(context, ids, [
+          FileVariant.PREVIEW,
+          FileVariant.PLAYBACK,
+        ]),
+      ]);
 
     // Indexed by id rather than zipped by position, for the same reason
     // AttachmentFileLoader does: a positional zip is correct only for as long
@@ -62,10 +72,14 @@ export class ContentFileLoader extends Loader<ContentFileMedia | null, string> {
     const previewByParent = new Map(
       previews.filter((file) => file != null).map((file) => [file.parentId, file]),
     );
+    const playbackByParent = new Map(
+      playbacks.filter((file) => file != null).map((file) => [file.parentId, file]),
+    );
 
     return ids.map((id) => {
       const original = originalById.get(id) ?? null;
       const preview = previewByParent.get(id) ?? null;
+      const playback = playbackByParent.get(id) ?? null;
 
       // An external_id that resolves to neither an original nor a preview is
       // not a file reference we can render (a purged blob, or an opaque
@@ -77,6 +91,8 @@ export class ContentFileLoader extends Loader<ContentFileMedia | null, string> {
       return {
         previewUrl: preview?.url ?? null,
         mediaUrl: original?.url ?? null,
+        playbackUrl: playback?.url ?? null,
+        playbackContentType: playback?.contentType ?? null,
         contentType: original?.contentType ?? null,
         filename: original?.filename ?? null,
         size: original?.size != null ? Number(original.size) : null,

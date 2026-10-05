@@ -12,6 +12,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 });
 
 const h = vi.hoisted(() => ({
+  ios: false,
   persistApiBaseUrl: vi.fn(),
   getApiBaseUrl: vi.fn(() => ''),
   signInToPortal: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('@ci/common', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@ci/common')>()),
   persistApiBaseUrl: h.persistApiBaseUrl,
   getApiBaseUrl: () => h.getApiBaseUrl(),
+  isIosPlatform: () => h.ios,
 }));
 
 vi.mock('@/components/ThemePicker', () => ({
@@ -60,6 +62,7 @@ vi.mock('@/hooks', () => ({
       h.profileUser !== undefined ? h.profileUser : h.authenticated ? { id: 'u1', onboarded: true } : null,
     loading: false,
     error: h.profileError,
+    refetch: vi.fn(async () => ({})),
   }),
 }));
 
@@ -84,6 +87,7 @@ vi.mock('./oidc', async (importOriginal) => {
 });
 
 beforeEach(() => {
+  h.ios = false;
   navigate.mockReset();
   h.persistApiBaseUrl.mockReset();
   h.getApiBaseUrl.mockReset();
@@ -117,6 +121,29 @@ describe('DeviceConnectPage', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('names Safari on iOS and stays browser-neutral everywhere else while OIDC is pending', async () => {
+    // Never resolves: the page keeps the abort controller, so the pending hint stays up.
+    h.loginWithPortalOidc.mockReturnValue(new Promise(() => {}));
+
+    const { unmount } = render(<DeviceConnectPage />);
+
+    fireEvent.click(screen.getByTestId('oidc-login-btn'));
+
+    expect(
+      await screen.findByText(/Finish signing in in your browser, then return to this app\./),
+    ).toBeInTheDocument();
+    unmount();
+
+    h.ios = true;
+    render(<DeviceConnectPage />);
+
+    fireEvent.click(screen.getByTestId('oidc-login-btn'));
+
+    expect(
+      await screen.findByText(/Finish signing in in Safari, then return to this app\./),
+    ).toBeInTheDocument();
+  });
+
   it('opens Advanced from the splash', () => {
     render(<DeviceConnectPage />);
     fireEvent.click(screen.getByTestId('advanced-link'));
@@ -139,10 +166,51 @@ describe('DeviceConnectPage', () => {
     fireEvent.click(screen.getByTestId('oidc-login-btn'));
 
     expect(await screen.findByText('Home')).toBeInTheDocument();
+    expect(screen.queryByTestId('portal-account')).not.toBeInTheDocument();
     expect(h.listMemoryServers).toHaveBeenCalledWith(
       { token: 'oidc-at', idToken: null, cookie: null, kind: 'oauth' },
       expect.any(String),
     );
+  });
+
+  it('shows the Companion account on the Memory picker', async () => {
+    const payload = btoa(JSON.stringify({ email: 'demo-1@lifescope.io' }))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    h.loginWithPortalOidc.mockResolvedValue({
+      accessToken: 'oidc-at',
+      idToken: `e30.${payload}.sig`,
+      tokenType: 'Bearer',
+      expiresIn: 3600,
+    });
+    h.listMemoryServers.mockResolvedValue([]);
+
+    render(<DeviceConnectPage />);
+    fireEvent.click(screen.getByTestId('oidc-login-btn'));
+
+    expect(await screen.findByTestId('portal-account')).toHaveTextContent('Signed in as demo-1@lifescope.io');
+  });
+
+  it('Back forgets the Portal token so the next Log in is not that account', async () => {
+    h.loginWithPortalOidc.mockResolvedValue({
+      accessToken: 'oidc-at',
+      idToken: null,
+      tokenType: 'Bearer',
+      expiresIn: 3600,
+    });
+    h.listMemoryServers.mockResolvedValue([]);
+
+    render(<DeviceConnectPage />);
+    fireEvent.click(screen.getByTestId('oidc-login-btn'));
+    expect(await screen.findByText('Pick a Memory Server')).toBeInTheDocument();
+    expect(sessionStorage.getItem('ci.deviceConnect.portalAuth')).toContain('oidc-at');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+
+    expect(sessionStorage.getItem('ci.deviceConnect.portalAuth')).toBeNull();
+    expect(localStorage.getItem('ci.deviceConnect.portalAuth')).toBeNull();
+    expect(screen.getByTestId('oidc-login-btn')).toBeInTheDocument();
   });
 
   it('after Portal OIDC, picking a server mints a Memory key and skips /login', async () => {

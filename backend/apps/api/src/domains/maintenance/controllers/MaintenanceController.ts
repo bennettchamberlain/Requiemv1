@@ -19,7 +19,8 @@ import { DataSource } from 'typeorm';
 import { z } from 'zod';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
-import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { FULL_CAPABILITY, READ_CAPABILITY, RequireCapability, WRITE_CAPABILITY } from '@ci/common/decorators';
+import { ApplianceAdminGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { UNFURL_SWEEP_QUEUE, UnfurlSweepRequestEvent } from '@ci/domains/embed/events';
@@ -27,6 +28,8 @@ import { EventService as SignallingEventService } from '@ci/domains/events';
 import {
   FILE_PREVIEW_SWEEP_QUEUE,
   FilePreviewSweepRequestEvent,
+  VIDEO_PLAYBACK_SWEEP_QUEUE,
+  VideoPlaybackSweepRequestEvent,
   MediaDimensionsBackfillRequestEvent,
   MEDIA_DIMENSIONS_QUEUE,
 } from '@ci/domains/files';
@@ -58,6 +61,10 @@ import {
   EmbedCoverageTelemetryService,
 } from '../services/EmbedCoverageTelemetryService';
 import {
+  type EntityIdentifierBackfillResult,
+  EntityIdentifierBackfillService,
+} from '../services/EntityIdentifierBackfillService';
+import {
   type EventParticipantBackfillProgress,
   type EventParticipantBackfillResult,
   EventParticipantBackfillService,
@@ -73,12 +80,6 @@ import {
   GraphEnrichmentService,
 } from '../services/GraphEnrichmentService';
 import { type HealSelfCollationResult, HealSelfCollationService } from '../services/HealSelfCollationService';
-import {
-  type DeferralResult,
-  type DroppedIndex,
-  IndexDeferralService,
-  type RecreateResult,
-} from '../services/IndexDeferralService';
 import { type IngestResetResult, IngestResetService } from '../services/IngestResetService';
 import {
   DEFAULT_ESTIMATE_SOURCE_SYSTEMS,
@@ -106,20 +107,6 @@ import {
   type SummaryBackfillResult,
   SummaryBackfillService,
 } from '../services/SummaryBackfillService';
-
-// Body for POST /api/maintenance/indexes/recreate: the `dropped` array returned
-// verbatim by the matching /drop call (each carries its exact CREATE statement).
-const recreateIndexesSchema = z.object({
-  dropped: z
-    .array(
-      z.object({
-        schema: z.string(),
-        name: z.string(),
-        definition: z.string(),
-      }),
-    )
-    .min(1),
-});
 
 const geocodeLocationsSchema = z.object({
   /** Max events to geocode in this batch (default: config.geocoding.batchSize). */
@@ -334,6 +321,15 @@ const extractPeopleFromCommunicationsSchema = linkCommunicationsSchema;
 
 type ExtractPeopleFromCommunicationsRequest = z.infer<typeof extractPeopleFromCommunicationsSchema>;
 
+// Body for POST /api/maintenance/index-entity-identifiers. The scan is over
+// ordinary entity rows, not a hypertable, so a bounded page size is sufficient.
+const indexEntityIdentifiersSchema = z.object({
+  /** Maximum active Person rows read per page (default 1000). */
+  pageSize: z.coerce.number().int().min(1).max(5000).optional(),
+});
+
+type IndexEntityIdentifiersRequest = z.infer<typeof indexEntityIdentifiersSchema>;
+
 // Body for POST /api/maintenance/materialize-edges. All optional: with no time
 // range each matrix rule derives its own bounds from its candidates' MIN/MAX
 // time and walks the whole history in windows. `rules` restricts the run to a
@@ -401,6 +397,7 @@ const orchestrateSchema = z.object({
   options: z
     .object({
       extractPeople: extractPeopleFromCommunicationsSchema.optional(),
+      indexEntityIdentifiers: indexEntityIdentifiersSchema.optional(),
       linkCommunications: linkCommunicationsSchema.optional(),
       linkEvents: linkEventsSchema.optional(),
       healSelfCollation: healSelfCollationSchema.optional(),
@@ -460,13 +457,31 @@ const MEDIA_DIMENSIONS_DEFAULT_LIMIT = 500;
  * to process out-of-band.
  */
 @UseGuards(JwtOrApiKeyAuthGuard)
-@Controller('api/maintenance')
+// `write` for the whole controller: every route here mutates — backfills,
+// sweeps, re-index passes — and until now NONE of them asked about capability,
+// so a key the settings UI describes as "Read-only - cannot record or change
+// anything" could run all 31. Scope enforcement does not cover this: an
+// empty-scope key skips it entirely (apiKeyScopeEnforcement returns early only
+// for non-api-key principals), which leaves capability as the only axis, and
+// nothing was reading it.
+//
+// Capability only, no `@RequireScopes`: adding one would newly refuse keys
+// carrying some other scope, which is a wider change than #1780 asks for and
+// would also pull this controller into apiKeyCapabilityCoverage.test.ts's
+// scanned set. The five GET routes below re-declare `read` so a class-level
+// `write` does not wrongly refuse a status check.
+@RequireCapability(WRITE_CAPABILITY)
+// The appliance gateway and the standalone Vite proxy both strip the public
+// `/api` prefix before forwarding to Nest. Keep the controller path aligned
+// with the path the API actually receives so `/api/maintenance/*` works in
+// every supported local and deployed entry point.
+@Controller('maintenance')
 export class MaintenanceController {
   constructor(
     private readonly signallingEventService: SignallingEventService,
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly indexDeferralService: IndexDeferralService,
     private readonly orphanCleanupService: OrphanCleanupService,
+    private readonly entityIdentifierBackfillService: EntityIdentifierBackfillService,
     private readonly communicationLinkBackfillService: CommunicationLinkBackfillService,
     private readonly personStubBackfillService: PersonStubBackfillService,
     private readonly eventParticipantBackfillService: EventParticipantBackfillService,
@@ -539,11 +554,39 @@ export class MaintenanceController {
   }
 
   /**
+   * Rebuild the derived email/phone/name index from existing Person properties
+   * and repair/provision the owner's self Person. This is additive and
+   * idempotent: source entities are not deleted or merged.
+   */
+  @Post('index-entity-identifiers')
+  async indexEntityIdentifiers(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(indexEntityIdentifiersSchema)) body: IndexEntityIdentifiersRequest,
+  ): Promise<EntityIdentifierBackfillResult> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return {
+        examined: 0,
+        identifiersSeen: 0,
+        entitiesWithIdentifiers: 0,
+        identifiersIndexed: 0,
+        selfEntityId: null,
+        errors: [],
+      };
+    }
+
+    return this.entityIdentifierBackfillService.backfill(userId, { pageSize: body.pageSize });
+  }
+
+  /**
    * Reverse-geocode backfill (geodata-plan Phase 2): the inverse of
-   * geocode-locations. Counts events that HAVE coordinates (photo EXIF / GPS /
-   * estimation) but no readable location_name, and emits a
+   * geocode-locations. Counts events that HAVE measured coordinates (photo EXIF
+   * / GPS) but no readable location_name, and emits a
    * {@link GeocodeBatchRequestEvent} with direction 'reverse' so the batch
    * listener resolves a place name for each — turning bare map pins into labels.
+   * Estimated coordinates are not counted: the listener refuses to name them.
    */
   @Post('reverse-geocode-locations')
   async reverseGeocodeLocations(
@@ -561,13 +604,15 @@ export class MaintenanceController {
     const retryNull = body.retryNull ?? false;
 
     // Candidate set: coordinates present, name missing — the inverse of the
-    // forward backfill's filter.
+    // forward backfill's filter — minus estimated coordinates, which the
+    // listener refuses (GeocodeBatchListener.selectReverseCandidates).
     const candidateCount = await this.dataSource
       .getRepository(EventEntity)
       .createQueryBuilder('event')
       .where('event.user_id = :userId', { userId })
       .andWhere('event.location_coordinates IS NOT NULL')
       .andWhere("(event.location_name IS NULL OR btrim(event.location_name) = '')")
+      .andWhere("COALESCE(event.metadata->>'location_source', '') <> 'estimated'")
       .getCount();
 
     const estimatedEventCount = Math.min(candidateCount, limit);
@@ -655,6 +700,31 @@ export class MaintenanceController {
       FilePreviewSweepRequestEvent,
       { userId, requestedBy: 'maintenance-api' },
       { queue: FILE_PREVIEW_SWEEP_QUEUE, singletonKey: `file-preview-sweep:${userId}` },
+    );
+
+    return { status: 'enqueued' };
+  }
+
+  /**
+   * On-demand `enrich.video_playback` sweep: transcode the browser-playable
+   * PLAYBACK rendition for every stored video of the caller's whose codec
+   * needs one (HEVC etc.) and has none. Same shape and idempotency as
+   * `file-preview-sweep`; the sweep serialises the transcodes, so on a large
+   * library it runs for an hour or more in the background.
+   */
+  @Post('video-playback-sweep')
+  async videoPlaybackSweep(@Context() context: RequestContext): Promise<{ status: 'enqueued' | 'noop' }> {
+    const serviceContext = toServiceContext(context);
+    const userId = serviceContext.userId;
+
+    if (typeof userId !== 'string') {
+      return { status: 'noop' };
+    }
+
+    await this.signallingEventService.send(
+      VideoPlaybackSweepRequestEvent,
+      { userId, requestedBy: 'maintenance-api' },
+      { queue: VIDEO_PLAYBACK_SWEEP_QUEUE, singletonKey: `video-playback-sweep:${userId}` },
     );
 
     return { status: 'enqueued' };
@@ -1140,6 +1210,7 @@ export class MaintenanceController {
    * would replay.
    */
   @Get('graph-enrichment-proposals')
+  @RequireCapability(READ_CAPABILITY)
   async listGraphEnrichmentProposals(
     @Context() context: RequestContext,
     @Query(new ValidationPipe(graphEnrichmentProposalsQuerySchema)) query: GraphEnrichmentProposalsQuery,
@@ -1237,31 +1308,6 @@ export class MaintenanceController {
   }
 
   /**
-   * Index-deferral helper (issue #12), DROP phase. Drops the deferrable
-   * secondary indexes (FTS GIN, pgvector HNSW, per-table btree/GIN on the bulk
-   * destinations) before a very large load. Returns each dropped index's exact
-   * recreate statement in `dropped` — POST that array back to /indexes/recreate
-   * after the load. Provenance unique indexes and primary keys are never
-   * dropped (enforced in IndexDeferralService). OPT-IN; operator-triggered.
-   */
-  @Post('indexes/drop')
-  async dropIndexes(): Promise<DeferralResult> {
-    return this.indexDeferralService.dropDeferredIndexes();
-  }
-
-  /**
-   * Index-deferral helper (issue #12), RECREATE phase. Recreates the indexes
-   * dropped by /indexes/drop from the definitions returned there (passed back
-   * verbatim in the body).
-   */
-  @Post('indexes/recreate')
-  async recreateIndexes(
-    @Body(new ValidationPipe(recreateIndexesSchema)) body: { dropped: DroppedIndex[] },
-  ): Promise<RecreateResult> {
-    return this.indexDeferralService.recreateDeferredIndexes(body.dropped);
-  }
-
-  /**
    * Search-index hygiene (#2), ORPHAN-CLEANUP phase. Deletes
    * `ci_search.embeddings` / `ci_search.vectors` rows whose `entity_id` no longer
    * exists in its source table (per the entity-source map). Re-runnable and
@@ -1269,6 +1315,9 @@ export class MaintenanceController {
    * Complements the per-event cascade-delete the search listeners now do on
    * `*RemovedEvent` — this reaps the historical orphans those never covered.
    */
+  // Appliance-wide (it walks every user's index rows), so it is the administrator's call,
+  // not any signed-in household member's. See ApplianceAdminGuard for the unclaimed-box rule.
+  @UseGuards(ApplianceAdminGuard)
   @Post('search-index/cleanup-orphans')
   async cleanupSearchOrphans(
     @Body(new ValidationPipe(cleanupOrphansSchema)) body: CleanupOrphansRequest,
@@ -1285,6 +1334,8 @@ export class MaintenanceController {
    * tables wholesale. A data reset that clears `ci.*` must also do this (or it
    * re-orphans the entire index). Destructive — requires `{ "confirm": true }`.
    */
+  // Wipes BOTH search tables for EVERY user. Administrator only.
+  @UseGuards(ApplianceAdminGuard)
   @Post('search-index/truncate')
   async truncateSearchIndex(
     @Body(new ValidationPipe(truncateSearchIndexSchema)) body: { confirm: true },
@@ -1305,6 +1356,8 @@ export class MaintenanceController {
    * the batched-Ollama buffer amortises the embed calls. Re-runnable + incremental.
    * Run it after a bulk import (and after link-communications / extract-graph).
    */
+  // Re-embeds across every user; a heavy, appliance-wide job. Administrator only.
+  @UseGuards(ApplianceAdminGuard)
   @Post('search-index/backfill')
   async backfillSearchIndex(
     @Body(new ValidationPipe(searchIndexBackfillSchema)) body: SearchIndexBackfillRequest,
@@ -1398,6 +1451,7 @@ export class MaintenanceController {
    * degrades gracefully if this is absent/erroring.
    */
   @Get('search-index/embedded-count')
+  @RequireCapability(READ_CAPABILITY)
   async embeddedCount(
     @Query(new ValidationPipe(embeddedCountQuerySchema)) query: EmbeddedCountQuery,
   ): Promise<EmbeddedCountResponse> {
@@ -1441,6 +1495,7 @@ export class MaintenanceController {
    * A metrics scraper can poll this and page on a non-empty `alarms`.
    */
   @Get('search/coverage')
+  @RequireCapability(READ_CAPABILITY)
   async searchCoverage(
     @Query(new ValidationPipe(coverageQuerySchema)) query: CoverageQuery,
   ): Promise<EmbedCoverageReport> {
@@ -1467,6 +1522,7 @@ export class MaintenanceController {
    * GLOBAL, matching /search/coverage.
    */
   @Get('content/external-id-kind')
+  @RequireCapability(READ_CAPABILITY)
   async contentExternalIdKindIntegrity(): Promise<ExternalIdKindIntegrityReport> {
     return this.externalIdKindIntegrityService.check();
   }
@@ -1480,6 +1536,7 @@ export class MaintenanceController {
    * endpoint hit by hand or a poller.
    */
   @Get('ingest-status')
+  @RequireCapability(READ_CAPABILITY)
   async ingestStatus(): Promise<IngestStatusResponse> {
     const [tableRows, embeddingRows, skipRows, queueRows] = await Promise.all([
       this.dataSource.query<
@@ -1555,7 +1612,13 @@ export class MaintenanceController {
    * still holds another account's data; the confirm literal proves the caller
    * meant it, not that they were entitled to everyone else's memory.
    */
+  // `full`, not the class-level `write`: this one TRUNCATES. `capabilityAllows`
+  // refuses anything that removes data below `full`, which is the same line
+  // `memory.forget` sits behind — a read-only key being able to truncate its
+  // own ingested data was the sharpest instance of the gap #1780 describes.
+  // The confirm literal proves intent; it was never an authorization check.
   @Post('ingest/reset')
+  @RequireCapability(FULL_CAPABILITY)
   async resetIngest(
     @Context() context: RequestContext,
     @Body(new ValidationPipe(ingestResetSchema)) body: { confirm: 'RESET_ALL_INGESTED_DATA' },

@@ -1,7 +1,9 @@
+import { useState } from 'react';
+
 import { Tooltip, cn } from '@ci/shadcn';
 import { useTranslation } from 'react-i18next';
 
-import logo from '@/assets/logo.png';
+import { CompanionMark } from '@/components/CompanionMark';
 
 import { usePowerRail } from './PowerRailContext';
 
@@ -13,7 +15,7 @@ const CAPSULE =
 
 /**
  * Mark and name. Desktop keeps the full product name. The phone drawer
- * shares 224px with the close chevron, so it uses the short form — the
+ * shares its width with the close chevron, so it uses the short form — the
  * full string used to ellipsize.
  */
 function RailMark({
@@ -22,6 +24,7 @@ function RailMark({
   name = 'Companion Memory',
   opticalNudge = true,
   centerOnNavIcons = false,
+  animated = false,
 }: {
   showName: boolean;
   truncateName?: boolean;
@@ -36,19 +39,21 @@ function RailMark({
    * the icon column runs through the middle of the mark.
    */
   centerOnNavIcons?: boolean;
+  animated?: boolean;
 }) {
   return (
     <>
-      {/* Full-size mark on a white disc. `max-w-none` defeats Tailwind
-          preflight `img { max-width: 100% }` so it stays round. */}
+      {/* Full-size mark on a disc. The disc is near-black, not white: the mark's
+          glows fall off to transparent and are drawn to sit on the splash's
+          black, so a white disc washes the node graph out to nothing. */}
       <span
         className={cn(
-          'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white',
+          'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-neutral-950',
           opticalNudge && '-translate-x-px',
           centerOnNavIcons && '-translate-x-1',
         )}
       >
-        <img src={logo} alt="" className="size-8 max-w-none rounded-full" />
+        <CompanionMark animated={animated} className="size-8 rounded-full" />
       </span>
       <span
         aria-hidden={!showName}
@@ -57,7 +62,7 @@ function RailMark({
           opticalNudge && '-translate-y-px',
           // The dock capsule animates its own max-width and wipes the name as
           // it closes; a shrinkable span would put an ellipsis in the middle of
-          // that. The drawer instead has a fixed 224px to share with the close
+          // that. The drawer instead has a fixed width to share with the close
           // chevron, so there the name is the part that gives way.
           truncateName ? 'min-w-0 truncate' : 'overflow-hidden whitespace-nowrap',
         )}
@@ -76,7 +81,7 @@ function RailMark({
  * name is one control too many. Desktop keeps the toggle below, because there
  * the mark IS the button.
  *
- * No capsule either: the drawer is already a pane of glass, and a bordered pill
+ * No capsule either: the drawer is already its own surface, and a bordered pill
  * inside it is a border drawn on a border — one that would also cost the width
  * the chevron needs.
  */
@@ -99,6 +104,10 @@ export function PowerRailToggle() {
   const { t } = useTranslation();
   const { expanded, pinned, toggle } = usePowerRail();
   const label = expanded ? t('NAV_RAIL_COLLAPSE') : t('NAV_RAIL_EXPAND');
+  // The mark animates only while the user is on it. A 32px loop running behind
+  // every screen is motion the chrome never asked for; on hover it reads as the
+  // control answering. Focus counts too, so keyboard users get the same answer.
+  const [active, setActive] = useState(false);
 
   return (
     // Width matches the drawer (`w-14` / `w-56`). Vertical inset is only `px-2`
@@ -118,6 +127,10 @@ export function PowerRailToggle() {
             aria-expanded={pinned}
             aria-controls="power-rail"
             onClick={toggle}
+            onPointerEnter={() => setActive(true)}
+            onPointerLeave={() => setActive(false)}
+            onFocus={() => setActive(true)}
+            onBlur={() => setActive(false)}
             // PINNED, not merely expanded. This button sits in the same `auto`
             // grid column as the rail, so a wordmark appearing here widens the
             // column and shoves the header and page content sideways — which is
@@ -129,7 +142,7 @@ export function PowerRailToggle() {
               pinned ? 'max-w-52 gap-2 pr-3' : 'max-w-10 gap-0',
             )}
           >
-            <RailMark showName={pinned} />
+            <RailMark showName={pinned} animated={active} />
           </button>
         </Tooltip.Trigger>
       </Tooltip>

@@ -13,11 +13,15 @@
     "e2e:ui": "playwright test --config playwright.e2e.config.ts --ui",
     "e2e:headed": "playwright test --config playwright.e2e.config.ts --headed",
     "e2e:report": "playwright show-report",
-    "prepare": "husky && sh scripts/merge-uv-lock.sh --register"
+    "test": "tsx --test \"scripts/*.test.ts\" \"scripts/xtask/**/*.test.ts\" \"scripts/dev-stack/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepare": "husky && sh scripts/merge-uv-lock.sh --register",
+    "lint:canon": "ci-lint-canon . && yarn workspace @ci/fe-web brand:check"
   },
   "packageManager": "yarn@4.9.1",
   "workspaces": [
     "backend/apps/*",
+    "backend/packages/*",
     "frontend/apps/*",
     "frontend/packages/*",
     "!frontend/apps/ios",
@@ -50,19 +54,17 @@
     "undici": "^8.10.0",
     "fast-uri": "^3.1.5",
     "lodash": "^4.18.1",
-    "ws": "^8.21.0"
-  },
-  "dependenciesMeta": {
-    "sharp@0.34.5": {
-      "built": false
-    }
+    "ws": "^8.21.0",
+    "@yarnpkg/sdks/@yarnpkg/core": "4.9.1"
   },
   "devDependencies": {
+    "@companionintelligence/config": "^1.0.0",
     "@eslint/js": "^9.27.0",
     "@playwright/test": "^1.57.0",
     "@storybook/react-vite": "^9.1.19",
     "@types/node": "^25.0.1",
     "@types/pg": "^8",
+    "@yarnpkg/sdks": "^3.3.1",
     "dotenv": "^17.2.3",
     "eslint": "^9.27.0",
     "eslint-config-prettier": "^10.1.5",
@@ -77,6 +79,7 @@
     "tsx": "^4.7.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "yaml": "^2.8.1"
   }
 }

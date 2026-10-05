@@ -13,6 +13,34 @@ import config from '@ci/configuration';
 import { SessionEntity } from '../entities/SessionEntity';
 import type { IssuedSession, JwtPayload, RotationResult, SessionMetadata } from '../types';
 
+/** The OIDC (issuer, subject) pair a signup intent was minted for. */
+export interface SignupIntentIdentity {
+  issuer: string;
+  subject: string;
+}
+
+/**
+ * What the confirm-account step learns from its cookie. `issuer`/`subject` are
+ * what let it bind the account it creates to the Portal identity that asked for
+ * it — and recognise the one case where an account already exists for the
+ * address legitimately (a concurrent tab that confirmed first).
+ */
+export interface SignupIntent extends Partial<SignupIntentIdentity> {
+  email: string;
+  name?: string;
+  /**
+   * The callback waived the signup code for this person only because the
+   * appliance had no accounts. That was true when the intent was minted, which
+   * can be its whole lifetime before the confirm step runs — so the confirm step
+   * creates the account only if it is still the first, and decides that
+   * atomically with the insert (`UserService.createFirstAccount`).
+   *
+   * Absent on an intent where nothing was waived: codes are off, or the person
+   * holds an invitation.
+   */
+  firstAccountOnly?: boolean;
+}
+
 const SESSION_EXPIRES_IN = parseDuration(config.auth.session.duration) ?? 0;
 const REFRESH_GRACE_PERIOD = parseDuration(config.auth.session.refreshGracePeriod) ?? 0;
 
@@ -70,15 +98,35 @@ export class AuthService {
    * so the confirm endpoint can create the account without re-trusting inputs.
    * The `purpose` claim prevents it being accepted anywhere a session token is.
    */
-  issueSignupIntentToken(email: string, name?: string): string {
+  issueSignupIntentToken(
+    email: string,
+    name?: string,
+    identity?: SignupIntentIdentity,
+    admission?: Pick<SignupIntent, 'firstAccountOnly'>,
+  ): string {
     return this.jwtService.sign(
-      { email, name, purpose: 'signup_intent' },
+      {
+        email,
+        name,
+        purpose: 'signup_intent',
+        issuer: identity?.issuer,
+        subject: identity?.subject,
+        // Only ever `true` or absent, so an intent that waived nothing reads exactly as before.
+        firstAccountOnly: admission?.firstAccountOnly === true ? true : undefined,
+      },
       { secret: config.auth.jwt.refreshTokenSecret, expiresIn: '10m' },
     );
   }
 
-  verifySignupIntentToken(token: string): { email: string; name?: string } {
-    const payload = this.jwtService.verify<{ email?: string; name?: string; purpose?: string }>(token, {
+  verifySignupIntentToken(token: string): SignupIntent {
+    const payload = this.jwtService.verify<{
+      email?: string;
+      name?: string;
+      purpose?: string;
+      issuer?: string;
+      subject?: string;
+      firstAccountOnly?: boolean;
+    }>(token, {
       secret: config.auth.jwt.refreshTokenSecret,
     });
 
@@ -86,7 +134,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid signup intent token');
     }
 
-    return { email: payload.email, name: payload.name };
+    return {
+      email: payload.email,
+      name: payload.name,
+      issuer: payload.issuer,
+      subject: payload.subject,
+      ...(payload.firstAccountOnly === true ? { firstAccountOnly: true } : {}),
+    };
   }
 
   async rotateSessionToken(userId: string, token: string, meta: SessionMetadata): Promise<RotationResult> {
@@ -145,6 +199,21 @@ export class AuthService {
       user: { id: userId },
       ...(currentHashed ? { token: Not(currentHashed) } : {}),
     });
+  }
+
+  /**
+   * When the session behind `token` was established — its sign-in time, which
+   * survives token rotation because the row does. `null` when the token names
+   * no live session of this user. Read by `AccountController.requireReauth`
+   * as the "signed in recently" proof for an account with no password to ask
+   * for; nothing about the session is touched or extended.
+   */
+  async sessionEstablishedAt(userId: string, token: string): Promise<Date | null> {
+    const session = await this.sessionRepository.findOne({
+      where: { token: this.digest(token), expires_at: MoreThan(new Date()), user: { id: userId } },
+    });
+
+    return session?.created_at ?? null;
   }
 
   issueAccessToken(userId: string): string {

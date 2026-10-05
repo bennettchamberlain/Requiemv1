@@ -1,4 +1,4 @@
-import { type ReactNode, lazy, useEffect } from 'react';
+import { type ReactNode, Suspense, lazy, useEffect } from 'react';
 
 import {
   ConnectionModeProvider,
@@ -6,6 +6,7 @@ import {
   LoadingPage,
   OutboxQueueProvider,
   isNativePlatform,
+  isTauriPlatform,
   needsNativeCloudConnect,
   useDeviceLayout,
 } from '@ci/common';
@@ -21,7 +22,6 @@ import {
 } from 'react-router-dom';
 
 import { ApolloProvider } from '@/api/ApolloProvider';
-import { PowerSyncProvider } from '@/api/powersync/PowerSyncProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -32,6 +32,7 @@ import {
   AuthProvider,
   CaptureModalProvider,
   ModelProvider,
+  useAuth,
   useLocationTracking,
   useNativeShell,
   usePreventOverscroll,
@@ -39,9 +40,14 @@ import {
 } from '@/hooks';
 import { Centered as CenteredLayout, Main as MainLayout } from '@/layouts';
 import { CHAT_BASE, chatThreadPath } from '@/pages/ChatPage/chatPaths';
+import DesktopSignInPage from '@/pages/DesktopSignInPage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import SplashPage from '@/pages/SplashPage';
+
+const LazyPowerSyncProvider = lazy(() =>
+  import('@/api/powersync/PowerSyncProvider').then((m) => ({ default: m.PowerSyncProvider })),
+);
 
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
@@ -55,6 +61,8 @@ const ForecastPage = lazy(() => import('@/pages/ForecastPage'));
 const ItemPage = lazy(() => import('@/pages/ItemPage'));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
 const JobsPage = lazy(() => import('@/pages/JobsPage'));
+const ApprovalsPage = lazy(() => import('@/pages/ApprovalsPage'));
+const ActivityPage = lazy(() => import('@/pages/ActivityPage'));
 const ThingsPage = lazy(() => import('@/pages/ThingsPage'));
 const ReceiptsPage = lazy(() => import('@/pages/ReceiptsPage'));
 const ReceiptPage = lazy(() => import('@/pages/ReceiptPage'));
@@ -132,9 +140,44 @@ function RedirectProfileToSelfSettings() {
   return <Navigate to={rest ? `/self/settings/${rest}` : '/self/settings'} replace />;
 }
 
-function Providers({ children }: { children: ReactNode }) {
+/**
+ * PowerSync only matters once someone is signed in.
+ *
+ * It was mounted unconditionally, which put ~200 KB of sync engine in the chunk
+ * every visitor downloads before first paint and opened a WASQLite IndexedDB
+ * database for people sitting on the splash screen who may never sign in. Signed
+ * out, the tree renders without it; signed in, it loads and mounts exactly as
+ * before — every consumer of PowerSyncContext lives behind ProtectedRoute.
+ */
+function PowerSyncBoundary({ children }: { children: ReactNode }) {
+  const [{ authenticated, authToken }] = useAuth();
+
+  if (!authenticated && !authToken) {
+    return children;
+  }
+
   return (
-    <Router>
+    <Suspense fallback={<LoadingPage />}>
+      <LazyPowerSyncProvider>{children}</LazyPowerSyncProvider>
+    </Suspense>
+  );
+}
+
+function Providers({ children }: { children: ReactNode }) {
+  // React Router 7 wraps every navigation in React.startTransition unless
+  // told not to. That fights Apollo's useQuery, which re-observes (and
+  // fires the network request) during render: React renders the transition
+  // tree with the new URL, Apollo emits a store change mid-render, React
+  // throws that render away and re-renders synchronously with the OLD
+  // URL, Apollo re-observes the old variables and aborts the new request —
+  // and the two keep trading places on every response. Measured on
+  // /memory/events when the What bar wrote ?eventTypes=: one click, a
+  // dozen Search requests, half aborted, each with the pre-click variables.
+  // Synchronous navigation restores one request per URL change. The cost
+  // is that a lazily-loaded route shows its Suspense fallback on first
+  // visit instead of holding the previous screen — the v6 behaviour.
+  return (
+    <Router useTransitions={false}>
       <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
         <BackgroundProvider>
           <DeviceLayoutProvider args={[]}>
@@ -147,7 +190,7 @@ function Providers({ children }: { children: ReactNode }) {
                     <ModelProvider args={[]}>
                       <CaptureModalProvider args={[]}>
                         <ApolloProvider>
-                          <PowerSyncProvider>{children}</PowerSyncProvider>
+                          <PowerSyncBoundary>{children}</PowerSyncBoundary>
                         </ApolloProvider>
                       </CaptureModalProvider>
                     </ModelProvider>
@@ -203,9 +246,18 @@ function AppRoutes() {
           path="/"
           element={
             <RedirectKnownUser>
-              {/* Native: Safari / cold start always reopens `/`. The marketing
-                  splash is web-only; the phone's first screen is cloud-connect. */}
-              {isNativePlatform() ? <Navigate to="/device-connect" replace /> : <SplashPage />}
+              {/* The marketing splash is for a browser visitor who has not decided
+                  yet. Someone inside the desktop app or the phone app has already
+                  installed the thing — they get a way in, not a pitch. Native goes
+                  to cloud-connect (it must find an appliance first); desktop is
+                  already looking at its own, so it goes straight to sign-in. */}
+              {isNativePlatform() ? (
+                <Navigate to="/device-connect" replace />
+              ) : isTauriPlatform() ? (
+                <DesktopSignInPage />
+              ) : (
+                <SplashPage />
+              )}
             </RedirectKnownUser>
           }
         />
@@ -239,10 +291,17 @@ function AppRoutes() {
           <Route
             path="/login"
             element={
-              // Native shells always cloud-connect. Restoring `/login` from an
-              // earlier hop (or an Android deep-link cold start) used to drop
-              // Portal PKCE that only DeviceConnectPage resumes.
-              isNativePlatform() ? (
+              // Native shells cloud-connect only while they still NEED to: an
+              // unpaired shell (no server origin yet, or iOS pointed at a local
+              // appliance) must go through DeviceConnectPage, because restoring
+              // `/login` from an earlier hop (or an Android deep-link cold start)
+              // drops Portal PKCE that only DeviceConnectPage resumes.
+              //
+              // Once a self-hosted Memory Server origin IS configured, that no
+              // longer applies and this redirect was locking the owner out: the
+              // only credential form left is Portal's, so an appliance whose
+              // owner has no Portal account had no way in at all.
+              needsNativeCloudConnect() ? (
                 <Navigate to="/device-connect" replace />
               ) : (
                 <RedirectKnownUser>
@@ -543,6 +602,37 @@ function AppRoutes() {
               <Route path="/chat/:id?" element={<RedirectToChat />} />
             </>
           )}
+
+          {/* Approvals — the owner's answer queue for anything the capability
+              gate stopped. NOT feature-flagged: `tools.pendingActions` gates
+              whether the DIAL queues an owner's own actions, but an installed
+              app is queued unconditionally (see resolveToolGate's `managed-app`
+              rule), so cards can arrive with the flag off. A flag-gated route
+              would hide them, which is the one failure mode worse than not
+              having the page. */}
+          <Route
+            path="/approvals"
+            element={
+              <ProtectedRoute>
+                <ApprovalsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Activity — the tool-call ledger, including the refusals. Sibling of
+              /approvals rather than part of it: the queue is the open questions,
+              this is the record of every answer and every call that needed none.
+              Also unflagged, and for the same reason — a refusal recorded where
+              nobody can read it is what made the ledger write-only for a
+              fortnight. */}
+          <Route
+            path="/activity"
+            element={
+              <ProtectedRoute>
+                <ActivityPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Admin / System */}
           {/* One page, five addresses. The section (and, for a category

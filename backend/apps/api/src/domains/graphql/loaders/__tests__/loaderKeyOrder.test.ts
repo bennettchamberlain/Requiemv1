@@ -21,6 +21,7 @@ import { PersonInteractionStatsLoader } from '../PersonInteractionStatsLoader';
 import { PersonLoader } from '../PersonLoader';
 import { PlaceLoader } from '../PlaceLoader';
 import { PlaceVisitStatsLoader } from '../PlaceVisitStatsLoader';
+import { PlaybackLoader } from '../PlaybackLoader';
 import { PreviewLoader } from '../PreviewLoader';
 import { ProviderKeyLoader } from '../ProviderKeyLoader';
 import { ProviderLoader } from '../ProviderLoader';
@@ -172,8 +173,14 @@ const CASES: readonly LoaderCase[] = [
       const loader = new ContentFileLoader(
         stub({
           findByIds: async (_ctx: unknown, ids: string[]) => planner(ids, present, (id) => ({ id, url: id })),
-          findVariantsByParentIds: async (_ctx: unknown, ids: string[]) =>
-            planner(ids, present, (id) => ({ id: `pv-${id}`, parentId: id, url: `pv:${id}` })),
+          // PREVIEW and PLAYBACK from the one call, each list scrambled.
+          findVariantsOfKindsByParentIds: async (_ctx: unknown, ids: string[], kinds: readonly string[]) =>
+            Object.fromEntries(
+              kinds.map((kind) => [
+                kind,
+                planner(ids, present, (id) => ({ id: `${kind}-${id}`, parentId: id, url: `${kind}:${id}` })),
+              ]),
+            ),
         }),
         stub(LOGGER),
       );
@@ -241,8 +248,13 @@ const CASES: readonly LoaderCase[] = [
         stub({
           findByIds: async (_ctx: unknown, ids: string[]) =>
             ids.map((id) => ({ id, url: id.replace('file-of-', '') })).reverse(),
-          findVariantsByParentIds: async (_ctx: unknown, ids: string[]) =>
-            ids.map((id) => ({ id: `pv-${id}`, parentId: id, url: `pv:${id}` })).reverse(),
+          findVariantsOfKindsByParentIds: async (_ctx: unknown, ids: string[], kinds: readonly string[]) =>
+            Object.fromEntries(
+              kinds.map((kind) => [
+                kind,
+                ids.map((id) => ({ id: `${kind}-${id}`, parentId: id, url: `${kind}:${id}` })).reverse(),
+              ]),
+            ),
         }),
         stub(LOGGER),
       );
@@ -458,6 +470,23 @@ const CASES: readonly LoaderCase[] = [
     probe: (value) => (value as { visitCount: number }).visitCount,
     found: (id) => COUNT[id],
     empty: 0,
+  },
+  {
+    name: 'PlaybackLoader',
+    build: (present) => {
+      const loader = new PlaybackLoader(
+        stub({
+          // Keyed on the ORIGINAL video, exactly as PreviewLoader is.
+          findVariantsByParentIds: async (_ctx: unknown, ids: string[]) =>
+            planner(ids, present, (id) => ({ id: `pb-${id}`, parentId: id })),
+        }),
+        stub(LOGGER),
+      );
+
+      return (id) => loader.load(CTX, id);
+    },
+    probe: (value) => (value as { parentId: string } | null)?.parentId ?? null,
+    empty: null,
   },
   {
     name: 'PreviewLoader',

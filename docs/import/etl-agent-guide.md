@@ -31,7 +31,7 @@ because the next agent will act on it.
 > `entities.unresolved`.
 
 > **This file has already been wrong once, in the worst direction.** The revision
-> written against `5f29d3fdb` told you that `ci-import doctor` did not exist and
+> written against `5f29d3fdb` told you that `ci doctor` did not exist and
 > not to cite it. It had merged as [#2105](https://github.com/companionintelligence/CI-Server/pull/2105)
 > a few hours later, so every reader who believed §6 hand-typed a fifteen-query
 > baseline instead of running the nineteen-check suite that already existed. Two
@@ -40,7 +40,7 @@ because the next agent will act on it.
 > stage queue per kind and made the inbox per-user. Re-verify before you cite;
 > correcting what you find is part of your change.
 
-**Companion docs.** The command line: [`docs/cli/ci-import.md`](../cli/ci-import.md).
+**Companion docs.** The command line: [`docs/cli/ci.md`](../cli/ci.md).
 The last full acceptance pass, with real archive numbers:
 [`docs/runbooks/import-acceptance-2026-08.md`](../runbooks/import-acceptance-2026-08.md).
 The enrichment half that runs *after* an import:
@@ -59,11 +59,11 @@ this document.
 
 | Question | Answer lives in | Get it with |
 |---|---|---|
-| **Is the data it wrote sound?** | 23 checks over `ci.*`, `ci_search.*`, `ci.pipeline_*` | `ci-import doctor` — see [§6](#6-what-to-measure--ci-import-doctor). Ask this first; the four below are the drill-downs |
+| **Is the data it wrote sound?** | 23 checks over `ci.*`, `ci_search.*`, `ci.pipeline_*` | `ci doctor` — see [§6](#6-what-to-measure--ci-doctor). Ask this first; the four below are the drill-downs |
 | What ran? | `ci_import.import_runs.data_sources`, `ci_import.import_stages.kind` | `select label, status, percent, data_sources from ci_import.import_runs order by started_at;` |
 | How long? | `import_stages.duration_ms`, `.items_per_sec`, `.started_at/.finished_at` | `select kind, processed, total, round(duration_ms/1000.0,1) secs, items_per_sec from ci_import.import_stages where run_id = '…' order by seq;` |
 | What did it produce? | `import_stages.detail` (per stage), then the `ci.*` tables | `select jsonb_pretty(detail) from ci_import.import_stages where kind='push' and run_id='…';` |
-| **What did it drop?** | `detail->'summary'` on **every** stage (`consumed`/`produced`/`dropped`, `dropsByReason`, `gaps`); the older per-stage keys are still there — `detail->'sources'->N->'drops'` (parse), `detail->'rejected'` (unpack), `staged_items.push_status='failed'` + `.push_error` (push) | `ci-import doctor`, then the drop-ledger queries in [§6.2](#62-what-did-it-drop--the-single-most-useful-query-here) |
+| **What did it drop?** | `detail->'summary'` on **every** stage (`consumed`/`produced`/`dropped`, `dropsByReason`, `gaps`); the older per-stage keys are still there — `detail->'sources'->N->'drops'` (parse), `detail->'rejected'` (unpack), `staged_items.push_status='failed'` + `.push_error` (push) | `ci doctor`, then the drop-ledger queries in [§6.2](#62-what-did-it-drop--the-single-most-useful-query-here) |
 | Why? | `import_stages.error` **and `detail->'summary'->'failure'`** (the same facts as fields: `dataSource`, `file`, `destination`, `phase`), `staged_items.push_error`, `staged_entities.push_error`, then `ci.pipeline_dead_letters` for the enrichment half | `select kind, status, error, detail->'summary'->'failure' from ci_import.import_stages where error is not null;` |
 
 If the answer to any of those is "the table does not say", that is itself the
@@ -134,9 +134,9 @@ way round.
 | Per-service inbox drop folders | `.../import/sources/inboxFolders.ts`, fed by `.../import/sources/guides.ts` |
 | Acquisition (rename, EXDEV copy fallback, crash recovery) | `.../import/sources/localAcquire.ts` |
 | Scratch tree lifecycle | `.../import/services/ImportScratchService.ts` |
-| **Data-quality checks** (`ci-import doctor`) | `.../import/doctor/checks.ts`, `.../import/doctor/ImportDoctorService.ts` |
+| **Data-quality checks** (`ci doctor`) | `.../import/doctor/checks.ts`, `.../import/doctor/ImportDoctorService.ts` |
 | REST surface | `.../import/controllers/{ImportRunsController,ImportInboxController,ImportUploadsController,ImportDoctorController}.ts` |
-| CLI | `.../import/cli/` (see [`docs/cli/ci-import.md`](../cli/ci-import.md)) |
+| CLI | `backend/apps/cli/` — its own workspace, `@ci/cli` (see [`docs/cli/ci.md`](../cli/ci.md)) |
 | Web UI | `frontend/apps/web/src/pages/ImportPage/` (`StageBar.tsx`, `RunPipeline.tsx`, `wizard/LiveRun.tsx`, `useImportApi.ts`) and `frontend/apps/web/src/components/ImportActivity/` (the region pinned to the Import and Jobs pages) |
 
 ### 1.3 The four stages, and what each one can lose
@@ -271,23 +271,136 @@ media and push legs proceed meanwhile; they do not make the parses overlap. So:
 | Constant | Value | Where | Why |
 |---|---|---|---|
 | `PROGRESS_THROTTLE_MS` | 1,000 ms | `ImportStageListener.ts` | A parse ticking per record would write a row per record for the length of a 40GB import |
-| `STAGE_HEARTBEAT_MS` | 30,000 ms | `ImportStageListener.ts` | Keeps the claim fresh through silent stretches (a giant archive mid-extract says nothing for minutes) |
-| `STALE_STAGE_MINUTES` | 10 | `ImportRunService.ts` | A live stage is never silent this long, so silence *is* death — whoever the worker was |
+| `IMPORT_STAGE_HEARTBEAT_SECONDS` | 30 s | `constants.ts` | Keeps the claim fresh through silent stretches (a giant archive mid-extract says nothing for minutes). Every threshold below is a multiple of it |
+| `IMPORT_STAGE_STALLED_SECONDS` | 90 s (3 beats) | `constants.ts` | A `running` stage silent this long is reported **stalled** — on the run detail, the active snapshot, `ci runs` and the import activity panel. A report, never an action |
+| `IMPORT_STAGE_ORPHAN_SECONDS` | 180 s (6 beats) | `constants.ts` | A stage claimed through a pg-boss job and silent this long is taken back, and the job **failed through pg-boss**, which retries it in place (same id, same place in line) or dead-letters it. Short is safe because the reaper never touches a stage its own process is running, and claims are fenced — see below |
+| `ORPHAN_REAP_CRON` | `15 * * * * *` | `ImportStageListener.ts` | The orphan reaper, every minute (and at boot, inside the sweep) |
+| `STALE_STAGE_MINUTES` | 10 | `ImportRunService.ts` | The **backstop**: claims no pg-boss job holds (in-process connector runs, pre-claim-ownership rows) and anything the reaper failed to handle. A live stage is never silent this long |
 | `RESUME_SWEEP_CRON` | `30 */5 * * * *` | `ImportStageListener.ts` | Recovery is periodic, not boot-only, so a crash is picked up without a restart |
+| `STAGE_FAILURE_RECORD_RETRY` | 10 min budget, 1s → 30s | `ImportStageListener.ts` | A failure is recorded through a database that is away (not ready *or* crashed), so the sweep never re-runs a stage whose failure write was lost |
 
 Every recovery gate is a **staleness test on `updated_at`**, never an assumption
 about who else is running. The comment on `resumeInterrupted` records why: the
 first version assumed "at bootstrap, any running stage is orphaned", and a dev
 restart that leaked the old process disproved it — two executors interleaved
-progress writes with different totals on the same stage.
+progress writes with different totals on the same stage. The one thing a
+process does know for certain is what IT is running, so both recovery passes
+take the caller's live stages (`liveStageIds`) and never touch them, however
+silent — a parser blocking the event loop, or a database away, no longer costs
+a stage to the very process running it.
+
+**Claims are fenced.** `claimStage` mints a `claim_token` per claim and records
+the delivering job (`claim_job_id`, `claim_queue`); the listener's heartbeat,
+progress, completion and failure writes all land only while the token still
+matches, and both recovery passes clear it. A worker that was only slow and lost
+its stage therefore finds out at its next beat or progress report, stops, cannot
+complete the stage or advance the run behind its replacement, and acknowledges
+its delivery with `defer` — pg-boss re-issued the job under the same id, so
+completing it would mark the replacement's job done.
+
+**A dead worker is retried, and pg-boss counts the retries.** The orphan
+reaper (`ImportRunService.reclaimOrphanedStages`) fails the dead worker's job
+through pg-boss rather than enqueueing a new one: the retry keeps the job's id
+and `created_on`, so the interrupted run resumes at the head of its kind's queue
+instead of behind every run that queued meanwhile, and nothing is left `active`
+for a twelve-hour lease. It also means the queue's `retryLimit: 3` applies: a
+stage whose worker dies a fourth time is FAILED, with its job dead-lettered and
+a message saying the worker kept dying — where the ten-minute sweep would have
+re-run a worker-killing stage forever. Stage `detail.interrupted` records each
+take (when, how far it had got, which retry is next); `ci runs <id>` prints it.
 
 **Failure is recorded, not retried.** A throw fails the stage and is rethrown so
 pg-boss dead-letters it, but the redelivery is a deliberate no-op: `beginStage`
 only claims a `queued` stage, so a redelivered job for a `failed` stage logs and
-returns. Re-running a failed stage is a user action —
+returns (the queue's `retryLimit: 3` with backoff therefore re-runs nothing for a
+*recorded* failure, and neither does the recovery sweep, which leaves a `failed`
+stage alone — the retries it does spend are on workers that died, above). That
+holds only if the failure is actually *recorded* — a stage left `running` is
+exactly what the recovery sweep re-queues after `STALE_STAGE_MINUTES` — so
+`ImportStageListener` records it through an absent database:
+`STAGE_FAILURE_RECORD_RETRY` waits up to ten minutes (1s → 30s backoff), through
+a crash as well as a not-ready server, since the record is bookkeeping by id that
+cannot be what crashed anything. The failure most likely to meet an absent
+database is one the database caused (a push that crashed Postgres, below), and
+unrecorded it would crash the database again every sweep. Past the wait the
+failure is logged unrecorded and the staleness rule applies as before.
+Re-running a failed stage is a user action —
 `POST /import/runs/:runId/stages/:stageId/retry`, or
-`POST /import/runs/:runId/push/retry` for individual rows the push could not
-write.
+`POST /import/runs/:runId/push/retry` (`ci push --run <id> --retry-failed`) for
+individual rows the push could not write. The push retry also re-drives a push
+stage that ran and failed — rows still `pending`, or all settled and it died in
+the close-out. It refuses (409) while any stage of the run is still working (a
+stage left `running` in a *finished* run and silent past `STALE_STAGE_MINUTES`
+does not count — `cancel()` closed the run while its worker died), while a stage
+ahead of the push did not complete (a run cancelled mid-parse is half staged;
+retry that stage first), and when the push itself never ran (cancelled or failed
+before a worker claimed it — the stage retry is the explicit way to run it). The
+push stage is reopened only from the status that was read, because `retryStage`
+and a claiming worker move stages without the run lock.
+
+**Inside the push, a database that is not ready is waited out, not recorded.**
+Every database step in `PushStage` goes through `retryOnTransientDatabaseError`
+(`common/persistence/transientDatabaseError.ts`), which classifies code-first. A
+server that never took the statement — SQLSTATE 57P03 ("in recovery mode", "not
+yet accepting connections"), 53300, 08001/08004, a refused or unreachable socket
+(ECONNREFUSED, EHOSTUNREACH, ENETUNREACH, EAI_AGAIN, a `connect` ETIMEDOUT), a
+pool connect timeout (`isDatabaseNotReadyError`) — is retried on a doubling
+backoff (1s → 30s cap, three-minute budget), batch as a batch. Past the budget the
+stage fails with every unwritten row still `pending`. No failure of the database
+being away (`isTransientDatabaseError`) ever degrades a batch to per-row or
+quarantines a row: a row is `failed` only for something the database said about
+that row. Before this, a Postgres crash-restart mid-push marked 437 good rows
+`failed` with "the database system is in recovery mode", on a run nothing would
+ever push again.
+
+**…but a database that crashed with a statement in flight stops the push.** A
+statement can *crash* Postgres (a TimescaleDB 2.28 segfault during a bulk upsert
+is the precedent), and from the client "met a crash" and "caused one" are the
+same error. So a failure that ended the session with the statement possibly in
+flight (`isDatabaseCrashError`: 57P01/57P02, 08000/08003/08006, ECONNRESET,
+EPIPE, an ETIMEDOUT on an open socket, pg's bare "Connection terminated
+unexpectedly" — which pg also raises for a socket closed during connect, and
+which is a crash because nothing on the error tells the two apart) is **never
+resent in-process and never written off against a row**. Wherever it lands — a
+destination write, the entity lane and the receipt place lookup (both read from
+the message half of ingest's `entity <key>: <message>` text — ingest catches a
+batch-level failure and returns it as data, so a crash there is not a throw), the
+shared-content edge write, a read, a ledger write — the stage fails at once with
+`DatabaseCrashedDuringPushError`:
+
+```text
+the database crashed while this push was writing 500 communications record(s);
+rows are left pending — re-drive with `ci push --run <id> --retry-failed` once
+the database is healthy (last error: Connection terminated unexpectedly)
+```
+
+One crash per stage attempt, whatever caused it; every unsettled row stays
+`pending`; an error log line (`The database crashed with these staged rows in
+flight; the push stops here`) names the first and last staged item id and the
+data sources of the batch in flight. Re-drive it with `--retry-failed` once the
+database is back. If the re-driven push crashes the database again at the same
+place, the data in that batch is the suspect — it costs one crash per re-drive,
+so do not loop it. **Automatic poison-row isolation is a known follow-up, not
+done here.** An in-process version (resend the batch once, then each row alone,
+quarantine the row that crashed it twice) was tried and withdrawn: it crashed the
+server four times per poison row, never isolated the row when crash recovery
+took more than about a minute, crashed it dozens of times and quarantined good
+rows when *every* write crashed the server, and left the entity lane resending
+a crashing batch ten times.
+
+**Known follow-up, pre-existing and not fixed here: `GraphIngestService.indexIdentifiers`
+swallows any error, a crash included.** After the entities are upserted, ingest indexes
+their email/phone/name identifiers in one more statement that only logs (`Failed to
+index entity identifiers`) and returns, so `ingest` still reports every entity as
+resolved and the push marks the staged row `pushed`. A crash in that statement is
+therefore not a stage failure and the push carries on — so it breaks the "one crash per
+stage attempt" promise above, and if the identifier insert is what takes the server
+down, every batch does it again. The rows' identifiers are silently missing rather
+than the run reporting anything; `EntityIdentifierBackfillService` (maintenance) can
+rebuild the index for Person rows from their `properties`. Making the swallow raise
+would have to distinguish a crash from a refusal there without failing an ingest whose
+entities did land — the same message-half reading the two lanes above use is the
+starting point.
 
 **The sweep re-enqueues waiting stages, and only `policy: 'short'` stops it.**
 `resumeInterrupted` judges staleness from `import_stages.updated_at`, which
@@ -413,7 +526,14 @@ of each destination "what does this row *render* as there?" — and note that a
 routed-nowhere row is now recorded rather than hidden: `PushStage` marks it
 skipped with `NO_DESTINATION_REASON` and the stage summary counts it under the
 `no_destination` drop reason, which is classified a **gap**, not an expected
-outcome.
+outcome. The exception is a row routed nowhere **by design because another lane
+carries it** — a contact card (its Person arrives on the entity lane) or a
+rolled-up subscription line (its order's itemised receipt holds it). Those are
+named by `push/canonical.ts isRepresentedElsewhere`, marked with
+`REPRESENTED_ELSEWHERE_REASON`, and counted under `represented_elsewhere`, which
+is **expected**: still visible in `dropsByReason`, not in `gaps`. Adding a new
+`[]` branch to `destinationsFor` reads as a gap until you list it there on
+purpose — that default is deliberate.
 
 **A purchase ALWAYS produces a receipt**, and that is the third scar. The
 receipt is what carries the merchant, the money and the moment; an
@@ -893,6 +1013,23 @@ gets missed under time pressure. Two real shapes:
 - **Amazon Appstore entitlements** — the code fix landed first; the 92 existing
   rows would have stayed typed `'media'` forever. Migration `20260818224249`,
   commit `5dafcf14b`, PR #2079.
+- **A contact's natural key** — the phone join key kept the last ten digits of
+  line + extension, so `(212) 555-0147;229` keyed a card as `contact:5550147229`.
+  Fixing the rule MOVES the key, so every affected card re-imports as a
+  duplicate beside its old row. Migration `20260930020117` could only re-key
+  the rows whose own `properties.Phones` still held the typed line (vCard); the
+  Apple Contacts and CSV parsers kept their numbers only in identity
+  ATTRIBUTES, which staging never persists. Two things close the gap: staging
+  records the key the card was minted under (`legacy_identity_key`, read with
+  the pre-fix rule) and the push moves the old row onto the new key
+  (`push/legacyKeys.ts`, PR #2795's mechanism for shared office lines); and
+  those parsers now keep `Phones` / `Emails`, so `push/truncatedPhoneKeys.ts`
+  can prove from the card that the old key was a truncation and undo what it
+  reached. `contactKeyRecomputable.test.ts` fails any contact parser whose key
+  cannot be rebuilt from its own metadata. **The rule for a new parser:** every
+  value its key is derived from must reach `metadata`, and a change to the key
+  rule must keep the OLD rule callable (`legacyEntityIdentityKey`) until every
+  stored row has been re-imported — or no fix can reach rows already stored.
 
 **Why it recurs:** the test suite goes green on the code fix, and green feels
 like done. It is not; the corpus is the deliverable.
@@ -984,12 +1121,13 @@ already cleared (so the two must be disjoint), a `name` already NULL (so the
 migration is idempotent).
 
 The suite skips legibly when there is no database rather than failing every test
-on a connection error (`domains/__tests__/support/databaseConnection.ts`;
-`databaseAvailability()` prints the reason). Point it at a scratch database with
-the suite's own variable — `IMPORT_TEST_DATABASE_URL` for the import suites,
-`PIPELINE_TEST_DATABASE_URL`, `MEMORY_TEST_DATABASE_URL`, etc. Take the value
-from `make dburl`: the dev stack reallocates ports on every `up`, and a stale
-port reads as "no database".
+on a connection error (`domains/__tests__/support/databaseConnection.ts`; the
+end of the jest run lists every skipped file with its reason). Point it at a
+scratch database with the suite's own variable — `IMPORT_TEST_DATABASE_URL` for
+the import suites, `PIPELINE_TEST_DATABASE_URL`, `MEMORY_TEST_DATABASE_URL`,
+etc. Take the value from `make dburl`: the dev stack reallocates ports on every
+`up`, and a URL you set that nothing answers on now FAILS the suite, naming the
+variable, where it used to skip as "no database".
 
 ### 4.4 The commands
 
@@ -1000,7 +1138,7 @@ yarn workspace @ci/be-api typecheck
 yarn workspace @ci/fe-web typecheck
 
 yarn workspace @ci/be-api test src/domains/import              # the whole import domain
-yarn workspace @ci/be-api test src/domains/import/cli          # just the CLI
+yarn workspace @ci/cli test                                    # the CLI (its own workspace)
 yarn workspace @ci/be-api test src/domains/import/push         # routing + mappers
 
 yarn prettier --write <every file you changed>                 # CI checks ts/tsx/js/mjs formatting separately from eslint
@@ -1078,7 +1216,7 @@ cd frontend/apps/web && API_PROXY_TARGET=http://127.0.0.1:3030 yarn dev --port 5
 
 The web app calls `/api/*`; Caddy (and the Vite dev proxy, `vite.config.ts`)
 **strips the `/api` prefix**. The API's own routes are `/import/*`, not
-`/api/import/*` — which is what the `ci-import` CLI and any direct `curl` must
+`/api/import/*` — which is what the `ci` CLI and any direct `curl` must
 use.
 
 ### 5.2 The environment variables
@@ -1089,7 +1227,7 @@ in `config/default.json`:
 | Variable | Default | What |
 |---|---|---|
 | `CI_IMPORT_INBOX_DIR` | `/var/lib/ci-import/inbox` | The **root** of the inbox. `ImportInboxService` scans only `<root>/<user>/` — see §5.3. Importer-owned; readable without any root configured |
-| `CI_IMPORT_INBOX_HOST_DIR` | *(empty)* | Where `CI_IMPORT_INBOX_DIR` lives **on the host** when the API is a container and the inbox is a bind mount. The scan returns it re-rooted per user as `displayDir`, which the import page and `ci-import inbox` show instead of the in-container `inboxDir`. A label only — never resolved, never handed to the resolvers. Empty on bare metal |
+| `CI_IMPORT_INBOX_HOST_DIR` | *(empty)* | Where `CI_IMPORT_INBOX_DIR` lives **on the host** when the API is a container and the inbox is a bind mount. The scan returns it re-rooted per user as `displayDir`, which the import page and `ci inbox` show instead of the in-container `inboxDir`. A label only — never resolved, never handed to the resolvers. Empty on bare metal |
 | `CI_IMPORT_UPLOADS_DIR` | `/var/lib/ci-import/uploads` | Where `POST /import/uploads` lands multipart bytes |
 | `CI_IMPORT_SCRATCH_DIR` | `/var/tmp/ci-import` | Per-run working tree. **Not `/tmp`** — `/tmp` is tmpfs on a stock appliance, so a large export would consume RAM until the machine died |
 | `CI_IMPORT_ROOTS` | `[]` | Host paths an API caller may name. **Parsed as JSON** (`"__format": "json"`), so it must be a JSON array literal: `CI_IMPORT_ROOTS=["/path/one","/path/two"]`. A bare path silently yields nothing |
@@ -1169,7 +1307,7 @@ cp -Rc /path/to/corpus/* "$INBOX"/           # macOS: -c is an APFS clone — in
 cp -r --reflink=auto /path/to/corpus/* "$INBOX"/   # Linux equivalent on btrfs/XFS
 ```
 
-The upload path (`ci-import import <file>`, or the web drop zone) copies instead
+The upload path (`ci import <file>`, or the web drop zone) copies instead
 and leaves the original alone.
 
 There is one deliberate exception that saves you: `ImportStageListener` will
@@ -1179,12 +1317,12 @@ disk; the alternative costs the archive. If you see
 `Import staged no records; keeping its scratch tree rather than reclaiming it` in
 the logs, your data is still on disk under `CI_IMPORT_SCRATCH_DIR`.
 
-`ci-import inbox` also **scans by default** and imports only with `--start`, for
+`ci inbox` also **scans by default** and imports only with `--start`, for
 the same reason — a mistake is not a re-run away.
 
 ### 5.4 The CLI
 
-Full reference: [`docs/cli/ci-import.md`](../cli/ci-import.md). It is an HTTP
+Full reference: [`docs/cli/ci.md`](../cli/ci.md). It is an HTTP
 client against a running appliance, never an embedded server (running
 `ImportModule` in a CLI process would start a *second* set of stage workers
 racing the server's for the same claims).
@@ -1192,7 +1330,7 @@ racing the server's for the same claims).
 ```bash
 export CI_SERVER_URL=http://localhost:3030
 export CI_API_KEY=…                       # web UI → Settings → API keys, or `make testuser`
-yarn workspace @ci/be-api ci-import <command>
+yarn workspace @ci/cli dev <command>          # or `ci <command>` once installed
 ```
 
 | Command | Does |
@@ -1203,13 +1341,14 @@ yarn workspace @ci/be-api ci-import <command>
 | `inbox [--start] [--only] [--skip] [--units]` | Scans the caller's inbox subtree; `--start` imports it, smallest unit first. `~3.0GB` / `49788+` mark a size the walk stopped measuring, and a unit listed with **no parsers** ran out of recognition budget — it will not match `--only` |
 | `runs [runId] [--wait]` | Runs and their stage bars |
 | `push [--run <id>] [--dry-run]` | Appends a `push` stage to every run whose rows are staged and uncommitted |
+| `push --run <id> --retry-failed [--wait]` | Re-drives a push that already **ran**: its `failed` rows (items and entities) go back to `pending` and its own push stage is re-queued; also re-runs a push stage that failed with nothing marked failed. Refused (409, per run) while a stage is working, when a stage ahead of the push did not complete, or when the push never ran. Explicit run ids only, no `--dry-run` |
 | `stats` | `ci.*` row counts, search-index coverage, queue depth, run rollup |
-| **`doctor [--list] [--check <id>] [--failures-only] [--timeout <ms>] [--json]`** | **The twenty-three data-quality checks over what the import actually wrote. See [§6](#6-what-to-measure--ci-import-doctor)** |
+| **`doctor [--list] [--check <id>] [--failures-only] [--timeout <ms>] [--json]`** | **The twenty-three data-quality checks over what the import actually wrote. See [§6](#6-what-to-measure--ci-doctor)** |
 | `backfill [stages…] [--list]` | The post-import enrichment chain via `POST /api/maintenance/orchestrate` (NDJSON-streamed, because a `search_index` backfill outlives undici's 300s headers timeout) |
 
 Exit codes: **0** success, **2** a failure you can fix (bad path, missing key,
 unreachable server, an unknown `--check` id), **1** a failure the appliance owns.
-`doctor` also exits **1** when its gate trips — see [§6](#6-what-to-measure--ci-import-doctor);
+`doctor` also exits **1** when its gate trips — see [§6](#6-what-to-measure--ci-doctor);
 distinguish the two by whether stdout carried a report.
 
 `--stages` warns when it omits `media`, because that stage uploads the archive's
@@ -1253,23 +1392,23 @@ select n.nspname, t.typname from pg_type t
 
 ---
 
-## 6. What to measure — `ci-import doctor`
+## 6. What to measure — `ci doctor`
 
 **Start here. Do not hand-type a baseline.**
 [#2105](https://github.com/companionintelligence/CI-Server/pull/2105) shipped the
 audit that used to live in a scratch `psql` buffer as a nineteen-check suite; the
 registry holds **23** today. Each check is a regression detector for a defect
 that really shipped (the ones in §3, mostly), and where a live predicate exists
-the check **mirrors** it, so the two are maintained together. `ci-import doctor
+the check **mirrors** it, so the two are maintained together. `ci doctor
 --list` is the authoritative count — do not trust the number in this file, or in
 any other, over the registry.
 
 ```bash
-yarn workspace @ci/be-api ci-import doctor                 # the table
-yarn workspace @ci/be-api ci-import doctor --failures-only # hide the clean ones
-yarn workspace @ci/be-api ci-import doctor --list          # the vocabulary, running nothing
-yarn workspace @ci/be-api ci-import doctor --json          # for a loop
-yarn workspace @ci/be-api ci-import doctor --check comms-missing-thread-id --json
+yarn workspace @ci/cli dev doctor                 # the table
+yarn workspace @ci/cli dev doctor --failures-only # hide the clean ones
+yarn workspace @ci/cli dev doctor --list          # the vocabulary, running nothing
+yarn workspace @ci/cli dev doctor --json          # for a loop
+yarn workspace @ci/cli dev doctor --check comms-missing-thread-id --json
 ```
 
 Under it are two GET routes, so an agent holding an api key and no database
@@ -1488,7 +1627,7 @@ theory on it, and was wrong. Handle-based sources resolve through `name`
 identifiers; there is no `handle` row in `ci.entity_identifiers` and none is
 needed.
 
-So: run `ci-import backfill extract_people link_communications` (or the whole
+So: run `ci backfill extract_people link_communications` (or the whole
 chain) and only then believe a participant, vector, or geocode finding. Each
 check's `remedy` names the leg that repairs it — read it before concluding a
 parser is at fault.
@@ -1603,7 +1742,7 @@ Takeout's 56 parse entries read `0/0/{}` and the two were indistinguishable.
 **The drop vocabulary is closed and two-level** (`telemetry/dropReasons.ts`). The
 parsers' own slugs are kept verbatim as the human-facing detail — a few dozen of
 them across the datasource pack — and every slug is *also* classified through
-`DROP_SLUG_REASONS` into one of the **21** `DROP_REASONS` codes, which is what
+`DROP_SLUG_REASONS` into one of the **22** `DROP_REASONS` codes, which is what
 you group and compare by. Four parsers
 spell "the archive references bytes it does not contain" four different ways
 (`media_asset_missing`, `media_file_missing`, `missing_media`,
@@ -1613,9 +1752,9 @@ walks `datasources/` for `drop?.('…')` literals and fails on one this table ha
 not classified.
 
 Each reason is `expected` or a `gap` (`DROP_SEVERITY`). `cancelled`, `filtered`,
-`duplicate_in_run`, `already_present` and `entity_excluded` are expected; every
-other reason means the appliance was handed something it could not turn into a
-memory. `summary.gaps` is that subset, precomputed and sorted, and it is the one
+`duplicate_in_run`, `already_present`, `entity_excluded` and
+`represented_elsewhere` are expected; every other reason means the appliance was
+handed something it could not turn into a memory. `summary.gaps` is that subset, precomputed and sorted, and it is the one
 list to read first: a run that dropped 40,000 records under `filtered` worked, and
 a run that dropped 12 under `collapsed_ambiguous` lost twelve things nobody can
 name.
@@ -1773,7 +1912,7 @@ Full pipeline operations: [`docs/runbooks/pipeline-operations.md`](../runbooks/p
 
 ### 6.5 The same invariants by hand, when you have psql and no api key
 
-**`ci-import doctor` runs these for you** — `position-not-a-place-name` and
+**`ci doctor` runs these for you** — `position-not-a-place-name` and
 `person-name-garbage` are the same predicates, maintained next to the guards they
 mirror, and the doctor's version is the one that will not drift. Reach for the
 queries below only when you have a psql prompt and no api key, or when you are
@@ -1868,7 +2007,7 @@ Listed so the next agent does not mistake silence for confidence.
    index the other eight tables in that list carry, is not written down anywhere
    in the tree. The stale comments in `PushStage.ts` suggest the second reading;
    treat that as a hypothesis, not a finding.
-3. **The doctor's `medium` checks have no agreed target.** `ci-import doctor`
+3. **The doctor's `medium` checks have no agreed target.** `ci doctor`
    exists and is the baseline (§6) — the previous revision of this list said it
    did not exist, which was wrong from the day
    [#2105](https://github.com/companionintelligence/CI-Server/pull/2105) merged.
@@ -1897,7 +2036,7 @@ Listed so the next agent does not mistake silence for confidence.
 
 If you read nothing else:
 
-- **Run `ci-import doctor` before you believe an import.** Twenty-one checks, six
+- **Run `ci doctor` before you believe an import.** Twenty-one checks, six
   of them mirroring a live guard (one more mirrors a migration; the other
   fourteen have no twin); exit 1 on any `high` finding **or** any `high`
   check that could not answer. `--json` for a loop. `--list` is the
@@ -1945,7 +2084,7 @@ _Written 2026-08-19 against `origin/main` `5f29d3fdb`; **re-verified and
 corrected against `93fc6d8a9` the same day**, with every file path, table,
 column, env var, command, flag and cited PR re-checked against the tree, and
 every number re-measured against a live appliance. The corrections that pass
-were: `ci-import doctor` exists (§6, §7.3); the stage queue is per kind, not one
+were: `ci doctor` exists (§6, §7.3); the stage queue is per kind, not one
 appliance-wide slot (§1.1, §1.4, §6.1); the inbox is per user with per-service
 folders (§5.2, §5.3); the inbox budget table lost a constant that no longer
 exists (§3.5)._

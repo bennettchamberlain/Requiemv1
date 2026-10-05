@@ -1,9 +1,12 @@
+import { ListTodo } from '@ci/shadcn/icons';
 import { describe, expect, it } from 'vitest';
 
 import {
   RAIL_DESTINATIONS,
+  type RailDestination,
   allRailDestinations,
   isRailDestinationActive,
+  railClusters,
   visibleRailDestinations,
 } from './railDestinations';
 
@@ -17,6 +20,7 @@ describe('visibleRailDestinations', () => {
       'saved-searches',
       'sources',
       'jobs',
+      'approvals',
       'forecast',
       'self',
     ]);
@@ -26,7 +30,8 @@ describe('visibleRailDestinations', () => {
   // ═══ THE ACCOUNT TILE IS NOT A STATISTICS PAGE ═══
   //
   // Self used to be gated on `stats.page`, and the tile is the ONLY mount point
-  // for `NavUserMenu` — the only Settings / Theme / Log out cluster in the app.
+  // for `NavUserMenu` — the Theme / Log out cluster, with Settings beside
+  // Profile in the same submenu.
   // Turning off a flag named for a statistics page therefore removed the user's
   // avatar, their whole identity surface, the theme switcher, Settings, and
   // every way to sign out. Both directions are asserted, because it is the
@@ -194,5 +199,110 @@ describe('Sources submenu', () => {
     expect(importRow?.match?.('/sources/devices')).toBe(false);
     expect(devices?.match?.('/sources/import')).toBe(false);
     expect(services?.match?.('/sources/import')).toBe(false);
+  });
+});
+
+describe('Approvals and Activity', () => {
+  // Both routes shipped complete, tested and unflagged, and nothing linked to
+  // either — the only way to reach them was to type the URL. That is precisely
+  // the failure `visibleRailDestinations` warns about in its own comment: a
+  // page you can only type at.
+  it('reaches both pages from the rail', () => {
+    const routes = allRailDestinations().map((destination) => destination.to);
+
+    expect(routes).toContain('/approvals');
+    expect(routes).toContain('/activity');
+  });
+
+  it('carries Activity under Approvals rather than as a peer row', () => {
+    const approvals = visibleRailDestinations(() => true).find((d) => d.id === 'approvals');
+
+    expect(approvals?.children?.map((child) => child.id)).toEqual(['activity']);
+  });
+
+  it('never hides either row behind a feature flag', () => {
+    // `tools.pendingActions` gates whether the owner's own trust DIAL queues
+    // their actions. An installed app is queued unconditionally by
+    // resolveToolGate's managed-app rule, so cards arrive with that flag off —
+    // and a rail row gated on it would hide a queue that is not empty. Assert
+    // with EVERY flag off, which is the state a fresh appliance is in.
+    const visible = visibleRailDestinations(() => false);
+    const approvals = visible.find((d) => d.id === 'approvals');
+
+    expect(approvals).toBeDefined();
+    expect(approvals?.children?.map((c) => c.id)).toEqual(['activity']);
+  });
+
+  it('points at the routes App.tsx actually serves', () => {
+    // A rail entry pointing at a path no route matches is a link to a 404 —
+    // the same class of bug as gating a row on a different flag from its route.
+    const byId = Object.fromEntries(allRailDestinations().map((d) => [d.id, d.to]));
+
+    expect(byId.approvals).toBe('/approvals');
+    expect(byId.activity).toBe('/activity');
+  });
+});
+
+/**
+ * The rail separates the places you work from the machinery behind them with
+ * space and a hairline, not a label — so the split has to live in the data.
+ */
+describe('railClusters', () => {
+  const ids = (clusters: RailDestination[][]) => clusters.map((cluster) => cluster.map((d) => d.id));
+
+  it('puts Planning, Memory and Saved Searches above Sources, Jobs, Approvals and Forecast', () => {
+    const rows = visibleRailDestinations(() => true).filter((d) => d.id !== 'self');
+
+    expect(ids(railClusters(rows))).toEqual([
+      ['plan', 'memory', 'saved-searches'],
+      ['sources', 'jobs', 'approvals', 'forecast'],
+    ]);
+  });
+
+  it('keeps two clusters when gated rows drop out of either', () => {
+    const rows = visibleRailDestinations((flag) => flag !== 'jobs.page' && flag !== 'forecast.page').filter(
+      (d) => d.id !== 'self',
+    );
+
+    expect(ids(railClusters(rows))).toEqual([
+      ['plan', 'memory', 'saved-searches'],
+      ['sources', 'approvals'],
+    ]);
+  });
+
+  // Runs, not buckets: the rail never reorders rows to gather a cluster.
+  it('starts a new cluster each time the cluster changes, in rail order', () => {
+    const row = (id: string, cluster?: RailDestination['cluster']): RailDestination => ({
+      id,
+      to: `/${id}`,
+      label: id,
+      icon: ListTodo,
+      cluster,
+    });
+
+    expect(ids(railClusters([row('a'), row('b', 'system'), row('c'), row('d', 'work')]))).toEqual([
+      ['a'],
+      ['b'],
+      ['c', 'd'],
+    ]);
+    expect(railClusters([])).toEqual([]);
+  });
+
+  // A group head going dark promotes its children to the top level; they have
+  // to land in the head's cluster, not open a hairline of their own.
+  it('gives a promoted child its gated head’s cluster', () => {
+    const head: RailDestination = {
+      id: 'head',
+      to: '/head',
+      label: 'Head',
+      icon: ListTodo,
+      flag: 'head.page',
+      cluster: 'system',
+      children: [{ id: 'child', to: '/child', label: 'Child', icon: ListTodo }],
+    };
+
+    const visible = visibleRailDestinations((flag) => flag !== 'head.page', [head]);
+
+    expect(visible.map((d) => [d.id, d.cluster])).toEqual([['child', 'system']]);
   });
 });

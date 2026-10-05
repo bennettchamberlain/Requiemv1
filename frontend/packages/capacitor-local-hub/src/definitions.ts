@@ -85,10 +85,21 @@ export interface LocalHubPlugin {
   secureRemove(options: { key: string }): Promise<void>;
 
   /**
-   * Opens `url` in the system browser (Safari / Chrome), not an in-app webview.
-   * Used for Portal PKCE so the custom-scheme redirect can bounce back into the app.
+   * Opens `url` outside the app WebView.
+   * Android presents Chrome Auth Tab and replays `companion://` into `appUrlOpen`.
+   * Portal sign-in on Android lands here. iOS opens Safari; Portal sign-in there
+   * uses {@link startAuthSession} instead.
    */
   openUrl(options: { url: string }): Promise<void>;
+
+  /**
+   * iOS only. Presents an in-app Safari authentication sheet and resolves when it
+   * finishes. The sheet does not keep Portal cookies, so the next sign-in asks
+   * for the account again. The `companion://` callback is forwarded into the app;
+   * it does not open Safari. Rejects with code `CANCELLED` when the user dismisses the sheet.
+   * Android rejects as unavailable. Android sign-in goes through `openUrl`.
+   */
+  startAuthSession(options: { url: string; callbackScheme?: string }): Promise<void>;
 
   /**
    * iOS only. One high-accuracy fix for placing a pin — does not write the
@@ -97,7 +108,25 @@ export interface LocalHubPlugin {
   getCurrentLocation(): Promise<NativeCurrentLocation>;
 
   openAppSettings(): Promise<void>;
+
+  /**
+   * iOS only. Core Location authorization for the Always two-step
+   * (When In Use, then Always Allow). Android resolves `{ status: "unsupported" }`.
+   */
+  getLocationAuthorization(): Promise<{ status: NativeLocationAuthorization }>;
+
+  requestLocationAuthorization(options: {
+    always: boolean;
+  }): Promise<{ status: NativeLocationAuthorization }>;
 }
+
+export type NativeLocationAuthorization =
+  | 'notDetermined'
+  | 'denied'
+  | 'restricted'
+  | 'whenInUse'
+  | 'always'
+  | 'unsupported';
 
 export interface NativeCurrentLocation {
   latitude: number;

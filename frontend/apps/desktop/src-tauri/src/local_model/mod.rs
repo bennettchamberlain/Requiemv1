@@ -23,6 +23,9 @@
 
 pub mod ollama_sidecar;
 
+/// Compiled everywhere, used only on Linux — see its module doc comment.
+pub mod bridge_relay;
+
 #[cfg(target_os = "macos")]
 pub mod apple_bridge;
 
@@ -69,10 +72,22 @@ enum ResolutionState {
 
 /// Holds whatever child processes this module itself spawned, so main.rs can
 /// tear them down on quit. Never holds a handle for an instance we detected
-/// but don't own (the user's own pre-existing Ollama) — see ollama_sidecar's
-/// RunningInstance::child doc comment.
+/// but don't own (the user's own pre-existing Ollama).
+///
+/// Both `ollama_child` and `ollama_relay` are populated by
+/// `ollama_sidecar::ensure_available` itself, directly, as soon as each
+/// resource exists — not by its caller after the whole (potentially
+/// multi-minute, model-download-and-pull) call returns. A quit signal
+/// arriving mid-resolution must still be able to find and kill whatever has
+/// been spawned so far; populating these fields only on a successful return
+/// would leave that window unguarded.
 pub struct LocalModelHandles {
     ollama_child: Mutex<Option<Child>>,
+    /// Linux only in practice: the bridge-gateway relay in front of the
+    /// loopback-bound Ollama sidecar. Held for the same reason as
+    /// `ollama_child` — it owns a listening socket that must be released on
+    /// quit, or a relaunch cannot bind the gateway address again.
+    ollama_relay: Mutex<Option<bridge_relay::RelayHandle>>,
     #[cfg(target_os = "macos")]
     apple_bridge: Mutex<Option<apple_bridge::AppleBridgeHandle>>,
     /// Set once resolution finishes — read by get_local_model_status_command
@@ -89,6 +104,7 @@ impl Default for LocalModelHandles {
     fn default() -> Self {
         Self {
             ollama_child: Mutex::new(None),
+            ollama_relay: Mutex::new(None),
             #[cfg(target_os = "macos")]
             apple_bridge: Mutex::new(None),
             status: Mutex::new(None),
@@ -98,13 +114,45 @@ impl Default for LocalModelHandles {
 }
 
 impl LocalModelHandles {
+    /// For `ollama_sidecar::ensure_available` to register the child it spawns
+    /// directly, as soon as it exists — see this struct's own doc comment for
+    /// why that can't wait until `ensure_available` returns.
+    pub(crate) fn ollama_child_slot(&self) -> &Mutex<Option<Child>> {
+        &self.ollama_child
+    }
+
+    /// Same reason as `ollama_child_slot`, for the Linux bridge relay.
+    pub(crate) fn ollama_relay_slot(&self) -> &Mutex<Option<bridge_relay::RelayHandle>> {
+        &self.ollama_relay
+    }
+
     pub fn shutdown(&self) {
-        if let Some(mut child) = self.ollama_child.lock().unwrap_or_else(|p| p.into_inner()).take() {
+        // Relay first: it holds connections INTO the sidecar, so closing it
+        // before killing the process avoids a window where a container's
+        // in-flight request is relayed to a pid that is already gone.
+        //
+        // `.take()` is split onto its own statement, deliberately: an
+        // `if let Some(x) = mutex.lock()...take() { ... }` keeps the
+        // MutexGuard alive for the whole block in this edition, so
+        // `relay.shutdown()` — which blocks on a socket connect and a thread
+        // join — would otherwise run while still holding this lock, blocking
+        // any other thread (e.g. a status probe) that needs it for as long as
+        // shutdown takes. Ending the statement before calling shutdown() lets
+        // the guard drop first.
+        let relay = self.ollama_relay.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(relay) = relay {
+            relay.shutdown();
+        }
+        let child = self.ollama_child.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(mut child) = child {
             let _ = child.kill();
         }
         #[cfg(target_os = "macos")]
-        if let Some(handle) = self.apple_bridge.lock().unwrap_or_else(|p| p.into_inner()).take() {
-            handle.shutdown();
+        {
+            let handle = self.apple_bridge.lock().unwrap_or_else(|p| p.into_inner()).take();
+            if let Some(handle) = handle {
+                handle.shutdown();
+            }
         }
     }
 
@@ -158,14 +206,11 @@ fn resolve_and_start(
 ) -> Result<(LocalModelResolution, LlmEnvOverride), String> {
     let host_ollama_running = ollama_sidecar::is_running(ollama_sidecar::OLLAMA_PORT);
 
-    let chat_backend = if host_ollama_running {
-        ChatBackend::HostOllama
-    } else if apple_chat_available(apple_bridge_binary) {
-        ChatBackend::AppleOnDevice
-    } else {
-        ChatBackend::BundledOllama
-    };
+    let chat_backend = choose_chat_backend(host_ollama_running, || apple_chat_available(apple_bridge_binary));
 
+    // `mut` only on macOS: the Apple-bridge arm just below is the sole writer,
+    // and it is compiled out on every other host.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut env = LlmEnvOverride::default();
     if chat_backend == ChatBackend::AppleOnDevice {
         #[cfg(target_os = "macos")]
@@ -180,9 +225,27 @@ fn resolve_and_start(
 
     if !host_ollama_running {
         let need_chat_model = chat_backend == ChatBackend::BundledOllama;
-        let instance = ollama_sidecar::ensure_available(data_dir, logs_dir, need_chat_model)?;
+        // `handles` is passed through so `ensure_available` can register the
+        // child (and, later, the relay) into it directly, as soon as each
+        // exists — see LocalModelHandles's own doc comment for why.
+        let instance = ollama_sidecar::ensure_available(data_dir, logs_dir, need_chat_model, handles)?;
         log::info!("Local Ollama instance answering on port {}", instance.port);
-        *handles.ollama_child.lock().unwrap_or_else(|p| p.into_inner()) = instance.child;
+    } else {
+        // Reusing an already-answering instance we did not start — nothing to
+        // register in `handles` (we own neither the process nor, on Linux, a
+        // relay for it: see ensure_available's own "somebody else's Ollama"
+        // comment). Logged, not silent, because this is exactly the case
+        // where container reachability now depends entirely on how THAT
+        // instance happens to be bound, and there is nothing else here that
+        // will say so.
+        #[cfg(target_os = "linux")]
+        log::info!(
+            "An Ollama instance is already answering on port {} — reusing it as-is, no bridge relay \
+             started. If the appliance's containers report model errors, this is the instance to check: \
+             it needs to be reachable from the docker bridge gateway, which this app made no decision \
+             about since it isn't the one that started it.",
+            ollama_sidecar::OLLAMA_PORT
+        );
     }
 
     let detail = match chat_backend {
@@ -200,6 +263,28 @@ fn resolve_and_start(
     Ok((LocalModelResolution { chat_backend, detail }, env))
 }
 
+/// Which backend answers chat, split from the probes that feed it so the
+/// precedence is testable on any host — the same shape (and the same reason)
+/// as stack_manager::choose_docker_host.
+///
+/// The order is the point. A user who already runs their own Ollama has chosen
+/// their models and keeps them; nothing here may quietly move their chat onto
+/// Apple's on-device model instead. Apple only wins the fallback, and the
+/// bundled small models are the last resort.
+///
+/// `apple_chat_available` is a closure rather than a `bool` so it stays lazy:
+/// on macOS the real probe spawns `ci-apple-bridge --check` as a subprocess,
+/// and the first arm's whole job is to make that unnecessary.
+fn choose_chat_backend(host_ollama_running: bool, apple_chat_available: impl FnOnce() -> bool) -> ChatBackend {
+    if host_ollama_running {
+        ChatBackend::HostOllama
+    } else if apple_chat_available() {
+        ChatBackend::AppleOnDevice
+    } else {
+        ChatBackend::BundledOllama
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn apple_chat_available(bridge_binary: &Path) -> bool {
     apple_bridge::is_available(bridge_binary)
@@ -208,4 +293,39 @@ fn apple_chat_available(bridge_binary: &Path) -> bool {
 #[cfg(not(target_os = "macos"))]
 fn apple_chat_available(_bridge_binary: &Path) -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The user's own Ollama outranks everything. Getting this order wrong is
+    /// not a crash — the app would come up looking fine while chat silently
+    /// ran on a different model than the one the user installed and pulled
+    /// weights for, which is the kind of thing nobody reports as a bug.
+    #[test]
+    fn a_users_own_ollama_outranks_the_apple_on_device_model() {
+        assert_eq!(choose_chat_backend(true, || true), ChatBackend::HostOllama);
+        assert_eq!(choose_chat_backend(true, || false), ChatBackend::HostOllama);
+        assert_eq!(choose_chat_backend(false, || true), ChatBackend::AppleOnDevice);
+        assert_eq!(choose_chat_backend(false, || false), ChatBackend::BundledOllama);
+    }
+
+    /// The first arm exists precisely so the Apple probe — which spawns
+    /// `ci-apple-bridge --check` and waits on it — never runs when the answer
+    /// is already known. Turning the closure into an eagerly evaluated `bool`
+    /// argument would keep every assertion above passing while adding a
+    /// subprocess to every launch on the most common macOS path.
+    #[test]
+    fn the_apple_probe_is_not_run_once_a_host_ollama_has_answered() {
+        let probes = std::cell::Cell::new(0);
+
+        let backend = choose_chat_backend(true, || {
+            probes.set(probes.get() + 1);
+            true
+        });
+
+        assert_eq!(backend, ChatBackend::HostOllama);
+        assert_eq!(probes.get(), 0, "the Apple bridge should not have been probed at all");
+    }
 }

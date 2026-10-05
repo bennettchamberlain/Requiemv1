@@ -386,6 +386,29 @@ describe('JobsPage table', () => {
     expect(screen.getByText(/at FfmpegCommand/)).toBeInTheDocument();
   });
 
+  it('clips a long failure to the job column so the page does not scroll sideways', () => {
+    const message =
+      'Error: Invalid model specified: qwen3.6:35b — '.repeat(20) +
+      'the rest of a stack-length message that used to stretch the table';
+
+    render({
+      list: list({
+        items: [job({ state: 'failed', label: 'Infer answer', failure: { message } })],
+        total: 1,
+      }),
+    });
+
+    const line = screen.getByText(message);
+
+    // CSS ellipsis only applies when the text node can shrink. The table is
+    // table-fixed and this cell is min-w-0 so a 2kb error cannot set the
+    // page width; the full string stays on title and in the expanded detail.
+    expect(line).toHaveClass('truncate', 'min-w-0');
+    expect(line).toHaveAttribute('title', message);
+    expect(line.closest('td')).toHaveClass('min-w-0');
+    expect(line.closest('table')).toHaveClass('table-fixed');
+  });
+
   it('asks the server for the filters rather than filtering in the browser', () => {
     render();
 
@@ -1034,9 +1057,7 @@ describe('JobsPage dead letters', () => {
  *
  * The card has its own test file. What the PAGE owes it is being findable from
  * the counts that send someone looking for it — "something is pegging this box"
- * is answered by the tiles and acted on in Controls, and a control four cards
- * further down is one an operator reaches for after they have already restarted
- * the appliance.
+ * is answered by the tiles and acted on in Controls.
  */
 describe('JobsPage controls', () => {
   it('mounts the controls card under the summary', () => {
@@ -1227,6 +1248,60 @@ describe('JobsPage refresh', () => {
  * distinct stages). Nothing here said which archive was importing, how far
  * along it was, or which stage had been waiting an hour.
  */
+/**
+ * Sidebar destinations must open on their own surface, not on the same Health
+ * card the Overview already showed. Health and Controls stay on every Jobs
+ * address, but below the thing the rail just named.
+ */
+describe('JobsPage section order', () => {
+  function title(name: string): HTMLElement {
+    return screen.getByText(name, { selector: '[data-slot="card-title"]' });
+  }
+
+  it('keeps Health above the rest of Overview', () => {
+    render();
+
+    expect(
+      title('Health').compareDocumentPosition(title('History')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      title('Health').compareDocumentPosition(title('Controls')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('opens History on the charts, with Health underneath', () => {
+    render({ routerEntries: ['/jobs/history'] });
+
+    expect(
+      title('History').compareDocumentPosition(title('Health')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('opens Schedules on the table, with Health underneath', () => {
+    render({ routerEntries: ['/jobs/schedules'] });
+
+    expect(
+      title('Schedules').compareDocumentPosition(title('Health')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('opens Dead letters on that card, with Health underneath', () => {
+    render({ routerEntries: ['/jobs/dead-letters'] });
+
+    expect(
+      title('Dead letters').compareDocumentPosition(title('Health')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('opens a category on the jobs table, with Health underneath', () => {
+    render({ routerEntries: ['/jobs/category/ingest'] });
+
+    expect(
+      title('Jobs').compareDocumentPosition(title('Health')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
 describe('JobsPage live imports', () => {
   it('pins import progress above the queue summary', () => {
     renderWithProviders(<JobsPage />);
@@ -1289,7 +1364,45 @@ describe('JobsPage phone layout', () => {
     });
 
     expect(screen.getByText('Generate chat reply')).toBeInTheDocument();
-    expect(screen.getByText(/chat\.generate/)).toBeInTheDocument();
+  });
+
+  it('keeps the event and queue names out of the phone card summary and shows them in its details', async () => {
+    setViewport(true);
+    render({
+      list: list({
+        items: [job({ label: 'Generate chat reply', event: 'chat.generate', queue: 'chat' })],
+        total: 1,
+      }),
+    });
+
+    const card = await screen.findByRole('button', { name: 'Details for Generate chat reply' });
+
+    expect(screen.queryByText(/chat\.generate/)).not.toBeInTheDocument();
+
+    fireEvent.click(card);
+
+    expect(await screen.findByText('chat.generate')).toBeInTheDocument();
+    expect(screen.getByText('Event')).toBeInTheDocument();
+    expect(screen.getByText('Queue')).toBeInTheDocument();
+  });
+
+  it('counts retries on a phone card only once there have been some', async () => {
+    setViewport(true);
+    render({
+      list: list({
+        items: [
+          job({ id: 'job-1', label: 'Fresh job', retryCount: 0, retryLimit: 3 }),
+          job({ id: 'job-2', label: 'Second job', retryCount: 1, retryLimit: 3 }),
+        ],
+        total: 2,
+      }),
+    });
+
+    await screen.findByText('Second job');
+
+    expect(screen.getByText(/Retried 1 of 3/)).toBeInTheDocument();
+    expect(screen.queryByText(/0\/3/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Retried/)).toHaveLength(1);
   });
 
   it('asks the server for a shorter page so a phone is a scan, not a novel', async () => {

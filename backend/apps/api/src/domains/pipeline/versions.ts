@@ -107,12 +107,20 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * recorded `skipped: probe_failed` under the old version are re-probed, which
    * is precisely what today's `width IS NULL` predicate can never express: it
    * cannot distinguish "not probed yet" from "probed and unreadable".
+   *
+   * v2 — the probe moved from sharp's bundled libvips to the system `vips`
+   * tools (VipsService). HEIC now reads: sharp's libheif had no HEVC decoder,
+   * so every iPhone original probed as unreadable.
    */
-  [STAGE_IDS.ENRICH_MEDIA_DIMENSIONS]: 1,
+  [STAGE_IDS.ENRICH_MEDIA_DIMENSIONS]: 2,
 
   /**
    * v1 — first ledger-driven run of the preview generator (`FilePreviewService`,
    * the same sharp / ffmpeg path the upload listener uses).
+   *
+   * v2 — sharp replaced by the system `vips` tools (VipsService). HEIC decodes
+   * now (52 of 53 HEIC originals in the first imported library were recorded
+   * `undecodable` under v1 and are re-offered by this bump).
    *
    * Bump when the generator can decode something it previously could not, or
    * when the preview itself changes shape (size, format, frame choice for
@@ -121,7 +129,21 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * change that must re-render existing previews needs the predicate widened
    * too — see FilePreviewStage.
    */
-  [STAGE_IDS.ENRICH_FILE_PREVIEW]: 1,
+  [STAGE_IDS.ENRICH_FILE_PREVIEW]: 2,
+
+  /**
+   * v1 — first run of the playback-rendition generator (`VideoPlaybackService`:
+   * software x264 at 1080p max, HDR tone-mapped to BT.709, AAC audio).
+   *
+   * Bump when the codec rule changes (a codec added to or removed from
+   * `BROWSER_SAFE_VIDEO_CODECS`), when ffmpeg can decode something it
+   * previously could not (`transcode_failed` skips are re-offered), or when
+   * the rendition itself changes shape. As with file_preview, the source
+   * predicate excludes originals that already carry a PLAYBACK child, so a
+   * bump re-offers only the rendition-less corpus; re-encoding existing
+   * renditions needs the predicate widened — see VideoPlaybackStage.
+   */
+  [STAGE_IDS.ENRICH_VIDEO_PLAYBACK]: 1,
 
   /**
    * v1 — oEmbed (YouTube/Spotify/Vimeo/SoundCloud/Dailymotion/X), Wikidata +
@@ -142,6 +164,10 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * predicate (their `hulu:title:` URI is an external_uri) and were ledgered
    * `skipped / no_resolve_target` at v2 — terminal, so only a bump re-offers
    * them.
+   *
+   * Disney+ (2026-09) joined at v3 without a bump: its rows are new, so
+   * nothing was ledgered terminal, and the Disney+ watch link a shared work's
+   * cached answer lacks arrives when that row's expiry refreshes it.
    */
   [STAGE_IDS.ENRICH_UNFURL]: 3,
 
@@ -249,8 +275,14 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * coordinate, so improving the geocoder makes every estimate stale. Bumping
    * the provider generation therefore bumps BOTH stages — which is the point,
    * and means this line moves whenever `enrich.geocode`'s does.
+   *
+   * v2 — ESTIMATE_RULE_GENERATION 2: an event with its own `location_name` is
+   * skipped (`has_location_name`) instead of borrowing a neighbour's coordinate.
+   * The bump re-decides every row under the new rule; the estimates v1 wrote
+   * onto named events, and the place links built on them, are withdrawn by
+   * migration 20260930035044_clear_estimates_on_events_with_own_location.
    */
-  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 1,
+  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 2,
 
   /**
    * v1 — initial conversion of the three participant backfills.
@@ -271,27 +303,70 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * shared: it re-opens every row, INCLUDING the ones already carrying a
    * partial link, so a message whose other four recipients finally have
    * contacts gets them.
+   *
+   * v2 — PERSON_PROJECTION_RULE_GENERATION 2: the plural projection merges into
+   * the column instead of replacing it (see PersonLinkStage.ts). The bump
+   * re-links every row under the merge, which also repairs the rows v1 cut
+   * down to a single recipient.
+   *
+   * v3 — IDENTIFIER_RULE_GENERATION 2: the shared `normalizePhone` refuses a
+   * value carrying an extension. Every claim is re-adjudicated against an index
+   * that no longer holds keys truncated from office lines (see migration
+   * 20260930020117_refuse_phone_extension_join_keys).
    */
-  [STAGE_IDS.ENRICH_PERSON_LINK]: 1,
-  [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: 1,
+  [STAGE_IDS.ENRICH_PERSON_LINK]: 3,
+  [STAGE_IDS.ENRICH_EVENT_PERSON_LINK]: 3,
 
   /**
+   * v2 — self claims track the record (a claim the record no longer states is
+   * retracted), and records now state every email and phone a contact card
+   * gives (staging's contactIdentifiers; migration 20260930022046 for rows
+   * already imported), so every Person is re-read.
+   *
+   * v3 — PERSON_SELF_CLAIM_GENERATION 3: the shared `normalizePhone` refuses a
+   * value carrying an extension. Generation 2 already shipped for the tracking
+   * change, so this bump is what re-reads a Person whose claim is still the
+   * truncation (migration 20260930020117 deletes those claims).
+   *
    * v1 — initial self-claim producer (PERSON_SELF_CLAIM_GENERATION in
    * PersonSelfClaimStage.ts). Bump alongside that generation.
    */
-  [STAGE_IDS.ENRICH_PERSON_SELF_CLAIM]: 1,
+  [STAGE_IDS.ENRICH_PERSON_SELF_CLAIM]: 3,
 
   /** v2 — reddit added to SOURCE_TIME_SPECS. Bump when it gains a source; only a bump re-opens a skip. */
   [STAGE_IDS.CLEAN_TEMPORAL_REPAIR]: 2,
 
   /**
-   * v4 — DUPLICATE_SCORING_GENERATION bumped to 3: name evidence is token-
-   * subset overlap (honorifics stripped, last-name conflicts refused), not
-   * exact display-string only. v3 was phone E.164 adjudication; v2 was
-   * enrich.person_self_claim widening the evidence set. A bump rescores
-   * pending candidates; it never resurrects a rejected pair.
+   * v8 — DUPLICATE_CANDIDATE_GENERATION bumped to 3: the claim population
+   * changed under the detector — self claims now carry every email and phone
+   * a contact card states, and stale ones are retracted — so every person is
+   * re-examined (behind enrich.person_self_claim, which STAGE_DEPENDENCIES
+   * orders first). Released together with v7; both bumps are in the sum.
+   *
+   * v7 — DUPLICATE_SCORING_GENERATION bumped to 6: a number a Person's record
+   * files as a fax (`properties.Faxes`, from the vCard parser's `TEL;TYPE=FAX`)
+   * is never phone evidence. One office's fax is on every card from that
+   * office, and it had proposed two colleagues as one person at 0.85.
+   *
+   * v6 — DUPLICATE_SCORING_GENERATION bumped to 5: a properties-based phone
+   * tier (memory/utils/phoneIdentity.ts). Person `Phones`/`phones`/`phone` and
+   * numeric display names are parsed to E.164 — stated forms, or a valid
+   * geographic NANP number under a derived owner region that the corpus
+   * corroborates and that yields to any foreign-stated form — and graded by
+   * first given name, generational suffix, line census, holder cap and owner
+   * and self exclusion: 0.95 only on a clean exact, 0.85 + `phone_check`
+   * otherwise. The claim pass's unguarded E.164 tier is capped at 0.85, and
+   * the profile veto is still applied last.
+   *
+   * v5 — DUPLICATE_SCORING_GENERATION bumped to 4: profile_url evidence
+   * (LinkedIn /in/ URLs from URL/URLs/Notes `URL:` lines). Equal, corroborated
+   * URL sets score 0.95 (folded by MergeCandidateService); a disjoint or
+   * partial set vetoes every pair, email pairs included. v4 was token-subset
+   * name overlap; v3 phone E.164 adjudication; v2 enrich.person_self_claim
+   * widening the evidence set. A bump rescores pending candidates; it never
+   * resurrects a rejected pair.
    */
-  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 4,
+  [STAGE_IDS.CLEAN_DUPLICATE_DETECT]: 8,
 
   /**
    * v1 — initial owned-unit detector. A literal mirroring the derivation in
@@ -303,8 +378,16 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    */
   [STAGE_IDS.CLEAN_OBJECT_DUPLICATE_DETECT]: 1,
 
-  /** v1 — initial identifier canonicaliser. Deliberately NOT tied to IDENTITY_SPEC_VERSION, which versions the object identity ladder. */
-  [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 1,
+  /**
+   * v1 — initial identifier canonicaliser. Deliberately NOT tied to
+   * IDENTITY_SPEC_VERSION, which versions the object identity ladder.
+   *
+   * v3 — a literal mirroring the derivation in `IdentifierNormalizeStage.ts`
+   * (IDENTIFIER_RULE_GENERATION + E164_RULE_GENERATION - 1), which throws at
+   * module load if this line disagrees. Both generations moved to 2 together:
+   * `normalizePhone` and `toE164` refuse a value carrying an extension.
+   */
+  [STAGE_IDS.CLEAN_IDENTIFIER_NORMALIZE]: 3,
 
   /**
    * v1 — initial single-valued contradiction audit. A literal mirroring the
@@ -372,8 +455,17 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * v6 = matrix generation 6: communication.has_content_attachment (Content
    * -ATTACHED_TO-> Communication), the content half of the same column.
    */
-  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: 6,
-  [STAGE_IDS.PROMOTE_EDGE_EVENT]: 6,
+  // v7 for the two person-fed legs: PERSON_LINK_VERSION moved 1 -> 2 (the
+  // plural projection merges instead of replacing), and these legs derive
+  // their version from it, so the edges are re-projected from the repaired
+  // link columns. The other legs have no person producer and stay at 6.
+  //
+  // v8 for the same two legs: PERSON_LINK_VERSION moved 2 -> 3 (the shared
+  // phone key refuses extensions). The projection only ever adds edges, so the
+  // ones a truncated key had produced are deleted by migration
+  // 20260930020117_refuse_phone_extension_join_keys, not by this re-run.
+  [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: 8,
+  [STAGE_IDS.PROMOTE_EDGE_EVENT]: 8,
   [STAGE_IDS.PROMOTE_EDGE_CONTENT]: 6,
   [STAGE_IDS.PROMOTE_EDGE_OBJECT]: 6,
   [STAGE_IDS.PROMOTE_EDGE_RECEIPT]: 6,

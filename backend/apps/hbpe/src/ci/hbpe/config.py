@@ -144,6 +144,56 @@ class Settings(BaseSettings):
     label_http_timeout_seconds: float | None = Field(
         default_factory=_label_http_timeout_seconds
     )
+    # While the GGUF fallback is active, re-probe the chat endpoint this often
+    # and switch back to it when it answers (0 disables). See inference/qwen.py.
+    label_endpoint_reprobe_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("HBPE_LABEL_REPROBE_SECONDS", "300"))
+    )
+    # GGUF fallback: prompt chunk size (n_batch = n_ubatch). Small and fixed on
+    # purpose — it bounds the backend's scratch pool. Measured 2026-09-11 on
+    # ROCm: 64 held VRAM flat after warm-up where the default 512 grew ~0.5 MiB
+    # per completion indefinitely, at the same speed.
+    qwen_gguf_batch: int = Field(
+        default_factory=lambda: int(os.getenv("QWEN_GGUF_BATCH", "64"))
+    )
+    # GGUF fallback: rebuild the llama.cpp context after this many completions
+    # to release whatever the scratch pool still accumulated (0 disables).
+    qwen_gguf_recycle_calls: int = Field(
+        default_factory=lambda: int(os.getenv("QWEN_GGUF_RECYCLE_CALLS", "500"))
+    )
+
+    # ── Yield to chat (see label_yield.py) ────────────────────────────────────
+    # Before each chat-API label request, stand aside while any thread has a
+    # chat turn queued or running (ci.threads.generation_status). Only the HTTP
+    # backend shares Ollama with chat; the in-process GGUF backend never asks.
+    # Waiting counts against label_budget_seconds — that is the point.
+    label_yield_to_chat: bool = Field(
+        default_factory=lambda: (
+            os.getenv("HBPE_LABEL_YIELD_TO_CHAT", "true").strip().lower()
+            not in ("0", "false", "no", "off")
+        )
+    )
+    # Longest one request will wait for a turn to finish before proceeding
+    # anyway. Long on purpose: a real turn with thinking and tools on a local
+    # model takes minutes, and cutting in early re-creates the starvation.
+    label_yield_max_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("HBPE_LABEL_YIELD_MAX_SECONDS", "600"))
+    )
+    label_yield_poll_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("HBPE_LABEL_YIELD_POLL_SECONDS", "2"))
+    )
+
+    # ── Request ceiling (see label_ceiling.py) ───────────────────────────────
+    # Most chat-API label requests per minute, enforced as an even gap between
+    # request starts (6 → one every 10 s). Exists so the shared chat runner is
+    # regularly idle and Ollama can evict or swap it; measured 2026-09-14 the
+    # unthrottled labeler kept a 27B runner busy all afternoon and wedged the
+    # scheduler. 0 disables. The GGUF fallback is never throttled.
+    label_max_requests_per_minute: float = Field(
+        default_factory=lambda: float(
+            os.getenv("HBPE_LABEL_MAX_REQUESTS_PER_MINUTE", "6")
+        )
+    )
 
     # ── Staleness (§1.2) ─────────────────────────────────────────────────────
     cluster_staleness_days: int = Field(
@@ -200,12 +250,17 @@ class Settings(BaseSettings):
     api_url: str = Field(
         default_factory=lambda: os.getenv("API_URL", "http://api:3030")
     )
-    # Shared JWT secret — must match AUTH_JWT_AUTHTOKENSECRET in the app.
-    # HBPE self-signs service JWTs with this secret so the app accepts them.
-    api_jwt_secret: str = Field(default_factory=lambda: os.getenv("API_JWT_SECRET", ""))
-    # How long each service JWT lives (default 24 h).
-    api_jwt_expiry_seconds: int = Field(
-        default_factory=lambda: int(os.getenv("API_JWT_EXPIRY_SECONDS", "86400"))
+    # Shared bearer for THIS service's inbound HTTP surface (see auth.py): the
+    # API presents it on every request and the middleware refuses requests
+    # without it. Minted by setup-secrets as SIDECAR_AUTH_SECRET.
+    #
+    # This replaced API_JWT_SECRET — the API's own token-signing secret, with
+    # which HBPE used to mint a user token for any ``user_id`` it was handed.
+    # HBPE now holds no signing secret at all: every run arrives with a
+    # per-run token the API issued for that job's user (see runner.py /
+    # graphql_client.py), and that token is the only thing it ever presents back.
+    sidecar_auth_secret: str = Field(
+        default_factory=lambda: os.getenv("SIDECAR_AUTH_SECRET", "")
     )
 
     # ── Function runner (pg-boss dispatch from the NestJS API) ───────────────

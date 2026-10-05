@@ -308,6 +308,26 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
   },
 
   /**
+   * Local CPU only, but the expensive kind: a software transcode runs at
+   * about the clip's own length, one at a time. That is why it is confined to
+   * the enrichment window and why the stage itself serialises — a library of
+   * a few hundred phone clips is an hour or two of background CPU, once. The
+   * upload path covers new videos; this is the backfill and the net.
+   * An on-demand run is available through `POST /api/maintenance/video-playback-sweep`.
+   */
+  [STAGE_IDS.ENRICH_VIDEO_PLAYBACK]: {
+    trigger: 'scheduled',
+    cost: 'local',
+    window: 'enrichment',
+    minInterval: 1 * DAYS,
+    maxStaleness: 3 * DAYS,
+    // Ten clips per job, not the default 200: the stage transcodes one at a
+    // time at about real time, so a default slice would be a single job of
+    // hours. See `StageSchedule.sliceSize`.
+    sliceSize: 10,
+  },
+
+  /**
    * Every key is a request to someone else's server, so this is metered even
    * though nobody bills for it: provider oEmbed endpoints and Wikimedia both
    * rate-limit, and a full-corpus first pass (tens of thousands of YouTube and
@@ -603,9 +623,9 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
    * sit on exactly this tier, and they drained 777,340 communications in a day
    * on the corpus that defeated this one.
    *
-   * The premature-`done` hazard the nightly tier was also guarding against does
-   * not exist here, and not by luck: every leg's `StageSource.predicate`
-   * requires its linkage column to be POPULATED, so an unlinked row is not a
+   * The premature-`done` hazard the nightly tier was also guarding against is
+   * mostly absent here, and not by luck: every leg's `StageSource.predicate`
+   * requires a linkage column to be POPULATED, so an unlinked row is not a
    * candidate and cannot be marked `done` by a sweep that outruns its producer.
    * It becomes a candidate — never-run, immediately due — the moment the linker
    * fills the column. Ordering against the producers stays where it belongs, in
@@ -613,6 +633,12 @@ export const STAGE_SCHEDULES: Record<StageId, StageSchedule> = {
    * is due WITH candidates; outside the enrichment window the nightly producers
    * are not due, so the projection runs on its own clock and the two never
    * fight.
+   *
+   * "Mostly": the event leg's predicate is an OR over four columns filled by two
+   * producers, so an event with participants IS decided before `promote.place`
+   * links it — hourly against nightly, that is the usual order. Its place link
+   * is re-opened by `STAGE_REOPENS` (`reopens.ts`) when `promote.place` records
+   * it, which is what keeps this cadence safe for that leg.
    *
    * `maxStaleness` of 6 h for the same reason `index.embed` has it: a stage this
    * cheap to start has no business being a day behind the rows it projects.

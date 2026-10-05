@@ -1,10 +1,11 @@
-import { UseGuards } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, Resolver, ResolveField } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { ConnectionSyncJobService } from '@ci/domains/etl';
 
+import { GraphqlPrivacy } from '../decorators/GraphqlPrivacy';
 import { ConnectionLoader } from '../loaders/ConnectionLoader';
 import { ConnectionSyncJobConnection } from '../types/ConnectionSyncJobConnection';
 import { ConnectionSyncJobEdge } from '../types/ConnectionSyncJobEdge';
@@ -29,18 +30,33 @@ export class ConnectionSyncJobResolver {
   ) {}
 
   @Mutation(() => CreateConnectionSyncJobPayload)
+  // Plain create: inserts one new sync-job row.
+  @GraphqlPrivacy({ destructive: false })
   async createConnectionSyncJob(
     @Context() context: RequestContext,
     @Args('input') input: CreateConnectionSyncJobInput,
   ): Promise<CreateConnectionSyncJobPayload> {
     const serviceContext = toServiceContext(context);
 
-    const userId = input.userId ? GlobalUID.parse('user', input.userId) : serviceContext.userId;
+    // A sync job is only ever the caller's own. The fetch runs on the
+    // connection's credentials and the transform files what it fetched under the
+    // job's `userId`: a job naming another user put the caller's provider data
+    // in that user's memory, and a job on another user's connection pulled that
+    // user's provider data into the caller's.
+    if (input.userId && GlobalUID.parse('user', input.userId) !== serviceContext.userId) {
+      throw new ForbiddenException('A sync job can only be created for the signed-in user');
+    }
+
     const connectionId = GlobalUID.parse('connection', input.connectionId);
+
+    // Scoped to the caller, so another user's connection reads as absent.
+    if ((await this.connectionLoader.load(serviceContext, connectionId)) == null) {
+      throw new NotFoundException(`Connection ${input.connectionId} not found`);
+    }
 
     const entity = await this.connectionSyncJobService.create(serviceContext, {
       id: input.id,
-      userId,
+      userId: serviceContext.userId,
       connectionId,
       jobId: input.jobId,
       endpointName: input.endpointName,
@@ -66,6 +82,9 @@ export class ConnectionSyncJobResolver {
   }
 
   @Mutation(() => UpdateConnectionSyncJobPayload)
+  // Patches only this job's own status/cursor/data fields; the row stays
+  // intact throughout.
+  @GraphqlPrivacy({ destructive: false })
   async updateConnectionSyncJob(
     @Context() context: RequestContext,
     @Args('input') input: UpdateConnectionSyncJobInput,
@@ -100,6 +119,9 @@ export class ConnectionSyncJobResolver {
   }
 
   @Mutation(() => DeleteByIdPayload)
+  // ConnectionSyncJobService.delete does a HARD `repository.delete` — the row
+  // is gone with no restore path in the schema.
+  @GraphqlPrivacy({ access: 'delete', destructive: true })
   async deleteConnectionSyncJob(
     @Context() context: RequestContext,
     @Args('input') input: DeleteByIdInput,

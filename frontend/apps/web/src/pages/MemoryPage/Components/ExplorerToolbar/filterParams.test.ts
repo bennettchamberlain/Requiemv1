@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   UNDATED_ENTITY_TYPES,
+  countActiveFilters,
+  eventsInPlay,
   explorerSearchTypeFilters,
+  hasActivityFilter,
   hasWhenFilter,
   narrowedEntityTypes,
+  peopleInPlay,
   resolveExplorerTypes,
 } from './filterParams';
 
@@ -126,5 +130,152 @@ describe('resolveExplorerTypes on the events browse', () => {
       droppedByWhen: [],
       nothingLeft: false,
     });
+  });
+});
+
+describe('resolveExplorerTypes with an Activity filter', () => {
+  it('is off without the param and on for any named activity', () => {
+    expect(hasActivityFilter(new URLSearchParams('view=list'))).toBe(false);
+    expect(hasActivityFilter(new URLSearchParams('eventTypes='))).toBe(false);
+    expect(hasActivityFilter(new URLSearchParams('eventTypes=sale'))).toBe(true);
+  });
+
+  it('pins an unnarrowed browse to events instead of letting the other kinds through unfiltered', () => {
+    expect(resolveExplorerTypes(new URLSearchParams('eventTypes=sale'), '/memory')).toEqual({
+      includeTypes: ['Event'],
+      droppedByWhen: [],
+      nothingLeft: false,
+    });
+    expect(explorerSearchTypeFilters(new URLSearchParams('eventTypes=sale'), '/memory')).toEqual({
+      includeTypes: ['Event'],
+    });
+  });
+
+  it('pins the events browse to events, dropping its browser and communication kinds', () => {
+    expect(
+      resolveExplorerTypes(new URLSearchParams('view=list&eventTypes=sale,payment'), '/memory/events'),
+    ).toEqual({ includeTypes: ['Event'], droppedByWhen: [], nothingLeft: false });
+  });
+
+  it('pins a What selection made only of the events-browse kinds', () => {
+    expect(
+      resolveExplorerTypes(
+        new URLSearchParams('includedEntityTypes=Event,Communication&eventTypes=sale'),
+        '/memory',
+      ),
+    ).toEqual({ includeTypes: ['Event'], droppedByWhen: [], nothingLeft: false });
+  });
+
+  it('keeps a What selection that names another kind alongside events', () => {
+    expect(
+      resolveExplorerTypes(
+        new URLSearchParams('includedEntityTypes=Event,Content&eventTypes=sale'),
+        '/memory',
+      ),
+    ).toEqual({ includeTypes: ['Content', 'Event'], droppedByWhen: [], nothingLeft: false });
+  });
+
+  it('keeps the Content half of the seeded "Trophy Case" search', () => {
+    // The URL applySavedSearchToParams writes for entityTypes ['event',
+    // 'content'] + eventTypes ['achievement_unlocked'] + query 'achievement'.
+    // Pinning it to events hid every matching post while the What bar still
+    // showed Content as picked, and a share link of it still returned them.
+    const params = new URLSearchParams(
+      'excludedEntityTypes=Browser,Communication,File,Note,Person,Place,Product,Receipt,Thing,Answer,Concept' +
+        '&eventTypes=achievement_unlocked&search=achievement',
+    );
+
+    expect(explorerSearchTypeFilters(params, '/memory')).toEqual({ includeTypes: ['Content', 'Event'] });
+    expect(eventsInPlay(params, '/memory')).toBe(true);
+  });
+
+  it('lets the When override report what it sets aside from such a selection', () => {
+    // The seeded "Recent Entertainment" search: File + Event, last week, an
+    // activity. The pin used to swallow File first, so droppedByWhen was empty.
+    expect(
+      resolveExplorerTypes(
+        new URLSearchParams('includedEntityTypes=Event,File&when=last-week&eventTypes=played_music'),
+        '/memory',
+      ),
+    ).toEqual({ includeTypes: ['Event'], droppedByWhen: ['File'], nothingLeft: false });
+  });
+
+  it('leaves a What selection alone once it has left events out, so the chip can be reported as unmatched', () => {
+    const params = new URLSearchParams('includedEntityTypes=Content,File&eventTypes=sale');
+
+    expect(resolveExplorerTypes(params, '/memory')).toEqual({
+      includeTypes: ['Content', 'File'],
+      droppedByWhen: [],
+      nothingLeft: false,
+    });
+    expect(eventsInPlay(params, '/memory')).toBe(false);
+  });
+
+  it('agrees with the When override, which keeps events', () => {
+    expect(
+      resolveExplorerTypes(new URLSearchParams('when=yesterday&eventTypes=sale'), '/memory/events'),
+    ).toEqual({ includeTypes: ['Event'], droppedByWhen: [], nothingLeft: false });
+  });
+});
+
+describe('eventsInPlay', () => {
+  it('stays true under an Activity filter, which pins the browse to events', () => {
+    expect(eventsInPlay(new URLSearchParams('eventTypes=sale'), '/memory/events')).toBe(true);
+    expect(eventsInPlay(new URLSearchParams('eventTypes=sale'), '/memory')).toBe(true);
+  });
+
+  it('is true on the everything browse when nothing is narrowed', () => {
+    expect(eventsInPlay(new URLSearchParams('view=list'), '/memory')).toBe(true);
+  });
+
+  it('is true on the events browse, whose kinds always include events', () => {
+    expect(eventsInPlay(new URLSearchParams(''), '/memory/events')).toBe(true);
+    // A What selection that names no events-browse kind falls back to all of them.
+    expect(eventsInPlay(new URLSearchParams('includedEntityTypes=Content'), '/memory/events')).toBe(true);
+  });
+
+  it('is false once the What bar leaves events out', () => {
+    expect(eventsInPlay(new URLSearchParams('includedEntityTypes=Content,File'), '/memory')).toBe(false);
+    expect(eventsInPlay(new URLSearchParams('excludedEntityTypes=Event,Answer,Concept'), '/memory')).toBe(
+      false,
+    );
+  });
+
+  it('is true when events are among the selected kinds', () => {
+    expect(eventsInPlay(new URLSearchParams('includedEntityTypes=Content,Event'), '/memory')).toBe(true);
+  });
+
+  it('survives the When override, which only drops undated kinds', () => {
+    expect(eventsInPlay(new URLSearchParams('when=yesterday'), '/memory')).toBe(true);
+    // ...but not a selection the override empties out entirely.
+    expect(eventsInPlay(new URLSearchParams('when=yesterday&includedEntityTypes=Note'), '/memory')).toBe(
+      false,
+    );
+  });
+});
+
+describe('peopleInPlay', () => {
+  it('follows events, which link to people through participants', () => {
+    expect(peopleInPlay(new URLSearchParams(''), '/memory')).toBe(true);
+    expect(peopleInPlay(new URLSearchParams('includedEntityTypes=Event'), '/memory')).toBe(true);
+  });
+
+  it('also holds for communications alone, whose sender and recipients link to people', () => {
+    expect(peopleInPlay(new URLSearchParams('includedEntityTypes=Communication'), '/memory')).toBe(true);
+    expect(eventsInPlay(new URLSearchParams('includedEntityTypes=Communication'), '/memory')).toBe(false);
+  });
+
+  it('is false once neither kind is in play', () => {
+    expect(peopleInPlay(new URLSearchParams('includedEntityTypes=Content,File'), '/memory')).toBe(false);
+    expect(
+      peopleInPlay(new URLSearchParams('excludedEntityTypes=Event,Communication,Answer,Concept'), '/memory'),
+    ).toBe(false);
+  });
+});
+
+describe('countActiveFilters', () => {
+  it('counts the From / To toggle as one filter', () => {
+    expect(countActiveFilters(new URLSearchParams('direction=inbound'))).toBe(1);
+    expect(countActiveFilters(new URLSearchParams('direction=inbound&people=Ada'))).toBe(2);
   });
 });

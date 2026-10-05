@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import bcrypt from 'bcrypt';
-import { QueryDeepPartialEntity, Repository } from 'typeorm';
+import { EntityManager, QueryDeepPartialEntity, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { ServiceContext, SYSTEM_USER } from '@ci/common/context';
@@ -22,6 +22,25 @@ import { CreateUserDto, UpdateUserDto } from '../types';
  */
 const purgeGraceDays = () => config.accountDeletion.graceDays;
 
+/**
+ * Advisory-lock key serializing every account creation, and with it the two questions asked while
+ * one is created: "is this the first account?" ({@link UserService.createFirstAccount}) and "is this
+ * appliance unowned?" ({@link UserService.claimApplianceIfUnowned}).
+ *
+ * Any stable bigint works. This one is the version of the migration that heals the appliances
+ * predating that method (20260910133657_bootstrap_first_user_as_admin) — arbitrary, but unique by
+ * construction and traceable to what it guards, so a future advisory lock in another domain can be
+ * chosen not to collide with it.
+ */
+const APPLIANCE_CLAIM_LOCK_KEY = 20260910133657;
+
+/**
+ * Work that must commit or roll back together with a new account, run inside the transaction that
+ * creates it — after the row and its admin claim are written, before either is visible to anyone.
+ * Write through `manager`; anything written another way is outside the transaction.
+ */
+export type WithNewAccount = (manager: EntityManager, user: User) => Promise<unknown>;
+
 @Injectable()
 export class UserService {
   constructor(
@@ -35,22 +54,214 @@ export class UserService {
       throw new Error('Unauthorized');
     }
 
+    const user = await this.insertAccount(data, { onlyIfFirst: false });
+
+    // Unreachable: only an `onlyIfFirst` insert can decline. Thrown rather than asserted away, so a
+    // change that breaks that is a loud failure instead of a `null` typed as a User.
+    if (user == null) {
+      throw new Error('UserService.create: the account was not created');
+    }
+
+    return user;
+  }
+
+  /**
+   * Create `data` as this appliance's FIRST account — or, if it already has one, create nothing and
+   * return `null`.
+   *
+   * ── Why this is one step ───────────────────────────────────────────────────
+   *
+   * Three doors admit someone WITHOUT an invitation, and only while the appliance has never had an
+   * account, because until then there is nobody who could have issued one: a Portal identity nobody
+   * here has bound (`PortalTokenService.provisionUser`), the signup-code exemption
+   * (`SignupController`), and an uninvited OIDC sign-in (`OidcController`). Each used to ask
+   * {@link hasNoUsers} and then call {@link create} as a separate step. Two sign-ins arriving
+   * together on an empty appliance both saw it empty and both got in, and whichever lost the race
+   * for admin became a permanent member that nobody invited. Here the question is asked again inside
+   * the transaction that inserts the row, under the lock every account creation takes, so exactly
+   * one account can ever be first — and that account is the one {@link claimApplianceIfUnowned}
+   * promotes, in the same transaction.
+   *
+   * ── What "first" means ─────────────────────────────────────────────────────
+   *
+   * No row in `ci.users` at all — soft-deleted ones included, the same question {@link hasNoUsers}
+   * answers, and deliberately NOT the one the admin claim asks. An account awaiting its purge still
+   * means someone claimed this box, and its data is still on disk; reopening uninvited signup while
+   * it is there would be a way back in. Once the purge removes the last row the appliance is as
+   * empty as a fresh install, and is claimable again. The admin claim is different on purpose: it
+   * ignores deleted accounts, so an owner who deleted theirs is replaced as admin by the next account
+   * created — through a door that still requires an invitation.
+   *
+   * @param alongside the caller's record of the claim — a federated binding — written in the same
+   *   transaction. It then exists exactly when the account does, and a racer that lost finds both
+   *   committed. If it throws, the account is rolled back with it.
+   */
+  async createFirstAccount(
+    context: ServiceContext,
+    data: CreateUserDto,
+    alongside?: WithNewAccount,
+  ): Promise<User | null> {
+    if (context.userId !== SYSTEM_USER) {
+      throw new Error('Unauthorized');
+    }
+
+    // The unlocked answer first. On a claimed appliance — the steady state, and where every Portal
+    // token nobody here has bound ends up — this declines without hashing a password or queueing on
+    // the lock. Only an appliance that looked empty a moment ago pays for the real decision.
+    if (!(await this.hasNoUsers())) {
+      return null;
+    }
+
+    return this.insertAccount(data, { onlyIfFirst: true, alongside });
+  }
+
+  /**
+   * Insert the account and settle its role, in one transaction holding {@link APPLIANCE_CLAIM_LOCK_KEY}.
+   *
+   * EVERY account creation takes the lock, not only the first-account ones. Both questions asked
+   * here read the table they are about to write, and under READ COMMITTED an answer is only as good
+   * as the guarantee that nobody inserts between the read and this transaction's commit — which
+   * holds only if everybody who inserts waits on the same lock. It costs nothing on a path that runs
+   * once per account.
+   *
+   * @returns `null` only when `onlyIfFirst` and the appliance already has an account.
+   */
+  private async insertAccount(
+    data: CreateUserDto,
+    { onlyIfFirst, alongside }: { onlyIfFirst: boolean; alongside?: WithNewAccount },
+  ): Promise<User | null> {
     const id = data.id ?? uuidv7();
+    const { passwordChosenByUser = true, ...columns } = data;
+    // Before the transaction opens: bcrypt is the slow part, and nobody queued on the lock should
+    // wait for it as well.
     const hashedPassword = await bcrypt.hash(data.password, config.auth.local.saltRounds);
 
     const instance = this.userRepository.create({
-      ...data,
+      ...columns,
       id,
       password: hashedPassword,
+      passwordSetAt: passwordChosenByUser ? new Date() : null,
     });
 
-    const entity = await this.userRepository.save(instance);
+    const entity = await this.userRepository.manager.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock($1)', [APPLIANCE_CLAIM_LOCK_KEY]);
 
+      if (onlyIfFirst && (await this.anyAccountExists(manager))) {
+        return null;
+      }
+
+      const saved = await manager.save(instance);
+
+      // Before the event, so nothing observing UserCreated can read a half-claimed appliance.
+      saved.role = (await this.claimApplianceIfUnowned(manager, saved.id)) ? 'admin' : saved.role;
+
+      await alongside?.(manager, UserEntity.toEgressType(saved));
+
+      return saved;
+    });
+
+    if (entity == null) {
+      return null;
+    }
+
+    // After the commit, so every listener finds the account — and whatever `alongside` wrote.
     await this.eventService.send(UserCreatedEvent, {
       userId: entity.id,
     });
 
     return UserEntity.toEgressType(entity);
+  }
+
+  /**
+   * Whether this appliance has ever had an account: any row in `ci.users`, soft-deleted or not.
+   * The single definition behind both {@link hasNoUsers} and {@link createFirstAccount}, so the
+   * unlocked answer and the locked decision cannot drift apart.
+   */
+  private async anyAccountExists(manager: EntityManager): Promise<boolean> {
+    const [row] = await manager.query<Array<{ present: boolean }>>(
+      `SELECT EXISTS (SELECT 1 FROM ci.users) AS present`,
+    );
+
+    return row?.present === true;
+  }
+
+  /**
+   * Makes the account that claims an unowned appliance its administrator.
+   *
+   * ── Why this exists ────────────────────────────────────────────────────────
+   *
+   * Until this method, NOTHING in application code ever wrote `role = 'admin'`. The only path was
+   * migration 20260825233952, which promotes the earliest EXISTING user and only when no admin
+   * exists: on an upgrade that finds the owner, but on a fresh install it runs against an empty
+   * `ci.users`, matches nothing, and the first signup lands on the column default `'user'`. Every
+   * appliance installed fresh was therefore permanently admin-less, which made
+   * {@link AdminOnlyGuard}'s routes — all MCP server configuration including the outbound
+   * per-tool approval UI, and `GET /api/tools/invocations/system`, the only reader of the ledger's
+   * `user_id IS NULL` rows — return 403 to every real user. Migration 20260910133657 heals the
+   * appliances that already exist; this covers every one created from here on.
+   *
+   * ── Why the FIRST account, and why automatically ───────────────────────────
+   *
+   * Because on a single-owner personal appliance "admin" is not a distinct person from "the
+   * owner", and this codebase already says so in three places that predate this method:
+   * `SignupController.isSignupCodeRequired` exempts the first account precisely because "an
+   * appliance with zero accounts has nothing to protect yet"; 20260825233952 identifies the owner
+   * as `ORDER BY created_at ASC LIMIT 1`; and {@link findAllOnboarded} attributes an
+   * appliance-wide connector's corpus to the first onboarded account, calling oldest-first "the
+   * only stable meaning 'first account' can have". Promoting the first account is not a new
+   * concept — it is the one already written down, finally applied.
+   *
+   * ── Why this TIGHTENS the appliance rather than loosening it ───────────────
+   *
+   * The instinct is that granting admin can only widen access. Here it does the opposite on net,
+   * because {@link ApplianceAdminGuard} — which gates the `/jobs` appliance-wide controls and
+   * `/signup-codes` minting — admits EVERY signed-in user when no admin exists, that being the
+   * only honest thing it could do while the role was ungrantable. So on a fresh appliance today:
+   * those routes are open to anyone with an account, and `AdminOnlyGuard`'s are open to nobody.
+   * After this, the first surface narrows from everyone to one person and the second widens from
+   * nobody to that same person. One hole closes; one route becomes usable by its intended reader.
+   *
+   * ── The unowned test, and why it matches the guard's exactly ───────────────
+   *
+   * "No LIVE admin" (`deleted_at IS NULL`), which is character-for-character the question
+   * `ApplianceAdminGuard.applianceHasAdmin()` asks. They must agree: an appliance the guard treats
+   * as unclaimed — and therefore opens to everybody — has to be one this is willing to claim, or
+   * the permissive branch becomes permanent instead of transitional. A consequence worth stating
+   * plainly: if the sole owner deletes their account, the next account created claims the box.
+   * That is deliberate and is strictly better than the alternative, which is an appliance whose
+   * control plane stays open to everyone forever. It is also narrower than it sounds: the doors
+   * that need no invitation still count that deleted account (see {@link createFirstAccount}), so
+   * "the next account" is one somebody let in.
+   *
+   * Runs in {@link insertAccount}'s transaction, under its advisory lock, because the decision reads
+   * a table it is about to write. Two signups racing on a fresh appliance would otherwise both
+   * observe "no admin" under READ COMMITTED and both promote — a small consequence (two admins on a
+   * single-owner box, both among its first two accounts) but a silent one.
+   *
+   * @returns whether this account was promoted.
+   */
+  private async claimApplianceIfUnowned(manager: EntityManager, userId: string): Promise<boolean> {
+    // Wrapped in a CTE so the OUTER command is a SELECT, which is the only shape TypeORM's
+    // Postgres driver resolves to the rows themselves. A bare `UPDATE ... RETURNING` resolves to
+    // the pair `[rows, rowCount]` instead, and this used to read that pair's length — 2, whatever
+    // the UPDATE matched — as "promoted": `create()` handed back `role: 'admin'` for EVERY new
+    // account while the row correctly stayed 'user'. `PortalTokenService.provisionUser` puts that
+    // object straight onto `request.user`, which is what both admin guards read. Same trap as
+    // `PipelineControlService.reapExpiredShardLeases`; see its comment for the driver detail.
+    const promoted = await manager.query<Array<{ id: string }>>(
+      `WITH promoted AS (
+         UPDATE ci.users
+            SET role = 'admin'
+          WHERE id = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM ci.users WHERE role = 'admin' AND deleted_at IS NULL
+            )
+        RETURNING id)
+       SELECT id FROM promoted`,
+      [userId],
+    );
+
+    return promoted.length > 0;
   }
 
   async findAll(): Promise<User[]> {
@@ -231,7 +442,9 @@ export class UserService {
 
     const hashedPassword = await bcrypt.hash(newPassword, config.auth.local.saltRounds);
 
-    await this.userRepository.update(id, { password: hashedPassword });
+    // From here the user knows a password, so `requireReauth` may ask for it —
+    // including on an OIDC-linked account that just set its first one.
+    await this.userRepository.update(id, { password: hashedPassword, passwordSetAt: new Date() });
 
     await this.eventService.send(UserUpdatedEvent, {
       userId: id,
@@ -260,11 +473,16 @@ export class UserService {
    * Counts soft-deleted rows for the same reason `checkEmailAvailability` reads
    * through the filter: a deleted account still means someone claimed this box,
    * and re-opening signup for whoever reaches it next would be a way back in.
+   *
+   * ⚠️ An answer for this instant, good for telling someone what to expect
+   * (whether the signup form needs a code field) and for refusing early. Never
+   * create an account on the strength of it: another request can claim the
+   * appliance between this answer and the INSERT. That decision belongs to
+   * {@link createFirstAccount}, which asks again under the lock every account
+   * creation takes.
    */
   async hasNoUsers(): Promise<boolean> {
-    const count = await this.userRepository.count({ withDeleted: true });
-
-    return count === 0;
+    return !(await this.anyAccountExists(this.userRepository.manager));
   }
 
   async findByEmail(email: string): Promise<User | null> {

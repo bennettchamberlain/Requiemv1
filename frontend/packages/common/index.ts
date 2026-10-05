@@ -2,11 +2,20 @@ export { EmptyState } from './src/components/EmptyState';
 export { ErrorPage } from './src/components/error-page';
 export { LoadingPage } from './src/components/loading-page';
 export { Portal } from './src/components/portal';
-export { MOBILE_BREAKPOINT, DeviceLayoutProvider, useDeviceLayout, usePageTitle } from './src/hooks';
+export {
+  MOBILE_BREAKPOINT,
+  DeviceLayoutProvider,
+  useDeviceLayout,
+  useOverflowsRight,
+  usePageTitle,
+} from './src/hooks';
 export { GlobalUID } from './src/utils/GlobalUID';
 export { apiKeyHeaders, getApiKey, setApiKey } from './src/utils/apiAuth';
+export { API_CONTRACT, MIN_SERVER_CONTRACT, memoryContractNotice } from './src/utils/apiContract';
+export type { MemoryContractNotice } from './src/utils/apiContract';
 export {
   buildApiUrl,
+  clearPersistedApiBaseUrl,
   getApiBaseUrl,
   initApiBaseUrl,
   isIosPlatform,
@@ -36,6 +45,7 @@ export {
   HOME_GEOFENCE_RADIUS_METERS,
   LOCATION_ENABLED_STORAGE_KEY,
   LOCATION_MODE_CHANGE_EVENT,
+  LOCATION_NEEDS_SETTINGS_EVENT,
   LOCATION_MODE_STORAGE_KEY,
   LOCATION_TRACKING_MODES,
   MIN_DISTANCE_METERS,
@@ -56,6 +66,7 @@ export {
   newNoteId,
   positionSourceId,
   publishLocationTrackingMode,
+  publishLocationNeedsSettingsUpgrade,
   readLocationTrackingMode,
   rememberQueuedNote,
   writeLocationTrackingMode,
@@ -82,6 +93,62 @@ export {
   type FetchJsonIssue,
 } from './src/utils/fetchJson';
 export { localHubPlugin, localHubSession, type LocalHubSession } from './src/utils/localHub';
+export {
+  cancelLocalLlmDownload,
+  deleteLocalLlmModel,
+  downloadLocalLlmModel,
+  ensureLocalLlmLoaded,
+  isContextExhausted,
+  isLocalLlmReady,
+  localLlmPlatform,
+  localLlmPlugin,
+  onLocalLlmDownloadProgress,
+  probeLocalLlm,
+  resetLocalLlmConversation,
+  streamLocalLlm,
+  unloadLocalLlm,
+} from './src/utils/localLlm';
+export type {
+  LoadLocalLlmOptions,
+  LocalLlmAvailability,
+  LocalLlmDownloadProgress,
+  LocalLlmGenerationStats,
+  LocalLlmLoadResult,
+  LocalLlmModelState,
+  LocalLlmModelStatus,
+  LocalLlmModelStatusResult,
+  LocalLlmPluginApi,
+  LocalLlmProbe,
+  LocalLlmTokenEvent,
+  StreamLocalLlmOptions,
+  StreamLocalLlmResult,
+} from './src/utils/localLlm';
+export {
+  LOCAL_LLM_CATALOG,
+  LOCAL_LLM_DISK_HEADROOM_BYTES,
+  LOCAL_LLM_MODEL_LIST,
+  evaluateModelFit,
+  findLocalLlmModel,
+  formatBytes,
+  localLlmModelsFor,
+} from './src/utils/localLlmCatalog';
+export type {
+  LocalLlmAccelerator,
+  LocalLlmCapability,
+  LocalLlmDeviceFacts,
+  LocalLlmFit,
+  LocalLlmModelId,
+  LocalLlmModelSpec,
+  LocalLlmPlatform,
+} from './src/utils/localLlmCatalog';
+export {
+  DEFAULT_LOCAL_LLM_PREFS,
+  getLocalLlmPrefs,
+  parseLocalLlmPrefs,
+  setLocalLlmPrefs,
+  subscribeLocalLlmPrefs,
+} from './src/utils/localLlmPrefs';
+export type { LocalLlmMode, LocalLlmPrefs } from './src/utils/localLlmPrefs';
 export {
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_MAX_ITEMS,
@@ -133,14 +200,17 @@ export {
   getCurrentDeviceLocation,
   getLaunchUrl,
   getNativeCurrentLocation,
+  getNativeLocationAuthorization,
   hasNotificationPermission,
   hideSplashScreen,
   isBarcodeScanError,
   isDeviceLocationError,
+  openAuthSession,
   openExternalUrl,
   openNativeAppSettings,
   openNativeLocationSettings,
   removeBackgroundLocationWatcher,
+  requestNativeLocationAuthorization,
   requestNotificationPermission,
   scanQrCode,
   scheduleLocalNotification,
@@ -157,8 +227,9 @@ export type {
   DeviceLocationErrorCode,
   LocalNotification,
   NativeCurrentLocation,
+  NativeLocationAuthorization,
 } from './src/utils/nativeBridge';
-export { BarcodeScanError, DeviceLocationError } from './src/utils/nativeBridge';
+export { AuthSessionCancelledError, BarcodeScanError, DeviceLocationError } from './src/utils/nativeBridge';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,

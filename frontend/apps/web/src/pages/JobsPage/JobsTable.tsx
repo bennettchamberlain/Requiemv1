@@ -1,5 +1,6 @@
 import { Fragment, useState, type ReactNode } from 'react';
 
+import { useOverflowsRight } from '@ci/common';
 import { Badge, Button, Card, Collapsible, Input, Skeleton, cn } from '@ci/shadcn';
 import { AlertTriangle, ChevronDown, ChevronRight, type LucideIcon } from '@ci/shadcn/icons';
 
@@ -110,15 +111,7 @@ export function JobsTable({ data, loading, error, filters, jobTypes, onChange, o
    * fail in a way that points at the wrong component.
    */
   const categoryChips = (
-    <div
-      className={
-        phone
-          ? 'scrollbar-none flex gap-1 overflow-x-auto overscroll-x-contain pb-0.5'
-          : 'flex flex-wrap items-center gap-1'
-      }
-      role="tablist"
-      aria-label="Job category"
-    >
+    <ChipRow phone={phone} label="Job category" wideClassName="flex flex-wrap items-center gap-1">
       <CategoryChip
         label="All"
         count={allCategoriesTotal}
@@ -162,19 +155,11 @@ export function JobsTable({ data, loading, error, filters, jobTypes, onChange, o
           />
         </>
       ) : null}
-    </div>
+    </ChipRow>
   );
 
   const stateTabs = (
-    <div
-      className={
-        phone
-          ? 'scrollbar-none flex gap-1 overflow-x-auto overscroll-x-contain pb-0.5'
-          : 'flex flex-wrap gap-1'
-      }
-      role="tablist"
-      aria-label="Job state"
-    >
+    <ChipRow phone={phone} label="Job state" wideClassName="flex flex-wrap gap-1">
       {STATE_TABS.map((tab) => {
         // `stateCounts` deliberately ignores the state filter, so every tab
         // shows what picking it would yield. `total` does NOT — it reflects
@@ -214,7 +199,7 @@ export function JobsTable({ data, loading, error, filters, jobTypes, onChange, o
           </Button>
         );
       })}
-    </div>
+    </ChipRow>
   );
 
   const filterSelects = (
@@ -265,7 +250,11 @@ export function JobsTable({ data, loading, error, filters, jobTypes, onChange, o
             them under one surface makes the card read as "narrow the table by
             state, then by category, then by these three" instead of as three
             unrelated control strips. */}
-        <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-2">
+        {/* `min-w-0`: this panel is an item of the card header's grid, and a grid
+            item's minimum width defaults to its content's. On a phone that content
+            is a chip row laid out on one line (~1,750px), so without it the whole
+            header — Find box included — was laid out that wide. */}
+        <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-2">
           <FilterRow label="State" phone={phone}>
             {stateTabs}
           </FilterRow>
@@ -347,27 +336,31 @@ export function JobsTable({ data, loading, error, filters, jobTypes, onChange, o
             ))}
           </ul>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-sm">
+          <div className="min-w-0 max-w-full overflow-x-auto">
+            {/* table-fixed so a long failure cannot grow the Job column past
+                the card. table-auto + truncate does nothing: the cell's
+                min-width follows the text, the wrapper grows with the table,
+                and the whole page scrolls sideways. */}
+            <table className="w-full table-fixed border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-left text-xs uppercase text-muted-foreground">
                   <th scope="col" className="w-8 py-1.5" />
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                  <th scope="col" className="min-w-0 py-1.5 pr-3 font-medium">
                     Job
                   </th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                  <th scope="col" className="w-36 py-1.5 pr-3 font-medium">
                     Queue
                   </th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">
+                  <th scope="col" className="w-28 py-1.5 pr-3 font-medium">
                     State
                   </th>
-                  <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+                  <th scope="col" className="w-20 py-1.5 pr-3 text-right font-medium">
                     Duration
                   </th>
-                  <th scope="col" className="py-1.5 pr-3 text-right font-medium">
+                  <th scope="col" className="w-16 py-1.5 pr-3 text-right font-medium">
                     Retries
                   </th>
-                  <th scope="col" className="py-1.5 text-right font-medium">
+                  <th scope="col" className="w-36 py-1.5 text-right font-medium">
                     Created
                   </th>
                 </tr>
@@ -413,6 +406,24 @@ export function JobsTable({ data, loading, error, filters, jobTypes, onChange, o
   );
 }
 
+/**
+ * Collapsed-row failure: one line, ellipsis, full text on hover and in details.
+ *
+ * A table cell grows to its text unless this is allowed to shrink (`min-w-0`)
+ * and the table is `table-fixed`. `inline-flex` + `truncate` alone is not
+ * enough — the flex item sizes to the message and the page scrolls sideways.
+ */
+function JobFailureLine({ message }: { message: string }) {
+  return (
+    <span className="mt-1 flex min-w-0 max-w-full items-center gap-1 text-xs text-destructive">
+      <AlertTriangle aria-hidden className="h-3 w-3 shrink-0" />
+      <span className="min-w-0 truncate" title={message}>
+        {message}
+      </span>
+    </span>
+  );
+}
+
 function JobRow({ job, expanded, onToggle }: { job: JobListItem; expanded: boolean; onToggle: () => void }) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
@@ -433,31 +444,26 @@ function JobRow({ job, expanded, onToggle }: { job: JobListItem; expanded: boole
             <Chevron className="h-4 w-4" />
           </button>
         </td>
-        <td className="py-1.5 pr-3">
-          <div className="flex flex-col">
-            <span className="flex items-center gap-1.5 font-medium">
+        <td className="min-w-0 py-1.5 pr-3">
+          <div className="flex min-w-0 flex-col">
+            <span className="flex min-w-0 items-center gap-1.5 font-medium">
               {/* Category as a colour cue on every row, so a subsystem's work is
                   scannable in a wall of thousands. The written category is in the
                   expanded detail and the filter — colour is never the only
                   channel (WCAG 1.4.1). */}
               <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${categoryDot(job.category)}`} />
-              {job.label}
+              <span className="min-w-0 truncate">{job.label}</span>
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
               {job.event ?? 'no event name'}
               {job.interactive ? ' · interactive' : ''}
             </span>
           </div>
-          {job.failure ? (
-            <span className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-destructive">
-              <AlertTriangle aria-hidden className="h-3 w-3 shrink-0" />
-              <span className="truncate" title={job.failure.message}>
-                {job.failure.message}
-              </span>
-            </span>
-          ) : null}
+          {job.failure ? <JobFailureLine message={job.failure.message} /> : null}
         </td>
-        <td className="py-1.5 pr-3 text-xs text-muted-foreground">{job.queue}</td>
+        <td className="truncate py-1.5 pr-3 text-xs text-muted-foreground" title={job.queue}>
+          {job.queue}
+        </td>
         <td className="py-1.5 pr-3">
           <StateBadge job={job} />
         </td>
@@ -489,7 +495,7 @@ function JobCard({ job, expanded, onToggle }: { job: JobListItem; expanded: bool
         aria-expanded={expanded}
         aria-label={`Details for ${job.label}`}
         onClick={onToggle}
-        className="flex w-full flex-col gap-1 py-2.5 text-left"
+        className="flex w-full min-w-0 flex-col gap-1 py-2.5 text-left"
       >
         <div className="flex items-start justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1.5 font-medium">
@@ -498,42 +504,43 @@ function JobCard({ job, expanded, onToggle }: { job: JobListItem; expanded: bool
           </span>
           <StateBadge job={job} />
         </div>
-        <p className="min-w-0 truncate text-xs text-muted-foreground">
-          {job.event ?? 'no event name'}
-          {job.interactive ? ' · interactive' : ''}
-          {' · '}
-          {job.queue}
-        </p>
+        {/* The name above already says what the job is; its event and queue names
+            say it again in internal form ("Retrieval telemetry", then
+            "retrieval.query · telemetry"), so on a phone they wait in the details.
+            Retries are counted only once there have been some. */}
         <p className="text-xs text-muted-foreground">
           {formatDuration(job.durationMs)}
           {' · '}
-          {job.retryCount}/{job.retryLimit}
-          {' · '}
           {formatTimestamp(job.createdOn)}
+          {job.retryCount > 0 ? ` · Retried ${job.retryCount} of ${job.retryLimit}` : ''}
+          {job.interactive ? ' · interactive' : ''}
         </p>
-        {job.failure ? (
-          <span className="inline-flex min-w-0 items-center gap-1 text-xs text-destructive">
-            <AlertTriangle aria-hidden className="h-3 w-3 shrink-0" />
-            <span className="truncate" title={job.failure.message}>
-              {job.failure.message}
-            </span>
-          </span>
-        ) : null}
+        {job.failure ? <JobFailureLine message={job.failure.message} /> : null}
       </button>
       {expanded ? (
         <div className="pb-3">
-          <JobDetails job={job} />
+          <JobDetails job={job} names />
         </div>
       ) : null}
     </div>
   );
 }
 
-function JobDetails({ job }: { job: JobListItem }) {
+/**
+ * `names` adds the event and queue names, which the table shows in its own columns
+ * but a phone card leaves out of its summary.
+ */
+function JobDetails({ job, names = false }: { job: JobListItem; names?: boolean }) {
   return (
     <>
       <p className="mb-2 max-w-3xl text-xs text-muted-foreground">{job.description}</p>
       <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+        {names ? (
+          <>
+            <Detail label="Event" value={job.event ?? 'no event name'} mono />
+            <Detail label="Queue" value={job.queue} mono />
+          </>
+        ) : null}
         <Detail label="Job id" value={job.id} mono />
         <Detail
           label="Category"
@@ -552,7 +559,7 @@ function JobDetails({ job }: { job: JobListItem }) {
       </dl>
       {job.failure ? (
         <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-2">
-          <p className="text-xs font-medium text-destructive">{job.failure.message}</p>
+          <p className="break-words text-xs font-medium text-destructive">{job.failure.message}</p>
           {job.failure.failedAt ? (
             <p className="mt-0.5 text-xs text-muted-foreground">
               Failed {formatTimestamp(job.failure.failedAt)}
@@ -614,6 +621,45 @@ function Detail({ label, value, mono }: { label: string; value: ReactNode; mono?
  * is a visible echo of what assistive tech was already being told, not the only
  * copy of it.
  */
+/**
+ * A row of filter chips. On a wide screen the chips wrap. On a phone they stay on
+ * one line that scrolls sideways, and the right edge fades while chips are still
+ * hidden past it — otherwise the row just looks cut off.
+ */
+function ChipRow({
+  phone,
+  label,
+  wideClassName,
+  children,
+}: {
+  phone: boolean;
+  label: string;
+  wideClassName: string;
+  children: ReactNode;
+}) {
+  const [ref, more] = useOverflowsRight<HTMLDivElement>();
+
+  if (!phone) {
+    return (
+      <div className={wideClassName} role="tablist" aria-label={label}>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={ref}
+      data-more={more || undefined}
+      className="scrollbar-none flex gap-1 overflow-x-auto overscroll-x-contain pb-0.5 data-[more]:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
+      role="tablist"
+      aria-label={label}
+    >
+      {children}
+    </div>
+  );
+}
+
 function FilterRow({ label, phone, children }: { label: string; phone: boolean; children: ReactNode }) {
   return (
     <div

@@ -4,7 +4,7 @@ import { useQuery } from '@apollo/client';
 import { EmptyState, GlobalUID, usePageTitle } from '@ci/common';
 import { Button } from '@ci/shadcn';
 import { FileType, Shapes } from '@ci/shadcn/icons';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ErrorState } from '@/components/ErrorState';
 import { InfiniteListFooter } from '@/components/InfiniteList';
@@ -77,7 +77,7 @@ export const GET_CONTENTS = gql(`
  * the server, so a tile needs no second lookup to show its thumbnail.
  */
 export function ContentLibraryPage() {
-  usePageTitle('Content - Companion Intelligence');
+  usePageTitle('Content - Companion Memory');
 
   const navigate = useNavigate();
   // The open row lives in the URL rather than in local state, so it has a
@@ -86,6 +86,10 @@ export function ContentLibraryPage() {
   // `id` is the base64 global id, so each direction converts explicitly.
   const { contentId } = useParams<{ contentId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  // The drawer is a path segment; the search and every facet are query params.
+  // Opening and closing must carry `location.search` along, or the first click
+  // silently resets the library to an empty, queryless page behind the drawer.
+  const { search: queryString } = useLocation();
 
   const filterVariables = useMemo(() => {
     // The header search box's `?search=` (see isLiveSearchPath): title, text or URL.
@@ -108,8 +112,13 @@ export function ContentLibraryPage() {
     fetchPolicy: 'cache-and-network',
     notifyOnNetworkStatusChange: true,
   });
-  const { data: facetData } = useQuery(GET_CONTENT_FACETS);
+  // `error` matters here as much as it does for the page query below: a facet
+  // query that fails leaves `facetData` undefined, and the pickers must not
+  // read that as "this account has no types". Measured live 2026-09-22 —
+  // Postgres out of /dev/shm, every load — they said exactly that.
+  const { data: facetData, error: facetError } = useQuery(GET_CONTENT_FACETS);
   const facets = facetData?.contentFacets;
+  const facetsUnavailable = facetError != null && facets == null;
 
   const clearFilters = useCallback(
     () =>
@@ -166,10 +175,10 @@ export function ContentLibraryPage() {
   }, [contentId]);
 
   const handleSelect = useCallback(
-    (globalId: string) => navigate(`/memory/content/${GlobalUID.parse('content', globalId)}`),
-    [navigate],
+    (globalId: string) => navigate(`/memory/content/${GlobalUID.parse('content', globalId)}${queryString}`),
+    [navigate, queryString],
   );
-  const handleClose = useCallback(() => navigate('/memory/content'), [navigate]);
+  const handleClose = useCallback(() => navigate(`/memory/content${queryString}`), [navigate, queryString]);
   const handleChanged = useCallback(() => void refetch(), [refetch]);
 
   return (
@@ -184,12 +193,14 @@ export function ContentLibraryPage() {
                 label="Content type"
                 param="types"
                 options={facets?.types ?? []}
+                unavailable={facetsUnavailable}
                 icon={Shapes}
               />
               <ContentFacetFilter
                 label="File type"
                 param="mimetypes"
                 options={facets?.mimetypes ?? []}
+                unavailable={facetsUnavailable}
                 icon={FileType}
               />
               <ConnectorFilter modal={false} label="How" includeTypes={['content']} />

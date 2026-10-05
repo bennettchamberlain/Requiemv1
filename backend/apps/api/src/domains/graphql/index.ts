@@ -56,6 +56,7 @@ import { PersonInteractionStatsLoader } from './loaders/PersonInteractionStatsLo
 import { PersonLoader } from './loaders/PersonLoader';
 import { PlaceLoader } from './loaders/PlaceLoader';
 import { PlaceVisitStatsLoader } from './loaders/PlaceVisitStatsLoader';
+import { PlaybackLoader } from './loaders/PlaybackLoader';
 import { PreviewLoader } from './loaders/PreviewLoader';
 import { ProviderKeyLoader } from './loaders/ProviderKeyLoader';
 import { ProviderLoader } from './loaders/ProviderLoader';
@@ -101,6 +102,7 @@ import { ProviderResolver } from './resolvers/ProviderResolver';
 import { QuestionResolver } from './resolvers/QuestionResolver';
 import { ReceiptResolver } from './resolvers/ReceiptResolver';
 import { RelationshipResolver } from './resolvers/RelationshipResolver';
+import { ReminderResolver } from './resolvers/ReminderResolver';
 import { SavedSearchResolver } from './resolvers/SavedSearchResolver';
 import { ScheduleCandidateResolver } from './resolvers/ScheduleCandidateResolver';
 import { SearchResolver } from './resolvers/SearchResolver';
@@ -197,6 +199,7 @@ import { UserResolver } from './resolvers/UserResolver';
     NodeResolver,
     NoteResolver,
     TaskResolver,
+    ReminderResolver,
     AnswerResolver,
     AttachmentFileLoader,
     EventContentsLoader,
@@ -226,6 +229,7 @@ import { UserResolver } from './resolvers/UserResolver';
     PlaceResolver,
     PositionResolver,
     PreviewLoader,
+    PlaybackLoader,
     ProductIdentifierLoader,
     ProductModelResolver,
     ProviderResolver,

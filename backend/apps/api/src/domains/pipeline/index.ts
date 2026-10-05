@@ -62,8 +62,10 @@ import { PIPELINE_TICK, PipelineTickCron } from './listeners/PipelineTickCron';
 import { SearchIndexSweepRequestListener } from './listeners/SearchIndexSweepRequestListener';
 import { StageArrivalListener } from './listeners/StageArrivalListener';
 import { UnfurlSweepRequestListener } from './listeners/UnfurlSweepRequestListener';
+import { VideoPlaybackSweepRequestListener } from './listeners/VideoPlaybackSweepRequestListener';
 import { BackpressureService } from './services/BackpressureService';
 import { EnrichmentWindowService } from './services/EnrichmentWindowService';
+import { IdentifierArrivalService } from './services/IdentifierArrivalService';
 import { PipelineControlService } from './services/PipelineControlService';
 import { PipelineDispatchService } from './services/PipelineDispatchService';
 import { PipelineRunService } from './services/PipelineRunService';
@@ -83,6 +85,7 @@ import { EventPersonLinkStage, PersonLinkStage } from './stages/enrich/PersonLin
 import { PersonSelfClaimStage } from './stages/enrich/PersonSelfClaimStage';
 import { PositionReverseStage } from './stages/enrich/PositionReverseStage';
 import { UnfurlStage } from './stages/enrich/UnfurlStage';
+import { VideoPlaybackStage } from './stages/enrich/VideoPlaybackStage';
 import { EmbedStage } from './stages/index/EmbedStage';
 import {
   BrowserActivityEmbedStage,
@@ -146,6 +149,7 @@ import { PositionPlacePromoteStage } from './stages/promote/PositionPlacePromote
 const stageProviders: Provider[] = [
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_MEDIA_DIMENSIONS], useClass: MediaDimensionsStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_FILE_PREVIEW], useClass: FilePreviewStage },
+  { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_VIDEO_PLAYBACK], useClass: VideoPlaybackStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.ENRICH_UNFURL], useClass: UnfurlStage },
   { provide: STAGE_REGISTRY[STAGE_IDS.INDEX_EMBED], useClass: EmbedStage },
   // The rest of the dense-embed family — one id per source table, one shared
@@ -286,6 +290,9 @@ const stageProviders: Provider[] = [
     // `stageDueness` for every leg it judges. Declared and specced before
     // anything consumed it; the dueness gate is its first caller.
     EnrichmentWindowService,
+    // New evidence re-opens old person-link decisions. Consulted by the control
+    // tick per user, before the candidates are counted.
+    IdentifierArrivalService,
     PipelineControlService,
     PipelineSliceListener,
     // Rows are enriched AS THEY ARRIVE; the tick is the backstop, not the
@@ -301,6 +308,7 @@ const stageProviders: Provider[] = [
     GraphEdgeSweepRequestListener,
     UnfurlSweepRequestListener,
     FilePreviewSweepRequestListener,
+    VideoPlaybackSweepRequestListener,
     PipelineTickCron,
     // The cron owns the schedule and the cluster-safe advisory lock; the control
     // service owns what a tick DOES. Binding by token rather than importing the

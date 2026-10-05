@@ -11,6 +11,7 @@ export type {
   SourceLedgerOptions,
   SourceTriple,
 } from './bulkUpsert';
+export { countAffected } from './countAffected';
 export { appendRecordSources } from './recordSources';
 export type { RecordSourceRow } from './recordSources';
 export {
@@ -22,6 +23,7 @@ export {
 export type { IngestEntityKind } from './ingestRefreshColumns';
 export { keysetPaginate, resolvePageShape, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE } from './keysetPaginate';
 export type { KeysetPageArgs, KeysetPage } from './keysetPaginate';
+export { withoutUndefined } from './withoutUndefined';
 export {
   assertSchemaIntegrity,
   currentStackKey,
@@ -40,3 +42,23 @@ export type {
   SchemaIntegrityReport,
   SchemaProbe,
 } from './schemaIntegrity';
+export {
+  CRASH_NETWORK_CODES,
+  CRASH_SQLSTATES,
+  DatabaseCrashedError,
+  DatabaseNotReadyError,
+  DatabaseUnavailableError,
+  NOT_READY_NETWORK_CODES,
+  NOT_READY_SQLSTATES,
+  TRANSIENT_NETWORK_CODES,
+  TRANSIENT_SQLSTATES,
+  TransientDatabaseError,
+  classifyDatabaseError,
+  classifyDatabaseMessage,
+  isDatabaseCrashError,
+  isDatabaseNotReadyError,
+  isTransientDatabaseError,
+  isTransientDatabaseMessage,
+  retryOnTransientDatabaseError,
+} from './transientDatabaseError';
+export type { DatabaseAbsence, TransientRetryNotice, TransientRetryPolicy } from './transientDatabaseError';

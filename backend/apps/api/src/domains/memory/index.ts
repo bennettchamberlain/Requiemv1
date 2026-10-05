@@ -36,6 +36,7 @@ import { SearchNextModule } from '@ci/domains/search-next';
 import { UserModule, UserEntity } from '@ci/domains/user';
 
 import { GraphController } from './controllers/GraphController';
+import { DeterministicPersonMergeCron } from './cron/DeterministicPersonMergeCron';
 import { BaseEntity } from './entities/BaseEntity';
 import { CommunicationBaseEntity } from './entities/CommunicationBaseEntity';
 import { type Communication, CommunicationEntity } from './entities/CommunicationEntity';
@@ -163,6 +164,9 @@ import { UserContextService } from './services/UserContextService';
     EntityMergeBlockService,
     PersonDuplicateService,
     MergeCandidateService,
+    // Hourly, worker-role: drains the deterministic merge-candidate backlog
+    // (email / E.164 phone / exact profile URL) with a live re-check per pair.
+    DeterministicPersonMergeCron,
     PersonMergeService,
     PlaceMergeService,
     PlaceDuplicateService,
@@ -286,7 +290,14 @@ export {
 };
 
 export type { Content } from './entities/ContentEntity';
+export { SELF_ENTITY_PROVISIONER, type SelfEntityProvisioner } from './services/selfEntityProvisioner';
 export type { MapPin } from './services/CalendarEventService';
+export { DEAD_EVENT_STATUSES, LIVE_EVENT_SQL } from './services/CalendarEventService';
+export { MAX_EXPANDED_OCCURRENCES, MAX_RECURRING_MASTERS } from './services/CalendarEventService';
+// Read-time RRULE expansion. Exported so `peers` can expand the same series for
+// free/busy without routing that read through findInRange, which would silently
+// impose SCHEDULE_EVENT_TYPES and LIVE_EVENT_SQL on it.
+export * from './recurrence';
 export type { PlaceKind } from './entities/PlaceEntity';
 export type { PlaceVisitStats } from './services/PlaceService';
 export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
@@ -304,11 +315,13 @@ export type {
   MergeCandidateStatus,
 } from './services/MergeCandidateService';
 export {
+  DETERMINISTIC_MERGE_CRON,
   encodeMergeCandidateCursor,
   hasEmailEvidence,
   isMergeCandidateStatus,
   MERGE_CANDIDATE_STATUSES,
 } from './services/MergeCandidateService';
+export type { AutoMergeOptions, AutoMergeResult } from './services/MergeCandidateService';
 export type { PersonInteractionStats } from './services/PersonActivityService';
 export type { MergeCounts } from './services/PersonMergeService';
 export type { PlaceMergeCounts } from './services/PlaceMergeService';
@@ -384,6 +397,13 @@ export type {
 } from './types';
 export type { ObjectObservationWriteResult } from './services/ObjectObservationService';
 export { detectionKeyFor } from './services/ObjectObservationService';
+export {
+  MEDIA_HIT_TYPES,
+  eventsForMatchingMedia,
+  mergeIdentifiers,
+  searchReachesEvents,
+  type MediaEventSearchDeps,
+} from './services/mediaEventSearch';
 // The object-identity service surface. Exported for the same reason the
 // observation DTOs above are: the API layer, the maintenance jobs and the
 // import path all speak these shapes, and a second definition of any of them is
@@ -435,6 +455,7 @@ export type {
   KnownPlaceKind,
   KnownPlaceSource,
   KnownPlaceCandidate,
+  KnownPlaceSampleEvent,
 } from './services/KnownPlacesService';
 export type { Concept, Event, Item, ObjectCondition, Person, Communication, Place };
 export type {
@@ -472,8 +493,102 @@ export {
   type TokenizedPersonName,
   NAME_OVERLAP_SCORES,
   compareTokenizedNames,
+  hasFamilyConflict,
   indexableTokens,
   isRelationalDescriptor,
   pickFullerName,
   tokenizePersonName,
 } from './utils/personNameTokens';
+// LinkedIn profile URLs as duplicate evidence. One adjudicator, read by the
+// duplicate detector (pipeline domain) and the auto-merger here — a second
+// copy of the rule would be a second definition of "the same person".
+export {
+  type EvidenceLike,
+  type ProfileCheckReason,
+  type ProfileCorroboration,
+  type ProfileEvidenceItem,
+  type ProfileFacts,
+  type ProfileFactsCorpusRow,
+  type ProfileVerdict,
+  PROFILE_FACTS_CORPUS_SQL,
+  PROFILE_FACT_PROPERTY_KEYS,
+  PROFILE_URL_EVIDENCE,
+  PROFILE_URL_MAX_HOLDERS,
+  PROFILE_URL_PREFILTER_TOKEN,
+  PROFILE_URL_SCORES,
+  PROFILE_URL_SQL_PREFILTER,
+  ProfileUrlHolders,
+  adjudicateProfileUrls,
+  applyProfileVerdict,
+  canonicalConnectedOn,
+  extractProfileFacts,
+  isProfileUrlEvidenceKind,
+  normalizeProfileUrl,
+  profileEvidenceFor,
+  profileFactsSqlObject,
+  profileUrlSqlPrefilter,
+} from './utils/profileUrls';
+// A shared email's one guard: never folded into the self Person over a name
+// that contradicts the owner's. Read by the detector and the drain.
+export {
+  type EmailCheckReason,
+  type EmailEndpoint,
+  EMAIL_EVIDENCE,
+  EMAIL_HELD_SCORE,
+  emailHoldReason,
+  holdEmailEvidence,
+} from './utils/emailIdentity';
+// Phone numbers as duplicate evidence. The same arrangement as profile URLs:
+// one adjudicator, read by the duplicate detector and by the auto-merger's
+// live re-check, and the only producer of a 0.95 phone item.
+export {
+  type GivenNameRelation,
+  type LivePhoneSupport,
+  type NanpNumberClass,
+  type ParsedPhone,
+  type PhoneBasis,
+  type PhoneCheckReason,
+  type PhoneClaimE164Row,
+  type PhoneEvidenceItem,
+  type PhoneFacts,
+  type PhoneFactsCorpusRow,
+  type PhoneLine,
+  type PhoneParseStatus,
+  type PhonePlaceholder,
+  type PhoneReading,
+  type PhoneRegion,
+  type PhoneUnusableReason,
+  type PhoneVerdict,
+  type RevalidatedPhoneEvidence,
+  FAX_FACT_PROPERTY_KEYS,
+  NANP_TIMEZONES,
+  PHONE_CLAIM_E164_SQL,
+  PHONE_EVIDENCE,
+  PHONE_FACTS_CORPUS_SQL,
+  PHONE_FACT_PROPERTY_KEYS,
+  PHONE_IDENTITY_SCORES,
+  PHONE_LINE_MAX_IDENTITIES,
+  PHONE_MAX_HOLDERS,
+  PHONE_REGION_CORROBORATION,
+  PhoneHolders,
+  applyPhoneVerdict,
+  capUnadjudicatedPhones,
+  carriedPhoneLines,
+  classifyPhoneName,
+  derivePhoneRegion,
+  extractPhoneFacts,
+  generationalSuffix,
+  givenNameRelation,
+  isNanpE164,
+  isPhoneEvidenceKind,
+  isPlaceholderPersonName,
+  nanpNumberClass,
+  parsePhone,
+  phoneCorpusFacts,
+  phoneEvidenceFor,
+  phoneEvidenceNumbers,
+  phoneFactsSqlObject,
+  revalidatePhoneEvidence,
+  sharedPhoneLines,
+  statedPhoneNumbers,
+} from './utils/phoneIdentity';

@@ -44,11 +44,32 @@ describe('resolveContextBudget', () => {
     expect(budget.source).toBe(NUM_CTX_ENV_VAR);
   });
 
-  it('falls back to the tier profile when Hub did not export one', () => {
+  it('falls back to the tier profile when Hub did not export one and nothing was measured', () => {
     const budget = resolveContextBudget({ env: {} });
 
     expect(budget.maxContextTokens).toBe(TIER_PROFILES.on_device.maxContextTokens);
     expect(budget.source).toBe('tier-profile');
+  });
+
+  it('uses the window the residency planner measured when Hub exported nothing', () => {
+    const budget = resolveContextBudget({ env: {}, measuredContextTokens: 16384 });
+
+    expect(budget.maxContextTokens).toBe(16384);
+    expect(budget.source).toBe('residency-planner');
+  });
+
+  it('lets the Hub-exported window outrank the measured one: a configured window is a decision', () => {
+    const budget = resolveContextBudget({ env: { [NUM_CTX_ENV_VAR]: '8192' }, measuredContextTokens: 32768 });
+
+    expect(budget.maxContextTokens).toBe(8192);
+    expect(budget.source).toBe(NUM_CTX_ENV_VAR);
+  });
+
+  it('treats a measured value that is not a positive integer as absent', () => {
+    for (const measured of [null, undefined, 0, -1, 1.5, Number.NaN]) {
+      const budget = resolveContextBudget({ env: {}, measuredContextTokens: measured });
+      expect(budget.source).toBe('tier-profile');
+    }
   });
 
   it('never lets the byte budget exceed the token headroom (tokens <= bytes)', () => {
@@ -269,6 +290,11 @@ describe('isContextOverflowError', () => {
     'Requested token count exceeds the model context window',
     'context_length_exceeded',
     'prompt is too long: 12000 tokens > 8192',
+    // llama.cpp's server, and so Lemonade, as the openai client surfaces it.
+    '400 the request exceeds the available context size, try increasing it',
+    'exceed_context_size_error',
+    // Hugging Face TGI.
+    'Input validation error: `inputs` tokens + `max_new_tokens` must be <= 4096. Given: 4000 `inputs` tokens and 512 `max_new_tokens`',
   ])('classifies %s as an overflow', (message) => {
     expect(isContextOverflowError(new Error(message))).toBe(true);
   });

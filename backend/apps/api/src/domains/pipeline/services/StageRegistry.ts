@@ -32,6 +32,7 @@ import { STAGE_VERSIONS, stageVersion, type StageVersion } from '../versions';
 export const STAGE_REGISTRY: Record<StageId, string> = {
   [STAGE_IDS.ENRICH_MEDIA_DIMENSIONS]: 'PipelineStage:enrich.media_dimensions',
   [STAGE_IDS.ENRICH_FILE_PREVIEW]: 'PipelineStage:enrich.file_preview',
+  [STAGE_IDS.ENRICH_VIDEO_PLAYBACK]: 'PipelineStage:enrich.video_playback',
   [STAGE_IDS.ENRICH_UNFURL]: 'PipelineStage:enrich.unfurl',
   [STAGE_IDS.INDEX_EMBED]: 'PipelineStage:index.embed',
   [STAGE_IDS.INDEX_EMBED_COMMUNICATION]: 'PipelineStage:index.embed_communication',
@@ -276,6 +277,22 @@ export class StageRegistry {
     }
 
     this.assertApplicabilityPredicate(stageId, stage.source.predicate);
+
+    // Interpolated as an identifier by `reopenChangedSources`, like the four
+    // above. Checked here as well as at query time because the tick contains a
+    // failing re-open per leg and only logs it — a malformed declaration would
+    // otherwise be one error line every tick instead of a failure at first use.
+    const changedAt = stage.source.changedAtColumn;
+
+    if (
+      changedAt !== undefined &&
+      (typeof changedAt !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(changedAt))
+    ) {
+      throw new Error(
+        `Pipeline stage "${stageId}" declares source.changedAtColumn "${String(changedAt)}", which is not ` +
+          `a plain column name. It is interpolated into the re-open query as an identifier.`,
+      );
+    }
   }
 
   /**

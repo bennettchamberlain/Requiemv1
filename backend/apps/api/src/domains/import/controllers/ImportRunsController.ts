@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 
 import { Context, type RequestContext } from '@ci/common/context';
+import { READ_CAPABILITY, RequireCapability } from '@ci/common/decorators';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { UserService } from '@ci/domains/user';
 
@@ -33,6 +34,7 @@ import {
 import { ImportRetentionService, type DiscardedRun } from '../services/ImportRetentionService';
 import { ImportRunService } from '../services/ImportRunService';
 import { ObjectCountService, type ObjectCountEntry } from '../services/ObjectCountService';
+import { isStageStalled } from '../services/stageLiveness';
 
 /** A run as the progress UI reads it. */
 export interface RunSummary {
@@ -69,6 +71,13 @@ export interface RunSummary {
    * fetching every run's stages. Zero for a run that has not pushed yet.
    */
   records?: number;
+  /**
+   * A stage of this run is `running` but has stopped heartbeating — see
+   * {@link StageSummary.stalled}. The run's own `status` is a cache written on
+   * transitions, so without this it goes on reading `running` for as long as
+   * recovery takes. On the list and the detail; absent where neither computed it.
+   */
+  stalled?: boolean;
 }
 
 /** One box of the stage bar. */
@@ -104,6 +113,20 @@ export interface StageSummary {
    */
   startedAt: Date | null;
   finishedAt: Date | null;
+  /**
+   * The claim's last sign of life. A running stage is touched by its worker's
+   * heartbeat and every progress write, so this is "when did anything last
+   * happen here" — the number that tells a slow stage from an abandoned one.
+   */
+  heartbeatAt: Date;
+  /**
+   * `running`, and silent past `IMPORT_STAGE_STALLED_SECONDS`: its worker is
+   * gone or wedged. Until this existed that read as a plain `running`, progress
+   * frozen and no error, for as long as recovery took to notice. If the worker
+   * is gone, the orphan reaper retries the stage within minutes, and
+   * `detail.interrupted` then says what happened.
+   */
+  stalled: boolean;
 }
 
 export interface RunDetail extends RunSummary {
@@ -214,7 +237,7 @@ export class ImportRunsController {
    * controller cannot answer: everywhere else an archive is opaque bytes until a
    * run unpacks it, so `runs/:runId/recognized` reports what the parse stage
    * found — after the import. This answers first, which is what makes
-   * `ci-import recognize` (and the identical `import.recognize_path` MCP tool,
+   * `ci recognize` (and the identical `import.recognize_path` MCP tool,
    * which shares the implementation) able to say "that folder is a Google
    * Takeout" before anything is written.
    *
@@ -228,6 +251,8 @@ export class ImportRunsController {
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('recognize')
+  // POST for the reasons above, but a pure read ("before anything is written").
+  @RequireCapability(READ_CAPABILITY)
   async recognize(@Context() context: RequestContext, @Body() body: RecognizeBody): Promise<PathRecognition> {
     if (!body?.path) {
       throw new BadRequestException('path is required');
@@ -291,7 +316,7 @@ export class ImportRunsController {
       },
     );
 
-    return runs.map((run) => ({ ...toRunSummary(run), records: run.records }));
+    return runs.map((run) => ({ ...toRunSummary(run), records: run.records, stalled: run.stalled }));
   }
 
   /**
@@ -367,7 +392,9 @@ export class ImportRunsController {
       throw new NotFoundException(`No import run ${runId}`);
     }
 
-    return { ...toRunSummary(detail.run), stages: detail.stages.map(toStageSummary) };
+    const stages = detail.stages.map(toStageSummary);
+
+    return { ...toRunSummary(detail.run), stalled: stages.some((stage) => stage.stalled), stages };
   }
 
   /**
@@ -511,8 +538,17 @@ export class ImportRunsController {
    * skips a run that already has a push stage, and a stage retry refuses a
    * stage that completed. This resets those rows and re-queues the push.
    *
-   * `{ items: 0, entities: 0 }` is a fine answer, not an error: it means there
-   * was nothing stranded, which is what the caller wanted to be true.
+   * It also re-drives a push that ran and FAILED — with its rows still
+   * pending (how a push ends when the database stays away past its wait, or
+   * crashes under one of its statements), or after every row settled — so `ci push --run <id> --retry-failed` is one
+   * command for every shape of "this run's push did not finish".
+   *
+   * `{ items: 0, entities: 0, requeued: false }` is a fine answer, not an
+   * error: it means there was nothing stranded, which is what the caller
+   * wanted to be true. A 409, with the reason and the way forward, for a run
+   * with a stage still working (resetting rows under a running push would
+   * hand them to two writers), a run whose stages ahead of the push did not
+   * complete (cancelled mid-parse), and a push that never ran.
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('runs/:runId/push/retry')
@@ -704,5 +740,7 @@ function toStageSummary(stage: ImportStage): StageSummary {
     detail: stage.detail ?? {},
     startedAt: stage.startedAt,
     finishedAt: stage.finishedAt,
+    heartbeatAt: stage.updatedAt,
+    stalled: isStageStalled(stage),
   };
 }

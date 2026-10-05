@@ -12,11 +12,12 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, type FindOptionsWhere } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
+import { isUniqueViolation } from '@ci/common/constants';
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
 import { serves } from '@ci/common/roles';
@@ -41,6 +42,9 @@ export interface HourlyFileCount {
   bucketStart: Date;
   count: number;
 }
+
+/** Shape of every `ci.files.key` — the column is `uuid`, minted by `uuidv4()` on upload. */
+const UUID_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class FileService implements OnModuleInit {
@@ -184,8 +188,12 @@ export class FileService implements OnModuleInit {
     // object that does not exist — a phantom that poisons its own repair.
     // This order fails the other way: a save that dies after a successful PUT
     // strands an unreferenced object in the store, which wastes bytes but
-    // breaks nothing and lies to nobody.
-    if (file.externalId == null && bucket != null && key != null) {
+    // breaks nothing and lies to nobody. The one save failure that PROVES no
+    // row was written — a unique index refusing it (at most one PLAYBACK per
+    // original) — deletes the object it just put, below.
+    const uploaded = file.externalId == null && bucket != null && key != null;
+
+    if (uploaded) {
       const putOptions = {
         Bucket: bucket,
         Key: key,
@@ -209,7 +217,26 @@ export class FileService implements OnModuleInit {
       }
     }
 
-    const result = await this.fileRepository.save(entity);
+    let result: FileEntity;
+
+    try {
+      result = await this.fileRepository.save(entity);
+    } catch (err: unknown) {
+      // Only a unique violation: any other failure (a dropped connection
+      // mid-commit) may have written the row after all, and deleting its
+      // bytes then would make exactly the phantom described above.
+      if (uploaded && isUniqueViolation(err)) {
+        await this.deleteObjects(bucket, [key]).catch((cleanupErr: unknown) => {
+          this.logger.warn('Could not delete the object of a file row a unique index refused', {
+            bucket,
+            key,
+            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+          });
+        });
+      }
+
+      throw err;
+    }
 
     return this.signFile(result);
   }
@@ -484,25 +511,52 @@ export class FileService implements OnModuleInit {
     parentIds: string[],
     variant: FileVariant,
   ): Promise<(SignedFile | null)[]> {
-    if (parentIds.length === 0) {
-      return [];
+    const byKind = await this.findVariantsOfKindsByParentIds(context, parentIds, [variant]);
+
+    return byKind[variant];
+  }
+
+  /**
+   * Several variant kinds of each parent in ONE query — the PREVIEW and the
+   * PLAYBACK of a page of media originals, say. Each kind comes back aligned
+   * with `parentIds` (null where that parent has none), the shape
+   * {@link findVariantsByParentIds} returns for one kind.
+   *
+   * A loader that needs two derivatives calls this rather than
+   * `findVariantsByParentIds` once per kind, so a page stays one variants
+   * query per hop: PLAYBACK added beside PREVIEW as a second call doubled the
+   * content and event media loaders' query count
+   * (ContentResolver.batching.test.ts holds the count).
+   */
+  async findVariantsOfKindsByParentIds<V extends FileVariant>(
+    context: ServiceContext,
+    parentIds: string[],
+    variants: readonly V[],
+  ): Promise<Record<V, (SignedFile | null)[]>> {
+    // Keyed by the column's own type: `ci.files.variant` is a varchar.
+    const byKind = new Map<string, Map<string | null, SignedFile>>(
+      variants.map((variant) => [variant, new Map()]),
+    );
+
+    if (parentIds.length > 0 && variants.length > 0) {
+      const entities = await this.fileRepository.find({
+        where: {
+          parentId: In(parentIds),
+          variant: In([...variants]),
+          ...(context.userId !== SYSTEM_USER && {
+            userId: context.userId,
+          }),
+        },
+      });
+
+      for (const file of await this.signFiles(entities)) {
+        byKind.get(file.variant)?.set(file.parentId, file);
+      }
     }
 
-    const entities = await this.fileRepository.find({
-      where: {
-        parentId: In(parentIds),
-        variant,
-        ...(context.userId !== SYSTEM_USER && {
-          userId: context.userId,
-        }),
-      },
-    });
-
-    const signedFiles = await this.signFiles(entities);
-
-    const map = new Map(signedFiles.map((file) => [file.parentId, file]));
-
-    return parentIds.map((id) => map.get(id) ?? null);
+    return Object.fromEntries(
+      variants.map((variant) => [variant, parentIds.map((id) => byKind.get(variant)?.get(id) ?? null)]),
+    ) as Record<V, (SignedFile | null)[]>;
   }
 
   async upload(context: UserServiceContext, file: UploadFileDto): Promise<SignedFile> {
@@ -614,7 +668,49 @@ export class FileService implements OnModuleInit {
     }
   }
 
+  /**
+   * Refuse a by-key read unless the caller owns the `ci.files` row that points
+   * at `key`. Object keys are minted UUIDs, but they are not secrets — they ride
+   * in every presigned `/static/` URL — and the two readers below took any key
+   * on the caller's word, so a key learned from someone else's share link (or
+   * planted in a row, as the account import once allowed) came back as bytes.
+   * The check is on the ROW, not the object: ownership is a fact about
+   * `ci.files.user_id`, and a soft-deleted row still names its owner, so the
+   * lookup includes deleted rows (export reads those too). It runs once per
+   * read, per file, in every background pass, so it must stay a single probe
+   * of `files_user_id_key_idx` (user_id, key) — keep both columns in the WHERE.
+   *
+   * The system principal is exempt, exactly as every other scoped lookup in
+   * this service exempts it: background jobs act for the appliance, not for a
+   * person, and carry no user to check against.
+   *
+   * A key that is not even UUID-shaped cannot match any row (the column is
+   * `uuid`), so it is refused up front rather than handed to Postgres to
+   * reject with a type error.
+   */
+  private async assertOwnsKey(context: ServiceContext, key: string): Promise<void> {
+    if (context.userId === SYSTEM_USER) {
+      return;
+    }
+
+    if (!UUID_KEY.test(key)) {
+      throw new NotFoundException('File not found');
+    }
+
+    const owned = await this.fileRepository.findOne({
+      where: { key, userId: context.userId },
+      select: ['id'],
+      withDeleted: true,
+    });
+
+    if (!owned) {
+      throw new NotFoundException('File not found');
+    }
+  }
+
   async getFileContent(context: ServiceContext, key: string): Promise<Uint8Array> {
+    await this.assertOwnsKey(context, key);
+
     const response = await this.s3.send(
       new GetObjectCommand({
         Bucket: config.staticfiles.bucket,
@@ -630,6 +726,8 @@ export class FileService implements OnModuleInit {
   }
 
   async getFileStream(context: ServiceContext, key: string): Promise<Readable> {
+    await this.assertOwnsKey(context, key);
+
     const response = await this.s3.send(
       new GetObjectCommand({
         Bucket: config.staticfiles.bucket,
@@ -772,11 +870,21 @@ export class FileService implements OnModuleInit {
   /**
    * Originals that are still missing a description but already have a PREVIEW
    * child — candidates to re-fire {@link PreviewGeneratedEvent} after the user
-   * turns image description back on.
+   * turns image description back on. Images and videos alike: a video's
+   * preview is one extracted frame, and the description listener samples
+   * more from the original. Until 2026-09-22 this said `image/%` alone, and
+   * every video in the measured library (519) sat undescribed for it.
+   *
+   * Newest first, paged by keyset on the original's id: `afterParentFileId`
+   * returns the page strictly older than that id. Ids are UUIDv7, so id order
+   * is creation order, and a cursor on it is stable while the descriptions
+   * the previous page enqueued are still being written (an OFFSET would slide
+   * as rows leave the "undescribed" set).
    */
   async findUndescribedImagePreviews(
     userId: string,
     limit: number,
+    afterParentFileId?: string,
   ): Promise<Array<{ previewId: string; parentFileId: string }>> {
     const rows: Array<{ preview_id: string; parent_file_id: string }> = await this.fileRepository
       .createQueryBuilder('preview')
@@ -790,12 +898,86 @@ export class FileService implements OnModuleInit {
       .where('preview.userId = :userId', { userId })
       .andWhere('preview.variant = :previewVariant', { previewVariant: FileVariant.PREVIEW })
       .andWhere('original.variant = :originalVariant', { originalVariant: FileVariant.ORIGINAL })
-      .andWhere('original.contentType LIKE :imagePrefix', { imagePrefix: 'image/%' })
+      .andWhere('(original.contentType LIKE :imagePrefix OR original.contentType LIKE :videoPrefix)', {
+        imagePrefix: 'image/%',
+        videoPrefix: 'video/%',
+      })
       .andWhere("(original.description IS NULL OR btrim(original.description) = '')")
-      .orderBy('original.createdAt', 'DESC')
+      .andWhere(afterParentFileId ? 'original.id < :afterParentFileId' : 'TRUE', { afterParentFileId })
+      .orderBy('original.id', 'DESC')
       .limit(Math.max(1, Math.min(limit, 2000)))
       .getRawMany();
 
     return rows.map((row) => ({ previewId: row.preview_id, parentFileId: row.parent_file_id }));
+  }
+
+  /**
+   * How much of the user's photo library a subject search can actually see.
+   *
+   * A photo reaches the search index through its title, description, filename
+   * and content type ({@link fileWeightedTexts}); of those, only the
+   * description — written by the image-description pass — says what the
+   * picture is OF. So "how many photos of rabbits" is really a question about
+   * the described subset, and a count that does not say how big that subset
+   * is invites the model to present a floor as a total. Measured 2026-09-16:
+   * 5,393 of 22,870 originals described.
+   *
+   * Counts ORIGINALs only (previews and thumbnails are derived copies of the
+   * same picture and are not indexed) and treats a blank description as
+   * absent, the same predicate {@link findUndescribedImagePreviews} uses to
+   * decide what is still owed a description.
+   */
+  async describedImageCoverage(context: UserServiceContext): Promise<{ images: number; described: number }> {
+    const rows: Array<{ images: string; described: string }> = await this.fileRepository.query(
+      `
+        SELECT
+          count(*) AS images,
+          count(*) FILTER (WHERE description IS NOT NULL AND btrim(description) <> '') AS described
+        FROM ci.files
+        WHERE user_id = $1
+          AND deleted_at IS NULL
+          AND variant = $2
+          AND content_type LIKE 'image/%'
+      `,
+      [context.userId, FileVariant.ORIGINAL],
+    );
+
+    return {
+      images: Number(rows[0]?.images ?? 0),
+      described: Number(rows[0]?.described ?? 0),
+    };
+  }
+
+  /**
+   * Every user who owns at least one image {@link findUndescribedImagePreviews}
+   * would return a row for — an EXISTS check, not the rows themselves.
+   *
+   * Exists for {@link ImageDescriptionSweepCron}: cheap enough to run over
+   * every user before the far more expensive per-user check (a live Ollama
+   * round trip, via `ImageDescriptionPreferenceService.isEnabled`) that
+   * decides whether the setting is actually on for them. A user with nothing
+   * left to describe — or nothing that ever needed describing — never reaches
+   * that second check.
+   */
+  async listUserIdsWithUndescribedImages(): Promise<string[]> {
+    const rows: Array<{ user_id: string }> = await this.fileRepository
+      .createQueryBuilder('original')
+      .select('DISTINCT original.userId', 'user_id')
+      .innerJoin(
+        FileEntity,
+        'preview',
+        'preview.parentId = original.id AND preview.userId = original.userId AND preview.variant = :previewVariant',
+        { previewVariant: FileVariant.PREVIEW },
+      )
+      .where('original.variant = :originalVariant', { originalVariant: FileVariant.ORIGINAL })
+      .andWhere('(original.contentType LIKE :imagePrefix OR original.contentType LIKE :videoPrefix)', {
+        imagePrefix: 'image/%',
+        videoPrefix: 'video/%',
+      })
+      .andWhere("(original.description IS NULL OR btrim(original.description) = '')")
+      .andWhere('original.userId IS NOT NULL')
+      .getRawMany();
+
+    return rows.map((row) => row.user_id);
   }
 }

@@ -7,7 +7,7 @@ import { LoggerService } from '@ci/common/logging';
 
 import { type EventPayloads } from '../event-registry';
 import { EventRegistry } from '../registry';
-import type { EventSendOptions } from '../types';
+import type { EventSendOptions, QueuedJob } from '../types';
 
 import { EventService } from './EventService';
 
@@ -108,9 +108,16 @@ export class LocalEventService extends EventService implements BeforeApplication
 
       const job: JobWithMetadata<EventData> = {
         id: traceId,
+        // `name` LAST, matching PGBossEventService.send's `{ ...event, name }`.
+        // Spread first, the routing key could be beaten by a payload field of
+        // the same name — and since `executeJob` re-derives `${name}:${queue}`
+        // from it, such a job routes to a listener that does not exist and is
+        // dropped in silence. The typed paths are guarded (`name?: never` on
+        // both payload types), but `sendMany` takes an untyped
+        // `Record<string, unknown>` and walks straight past that guard.
         data: {
-          name,
           ...event,
+          name,
         },
         userId,
       };
@@ -163,7 +170,9 @@ export class LocalEventService extends EventService implements BeforeApplication
     for (const event of events) {
       const job: JobWithMetadata<EventData> = {
         id: uuidv4(),
-        data: { name: event.name, ...event.data },
+        // Same precedence as send() above and as the pg-boss implementation:
+        // the envelope's routing key wins over anything in the payload.
+        data: { ...event.data, name: event.name },
         userId: (event.data as { userId?: string }).userId,
       };
 
@@ -177,10 +186,19 @@ export class LocalEventService extends EventService implements BeforeApplication
     this.logger.debug(`completeJob(${queue}, ${jobId}) is a no-op for LocalEventService`);
   }
 
-  async failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<void> {
+  async failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<boolean> {
     this.logger.warn(
       `failJob(${queue}, ${jobId}) is a no-op for LocalEventService${output ? `: ${JSON.stringify(output)}` : ''}`,
     );
+
+    // Nothing was transitioned, so no retry is coming — the contract a caller
+    // that needs the work redone relies on.
+    return false;
+  }
+
+  // Jobs run inline and leave nothing behind to look up.
+  async getJob(): Promise<QueuedJob | null> {
+    return null;
   }
 
   /**
@@ -217,10 +235,11 @@ export class LocalEventService extends EventService implements BeforeApplication
       return new Promise<void>((resolve, reject) => {
         const { name, ...data } = job.data;
 
-        const resolvedData = {
-          ...data,
-          jobId: job.id,
-        };
+        // The payload is delivered VERBATIM. `name` — the routing key — is the
+        // only thing stripped, and the bus adds NOTHING: this used to merge
+        // `jobId: job.id` in, overwriting whatever the domain had put there.
+        // Runtime metadata rides the acknowledgement instead, so `jobId` is an
+        // ordinary domain field name again with no special meaning to the bus.
 
         this.logger.log(`Executing job for event ${name} in queue ${queue}`, userId ? { userId } : undefined);
 
@@ -246,7 +265,7 @@ export class LocalEventService extends EventService implements BeforeApplication
         const queueSpecificEventName = `${name}:${queue}`;
 
         if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
-          this.eventEmitter.emit(queueSpecificEventName, resolvedData, { done, fail, defer });
+          this.eventEmitter.emit(queueSpecificEventName, data, { jobId: job.id, done, fail, defer });
         } else {
           this.logger.log(`No listeners for event ${name} in queue ${queue}`);
           resolve();
