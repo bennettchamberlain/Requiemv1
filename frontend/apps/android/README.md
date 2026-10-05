@@ -24,7 +24,13 @@ stay that way.
   `localStorage`**. On first launch with no server set, it routes to the in-app
   `/device-connect` screen (Portal picker). `/server` is Advanced URL entry.
 - All `/api/...` calls resolve through `buildApiUrl()` (`@ci/common`): `''` on web
-  (same-origin), the configured origin on native.
+  (same-origin), the configured origin on native. That covers every `fetch`, XHR,
+  `src`, `href` and `window.open`, not just GraphQL: the page origin is
+  `https://localhost`, so a bare `/api/...` or `/static/...` there is a request to
+  the app's own bundle. Media paths go through `resolveMediaUrl()` (it adds the
+  `/static` prefix and the origin), and a link meant for another device — a share
+  link, a QR code, a webhook address — takes `getWebOrigin()`, never
+  `window.location.origin`.
 - The native web build sets `VITE_DISABLE_PWA=true` so the Workbox service worker
   doesn't fight Capacitor's local asset serving.
 
@@ -435,7 +441,8 @@ nothing on iOS has run inference at all (it compiles and its pure logic and down
 Compiled and unit-tested: the catalog, download resume/verification, policy decisions (RAM/disk/URL), stats maths,
 image sizing and the web layer. **Unverified until someone runs a phone:** actual generation,
 GPU/Metal init, multi-token prediction, whether a model emits the `thought` channel or leaks `<think>` tags,
-photo input on Gemma 4, and memory headroom (iOS `physicalMemory` reports below the marketing figure — a
+photo input on Gemma 4, whether the tool-result budget leaves a small model room to answer, and memory headroom
+(iOS `physicalMemory` reports below the marketing figure — a
 "6 GB" iPhone reports ~5.6 GB and will not be offered Qwen2.5). **Not built** from Gallery: Prompt Lab,
 Agent Skills, Mobile Actions (FunctionGemma), audio input, the benchmark screen, importing a model file,
 and NPU backends.
@@ -455,18 +462,44 @@ The local model can call CI's **published intents** as tools, so it answers from
 of its own weights. Enable it per platform with `LocalLLM.configureIntentTools({ baseUrl, apiKey })`;
 the plugin then fetches the intent catalog with `?tier=local` and binds what the appliance allows.
 
-> **Watch the doubled `/api`.** `IntentsController` is `@Controller('api/intents')` while the
-> fronting proxy already strips a leading `/api`, so from an app holding the proxy origin the real
-> path is `<base>/api/api/intents?tier=local` — which is exactly what `CompanionIntentClient`
-> requests on both platforms. `McpController` is `@Controller('mcp')`, so it is reached at the
-> ordinary `<base>/api/mcp`. (`/api/agent/intents` is the canonical prefix for new callers;
-> `/api/intents` still serves and is what these clients use.)
+> **One `/api`, for both.** The fronting proxy strips a leading `/api` and Nest sets no global
+> prefix, so `IntentsController` (mounted at the bare `intents`) is reached at
+> `<base>/api/intents?tier=local` and `McpController` (`mcp`) at `<base>/api/mcp` — which is what
+> `CompanionIntentClient` requests on both platforms. The catalog used to be `<base>/api/api/intents`,
+> while the controller baked its own `api/` into its mount; #2653 removed that, the clients kept asking
+> for the doubled path, and on-device tools silently never bound against a current appliance (a 404 is
+> swallowed so the model still loads, toolless). `capacitorPluginContract.test.ts` now checks both
+> clients' paths against the controllers' real mounts. (`/api/agent/intents` is the canonical prefix for
+> new callers; `/api/intents` still serves and is what these clients use.)
 
 **One security rule, not three.** The appliance computes the `execute` / `queue` / `deny` ruling
 (`dispatchPolicy.ts`) and publishes it per intent; the phone reads `dispatch.decision` and obeys it.
 Neither Kotlin nor Swift re-derives the policy — `dispatchPolicy.ts` says why ("two copies of a
 security rule are two rules"), and it means a policy change ships with the appliance instead of
 waiting on two app-store releases. Destructive and external intents always queue on-device.
+
+**A tool's result is bounded before the model sees it.** The appliance answers a tool call with the whole result,
+pretty-printed — 25 hits from `knowledge_search` is ~45 KB — and a small model's context window cannot take that in:
+Qwen3-0.6B's is 1,024 tokens, and its system prompt and tool declarations already use ~500 of them. So `IntentTool`
+passes every successful result through `ToolResultShaper` before it goes back to LiteRT-LM, with a budget of
+`LocalLlmPolicy.toolResultByteBudget(maxTokens)` — half the window in bytes, never under 256 or over 16,384 (512 for
+Qwen3-0.6B, 2,000 for Gemma 4) — which `loadModel` works out from the window it just configured. A result that fits
+goes through byte for byte. Otherwise JSON is pruned and re-emitted compactly: unset columns (`null`, `false`, `""`,
+`[]`, `{}`) and foreign-key UUIDs are dropped, since a hit is mostly those; each object is written answer-first (`type`
+/ `link` / `title`, then when, then what it says, the rest, bookkeeping last) and loses its last members first; strings
+are capped; and every list — the `items` of a search, the `nodes` and `edges` of `memory_recall` — gets an equal share
+of what the object's other members leave, in which the first three hits share the room and a closing note says how
+many were left out. Anything that is not JSON is cut at the budget and ends `…[truncated]`, and so is JSON whose
+budget is too small for that (under about 800 bytes: at Qwen3-0.6B's 512 the synthetic dentist and graph results end
+that way). A refusal or a failed call is a sentence and is not shaped; an error response's body is cut to its first 200
+characters before it becomes one. This is a port of iOS's `ToolResultShaper` (`LocalLLMPolicy.swift`, which is in turn
+the device twin of the appliance's `toolResultBudget.ts`) and is written to give the same text for the same input:
+`SwiftParityTest` checks it against answers the Swift shaper gave for ~360 inputs, and fails when the Swift
+shaper's code is no longer the one those answers were recorded from; after a change to either side,
+`frontend/packages/capacitor-local-llm/android/scripts/regenerate-swift-parity.sh` (it needs `swiftc`) records them
+again. `IntentTool` logs sizes only (`knowledge_search returned 45598 bytes; passing 482 to the model
+(budget 512)`), never the result. The budget is an estimate no device run has measured; `toolResultByteBudget` is the one
+place to tune it, on both platforms.
 
 **The binding is per-platform, because the runtimes genuinely differ:**
 
@@ -479,6 +512,18 @@ waiting on two app-store releases. Destructive and external intents always queue
 That asymmetry is structural, not an oversight: the LiteRT-LM Swift surface has no `OpenApiTool`
 equivalent (verified against the vendored source — 18 public types, one tool protocol, no
 schema-string entry point), so iOS cannot construct tools dynamically at all.
+
+**What iOS binds today.** Three hand-written structs in `CompanionIntentTools.swift`: `knowledge_search`
+(the tool for "what do I know about X", "when did I …", "how many …"), `people_find`, and `memory_recall`,
+which is a graph lookup of a *person* and who they are connected to — it takes `personName` and nothing
+else, because the appliance's `memory.recall` has no free-text or date-range parameter. Each `@ToolParam` must
+be a same-named property of the intent's published schema and each `run()` must send exactly those;
+`IntentCatalogService.realTools.test.ts` (backend) reads the Swift file against the real tool classes and fails
+when they drift (the app used to send `query` / `startDate` / `endDate` to `memory_recall`, which the server
+silently dropped, and `content` to `memory_remember`, which it rejected). `memory.remember` is **not** offered on
+iOS: it writes graph entities (`operations: [{ kind: "entity.create", … }]`), not a Note, and no intent the local
+tier may run creates a Note. Android still binds it, with the published schema, because it binds every
+`execute` intent.
 
 Execution goes over MCP `tools/call` (`POST /mcp`) — there is no REST "execute this intent"
 endpoint — authenticated with the same `x-api-key` the App Intents already use.

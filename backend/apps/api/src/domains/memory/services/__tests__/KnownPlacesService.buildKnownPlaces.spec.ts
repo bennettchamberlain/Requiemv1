@@ -3,7 +3,7 @@ import type { DataSource } from 'typeorm';
 import type { UserServiceContext } from '@ci/common/context';
 import type { LoggerService } from '@ci/common/logging';
 
-import { LIVE_EVENT_SQL } from '../CalendarEventService';
+import { EVENT_HAPPENED_SQL } from '../eventHappened';
 import { KnownPlacesService } from '../KnownPlacesService';
 import type { PlaceService } from '../PlaceService';
 
@@ -71,7 +71,12 @@ function weekly(weeks: number, overrides: Partial<RawRow> & { start_time: string
 }
 
 function makeService(rows: RawRow[]) {
-  const query = jest.fn<Promise<RawRow[]>, [string, unknown[]?]>().mockResolvedValue(rows);
+  // Events only: the ci.position read finds nothing, so these cases pin the
+  // event rules exactly as they run for a user with no location history.
+  // KnownPlacesService.presence.spec.ts covers the measured-presence side.
+  const query = jest
+    .fn<Promise<RawRow[]>, [string, unknown[]?]>()
+    .mockImplementation(async (sql) => (sql.includes('ci.position') ? [] : rows));
   const dataSource = { query } as unknown as DataSource;
   const logger = {
     setContext: jest.fn(),
@@ -572,21 +577,17 @@ describe('KnownPlacesService.buildKnownPlaces', () => {
 
   it('leaves deleted, predicted and did-not-happen events out of the read', async () => {
     // Also proven against Postgres in KnownPlacesService.integration.spec.ts.
-    // The status test is the calendar's own LIVE_EVENT_SQL rather than a copy,
-    // because DEAD_EVENT_STATUSES is shared precisely so its copies cannot
-    // drift apart. The reservation key IS a copy (see
-    // RESERVATION_CANCELED_KEY), so it is pinned here.
+    // The rule is the shared EVENT_HAPPENED_SQL, whose text eventHappened.spec.ts
+    // pins clause by clause. This pins that the read applies it, and that it
+    // brings no bind parameter of its own: the estimate tokens keep $2 to $4.
     const { service, query } = makeService([]);
 
     await service.buildKnownPlaces(CONTEXT);
 
     const [sql, params] = query.mock.calls[0] as [string, unknown[]];
 
-    expect(sql).toContain('event.is_deleted IS NOT TRUE');
-    expect(sql).toContain('event.is_predicted IS NOT TRUE');
-    expect(sql).toContain(LIVE_EVENT_SQL);
-    expect(sql).toContain("COALESCE(event.metadata->>$5, '') <> 'true'");
-    expect(params[4]).toBe('Canceled');
+    expect(sql).toContain(EVENT_HAPPENED_SQL);
+    expect(params).toHaveLength(4);
   });
 
   it('keeps the newest event titles so an unnamed cluster can be recognized', async () => {

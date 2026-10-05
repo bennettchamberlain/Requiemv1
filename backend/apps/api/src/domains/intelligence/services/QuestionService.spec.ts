@@ -2,6 +2,7 @@ import { SYSTEM_USER, type ServiceContext } from '@ci/common/context';
 
 import { QuestionEntity } from '../entities/QuestionEntity';
 import { QUESTION_ROTATION_ORDER_SQL, QUESTION_ROTATION_RANK_SQL } from '../questionOrder';
+import { excludeForkedOriginsSql } from '../questionScope';
 
 import { QuestionService, FEED_QUESTION_STALE_MS } from './QuestionService';
 
@@ -484,6 +485,39 @@ describe('QuestionService privacy scoping (is_private_to)', () => {
       expect(seed.key).toBe('blood_type');
     });
 
+    it("carries the origin's evidence class onto the copy, so rewording a hand-entry question does not make it inferable", async () => {
+      // Both inference selectors skip a hand_entry question, and the origin is
+      // hidden from whoever forked it. A copy that fell back to the column default
+      // ('traceable') would be the only version of it the job can still see — and
+      // it is a question nothing may answer on this person's behalf. The class is
+      // not on the egress type, so this reads the stored row.
+      const seed = makeSeedQuestion('seed-1');
+      seed.evidenceClass = 'hand_entry';
+      const { service, rows } = makeScopedService([seed]);
+
+      await service.update(CONTEXT, 'seed-1', { text: 'my wording' });
+
+      const fork = rows.find((row) => row.forkedFromQuestionId === 'seed-1');
+
+      expect(fork?.evidenceClass).toBe('hand_entry');
+      expect(seed.evidenceClass).toBe('hand_entry');
+    });
+
+    it('leaves the class of an existing copy alone on a later edit, even when the origin is looser', async () => {
+      // Copying the origin's class again would overwrite a copy that is stricter
+      // than its origin — one classified on its own wording — with 'traceable'.
+      const seed = makeSeedQuestion('seed-1');
+      seed.evidenceClass = 'traceable';
+      const strictCopy = makeQuestion('my-copy', { isPrivateTo: USER, forkedFromQuestionId: 'seed-1' });
+      strictCopy.evidenceClass = 'hand_entry';
+      const { service } = makeScopedService([seed, strictCopy]);
+
+      const result = await service.update(CONTEXT, 'seed-1', { text: 'edited' });
+
+      expect(result?.id).toBe('my-copy');
+      expect(strictCopy.evidenceClass).toBe('hand_entry');
+    });
+
     it('marks the copy as neither seed content nor LLM-written, whatever the origin was', async () => {
       const { service } = makeScopedService([makeSeedQuestion('seed-1')]);
 
@@ -760,6 +794,68 @@ describe('QuestionService.findUnansweredByUserId', () => {
     const result = await service.findUnansweredByUserId(ATTEMPT_HISTORY);
 
     expect(result.size).toBe(0);
+  });
+});
+
+describe('QuestionService.findInferenceStanding', () => {
+  // The SQL itself runs against a real Postgres in
+  // smart-rotation/listeners/__tests__/AnswerInferenceListener.executionGate.integration.spec.ts.
+  // What a mocked `query` CAN pin is the contract around it: how a row becomes
+  // the three facts, and what the two bind parameters are.
+  const flat = (sql: string) => sql.replace(/\s+/g, ' ');
+
+  function makeService(
+    rows: unknown[] = [{ is_active: true, evidence_class: 'traceable', forked_by_caller: false }],
+  ) {
+    const dataSource = { query: jest.fn(async (_sql: string, _params?: unknown[]) => rows) };
+    const service = new QuestionService(dataSource as never, {} as never, { send: jest.fn() } as never);
+
+    return { service, dataSource };
+  }
+
+  it('turns the row into the three facts both selectors filter on', async () => {
+    const { service } = makeService([
+      { is_active: false, evidence_class: 'hand_entry', forked_by_caller: true },
+    ]);
+
+    expect(await service.findInferenceStanding(CONTEXT, 'q-1')).toEqual({
+      isActive: false,
+      evidenceClass: 'hand_entry',
+      forkedByCaller: true,
+    });
+  });
+
+  it('is null when the caller cannot see the row — missing, or private to somebody else', async () => {
+    const { service } = makeService([]);
+
+    expect(await service.findInferenceStanding(CONTEXT, 'q-1')).toBeNull();
+  });
+
+  it('binds the question and the caller, and NULL — never the symbol — for a system caller', async () => {
+    // SYSTEM_USER is a Symbol. Handed to the driver as a parameter it throws, and
+    // it owns no private rows and no forks anyway, which is what NULL says.
+    const { service, dataSource } = makeService();
+
+    await service.findInferenceStanding(CONTEXT, 'q-1');
+    await service.findInferenceStanding(SYSTEM_CONTEXT, 'q-2');
+
+    expect(dataSource.query.mock.calls.map(([, params]) => params)).toEqual([
+      ['q-1', USER],
+      ['q-2', null],
+    ]);
+  });
+
+  it('reads the fork rule from the shared helper and the visibility rule findById applies', async () => {
+    // One definition of "this caller has replaced that row" for every selector.
+    // A hand-copied subquery here would be a third place for it to drift from.
+    const { service, dataSource } = makeService();
+
+    await service.findInferenceStanding(CONTEXT, 'q-1');
+
+    const sql = flat(dataSource.query.mock.calls[0][0]);
+
+    expect(sql).toContain(flat(excludeForkedOriginsSql('visible', '$2::uuid')));
+    expect(sql).toContain('AND (q.is_private_to IS NULL OR q.is_private_to = $2::uuid)');
   });
 });
 

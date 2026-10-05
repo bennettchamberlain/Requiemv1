@@ -7,12 +7,15 @@ import { test } from 'node:test';
 import {
   APP_DATABASE,
   CONTAINER_PREFIX,
+  DEFAULT_KEEP_FOR_MS,
   EMPTY_DATABASE,
   KEEP_ENV_NAMES,
   KEEP_ENV_PREFIXES,
+  KEEP_UNTIL_LABEL_KEY,
   LABEL_KEY,
   LABEL_VALUE,
   LOCAL_IMAGE,
+  MAX_KEEP_FOR_MS,
   PS_FORMAT,
   STALE_AFTER_MS,
   TEST_ADMIN_URL_VARS,
@@ -21,20 +24,27 @@ import {
   buildTestEnv,
   chooseImage,
   escapeRegex,
+  formatAge,
   formatDuration,
   isDatabaseShaped,
   isOurs,
   jestChoosesWorkers,
   jestFiltersByName,
+  keepUntil,
+  keepUntilLabelValue,
+  keptNotice,
   newContainerName,
   parseCiDatabaseImage,
   parseDockerPort,
   parseInspectContainers,
+  parseKeepFor,
   parsePsRows,
   parseTestDbArgs,
+  planReap,
   randomPassword,
   scrubEnv,
   selectStale,
+  type ClientProbe,
   type ContainerInfo,
 } from './testDb';
 
@@ -108,6 +118,378 @@ test('selectStale leaves a container with an unreadable creation time alone', ()
 
 test('selectStale honours a different age limit', () => {
   assert.equal(selectStale([ours('ci-testdb-a', 10 * 60 * 1000)], NOW, 5 * 60 * 1000).length, 1);
+});
+
+// -- the --keep window: a label stamped at creation ------------------------------------------------
+
+/** One of ours that is `ageMs` old, carrying a keep label that ends `untilMs` from NOW. */
+const keptFor = (name: string, ageMs: number, untilMs: number): ContainerInfo =>
+  ours(name, ageMs, {
+    [LABEL_KEY]: LABEL_VALUE,
+    [KEEP_UNTIL_LABEL_KEY]: keepUntilLabelValue(NOW + untilMs),
+  });
+
+test('the keep label is its own key, so `--filter label=ci.test-db=1` still lists a kept container', () => {
+  assert.equal(KEEP_UNTIL_LABEL_KEY, 'ci.test-db.keep-until');
+  assert.notEqual(KEEP_UNTIL_LABEL_KEY, LABEL_KEY);
+  // A kept container is ours by the same two tests as any other: the keep label adds nothing to ownership.
+  assert.equal(isOurs(keptFor('ci-testdb-a', 0, HOURS)), true);
+  assert.equal(
+    isOurs(ours('some-other-db', 0, { [KEEP_UNTIL_LABEL_KEY]: keepUntilLabelValue(NOW + HOURS) })),
+    false,
+    'a keep label alone does not make a container ours',
+  );
+});
+
+test('keepUntilLabelValue is UTC ISO-8601 with milliseconds, and keepUntil reads back exactly what it wrote', () => {
+  assert.equal(keepUntilLabelValue(Date.parse('2026-10-02T17:37:42.123Z')), '2026-10-02T17:37:42.123Z');
+
+  for (const at of [NOW, NOW + 1, NOW + 24 * HOURS, NOW + MAX_KEEP_FOR_MS, 0]) {
+    const c = ours('ci-testdb-a', 0, { [KEEP_UNTIL_LABEL_KEY]: keepUntilLabelValue(at) });
+
+    assert.equal(keepUntil(c), at, new Date(at).toISOString());
+  }
+});
+
+test('keepUntil: no label, or anything that is not exactly an ISO-8601 UTC instant, is null — nothing protects by accident', () => {
+  assert.equal(keepUntil(ours('ci-testdb-a', 0)), null, 'no keep label');
+
+  // `Date.parse` alone reads several of these as SOME date, which could protect a container for years.
+  for (const value of [
+    '',
+    'forever',
+    'tomorrow',
+    '12',
+    '1',
+    '2099',
+    '2099-01-01',
+    '2099-01-01T00:00:00',
+    '2099-01-01T00:00:00+02:00',
+    '2099-01-01 00:00:00Z',
+    '2026-13-45T99:99:99Z',
+    '2026-10-02T17:37:42.Z',
+    ' 2026-10-02T17:37:42.000Z',
+    '2026-10-02T17:37:42.000Z ',
+    '1759426662000',
+  ]) {
+    assert.equal(
+      keepUntil(ours('ci-testdb-a', 0, { [LABEL_KEY]: LABEL_VALUE, [KEEP_UNTIL_LABEL_KEY]: value })),
+      null,
+      `'${value}'`,
+    );
+  }
+
+  // Without milliseconds, and with more of them, are still instants.
+  const second = Date.parse('2026-10-02T17:37:42Z');
+
+  assert.equal(keepUntil(ours('ci-testdb-a', 0, { [KEEP_UNTIL_LABEL_KEY]: '2026-10-02T17:37:42Z' })), second);
+  assert.equal(
+    keepUntil(ours('ci-testdb-a', 0, { [KEEP_UNTIL_LABEL_KEY]: '2026-10-02T17:37:42.123456789Z' })),
+    second + 123,
+  );
+});
+
+test('the keep window has a default that outlasts the 11-hour case, and a cap that keeps its label printable', () => {
+  assert.equal(DEFAULT_KEEP_FOR_MS, 24 * HOURS);
+  assert.ok(DEFAULT_KEEP_FOR_MS > 11 * HOURS, 'a kept database was reaped at 11 hours old');
+  assert.ok(
+    DEFAULT_KEEP_FOR_MS > STALE_AFTER_MS,
+    'a window shorter than the age floor would protect nothing',
+  );
+  assert.equal(MAX_KEEP_FOR_MS, 7 * 24 * HOURS);
+  assert.ok(DEFAULT_KEEP_FOR_MS <= MAX_KEEP_FOR_MS);
+  // The cap's other job: `now + keepFor` must stay a date `toISOString` can print.
+  assert.doesNotThrow(() => keepUntilLabelValue(Date.now() + MAX_KEEP_FOR_MS));
+  assert.throws(
+    () => keepUntilLabelValue(Number.NaN),
+    RangeError,
+    'this is what an unbounded value would do',
+  );
+});
+
+// -- planReap: what the reaper does with a listing --------------------------------------------------------
+
+/** A probe that answers from a table by name, and records every container it was asked about. */
+function probing(answers: Record<string, ClientProbe>) {
+  const asked: string[] = [];
+
+  return {
+    asked,
+    probe: (c: ContainerInfo): ClientProbe => {
+      asked.push(c.name);
+
+      return answers[c.name] ?? { state: 'unknown', detail: `no answer scripted for ${c.name}` };
+    },
+  };
+}
+
+test('planReap: a stale container with clients is spared — the 12-worker jest run at 2h01m', () => {
+  const { probe } = probing({ 'ci-testdb-42b8deef': { state: 'counted', clients: 12 } });
+  const plan = planReap([ours('ci-testdb-42b8deef', 2 * HOURS + 60_000)], NOW, probe);
+
+  assert.deepEqual(plan.remove, []);
+  assert.deepEqual(
+    plan.spared.map((s) => [s.container.name, s.why, s.why === 'in-use' ? s.clients : undefined]),
+    [['ci-testdb-42b8deef', 'in-use', 12]],
+  );
+});
+
+test('planReap: the decision table, one row per answer the probe can give', () => {
+  const { probe } = probing({
+    'ci-testdb-idle': { state: 'counted', clients: 0 },
+    'ci-testdb-busy': { state: 'counted', clients: 1 },
+    'ci-testdb-dead': { state: 'no-process' },
+    'ci-testdb-unsure': { state: 'unknown', detail: 'docker exec timed out' },
+  });
+  const plan = planReap(
+    ['idle', 'busy', 'dead', 'unsure'].map((n) => ours(`ci-testdb-${n}`, 5 * HOURS)),
+    NOW,
+    probe,
+  );
+
+  assert.deepEqual(
+    plan.remove.map((c) => c.name),
+    ['ci-testdb-idle', 'ci-testdb-dead'],
+    'idle, and nothing-running, go',
+  );
+  assert.deepEqual(
+    plan.spared.map((s) => [s.container.name, s.why]),
+    [
+      ['ci-testdb-busy', 'in-use'],
+      ['ci-testdb-unsure', 'unverified'],
+    ],
+    'busy, and could-not-tell, stay: an unknown is never idle',
+  );
+  const unsure = plan.spared.find((s) => s.container.name === 'ci-testdb-unsure');
+
+  assert.deepEqual(
+    unsure?.why === 'unverified' ? unsure.detail : undefined,
+    'docker exec timed out',
+    'and the reason travels with it',
+  );
+});
+
+test('planReap: a container inside its keep window is spared WITHOUT being probed, at any client count', () => {
+  const { probe, asked } = probing({ 'ci-testdb-kept': { state: 'counted', clients: 0 } });
+  const plan = planReap([keptFor('ci-testdb-kept', 11 * HOURS, 13 * HOURS)], NOW, probe);
+
+  assert.deepEqual(plan.remove, []);
+  assert.deepEqual(asked, [], 'the label settles it; there is nothing to ask');
+  assert.equal(plan.spared.length, 1);
+  assert.deepEqual(
+    [plan.spared[0].why, plan.spared[0].why === 'kept' ? plan.spared[0].until : null],
+    ['kept', NOW + 13 * HOURS],
+  );
+});
+
+test('planReap: an ended keep window protects nothing — the probe decides, both ways', () => {
+  const { probe, asked } = probing({
+    'ci-testdb-over-idle': { state: 'counted', clients: 0 },
+    'ci-testdb-over-busy': { state: 'counted', clients: 2 },
+  });
+  const plan = planReap(
+    [keptFor('ci-testdb-over-idle', 30 * HOURS, -HOURS), keptFor('ci-testdb-over-busy', 30 * HOURS, -1)],
+    NOW,
+    probe,
+  );
+
+  assert.deepEqual(asked, ['ci-testdb-over-idle', 'ci-testdb-over-busy']);
+  assert.deepEqual(
+    plan.remove.map((c) => c.name),
+    ['ci-testdb-over-idle'],
+  );
+  assert.deepEqual(
+    plan.spared.map((s) => s.why),
+    ['in-use'],
+  );
+});
+
+test('planReap: a window ending exactly now is over; one more millisecond and it is not', () => {
+  const idle = { state: 'counted', clients: 0 } as const;
+  const at = (untilMs: number) =>
+    planReap([keptFor('ci-testdb-a', 30 * HOURS, untilMs)], NOW, () => idle).remove.length;
+
+  assert.equal(at(0), 1);
+  assert.equal(at(1), 0);
+});
+
+test('planReap asks about NOBODY it could not remove anyway: not ours, not old enough, clock unreadable', () => {
+  const { probe, asked } = probing({});
+  const plan = planReap(
+    [
+      ours('ci-testdb-young', 119 * 60_000),
+      ours('ci-testdb-edge', STALE_AFTER_MS),
+      ours('ci-testdb-nolabel', 99 * HOURS, {}),
+      ours('postgres-other', 99 * HOURS, { [LABEL_KEY]: LABEL_VALUE }),
+      { ...ours('ci-testdb-mystery', 99 * HOURS), createdAt: null },
+    ],
+    NOW,
+    probe,
+  );
+
+  assert.deepEqual(asked, [], "nothing was exec'd into");
+  assert.deepEqual(plan, { remove: [], spared: [] });
+});
+
+test('planReap honours a different age limit, and keeps the order of the listing', () => {
+  const idle = { state: 'counted', clients: 0 } as const;
+  const plan = planReap(
+    [ours('ci-testdb-b', 10 * 60_000), ours('ci-testdb-a', 20 * 60_000)],
+    NOW,
+    () => idle,
+    5 * 60_000,
+  );
+
+  assert.deepEqual(
+    plan.remove.map((c) => c.name),
+    ['ci-testdb-b', 'ci-testdb-a'],
+  );
+});
+
+// -- --keep-for ---------------------------------------------------------------------------------------------
+
+test('parseKeepFor: a whole number and one unit of m, h or d', () => {
+  assert.equal(parseKeepFor('1m'), 60_000);
+  assert.equal(parseKeepFor('90m'), 90 * 60_000);
+  assert.equal(parseKeepFor('12h'), 12 * HOURS);
+  assert.equal(parseKeepFor('24h'), DEFAULT_KEEP_FOR_MS);
+  assert.equal(parseKeepFor('2d'), 48 * HOURS);
+  assert.equal(parseKeepFor('7d'), MAX_KEEP_FOR_MS, 'the cap itself is allowed');
+  assert.equal(parseKeepFor('168h'), MAX_KEEP_FOR_MS);
+  assert.equal(parseKeepFor('007h'), 7 * HOURS);
+});
+
+test('parseKeepFor refuses everything else, naming the flag and what it would take — it never guesses', () => {
+  for (const bad of [
+    '',
+    '12',
+    '0m',
+    '0h',
+    '0d',
+    '-5h',
+    '1.5h',
+    '1h30m',
+    '12 h',
+    ' 12h',
+    '12h ',
+    '12H',
+    '12hours',
+    'h',
+    'forever',
+    '1w',
+    '30s',
+    '+5h',
+    '1e3m',
+    '99999999999999999999999999d',
+    '9'.repeat(400) + 'd',
+  ]) {
+    assert.throws(
+      () => parseKeepFor(bad),
+      /--keep-for must be a whole, positive number with a unit of m, h or d \(for example 30m, 12h, 2d\)/,
+      `'${bad}'`,
+    );
+  }
+});
+
+test('parseKeepFor: over the cap is its own error, which says how to protect a container for longer', () => {
+  for (const tooLong of ['8d', '169h', '10081m', '365d', '99999d']) {
+    assert.throws(
+      () => parseKeepFor(tooLong),
+      /--keep-for is at most 7d, got '.*'\. `docker rename`/,
+      tooLong,
+    );
+  }
+});
+
+test('parseTestDbArgs: --keep-for sets the window AND implies --keep, in either value syntax', () => {
+  const a = parseTestDbArgs(['--keep-for', '12h']);
+  const b = parseTestDbArgs(['--keep-for=2d']);
+
+  assert.deepEqual([a.keep, a.keepFor], [true, 12 * HOURS]);
+  assert.deepEqual([b.keep, b.keepFor], [true, 48 * HOURS]);
+  assert.deepEqual(parseTestDbArgs(['--keep', '--keep-for', '3h']).keepFor, 3 * HOURS);
+  assert.deepEqual(parseTestDbArgs(['--keep-for', '3h', '--keep']).keepFor, 3 * HOURS);
+  assert.equal(parseTestDbArgs(['--keep-for', '3h', '--workers', '2', 'src/x']).workers, 2);
+  assert.deepEqual(parseTestDbArgs(['--keep-for', '3h', 'src/x']).jestArgs, ['src/x']);
+});
+
+test('parseTestDbArgs: --keep alone has no window of its own (the default applies), and no flag keeps nothing', () => {
+  const keep = parseTestDbArgs(['--keep']);
+
+  assert.equal(keep.keep, true);
+  assert.equal(
+    'keepFor' in keep,
+    false,
+    'absent, not undefined: the default is applied where the container is made',
+  );
+  assert.equal(parseTestDbArgs([]).keep, false);
+  assert.equal('keepFor' in parseTestDbArgs([]), false);
+});
+
+test("parseTestDbArgs: --keep-for needs a value, a good one, and after -- it is jest's", () => {
+  assert.throws(() => parseTestDbArgs(['--keep-for']), /--keep-for needs a value/);
+  assert.throws(() => parseTestDbArgs(['--keep-for', '--keep']), /--keep-for needs a value/);
+  assert.throws(
+    () => parseTestDbArgs(['--keep-for', 'a-while']),
+    /--keep-for must be a whole, positive number/,
+  );
+  assert.throws(() => parseTestDbArgs(['--keep-for=30d']), /--keep-for is at most 7d/);
+  // A bad value fails the whole command: it is never silently replaced by the default.
+  assert.throws(() => parseTestDbArgs(['--keep', '--keep-for', '12']), /--keep-for must be/);
+
+  const after = parseTestDbArgs(['--', '--keep-for', '12h']);
+
+  assert.equal(after.keep, false);
+  assert.deepEqual(after.jestArgs, ['--keep-for', '12h']);
+});
+
+// -- messages -------------------------------------------------------------------------------------------------
+
+test('formatAge: minutes, hours, days — whole hours without a dangling 00m, the default window as the 24h it is typed as', () => {
+  assert.equal(formatAge(0), '0m');
+  assert.equal(formatAge(-5 * 60_000), '0m');
+  assert.equal(formatAge(59_999), '0m');
+  assert.equal(formatAge(45 * 60_000), '45m');
+  assert.equal(formatAge(60 * 60_000), '1h');
+  assert.equal(formatAge(STALE_AFTER_MS), '2h');
+  assert.equal(formatAge(2 * HOURS + 60_000), '2h 01m');
+  assert.equal(formatAge(11 * HOURS + 5 * 60_000), '11h 05m');
+  assert.equal(formatAge(DEFAULT_KEEP_FOR_MS), '24h');
+  assert.equal(formatAge(47 * HOURS + 59 * 60_000), '47h 59m');
+  assert.equal(formatAge(48 * HOURS), '2d');
+  assert.equal(formatAge(51 * HOURS), '2d 3h');
+  assert.equal(formatAge(MAX_KEEP_FOR_MS), '7d');
+});
+
+test('keptNotice rounds the time left UP to the minute: a window made a moment ago is the 3h it was asked for', () => {
+  const left = (ms: number): string | undefined =>
+    /\((.*) from now\)/.exec(keptNotice('ci-testdb-a', 1, 'pw', NOW + 3 * HOURS, NOW + ms).join('\n'))?.[1];
+
+  assert.equal(left(0), '3h');
+  assert.equal(left(300), '3h', '300 ms into the run');
+  assert.equal(left(59_999), '3h', 'a second short of a minute');
+  assert.equal(left(60_000), '2h 59m');
+  assert.equal(left(25 * 60_000 + 1), '2h 35m', 'a 25-minute jest run later');
+  assert.equal(left(3 * HOURS - 30_000), '1m', 'half a minute left still reads as a minute, not 0m');
+});
+
+test('keptNotice: how to reach and remove the database, how long it is protected, and how to protect it longer — and no word of the old rule', () => {
+  const until = NOW + DEFAULT_KEEP_FOR_MS;
+  const lines = keptNotice('ci-testdb-ab12cd34', 61778, 'apppw0123', until, NOW);
+  const text = lines.join('\n');
+
+  assert.match(lines[0], /^Kept ci-testdb-ab12cd34 on 127\.0\.0\.1:61778 \(throwaway; loopback only\)\.$/);
+  assert.match(text, /docker exec -it ci-testdb-ab12cd34 psql -U postgres -d companion/);
+  assert.match(text, /postgres:\/\/companion:apppw0123@127\.0\.0\.1:61778\/companion\?sslmode=disable/);
+  assert.match(text, /remove it: {10}docker rm -f -v ci-testdb-ab12cd34/);
+  assert.match(text, /protected until: {4}2026-09-30T12:00:00\.000Z \(24h from now\)/);
+  assert.match(text, /will not remove it before then, nor while anything is connected to it/);
+  assert.match(text, /--keep-for <duration> on the next run \(default 24h, at most 7d\)/);
+  assert.match(text, /docker rename ci-testdb-ab12cd34 <new name>/);
+  assert.doesNotMatch(text, /two hours|removes it anyway|next `make test-db` removes/i);
+
+  // The label the reaper reads is the instant the notice prints.
+  assert.match(text, new RegExp(keepUntilLabelValue(until).replace(/\./g, '\\.')));
 });
 
 test('parseInspectContainers reads id, name (slash stripped), created and labels; drops malformed lines', () => {
@@ -273,7 +655,7 @@ test('parseTestDbArgs: bare words are jest path patterns; everything after -- is
 test('parseTestDbArgs: an unknown flag before -- is an error that says how to reach jest', () => {
   assert.throws(
     () => parseTestDbArgs(['--kepp']),
-    /Unknown flag '--kepp'.*--help, --keep, --image, --workers, --no-retry.*after '--'/s,
+    /Unknown flag '--kepp'.*--help, --keep, --keep-for, --image, --workers, --no-retry.*after '--'/s,
   );
   assert.throws(() => parseTestDbArgs(['-t', 'x']), /Unknown flag '-t'/);
 });
@@ -602,11 +984,30 @@ test('formatDuration', () => {
 
 // -- drift guard --------------------------------------------------------------
 
+// The probe helper's own spec drives `databaseAvailability` / `dataSourceConnection` with
+// variable names it invents (`PROBE_SPEC_*`, `NOTES_ABSENT_*`), one per case, so each gets a
+// clean cache key. They are test inputs, not variables any suite reads. Listing them would be
+// wrong, not just noisy: `buildTestEnv` sets every listed name to the throwaway URL, and the
+// "no database configured" cases need theirs unset.
+const INVENTED_NAMES_SPEC =
+  'backend/apps/api/src/domains/__tests__/support/__tests__/databaseConnection.spec.ts';
+
 test('TEST_DATABASE_URL_VARS is exactly the set of *_TEST_DATABASE_URL variables the source tree reads', () => {
-  const res = spawnSync('git', ['grep', '-ohE', '[A-Z][A-Z_]*_TEST_(ADMIN_)?DATABASE_URL', '--', 'backend'], {
-    encoding: 'utf8',
-    cwd: process.cwd(),
-  });
+  const res = spawnSync(
+    'git',
+    [
+      'grep',
+      '-ohE',
+      '[A-Z][A-Z_]*_TEST_(ADMIN_)?DATABASE_URL',
+      '--',
+      'backend',
+      `:(exclude)${INVENTED_NAMES_SPEC}`,
+    ],
+    {
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    },
+  );
 
   assert.equal(res.status, 0, `git grep failed: ${res.stderr}`);
 

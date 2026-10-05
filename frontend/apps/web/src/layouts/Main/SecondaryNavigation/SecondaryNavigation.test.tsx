@@ -27,7 +27,11 @@ vi.mock('@/common/feature', async () => {
 vi.mock('./useFeedBadgeCount', () => ({ useFeedBadgeCount: () => 0 }));
 vi.mock('./usePlanBadgeCount', () => ({ usePlanBadgeCount: () => 0 }));
 
-const recentThreads = vi.hoisted(() => ({ current: [] as { id: string; name: string | null }[] }));
+const recentThreads = vi.hoisted(() => ({
+  current: [] as { id: string; name: string | null; createdAt?: string }[],
+}));
+// One stable function, so a test can say whether the account row actually signed anyone out.
+const logout = vi.hoisted(() => vi.fn());
 
 vi.mock('@/pages/ChatPage/useRecentThreads', async () => {
   const actual = await vi.importActual<typeof import('@/pages/ChatPage/useRecentThreads')>(
@@ -49,7 +53,7 @@ vi.mock('@/hooks', async () => {
 
   return {
     ...actual,
-    useAuth: () => [{ isAuthenticated: true, authToken: 'token' }, { logout: vi.fn() }],
+    useAuth: () => [{ isAuthenticated: true, authToken: 'token' }, { logout }],
     useCurrentUser: () => ({ user: { name: 'Test User', email: 'test@example.com', onboarded: true } }),
     useCaptureModal: () => [{ isOpen: false }, { open: vi.fn(), close: vi.fn() }],
   };
@@ -67,6 +71,7 @@ vi.mock('@/components/ThemePicker', () => ({
 beforeEach(() => {
   localStorage.removeItem(STORAGE_KEY);
   recentThreads.current = [];
+  logout.mockClear();
 });
 
 function renderRail(route = '/plan', { expanded = false }: { expanded?: boolean } = {}) {
@@ -237,6 +242,37 @@ describe('SecondaryNavigation', () => {
     expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
   });
 
+  /**
+   * QA: on the phone the footer is pinned to the bottom edge and grows upward, so
+   * once the account row opens, "Log out" sits exactly where the chevron that
+   * opened it was. A second tap on the same spot signed two testers out, and
+   * getting back in is a trip through the Companion sign-in. The row now asks.
+   */
+  it('asks before logging out, and signs out only when that is confirmed', () => {
+    renderRail('/feed', { expanded: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Self sections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
+
+    // The row alone signs nobody out: it opens a question.
+    const dialog = screen.getByRole('alertdialog');
+
+    expect(within(dialog).getByText('Log out?')).toBeInTheDocument();
+    expect(logout).not.toHaveBeenCalled();
+
+    // Backing out leaves the session alone, and the question goes away.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(logout).not.toHaveBeenCalled();
+
+    // Asked again, a yes does it — once.
+    fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Log out' }));
+
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
   // Appearance is a setting, not a peer of the places you work.
   it('nests theme and colours inside the account, not in the drawer', () => {
     renderRail('/feed', { expanded: true });
@@ -278,6 +314,10 @@ describe('SecondaryNavigation', () => {
 
     expect(screen.getByRole('link', { name: 'Support' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Docs' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute(
+      'href',
+      'https://ci.computer/privacy-policy',
+    );
   });
 
   // The rail floats over the content when pinned open, so the lane it sits in
@@ -492,8 +532,9 @@ describe('SecondaryNavigation', () => {
 
   // The point of the submenu: pick a conversation from the menu, not from a
   // second chat UI nested in it. Threads render under Chat's own row, inside
-  // Memory's list — the phone drawer is the only way to change conversation
-  // there, since ChatSidebar portals to a slot the mobile layout never renders.
+  // Memory's list — the phone drawer is how you change conversation from
+  // outside Chat, since ChatSidebar portals to a slot the mobile layout never
+  // renders (inside Chat the phone has PhoneChatBar).
   it('lists recent threads as links under Chat, inside the Memory group', () => {
     recentThreads.current = [
       { id: 't1', name: 'Dinner plans' },
@@ -504,6 +545,23 @@ describe('SecondaryNavigation', () => {
 
     expect(screen.getByRole('link', { name: 'Dinner plans' })).toHaveAttribute('href', '/memory/chat/t1');
     expect(screen.getByRole('link', { name: 'Thread t2' })).toHaveAttribute('href', '/memory/chat/t2');
+  });
+
+  // Titles arrive late, and "Thread 01a0fd3b" reads the same for every chat started in the same minute.
+  it('names untitled threads by when they started, so the rows can be told apart', () => {
+    recentThreads.current = [
+      { id: '01a0fd3b-aaaa', name: null, createdAt: '2026-10-02T16:24:00Z' },
+      { id: '01a0fd3b-bbbb', name: null, createdAt: '2026-10-02T17:31:00Z' },
+    ];
+
+    renderRail('/memory/chat', { expanded: true });
+
+    expect(screen.queryByRole('link', { name: /^Thread / })).not.toBeInTheDocument();
+
+    const labels = screen.getAllByRole('link', { name: /^Chat · / }).map((link) => link.textContent);
+
+    expect(labels).toHaveLength(2);
+    expect(new Set(labels).size).toBe(2);
   });
 
   it('opens the Memory group on a thread deep-link and marks the thread current', () => {
@@ -584,13 +642,13 @@ describe('SecondaryNavigation', () => {
       const chat = screen.getByRole('link', { name: 'Chat' });
 
       expect(thread).toHaveClass(
-        'ml-18',
+        'ml-7.5',
         'text-xs',
         'text-muted-foreground',
         'min-h-[36px]',
         'device:min-h-[28px]',
       );
-      expect(chat).toHaveClass('ml-9', 'text-sm', 'min-h-[40px]', 'device:min-h-[32px]');
+      expect(chat).toHaveClass('ml-4.5', 'text-sm', 'min-h-[40px]', 'device:min-h-[32px]');
     });
   });
 

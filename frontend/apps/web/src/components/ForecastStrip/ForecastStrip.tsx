@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 
 import type { ForecastBucket, ProbabilityEntry } from '@/api/useForecastService';
 import { useFeatures } from '@/common/feature';
+import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
 import { classColor, normalizeClass } from '@/lib/activityPalette';
+import { HOUR_MINUTE, type DateTimeFormatter } from '@/lib/dateTimeFormat';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -51,15 +53,14 @@ function localMinutesOfDay(iso: string): number | null {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-/** Format minutes-since-local-midnight as a clock label (e.g. 510 → "8:30 AM"). */
-function formatClock(minutesOfDay: number): string {
+/**
+ * Format minutes-since-local-midnight as a clock label (e.g. 510 → "8:30 AM", or "08:30" in
+ * 24-hour). A position on the strip rather than an instant, so only the hour cycle applies.
+ */
+function formatClock(minutesOfDay: number, fmt: DateTimeFormatter): string {
   const m = ((minutesOfDay % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
 
-  // Date constructor normalises overflow: 1440 → Jan 2 midnight → "12:00 AM"
-  return new Date(2000, 0, 1, Math.floor(m / 60), m % 60).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return fmt.clock(Math.floor(m / 60), m % 60);
 }
 
 /** Always returns exactly `n` entries sorted 0…n-1, filling gaps with neutral defaults. */
@@ -166,6 +167,7 @@ export function SlotTooltip({
   minutes: number;
 }) {
   const { isFeatureEnabled } = useFeatures();
+  const fmt = useDateTimeFormat();
   const sorted = [...bucket.l0Probs].sort((a, b) => b.probability - a.probability);
   const top1 = topL1(bucket.l1Probs);
   // The painted class is prior-corrected, so it is not always the tallest bar.
@@ -176,7 +178,7 @@ export function SlotTooltip({
   return (
     <div className="w-52 space-y-2 text-left">
       <p className="text-xs font-semibold">
-        {formatClock(localMin)} – {formatClock(localMin + minutes)}
+        {formatClock(localMin, fmt)} – {formatClock(localMin + minutes, fmt)}
       </p>
 
       <p className="text-[10px] opacity-60">
@@ -372,6 +374,7 @@ export function ForecastStrip({
   pipelineDetail = null,
   className,
 }: ForecastStripProps) {
+  const fmt = useDateTimeFormat();
   const ordered = orderLocalDay(buckets);
 
   const isReady = systemStatus === 'READY';
@@ -380,7 +383,7 @@ export function ForecastStrip({
   const baselineName =
     modelVersion && modelVersion !== 'hmt' && !modelVersion.startsWith('hmt') ? modelVersion : null;
   let statusLabel = isReady
-    ? `Generated ${new Date(generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+    ? `Generated ${fmt.time(generatedAt, HOUR_MINUTE)}`
     : stalled
       ? 'Prediction model not built yet — open Add ▸ Predict to start'
       : (STATUS_LABELS[systemStatus] ?? 'Processing...');
@@ -426,7 +429,7 @@ export function ForecastStrip({
 
       {/* Time labels — local midnight to last slot */}
       <div className="flex justify-between text-[10px] text-muted-foreground px-0.5">
-        <span>{formatClock(ordered[0]?.localMin ?? 0)}</span>
+        <span>{formatClock(ordered[0]?.localMin ?? 0, fmt)}</span>
         <span
           className={
             pipelineRunning && !stalled
@@ -441,6 +444,7 @@ export function ForecastStrip({
         <span>
           {formatClock(
             ordered[ordered.length - 1]?.localMin ?? MINUTES_PER_DAY - (ordered[0]?.minutes ?? 15),
+            fmt,
           )}
         </span>
       </div>

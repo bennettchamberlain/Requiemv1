@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { fetchJson } from '@ci/common';
+import { apiFetch, apiKeyHeaders, buildApiUrl, fetchJson } from '@ci/common';
 
 import { useAuth } from '@/hooks';
 
@@ -357,9 +357,15 @@ export function useImportApi() {
    * the reason `useJobsAuth` documents — the conditional form infers
    * `{ Authorization?: undefined }`, which `exactOptionalPropertyTypes` refuses
    * to widen.
+   *
+   * The keystore key is added here too, because the multipart upload, `post`
+   * and `del` below do NOT go through `fetchJson`: without it those requests
+   * reach the server unauthenticated on a phone. Read per call, like the token,
+   * so a long-lived closure signs with whatever is live at SEND time. Repeating
+   * it on a `fetchJson` call is harmless — same header, same value.
    */
   const authHeaders = useCallback((): Record<string, string> => {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...apiKeyHeaders() };
 
     if (tokenRef.current) {
       headers.Authorization = `Bearer ${tokenRef.current}`;
@@ -461,7 +467,12 @@ export function useImportApi() {
 
         const xhr = new XMLHttpRequest();
 
-        xhr.open('POST', '/api/import/uploads');
+        // `buildApiUrl`, not the bare path: on the native shell the page origin is
+        // `capacitor://localhost`, and Capacitor's XHR patch treats a relative URL
+        // as the WebView's own — it never calls the native `open()`, so the very
+        // next `setRequestHeader` throws "The object is in an invalid state", and
+        // every wizard upload from a phone failed with exactly that text.
+        xhr.open('POST', buildApiUrl('/api/import/uploads'));
 
         for (const [name, value] of Object.entries(authHeaders())) {
           xhr.setRequestHeader(name, value);
@@ -877,6 +888,9 @@ export function useRunsProgress(
 export function useActiveImports(
   activeIntervalMs = 2_000,
   idleIntervalMs = 30_000,
+  // Lets a caller that only sometimes wants the poll (the getting-started banner
+  // on an appliance with importing switched off) call the hook unconditionally.
+  enabled = true,
 ): { snapshot: ActiveImportSnapshot | null; error: string | null; refresh: () => void } {
   const { getActiveImports, ready } = useImportApi();
   const [snapshot, setSnapshot] = useState<ActiveImportSnapshot | null>(null);
@@ -887,7 +901,7 @@ export function useActiveImports(
   const kick = useRef<() => void>(() => {});
 
   useEffect(() => {
-    if (!ready) {
+    if (!ready || !enabled) {
       return;
     }
 
@@ -960,15 +974,18 @@ export function useActiveImports(
       window.clearTimeout(timer.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [activeIntervalMs, getActiveImports, idleIntervalMs, ready]);
+  }, [activeIntervalMs, enabled, getActiveImports, idleIntervalMs, ready]);
 
   const refresh = useCallback(() => kick.current(), []);
 
   return { snapshot, error, refresh };
 }
 
+// `apiFetch` resolves the path against the Memory origin (a no-op on web) and, on
+// the native shells, goes out through CapacitorHttp — a bare `fetch('/api/...')`
+// there is a request to the app's own `capacitor://localhost` bundle.
 async function del<T>(url: string, headers: Record<string, string>): Promise<T> {
-  const response = await fetch(url, { method: 'DELETE', headers });
+  const response = await apiFetch(url, { method: 'DELETE', headers });
 
   if (!response.ok) {
     throw new Error(await describeFailure(response, 'Request failed'));
@@ -978,7 +995,7 @@ async function del<T>(url: string, headers: Record<string, string>): Promise<T> 
 }
 
 async function post<T>(url: string, headers: Record<string, string>, body: unknown): Promise<T> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -1002,7 +1019,7 @@ async function postUpload(form: FormData, headers: Record<string, string>): Prom
   let response: Response;
 
   try {
-    response = await fetch('/api/import/uploads', {
+    response = await apiFetch('/api/import/uploads', {
       method: 'POST',
       headers,
       body: form,

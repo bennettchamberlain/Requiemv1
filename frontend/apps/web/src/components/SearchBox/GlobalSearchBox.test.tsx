@@ -37,7 +37,18 @@ vi.mock('./useSearchService', () => ({
 // useAuth/useMutation context this test doesn't provide. GlobalSearchBox only
 // composes it in; assert that composition without dragging its internals in.
 vi.mock('@/pages/MemoryPage/Components/ExplorerToolbar/ExplorerToolbar', () => ({
-  SearchPanelFilters: () => <div>advanced filters</div>,
+  // Load search stands in as one button that hands over a picked search.
+  SearchPanelFilters: ({ onOpenSavedSearch }: { onOpenSavedSearch?: (params: URLSearchParams) => void }) => (
+    <>
+      <div>advanced filters</div>
+      <button
+        type="button"
+        onClick={() => onOpenSavedSearch?.(new URLSearchParams('search=paris&tags=vacation'))}
+      >
+        Load a saved search
+      </button>
+    </>
+  ),
 }));
 
 // The phone footer (its sheets have their own suite); here, only what the box
@@ -251,6 +262,19 @@ describe('GlobalSearchBox off the memory lists (jump-to launcher)', () => {
     expect(screen.getByText('advanced filters')).toBeInTheDocument();
   });
 
+  it('opens a saved search picked in the panel in the explorer, with its query in the box', async () => {
+    renderAt('/plan/tasks?view=board');
+
+    engage(screen.getByRole('textbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Load a saved search' }));
+
+    await waitFor(() => expect(path()).toBe('/memory'));
+    expect(params().get('search')).toBe('paris');
+    expect(params().get('tags')).toBe('vacation');
+    expect(params().has('view')).toBe(false);
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue('paris'));
+  });
+
   it('does not write the current route while typing — only the "jump to" suggestions react', async () => {
     renderAt('/dashboard');
 
@@ -446,5 +470,35 @@ describe('GlobalSearchBox on a phone', () => {
 
     expect(screen.getByText('latte')).toBeInTheDocument();
     expect(screen.queryByText('Recent')).not.toBeInTheDocument();
+  });
+
+  /**
+   * QA MEM-05 re-test, P3: after "Open full page" on an entity sheet, the search box
+   * showed its Filters / Saved searches panel over the new page's Back bar. The sheet's
+   * icon and the page's search field share a spot on the screen, so the suspects were
+   * focus handed back by the closing sheet, or a tap landing through onto the field.
+   *
+   * Neither is what happens. On an iOS 27 Simulator (real touch, WebKit) one tap on the
+   * icon left the box shut 9 times in 9; a SECOND tap at that spot (a retried or
+   * repeated tap) opened it all 3 times, which is simply a tap on the field. These two
+   * hold that split in place so the gating cannot loosen unnoticed: a pointer gesture
+   * opens the panel, bare focus never does.
+   */
+  it('stays shut when focus lands on it without a tap, as when a closing sheet hands focus back', () => {
+    asPhone();
+    renderAt('/events/42');
+
+    fireEvent.focus(screen.getByRole('textbox'));
+
+    expect(screen.queryByText(/phone filters/)).not.toBeInTheDocument();
+  });
+
+  it("opens on a tap on the field, which is all a second tap at the sheet icon's spot amounts to", () => {
+    asPhone();
+    renderAt('/events/42');
+
+    engage(screen.getByRole('textbox'));
+
+    expect(screen.getByText('phone filters: 0, saved searches')).toBeInTheDocument();
   });
 });

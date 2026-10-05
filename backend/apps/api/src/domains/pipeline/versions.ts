@@ -281,8 +281,14 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    * The bump re-decides every row under the new rule; the estimates v1 wrote
    * onto named events, and the place links built on them, are withdrawn by
    * migration 20260930035044_clear_estimates_on_events_with_own_location.
+   *
+   * v3 — ESTIMATE_RULE_GENERATION 3: donors and targets must be events that
+   * happened (`eventHappenedSql`). A cancelled, no_show or skipped event, a
+   * prediction, or a Takeout reservation marked cancelled no longer lends its
+   * coordinate, and no longer receives an estimate. The bump re-derives every
+   * earlier estimate from the donors that are left.
    */
-  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 2,
+  [STAGE_IDS.ENRICH_ESTIMATE_LOCATION]: 3,
 
   /**
    * v1 — initial conversion of the three participant backfills.
@@ -403,7 +409,16 @@ export const STAGE_VERSIONS: Record<StageId, StageVersion> = {
    */
   [STAGE_IDS.CLEAN_SINGLE_VALUED_EDGE_AUDIT]: 1,
 
-  /** v1 — place promotion. Derives from the forward-geocode generation: a better provider makes every hierarchy provisional. Cheap to bump — no provider call. */
+  /**
+   * v1 — place promotion. Derives from the forward-geocode generation: a better
+   * provider makes every hierarchy provisional. Cheap to bump — no provider call.
+   *
+   * Still v1 after events that did not happen left `PROMOTE_PLACE_SOURCE`. That
+   * narrowed which rows the sweep offers, and a bump re-offers only rows the
+   * predicate admits, so it could not have withdrawn one of the links written
+   * earlier. Migration
+   * 20261001153044_withdraw_place_links_from_events_that_did_not_happen does.
+   */
   [STAGE_IDS.PROMOTE_PLACE]: 1,
 
   /**

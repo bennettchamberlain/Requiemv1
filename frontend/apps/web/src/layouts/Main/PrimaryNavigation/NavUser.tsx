@@ -1,6 +1,6 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
-import { Collapsible, Popover, cn } from '@ci/shadcn';
+import { AlertDialog, Collapsible, Popover, cn } from '@ci/shadcn';
 import { ChevronRight, LogOut, Palette } from '@ci/shadcn/icons';
 
 import { ColorPicker, useTheme } from '@/components/ThemePicker';
@@ -30,16 +30,44 @@ const THEME_MODES = [
  */
 export function NavUserMenu() {
   const [, { logout }] = useAuth();
+  const [confirming, setConfirming] = useState(false);
 
   return (
     <div className="flex flex-col gap-0.5">
       <ThemeSubmenu />
 
+      {/* Asks first. On the phone this row lands exactly where the account
+          chevron that opened it was — the footer is pinned to the bottom edge
+          and grows upward — so a second tap on the same spot signed two QA
+          testers out by accident. Signing back in there means a trip through
+          the Companion sign-in, which is not a cost to spring on a stray tap. */}
       <SubRow
         icon={<LogOut className="h-4 w-4 shrink-0" strokeWidth={1.25} />}
         label="Log out"
-        onClick={logout}
+        onClick={() => setConfirming(true)}
       />
+
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialog.Content>
+          <AlertDialog.Header>
+            <AlertDialog.Title>Log out?</AlertDialog.Title>
+            <AlertDialog.Description>
+              You will need to log in again to get back to your memory on this device.
+            </AlertDialog.Description>
+          </AlertDialog.Header>
+          <AlertDialog.Footer>
+            <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+            <AlertDialog.Action
+              // AlertDialog.Action renders the default button variant, so the
+              // destructive styling has to come from here.
+              className="bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60"
+              onClick={logout}
+            >
+              Log out
+            </AlertDialog.Action>
+          </AlertDialog.Footer>
+        </AlertDialog.Content>
+      </AlertDialog>
     </div>
   );
 }
@@ -68,7 +96,7 @@ function SubRow({ icon, label, onClick }: SubRowProps) {
       className={cn(
         'flex cursor-pointer items-center rounded-md text-left text-sm transition',
         RAIL_CHILD_HEIGHT,
-        expanded ? ['gap-2.5', RAIL_CHILD_INSET] : 'justify-center',
+        expanded ? ['gap-2', RAIL_CHILD_INSET] : 'justify-center',
         railRowTone(false),
       )}
     >
@@ -100,7 +128,7 @@ function ThemeSubmenu() {
         className={cn(
           'flex items-center rounded-md text-left text-sm transition [&[data-state=open]>svg:last-child]:rotate-90',
           RAIL_CHILD_HEIGHT,
-          expanded ? ['gap-2.5', RAIL_CHILD_INSET] : 'justify-center',
+          expanded ? ['gap-2', RAIL_CHILD_INSET] : 'justify-center',
           railRowTone(false),
         )}
       >
@@ -113,12 +141,12 @@ function ThemeSubmenu() {
 
       <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
         <div className="flex flex-col gap-0.5 py-1">
-          {/* One level under Theme, on its label column — the rail's third
+          {/* One level under Theme, starting under its icon — the rail's third
               level (`RAIL_LEAF_INSET`), where Chat's threads sit under Chat.
               It runs to the rows' right edge, with tight segments, because
-              that column leaves the desktop rail about 8.5rem for three
+              that column leaves the desktop rail about 11.125rem for three
               labels; everything there is rem, so it fits at any zoom. */}
-          <div className={expanded ? 'ml-18' : undefined}>
+          <div className={expanded ? 'ml-7.5' : undefined}>
             <div
               role="radiogroup"
               aria-label="Theme"

@@ -65,6 +65,7 @@ function Field({
   listId,
   autoFocus,
   errorId,
+  inputClassName,
 }: {
   id: string;
   label: string;
@@ -76,6 +77,8 @@ function Field({
   autoFocus?: boolean;
   /** Id of the message saying what is wrong with the value, when something is. */
   errorId?: string;
+  /** Extra classes for the input itself (the wrapper is not the thing to style). */
+  inputClassName?: string;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -91,6 +94,7 @@ function Field({
         autoFocus={autoFocus}
         aria-invalid={errorId ? true : undefined}
         aria-describedby={errorId}
+        className={inputClassName}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>
@@ -271,11 +275,17 @@ export function PersonForm({
             listId={genderListId}
             onChange={(next) => set('gender', next)}
           />
+          {/* iOS WebKit lays a native date input out as content-box with a forced
+              min-width, so `w-full` came out ~28px wider than the card: the field
+              stuck out of it and the page panned sideways. Without the native
+              appearance it is an ordinary box again; the picker still opens, and
+              the value stays left-aligned like its neighbours. */}
           <Field
             id={`${uid}-birth-date`}
             label="Birthday"
             type="date"
             value={value.birthDate}
+            inputClassName="appearance-none [&::-webkit-date-and-time-value]:text-left"
             onChange={(next) => set('birthDate', next)}
           />
         </div>
@@ -461,7 +471,9 @@ export function PersonForm({
           ))}
         </div>
 
-        <div className="flex gap-2">
+        {/* Three nowrap buttons are ~368px wide: on a 390pt phone they overflowed
+            the card and pushed the whole Self page ~5pt sideways. */}
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             size="sm"

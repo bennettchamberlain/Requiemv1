@@ -24,7 +24,13 @@ separate package and must stay that way.
   `localStorage`**. On first launch with no server set, it routes to the in-app
   `/device-connect` screen (Portal picker). `/server` is Advanced URL entry.
 - All `/api/...` calls resolve through `buildApiUrl()` (`@ci/common`): `''` on web
-  (same-origin), the configured origin on native.
+  (same-origin), the configured origin on native. That covers every `fetch`, XHR,
+  `src`, `href` and `window.open`, not just GraphQL: the page origin is
+  `capacitor://localhost`, so a bare `/api/...` or `/static/...` there is a request to
+  the app's own bundle. Media paths go through `resolveMediaUrl()` (it adds the
+  `/static` prefix and the origin), and a link meant for another device — a share
+  link, a QR code, a webhook address — takes `getWebOrigin()`, never
+  `window.location.origin`.
 - The native web build sets `VITE_DISABLE_PWA=true` so the Workbox service worker
   doesn't fight Capacitor's local asset serving.
 
@@ -425,6 +431,13 @@ photo input on Gemma 4, and memory headroom (iOS `physicalMemory` reports below 
 Agent Skills, Mobile Actions (FunctionGemma), audio input, the benchmark screen, importing a model file,
 and NPU backends.
 
+**Checking the iOS pure logic on a Mac.** `bash scripts/test-local-llm-pure.sh` (from this directory; needs only
+`swiftc`) compiles the app's own `LocalLLMStreaming.swift`, `LocalLLMPolicy.swift` and `LocalLLMModels.swift`, plus
+the vendored `LiteRTLMError.swift`, together with `tests/local-llm-pure/main.swift`, and runs it — reply assembly
+(including the stripping of leaked chat-template markers such as `<|endoftext|>`), how a failed generation is worded
+for the log and for JS, and the shaping of tool results. The project has no XCTest target, so these are plain
+assertions that exit non-zero; anything that needs the engine, Capacitor or the xcframework is out of reach there.
+
 - **Android:** minSdk stays 23; the plugin itself gates on `Build.VERSION.SDK_INT >= 31`
   (LiteRT-LM's AAR requires Android 12), so older devices keep the rest of the app.
 - **iOS:** the LiteRT-LM Swift package is vendored, not consumed via SPM — Apple blocks
@@ -444,18 +457,32 @@ The local model can call CI's **published intents** as tools, so it answers from
 of its own weights. Enable it per platform with `LocalLLM.configureIntentTools({ baseUrl, apiKey })`;
 the plugin then fetches the intent catalog with `?tier=local` and binds what the appliance allows.
 
-> **Watch the doubled `/api`.** `IntentsController` is `@Controller('api/intents')` while the
-> fronting proxy already strips a leading `/api`, so from an app holding the proxy origin the real
-> path is `<base>/api/api/intents?tier=local` — which is exactly what `CompanionIntentClient`
-> requests on both platforms. `McpController` is `@Controller('mcp')`, so it is reached at the
-> ordinary `<base>/api/mcp`. (`/api/agent/intents` is the canonical prefix for new callers;
-> `/api/intents` still serves and is what these clients use.)
+> **One `/api`, for both.** The fronting proxy strips a leading `/api` and Nest sets no global
+> prefix, so `IntentsController` (mounted at the bare `intents`) is reached at
+> `<base>/api/intents?tier=local` and `McpController` (`mcp`) at `<base>/api/mcp` — which is what
+> `CompanionIntentClient` requests on both platforms. The catalog used to be `<base>/api/api/intents`,
+> while the controller baked its own `api/` into its mount; #2653 removed that, the clients kept asking
+> for the doubled path, and on-device tools silently never bound against a current appliance (a 404 is
+> swallowed so the model still loads, toolless). `capacitorPluginContract.test.ts` now checks both
+> clients' paths against the controllers' real mounts. (`/api/agent/intents` is the canonical prefix for
+> new callers; `/api/intents` still serves and is what these clients use.)
 
 **One security rule, not three.** The appliance computes the `execute` / `queue` / `deny` ruling
 (`dispatchPolicy.ts`) and publishes it per intent; the phone reads `dispatch.decision` and obeys it.
 Neither Kotlin nor Swift re-derives the policy — `dispatchPolicy.ts` says why ("two copies of a
 security rule are two rules"), and it means a policy change ships with the appliance instead of
 waiting on two app-store releases. Destructive and external intents always queue on-device.
+
+**A tool's result is bounded before the model sees it (iOS).** The appliance answers a tool call with the whole
+result, pretty-printed — 25 hits from `knowledge_search` is ~45 KB — and a small model's context window cannot hold
+it: Qwen3-0.6B's is 1,024 tokens, and its system prompt and tool declarations already take ~500 of them. Left alone,
+that is many times the window. `ToolResultShaper` (in `LocalLLMPolicy.swift`) cuts it to half the window in bytes
+(`toolResultByteBudget(contextTokens:)` — 512 for Qwen3-0.6B): a result that fits goes through untouched; otherwise
+JSON is re-emitted compactly with long strings capped, each hit's `type`/`link`/`title` first, the search header
+whole and as many whole hits as fit, and a closing note saying how many were left out. It is the device twin of the
+appliance's own `toolResultBudget.ts`, and the budget is an estimate to tune on a device. `CompanionToolContext`
+logs sizes only (`[LocalLLM] knowledge_search returned 45598 bytes; passing 482 …`), never the result. The Android
+adapter returns the result unbounded and does not yet do this.
 
 **The binding is per-platform, because the runtimes genuinely differ:**
 
@@ -469,6 +496,18 @@ That asymmetry is structural, not an oversight: the LiteRT-LM Swift surface has 
 equivalent (verified against the vendored source — 18 public types, one tool protocol, no
 schema-string entry point), so iOS cannot construct tools dynamically at all.
 
+**What iOS binds today.** Three hand-written structs in `CompanionIntentTools.swift`: `knowledge_search`
+(the tool for "what do I know about X", "when did I …", "how many …"), `people_find`, and `memory_recall`,
+which is a graph lookup of a *person* and who they are connected to — it takes `personName` and nothing
+else, because the appliance's `memory.recall` has no free-text or date-range parameter. Each `@ToolParam` must
+be a same-named property of the intent's published schema and each `run()` must send exactly those;
+`IntentCatalogService.realTools.test.ts` (backend) reads the Swift file against the real tool classes and fails
+when they drift (the app used to send `query` / `startDate` / `endDate` to `memory_recall`, which the server
+silently dropped, and `content` to `memory_remember`, which it rejected). `memory.remember` is **not** offered on
+iOS: it writes graph entities (`operations: [{ kind: "entity.create", … }]`), not a Note, and no intent the local
+tier may run creates a Note. Android still binds it, with the published schema, because it binds every
+`execute` intent.
+
 Execution goes over MCP `tools/call` (`POST /mcp`) — there is no REST "execute this intent"
 endpoint — authenticated with the same `x-api-key` the App Intents already use.
 
@@ -479,6 +518,17 @@ endpoint — authenticated with the same `x-api-key` the App Intents already use
 `<name>.part` and the next attempt continues with an HTTP `Range` request, so a force-quit or a lost
 connection costs nothing. It still lives in the app target rather than that package (which declares
 itself Android-only); moving it there needs a podspec + vendored xcframework + Podfile regeneration.
+
+Because it lives in the app target, **nothing generated knows it exists**: the `packageClassList` that
+`cap sync` writes into `capacitor.config.json` is built from the `ios/` sources of *installed npm
+packages*, and Capacitor 7 has no runtime scan. `ios/App/App/MainViewController.swift` is what puts it on
+the bridge — a `CAPBridgeViewController` subclass whose `capacitorDidLoad()` calls
+`bridge?.registerPluginInstance(LocalLLMPlugin())` (not `registerPluginType`, which is a no-op with the
+default auto-registration). Three hand-maintained pieces must stay joined — the class, the root
+`customClass` in `Main.storyboard`, and the file's entry in the App target's Sources — and `cap sync`
+touches none of them, but `cap add ios` would restore the stock class: Settings → On-device model would
+then read "On-device models run in the iOS and Android apps." on a phone.
+`capacitorPluginContract.test.ts` fails if any of the three drifts.
 
 > ✅ **Fixed 2026-09-29 — Qwen3's `resolve/main` URL had drifted twice over.** The 2026-08-26 fix recorded
 > `Qwen3-0.6B` at 344,437,808 bytes against a `resolve/main` URL. On 2026-09-20 Hugging Face's `main` became a

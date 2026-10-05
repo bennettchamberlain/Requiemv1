@@ -1539,9 +1539,9 @@ export class ImportRunService {
         throw new ConflictException(
           state.liveKind === 'push'
             ? `Import run ${runId} is still pushing (its push stage is ${state.liveStatus}). ` +
-              'Wait for it to finish, then retry the rows it could not write.'
+                'Wait for it to finish, then retry the rows it could not write.'
             : `Import run ${runId} is still working (its ${state.liveKind} stage is ${state.liveStatus}). ` +
-              'Wait for it to finish, then retry its failed push rows.',
+                'Wait for it to finish, then retry its failed push rows.',
         );
       }
 

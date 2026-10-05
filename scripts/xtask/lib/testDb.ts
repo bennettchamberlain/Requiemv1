@@ -26,8 +26,31 @@ export const CONTAINER_PREFIX = 'ci-testdb-';
 /** ...and carries this label. A container is ours only if it has BOTH. */
 export const LABEL_KEY = 'ci.test-db';
 export const LABEL_VALUE = '1';
-/** A container older than this belongs to a run that died without cleaning up. */
+/**
+ * A container older than this MIGHT belong to a run that died without cleaning up. Age alone is not
+ * enough to remove one — a `--keep` database, or a run on a loaded machine, is legitimately older — so
+ * {@link planReap} asks what else is true of it first.
+ */
 export const STALE_AFTER_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Stamped on a container by `--keep` when it is created: the instant before which the reaper must leave
+ * it alone (ISO-8601, UTC). It covers what the live-client check cannot — a kept database between two
+ * jest runs has no connections at all. A label cannot be changed on a running container, so the window
+ * is fixed at creation; `docker rename` is the way to protect one beyond it.
+ *
+ * A different key from {@link LABEL_KEY}, not a different value of it: `--filter label=ci.test-db=1`
+ * matches the key exactly, so this one never changes which containers are listed.
+ */
+export const KEEP_UNTIL_LABEL_KEY = 'ci.test-db.keep-until';
+/** How long `--keep` protects a container when `--keep-for` does not say: a working day, with margin. */
+export const DEFAULT_KEEP_FOR_MS = 24 * 60 * 60 * 1000;
+/**
+ * The longest `--keep-for` accepts. A guard against a typo that would protect a container for years, and
+ * what keeps `now + keepFor` a date `toISOString()` can still print: a value past the Date range throws,
+ * and it would throw after the container had been created.
+ */
+export const MAX_KEEP_FOR_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface ContainerInfo {
   id: string;
@@ -44,9 +67,10 @@ export function isOurs(c: ContainerInfo): boolean {
 }
 
 /**
- * Containers this command may reap: ours, and older than `maxAgeMs`. One whose
- * creation time cannot be read is left alone — an unreadable clock is not
- * grounds for `rm -f`.
+ * Containers old enough to be CANDIDATES for reaping: ours, and older than `maxAgeMs`. One whose
+ * creation time cannot be read is left alone — an unreadable clock is not grounds for `rm -f`.
+ *
+ * A candidate is not yet a verdict: {@link planReap} decides which of them are actually removed.
  */
 export function selectStale(
   containers: ContainerInfo[],
@@ -54,6 +78,99 @@ export function selectStale(
   maxAgeMs: number = STALE_AFTER_MS,
 ): ContainerInfo[] {
   return containers.filter((c) => isOurs(c) && c.createdAt !== null && now - c.createdAt > maxAgeMs);
+}
+
+/** The value of {@link KEEP_UNTIL_LABEL_KEY} for a container kept until `until`: UTC with milliseconds, so it reads back exactly. */
+export function keepUntilLabelValue(until: number): string {
+  return new Date(until).toISOString();
+}
+
+/**
+ * Exactly what {@link keepUntilLabelValue} writes. Stricter than `Date.parse`, which reads `12` as a
+ * year and `1` as a month: a hand-typed or damaged label that merely parses as SOMETHING must not be
+ * able to protect a container indefinitely, or hand it over for removal early, by accident.
+ */
+const KEEP_UNTIL_FORMAT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+
+/** When `c`'s keep label says it may next be reaped; null when it has none, or the value is not an ISO-8601 UTC instant. */
+export function keepUntil(c: ContainerInfo): number | null {
+  const raw = c.labels[KEEP_UNTIL_LABEL_KEY];
+
+  if (raw === undefined || !KEEP_UNTIL_FORMAT.test(raw)) {
+    return null;
+  }
+
+  const ms = Date.parse(raw);
+
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** What looking inside a candidate for reaping found. */
+export type ClientProbe =
+  /** `clients` connections other than the probe's own; zero means idle. */
+  | { state: 'counted'; clients: number }
+  /** Nothing is running in it (created, exited, dead), so nothing can be connected. */
+  | { state: 'no-process' }
+  /** The daemon would not say, or said something unreadable. Never read as "idle". */
+  | { state: 'unknown'; detail: string };
+
+/** Why a candidate for reaping was left alone. */
+export type SparedReason =
+  { why: 'kept'; until: number } | { why: 'in-use'; clients: number } | { why: 'unverified'; detail: string };
+
+export type Spared = { container: ContainerInfo } & SparedReason;
+
+export interface ReapPlan {
+  /** Old enough, not protected, and nothing connected: safe to remove. */
+  remove: ContainerInfo[];
+  /** Old enough to be candidates, and left alone. */
+  spared: Spared[];
+}
+
+/**
+ * What the stale-container reaper does with a listing. A container is removed only when ALL of:
+ *
+ *  1. it is ours and older than `maxAgeMs` ({@link selectStale});
+ *  2. it is not inside a `--keep` window ({@link keepUntil} is absent, unreadable, or already past);
+ *  3. nothing is connected to it — or nothing is running in it at all.
+ *
+ * Age alone used to decide. It removed a kept database that was idle between two runs (11h old), and
+ * would have removed one with a 12-worker jest run connected to it (2h01m old) had its owner not renamed
+ * it in time. Check 2 is the cure for the first and check 3 for the second.
+ *
+ * `probe` is asked only about a candidate that check 2 did not already protect: looking inside a
+ * container is a docker exec, and nothing should be exec'd into without a reason. A probe that could
+ * not find out is a reason to LEAVE the container, not to remove it.
+ */
+export function planReap(
+  containers: ContainerInfo[],
+  now: number,
+  probe: (c: ContainerInfo) => ClientProbe,
+  maxAgeMs: number = STALE_AFTER_MS,
+): ReapPlan {
+  const plan: ReapPlan = { remove: [], spared: [] };
+
+  for (const container of selectStale(containers, now, maxAgeMs)) {
+    const until = keepUntil(container);
+
+    if (until !== null && until > now) {
+      plan.spared.push({ container, why: 'kept', until });
+
+      continue;
+    }
+
+    const seen = probe(container);
+
+    if (seen.state === 'unknown') {
+      plan.spared.push({ container, why: 'unverified', detail: seen.detail });
+    } else if (seen.state === 'counted' && seen.clients > 0) {
+      plan.spared.push({ container, why: 'in-use', clients: seen.clients });
+    } else {
+      plan.remove.push(container);
+    }
+  }
+
+  return plan;
 }
 
 /**
@@ -202,6 +319,11 @@ export function chooseImage(opts: {
 export interface TestDbArgs {
   help: boolean;
   keep: boolean;
+  /**
+   * `--keep-for`, in ms: how long the kept container is protected from the stale-container reaper.
+   * Present only when the flag was given (it implies `keep`); {@link DEFAULT_KEEP_FOR_MS} applies otherwise.
+   */
+  keepFor?: number;
   image?: string;
   workers: number;
   /**
@@ -216,7 +338,34 @@ export interface TestDbArgs {
 export const DEFAULT_WORKERS = 4;
 const MAX_WORKERS = 32;
 
-const OWN_FLAGS = ['--help', '--keep', '--image', '--workers', '--no-retry'];
+const OWN_FLAGS = ['--help', '--keep', '--keep-for', '--image', '--workers', '--no-retry'];
+
+const DURATION_UNIT_MS: Readonly<Record<string, number>> = { m: 60_000, h: 60 * 60_000, d: 24 * 60 * 60_000 };
+
+/**
+ * The value of `--keep-for`: a whole, positive number and one unit — `30m`, `12h`, `2d` — no longer than
+ * {@link MAX_KEEP_FOR_MS}. Anything else (a bare `12`, `1.5h`, `1h30m`, `forever`) is an error rather than
+ * a guess about what was meant: the value decides how long a database nobody is watching survives.
+ */
+export function parseKeepFor(raw: string): number {
+  const match = /^(\d+)([mhd])$/.exec(raw);
+  const ms = match ? Number(match[1]) * DURATION_UNIT_MS[match[2]] : Number.NaN;
+
+  if (!Number.isSafeInteger(ms) || ms <= 0) {
+    throw new Error(
+      `--keep-for must be a whole, positive number with a unit of m, h or d (for example 30m, 12h, 2d), got '${raw}'`,
+    );
+  }
+
+  if (ms > MAX_KEEP_FOR_MS) {
+    throw new Error(
+      `--keep-for is at most ${formatAge(MAX_KEEP_FOR_MS)}, got '${raw}'. ` +
+        '`docker rename` a container to protect it from the reaper for good.',
+    );
+  }
+
+  return ms;
+}
 
 /**
  * Own flags come first; bare words are jest path patterns; everything after `--`
@@ -254,6 +403,13 @@ export function parseTestDbArgs(argv: string[]): TestDbArgs {
     if (flag === '--help' || token === '-h') {
       args.help = true;
     } else if (flag === '--keep') {
+      args.keep = true;
+    } else if (flag === '--keep-for') {
+      let raw: string;
+
+      [raw, i] = value('--keep-for', i);
+      args.keepFor = parseKeepFor(raw);
+      // Asking for a window is asking for the container to be kept.
       args.keep = true;
     } else if (flag === '--no-retry') {
       args.retry = false;
@@ -571,4 +727,51 @@ export function formatDuration(ms: number): string {
   const s = total % 60;
 
   return m === 0 ? `${s}s` : `${m}m ${String(s).padStart(2, '0')}s`;
+}
+
+/** A coarse span for a message about a container's age or protection: `45m`, `2h`, `2h 01m`, `24h`, `2d 3h`. */
+export function formatAge(ms: number): string {
+  const minutes = Math.max(0, Math.floor(ms / 60_000));
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  // Hours up to two days, so the default window reads as the `24h` it is typed as.
+  if (hours < 48) {
+    return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+  }
+
+  return hours % 24 === 0 ? `${hours / 24}d` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+/**
+ * What `--keep` prints once the run is over: how to reach the database, how to remove it, and — in place
+ * of the old "the next `make test-db` removes it anyway once it is more than two hours old" — what
+ * protects it from the stale-container reaper, for how long, and how to protect it longer.
+ */
+export function keptNotice(
+  name: string,
+  port: number,
+  appPassword: string,
+  until: number,
+  now: number,
+): string[] {
+  const indent = ' '.repeat(22);
+  // The notice is printed when the run ends, so the time left is rounded UP: a window made a moment ago reads
+  // as the `3h` it was asked for, not `2h 59m`.
+  const remaining = Math.ceil((until - now) / 60_000) * 60_000;
+
+  return [
+    `Kept ${name} on ${LOOPBACK}:${port} (throwaway; loopback only).`,
+    `  psql as superuser:  docker exec -it ${name} psql -U postgres -d ${APP_DATABASE}`,
+    `  application URL:    postgres://${APP_ROLE}:${appPassword}@${LOOPBACK}:${port}/${APP_DATABASE}?sslmode=disable`,
+    `  remove it:          docker rm -f -v ${name}`,
+    `  protected until:    ${keepUntilLabelValue(until)} (${formatAge(remaining)} from now): a later \`make test-db\``,
+    `${indent}will not remove it before then, nor while anything is connected to it`,
+    `  protect longer:     --keep-for <duration> on the next run (default ${formatAge(DEFAULT_KEEP_FOR_MS)}, at most ${formatAge(MAX_KEEP_FOR_MS)}); this window is fixed.`,
+    `${indent}Or rename it so it no longer matches ci-testdb-*:  docker rename ${name} <new name>`,
+  ];
 }

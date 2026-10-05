@@ -1,3 +1,4 @@
+import { isIosPlatform } from '@ci/common';
 import {
   AppWindow,
   Bookmark,
@@ -7,18 +8,17 @@ import {
   MousePointerClick,
   Search,
 } from '@ci/shadcn/icons';
+import { useNavigate } from 'react-router-dom';
 
 import { SourceCard, type TrackedObject } from '@/components/connect/SourceCard';
+import {
+  CAPTURE_DOWNLOAD_URL,
+  CHROME_EXTENSION_URL,
+  FIREFOX_EXTENSION_URL,
+} from '@/pages/OnboardingPage/constants';
 
 import { PathHeader } from './PathHeader';
 import { useDevices, type RegisteredDevice } from './useDevices';
-
-export const CHROME_EXTENSION_URL =
-  'https://chromewebstore.google.com/detail/companion-intelligence/bcocflgkdeimninckpmdifcniajoneih?authuser=3&hl=en';
-
-export const FIREFOX_EXTENSION_URL = 'https://addons.mozilla.org/en-US/firefox/addon/companion-intelligence/';
-
-export const CAPTURE_DOWNLOAD_URL = 'https://ci.computer/download#capture';
 
 /** Every browser extension hands over the same three things. */
 export const BROWSER_TRACKS: readonly TrackedObject[] = [
@@ -53,6 +53,7 @@ export const CAPTURE_TRACKS: readonly TrackedObject[] = [
  */
 export function DevicesPanel() {
   const { devices, loading } = useDevices();
+  const navigate = useNavigate();
 
   return (
     <div className="w-full">
@@ -85,7 +86,20 @@ export function DevicesPanel() {
             tracks={BROWSER_TRACKS}
             onSelect={() => window.open(FIREFOX_EXTENSION_URL, '_blank', 'noopener,noreferrer')}
           />
-          <SourceCard logo="/branding/safari/logo.svg" name="Safari" tracks={BROWSER_TRACKS} comingSoon />
+          {/* The Safari extension ships INSIDE the iOS app (and only there), and
+              Settings → Safari has the steps that switch it on. Elsewhere there
+              is nothing to install yet, so the card stays an honest "coming
+              soon" — on the one phone that already has it, it must not say so. */}
+          {isIosPlatform() ? (
+            <SourceCard
+              logo="/branding/safari/logo.svg"
+              name="Safari"
+              tracks={BROWSER_TRACKS}
+              onSelect={() => navigate('/settings/safari')}
+            />
+          ) : (
+            <SourceCard logo="/branding/safari/logo.svg" name="Safari" tracks={BROWSER_TRACKS} comingSoon />
+          )}
         </div>
       </section>
 

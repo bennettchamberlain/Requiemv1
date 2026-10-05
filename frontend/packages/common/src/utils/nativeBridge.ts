@@ -104,12 +104,7 @@ export interface NativeCurrentLocation {
 
 /** Core Location authorization — iOS Always two-step. `unsupported` on web/Android. */
 export type NativeLocationAuthorization =
-  | 'notDetermined'
-  | 'denied'
-  | 'restricted'
-  | 'whenInUse'
-  | 'always'
-  | 'unsupported';
+  'notDetermined' | 'denied' | 'restricted' | 'whenInUse' | 'always' | 'unsupported';
 
 export type DeviceLocationErrorCode = 'denied' | 'unavailable' | 'timeout';
 

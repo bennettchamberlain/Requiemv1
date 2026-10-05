@@ -28,7 +28,9 @@ Section **2.1(b)** is cited from `GraphIngestService.ts`. Do not renumber it.
   until the `countAffected` fix** (2026-09-29): each was `….length` of a bare
   `UPDATE/DELETE … RETURNING`, which TypeORM resolves to the pair `[rows, rowCount]`, so every
   Person count read 2 and `relationshipsDropped` 6, and every Location count 2, 4 or 6, whatever
-  moved. Rows written before the fix still carry those numbers — see §5.4.
+  moved. Rows written before the fix still carry those numbers — see §5.4. `relationshipsRescued`
+  (the final relationship sweep, §5.2) is newer still: a Person or Location merge row written before
+  it has no such key, which means "not counted", not "none".
 - `ci.entity_identifiers` grew from a bare lookup into a real contact-method table:
   `raw_value`, `label`, `is_primary`, `source`, `verified_at`.
 - `PersonDuplicateService` — candidate groups by shared normalized email / phone / name.
@@ -539,6 +541,29 @@ Type-specific rules:
 - **Tags** (`ci_search.entity_tag`) → union, deduped on the `(entity_type, entity_id, tag_id)`
   unique index.
 
+**What a later import does to the survivor — built (2026-09-29).** The survivor is usually some
+source's own row, and that source keeps re-importing it. `GraphIngestService` used to refresh it
+with `properties = EXCLUDED.properties`, which quietly undid every merge into an imported contact:
+the next import of the survivor's card replaced the folded `phones`/`Phones`/`names` with the card's
+own. The refresh is now a merge, run inside the upsert against the locked row
+(`graph/utils/ingestedProperties.ts`):
+
+- keys the source does not send are left alone, and a JSON null says nothing;
+- the plural identity keys this fold unions (`IDENTITY_LIST_KEYS`) and the parser's own
+  `accumulate[]` keys (carried on `ci_import.staged_entities.accumulate`) are unioned;
+- any other key the source sends takes its new value, and `name`/`description` do too unless null.
+
+The re-key that moves a row onto a new import key (`rekeyImportedEntities`, `resetProperties`) rests
+on the same rule: it empties what the SOURCE put in the row and keeps the identity values its
+standing merges brought in — the same `IDENTITY_LIST_KEYS` — and the ingest that follows unions the
+card's values into them. Before this refresh was a merge, that following ingest would have replaced
+the kept values too. The repair migration `restore_merged_person_identity_lists` (#2796) puts back
+what earlier re-imports erased; it only stays put with this refresh in place.
+
+Two limits follow from there being no per-key provenance yet: an import cannot *remove* a member of
+a unioned list, and a key the source itself sends (`avatar_url` on a vCard) still overrides a user
+edit of it. The precedence scheme above is what resolves the second.
+
 ### 5.2 Relationship folding
 
 Two hazards, both already encoded as constraints on `ci.relationships`, and both already guarded in
@@ -559,6 +584,50 @@ rather than fail:
 - loser edge → `is_active = FALSE` (kept for unmerge)
 
 Both directions must be swept — the loser can appear as `from_entity_id` or `to_entity_id`.
+
+**Edges that arrive while the merge runs.** `PersonMergeService.repointReferences` and
+`PlaceMergeService.repointReferences` are each one READ COMMITTED transaction, so each statement sees
+what had committed when *it* started. The edge projection reads the very columns the merge is
+rewriting and, until the merge commits, still sees the loser: it writes the **loser's** edge, to a
+table with no foreign key that could make it wait. (For people that is `promote.edge_communication` /
+`promote.edge_event`; for places `promote.edge_event`, `promote.edge_position` and `promote.edge_place`,
+which read `events.location_entity_id`, `position.location_entity_id` and `parent_place_id` — the last
+puts the loser at the *from* end of its `Place → Place` edge.) The guarded UPDATEs cannot move an edge
+they cannot see, and the statement after them used to be a plain `DELETE` of whatever loser edges were
+left — on the premise that the UPDATEs had declined each as a duplicate. An edge committed in
+between was deleted instead: no delta, the merge committed the columns pointing at the survivor, and
+the leg's ledger row (`running` throughout) was stamped `done`, so nothing ever offered the row
+again. Five SENT/RECEIVED edges went that way in one person merge on the reference appliance.
+
+That statement is now a **sweep**, one per end of the edge, run after both guarded re-points
+(`sweepLeftoverEdges` in `memory/services/mergeEdgeSweep.ts`, shared by both merges). Its DELETE and
+its INSERT share a snapshot, so whatever the DELETE sees the INSERT puts back on the target — the
+same row, `relationship_id` and every other column kept — except that:
+
+- an active edge whose shape the target already holds conflicts with
+  `relationships_unique_directed_idx` and is dropped (`ON CONFLICT DO NOTHING`), as the UPDATE would
+  have declined it; of several sources' edges of one shape the oldest is kept;
+- an edge whose other end is a source or the target is dropped, not inserted — re-pointed it would
+  be a self-reference, and `no_self_references` is a CHECK, which no `ON CONFLICT` absorbs and which
+  would abort the merge;
+- an inactive edge is outside the index and kept, as the UPDATE keeps it.
+
+An edge the sweep moves is written as a `relationship/updated` delta (`change_source`
+`PersonMergeService.mergePeople` / `PlaceMergeService.mergePlaces`, `change_reason`
+`person_merge.rescued_edge` / `place_merge.rescued_edge`, `changed_fields` naming the source it came
+from) and counted in `relationshipsRescued`; an edge it drops leaves no trail, as before. The id is kept so a delta for a relationship that no longer exists in
+`ci.relationships` stays an exact signal of a hard delete.
+
+What this does **not** close: a projection whose own snapshot predates the merge's commit and that
+commits after the sweep leaves its edge on the tombstone — a window the length of the sweep plus the
+rest of the transaction. On the reference appliance no edge sits on any of 3,079 merged-away people
+(checked 2026-09-30), against the five the straddle lost; no such check has been made for places.
+Closing it entirely would take a lock the projection also takes. `PlaceMergeService` ended in the
+same plain `DELETE` and had the same race for `Event → Place`, `Person → Place` and `Place → Place`
+edges; it now ends in the same sweep. Proven against Postgres in
+`pipeline/stages/__tests__/PersonMergeRacesEdgeProjection.integration.spec.ts` and
+`pipeline/stages/__tests__/PlaceMergeRacesEdgeProjection.integration.spec.ts`, which interleave the
+real merge with the real projection stages on two connections.
 
 ### 5.3 Referrer registry and the sweep
 

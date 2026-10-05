@@ -318,6 +318,42 @@ class LocalLlmPolicyTest {
         assertNull(LocalLlmAccelerator.fromWire(null))
     }
 
+    // ---- tool-result budget ---------------------------------------------------------------------
+
+    @Test
+    fun a_tool_result_may_take_half_the_context_window_in_bytes() {
+        assertEquals("Qwen3-0.6B's window", 512, LocalLlmPolicy.toolResultByteBudget(1024))
+        assertEquals("a 4k window", 2048, LocalLlmPolicy.toolResultByteBudget(4096))
+        assertEquals("Gemma 4's window", 2000, LocalLlmPolicy.toolResultByteBudget(4000))
+        assertEquals("an 8k window", 4096, LocalLlmPolicy.toolResultByteBudget(8192))
+    }
+
+    @Test
+    fun the_tool_result_budget_has_a_floor_and_a_ceiling() {
+        assertEquals("capped like the appliance's", 16_384, LocalLlmPolicy.toolResultByteBudget(1_000_000))
+        assertEquals("the ceiling is reached at a 32k window", 16_384, LocalLlmPolicy.toolResultByteBudget(32_768))
+        assertEquals(16_383, LocalLlmPolicy.toolResultByteBudget(32_766))
+        assertEquals(16_384, LocalLlmPolicy.toolResultByteBudget(Int.MAX_VALUE))
+
+        assertEquals("a tiny window keeps a floor", 256, LocalLlmPolicy.toolResultByteBudget(100))
+        assertEquals("the floor is reached at 512", 256, LocalLlmPolicy.toolResultByteBudget(512))
+        assertEquals(257, LocalLlmPolicy.toolResultByteBudget(514))
+        assertEquals(256, LocalLlmPolicy.toolResultByteBudget(0))
+        assertEquals("nonsense keeps the floor", 256, LocalLlmPolicy.toolResultByteBudget(-5))
+        assertEquals(256, LocalLlmPolicy.toolResultByteBudget(Int.MIN_VALUE))
+    }
+
+    @Test
+    fun every_catalog_model_that_can_call_tools_gets_a_budget_smaller_than_its_window() {
+        for (info in LocalLlmModels.ALL.filter { it.supportsTools }) {
+            val budget = LocalLlmPolicy.toolResultByteBudget(info.defaultMaxTokens)
+
+            // Bytes against tokens, but a token is never less than a byte: a budget under the window in tokens
+            // cannot fill it, however the text tokenises.
+            assertTrue("${info.modelId}: $budget bytes in a ${info.defaultMaxTokens} token window", budget < info.defaultMaxTokens)
+        }
+    }
+
     // ---- wording -------------------------------------------------------------------------------
 
     @Test

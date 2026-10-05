@@ -1,8 +1,16 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { EDGE_PROJECTION_REOPENER } from '@ci/domains/maintenance';
+import { EVENT_LOCATION_REOPENER, EVENT_STATUS_REOPENER, EVENT_TIME_REOPENER } from '@ci/domains/memory';
+
 import { PIPELINE_QUEUE_NAMES, STAGE_ID_LIST, type StageId } from '../constants';
+import { EDGE_STAGES_BY_SOURCE } from '../listeners/GraphEdgeSweepRequestListener';
 import { STAGE_REOPENS, assertStageReopens } from '../reopens';
+import { EdgeProjectionReopenService } from '../services/EdgeProjectionReopenService';
+import { EventLocationReopenService } from '../services/EventLocationReopenService';
+import { EventStatusReopenService } from '../services/EventStatusReopenService';
+import { EventTimeReopenService } from '../services/EventTimeReopenService';
 import { STAGE_REGISTRY } from '../services/StageRegistry';
 import type { Stage } from '../types';
 import { STAGE_VERSIONS, stageVersion } from '../versions';
@@ -401,4 +409,65 @@ describe('every STAGE_REOPENS edge re-opens the row its producer decided', () =>
     expect(() => assertStageReopens({ 'promote.place': ['promote.place'] })).toThrow(/re-opens itself/);
     expect(() => assertStageReopens()).not.toThrow();
   });
+});
+
+/**
+ * `STAGE_REOPENS`' counterpart for linkage writers that are NOT stages: the
+ * maintenance linkers (the `link_*` legs smart-rotation's `graph_link` runs)
+ * re-open the edge legs themselves through `EDGE_PROJECTION_REOPENER`, which
+ * they resolve lazily and THROW without — so an unbound token here is every
+ * two-hourly link run failing, not a silent gap. Checked off the same `@Module`
+ * metadata Nest boots from.
+ */
+/**
+ * The same for the memory domain's three contracts: `CalendarEventService` asks
+ * the pipeline to settle what it decided about an event's old time
+ * (`EVENT_TIME_REOPENER`), about whether it happened (`EVENT_STATUS_REOPENER`)
+ * and about where (`EVENT_LOCATION_REOPENER`, when a calendar source moves the
+ * place), and THROWS without a binding. A person's edit of an event's time, a
+ * drag on the calendar, a cancellation and a re-delivered place all ask, so an
+ * unbound token is those writes failing, not a silent gap.
+ */
+describe.each([
+  ['EVENT_TIME_REOPENER', EVENT_TIME_REOPENER, EventTimeReopenService],
+  ['EVENT_STATUS_REOPENER', EVENT_STATUS_REOPENER, EventStatusReopenService],
+  ['EVENT_LOCATION_REOPENER', EVENT_LOCATION_REOPENER, EventLocationReopenService],
+] as const)('%s is bound for the writers of an event that are not stages', (_name, token, service) => {
+  it('binds the token to its service, and provides that service', () => {
+    const binding = MODULE_PROVIDERS.find(
+      (provider) =>
+        typeof provider === 'object' &&
+        provider != null &&
+        (provider as { provide?: unknown }).provide === token,
+    );
+
+    expect(binding).toEqual({ provide: token, useExisting: service });
+    expect(MODULE_PROVIDERS).toContain(service);
+  });
+});
+
+describe('EDGE_PROJECTION_REOPENER is bound for the linkage writers that are not stages', () => {
+  it('binds the token to EdgeProjectionReopenService, and provides that service', () => {
+    const binding = MODULE_PROVIDERS.find(
+      (provider) =>
+        typeof provider === 'object' &&
+        provider != null &&
+        (provider as { provide?: unknown }).provide === EDGE_PROJECTION_REOPENER,
+    );
+
+    expect(binding).toEqual({ provide: EDGE_PROJECTION_REOPENER, useExisting: EdgeProjectionReopenService });
+    expect(MODULE_PROVIDERS).toContain(EdgeProjectionReopenService);
+  });
+
+  it.each(Object.entries(EDGE_STAGES_BY_SOURCE))(
+    '%s: the leg a linkage writer re-opens (%s) is a real stage keyed under an entity type',
+    (_source, stageId) => {
+      // EdgeProjectionReopenService re-opens under the stage's own entityTypes;
+      // an empty list would make every re-open a silent no-op.
+      const stage = DISCOVERED_BY_ID.get(stageId)?.instance;
+
+      expect(stage).toBeDefined();
+      expect(stage?.entityTypes.length).toBeGreaterThan(0);
+    },
+  );
 });

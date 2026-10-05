@@ -54,6 +54,10 @@ cd backend/apps/api && yarn test
 # FAILS instead of skipping), and fails on any unexplained skip or DB crash.
 # Never uses .env. See docs/CI.md.
 make test-db                                  # or ARGS='src/domains/import', KEEP=1
+# KEEP=1 leaves the container up, and later runs leave it alone for 24h and while
+# anything is connected (KEEP_FOR=12h sets the window). Without that, every run
+# removes any ci-testdb-* container older than 2h that nothing is connected to.
+# docs/CI.md#stale-containers-and---keep
 
 # The native suites, which `make test` does NOT cover (each checks its own
 # toolchain first — JDK 21 + an Android SDK via ANDROID_HOME; cargo + GTK/WebKit)
@@ -194,6 +198,8 @@ native builds.
 SQL migration files in `backend/apps/api/db/postgres/migrations/` are hand-written and are the source of truth (applied via dbmate). Update the TypeORM entities to match.
 
 **Never hand-write the timestamp prefix.** Create migration files with `yarn workspace @ci/be-api migrate:make <name>`, which stamps the real UTC time to the second. Hand-picked round timestamps (…120000) have collided across parallel branches; dbmate keys `schema_migrations` on the prefix, so a duplicate breaks `migrate` for everyone. Uniqueness is enforced by `bin/check-migration-versions.js` (runs in lint-staged and before `yarn migrate`). It is plain CommonJS, not TypeScript, because `migrate` runs it inside the production image, which has no devDependencies — keep it dependency-free.
+
+**Never let a comment line start with `-- migrate:up` or `-- migrate:down`.** dbmate finds its directives with a line-anchored regex, so prose that wraps onto one is a directive. Since dbmate 2.29 each extra `-- migrate:up` opens a new section, and the file fails with `dbmate requires each migration to define a down block`. That is how 20260930025958 stopped `migrate` once #2865 took dbmate from 2.27 to 2.36. In prose, quote the word (`` -- `migrate:up` ``). `bin/check-migration-directives.js`, which runs in the same two places, requires exactly one of each per file.
 
 ## GraphQL codegen
 

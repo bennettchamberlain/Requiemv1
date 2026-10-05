@@ -160,6 +160,8 @@ actor LocalLLMEngine {
   private var conversationConfig: ConversationConfig?
   /// Set when the conversation was cancelled or a turn failed on it; see the type doc.
   private var conversationStale = false
+  /// Turns the resident conversation has answered. Zero for a fresh one, which is never renewed for want of room.
+  private var turnsInConversation = 0
   private var loaded: LoadedModel?
 
   private var pendingLoad: PendingLoad?
@@ -181,6 +183,27 @@ actor LocalLLMEngine {
   var loadedModelId: String? { loaded?.modelId }
   var loadedAccelerator: LocalLLMAccelerator? { loaded?.accelerator }
   var isLoaded: Bool { engine != nil && loaded != nil }
+
+  /// The window the resident engine was sized with: input plus output tokens.
+  var contextWindowTokens: Int? { loaded?.key.maxTokens }
+
+  /// Tokens the resident conversation holds right now (prefill and decode), read from the runtime — not
+  /// estimated. `nil` with nothing loaded, or when the runtime cannot say.
+  func contextTokensUsed() -> Int? {
+    guard let conversation, let count = try? conversation.getTokenCount(), count >= 0 else { return nil }
+
+    return count
+  }
+
+  /// What the window has left: its size less what the resident conversation holds now. A tool uses this
+  /// to size its result against the room there really is (`LocalLLMPolicy.toolResultByteBudget`). `nil`
+  /// when either number is unknown.
+  func contextTokensLeft() -> Int? {
+    guard let window = contextWindowTokens, let used = contextTokensUsed() else { return nil }
+
+    return max(window - used, 0)
+  }
+
   /// Exposed for the harness that checks the stale-conversation bookkeeping.
   var isConversationStale: Bool { conversationStale }
 
@@ -275,6 +298,7 @@ actor LocalLLMEngine {
     conversation = newConversation
     conversationConfig = config
     conversationStale = false
+    turnsInConversation = 0
     loaded = LoadedModel(
       path: request.modelPath, modelId: request.modelId, capabilities: request.capabilities,
       accelerator: accelerator, key: key, outcome: outcome)
@@ -345,6 +369,7 @@ actor LocalLLMEngine {
       do {
         conversation = try await engine.createConversation(with: config)
         conversationStale = false
+        turnsInConversation = 0
 
         return
       } catch {
@@ -390,6 +415,7 @@ actor LocalLLMEngine {
     conversation = nil
     conversationConfig = nil
     conversationStale = false
+    turnsInConversation = 0
     engine = nil
     loaded = nil
     activeGeneration = nil
@@ -433,6 +459,21 @@ actor LocalLLMEngine {
     let id = nextGenerationID
     activeGeneration = id
     cancelRequested = false
+
+    // A tool call needs about 700 tokens of the window left once its result is in, or the reply that follows
+    // it comes out garbled whatever the result says (`LocalLLMPolicy.ToolResultProfile.reserveTokens`).
+    // When a conversation that offers tools has too little left for one, forgetting the earlier turns is
+    // a better answer than that.
+    if !conversationStale, conversation != nil, loaded.outcome.toolCount > 0 {
+      let left = contextTokensLeft()
+
+      if LocalLLMPolicy.shouldRenewToolConversation(tokensLeft: left, hasHistory: turnsInConversation > 0) {
+        NSLog(
+          "[LocalLLM] %ld tokens of the window are left, too few for a tool call: starting a new conversation",
+          left ?? -1)
+        conversationStale = true
+      }
+    }
 
     if conversationStale || conversation == nil {
       do {
@@ -492,7 +533,12 @@ actor LocalLLMEngine {
           id, removing: thermalObserver, failed: failure != nil)
 
         if let failure, !cancelled {
-          continuation.finish(throwing: failure)
+          // Wrapped so the plugin can say how far it got: a failure with no chunk at all, soon after
+          // the request, is a different thing from one a hundred tokens in.
+          continuation.finish(
+            throwing: GenerationStreamFailure(
+              underlying: failure, chunksReceived: tracker.chunkCount,
+              elapsedMs: tracker.elapsedMs(at: ProcessInfo.processInfo.systemUptime)))
 
           return
         }
@@ -500,6 +546,15 @@ actor LocalLLMEngine {
         let tail = assembler.finish()
         if !tail.isEmpty {
           continuation.yield(.delta(answer: tail.answer, thought: tail.thought))
+        }
+
+        // How full the window is, in the runtime's own count. A conversation that fills its window
+        // answers every later message with nothing (see `isContextExhausted` in the web layer), and
+        // until this line nothing on a device said how close a turn had come. Counts only.
+        if failure == nil, !cancelled, let used = self.contextTokensUsed(),
+          let window = self.contextWindowTokens
+        {
+          NSLog("[LocalLLM] reply finished: %ld of %ld context tokens in use", used, window)
         }
 
         // Stats only for a run that went the distance. A cancelled one, a thermally cut one and a
@@ -535,7 +590,7 @@ actor LocalLLMEngine {
     guard activeGeneration == id else { return true }
 
     let cancelled = cancelRequested
-    if cancelled || failed { conversationStale = true }
+    if cancelled || failed { conversationStale = true } else { turnsInConversation += 1 }
     activeGeneration = nil
     cancelRequested = false
 
@@ -625,7 +680,8 @@ actor LocalLLMEngine {
   /// still parse correctly.
   private static let enableExperimentalConstrainedDecoding = false
 
-  private static let toolSystemInstruction =
+  /// Internal, not private, so the device bench (`tests/local-llm-device`) measures this exact text.
+  static let toolSystemInstruction =
     "You are Companion, answering questions about the user's own memory on their device. "
     + "Use the provided tools to look things up rather than guessing, and cite what you found. "
     + "If a tool reports an error or says an action must be confirmed on the appliance, tell the "

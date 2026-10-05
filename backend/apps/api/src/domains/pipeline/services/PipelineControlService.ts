@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { LoggerService } from '@ci/common/logging';
 
 import { SHARD_LEASE_SECONDS, STAGE_ID_LIST, STAGE_IDS, type StageId } from '../constants';
+import { stageHeldByOutboundPolicy } from '../outboundHolds';
 import { STAGE_REOPENS } from '../reopens';
 import {
   automaticStageIds,
@@ -379,6 +380,10 @@ export const STAGE_DEPENDENCIES: Readonly<Partial<Record<StageId, readonly Stage
   // event leg's predicate is an OR over four columns and two producers, so an
   // event with participants is decided before `promote.place` links it — and
   // that row is re-opened by `STAGE_REOPENS` (`reopens.ts`), not by this graph.
+  // The communication leg's is an OR too (sender, recipients, attachments), so
+  // a message is decided on whichever arrives first. Its late linkers re-open
+  // it the same way: `enrich.person_link` through `STAGE_REOPENS`, and the
+  // non-stage maintenance linkers through `EDGE_PROJECTION_REOPENER`.
   [STAGE_IDS.PROMOTE_EDGE_COMMUNICATION]: [STAGE_IDS.ENRICH_PERSON_LINK],
   [STAGE_IDS.PROMOTE_EDGE_EVENT]: [STAGE_IDS.ENRICH_EVENT_PERSON_LINK, STAGE_IDS.PROMOTE_PLACE],
   [STAGE_IDS.PROMOTE_EDGE_OBJECT]: [STAGE_IDS.PROMOTE_OBJECT],
@@ -924,7 +929,15 @@ export class PipelineControlService {
     }
 
     const stageIds = this.stageSetFor(row);
-    const legs = this.legsFor(stageIds);
+
+    // Legs whose stage is held by one of the user's outbound switches are not
+    // probed, stamped or swept — see `stageHeldByOutboundPolicy` for why the
+    // hold sits here, before any ledger or `ci.pipeline_schedule` write. The
+    // held leg's `last_started_at` therefore does not move, so it is exactly as
+    // due the moment the switch goes back on as it was when it went off.
+    const allLegs = this.legsFor(stageIds);
+    const legs = allLegs.filter((leg) => stageHeldByOutboundPolicy(leg.stageId) == null);
+    const legsHeld = allLegs.length - legs.length;
 
     // ONE read per user per tick, not one per leg: a user has at most a dozen
     // rows here and the tick already issues a staleness probe per leg, so a
@@ -1056,10 +1069,15 @@ export class PipelineControlService {
       // not time" — the second is the expected end of a run on an appliance with
       // a weekly stage, and reporting it as `drained` would make the geocoder
       // look converged while 95 events still wait for it.
+      //
+      // A leg held by an outbound switch was not even probed, so it counts as
+      // work that is waiting rather than as drained: reporting `drained` would
+      // claim the geocoder had converged when it has merely been told to stop.
       await this.runService.finishRun(row.run_id, 'completed', {
         finalizedBy: 'control-tick',
-        finalizedReason: waiting > 0 ? 'not_due' : 'drained',
+        finalizedReason: waiting > 0 || legsHeld > 0 ? 'not_due' : 'drained',
         legsNotDue: waiting,
+        ...(legsHeld > 0 ? { legsHeldByOutboundPolicy: legsHeld } : {}),
       });
 
       report.runsFinalized += 1;

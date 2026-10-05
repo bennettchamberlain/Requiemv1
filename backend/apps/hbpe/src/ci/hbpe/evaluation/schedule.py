@@ -42,17 +42,23 @@ import numpy as np
 
 from ci.hbpe.buckets import BUCKET_MINUTES, BUCKETS_PER_DAY
 from ci.hbpe.evaluation.forecaster import CLASS_INDEX, N_CLASSES, DayFit
+from ci.hbpe.event_status import LIVE_EVENT_SQL
 
 # Confidence assigned to a bucket a scheduled event covers. Not 1.0: a calendar
 # entry says something was booked, not that it happened.
 SCHEDULE_CONFIDENCE = 0.85
 
-_EVENTS_SQL = """
+# An event that did not happen is not on the schedule either: a meeting the
+# source cancelled is still a row, and counting it would forecast a block nobody
+# attends. The predicate is the shared one (event_status.LIVE_EVENT_SQL), and
+# tests/test_event_status_readers.py fails any ci.events reader that omits it.
+_EVENTS_SQL = f"""
     SELECT e.start_time, e.end_time, lc.l0_class
     FROM ci.events e
     JOIN hbpe.l1_event_cluster lec ON lec.event_id = e.event_id
     JOIN hbpe.l1_clusters      lc  ON lc.cluster_id = lec.cluster_id
     WHERE e.user_id = %s
+      AND e.is_deleted = FALSE AND {LIVE_EVENT_SQL}
       AND e.start_time IS NOT NULL
       AND lc.l0_class IS NOT NULL
 """

@@ -56,6 +56,11 @@ struct GenerationStatsTracker {
     chunkCount += 1
   }
 
+  /// Milliseconds from the request to `now`.
+  func elapsedMs(at now: TimeInterval) -> Int {
+    Self.milliseconds(now - startedAt)
+  }
+
   /// A generation that produced no chunk reports its whole duration as time-to-first-token and
   /// zero tokens, rather than inventing a rate.
   func finish(at now: TimeInterval) -> GenerationStats {
@@ -85,6 +90,104 @@ struct GenerationStatsTracker {
 }
 
 // MARK: - Reply assembly
+
+/// Removes chat-template control tokens — `<|im_end|>`, `<|im_start|>`, `<|endoftext|>` and their
+/// kin — from model text.
+///
+/// Those markers belong to the runtime, which stops on an end-of-turn token and hides it. They reach
+/// the app as text only when the runtime did not recognise one: on the turn that follows a tool
+/// result, Qwen3-0.6B began its reply with a literal `<|endoftext|>`, and the chat bubble read
+/// "<|endoftext|>This is a test of the tool…".
+///
+/// A marker is recognised by its **shape** — `<|`, one to ``maxNameLength`` letters, digits or
+/// underscores, `|>` — rather than from a list, so one this file has never heard of (`<|eot_id|>`,
+/// `<|end|>`, `<|vision_start|>`) goes too. Prose does not have that shape: Haskell's `<|>` has no
+/// name between the bars.
+///
+/// Like ``ThinkTagSplitter`` it takes the **whole text so far**, so a marker split across chunks
+/// (`"<|im_"` then `"end|>"`) is caught however the chunks fall. For that to hold, the result for a
+/// prefix is always a prefix of the result for the full text: with `final: false`, a trailing
+/// fragment that could still become a marker is held back instead of being shown and retracted.
+enum SpecialTokenStripper {
+  /// Longest marker name recognised. It also bounds how much text is ever held back.
+  static let maxNameLength = 32
+
+  private enum Match {
+    /// A complete marker, this many bytes long.
+    case marker(length: Int)
+    /// The text ends inside something that may still become a marker.
+    case partial
+    case text
+  }
+
+  static func strip(_ text: String, final: Bool) -> String {
+    let lessThan = UInt8(ascii: "<")
+
+    // The overwhelmingly common case — no `<` at all — costs one scan and no copy.
+    guard text.utf8.contains(lessThan) else { return text }
+
+    // Markers are ASCII and a UTF-8 continuation byte is never ASCII, so scanning bytes cannot cut
+    // a character in half: everything is copied through whole, or dropped at a `<`.
+    let bytes = Array(text.utf8)
+    var kept: [UInt8] = []
+    kept.reserveCapacity(bytes.count)
+    var index = 0
+
+    while index < bytes.count {
+      guard bytes[index] == lessThan else {
+        kept.append(bytes[index])
+        index += 1
+
+        continue
+      }
+
+      switch match(in: bytes, at: index) {
+      case .marker(let length):
+        index += length
+      case .partial:
+        // It runs to the end of the text. Held back while the stream goes on; once it is over, what
+        // never became a marker is just text.
+        if final { kept.append(contentsOf: bytes[index...]) }
+        index = bytes.count
+      case .text:
+        kept.append(bytes[index])
+        index += 1
+      }
+    }
+
+    return String(decoding: kept, as: UTF8.self)
+  }
+
+  /// What starts at `start`, which holds a `<`.
+  private static func match(in bytes: [UInt8], at start: Int) -> Match {
+    var index = start + 1
+
+    guard index < bytes.count else { return .partial }
+    guard bytes[index] == UInt8(ascii: "|") else { return .text }
+    index += 1
+
+    let nameStart = index
+    while index < bytes.count, index - nameStart < maxNameLength, isNameByte(bytes[index]) {
+      index += 1
+    }
+
+    guard index < bytes.count else { return .partial }
+    // No name at all (`<|>`, `<||`), or a name too long to be one, or no closing bar.
+    guard index > nameStart, bytes[index] == UInt8(ascii: "|") else { return .text }
+    index += 1
+
+    guard index < bytes.count else { return .partial }
+
+    return bytes[index] == UInt8(ascii: ">") ? .marker(length: index + 1 - start) : .text
+  }
+
+  private static func isNameByte(_ byte: UInt8) -> Bool {
+    (UInt8(ascii: "a")...UInt8(ascii: "z")).contains(byte)
+      || (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte)
+      || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+      || byte == UInt8(ascii: "_")
+  }
+}
 
 /// Splits reasoning out of text that carries `<think>…</think>` tags.
 ///
@@ -251,13 +354,15 @@ struct ReplyAssembler {
   }
 
   private mutating func render(final: Bool) -> ReplyDelta {
-    let split = ThinkTagSplitter.split(contentStream.text, final: final)
+    // Control tokens go first, so a marker can never end up inside what the tag splitter returns.
+    let split = ThinkTagSplitter.split(
+      SpecialTokenStripper.strip(contentStream.text, final: final), final: final)
     let thought: String
 
     if !enableThinking {
       thought = ""
     } else if !channelStream.text.isEmpty {
-      thought = channelStream.text
+      thought = SpecialTokenStripper.strip(channelStream.text, final: final)
     } else {
       thought = split.thought
     }
@@ -276,5 +381,64 @@ struct ReplyAssembler {
     emitted = full
 
     return added
+  }
+}
+
+// MARK: - Failures
+
+/// A native generation that ended in an error, with how far it had got.
+///
+/// Carries the runtime's own error and two counters, and adds nothing else. In particular no prompt
+/// text and no tool result: those are the user's data, and this value is what gets logged and shown.
+struct GenerationStreamFailure: Error, LocalizedError {
+  let underlying: Error
+  /// Non-empty chunks (answer or reasoning) received before the failure. Zero means no token had
+  /// come back yet — on a turn that called a tool, the request that carried the tool's result.
+  let chunksReceived: Int
+  /// Milliseconds from the request to the failure.
+  let elapsedMs: Int
+
+  var errorDescription: String? { underlying.localizedDescription }
+}
+
+/// How a failed generation is worded: for the device log, and for the rejection that reaches JS.
+///
+/// Until this existed a native failure was visible nowhere — nothing logged, and the chat showed
+/// only "interrupted" — so a turn that died within 100 ms of a tool call left no way to tell why.
+enum GenerationFailure {
+  /// The longest reason passed on. A runtime error can echo what it choked on, and the whole of
+  /// that must not travel with it.
+  static let maxReasonLength = 200
+
+  /// The generic wording JS has always seen, with the reason after it when there is one.
+  static func rejectionMessage(for error: Error) -> String {
+    let reason = reason(for: error)
+
+    return reason.isEmpty ? "Generation failed" : "Generation failed: \(reason)"
+  }
+
+  /// What went wrong, in the runtime's own words: one line, bounded.
+  static func reason(for error: Error) -> String {
+    let underlying = (error as? GenerationStreamFailure)?.underlying ?? error
+    let line = underlying.localizedDescription
+      .split(whereSeparator: \.isWhitespace)
+      .joined(separator: " ")
+
+    guard line.count > maxReasonLength else { return line }
+
+    return String(line.prefix(maxReasonLength)) + "…"
+  }
+
+  /// The device-log line for a failed `method`: the reason, the error's type, and how far the
+  /// generation got when that is known.
+  static func logLine(for error: Error, method: String) -> String {
+    let underlying = (error as? GenerationStreamFailure)?.underlying ?? error
+    var line = "[LocalLLM] \(method) failed (\(type(of: underlying))): \(reason(for: error))"
+
+    if let failure = error as? GenerationStreamFailure {
+      line += " [after \(failure.chunksReceived) chunks, \(failure.elapsedMs) ms]"
+    }
+
+    return line
   }
 }

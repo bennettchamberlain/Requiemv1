@@ -39,6 +39,12 @@ type ReturnType = [
     submit: (data: FormData) => Promise<boolean>;
     attach: (threadId: string) => Promise<boolean>;
     detach: () => void;
+    /**
+     * Leave the conversation on screen (a new chat, another thread): drop its stream like `detach`, and the
+     * "answered on this phone" badge too, which describes a turn that is no longer showing. `detach` alone keeps
+     * the badge — it is also what Stop calls, and a stopped reply still came from the phone.
+     */
+    reset: () => void;
     stop: () => void;
     cancel: (id: string) => void;
   },
@@ -141,6 +147,14 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
     setLoading(false);
   }, []);
 
+  const reset = useCallback(() => {
+    detach();
+    setLocal(null);
+    // No thread is active any more. Left set, Stop in the next chat — an on-device turn has no thread of its own to
+    // overwrite it — would cancel the server job of the one that was left. A thread the page opens next sets it again.
+    activeThreadIdRef.current = null;
+  }, [detach]);
+
   const openBody = useCallback((body: ReadableStream<Uint8Array>) => {
     const monitored = pipeMonitor(
       body,
@@ -180,7 +194,10 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
       const spec = prefs.modelId ? findLocalLlmModel(prefs.modelId) : undefined;
 
       if (!prefs.modelId || !spec) {
-        setError(new Error('Choose an on-device model in Settings first.'));
+        const missing = new Error('Choose an on-device model in Settings first.');
+
+        setError(missing);
+        toast.error(missing.message);
 
         return false;
       }
@@ -193,7 +210,17 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
         });
       } catch (err) {
         setError(err);
+        // A refused send leaves no bubble in the transcript (see `Chat`), so it has to say why.
+        toast.error(
+          err instanceof Error && err.message ? err.message : 'The on-device model could not start.',
+        );
 
+        return false;
+      }
+
+      // A cold model takes seconds to load. If the chat was left in the meantime (`reset`/`detach` aborted this
+      // turn), nobody is waiting for it: generating now would paint a reply and a badge into whatever chat is open.
+      if (controller.signal.aborted) {
         return false;
       }
 
@@ -497,6 +524,13 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           }
 
           setError(err);
+          // The raw error stays in `error`; a person is told what happened and what to do about it. A refused send
+          // leaves no bubble in the transcript (see `Chat`), so this is the only sign it was even tried.
+          toast.error(
+            err instanceof ApplianceRefusedError
+              ? 'Your Companion could not answer that. Try again.'
+              : 'Could not reach your Companion. Check your connection and try again.',
+          );
         }
       } finally {
         setLoading(false);
@@ -563,6 +597,7 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
       submit,
       attach,
       detach,
+      reset,
       stop,
       cancel,
     },

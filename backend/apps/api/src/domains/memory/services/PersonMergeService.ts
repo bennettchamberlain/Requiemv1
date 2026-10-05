@@ -11,6 +11,7 @@ import { PersonUpdatedEvent } from '@ci/domains/memory/events';
 import { type Person, PersonEntity } from '../entities/PersonEntity';
 
 import { GraphDeltaWriter } from './GraphDeltaWriter';
+import { sweepLeftoverEdges } from './mergeEdgeSweep';
 
 /** Per-table re-point counts recorded in the ci.entity_merges audit row. */
 export interface MergeCounts {
@@ -26,6 +27,14 @@ export interface MergeCounts {
   relationshipsFrom: number;
   relationshipsTo: number;
   relationshipsDropped: number;
+  /**
+   * Edges a concurrent writer committed to a source AFTER the guarded re-point's
+   * snapshot (the edge projection, most often), which the final sweep moved onto
+   * the target instead of dropping. Not part of `relationshipsFrom/To`, which
+   * count the rows that UPDATE moved. Zero on almost every merge; a non-zero
+   * value is the race this count exists to make visible.
+   */
+  relationshipsRescued: number;
 }
 
 /**
@@ -44,7 +53,10 @@ export interface MergeCounts {
  * 2. re-points communications.from_entity_id / to_entity_ids[],
  * 3. re-points events.organizer_entity_id / participant_entity_ids[],
  * 4. re-points ci.relationships endpoints (dropping edges that would become
- *    self-references or duplicate an existing active edge),
+ *    self-references or duplicate an existing active edge), then sweeps what
+ *    that left behind — moving, not dropping, any edge a concurrent writer
+ *    committed to a source after the re-point's snapshot (see
+ *    {@link sweepLeftoverEdges}),
  * 5. folds source properties into the target (target wins scalars;
  *    emails/phones/names arrays are unioned),
  * 6. tombstones each source (is_active = FALSE, merged_into_entity_id =
@@ -303,6 +315,13 @@ export class PersonMergeService {
    * `UPDATE/DELETE … RETURNING`: TypeORM resolves that to `[rows, rowCount]`,
    * which made each of these a constant 2 in the audit row (and
    * `relationshipsDropped` a constant 6).
+   *
+   * The relationship statements run in a fixed order: the self-reference drop,
+   * both guarded re-points, and only THEN the two sweeps. Each statement of a
+   * READ COMMITTED transaction takes its own snapshot, and the re-points are the
+   * long ones (a person with thousands of edges moves them all in one UPDATE) —
+   * the sweeps are short and read last, so the span in which a concurrent commit
+   * can slip past every statement is as small as it can be made here.
    */
   private async repointReferences(
     em: EntityManager,
@@ -478,17 +497,6 @@ export class PersonMergeService {
       [ownerUserId, sources, targetId],
     );
 
-    const droppedFromDupes = await countAffected(
-      em,
-      `WITH dropped AS (
-         DELETE FROM ci.relationships
-          WHERE owner_user_id = $1 AND from_entity_id = ANY($2::uuid[])
-          RETURNING 1
-       )
-       SELECT count(*)::int AS count FROM dropped`,
-      [ownerUserId, sources],
-    );
-
     const relationshipsTo = await countAffected(
       em,
       `WITH repointed AS (
@@ -514,16 +522,20 @@ export class PersonMergeService {
       [ownerUserId, sources, targetId],
     );
 
-    const droppedToDupes = await countAffected(
-      em,
-      `WITH dropped AS (
-         DELETE FROM ci.relationships
-          WHERE owner_user_id = $1 AND to_entity_id = ANY($2::uuid[])
-          RETURNING 1
-       )
-       SELECT count(*)::int AS count FROM dropped`,
-      [ownerUserId, sources],
-    );
+    // Any edge that still holds a source after the re-points is swept. This used
+    // to be a plain DELETE of every such row, on the premise that the guarded
+    // UPDATEs had declined it as a duplicate — true of each row the UPDATEs
+    // saw, false of a row committed after their snapshots (see
+    // sweepLeftoverEdges). Both sweeps come after both re-points on purpose.
+    const sweep = {
+      ownerUserId,
+      sources,
+      targetId,
+      changeSource: 'PersonMergeService.mergePeople',
+      changeReason: 'person_merge.rescued_edge',
+    };
+    const sweptFrom = await sweepLeftoverEdges(em, this.graphDeltaWriter, { ...sweep, end: 'from' });
+    const sweptTo = await sweepLeftoverEdges(em, this.graphDeltaWriter, { ...sweep, end: 'to' });
 
     return {
       identifiers,
@@ -535,7 +547,8 @@ export class PersonMergeService {
       eventsParticipants,
       relationshipsFrom,
       relationshipsTo,
-      relationshipsDropped: droppedSelfRef + droppedFromDupes + droppedToDupes,
+      relationshipsDropped: droppedSelfRef + sweptFrom.dropped + sweptTo.dropped,
+      relationshipsRescued: sweptFrom.rescued + sweptTo.rescued,
     };
   }
 }

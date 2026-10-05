@@ -5,6 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import {
+  CLIENT_COUNT_SQL,
   DOCKER_LIST_TIMEOUT_MS,
   DOCKER_PROBE_TIMEOUT_MS,
   DOCKER_QUERY_TIMEOUT_MS,
@@ -14,10 +15,12 @@ import {
   IMAGE_PROBE_ATTEMPTS,
   PORT_LOOKUP_BUDGET_MS,
   REMOVE_ATTEMPTS,
+  containerStatus,
   docker,
   imageState,
   listOurContainers,
   ourContainerNamed,
+  probeClients,
   removeContainers,
   removeOursByName,
   startContainer,
@@ -25,7 +28,7 @@ import {
   type DockerFn,
 } from './docker';
 import { FakeDaemon, failed, ok, ours, timedOut, type FakeDaemonOptions } from './fakeDocker';
-import { LABEL_KEY, LABEL_VALUE } from './testDb';
+import { KEEP_UNTIL_LABEL_KEY, LABEL_KEY, LABEL_VALUE, type ContainerInfo } from './testDb';
 
 const NAME = 'ci-testdb-deadbeef';
 const ID = 'f'.repeat(64);
@@ -761,4 +764,240 @@ test('listOurContainers: an inspect that fails for any OTHER reason is a problem
 
   assert.match(listing.problem ?? '', /docker inspect failed: docker inspect timed out/);
   assert.deepEqual(listing.containers, []);
+});
+
+// -- the keep window is a label, written when the container is created ---------------------------------------
+
+const NOW_FOR_LABELS = Date.parse('2026-10-01T18:00:00Z');
+
+/** Every `--label` value on a recorded `docker run`. */
+const labelsOf = (argv: string[]): string[] => argv.filter((_, i) => argv[i - 1] === '--label');
+
+test('--keep stamps the protection window on the container at creation; a run that is removed at its end carries no keep label', () => {
+  const until = Date.parse('2026-10-02T17:37:42.123Z');
+  const kept = creating();
+  const plain = creating();
+
+  startContainer('img', NAME, 'pw', { ...hooks().opts, run: kept.run, keepUntil: until });
+  startContainer('img', NAME, 'pw', { ...hooks().opts, run: plain.run });
+
+  assert.deepEqual(labelsOf(kept.sub('run')[0]), [
+    `${LABEL_KEY}=${LABEL_VALUE}`,
+    `${KEEP_UNTIL_LABEL_KEY}=2026-10-02T17:37:42.123Z`,
+  ]);
+  assert.deepEqual(labelsOf(plain.sub('run')[0]), [`${LABEL_KEY}=${LABEL_VALUE}`]);
+  assert.ok(!plain.sub('run')[0].some((a) => a.includes('keep-until')));
+});
+
+test('the keep label changes nothing else about `docker run`: same flags, same order, one extra label', () => {
+  const kept = creating();
+  const plain = creating();
+
+  startContainer('img', NAME, 'pw', { ...hooks().opts, run: kept.run, keepUntil: NOW_FOR_LABELS });
+  startContainer('img', NAME, 'pw', { ...hooks().opts, run: plain.run });
+
+  const withoutKeep = kept
+    .sub('run')[0]
+    .filter(
+      (a, i, all) =>
+        !a.startsWith(KEEP_UNTIL_LABEL_KEY) &&
+        !(a === '--label' && all[i + 1]?.startsWith(KEEP_UNTIL_LABEL_KEY)),
+    );
+
+  assert.deepEqual(withoutKeep, plain.sub('run')[0]);
+});
+
+test('a kept container is still found by the ownership lookups: the label listing and the by-name check both see it', () => {
+  const keptContainer = {
+    ...ours(ID, NAME),
+    createdAt: NOW_FOR_LABELS - 3 * 3_600_000,
+    labels: {
+      [LABEL_KEY]: LABEL_VALUE,
+      [KEEP_UNTIL_LABEL_KEY]: '2026-10-02T17:37:42.123Z',
+    },
+  };
+  const d = new FakeDaemon({ containers: [keptContainer] });
+  const listing = listOurContainers(d.run);
+
+  assert.equal(listing.problem, undefined);
+  assert.deepEqual(
+    listing.containers.map((c) => [c.name, c.labels[KEEP_UNTIL_LABEL_KEY]]),
+    [[NAME, '2026-10-02T17:37:42.123Z']],
+    'listed under label=ci.test-db=1, with the keep label readable',
+  );
+  assert.equal(ourContainerNamed(NAME, d.run).state, 'present');
+});
+
+// -- probeClients: counting who is connected, from inside ----------------------------------------------------
+
+const candidate = (extra: Partial<ContainerInfo> = {}): ContainerInfo => ({
+  id: ID,
+  name: NAME,
+  createdAt: 0,
+  labels: { [LABEL_KEY]: LABEL_VALUE },
+  ...extra,
+});
+
+const withClients = (clients: number, status = 'running') =>
+  new FakeDaemon({ containers: [{ ...ours(ID, NAME), clients, status }] });
+
+test('probeClients: the count is what psql prints — run by id, as the superuser, on the maintenance database, with a timeout', () => {
+  const d = withClients(12);
+
+  assert.deepEqual(probeClients(candidate(), d.run), { state: 'counted', clients: 12 });
+  assert.deepEqual(d.calls[0].args, [
+    'exec',
+    ID,
+    'psql',
+    '-X',
+    '-U',
+    'postgres',
+    '-d',
+    'postgres',
+    '-At',
+    '-c',
+    CLIENT_COUNT_SQL,
+  ]);
+  assert.equal(d.calls[0].opts?.timeoutMs, DOCKER_LIST_TIMEOUT_MS);
+  assert.equal(d.calls.length, 1, 'one call when it works: no state lookup');
+});
+
+test('probeClients: zero is a count — idle — and not an absence of one', () => {
+  assert.deepEqual(probeClients(candidate(), withClients(0).run), { state: 'counted', clients: 0 });
+});
+
+test('the count query counts client backends only, never itself, on a database that exists before bootstrap', () => {
+  // Checked against the real image: a fresh container lists `client backend` (the probe's own session) next to
+  // `TimescaleDB Background Worker Launcher`, the autovacuum launcher, the checkpointer and three io workers.
+  // Without the type filter every container would look busy for ever; without the self-exclusion, never idle.
+  assert.match(CLIENT_COUNT_SQL, /^select count\(\*\) from pg_stat_activity where /);
+  assert.match(CLIENT_COUNT_SQL, /backend_type = 'client backend'/);
+  assert.match(CLIENT_COUNT_SQL, /pid <> pg_backend_pid\(\)/);
+  assert.doesNotMatch(CLIENT_COUNT_SQL, /datname|companion/, 'cluster-wide, not one database');
+  assert.doesNotMatch(CLIENT_COUNT_SQL, /state\s*(=|<>|!=|in)/i, 'an idle-in-transaction client is a client');
+});
+
+test('probeClients: anything psql prints that is not a bare count is UNKNOWN, with what it printed', () => {
+  for (const printed of ['', 'ERROR', '1 row', '-1', '3.5', '12 clients', 'count\n-----\n    3']) {
+    const d = new FakeDaemon({ containers: [ours(ID, NAME)], override: { exec: () => ok(printed) } });
+    const probe = probeClients(candidate(), d.run);
+
+    assert.equal(probe.state, 'unknown', JSON.stringify(printed));
+    assert.match((probe as { detail: string }).detail, /not a count/, JSON.stringify(printed));
+  }
+
+  assert.deepEqual(
+    probeClients(candidate(), new FakeDaemon({ override: { exec: () => ok('  7\n') } }).run),
+    { state: 'counted', clients: 7 },
+    'surrounding whitespace is not a reason',
+  );
+});
+
+test('probeClients: when exec fails, a container with nothing running in it has no clients; every other reason is UNKNOWN', () => {
+  // The real daemon's wording for the first row was read off a created-but-never-started container.
+  for (const status of ['created', 'exited', 'dead', 'removing']) {
+    assert.deepEqual(probeClients(candidate(), withClients(0, status).run), { state: 'no-process' }, status);
+  }
+
+  for (const status of ['paused', 'restarting', 'running']) {
+    const probe = probeClients(
+      candidate(),
+      status === 'running'
+        ? new FakeDaemon({
+            containers: [{ ...ours(ID, NAME), status }],
+            override: { exec: () => failed('psql: error: the database system is starting up') },
+          }).run
+        : withClients(0, status).run,
+    );
+
+    assert.equal(probe.state, 'unknown', status);
+    assert.match((probe as { detail: string }).detail, new RegExp(`the container is ${status}`), status);
+  }
+});
+
+test('probeClients: a container that has gone by the time it is asked has no clients', () => {
+  assert.deepEqual(probeClients(candidate(), new FakeDaemon().run), { state: 'no-process' });
+});
+
+test('probeClients: exec and the state lookup BOTH failing is unknown, and says both — a timeout is not an answer', () => {
+  const d = new FakeDaemon({
+    containers: [ours(ID, NAME)],
+    override: { exec: () => timedOut('exec'), inspect: () => timedOut('inspect') },
+  });
+  const probe = probeClients(candidate(), d.run);
+
+  assert.equal(probe.state, 'unknown');
+  assert.match(
+    (probe as { detail: string }).detail,
+    /docker exec timed out.*its state could not be read either \(docker inspect timed out/,
+  );
+  assert.ok(
+    d.calls.every((c) => typeof c.opts?.timeoutMs === 'number'),
+    'both calls carry a timeout',
+  );
+});
+
+test('probeClients refuses a container that is not ours, before any docker call', () => {
+  for (const stranger of [
+    candidate({ name: 'postgres-other' }),
+    candidate({ labels: {} }),
+    candidate({ name: 'ci-server-x-database-1', labels: { 'com.docker.compose.project': 'x' } }),
+    // A keep label does not make a stranger ours.
+    candidate({
+      name: 'someone-elses',
+      labels: { [LABEL_KEY]: LABEL_VALUE, [KEEP_UNTIL_LABEL_KEY]: '2099-01-01T00:00:00.000Z' },
+    }),
+  ]) {
+    const d = withClients(3);
+
+    assert.throws(
+      () => probeClients(stranger, d.run),
+      /refusing to look inside .* not a ci-testdb container/,
+    );
+    assert.equal(d.calls.length, 0, `${stranger.name}: nothing was asked`);
+  }
+});
+
+// -- containerStatus --------------------------------------------------------------------------------------------
+
+test('containerStatus: the daemon\'s own word; "gone" only from its own "no such object"; a timeout is unknown', () => {
+  assert.deepEqual(containerStatus(candidate(), withClients(0, 'paused').run), {
+    state: 'known',
+    status: 'paused',
+  });
+  assert.deepEqual(containerStatus(candidate(), new FakeDaemon().run), { state: 'gone' });
+
+  // Asked by id, read-only, with a timeout.
+  const d = withClients(0);
+
+  containerStatus(candidate(), d.run);
+  assert.deepEqual(d.calls[0].args, ['inspect', '--format', '{{.State.Status}}', ID]);
+  assert.equal(d.calls[0].opts?.timeoutMs, DOCKER_QUERY_TIMEOUT_MS);
+
+  const timedOutMentioningIt = {
+    status: null,
+    stdout: '',
+    stderr: 'docker inspect timed out after 20000 ms while waiting for: no such object',
+  };
+
+  assert.equal(
+    containerStatus(candidate(), new FakeDaemon({ override: { inspect: () => timedOutMentioningIt } }).run)
+      .state,
+    'unknown',
+    'a call that never finished said nothing about the container',
+  );
+  assert.equal(
+    containerStatus(
+      candidate(),
+      new FakeDaemon({ override: { inspect: () => failed('Cannot connect to the Docker daemon') } }).run,
+    ).state,
+    'unknown',
+  );
+  assert.deepEqual(
+    containerStatus(candidate(), new FakeDaemon({ override: { inspect: () => ok('\n') } }).run),
+    {
+      state: 'unknown',
+      detail: 'docker inspect printed nothing',
+    },
+  );
 });

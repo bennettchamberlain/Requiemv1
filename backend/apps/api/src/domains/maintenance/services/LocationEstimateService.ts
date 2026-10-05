@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { countAffected } from '@ci/common/persistence';
+import { DEAD_EVENT_STATUSES } from '@ci/domains/memory';
 
 /**
  * Default physical-presence `source_system`s eligible for temporal location
@@ -41,6 +42,35 @@ export const DEFAULT_MAX_GAP_HOURS = 24;
  * clustering discount them relative to measured or geocoded coordinates.
  */
 export const ESTIMATED_CONFIDENCE = 0.4;
+
+/**
+ * "This event happened", for a `ci.events` row aliased `alias`: not deleted,
+ * not a prediction (NULL is not one), not cancelled, no_show or skipped (the
+ * calendar's `LIVE_EVENT_SQL`, with the same COALESCE), and not a Google
+ * Takeout reservation whose `metadata.Canceled` is true. The importer leaves
+ * such a reservation 'confirmed', so that key is its only cancellation marker.
+ *
+ * Used on both sides. A donor must have happened, because an event that did
+ * not happen says nothing about where the user was. A candidate must too,
+ * because an estimate on one would tie a place to it.
+ *
+ * DUPLICATED from `eventHappenedSql` in
+ * `domains/pipeline/stages/enrich/EstimateLocationStage.ts`, which the pipeline
+ * barrel does not export, for the reason {@link DEFAULT_ESTIMATE_SOURCE_SYSTEMS}
+ * is. The two must produce the same text, and each domain's spec pins its copy.
+ * The status list is shared, not copied. `alias` is a static string this class
+ * controls, never input.
+ */
+export function eventHappenedSql(alias: string): string {
+  const dead = DEAD_EVENT_STATUSES.map((status) => `'${status}'`).join(', ');
+
+  return (
+    `COALESCE(${alias}.is_deleted, false) = false ` +
+    `AND COALESCE(${alias}.is_predicted, false) = false ` +
+    `AND COALESCE(${alias}.status, 'confirmed') NOT IN (${dead}) ` +
+    `AND COALESCE(${alias}.metadata->>'Canceled', '') <> 'true'`
+  );
+}
 
 export interface EstimateBatchOptions {
   /** Max coordinate-less candidates to fill in this batch. */
@@ -80,7 +110,8 @@ export interface EstimateBatchResult {
  * Idempotent and re-runnable: estimated rows are excluded as both candidates and
  * donors (`metadata.location_source <> 'estimated'`), so re-runs never chain an
  * estimate off another estimate, and the `location_coordinates IS NULL` filter
- * guarantees measured/geocoded coordinates are never overwritten.
+ * guarantees measured/geocoded coordinates are never overwritten. An event that
+ * did not happen ({@link eventHappenedSql}) is neither a candidate nor a donor.
  */
 @Injectable()
 export class LocationEstimateService {
@@ -94,9 +125,12 @@ export class LocationEstimateService {
   /**
    * The candidate filter, shared by {@link countCandidates} and the estimate
    * UPDATE so the count is EXACT (every counted row can actually be filled). A
-   * candidate is a non-deleted, non-PREDICTED, physical-presence event without
-   * usable own coordinates that has at least one real donor location within the
-   * gap. `gapParam` and `forcedParam` are bind-placeholder names ($N) — static
+   * candidate is a physical-presence event that happened
+   * ({@link eventHappenedSql}: not deleted, not PREDICTED, not called off)
+   * without usable own coordinates that has at least one real donor location
+   * within the gap. The donor `EXISTS` below must admit exactly the donors the
+   * UPDATE's LATERAL does, or the count stops being exact. `gapParam` and
+   * `forcedParam` are bind-placeholder names ($N) — static
    * strings this class controls, never user input. The donor predicates use a
    * sargable BETWEEN window (not abs(...)) so the planner can use the
    * (user_id, time) / (user_id, start_time) indexes.
@@ -132,8 +166,7 @@ export class LocationEstimateService {
             OR (${forcedParam}::bool AND e.metadata->>'location_source' = 'estimated')
           )
           AND (e.location_name IS NULL OR btrim(e.location_name) = '')
-          AND e.is_deleted = false
-          AND COALESCE(e.is_predicted, false) = false
+          AND ${eventHappenedSql('e')}
           AND e.source_system = ANY($2)
           AND (
             ${forcedParam}::bool
@@ -148,7 +181,7 @@ export class LocationEstimateService {
             OR EXISTS (
               SELECT 1 FROM ci.events n
                WHERE n.user_id = $1 AND n.location_coordinates IS NOT NULL
-                 AND n.event_id <> e.event_id AND n.is_deleted = false
+                 AND n.event_id <> e.event_id AND ${eventHappenedSql('n')}
                  AND COALESCE(n.metadata->>'location_source', '') <> 'estimated'
                  AND n.start_time BETWEEN ${window}
             )
@@ -249,7 +282,7 @@ export class LocationEstimateService {
                     WHERE n.user_id = $1
                       AND n.location_coordinates IS NOT NULL
                       AND n.event_id <> c.event_id
-                      AND n.is_deleted = false
+                      AND ${eventHappenedSql('n')}
                       AND COALESCE(n.metadata->>'location_source', '') <> 'estimated'
                       AND n.start_time BETWEEN c.start_time - make_interval(secs => $4)
                                            AND c.start_time + make_interval(secs => $4)
