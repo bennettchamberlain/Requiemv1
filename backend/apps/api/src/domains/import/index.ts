@@ -199,7 +199,11 @@ export type { ImportRootsCaller } from './sources/importRoots';
 // its barrel rather than into its internals.
 // Re-exported for the etl domain's cloud-drive sync, which asks whether a
 // remote zip is an export before downloading it.
-export { recognizeArchiveListing, recognizeListingRoots } from './archive/archiveListingRecognition';
+export {
+  listingHasRecords,
+  recognizeArchiveListing,
+  recognizeListingRoots,
+} from './archive/archiveListingRecognition';
 export { listRemoteZipEntries } from './archive/remoteZipListing';
 export type { ReadRange } from './archive/remoteZipListing';
 export { dataSourcesRecognize } from './datasources/registry';
@@ -288,7 +292,11 @@ export type {
   UnpushedRunSummary,
 } from './controllers/ImportRunsController';
 export { DataSourceCatalogService } from './services/DataSourceCatalogService';
-export type { DataSourceSummary, SourceCatalogEntry } from './services/DataSourceCatalogService';
+export type {
+  BundleCatalogEntry,
+  DataSourceSummary,
+  SourceCatalogEntry,
+} from './services/DataSourceCatalogService';
 export { ObjectCountService, assembleObjectCounts } from './services/ObjectCountService';
 export type { ObjectCountEntry, RawObjectCountData } from './services/ObjectCountService';
 export { ImportUploadsController } from './controllers/ImportUploadsController';

@@ -128,6 +128,22 @@ export class CloudFolderExportLedgerService {
     );
   }
 
+  /**
+   * The folder settled, but nothing in it is something its importers read
+   * yet: the service that writes it has paused, not finished. Nothing was
+   * downloaded. The row waits out another settle window from NOW before it
+   * is looked at again (sooner sightings of a change restart the window as
+   * usual), with the reason where a failure's would be.
+   */
+  async markWaiting(id: string, result: { fileCount: number; reason: string }): Promise<void> {
+    await this.dataSource.query(
+      `UPDATE ci_etl.cloud_folder_exports
+          SET status = 'collecting', last_change_at = now(), file_count = $2, last_error = $3, updated_at = now()
+        WHERE id = $1::uuid`,
+      [id, result.fileCount, result.reason],
+    );
+  }
+
   /** The download failed; the next sync tick that finds it settled tries again. */
   async markFailed(id: string, error: string): Promise<void> {
     await this.dataSource.query(

@@ -67,6 +67,15 @@ export type RecognizeParams = Record<string, never>;
 export interface FileImporter {
   recognize(ctx: ImportContext, entry: DirEntry, opts: RecognizeParams): Promise<Recognition>;
   fileImport(ctx: ImportContext, entry: DirEntry, params: import('./timeline').ImportParams): Promise<void>;
+  /**
+   * Optional. From file paths alone (relative to the export's folder): is
+   * there anything here this importer turns into records? `recognize` answers
+   * "is this one of mine" from the export's SHAPE, which a half-delivered
+   * export already has; this answers "is there anything in it to read yet".
+   * An importer that cannot tell from names leaves it out, and is taken to
+   * have something to read.
+   */
+  listingHasRecords?(relativePaths: readonly string[]): boolean;
 }
 
 // Settings accessor passed to API importers. Decouples the importer from the

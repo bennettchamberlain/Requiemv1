@@ -43,6 +43,7 @@ import { AVAILABLE_ENTITY_TYPES, useDropdown } from '@/components/SearchBox/useD
 import { type FragmentType } from '@/graphql';
 import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
 import type { DateTimeFormatter } from '@/lib/dateTimeFormat';
+import { filterValueLabel, sourceFilterLabel } from '@/lib/sourceNames';
 
 import { CREATE_SAVED_SEARCH } from '../../../SavedSearchesPage/CreateSavedSearchModal';
 import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/SavedSearch';
@@ -117,6 +118,39 @@ function timeInputValue(value: string, fallback: string): string {
 
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
+
+/**
+ * A typed date worth applying. A date field reports a value as soon as its
+ * three parts are filled, so typing the year 2026 passes through the years 2,
+ * 20 and 202 on the way — real dates, and never the one meant. Four digits
+ * is the tell that the year is finished.
+ */
+function isCompleteDateValue(value: string): boolean {
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
+
+  return match != null && Number(match[1]) >= 1000;
+}
+
+/** The local day a `yyyy-mm-dd` names, for pointing the calendar at it. */
+function localDateFromInputValue(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+
+  return new Date(year, month - 1, day);
+}
+
+/** The month the calendar opens on: where the range starts, else today. */
+function calendarMonthFor(dateFrom: string, dateTo: string): Date {
+  const shown = dateInputValue(dateFrom) || dateInputValue(dateTo);
+
+  return shown ? localDateFromInputValue(shown) : new Date();
+}
+
+// The years the calendar's year dropdown offers. Back far enough for a
+// scanned childhood photo, forward far enough for a calendar entry booked
+// years out; a date typed outside it still applies, the grid just cannot
+// page to it.
+const CALENDAR_START_MONTH = new Date(1900, 0);
+const CALENDAR_YEARS_AHEAD = 10;
 
 function isCompleteTimeValue(value: string): boolean {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
@@ -560,8 +594,8 @@ function FilterDropArea() {
                 <FilterChip
                   key={`source:${name}`}
                   icon={Database}
-                  label={name}
-                  removeLabel={`Remove source ${name}`}
+                  label={sourceFilterLabel(name)}
+                  removeLabel={`Remove source ${sourceFilterLabel(name)}`}
                   inactiveReason={reasonFor('connectors')}
                   onRemove={() => removeCsvValue('connectors', name)}
                 />
@@ -570,8 +604,8 @@ function FilterDropArea() {
                 <FilterChip
                   key={`activity:${name}`}
                   icon={Activity}
-                  label={name}
-                  removeLabel={`Remove activity ${name}`}
+                  label={filterValueLabel(name)}
+                  removeLabel={`Remove activity ${filterValueLabel(name)}`}
                   inactiveReason={reasonFor('eventTypes')}
                   onRemove={() => removeCsvValue('eventTypes', name)}
                 />
@@ -808,6 +842,12 @@ export function DateControl({
   const toTimeValue = timeInputValue(dateTo, END_OF_DAY_TIME);
   const [draftFromTime, setDraftFromTime] = useState(fromTimeValue);
   const [draftToTime, setDraftToTime] = useState(toTimeValue);
+  const [draftFromDate, setDraftFromDate] = useState(fromDateValue);
+  const [draftToDate, setDraftToDate] = useState(toDateValue);
+  // Held here rather than left to the calendar so a typed date can turn the
+  // grid to its month.
+  const [calendarMonth, setCalendarMonth] = useState(() => calendarMonthFor(dateFrom, dateTo));
+  const calendarEndMonth = useMemo(() => new Date(new Date().getFullYear() + CALENDAR_YEARS_AHEAD, 11), []);
 
   useEffect(() => {
     if (rangeHasDetailedTime(dateFrom, dateTo)) {
@@ -819,6 +859,11 @@ export function DateControl({
     setDraftFromTime(fromTimeValue);
     setDraftToTime(toTimeValue);
   }, [fromTimeValue, toTimeValue]);
+
+  useEffect(() => {
+    setDraftFromDate(fromDateValue);
+    setDraftToDate(toDateValue);
+  }, [fromDateValue, toDateValue]);
 
   // "Specific time" adds its two inputs at the foot of a popover that, on a
   // phone, already runs to the bottom edge of the screen. Bring them into view
@@ -871,6 +916,80 @@ export function DateControl({
     applyTime(part, nextValue);
   };
 
+  // One end of the range, typed. `value` is a complete yyyy-mm-dd, or '' to
+  // leave that end open.
+  const applyDate = (part: 'from' | 'to', value: string) => {
+    let nextFromDate = part === 'from' ? value : fromDateValue;
+    let nextToDate = part === 'to' ? value : toDateValue;
+
+    // A start typed past the end (or an end before the start) is a new range
+    // beginning there, not an empty one: the other end comes along to the same
+    // day and can then be typed in turn.
+    if (nextFromDate && nextToDate && nextFromDate > nextToDate) {
+      if (part === 'from') {
+        nextToDate = nextFromDate;
+      } else {
+        nextFromDate = nextToDate;
+      }
+    }
+
+    setDateRange(
+      nextFromDate
+        ? dateTimeIso(nextFromDate, timeExpanded ? fromTimeValue : START_OF_DAY_TIME, 'start')
+        : undefined,
+      nextToDate ? dateTimeIso(nextToDate, timeExpanded ? toTimeValue : END_OF_DAY_TIME, 'end') : undefined,
+    );
+
+    if (value) {
+      setCalendarMonth(localDateFromInputValue(value));
+    }
+  };
+
+  const handleDateChange = (part: 'from' | 'to', value: string) => {
+    if (part === 'from') {
+      setDraftFromDate(value);
+    } else {
+      setDraftToDate(value);
+    }
+
+    if (isCompleteDateValue(value)) {
+      applyDate(part, value);
+    }
+  };
+
+  // Leaving the field (or Enter) settles it. Emptied on purpose, that end of
+  // the range opens; left half-typed or at a year still being typed, it goes
+  // back to the date in force — a date field reports '' for both, and
+  // `badInput` is what tells an unfinished entry from an empty one.
+  const commitDate = (part: 'from' | 'to', input: HTMLInputElement) => {
+    const applied = part === 'from' ? fromDateValue : toDateValue;
+    const { value } = input;
+
+    if (isCompleteDateValue(value)) {
+      if (value !== applied) {
+        applyDate(part, value);
+      }
+
+      return;
+    }
+
+    if (value === '' && !input.validity.badInput) {
+      if (applied) {
+        applyDate(part, '');
+      }
+
+      return;
+    }
+
+    input.value = applied;
+
+    if (part === 'from') {
+      setDraftFromDate(applied);
+    } else {
+      setDraftToDate(applied);
+    }
+  };
+
   const clearDetailedTime = () => {
     setTimeExpanded(false);
     setDraftFromTime(START_OF_DAY_TIME);
@@ -907,6 +1026,7 @@ export function DateControl({
           setCustomMode(
             whenPreset === 'custom' || (!isRollingDatePreset(whenPreset) && Boolean(dateFrom || dateTo)),
           );
+          setCalendarMonth(calendarMonthFor(dateFrom, dateTo));
         }
       }}
     >
@@ -966,12 +1086,52 @@ export function DateControl({
 
         {showCustomPicker && (
           <>
+            {/* The same range as the grid below, for typing: quicker than
+                paging to a date years back. */}
+            <div className="grid grid-cols-2 gap-2 border-t px-3 pt-3">
+              {(
+                [
+                  ['from', 'memory-filter-start-date', 'Start date', draftFromDate],
+                  ['to', 'memory-filter-end-date', 'End date', draftToDate],
+                ] as const
+              ).map(([part, id, label, draft]) => (
+                <div key={part} className="space-y-1.5">
+                  <Label htmlFor={id} className="text-xs text-muted-foreground">
+                    {label}
+                  </Label>
+                  <Input
+                    id={id}
+                    type="date"
+                    // Without it a date field takes a six-digit year.
+                    max="9999-12-31"
+                    value={draft}
+                    onChange={(event) => handleDateChange(part, event.target.value)}
+                    onBlur={(event) => commitDate(part, event.currentTarget)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        commitDate(part, event.currentTarget);
+                      }
+                    }}
+                    // The grid below is the picker; the field's own would be a
+                    // second calendar, and its button leaves no room for the date.
+                    className="h-8 px-2 [&::-webkit-calendar-picker-indicator]:hidden"
+                  />
+                </div>
+              ))}
+            </div>
             {/* Only the grid itself is deferred, not the controls beside it:
                 "Clear range" and the time fields stay synchronous so opening the
                 popover still gives you something to act on immediately. */}
             <Suspense fallback={null}>
               <Calendar
                 mode="range"
+                // Month and year dropdowns in the caption, so a date years
+                // away is two picks rather than a click per month.
+                captionLayout="dropdown"
+                startMonth={CALENDAR_START_MONTH}
+                endMonth={calendarEndMonth}
+                month={calendarMonth}
+                onMonthChange={setCalendarMonth}
                 selected={selectedRange}
                 onSelect={(range) => {
                   const fromDate = range?.from ? localDateInputValue(range.from) : '';

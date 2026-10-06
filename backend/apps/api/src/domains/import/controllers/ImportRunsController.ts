@@ -29,6 +29,7 @@ import {
 import {
   DataSourceCatalogService,
   type DataSourceSummary,
+  type BundleCatalogEntry,
   type SourceCatalogEntry,
 } from '../services/DataSourceCatalogService';
 import { ImportRetentionService, type DiscardedRun } from '../services/ImportRetentionService';
@@ -210,6 +211,19 @@ export class ImportRunsController {
   @Get('sources/catalog')
   sourceCatalog(): SourceCatalogEntry[] {
     return this.catalog.catalog();
+  }
+
+  /**
+   * The export bundles — Google Takeout, Meta Accounts Center, Amazon Privacy
+   * Central — each ONE download that covers several of the catalog's sources.
+   * The wizard shows a bundle as one picker button and one export card in
+   * place of its members' own. Authored beside the guides so every export
+   * instruction the wizard shows comes from the backend.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('sources/bundles')
+  sourceBundles(): BundleCatalogEntry[] {
+    return this.catalog.bundles();
   }
 
   /**

@@ -144,6 +144,25 @@ describeWithDatabase(`CloudFolderExportLedgerService, against real Postgres (${a
     expect((await ledger.listForConnection(ctx, key))[0].status).toBe('collecting');
   });
 
+  it('parks a settled folder that has nothing to read yet for another settle window', async () => {
+    await ledger.recordChange(ctx, { ...key, rootPath: ROOT, importers: ['facebook'] });
+    await age(ROOT, 'last_change_at', FOLDER_SETTLE_MS + 60_000);
+    const [claimed] = await ledger.claimSettled(ctx, key);
+
+    await ledger.markWaiting(claimed.id, { fileCount: 5834, reason: 'waiting: nothing to read yet' });
+
+    expect((await ledger.listForConnection(ctx, key))[0]).toMatchObject({
+      status: 'collecting',
+      fileCount: 5834,
+      lastError: 'waiting: nothing to read yet',
+    });
+    // Not looked at again on the very next tick…
+    expect(await ledger.claimSettled(ctx, key)).toEqual([]);
+    // …but again once a settle window has passed with no change.
+    await age(ROOT, 'last_change_at', FOLDER_SETTLE_MS + 60_000);
+    expect(await ledger.claimSettled(ctx, key)).toHaveLength(1);
+  });
+
   it('returns a failed download to the queue with its reason', async () => {
     await ledger.recordChange(ctx, { ...key, rootPath: ROOT, importers: ['facebook'] });
     await age(ROOT, 'last_change_at', FOLDER_SETTLE_MS + 60_000);

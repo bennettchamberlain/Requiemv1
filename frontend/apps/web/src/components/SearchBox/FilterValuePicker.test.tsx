@@ -50,6 +50,90 @@ describe('FilterValuePicker', () => {
     expect(screen.getByRole('button', { name: /^Who: Ada/ })).toBeInTheDocument();
   });
 
+  it('shows values through formatValue but adds, removes and matches the value itself', () => {
+    const label = (value: string) => value.replace(/_/g, ' ').toUpperCase();
+
+    render(
+      <Host
+        label="How"
+        options={['amazon_music', 'gmail']}
+        optionsKnown
+        formatValue={label}
+        searchPlaceholder="Search sources…"
+        // So the trigger stays readable while the list is open.
+        modal={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^How: all/ }));
+    expect(screen.queryByRole('option', { name: 'amazon_music' })).not.toBeInTheDocument();
+
+    // Typed the way it reads on screen, or the way it is stored.
+    const search = screen.getByRole('textbox', { name: 'Search sources…' });
+
+    fireEvent.change(search, { target: { value: 'amazon mu' } });
+    expect(screen.getByRole('option', { name: 'AMAZON MUSIC' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'GMAIL' })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'amazon_mu' } });
+
+    fireEvent.click(screen.getByRole('option', { name: 'AMAZON MUSIC' }));
+
+    // The caller is handed the raw value; only the screen says otherwise.
+    expect(screen.getByTestId('values')).toHaveTextContent('amazon_music');
+    expect(screen.getByRole('button', { name: /^How: AMAZON MUSIC/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('option', { name: 'AMAZON MUSIC' }));
+    expect(screen.getByTestId('values')).toBeEmptyDOMElement();
+  });
+
+  it('asks for the next page when the end of a longer list comes into view, and only while there is one', () => {
+    const original = globalThis.IntersectionObserver;
+    const callbacks: IntersectionObserverCallback[] = [];
+
+    class CapturingObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        callbacks.push(callback);
+      }
+
+      observe() {}
+
+      disconnect() {}
+    }
+
+    globalThis.IntersectionObserver = CapturingObserver as unknown as typeof IntersectionObserver;
+
+    try {
+      const onLoadMore = vi.fn();
+      const { rerender } = render(
+        <Host
+          options={['Ada Lovelace', 'Alan Turing']}
+          onSearch={() => undefined}
+          hasMore
+          onLoadMore={onLoadMore}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /^Who: all/ }));
+      expect(screen.getByText('More…')).toBeInTheDocument();
+      expect(callbacks).toHaveLength(1);
+
+      callbacks[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+      expect(onLoadMore).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <Host
+          options={['Ada Lovelace', 'Alan Turing', 'Grace Hopper']}
+          onSearch={() => undefined}
+          hasMore={false}
+          onLoadMore={onLoadMore}
+        />,
+      );
+      expect(screen.queryByText('More…')).not.toBeInTheDocument();
+    } finally {
+      globalThis.IntersectionObserver = original;
+    }
+  });
+
   it('adds a listed option and removes it again by toggling', () => {
     render(<Host options={['Ada Lovelace', 'Alan Turing']} />);
 

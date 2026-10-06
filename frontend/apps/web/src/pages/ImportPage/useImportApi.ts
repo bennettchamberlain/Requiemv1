@@ -75,6 +75,27 @@ export interface CatalogSource {
 }
 
 /**
+ * One export bundle from `GET /import/sources/bundles`: a platform whose ONE
+ * download covers several catalog sources (Google Takeout, Meta Accounts
+ * Center, Amazon Privacy Central). The wizard shows it as a single picker
+ * button and export card in place of its members' own; the parse finds every
+ * member inside the archive. Authored in the backend beside the guides.
+ */
+export interface ImportBundle {
+  readonly id: string;
+  readonly ecosystem: string;
+  readonly title: string;
+  readonly blurb: string;
+  readonly url?: string;
+  readonly stepsTitle?: string;
+  readonly steps: readonly string[];
+  readonly altPath?: { readonly title: string; readonly url?: string; readonly steps: readonly string[] };
+  /** Catalog source ids this single download covers. */
+  readonly members: readonly string[];
+  readonly notes?: readonly string[];
+}
+
+/**
  * How many rows one importer has actually put in `ci.*`, for one object kind
  * — the picker tile's "24K Mail" line. From `GET
  * /import/sources/object-counts`, read from the live destination tables
@@ -386,6 +407,12 @@ export function useImportApi() {
     [authHeaders],
   );
 
+  const listBundles = useCallback(
+    async (): Promise<ImportBundle[]> =>
+      (await fetchJson<ImportBundle[]>('/api/import/sources/bundles', { headers: authHeaders() })) ?? [],
+    [authHeaders],
+  );
+
   const getObjectCounts = useCallback(
     async (): Promise<ObjectCount[]> =>
       (await fetchJson<ObjectCount[]>('/api/import/sources/object-counts', { headers: authHeaders() })) ?? [],
@@ -663,6 +690,7 @@ export function useImportApi() {
       ready: Boolean(authenticated),
       listSources,
       listCatalog,
+      listBundles,
       getObjectCounts,
       listRuns,
       listUnpushed,
@@ -686,6 +714,7 @@ export function useImportApi() {
       authenticated,
       listSources,
       listCatalog,
+      listBundles,
       getObjectCounts,
       listRuns,
       listUnpushed,

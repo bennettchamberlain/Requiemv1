@@ -5,7 +5,11 @@ import path from 'node:path';
 import AdmZip from 'adm-zip';
 
 import '../../datasources';
-import { recognizeArchiveListing, recognizeListingRoots } from '../archiveListingRecognition';
+import {
+  listingHasRecords,
+  recognizeArchiveListing,
+  recognizeListingRoots,
+} from '../archiveListingRecognition';
 import { listRemoteZipEntries, type ReadRange } from '../remoteZipListing';
 
 /** A ReadRange over an in-memory "remote" file that records what was asked for. */
@@ -186,5 +190,36 @@ describe('recognizeListingRoots', () => {
     }
 
     expect(roots.flatMap((r) => r.importers)).toContain('google_photos');
+  });
+});
+
+describe('listingHasRecords', () => {
+  const media = [
+    'your_facebook_activity/messages/inbox/friends_1/photos/a.jpg',
+    'your_facebook_activity/messages/inbox/friends_1/videos/b.mp4',
+    'your_facebook_activity/messages/inbox/friends_1/files/c.pdf',
+  ];
+
+  it('says a Facebook export that is attachments and nothing else has nothing to read', () => {
+    expect(listingHasRecords(['facebook'], media)).toBe(false);
+  });
+
+  it('says it has once a conversation or a post has arrived', () => {
+    expect(
+      listingHasRecords(
+        ['facebook'],
+        [...media, 'your_facebook_activity/messages/inbox/friends_1/message_1.json'],
+      ),
+    ).toBe(true);
+    expect(listingHasRecords(['facebook'], [...media, 'your_facebook_activity/posts/your_posts.html'])).toBe(
+      true,
+    );
+  });
+
+  it('does not hold a folder back on behalf of an importer that cannot judge from names', () => {
+    // Claimed by Facebook and by one with no opinion: the doubt goes to importing.
+    expect(listingHasRecords(['facebook', 'google_takeout'], media)).toBe(true);
+    expect(listingHasRecords(['no_such_importer'], media)).toBe(true);
+    expect(listingHasRecords([], media)).toBe(true);
   });
 });

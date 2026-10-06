@@ -468,7 +468,24 @@ function attachmentMetadata(root: string, uris: string[]): Metadata {
   };
 }
 
+/**
+ * Everything this importer reads — conversations, posts, comments, groups,
+ * events, pages, Marketplace — is a .json or .html file. Photos, videos and
+ * the rest only come in as attachments OF those records.
+ */
+const RECORD_FILE_RE = /\.(?:json|html)$/i;
+
 export class FacebookFileImporter implements FileImporter {
+  /**
+   * False for a tree that is media and nothing else. That is what a Meta
+   * transfer to a cloud drive looks like for its first hours: the attachments
+   * are written before the conversations they belong to, and importing it
+   * then reads nothing.
+   */
+  listingHasRecords(relativePaths: readonly string[]): boolean {
+    return relativePaths.some((relativePath) => RECORD_FILE_RE.test(relativePath));
+  }
+
   async recognize(_ctx: unknown, entry: DirEntry): Promise<Recognition> {
     const root = entry.fullPath || entry.fsRoot || entry.filename;
     if (!root) {

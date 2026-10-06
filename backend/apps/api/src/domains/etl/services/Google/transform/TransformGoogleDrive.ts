@@ -13,12 +13,17 @@ import {
 import { ConnectionSyncJob } from '../../../types';
 import { CloudFileIngestService } from '../../CloudFileIngestService';
 import { isPhotoOrVideoType, isZipArchive } from '../../cloudFileTypes';
+import { CloudFolderIngestService } from '../../CloudFolderIngestService';
+
+const DRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 interface DriveFile {
   id?: string;
   name?: string;
   mimeType?: string;
   modifiedTime?: string;
+  /** The folder the file is in. Absent for a file that is in none of this drive's folders. */
+  parents?: string[];
   owners?: Array<{
     displayName?: string;
     emailAddress?: string;
@@ -35,6 +40,7 @@ export class GoogleDriveTransformService {
     private readonly fileService: FileService,
     private readonly connectionService: ConnectionService,
     private readonly cloudFileIngestService: CloudFileIngestService,
+    private readonly cloudFolderIngestService: CloudFolderIngestService,
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(GoogleDriveTransformService.name);
@@ -55,10 +61,41 @@ export class GoogleDriveTransformService {
         syncJobId,
       });
 
-      const files = this.extractDriveFiles(data);
+      const listed = this.extractDriveFiles(data);
+
+      // A FOLDER an importer recognises as a data export (Meta transfers a
+      // Facebook export to Drive as loose files, in several part folders) is
+      // set aside whole: its files get no rows of their own, and once the
+      // folder stops changing it is downloaded and imported as one run — see
+      // CloudFolderIngestService. Claimed first, so a change seen in this
+      // very listing counts against the folder being settled.
+      const isFolder = (file: DriveFile): boolean => file.mimeType === DRIVE_FOLDER_MIME;
+      const describe = (file: DriveFile) => ({
+        file,
+        id: file.id!,
+        name: file.name ?? '',
+        parents: file.parents,
+      });
+      const inExportFolder = await this.cloudFolderIngestService.claimDriveFiles({
+        connection,
+        userId,
+        files: listed.filter((file) => file.id && !isFolder(file)).map(describe),
+        folders: listed.filter((file) => file.id && isFolder(file)).map(describe),
+      });
+      const claimed = new Set([...inExportFolder].map((entry) => entry.file));
+      const files = listed.filter((file) => !claimed.has(file));
+
+      // Every sync tick is also the clock that notices a folder has settled —
+      // including the ticks that list nothing, which is what "settled" looks
+      // like. Deliberately not awaited: see ingestSettledDropboxFolders.
+      void this.cloudFolderIngestService.ingestSettledDriveFolders({ connection, userId });
 
       if (files.length === 0) {
-        this.logger.log('No Drive files found to transform', { userId, syncJobId });
+        this.logger.log('No Drive files found to transform', {
+          userId,
+          syncJobId,
+          inExportFolders: claimed.size,
+        });
 
         return;
       }
@@ -67,6 +104,7 @@ export class GoogleDriveTransformService {
         userId,
         syncJobId,
         fileCount: files.length,
+        inExportFolders: claimed.size,
       });
 
       // Photos and videos go together, as one download and one import run
@@ -224,7 +262,7 @@ export class GoogleDriveTransformService {
       const webViewLink = file.webViewLink || null;
 
       // Skip Google Drive folders
-      if (mimeType === 'application/vnd.google-apps.folder') {
+      if (mimeType === DRIVE_FOLDER_MIME) {
         this.logger.debug('Skipping Google Drive folder', {
           userId,
           connectionId,

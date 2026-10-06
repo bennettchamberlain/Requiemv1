@@ -4,7 +4,9 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryColumn, UpdateDateColum
  * 'collecting' — files are still arriving; wait for the folder to stop
  * changing. 'downloading' — a download is running (`updatedAt` is its
  * heartbeat). 'imported' — downloaded whole, import run started. A failed
- * download returns to 'collecting' with `lastError` set.
+ * download returns to 'collecting' with `lastError` set; so does a folder
+ * that settled before anything an importer reads had arrived in it, with
+ * `lastError` saying it is waiting.
  */
 export type CloudFolderExportStatus = 'collecting' | 'downloading' | 'imported';
 

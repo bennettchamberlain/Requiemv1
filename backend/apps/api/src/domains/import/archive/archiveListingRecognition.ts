@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { dataSourcesRecognize } from '../datasources/registry';
+import { allDataSources, dataSourcesRecognize } from '../datasources/registry';
 
 /** The catch-all importer: it claims any tree, so its match says nothing. */
 const GENERIC_DATA_SOURCE = 'generic';
@@ -148,6 +148,34 @@ export async function recognizeListingRoots(
   } finally {
     await fs.promises.rm(base, { recursive: true, force: true });
   }
+}
+
+/**
+ * Whether a folder with these files holds anything its importers would turn
+ * into records, judged from the paths alone. A service that delivers an export
+ * over hours can leave it looking exactly like an export — same folders, so
+ * the recognisers claim it — while the files that carry the records have not
+ * arrived. Importing it then is a download for nothing.
+ *
+ * Only an importer that says outright "nothing here for me yet" counts
+ * against the folder. One that cannot judge from names, or is not known,
+ * counts as having something to read: waiting forever on a guess would be
+ * worse than one early import.
+ */
+export function listingHasRecords(
+  importerNames: readonly string[],
+  relativePaths: readonly string[],
+): boolean {
+  const byName = new Map(allDataSources().map((source) => [source.name, source]));
+
+  return (
+    importerNames.length === 0 ||
+    importerNames.some((name) => {
+      const importer = byName.get(name)?.newFileImporter?.();
+
+      return importer?.listingHasRecords ? importer.listingHasRecords(relativePaths) : true;
+    })
+  );
 }
 
 /**
