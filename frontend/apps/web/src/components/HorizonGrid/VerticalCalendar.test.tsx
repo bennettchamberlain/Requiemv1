@@ -194,6 +194,19 @@ describe('VerticalCalendar', () => {
   });
 });
 
+describe('VerticalCalendar — keeping the scrolled time', () => {
+  it('does not jump back to the morning when the same day is handed in again', () => {
+    const { rerender } = render(<VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={[]} />);
+    const scroller = screen.getByTestId('vertical-calendar-scroll');
+
+    scroller.scrollTop = 900;
+
+    rerender(<VerticalCalendar start={new Date(MONDAY.getTime())} days={1} events={[]} rhythm={[]} />);
+
+    expect(scroller.scrollTop).toBe(900);
+  });
+});
+
 describe('VerticalCalendar — empty-slot selection', () => {
   function stubLaneHeight(lane: HTMLElement, height = 1440, top = 0) {
     lane.getBoundingClientRect = () =>
