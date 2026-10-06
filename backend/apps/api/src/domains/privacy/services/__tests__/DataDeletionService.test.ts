@@ -505,6 +505,31 @@ describe('DataDeletionService.revokeConnectionGrant via CI Portal', () => {
     expect(savedAudits[0]).toMatchObject({ tokenRevoked: true });
   });
 
+  it('ends the grant from here first when only an access token can revoke it (Dropbox), then has Portal delete its copy', async () => {
+    const client = new FakeGoogleClient();
+    (client as { revokesWithAccessToken: boolean }).revokesWithAccessToken = true;
+    // Portal holds only the refresh token and cannot revoke this provider upstream.
+    const revoke = jest.fn(async () => ({ success: true, tokens_deleted: 1, revocation_ok: false }));
+
+    const { service, portalRevoke } = makeService({
+      connections: [proxied],
+      store: { 'ci.connections': [{ user: 'user-1', connection: 'conn-1' }] },
+      portal: { configured: true, providerName: 'dropbox', revoke },
+      providerKey: null,
+      client,
+    });
+
+    const result = await service.disconnectConnection({ userId: 'user-1' }, 'conn-1');
+
+    // The provider's own access token is used; the Portal proxy refresh token
+    // is never handed to the provider client.
+    expect(client.revoke).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: 'google-access-token', refreshToken: null }),
+    );
+    expect(portalRevoke).toHaveBeenCalledTimes(1);
+    expect(result.tokenRevoked).toBe(true);
+  });
+
   it('uses the direct provider path when the user brought their own app keys', async () => {
     const { service, client, portalRevoke } = makeService({
       connections: [proxied],

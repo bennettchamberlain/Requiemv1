@@ -57,6 +57,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   github: 'GitHub',
   reddit: 'Reddit',
   slack: 'Slack',
+  dropbox: 'Dropbox',
 };
 
 /**
@@ -108,6 +109,7 @@ export class CloudOAuthProxyService {
       [providers.github.id]: 'github',
       [providers.reddit.id]: 'reddit',
       [providers.slack.id]: 'slack',
+      [providers.dropbox.id]: 'dropbox',
     };
 
     return map[providerId];

@@ -31,8 +31,18 @@ function build() {
   };
   const fileService = {
     create: jest.fn(async (_ctx: unknown, _input: Record<string, unknown>) => ({ id: 'file-1' })),
+    removePointersByExternalIds: jest.fn(async (_ctx: unknown, _ids: string[]) => 0),
   };
-  const cloudFileIngestService = { ingestDriveDocument: jest.fn() };
+  const cloudFileIngestService = {
+    ingestDriveDocument: jest.fn(),
+    ingestDriveArchive: jest.fn(),
+    ingestDriveMedia: jest.fn(async ({ files }: { files: Array<{ id: string }> }) => ({
+      downloaded: files.map((f) => f.id),
+      unchanged: [] as string[],
+      failed: [] as Array<{ id: string; reason: string }>,
+      byteSize: 0,
+    })),
+  };
 
   const service = new GoogleDriveTransformService(
     contentService as never,
@@ -207,15 +217,15 @@ describe('GoogleDriveTransformService.transformGoogleDrive — document branch',
     );
   });
 
-  it('keeps the pointer-only path for non-document types (images/video)', async () => {
+  it('keeps the pointer-only path for files that are neither documents nor media', async () => {
     const { service, contentService, fileService, cloudFileIngestService } = build();
 
     await service.transformGoogleDrive({
       connection,
       syncJob: syncJobWithFile({
         id: 'drive-3',
-        name: 'photo.jpg',
-        mimeType: 'image/jpeg',
+        name: 'passwords.kdbx',
+        mimeType: 'application/octet-stream',
         webViewLink: 'https://drive.google.com/file/d/drive-3/view',
       }),
     });
@@ -286,5 +296,152 @@ describe('GoogleDriveTransformService.transformGoogleDrive — document branch',
     expect(fileService.create).not.toHaveBeenCalled();
     expect(contentService.create).not.toHaveBeenCalled();
     expect(cloudFileIngestService.ingestDriveDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('GoogleDriveTransformService.transformGoogleDrive — zip archive branch', () => {
+  const zipFile = {
+    id: 'drive-zip-1',
+    name: 'facebook-export.zip',
+    mimeType: 'application/zip',
+    modifiedTime: '2026-10-01T00:00:00Z',
+    size: '2048',
+    webViewLink: 'https://drive.google.com/file/d/drive-zip-1/view',
+  };
+
+  it('offers a zip to the archive ingest, with its size as a number', async () => {
+    const { service, cloudFileIngestService } = build();
+    cloudFileIngestService.ingestDriveArchive.mockResolvedValue({ outcome: 'not_an_export' });
+
+    await service.transformGoogleDrive({ connection, syncJob: syncJobWithFile(zipFile) });
+
+    expect(cloudFileIngestService.ingestDriveArchive).toHaveBeenCalledWith({
+      connection,
+      userId: 'user-1',
+      file: {
+        id: 'drive-zip-1',
+        name: 'facebook-export.zip',
+        mimeType: 'application/zip',
+        modifiedTime: '2026-10-01T00:00:00Z',
+        size: 2048,
+      },
+    });
+    expect(cloudFileIngestService.ingestDriveDocument).not.toHaveBeenCalled();
+  });
+
+  it('recognises a zip by name when Drive reports a generic type', async () => {
+    const { service, cloudFileIngestService } = build();
+    cloudFileIngestService.ingestDriveArchive.mockResolvedValue({ outcome: 'not_an_export' });
+
+    await service.transformGoogleDrive({
+      connection,
+      syncJob: syncJobWithFile({ ...zipFile, mimeType: 'application/octet-stream' }),
+    });
+
+    expect(cloudFileIngestService.ingestDriveArchive).toHaveBeenCalled();
+  });
+
+  it.each(['downloaded', 'skipped_unchanged'])(
+    'writes no pointer row for an export that was %s',
+    async (outcome) => {
+      const { service, fileService, cloudFileIngestService } = build();
+      cloudFileIngestService.ingestDriveArchive.mockResolvedValue({
+        outcome,
+        importers: ['facebook'],
+        importRunId: 'run-1',
+        byteSize: 2048,
+      });
+
+      await service.transformGoogleDrive({ connection, syncJob: syncJobWithFile(zipFile) });
+
+      expect(fileService.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ outcome: 'not_an_export' }, { outcome: 'failed', reason: 'x', attempts: 2 }])(
+    'keeps the ordinary pointer row when the zip is $outcome',
+    async (result) => {
+      const { service, fileService, contentService, cloudFileIngestService } = build();
+      cloudFileIngestService.ingestDriveArchive.mockResolvedValue(result);
+
+      await service.transformGoogleDrive({ connection, syncJob: syncJobWithFile(zipFile) });
+
+      expect(fileService.create).toHaveBeenCalledWith(
+        { userId: 'user-1' },
+        expect.objectContaining({ externalId: 'https://drive.google.com/file/d/drive-zip-1/view' }),
+      );
+      expect(contentService.create).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('GoogleDriveTransformService.transformGoogleDrive — photos and videos', () => {
+  const photo = {
+    id: 'drive-photo-1',
+    name: 'IMG_0001.jpg',
+    mimeType: 'image/jpeg',
+    modifiedTime: '2026-10-01T00:00:00Z',
+    size: '2048',
+    webViewLink: 'https://drive.google.com/file/d/drive-photo-1/view',
+  };
+  const video = {
+    ...photo,
+    id: 'drive-video-1',
+    name: 'clip.mp4',
+    mimeType: 'video/mp4',
+    webViewLink: 'https://drive.google.com/file/d/drive-video-1/view',
+  };
+  const job = (files: Array<Record<string, unknown>>) =>
+    ({ id: 'job-1', userId: 'user-1', connectionId: 'conn-1', data: { files } }) as never;
+
+  it('downloads a page of photos and videos as ONE batch, and writes no pointer rows for them', async () => {
+    const { service, fileService, cloudFileIngestService } = build();
+
+    await service.transformGoogleDrive({ connection, syncJob: job([photo, video]) });
+
+    expect(cloudFileIngestService.ingestDriveMedia).toHaveBeenCalledTimes(1);
+    expect(cloudFileIngestService.ingestDriveMedia).toHaveBeenCalledWith({
+      connection,
+      userId: 'user-1',
+      files: [
+        {
+          id: 'drive-photo-1',
+          name: 'IMG_0001.jpg',
+          mimeType: 'image/jpeg',
+          revision: '2026-10-01T00:00:00Z',
+          size: 2048,
+          // Names repeat in Drive; the id keeps two IMG_0001.jpg apart.
+          relativePath: 'drive-photo-1/IMG_0001.jpg',
+        },
+        expect.objectContaining({ id: 'drive-video-1', relativePath: 'drive-video-1/clip.mp4' }),
+      ],
+    });
+    expect(fileService.create).not.toHaveBeenCalled();
+    // Pointer rows an earlier sync wrote for them are cleared.
+    expect(fileService.removePointersByExternalIds).toHaveBeenCalledWith({ userId: 'user-1' }, [
+      'https://drive.google.com/file/d/drive-photo-1/view',
+      'https://drive.google.com/file/d/drive-video-1/view',
+    ]);
+  });
+
+  it('keeps a pointer row for a photo that could not be downloaded', async () => {
+    const { service, fileService, cloudFileIngestService } = build();
+    cloudFileIngestService.ingestDriveMedia.mockResolvedValue({
+      downloaded: ['drive-video-1'],
+      unchanged: [],
+      failed: [{ id: 'drive-photo-1', reason: 'Drive content download failed: 500' }],
+      byteSize: 2048,
+    });
+
+    await service.transformGoogleDrive({ connection, syncJob: job([photo, video]) });
+
+    expect(fileService.create).toHaveBeenCalledTimes(1);
+    expect(fileService.create).toHaveBeenCalledWith(
+      { userId: 'user-1' },
+      expect.objectContaining({ filename: 'IMG_0001.jpg', connectionId: 'conn-1' }),
+    );
+    expect(fileService.removePointersByExternalIds).toHaveBeenCalledWith({ userId: 'user-1' }, [
+      'https://drive.google.com/file/d/drive-video-1/view',
+    ]);
   });
 });

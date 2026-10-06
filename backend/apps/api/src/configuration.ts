@@ -260,6 +260,9 @@ export const ConfigSchema = z.object({
       slack: z.object({
         id: z.string(),
       }),
+      dropbox: z.object({
+        id: z.string(),
+      }),
     }),
     openid: z.object({
       callbackUrl: z.string(),

@@ -87,6 +87,22 @@ export interface StartRunInput {
   declaredSources?: readonly string[];
 
   /**
+   * The platform a connection fetched this run's bytes from ('dropbox',
+   * 'google_drive'), when one did. Stamped on what the catch-all importer
+   * produces, so a photo that lives in Dropbox is ledgered as arriving from
+   * Dropbox rather than from "generic". See migration 20261005230949.
+   */
+  originPlatform?: string | null;
+
+  /**
+   * The connection that fetched this run's bytes, when one did. Stamped as
+   * `connection_id` on every record the run produces, so disconnecting it
+   * removes them — unless something else also delivered the same record. See
+   * migration 20261005231545.
+   */
+  originConnectionId?: string | null;
+
+  /**
    * Stage kinds to execute, in order. Defaults to {@link DEFAULT_STAGES}.
    * Naming them explicitly is how a re-run of a failed push will skip
    * re-reading a 40GB tree.
@@ -419,8 +435,10 @@ export class ImportRunService {
       }
 
       const runRows = await manager.query<Array<{ id: string }>>(
-        `INSERT INTO ci_import.import_runs (user_id, label, source, status, requested_stages, declared_sources)
-              VALUES ($1::uuid, $2, $3, 'queued', $4::text[], $5::text[])
+        `INSERT INTO ci_import.import_runs
+                (user_id, label, source, status, requested_stages, declared_sources,
+                 origin_platform, origin_connection_id)
+              VALUES ($1::uuid, $2, $3, 'queued', $4::text[], $5::text[], $6, $7::uuid)
            RETURNING id`,
         [
           ctx.userId,
@@ -428,6 +446,8 @@ export class ImportRunService {
           input.source ?? 'wizard',
           kinds,
           input.declaredSources ?? null,
+          input.originPlatform ?? null,
+          input.originConnectionId ?? null,
         ],
       );
 

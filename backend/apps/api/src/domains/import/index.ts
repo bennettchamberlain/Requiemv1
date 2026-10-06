@@ -197,6 +197,11 @@ export type { ImportRootsCaller } from './sources/importRoots';
 // Re-exported for the import tools, which live in the tools domain (that is
 // where the native provider is assembled) and must reach this domain through
 // its barrel rather than into its internals.
+// Re-exported for the etl domain's cloud-drive sync, which asks whether a
+// remote zip is an export before downloading it.
+export { recognizeArchiveListing, recognizeListingRoots } from './archive/archiveListingRecognition';
+export { listRemoteZipEntries } from './archive/remoteZipListing';
+export type { ReadRange } from './archive/remoteZipListing';
 export { dataSourcesRecognize } from './datasources/registry';
 export type { DirEntry, DataSourceRecognition } from './datasources/registry';
 export { recognizePathWithinRoots } from './datasources/recognizePath';

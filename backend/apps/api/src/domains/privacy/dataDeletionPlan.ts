@@ -68,6 +68,8 @@ export const USER_OWNED_TABLES: readonly UserOwnedTable[] = [
 
   // --- ETL / sync bookkeeping. ---
   { schema: 'ci_etl', table: 'connection_sync_jobs', userColumn: 'user_id' },
+  { schema: 'ci_etl', table: 'cloud_file_ingests', userColumn: 'user_id' },
+  { schema: 'ci_etl', table: 'cloud_folder_exports', userColumn: 'user_id' },
 
   // --- Multi-provenance ledger (docs/design/cross-pipeline-identity.md §5).
   // References records only logically (no FK), so position is flexible; it
@@ -143,6 +145,13 @@ export interface ConnectionScopedTable {
 
 export const CONNECTION_SCOPED_TABLES: readonly ConnectionScopedTable[] = [
   { schema: 'ci_etl', table: 'connection_sync_jobs', connectionColumn: 'connection_id' },
+  // The cloud-drive download ledgers. Left behind, they would make a
+  // reconnected drive look half-synced to anyone reading them.
+  { schema: 'ci_etl', table: 'cloud_file_ingests', connectionColumn: 'connection_id' },
+  { schema: 'ci_etl', table: 'cloud_folder_exports', connectionColumn: 'connection_id' },
+  // Pointer rows a cloud-drive sync wrote (name, size, link — no bytes here).
+  // Only those carry a connection_id; files imported or uploaded do not.
+  { schema: 'ci', table: 'files', connectionColumn: 'connection_id' },
   {
     schema: 'ci',
     table: 'communications',
