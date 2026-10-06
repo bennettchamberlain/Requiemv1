@@ -6,7 +6,7 @@ import type { RhythmDay, ScheduleEvent } from '@/api/useScheduleService';
 import { EVENT_DRAG_TYPE } from '@/lib/scheduleDrag';
 
 import { addDays, startOfLocalDay } from './nowNext';
-import { VerticalCalendar } from './VerticalCalendar';
+import { GRID_HEIGHT_PX, VerticalCalendar } from './VerticalCalendar';
 
 const MONDAY = startOfLocalDay(new Date(2026, 7, 3));
 
@@ -204,6 +204,48 @@ describe('VerticalCalendar — keeping the scrolled time', () => {
     rerender(<VerticalCalendar start={new Date(MONDAY.getTime())} days={1} events={[]} rhythm={[]} />);
 
     expect(scroller.scrollTop).toBe(900);
+  });
+
+  it('leaves a selected time where it is when that hour is already on screen', () => {
+    const { rerender } = render(<VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={[]} />);
+    const scroller = screen.getByTestId('vertical-calendar-scroll');
+    const sevenPm = (19 / 24) * GRID_HEIGHT_PX;
+
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 800 });
+    scroller.scrollTop = sevenPm - 100;
+
+    rerender(
+      <VerticalCalendar
+        start={MONDAY}
+        days={1}
+        events={[]}
+        rhythm={[]}
+        selectedSlot={{ instant: new Date(2026, 7, 3, 19, 0), allDay: false }}
+      />,
+    );
+
+    expect(scroller.scrollTop).toBe(sevenPm - 100);
+  });
+
+  it('brings a selected time on screen when it is below the pane', () => {
+    const { rerender } = render(<VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={[]} />);
+    const scroller = screen.getByTestId('vertical-calendar-scroll');
+    const sevenPm = (19 / 24) * GRID_HEIGHT_PX;
+
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 200 });
+    scroller.scrollTop = 0;
+
+    rerender(
+      <VerticalCalendar
+        start={MONDAY}
+        days={1}
+        events={[]}
+        rhythm={[]}
+        selectedSlot={{ instant: new Date(2026, 7, 3, 19, 0), allDay: false }}
+      />,
+    );
+
+    expect(scroller.scrollTop).toBe(Math.max(0, sevenPm - 200 / 3));
   });
 });
 

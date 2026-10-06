@@ -1046,6 +1046,30 @@ export function VerticalCalendar({
     pane.scrollTop = Math.max(0, y);
   }, [dayStarts, zone]);
 
+  const selectedMinute = selectedSlot && !selectedSlot.allDay ? selectedSlot.instant.getTime() : null;
+
+  useEffect(() => {
+    if (selectedMinute === null) {
+      return;
+    }
+
+    const pane = scrollRef.current;
+
+    if (!pane || pane.clientHeight === 0) {
+      return;
+    }
+
+    const y = (zonedMinutesOfDay(new Date(selectedMinute), zone) / MINUTES_PER_DAY) * GRID_HEIGHT_PX;
+    const viewTop = pane.scrollTop;
+    const viewBottom = viewTop + pane.clientHeight;
+
+    if (y >= viewTop && y <= viewBottom) {
+      return;
+    }
+
+    pane.scrollTop = Math.max(0, y - pane.clientHeight / 3);
+  }, [selectedMinute, zone]);
+
   const handleMoveEvent = useCallback(
     (eventId: string, startTime: Date) => {
       onMoveEvent?.(eventId, startTime);
