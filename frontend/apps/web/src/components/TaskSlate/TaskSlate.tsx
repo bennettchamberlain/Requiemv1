@@ -449,7 +449,7 @@ export function TaskSlateDrawer({
         className={cn(
           'pointer-events-auto gap-0 p-0',
           isMobile
-            ? 'max-h-[70vh] w-full pb-[var(--safe-area-bottom)] sm:max-w-none'
+            ? 'max-h-[70vh] w-full overscroll-contain pb-[var(--safe-area-bottom)] sm:max-w-none'
             : 'w-[24rem] sm:max-w-md',
         )}
       >
@@ -460,7 +460,7 @@ export function TaskSlateDrawer({
           </Sheet.Description>
         </Sheet.Header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 pb-4">
           <section
             aria-labelledby="slot-predictions-label"
             className="rounded-lg border border-border bg-muted/30 px-3 py-2.5"
