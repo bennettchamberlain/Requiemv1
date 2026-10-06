@@ -23,12 +23,6 @@ export const GET_PLAN_BADGE_COUNT = gql`
   }
 `;
 
-/** Active observers of the rail badge, refetched after a task is deleted or its status changes. */
-export const planBadgeRefetch = {
-  query: GET_PLAN_BADGE_COUNT,
-  variables: { first: PLAN_BADGE_TASK_LIMIT },
-};
-
 interface PlanBadgeTaskNode {
   id: string;
   status: string;
