@@ -55,9 +55,11 @@ import { pipelineDeadLetterReapPayloadSchema } from '../types';
  *
  * ── Exactly-once, without a schema change ──────────────────────────────────
  *
- * `ci.pipeline_dead_letters.id` is set to the ORIGINATING pg-boss job id rather
- * than a fresh uuid. Both are uuids, the pg-boss id is unique, and it gives the
- * copy a natural idempotency key: the anti-join skips rows already copied, and
+ * `ci.pipeline_dead_letters.id` is set to the pg-boss id of the dead-letter row
+ * (pg-boss inserts that copy as a new job, so it is not the id of the job that
+ * failed) rather than a fresh uuid. Both are uuids, the pg-boss id is unique,
+ * and it gives the copy a natural idempotency key: the anti-join skips rows
+ * already copied, and
  * `ON CONFLICT (id) DO NOTHING` closes the race between two concurrent reaps.
  * It also means an operator can correlate a dead letter straight back to
  * `pgboss.job` while that row still exists.
@@ -183,6 +185,19 @@ export class DeadLetterReaperListener {
     //
     // Column-by-column notes, each guarding a way this can meet data it did not
     // expect:
+    //  - `queue` is the queue the job FAILED on, read from `output.queue`, which
+    //    `PGBossEventService` writes on both of its failure paths. pg-boss's
+    //    dead-letter copy keeps `data` and `output` and drops the source queue,
+    //    so this is the only place it survives. Replay sends the letter to this
+    //    queue alone, unless it no longer listens for the event or the letter
+    //    has a better route (see `replayQueueFor` in PipelineRunService).
+    //    Before, every reaped letter said `dead-letter` and replay
+    //    fanned it out to every queue listening for the event: a `file.uploaded`
+    //    that failed only its preview re-ran all six of its listeners. A blank,
+    //    non-string or `dead-letter` value falls back to `j.name`, as does an
+    //    output with no queue (pg-boss's own expiry writes one, and so did every
+    //    failure before this field existed). Those still replay by listener
+    //    registration.
     //  - `payload` is `j.data` VERBATIM. Never wrapped, never enriched — a dead
     //    letter that cannot be replayed byte-for-byte is just a log line.
     //    COALESCEd to '{}' because the column is NOT NULL and a job may carry
@@ -201,7 +216,12 @@ export class DeadLetterReaperListener {
       `INSERT INTO ci.pipeline_dead_letters
               (id, queue, event_name, stage, entity_type, entity_id, user_id, payload, error, failed_at)
        SELECT j.id,
-              j.name,
+              CASE
+                WHEN jsonb_typeof(j.output->'queue') = 'string'
+                 AND j.output->>'queue' NOT IN ('', $1)
+                THEN j.output->>'queue'
+                ELSE j.name
+              END,
               COALESCE(NULLIF(j.data->>'name', ''), 'unknown'),
               j.data->>'stage',
               j.data->>'entityType',
