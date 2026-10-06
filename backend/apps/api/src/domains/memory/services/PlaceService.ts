@@ -209,8 +209,9 @@ export class PlaceService {
     // races safely with concurrent callers for the same cell. Loser sees zero
     // rows affected; both fall through to the SELECT below and return the same
     // id. location_point carries FULL precision (snap lives only in the index).
-    // A bounded feature is an area, not an address: keep place_kind honest so
-    // the hierarchy and the UI don't label a whole city "address".
+    // A bounded feature is an area. A bare point is not a kind: labeling every
+    // geocode "address" is what made the places list a stack of Address badges.
+    // The street stays on the name; the user picks a kind.
     const bounds = normalizeBounds(input.bounds);
 
     await this.placeRepository.manager.query(
@@ -228,7 +229,7 @@ export class PlaceService {
         JSON.stringify(properties),
         input.lng,
         input.lat,
-        bounds ? 'neighborhood' : 'address',
+        bounds ? 'neighborhood' : null,
         bounds != null,
         bounds?.west ?? 0,
         bounds?.south ?? 0,
@@ -408,7 +409,11 @@ export class PlaceService {
     await this.placeRepository.manager.query(
       `UPDATE ci.entities
           SET location_point = COALESCE(location_point, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography),
-              place_kind = COALESCE(place_kind, 'address'),
+              place_kind = CASE
+                WHEN place_kind IS NOT NULL THEN place_kind
+                WHEN $5::boolean THEN 'neighborhood'
+                ELSE NULL
+              END,
               location_boundary = COALESCE(
                 location_boundary,
                 CASE WHEN $5::boolean
