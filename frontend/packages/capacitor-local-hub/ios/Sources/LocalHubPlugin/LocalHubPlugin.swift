@@ -277,10 +277,14 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             let monitor = SignificantLocationMonitor.shared
             monitor.onUpdate = { [weak self] payload in
-                self?.notifyListeners("significantLocation", data: payload)
+                DispatchQueue.main.async {
+                    self?.notifyListeners("significantLocation", data: payload)
+                }
             }
             monitor.onDenied = { [weak self] in
-                self?.notifyListeners("significantLocationError", data: ["code": "NOT_AUTHORIZED"])
+                DispatchQueue.main.async {
+                    self?.notifyListeners("significantLocationError", data: ["code": "NOT_AUTHORIZED"])
+                }
             }
             monitor.start()
             call.resolve()
