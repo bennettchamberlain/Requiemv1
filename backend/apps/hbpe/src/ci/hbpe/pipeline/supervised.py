@@ -99,7 +99,7 @@ def _build(
     half_life_days: float,
     *,
     target_date: datetime.date | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Features for every row of *y*, plus one extra block for *target_date*.
 

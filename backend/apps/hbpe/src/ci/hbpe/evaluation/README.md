@@ -135,10 +135,10 @@ all three columns.
 | `walkforward.py` | the loop, leakage guard, output validation, D3 verdict |
 | `report.py` | text rendering |
 | `hmt.py` | adapter for the deployed transformer (ONNX + DB; imported separately) |
-| `shrinkage.py` | recency-weighted hierarchical shrinkage; balanced transitions |
-| `discriminative.py` | multinomial logistic head over per-bucket features |
+| `pipeline/shrinkage.py` | recency-weighted hierarchical shrinkage; balanced transitions |
+| `pipeline/supervised.py` | multinomial logistic head over per-bucket features |
 | `schedule.py` | tomorrow's calendar as an input (read its caveat) |
-| `rhythm.py` | the onboarding-declared wake/sleep window as a densification prior |
+| `pipeline/rhythm.py` | the onboarding-declared wake/sleep window as a densification prior |
 | `__main__.py` | CLI |
 
 ## Known limitation

@@ -44,7 +44,7 @@ import datetime
 from collections.abc import Callable, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ci.hbpe.buckets import BUCKET_MINUTES, BUCKETS_PER_DAY
+from ci.hbpe.buckets import BUCKETS_PER_DAY
 from ci.hbpe.pipeline.baselines import _as_date
 from ci.hbpe.tokenizer.vocab_registry import L0_CLASSES
 
@@ -113,13 +113,21 @@ def _utc_offset_minutes(tz: str | None, on: datetime.date | None) -> int:
     return int(offset.total_seconds() // 60) if offset else 0
 
 
-def _bucket_of(clock: str) -> int | None:
-    """``"09:15"`` → bucket index. None when unparseable."""
+def _bucket_of(clock: str, n_buckets: int = BUCKETS_PER_DAY) -> int | None:
+    """``"09:15"`` → bucket index under *n_buckets*. None when unparseable."""
     try:
         parsed = datetime.time.fromisoformat(clock.strip())
     except (AttributeError, ValueError):
         return None
-    return (parsed.hour * 60 + parsed.minute) // BUCKET_MINUTES
+    if n_buckets < 1:
+        return None
+    minutes = (24 * 60) // n_buckets
+    if minutes < 1:
+        return None
+    bucket = (parsed.hour * 60 + parsed.minute) // minutes
+    if bucket >= n_buckets:
+        bucket = n_buckets - 1
+    return bucket
 
 
 def sleep_buckets(
@@ -141,8 +149,8 @@ def sleep_buckets(
     """
     if not rhythm:
         return set()
-    start = _bucket_of(str(rhythm.get("sleep_time") or ""))
-    end = _bucket_of(str(rhythm.get("wake_time") or ""))
+    start = _bucket_of(str(rhythm.get("sleep_time") or ""), n_buckets)
+    end = _bucket_of(str(rhythm.get("wake_time") or ""), n_buckets)
     if start is None or end is None or start == end:
         return set()
 
@@ -229,20 +237,19 @@ def densify(
     same rows. Densifying actuals alone would score every forecaster against a
     class none of them had ever been fit on.
 
-    *background* is either one class for every bucket, or a per-bucket sequence
-    of length *n_buckets*. The sequence form is how a declared daily rhythm
+    *background* is either one class for every bucket, a per-bucket sequence of
+    length *n_buckets*, or a callable returning that sequence for a given day.
+    A callable is checked the same way as a fixed sequence: the wrong length or
+    a class outside the L0 taxonomy raises ``ValueError`` instead of being
+    written into the corpus. The sequence form is how a declared daily rhythm
     enters the corpus — see ``rhythm.background_by_bucket``, which marks the
     user's stated sleep window SLEEP and leaves the rest flat. An observed
     token always beats the filler, so a night actually spent working still
     reads WORK.
     """
-    if callable(background):
-        per_day = background
-    else:
-        if isinstance(background, str):
-            fixed = [background] * n_buckets
-        else:
-            fixed = list(background)
+
+    def _checked(raw: Sequence[str]) -> list[str]:
+        fixed = list(raw)
         if len(fixed) != n_buckets:
             raise ValueError(
                 f"background has {len(fixed)} entries, expected {n_buckets}"
@@ -250,6 +257,18 @@ def densify(
         unknown = sorted({c for c in fixed if c not in _L0_SET})
         if unknown:
             raise ValueError(f"background {unknown[0]!r} is not an L0 class")
+        return fixed
+
+    if callable(background):
+
+        def per_day(day: datetime.date, _background=background) -> list[str]:
+            return _checked(_background(day))
+
+    else:
+        if isinstance(background, str):
+            fixed = _checked([background] * n_buckets)
+        else:
+            fixed = _checked(background)
 
         def per_day(_day: datetime.date, _fixed=fixed) -> list[str]:
             return _fixed

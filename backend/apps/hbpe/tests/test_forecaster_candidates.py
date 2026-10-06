@@ -212,6 +212,12 @@ def test_sleep_window_that_does_not_wrap_midnight():
     assert len(got) == 28
 
 
+def test_sleep_window_uses_the_requested_bucket_count():
+    """A 24-bucket day is hourly. 02:00–09:00 must stay inside 0..23."""
+    got = sleep_buckets({"sleep_time": "02:00", "wake_time": "09:00"}, 24)
+    assert got == set(range(2, 9))
+
+
 def test_sleep_window_wraps_midnight():
     got = sleep_buckets({"sleep_time": "22:00", "wake_time": "07:00"}, 96)
     assert got == set(range(88, 96)) | set(range(0, 28))
@@ -237,8 +243,9 @@ def test_background_marks_sleep_and_leaves_the_rest_flat():
 
 
 def test_densify_applies_a_per_bucket_background():
+    # N_BUCKETS is 8, so each bucket is three hours. 00:00–06:00 covers 0 and 1.
     background = background_by_bucket(
-        {"sleep_time": "00:00", "wake_time": "01:00"}, "UNKNOWN", N_BUCKETS
+        {"sleep_time": "00:00", "wake_time": "06:00"}, "UNKNOWN", N_BUCKETS
     )
     rows = densify([_row(DAY, 5, "WORK")], background, N_BUCKETS)
     by_bucket = {r["bucket_idx"]: r["token_id"] for r in rows}
@@ -249,6 +256,22 @@ def test_densify_applies_a_per_bucket_background():
 def test_densify_rejects_a_background_of_the_wrong_length():
     with pytest.raises(ValueError, match="expected"):
         densify([_row(DAY, 0, "WORK")], ["UNKNOWN"] * 3, N_BUCKETS)
+
+
+def test_densify_rejects_a_callable_background_outside_the_taxonomy():
+    def bad(_day: datetime.date) -> list[str]:
+        return ["IDLE"] * N_BUCKETS
+
+    with pytest.raises(ValueError, match="L0"):
+        densify([_row(DAY, 0, "WORK")], bad, N_BUCKETS)
+
+
+def test_densify_rejects_a_callable_background_of_the_wrong_length():
+    def short(_day: datetime.date) -> list[str]:
+        return ["UNKNOWN"]
+
+    with pytest.raises(ValueError, match="expected"):
+        densify([_row(DAY, 0, "WORK")], short, N_BUCKETS)
 
 
 # ── decision rule ─────────────────────────────────────────────────────────────
@@ -387,6 +410,19 @@ def test_conversion_can_wrap_the_window_past_midnight_utc():
     on = datetime.date(2026, 7, 1)
     assert len(sleep_buckets(rhythm, 96, tz="Asia/Tokyo", on=on)) == 32
     assert len(sleep_buckets(rhythm, 96, tz="America/Los_Angeles", on=on)) == 32
+
+
+def test_schedule_records_every_bucket_a_short_event_crosses():
+    from ci.hbpe.evaluation.schedule import covered_buckets
+
+    # 10:14–10:16 crosses 10:00–10:15 and 10:15–10:30. Starting at 10:14 and
+    # stepping 15 minutes used to skip the second bucket.
+    start = datetime.datetime(2026, 7, 1, 10, 14)
+    finish = datetime.datetime(2026, 7, 1, 10, 16)
+    assert covered_buckets(start, finish) == [
+        (datetime.date(2026, 7, 1), 40),
+        (datetime.date(2026, 7, 1), 41),
+    ]
 
 
 def test_densify_accepts_a_per_day_background():

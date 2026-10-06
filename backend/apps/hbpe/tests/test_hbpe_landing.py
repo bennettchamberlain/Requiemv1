@@ -287,6 +287,30 @@ def test_histogram_keeps_b1_ready_while_still_learning():
     assert overridden["system_status"] == "READY"
 
 
+def test_histogram_keeps_logit_ready_without_a_checkpoint():
+    from ci.hbpe.pipeline.histogram_api import build_histogram
+
+    class _Engine:
+        last_model_version = "logit"
+        last_still_learning = False
+
+        def predict(self, horizon_start=None):
+            return [
+                {
+                    "bucket_index": 0,
+                    "start_time": "2026-08-18T00:00:00Z",
+                    "l0_probs": {WORK: 0.6, SLEEP: 0.4},
+                    "l1_probs": {},
+                    "l2_probs": {},
+                }
+            ]
+
+    out = build_histogram(_Engine(), user_id=None, system_status="COLD_START")
+    assert out["still_learning"] is False
+    assert out["model_version"] == "logit"
+    assert out["system_status"] == "READY"
+
+
 def test_histogram_keeps_pipeline_step_while_still_learning(monkeypatch):
     from ci.hbpe.pipeline.histogram_api import build_histogram
 

@@ -64,6 +64,34 @@ _EVENTS_SQL = f"""
 """
 
 
+def covered_buckets(
+    start: datetime.datetime, finish: datetime.datetime
+) -> list[tuple[datetime.date, int]]:
+    """
+    ``(date, bucket_idx)`` pairs an event occupies.
+
+    The cursor is floored to the bucket that contains *start*. Stepping from the
+    exact start minute skips every later bucket the event still crosses: a
+    10:14–10:16 event recorded 10:00–10:15 and then jumped to 10:29, leaving
+    10:15–10:30 empty.
+    """
+    minute_of_day = start.hour * 60 + start.minute
+    floored = (minute_of_day // BUCKET_MINUTES) * BUCKET_MINUTES
+    cursor = start.replace(
+        hour=floored // 60,
+        minute=floored % 60,
+        second=0,
+        microsecond=0,
+    )
+    covered: list[tuple[datetime.date, int]] = []
+    while cursor < finish:
+        bucket = (cursor.hour * 60 + cursor.minute) // BUCKET_MINUTES
+        if 0 <= bucket < BUCKETS_PER_DAY:
+            covered.append((cursor.date(), bucket))
+        cursor += datetime.timedelta(minutes=BUCKET_MINUTES)
+    return covered
+
+
 def fetch_schedule(user_id: str) -> dict[datetime.date, dict[int, str]]:
     """``{date: {bucket_idx: l0_class}}`` for every classified scheduled event."""
     from ci.hbpe.database import get_conn
@@ -81,13 +109,8 @@ def fetch_schedule(user_id: str) -> dict[datetime.date, dict[int, str]]:
         if finish <= start:
             finish = start + datetime.timedelta(minutes=BUCKET_MINUTES)
 
-        cursor = start
-        while cursor < finish:
-            day = cursor.date()
-            bucket = (cursor.hour * 60 + cursor.minute) // BUCKET_MINUTES
-            if 0 <= bucket < BUCKETS_PER_DAY:
-                out.setdefault(day, {})[bucket] = l0_class
-            cursor += datetime.timedelta(minutes=BUCKET_MINUTES)
+        for day, bucket in covered_buckets(start, finish):
+            out.setdefault(day, {})[bucket] = l0_class
     return out
 
 
