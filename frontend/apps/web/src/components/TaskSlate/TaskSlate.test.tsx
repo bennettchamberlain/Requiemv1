@@ -91,6 +91,20 @@ function createMock(capture: (input: Record<string, unknown>) => void): MockedRe
 describe('TaskSlateDrawer — Plan backlog', () => {
   afterEach(() => setViewport(false));
 
+  it('contains overscroll on the phone sheet so the day underneath does not move', async () => {
+    setViewport(true);
+
+    renderWithProviders(
+      <TaskSlateDrawer open onOpenChange={() => {}} slot={SLOT} sections={backlog([task()])} {...NOOP} />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-slot="sheet-content"]')?.className).toContain(
+        'overscroll-contain',
+      );
+    });
+  });
+
   it('stays shut until it is asked for', () => {
     renderWithProviders(
       <TaskSlateDrawer

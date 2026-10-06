@@ -949,6 +949,11 @@ interface VerticalCalendarProps {
   timeZone?: string;
   footer?: ReactNode;
   className?: string;
+  /**
+   * Room after the last hour, matching the phone add-to-calendar sheet
+   * (`max-h-[70vh]`). Without it the evening sits under the sheet.
+   */
+  scrollEndInset?: boolean;
 }
 
 /**
@@ -977,6 +982,7 @@ export function VerticalCalendar({
   timeZone,
   footer,
   className,
+  scrollEndInset = false,
 }: VerticalCalendarProps) {
   const fmt = useDateTimeFormat();
   const zone = timeZone ?? detectBrowserTimeZone();
@@ -1148,7 +1154,14 @@ export function VerticalCalendar({
         })}
       </div>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto" data-testid="vertical-calendar-scroll">
+      <div
+        ref={scrollRef}
+        className={cn(
+          'min-h-0 flex-1 overflow-auto',
+          scrollEndInset && 'pb-[calc(70vh+env(safe-area-inset-bottom,0px))]',
+        )}
+        data-testid="vertical-calendar-scroll"
+      >
         <div className="flex min-w-0">
           {/* Hours the days read against. Predicted colour lives in each
               column, behind committed time, so the axis stays a clock. */}
