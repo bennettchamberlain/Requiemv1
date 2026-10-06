@@ -192,6 +192,12 @@ describe('VerticalCalendar', () => {
     expect(screen.getByRole('list', { name: /All day on / })).toBeInTheDocument();
     expect(screen.getByRole('listitem', { name: /August/ })).toBeInTheDocument();
   });
+
+  it('leaves room after the last hour when a bottom sheet covers the grid', () => {
+    render(<VerticalCalendar start={MONDAY} days={1} events={[]} rhythm={[]} scrollEndInset />);
+
+    expect(screen.getByTestId('vertical-calendar-scroll').className).toContain('70vh');
+  });
 });
 
 describe('VerticalCalendar — empty-slot selection', () => {
