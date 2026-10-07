@@ -221,16 +221,32 @@ Android's local release-build rules live in the Android package —
 
 ## On-device live reload
 
+The script is `yarn ios` (= `cap run ios`). It used to be called `run`, but Yarn's
+own `run` command shadows a script of that name: a bare `yarn run` only prints the
+script list and exits 0, so nothing was ever built or deployed.
+
 Run the web dev server on every interface
 (`DEV_LISTEN_HOST=0.0.0.0 yarn workspace @ci/fe-web dev`; without the variable it
 listens on `127.0.0.1` only and the device cannot reach it), then:
 
 ```bash
-CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173 yarn run   # = cap run ios
+CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173 yarn ios
 ```
 
-Point the in-app `/server` setting at your API origin so data calls resolve. Unset
-`CAP_SERVER_URL` for a bundled build.
+`CAP_SERVER_URL` is baked into the app: the WebView loads the whole web app from
+that URL. Unset it for a bundled build.
+
+**Signing in.** Vite proxies `/api`, so the dev-server URL is a complete API origin.
+On first launch the app routes to `/device-connect` (Portal). There is no in-app
+field for a local server origin yet (`/device-connect/advanced` only stores the
+Portal URL). To sign in with an email/password account, set the origin from Safari
+Web Inspector (Develop → device → the app's WebView), then open `/login` and choose
+"Sign in with email instead". Use the LAN or Tailscale IP, not `localhost`: on iOS a
+`localhost`, `*.localhost` or `*.local` origin always routes back to `/device-connect`.
+
+```js
+localStorage.setItem('ci.apiBaseUrl', 'http://<lan-or-tailscale-ip>:5173'); location.href = '/login';
+```
 
 ## App icons & splash
 

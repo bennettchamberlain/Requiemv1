@@ -171,6 +171,21 @@ export function isIosPlatform(): boolean {
 }
 
 /**
+ * True only inside the Android Capacitor shell. Web, iOS, and tests without a
+ * `getPlatform` stub stay false. Pair with {@link isIosPlatform} when copy or a
+ * flow differs per OS; "not iOS" alone would also match a desktop browser.
+ */
+export function isAndroidPlatform(): boolean {
+  if (!isNativePlatform()) {
+    return false;
+  }
+
+  const cap = (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+
+  return cap?.getPlatform?.() === 'android';
+}
+
+/**
  * Whether the app is running inside the desktop Tauri shell (`frontend/apps/desktop`).
  * A DIFFERENT native shell from Capacitor's — Tauri injects `window.__TAURI_INTERNALS__`,
  * never `window.Capacitor` — so `isNativePlatform()` is always false here and callers

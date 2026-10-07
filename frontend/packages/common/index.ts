@@ -22,6 +22,7 @@ export {
   initApiBaseUrl,
   isIosPlatform,
   isLocalApplianceOrigin,
+  isAndroidPlatform,
   isNativePlatform,
   isTauriPlatform,
   needsNativeCloudConnect,

@@ -274,16 +274,44 @@ For a sideload build, use `./gradlew assembleDebug` — it needs no keystore.
 
 ## On-device live reload
 
-Run the web dev server on every interface
-(`DEV_LISTEN_HOST=0.0.0.0 yarn workspace @ci/fe-web dev`; without the variable it
-listens on `127.0.0.1` only and the device cannot reach it), then:
+The script is `yarn android` (= `cap run android`). It used to be called `run`, but
+Yarn's own `run` command shadows a script of that name: a bare `yarn run` only
+prints the script list and exits 0, so nothing was ever built or deployed.
+
+The Capacitor CLI finds the SDK through `ANDROID_HOME` / `ANDROID_SDK_ROOT` only —
+it does not read `android/local.properties` — and fails at once with
+`ERR_SDK_NOT_FOUND` when neither is exported.
+
+**Phone on USB.** Make the dev server reachable as the phone's own `localhost`,
+then build and deploy against it:
 
 ```bash
-CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173 yarn run   # = cap run android
+cd frontend/apps/android
+adb reverse tcp:5173 tcp:5173
+ANDROID_HOME=$HOME/Android/Sdk ANDROID_SDK_ROOT=$HOME/Android/Sdk \
+  CAP_SERVER_URL=http://localhost:5173 yarn android --target <serial>   # adb devices -l
 ```
 
-Point the in-app `/server` setting at your API origin so data calls resolve. Unset
-`CAP_SERVER_URL` for a bundled build.
+`adb reverse` rules live in the adb server, so they are gone after every reboot
+(and whenever adb is restarted); the installed app then opens to a blank page
+until the rule is re-added. Over Wi-Fi, run the dev server on every interface
+(`DEV_LISTEN_HOST=0.0.0.0 yarn workspace @ci/fe-web dev`; without the variable it
+listens on `127.0.0.1` only and the device cannot reach it), use
+`CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173`, and no `adb reverse`.
+
+`CAP_SERVER_URL` is baked into the APK (`assets/capacitor.config.json`): the
+WebView loads the whole web app from that URL. Unset it for a bundled build.
+
+**Signing in.** Vite proxies `/api`, so the dev-server URL is a complete API origin.
+On first launch the app routes to `/device-connect` (Portal). To sign in to the local
+server with an email/password account instead, there is no in-app field yet
+(`/device-connect/advanced` only stores the Portal URL): set the origin by hand from
+`chrome://inspect` → the app's WebView → console, then open `/login` and choose
+"Sign in with email instead":
+
+```js
+localStorage.setItem('ci.apiBaseUrl', 'http://localhost:5173'); location.href = '/login';
+```
 
 ## App icons & splash
 
