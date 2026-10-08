@@ -42,12 +42,12 @@
 }
 
 .custom-map-marker .custom-map-marker-pin {
-  box-shadow: var(--shadow-glow-ci), 0 2px 8px rgb(0 0 0 / 20%);
+  box-shadow: var(--ci-button-shadow), 0 2px 8px rgb(0 0 0 / 20%);
   transition: box-shadow 0.2s ease-out;
 }
 
 .custom-map-marker:hover .custom-map-marker-pin {
-  box-shadow: var(--shadow-glow-ci), 0 4px 16px rgb(0 0 0 / 30%);
+  box-shadow: var(--ci-button-shadow), 0 4px 16px rgb(0 0 0 / 30%);
 }
 
 .memory-map-cluster > div {
