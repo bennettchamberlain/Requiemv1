@@ -329,54 +329,45 @@ function TraceStatus({ text }: { text: string }) {
  * that separation is the point: a trace of every fix would otherwise swamp the
  * 121 things that actually happened.
  *
- * `className` places it, because the desktop map has a 300px timeline panel
- * pinned to its left edge and the mobile one does not.
+ * Just the button: MapView's top bar places it beside the area-search controls
+ * and keeps the map from reacting to presses on it.
  */
 export function TraceToggleControl({
   enabled,
   onToggle,
-  className,
   compact = false,
 }: {
   enabled: boolean;
   onToggle: () => void;
-  className?: string;
   compact?: boolean;
 }) {
-  const stopPropagation = useCallback((el: HTMLDivElement | null) => {
-    if (el) {
-      L.DomEvent.disableClickPropagation(el);
-      L.DomEvent.disableScrollPropagation(el);
-    }
-  }, []);
-
+  // No wrapper of its own: the control sits in the map's top bar (MapTopBar in
+  // MapView), which positions it and keeps its presses off the map.
   return (
-    <div ref={stopPropagation} className={cn('absolute left-3 top-3 z-400', className)}>
-      <Button
-        variant="outline"
-        size="sm"
-        aria-pressed={enabled}
-        aria-label={enabled ? 'Hide location history' : 'Show location history'}
-        onClick={onToggle}
-        className={cn(
-          'border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent',
-          compact && 'h-9 px-3 text-xs',
-        )}
-      >
-        <Route className="mr-1 h-4 w-4 shrink-0" />
-        {compact ? (
-          <>
-            History
-            <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {enabled ? 'On' : 'Off'}
-            </span>
-          </>
-        ) : enabled ? (
-          'Hide location history'
-        ) : (
-          'Show location history'
-        )}
-      </Button>
-    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      aria-pressed={enabled}
+      aria-label={enabled ? 'Hide location history' : 'Show location history'}
+      onClick={onToggle}
+      className={cn(
+        'border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent',
+        compact && 'h-9 px-3 text-xs',
+      )}
+    >
+      <Route className="mr-1 h-4 w-4 shrink-0" />
+      {compact ? (
+        <>
+          History
+          <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {enabled ? 'On' : 'Off'}
+          </span>
+        </>
+      ) : enabled ? (
+        'Hide location history'
+      ) : (
+        'Show location history'
+      )}
+    </Button>
   );
 }

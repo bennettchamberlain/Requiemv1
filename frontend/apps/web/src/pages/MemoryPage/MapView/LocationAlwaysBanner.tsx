@@ -20,7 +20,7 @@ export function LocationAlwaysBanner() {
   return (
     <p className="border-b border-border bg-card px-3 py-2 text-xs text-muted-foreground">
       You can record your location for better placement of memories, even while the app is closed and your
-      device is locked.
+      device is locked.{' '}
       <Link to={href} className="font-medium text-foreground underline">
         Turn on Location Sync
       </Link>

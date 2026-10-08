@@ -91,11 +91,14 @@
   color: var(--accent-foreground) !important;
 }
 
-/* Map container */
+/* Map container. The background shows wherever a tile has not loaded yet —
+   the moment after a pan or zoom. The basemap is satellite imagery, so a
+   dark sea tone reads as "more map" there; the page background read as a
+   white flash. */
 .leaflet-container {
   font-family: inherit;
   z-index: 1 !important;
-  background-color: var(--background);
+  background-color: #0f1a24;
 }
 
 /* Ensure all Leaflet elements have lower z-index */

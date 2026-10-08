@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ComponentType, type ReactElement, typ
 import { Badge, Button, Input, Label, Popover, Tooltip, cn } from '@ci/shadcn';
 import { AlertTriangle, Check, ChevronDown, Plus, X } from '@ci/shadcn/icons';
 
+import { MenuShield } from '@/components/MenuShield';
 import { filterValueKey } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
 
 /**
@@ -312,6 +313,7 @@ export function FilterValuePicker({
   const popover = (trigger: ReactNode) => (
     <Popover open={open} onOpenChange={changeOpen} modal={modal}>
       <Popover.Trigger asChild>{trigger}</Popover.Trigger>
+      <MenuShield open={open} />
       <Popover.Content
         align="start"
         sideOffset={4}

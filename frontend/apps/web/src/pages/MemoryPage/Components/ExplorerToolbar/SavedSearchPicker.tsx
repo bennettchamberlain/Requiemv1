@@ -5,6 +5,7 @@ import { Button, Input, Popover, cn } from '@ci/shadcn';
 import { ChevronDown, FolderSearch2 } from '@ci/shadcn/icons';
 import { Link, useSearchParams } from 'react-router-dom';
 
+import { MenuShield } from '@/components/MenuShield';
 import { gql } from '@/graphql';
 
 import { applySavedSearchToParams, GET_SAVED_SEARCH } from '../../useSavedSearchResolution';
@@ -175,6 +176,7 @@ export function SavedSearchPicker({ onOpen }: { onOpen?: (params: URLSearchParam
           <ChevronDown className="ml-2 h-4 w-4 opacity-50 transition-transform group-data-[state=open]:rotate-180" />
         </Button>
       </Popover.Trigger>
+      <MenuShield open={open} />
       <Popover.Content className="w-72 p-0" align="end">
         <SavedSearchList
           filterText={filterText}
