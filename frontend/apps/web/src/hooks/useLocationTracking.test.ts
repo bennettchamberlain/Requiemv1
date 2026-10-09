@@ -409,7 +409,7 @@ describe('useLocationTracking — native watcher is the only writer', () => {
     expect(h.addBackgroundLocationWatcher.mock.calls[0][0]).toMatchObject({ background: false });
   });
 
-  it('starts a background watcher and requests notification permission for Always', async () => {
+  it('on Android keeps the watcher foreground-only and hands Always to motion-gated sampling', async () => {
     localStorage.setItem(STORAGE_KEY, 'true');
     h.authenticated = true;
     h.isNativePlatform.mockReturnValue(true);
@@ -418,14 +418,50 @@ describe('useLocationTracking — native watcher is the only writer', () => {
 
     act(() => result.current.setMode('always'));
 
-    await waitFor(() =>
-      expect(h.addBackgroundLocationWatcher).toHaveBeenLastCalledWith(
-        expect.objectContaining({ background: true }),
-        expect.any(Function),
-        expect.any(Function),
-      ),
+    await waitFor(() => expect(h.startSignificantLocationUpdates).toHaveBeenCalled());
+
+    // Never `background: true`: that flag is the always-on 1 Hz GPS request this replaced.
+    // And never prompting: the LocalHub chain owns the prompts and must run first, or the
+    // two plugins' requests collide and Android drops one.
+    await waitFor(() => expect(h.addBackgroundLocationWatcher).toHaveBeenCalled());
+    expect(h.addBackgroundLocationWatcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ background: false, requestPermissions: false }),
+      expect.any(Function),
+      expect.any(Function),
     );
+    expect(h.startSignificantLocationUpdates.mock.invocationCallOrder[0]).toBeLessThan(
+      h.addBackgroundLocationWatcher.mock.invocationCallOrder.at(-1) ?? 0,
+    );
+    // The notification is still needed, for the moving-only foreground service.
     expect(h.requestNotificationPermission).toHaveBeenCalled();
+    // Android builds the wire record natively from exactly what captureLocationFix would
+    // use here, so the two enqueues of one fix share a source_id.
+    expect(h.startSignificantLocationUpdates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deviceKey: expect.any(String),
+        provider: 'companion-mobile',
+        owner: null,
+        minDistanceMeters: 150,
+        minIntervalMs: 10 * 60 * 1000,
+        maxAccuracyMeters: 200,
+        geofenceRadiusMeters: 100,
+        notificationTitle: expect.any(String),
+        notificationText: expect.any(String),
+      }),
+      expect.any(Function),
+      expect.any(Function),
+    );
+  });
+
+  it('does not start motion-gated sampling for when_in_use', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true');
+    h.authenticated = true;
+    h.isNativePlatform.mockReturnValue(true);
+
+    renderHook(() => useLocationTracking());
+
+    await waitFor(() => expect(h.addBackgroundLocationWatcher).toHaveBeenCalled());
+
     expect(h.startSignificantLocationUpdates).not.toHaveBeenCalled();
   });
 
@@ -465,7 +501,7 @@ describe('useLocationTracking — native watcher is the only writer', () => {
     const stop = vi.fn(async () => {});
     let deliver: ((location: ReturnType<typeof fakeBackgroundLocation>) => void) | undefined;
 
-    h.startSignificantLocationUpdates.mockImplementation(async (onLocation) => {
+    h.startSignificantLocationUpdates.mockImplementation(async (_options, onLocation) => {
       deliver = onLocation;
 
       return stop;

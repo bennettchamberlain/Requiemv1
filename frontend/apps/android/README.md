@@ -274,30 +274,48 @@ For a sideload build, use `./gradlew assembleDebug` — it needs no keystore.
 
 ## On-device live reload
 
-The script is `yarn android` (= `cap run android`). It used to be called `run`, but
-Yarn's own `run` command shadows a script of that name: a bare `yarn run` only
-prints the script list and exits 0, so nothing was ever built or deployed.
+The script is `yarn android` (= `cap run android`, with two things done first — see
+below). It used to be called `run`, but Yarn's own `run` command shadows a script of
+that name: a bare `yarn run` only prints the script list and exits 0, so nothing was
+ever built or deployed.
 
-The Capacitor CLI finds the SDK through `ANDROID_HOME` / `ANDROID_SDK_ROOT` only —
-it does not read `android/local.properties` — and fails at once with
-`ERR_SDK_NOT_FOUND` when neither is exported.
-
-**Phone on USB.** Make the dev server reachable as the phone's own `localhost`,
-then build and deploy against it:
+**Phone on USB.** Start the full dev stack from the repo root with `make dev` (API,
+worker and the Vite web server), then build and deploy against it as the phone's
+own `localhost`:
 
 ```bash
 cd frontend/apps/android
-adb reverse tcp:5173 tcp:5173
-ANDROID_HOME=$HOME/Android/Sdk ANDROID_SDK_ROOT=$HOME/Android/Sdk \
-  CAP_SERVER_URL=http://localhost:5173 yarn android --target <serial>   # adb devices -l
+CAP_SERVER_URL=http://localhost:5173 yarn android --target <serial>   # adb devices -l
 ```
 
-`adb reverse` rules live in the adb server, so they are gone after every reboot
-(and whenever adb is restarted); the installed app then opens to a blank page
-until the rule is re-added. Over Wi-Fi, run the dev server on every interface
-(`DEV_LISTEN_HOST=0.0.0.0 yarn workspace @ci/fe-web dev`; without the variable it
-listens on `127.0.0.1` only and the device cannot reach it), use
-`CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173`, and no `adb reverse`.
+`scripts/dev-android.cjs` is what `yarn android` runs. Before handing every
+argument on to `cap run android`, it:
+
+- **Finds the SDK the way the Makefile does** — `ANDROID_HOME`, then
+  `ANDROID_SDK_ROOT`, then the `sdk.dir` Android Studio writes into the git-ignored
+  `android/local.properties` — and exports it for the Capacitor CLI. The CLI's
+  device runner reads the two variables only (its own Linux fallback is
+  `~/Android/sdk`, which is not Android Studio's `~/Android/Sdk`), so without this
+  it fails at once with `ERR_SDK_NOT_FOUND` on a machine where Gradle is perfectly
+  happy. No path is ever guessed: with none of the three set it stops with the fix
+  in the message.
+- **Re-applies `adb reverse tcp:<port> tcp:<port>`** whenever `CAP_SERVER_URL` names
+  the device's own loopback. The rule lives in the adb server, so it is gone after
+  every phone reboot (and whenever adb restarts); the installed app then opens to a
+  blank page until it is back. `--target <serial>` and `ANDROID_SERIAL` pick the
+  device when more than one is attached. A LAN / tailnet URL and a bundled build
+  (no `CAP_SERVER_URL`) need no tunnel and skip this step.
+
+Through the tunnel nothing needs to listen on the LAN (`DEV_LISTEN_HOST` is not
+required), Vite's `/api` proxy carries data calls to the dev stack's API, and the
+in-app `/server` setting needs no change: the app stores the Capacitor server URL as
+its API origin on first load. Note the dev stack takes port 5173 only when it is
+free; a second worktree's stack gets another port, and the URL decides which port is
+tunnelled.
+
+**Phone over Wi-Fi.** Run `make dev` with `DEV_LISTEN_HOST=0.0.0.0` set (without it
+Vite and the API listen on `127.0.0.1` only and the device cannot reach them), use
+`CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173`, and no tunnel is involved.
 
 `CAP_SERVER_URL` is baked into the APK (`assets/capacitor.config.json`): the
 WebView loads the whole web app from that URL. Unset it for a bundled build.
@@ -374,6 +392,46 @@ light bar in light mode — and re-applies on theme change via a `MutationObserv
 with a web no-op fallback. Android 13+ needs the `POST_NOTIFICATIONS` runtime permission
 (declared). All native-bridge helpers are unit-tested in
 `frontend/apps/web/src/test/nativeBridge.test.ts`.
+
+**Location (Always mode).** Two plugins, with a strict split. The foreground is
+`@capacitor-community/background-geolocation`, used **foreground-only** in every mode
+(`useLocationTracking` never sets its `backgroundMessage`). Its background watcher is
+not used because of how it asks the OS for fixes: a high-accuracy request every
+**1 second**, for as long as the watcher exists, with the distance filter applied only to
+delivery. The GPS receiver stayed on around the clock, phone still or not, and the phone's
+own battery stats put that one request at about a quarter of a day's drain (4h 14m of GPS
+in a 4-hour window, plus an hour and a half of Wi-Fi location scanning on the app's
+account). The app's 150 m / 10 min sampling rule sits downstream of that request and
+cannot reduce it.
+
+Background samples come from `@ci/capacitor-local-hub`'s `startSignificantLocationUpdates`
+instead — **motion-gated sampling**, under `android/src/main/java/.../localhub/motion/`.
+GPS runs only while the phone is moving, and every signal that decides that needs nothing
+beyond the location grants Always already holds. The fixes themselves say when the phone has
+stopped (ten minutes without 50 m of movement from where movement was last confirmed, or
+three once the permission-free stationary-detect sensor has reported it physically at rest);
+an exit geofence of 100 m around the resting spot says when it starts again. That geofence is
+the **only** restart signal: Android evaluates it with cheap location, it survives the
+process being frozen or killed, and it is one of the few events that may start a location
+foreground service from the background. No sensor can fill that role — since Android 9 a
+backgrounded app with no foreground service receives no sensor events, one-shot triggers
+included (verified on a device: the significant-motion trigger fired for the system's
+listeners and never reached the app, frozen a minute after it stopped). The cost is that the
+first stretch of every trip, the radius plus Play Services' latency, is not sampled, and a
+walk shorter than the radius is not sampled at all. A location foreground service,
+with the notification Android requires, exists only in between. The activity-recognition
+API is deliberately **not** used: it is a separate "Physical activity" permission that reads
+as a different kind of monitoring than location, and iOS's significant-change monitoring
+asks for nothing of the sort. Each fix that clears the gate is queued into the encrypted
+outbox **from native code**, so recording continues after the WebView is gone; the plugin
+also emits it as `significantLocation`, and the web side's own enqueue collapses on the
+shared `source_id` (the record builder is pinned to the same fixture as the web one, see
+`PositionRecordJsonTest`). Two runtime grants, walked one prompt at a time by the plugin:
+fine location, then background location (`Allow all the time`). Refusing either emits
+`significantLocationError` `NOT_AUTHORIZED`, which is what lights up "Open Settings".
+Check the footprint on a device with `adb shell dumpsys location`: while the phone is
+still there must be **no** `ProviderRequest` carrying this app's uid, and
+`dumpsys activity services com.ci.memory` must list no `MotionLocationService`.
 
 These bridges live in `@ci/common/src/utils/nativeBridge.ts` and reach the plugins via
 the runtime `window.Capacitor.Plugins` global (no `@capacitor/*` import in the web

@@ -6,4 +6,28 @@
          permission does not expose the device to the network, only to the app's own
          localhost port. -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Motion-gated background sampling (motion/). GPS runs only while the phone is
+         moving: the fixes themselves and the permission-free stationary-detect sensor say
+         when it stops, an exit geofence says when it starts again, and a location
+         foreground service exists only in between. Nothing beyond the location grants is declared:
+         deliberately no ACTIVITY_RECOGNITION. The host app already declares the location
+         permissions; they are repeated here so the module is complete on its own and the
+         merger unions them. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <service
+            android:name=".motion.MotionLocationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+        <receiver
+            android:name=".motion.MotionGeofenceReceiver"
+            android:exported="false" />
+    </application>
 </manifest>

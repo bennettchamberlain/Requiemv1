@@ -100,10 +100,8 @@ const PLUGINS: PluginUnderTest[] = [
     androidPlugin: 'android/src/main/java/com/companionintelligence/localhub/LocalHubPlugin.kt',
     iosPlugin: 'ios/Sources/LocalHubPlugin/LocalHubPlugin.swift',
     anchorMethod: 'secureGet',
-    // Significant-change monitoring. `startSignificantLocationUpdates` in
-    // @ci/common's nativeBridge returns before touching the plugin off iOS; Android
-    // keeps its background watcher instead.
-    iosOnly: ['startSignificantLocationUpdates', 'stopSignificantLocationUpdates'],
+    // `startSignificantLocationUpdates` / `stopSignificantLocationUpdates` are on both
+    // halves now: significant-change monitoring on iOS, motion-gated sampling on Android.
   },
   {
     pkg: 'capacitor-local-llm',

@@ -5,8 +5,10 @@ import {
   type LocationCaptureOutcome,
   type LocationSampler,
   type LocationTrackingMode,
+  BACKGROUND_MAX_ACCURACY_METERS,
   BACKGROUND_MIN_DISTANCE_METERS,
   BACKGROUND_MIN_INTERVAL_MS,
+  HOME_GEOFENCE_RADIUS_METERS,
   LOCATION_MODE_CHANGE_EVENT,
   LOCATION_NEEDS_SETTINGS_EVENT,
   MIN_DISTANCE_METERS,
@@ -14,11 +16,13 @@ import {
   addBackgroundLocationWatcher,
   captureLocationFix,
   createLocationSampler,
+  deviceSourceKey,
   fixFromBackgroundGeolocationLocation,
   fixFromGeolocationPosition,
   getNativeLocationAuthorization,
   isIosPlatform,
   isNativePlatform,
+  outboxOwnerStamp,
   publishLocationNeedsSettingsUpgrade,
   publishLocationTrackingMode,
   readLocationTrackingMode,
@@ -66,13 +70,19 @@ async function ensureIosAlwaysAuthorization(): Promise<boolean> {
 /**
  * Location tracking: records `ci.position` fixes from this device.
  *
- * Native (iOS + Android) uses `@capacitor-community/background-geolocation` as the one
- * writer, gated by `mode`: `when_in_use` starts a foreground-only watcher. `always` on
- * Android adds a `backgroundMessage` so the OS keeps sampling after the app leaves the
- * foreground (the persistent notification Android requires). `always` on iOS does not:
- * that flag turns on the solid blue indicator for the whole background session. iOS
- * instead starts significant-change monitoring, which records a real move and stays
- * quiet while the phone sits still. Plain web falls back to `navigator.geolocation`.
+ * Native (iOS + Android) uses `@capacitor-community/background-geolocation` for the
+ * foreground: a foreground-only watcher in every enabled mode. Its background flag is
+ * never set. On Android it would hold a high-accuracy, once-per-second GPS request for as
+ * long as the watcher exists, phone still or not (measured at about a quarter of a day's
+ * battery); on iOS it turns on the solid blue indicator for the whole background session.
+ *
+ * `always` adds the LocalHub plugin's `startSignificantLocationUpdates` instead: on iOS,
+ * significant-change monitoring, which records a real move and stays quiet while the phone
+ * sits still; on Android, motion-gated sampling, where the fixes and an exit geofence
+ * decide when the phone is moving and GPS runs only then. Android
+ * queues each background fix natively, so it keeps recording after the WebView is gone; the
+ * event is still handed to `captureLocationFix`, where the shared `source_id` makes the
+ * second enqueue a no-op. Plain web falls back to `navigator.geolocation`.
  *
  * Consent is per-device (localStorage). Settings → Location owns the disclosure.
  */
@@ -227,9 +237,9 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
 
     void (async () => {
       if (mode === 'always') {
-        // Android 13+ requires POST_NOTIFICATIONS before the persistent tracking
-        // notification (the OS's price of admission for background sampling) can show.
-        // iOS Always does not post that notification.
+        // Android 13+ requires POST_NOTIFICATIONS before the tracking notification (the
+        // OS's price of admission for a location foreground service; shown only while the
+        // phone is moving) can show. iOS Always does not post that notification.
         if (!isIosPlatform()) {
           await requestNotificationPermission();
         }
@@ -249,22 +259,50 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
         publishLocationNeedsSettingsUpgrade(false);
       }
 
+      // Always: the LocalHub plugin walks the location prompts (fine, then background)
+      // itself, so it goes FIRST and the watcher below must not prompt. Android allows one
+      // permission request at a time; two plugins asking at once lost the second request
+      // outright ("Can request only one set of permissions at a time"), which is how the
+      // background-location step never appeared on a device.
+      if (mode === 'always') {
+        stopSignificant = await startSignificantLocationUpdates(
+          {
+            // Android builds the wire record from these in a process that may have no
+            // JavaScript; they are the same values captureLocationFix would use here.
+            deviceKey: deviceSourceKey(),
+            provider: 'companion-mobile',
+            owner: outboxOwnerStamp(),
+            minDistanceMeters: BACKGROUND_MIN_DISTANCE_METERS,
+            minIntervalMs: BACKGROUND_MIN_INTERVAL_MS,
+            maxAccuracyMeters: BACKGROUND_MAX_ACCURACY_METERS,
+            geofenceRadiusMeters: HOME_GEOFENCE_RADIUS_METERS,
+            notificationTitle: 'Recording location',
+            notificationText: 'Per your request, Companion records your location while you are on the move.',
+          },
+          onLocation,
+          onError,
+        );
+
+        if (cancelled) {
+          void stopSignificant?.();
+
+          return;
+        }
+      }
+
       const id = await addBackgroundLocationWatcher(
         {
-          // iOS Always stays foreground-only on this plugin. Background samples go
-          // through significant-change monitoring, which does not hold the blue pill.
-          background: mode === 'always' && !isIosPlatform(),
-          distanceFilter: mode === 'always' ? BACKGROUND_MIN_DISTANCE_METERS : MIN_DISTANCE_METERS,
-          // iOS Always is requested above so the plugin does not skip the second prompt.
-          requestPermissions: mode === 'always' ? !isIosPlatform() : true,
+          // Foreground-only on both platforms, in every mode. Background samples go
+          // through startSignificantLocationUpdates above (see the hook docblock).
+          background: false,
+          distanceFilter: MIN_DISTANCE_METERS,
+          // Always: location was just requested above (iOS: ensureIosAlwaysAuthorization;
+          // Android: the LocalHub chain), so the plugin must not prompt again.
+          requestPermissions: mode !== 'always',
         },
         onLocation,
         onError,
       );
-
-      if (mode === 'always' && isIosPlatform()) {
-        stopSignificant = await startSignificantLocationUpdates(onLocation, onError);
-      }
 
       if (cancelled) {
         if (id) {
