@@ -411,7 +411,7 @@ bytes + 512 MiB) instead of a global 1 GiB, and `downloadModel` refuses any URL 
 `capacitorPluginContract.test.ts` parses `definitions.ts`, the Kotlin and the Swift catalogs and both
 method lists, so the halves cannot drift.
 
-**Known limits (measured on LiteRT-LM 0.14.0 with the Android emulator).**
+**Known limits (measured on LiteRT-LM 0.14.0 with the Android emulator; the app links 0.18.0 since the bump, re-measure on a device).**
 
 - A cancelled conversation cannot be reused, so after **Stop** — or a failed turn — the next message starts a
   fresh conversation and the model forgets earlier turns, even though the chat still shows them. Replaying
@@ -422,7 +422,7 @@ method lists, so the halves cannot drift.
   GPU load probes one token and falls back to the CPU itself (`fellBackToCpu`). The plugin manifest declares
   `libOpenCL.so` / `libvndksupport.so` (`required=false`), which Android 12+ needs before an app targeting API 31+
   may open the vendor OpenCL library; that effect needs a real GPU device to confirm.
-- The catalog is pinned to revisions that load on 0.14.0. Qwen3's `main` needs 0.17.1+, so bump LiteRT-LM on both
+- The catalog is pinned to revisions that load on the runtime both platforms link (0.18.0). Qwen3's pin is the 0.17.1+ re-export; any further repin goes on both
   platforms *before* repinning it.
 - **Play Console:** the Android plugin manifest again declares `FOREGROUND_SERVICE_DATA_SYNC` and
   `foregroundServiceType="dataSync"` on both `LocalLlmGenerationService` and WorkManager's
@@ -581,6 +581,10 @@ then read "On-device models run in the iOS and Android apps." on a phone.
   (iOS 26+) is the fuller answer and a separate, UX-affecting change.
 - **The Android AAR and iOS xcframework had drifted** (0.11.0 vs 0.14.0 of the same upstream
   LiteRT-LM release) with no record of why. Reconciled to 0.14.0 on both.
+- **Bumped to 0.18.0 on both (2026-10-12).** Android: Kotlin plugin 2.4.21 (the AAR carries 2.4 metadata),
+  minSdk 24 (the AAR declares it), `Capabilities` → `ModelInfo`. iOS: re-vendored `swift/` with the
+  patches in `Vendor/LiteRTLM/PATCHES.md` re-applied, two of them now upstream. Qwen3 repinned to the
+  0.17.1+ re-export (`a6e678a1…`, 344,671,744 bytes).
 - **The RAM floor was unreconciled 2x between platforms** (Android 3 GB total RAM vs iOS 6 GB
   physical memory) for models with the same ~2 GB estimated peak RSS. Both now gate at 4 GB.
 - **LiteRT-LM's own constrained-decoding flag** (`enableConversationConstrainedDecoding`) is now

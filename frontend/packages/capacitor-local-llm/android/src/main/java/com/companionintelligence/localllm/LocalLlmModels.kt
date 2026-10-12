@@ -93,18 +93,17 @@ object LocalLlmModels {
      * download got `401 GatedRepo`).
      *
      * **Why the url is pinned, and to this commit.** `resolve/main` moved on 2026-09-20 to a re-export
-     * (344_671_744 bytes) that needs LiteRT-LM 0.17.1 or newer. On this plugin's 0.14.0 it fails at
-     * `Engine.initialize()` ("Only kv_cache tensors are supported as outputs to prefill"), and it also failed
-     * [ModelDownloadWorker]'s final `length != expected` check against the 344_437_808 recorded here. This is
-     * the last revision that loads on 0.14.0 (exercised on an arm64 emulator). Bumping LiteRT-LM is what
-     * unlocks `main`; change the commit and the size together, never one alone.
+     * (344_671_744 bytes) that needs LiteRT-LM 0.17.1 or newer; on the 0.14.0 this plugin used to link it
+     * failed at `Engine.initialize()` and failed [ModelDownloadWorker]'s size check against the older
+     * 344_437_808. Since the 0.18.0 bump the pin is that re-export. Change the commit and the size together,
+     * never one alone, and only to a revision that loads on the runtime both platforms link.
      */
     val QWEN3_0_6B_INT4 = LocalLlmModelInfo(
         modelId = "qwen3-0.6b-int4",
         hfRepo = "litert-community/Qwen3-0.6B",
         fileName = "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
-        sizeBytes = 344_437_808L,
-        commitHash = "154c5de0fc0fc5002a7da570ba8c67edffa32ca2",
+        sizeBytes = 344_671_744L,
+        commitHash = "a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b",
         minDeviceMemoryBytes = 4_294_967_296L,
         defaultMaxTokens = 1024,
         defaultTopK = 64,
