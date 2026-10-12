@@ -203,4 +203,31 @@ object LocalLlmPolicy {
      * retuned together.
      */
     fun toolResultByteBudget(contextTokens: Int): Int = minOf(maxOf(contextTokens / 2, 256), 16_384)
+
+    // ---- tool declarations ----------------------------------------------------------------------
+
+    /**
+     * JSON bytes per token for a tool declaration, as measured: on a device, Gemma 4 E2B tokenised
+     * 18.1 KB of declarations (21 intents' name, description and parameter schema) plus the short
+     * system instruction to ~4,350 tokens -- about 4.2 bytes a token. 4 rounds towards counting
+     * MORE tokens than there are, which is the safe direction for a budget.
+     */
+    const val TOOL_DECLARATION_BYTES_PER_TOKEN = 4
+
+    /**
+     * The most tokens the tool *declarations* may take, together: a third of the window.
+     *
+     * Every declaration is in the prompt of every turn, so this is paid before the question, the
+     * model's reasoning, a tool result ([toolResultByteBudget], up to half the window in bytes) or
+     * the reply get any room. Nothing enforced this before, and on a device the appliance's 21
+     * local-tier intents came to ~4,350 tokens against Gemma 4's 4,000-token window: the first
+     * message could never fit, and every turn failed with the runtime's own "too long" error.
+     * [com.companionintelligence.localllm.intents.IntentToolProvider] binds tools in priority
+     * order until this is spent and leaves the rest out, by name in the log.
+     */
+    fun toolDeclarationTokenBudget(contextTokens: Int): Int = maxOf(contextTokens / 3, 0)
+
+    /** Tokens for [utf8Bytes] of declaration JSON, rounded up; see [TOOL_DECLARATION_BYTES_PER_TOKEN]. */
+    fun estimateDeclarationTokens(utf8Bytes: Int): Int =
+        if (utf8Bytes <= 0) 0 else (utf8Bytes + TOOL_DECLARATION_BYTES_PER_TOKEN - 1) / TOOL_DECLARATION_BYTES_PER_TOKEN
 }

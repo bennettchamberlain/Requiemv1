@@ -1,8 +1,10 @@
 package com.companionintelligence.localhub.motion
 
+import android.Manifest
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.hardware.TriggerEvent
@@ -88,22 +90,47 @@ class PlayServicesMotionPlatform(context: Context) : MotionPlatform {
         LocationServices.getGeofencingClient(app).removeGeofences(geofenceIntent())
     }
 
-    override fun startSampling(config: MotionTrackingConfig) {
+    override fun startSampling(config: MotionTrackingConfig): Boolean {
         val intent = Intent(app, MotionLocationService::class.java)
             .putExtra(MotionLocationService.EXTRA_TITLE, config.notificationTitle)
             .putExtra(MotionLocationService.EXTRA_TEXT, config.notificationText)
-        try {
+        return try {
             ContextCompat.startForegroundService(app, intent)
+            true
         } catch (e: Exception) {
-            // ForegroundServiceStartNotAllowedException (API 31+) when the start came from
-            // somewhere Android does not exempt. The next transition or geofence exit, which
-            // are exempt, will try again.
+            // ForegroundServiceStartNotAllowedException (API 31+): the start came from
+            // somewhere Android does not exempt -- seen on a device when the app was launched
+            // behind the lock screen (uid state TOP_SLEEPING). The tracker falls back to a
+            // geofence, whose exit IS exempt.
             Log.w(TAG, "location service not started: ${e.message}")
+            false
         }
     }
 
     override fun stopSampling() {
         app.stopService(Intent(app, MotionLocationService::class.java))
+    }
+
+    override fun isSamplingRunning(): Boolean = MotionLocationService.isRunning
+
+    override fun lastKnownLocation(onResult: (GateSample?) -> Unit) {
+        if (ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            onResult(null)
+            return
+        }
+        try {
+            LocationServices.getFusedLocationProviderClient(app).lastLocation
+                .addOnSuccessListener { location ->
+                    onResult(location?.let { GateSample(it.latitude, it.longitude, it.time) })
+                }
+                .addOnFailureListener {
+                    Log.w(TAG, "last known location unavailable: ${it.message}")
+                    onResult(null)
+                }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "last known location refused: ${e.message}")
+            onResult(null)
+        }
     }
 
     override fun nowMs(): Long = System.currentTimeMillis()

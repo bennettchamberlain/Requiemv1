@@ -18,7 +18,12 @@ const llm = vi.hoisted(() => ({
     intentTools: true,
   },
   ready: true,
-  ensureLoaded: vi.fn(async () => ({ alreadyLoaded: true, accelerator: 'cpu' })),
+  ensureLoaded: vi.fn(
+    async (): Promise<{ alreadyLoaded: boolean; accelerator: string; toolCount?: number }> => ({
+      alreadyLoaded: true,
+      accelerator: 'cpu',
+    }),
+  ),
   stream: vi.fn(),
   reset: vi.fn(async () => {}),
 }));
@@ -238,6 +243,47 @@ describe('useChatRequester — device mode', () => {
       await result.current[1].submit({ message: 'b', fileIds: [] });
     });
     expect(llm.stream).toHaveBeenLastCalledWith('b', expect.objectContaining({ enableThinking: false }));
+  });
+
+  it('refuses a write request in code when the phone has no tools, without asking the model', async () => {
+    llm.ensureLoaded.mockResolvedValueOnce({ alreadyLoaded: true, accelerator: 'cpu', toolCount: 0 });
+
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    let returned: boolean | undefined;
+
+    await act(async () => {
+      returned = await result.current[1].submit({ message: 'Add a task to buy milk', fileIds: [] });
+    });
+
+    expect(returned).toBe(true);
+    expect(llm.stream).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current[0].stream).not.toBeNull());
+
+    let drained: { text: string; think: string } | undefined;
+
+    await act(async () => {
+      drained = await drain(result.current[0].stream as ReadableStream<Uint8Array>);
+    });
+
+    expect(drained?.text).toMatch(/nothing was changed/);
+    expect(result.current[0].local?.modelId).toBe('qwen3-0.6b-int4');
+  });
+
+  it('lets a question through to a tool-less model, and a write request through to a model with tools', async () => {
+    llm.ensureLoaded.mockResolvedValueOnce({ alreadyLoaded: true, accelerator: 'cpu', toolCount: 0 });
+    const { result } = renderHook(() => useChatRequester({ threadId: null }));
+
+    await act(async () => {
+      await result.current[1].submit({ message: 'What tasks do I have?', fileIds: [] });
+    });
+    expect(llm.stream).toHaveBeenCalledTimes(1);
+
+    llm.ensureLoaded.mockResolvedValueOnce({ alreadyLoaded: true, accelerator: 'cpu', toolCount: 10 });
+    await act(async () => {
+      await result.current[1].submit({ message: 'Add a task to buy milk', fileIds: [] });
+    });
+    expect(llm.stream).toHaveBeenCalledTimes(2);
   });
 
   it('refuses, rather than falling through to the appliance, when the model is not downloaded', async () => {

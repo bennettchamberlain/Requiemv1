@@ -89,6 +89,7 @@ class MotionLocationService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        isRunning = true
         if (config == null && intent == null) {
             // Restarted after the tracker was disarmed or told the phone is still.
             stopSelf()
@@ -118,6 +119,7 @@ class MotionLocationService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         client?.removeLocationUpdates(callback)
         client = null
         super.onDestroy()
@@ -159,6 +161,16 @@ class MotionLocationService : Service() {
     }
 
     companion object {
+        /**
+         * True from a successful startForeground() until onDestroy(), in this process only.
+         * [MotionGatedTracker] reads it (through the platform) to tell "the service is running
+         * and its notification was swiped" from "the service is missing" -- only the latter
+         * may be restarted, or every swipe-away would be undone on the next resume.
+         */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
         const val EXTRA_TITLE = "title"
         const val EXTRA_TEXT = "text"
         const val INTERVAL_MS = 5_000L

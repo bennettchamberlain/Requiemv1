@@ -17,14 +17,34 @@ import org.robolectric.annotation.Config
 private class FakePlatform : MotionPlatform {
     val calls = mutableListOf<String>()
     var now = 1_000_000L
+    /** False = Android refuses the foreground service (started from the background). */
+    var startAllowed = true
+    /** Whether the service is alive; set by an allowed start, cleared by stop -- or by a test playing process death. */
+    var samplingRunning = false
+    /** What the fused provider answers for its last known fix. */
+    var lastKnown: GateSample? = null
     override fun watchForStillness() { calls += "watchForStillness" }
     override fun cancelSensorTriggers() { calls += "cancelSensorTriggers" }
     override fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float) {
         calls += "geofence($latitude,$longitude,$radiusMeters)"
     }
     override fun clearExitGeofence() { calls += "clearGeofence" }
-    override fun startSampling(config: MotionTrackingConfig) { calls += "startSampling" }
-    override fun stopSampling() { calls += "stopSampling" }
+    override fun startSampling(config: MotionTrackingConfig): Boolean {
+        calls += "startSampling"
+        if (startAllowed) {
+            samplingRunning = true
+        }
+        return startAllowed
+    }
+    override fun stopSampling() {
+        calls += "stopSampling"
+        samplingRunning = false
+    }
+    override fun isSamplingRunning(): Boolean = samplingRunning
+    override fun lastKnownLocation(onResult: (GateSample?) -> Unit) {
+        calls += "lastKnownLocation"
+        onResult(lastKnown)
+    }
     override fun nowMs(): Long = now
 }
 
@@ -149,6 +169,25 @@ class MotionGatedTrackerTest {
     }
 
     @Test
+    fun `a geofence exit whose service start is refused fences where the phone is now`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        becomeStillViaFixes()
+        platform.startAllowed = false
+        platform.lastKnown = GateSample(33.6800, -117.7900, platform.now)
+        platform.calls.clear()
+
+        tracker.onGeofenceExit()
+
+        // Not the old resting spot: the phone has left it, and a fence it is outside of never fires.
+        assertEquals(
+            listOf("clearGeofence", "startSampling", "lastKnownLocation", "geofence(33.68,-117.79,200.0)"),
+            platform.calls,
+        )
+        assertFalse(store.load()!!.moving)
+    }
+
+    @Test
     fun `a geofence exit while already moving is a no-op`() {
         tracker.arm(config)
         platform.calls.clear()
@@ -250,17 +289,133 @@ class MotionGatedTrackerTest {
     }
 
     @Test
-    fun `coming to the foreground touches nothing but the foreground flag`() {
+    fun `coming to the foreground touches nothing but the flag while the service is running`() {
         tracker.arm(config)
         platform.calls.clear()
 
         tracker.onAppResumed()
         assertTrue(tracker.appInForeground)
-        // No restart of the service: that would re-post a notification the user swiped away.
+        // No restart of a running service: that would re-post a notification the user swiped away.
         assertTrue(platform.calls.isEmpty())
 
         tracker.onAppPaused()
         assertFalse(tracker.appInForeground)
+    }
+
+    @Test
+    fun `coming to the foreground does not restart a service that is absent because the phone is still`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        becomeStillViaFixes()
+        platform.calls.clear()
+
+        tracker.onAppResumed()
+
+        assertTrue(platform.calls.isEmpty())
+        assertFalse(store.load()!!.moving)
+    }
+
+    @Test
+    fun `coming to the foreground restarts a service that died while moving`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        // The process was killed and came back with the state saying "moving" but no service.
+        platform.samplingRunning = false
+        platform.calls.clear()
+
+        tracker.onAppResumed()
+
+        assertEquals(listOf("startSampling", "watchForStillness"), platform.calls)
+        assertTrue(store.load()!!.moving)
+        // The still clock starts over: the fixes that would have advanced it never arrived.
+        assertNull(store.load()!!.movementAnchor)
+    }
+
+    @Test
+    fun `a refused service start fences the last known location instead of pretending to move`() {
+        // The device case: the app was (re)installed and launched behind the lock screen, so
+        // Android refused the location foreground service. Three days of trips were lost
+        // because the tracker recorded "moving" with no GPS and no fence.
+        platform.startAllowed = false
+        platform.lastKnown = GateSample(33.6952, -117.7481, 5_000L)
+
+        tracker.arm(config)
+
+        assertEquals(
+            listOf("clearGeofence", "startSampling", "lastKnownLocation", "geofence(33.6952,-117.7481,200.0)"),
+            platform.calls,
+        )
+        val state = store.load()!!
+        assertFalse(state.moving)
+        assertEquals(33.6952, state.lastSeen!!.latitude, 0.0)
+        assertNull(tracker.configForService())
+
+        // Leaving the fence restarts sampling the exempt way, like any other departure.
+        platform.startAllowed = true
+        platform.calls.clear()
+        tracker.onGeofenceExit()
+        assertEquals(listOf("clearGeofence", "startSampling", "watchForStillness"), platform.calls)
+        assertTrue(store.load()!!.moving)
+    }
+
+    @Test
+    fun `a refused start with no location to fence stays wanted and is repaired on resume`() {
+        platform.startAllowed = false
+        platform.lastKnown = null
+
+        tracker.arm(config)
+
+        assertEquals(listOf("clearGeofence", "startSampling", "lastKnownLocation"), platform.calls)
+        assertTrue(store.load()!!.moving)
+        assertFalse(platform.samplingRunning)
+
+        // The user unlocks the phone and opens the app: the start is allowed now.
+        platform.startAllowed = true
+        platform.calls.clear()
+        tracker.onAppResumed()
+        assertEquals(listOf("startSampling", "watchForStillness"), platform.calls)
+        assertTrue(platform.samplingRunning)
+    }
+
+    @Test
+    fun `a refused start falls back to the last fix this tracker saw when the platform knows nothing`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        // Re-armed (new options) from the background: refused, and the fused provider has nothing.
+        platform.startAllowed = false
+        platform.lastKnown = null
+        platform.samplingRunning = false
+        platform.calls.clear()
+
+        tracker.arm(config.copy(notificationText = "changed"))
+
+        assertEquals(
+            listOf("clearGeofence", "startSampling", "lastKnownLocation", "geofence(33.6767,-117.7972,200.0)"),
+            platform.calls,
+        )
+        assertFalse(store.load()!!.moving)
+    }
+
+    @Test
+    fun `a late last-known answer is ignored once sampling is running after all`() {
+        // The fused provider answers asynchronously; if the service came up in the meantime
+        // (the user opened the app), the stale answer must not fence a moving phone.
+        var pending: ((GateSample?) -> Unit)? = null
+        val deferring = object : MotionPlatform by platform {
+            override fun lastKnownLocation(onResult: (GateSample?) -> Unit) { pending = onResult }
+        }
+        val deferred = MotionGatedTracker(deferring, store, { outbox })
+        platform.startAllowed = false
+        deferred.arm(config)
+        assertTrue(store.load()!!.moving)
+
+        platform.startAllowed = true
+        deferred.onAppResumed()
+        platform.calls.clear()
+        pending!!(GateSample(33.6952, -117.7481, 5_000L))
+
+        assertTrue(platform.calls.isEmpty())
+        assertTrue(store.load()!!.moving)
     }
 
     @Test

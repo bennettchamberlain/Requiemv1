@@ -354,6 +354,34 @@ class LocalLlmPolicyTest {
         }
     }
 
+    @Test
+    fun tool_declarations_may_take_a_third_of_the_context_window_in_tokens() {
+        assertEquals("Qwen3-0.6B's window", 341, LocalLlmPolicy.toolDeclarationTokenBudget(1024))
+        assertEquals("Gemma 4's window", 1333, LocalLlmPolicy.toolDeclarationTokenBudget(4000))
+        assertEquals("an 8k window", 2730, LocalLlmPolicy.toolDeclarationTokenBudget(8192))
+        assertEquals("nonsense gets nothing", 0, LocalLlmPolicy.toolDeclarationTokenBudget(-5))
+    }
+
+    @Test
+    fun declaration_tokens_are_estimated_at_four_bytes_each_rounding_up() {
+        assertEquals(0, LocalLlmPolicy.estimateDeclarationTokens(0))
+        assertEquals(1, LocalLlmPolicy.estimateDeclarationTokens(1))
+        assertEquals(1, LocalLlmPolicy.estimateDeclarationTokens(4))
+        assertEquals(2, LocalLlmPolicy.estimateDeclarationTokens(5))
+        // The device measurement: 18.1 KB of declarations came to ~4,350 tokens with the instruction. The
+        // estimate must land at or above the real count, never below -- a budget that undercounts overflows.
+        assertTrue(LocalLlmPolicy.estimateDeclarationTokens(18_132) >= 4_290)
+    }
+
+    @Test
+    fun the_declarations_the_appliance_published_on_device_do_not_fit_gemma_4s_default_window() {
+        // What this budget exists for: 21 intents, ~18.1 KB, against a 4,000-token window.
+        val tokens = LocalLlmPolicy.estimateDeclarationTokens(18_132)
+        assertTrue(tokens > LocalLlmPolicy.toolDeclarationTokenBudget(4000))
+        assertTrue("nor an 8k one -- the schemas have to get leaner, not just the window bigger", tokens > LocalLlmPolicy.toolDeclarationTokenBudget(8192))
+        assertTrue("a 16k window could", tokens <= LocalLlmPolicy.toolDeclarationTokenBudget(16_384))
+    }
+
     // ---- wording -------------------------------------------------------------------------------
 
     @Test

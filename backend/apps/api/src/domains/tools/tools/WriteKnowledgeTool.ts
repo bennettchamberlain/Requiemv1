@@ -302,6 +302,37 @@ export interface WriteKnowledgeOutput {
 export class WriteKnowledgeTool extends BaseTool<WriteKnowledgeInput, WriteKnowledgeOutput> {
   readonly schema: IntentDefinition = {
     name: 'memory.remember',
+    local: {
+      description:
+        'Save a fact. One operation per entity (kind entity.create with entityType and name) and one ' +
+        'per link between them (kind relationship.create with relationshipType, from.name, to.name).',
+      parameters: {
+        type: 'object',
+        properties: {
+          operations: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              required: ['kind'],
+              properties: {
+                kind: {
+                  type: 'string',
+                  enum: ['entity.create', 'entity.update', 'relationship.create', 'relationship.update'],
+                },
+                entityType: { type: 'string' },
+                name: { type: 'string' },
+                relationshipType: { type: 'string' },
+                from: { type: 'object', properties: { name: { type: 'string' } } },
+                to: { type: 'object', properties: { name: { type: 'string' } } },
+              },
+            },
+          },
+        },
+        required: ['operations'],
+        additionalProperties: false,
+      },
+    },
     domain: 'memory',
     title: 'Remember a fact',
     // The label of its mildest use, adding a fact. A call that replaces or erases stored data, or

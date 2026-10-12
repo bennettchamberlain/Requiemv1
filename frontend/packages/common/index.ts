@@ -145,6 +145,7 @@ export type {
   LocalLlmModelSpec,
   LocalLlmPlatform,
 } from './src/utils/localLlmCatalog';
+export { LOCAL_TOOLS_OFF_REFUSAL, isLocalWriteRequest } from './src/utils/localLlmToolsOff';
 export {
   DEFAULT_LOCAL_LLM_PREFS,
   getLocalLlmPrefs,
@@ -231,6 +232,7 @@ export {
   secureStorageRemove,
   secureStorageSet,
   setStatusBarStyle,
+  setSystemBarsBackground,
   syncNativeIntentConfig,
   takeNativePhoto,
 } from './src/utils/nativeBridge';

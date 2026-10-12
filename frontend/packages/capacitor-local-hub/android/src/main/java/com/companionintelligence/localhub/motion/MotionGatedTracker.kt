@@ -20,16 +20,35 @@ interface MotionPlatform {
     /** One exit geofence around where the phone came to rest, delivered to [MotionGeofenceReceiver]. */
     fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float)
     fun clearExitGeofence()
-    /** Start the foreground location service (GPS on). */
-    fun startSampling(config: MotionTrackingConfig)
+    /**
+     * Start the foreground location service (GPS on). Returns false when Android refused the
+     * start -- a location foreground service may not be started from the background, and
+     * "background" includes an app launched behind the lock screen (uid state TOP_SLEEPING)
+     * or re-armed while another app is on screen. The tracker must not believe GPS is on
+     * when it is not.
+     */
+    fun startSampling(config: MotionTrackingConfig): Boolean
     /** Stop it (GPS off). */
     fun stopSampling()
+    /** Whether that service is alive in this process right now (false in a fresh process). */
+    fun isSamplingRunning(): Boolean
+    /**
+     * The platform's last known fix, if any, delivered once (possibly later, possibly on
+     * another thread). Needs no foreground service: with the Always grant the fused provider
+     * answers from the background, which is what makes it the fallback fence centre.
+     */
+    fun lastKnownLocation(onResult: (GateSample?) -> Unit)
     fun nowMs(): Long
 }
 
 /** Everything the tracker must remember across process deaths. */
 data class MotionState(
     val config: MotionTrackingConfig,
+    /**
+     * True while the location service is wanted. It is normally also running; when Android
+     * refused to start it and no fence could be set (no known location), it is wanted but
+     * absent until [MotionGatedTracker.onAppResumed] repairs it.
+     */
     val moving: Boolean,
     /** The last fix actually queued -- what the distance/interval gate compares against. */
     val lastAccepted: GateSample?,
@@ -166,7 +185,15 @@ class MotionGatedTracker(
     /** Snapshot for diagnostics (`getStatus`-style reads); never mutated through. */
     fun snapshot(): MotionState? = synchronized(this) { current()?.copy() }
 
-    /** Arm, or re-arm with new options. Starts sampling at once: a phone being configured is in hand. */
+    /**
+     * Arm, or re-arm with new options. Starts sampling at once: a phone being configured is
+     * usually in hand. Usually -- not always. An app launched behind the lock screen, or
+     * re-armed while backgrounded, is refused a location foreground service, and an earlier
+     * revision recorded "moving" regardless: no GPS, no fence, and nothing that could ever
+     * wake it again (three days of trips went unrecorded that way). A refused start now
+     * falls back to a fence around the last known location, exactly as if the phone had
+     * just come to rest, so the next departure restarts it the exempt way.
+     */
     fun arm(config: MotionTrackingConfig) = synchronized(this) {
         val previous = current()
         val next = MotionState(
@@ -178,8 +205,11 @@ class MotionGatedTracker(
         )
         persist(next)
         platform.clearExitGeofence()
-        platform.startSampling(config)
-        platform.watchForStillness()
+        if (platform.startSampling(config)) {
+            platform.watchForStillness()
+        } else {
+            fenceInsteadOfSampling()
+        }
     }
 
     fun disarm() = synchronized(this) {
@@ -192,13 +222,20 @@ class MotionGatedTracker(
     }
 
     /**
-     * Foreground tracking only; deliberately no side effects. An earlier revision re-started
-     * the location service here so a notification dropped while notifications were denied
+     * Foreground tracking, plus one repair. An earlier revision re-started the location
+     * service here unconditionally so a notification dropped while notifications were denied
      * would reappear after the grant, but that re-post also undid every swipe-away for the
-     * rest of a trip. A dismissed indicator now stays dismissed until the next stop and start.
+     * rest of a trip. A dismissed indicator stays dismissed: a swiped notification leaves the
+     * service running, and a running service is never touched here.
+     *
+     * The repair is for the service being *absent* while the state says moving: Android
+     * refused the start and no fence could be set, or the process died while sampling and
+     * the sticky restart has not happened. With the app on screen the start is allowed, so
+     * this is the one moment the tracker can be sure to get GPS back.
      */
     fun onAppResumed() {
         appInForeground = true
+        repairMissingService()
     }
 
     fun onAppPaused() {
@@ -327,8 +364,45 @@ class MotionGatedTracker(
         platform.clearExitGeofence()
         // A fresh anchor comes with the first fix of the new session.
         persist(now.copy(moving = true, lastMovementAtMs = platform.nowMs(), movementAnchor = null, stationaryNotedAtMs = null))
-        platform.startSampling(now.config)
-        platform.watchForStillness()
+        if (platform.startSampling(now.config)) {
+            platform.watchForStillness()
+        } else {
+            // A geofence exit is exempt, so this should not happen; if it does, the phone has
+            // left the old fence, so a new one goes around where it is now.
+            fenceInsteadOfSampling()
+        }
+    }
+
+    /**
+     * Android refused the location service: behave as if the phone had just come to rest, so
+     * the exit geofence -- the one restart Android always allows -- takes over. The centre is
+     * the platform's last known fix (fresh, and the fence must enclose the phone for an exit
+     * to ever fire), falling back to the last fix this tracker saw. With neither, the state
+     * stays "moving" with no service, and [onAppResumed] repairs it.
+     */
+    private fun fenceInsteadOfSampling() {
+        platform.lastKnownLocation { known ->
+            synchronized(this) {
+                val now = current() ?: return@synchronized
+                if (!now.moving || platform.isSamplingRunning()) {
+                    return@synchronized
+                }
+                val centre = known ?: now.lastSeen ?: return@synchronized
+                platform.setExitGeofence(centre.latitude, centre.longitude, now.config.geofenceRadiusMeters)
+                persist(now.copy(moving = false, lastSeen = centre, stationaryNotedAtMs = null))
+            }
+        }
+    }
+
+    private fun repairMissingService() = synchronized(this) {
+        val now = current() ?: return
+        if (!now.moving || platform.isSamplingRunning()) {
+            return
+        }
+        if (platform.startSampling(now.config)) {
+            persist(now.copy(lastMovementAtMs = platform.nowMs(), movementAnchor = null, stationaryNotedAtMs = null))
+            platform.watchForStillness()
+        }
     }
 
     private fun current(): MotionState? {

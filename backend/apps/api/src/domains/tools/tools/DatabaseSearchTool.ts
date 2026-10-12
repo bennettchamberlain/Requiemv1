@@ -199,10 +199,35 @@ export interface SearchToolResult {
   coverage?: { images: number; described: number };
 }
 
+/** The entity-type filter's allowed values, shared by the full schema and its lean local-tier form. */
+const ENTITY_TYPES_ITEMS = {
+  type: 'string',
+  enum: [...INDEXABLE_ENTITIES],
+};
+
 @Injectable()
 export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchToolResult> {
   readonly schema: IntentDefinition = {
     name: 'knowledge.search',
+    local: {
+      description:
+        'Search everything you have: people, places, notes, messages, files, events. ' +
+        'For "how many" questions set countOnly and use one specific word.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Keywords to search for.', maxLength: 500 },
+          entityTypes: {
+            type: 'array',
+            items: ENTITY_TYPES_ITEMS,
+            description: 'Only these kinds of entries.',
+          },
+          countOnly: { type: 'boolean', description: 'Return only the exact count, no items.' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
     domain: 'knowledge',
     title: 'Search everything',
     privacy: { access: 'read', sensitivity: 'personal', destructive: false, external: false },
@@ -248,10 +273,7 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchTool
         },
         entityTypes: {
           type: 'array',
-          items: {
-            type: 'string',
-            enum: [...INDEXABLE_ENTITIES],
-          },
+          items: ENTITY_TYPES_ITEMS,
           description:
             'When searching entities, filter to specific types: Person, Concept, Location, Object, etc.',
         },

@@ -443,6 +443,8 @@ the sort.
 | moving → still | the fixes: no 50 m of movement from where movement was last confirmed, for 10 minutes | location | stop the location service, set a 100 m exit geofence at the resting spot |
 | moving → still (sooner) | `TYPE_STATIONARY_DETECT` one-shot sensor (five seconds at rest); armed only while the service runs | none | never stops GPS by itself (a red light fires it too); shortens the fixes clock to 3 minutes |
 | still → moving | the exit geofence, and nothing else | location | evaluated by Android with cheap location, survives the process being frozen or killed, exempt for starting a location foreground service from the background |
+| service refused | `startForegroundService` throws `ForegroundServiceStartNotAllowedException` | — | treated as "still": fence the fused provider's last known fix (then the last fix seen) and wait for the exit; with no location at all, stay "moving" and restart on the next resume |
+| service missing on resume | state says moving, `MotionLocationService.isRunning` is false | — | start it (allowed: the app is on screen); a running service, swiped notification or not, is never touched |
 
 The geofence broadcast reaches this module's receiver with no WebView, no plugin instance
 and no JavaScript. `MotionLocationService` (foreground service type `location`, with the
@@ -459,6 +461,21 @@ the app eligible. The trade-off, stated plainly: the first stretch of every trip
 radius plus Play Services' evaluation latency, typically a few hundred metres on foot and a
 kilometre or two by car) is not sampled, and a trip shorter than the radius is not sampled
 at all.
+
+**When Android refuses the service.** A location foreground service may not be started from
+the background, and "background" is wider than it sounds: an app launched behind the lock
+screen (uid state `TOP_SLEEPING`, which is what `cap run`'s install-and-launch does to a locked
+phone) or re-armed while another app is on screen is refused too. An earlier revision swallowed
+that exception and recorded "moving" anyway: no GPS, no fence, and nothing that could ever
+wake it. A phone sat in that state for three days (2026-10-09 15:52 to 10-12), and every trip in
+between went unrecorded; `dumpsys activity services` showed the record with
+`startForegroundCount=0`, `uidState: TPSL`, `code:DENIED`. Now `startSampling` reports the
+refusal, and the tracker fences the phone's last known location and waits for the exit, the
+one restart Android always allows. A second guard runs on every resume: if the state says
+moving and the service is not alive in this process (refused with nothing to fence, or the
+process died mid-trip before the sticky restart), it is started then, while the app is on
+screen and the start is permitted. It is never restarted while running, so a swiped-away
+notification stays away.
 
 **What is recorded.** The tracker applies the web side's background gate (150 m or
 10 min, fixes looser than 200 m dropped) and queues each accepted fix into the encrypted

@@ -335,7 +335,9 @@ export interface LoadLocalLlmOptions {
 export async function ensureLocalLlmLoaded(
   modelId: string,
   options: LoadLocalLlmOptions = {},
-): Promise<LocalLlmLoadResult | { alreadyLoaded: true; accelerator: LocalLlmAccelerator }> {
+): Promise<
+  LocalLlmLoadResult | { alreadyLoaded: true; accelerator: LocalLlmAccelerator; toolCount?: number }
+> {
   const spec = requireModel(modelId);
   const plugin = requirePlugin();
   const current = await plugin.getLoadedModel();
@@ -352,7 +354,13 @@ export async function ensureLocalLlmLoaded(
       current.accelerator === wanted ||
       (current.accelerator === 'cpu' && gpuFallbacks.has(fallbackKey)))
   ) {
-    return { alreadyLoaded: true, accelerator: current.accelerator ?? wanted };
+    // `toolCount` is what this session's own load reported; a model that was resident before the
+    // WebView started has an unknown count, and an unknown count never triggers the tool-less refusal.
+    return {
+      alreadyLoaded: true,
+      accelerator: current.accelerator ?? wanted,
+      toolCount: toolCounts.get(modelId),
+    };
   }
 
   const baseUrl = getApiBaseUrl();
@@ -377,11 +385,16 @@ export async function ensureLocalLlmLoaded(
     gpuFallbacks.delete(fallbackKey);
   }
 
+  toolCounts.set(modelId, result.toolCount);
+
   return result;
 }
 
 /** `model:accelerator` requests that already fell back to the CPU this session. */
 const gpuFallbacks = new Set<string>();
+
+/** Tools bound by the most recent load of each model this session, for the already-loaded short cut. */
+const toolCounts = new Map<string, number>();
 
 /**
  * The backend to ask for: the user's preference when this model can run on it, otherwise the model's own
