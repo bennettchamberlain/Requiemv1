@@ -307,21 +307,20 @@ const GIB = 1024 * 1024 * 1024;
  * account and licence click-through — the same `401 GatedRepo` that once left Android with no
  * downloadable model at all. They come back with an HF sign-in flow, not before.
  *
- * **Why pin — and why to this revision.** `litert-community/Qwen3-0.6B` `main` moved on 2026-09-20 to a
- * re-export (344,671,744 bytes) that needs LiteRT-LM 0.17.1 or newer. Against this repo's 0.14.0 it fails at
- * `Engine.initialize()` with "Only kv_cache tensors are supported as outputs to prefill", and it also failed every
- * download's size check, because the catalog recorded the older 344,437,808. So this entry pins the last
- * revision that loads on 0.14.0 (`154c5de0…`, exercised on an arm64 emulator). Moving to `main` means bumping
- * LiteRT-LM on both platforms first; repin the commit and the size together, never one alone.
+ * **Why pin.** `resolve/main` moves under a catalog: on 2026-09-20 `litert-community/Qwen3-0.6B` became a
+ * re-export (344,671,744 bytes) that needs LiteRT-LM 0.17.1 or newer, and every download failed its size
+ * check against the older revision recorded here until the catalog was repinned. Since the LiteRT-LM 0.18.0
+ * bump the pin IS that re-export (`a6e678a1…`); repin the commit and the size together, never one alone, and
+ * only to a revision that loads on the runtime both platforms link.
  */
 export const LOCAL_LLM_MODELS = {
   'qwen3-0.6b-int4': {
     modelId: 'qwen3-0.6b-int4',
     label: 'Qwen3 0.6B',
     description: 'Smallest and fastest. Answers short questions and calls tools; runs on almost any phone.',
-    url: 'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/154c5de0fc0fc5002a7da570ba8c67edffa32ca2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm?download=true',
-    sizeBytes: 344_437_808,
-    commitHash: '154c5de0fc0fc5002a7da570ba8c67edffa32ca2',
+    url: 'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm?download=true',
+    sizeBytes: 344_671_744,
+    commitHash: 'a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b',
     minDeviceMemoryBytes: 4 * GIB,
     capabilities: ['thinking', 'tools'],
     accelerators: ['cpu'],

@@ -645,7 +645,8 @@ actor LocalLLMEngine {
   /// it (`Capabilities`). A supporting file is always set explicitly (never left to the engine's
   /// default) so the value reported to JS is the value in force; an unsupporting one is left alone.
   private static func configureSpeculativeDecoding(modelPath: String, requested: Bool) -> Bool {
-    let supported = Capabilities(modelPath: modelPath)?.hasSpeculativeDecodingSupport() ?? false
+    // LiteRT-LM 0.18 replaced the 0.14 `Capabilities` probe with `ModelInfo`; an embedding bundle has no `llm`.
+    let supported = ModelInfo(modelPath: modelPath)?.llm?.hasSpeculativeDecodingSupport() ?? false
     let effective = LocalLLMPolicy.effectiveSpeculativeDecoding(
       requested: requested, fileSupports: supported)
 

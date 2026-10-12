@@ -263,12 +263,13 @@ class ModelDownloadWorkerTest {
     }
 
     @Test
-    fun the_qwen3_pin_is_the_revision_that_loads_on_litert_lm_0_14_0_not_whatever_main_is_now() {
-        // `main` was re-exported on 2026-09-20 (344_671_744 bytes) for LiteRT-LM 0.17.1+: on 0.14.0 it fails at
-        // Engine.initialize() and it fails this size check. The pin is the older revision, size and commit as a pair.
-        assertEquals("154c5de0fc0fc5002a7da570ba8c67edffa32ca2", LocalLlmModels.QWEN3_0_6B_INT4.commitHash)
-        assertEquals(344_437_808L, LocalLlmModels.QWEN3_0_6B_INT4.sizeBytes)
-        assertTrue(LocalLlmModels.QWEN3_0_6B_INT4.sizeBytes != 344_671_744L)
+    fun the_qwen3_pin_is_a_revision_that_loads_on_this_litert_lm_not_whatever_main_is_now() {
+        // The 2026-09-20 re-export (344_671_744 bytes) needs LiteRT-LM 0.17.1+, which this plugin links since the
+        // 0.18.0 bump; the earlier 344_437_808-byte revision was the last one that loaded on 0.14.0. Size and commit
+        // move as a pair: the worker verifies the size, and a URL on `main` would drift under it again.
+        assertEquals("a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b", LocalLlmModels.QWEN3_0_6B_INT4.commitHash)
+        assertEquals(344_671_744L, LocalLlmModels.QWEN3_0_6B_INT4.sizeBytes)
+        assertTrue(LocalLlmModels.QWEN3_0_6B_INT4.sizeBytes != 344_437_808L)
     }
 
     @Test

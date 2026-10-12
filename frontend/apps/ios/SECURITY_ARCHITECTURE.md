@@ -162,7 +162,7 @@ to what any one device actually downloads from an AAB, since Play splits per ABI
 
 1. **16 KB page size stops being a no-op.** `DELIVERY.md` §1a says "likely a no-op — no
    native libs." That is *already* false: `@ci/capacitor-local-llm` pulls
-   `com.google.ai.edge.litertlm:litertlm-android:0.14.0` **[V]**, which ships native
+   `com.google.ai.edge.litertlm:litertlm-android:0.18.0` **[V]**, which ships native
    libraries. SQLCipher makes it doubly so. Both need an API-35 device check.
 2. **`ITSAppUsesNonExemptEncryption=false` needs re-examination on iOS.** The Info.plist
    comment states the basis as "only exempt standard cryptography (HTTPS/TLS via the OS,

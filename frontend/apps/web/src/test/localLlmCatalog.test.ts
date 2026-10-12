@@ -90,8 +90,8 @@ describe('the on-device model catalog', () => {
     // Engine.initialize(), and its size (344,671,744) no longer matches this entry. Bump the runtime first.
     const qwen3 = LOCAL_LLM_CATALOG['qwen3-0.6b-int4'];
 
-    expect(qwen3.commitHash).toBe('154c5de0fc0fc5002a7da570ba8c67edffa32ca2');
-    expect(qwen3.sizeBytes).toBe(344_437_808);
+    expect(qwen3.commitHash).toBe('a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b');
+    expect(qwen3.sizeBytes).toBe(344_671_744);
   });
 
   it('finds a model by id', () => {

@@ -4,7 +4,8 @@ import android.content.Context
 import android.os.PowerManager
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Capabilities
+import com.google.ai.edge.litertlm.LlmCapability
+import com.google.ai.edge.litertlm.ModelInfo
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -467,11 +468,15 @@ class LocalLlmEngine(private val context: Context) {
         }
     }
 
-    /** Whether the bundle at [modelPath] ships the multi-token-prediction drafter. False on any error. */
+    /**
+     * Whether the bundle at [modelPath] ships the multi-token-prediction drafter. False on any error.
+     * LiteRT-LM 0.18 replaced the 0.14 `Capabilities` probe with [ModelInfo], whose LLM variant
+     * implements [LlmCapability]; an embedding bundle is not one and reports false.
+     */
     @OptIn(ExperimentalApi::class)
     private fun hasSpeculativeDecodingSupport(modelPath: String): Boolean =
         try {
-            Capabilities(modelPath).use { it.hasSpeculativeDecodingSupport() }
+            ModelInfo.from(modelPath).use { (it as? LlmCapability)?.hasSpeculativeDecodingSupport() ?: false }
         } catch (e: Exception) {
             Log.w(TAG, "Could not read the speculative-decoding capability of $modelPath; treating it as unsupported", e)
             false

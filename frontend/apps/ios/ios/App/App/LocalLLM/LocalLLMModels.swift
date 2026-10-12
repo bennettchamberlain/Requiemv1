@@ -54,12 +54,11 @@ enum LocalLLMModels {
   /// together with that entitlement, never before.
   ///
   /// **Why the URLs are pinned, and Qwen3 to this commit.** `resolve/main` for `litert-community/Qwen3-0.6B`
-  /// moved on 2026-09-20 to a re-export (344,671,744 bytes) that needs LiteRT-LM 0.17.1 or newer. This app
-  /// links 0.14.0, where it fails to load, and it also failed every download's size check against the
-  /// 344,437,808 recorded here. The pin below is the last revision that loads on 0.14.0 (exercised on the
-  /// Android AAR of the same version). Bumping the xcframework is what unlocks `main`; change the commit and
-  /// the size together, never one alone. Both sizes were read from the pinned files
-  /// (`content-range: bytes 0-0/<size>`), not from `main`.
+  /// moved on 2026-09-20 to a re-export (344,671,744 bytes) that needs LiteRT-LM 0.17.1 or newer; on the
+  /// 0.14.0 this app used to link it failed to load and failed every download's size check against the older
+  /// 344,437,808. Since the 0.18.0 bump the pin is that re-export. Change the commit and the size together,
+  /// never one alone, and only to a revision that loads on the runtime both platforms link. Sizes are read
+  /// from the pinned files (`content-range: bytes 0-0/<size>`), not from `main`.
   ///
   /// Both entries are ungated — an anonymous ranged GET answers `206` with `accept-ranges: bytes`,
   /// which is what makes ``ModelDownloader``'s resume work. (The original Android entry, Gemma3-1B,
@@ -73,10 +72,10 @@ enum LocalLLMModels {
     fileName: "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
     url: URL(
       string:
-        "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/154c5de0fc0fc5002a7da570ba8c67edffa32ca2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm?download=true"
+        "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm?download=true"
     )!,
-    sizeBytes: 344_437_808,
-    commitHash: "154c5de0fc0fc5002a7da570ba8c67edffa32ca2",
+    sizeBytes: 344_671_744,
+    commitHash: "a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b",
     minDeviceMemoryBytes: 4_294_967_296,
     capabilities: [.thinking, .tools],
     accelerators: [.cpu],
