@@ -30,6 +30,12 @@ export interface CreateFileDto extends Partial<Pick<Express.Multer.File, 'path' 
    * race independently and the applet never learns the server's event id.
    */
   captureTickId?: string | null;
+  /**
+   * The connection whose sync wrote this row. Set only for POINTER rows (a
+   * cloud-drive file recorded by link, no bytes here), so a disconnect can
+   * delete what it created. See migration 20261005214652.
+   */
+  connectionId?: string | null;
 }
 
 export type UploadFileDto = Omit<

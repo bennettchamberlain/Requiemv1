@@ -569,6 +569,7 @@ The importer ported out of the retired CI-Import-Tools runs **inside this server
 | ---- | ------------------------------------------- | ------ | ---------------------------------------------------------- |
 | GET  | `/import/sources`                           | `:168` | The datasources this build can parse.                      |
 | GET  | `/import/sources/catalog`                   | `:181` | The full source catalog.                                   |
+| GET  | `/import/sources/bundles`                   | `:223` | The export bundles (one download, several sources).        |
 | POST | `/import/recognize`                         | `:206` | Recognize what a drop contains before committing to a run. |
 | POST | `/import/runs`                              | `:221` | Start a run.                                               |
 | GET  | `/import/runs`                              | `:253` | List runs.                                                 |

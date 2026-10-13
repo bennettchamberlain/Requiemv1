@@ -460,6 +460,10 @@ export {
   searchReachesEvents,
   type MediaEventSearchDeps,
 } from './services/mediaEventSearch';
+// The How filter's rule for content, for the callers that count or filter
+// content in their own SQL (the activity heatmap) rather than through
+// ContentService.
+export { effectiveSourceSystemPredicate } from './services/contentFacetsSql';
 // The object-identity service surface. Exported for the same reason the
 // observation DTOs above are: the API layer, the maintenance jobs and the
 // import path all speak these shapes, and a second definition of any of them is

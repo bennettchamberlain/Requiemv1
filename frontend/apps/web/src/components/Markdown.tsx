@@ -14,19 +14,21 @@ const INTERNAL_PATH = /^\/(?!\/)/;
  * open conversation. Everything else stays a plain anchor. Falls back to an
  * anchor outside a router (tests, stories, and any caller that has none).
  */
-function MarkdownLink({ href, children, ...rest }: ComponentProps<'a'>) {
+function MarkdownLink({ href, children, target, ...rest }: ComponentProps<'a'>) {
   const inRouter = useInRouterContext();
+  // A link sent to a new tab must not hand that tab a handle on this one.
+  const rel = target === '_blank' ? 'noopener noreferrer' : undefined;
 
   if (inRouter && href && INTERNAL_PATH.test(href)) {
     return (
-      <Link to={href} {...rest}>
+      <Link to={href} target={target} rel={rel} {...rest}>
         {children}
       </Link>
     );
   }
 
   return (
-    <a href={href} {...rest}>
+    <a href={href} target={target} rel={rel} {...rest}>
       {children}
     </a>
   );
@@ -125,6 +127,12 @@ interface Props {
    * where the content is known to be a single line.
    */
   inline?: boolean;
+  /**
+   * Where the content's links open. `_blank` for text the reader is following
+   * as instructions (the import wizard's steps): the page they are on is the
+   * one they came to act on, and a link in step 3 must not take it away.
+   */
+  linkTarget?: '_blank';
 }
 
 /**
@@ -136,12 +144,12 @@ interface Props {
  * construct that still fetches on render, and {@link MarkdownImage} is what
  * keeps that fetch on this origin.
  */
-export function Markdown({ children, inline = false }: Props) {
+export function Markdown({ children, inline = false, linkTarget }: Props) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        a: MarkdownLink,
+        a: linkTarget ? (props) => <MarkdownLink {...props} target={linkTarget} /> : MarkdownLink,
         img: MarkdownImage,
         ...(inline && { p: ({ children: content }) => <>{content}</> }),
       }}

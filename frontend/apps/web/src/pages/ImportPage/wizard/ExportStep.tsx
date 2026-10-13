@@ -10,7 +10,14 @@ import { useImportApi, type InboxScan } from '../useImportApi';
 import { zipFilesStore } from '../zipStore';
 
 import { LiveRunList } from './LiveRunList';
-import { bundleToGuide, serviceLogoUrl, shortTitle, sourceToGuide, type ExportEntry } from './sources';
+import {
+  bundleLogoUrl,
+  bundleToGuide,
+  serviceLogoUrl,
+  shortTitle,
+  sourceToGuide,
+  type ExportEntry,
+} from './sources';
 
 /**
  * One dropped file's place in the upload queue. Files upload ONE AT A TIME (a
@@ -294,9 +301,7 @@ export function ExportStep({
 
       <SourceGuide
         guide={guide}
-        logo={
-          entry.kind === 'bundle' ? `/import-logos/${entry.bundle.logo}` : serviceLogoUrl(entry.source.id)
-        }
+        logo={entry.kind === 'bundle' ? bundleLogoUrl(entry.bundle) : serviceLogoUrl(entry.source.id)}
         badges={
           startedRuns.length > 0 ? (
             <Badge variant="outline" className="border-primary text-primary">

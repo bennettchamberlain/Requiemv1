@@ -775,10 +775,23 @@ export class SearchResolver {
     // entries whose row came from one of the named sources. A kind with no
     // source column cannot match and drops out, exactly as the timed path
     // leaves it unfetched (see browseWants).
+    //
+    // Content is asked of the ledger instead: its own column says `file` for
+    // a photo from Google Photos or a document from Dropbox, and the timed
+    // path matches it on the delivering platform too.
     if (connectors != null && candidateSource !== 'timed') {
       const allowed = new Set(connectors);
+      const keptContent = await this.contentService.idsMatchingSourceSystems(
+        serviceContext,
+        entries.filter((entry) => entry.type === 'content').map((entry) => entry.entity.id),
+        connectors,
+      );
 
       entries = entries.filter((entry) => {
+        if (entry.type === 'content') {
+          return keptContent.has(entry.entity.id);
+        }
+
         const source = SearchResolver.getEntitySourceSystem(entry);
 
         return source != null && allowed.has(source);

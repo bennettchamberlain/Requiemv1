@@ -6,6 +6,7 @@ import { Activity, Database, MapPin, Users } from '@ci/shadcn/icons';
 import { DirectionToggle, readMessageDirection } from '@/components/SearchBox/DirectionToggle';
 import { FilterValuePicker } from '@/components/SearchBox/FilterValuePicker';
 import { noNameSuggestions, type NameSuggestionHook } from '@/components/SearchBox/useNameSuggestions';
+import { filterValueLabel, sourceFilterLabel } from '@/lib/sourceNames';
 
 import {
   addListValue,
@@ -65,7 +66,7 @@ function NamePatternField({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const { names, loading } = useSuggestions(query, open);
+  const { names, loading, hasMore, loadingMore, loadMore } = useSuggestions(query, open);
 
   return (
     <FilterValuePicker
@@ -74,6 +75,9 @@ function NamePatternField({
       icon={icon}
       options={names}
       loading={loading}
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      onLoadMore={loadMore}
       onSearch={setQuery}
       onOpenChange={setOpen}
       searchPlaceholder={searchPlaceholder}
@@ -93,11 +97,14 @@ function ExactValueField({
   searchPlaceholder,
   emptyText,
   unknownValueHint,
+  formatValue,
   field,
 }: {
   label: string;
   icon: typeof Users;
   options?: string[];
+  /** How a value is shown; the stored filter keeps the value itself. */
+  formatValue: (value: string) => string;
   searchPlaceholder: string;
   emptyText: string;
   unknownValueHint: string;
@@ -110,6 +117,7 @@ function ExactValueField({
       icon={icon}
       options={options ?? []}
       optionsKnown={options != null}
+      formatValue={formatValue}
       searchPlaceholder={searchPlaceholder}
       emptyText={options == null ? 'Type a value and press Enter' : emptyText}
       unknownValueHint={unknownValueHint}
@@ -212,6 +220,7 @@ export function SavedSearchFiltersEditor({ value, onChange, vocabulary = {} }: P
         searchPlaceholder="Search sources…"
         emptyText="No sources match"
         unknownValueHint="No connected source has this name, so this filter matches nothing."
+        formatValue={sourceFilterLabel}
         field={listField('connectors')}
       />
       <ExactValueField
@@ -221,6 +230,7 @@ export function SavedSearchFiltersEditor({ value, onChange, vocabulary = {} }: P
         searchPlaceholder="Search activities…"
         emptyText="No activities match"
         unknownValueHint="No event has this activity type, so this filter matches nothing."
+        formatValue={filterValueLabel}
         field={listField('eventTypes')}
       />
 

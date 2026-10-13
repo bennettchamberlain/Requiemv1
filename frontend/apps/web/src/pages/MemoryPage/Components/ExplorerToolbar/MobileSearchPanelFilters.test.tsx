@@ -196,7 +196,7 @@ describe('MobileSearchPanelFilters', () => {
     const sheet = openFilters();
 
     fireEvent.click(row(sheet, 'How'));
-    fireEvent.click(await screen.findByRole('option', { name: 'gmail' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Gmail' }));
 
     expect(params().get('connectors')).toBe('gmail');
 
@@ -205,7 +205,7 @@ describe('MobileSearchPanelFilters', () => {
     await waitFor(() =>
       expect(screen.queryByRole('listbox', { name: 'How options' })).not.toBeInTheDocument(),
     );
-    expect(row(sheet, 'How')).toHaveTextContent('gmail');
+    expect(row(sheet, 'How')).toHaveTextContent('Gmail');
   });
 
   it('shows the sort in force on the Sort row', () => {

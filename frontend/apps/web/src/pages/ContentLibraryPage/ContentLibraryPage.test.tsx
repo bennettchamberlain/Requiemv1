@@ -258,7 +258,7 @@ describe('ContentLibraryPage', () => {
     expect(await screen.findByText('Holiday photo')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Content type: image/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^File type: all/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^How: reddit/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^How: Reddit/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
 

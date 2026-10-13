@@ -1,11 +1,12 @@
 import { Children, isValidElement, type ReactNode } from 'react';
 
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useSearchParams } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SearchBox } from '@/components/SearchBox/SearchBox';
 import { DropdownProvider } from '@/components/SearchBox/useDropdown';
+import { PERSON_NAME_SUGGESTIONS_QUERY } from '@/components/SearchBox/useNameSuggestions';
 import { gql } from '@/graphql';
 import { GetSavedSearchDocument, GetSavedSearchesForPickerDocument } from '@/graphql/graphql';
 import { mockQuery } from '@/test/gql';
@@ -92,19 +93,6 @@ const EVENT_TYPES_QUERY = gql(`
   }
 `);
 
-const PERSON_NAME_SUGGESTIONS_QUERY = gql(`
-  query PersonNameSuggestions($query: String, $first: Int) {
-    people(query: $query, first: $first) {
-      edges {
-        node {
-          id
-          name
-        }
-      }
-    }
-  }
-`);
-
 // Surfaces the live URL search params in the DOM so assertions can read the
 // filter state the toolbar writes without reaching into router internals.
 function ParamsProbe() {
@@ -131,14 +119,17 @@ function renderToolbar(ui: ReactNode, { mocks = [], ...options }: RenderWithProv
             people: {
               edges: [
                 {
+                  cursor: 'c1',
                   node: { id: 'p1', name: 'Ada Lovelace', __typename: 'PersonType' },
                   __typename: 'PersonEdge',
                 },
                 {
+                  cursor: 'c2',
                   node: { id: 'p2', name: 'Alan Turing', __typename: 'PersonType' },
                   __typename: 'PersonEdge',
                 },
               ],
+              pageInfo: { hasNextPage: false, endCursor: 'c2', __typename: 'PageInfo' },
               __typename: 'PersonConnection',
             },
           },
@@ -193,6 +184,91 @@ describe('ExplorerToolbar', () => {
 
       expect(screen.getByTestId('params').textContent).not.toMatch(/from=|to=|when=/);
       expect(screen.getByRole('button', { name: 'When' })).toBeInTheDocument();
+    });
+
+    describe('typing a custom range', () => {
+      const from = new Date(2026, 0, 1, 0, 0, 0, 0).toISOString();
+      const to = new Date(2026, 0, 31, 23, 59, 59, 999).toISOString();
+      const route = `/?when=custom&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      const label = `${new Date(from).toLocaleDateString()} – ${new Date(to).toLocaleDateString()}`;
+      const param = (name: string) =>
+        new URLSearchParams(screen.getByTestId('params').textContent ?? '').get(name);
+
+      it('shows the range in the Start / End date fields and applies a typed date as a whole local day', () => {
+        renderToolbar(<MemoryExplorerFilterControls />, { route });
+        fireEvent.click(screen.getByRole('button', { name: label }));
+
+        const start = screen.getByLabelText('Start date');
+        const end = screen.getByLabelText('End date');
+
+        expect(start).toHaveValue('2026-01-01');
+        expect(end).toHaveValue('2026-01-31');
+
+        fireEvent.change(end, { target: { value: '2026-03-15' } });
+
+        expect(param('from')).toBe(from);
+        expect(param('to')).toBe(new Date(2026, 2, 15, 23, 59, 59, 999).toISOString());
+        expect(param('when')).toBe('custom');
+      });
+
+      it('waits for a four-digit year, and goes back to the applied date if the field is left before one', () => {
+        renderToolbar(<MemoryExplorerFilterControls />, { route });
+        fireEvent.click(screen.getByRole('button', { name: label }));
+
+        const start = screen.getByLabelText('Start date');
+
+        // What a date field reports part-way through typing the year 2019.
+        fireEvent.change(start, { target: { value: '0020-06-01' } });
+        expect(param('from')).toBe(from);
+
+        fireEvent.blur(start);
+        expect(start).toHaveValue('2026-01-01');
+        expect(param('from')).toBe(from);
+
+        fireEvent.change(start, { target: { value: '2019-06-01' } });
+        expect(param('from')).toBe(new Date(2019, 5, 1, 0, 0, 0, 0).toISOString());
+        expect(param('to')).toBe(to);
+      });
+
+      it('brings the other end along when a start is typed past it, and opens an end that is emptied', () => {
+        renderToolbar(<MemoryExplorerFilterControls />, { route });
+        fireEvent.click(screen.getByRole('button', { name: label }));
+
+        fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-05-10' } });
+
+        expect(param('from')).toBe(new Date(2026, 4, 10, 0, 0, 0, 0).toISOString());
+        expect(param('to')).toBe(new Date(2026, 4, 10, 23, 59, 59, 999).toISOString());
+
+        const end = screen.getByLabelText('End date');
+
+        fireEvent.change(end, { target: { value: '' } });
+        fireEvent.blur(end);
+
+        expect(param('from')).toBe(new Date(2026, 4, 10, 0, 0, 0, 0).toISOString());
+        expect(param('to')).toBeNull();
+      });
+
+      it('offers month and year dropdowns on the calendar and turns it to a typed date', async () => {
+        renderToolbar(<MemoryExplorerFilterControls />, { route });
+        fireEvent.click(screen.getByRole('button', { name: label }));
+
+        // The grid is lazy-loaded; it opens on the range's own month.
+        const year = await screen.findByRole('combobox', { name: /year/i });
+
+        expect(year).toHaveValue('2026');
+        expect(screen.getByRole('combobox', { name: /month/i })).toHaveValue('0');
+
+        fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2019-06-01' } });
+
+        expect(screen.getByRole('combobox', { name: /year/i })).toHaveValue('2019');
+        expect(screen.getByRole('combobox', { name: /month/i })).toHaveValue('5');
+
+        // Picking a year pages the grid without touching the applied range.
+        fireEvent.change(screen.getByRole('combobox', { name: /year/i }), { target: { value: '2012' } });
+
+        expect(screen.getByRole('combobox', { name: /year/i })).toHaveValue('2012');
+        expect(param('from')).toBe(new Date(2019, 5, 1, 0, 0, 0, 0).toISOString());
+      });
     });
 
     /**
@@ -255,7 +331,7 @@ describe('ExplorerToolbar', () => {
     it('labels the trigger with the selected event type', () => {
       renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory?eventTypes=visited' });
 
-      expect(screen.getByRole('button', { name: /^Activity: visited/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Activity: Visited/ })).toBeInTheDocument();
     });
 
     it('is withheld once the What bar leaves events out, since eventTypes only narrows events', () => {
@@ -277,23 +353,23 @@ describe('ExplorerToolbar', () => {
       renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
 
       fireEvent.click(screen.getByRole('button', { name: /^Activity: all/ }));
-      fireEvent.click(await screen.findByRole('option', { name: 'visited' }));
+      fireEvent.click(await screen.findByRole('option', { name: 'Visited' }));
 
       expect(screen.getByTestId('params').textContent).toContain('eventTypes=visited');
-      expect(screen.getByRole('button', { name: /^Activity: visited/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Activity: Visited/ })).toBeInTheDocument();
     });
 
     it('narrows the list by the typed text and refuses text that is not an event type', async () => {
       renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
 
       fireEvent.click(screen.getByRole('button', { name: /^Activity: all/ }));
-      await screen.findByRole('option', { name: 'visited' });
+      await screen.findByRole('option', { name: 'Visited' });
 
       const search = screen.getByRole('textbox', { name: 'Search activities…' });
 
       fireEvent.change(search, { target: { value: 'vis' } });
-      expect(screen.getByRole('option', { name: 'visited' })).toBeInTheDocument();
-      expect(screen.queryByRole('option', { name: 'messaged' })).not.toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'Visited' })).toBeInTheDocument();
+      expect(screen.queryByRole('option', { name: 'Messaged' })).not.toBeInTheDocument();
 
       fireEvent.change(search, { target: { value: 'skydived' } });
       fireEvent.keyDown(search, { key: 'Enter' });
@@ -309,22 +385,22 @@ describe('ExplorerToolbar', () => {
       renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
 
       fireEvent.click(screen.getByRole('button', { name: /^How: all/ }));
-      fireEvent.click(await screen.findByRole('option', { name: 'gmail' }));
+      fireEvent.click(await screen.findByRole('option', { name: 'Gmail' }));
 
       expect(screen.getByTestId('params').textContent).toContain('connectors=gmail');
-      expect(screen.getByRole('button', { name: /^How: gmail/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^How: Gmail/ })).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole('option', { name: 'gmail' }));
+      fireEvent.click(screen.getByRole('option', { name: 'Gmail' }));
       expect(screen.getByTestId('params').textContent).not.toContain('connectors=');
     });
 
     it('keeps a URL-carried source the list no longer holds, flagged, so it can be removed', async () => {
       renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory?connectors=myspace' });
 
-      fireEvent.click(screen.getByRole('button', { name: /^How: myspace/ }));
-      await screen.findByRole('option', { name: 'gmail' });
+      fireEvent.click(screen.getByRole('button', { name: /^How: Myspace/ }));
+      await screen.findByRole('option', { name: 'Gmail' });
 
-      const stale = screen.getByRole('option', { name: 'myspace' });
+      const stale = screen.getByRole('option', { name: 'Myspace' });
 
       expect(stale).toHaveAttribute('aria-selected', 'true');
       expect(stale.querySelector('svg.text-warning-foreground')).not.toBeNull();
@@ -363,6 +439,79 @@ describe('ExplorerToolbar', () => {
 
       expect(screen.getByTestId('params').textContent).toContain('people=Ada+Lovelace');
       expect(screen.getByRole('button', { name: /^Who: Ada Lovelace/ })).toBeInTheDocument();
+    });
+
+    it('lists the people a page at a time, fetching the next page as the end of the list comes into view', async () => {
+      // The suite-wide IntersectionObserver stub never fires; capture the
+      // picker's so the end of its list can be brought "into view".
+      const original = globalThis.IntersectionObserver;
+      const callbacks: IntersectionObserverCallback[] = [];
+
+      class CapturingObserver {
+        constructor(callback: IntersectionObserverCallback) {
+          callbacks.push(callback);
+        }
+
+        observe() {}
+
+        disconnect() {}
+      }
+
+      globalThis.IntersectionObserver = CapturingObserver as unknown as typeof IntersectionObserver;
+
+      const edge = (cursor: string, id: string, name: string) => ({
+        cursor,
+        node: { id, name, __typename: 'PersonType' as const },
+        __typename: 'PersonEdge' as const,
+      });
+
+      try {
+        renderToolbar(<MemoryExplorerFilterControls />, {
+          route: '/memory',
+          mocks: [
+            mockQuery(
+              PERSON_NAME_SUGGESTIONS_QUERY,
+              { query: '', first: 8 },
+              {
+                people: {
+                  edges: [edge('c1', 'p1', 'Ada Lovelace'), edge('c2', 'p2', 'Alan Turing')],
+                  pageInfo: { hasNextPage: true, endCursor: 'c2', __typename: 'PageInfo' },
+                  __typename: 'PersonConnection',
+                },
+              },
+            ),
+            mockQuery(
+              PERSON_NAME_SUGGESTIONS_QUERY,
+              { query: '', first: 8, after: 'c2' },
+              {
+                people: {
+                  edges: [edge('c3', 'p3', 'Grace Hopper')],
+                  pageInfo: { hasNextPage: false, endCursor: 'c3', __typename: 'PageInfo' },
+                  __typename: 'PersonConnection',
+                },
+              },
+            ),
+          ],
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /^Who: all/ }));
+        await screen.findByRole('option', { name: 'Alan Turing' });
+        expect(screen.queryByRole('option', { name: 'Grace Hopper' })).not.toBeInTheDocument();
+        expect(screen.getByText('More…')).toBeInTheDocument();
+
+        await act(async () => {
+          for (const callback of callbacks) {
+            callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+          }
+        });
+
+        // The second page joins the first; nothing follows it, so the list stops asking.
+        expect(await screen.findByRole('option', { name: 'Grace Hopper' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Ada Lovelace' })).toBeInTheDocument();
+        expect(screen.queryByText('More…')).not.toBeInTheDocument();
+      } finally {
+        globalThis.IntersectionObserver = original;
+      }
     });
 
     it('offers the From / To toggle inside Who, chips it, and clears it from the chip', () => {

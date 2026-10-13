@@ -317,7 +317,17 @@ export class DataDeletionService {
     }
 
     if (await this.isProxiedThroughPortal(connection)) {
-      return this.revokeViaPortal(connection);
+      // Portal can only delete its stored refresh token for a provider like
+      // Dropbox, whose revocation needs a live ACCESS token — and the access
+      // token on this connection is the provider's own, proxied or not. So
+      // end the grant from here first; Portal's delete still follows, since a
+      // credential the box has disconnected must not survive there either.
+      const revokedHere = client.revokesWithAccessToken
+        ? await this.revokeWithAccessToken(client, connection)
+        : false;
+      const revokedAtPortal = await this.revokeViaPortal(connection);
+
+      return revokedHere || revokedAtPortal;
     }
 
     try {
@@ -411,6 +421,35 @@ export class DataDeletionService {
    *   issues refresh tokens (Facebook) reports false, as before, because there
    *   was nothing held anywhere but here.
    */
+  /**
+   * Revoke with the access token only. The connection's `refresh_token` is a
+   * Portal proxy token here — a Portal secret the provider has never seen —
+   * and is deliberately withheld from the client.
+   */
+  private async revokeWithAccessToken(
+    client: BaseOAuth2Client,
+    connection: ConnectionEntity,
+  ): Promise<boolean> {
+    try {
+      const { revoked } = await client.revoke({
+        id: connection.id,
+        accessToken: connection.accessToken,
+        refreshToken: null,
+        userId: connection.userId,
+        providerId: connection.providerId,
+      } as Connection);
+
+      return revoked;
+    } catch (error) {
+      this.logger.error('Access-token revocation threw; continuing', {
+        connectionId: connection.id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+
+      return false;
+    }
+  }
+
   private async revokeViaPortal(connection: ConnectionEntity): Promise<boolean> {
     try {
       const provider = this.cloudOAuthProxyService.getProviderNameForId(connection.providerId!)!;
