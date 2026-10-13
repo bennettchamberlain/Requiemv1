@@ -107,6 +107,14 @@ describe('PlaybackBar', () => {
     expect(await transport()).toHaveAccessibleName('Play back my life');
   });
 
+  it('gives mobile speed and gap actions readable labels instead of icon-only controls', async () => {
+    renderBar();
+    await transport();
+
+    expect(screen.getByRole('button', { name: /Playback speed/ })).toHaveTextContent('Speed1h/s');
+    expect(screen.getByRole('button', { name: 'Skip empty stretches' })).toHaveTextContent('Skip gaps');
+  });
+
   it('toggles between play and pause', async () => {
     renderBar();
 

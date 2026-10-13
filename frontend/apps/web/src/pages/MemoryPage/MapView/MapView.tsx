@@ -8,7 +8,7 @@ import { Marker as LeafletMarker, Popup, useMap as useLeafletMap, useMapEvents }
 import { useSearchParams } from 'react-router-dom';
 
 import { ChatAbout, ChatAboutSheet } from '@/components/ChatWithAgent';
-import { Map } from '@/components/Map';
+import { Map, MapAttribution } from '@/components/Map';
 import { type MarkerVariant } from '@/components/Map/Marker';
 import { gql, useFragment } from '@/graphql';
 import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
@@ -681,7 +681,7 @@ function ClusteredMarkers({
 // the box; the control is labelled "Search events in this area" to make that
 // scope explicit rather than silently dropping non-event pins.
 // Panning fully away from the searched area drops the filter again.
-function SearchAreaControl() {
+function SearchAreaControl({ compact = false }: { compact?: boolean } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeBbox = parseBbox(searchParams.get('bbox'));
   const [movedSinceSearch, setMovedSinceSearch] = useState(false);
@@ -740,16 +740,26 @@ function SearchAreaControl() {
   const showSearch = !activeBbox || movedSinceSearch;
 
   return (
-    <div ref={stopPropagation} className="absolute left-1/2 top-3 z-400 flex -translate-x-1/2 gap-2">
+    <div
+      ref={stopPropagation}
+      className={cn(
+        'absolute z-400 flex gap-2',
+        compact ? 'left-3 right-14 top-3 flex-wrap justify-start gap-1.5' : 'left-1/2 top-3 -translate-x-1/2',
+      )}
+    >
       {showSearch && (
         <Button
           variant="outline"
           size="sm"
+          aria-label={compact ? 'Search events in this map area' : undefined}
           onClick={() => setBbox(formatBbox(boundsToBbox(map.getBounds())))}
-          className="border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent"
+          className={cn(
+            'border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent',
+            compact && 'h-9 max-w-full px-3 text-xs',
+          )}
         >
-          <SearchIcon className="mr-1 h-4 w-4" />
-          Search events in this area
+          <SearchIcon className="mr-1 h-4 w-4 shrink-0" />
+          {compact ? 'Search this area' : 'Search events in this area'}
         </Button>
       )}
 
@@ -758,10 +768,13 @@ function SearchAreaControl() {
           size="sm"
           variant="outline"
           onClick={() => setBbox(null)}
-          className="border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent"
+          className={cn(
+            'border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent',
+            compact && 'h-9 px-3 text-xs',
+          )}
         >
-          <X className="mr-1 h-4 w-4" />
-          Clear area
+          <X className="mr-1 h-4 w-4 shrink-0" />
+          {compact ? 'Clear' : 'Clear area'}
         </Button>
       )}
     </div>
@@ -1183,7 +1196,12 @@ export function DesktopMapView({ readOnly = false }: { readOnly?: boolean } = {}
         },
       ]}
     >
-      <DesktopMapSurface view={view} readOnly={readOnly} />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1">
+          <DesktopMapSurface view={view} readOnly={readOnly} />
+        </div>
+        <MapAttribution />
+      </div>
     </PlaybackProvider>
   );
 }
@@ -1261,7 +1279,7 @@ function DesktopMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapV
   );
 
   return (
-    <Map center={[37.7749, -122.4194]} autoCenterMarkers={false}>
+    <Map center={[37.7749, -122.4194]} autoCenterMarkers={false} attributionControl={false}>
       <Map.Controls position="top-right" />
       <Map.Panel position="left" className="w-[300px] relative">
         <TimelineView
@@ -1335,6 +1353,7 @@ export function MobileMapView({ readOnly = false }: { readOnly?: boolean } = {})
         <div className="min-h-0 flex-1">
           <MobileMapSurface view={view} readOnly={readOnly} />
         </div>
+        <MapAttribution />
       </div>
     </PlaybackProvider>
   );
@@ -1372,14 +1391,16 @@ function MobileMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapVi
       center={recentCenter ?? homeCenter ?? [37.7749, -122.4194]}
       zoom={recentCenter ? MOBILE_RECENT_MAP_ZOOM : homeCenter ? HOME_MAP_ZOOM : 13}
       autoCenterMarkers={false}
+      attributionControl={false}
     >
       <Map.Controls position="top-right" />
-      {!readOnly && <SearchAreaControl />}
+      {!readOnly && <SearchAreaControl compact />}
       {!readOnly && (
         <TraceToggleControl
           enabled={showTrace}
           onToggle={() => setShowTrace((value) => !value)}
           className="top-14"
+          compact
         />
       )}
       {!readOnly && <PositionTraceLayer enabled={showTrace} fitToTrace={pins.length === 0} />}

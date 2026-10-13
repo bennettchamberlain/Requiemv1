@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react';
 
 import { useQuery } from '@apollo/client';
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { LatLngBounds } from 'leaflet';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { boundsToBbox } from '../bbox';
 
-import { PositionTraceLayer } from './TraceLayer';
+import { PositionTraceLayer, TraceToggleControl } from './TraceLayer';
 
 /**
  * `PositionTraceLayer` needs a real Leaflet map instance for `useMap` /
@@ -189,5 +189,20 @@ describe('PositionTraceLayer', () => {
 
     expect(secondBbox).toEqual(currentBbox());
     expect(secondBbox).not.toEqual(firstBbox);
+  });
+});
+
+describe('TraceToggleControl', () => {
+  it('shows the mobile history state compactly and keeps the full accessible action', () => {
+    const onToggle = vi.fn();
+
+    render(<TraceToggleControl enabled={false} onToggle={onToggle} compact />);
+
+    const toggle = screen.getByRole('button', { name: 'Show location history' });
+
+    expect(toggle).toHaveTextContent('HistoryOff');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(toggle);
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });

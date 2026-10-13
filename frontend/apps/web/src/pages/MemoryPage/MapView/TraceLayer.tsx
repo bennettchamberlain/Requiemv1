@@ -316,7 +316,7 @@ export function PositionTraceLayer({ enabled, fitToTrace }: { enabled: boolean; 
 /** Says what the trace is showing — and, when downsampled, what it is not. */
 function TraceStatus({ text }: { text: string }) {
   return (
-    <div className="pointer-events-none absolute bottom-4 right-4 z-400">
+    <div className="pointer-events-none absolute left-3 right-14 top-24 z-400 device:bottom-4 device:left-auto device:right-4 device:top-auto">
       <div className="rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow-md">
         {text}
       </div>
@@ -336,10 +336,12 @@ export function TraceToggleControl({
   enabled,
   onToggle,
   className,
+  compact = false,
 }: {
   enabled: boolean;
   onToggle: () => void;
   className?: string;
+  compact?: boolean;
 }) {
   const stopPropagation = useCallback((el: HTMLDivElement | null) => {
     if (el) {
@@ -354,11 +356,26 @@ export function TraceToggleControl({
         variant="outline"
         size="sm"
         aria-pressed={enabled}
+        aria-label={enabled ? 'Hide location history' : 'Show location history'}
         onClick={onToggle}
-        className="border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent"
+        className={cn(
+          'border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:text-accent-foreground dark:border-border dark:bg-card dark:hover:bg-accent',
+          compact && 'h-9 px-3 text-xs',
+        )}
       >
-        <Route className="mr-1 h-4 w-4" />
-        {enabled ? 'Hide location history' : 'Show location history'}
+        <Route className="mr-1 h-4 w-4 shrink-0" />
+        {compact ? (
+          <>
+            History
+            <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {enabled ? 'On' : 'Off'}
+            </span>
+          </>
+        ) : enabled ? (
+          'Hide location history'
+        ) : (
+          'Show location history'
+        )}
       </Button>
     </div>
   );
