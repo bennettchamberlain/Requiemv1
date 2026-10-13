@@ -797,6 +797,28 @@ describe('slotForecastLine — what the drawer is allowed to claim', () => {
       expect(slotForecastLine({ instant, allDay: false }, () => undefined)).toBeNull();
     });
   });
+
+  it('says nothing when the only name is the labeler placeholder', () => {
+    withTimeZone('UTC', () => {
+      const instant = new Date(Date.UTC(2026, 7, 4, 20, 0));
+      const day: RhythmDay = {
+        date: '2026-08-04',
+        dow: 'Tue',
+        clusters: [
+          {
+            clusterId: 'c-label',
+            name: 'Label',
+            l0Class: 'UNKNOWN',
+            pOccur: 0.95,
+            scheduled: false,
+            daypartProbs: [{ label: 'evening', probability: 1 }],
+          },
+        ],
+      };
+
+      expect(slotForecastLine({ instant, allDay: false }, (key) => (key === '2026-08-04' ? day : undefined))).toBeNull();
+    });
+  });
 });
 
 /**
