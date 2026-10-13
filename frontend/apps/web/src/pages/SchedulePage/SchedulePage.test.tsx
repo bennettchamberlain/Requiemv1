@@ -6,6 +6,9 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { SchedulePage } from './SchedulePage';
 
+const toastError = vi.hoisted(() => vi.fn());
+const toastDismiss = vi.hoisted(() => vi.fn());
+
 const h = vi.hoisted(() => ({
   schedule: {} as Record<string, unknown>,
   plan: {} as Record<string, unknown>,
@@ -66,6 +69,16 @@ vi.mock('@/api/useRescheduleEvent', () => ({
 
 // The page reads the owner's zone to draw in. `useCurrentUser` reaches for the
 // auth hook context, which `renderWithProviders` deliberately does not supply.
+// Sonner only paints behind a mounted Toaster, which this page does not own.
+vi.mock('@ci/shadcn', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+
+  return {
+    ...actual,
+    useToast: () => ({ toast: { error: toastError, dismiss: toastDismiss } }),
+  };
+});
+
 vi.mock('@/hooks/useCurrentUser', () => ({
   useCurrentUser: () => ({
     user: { id: 'u1', timezone: h.profileTimeZone },
@@ -446,7 +459,10 @@ describe('SchedulePage — mutations that the server refuses', () => {
     renderWithProviders(<SchedulePage />);
     placeFromDrawer('Call the dentist');
 
-    expect(await screen.findByText(/Could not put that on the calendar/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not put that on the calendar/)),
+    );
+    expect(screen.queryByText(/Could not put that on the calendar/)).not.toBeInTheDocument();
   });
 
   it('tells the user when a move is rejected', async () => {
@@ -455,7 +471,8 @@ describe('SchedulePage — mutations that the server refuses', () => {
     renderWithProviders(<SchedulePage />);
     fireEvent.click(screen.getByText('stub-move'));
 
-    expect(await screen.findByText(/Could not move that/)).toBeInTheDocument();
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not move that/)));
+    expect(screen.queryByText(/Could not move that/)).not.toBeInTheDocument();
   });
 
   it('tells the user when dismissing a proposed task is rejected', async () => {
@@ -469,7 +486,10 @@ describe('SchedulePage — mutations that the server refuses', () => {
     fireEvent.click(screen.getByText('stub-slot'));
     fireEvent.click(screen.getByLabelText('Dismiss Book the dentist'));
 
-    expect(await screen.findByText(/Could not dismiss that task/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not dismiss that task/)),
+    );
+    expect(screen.queryByText(/Could not dismiss that task/)).not.toBeInTheDocument();
   });
 
   it('clears the message when the next attempt succeeds', async () => {
@@ -481,13 +501,15 @@ describe('SchedulePage — mutations that the server refuses', () => {
 
     renderWithProviders(<SchedulePage />);
     placeFromDrawer('Call the dentist');
-    expect(await screen.findByText(/Could not put that on the calendar/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not put that on the calendar/)),
+    );
+    expect(toastDismiss).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByText('stub-move'));
 
-    await waitFor(() =>
-      expect(screen.queryByText(/Could not put that on the calendar/)).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(toastDismiss).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/Could not put that on the calendar/)).not.toBeInTheDocument();
   });
 });
 
@@ -943,7 +965,8 @@ describe('SchedulePage — dragging a planned block moves its task too', () => {
     renderWithProviders(<SchedulePage />);
     fireEvent.click(screen.getByText('stub-move-planned'));
 
-    expect(await screen.findByText(/Could not move that/)).toBeInTheDocument();
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not move that/)));
+    expect(screen.queryByText(/Could not move that/)).not.toBeInTheDocument();
   });
 
   /**
@@ -963,7 +986,10 @@ describe('SchedulePage — dragging a planned block moves its task too', () => {
     renderWithProviders(<SchedulePage />);
     fireEvent.click(screen.getByText('stub-move'));
 
-    expect(await screen.findByText(/Recurring occurrences can't be moved yet/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Recurring occurrences can't be moved yet."),
+    );
+    expect(screen.queryByText(/Recurring occurrences can't be moved yet/)).not.toBeInTheDocument();
     expect(h.reschedule).not.toHaveBeenCalled();
     expect(placeOnDay).not.toHaveBeenCalled();
   });
