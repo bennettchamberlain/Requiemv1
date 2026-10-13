@@ -23,8 +23,8 @@ const NO_PINNED_TAGS: readonly string[] = [];
  * context-specific choices. Matching is case-insensitive because tag writes
  * normalize labels to lowercase.
  */
-export function useTagSuggestions(pinned: readonly string[] = NO_PINNED_TAGS): string[] {
-  const { data } = useQuery(GET_TAG_SUGGESTIONS);
+export function useTagSuggestions(pinned: readonly string[] = NO_PINNED_TAGS, enabled = true): string[] {
+  const { data } = useQuery(GET_TAG_SUGGESTIONS, { skip: !enabled });
 
   return useMemo(() => {
     const suggestions: string[] = [];
