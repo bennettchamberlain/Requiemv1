@@ -11,7 +11,7 @@ import { ChatAbout } from '@/components/ChatWithAgent';
 import { ErrorState } from '@/components/ErrorState';
 import { InfiniteListFooter } from '@/components/InfiniteList';
 import { PageContent } from '@/components/layout';
-import { Map } from '@/components/Map';
+import { MAP_IMAGERY_ATTRIBUTION, Map } from '@/components/Map';
 import { MemoryHubShell } from '@/components/MemoryHub';
 import { AddPlaceModal } from '@/components/modals/AddItemModal';
 import { PLACE_KIND_LABELS } from '@/components/PlaceForm';
@@ -974,7 +974,11 @@ export function PlacesPage() {
                 {(locatedPlaces.length > 0 || locatedCandidate != null || extraCandidatePins.length > 0) && (
                   <div ref={mapRef} className="flex-1 lg:sticky lg:top-4">
                     <div className="h-64 overflow-hidden rounded-md border sm:h-72 lg:h-[calc(100vh-14rem)] lg:min-h-72">
-                      <Map center={mapCenter} zoom={locatedPlaces.length === 1 ? 13 : 3}>
+                      <Map
+                        center={mapCenter}
+                        zoom={locatedPlaces.length === 1 ? 13 : 3}
+                        attributionControl={!isMobile}
+                      >
                         <FlyToLocated target={locatedCandidate} />
                         {locatedCandidate && (
                           <Map.Marker
@@ -1007,6 +1011,23 @@ export function PlacesPage() {
                         ))}
                       </Map>
                     </div>
+
+                    {isMobile && (
+                      <div
+                        data-testid="mobile-map-attribution"
+                        className="px-1 pt-1 text-[10px] leading-tight text-muted-foreground/60"
+                      >
+                        <a
+                          href="https://leafletjs.com"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline-offset-2 hover:underline"
+                        >
+                          Leaflet
+                        </a>{' '}
+                        | {MAP_IMAGERY_ATTRIBUTION}
+                      </div>
+                    )}
 
                     {locatedPlaces.length > MAX_MAP_MARKERS && (
                       <div className="pt-1 text-xs text-muted-foreground">

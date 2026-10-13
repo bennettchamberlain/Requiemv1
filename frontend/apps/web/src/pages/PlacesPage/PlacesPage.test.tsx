@@ -536,6 +536,9 @@ describe('PlacesPage', () => {
       await waitFor(() => {
         expect(document.querySelector('.leaflet-container')).not.toBeNull();
       });
+      expect(screen.getByTestId('map-root')).toHaveClass('[&_.leaflet-control-attribution]:opacity-[0.65]');
+      expect(document.querySelector('.leaflet-control-attribution')).not.toBeNull();
+      expect(screen.queryByTestId('mobile-map-attribution')).not.toBeInTheDocument();
       expect(screen.queryByText('Unknown place · 12 events')).not.toBeInTheDocument();
 
       fireEvent.click(locate);
@@ -882,6 +885,10 @@ describe('PlacesPage', () => {
       expect(known.closest('[data-slot="card"]')).toHaveClass('py-0');
       const map = document.querySelector('.leaflet-container');
       const allPlaces = screen.getByText('All places');
+      expect(document.querySelector('.leaflet-control-attribution')).toBeNull();
+      expect(screen.getByTestId('mobile-map-attribution')).toHaveTextContent(
+        'Leaflet | Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+      );
       expect(review.compareDocumentPosition(known) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(known.compareDocumentPosition(map!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(map!.compareDocumentPosition(allPlaces) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
