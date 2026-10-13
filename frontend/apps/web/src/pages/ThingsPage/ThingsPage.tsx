@@ -353,6 +353,7 @@ function DuplicateGroupCard({
   group: DuplicateGroup;
   onMerged: () => Promise<unknown>;
 }) {
+  const { isMobile } = useDeviceLayout();
   const [mergeItems, { loading }] = useMutation(MERGE_ITEMS);
   const [rejectDuplicates, { loading: rejecting }] = useMutation(REJECT_ITEM_DUPLICATES);
   const [pendingTargetId, setPendingTargetId] = useState<string | null>(null);
@@ -393,7 +394,7 @@ function DuplicateGroupCard({
   };
 
   return (
-    <div className="rounded-md border p-3">
+    <div className="rounded-md border p-2.5 device:p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <Merge className="h-4 w-4" />
         <span>
@@ -410,7 +411,7 @@ function DuplicateGroupCard({
 
       <div className="flex flex-col gap-2">
         {group.items.map((thing) => (
-          <div key={thing.id} className="flex items-center gap-3">
+          <div key={thing.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 device:gap-3">
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{thing.name || 'Unnamed thing'}</div>
               <div className="truncate text-sm text-muted-foreground">{describeThing(thing)}</div>
@@ -418,28 +419,35 @@ function DuplicateGroupCard({
 
             <Button
               size="sm"
-              variant="ghost"
+              variant="outline"
               disabled={loading}
               onClick={() => {
                 setMergeError(null);
                 setPendingTargetId(thing.id);
               }}
             >
-              Use as the kept thing
+              {isMobile ? 'Keep this thing' : 'Use as the kept thing'}
             </Button>
           </div>
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t pt-2">
+      <div className="mt-3 grid grid-cols-2 items-center gap-2 border-t pt-2 device:flex device:flex-wrap device:justify-end device:gap-3">
         {mergeError && pendingTargetId == null && (
-          <span className="text-sm text-destructive">{mergeError}</span>
+          <span className="col-span-2 text-sm text-destructive">{mergeError}</span>
         )}
-        <Button size="sm" variant="ghost" disabled={loading || rejecting} onClick={() => void reject()}>
-          {rejecting ? 'Saving…' : 'Not the same thing'}
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full device:w-auto"
+          disabled={loading || rejecting}
+          onClick={() => void reject()}
+        >
+          {rejecting ? 'Saving…' : isMobile ? 'Different things' : 'Not the same thing'}
         </Button>
         <Button
           size="sm"
+          className="w-full device:w-auto"
           disabled={loading || rejecting || defaultTargetId == null}
           onClick={() => {
             if (defaultTargetId != null) {
@@ -448,7 +456,7 @@ function DuplicateGroupCard({
             }
           }}
         >
-          Merge into one thing
+          {isMobile ? 'Merge things' : 'Merge into one thing'}
         </Button>
       </div>
 
@@ -496,6 +504,7 @@ export function ThingsPage() {
   const { isMobile } = useDeviceLayout();
   const navigate = useNavigate();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [expandedMobileDuplicates, setExpandedMobileDuplicates] = useState(false);
 
   // Search text is the header search box's `?search=` — it edits this page's
   // query in place (see GlobalSearchBox / isLiveSearchPath), so the page has
@@ -557,6 +566,8 @@ export function ThingsPage() {
 
   const duplicates = duplicatesData?.itemDuplicates;
   const duplicateGroups = duplicates?.groups ?? [];
+  const visibleDuplicateGroups =
+    isMobile && !expandedMobileDuplicates ? duplicateGroups.slice(0, 1) : duplicateGroups;
 
   const fetchNextPage = useCallback(
     (after: string) =>
@@ -731,6 +742,7 @@ export function ThingsPage() {
   // hand-written splice would have to keep totalCount honest too.
   const onMerged = useCallback(async () => {
     setDuplicatePages(1);
+    setExpandedMobileDuplicates(false);
     await Promise.all([refetch(), refetchDuplicates({ limit: DUPLICATE_PAGE_SIZE, offset: 0 })]);
   }, [refetch, refetchDuplicates]);
 
@@ -752,7 +764,7 @@ export function ThingsPage() {
   } else {
     content = (
       <PullToRefresh onRefresh={refetch}>
-        <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
+        <PageContent ref={pagination.scrollRef} className="gap-2 p-0 device:gap-4">
           <MemoryHubShell
             actions={
               isMobile ? undefined : (
@@ -762,14 +774,21 @@ export function ThingsPage() {
               )
             }
           >
-            <Tabs defaultValue="things" className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
-              <Tabs.List className="self-start">
-                <Tabs.Trigger value="things">Things</Tabs.Trigger>
-                <Tabs.Trigger value="review">Review sightings</Tabs.Trigger>
+            <Tabs
+              defaultValue="things"
+              className="flex flex-col gap-2 px-2 pb-3 device:gap-4 device:px-4 device:pb-4"
+            >
+              <Tabs.List className="w-full self-start device:w-auto">
+                <Tabs.Trigger value="things" className="flex-1 device:flex-none">
+                  Things
+                </Tabs.Trigger>
+                <Tabs.Trigger value="review" className="flex-1 device:flex-none">
+                  Review sightings
+                </Tabs.Trigger>
               </Tabs.List>
 
-              <Tabs.Content value="things" className="flex flex-col gap-4">
-                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+              <Tabs.Content value="things" className="flex flex-col gap-2 device:gap-4">
+                <div className="flex items-center justify-between gap-2 device:justify-start">
                   <div className="text-sm text-muted-foreground">{totalCount} things</div>
                   {isMobile ? (
                     <Button
@@ -857,21 +876,21 @@ export function ThingsPage() {
                 )}
 
                 {duplicateGroups.length > 0 && (
-                  <Card>
-                    <Card.Header>
+                  <Card className="gap-0">
+                    <Card.Header className="p-3 pb-2 device:p-6 device:pb-3">
                       <Card.Title className="flex items-center gap-2 text-base">
                         <Merge className="h-4 w-4" />
                         Possible duplicates
                         <Badge variant="secondary">{duplicates?.totalCount ?? 0}</Badge>
                       </Card.Title>
-                      <Card.Description>
+                      <Card.Description className="hidden device:block">
                         These things share a code, a product, or a brand and model bought the same day.
                       </Card.Description>
                     </Card.Header>
                     {/* The list grows with every "Load more"; capped so the things
                       list below stays reachable without scrolling past dozens of groups. */}
-                    <Card.Content className="flex max-h-[40em] flex-col gap-3 overflow-y-auto">
-                      {duplicateGroups.map((group) => (
+                    <Card.Content className="flex max-h-[40em] flex-col gap-2 overflow-y-auto p-3 pt-0 device:gap-3 device:p-6 device:pt-0">
+                      {visibleDuplicateGroups.map((group) => (
                         <DuplicateGroupCard
                           key={`${group.reason}:${group.value}`}
                           group={group}
@@ -879,7 +898,18 @@ export function ThingsPage() {
                         />
                       ))}
 
-                      {duplicates?.hasMore && (
+                      {isMobile && !expandedMobileDuplicates && duplicateGroups.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="self-start"
+                          onClick={() => setExpandedMobileDuplicates(true)}
+                        >
+                          Show {duplicateGroups.length - 1} more suggestions
+                        </Button>
+                      )}
+
+                      {duplicates?.hasMore && (!isMobile || expandedMobileDuplicates) && (
                         <div className="flex justify-center">
                           <Button variant="outline" size="sm" onClick={loadMoreDuplicates}>
                             Load more duplicate groups
@@ -888,7 +918,7 @@ export function ThingsPage() {
                       )}
 
                       <div className="text-center text-xs text-muted-foreground">
-                        {duplicateGroups.length} of {duplicates?.totalCount ?? 0} groups shown
+                        {visibleDuplicateGroups.length} of {duplicates?.totalCount ?? 0} groups shown
                       </div>
                     </Card.Content>
                   </Card>
