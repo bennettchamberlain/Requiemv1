@@ -512,8 +512,15 @@ actor LocalLLMEngine {
           // A Stop that landed before the native send started has nothing to interrupt; honour it
           // by not sending at all.
           if !self.cancelRequested {
+            // A reasoning budget, always (LiteRT-LM 0.18's `ThinkingConfig`): the runtime stops the reasoning
+            // there and makes the model answer, instead of letting it fill the window and go silent. -1 is
+            // the runtime's "no limit", used when thinking is off.
             for try await message in conversation.sendMessageStream(
-              Message(prompt), extraContext: ["enable_thinking": thinking])
+              Message(prompt), extraContext: ["enable_thinking": thinking],
+              thinkingConfig: ThinkingConfig(
+                enableThinking: thinking,
+                thinkingTokenBudget: thinking
+                  ? LocalLLMPolicy.thinkingTokenBudget(contextTokens: loaded.key.maxTokens) : -1))
             {
               let text = message.toString
               let thought = message.channels[Self.thoughtChannel] ?? ""

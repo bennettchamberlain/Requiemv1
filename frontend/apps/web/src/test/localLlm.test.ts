@@ -5,6 +5,7 @@ import {
   deleteLocalLlmModel,
   downloadLocalLlmModel,
   ensureLocalLlmLoaded,
+  isAnswerCutShort,
   isContextExhausted,
   isLocalLlmReady,
   LocalLlmGenerationError,
@@ -833,5 +834,41 @@ describe('isContextExhausted', () => {
     ).toBe(false);
     expect(isContextExhausted({ text: '', thought: '', stats: undefined, cancelled: true })).toBe(false);
     expect(isContextExhausted({ text: '', thought: '', stats: undefined, cancelled: false })).toBe(false);
+  });
+});
+
+describe('isAnswerCutShort', () => {
+  const stats = {
+    timeToFirstTokenMs: 300,
+    totalMs: 2000,
+    outputTokens: 350,
+    decodeTokensPerSecond: 30,
+    tokensEstimated: false,
+  };
+
+  it('is the device case: reasoning, then a tool call cut off mid-JSON, no answer', () => {
+    expect(
+      isAnswerCutShort({
+        text: '\n\n<tool_call>\n{"name": "media_findPhotos", "arguments": {"query": "s',
+        thought: 'The user asks about photos…',
+        stats,
+        cancelled: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('is reasoning with nothing after it', () => {
+    expect(isAnswerCutShort({ text: '', thought: 'Let me think…', stats, cancelled: false })).toBe(true);
+  });
+
+  it('is not an answered turn, a finished tool call, a stop, or an empty second turn', () => {
+    expect(isAnswerCutShort({ text: 'Paris.', thought: 'easy', stats, cancelled: false })).toBe(false);
+    expect(
+      isAnswerCutShort({ text: '<tool_call>{"name":"x"}</tool_call>', thought: '', stats, cancelled: false }),
+    ).toBe(false);
+    expect(isAnswerCutShort({ text: '', thought: 'cut', stats: undefined, cancelled: true })).toBe(false);
+    expect(
+      isAnswerCutShort({ text: '', thought: '', stats: { ...stats, outputTokens: 0 }, cancelled: false }),
+    ).toBe(false);
   });
 });

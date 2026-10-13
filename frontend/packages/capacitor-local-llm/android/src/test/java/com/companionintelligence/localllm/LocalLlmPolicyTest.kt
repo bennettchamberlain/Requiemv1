@@ -382,6 +382,25 @@ class LocalLlmPolicyTest {
         assertTrue("a 16k window could", tokens <= LocalLlmPolicy.toolDeclarationTokenBudget(16_384))
     }
 
+    @Test
+    fun a_thinking_model_may_reason_for_a_quarter_of_the_window() {
+        assertEquals("Qwen3-0.6B's window", 256, LocalLlmPolicy.thinkingTokenBudget(1024))
+        assertEquals("Gemma 4's window", 1000, LocalLlmPolicy.thinkingTokenBudget(4000))
+        assertEquals("an 8k window", 2048, LocalLlmPolicy.thinkingTokenBudget(8192))
+        assertEquals("a tiny window keeps the floor", 64, LocalLlmPolicy.thinkingTokenBudget(100))
+        assertEquals(64, LocalLlmPolicy.thinkingTokenBudget(0))
+    }
+
+    @Test
+    fun the_reasoning_budget_and_a_tool_result_together_leave_the_window_room_for_the_reply() {
+        for (window in listOf(1024, 4000, 8192)) {
+            // A result is budgeted in bytes; at ~3 bytes a token it is at most a sixth of the window in tokens.
+            val resultTokens = LocalLlmPolicy.toolResultByteBudget(window) / 3
+            val spent = LocalLlmPolicy.thinkingTokenBudget(window) + resultTokens
+            assertTrue("$window: $spent", spent < window / 2)
+        }
+    }
+
     // ---- wording -------------------------------------------------------------------------------
 
     @Test

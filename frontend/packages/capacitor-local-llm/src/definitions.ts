@@ -108,6 +108,14 @@ export interface GenerateOptions {
    */
   enableThinking?: boolean;
   /**
+   * The most tokens the model may spend reasoning before it must answer. Omit for the native default,
+   * a quarter of the model's context window: without a cap a small model reasons until the window is
+   * full and stops with no answer. Ignored when `enableThinking` is off.
+   */
+  thinkingTokenBudget?: number;
+  /** The most tokens the whole reply (reasoning included) may take. Omit for whatever the window has left. */
+  maxOutputTokens?: number;
+  /**
    * Images to put in front of the prompt, as bare base64 (no `data:` prefix) JPEG or PNG. Only
    * honoured by `vision` models; any other model rejects the call rather than dropping them.
    */

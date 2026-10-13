@@ -230,4 +230,18 @@ object LocalLlmPolicy {
     /** Tokens for [utf8Bytes] of declaration JSON, rounded up; see [TOOL_DECLARATION_BYTES_PER_TOKEN]. */
     fun estimateDeclarationTokens(utf8Bytes: Int): Int =
         if (utf8Bytes <= 0) 0 else (utf8Bytes + TOOL_DECLARATION_BYTES_PER_TOKEN - 1) / TOOL_DECLARATION_BYTES_PER_TOKEN
+
+    // ---- reasoning -------------------------------------------------------------------------------
+
+    /**
+     * The most tokens a thinking model may spend reasoning before it has to answer: a quarter of the window,
+     * never under [MIN_THINKING_TOKEN_BUDGET]. Without a cap a small model reasons until the window is full and
+     * then stops with no answer and no error (measured: Qwen3-0.6B, 1,024 tokens, two thirds of it prompt).
+     * A quarter leaves the prompt, a tool result and the reply their room; the runtime forces the answer when
+     * the budget is spent. The caller may still pass its own.
+     */
+    fun thinkingTokenBudget(contextTokens: Int): Int = maxOf(contextTokens / 4, MIN_THINKING_TOKEN_BUDGET)
+
+    /** A budget below this leaves nothing to reason with; the floor keeps a tiny window honest rather than mute. */
+    const val MIN_THINKING_TOKEN_BUDGET = 64
 }
