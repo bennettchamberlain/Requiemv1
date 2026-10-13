@@ -1766,6 +1766,7 @@ export type KnownPlaceType = {
   label: Scalars['String']['output'];
   locationId?: Maybe<Scalars['String']['output']>;
   source: Scalars['String']['output'];
+  tags: Array<Scalars['String']['output']>;
 };
 
 export type LinkItemToProductInput = {
@@ -5014,9 +5015,11 @@ export type UpdateKnownPlaceInput = {
   confidence?: InputMaybe<Scalars['Float']['input']>;
   coordinates?: InputMaybe<KnownPlaceCoordinatesInput>;
   kind: Scalars['String']['input'];
+  knownPlaceId?: InputMaybe<Scalars['String']['input']>;
   label: Scalars['String']['input'];
   locationId?: InputMaybe<Scalars['String']['input']>;
   source?: InputMaybe<Scalars['String']['input']>;
+  tags?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
 export type UpdateNoteInput = {

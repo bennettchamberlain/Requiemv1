@@ -1792,6 +1792,7 @@ type KnownPlaceType {
   label: String!
   locationId: String
   source: String!
+  tags: [String!]!
 }
 
 input LinkItemToProductInput {
@@ -3988,9 +3989,11 @@ input UpdateKnownPlaceInput {
   confidence: Float
   coordinates: KnownPlaceCoordinatesInput
   kind: String!
+  knownPlaceId: String
   label: String!
   locationId: String
   source: String
+  tags: [String!]
 }
 
 input UpdateNoteInput {
