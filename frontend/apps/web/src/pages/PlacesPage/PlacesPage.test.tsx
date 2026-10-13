@@ -706,6 +706,85 @@ describe('PlacesPage', () => {
       });
     });
 
+    it('creates a typed custom tag and offers it on the next mobile review item', async () => {
+      setViewport(true);
+      const first = candidate({ locationId: 'loc-first', label: 'First Place' });
+      const second = candidate({
+        locationId: 'loc-second',
+        label: 'Second Place',
+        lat: 40,
+        lng: -120,
+      });
+
+      renderPlaces([
+        noDuplicatesMock(),
+        emptyPlacesMock(),
+        knownPlacesMock({ knownPlaceCandidates: [first, second] }),
+        {
+          request: {
+            query: CONFIRM_KNOWN_PLACE,
+            variables: {
+              input: {
+                label: 'First Place',
+                kind: 'other',
+                tags: ['other', 'family'],
+                locationId: 'loc-first',
+                coordinates: { lat: 37.7749, lng: -122.4194 },
+                confidence: 0.8,
+                source: 'inferred',
+              },
+            },
+          },
+          result: {
+            data: {
+              updateKnownPlace: {
+                __typename: 'KnownPlaceType' as const,
+                id: 'kp-first',
+                label: 'First Place',
+                kind: 'other',
+                tags: ['other', 'family'],
+              },
+            },
+          },
+        },
+        knownPlacesMock({
+          knownPlaces: [
+            knownPlace({
+              id: 'kp-first',
+              locationId: 'loc-first',
+              label: 'First Place',
+              kind: 'other',
+              tags: ['other', 'family'],
+              coordinates: {
+                __typename: 'KnownPlaceCoordinates' as const,
+                lat: 37.7749,
+                lng: -122.4194,
+              },
+            }),
+          ],
+          knownPlaceCandidates: [second],
+        }),
+      ]);
+
+      await screen.findByDisplayValue('First Place');
+      const firstTagInput = screen.getByRole('textbox', {
+        name: 'Categories and tags for First Place',
+      });
+      fireEvent.change(firstTagInput, { target: { value: 'family' } });
+      fireEvent.submit(firstTagInput.closest('form')!);
+      expect(await screen.findByRole('button', { name: 'Remove tag “family”' })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(await screen.findByDisplayValue('Second Place')).toBeInTheDocument();
+      const secondTagInput = screen.getByRole('textbox', {
+        name: 'Categories and tags for Second Place',
+      });
+      fireEvent.focus(secondTagInput);
+
+      expect(await screen.findByRole('button', { name: 'family' })).toBeInTheDocument();
+    });
+
     it('starts legacy known places with their semantic tag and safely recategorizes by relationship id', async () => {
       setViewport(true);
       const legacy = knownPlace({ tags: [] });

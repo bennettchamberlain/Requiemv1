@@ -16,7 +16,7 @@ import { MemoryHubShell } from '@/components/MemoryHub';
 import { AddPlaceModal } from '@/components/modals/AddItemModal';
 import { PLACE_KIND_LABELS } from '@/components/PlaceForm';
 import { PullToRefresh } from '@/components/PullToRefresh';
-import { TagInput, useTagSuggestions } from '@/components/TagInput';
+import { GET_TAG_SUGGESTIONS, TagInput, useTagSuggestions } from '@/components/TagInput';
 import { gql } from '@/graphql';
 import type { GetKnownPlacesQuery, GetPlacesQuery } from '@/graphql/graphql';
 import { useModalControls } from '@/hooks';
@@ -222,12 +222,33 @@ type KnownPlaceKind = (typeof KNOWN_PLACE_KINDS)[number];
 
 /** Always shown first in the combined category/tag suggestion list. */
 export const DEFAULT_KNOWN_PLACE_TAGS: readonly KnownPlaceKind[] = KNOWN_PLACE_KINDS;
+const RECENT_PLACE_TAG_LIMIT = 10;
 
 /** The server's label for a cluster it could not name — never worth saving verbatim. */
 const UNNAMED_CANDIDATE_LABEL = 'unknown place';
 
 function isKnownPlaceKind(kind: string): kind is KnownPlaceKind {
   return (KNOWN_PLACE_KINDS as readonly string[]).includes(kind);
+}
+
+/** Put newly used custom tags directly after the five fixed role suggestions. */
+function prependRecentPlaceTags(current: readonly string[], used: readonly string[]): string[] {
+  const seen = new Set(DEFAULT_KNOWN_PLACE_TAGS.map((tag) => tag.toLowerCase()));
+  const next: string[] = [];
+
+  // Selection order is meaningful elsewhere on this form, so the last custom
+  // tag selected is also the first recent suggestion for the next candidate.
+  for (const value of [...used].reverse().concat(current)) {
+    const trimmed = value.trim();
+    const normalized = trimmed.toLowerCase();
+
+    if (trimmed !== '' && !seen.has(normalized)) {
+      seen.add(normalized);
+      next.push(trimmed);
+    }
+  }
+
+  return next.slice(0, RECENT_PLACE_TAG_LIMIT);
 }
 
 interface KnownPlaceCandidateDraft {
@@ -488,9 +509,16 @@ function KnownPlacesCard({
   onCandidates: (candidates: LocatedCandidate[]) => void;
 }) {
   const { isMobile } = useDeviceLayout();
-  const suggestions = useTagSuggestions(DEFAULT_KNOWN_PLACE_TAGS);
+  const [recentTags, setRecentTags] = useState<string[]>([]);
+  const pinnedSuggestions = useMemo(() => [...DEFAULT_KNOWN_PLACE_TAGS, ...recentTags], [recentTags]);
+  const suggestions = useTagSuggestions(pinnedSuggestions);
   const { data, refetch } = useQuery(GET_KNOWN_PLACES);
-  const [confirmKnownPlace, { loading }] = useMutation(CONFIRM_KNOWN_PLACE);
+  const [confirmKnownPlace, { loading }] = useMutation(CONFIRM_KNOWN_PLACE, {
+    // replaceEntityTags creates custom tags server-side. Refresh this
+    // connection too so the new vocabulary survives leaving and returning to
+    // Places instead of remaining absent from Apollo's cached tag list.
+    refetchQueries: [GET_TAG_SUGGESTIONS],
+  });
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [expandedCandidates, setExpandedCandidates] = useState(false);
@@ -558,6 +586,10 @@ function KnownPlacesCard({
     }
   }, [isMobile]);
 
+  const rememberTags = useCallback((tags: readonly string[]) => {
+    setRecentTags((current) => prependRecentPlaceTags(current, tags));
+  }, []);
+
   if (knownPlaces.length === 0 && candidates.length === 0) {
     return null;
   }
@@ -578,6 +610,7 @@ function KnownPlacesCard({
           },
         },
       });
+      rememberTags(draft.tags);
       // The pin was a temporary aid for naming this cluster; once saved it
       // shows up as a confirmed place instead.
       if (sameSpot(located, candidate)) {
@@ -619,6 +652,7 @@ function KnownPlacesCard({
           },
         },
       });
+      rememberTags(tags);
       await refetch();
 
       return true;
