@@ -570,7 +570,13 @@ class LocalLlmPlugin : Plugin() {
     }
 
     /** The parts of a `generate`/`generateStream` call that can be checked without decoding anything. */
-    private class ParsedGenerate(val prompt: String, val enableThinking: Boolean, val rawImages: List<String>)
+    private class ParsedGenerate(
+        val prompt: String,
+        val enableThinking: Boolean,
+        val rawImages: List<String>,
+        val thinkingTokenBudget: Int?,
+        val maxOutputTokens: Int?,
+    )
 
     /**
      * Validates a generate call synchronously and rejects it (returning null) on the first problem,
@@ -621,7 +627,18 @@ class LocalLlmPlugin : Plugin() {
             return null
         }
 
-        return ParsedGenerate(prompt, enableThinking, images)
+        // Both optional and both validated: a non-positive budget is a mistake, not "unlimited".
+        val thinkingTokenBudget = call.getInt("thinkingTokenBudget")
+        val maxOutputTokens = call.getInt("maxOutputTokens")
+        if (thinkingTokenBudget != null && thinkingTokenBudget <= 0) {
+            call.reject("thinkingTokenBudget must be positive")
+            return null
+        }
+        if (maxOutputTokens != null && maxOutputTokens <= 0) {
+            call.reject("maxOutputTokens must be positive")
+            return null
+        }
+        return ParsedGenerate(prompt, enableThinking, images, thinkingTokenBudget, maxOutputTokens)
     }
 
     /**
@@ -640,7 +657,7 @@ class LocalLlmPlugin : Plugin() {
                 call.reject("The image is too large to process on this device.")
                 return null
             }
-        return LocalLlmEngine.GenerateRequest(parsed.prompt, parsed.enableThinking, images)
+        return LocalLlmEngine.GenerateRequest(parsed.prompt, parsed.enableThinking, images, parsed.thinkingTokenBudget, parsed.maxOutputTokens)
     }
 
     private fun statsToJs(stats: GenerationStats): JSObject {

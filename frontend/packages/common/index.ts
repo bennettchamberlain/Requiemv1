@@ -100,6 +100,7 @@ export {
   deleteLocalLlmModel,
   downloadLocalLlmModel,
   ensureLocalLlmLoaded,
+  isAnswerCutShort,
   isContextExhausted,
   isLocalLlmReady,
   LocalLlmGenerationError,

@@ -5,6 +5,7 @@ import {
   ensureLocalLlmLoaded,
   findLocalLlmModel,
   getLocalLlmPrefs,
+  isAnswerCutShort,
   isContextExhausted,
   isLocalLlmReady,
   resetLocalLlmConversation,
@@ -277,6 +278,13 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           // on screen is truncated and would otherwise read as complete.
           if (result.cancelled && !controller.signal.aborted) {
             toast.info('The reply stopped early — this phone is running too hot to keep going.');
+          }
+
+          // Reasoning that filled the window: tokens were produced, no answer arrived, nothing failed.
+          if (!controller.signal.aborted && isAnswerCutShort(result)) {
+            toast.info(
+              'The on-device model ran out of room before it could answer. Try a shorter question, or turn off "Think before answering" in Settings → On-device model.',
+            );
           }
 
           streamController.close();

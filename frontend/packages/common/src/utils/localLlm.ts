@@ -106,7 +106,13 @@ export interface LocalLlmPluginApi {
   configureIntentTools(options: { enabled?: boolean; baseUrl?: string; apiKey?: string }): Promise<void>;
   resetConversation(): Promise<void>;
   unloadModel(): Promise<void>;
-  generateStream(options: { prompt: string; enableThinking?: boolean; images?: string[] }): Promise<void>;
+  generateStream(options: {
+    prompt: string;
+    enableThinking?: boolean;
+    thinkingTokenBudget?: number;
+    maxOutputTokens?: number;
+    images?: string[];
+  }): Promise<void>;
   cancel(): Promise<void>;
   addListener(
     eventName: 'modelDownloadProgress',
@@ -424,6 +430,10 @@ export async function resetLocalLlmConversation(): Promise<void> {
 
 export interface StreamLocalLlmOptions {
   enableThinking?: boolean;
+  /** Reasoning cap in tokens; omit for the native default (a quarter of the window). */
+  thinkingTokenBudget?: number;
+  /** Whole-reply cap in tokens; omit for whatever the window has left. */
+  maxOutputTokens?: number;
   /** Bare base64 JPEG/PNG, vision models only. */
   images?: string[];
   signal?: AbortSignal;
@@ -447,6 +457,26 @@ export interface StreamLocalLlmResult {
  */
 export function isContextExhausted(result: StreamLocalLlmResult): boolean {
   return !result.cancelled && result.text === '' && result.thought === '' && result.stats?.outputTokens === 0;
+}
+
+/** A `<tool_call>` the model opened and never closed: it was cut off while writing the call. */
+const UNFINISHED_TOOL_CALL = /<tool_call>(?![\s\S]*<\/tool_call>)[\s\S]*$/;
+
+/**
+ * A turn that ran, produced tokens, and still delivered no answer: the model reasoned (or started a tool
+ * call) until the window was full and the runtime stopped it there, silently. Measured on a device: Qwen3-0.6B
+ * thought for ~350 tokens, opened a `<tool_call>` and stopped mid-JSON; the chat showed reasoning that just
+ * ended. Distinct from {@link isContextExhausted} (an empty second turn) and from a stop (no stats). The
+ * native side now caps reasoning, so this is the backstop that at least says what happened.
+ */
+export function isAnswerCutShort(result: StreamLocalLlmResult): boolean {
+  if (result.cancelled || !result.stats || result.stats.outputTokens === 0) {
+    return false;
+  }
+
+  const answer = result.text.replace(UNFINISHED_TOOL_CALL, '').trim();
+
+  return answer === '' && (result.thought.trim() !== '' || UNFINISHED_TOOL_CALL.test(result.text));
 }
 
 /** The longest reason the chat shows: a native error that echoes its input must not fill a bubble. */
@@ -554,6 +584,8 @@ async function runStream(prompt: string, options: StreamLocalLlmOptions): Promis
     await plugin.generateStream({
       prompt,
       enableThinking: options.enableThinking,
+      thinkingTokenBudget: options.thinkingTokenBudget,
+      maxOutputTokens: options.maxOutputTokens,
       images: options.images && options.images.length > 0 ? options.images : undefined,
     });
   } catch (error) {

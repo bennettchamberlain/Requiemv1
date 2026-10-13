@@ -174,6 +174,14 @@ enum LocalLLMPolicy {
   }
 
   /// `enableThinking` only reaches the chat template for a model that has the capability.
+  /// The most tokens a thinking model may spend reasoning before it has to answer: a quarter of the window,
+  /// never under 64. Without a cap a small model reasons until the window is full and stops with no answer
+  /// and no error (measured on Android: Qwen3-0.6B, 1,024 tokens, two thirds of it prompt). The same figure as
+  /// Android's `LocalLlmPolicy.thinkingTokenBudget`; retune the two together.
+  static func thinkingTokenBudget(contextTokens: Int) -> Int {
+    max(contextTokens / 4, 64)
+  }
+
   static func effectiveThinking(requested: Bool, capabilities: Set<LocalLLMCapability>) -> Bool {
     requested && capabilities.contains(.thinking)
   }

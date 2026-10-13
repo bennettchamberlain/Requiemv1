@@ -17,6 +17,7 @@ import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.ThinkingConfig
 import com.google.ai.edge.litertlm.ToolProvider
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
@@ -118,6 +119,10 @@ class LocalLlmEngine(private val context: Context) {
         val prompt: String,
         val enableThinking: Boolean = false,
         val images: List<ByteArray> = emptyList(),
+        /** Tokens the model may spend reasoning before it must answer; null = [LocalLlmPolicy.thinkingTokenBudget] of the window. */
+        val thinkingTokenBudget: Int? = null,
+        /** Tokens the whole reply (reasoning included) may take; null = whatever the window has left. */
+        val maxOutputTokens: Int? = null,
     )
 
     /**
@@ -678,8 +683,25 @@ class LocalLlmEngine(private val context: Context) {
                     }
                 }
 
+            // A reasoning budget, always. On a device Qwen3-0.6B (1,024-token window, two thirds of it prompt)
+            // thought for ~350 tokens, started a tool call and hit the window mid-JSON: no answer, no error, and
+            // the runtime reports no stop reason. LiteRT-LM 0.18 stops the reasoning at this budget and makes the
+            // model answer. -1 is the runtime's "no limit".
+            val thinkingBudget =
+                if (enableThinking) request.thinkingTokenBudget ?: LocalLlmPolicy.thinkingTokenBudget(live.spec.maxTokens) else -1
+            val thinkingConfig = ThinkingConfig(enableThinking, thinkingBudget)
             try {
-                conversation.sendMessageAsync(contents, callback, mapOf(EXTRA_CONTEXT_ENABLE_THINKING to enableThinking))
+                conversation.sendMessageAsync(
+                    contents,
+                    callback,
+                    mapOf(EXTRA_CONTEXT_ENABLE_THINKING to enableThinking),
+                    null, // repetitionPenaltyConfig
+                    null, // noRepeatNgramConfig
+                    null, // suppressTokensConfig
+                    request.maxOutputTokens,
+                    thinkingConfig,
+                    null, // responseFormat
+                )
             } catch (e: Throwable) {
                 live.conversationStale = true
                 if (finish() && cont.isActive) cont.resumeWithException(e)
