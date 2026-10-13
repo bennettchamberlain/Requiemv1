@@ -88,7 +88,7 @@ function makeService() {
   const authService = {
     validateSessionToken: jest.fn(),
     // The browser's session row is live unless a case says otherwise.
-    sessionEstablishedAt: jest.fn().mockResolvedValue(new Date(NOW - 60_000)),
+    resolveLiveSession: jest.fn().mockResolvedValue({ userId: 'user-a', sessionId: 'sid-old' }),
     invalidateSession: jest.fn().mockResolvedValue(undefined),
     issueSessionToken: jest.fn().mockResolvedValue({ sessionToken: 'new-sess', sessionId: 'sid-2' }),
     issueAccessToken: jest.fn().mockReturnValue('access-hello'),
@@ -243,6 +243,24 @@ describe('HubForwardAuthBridgeService', () => {
       expect(userService.create).not.toHaveBeenCalled();
     });
 
+    it('replaces a matching cookie when its Memory session is no longer live', async () => {
+      const { service, userService, authService } = makeService();
+      authService.validateSessionToken.mockReturnValue({ sub: 'user-a' });
+      authService.resolveLiveSession.mockResolvedValue(null);
+      userService.findById.mockResolvedValue(account('user-a', 'hello@lifescope.io'));
+      userService.findAccountByEmail.mockResolvedValue(account('user-a', 'hello@lifescope.io'));
+
+      await expect(
+        service.alignSession(requestWith(signedHeaders('hello@lifescope.io')), response()),
+      ).resolves.toEqual({
+        username: 'hello@lifescope.io',
+        replaced: true,
+        accessToken: 'access-hello',
+      });
+      expect(authService.invalidateSession).toHaveBeenCalledWith('user-a', 'old-token', expect.any(Object));
+      expect(authService.issueSessionToken).toHaveBeenCalledWith('user-a', expect.any(Object));
+    });
+
     it('replaces a stale Memory session and JIT-creates the Hub person', async () => {
       const { service, userService, authService, csrfService, federatedIdentityService } = makeService();
       authService.validateSessionToken.mockReturnValue({ sub: 'user-a' });
@@ -346,6 +364,24 @@ describe('HubForwardAuthBridgeService', () => {
       expect(federatedIdentityService.findUserId).toHaveBeenCalledWith(DIRECTORY, HUB_ID);
       expect(userService.create).not.toHaveBeenCalled();
       expect(authService.invalidateSession).not.toHaveBeenCalled();
+    });
+
+    it('replaces a same-user cookie when its backing session row is gone', async () => {
+      const { service, userService, authService, federatedIdentityService } = makeService();
+      federatedIdentityService.findUserId.mockResolvedValue('user-a');
+      authService.validateSessionToken.mockReturnValue({ sub: 'user-a' });
+      authService.resolveLiveSession.mockResolvedValue(null);
+      userService.findById.mockResolvedValue(account('user-a', 'hello@lifescope.io'));
+
+      await expect(
+        service.alignSession(requestWith(stableHeaders('hello@lifescope.io')), response()),
+      ).resolves.toEqual({
+        username: 'hello@lifescope.io',
+        replaced: true,
+        accessToken: 'access-hello',
+      });
+      expect(authService.invalidateSession).toHaveBeenCalledWith('user-a', 'old-token', expect.any(Object));
+      expect(authService.issueSessionToken).toHaveBeenCalledWith('user-a', expect.any(Object));
     });
 
     it("moves a browser holding someone else's session to the linked account", async () => {
@@ -463,7 +499,7 @@ describe('HubForwardAuthBridgeService', () => {
       await expect(
         service.alignSession(requestWith(stableHeaders('hello@lifescope.io')), response()),
       ).resolves.toEqual({ username: 'hello@lifescope.io', replaced: false });
-      expect(authService.sessionEstablishedAt).toHaveBeenCalledWith('user-a', 'old-token');
+      expect(authService.resolveLiveSession).toHaveBeenCalledWith('old-token');
       expect(federatedIdentityService.bind).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'user-a', issuer: DIRECTORY, subject: HUB_ID }),
       );
@@ -476,7 +512,7 @@ describe('HubForwardAuthBridgeService', () => {
       const own = unprovenAccount('user-a', 'hello@lifescope.io');
       userService.findAccountByEmail.mockResolvedValue(own);
       authService.validateSessionToken.mockReturnValue({ sub: 'user-a' });
-      authService.sessionEstablishedAt.mockResolvedValue(null);
+      authService.resolveLiveSession.mockResolvedValue(null);
       userService.findById.mockResolvedValue(own);
 
       await expect(

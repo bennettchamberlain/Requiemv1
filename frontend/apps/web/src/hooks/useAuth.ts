@@ -211,12 +211,15 @@ async function postLogout(): Promise<void> {
  * Primes the csrf cookie first when it is missing (e.g. a cleared cookie with a
  * still-valid session), and on a 403 — a stale/invalid CSRF token, such as one
  * signed with a rotated server secret — re-primes and retries exactly once.
- * A 401 (invalid session) is never retried: that must fall through to login.
+ * A 401 (invalid session) is never retried here. The hook can instead ask the
+ * Hub bridge to repair a stale same-user session without repeating a request
+ * that the server has already rejected.
  */
 /**
  * If Traefik named a Hub person who does not match the Memory cookie, the
- * server replaces the session. Call this before refresh so the SPA never
- * hydrates the previous person's token / PowerSync replica.
+ * server replaces the session. Call this before the mount refresh, and after a
+ * later 401, so the SPA never hydrates the previous person's token / PowerSync
+ * replica or logs out a Hub-authenticated person over a stale Memory cookie.
  */
 async function alignHubSession(): Promise<(AuthResponse & { replaced?: boolean }) | undefined> {
   if (isNativePlatform()) {
@@ -853,10 +856,28 @@ function useAuth(): ReturnValue {
 
       setAccessToken(data?.accessToken ?? null);
     } catch (err: unknown) {
+      if (err instanceof FetchJsonError && err.status === 401) {
+        const bridged = await alignHubSession();
+
+        if (bridged?.replaced && bridged.accessToken) {
+          const nextSubject = jwtDecode<JwtPayload>(bridged.accessToken).sub;
+
+          // A changed Hub identity must never inherit the previous account's
+          // local replica. A repaired session for the same person can keep it.
+          if (!decoded?.sub || decoded.sub !== nextSubject) {
+            await disconnectAndClearPowerSyncForLogout();
+          }
+
+          setAccessToken(bridged.accessToken);
+
+          return;
+        }
+      }
+
       setRefreshError(err);
       setAccessToken(null);
     }
-  }, []);
+  }, [decoded?.sub]);
 
   useEffect(() => {
     (async () => {

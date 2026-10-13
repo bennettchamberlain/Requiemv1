@@ -17,11 +17,28 @@ interface Props {
   zoom?: number;
   zoomEnabled?: boolean;
   draggingEnabled?: boolean;
+  attributionControl?: boolean;
+  autoCenterMarkers?: boolean;
 }
 
-export function Map({ center, children, zoom = 13, zoomEnabled = true, draggingEnabled = true }: Props) {
+export const MAP_IMAGERY_ATTRIBUTION =
+  'Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community';
+
+export function Map({
+  center,
+  children,
+  zoom = 13,
+  zoomEnabled = true,
+  draggingEnabled = true,
+  attributionControl = true,
+  autoCenterMarkers = true,
+}: Props) {
   return (
-    <div className="relative w-full h-full" style={{ zIndex: 1 }}>
+    <div
+      data-testid="map-root"
+      className="relative h-full w-full [&_.leaflet-control-attribution]:opacity-[0.65] [&_.leaflet-control-attribution]:transition-opacity [&_.leaflet-control-attribution:focus-within]:opacity-100 [&_.leaflet-control-attribution:hover]:opacity-100"
+      style={{ zIndex: 1 }}
+    >
       <MapContainer
         center={center}
         zoom={zoom}
@@ -29,8 +46,9 @@ export function Map({ center, children, zoom = 13, zoomEnabled = true, draggingE
         scrollWheelZoom={zoomEnabled}
         dragging={draggingEnabled}
         zoomControl={false}
+        attributionControl={attributionControl}
       >
-        <MapProvider args={[]}>
+        <MapProvider args={[{ autoCenterMarkers }]}>
           {/* The basemap belongs to a third party, and rendering it contacts them on every
               tile — the one egress a fresh appliance performs with no key and no connector.
               Esri's World Imagery terms require the credit, and the attribution control is
@@ -39,7 +57,7 @@ export function Map({ center, children, zoom = 13, zoomEnabled = true, draggingE
               that had been switched off here. See docs/architecture/third-party-egress.md. */}
           <TileLayer
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            attribution="Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+            attribution={MAP_IMAGERY_ATTRIBUTION}
           />
 
           {children}

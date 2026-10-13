@@ -10,6 +10,9 @@
 /** Minimum a pin has to carry to be placed, ordered or keyed. */
 export type PinPoint = { id: string; coords: { lat: number; lng: number } };
 
+/** A placed pin with a real domain timestamp; zero denotes an undated/import-only row. */
+export type TimedPinPoint = PinPoint & { sortTime: number };
+
 /** The slice of Leaflet's LatLngBounds this module needs (keeps it DOM-free). */
 export interface BoundsLike {
   contains(point: [number, number]): boolean;
@@ -36,6 +39,24 @@ export function pinsInBounds<T extends PinPoint>(pins: T[], bounds: BoundsLike):
  */
 export function routePoints(pins: PinPoint[], max: number): Array<[number, number]> {
   return pins.slice(-Math.max(max, 0)).map((pin) => [pin.coords.lat, pin.coords.lng]);
+}
+
+/**
+ * The latest genuinely dated location.
+ *
+ * Map pins normally arrive time-ascending, but scanning by timestamp keeps the
+ * mobile opening camera correct if an undated/import-only pin is appended.
+ */
+export function mostRecentDatedPin<T extends TimedPinPoint>(pins: readonly T[]): T | null {
+  let latest: T | null = null;
+
+  for (const pin of pins) {
+    if (pin.sortTime > 0 && (latest == null || pin.sortTime > latest.sortTime)) {
+      latest = pin;
+    }
+  }
+
+  return latest;
 }
 
 /**

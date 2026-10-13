@@ -85,28 +85,38 @@ function ReceiptRowButton({ receipt, onOpen }: { receipt: ReceiptNode; onOpen: (
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full items-center gap-3 rounded-md border bg-card p-3 text-left transition hover:bg-accent"
+        data-testid="receipt-row"
+        className="flex w-full items-center gap-2 rounded-md border bg-card p-2 text-left transition hover:bg-accent device:gap-3 device:p-3"
       >
-        <ReceiptIcon className="shrink-0" />
+        <ReceiptIcon className="h-5 w-5 shrink-0 device:h-6 device:w-6" />
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium">{receipt.merchantName || 'Unknown merchant'}</span>
+          <div className="flex items-center gap-1.5 device:gap-2">
+            <span className="truncate text-sm font-medium device:text-base">
+              {receipt.merchantName || 'Unknown merchant'}
+            </span>
             {/* A receipt whose extraction never finished has no reliable total or
               lines; flag it rather than showing an empty one as if it were
               complete. */}
             {receipt.extractionState !== 'EXTRACTED' && (
-              <Badge variant="secondary">{humanizeEnum(receipt.extractionState)}</Badge>
+              <Badge
+                variant="secondary"
+                className="max-w-28 truncate px-1.5 py-0 text-[10px] leading-4 device:max-w-none device:px-2.5 device:py-0.5 device:text-xs"
+              >
+                {humanizeEnum(receipt.extractionState)}
+              </Badge>
             )}
           </div>
-          <div className="truncate text-sm text-muted-foreground">
+          <div className="truncate text-xs text-muted-foreground device:text-sm">
             {[dateLabel, receipt.orderNumber ? `#${receipt.orderNumber}` : null].filter(Boolean).join(' · ')}
           </div>
         </div>
 
         <div className="shrink-0 text-right">
-          <div className="font-medium tabular-nums">{total ?? '—'}</div>
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm font-semibold tabular-nums device:text-base device:font-medium">
+            {total ?? '—'}
+          </div>
+          <div className="text-xs text-muted-foreground device:text-sm">
             {lineCount} {lineCount === 1 ? 'line' : 'lines'}
           </div>
         </div>
@@ -211,10 +221,13 @@ export function ReceiptsPage() {
   } else {
     content = (
       <PullToRefresh onRefresh={refetch}>
-        <PageContent ref={pagination.scrollRef} className="gap-4 p-0">
+        <PageContent ref={pagination.scrollRef} className="gap-2 p-0 device:gap-4">
           <MemoryHubShell>
-            <div className="flex flex-col gap-4 px-2 pb-3 sm:px-4 sm:pb-4">
-              <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex flex-col gap-2 px-2 pb-3 device:gap-4 device:px-4 device:pb-4">
+              <div
+                className="grid grid-cols-[minmax(0,1fr)_9rem] items-center gap-2 device:flex device:flex-row device:flex-wrap"
+                data-testid="receipts-toolbar"
+              >
                 <Input
                   placeholder="Search by merchant..."
                   value={merchantQuery}
@@ -222,10 +235,7 @@ export function ReceiptsPage() {
                     setMerchantQuery(e.target.value);
                     pagination.reset();
                   }}
-                  // Three items (search, extraction-state select, count) never all fit
-                  // one row at phone widths — full-width below `sm` lets each wrap to
-                  // its own line instead of squeezing into an illegible sliver.
-                  className="max-w-xl w-full flex-1 sm:w-auto"
+                  className="min-w-0 w-full device:max-w-xl device:flex-1"
                 />
 
                 <Select
@@ -235,7 +245,10 @@ export function ReceiptsPage() {
                     pagination.reset();
                   }}
                 >
-                  <Select.Trigger className="w-full sm:w-48" aria-label="Extraction state">
+                  <Select.Trigger
+                    className="w-full min-w-0 [&>span]:truncate device:w-48"
+                    aria-label="Extraction state"
+                  >
                     <Select.Value placeholder="Any extraction state" />
                   </Select.Trigger>
                   <Select.Content>
@@ -248,14 +261,16 @@ export function ReceiptsPage() {
                   </Select.Content>
                 </Select>
 
-                <div className="text-sm text-muted-foreground">{pagination.totalCount} receipts</div>
+                <div className="col-span-2 justify-self-end text-xs text-muted-foreground device:text-sm">
+                  {pagination.totalCount} receipts
+                </div>
               </div>
 
               {receipts.length === 0 ? (
                 <EmptyState message="No receipts found" />
               ) : (
                 <>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-1.5 device:gap-2">
                     {receipts.map((receipt) => (
                       <ReceiptRowButton
                         key={receipt.id}

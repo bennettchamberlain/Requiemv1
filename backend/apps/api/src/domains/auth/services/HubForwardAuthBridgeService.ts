@@ -348,7 +348,7 @@ export class HubForwardAuthBridgeService {
       return { username, replaced: false, refused: placed.reason };
     }
 
-    if (session?.userId === placed.user.id) {
+    if (session?.userId === placed.user.id && (await this.liveSessionUserId(session)) === placed.user.id) {
       return { username, replaced: false };
     }
 
@@ -363,7 +363,11 @@ export class HubForwardAuthBridgeService {
     const { username } = identity;
     const session = await this.readSession(req);
 
-    if (session && emailsEqual(session.email, username)) {
+    if (
+      session &&
+      emailsEqual(session.email, username) &&
+      (await this.liveSessionUserId(session)) === session.userId
+    ) {
       return { username, replaced: false };
     }
 
@@ -535,9 +539,9 @@ export class HubForwardAuthBridgeService {
   }
 
   /**
-   * The account this browser's session belongs to, when the session is still live (its
-   * `ci.sessions` row exists and has not expired). A signed session cookie alone is not enough:
-   * logging out deletes the row and leaves the cookie's signature valid.
+   * The account this browser's session belongs to, when the session is still live. A signed
+   * session cookie alone is not enough: logging out deletes the row and leaves the cookie's
+   * signature valid. The previous token is live during rotation grace, just as it is for refresh.
    */
   private async liveSessionUserId(session: MemorySession | null): Promise<string | null> {
     if (!session) {
@@ -545,9 +549,7 @@ export class HubForwardAuthBridgeService {
     }
 
     try {
-      return (await this.authService.sessionEstablishedAt(session.userId, session.token))
-        ? session.userId
-        : null;
+      return (await this.authService.resolveLiveSession(session.token))?.userId ?? null;
     } catch {
       return null;
     }

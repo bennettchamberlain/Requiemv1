@@ -116,7 +116,7 @@ export function PlaybackBar({ className }: { className?: string } = {}) {
         className,
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-2 device:flex device:gap-3">
         <Tooltip.Provider>
           <Tooltip delayDuration={600}>
             <Tooltip.Content side="top">{ended ? 'Replay' : playing ? 'Pause' : 'Play'}</Tooltip.Content>
@@ -127,6 +127,7 @@ export function PlaybackBar({ className }: { className?: string } = {}) {
                 variant={playing ? 'default' : 'outline'}
                 aria-label={ended ? 'Replay' : playing ? 'Pause playback' : 'Play back my life'}
                 onClick={() => store.dispatch({ type: 'toggle' })}
+                className="shrink-0"
               >
                 {ended ? <RotateCcw /> : playing ? <Pause /> : <Play />}
               </Button>
@@ -154,77 +155,88 @@ export function PlaybackBar({ className }: { className?: string } = {}) {
               aria-valuetext={formatMoment(cursor, fmt)}
             />
 
-            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span className="tabular-nums">{formatMoment(range.start, fmt)}</span>
+            <div className="grid grid-cols-2 gap-x-2 text-[10px] leading-tight text-muted-foreground sm:text-xs device:grid-cols-[1fr_auto_1fr] device:items-center">
+              <span className="col-start-1 row-start-2 tabular-nums device:col-auto device:row-auto">
+                {formatMoment(range.start, fmt)}
+              </span>
               <span
                 // Live region, but polite and only announced at the resolution
                 // usePlaybackCursor samples at — a per-frame aria-live would be
                 // unusable with a screen reader.
                 aria-live="polite"
-                className="truncate font-medium text-foreground tabular-nums"
+                className="col-span-2 row-start-1 pb-0.5 text-center font-medium text-foreground tabular-nums device:col-span-1 device:row-auto device:truncate device:pb-0"
               >
                 {formatMoment(cursor, fmt)}
               </span>
-              <span className="tabular-nums">{formatMoment(range.end, fmt)}</span>
+              <span className="col-start-2 row-start-2 text-right tabular-nums device:col-auto device:row-auto">
+                {formatMoment(range.end, fmt)}
+              </span>
             </div>
           </div>
 
-          <Tooltip delayDuration={600}>
-            <Tooltip.Content side="top">Playback speed</Tooltip.Content>
-            <Tooltip.Trigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="w-16 tabular-nums"
-                aria-label={`Playback speed: ${formatSpeed(speed)}`}
-                onClick={() => store.dispatch({ type: 'setSpeed', speed: nextSpeed(speed) })}
-              >
-                {formatSpeed(speed)}
-              </Button>
-            </Tooltip.Trigger>
-          </Tooltip>
-
-          <Tooltip delayDuration={600}>
-            <Tooltip.Content side="top">
-              {skipGaps ? 'Skipping days with nothing recorded' : 'Playing every empty hour'}
-            </Tooltip.Content>
-            <Tooltip.Trigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant={skipGaps ? 'default' : 'outline'}
-                aria-label="Skip empty stretches"
-                aria-pressed={skipGaps}
-                onClick={() => store.dispatch({ type: 'setSkipGaps', skipGaps: !skipGaps })}
-              >
-                <FastForward />
-              </Button>
-            </Tooltip.Trigger>
-          </Tooltip>
-
-          {/* The way out. Without it a viewer who pressed play once would be
-              left on a map that only ever shows the pins the playhead has
-              passed — every other control moves the playhead, none of them
-              hands the map back. Stop returns the view to `idle`, which is
-              where every pin is on the map and the camera is the viewer's
-              again. */}
-          {status !== 'idle' && (
+          <div className="col-span-2 flex min-w-0 items-center gap-2 border-t border-border/60 pt-2 device:contents">
             <Tooltip delayDuration={600}>
-              <Tooltip.Content side="top">Stop and show every pin again</Tooltip.Content>
+              <Tooltip.Content side="top">Playback speed</Tooltip.Content>
               <Tooltip.Trigger asChild>
                 <Button
                   type="button"
-                  size="icon"
+                  size="sm"
                   variant="outline"
-                  aria-label="Stop playback"
-                  onClick={() => store.dispatch({ type: 'reset' })}
+                  className="h-9 min-w-0 flex-1 gap-1 px-3 tabular-nums device:w-16 device:flex-none"
+                  aria-label={`Playback speed: ${formatSpeed(speed)}`}
+                  onClick={() => store.dispatch({ type: 'setSpeed', speed: nextSpeed(speed) })}
                 >
-                  <Square />
+                  <span className="device:hidden">Speed</span>
+                  {formatSpeed(speed)}
                 </Button>
               </Tooltip.Trigger>
             </Tooltip>
-          )}
+
+            <Tooltip delayDuration={600}>
+              <Tooltip.Content side="top">
+                {skipGaps ? 'Skipping days with nothing recorded' : 'Playing every empty hour'}
+              </Tooltip.Content>
+              <Tooltip.Trigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={skipGaps ? 'default' : 'outline'}
+                  className="h-9 min-w-0 flex-1 gap-1.5 px-3 device:w-9 device:flex-none device:px-0"
+                  aria-label="Skip empty stretches"
+                  aria-pressed={skipGaps}
+                  onClick={() => store.dispatch({ type: 'setSkipGaps', skipGaps: !skipGaps })}
+                >
+                  <FastForward />
+                  <span className="device:hidden">Skip gaps</span>
+                </Button>
+              </Tooltip.Trigger>
+            </Tooltip>
+
+            {/* The way out. Without it a viewer who pressed play once would be
+                left on a map that only ever shows the pins the playhead has
+                passed — every other control moves the playhead, none of them
+                hands the map back. Stop returns the view to `idle`, which is
+                where every pin is on the map and the camera is the viewer's
+                again. */}
+            {status !== 'idle' && (
+              <Tooltip delayDuration={600}>
+                <Tooltip.Content side="top">Stop and show every pin again</Tooltip.Content>
+                <Tooltip.Trigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 min-w-0 flex-1 gap-1.5 px-3 device:w-9 device:flex-none device:px-0"
+                    aria-label="Stop playback"
+                    onClick={() => store.dispatch({ type: 'reset' })}
+                  >
+                    <Square />
+                    <span className="device:hidden">Stop</span>
+                  </Button>
+                </Tooltip.Trigger>
+              </Tooltip>
+            )}
+          </div>
         </Tooltip.Provider>
       </div>
 

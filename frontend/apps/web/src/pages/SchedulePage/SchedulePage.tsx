@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ElementType } from 'react';
 
 import { EmptyState, LoadingPage, useDeviceLayout, usePageTitle } from '@ci/common';
-import { Button, IconButton, cn } from '@ci/shadcn';
+import { Button, IconButton, cn, useToast } from '@ci/shadcn';
 import { CalendarRange, ChevronLeft, ChevronRight } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -301,12 +301,15 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
    * view — the card stays on the rail, or the chip snaps back — so without this
    * a rejection is only ever visible in the console.
    */
-  const [actionError, setActionError] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  const run = useCallback((work: Promise<unknown>, message: string) => {
-    setActionError(null);
-    work.catch(() => setActionError(message));
-  }, []);
+  const run = useCallback(
+    (work: Promise<unknown>, message: string) => {
+      toast.dismiss();
+      work.catch(() => toast.error(message));
+    },
+    [toast],
+  );
 
   const handleSelectSlot = useCallback((next: CalendarSlot) => {
     setSlot(next);
@@ -378,7 +381,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
       // findOne misses, the mutation resolves null, the refetch puts the chip
       // back where it was and nothing explains why. Say so instead.
       if (moved?.seriesMasterId) {
-        setActionError("Recurring occurrences can't be moved yet.");
+        toast.error("Recurring occurrences can't be moved yet.");
 
         return;
       }
@@ -391,7 +394,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
 
       run(rescheduleEvent(eventId, startTime), 'Could not move that. Try again shortly.');
     },
-    [events, placeOnDay, rescheduleEvent, run],
+    [events, placeOnDay, rescheduleEvent, run, toast],
   );
 
   const handleDismissProposed = useCallback(
@@ -506,12 +509,6 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
       <Frame className={embedded ? 'relative flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3' : 'gap-3'}>
         {fetching && !hasAnything && <LoadingPage />}
 
-        {actionError && (
-          <p role="alert" className="text-sm text-destructive">
-            {actionError}
-          </p>
-        )}
-
         {error && !loading && (
           <p role="alert" className="text-sm text-muted-foreground">
             {hasAnything
@@ -588,7 +585,7 @@ export function SchedulePage({ embedded = false }: SchedulePageProps = {}) {
                 onSelectDay={handleSelectDay}
                 selectedSlot={slot}
                 onSelectSlot={handleSelectSlot}
-                scrollEndInset={isMobile && slot !== null}
+                liftSelectedHour={isMobile && slot !== null}
                 onMoveEvent={handleMove}
                 footer={rhythmFooter(
                   generatedAt ?? (hasOccupancySignal ? (occupancy?.generatedAt ?? null) : null),
