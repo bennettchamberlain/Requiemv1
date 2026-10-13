@@ -1194,11 +1194,7 @@ export function VerticalCalendar({
         })}
       </div>
 
-      <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-auto"
-        data-testid="vertical-calendar-scroll"
-      >
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto" data-testid="vertical-calendar-scroll">
         <div className="flex min-w-0">
           {/* Hours the days read against. Predicted colour lives in each
               column, behind committed time, so the axis stays a clock. */}

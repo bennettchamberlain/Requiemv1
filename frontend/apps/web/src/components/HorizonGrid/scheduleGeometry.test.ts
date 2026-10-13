@@ -817,7 +817,9 @@ describe('slotForecastLine — what the drawer is allowed to claim', () => {
         ],
       };
 
-      expect(slotForecastLine({ instant, allDay: false }, (key) => (key === '2026-08-04' ? day : undefined))).toBeNull();
+      expect(
+        slotForecastLine({ instant, allDay: false }, (key) => (key === '2026-08-04' ? day : undefined)),
+      ).toBeNull();
     });
   });
 });

@@ -471,7 +471,9 @@ describe('SchedulePage — mutations that the server refuses', () => {
     renderWithProviders(<SchedulePage />);
     fireEvent.click(screen.getByText('stub-move'));
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not move that/)));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not move that/)),
+    );
     expect(screen.queryByText(/Could not move that/)).not.toBeInTheDocument();
   });
 
@@ -965,7 +967,9 @@ describe('SchedulePage — dragging a planned block moves its task too', () => {
     renderWithProviders(<SchedulePage />);
     fireEvent.click(screen.getByText('stub-move-planned'));
 
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not move that/)));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/Could not move that/)),
+    );
     expect(screen.queryByText(/Could not move that/)).not.toBeInTheDocument();
   });
 
@@ -986,9 +990,7 @@ describe('SchedulePage — dragging a planned block moves its task too', () => {
     renderWithProviders(<SchedulePage />);
     fireEvent.click(screen.getByText('stub-move'));
 
-    await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith("Recurring occurrences can't be moved yet."),
-    );
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Recurring occurrences can't be moved yet."));
     expect(screen.queryByText(/Recurring occurrences can't be moved yet/)).not.toBeInTheDocument();
     expect(h.reschedule).not.toHaveBeenCalled();
     expect(placeOnDay).not.toHaveBeenCalled();
