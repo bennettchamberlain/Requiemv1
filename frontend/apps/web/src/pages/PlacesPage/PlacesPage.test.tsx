@@ -799,6 +799,8 @@ describe('PlacesPage', () => {
 
       const review = screen.getByText('Needs review');
       const known = screen.getByText('Known places');
+      expect(review.closest('[data-slot="card"]')).toHaveClass('py-0');
+      expect(known.closest('[data-slot="card"]')).toHaveClass('py-0');
       const map = document.querySelector('.leaflet-container');
       const allPlaces = screen.getByText('All places');
       expect(review.compareDocumentPosition(known) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

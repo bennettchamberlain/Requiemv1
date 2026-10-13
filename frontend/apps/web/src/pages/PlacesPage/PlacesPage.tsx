@@ -641,7 +641,7 @@ function KnownPlacesCard({
   return (
     <>
       {candidates.length > 0 && (
-        <Card className="gap-0">
+        <Card className="gap-0 py-0">
           <Card.Header className="p-3 pb-2 sm:p-6 sm:pb-3">
             <Card.Title className="flex items-center gap-2 text-base">
               Needs review
@@ -702,7 +702,7 @@ function KnownPlacesCard({
       )}
 
       {knownPlaces.length > 0 && (
-        <Card className="gap-0">
+        <Card className="gap-0 py-0">
           <Card.Header className="p-3 sm:p-6">
             <div className="flex items-center justify-between gap-2">
               <Card.Title className="flex items-center gap-2 text-base">
