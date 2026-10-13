@@ -1078,7 +1078,49 @@ describe('useAuth', () => {
     expect(result.current[0].authToken).toBeNull();
   });
 
-  it('does not retry a 401 refresh (invalid session must fall through to login)', async () => {
+  it('repairs a 401 refresh through Hub identity without repeating the rejected refresh', async () => {
+    document.cookie = 'csrfToken=csrf-abc';
+    let refreshCalls = 0;
+    let bridgeCalls = 0;
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    bindPowerSyncDatabase({ disconnectAndClear: disconnect } as never);
+
+    setFetch((url) => {
+      if (url.endsWith('/api/authenticate/refresh')) {
+        refreshCalls += 1;
+
+        return refreshCalls === 1
+          ? jsonResponse({ accessToken: 'initial-token' })
+          : emptyResponse(false, 401);
+      }
+
+      if (url.endsWith('/api/authenticate/hub-bridge')) {
+        bridgeCalls += 1;
+
+        return bridgeCalls === 1
+          ? emptyResponse()
+          : jsonResponse({ accessToken: 'recovered-token', replaced: true });
+      }
+
+      return emptyResponse();
+    });
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].authToken).toBe('initial-token'));
+
+    await act(async () => {
+      await result.current[1].refresh();
+    });
+
+    expect(result.current[0].authToken).toBe('recovered-token');
+    expect(result.current[0].error).toBeNull();
+    expect(refreshCalls).toBe(2);
+    expect(bridgeCalls).toBe(2);
+    // Both JWTs decode to the same subject in this test, so its replica stays intact.
+    expect(disconnect).not.toHaveBeenCalled();
+  });
+
+  it('logs out after a 401 when Hub identity cannot repair the session', async () => {
     document.cookie = 'csrfToken=csrf-abc';
     let refreshCalls = 0;
 
@@ -1086,17 +1128,24 @@ describe('useAuth', () => {
       if (url.endsWith('/api/authenticate/refresh')) {
         refreshCalls += 1;
 
-        return emptyResponse(false, 401);
+        return refreshCalls === 1
+          ? jsonResponse({ accessToken: 'initial-token' })
+          : emptyResponse(false, 401);
       }
 
       return emptyResponse();
     });
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current[0].authToken).toBe('initial-token'));
 
-    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    await act(async () => {
+      await result.current[1].refresh();
+    });
+
     expect(result.current[0].authToken).toBeNull();
-    expect(refreshCalls).toBe(1);
+    expect(result.current[0].error).toBeTruthy();
+    expect(refreshCalls).toBe(2);
   });
 
   it('iOS: finishes Memory OIDC from getLaunchUrl after a Safari cold start', async () => {
