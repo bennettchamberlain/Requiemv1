@@ -37,7 +37,7 @@ import { TimelineView } from '../TimelineView';
 import { clusterDiameterPx, mergeCollidingClusters, type PixelCluster } from './clusterOverlap';
 import { LocationAlwaysBanner } from './LocationAlwaysBanner';
 import { readCoordinates, readGeoJsonPoint } from './mapCoordinates';
-import { fitSignature, pinsInBounds, routePoints } from './pinSet';
+import { fitSignature, mostRecentDatedPin, pinsInBounds, routePoints } from './pinSet';
 import { PositionTraceLayer, TraceToggleControl } from './TraceLayer';
 import { HOME_MAP_ZOOM, useHomeMapCenter } from './useHomeMapCenter';
 import './memory-map.css';
@@ -336,6 +336,8 @@ const VIEWPORT_PAD = 0.25;
  * — every consecutive pair costs one Google Directions request.
  */
 const MAX_ROUTE_POINTS = 50;
+/** Regional context around the latest located event, rather than the whole memory globe. */
+const MOBILE_RECENT_MAP_ZOOM = 10;
 
 type Cluster = { id: string; lat: number; lng: number; items: Pin[] };
 
@@ -952,6 +954,23 @@ function HomeCamera({ center }: { center: [number, number] | null }) {
   return null;
 }
 
+/** Re-focus once per latest event, while leaving ordinary pans alone. */
+function RecentPinCamera({ pin }: { pin: Pin | null }) {
+  const map = useLeafletMap();
+  const appliedPinId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!pin || appliedPinId.current === pin.id) {
+      return;
+    }
+
+    appliedPinId.current = pin.id;
+    map.setView([pin.coords.lat, pin.coords.lng], MOBILE_RECENT_MAP_ZOOM);
+  }, [map, pin]);
+
+  return null;
+}
+
 type ConnectorLine = { x1: number; y1: number; x2: number; y2: number } | null;
 
 function MapTimelineConnector({
@@ -1187,12 +1206,9 @@ function DesktopMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapV
     setActiveEntity,
   } = view;
   const rowElementsRef = useRef(new globalThis.Map<string, HTMLDivElement>());
-  // The location-history trace is on by default: `ci.position` is where the
-  // overwhelming majority of this user's geography lives (63,044 fixes against
-  // 121 located events on the QA appliance), so a map that hides it by default
-  // is the empty map all over again. The toggle is there to get it out of the
-  // way once you have found what you came for.
-  const [showTrace, setShowTrace] = useState(true);
+  // Event pins are the primary layer. The much denser position history stays
+  // opt-in so opening the Events map is immediately readable.
+  const [showTrace, setShowTrace] = useState(false);
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const activeEntityId = hoveredEntityId ?? selectedEntityId;
@@ -1245,8 +1261,7 @@ function DesktopMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapV
   );
 
   return (
-    // TODO: This default leads to some map jittering. It's OK for now, but let's think about tracking the user's last location and use that for the default center.
-    <Map center={[37.7749, -122.4194]}>
+    <Map center={[37.7749, -122.4194]} autoCenterMarkers={false}>
       <Map.Controls position="top-right" />
       <Map.Panel position="left" className="w-[300px] relative">
         <TimelineView
@@ -1341,15 +1356,23 @@ function MobileMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapVi
     loadingMore,
     loadMore,
   } = view;
-  const [showTrace, setShowTrace] = useState(true);
+  const [showTrace, setShowTrace] = useState(false);
   const { status: playbackStatus } = usePlaybackControls();
   const revealedPins = useRevealedPins(pins);
   const playing = playbackStatus === 'playing';
   // Owner map only: the shared viewer must not aim someone else's pins at the viewer's home.
   const { center: homeCenter, resolved: homeResolved } = useHomeMapCenter(!readOnly);
+  const recentPin = useMemo(() => mostRecentDatedPin(pins), [pins]);
+  const recentCenter: [number, number] | null = recentPin
+    ? [recentPin.coords.lat, recentPin.coords.lng]
+    : null;
 
   return (
-    <Map center={homeCenter ?? [37.7749, -122.4194]} zoom={homeCenter ? HOME_MAP_ZOOM : 13}>
+    <Map
+      center={recentCenter ?? homeCenter ?? [37.7749, -122.4194]}
+      zoom={recentCenter ? MOBILE_RECENT_MAP_ZOOM : homeCenter ? HOME_MAP_ZOOM : 13}
+      autoCenterMarkers={false}
+    >
       <Map.Controls position="top-right" />
       {!readOnly && <SearchAreaControl />}
       {!readOnly && (
@@ -1373,8 +1396,9 @@ function MobileMapSurface({ view, readOnly }: { view: ReturnType<typeof useMapVi
       <Map.RouteLayer locations={routeLocations} />
       <PlaybackTrackLayer />
       <ClusteredMarkers pins={revealedPins} onSelect={selectPin} />
-      <FitBoundsToPins pins={pins} skip={!homeResolved || homeCenter != null} />
-      <HomeCamera center={homeCenter} />
+      <FitBoundsToPins pins={pins} skip={!homeResolved || recentPin != null || homeCenter != null} />
+      <RecentPinCamera pin={recentPin} />
+      <HomeCamera center={recentPin ? null : homeCenter} />
       <MapStatusOverlay loading={loading} error={error} empty={empty} filtered={filtered} onRetry={refetch} />
       <PlaybackBar />
     </Map>

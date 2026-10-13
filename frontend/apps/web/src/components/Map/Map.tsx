@@ -18,6 +18,7 @@ interface Props {
   zoomEnabled?: boolean;
   draggingEnabled?: boolean;
   attributionControl?: boolean;
+  autoCenterMarkers?: boolean;
 }
 
 export const MAP_IMAGERY_ATTRIBUTION =
@@ -30,6 +31,7 @@ export function Map({
   zoomEnabled = true,
   draggingEnabled = true,
   attributionControl = true,
+  autoCenterMarkers = true,
 }: Props) {
   return (
     <div
@@ -46,7 +48,7 @@ export function Map({
         zoomControl={false}
         attributionControl={attributionControl}
       >
-        <MapProvider args={[]}>
+        <MapProvider args={[{ autoCenterMarkers }]}>
           {/* The basemap belongs to a third party, and rendering it contacts them on every
               tile — the one egress a fresh appliance performs with no key and no connector.
               Esri's World Imagery terms require the credit, and the attribution control is

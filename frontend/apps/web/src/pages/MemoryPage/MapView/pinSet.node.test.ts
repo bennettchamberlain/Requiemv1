@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fitSignature, pinsInBounds, routePoints, type BoundsLike } from './pinSet';
+import { fitSignature, mostRecentDatedPin, pinsInBounds, routePoints, type BoundsLike } from './pinSet';
 
 function pin(id: string, lat: number, lng: number) {
   return { id, coords: { lat, lng } };
@@ -57,6 +57,23 @@ describe('routePoints', () => {
 
   it('handles an empty set', () => {
     expect(routePoints([], 50)).toEqual([]);
+  });
+});
+
+describe('mostRecentDatedPin', () => {
+  it('opens around the latest real event instead of fitting a worldwide library', () => {
+    const pins = [
+      { ...pin('london', 51.5, -0.12), sortTime: 100 },
+      { ...pin('tokyo', 35.68, 139.69), sortTime: 300 },
+      { ...pin('import-only', 0, 0), sortTime: 0 },
+      { ...pin('new-york', 40.71, -74), sortTime: 200 },
+    ];
+
+    expect(mostRecentDatedPin(pins)?.id).toBe('tokyo');
+  });
+
+  it('returns null when every mapped event is undated', () => {
+    expect(mostRecentDatedPin([{ ...pin('saved-place', 1, 2), sortTime: 0 }])).toBeNull();
   });
 });
 
