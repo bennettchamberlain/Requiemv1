@@ -930,7 +930,7 @@ describe('on a phone', () => {
     renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
 
     fireEvent.click(screen.getByRole('button', { name: /^How: all/ }));
-    await screen.findByRole('option', { name: 'gmail' });
+    await screen.findByRole('option', { name: /^gmail$/i });
 
     // Radix's modal layer is what swallows the outside tap: it turns pointer
     // events off for the rest of the page while the picker is open — and the
@@ -943,7 +943,7 @@ describe('on a phone', () => {
     renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
 
     fireEvent.click(screen.getByRole('button', { name: /^How: all/ }));
-    await screen.findByRole('option', { name: 'gmail' });
+    await screen.findByRole('option', { name: /^gmail$/i });
 
     expect(document.body.style.pointerEvents).toBe('');
   });
