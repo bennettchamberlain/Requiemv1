@@ -53,6 +53,21 @@ export type UploadFileDto = Omit<
    */
   skipDescription?: boolean;
   model?: string;
+  /**
+   * The user saved this file to Memory on purpose — the phone's Capture
+   * sheet, as opposed to a chat attachment or a CI-Capture screenshot. Rides
+   * on FileUploadedEvent so the memory domain can catalogue it as content
+   * (CaptureContentListener); nothing in the files domain reads it.
+   */
+  memoryCapture?: boolean;
+  /**
+   * When the device made this media, for a memory capture taken with the
+   * phone's own camera or recorder (NOT a library pick, whose bytes may be
+   * years old). The listener prefers the taken-at embedded in the bytes
+   * (EXIF, container) and falls back to this; with neither, the capture is
+   * content only and gets no timeline event. Validated by the controller.
+   */
+  capturedAt?: Date;
 };
 
 export type UpdateFileDto = Pick<CreateFileDto, 'title' | 'description' | 'externalUpdatedAt'>;

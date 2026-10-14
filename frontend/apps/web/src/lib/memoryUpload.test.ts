@@ -42,6 +42,29 @@ describe('uploadFilesToMemory', () => {
     expect(body.has('inventoryCapture')).toBe(false);
   });
 
+  it('marks a Capture-sheet save as a memory capture so the server catalogues it as content', async () => {
+    await uploadFilesToMemory([new File(['a'], 'IMG.jpg', { type: 'image/jpeg' })], { memoryCapture: true });
+
+    const body = mockedFetchJson.mock.calls[0][1]?.body as FormData;
+    expect(body.get('memoryCapture')).toBe('true');
+    expect(body.has('capturedAt')).toBe(false);
+  });
+
+  it('sends the device capture moment only alongside a memory capture', async () => {
+    await uploadFilesToMemory([new File(['a'], 'AUD.m4a', { type: 'audio/mp4' })], {
+      memoryCapture: true,
+      capturedAt: '2026-10-14T22:46:00.000Z',
+    });
+    await uploadFilesToMemory([new File(['a'], 'AUD.m4a', { type: 'audio/mp4' })], {
+      capturedAt: '2026-10-14T22:46:00.000Z',
+    });
+
+    const captured = mockedFetchJson.mock.calls[0][1]?.body as FormData;
+    const plain = mockedFetchJson.mock.calls[1][1]?.body as FormData;
+    expect(captured.get('capturedAt')).toBe('2026-10-14T22:46:00.000Z');
+    expect(plain.has('capturedAt')).toBe(false);
+  });
+
   it('omits Authorization when there is no session token (native API key path)', async () => {
     await uploadFilesToMemory([new File(['a'], 'a.jpg')]);
 

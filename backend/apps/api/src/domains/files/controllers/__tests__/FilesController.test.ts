@@ -138,6 +138,104 @@ describe('FilesController.upload — in-batch dedup grouping', () => {
     );
   });
 
+  it('passes the memoryCapture form field through as a boolean', async () => {
+    const { controller, fileService } = makeController();
+    fileService.getFileHash.mockResolvedValue('hash-a');
+    fileService.upload.mockResolvedValue({ id: 'id-a' });
+
+    await controller.upload(
+      ctx,
+      [multerFile()],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'true',
+    );
+
+    expect(fileService.upload).toHaveBeenCalledWith(
+      { userId: 'owner-1' },
+      expect.objectContaining({ memoryCapture: true }),
+    );
+
+    await controller.upload(ctx, [multerFile()]);
+
+    expect(fileService.upload).toHaveBeenLastCalledWith(
+      { userId: 'owner-1' },
+      expect.objectContaining({ memoryCapture: false }),
+    );
+  });
+
+  it('passes a plausible capturedAt through as a Date and drops an implausible one', async () => {
+    const { controller, fileService } = makeController();
+    fileService.getFileHash.mockResolvedValue('hash-a');
+    fileService.upload.mockResolvedValue({ id: 'id-a' });
+    const recent = new Date(Date.now() - 60_000).toISOString();
+
+    await controller.upload(
+      ctx,
+      [multerFile()],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'true',
+      recent,
+    );
+
+    expect(fileService.upload).toHaveBeenLastCalledWith(
+      { userId: 'owner-1' },
+      expect.objectContaining({ memoryCapture: true, capturedAt: new Date(recent) }),
+    );
+
+    for (const bad of [
+      'not-a-date',
+      '2001-01-01T00:00:00Z',
+      new Date(Date.now() + 3_600_000).toISOString(),
+    ]) {
+      await controller.upload(
+        ctx,
+        [multerFile()],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'true',
+        bad,
+      );
+
+      expect(fileService.upload).toHaveBeenLastCalledWith(
+        { userId: 'owner-1' },
+        expect.not.objectContaining({ capturedAt: expect.anything() }),
+      );
+    }
+
+    // Without memoryCapture the moment means nothing and is not forwarded.
+    await controller.upload(
+      ctx,
+      [multerFile()],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      recent,
+    );
+
+    expect(fileService.upload).toHaveBeenLastCalledWith(
+      { userId: 'owner-1' },
+      expect.not.objectContaining({ capturedAt: expect.anything() }),
+    );
+  });
+
   // The retired inventory feature's form field. Capture clients live in other
   // repos, so the old spelling still has to reach the same flag — a silently
   // ignored field would turn thing capture into a plain upload with no error.

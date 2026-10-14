@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { parseExifSafe } from '../_exif';
+import { parseExifSafe } from '../exif';
 
 /**
  * parseExifSafe against the REAL exifr and a REAL file on disk — deliberately

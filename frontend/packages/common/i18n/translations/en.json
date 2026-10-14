@@ -119,6 +119,8 @@
   "CAPTURE_SAVED": "Saved to Memory",
   "CAPTURE_SAVE_FAILED": "Could not save to Memory",
   "CAPTURE_RECORDING": "Recording",
+  "CAPTURE_READY_TO_RECORD": "Ready to record",
+  "CAPTURE_RECORD": "Record",
   "CAPTURE_STOP": "Stop",
   "CAPTURE_CANCEL": "Cancel",
   "FILE_DOWNLOAD": "Download file",
