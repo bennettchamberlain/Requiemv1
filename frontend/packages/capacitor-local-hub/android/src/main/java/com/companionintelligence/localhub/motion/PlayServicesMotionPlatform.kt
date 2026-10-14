@@ -64,7 +64,7 @@ class PlayServicesMotionPlatform(context: Context) : MotionPlatform {
         stationaryDetect?.let { sensors?.cancelTriggerSensor(stillnessListener, it) }
     }
 
-    override fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float) {
+    override fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float, onDone: (Boolean) -> Unit) {
         val fence = Geofence.Builder()
             .setRequestId(GEOFENCE_ID)
             .setCircularRegion(latitude, longitude, radiusMeters)
@@ -80,9 +80,14 @@ class PlayServicesMotionPlatform(context: Context) : MotionPlatform {
         try {
             LocationServices.getGeofencingClient(app)
                 .addGeofences(request, geofenceIntent())
-                .addOnFailureListener { Log.w(TAG, "exit geofence not set: ${it.message}") }
+                .addOnSuccessListener { onDone(true) }
+                .addOnFailureListener {
+                    Log.w(TAG, "exit geofence not set: ${it.message}")
+                    onDone(false)
+                }
         } catch (e: SecurityException) {
             Log.w(TAG, "exit geofence needs background location: ${e.message}")
+            onDone(false)
         }
     }
 

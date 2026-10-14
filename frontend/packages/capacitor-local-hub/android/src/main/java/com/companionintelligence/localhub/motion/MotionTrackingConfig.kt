@@ -41,7 +41,7 @@ data class MotionTrackingConfig(
     companion object {
         const val DEFAULT_PROVIDER = "companion-mobile"
         const val DEFAULT_MIN_DISTANCE_METERS = 150.0
-        const val DEFAULT_MIN_INTERVAL_MS = 10L * 60L * 1000L
+        const val DEFAULT_MIN_INTERVAL_MS = 5L * 60L * 1000L
         const val DEFAULT_MAX_ACCURACY_METERS = 200.0
         const val DEFAULT_GEOFENCE_RADIUS_METERS = 100f
         const val DEFAULT_NOTIFICATION_TITLE = "Recording location"

@@ -76,8 +76,8 @@ object PositionRecordJson {
     fun payload(record: JSONObject): JSONObject = JSONObject().put("records", JSONArray().put(record))
 
     /**
-     * The `significantLocation` event body, the `BackgroundGeolocationLocation` shape the web
-     * side already converts with `fixFromBackgroundGeolocationLocation` (same keys iOS emits).
+     * The `significantLocation` event body, the shape the web side converts with `fixFromNativeLocationEvent`
+     * (inherited from the plugin it replaced, so iOS and Android emit one event body).
      */
     fun eventBody(fix: MotionFix): JSONObject = JSONObject()
         .put("latitude", fix.latitude)

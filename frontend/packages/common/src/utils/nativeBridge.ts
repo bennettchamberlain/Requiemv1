@@ -12,7 +12,7 @@
 
 import { isAndroidPlatform, isIosPlatform, isNativePlatform, isTauriPlatform } from './apiBase';
 import { streamingFetch } from './fetchJson';
-import type { BackgroundGeolocationLocation } from './deviceSources/location';
+import type { NativeLocationEvent } from './deviceSources/location';
 
 /**
  * `capacitor-secure-storage-plugin`. **Legacy — read-only, for migration.** It used to hold
@@ -71,7 +71,7 @@ interface LocalHubPlugin {
    */
   addListener?(
     eventName: 'significantLocation' | 'significantLocationError',
-    listener: (event: BackgroundGeolocationLocation & { code?: string }) => void,
+    listener: (event: NativeLocationEvent & { code?: string }) => void,
   ): Promise<{ remove: () => Promise<void> }>;
   startSignificantLocationUpdates?(options?: SignificantLocationOptions): Promise<void>;
   stopSignificantLocationUpdates?(): Promise<void>;
@@ -94,35 +94,10 @@ export interface SignificantLocationOptions {
   notificationText?: string;
 }
 
-export interface BackgroundGeolocationError {
+/** Why a native location session stopped; `NOT_AUTHORIZED` is the one the UI acts on. */
+export interface NativeLocationError {
   code: string;
   message: string;
-}
-
-/**
- * `@capacitor-community/background-geolocation`. Declared locally, not imported from the
- * plugin package, for the same reason every other plugin interface here is: it keeps the
- * web bundle free of `@capacitor/*` native deps. One writer only — a second `addWatcher`
- * call replaces rather than adds a session on both platforms, so callers must
- * `removeWatcher` their previous id before starting a new one.
- */
-interface BackgroundGeolocationPlugin {
-  addWatcher(
-    options: {
-      /** Set to keep sampling once the app leaves the foreground; omit for foreground-only. */
-      backgroundMessage?: string;
-      backgroundTitle?: string;
-      requestPermissions?: boolean;
-      stale?: boolean;
-      distanceFilter?: number;
-    },
-    callback: (
-      location: BackgroundGeolocationLocation | undefined,
-      error?: BackgroundGeolocationError,
-    ) => void,
-  ): Promise<string>;
-  removeWatcher(options: { id: string }): Promise<void>;
-  openSettings(): Promise<void>;
 }
 
 /** One-shot fix from {@link getCurrentDeviceLocation} — placing a pin, not tracking. */
@@ -267,7 +242,6 @@ interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
   SystemBars?: SystemBarsPlugin;
   LocalHub?: LocalHubPlugin;
-  BackgroundGeolocation?: BackgroundGeolocationPlugin;
   Browser?: BrowserPlugin;
   App?: AppPlugin;
   SplashScreen?: SplashScreenPlugin;
@@ -649,53 +623,6 @@ export async function openAuthSession(url: string, callbackScheme = 'companion')
 }
 
 /**
- * Starts a `@capacitor-community/background-geolocation` watcher — the one writer for
- * both iOS and Android native location. No-op (`null`) on web, which keeps using
- * `navigator.geolocation` instead.
- *
- * `options.background`, when true, keeps sampling after the app leaves the foreground
- * (Android shows a persistent notification while this is active; iOS shows the blue
- * status-bar indicator). When false, updates are only guaranteed in the foreground on
- * both platforms. Returns the watcher id `removeBackgroundLocationWatcher` needs, or
- * `null` if no watcher was started.
- */
-export async function addBackgroundLocationWatcher(
-  options: { background: boolean; distanceFilter?: number; requestPermissions?: boolean },
-  onLocation: (location: BackgroundGeolocationLocation) => void,
-  onError: (error: BackgroundGeolocationError) => void,
-): Promise<string | null> {
-  const plugin = plugins()?.BackgroundGeolocation;
-
-  if (!isNativePlatform() || !plugin) {
-    return null;
-  }
-
-  return plugin.addWatcher(
-    {
-      requestPermissions: options.requestPermissions ?? true,
-      distanceFilter: options.distanceFilter,
-      ...(options.background
-        ? {
-            backgroundTitle: 'Recording location',
-            backgroundMessage: 'Companion is recording your location so it can place memories on the map.',
-          }
-        : {}),
-    },
-    (location, error) => {
-      if (error) {
-        onError(error);
-
-        return;
-      }
-
-      if (location) {
-        onLocation(location);
-      }
-    },
-  );
-}
-
-/**
  * Always-mode background samples on both native platforms. Returns a stop function, or
  * `null` off native.
  *
@@ -706,13 +633,17 @@ export async function addBackgroundLocationWatcher(
  * Android: motion-gated sampling in the LocalHub plugin. GPS runs only while the phone is
  * moving, and each fix that clears the gate is queued into the outbox natively -- which is
  * what keeps working after the WebView is gone -- and then also delivered here. The caller
- * queues it again; the shared `source_id` makes that a no-op. The always-on background
- * watcher this replaced held a 1 Hz high-accuracy GPS request around the clock.
+ * queues it again; the shared `source_id` makes that a no-op.
+ *
+ * This is the only recorder on either platform (since 2026-10-13): there is no on-screen
+ * trail. `@capacitor-community/background-geolocation`, which used to provide one, held a
+ * 1 Hz high-accuracy GPS request that our own location foreground service kept alive in the
+ * background, doubling every trip's trail and undoing the battery saving.
  */
 export async function startSignificantLocationUpdates(
   options: SignificantLocationOptions,
-  onLocation: (location: BackgroundGeolocationLocation) => void,
-  onError: (error: BackgroundGeolocationError) => void,
+  onLocation: (location: NativeLocationEvent) => void,
+  onError: (error: NativeLocationError) => void,
 ): Promise<(() => Promise<void>) | null> {
   const hub = plugins()?.LocalHub;
 
@@ -756,35 +687,20 @@ export async function startSignificantLocationUpdates(
 
 let significantLocationGeneration = 0;
 
-/** Stops a watcher started by {@link addBackgroundLocationWatcher}. No-op on web. */
-export async function removeBackgroundLocationWatcher(id: string): Promise<void> {
-  const plugin = plugins()?.BackgroundGeolocation;
-
-  if (!isNativePlatform() || !plugin) {
-    return;
-  }
-
-  try {
-    await plugin.removeWatcher({ id });
-  } catch {
-    // Already removed, or the plugin is mid-teardown — nothing further to recover.
-  }
-}
-
 /**
- * Opens the OS location settings screen for the continuous background-tracking
- * permission (Settings → Location, via the background-geolocation plugin). No-op on web.
- * For the one-shot "use my location" denied case, see {@link openNativeAppSettings} instead.
+ * Opens this app's OS settings page so the user can raise the location grant to Always.
+ * No-op on web. The same screen {@link openNativeAppSettings} opens; kept as its own name
+ * because the settings section means "fix the background-location grant" by it.
  */
 export async function openNativeLocationSettings(): Promise<void> {
-  const plugin = plugins()?.BackgroundGeolocation;
+  const hub = plugins()?.LocalHub;
 
-  if (!isNativePlatform() || !plugin) {
+  if (!isNativePlatform() || !hub?.openAppSettings) {
     return;
   }
 
   try {
-    await plugin.openSettings();
+    await hub.openAppSettings();
   } catch {
     // Best-effort — nothing to recover into if the OS refuses.
   }

@@ -17,8 +17,14 @@ interface MotionPlatform {
      */
     fun watchForStillness()
     fun cancelSensorTriggers()
-    /** One exit geofence around where the phone came to rest, delivered to [MotionGeofenceReceiver]. */
-    fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float)
+    /**
+     * One exit geofence around where the phone came to rest, delivered to
+     * [MotionGeofenceReceiver]. Re-adding under the same id replaces, so this is idempotent.
+     * [onDone] says whether the OS now holds the fence (possibly later, on another thread);
+     * the restore path uses it to retry a Play Services call that failed, e.g. at boot
+     * before Play Services itself was up.
+     */
+    fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float, onDone: (Boolean) -> Unit = {})
     fun clearExitGeofence()
     /**
      * Start the foreground location service (GPS on). Returns false when Android refused the
@@ -155,9 +161,8 @@ interface MotionStateStore {
  * (`significantLocation`), and the web side's own enqueue of the same fix collapses on the
  * shared `source_id`.
  *
- * Fixes are ignored while the app is in the foreground ([appInForeground]): the web side's
- * foreground watcher owns that case with its tighter 50 m / 5 min gate, and recording both
- * would double the density of every walk taken with the app open.
+ * Fixes are recorded whether or not the app is on screen: this is the only recorder (since
+ * 2026-10-13 there is no on-screen trail and no second plugin), so one gate applies everywhere.
  *
  * All state lives in [MotionStateStore] so a process the OS created just to deliver one
  * broadcast picks up where the previous one left off. Methods are synchronized; they are
@@ -168,10 +173,6 @@ class MotionGatedTracker(
     private val store: MotionStateStore,
     private val outbox: () -> OutboxQueue,
 ) {
-    /** Set by the plugin while the activity is resumed. Fixes are not queued while true. */
-    @Volatile
-    var appInForeground: Boolean = false
-
     /** The plugin's event sink while a WebView exists; null in a broadcast-only process. */
     @Volatile
     var listener: ((JSONObject) -> Unit)? = null
@@ -222,24 +223,83 @@ class MotionGatedTracker(
     }
 
     /**
-     * Foreground tracking, plus one repair. An earlier revision re-started the location
-     * service here unconditionally so a notification dropped while notifications were denied
-     * would reappear after the grant, but that re-post also undid every swipe-away for the
-     * rest of a trip. A dismissed indicator stays dismissed: a swiped notification leaves the
-     * service running, and a running service is never touched here.
+     * Foreground tracking, plus a repair pass ([restore]). An earlier revision re-started the
+     * location service here unconditionally so a notification dropped while notifications
+     * were denied would reappear after the grant, but that re-post also undid every
+     * swipe-away for the rest of a trip. A dismissed indicator stays dismissed: a swiped
+     * notification leaves the service running, and a running service is never touched here.
      *
      * The repair is for the service being *absent* while the state says moving: Android
      * refused the start and no fence could be set, or the process died while sampling and
      * the sticky restart has not happened. With the app on screen the start is allowed, so
-     * this is the one moment the tracker can be sure to get GPS back.
+     * this is the one moment the tracker can be sure to get GPS back. While still, it puts
+     * the exit fence back; see [restore] for why that can be missing.
      */
     fun onAppResumed() {
-        appInForeground = true
-        repairMissingService()
+        restore()
     }
 
-    fun onAppPaused() {
-        appInForeground = false
+    /**
+     * Put back whatever the OS should be holding for the saved state, after an event that
+     * wiped it. Play Services drops every geofence on reboot; on an update the system
+     * force-stops the package, which cancels its PendingIntents, and the fence goes with
+     * them (seen on a device: a phone that had come to rest at 16:19, an install at 17:04,
+     * no fence anywhere afterwards and an evening walk unrecorded). The web side re-arms on
+     * the next app open, so what this closes is the window before that open.
+     *
+     * - Never armed, or disarmed: nothing to do.
+     * - Still: the exit fence goes back around the resting spot (idempotent). With no
+     *   resting spot on record, around the platform's last known fix.
+     * - Moving (the process died mid-trip): the location service, if Android allows the
+     *   start; the boot and package-replaced broadcasts are exempt from the background-start
+     *   rule, so it usually does. Refused, it falls back to a fence like any other refused
+     *   start.
+     *
+     * [onDone] reports whether the OS now holds what the state needs. [MotionRestoreReceiver]
+     * finishes its async broadcast on it and schedules a retry on `false`.
+     */
+    fun restore(onDone: (Boolean) -> Unit = {}) = synchronized(this) {
+        val now = current()
+        if (now == null) {
+            onDone(true)
+            return@synchronized
+        }
+        if (now.moving) {
+            if (platform.isSamplingRunning()) {
+                onDone(true)
+                return@synchronized
+            }
+            if (platform.startSampling(now.config)) {
+                // The still clock starts over: the fixes that would have advanced it never arrived.
+                persist(now.copy(lastMovementAtMs = platform.nowMs(), movementAnchor = null, stationaryNotedAtMs = null))
+                platform.watchForStillness()
+                onDone(true)
+            } else {
+                fenceInsteadOfSampling(onDone)
+            }
+            return@synchronized
+        }
+        val centre = now.lastSeen
+        if (centre != null) {
+            platform.setExitGeofence(centre.latitude, centre.longitude, now.config.geofenceRadiusMeters, onDone)
+            return@synchronized
+        }
+        platform.lastKnownLocation { known ->
+            synchronized(this) {
+                val latest = current()
+                if (latest == null || latest.moving || latest.lastSeen != null) {
+                    // Armed, disarmed or fenced in the meantime; that path owns the outcome now.
+                    onDone(true)
+                    return@synchronized
+                }
+                if (known == null) {
+                    onDone(false)
+                    return@synchronized
+                }
+                persist(latest.copy(lastSeen = known))
+                platform.setExitGeofence(known.latitude, known.longitude, latest.config.geofenceRadiusMeters, onDone)
+            }
+        }
     }
 
     /** The exit geofence fired: the phone left its resting spot. */
@@ -295,11 +355,6 @@ class MotionGatedTracker(
                 becomeStill(next)
                 return FixOutcome.Ignored("still for ${timeout}ms; sampling stopped")
             }
-        }
-
-        if (appInForeground) {
-            persist(next)
-            return FixOutcome.Ignored("app in foreground; web watcher owns sampling")
         }
 
         val decision = MotionSamplingGate.decide(
@@ -380,28 +435,24 @@ class MotionGatedTracker(
      * to ever fire), falling back to the last fix this tracker saw. With neither, the state
      * stays "moving" with no service, and [onAppResumed] repairs it.
      */
-    private fun fenceInsteadOfSampling() {
+    private fun fenceInsteadOfSampling(onDone: (Boolean) -> Unit = {}) {
         platform.lastKnownLocation { known ->
             synchronized(this) {
-                val now = current() ?: return@synchronized
-                if (!now.moving || platform.isSamplingRunning()) {
+                val now = current()
+                if (now == null || !now.moving || platform.isSamplingRunning()) {
+                    // Disarmed, fenced by another path, or sampling after all: nothing owed.
+                    onDone(true)
                     return@synchronized
                 }
-                val centre = known ?: now.lastSeen ?: return@synchronized
-                platform.setExitGeofence(centre.latitude, centre.longitude, now.config.geofenceRadiusMeters)
+                val centre = known ?: now.lastSeen
+                if (centre == null) {
+                    // Wanted but absent; onAppResumed repairs it. Nothing the OS could hold.
+                    onDone(false)
+                    return@synchronized
+                }
+                platform.setExitGeofence(centre.latitude, centre.longitude, now.config.geofenceRadiusMeters, onDone)
                 persist(now.copy(moving = false, lastSeen = centre, stationaryNotedAtMs = null))
             }
-        }
-    }
-
-    private fun repairMissingService() = synchronized(this) {
-        val now = current() ?: return
-        if (!now.moving || platform.isSamplingRunning()) {
-            return
-        }
-        if (platform.startSampling(now.config)) {
-            persist(now.copy(lastMovementAtMs = platform.nowMs(), movementAnchor = null, stationaryNotedAtMs = null))
-            platform.watchForStillness()
         }
     }
 
@@ -422,8 +473,12 @@ class MotionGatedTracker(
     companion object {
         /** Fixes closer together than this, for the timeout in force, count as "not moving". */
         const val STILL_MOVEMENT_METERS = 50.0
-        /** The clock when nothing but the fixes says the phone is at rest. */
-        const val STILL_TIMEOUT_MS = 10L * 60L * 1000L
+        /**
+         * The clock when nothing but the fixes says the phone is at rest. Five minutes (was ten until
+         * 2026-10-13): a stop is declared sooner at the cost of a slightly longer unsampled restart
+         * after a pause that outlasts it -- the fence radius plus Play Services' evaluation delay.
+         */
+        const val STILL_TIMEOUT_MS = 5L * 60L * 1000L
         /** The clock once the stationary-detect sensor has confirmed the phone is physically at rest. */
         const val STILL_CONFIRMED_TIMEOUT_MS = 3L * 60L * 1000L
     }

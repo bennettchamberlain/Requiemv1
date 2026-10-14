@@ -336,7 +336,8 @@ class LocalLlmPlugin : Plugin() {
             call.reject("Model is not downloaded: $modelId")
             return
         }
-        LocalLlmPolicy.ramShortfallMessage(info, deviceMemoryBytes())?.let {
+        val deviceMemory = deviceMemoryBytes()
+        LocalLlmPolicy.ramShortfallMessage(info, deviceMemory)?.let {
             call.reject(it)
             return
         }
@@ -347,6 +348,10 @@ class LocalLlmPlugin : Plugin() {
             call.reject("accelerator must be 'cpu' or 'gpu', not '$requestedWire'")
             return
         }
+        // Decided here, where the device's RAM is known, so the engine never attempts a GPU load on a phone
+        // that can hold the model on the CPU only. `gpuWithheld` goes back on the result for the UI to explain.
+        val choice = LocalLlmPolicy.resolveAccelerator(info, requestedAccelerator, deviceMemory)
+        if (choice.gpuWithheld) Log.i(TAG, LocalLlmPolicy.gpuWithheldMessage(info, deviceMemory))
 
         // PluginCall's two-arg getInt/getDouble still return a nullable boxed type even
         // with a default supplied — fall back to the same default again to satisfy that.
@@ -364,7 +369,7 @@ class LocalLlmPlugin : Plugin() {
                 topK = topK,
                 topP = topP,
                 temperature = temperature,
-                accelerator = requestedAccelerator ?: info.defaultAccelerator,
+                accelerator = choice.accelerator,
                 enableSpeculativeDecoding = enableSpeculativeDecoding,
                 toolsGeneration = toolsGeneration.get(),
             )
@@ -392,6 +397,7 @@ class LocalLlmPlugin : Plugin() {
                 result.put("toolCount", outcome.toolCount)
                 result.put("accelerator", outcome.accelerator.wire)
                 result.put("fellBackToCpu", outcome.fellBackToCpu)
+                result.put("gpuWithheld", choice.gpuWithheld)
                 result.put("speculativeDecoding", outcome.speculativeDecoding)
                 call.resolve(result)
             } catch (e: Exception) {

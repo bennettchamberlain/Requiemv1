@@ -36,7 +36,7 @@ import org.robolectric.RuntimeEnvironment
 class ModelDownloadWorkerTest {
 
     private val context get() = RuntimeEnvironment.getApplication()
-    private val info = LocalLlmModels.QWEN3_0_6B_INT4
+    private val info = LocalLlmModels.GEMMA_4_E2B_IT
 
     /**
      * Larger than `DEFAULT_BUFFER_SIZE` (8 KiB) so the copy loop really iterates, and
@@ -263,18 +263,18 @@ class ModelDownloadWorkerTest {
     }
 
     @Test
-    fun the_qwen3_pin_is_a_revision_that_loads_on_this_litert_lm_not_whatever_main_is_now() {
-        // The 2026-09-20 re-export (344_671_744 bytes) needs LiteRT-LM 0.17.1+, which this plugin links since the
-        // 0.18.0 bump; the earlier 344_437_808-byte revision was the last one that loaded on 0.14.0. Size and commit
-        // move as a pair: the worker verifies the size, and a URL on `main` would drift under it again.
-        assertEquals("a6e678a1d43b3d67452aca8b3f4f9aa96e6c750b", LocalLlmModels.QWEN3_0_6B_INT4.commitHash)
-        assertEquals(344_671_744L, LocalLlmModels.QWEN3_0_6B_INT4.sizeBytes)
-        assertTrue(LocalLlmModels.QWEN3_0_6B_INT4.sizeBytes != 344_437_808L)
+    fun the_gemma_pin_is_a_revision_that_loads_on_this_litert_lm_not_whatever_main_is_now() {
+        // Size and commit move as a pair: the worker verifies the size, and a URL on `main` would drift under it
+        // (Qwen3-0.6B's did on 2026-09-20). This is the 2026-06-05 re-export; see the catalog comment.
+        assertEquals("361a4010ad6d88fc5c86e148e333c0342b99763d", LocalLlmModels.GEMMA_4_E2B_IT.commitHash)
+        assertEquals(2_588_147_712L, LocalLlmModels.GEMMA_4_E2B_IT.sizeBytes)
     }
 
     @Test
     fun a_download_of_exactly_the_catalog_size_is_accepted_and_one_byte_off_is_not() {
-        val size = LocalLlmModels.QWEN3_0_6B_INT4.sizeBytes.toInt()
+        // The worker compares the landed length with the size it was told (the plugin passes the catalog's).
+        // A synthetic size: the smallest catalog entry is 932 MiB since 2026-10-13, twice over is past the test heap.
+        val size = 24 * 1024 * 1024
         val exact = ByteArray(size) { (it % 251).toByte() }
 
         TestHttpServer { exchange, _ -> exchange.respond(200, exact) }.use { server ->

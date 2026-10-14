@@ -11,12 +11,14 @@ import { ApplianceRefusedError, isApplianceUnreachable, useChatRequester } from 
 const llm = vi.hoisted(() => ({
   prefs: {
     mode: 'appliance' as 'appliance' | 'auto' | 'device',
-    modelId: 'qwen3-0.6b-int4' as string | null,
+    modelId: 'gemma-4-e2b-it' as string | null,
     accelerator: null as 'cpu' | 'gpu' | null,
     thinking: false,
     speculativeDecoding: true,
     intentTools: true,
   },
+  /** When true, `findLocalLlmModel` reports the selected model as unable to see. */
+  blind: false,
   ready: true,
   ensureLoaded: vi.fn(
     async (): Promise<{ alreadyLoaded: boolean; accelerator: string; toolCount?: number }> => ({
@@ -28,14 +30,27 @@ const llm = vi.hoisted(() => ({
   reset: vi.fn(async () => {}),
 }));
 
-vi.mock('@ci/common', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@ci/common')>()),
-  getLocalLlmPrefs: () => llm.prefs,
-  isLocalLlmReady: async () => llm.ready,
-  ensureLocalLlmLoaded: (...args: unknown[]) => (llm.ensureLoaded as (...a: unknown[]) => unknown)(...args),
-  streamLocalLlm: (...args: unknown[]) => (llm.stream as (...a: unknown[]) => unknown)(...args),
-  resetLocalLlmConversation: () => llm.reset(),
-}));
+vi.mock('@ci/common', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@ci/common')>();
+
+  return {
+    ...real,
+    // Every catalog model can see since Qwen3-1.7B was dropped (2026-10-13); the sightless-model tests
+    // below substitute a spec without `vision` to keep that refusal path covered.
+    findLocalLlmModel: (modelId: string) => {
+      const spec = real.findLocalLlmModel(modelId);
+
+      return spec && llm.blind
+        ? { ...spec, capabilities: spec.capabilities.filter((c) => c !== 'vision') }
+        : spec;
+    },
+    getLocalLlmPrefs: () => llm.prefs,
+    isLocalLlmReady: async () => llm.ready,
+    ensureLocalLlmLoaded: (...args: unknown[]) => (llm.ensureLoaded as (...a: unknown[]) => unknown)(...args),
+    streamLocalLlm: (...args: unknown[]) => (llm.stream as (...a: unknown[]) => unknown)(...args),
+    resetLocalLlmConversation: () => llm.reset(),
+  };
+});
 
 const h = vi.hoisted(() => ({
   toastError: vi.fn(),
@@ -102,13 +117,14 @@ function applianceStream(threadId = 't-1') {
 beforeEach(() => {
   llm.prefs = {
     mode: 'appliance',
-    modelId: 'qwen3-0.6b-int4',
+    modelId: 'gemma-4-e2b-it',
     accelerator: null,
     thinking: false,
     speculativeDecoding: true,
     intentTools: true,
   };
   llm.ready = true;
+  llm.blind = false;
   llm.ensureLoaded.mockClear();
   llm.stream.mockReset();
   llm.reset.mockClear();
@@ -205,7 +221,7 @@ describe('useChatRequester — device mode', () => {
 
     expect(returned).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(llm.ensureLoaded).toHaveBeenCalledWith('qwen3-0.6b-int4', {
+    expect(llm.ensureLoaded).toHaveBeenCalledWith('gemma-4-e2b-it', {
       accelerator: undefined,
       enableSpeculativeDecoding: true,
       useIntentTools: true,
@@ -222,7 +238,7 @@ describe('useChatRequester — device mode', () => {
 
     expect(drained).toEqual({ text: 'Hello there.', think: 'hmm ' });
     await waitFor(() => expect(result.current[0].local?.stats).toEqual(STATS));
-    expect(result.current[0].local?.modelId).toBe('qwen3-0.6b-int4');
+    expect(result.current[0].local?.modelId).toBe('gemma-4-e2b-it');
   });
 
   it('asks for reasoning only from a model that has the capability', async () => {
@@ -236,13 +252,6 @@ describe('useChatRequester — device mode', () => {
       await result.current[1].submit({ message: 'a', fileIds: [] });
     });
     expect(llm.stream).toHaveBeenLastCalledWith('a', expect.objectContaining({ enableThinking: true }));
-
-    // Qwen2.5 cannot — never send it a thinking request just because the toggle is on.
-    llm.prefs.modelId = 'qwen2.5-1.5b-instruct';
-    await act(async () => {
-      await result.current[1].submit({ message: 'b', fileIds: [] });
-    });
-    expect(llm.stream).toHaveBeenLastCalledWith('b', expect.objectContaining({ enableThinking: false }));
   });
 
   it('refuses a write request in code when the phone has no tools, without asking the model', async () => {
@@ -267,7 +276,7 @@ describe('useChatRequester — device mode', () => {
     });
 
     expect(drained?.text).toMatch(/nothing was changed/);
-    expect(result.current[0].local?.modelId).toBe('qwen3-0.6b-int4');
+    expect(result.current[0].local?.modelId).toBe('gemma-4-e2b-it');
   });
 
   it('lets a question through to a tool-less model, and a write request through to a model with tools', async () => {
@@ -336,7 +345,8 @@ describe('useChatRequester — device mode', () => {
   });
 
   it('refuses photos for a model that cannot see, rather than answering as if none were sent', async () => {
-    llm.prefs.modelId = 'qwen3-0.6b-int4';
+    llm.prefs.modelId = 'gemma-4-e2b-it';
+    llm.blind = true;
     vi.stubGlobal('fetch', vi.fn());
 
     const { result } = renderHook(() => useChatRequester({ threadId: null }));
@@ -765,6 +775,7 @@ describe('useChatRequester — auto mode', () => {
   });
 
   it('does not answer a photo on a model that cannot see it when the appliance is down', async () => {
+    llm.blind = true;
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),

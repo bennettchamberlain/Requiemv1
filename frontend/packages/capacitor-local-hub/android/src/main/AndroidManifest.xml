@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Normal permission, no prompt: lets MotionRestoreReceiver put the exit geofence back
+         after a reboot, which Play Services does not survive. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application>
         <service
@@ -29,5 +32,17 @@
         <receiver
             android:name=".motion.MotionGeofenceReceiver"
             android:exported="false" />
+        <!-- Re-registers the exit geofence (or restarts the location service) after the two
+             events that wipe it: a reboot and an update of this app. Exported because a
+             manifest receiver with a filter must say, and safely so: both actions are
+             protected broadcasts only the system can send. See MotionRestoreReceiver. -->
+        <receiver
+            android:name=".motion.MotionRestoreReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

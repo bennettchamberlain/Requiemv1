@@ -6,9 +6,9 @@ import {
   buildPositionRecord,
   captureLocationFix,
   createLocationSampler,
-  fixFromBackgroundGeolocationLocation,
+  fixFromNativeLocationEvent,
   fixFromGeolocationPosition,
-  type BackgroundGeolocationLocation,
+  type NativeLocationEvent,
   haversineMeters,
   positionSourceId,
   type DeviceLocationFix,
@@ -844,14 +844,12 @@ describe('fixFromGeolocationPosition', () => {
 });
 
 /**
- * The `@capacitor-community/background-geolocation` counterpart to
+ * The native `significantLocation` event counterpart to
  * `fixFromGeolocationPosition` — same adapter contract, different field names
  * (`bearing`/`time` rather than `heading`/`timestamp`).
  */
-describe('fixFromBackgroundGeolocationLocation', () => {
-  function backgroundLocation(
-    overrides: Partial<BackgroundGeolocationLocation> = {},
-  ): BackgroundGeolocationLocation {
+describe('fixFromNativeLocationEvent', () => {
+  function backgroundLocation(overrides: Partial<NativeLocationEvent> = {}): NativeLocationEvent {
     return {
       latitude: SF_LAT,
       longitude: SF_LNG,
@@ -866,7 +864,7 @@ describe('fixFromBackgroundGeolocationLocation', () => {
   }
 
   it('carries every field across, renamed to the DeviceLocationFix contract', () => {
-    const fix = fixFromBackgroundGeolocationLocation(backgroundLocation());
+    const fix = fixFromNativeLocationEvent(backgroundLocation());
 
     expect(fix).toEqual({
       latitude: SF_LAT,
@@ -881,7 +879,7 @@ describe('fixFromBackgroundGeolocationLocation', () => {
 
   it('falls back to the current time only when the plugin reports no timestamp at all', () => {
     const before = Date.now();
-    const fix = fixFromBackgroundGeolocationLocation(backgroundLocation({ time: 0 }));
+    const fix = fixFromNativeLocationEvent(backgroundLocation({ time: 0 }));
     const after = Date.now();
 
     expect(fix.capturedAtMs).toBeGreaterThanOrEqual(before);
@@ -889,7 +887,7 @@ describe('fixFromBackgroundGeolocationLocation', () => {
   });
 
   it('passes through null optional fields rather than coercing them to 0', () => {
-    const fix = fixFromBackgroundGeolocationLocation(
+    const fix = fixFromNativeLocationEvent(
       backgroundLocation({ altitude: null, bearing: null, speed: null }),
     );
 

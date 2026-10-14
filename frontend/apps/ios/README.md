@@ -374,10 +374,8 @@ download is verified against that size, and a pinned URL cannot drift under it.
 
 | Model | Size | Min RAM | Backends | Reasoning | Photos | Memory tools | Platforms |
 |---|---|---|---|---|---|---|---|
-| Qwen3 0.6B | 328 MB | 4 GB | CPU | ✓ | | ✓ | iOS, Android |
-| Qwen2.5 1.5B Instruct | 1.5 GB | 6 GB | GPU, CPU | | | | iOS, Android |
-| Gemma 4 E2B | 2.4 GB | 8 GB | GPU, CPU | ✓ | ✓ | ✓ | Android |
-| Gemma 4 E4B | 3.4 GB | 12 GB | GPU, CPU | ✓ | ✓ | ✓ | Android |
+| Gemma 4 E2B | 2.4 GB | 6 GB (GPU from 8 GB) | CPU, GPU | ✓ | ✓ | ✓ | Android |
+| Gemma 4 E4B | 3.4 GB | 12 GB | CPU, GPU | ✓ | ✓ | ✓ | Android |
 
 Left out on purpose: Gemma 3n, Gemma3-1B-IT and the FunctionGemma fine-tunes. Hugging Face serves them
 `gated` (an account plus a licence click-through), so an anonymous download answers `401 GatedRepo` — the
@@ -560,7 +558,7 @@ then read "On-device models run in the iOS and Android apps." on a phone.
 > `litert-community/Gemma3-1B-IT`, a repo Hugging Face now serves `gated: "auto"`, so the `.task`
 > URL in `LocalLlmModels.kt` / `definitions.ts` answered `401 GatedRepo` to an anonymous download —
 > meaning no new Android user could fetch the only model offered. Android now ships the same
-> ungated Qwen3-0.6B iOS already used (`litert-community/Qwen3-0.6B`); both platforms ship the
+> ungated Qwen3 iOS already used (`litert-community/Qwen3-*`); both platforms ship the
 > identical model file. See `LocalLLMModels.swift` and `LocalLlmModels.kt` for the measurements.
 
 **Also fixed 2026-08-26, same pass:**

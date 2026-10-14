@@ -25,8 +25,11 @@ private class FakePlatform : MotionPlatform {
     var lastKnown: GateSample? = null
     override fun watchForStillness() { calls += "watchForStillness" }
     override fun cancelSensorTriggers() { calls += "cancelSensorTriggers" }
-    override fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float) {
+    /** Whether Play Services accepts the fence; false plays "not up yet" at boot. */
+    var geofenceAccepted = true
+    override fun setExitGeofence(latitude: Double, longitude: Double, radiusMeters: Float, onDone: (Boolean) -> Unit) {
         calls += "geofence($latitude,$longitude,$radiusMeters)"
+        onDone(geofenceAccepted)
     }
     override fun clearExitGeofence() { calls += "clearGeofence" }
     override fun startSampling(config: MotionTrackingConfig): Boolean {
@@ -96,9 +99,10 @@ class MotionGatedTrackerTest {
     }
 
     @Test
-    fun `a background fix is queued with the web side's record and owner`() {
+    fun `a fix is queued with the web side's record and owner, on screen or not`() {
         tracker.arm(config)
-        tracker.appInForeground = false
+        // On screen or not: the tracker is the only recorder, so the app's state changes nothing here.
+        tracker.onAppResumed()
 
         val outcome = tracker.onFix(fix(33.6767, -117.7972, 1791520516942L, accuracy = 4.0))
 
@@ -140,19 +144,6 @@ class MotionGatedTrackerTest {
         assertTrue(outcome is MotionGatedTracker.FixOutcome.Queued)
         assertEquals(1, events.size)
         assertEquals(1791520516942L, events[0].getLong("time"))
-    }
-
-    @Test
-    fun `fixes are ignored while the app is in the foreground`() {
-        tracker.arm(config)
-        tracker.appInForeground = true
-
-        val outcome = tracker.onFix(fix(33.6767, -117.7972, 0L))
-
-        assertTrue(outcome is MotionGatedTracker.FixOutcome.Ignored)
-        assertEquals(0, outbox.enqueueCalls.size)
-        // ...but the resting-spot centre still follows the phone.
-        assertEquals(33.6767, store.load()!!.lastSeen!!.latitude, 0.0)
     }
 
     @Test
@@ -252,17 +243,17 @@ class MotionGatedTrackerTest {
     }
 
     @Test
-    fun `fixes that show no movement for ten minutes stop sampling and fence the resting spot`() {
+    fun `fixes that show no movement for five minutes stop sampling and fence the resting spot`() {
         tracker.arm(config)
         tracker.onFix(fix(33.6767, -117.7972, 0L))
         platform.calls.clear()
 
-        // Jitter inside 50 m for nine minutes: still moving as far as the tracker knows.
-        platform.now += 9 * 60 * 1000L
+        // Jitter inside 50 m for four minutes: still moving as far as the tracker knows.
+        platform.now += 4 * 60 * 1000L
         tracker.onFix(fix(33.6768, -117.7972, platform.now))
         assertTrue(platform.calls.isEmpty())
 
-        // Past ten minutes: at rest. GPS off, fence around the last fix, motion sensor armed.
+        // Past five minutes: at rest. GPS off, fence around the last fix, motion sensor armed.
         platform.now += 2 * 60 * 1000L
         val outcome = tracker.onFix(fix(33.6768, -117.7973, platform.now))
         assertTrue(outcome is MotionGatedTracker.FixOutcome.Ignored)
@@ -294,16 +285,13 @@ class MotionGatedTrackerTest {
         platform.calls.clear()
 
         tracker.onAppResumed()
-        assertTrue(tracker.appInForeground)
         // No restart of a running service: that would re-post a notification the user swiped away.
         assertTrue(platform.calls.isEmpty())
 
-        tracker.onAppPaused()
-        assertFalse(tracker.appInForeground)
     }
 
     @Test
-    fun `coming to the foreground does not restart a service that is absent because the phone is still`() {
+    fun `coming to the foreground while still puts the fence back rather than starting a service`() {
         tracker.arm(config)
         tracker.onFix(fix(33.6767, -117.7972, 0L))
         becomeStillViaFixes()
@@ -311,8 +299,112 @@ class MotionGatedTrackerTest {
 
         tracker.onAppResumed()
 
-        assertTrue(platform.calls.isEmpty())
+        // Re-adding under the same id replaces, so a fence that was there is unchanged, and
+        // one lost to a reboot or an update is back. No service: the phone is still.
+        assertEquals(listOf("geofence(33.6767,-117.7972,200.0)"), platform.calls)
         assertFalse(store.load()!!.moving)
+    }
+
+    @Test
+    fun `restore after a reboot puts the fence back around the resting spot`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        becomeStillViaFixes()
+        // The device case: still at 16:19, the app reinstalled at 17:04, and Play Services
+        // holding no fence at all afterwards -- an evening walk went unrecorded.
+        val rebooted = MotionGatedTracker(platform, store, { outbox })
+        platform.calls.clear()
+        var outcome: Boolean? = null
+
+        rebooted.restore { outcome = it }
+
+        assertEquals(listOf("geofence(33.6767,-117.7972,200.0)"), platform.calls)
+        assertEquals(true, outcome)
+        assertFalse(store.load()!!.moving)
+    }
+
+    @Test
+    fun `restore reports a fence Play Services refused so the receiver can retry`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        becomeStillViaFixes()
+        platform.geofenceAccepted = false
+        var outcome: Boolean? = null
+
+        MotionGatedTracker(platform, store, { outbox }).restore { outcome = it }
+
+        assertEquals(false, outcome)
+    }
+
+    @Test
+    fun `restore while still with no resting spot on record fences the last known fix`() {
+        // Refused start with nothing to fence left the state "moving"; a later disarm/arm
+        // cycle is the realistic way to a still state with no lastSeen, so build it directly.
+        store.save(MotionState(config = config, moving = false, lastAccepted = null, lastSeen = null, lastMovementAtMs = 0L))
+        platform.lastKnown = GateSample(33.6952, -117.7481, 5_000L)
+        var outcome: Boolean? = null
+
+        MotionGatedTracker(platform, store, { outbox }).restore { outcome = it }
+
+        assertEquals(listOf("lastKnownLocation", "geofence(33.6952,-117.7481,200.0)"), platform.calls)
+        assertEquals(true, outcome)
+        assertEquals(33.6952, store.load()!!.lastSeen!!.latitude, 0.0)
+    }
+
+    @Test
+    fun `restore while still with no fix anywhere reports failure`() {
+        store.save(MotionState(config = config, moving = false, lastAccepted = null, lastSeen = null, lastMovementAtMs = 0L))
+        platform.lastKnown = null
+        var outcome: Boolean? = null
+
+        MotionGatedTracker(platform, store, { outbox }).restore { outcome = it }
+
+        assertEquals(listOf("lastKnownLocation"), platform.calls)
+        assertEquals(false, outcome)
+    }
+
+    @Test
+    fun `restore after a reboot mid-trip restarts sampling`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        platform.samplingRunning = false
+        platform.calls.clear()
+        var outcome: Boolean? = null
+
+        MotionGatedTracker(platform, store, { outbox }).restore { outcome = it }
+
+        assertEquals(listOf("startSampling", "watchForStillness"), platform.calls)
+        assertEquals(true, outcome)
+        assertTrue(store.load()!!.moving)
+        assertNull(store.load()!!.movementAnchor)
+    }
+
+    @Test
+    fun `restore mid-trip falls back to a fence when the start is refused`() {
+        tracker.arm(config)
+        tracker.onFix(fix(33.6767, -117.7972, 0L))
+        platform.samplingRunning = false
+        platform.startAllowed = false
+        platform.lastKnown = GateSample(33.6800, -117.7900, platform.now)
+        platform.calls.clear()
+        var outcome: Boolean? = null
+
+        MotionGatedTracker(platform, store, { outbox }).restore { outcome = it }
+
+        assertEquals(listOf("startSampling", "lastKnownLocation", "geofence(33.68,-117.79,200.0)"), platform.calls)
+        assertEquals(true, outcome)
+        assertFalse(store.load()!!.moving)
+    }
+
+    @Test
+    fun `restore with nothing armed does nothing and owes nothing`() {
+        var outcome: Boolean? = null
+
+        tracker.restore { outcome = it }
+
+        assertTrue(platform.calls.isEmpty())
+        assertEquals(true, outcome)
+        assertFalse(tracker.isArmed)
     }
 
     @Test

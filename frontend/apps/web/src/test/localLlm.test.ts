@@ -116,10 +116,10 @@ describe('localLlmPlatform / probeLocalLlm — off-device', () => {
   it('every mutating call rejects rather than pretending', async () => {
     setWindow({});
 
-    await expect(downloadLocalLlmModel('qwen3-0.6b-int4')).rejects.toThrow(/only available/);
-    await expect(cancelLocalLlmDownload('qwen3-0.6b-int4')).rejects.toThrow(/only available/);
-    await expect(deleteLocalLlmModel('qwen3-0.6b-int4')).rejects.toThrow(/only available/);
-    await expect(ensureLocalLlmLoaded('qwen3-0.6b-int4')).rejects.toThrow(/only available/);
+    await expect(downloadLocalLlmModel('gemma-4-e2b-it')).rejects.toThrow(/only available/);
+    await expect(cancelLocalLlmDownload('gemma-4-e2b-it')).rejects.toThrow(/only available/);
+    await expect(deleteLocalLlmModel('gemma-4-e2b-it')).rejects.toThrow(/only available/);
+    await expect(ensureLocalLlmLoaded('gemma-4-e2b-it')).rejects.toThrow(/only available/);
     await expect(streamLocalLlm('hi')).rejects.toThrow(/only available/);
   });
 
@@ -127,7 +127,7 @@ describe('localLlmPlatform / probeLocalLlm — off-device', () => {
     setWindow({});
 
     await expect(resetLocalLlmConversation()).resolves.toBeUndefined();
-    await expect(isLocalLlmReady('qwen3-0.6b-int4')).resolves.toBe(false);
+    await expect(isLocalLlmReady('gemma-4-e2b-it')).resolves.toBe(false);
   });
 });
 
@@ -135,9 +135,9 @@ describe('probeLocalLlm — native', () => {
   it('lists only the models this platform ships, with status and fit for each', async () => {
     const { plugin } = fakeLlm({
       getModelStatus: vi.fn(async ({ modelId }: { modelId: string }) =>
-        modelId === 'qwen3-0.6b-int4' ? { status: 'ready' } : { status: 'not_downloaded' },
+        modelId === 'gemma-4-e2b-it' ? { status: 'ready' } : { status: 'not_downloaded' },
       ),
-      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'qwen3-0.6b-int4', accelerator: 'cpu' })),
+      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'gemma-4-e2b-it', accelerator: 'cpu' })),
     });
 
     nativeWindow('ios', plugin);
@@ -146,10 +146,9 @@ describe('probeLocalLlm — native', () => {
 
     expect(probe.supported).toBe(true);
     expect(probe.platform).toBe('ios');
-    // Gemma 4 is Android-only until the iOS app carries the increased-memory-limit entitlement.
-    expect(probe.models.map((m) => m.spec.modelId)).toEqual(['qwen3-0.6b-int4', 'qwen2.5-1.5b-instruct']);
-    expect(probe.models[0].status.status).toBe('ready');
-    expect(probe.loaded).toEqual({ loaded: true, modelId: 'qwen3-0.6b-int4', accelerator: 'cpu' });
+    // Nothing ships on iOS (since 2026-10-13); the resident model is still reported as the bridge sees it.
+    expect(probe.models).toEqual([]);
+    expect(probe.loaded).toEqual({ loaded: true, modelId: 'gemma-4-e2b-it', accelerator: 'cpu' });
   });
 
   it('offers Gemma 4 on Android, and greys out what the device cannot hold', async () => {
@@ -199,7 +198,7 @@ describe('probeLocalLlm — native', () => {
   });
 
   it('counts a partial download toward the disk headroom check (a resume does not re-fetch it)', async () => {
-    const spec = LOCAL_LLM_CATALOG['qwen2.5-1.5b-instruct'];
+    const spec = LOCAL_LLM_CATALOG['gemma-4-e2b-it'];
     const { plugin } = fakeLlm({
       // Exactly enough room for the *remaining* bytes plus headroom — not enough for the whole file.
       isAvailable: vi.fn(async () => ({
@@ -240,29 +239,29 @@ describe('download management', () => {
   it('unloads a resident model before deleting its file', async () => {
     const order: string[] = [];
     const { plugin } = fakeLlm({
-      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'qwen3-0.6b-int4' })),
+      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'gemma-4-e2b-it' })),
       unloadModel: vi.fn(async () => void order.push('unload')),
       deleteModel: vi.fn(async () => void order.push('delete')),
     });
 
     nativeWindow('android', plugin);
 
-    await deleteLocalLlmModel('qwen3-0.6b-int4');
+    await deleteLocalLlmModel('gemma-4-e2b-it');
 
     expect(order).toEqual(['unload', 'delete']);
   });
 
   it('leaves a different resident model alone when deleting another', async () => {
     const { plugin } = fakeLlm({
-      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'gemma-4-e2b-it' })),
+      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'gemma-4-e4b-it' })),
     });
 
     nativeWindow('android', plugin);
 
-    await deleteLocalLlmModel('qwen3-0.6b-int4');
+    await deleteLocalLlmModel('gemma-4-e2b-it');
 
     expect(plugin.unloadModel).not.toHaveBeenCalled();
-    expect(plugin.deleteModel).toHaveBeenCalledWith({ modelId: 'qwen3-0.6b-int4' });
+    expect(plugin.deleteModel).toHaveBeenCalledWith({ modelId: 'gemma-4-e2b-it' });
   });
 
   it('cancels a download by model id', async () => {
@@ -270,22 +269,22 @@ describe('download management', () => {
 
     nativeWindow('ios', plugin);
 
-    await cancelLocalLlmDownload('qwen3-0.6b-int4');
+    await cancelLocalLlmDownload('gemma-4-e2b-it');
 
-    expect(plugin.cancelDownload).toHaveBeenCalledWith({ modelId: 'qwen3-0.6b-int4' });
+    expect(plugin.cancelDownload).toHaveBeenCalledWith({ modelId: 'gemma-4-e2b-it' });
   });
 
   it('isLocalLlmReady is true only for a fully downloaded model', async () => {
     const { plugin } = fakeLlm({
       getModelStatus: vi.fn(async ({ modelId }: { modelId: string }) => ({
-        status: modelId === 'qwen3-0.6b-int4' ? 'ready' : 'downloading',
+        status: modelId === 'gemma-4-e2b-it' ? 'ready' : 'downloading',
       })),
     });
 
     nativeWindow('android', plugin);
 
-    await expect(isLocalLlmReady('qwen3-0.6b-int4')).resolves.toBe(true);
-    await expect(isLocalLlmReady('gemma-4-e2b-it')).resolves.toBe(false);
+    await expect(isLocalLlmReady('gemma-4-e2b-it')).resolves.toBe(true);
+    await expect(isLocalLlmReady('gemma-4-e4b-it')).resolves.toBe(false);
     await expect(isLocalLlmReady(null)).resolves.toBe(false);
   });
 });
@@ -327,7 +326,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('onLocalLlmDownloadProgress', () => {
   const progress = {
-    modelId: 'qwen3-0.6b-int4',
+    modelId: 'gemma-4-e2b-it',
     status: 'downloading',
     bytesDownloaded: 1024,
     totalBytes: 2048,
@@ -416,9 +415,10 @@ describe('ensureLocalLlmLoaded', () => {
     await ensureLocalLlmLoaded('gemma-4-e2b-it');
 
     expect(plugin.configureIntentTools).toHaveBeenCalledWith({ enabled: false });
+    // The CPU since 2026-10-13: the GPU backend corrupts digits read from tool responses with Gemma 4.
     expect(plugin.loadModel).toHaveBeenCalledWith({
       modelId: 'gemma-4-e2b-it',
-      accelerator: 'gpu',
+      accelerator: 'cpu',
       enableSpeculativeDecoding: undefined,
     });
   });
@@ -437,6 +437,32 @@ describe('ensureLocalLlmLoaded', () => {
     expect(plugin.loadModel).not.toHaveBeenCalled();
   });
 
+  it('asks for the CPU on a phone under the model’s GPU floor, and treats the resident CPU model as a match', async () => {
+    let loaded: { loaded: boolean; modelId?: string; accelerator?: string } = { loaded: false };
+    const { plugin } = fakeLlm({
+      isAvailable: vi.fn(async () => ({
+        available: true,
+        totalMemoryBytes: 6 * GIB,
+        freeDiskBytes: 40 * GIB,
+      })),
+      getLoadedModel: vi.fn(async () => loaded),
+    });
+
+    nativeWindow('android', plugin);
+
+    await ensureLocalLlmLoaded('gemma-4-e2b-it', { accelerator: 'gpu' });
+
+    expect(plugin.loadModel).toHaveBeenCalledWith(expect.objectContaining({ accelerator: 'cpu' }));
+
+    // Resident on the CPU now: a second `gpu` request on this phone must not reload it every turn.
+    loaded = { loaded: true, modelId: 'gemma-4-e2b-it', accelerator: 'cpu' };
+    await expect(ensureLocalLlmLoaded('gemma-4-e2b-it', { accelerator: 'gpu' })).resolves.toMatchObject({
+      alreadyLoaded: true,
+      accelerator: 'cpu',
+    });
+    expect(plugin.loadModel).toHaveBeenCalledTimes(1);
+  });
+
   it('reloads when the requested accelerator differs from the resident one', async () => {
     const { plugin } = fakeLlm({
       getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'gemma-4-e2b-it', accelerator: 'gpu' })),
@@ -447,22 +473,6 @@ describe('ensureLocalLlmLoaded', () => {
     await ensureLocalLlmLoaded('gemma-4-e2b-it', { accelerator: 'cpu' });
 
     expect(plugin.loadModel).toHaveBeenCalledWith(expect.objectContaining({ accelerator: 'cpu' }));
-  });
-
-  it('asks a CPU-only model for its own backend even when a GPU preference is remembered', async () => {
-    // gpu was chosen for Qwen2.5, then the user picked Qwen3 (CPU-only): asking Qwen3 for `gpu` would never match
-    // the `cpu` it reports back, and would reload it on every message.
-    const { plugin } = fakeLlm({
-      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'qwen3-0.6b-int4', accelerator: 'cpu' })),
-    });
-
-    nativeWindow('android', plugin);
-
-    await expect(ensureLocalLlmLoaded('qwen3-0.6b-int4', { accelerator: 'gpu' })).resolves.toEqual({
-      alreadyLoaded: true,
-      accelerator: 'cpu',
-    });
-    expect(plugin.loadModel).not.toHaveBeenCalled();
   });
 
   it('does not reload every turn after a GPU request that fell back to the CPU', async () => {
@@ -478,27 +488,27 @@ describe('ensureLocalLlmLoaded', () => {
 
     nativeWindow('android', plugin);
 
-    await ensureLocalLlmLoaded('qwen2.5-1.5b-instruct', { accelerator: 'gpu' });
-    await ensureLocalLlmLoaded('qwen2.5-1.5b-instruct', { accelerator: 'gpu' });
-    await ensureLocalLlmLoaded('qwen2.5-1.5b-instruct', { accelerator: 'gpu' });
+    await ensureLocalLlmLoaded('gemma-4-e2b-it', { accelerator: 'gpu' });
+    await ensureLocalLlmLoaded('gemma-4-e2b-it', { accelerator: 'gpu' });
+    await ensureLocalLlmLoaded('gemma-4-e2b-it', { accelerator: 'gpu' });
 
     expect(plugin.loadModel).toHaveBeenCalledTimes(1);
 
     // Explicitly choosing the CPU is a different request and still reloads nothing: it is what is resident.
-    await ensureLocalLlmLoaded('qwen2.5-1.5b-instruct', { accelerator: 'cpu' });
+    await ensureLocalLlmLoaded('gemma-4-e2b-it', { accelerator: 'cpu' });
     expect(plugin.loadModel).toHaveBeenCalledTimes(1);
   });
 
   it('reloads when a different model is resident', async () => {
     const { plugin } = fakeLlm({
-      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'qwen3-0.6b-int4', accelerator: 'cpu' })),
+      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'gemma-4-e2b-it', accelerator: 'cpu' })),
     });
 
     nativeWindow('android', plugin);
 
-    await ensureLocalLlmLoaded('gemma-4-e2b-it');
+    await ensureLocalLlmLoaded('gemma-4-e4b-it');
 
-    expect(plugin.loadModel).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'gemma-4-e2b-it' }));
+    expect(plugin.loadModel).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'gemma-4-e4b-it' }));
   });
 
   it('binds the appliance’s intent tools only with an origin, an API key, and a model that can use them', async () => {
@@ -509,18 +519,13 @@ describe('ensureLocalLlmLoaded', () => {
 
     nativeWindow('android', plugin);
 
-    await ensureLocalLlmLoaded('qwen3-0.6b-int4', { useIntentTools: true });
+    await ensureLocalLlmLoaded('gemma-4-e2b-it', { useIntentTools: true });
 
     expect(plugin.configureIntentTools).toHaveBeenLastCalledWith({
       enabled: true,
       baseUrl: 'https://memory.example.com',
       apiKey: 'key-123',
     });
-
-    // Qwen2.5 has no tool-call slots in its chat template, so tools are never bound to it.
-    await ensureLocalLlmLoaded('qwen2.5-1.5b-instruct', { useIntentTools: true });
-
-    expect(plugin.configureIntentTools).toHaveBeenLastCalledWith({ enabled: false });
   });
 
   it('loads toolless when the user switched tools off, even with credentials present', async () => {
@@ -531,7 +536,7 @@ describe('ensureLocalLlmLoaded', () => {
 
     nativeWindow('android', plugin);
 
-    await ensureLocalLlmLoaded('qwen3-0.6b-int4', { useIntentTools: false });
+    await ensureLocalLlmLoaded('gemma-4-e2b-it', { useIntentTools: false });
 
     expect(plugin.configureIntentTools).toHaveBeenLastCalledWith({ enabled: false });
   });
@@ -555,7 +560,7 @@ describe('resetLocalLlmConversation', () => {
     expect(idle.plugin.resetConversation).not.toHaveBeenCalled();
 
     const loaded = fakeLlm({
-      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'qwen3-0.6b-int4' })),
+      getLoadedModel: vi.fn(async () => ({ loaded: true, modelId: 'gemma-4-e2b-it' })),
       resetConversation: vi.fn(async () => {
         throw new Error('busy');
       }),

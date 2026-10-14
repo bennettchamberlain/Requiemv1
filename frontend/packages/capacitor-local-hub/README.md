@@ -440,7 +440,7 @@ the sort.
 
 | Signal | Source | Permission | Role |
 |---|---|---|---|
-| moving → still | the fixes: no 50 m of movement from where movement was last confirmed, for 10 minutes | location | stop the location service, set a 100 m exit geofence at the resting spot |
+| moving → still | the fixes: no 50 m of movement from where movement was last confirmed, for 5 minutes | location | stop the location service, set a 100 m exit geofence at the resting spot |
 | moving → still (sooner) | `TYPE_STATIONARY_DETECT` one-shot sensor (five seconds at rest); armed only while the service runs | none | never stops GPS by itself (a red light fires it too); shortens the fixes clock to 3 minutes |
 | still → moving | the exit geofence, and nothing else | location | evaluated by Android with cheap location, survives the process being frozen or killed, exempt for starting a location foreground service from the background |
 | service refused | `startForegroundService` throws `ForegroundServiceStartNotAllowedException` | — | treated as "still": fence the fused provider's last known fix (then the last fix seen) and wait for the exit; with no location at all, stay "moving" and restart on the next resume |

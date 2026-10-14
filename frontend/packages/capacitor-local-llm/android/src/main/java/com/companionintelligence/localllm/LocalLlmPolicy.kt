@@ -121,7 +121,7 @@ object LocalLlmPolicy {
      *  - the **path must equal** `/<hfRepo>/resolve/<commitHash>/<fileName>` for *this* model — the whole
      *    path, not a suffix (a suffix match accepted `/attacker/repo/resolve/main/resolve/<commit>/<file>`,
      *    leaving byte size as the only integrity check). The query string is ignored. A stale bundle still
-     *    asking for `resolve/main` (whose size drifts, see [LocalLlmModels.QWEN3_0_6B_INT4]) is refused.
+     *    asking for `resolve/main` (whose size drifts, see [LocalLlmModels.GEMMA_4_E2B_IT]) is refused.
      */
     fun downloadUrlProblem(info: LocalLlmModelInfo, url: String): String? {
         val uri =
@@ -158,8 +158,16 @@ object LocalLlmPolicy {
         return h == "huggingface.co" || h.endsWith(".huggingface.co")
     }
 
-    /** The backend to load on, and whether the caller's preference had to be overridden. */
-    data class AcceleratorChoice(val accelerator: LocalLlmAccelerator, val preferenceUnsupported: Boolean)
+    /**
+     * The backend to load on, and why it may differ from what was asked: [preferenceUnsupported] when the
+     * model does not list the requested backend, [gpuWithheld] when the GPU was wanted (asked for, or the
+     * model's default) but this device has less RAM than the model's `gpuMinDeviceMemoryBytes`.
+     */
+    data class AcceleratorChoice(
+        val accelerator: LocalLlmAccelerator,
+        val preferenceUnsupported: Boolean,
+        val gpuWithheld: Boolean = false,
+    )
 
     /**
      * `requested` is a preference: an absent one takes the model's first listed accelerator, and one
@@ -171,6 +179,26 @@ object LocalLlmPolicy {
         if (info.supportsAccelerator(requested)) return AcceleratorChoice(requested, preferenceUnsupported = false)
         return AcceleratorChoice(info.defaultAccelerator, preferenceUnsupported = true)
     }
+
+    /**
+     * [resolveAccelerator] with the device's RAM taken into account: a GPU choice on a device under the
+     * model's `gpuMinDeviceMemoryBytes` becomes the CPU, with [AcceleratorChoice.gpuWithheld] set. The GPU
+     * attempt is not merely likely to fail on such a phone — it can succeed and then have the app killed for
+     * memory mid-conversation — so it is not tried at all. A model that lists no CPU backend keeps the GPU.
+     *
+     * @param deviceMemoryBytes the advertised figure from [advertisedMemoryBytes].
+     */
+    fun resolveAccelerator(info: LocalLlmModelInfo, requested: LocalLlmAccelerator?, deviceMemoryBytes: Long): AcceleratorChoice {
+        val base = resolveAccelerator(info, requested)
+        if (base.accelerator != LocalLlmAccelerator.GPU || deviceMemoryBytes >= info.gpuMinDeviceMemoryBytes) return base
+        if (!info.supportsAccelerator(LocalLlmAccelerator.CPU)) return base
+        return base.copy(accelerator = LocalLlmAccelerator.CPU, gpuWithheld = true)
+    }
+
+    /** The sentence for a withheld GPU, naming both figures: "… has 6 GB of RAM; the GPU needs at least 8 GB …". */
+    fun gpuWithheldMessage(info: LocalLlmModelInfo, deviceMemoryBytes: Long): String =
+        "This device has ${formatBytes(deviceMemoryBytes)} of RAM; ${info.modelId} needs at least " +
+            "${formatBytes(info.gpuMinDeviceMemoryBytes)} to run on the GPU, so it runs on the CPU."
 
     /** "512 MB", "3.4 GB", "4 GB" — for the sentences above; binary units under the familiar names. */
     fun formatBytes(bytes: Long): String {

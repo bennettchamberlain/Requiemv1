@@ -562,7 +562,14 @@ struct RememberTool: Tool {
 
       const search = local.get('knowledge.search');
       expect(search?.parameters).not.toEqual(full.get('knowledge.search')?.parameters);
-      expect(Object.keys(search?.parameters.properties ?? {})).toEqual(['query', 'entityTypes', 'countOnly']);
+      expect(Object.keys(search?.parameters.properties ?? {})).toEqual([
+        'query',
+        'entityTypes',
+        'since',
+        'until',
+        'sort',
+        'countOnly',
+      ]);
       // An intent without a lean form is published to the local tier unchanged.
       expect(local.get('people.find')?.parameters).toEqual(full.get('people.find')?.parameters);
     });

@@ -95,11 +95,6 @@ class LocalHubPlugin : Plugin() {
         super.handleOnResume()
     }
 
-    override fun handleOnPause() {
-        MotionTracking.get(context).onAppPaused()
-        super.handleOnPause()
-    }
-
     override fun handleOnDestroy() {
         MotionTracking.get(context).listener = null
         // Synchronous best-effort cleanup: handleOnDestroy has no coroutine to await, but
@@ -295,8 +290,8 @@ class LocalHubPlugin : Plugin() {
 
     /**
      * One-shot high-accuracy fix ("use my location") is iOS-only for now -- see
-     * `LocationTracker.swift`. Continuous background tracking on Android is owned
-     * entirely by `@capacitor-community/background-geolocation`, not this plugin.
+     * `LocationTracker.swift`. Continuous background tracking on Android is the motion-gated
+     * tracker in this plugin (motion/).
      */
     @PluginMethod
     fun getCurrentLocation(call: PluginCall) {
@@ -316,7 +311,7 @@ class LocalHubPlugin : Plugin() {
         }
     }
 
-    /** Always-authorization two-step is iOS-only. Android uses background-geolocation. */
+    /** Always-authorization two-step is iOS-only; Android's prompts run in startSignificantLocationUpdates. */
     @PluginMethod
     fun getLocationAuthorization(call: PluginCall) {
         val ret = JSObject()

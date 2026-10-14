@@ -351,7 +351,11 @@ describe('LocalLLM — the in-app iOS half and the native catalogs', () => {
       const blocks = modelBlocks(read(file));
 
       // Vacuity guard: a regex that matched nothing would make every comparison below pass on empty sets.
-      expect(blocks.length).toBeGreaterThan(0);
+      // (iOS legitimately ships nothing since 2026-10-13, so the guard applies where something is expected.)
+      if (expectedFor(platform).length > 0) {
+        expect(blocks.length).toBeGreaterThan(0);
+      }
+
       expect(blocks.map((b) => b.modelId).sort()).toEqual(expectedFor(platform).sort());
 
       for (const { modelId, block } of blocks) {
@@ -361,6 +365,9 @@ describe('LocalLLM — the in-app iOS half and the native catalogs', () => {
         expect(stringField(block, 'commitHash'), `${modelId} commitHash`).toBe(spec.commitHash);
         expect(numberField(block, 'minDeviceMemoryBytes'), `${modelId} minDeviceMemoryBytes`).toBe(
           spec.minDeviceMemoryBytes,
+        );
+        expect(numberField(block, 'gpuMinDeviceMemoryBytes'), `${modelId} gpuMinDeviceMemoryBytes`).toBe(
+          spec.gpuMinDeviceMemoryBytes,
         );
 
         // The file name is the last path segment of the pinned URL — the one the download is written to.

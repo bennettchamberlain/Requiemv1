@@ -28,7 +28,7 @@ enum CompanionToolContext {
 
   /// The most bytes of one tool result handed back to the model when the window's room cannot be read
   /// (``windowTokensLeft``). `loadModel` sets it from the context window it just configured; until then it
-  /// assumes the smallest window shipped (Qwen3-0.6B's 1024 tokens), so a result is bounded even if
+  /// assumes a 1024-token window (the smallest ever shipped, Qwen3-0.6B's), so a result is bounded even if
   /// nothing did. See ``ToolResultShaper`` for why.
   static var resultBudgetBytes = LocalLLMPolicy.toolResultByteBudget(contextTokens: 1024)
 
@@ -195,8 +195,21 @@ struct SearchMemoryTool: Tool {
   @ToolParam(description: "The key words to look for: a name, a place or a thing. Not the whole question")
   var query: String
 
+  /// Newest first. The appliance orders by each entry's own time; without it the page is by relevance and a
+  /// "most recent" question gets whatever ranked first (on a device: a message from 2022 ahead of 2025).
+  @ToolParam(description: "Set to \"recent\" for newest first: most recent, latest, last")
+  var sort: String?
+
+  @ToolParam(description: "Only entries on or after this date, YYYY-MM-DD")
+  var since: String?
+
   func run() async throws -> Any {
-    await CompanionToolContext.execute(Self.name, arguments: ["query": query])
+    var arguments: [String: Any] = ["query": query]
+    // Omitted rather than sent as null: the appliance validates against the intent's JSON Schema.
+    if let sort, !sort.isEmpty { arguments["sort"] = sort }
+    if let since, !since.isEmpty { arguments["since"] = since }
+
+    return await CompanionToolContext.execute(Self.name, arguments: arguments)
   }
 }
 

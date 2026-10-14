@@ -27,7 +27,8 @@ export const LOCATION_NEEDS_SETTINGS_EVENT = 'ci:location-needs-settings';
 /** Background persist gate — looser than the foreground 50 m / 5 min sampler. */
 export const BACKGROUND_MIN_DISTANCE_METERS = 150;
 
-export const BACKGROUND_MIN_INTERVAL_MS = 10 * 60 * 1000;
+/** Five minutes (was ten, 2026-10-13): a slow stretch gets a point sooner; GPS is on anyway while moving. */
+export const BACKGROUND_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Fixes looser than this in the background are dropped, not queued. */
 export const BACKGROUND_MAX_ACCURACY_METERS = 200;

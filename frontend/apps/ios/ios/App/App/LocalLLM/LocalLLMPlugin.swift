@@ -172,7 +172,7 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
   /// Idempotent: a load identical to the resident one is a no-op that returns the same result (see
   /// `LocalLLMEngine.load`), so the JS layer can ask every turn without paying for a reload.
   ///
-  /// Resolves `{toolCount, accelerator, fellBackToCpu, speculativeDecoding}`: the backend the model
+  /// Resolves `{toolCount, accelerator, fellBackToCpu, gpuWithheld, speculativeDecoding}`: the backend the model
   /// actually loaded on (a `gpu` request that will not initialise retries on the CPU), and whether
   /// multi-token prediction is in force (only when asked for *and* the file carries it).
   @objc func loadModel(_ call: CAPPluginCall) {
@@ -236,6 +236,7 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
           "toolCount": outcome.toolCount,
           "accelerator": outcome.accelerator.rawValue,
           "fellBackToCpu": outcome.fellBackToCpu,
+          "gpuWithheld": outcome.gpuWithheld,
           "speculativeDecoding": outcome.speculativeDecoding,
         ])
       } catch {

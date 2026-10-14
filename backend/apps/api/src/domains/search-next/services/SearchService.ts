@@ -217,7 +217,81 @@ type BaseSearchOptions = {
   maxResults?: number;
   /** Semantic modes only. See {@link SemanticSearchScope.distanceThreshold}. */
   distanceThreshold?: number;
+  /**
+   * Keep only rows whose own time ({@link entityTimeSql}) is on or after `since` / on or before
+   * `until`. Lexical modes only (`keyword`, `boosted`): a nearest-neighbour list has no "every
+   * match since Tuesday", so the semantic modes ignore both.
+   */
+  since?: Date;
+  until?: Date;
+  /**
+   * `recent` orders the page by each row's own time, newest first, nulls last, rank as the
+   * tie-break; the default is rank. Lexical modes only, like `since` / `until`.
+   */
+  sort?: 'relevance' | 'recent';
 };
+
+/**
+ * Each indexed row's OWN time, as SQL over the index row (`entity_type`, `entity_id`): when a
+ * message was sent, an event starts, a note was written. The index carries only when it was
+ * indexed, which for an import is the import's date, so "most recent" cannot be answered from
+ * the index alone. A scalar subquery per type is a primary-key lookup, and it runs only for the
+ * rows the lexical predicate already matched, so a page over thousands of matches stays cheap.
+ * Types with no meaningful time of their own (a position's key is its time; an item has no
+ * table) give NULL, which sorts last and is excluded by any window.
+ */
+function entityTimeSql(alias?: string): string {
+  const type = alias ? `${alias}.entity_type` : 'entity_type';
+  const id = alias ? `${alias}.entity_id` : 'entity_id';
+
+  return `(CASE ${type}
+    WHEN 'communication' THEN (SELECT c.time FROM ci.communications c WHERE c.id = ${id})
+    WHEN 'event' THEN (SELECT e.start_time FROM ci.events e WHERE e.event_id = ${id})
+    WHEN 'note' THEN (SELECT n.created_at FROM ci.notes n WHERE n.id = ${id})
+    WHEN 'content' THEN (SELECT ct.created_at FROM ci.content ct WHERE ct.id = ${id})
+    WHEN 'file' THEN (SELECT COALESCE(f.external_created_at, f.created_at) FROM ci.files f WHERE f.id = ${id})
+    WHEN 'file-chunk' THEN (SELECT fc.created_at FROM ci.file_chunks fc WHERE fc.id = ${id})
+    WHEN 'message' THEN (SELECT m.created_at FROM ci.messages m WHERE m.message_id = ${id})
+    WHEN 'thread' THEN (SELECT COALESCE(t.last_message_at, t.created_at) FROM ci.threads t WHERE t.thread_id = ${id})
+    WHEN 'answer' THEN (SELECT a.answered_at FROM ci.answers a WHERE a.answer_id = ${id})
+    WHEN 'browser-activity' THEN (SELECT b.time FROM ci.browser_activity b WHERE b.id = ${id})
+    WHEN 'receipt' THEN (SELECT COALESCE(r.purchased_at, r.created_at) FROM ci.receipts r WHERE r.receipt_id = ${id})
+    WHEN 'task' THEN (SELECT tk.created_at FROM ci.tasks tk WHERE tk.id = ${id})
+    WHEN 'product' THEN (SELECT pm.created_at FROM ci.product_models pm WHERE pm.product_id = ${id})
+    WHEN 'person' THEN (SELECT en.created_at FROM ci.entities en WHERE en.entity_id = ${id})
+    WHEN 'place' THEN (SELECT en.created_at FROM ci.entities en WHERE en.entity_id = ${id})
+    WHEN 'concept' THEN (SELECT en.created_at FROM ci.entities en WHERE en.entity_id = ${id})
+    ELSE NULL
+  END)`;
+}
+
+/** The `since` / `until` predicate over {@link entityTimeSql}, bound after `paramOffset - 1` params. */
+function buildTimeFilter(
+  options: { since?: Date; until?: Date },
+  paramOffset: number,
+  alias?: string,
+): { clause: string; params: string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  const time = entityTimeSql(alias);
+
+  if (options.since) {
+    clauses.push(`AND ${time} >= $${paramOffset + params.length}::timestamptz`);
+    params.push(options.since.toISOString());
+  }
+
+  if (options.until) {
+    clauses.push(`AND ${time} <= $${paramOffset + params.length}::timestamptz`);
+    params.push(options.until.toISOString());
+  }
+
+  return { clause: clauses.join('\n        '), params };
+}
+
+/** The ORDER BY a lexical page runs: rank, or each row's own time newest first with rank as the tie-break. */
+function lexicalOrderSql(sort: 'relevance' | 'recent' | undefined, alias?: string): string {
+  return sort === 'recent' ? `${entityTimeSql(alias)} DESC NULLS LAST, score DESC` : 'score DESC';
+}
 
 type SearchOptions =
   | (BaseSearchOptions & { includeTypes: IndexableEntity[]; excludeTypes?: never })
@@ -282,7 +356,7 @@ export interface SearchPage {
  * term, which a tool that demanded one turned into a validation error
  * (measured live 2026-09-16: the model sent `query: ""` and the turn died).
  */
-type CountOptions = { query?: string } & (
+type CountOptions = { query?: string; since?: Date; until?: Date } & (
   | { includeTypes: IndexableEntity[]; excludeTypes?: never }
   | { excludeTypes: IndexableEntity[]; includeTypes?: never }
   | { includeTypes?: never; excludeTypes?: never }
@@ -460,8 +534,8 @@ export class SearchService {
     // so it binds as $2 rather than after the query text.
     const { sql, params } =
       query.length > 0
-        ? this.buildKeywordCountPlan(context.userId, query, resolvedOptions)
-        : this.buildScopeCountPlan(context.userId, resolvedOptions);
+        ? this.buildKeywordCountPlan(context.userId, query, resolvedOptions, options)
+        : this.buildScopeCountPlan(context.userId, resolvedOptions, options);
 
     const rows: { total_matches: string | number }[] = await this.dataSource.query(sql, params);
     const totalMatches = Number(rows[0]?.total_matches ?? 0);
@@ -490,8 +564,10 @@ export class SearchService {
     userId: string,
     query: string,
     scope: Pick<SemanticSearchScope, 'includeTypes' | 'excludeTypes'>,
+    window: { since?: Date; until?: Date } = {},
   ): { sql: string; params: (string | string[])[] } {
     const typeFilter = this.buildTypeFilter(scope, 3);
+    const timeFilter = buildTimeFilter(window, 3 + (typeFilter.param ? 1 : 0));
 
     const sql = `
       WITH q AS (
@@ -505,6 +581,7 @@ export class SearchService {
         AND q.tq <> ''::tsquery
         AND vector @@ q.tq
         ${typeFilter.clause}
+        ${timeFilter.clause}
     `;
 
     const params: (string | string[])[] = [userId, query];
@@ -513,6 +590,8 @@ export class SearchService {
       params.push(typeFilter.param);
     }
 
+    params.push(...timeFilter.params);
+
     return { sql, params };
   }
 
@@ -520,14 +599,17 @@ export class SearchService {
   private buildScopeCountPlan(
     userId: string,
     scope: Pick<SemanticSearchScope, 'includeTypes' | 'excludeTypes'>,
+    window: { since?: Date; until?: Date } = {},
   ): { sql: string; params: (string | string[])[] } {
     const typeFilter = this.buildTypeFilter(scope, 2);
+    const timeFilter = buildTimeFilter(window, 2 + (typeFilter.param ? 1 : 0));
 
     const sql = `
       SELECT count(*) AS total_matches
       FROM ci_search.vectors
       WHERE user_id = $1
         ${typeFilter.clause}
+        ${timeFilter.clause}
     `;
 
     const params: (string | string[])[] = [userId];
@@ -535,6 +617,8 @@ export class SearchService {
     if (typeFilter.param) {
       params.push(typeFilter.param);
     }
+
+    params.push(...timeFilter.params);
 
     return { sql, params };
   }
@@ -1237,6 +1321,7 @@ export class SearchService {
     const { query, maxResults = DEFAULT_MAX_RESULTS } = options;
 
     const typeFilter = this.buildTypeFilter(options, 3);
+    const timeFilter = buildTimeFilter(options, 3 + (typeFilter.param ? 1 : 0));
     const { weights } = await this.rankingLiterals();
 
     // `count(*) OVER ()` is evaluated after WHERE and before LIMIT, so it is
@@ -1259,7 +1344,8 @@ export class SearchService {
         AND q.tq <> ''::tsquery
         AND vector @@ q.tq
         ${typeFilter.clause}
-      ORDER BY score DESC
+        ${timeFilter.clause}
+      ORDER BY ${lexicalOrderSql(options.sort)}
       LIMIT ${maxResults}
     `;
 
@@ -1268,6 +1354,8 @@ export class SearchService {
     if (typeFilter.param) {
       params.push(typeFilter.param);
     }
+
+    params.push(...timeFilter.params);
 
     const rows: CountedRowResult[] = await this.dataSource.query(sql, params);
 
@@ -1301,6 +1389,7 @@ export class SearchService {
 
     // Use 'v' table alias since we're joining vectors and embeddings
     const typeFilter = this.buildTypeFilter(options, 4, 'v');
+    const timeFilter = buildTimeFilter(options, 4 + (typeFilter.param ? 1 : 0), 'v');
     const { weights, boost } = await this.rankingLiterals();
 
     // The natural-language questions we get from clients ("Where does Jordan
@@ -1333,7 +1422,8 @@ export class SearchService {
         AND q.tq <> ''::tsquery
         AND v.vector @@ q.tq
         ${typeFilter.clause}
-      ORDER BY score DESC
+        ${timeFilter.clause}
+      ORDER BY ${lexicalOrderSql(options.sort, 'v')}
       LIMIT ${maxResults}
     `;
 
@@ -1342,6 +1432,8 @@ export class SearchService {
     if (typeFilter.param) {
       params.push(typeFilter.param);
     }
+
+    params.push(...timeFilter.params);
 
     const rows: CountedRowResult[] = await this.dataSource.query(sql, params);
 

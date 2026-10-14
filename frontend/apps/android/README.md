@@ -393,22 +393,24 @@ with a web no-op fallback. Android 13+ needs the `POST_NOTIFICATIONS` runtime pe
 (declared). All native-bridge helpers are unit-tested in
 `frontend/apps/web/src/test/nativeBridge.test.ts`.
 
-**Location (Always mode).** Two plugins, with a strict split. The foreground is
-`@capacitor-community/background-geolocation`, used **foreground-only** in every mode
-(`useLocationTracking` never sets its `backgroundMessage`). Its background watcher is
-not used because of how it asks the OS for fixes: a high-accuracy request every
-**1 second**, for as long as the watcher exists, with the distance filter applied only to
-delivery. The GPS receiver stayed on around the clock, phone still or not, and the phone's
-own battery stats put that one request at about a quarter of a day's drain (4h 14m of GPS
-in a 4-hour window, plus an hour and a half of Wi-Fi location scanning on the app's
-account). The app's 150 m / 10 min sampling rule sits downstream of that request and
-cannot reduce it.
+**Location (Always mode).** One recorder, the LocalHub plugin's background monitor, and
+no on-screen trail. Until 2026-10-13 the foreground was `@capacitor-community/background-geolocation`,
+kept "foreground-only" (no `backgroundMessage`) for a 50 m trail while the app was open. That
+plugin asks the OS for a high-accuracy fix every **1 second** for as long as its watcher
+exists and never removes the request when the app leaves the screen; on its own Android cuts
+a backgrounded app off from location, but the motion tracker's location foreground service
+grants the whole process background location, so the moment a trip started the old watcher
+ran alongside the tracker — a double-density trail and the 1 Hz GPS cost the tracker was built
+to remove (the phone's own battery stats had put that one request at about a quarter of a
+day's drain). The on-screen trail added nothing the 150 m background trail did not, so the
+plugin is gone: `when_in_use` now records nothing by itself (a current location is fetched on
+request), and `always` is the monitor below.
 
 Background samples come from `@ci/capacitor-local-hub`'s `startSignificantLocationUpdates`
-instead — **motion-gated sampling**, under `android/src/main/java/.../localhub/motion/`.
+— **motion-gated sampling**, under `android/src/main/java/.../localhub/motion/`.
 GPS runs only while the phone is moving, and every signal that decides that needs nothing
 beyond the location grants Always already holds. The fixes themselves say when the phone has
-stopped (ten minutes without 50 m of movement from where movement was last confirmed, or
+stopped (five minutes without 50 m of movement from where movement was last confirmed, or
 three once the permission-free stationary-detect sensor has reported it physically at rest);
 an exit geofence of 100 m around the resting spot says when it starts again. That geofence is
 the **only** restart signal: Android evaluates it with cheap location, it survives the
@@ -459,10 +461,8 @@ download is verified against that size, and a pinned URL cannot drift under it.
 
 | Model | Size | Min RAM | Backends | Reasoning | Photos | Memory tools | Platforms |
 |---|---|---|---|---|---|---|---|
-| Qwen3 0.6B | 328 MB | 4 GB | CPU | ✓ | | ✓ | iOS, Android |
-| Qwen2.5 1.5B Instruct | 1.5 GB | 6 GB | GPU, CPU | | | | iOS, Android |
-| Gemma 4 E2B | 2.4 GB | 8 GB | GPU, CPU | ✓ | ✓ | ✓ | Android |
-| Gemma 4 E4B | 3.4 GB | 12 GB | GPU, CPU | ✓ | ✓ | ✓ | Android |
+| Gemma 4 E2B | 2.4 GB | 6 GB (GPU from 8 GB) | CPU, GPU | ✓ | ✓ | ✓ | Android |
+| Gemma 4 E4B | 3.4 GB | 12 GB | CPU, GPU | ✓ | ✓ | ✓ | Android |
 
 Left out on purpose: Gemma 3n, Gemma3-1B-IT and the FunctionGemma fine-tunes. Hugging Face serves them
 `gated` (an account plus a licence click-through), so an anonymous download answers `401 GatedRepo` — the
@@ -636,7 +636,7 @@ itself Android-only); moving it there needs a podspec + vendored xcframework + P
 > `litert-community/Gemma3-1B-IT`, a repo Hugging Face now serves `gated: "auto"`, so the `.task`
 > URL in `LocalLlmModels.kt` / `definitions.ts` answered `401 GatedRepo` to an anonymous download —
 > meaning no new Android user could fetch the only model offered. Android now ships the same
-> ungated Qwen3-0.6B iOS already used (`litert-community/Qwen3-0.6B`); both platforms ship the
+> ungated Qwen3 iOS already used (`litert-community/Qwen3-*`); both platforms ship the
 > identical model file. See `LocalLLMModels.swift` and `LocalLlmModels.kt` for the measurements.
 
 **Also fixed 2026-08-26, same pass:**

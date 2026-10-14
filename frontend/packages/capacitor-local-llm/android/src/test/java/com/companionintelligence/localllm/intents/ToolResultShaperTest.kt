@@ -51,6 +51,46 @@ class ToolResultShaperTest {
         return ToolResultShaper.shape(text, budget)
     }
 
+    @Test
+    fun `an instant under a time key is written as its date and minute, which a small model can copy`() {
+        // Seen on a device: Gemma 4 E2B wrote "20202-1-128T06:5:59.00Z" for 2022-11-28T06:45:59.000Z.
+        val raw = pretty(
+            mapOf(
+                "summary" to "Showing the top 6 of 6 matches.",
+                "items" to (0 until 6).map {
+                    mapOf("type" to "communication", "link" to "/communications/c$it", "title" to "Subject $it", "time" to "2022-11-28T06:45:59.000Z", "content" to "x".repeat(400))
+                },
+            ),
+        )
+
+        val shaped = shape(raw, 700)
+
+        assertTrue(shaped, shaped.contains("\"time\":\"2022-11-28 06:45 UTC\""))
+        assertFalse(shaped, shaped.contains("2022-11-28T06:45"))
+    }
+
+    @Test
+    fun `time rendering keeps a date, an offset and a non-time string as they are`() {
+        val raw = pretty(
+            mapOf(
+                "summary" to "Showing the top 6 of 6 matches.",
+                "items" to (0 until 6).map {
+                    mapOf(
+                        "type" to "event", "link" to "/events/e$it", "title" to "Title $it", "content" to "y".repeat(400),
+                        "startTime" to "2025-10-09T21:30:00+02:00", "endTime" to "2025-10-09T22:30:00Z", "birthDate" to "1980-01-01", "date" to "next Tuesday",
+                    )
+                },
+            ),
+        )
+
+        val shaped = shape(raw, 900)
+
+        assertTrue(shaped, shaped.contains("\"startTime\":\"2025-10-09 21:30 +02:00\""))
+        assertTrue(shaped, shaped.contains("\"endTime\":\"2025-10-09 22:30 UTC\""))
+        assertTrue(shaped, shaped.contains("\"birthDate\":\"1980-01-01\""))
+        assertTrue(shaped, shaped.contains("\"date\":\"next Tuesday\""))
+    }
+
     /** The keys of the top-level object in the order they are written: a `JSONObject` does not promise one. */
     private fun orderOf(text: String): List<String> = checkNotNull(StrictJsonCheck.topLevelKeys(text)) { "not a JSON object: ${text.take(80)}" }
 
@@ -271,7 +311,7 @@ class ToolResultShaperTest {
         val shaped = shape(raw, 230)
 
         assertWithin(230, shaped)
-        assertTrue("the start time survives: $shaped", shaped.contains("\"startTime\":\"2025-10-09T21:30:00.000Z\""))
+        assertTrue("the start time survives: $shaped", shaped.contains("\"startTime\":\"2025-10-09 21:30 UTC\""))
         assertTrue("so does the title", shaped.contains("\"title\":\"Dentist: Dr. Nair\""))
         assertFalse("the bookkeeping is what was dropped", shaped.contains("sourceId"))
     }
@@ -335,7 +375,8 @@ class ToolResultShaperTest {
             val shaped = shape(dentist(), budget)
 
             assertWithin(budget, shaped)
-            assertTrue("the start time reaches the model at $budget", shaped.contains("2025-10-09T21:30:00.000Z"))
+            // Rendered for a small model: the date and the minute, not the 24-character instant it mangles.
+            assertTrue("the start time reaches the model at $budget", shaped.contains("2025-10-09 21:30 UTC"))
         }
     }
 
@@ -726,6 +767,17 @@ class ToolResultShaperTest {
     }
 
     /** Compact JSON for [value], strings cut to [cap] characters and an ellipsis: written here, not by the shaper, to measure it by. */
+    /** The time keys the shaper renders an instant under; `updatedAt` is bookkeeping and is written as it came. */
+    private val renderedTimeKeys = setOf("startTime", "endTime", "time", "dueDate", "date", "createdAt", "takenAt", "birthDate")
+
+    /** The shaper's rendering of an ISO instant, for an expected value: `2025-10-09T21:30:00.000Z` → `2025-10-09 21:30 UTC`. */
+    private fun renderedInstant(value: String): String {
+        val match = Regex("^(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2})(?::\\d{2}(?:\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})$").matchEntire(value) ?: return value
+        val (date, clock, zone) = match.destructured
+
+        return if (zone == "Z") "$date $clock UTC" else "$date $clock $zone"
+    }
+
     private fun compact(value: Any?, cap: Int = Int.MAX_VALUE): String =
         when (value) {
             null -> "null"
@@ -738,7 +790,8 @@ class ToolResultShaperTest {
     @Test
     fun a_hit_keeps_exactly_the_members_that_fit_and_one_byte_less_loses_the_last_of_them() {
         val raw = pretty(ranked)
-        val sent = ranked - "id" // an id beside a link is not sent
+        // An id beside a link is not sent, and an instant under a time key is sent rendered (date and minute).
+        val sent = (ranked - "id").mapValues { (key, value) -> if (key in renderedTimeKeys && value is String) renderedInstant(value) else value }
 
         // From four members up to all but one: the whole object was the last of the shortening steps, which cut strings to 24.
         for (count in 4 until rankedOrder.size) {

@@ -23,10 +23,6 @@ const config: CapacitorConfig = {
     // navigation otherwise covers the bottom ~48 dp of every page), but Capacitor's version
     // consumes the keyboard inset without applying it, which left the chat composer behind
     // the keyboard. MainActivity attaches WebViewInsets instead: bars AND keyboard.
-    // Required by @capacitor-community/background-geolocation: without it, location
-    // updates delivered through the legacy Capacitor bridge stop after ~5 minutes in
-    // the background. See https://github.com/capacitor-community/background-geolocation/issues/89.
-    useLegacyBridge: true,
   },
   plugins: {
     SplashScreen: {

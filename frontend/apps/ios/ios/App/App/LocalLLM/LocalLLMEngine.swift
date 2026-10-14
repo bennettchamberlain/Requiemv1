@@ -29,6 +29,10 @@ struct LocalLLMLoadRequest {
   /// Backends the model runs on, best first.
   let supportedAccelerators: [LocalLLMAccelerator]
   let requestedAccelerator: LocalLLMAccelerator?
+  /// The model's `gpuMinDeviceMemoryBytes` and the device's `ProcessInfo.physicalMemory`, for
+  /// ``LocalLLMPolicy/planAccelerator``: the GPU is withheld on a device under the model's GPU floor.
+  let gpuMinDeviceMemoryBytes: UInt64
+  let physicalMemory: UInt64
   let wantsSpeculativeDecoding: Bool
   /// The KV-cache size, i.e. the sum of input and output tokens.
   let maxTokens: Int
@@ -53,6 +57,8 @@ extension LocalLLMLoadRequest {
       capabilities: info.capabilities,
       supportedAccelerators: info.accelerators,
       requestedAccelerator: requestedAccelerator,
+      gpuMinDeviceMemoryBytes: info.gpuMinDeviceMemoryBytes,
+      physicalMemory: ProcessInfo.processInfo.physicalMemory,
       wantsSpeculativeDecoding: wantsSpeculativeDecoding,
       maxTokens: maxTokens ?? info.defaultMaxTokens,
       topK: topK ?? info.defaultTopK,
@@ -65,6 +71,8 @@ extension LocalLLMLoadRequest {
 struct LocalLLMLoadOutcome {
   let accelerator: LocalLLMAccelerator
   let fellBackToCpu: Bool
+  /// The GPU was wanted but withheld: the device is under the model's `gpuMinDeviceMemoryBytes`.
+  let gpuWithheld: Bool
   let speculativeDecoding: Bool
   /// How many tools were actually bound (0 for a model without the `tools` capability).
   let toolCount: Int
@@ -121,7 +129,9 @@ actor LocalLLMEngine {
       modelPath = request.modelPath
       accelerator =
         LocalLLMPolicy.planAccelerator(
-          requested: request.requestedAccelerator, supported: request.supportedAccelerators
+          requested: request.requestedAccelerator, supported: request.supportedAccelerators,
+          physicalMemory: request.physicalMemory,
+          gpuMinDeviceMemoryBytes: request.gpuMinDeviceMemoryBytes
         ).preferred
       speculativeDecoding = request.wantsSpeculativeDecoding
       maxTokens = request.maxTokens
@@ -258,7 +268,9 @@ actor LocalLLMEngine {
     let sampler = try SamplerConfig(
       topK: request.topK, topP: request.topP, temperature: request.temperature)
     let plan = LocalLLMPolicy.planAccelerator(
-      requested: request.requestedAccelerator, supported: request.supportedAccelerators)
+      requested: request.requestedAccelerator, supported: request.supportedAccelerators,
+      physicalMemory: request.physicalMemory,
+      gpuMinDeviceMemoryBytes: request.gpuMinDeviceMemoryBytes)
     let speculative = Self.configureSpeculativeDecoding(
       modelPath: request.modelPath, requested: request.wantsSpeculativeDecoding)
 
@@ -294,8 +306,8 @@ actor LocalLLMEngine {
     try ensureNotUnloaded(since: unloadsAtStart)
 
     let outcome = LocalLLMLoadOutcome(
-      accelerator: accelerator, fellBackToCpu: fellBackToCpu, speculativeDecoding: speculative,
-      toolCount: tools.count)
+      accelerator: accelerator, fellBackToCpu: fellBackToCpu, gpuWithheld: plan.withheldFromGPU,
+      speculativeDecoding: speculative, toolCount: tools.count)
 
     engine = newEngine
     conversation = newConversation

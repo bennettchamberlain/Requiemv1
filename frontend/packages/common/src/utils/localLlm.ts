@@ -25,6 +25,7 @@ import { getApiBaseUrl, isIosPlatform, isNativePlatform } from './apiBase';
 import {
   evaluateModelFit,
   findLocalLlmModel,
+  gpuAllowedOn,
   localLlmModelsFor,
   type LocalLlmAccelerator,
   type LocalLlmFit,
@@ -75,6 +76,8 @@ export interface LocalLlmLoadResult {
   toolCount: number;
   accelerator: LocalLlmAccelerator;
   fellBackToCpu: boolean;
+  /** The GPU was wanted but withheld: the device is under the model's `gpuMinDeviceMemoryBytes`. */
+  gpuWithheld?: boolean;
   speculativeDecoding: boolean;
 }
 
@@ -347,7 +350,7 @@ export async function ensureLocalLlmLoaded(
   const spec = requireModel(modelId);
   const plugin = requirePlugin();
   const current = await plugin.getLoadedModel();
-  const wanted = effectiveAccelerator(spec, options.accelerator);
+  const wanted = effectiveAccelerator(spec, options.accelerator, await deviceTotalMemoryBytes());
   const fallbackKey = `${modelId}:${wanted}`;
 
   // Already resident on the backend we would ask for — or on the CPU because that very request already fell
@@ -410,8 +413,38 @@ const toolCounts = new Map<string, number>();
 function effectiveAccelerator(
   spec: LocalLlmModelSpec,
   preferred: LocalLlmAccelerator | undefined,
+  totalMemoryBytes: number | undefined,
 ): LocalLlmAccelerator {
-  return preferred && spec.accelerators.includes(preferred) ? preferred : spec.accelerators[0];
+  const wanted = preferred && spec.accelerators.includes(preferred) ? preferred : spec.accelerators[0];
+
+  // The GPU is withheld on a phone under the model's GPU floor (see `gpuAllowedOn`). Asked for here, not left
+  // to the native side alone, so the already-loaded short cut below compares against the backend that will
+  // actually be used — otherwise a `gpu` preference on a 6 GB phone would reload the model on every turn.
+  return wanted === 'gpu' && !gpuAllowedOn(spec, totalMemoryBytes) && spec.accelerators.includes('cpu')
+    ? 'cpu'
+    : wanted;
+}
+
+/**
+ * The device's RAM as the plugin reports it, read once per plugin instance: it does not change while the app
+ * runs. Keyed on the plugin object rather than held in a module variable so a replaced bridge (tests install a
+ * fresh fake per case) is asked again rather than answered from the previous one's figure.
+ */
+const deviceMemoryByPlugin = new WeakMap<object, Promise<number | undefined>>();
+
+function deviceTotalMemoryBytes(): Promise<number | undefined> {
+  const plugin = requirePlugin();
+  let memory = deviceMemoryByPlugin.get(plugin);
+
+  if (!memory) {
+    memory = plugin
+      .isAvailable()
+      .then((availability) => availability.totalMemoryBytes)
+      .catch(() => undefined);
+    deviceMemoryByPlugin.set(plugin, memory);
+  }
+
+  return memory;
 }
 
 export async function unloadLocalLlm(): Promise<void> {
