@@ -75,6 +75,7 @@ import {
 } from './entities/ReceiptEntity';
 import { type ReceiptLineItem, ReceiptLineItemEntity } from './entities/ReceiptLineItemEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
+import { CaptureContentListener } from './listeners/CaptureContentListener';
 import { GraphEventListener } from './listeners/GraphEventListener';
 import { CalendarEventService } from './services/CalendarEventService';
 import { CommunicationService } from './services/CommunicationService';
@@ -164,6 +165,8 @@ import { UserContextService } from './services/UserContextService';
     ItemService,
     UserContextService,
     GraphEventListener,
+    // Turns a phone capture's FileUploadedEvent into a content row.
+    CaptureContentListener,
     PersonService,
     PersonActivityService,
     EntityMergeBlockService,

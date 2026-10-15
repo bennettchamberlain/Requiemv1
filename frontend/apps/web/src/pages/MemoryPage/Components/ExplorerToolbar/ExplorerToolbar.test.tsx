@@ -2,7 +2,7 @@ import { Children, isValidElement, type ReactNode } from 'react';
 
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useSearchParams } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SearchBox } from '@/components/SearchBox/SearchBox';
 import { DropdownProvider } from '@/components/SearchBox/useDropdown';
@@ -862,5 +862,89 @@ describe('SearchPanelFilters in the header search panel', () => {
     // Nothing of this page rides along, and this page's URL is untouched.
     expect(opened.has('view')).toBe(false);
     expect(screen.getByTestId('params')).toHaveTextContent(/^view=board$/);
+  });
+});
+
+// useDeviceLayout reads window.matchMedia; drive it to force the phone
+// branch, the same pattern as MobileMemoryPage.test.tsx.
+function setViewport(mobile: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: query.includes('max-width') ? mobile : query.includes('landscape') ? !mobile : false,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia;
+}
+
+describe('on a phone', () => {
+  afterEach(() => {
+    setViewport(false);
+    document.body.style.pointerEvents = '';
+  });
+
+  it('ends the scrolling chip row with Clear all and the save controls instead of wrapping them', () => {
+    setViewport(true);
+    renderToolbar(<ExplorerToolbar open />, {
+      route: '/?people=Ada%20Lovelace&tags=space',
+    });
+
+    const drop = screen.getByLabelText('Filter drop area');
+    const scroller = drop.querySelector<HTMLElement>('.overflow-x-auto');
+    const clear = screen.getByRole('button', { name: 'Clear all' });
+    const save = screen.getByRole('button', { name: 'Save' });
+
+    expect(scroller).not.toBeNull();
+    expect(scroller).toContainElement(clear);
+    expect(scroller).toContainElement(save);
+    // Chips, then Clear all, then the save controls — Clear all follows the
+    // last chip and precedes Save in the line.
+    const chip = screen.getByRole('button', { name: 'Remove Ada Lovelace' });
+
+    expect(chip.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(clear.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(clear);
+
+    const params = screen.getByTestId('params').textContent ?? '';
+
+    expect(params).not.toContain('people=');
+    expect(params).not.toContain('tags=');
+  });
+
+  it('lays the When / How / toggles / sort controls out as one sideways-scrolling line', () => {
+    renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
+
+    const row = screen.getByRole('button', { name: /^How: all/ }).parentElement;
+
+    // Scrolls below `device:`, wraps from it — never wraps on a phone.
+    expect(row).toHaveClass('max-device:overflow-x-auto', 'device:flex-wrap', 'scrollbar-none');
+    expect(row).not.toHaveClass('flex-wrap');
+  });
+
+  it('opens the How picker modal, so a tap away only closes it and reaches nothing underneath', async () => {
+    setViewport(true);
+    renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
+
+    fireEvent.click(screen.getByRole('button', { name: /^How: all/ }));
+    await screen.findByRole('option', { name: /^gmail$/i });
+
+    // Radix's modal layer is what swallows the outside tap: it turns pointer
+    // events off for the rest of the page while the picker is open — and the
+    // shield catches what that misses (map pins turn them back on).
+    expect(document.body.style.pointerEvents).toBe('none');
+    expect(screen.getByTestId('menu-shield')).toBeInTheDocument();
+  });
+
+  it('keeps the How picker non-modal on desktop', async () => {
+    renderToolbar(<MemoryExplorerFilterControls />, { route: '/memory' });
+
+    fireEvent.click(screen.getByRole('button', { name: /^How: all/ }));
+    await screen.findByRole('option', { name: /^gmail$/i });
+
+    expect(document.body.style.pointerEvents).toBe('');
   });
 });

@@ -16,10 +16,10 @@ __metadata:
 
 "@capacitor-community/background-geolocation@patch:@capacitor-community/background-geolocation@npm%3A1.2.26#~/.yarn/patches/@capacitor-community-background-geolocation-npm-1.2.26-e4d02e234f.patch":
   version: 1.2.26
-  resolution: "@capacitor-community/background-geolocation@patch:@capacitor-community/background-geolocation@npm%3A1.2.26#~/.yarn/patches/@capacitor-community-background-geolocation-npm-1.2.26-e4d02e234f.patch::version=1.2.26&hash=f23c44"
+  resolution: "@capacitor-community/background-geolocation@patch:@capacitor-community/background-geolocation@npm%3A1.2.26#~/.yarn/patches/@capacitor-community-background-geolocation-npm-1.2.26-e4d02e234f.patch::version=1.2.26&hash=2d11ff"
   peerDependencies:
     "@capacitor/core": ">=3.0.0"
-  checksum: 10c0/151c53fb336931521417f0722d85fdf4dbba8da5d705dcf9bad101c4c4ef7aaadb2b4e615109c7a8d36ecb1ece4fbbf536e48711b02f7996dcc3ae5ce8573275
+  checksum: 10c0/e27ac0e247b4780df05cb8c8543be67a0d5a8b069d652eae7331f747d5902bd61036ced4c62189116108da23d7ed1648b834a5520bd77567b01dda38830f3393
   languageName: node
   linkType: hard
 

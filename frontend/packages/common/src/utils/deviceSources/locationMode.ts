@@ -24,12 +24,11 @@ export const LOCATION_MODE_CHANGE_EVENT = 'ci:location-tracking-changed';
 /** Settings page watches this so Open Settings appears after Always is not granted. */
 export const LOCATION_NEEDS_SETTINGS_EVENT = 'ci:location-needs-settings';
 
-/** Background persist gate — looser than the foreground 50 m / 5 min sampler. */
-export const BACKGROUND_MIN_DISTANCE_METERS = 150;
-
-export const BACKGROUND_MIN_INTERVAL_MS = 10 * 60 * 1000;
-
-/** Fixes looser than this in the background are dropped, not queued. */
+/**
+ * Fixes looser than this in the background are dropped, not queued. The persist gate itself
+ * is the one in `location.ts` (`MIN_DISTANCE_METERS` / `MIN_INTERVAL_MS`): since 2026-10-14
+ * the background has no looser gate of its own.
+ */
 export const BACKGROUND_MAX_ACCURACY_METERS = 200;
 
 /** Home-exit geofence. House-scale, not a city block. */

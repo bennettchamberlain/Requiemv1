@@ -71,8 +71,36 @@ const DatabaseSearchInputSchema = z
     includeRelationships: booleanish().optional(),
     maxResults: z.number().int().min(1).max(100).optional(),
     countOnly: booleanish().optional(),
+    since: unwrapped(isoDate()).optional(),
+    until: unwrapped(isoDate()).optional(),
+    sort: unwrapped(z.enum(['relevance', 'recent'])).optional(),
   })
   .superRefine(requireQueryUnlessCounting);
+
+/**
+ * A scalar the model wrapped in a one-element array (`sort: ["recent"]`): accepted as the element.
+ * Seen on a device from Gemma 4 E2B, which generalised the array shape of `entityTypes` beside it
+ * and then, told the argument was invalid, gave up on the question. A phone's model gets one
+ * attempt at a call; the spelling is not worth it.
+ */
+function unwrapped<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((value) => (Array.isArray(value) && value.length === 1 ? value[0] : value), schema);
+}
+
+/**
+ * A date (`2025-10-01`) or instant (`2025-10-01T08:00:00Z`) the model wrote. Anything `Date` can
+ * parse is accepted, so a small model's `2025-10-1` still works; what it cannot parse is refused
+ * with the reason, not silently ignored (a dropped `since` would quietly answer the wrong question).
+ */
+function isoDate() {
+  return z
+    .string()
+    .min(4)
+    .max(40)
+    .refine((value) => !Number.isNaN(Date.parse(value)), {
+      message: 'not a date: use YYYY-MM-DD or an ISO 8601 instant',
+    });
+}
 
 export type DatabaseSearchInput = z.infer<typeof DatabaseSearchInputSchema>;
 
@@ -199,10 +227,76 @@ export interface SearchToolResult {
   coverage?: { images: number; described: number };
 }
 
+/** The entity-type filter's allowed values in the full schema. */
+const ENTITY_TYPES_ITEMS = {
+  type: 'string',
+  enum: [...INDEXABLE_ENTITIES],
+};
+
+/**
+ * What the lean local-tier form lets a phone's model pick from: the kinds a question names. Left
+ * out on purpose: `message` (chat fragments for the recall RAG channel, excluded from entity search
+ * by default and not what "a message from X" means), `file-chunk`, `thread`, `position`, `answer`,
+ * `browser-activity`, `concept`, `item`, `product` — none of which a small model has picked
+ * correctly, and each of which costs declaration tokens the window does not have.
+ */
+const LEAN_ENTITY_TYPES = [
+  'communication',
+  'content',
+  'file',
+  'event',
+  'note',
+  'person',
+  'place',
+  'receipt',
+  'task',
+] as const;
+
 @Injectable()
 export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchToolResult> {
   readonly schema: IntentDefinition = {
     name: 'knowledge.search',
+    local: {
+      description:
+        'Search everything you have: people, places, notes, messages, files, events. ' +
+        'For "most recent" or "latest" set sort to recent. ' +
+        'For "how many" questions set countOnly and use one specific word.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Keywords to search for.', maxLength: 500 },
+          entityTypes: {
+            type: 'array',
+            // The kinds a question names, with the ones a small model confuses spelled out: on a device
+            // "did Brianne message me" searched `message`, the chat-fragment index that is excluded by
+            // default, found nothing and said so. `message` is not offered here; a message is a
+            // `communication`.
+            items: { type: 'string', enum: [...LEAN_ENTITY_TYPES] },
+            description:
+              'Only these kinds: communication = a message, email or call; content = a photo or video; ' +
+              'file = a document; event = a calendar entry; note; person; place; receipt; task.',
+          },
+          since: {
+            type: 'string',
+            description: 'Only entries on or after this date, YYYY-MM-DD.',
+            maxLength: 40,
+          },
+          until: {
+            type: 'string',
+            description: 'Only entries on or before this date, YYYY-MM-DD.',
+            maxLength: 40,
+          },
+          sort: {
+            type: 'string',
+            enum: ['recent'],
+            description: 'recent = newest first. Use for "most recent", "latest", "last".',
+          },
+          countOnly: { type: 'boolean', description: 'Return only the exact count, no items.' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
     domain: 'knowledge',
     title: 'Search everything',
     privacy: { access: 'read', sensitivity: 'personal', destructive: false, external: false },
@@ -248,10 +342,7 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchTool
         },
         entityTypes: {
           type: 'array',
-          items: {
-            type: 'string',
-            enum: [...INDEXABLE_ENTITIES],
-          },
+          items: ENTITY_TYPES_ITEMS,
           description:
             'When searching entities, filter to specific types: Person, Concept, Location, Object, etc.',
         },
@@ -266,6 +357,26 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchTool
           description:
             'Return only the exact number of entries matching the query (keyword match, no cap) ' +
             'and no items. Use for "how many" questions. Omit query to count all entries of the given types.',
+        },
+        since: {
+          type: 'string',
+          maxLength: 40,
+          description:
+            'Only entries whose own time (when a message was sent, an event starts, a note was written) is on or ' +
+            'after this date or instant (YYYY-MM-DD or ISO 8601). Forces keyword matching.',
+        },
+        until: {
+          type: 'string',
+          maxLength: 40,
+          description:
+            'Only entries whose own time is on or before this date or instant. Forces keyword matching.',
+        },
+        sort: {
+          type: 'string',
+          enum: ['relevance', 'recent'],
+          description:
+            'recent = newest first by each entry\'s own time, for "most recent" / "latest" / "last" questions. ' +
+            'Forces keyword matching. Default: relevance.',
         },
       },
       required: [],
@@ -328,7 +439,12 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchTool
       // description, so a count over files is only as complete as that pass.
       // Say how complete, or the model presents a floor as a total.
       const [totalMatches, coverage] = await Promise.all([
-        this.searchService.count(serviceContext, { query, includeTypes }),
+        this.searchService.count(serviceContext, {
+          query,
+          includeTypes,
+          ...(input.since != null ? { since: new Date(input.since) } : {}),
+          ...(input.until != null ? { until: new Date(input.until) } : {}),
+        }),
         includeTypes?.includes('file') ? this.fileService.describedImageCoverage(serviceContext) : undefined,
       ]);
 
@@ -343,18 +459,25 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchTool
       };
     }
 
+    // A time window or a newest-first order is a predicate on each entry's own time, which only the
+    // lexical modes can apply and count: a nearest-neighbour list has no "all matches since Tuesday".
+    const timed = input.since != null || input.until != null || input.sort === 'recent';
+
     // The refinement guarantees a term here; a page cannot rank without one.
     const page = await this.searchService.searchPage(serviceContext, {
       query: input.query ?? '',
-      mode: input.searchMode,
+      mode: timed ? 'keyword' : input.searchMode,
       includeTypes,
       maxResults: input.maxResults,
+      ...(input.since != null ? { since: new Date(input.since) } : {}),
+      ...(input.until != null ? { until: new Date(input.until) } : {}),
+      ...(input.sort === 'recent' ? { sort: 'recent' as const } : {}),
     });
 
     const items = await this.resolveEntities(serviceContext, page.items);
 
     return {
-      summary: describePage(page, items.length),
+      summary: describePage(page, items.length, input.sort === 'recent'),
       totalMatches: page.totalMatches,
       truncated: page.truncated,
       limit: page.limit,
@@ -541,14 +664,18 @@ export function describeCount(
  * the right one. `shown` is the HYDRATED count — a hit the resolvers could not
  * load is not on the page — while `page.totalMatches` is the index's count.
  */
-export function describePage(page: SearchPage, shown: number): string {
+export function describePage(page: SearchPage, shown: number, newestFirst = false): string {
+  // Newest first is what "most recent" needs, so the sentence says the order the items are in:
+  // a small model otherwise reads the first item as the most relevant and the last as the newest.
+  const order = newestFirst ? ', newest first' : '';
+
   if (page.totalMatches != null) {
     if (page.totalMatches <= shown) {
-      return `${page.totalMatches} matches; all shown.`;
+      return `${page.totalMatches} matches; all shown${order}.`;
     }
 
     return (
-      `Showing the top ${shown} of ${page.totalMatches} matches (exact count). ` +
+      `Showing the ${newestFirst ? 'newest' : 'top'} ${shown} of ${page.totalMatches} matches (exact count)${order}. ` +
       'Report the total, not the number shown.'
     );
   }

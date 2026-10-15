@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 
 import { useMutation } from '@apollo/client';
+import { useDeviceLayout } from '@ci/common';
 import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
 import { Badge, Button, Dialog, Input, Label, Popover, Select, Tooltip, cn, useToast } from '@ci/shadcn';
 import {
@@ -27,6 +28,7 @@ import {
 import { useLocation, useSearchParams } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
+import { MenuShield } from '@/components/MenuShield';
 import { ActivityFilter } from '@/components/SearchBox/ActivityFilter';
 import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { MESSAGE_DIRECTION_LABELS, readMessageDirection } from '@/components/SearchBox/DirectionToggle';
@@ -354,6 +356,10 @@ function readNativeFilterDrag(event: DragEvent): ReturnType<typeof readFilterDra
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
   const dateTimeFormat = useDateTimeFormat();
+  // On a phone the chips, Clear all and the save controls share ONE
+  // horizontally scrolling line; see the drop area's class note below.
+  const { isMobile } = useDeviceLayout();
+  const phone = isMobile === true;
   const selections = useMemo(
     () => ({
       person: readCsvParam(searchParams, 'people'),
@@ -510,6 +516,31 @@ function FilterDropArea() {
     ? 'Drop to add'
     : 'Drag a person, place, or tag from the search results here to filter';
 
+  const clearButton = hasSelections && (
+    <Button
+      // Explicit: the drop area can render inside the header SearchBox's
+      // <form>, where a default (submit) button would commit the search
+      // right after clearing. On desktop it sits outside the chip scroller so
+      // a wide window cannot clip it behind the save controls; on a phone it
+      // ends the scrolling line instead (see the drop area's class note).
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+      onClick={clearAll}
+    >
+      Clear all
+    </Button>
+  );
+
+  const saveControls = (
+    <div className="flex shrink-0 items-center gap-2">
+      <FilterCountLabel />
+      <SavedSearchPicker />
+      <SaveSearchButton />
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -547,9 +578,12 @@ function FilterDropArea() {
             }
           }}
           className={cn(
-            // w-full on a phone so this row wraps and Clear all lands on the
-            // next line, outside this scroller. overflow-hidden here used to
-            // clip that button once the save controls took the remaining width.
+            // w-full on a phone: this area IS the whole line there, and Clear
+            // all plus the save controls ride inside its scroller after the
+            // chips, so one filter costs one line, not two. On desktop they
+            // sit beside it instead (`device:flex-1`); overflow-hidden here
+            // used to clip Clear all once the save controls took the
+            // remaining width, so the area never clips.
             'relative flex h-9 min-h-9 min-w-0 w-full select-none items-center gap-1.5 transition-colors device:w-auto device:flex-1',
             isDropTarget && 'rounded-md bg-accent/40',
           )}
@@ -701,6 +735,8 @@ function FilterDropArea() {
                   }
                 />
               )}
+              {phone && clearButton}
+              {phone && saveControls}
             </div>
           ) : (
             // pointer-events-none keeps the icon swap from firing its own
@@ -711,26 +747,8 @@ function FilterDropArea() {
             </div>
           )}
         </div>
-        {hasSelections && (
-          <Button
-            // Explicit: the drop area can render inside the header SearchBox's
-            // <form>, where a default (submit) button would commit the search
-            // right after clearing. Kept outside the chip scroller so a phone
-            // width cannot clip it behind the save controls.
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
-            onClick={clearAll}
-          >
-            Clear all
-          </Button>
-        )}
-        <div className="flex shrink-0 items-center gap-2">
-          <FilterCountLabel />
-          <SavedSearchPicker />
-          <SaveSearchButton />
-        </div>
+        {!phone && clearButton}
+        {!phone && saveControls}
       </div>
       {error && (
         <p className="text-xs text-destructive" role="alert">
@@ -1041,6 +1059,7 @@ export function DateControl({
           </Button>
         )}
       </Popover.Trigger>
+      <MenuShield open={open} />
       <Popover.Content
         // Never taller than the room the popover has, scrolling inside instead.
         // The calendar, the time fields and Clear range outgrow the screen on a
@@ -1357,9 +1376,17 @@ function FilterControlsRow({
   const showWho = peopleInPlay(searchParams, pathname);
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div
+      // On a phone this is one line that scrolls sideways, like the What strip
+      // above it: wrapped, When / How / Who / Where / the toggles / sort ran
+      // two to a row and ate half the screen. From `device:` up it wraps as
+      // before. The vertical padding is cancelled by the negative margin, so
+      // the line costs no height; it only keeps the focus ring inside the
+      // scroller's clip.
+      className="scrollbar-none flex min-w-0 items-center gap-2 overscroll-x-contain max-device:-my-0.5 max-device:overflow-x-auto max-device:py-0.5 device:flex-wrap"
+    >
       {includeEntityTypeFilter && <EntityTypeFilter modal={modal} label="What" />}
-      <DateControl />
+      <DateControl modal={modal} />
 
       <ConnectorFilter modal={modal} label="How" />
       {showEventDimensions && <ActivityFilter modal={modal} label="Activity" />}
@@ -1417,7 +1444,13 @@ export function SearchPanelFilters({
  * — rendered inline after the What categories in MemoryEntityTypeNav.
  */
 export function MemoryExplorerFilterControls() {
-  return <FilterControlsRow modal={false} showSave={false} />;
+  // Modal on a phone: a modal menu swallows the tap that closes it, so tapping
+  // away cannot also open whatever was under the finger (the first row of the
+  // list, usually). Desktop keeps the lighter non-modal menus, whose outside
+  // click goes through — no scroll lock, no scrollbar jump.
+  const { isMobile } = useDeviceLayout();
+
+  return <FilterControlsRow modal={isMobile === true} showSave={false} />;
 }
 
 /**

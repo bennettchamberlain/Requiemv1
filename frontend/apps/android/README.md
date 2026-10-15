@@ -274,16 +274,62 @@ For a sideload build, use `./gradlew assembleDebug` — it needs no keystore.
 
 ## On-device live reload
 
-Run the web dev server on every interface
-(`DEV_LISTEN_HOST=0.0.0.0 yarn workspace @ci/fe-web dev`; without the variable it
-listens on `127.0.0.1` only and the device cannot reach it), then:
+The script is `yarn android` (= `cap run android`, with two things done first — see
+below). It used to be called `run`, but Yarn's own `run` command shadows a script of
+that name: a bare `yarn run` only prints the script list and exits 0, so nothing was
+ever built or deployed.
+
+**Phone on USB.** Start the full dev stack from the repo root with `make dev` (API,
+worker and the Vite web server), then build and deploy against it as the phone's
+own `localhost`:
 
 ```bash
-CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173 yarn run   # = cap run android
+cd frontend/apps/android
+CAP_SERVER_URL=http://localhost:5173 yarn android --target <serial>   # adb devices -l
 ```
 
-Point the in-app `/server` setting at your API origin so data calls resolve. Unset
-`CAP_SERVER_URL` for a bundled build.
+`scripts/dev-android.cjs` is what `yarn android` runs. Before handing every
+argument on to `cap run android`, it:
+
+- **Finds the SDK the way the Makefile does** — `ANDROID_HOME`, then
+  `ANDROID_SDK_ROOT`, then the `sdk.dir` Android Studio writes into the git-ignored
+  `android/local.properties` — and exports it for the Capacitor CLI. The CLI's
+  device runner reads the two variables only (its own Linux fallback is
+  `~/Android/sdk`, which is not Android Studio's `~/Android/Sdk`), so without this
+  it fails at once with `ERR_SDK_NOT_FOUND` on a machine where Gradle is perfectly
+  happy. No path is ever guessed: with none of the three set it stops with the fix
+  in the message.
+- **Re-applies `adb reverse tcp:<port> tcp:<port>`** whenever `CAP_SERVER_URL` names
+  the device's own loopback. The rule lives in the adb server, so it is gone after
+  every phone reboot (and whenever adb restarts); the installed app then opens to a
+  blank page until it is back. `--target <serial>` and `ANDROID_SERIAL` pick the
+  device when more than one is attached. A LAN / tailnet URL and a bundled build
+  (no `CAP_SERVER_URL`) need no tunnel and skip this step.
+
+Through the tunnel nothing needs to listen on the LAN (`DEV_LISTEN_HOST` is not
+required), Vite's `/api` proxy carries data calls to the dev stack's API, and the
+in-app `/server` setting needs no change: the app stores the Capacitor server URL as
+its API origin on first load. Note the dev stack takes port 5173 only when it is
+free; a second worktree's stack gets another port, and the URL decides which port is
+tunnelled.
+
+**Phone over Wi-Fi.** Run `make dev` with `DEV_LISTEN_HOST=0.0.0.0` set (without it
+Vite and the API listen on `127.0.0.1` only and the device cannot reach them), use
+`CAP_SERVER_URL=http://<lan-or-tailscale-ip>:5173`, and no tunnel is involved.
+
+`CAP_SERVER_URL` is baked into the APK (`assets/capacitor.config.json`): the
+WebView loads the whole web app from that URL. Unset it for a bundled build.
+
+**Signing in.** Vite proxies `/api`, so the dev-server URL is a complete API origin.
+On first launch the app routes to `/device-connect` (Portal). To sign in to the local
+server with an email/password account instead, there is no in-app field yet
+(`/device-connect/advanced` only stores the Portal URL): set the origin by hand from
+`chrome://inspect` → the app's WebView → console, then open `/login` and choose
+"Sign in with email instead":
+
+```js
+localStorage.setItem('ci.apiBaseUrl', 'http://localhost:5173'); location.href = '/login';
+```
 
 ## App icons & splash
 
@@ -373,10 +419,8 @@ download is verified against that size, and a pinned URL cannot drift under it.
 
 | Model | Size | Min RAM | Backends | Reasoning | Photos | Memory tools | Platforms |
 |---|---|---|---|---|---|---|---|
-| Qwen3 0.6B | 328 MB | 4 GB | CPU | ✓ | | ✓ | iOS, Android |
-| Qwen2.5 1.5B Instruct | 1.5 GB | 6 GB | GPU, CPU | | | | iOS, Android |
-| Gemma 4 E2B | 2.4 GB | 8 GB | GPU, CPU | ✓ | ✓ | ✓ | Android |
-| Gemma 4 E4B | 3.4 GB | 12 GB | GPU, CPU | ✓ | ✓ | ✓ | Android |
+| Gemma 4 E2B | 2.4 GB | 6 GB (GPU from 8 GB) | CPU, GPU | ✓ | ✓ | ✓ | Android |
+| Gemma 4 E4B | 3.4 GB | 12 GB | CPU, GPU | ✓ | ✓ | ✓ | Android |
 
 Left out on purpose: Gemma 3n, Gemma3-1B-IT and the FunctionGemma fine-tunes. Hugging Face serves them
 `gated` (an account plus a licence click-through), so an anonymous download answers `401 GatedRepo` — the
@@ -410,7 +454,7 @@ bytes + 512 MiB) instead of a global 1 GiB, and `downloadModel` refuses any URL 
 `capacitorPluginContract.test.ts` parses `definitions.ts`, the Kotlin and the Swift catalogs and both
 method lists, so the halves cannot drift.
 
-**Known limits (measured on LiteRT-LM 0.14.0 with the Android emulator).**
+**Known limits (measured on LiteRT-LM 0.14.0 with the Android emulator; the app links 0.18.0 since the bump, re-measure on a device).**
 
 - A cancelled conversation cannot be reused, so after **Stop** — or a failed turn — the next message starts a
   fresh conversation and the model forgets earlier turns, even though the chat still shows them. Replaying
@@ -421,7 +465,7 @@ method lists, so the halves cannot drift.
   GPU load probes one token and falls back to the CPU itself (`fellBackToCpu`). The plugin manifest declares
   `libOpenCL.so` / `libvndksupport.so` (`required=false`), which Android 12+ needs before an app targeting API 31+
   may open the vendor OpenCL library; that effect needs a real GPU device to confirm.
-- The catalog is pinned to revisions that load on 0.14.0. Qwen3's `main` needs 0.17.1+, so bump LiteRT-LM on both
+- The catalog is pinned to revisions that load on the runtime both platforms link (0.18.0). Qwen3's pin is the 0.17.1+ re-export; any further repin goes on both
   platforms *before* repinning it.
 - **Play Console:** the Android plugin manifest again declares `FOREGROUND_SERVICE_DATA_SYNC` and
   `foregroundServiceType="dataSync"` on both `LocalLlmGenerationService` and WorkManager's
@@ -550,7 +594,7 @@ itself Android-only); moving it there needs a podspec + vendored xcframework + P
 > `litert-community/Gemma3-1B-IT`, a repo Hugging Face now serves `gated: "auto"`, so the `.task`
 > URL in `LocalLlmModels.kt` / `definitions.ts` answered `401 GatedRepo` to an anonymous download —
 > meaning no new Android user could fetch the only model offered. Android now ships the same
-> ungated Qwen3-0.6B iOS already used (`litert-community/Qwen3-0.6B`); both platforms ship the
+> ungated Qwen3 iOS already used (`litert-community/Qwen3-*`); both platforms ship the
 > identical model file. See `LocalLLMModels.swift` and `LocalLlmModels.kt` for the measurements.
 
 **Also fixed 2026-08-26, same pass:**
@@ -571,6 +615,10 @@ itself Android-only); moving it there needs a podspec + vendored xcframework + P
   (iOS 26+) is the fuller answer and a separate, UX-affecting change.
 - **The Android AAR and iOS xcframework had drifted** (0.11.0 vs 0.14.0 of the same upstream
   LiteRT-LM release) with no record of why. Reconciled to 0.14.0 on both.
+- **Bumped to 0.18.0 on both (2026-10-12).** Android: Kotlin plugin 2.4.21 (the AAR carries 2.4 metadata),
+  minSdk 24 (the AAR declares it), `Capabilities` → `ModelInfo`. iOS: re-vendored `swift/` with the
+  patches in `Vendor/LiteRTLM/PATCHES.md` re-applied, two of them now upstream. Qwen3 repinned to the
+  0.17.1+ re-export (`a6e678a1…`, 344,671,744 bytes).
 - **The RAM floor was unreconciled 2x between platforms** (Android 3 GB total RAM vs iOS 6 GB
   physical memory) for models with the same ~2 GB estimated peak RSS. Both now gate at 4 GB.
 - **LiteRT-LM's own constrained-decoding flag** (`enableConversationConstrainedDecoding`) is now

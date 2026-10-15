@@ -8,6 +8,20 @@ export interface MemoryUploadOptions {
   inventoryCapture?: boolean;
   thingCapture?: boolean;
   model?: string;
+  /**
+   * A deliberate "save to Memory" (the Capture sheet). The server catalogues
+   * the upload as content as well as a file, so it shows up in the Content
+   * library and the memory explorer like an imported photo would — a bare
+   * upload is only ever a File.
+   */
+  memoryCapture?: boolean;
+  /**
+   * When the phone's camera or recorder made this media (ISO 8601). Send it
+   * ONLY for media the device just produced — never for a library pick, whose
+   * bytes may be years old. With it, the server can put the capture on the
+   * timeline even when the bytes carry no date (a recording never does).
+   */
+  capturedAt?: string;
 }
 
 /**
@@ -35,6 +49,14 @@ export async function uploadFilesToMemory(
 
   if (options.model) {
     formData.append('model', options.model);
+  }
+
+  if (options.memoryCapture) {
+    formData.append('memoryCapture', 'true');
+
+    if (options.capturedAt) {
+      formData.append('capturedAt', options.capturedAt);
+    }
   }
 
   const headers: Record<string, string> = {};

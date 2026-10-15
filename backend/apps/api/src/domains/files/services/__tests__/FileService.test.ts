@@ -332,6 +332,30 @@ describe('FileService.uploadWithDedupInfo', () => {
     });
   });
 
+  it('still notifies on a dedup hit when memoryCapture is set, carrying the flag', async () => {
+    const repo = makeRepo();
+    const existing = { id: 'existing-id', userId: 'owner-1', hash: 'dupe-hash', bucket: null, key: null };
+    repo.findOne.mockResolvedValue(existing);
+    const { service, eventService } = makeService(repo);
+
+    await service.uploadWithDedupInfo(ownerCtx, {
+      buffer: Buffer.from('duplicate bytes'),
+      filename: 'dup.jpg',
+      memoryCapture: true,
+      capturedAt: new Date('2026-10-14T22:46:00Z'),
+    });
+
+    expect(eventService.send).toHaveBeenCalledWith(FileUploadedEvent, {
+      fileId: 'existing-id',
+      userId: 'owner-1',
+      thingCapture: false,
+      skipDescription: false,
+      model: undefined,
+      memoryCapture: true,
+      capturedAt: '2026-10-14T22:46:00.000Z',
+    });
+  });
+
   it('creates a new ORIGINAL file and fires FileUploadedEvent with deduped:false semantics when there is no match', async () => {
     const repo = makeRepo();
     repo.findOne.mockResolvedValue(null);

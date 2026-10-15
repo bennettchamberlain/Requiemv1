@@ -394,7 +394,7 @@ describe('positionSourceId — determinism is what makes a replay free', () => {
   });
 });
 
-describe('the sampling gate — 50 m or 5 minutes, whichever comes first', () => {
+describe('the sampling gate — 150 m or 5 minutes, whichever comes first', () => {
   it('always records the first fix', () => {
     expect(createLocationSampler().shouldCapture(fix())).toBe(true);
   });
@@ -414,12 +414,13 @@ describe('the sampling gate — 50 m or 5 minutes, whichever comes first', () =>
     ).toBe(false);
   });
 
-  it('records once we have moved at least 50 m, however soon', () => {
+  it('records once we have moved at least 150 m, however soon', () => {
     const sampler = createLocationSampler();
 
     sampler.accept(fix());
 
-    const moved = { latitude: SF_LAT + 0.001, longitude: SF_LNG, capturedAtMs: CAPTURED_AT + 1_000 };
+    // ~222 m north.
+    const moved = { latitude: SF_LAT + 0.002, longitude: SF_LNG, capturedAtMs: CAPTURED_AT + 1_000 };
 
     expect(haversineMeters(SF_LAT, SF_LNG, moved.latitude, moved.longitude)).toBeGreaterThan(
       MIN_DISTANCE_METERS,

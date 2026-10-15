@@ -10,7 +10,7 @@
     "sync": "cap sync ios && yarn sync:safari-extension",
     "build": "yarn build:web && yarn sync",
     "open": "cap open ios",
-    "run": "cap run ios"
+    "ios": "cap run ios"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

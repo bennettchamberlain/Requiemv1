@@ -22,6 +22,7 @@ export {
   initApiBaseUrl,
   isIosPlatform,
   isLocalApplianceOrigin,
+  isAndroidPlatform,
   isNativePlatform,
   isTauriPlatform,
   needsNativeCloudConnect,
@@ -42,8 +43,6 @@ export type { ConnectionMode } from './src/utils/connectionMode';
 export { createHookContext } from './src/utils/createHookContext';
 export {
   BACKGROUND_MAX_ACCURACY_METERS,
-  BACKGROUND_MIN_DISTANCE_METERS,
-  BACKGROUND_MIN_INTERVAL_MS,
   HOME_GEOFENCE_RADIUS_METERS,
   LOCATION_ENABLED_STORAGE_KEY,
   LOCATION_MODE_CHANGE_EVENT,
@@ -100,6 +99,7 @@ export {
   deleteLocalLlmModel,
   downloadLocalLlmModel,
   ensureLocalLlmLoaded,
+  isAnswerCutShort,
   isContextExhausted,
   isLocalLlmReady,
   LocalLlmGenerationError,
@@ -132,6 +132,7 @@ export {
   LOCAL_LLM_MODEL_LIST,
   evaluateModelFit,
   findLocalLlmModel,
+  gpuAllowedOn,
   formatBytes,
   localLlmModelsFor,
 } from './src/utils/localLlmCatalog';
@@ -144,6 +145,7 @@ export type {
   LocalLlmModelSpec,
   LocalLlmPlatform,
 } from './src/utils/localLlmCatalog';
+export { LOCAL_TOOLS_OFF_REFUSAL, isLocalWriteRequest } from './src/utils/localLlmToolsOff';
 export {
   DEFAULT_LOCAL_LLM_PREFS,
   getLocalLlmPrefs,
@@ -230,6 +232,7 @@ export {
   secureStorageRemove,
   secureStorageSet,
   setStatusBarStyle,
+  setSystemBarsBackground,
   syncNativeIntentConfig,
   takeNativePhoto,
 } from './src/utils/nativeBridge';

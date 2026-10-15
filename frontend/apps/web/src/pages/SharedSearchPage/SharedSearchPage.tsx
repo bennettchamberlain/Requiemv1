@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom';
 import { ErrorState } from '@/components/ErrorState';
 import { PageContent } from '@/components/layout';
 import { gql } from '@/graphql';
+import { useBackClosesSheet } from '@/hooks/useBackClosesSheet';
 
 import { EntityDetails } from '../MemoryPage/Components/EntityDetails';
 import { GalleryView } from '../MemoryPage/GalleryView';
@@ -81,6 +82,9 @@ function SharedSearchBody({ name, description }: { name: string; description: st
       setDetailsOpen(true);
     }
   }, [activeEntity]);
+
+  // Back closes the open drawer instead of leaving the page.
+  useBackClosesSheet(detailsOpen && activeEntity != null, () => toggleActiveEntity(false));
 
   const tabs = <ViewTabs activeTab={activeTab} setActiveTab={setActiveTab} />;
   // A results-fetch error must not masquerade as "no results" — show a retry

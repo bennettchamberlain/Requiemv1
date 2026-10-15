@@ -56,11 +56,24 @@ object IntentToolProvider {
         if (client == null || !spec.info.supportsTools) {
             emptyList()
         } else {
-            buildTools(client, LocalLlmPolicy.toolResultByteBudget(spec.maxTokens))
+            buildTools(
+                client,
+                LocalLlmPolicy.toolResultByteBudget(spec.maxTokens),
+                LocalLlmPolicy.toolDeclarationTokenBudget(spec.maxTokens),
+            )
         }
 
-    /** [buildProviders] before LiteRT-LM wraps each tool: the seam the unit tests call a tool through. */
-    internal fun buildTools(client: CompanionIntentClient, resultBudgetBytes: Int): List<IntentTool> {
+    /**
+     * [buildProviders] before LiteRT-LM wraps each tool: the seam the unit tests call a tool through.
+     *
+     * @param declarationTokenBudget the most tokens all the declarations together may take in the prompt, from
+     *   [LocalLlmPolicy.toolDeclarationTokenBudget]; `Int.MAX_VALUE` binds everything the server allows.
+     */
+    internal fun buildTools(
+        client: CompanionIntentClient,
+        resultBudgetBytes: Int,
+        declarationTokenBudget: Int = Int.MAX_VALUE,
+    ): List<IntentTool> {
         val manifest =
             try {
                 client.fetchManifest()
@@ -81,16 +94,87 @@ object IntentToolProvider {
                 "Appliance did not return per-tier dispatch rulings (manifest ${manifest.version}); " +
                     "no tools will be offered. Upgrade CI-Server to 1.2.0+ for on-device tool calling.",
             )
-        } else {
+        }
+
+        val selection = selectWithinBudget(executable, declarationTokenBudget)
+        if (manifest.tier != null) {
             Log.i(
                 TAG,
-                "Offering ${executable.size} of ${manifest.intents.size} intents to the local model; " +
-                    "a tool result is held to $resultBudgetBytes bytes",
+                "Offering ${selection.kept.size} of ${manifest.intents.size} intents to the local model " +
+                    "(${executable.size} may run here; declarations take ~${selection.keptTokens} of a " +
+                    "$declarationTokenBudget-token budget); a tool result is held to $resultBudgetBytes bytes",
+            )
+        }
+        if (selection.omitted.isNotEmpty()) {
+            Log.w(
+                TAG,
+                "${selection.omitted.size} intent(s) left out: their declarations would not fit the window. " +
+                    "Omitted: ${selection.omitted.joinToString { it.name }}",
             )
         }
 
-        return executable.map { IntentTool(it, client, resultBudgetBytes) }
+        return selection.kept.map { IntentTool(it, client, resultBudgetBytes) }
     }
+
+    /** What [selectWithinBudget] decided, so the caller can say what it left out. */
+    internal data class Selection(val kept: List<ManifestIntent>, val omitted: List<ManifestIntent>, val keptTokens: Int)
+
+    /**
+     * The intents whose declarations fit [budgetTokens] together, most useful first.
+     *
+     * Order: [PRIORITY_INTENTS] by position, then everything else by [PRIORITY_DOMAINS], then by name, so
+     * an intent the appliance adds tomorrow still lands somewhere sensible without an app release.
+     * Greedy and first-fit: an intent whose declaration does not fit is skipped, not a stopping point,
+     * so a small intent further down still gets in after a large one was passed over. The cost of each
+     * is the declaration exactly as the model would see it ([IntentTool.declaration]), estimated with
+     * [LocalLlmPolicy.estimateDeclarationTokens].
+     */
+    internal fun selectWithinBudget(intents: List<ManifestIntent>, budgetTokens: Int): Selection {
+        val ordered = intents.sortedWith(compareBy({ priorityRank(it) }, { it.name }))
+        val kept = ArrayList<ManifestIntent>()
+        val omitted = ArrayList<ManifestIntent>()
+        var spent = 0
+        for (intent in ordered) {
+            val cost = LocalLlmPolicy.estimateDeclarationTokens(IntentTool.declaration(intent).toByteArray(Charsets.UTF_8).size)
+            if (spent + cost <= budgetTokens) {
+                kept += intent
+                spent += cost
+            } else {
+                omitted += intent
+            }
+        }
+        return Selection(kept, omitted, spent)
+    }
+
+    private fun priorityRank(intent: ManifestIntent): Int {
+        val explicit = PRIORITY_INTENTS.indexOf(intent.name)
+        if (explicit >= 0) return explicit
+        val domain = PRIORITY_DOMAINS.indexOf(intent.domain)
+        return PRIORITY_INTENTS.size + (if (domain >= 0) domain else PRIORITY_DOMAINS.size)
+    }
+
+    /**
+     * The intents the offline surface exists for, in the order they are worth their tokens: finding
+     * things the user already has, then recording, then the rest. A preference, not a gate -- what is
+     * not listed is ordered by [PRIORITY_DOMAINS] after these.
+     */
+    internal val PRIORITY_INTENTS: List<String> =
+        listOf(
+            "knowledge.search",
+            "memory.recall",
+            "people.find",
+            "media.findPhotos",
+            "planning.findTasks",
+            "places.find",
+            "calendar.findEvents",
+            "memory.remember",
+            "planning.createTask",
+            "knowledge.preferences",
+        )
+
+    /** Domain order for intents not named in [PRIORITY_INTENTS]; unknown domains go last. */
+    internal val PRIORITY_DOMAINS: List<String> =
+        listOf("knowledge", "memory", "people", "places", "planning", "calendar", "media", "brief", "insights", "anomalies", "suggestions")
 }
 
 /**
@@ -109,12 +193,7 @@ internal class IntentTool(
     private val resultBudgetBytes: Int,
 ) : OpenApiTool {
 
-    override fun getToolDescriptionJsonString(): String =
-        JSONObject()
-            .put("name", intent.tool)
-            .put("description", buildDescription())
-            .put("parameters", intent.parameters)
-            .toString()
+    override fun getToolDescriptionJsonString(): String = declaration(intent)
 
     override fun execute(paramsJsonString: String): String {
         val arguments =
@@ -157,16 +236,24 @@ internal class IntentTool(
         return shaped
     }
 
-    private fun buildDescription(): String =
-        if (intent.title.isNotEmpty() && intent.title != intent.description) {
-            "${intent.title}. ${intent.description}"
-        } else {
-            intent.description
-        }
-
     private fun errorPayload(message: String): String = JSONObject().put("error", message).toString()
 
-    private companion object {
-        const val TOOL_TAG = "IntentTool"
+    companion object {
+        private const val TOOL_TAG = "IntentTool"
+
+        /** The function declaration exactly as the model is given it -- also what the declaration budget is measured on. */
+        fun declaration(intent: ManifestIntent): String =
+            JSONObject()
+                .put("name", intent.tool)
+                .put("description", buildDescription(intent))
+                .put("parameters", intent.parameters)
+                .toString()
+
+        private fun buildDescription(intent: ManifestIntent): String =
+            if (intent.title.isNotEmpty() && intent.title != intent.description) {
+                "${intent.title}. ${intent.description}"
+            } else {
+                intent.description
+            }
     }
 }

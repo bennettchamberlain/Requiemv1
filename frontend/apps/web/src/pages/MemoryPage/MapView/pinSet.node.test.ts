@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { fitSignature, mostRecentDatedPin, pinsInBounds, routePoints, type BoundsLike } from './pinSet';
+import {
+  fitActionFor,
+  fitSignature,
+  mostRecentDatedPin,
+  pinsInBounds,
+  routePoints,
+  type BoundsLike,
+} from './pinSet';
 
 function pin(id: string, lat: number, lng: number) {
   return { id, coords: { lat, lng } };
@@ -10,6 +17,8 @@ function pin(id: string, lat: number, lng: number) {
 function box(minLat: number, minLng: number, maxLat: number, maxLng: number): BoundsLike {
   return {
     contains: ([lat, lng]) => lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng,
+    getWest: () => minLng,
+    getEast: () => maxLng,
   };
 }
 
@@ -28,6 +37,50 @@ describe('pinsInBounds', () => {
     const pins = [pin('a', 1, 1), pin('b', 2, 2), pin('c', 3, 3)];
 
     expect(pinsInBounds(pins, box(0, 0, 10, 10)).map((p) => p.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  // A view panned round the globe reports bounds past ±180°; a pin on the
+  // other side of the seam is in that view, on the neighbouring copy of the
+  // world, and must be drawn there — Leaflet places a marker only where its
+  // own longitude says, so the copy was bare.
+  it('places a pin across the antimeridian on the copy of the world in view', () => {
+    const fiji = pin('fiji', -17.7, 178.1);
+    const samoa = pin('samoa', -13.8, -171.8);
+
+    const eastward = pinsInBounds([fiji, samoa], box(-30, 170, 0, 195));
+
+    expect(eastward.map((p) => [p.id, p.coords.lng])).toEqual([
+      ['fiji', 178.1],
+      ['samoa', 188.2],
+    ]);
+
+    const westward = pinsInBounds([fiji, samoa], box(-30, -195, 0, -165));
+
+    expect(westward.map((p) => [p.id, p.coords.lng])).toEqual([
+      ['fiji', -181.9],
+      ['samoa', -171.8],
+    ]);
+  });
+
+  it('follows the view any number of worlds round, in either direction', () => {
+    const home = pin('home', 37.77, -122.42);
+
+    expect(pinsInBounds([home], box(30, 590, 40, 610))[0].coords.lng).toBeCloseTo(597.58);
+    expect(pinsInBounds([home], box(30, -850, 40, -840))[0].coords.lng).toBeCloseTo(-842.42);
+  });
+
+  it('keeps the original object, untouched, for a pin on the primary copy', () => {
+    const home = pin('home', 37.77, -122.42);
+
+    expect(pinsInBounds([home], box(30, -130, 40, -120))[0]).toBe(home);
+    expect(home.coords.lng).toBe(-122.42);
+  });
+
+  it('draws each pin once even when the box reaches more than one of its copies', () => {
+    const placed = pinsInBounds([pin('a', 0, 10)], box(-10, -400, 10, 400));
+
+    expect(placed).toHaveLength(1);
+    expect([-350, 10, 370]).toContain(placed[0].coords.lng);
   });
 });
 
@@ -98,5 +151,54 @@ describe('fitSignature', () => {
     expect(fitSignature([pin('a', 1, 1), pin('b', 2, 2)])).not.toBe(
       fitSignature([pin('a', 1, 1), pin('z', 2, 2)]),
     );
+  });
+});
+
+describe('fitActionFor', () => {
+  it('moves nothing for an empty set, or one the viewport already follows', () => {
+    expect(fitActionFor({ signature: '', fitted: null, areaBound: false, previousAreaBound: false })).toBe(
+      'none',
+    );
+    expect(
+      fitActionFor({ signature: '3:a:c', fitted: '3:a:c', areaBound: false, previousAreaBound: false }),
+    ).toBe('none');
+  });
+
+  it('fits to the pins when a filter changes the set', () => {
+    expect(
+      fitActionFor({ signature: '3:a:c', fitted: '2:a:b', areaBound: false, previousAreaBound: false }),
+    ).toBe('pins');
+    expect(
+      fitActionFor({ signature: '3:a:c', fitted: null, areaBound: false, previousAreaBound: false }),
+    ).toBe('pins');
+  });
+
+  // "Search events in this area": the viewport IS the box the person framed.
+  // Fitting to the pins inside it re-centred and zoomed the map they had just
+  // set up, which brought the search button back at once and, from far enough
+  // out, carried the box's centre off screen — the signal that drops the
+  // filter — so one click searched, un-searched and flew back out.
+  it('leaves a viewport the person framed alone when its area search lands', () => {
+    expect(
+      fitActionFor({ signature: '2:a:b', fitted: '9:a:z', areaBound: true, previousAreaBound: false }),
+    ).toBe('none');
+  });
+
+  it('frames the area itself on a cold load with the box already in the URL', () => {
+    expect(
+      fitActionFor({ signature: '2:a:b', fitted: null, areaBound: true, previousAreaBound: false }),
+    ).toBe('area');
+  });
+
+  it('stays put when the area filter is dropped and the whole set comes back', () => {
+    expect(
+      fitActionFor({ signature: '9:a:z', fitted: '2:a:b', areaBound: false, previousAreaBound: true }),
+    ).toBe('none');
+  });
+
+  it('fits again on the next real filter change after an area search', () => {
+    expect(
+      fitActionFor({ signature: '4:a:d', fitted: '9:a:z', areaBound: false, previousAreaBound: false }),
+    ).toBe('pins');
   });
 });

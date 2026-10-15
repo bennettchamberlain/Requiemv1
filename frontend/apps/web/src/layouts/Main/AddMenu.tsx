@@ -1,6 +1,7 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
 
 import { useApolloClient } from '@apollo/client';
+import { useDeviceLayout } from '@ci/common';
 import { DropdownMenu, IconButton, Tooltip, useToast } from '@ci/shadcn';
 import {
   NotebookPen,
@@ -20,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { useUploadFile, useTriggerHbpe } from '@/api';
+import { MenuShield } from '@/components/MenuShield';
 import { AddEventModal, AddPersonModal, AddPlaceModal } from '@/components/modals/AddItemModal';
 import { AddConceptModal } from '@/components/modals/AddItemModal/AddConceptModal.tsx';
 import { CaptureModal } from '@/components/modals/CaptureModal';
@@ -42,6 +44,12 @@ export function AddMenu() {
   const { toast } = useToast();
   const [, { trigger }] = useTriggerHbpe();
   const client = useApolloClient();
+  // Modal on a phone: a modal menu swallows the tap that closes it, so tapping
+  // away cannot also press whatever was under the finger — a map control, a
+  // list row. Desktop keeps the non-modal menu (no scroll lock, no scrollbar
+  // jump), the same split the Memory filter menus make.
+  const { isMobile } = useDeviceLayout();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [{ isOpen: isCaptureModalOpen }, { open: openCaptureModal, close: closeCaptureModal }] =
     useModalControls();
@@ -77,12 +85,13 @@ export function AddMenu() {
   return (
     <>
       <div className="flex items-center">
-        <DropdownMenu modal={false}>
+        <DropdownMenu modal={isMobile === true} open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenu.Trigger asChild>
             <IconButton variant="default" size="icon-lg" label={t('NAV_ADD')} hideTooltip={overlayOpen}>
               <Plus strokeWidth={2} className="h-5 w-5" />
             </IconButton>
           </DropdownMenu.Trigger>
+          <MenuShield open={menuOpen} />
           <DropdownMenu.Content className="rounded-lg p-2" side="bottom" align="end" sideOffset={4}>
             <div className="text-center text-sm font-semibold mb-3 mt-1">Add</div>
             {/* Each grid label is a single word, so the tooltip describes what the

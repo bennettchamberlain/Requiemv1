@@ -645,8 +645,19 @@ export class FileService implements OnModuleInit {
     context: UserServiceContext,
     file: UploadFileDto,
   ): Promise<{ file: SignedFile; deduped: boolean }> {
-    const { thingCapture = false, skipDescription = false, model, ...uploadData } = file;
+    const {
+      thingCapture = false,
+      skipDescription = false,
+      model,
+      memoryCapture = false,
+      capturedAt,
+      ...uploadData
+    } = file;
     const hash = await this.getFileHash(uploadData);
+    // Carried only when set, so the payload of an ordinary upload is unchanged.
+    const captureFlags = memoryCapture
+      ? { memoryCapture: true, ...(capturedAt ? { capturedAt: capturedAt.toISOString() } : {}) }
+      : {};
 
     if (hash) {
       const existing = await this.findByHash(context, hash);
@@ -656,13 +667,18 @@ export class FileService implements OnModuleInit {
           existingFileId: existing.id,
         });
 
-        if (thingCapture) {
+        // A dedup hit is silent for a plain upload (the pipeline has seen the
+        // bytes once already), but a thing capture still wants its vision
+        // pass and a memory capture still wants its content row — both
+        // listeners are idempotent on the existing file.
+        if (thingCapture || memoryCapture) {
           await this.eventService.send(FileUploadedEvent, {
             fileId: existing.id,
             userId: context.userId,
-            thingCapture: true,
+            thingCapture,
             skipDescription,
             model,
+            ...captureFlags,
           });
         }
 
@@ -681,6 +697,7 @@ export class FileService implements OnModuleInit {
       thingCapture,
       skipDescription,
       model,
+      ...captureFlags,
     });
 
     return { file: created, deduped: false };

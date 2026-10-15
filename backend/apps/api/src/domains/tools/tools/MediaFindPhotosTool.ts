@@ -27,6 +27,19 @@ export type MediaFindPhotosInput = z.infer<typeof MediaFindPhotosInputSchema>;
 export class MediaFindPhotosTool extends BaseTool<MediaFindPhotosInput, SearchToolResult> {
   readonly schema: IntentDefinition = {
     name: 'media.findPhotos',
+    local: {
+      description:
+        'Find your photos and videos by what they show, where or when. For "how many" set countOnly and use one word.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What, where or when.' },
+          countOnly: { type: 'boolean', description: 'Return only the exact count, no items.' },
+          maxResults: { type: 'integer', minimum: 1, maximum: 100 },
+        },
+        required: [],
+      },
+    },
     domain: 'media',
     title: 'Find photos & videos',
     description:

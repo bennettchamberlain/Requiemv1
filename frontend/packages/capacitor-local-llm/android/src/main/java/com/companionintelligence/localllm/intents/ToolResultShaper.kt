@@ -245,7 +245,7 @@ object ToolResultShaper {
             if (key == "id" && linked) continue
             if (member is String && key != "id" && key != "link" && isUuid(member)) continue
 
-            kept[key] = prune(member) ?: continue
+            kept[key] = (if (key in TIME_KEYS && member is String) renderedTime(member) else prune(member)) ?: continue
         }
 
         return if (kept.isEmpty()) null else ParsedObject(kept)
@@ -467,6 +467,28 @@ object ToolResultShaper {
 
     /** When it happened, then what it says: the two things a question about the user's own memory asks. */
     private val TIME_KEYS = listOf("startTime", "endTime", "time", "dueDate", "date", "createdAt", "takenAt", "birthDate")
+
+    /**
+     * An ISO 8601 instant as the appliance writes one (`2022-11-28T06:45:59.000Z`, with or without fractional
+     * seconds, `Z` or an offset), captured as the date, the hour-and-minute and the offset part.
+     */
+    private val ISO_INSTANT = Regex("^(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2})(?::\\d{2}(?:\\.\\d+)?)?(Z|[+-]\\d{2}:?\\d{2})$")
+
+    /**
+     * A time key's value as the model should read it: `2022-11-28 06:45 UTC` for an instant, a date (`1980-01-01`)
+     * untouched, anything else as it came. On a device a 2B model copying the 24-character instant wrote
+     * `20202-1-128T06:5:59.00Z` and `2022-9-2519:4:1.0.0Z`; it copies a 16-character date-and-minute. Seconds and
+     * milliseconds answer no question a chat asks. The instant is NOT converted to local time: both platforms
+     * must shape identically wherever the phone is, and an offset is written out as it came so nothing is lost.
+     */
+    private fun renderedTime(value: String): String? {
+        if (value.isEmpty()) return null
+
+        val match = ISO_INSTANT.matchEntire(value) ?: return value
+        val (date, clock, zone) = match.destructured
+
+        return if (zone == "Z") "$date $clock UTC" else "$date $clock $zone"
+    }
     private val BODY_KEYS = listOf("content", "text", "description", "notes")
 
     /**

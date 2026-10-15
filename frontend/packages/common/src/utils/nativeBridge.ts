@@ -10,7 +10,7 @@
  * falls back to `localStorage`, and external links fall back to a normal navigation.
  */
 
-import { isIosPlatform, isNativePlatform, isTauriPlatform } from './apiBase';
+import { isAndroidPlatform, isIosPlatform, isNativePlatform, isTauriPlatform } from './apiBase';
 import { streamingFetch } from './fetchJson';
 import type { BackgroundGeolocationLocation } from './deviceSources/location';
 
@@ -235,8 +235,18 @@ interface BarcodeScannerPlugin {
   scan(options?: { formats?: string[] }): Promise<{ barcodes: Array<{ rawValue: string }> }>;
 }
 
+/**
+ * The Android shell's own `SystemBarsPlugin` (frontend/apps/android). The shell insets the
+ * WebView by the system bars there (`WebViewInsets`), which leaves a strip above and
+ * below showing the *window* background; this paints it with the app's colour.
+ */
+interface SystemBarsPlugin {
+  setBackgroundColor(options: { color: string }): Promise<void>;
+}
+
 interface CapacitorPlugins {
   SecureStoragePlugin?: SecureStoragePlugin;
+  SystemBars?: SystemBarsPlugin;
   LocalHub?: LocalHubPlugin;
   BackgroundGeolocation?: BackgroundGeolocationPlugin;
   Browser?: BrowserPlugin;
@@ -1080,6 +1090,28 @@ export async function setStatusBarStyle(style: 'DARK' | 'LIGHT', backgroundColor
     }
   } catch {
     // Plugin unavailable or unsupported on this platform — ignore.
+  }
+}
+
+/**
+ * Android only. Paints the window behind the status and navigation bars with the app's
+ * resolved background colour. On Android 15+ the WebView is inset by the system bars
+ * (`WebViewInsets` in the Android shell), so those
+ * strips show the window background rather than web content, and without this call they
+ * show the launch splash drawable. Pair it with {@link setStatusBarStyle} on every theme
+ * change. A no-op on iOS and web, and when the shell predates the plugin.
+ */
+export async function setSystemBarsBackground(color: string): Promise<void> {
+  const systemBars = plugins()?.SystemBars;
+
+  if (!isAndroidPlatform() || !systemBars) {
+    return;
+  }
+
+  try {
+    await systemBars.setBackgroundColor({ color });
+  } catch {
+    // Older shell without the plugin, or the activity is gone — ignore.
   }
 }
 

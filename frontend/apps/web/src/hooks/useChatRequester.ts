@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   apiKeyHeaders,
+  LOCAL_TOOLS_OFF_REFUSAL,
   ensureLocalLlmLoaded,
   findLocalLlmModel,
   getLocalLlmPrefs,
+  isAnswerCutShort,
+  isLocalWriteRequest,
   isContextExhausted,
   isLocalLlmReady,
   resetLocalLlmConversation,
@@ -202,8 +205,11 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
         return false;
       }
 
+      // Only the tool count is read from the load; `undefined` means "not known this session".
+      let loaded: { toolCount?: number };
+
       try {
-        await ensureLocalLlmLoaded(prefs.modelId, {
+        loaded = await ensureLocalLlmLoaded(prefs.modelId, {
           accelerator: prefs.accelerator ?? undefined,
           enableSpeculativeDecoding: prefs.speculativeDecoding,
           useIntentTools: prefs.intentTools,
@@ -243,6 +249,17 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
 
       setLocal({ modelId: prefs.modelId, stats: null });
 
+      // A model with no tools cannot add, save, forget or delete anything, and a small one will say it did
+      // anyway. The appliance refuses these in code before the model sees them; so does this. An unknown
+      // tool count (a model resident from before this session) is not "no tools".
+      if (loaded.toolCount === 0 && isLocalWriteRequest(prompt)) {
+        push(Channel.TEXT, LOCAL_TOOLS_OFF_REFUSAL);
+        streamController.close();
+        openBody(body);
+
+        return true;
+      }
+
       const generate = () =>
         streamLocalLlm(prompt, {
           enableThinking: prefs.thinking && spec.capabilities.includes('thinking'),
@@ -277,6 +294,13 @@ export function useChatRequester({ threadId, onNewThread }: Opts): ReturnType {
           // on screen is truncated and would otherwise read as complete.
           if (result.cancelled && !controller.signal.aborted) {
             toast.info('The reply stopped early — this phone is running too hot to keep going.');
+          }
+
+          // Reasoning that filled the window: tokens were produced, no answer arrived, nothing failed.
+          if (!controller.signal.aborted && isAnswerCutShort(result)) {
+            toast.info(
+              'The on-device model ran out of room before it could answer. Try a shorter question, or turn off "Think before answering" in Settings → On-device model.',
+            );
           }
 
           streamController.close();

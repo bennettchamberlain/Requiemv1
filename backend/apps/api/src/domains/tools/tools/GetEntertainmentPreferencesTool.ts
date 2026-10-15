@@ -80,6 +80,17 @@ export class GetEntertainmentPreferencesTool extends BaseTool<
 > {
   readonly schema: IntentDefinition = {
     name: 'media.entertainmentPreferences',
+    local: {
+      description: "Your, or a family member's, taste in movies, TV, music and books: likes and dislikes.",
+      parameters: {
+        type: 'object',
+        properties: {
+          mediaType: { type: 'string', enum: ['movies', 'tv', 'music', 'books', 'all'] },
+          personName: { type: 'string', description: 'Whose, e.g. "my wife"; omit for you.' },
+        },
+        required: [],
+      },
+    },
     domain: 'media',
     title: 'Get entertainment taste',
     privacy: { access: 'read', sensitivity: 'personal', destructive: false, external: false },

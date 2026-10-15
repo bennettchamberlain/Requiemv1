@@ -41,6 +41,7 @@ import { DeleteEntityDialog } from './DeleteEntityDialog';
 import { DELETE_TARGETS } from './deleteTargets';
 import { useEntityDrawerHost } from './drawerHost';
 import { GET_DRAWER_NODE, genericEntityGlobalId, isDetailNode } from './drawerNode';
+import { ignoreHistoryMouseButtons } from './historyMouseButtons';
 import { useReadOnly } from './readOnly';
 
 // The field/meta contract now lives with the shared editor so the full-page
@@ -716,6 +717,7 @@ export function EntityDetailScaffold({
   return (
     <Sheet.Content
       data-testid="entity-detail-sheet"
+      onPointerDownOutside={ignoreHistoryMouseButtons}
       className="z-[1000] w-full gap-0 overflow-hidden border-l border-white/10 bg-background/75 p-0 shadow-2xl backdrop-blur-2xl supports-[backdrop-filter]:bg-background/65 sm:max-w-xl pt-[var(--safe-area-top)] pb-[var(--safe-area-bottom)] [&>button]:top-[calc(var(--safe-area-top)+1rem)]"
       // Radix's default open-autofocus lands on the first tabbable descendant —
       // here that is always the header's ChatWithAgentMenu IconButton, whose

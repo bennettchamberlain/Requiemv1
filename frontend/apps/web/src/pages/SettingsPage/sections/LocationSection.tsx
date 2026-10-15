@@ -282,5 +282,5 @@ function modeDescription(mode: LocationTrackingMode, native: boolean): string {
     return 'Companion records your location in the background, including while your phone is locked or the app is closed, so it can attach places to your notes, photos and events on the map.';
   }
 
-  return 'While Companion is open, this device records your location when you move about 50 metres or every five minutes. Fixes are stored privately in your position history.';
+  return 'While Companion is open, this device records your location when you move about 150 metres or every five minutes. Fixes are stored privately in your position history.';
 }

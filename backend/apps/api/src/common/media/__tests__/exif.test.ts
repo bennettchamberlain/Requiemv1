@@ -30,7 +30,7 @@ import {
   extractVideoMetadata,
   extractMediaMetadata,
   _resetFfprobeAvailability,
-} from '../_exif';
+} from '../exif';
 
 const parseMock = exifr.parse as unknown as jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
 

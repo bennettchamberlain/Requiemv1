@@ -44,6 +44,7 @@ import org.robolectric.RobolectricTestRunner
 class ToolResultShaperInvariantsTest {
     private val marker = ToolResultShaper.TRUNCATION_MARKER
     private val closingNote = Regex("""\[\d+ more results omitted — refine the query to narrow them down]""")
+    private val renderedInstant = Regex("^(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}) (?:UTC|[+-]\\d{2}:?\\d{2})$")
     private val uuid = Regex("""[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}""")
 
     // ---- the properties ---------------------------------------------------------------------------
@@ -141,6 +142,15 @@ class ToolResultShaperInvariantsTest {
     /** Whether [string] is one of [inputs], or one of them cut short and ended with an ellipsis, or the note that closes a list. */
     private fun derived(string: String, inputs: TreeSet<String>): Boolean {
         if (string in inputs || closingNote.matches(string)) return true
+
+        // A rendered instant (`2022-11-28 06:45 UTC`) comes from an input instant that starts `2022-11-28T06:45`.
+        renderedInstant.matchEntire(string)?.let { match ->
+            val (date, clock) = match.destructured
+            val prefix = "${date}T$clock"
+
+            return inputs.ceiling(prefix)?.startsWith(prefix) == true
+        }
+
         if (!string.endsWith("…")) return false
 
         // Every string that starts with `head` sorts at or after it, and the first of those is the least of them all.

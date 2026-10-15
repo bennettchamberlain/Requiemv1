@@ -2,8 +2,8 @@ import { useCallback, useMemo, type KeyboardEvent } from 'react';
 
 import { Button, Tooltip, cn } from '@ci/shadcn';
 import { AlertTriangle, FastForward, Pause, Play, RotateCcw, Square } from '@ci/shadcn/icons';
-import L from 'leaflet';
 
+import { useMapIsolation } from '@/components/Map/mapIsolation';
 import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
 import type { DateTimeFormatter } from '@/lib/dateTimeFormat';
 
@@ -40,12 +40,7 @@ export function PlaybackBar({ className }: { className?: string } = {}) {
 
   // Leaflet would otherwise treat a drag on the scrubber as a map pan and a
   // wheel over the bar as a zoom.
-  const setContainerRef = useCallback((element: HTMLDivElement | null) => {
-    if (element) {
-      L.DomEvent.disableClickPropagation(element);
-      L.DomEvent.disableScrollPropagation(element);
-    }
-  }, []);
+  const setContainerRef = useMapIsolation();
 
   // `stopCount` alone is a circular gate: `stops` only gains position-fix
   // times once the transport has already been used once (see `armed` in

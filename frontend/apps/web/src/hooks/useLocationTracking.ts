@@ -5,8 +5,6 @@ import {
   type LocationCaptureOutcome,
   type LocationSampler,
   type LocationTrackingMode,
-  BACKGROUND_MIN_DISTANCE_METERS,
-  BACKGROUND_MIN_INTERVAL_MS,
   LOCATION_MODE_CHANGE_EVENT,
   LOCATION_NEEDS_SETTINGS_EVENT,
   MIN_DISTANCE_METERS,
@@ -83,17 +81,13 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
   const [lastOutcome, setLastOutcome] = useState<LocationCaptureOutcome | null>(null);
   const [needsSettingsUpgrade, setNeedsSettingsUpgrade] = useState(false);
 
+  // One gate (150 m or 5 min) whether the app is on screen or not; a denser trail while
+  // the app happens to be open adds nothing.
   const samplerRef = useRef<LocationSampler | null>(null);
-  const backgroundSamplerRef = useRef<LocationSampler | null>(null);
-  const isActiveRef = useRef(true);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
   samplerRef.current ??= createLocationSampler();
-  backgroundSamplerRef.current ??= createLocationSampler({
-    minDistanceMeters: BACKGROUND_MIN_DISTANCE_METERS,
-    minIntervalMs: BACKGROUND_MIN_INTERVAL_MS,
-  });
 
   const setMode = useCallback((next: LocationTrackingMode) => {
     const resolved: LocationTrackingMode = next === 'always' && !isNativePlatform() ? 'when_in_use' : next;
@@ -140,8 +134,8 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
 
   const enabled = mode !== 'off';
 
-  // Tracks foreground/background so the watcher callback can pick the right sampling
-  // gate — the OS keeps delivering fixes on the same watcher across the transition.
+  // iOS: when the app comes back to the screen in Always mode, re-check the grant so Open
+  // Settings appears if it was lowered in Settings while the app was away.
   useEffect(() => {
     if (!watch || !isNativePlatform()) {
       return;
@@ -151,8 +145,6 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
     let cancelled = false;
 
     void addAppStateListener((isActive) => {
-      isActiveRef.current = isActive;
-
       if (!isActive || modeRef.current !== 'always' || !isIosPlatform()) {
         return;
       }
@@ -201,10 +193,8 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
         return;
       }
 
-      const activeSampler = isActiveRef.current ? samplerRef.current : backgroundSamplerRef.current;
-
       void captureLocationFix(fixFromBackgroundGeolocationLocation(location), {
-        sampler: activeSampler ?? undefined,
+        sampler: samplerRef.current ?? undefined,
         authToken,
         provider: 'companion-mobile',
       })
@@ -254,7 +244,7 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
           // iOS Always stays foreground-only on this plugin. Background samples go
           // through significant-change monitoring, which does not hold the blue pill.
           background: mode === 'always' && !isIosPlatform(),
-          distanceFilter: mode === 'always' ? BACKGROUND_MIN_DISTANCE_METERS : MIN_DISTANCE_METERS,
+          distanceFilter: MIN_DISTANCE_METERS,
           // iOS Always is requested above so the plugin does not skip the second prompt.
           requestPermissions: mode === 'always' ? !isIosPlatform() : true,
         },
@@ -289,7 +279,6 @@ export function useLocationTracking(options: { watch?: boolean } = {}) {
       void stopSignificant?.();
 
       samplerRef.current?.reset();
-      backgroundSamplerRef.current?.reset();
     };
   }, [watch, mode, authenticated, authToken]);
 
