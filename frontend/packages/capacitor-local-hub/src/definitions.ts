@@ -125,54 +125,13 @@ export interface LocalHubPlugin {
   }): Promise<{ status: NativeLocationAuthorization }>;
 
   /**
-   * Background samples for Always tracking, on both platforms, delivered as
-   * `significantLocation` events (`significantLocationError` with `code: 'NOT_AUTHORIZED'`
-   * when the OS refuses).
-   *
-   * iOS: significant-change monitoring -- wakes on a real move (cell / ~500 m) and never
-   * turns on the solid blue background indicator. `options` is ignored there; the web side
-   * queues each event itself.
-   *
-   * Android: motion-gated sampling. GPS runs only while the phone is moving: the fixes
-   * themselves (helped by the permission-free stationary-detect sensor) say when it has
-   * stopped, an exit geofence around the resting spot says when it starts again, and a
-   * location foreground service (with its notification) exists only in between. Like iOS,
-   * nothing beyond the location grants is asked for; the activity-recognition API is not
-   * used. The cost of that choice: the first stretch of each trip (the fence radius plus
-   * Play Services' latency) is not sampled, and a trip shorter than the radius is not
-   * sampled at all. Every fix that clears the distance/interval gate is queued straight into the
-   * encrypted outbox from native code, so nothing depends on the WebView being alive; it is
-   * also emitted as an event, and the web side's own enqueue of it collapses on the shared
-   * `source_id`. `options` is required there -- see {@link SignificantLocationOptions}.
+   * iOS only. Significant-change monitoring for Always tracking: a callback when the
+   * phone moves a meaningful distance, including after the app leaves the foreground.
+   * Does not turn on the blue background location indicator. Android no-ops.
    */
-  startSignificantLocationUpdates(options?: SignificantLocationOptions): Promise<void>;
+  startSignificantLocationUpdates(): Promise<void>;
 
   stopSignificantLocationUpdates(): Promise<void>;
-}
-
-/**
- * What Android needs to build, from a process that may have no JavaScript, exactly the
- * record the web side's `buildPositionRecord` would have built for the same fix. Every
- * value is one the web side owns (its storage, its constants, its copy); nothing is
- * invented natively.
- */
-export interface SignificantLocationOptions {
-  /** Stable per-install id that prefixes `source_id` (`deviceSourceKey()`). Required on Android. */
-  deviceKey: string;
-  /** Free-text producer stored on the row; defaults to `companion-mobile`. */
-  provider?: string;
-  /** The outbox owner stamp (`outboxOwnerStamp()`), or null when nobody is signed in. */
-  owner?: string | null;
-  /** Background persist gate: record on moving this far OR waiting this long. */
-  minDistanceMeters?: number;
-  minIntervalMs?: number;
-  /** Fixes looser than this are dropped, not queued. */
-  maxAccuracyMeters?: number;
-  /** Radius of the exit geofence set where the phone came to rest. */
-  geofenceRadiusMeters?: number;
-  /** The foreground-service notification shown while moving (Android requires one). */
-  notificationTitle?: string;
-  notificationText?: string;
 }
 
 export type NativeLocationAuthorization =

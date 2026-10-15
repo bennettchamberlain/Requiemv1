@@ -393,48 +393,6 @@ with a web no-op fallback. Android 13+ needs the `POST_NOTIFICATIONS` runtime pe
 (declared). All native-bridge helpers are unit-tested in
 `frontend/apps/web/src/test/nativeBridge.test.ts`.
 
-**Location (Always mode).** One recorder, the LocalHub plugin's background monitor, and
-no on-screen trail. Until 2026-10-13 the foreground was `@capacitor-community/background-geolocation`,
-kept "foreground-only" (no `backgroundMessage`) for a 50 m trail while the app was open. That
-plugin asks the OS for a high-accuracy fix every **1 second** for as long as its watcher
-exists and never removes the request when the app leaves the screen; on its own Android cuts
-a backgrounded app off from location, but the motion tracker's location foreground service
-grants the whole process background location, so the moment a trip started the old watcher
-ran alongside the tracker — a double-density trail and the 1 Hz GPS cost the tracker was built
-to remove (the phone's own battery stats had put that one request at about a quarter of a
-day's drain). The on-screen trail added nothing the 150 m background trail did not, so the
-plugin is gone: `when_in_use` now records nothing by itself (a current location is fetched on
-request), and `always` is the monitor below.
-
-Background samples come from `@ci/capacitor-local-hub`'s `startSignificantLocationUpdates`
-— **motion-gated sampling**, under `android/src/main/java/.../localhub/motion/`.
-GPS runs only while the phone is moving, and every signal that decides that needs nothing
-beyond the location grants Always already holds. The fixes themselves say when the phone has
-stopped (five minutes without 50 m of movement from where movement was last confirmed, or
-three once the permission-free stationary-detect sensor has reported it physically at rest);
-an exit geofence of 100 m around the resting spot says when it starts again. That geofence is
-the **only** restart signal: Android evaluates it with cheap location, it survives the
-process being frozen or killed, and it is one of the few events that may start a location
-foreground service from the background. No sensor can fill that role — since Android 9 a
-backgrounded app with no foreground service receives no sensor events, one-shot triggers
-included (verified on a device: the significant-motion trigger fired for the system's
-listeners and never reached the app, frozen a minute after it stopped). The cost is that the
-first stretch of every trip, the radius plus Play Services' latency, is not sampled, and a
-walk shorter than the radius is not sampled at all. A location foreground service,
-with the notification Android requires, exists only in between. The activity-recognition
-API is deliberately **not** used: it is a separate "Physical activity" permission that reads
-as a different kind of monitoring than location, and iOS's significant-change monitoring
-asks for nothing of the sort. Each fix that clears the gate is queued into the encrypted
-outbox **from native code**, so recording continues after the WebView is gone; the plugin
-also emits it as `significantLocation`, and the web side's own enqueue collapses on the
-shared `source_id` (the record builder is pinned to the same fixture as the web one, see
-`PositionRecordJsonTest`). Two runtime grants, walked one prompt at a time by the plugin:
-fine location, then background location (`Allow all the time`). Refusing either emits
-`significantLocationError` `NOT_AUTHORIZED`, which is what lights up "Open Settings".
-Check the footprint on a device with `adb shell dumpsys location`: while the phone is
-still there must be **no** `ProviderRequest` carrying this app's uid, and
-`dumpsys activity services com.ci.memory` must list no `MotionLocationService`.
-
 These bridges live in `@ci/common/src/utils/nativeBridge.ts` and reach the plugins via
 the runtime `window.Capacitor.Plugins` global (no `@capacitor/*` import in the web
 bundle); the standalone mobile project declares the actual plugin packages.

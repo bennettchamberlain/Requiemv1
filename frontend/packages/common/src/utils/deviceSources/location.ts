@@ -46,11 +46,11 @@
  * ## Foreground vs background
  *
  * This module shapes and queues a fix; it does not talk to the OS location APIs itself.
- * On native (iOS + Android), `useLocationTracking` starts the LocalHub plugin's background
- * monitor (Always mode only; there is no on-screen trail) and hands each delivered fix to
- * {@link captureLocationFix} via {@link fixFromNativeLocationEvent}. Plain web records no trail
- * (since 2026-10-13); {@link fixFromGeolocationPosition} remains for a browser position that is
- * captured on demand.
+ * On native (iOS + Android), `useLocationTracking` drives
+ * `@capacitor-community/background-geolocation` and hands each delivered fix to
+ * {@link captureLocationFix} via {@link fixFromBackgroundGeolocationLocation}. Plain web
+ * (no Capacitor) falls back to `navigator.geolocation` via {@link fixFromGeolocationPosition}
+ * instead, foreground-only.
  */
 
 import { fetchJson } from '../fetchJson';
@@ -465,11 +465,12 @@ export function fixFromGeolocationPosition(position: GeolocationPosition): Devic
 }
 
 /**
- * The location shape the LocalHub plugin's `significantLocation` event carries on both
- * platforms (inherited from the `@capacitor-community/background-geolocation` watcher
- * callback it replaced, so the two natives did not have to change their event bodies).
+ * The location shape delivered by `@capacitor-community/background-geolocation`'s
+ * `addWatcher` callback (both iOS and Android). Declared here — not imported from the
+ * plugin package — for the same reason every other native payload shape in this module
+ * is declared locally: the web bundle must stay free of `@capacitor/*` native deps.
  */
-export interface NativeLocationEvent {
+export interface BackgroundGeolocationLocation {
   latitude: number;
   longitude: number;
   /** Radius of horizontal uncertainty in metres, with 68% confidence. */
@@ -484,8 +485,10 @@ export interface NativeLocationEvent {
   time: number;
 }
 
-/** Adapt a native `significantLocation` event to {@link DeviceLocationFix}. */
-export function fixFromNativeLocationEvent(location: NativeLocationEvent): DeviceLocationFix {
+/** Adapt a `@capacitor-community/background-geolocation` fix to {@link DeviceLocationFix}. */
+export function fixFromBackgroundGeolocationLocation(
+  location: BackgroundGeolocationLocation,
+): DeviceLocationFix {
   return {
     latitude: location.latitude,
     longitude: location.longitude,

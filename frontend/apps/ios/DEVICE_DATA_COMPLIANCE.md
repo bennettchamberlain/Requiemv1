@@ -239,12 +239,6 @@ Background is a different animal:
 > shows a map of your day" — with a UI the video can actually show. **Budget two rejection
 > cycles.**
 
-> 🔵 **[code] Update 2026-10-13:** `@capacitor-community/background-geolocation` is gone from both
-> shells. Background location is the LocalHub plugin's own monitor on each platform (Android: motion-gated
-> GPS with an exit geofence and a foreground-service `location` type; iOS: significant-change monitoring),
-> and there is no on-screen trail — "While using" means a current location on request only. The
-> permissions, declarations and disclosures below are unchanged by this; only the implementation behind them.
-
 > 🔴 **[code] Update 2026-08-21: background location now ships on BOTH platforms, ahead of
 > the phased plan below.** The client standardized on
 > `@capacitor-community/background-geolocation` for iOS *and* Android rather than the

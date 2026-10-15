@@ -70,7 +70,7 @@ describe('LocationSection', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'While using' }));
 
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-    expect(screen.getByText(/Use your location while using Companion/)).toBeInTheDocument();
+    expect(screen.getByText(/Record your location while using Companion/)).toBeInTheDocument();
     expect(h.setMode).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Agree' }));
