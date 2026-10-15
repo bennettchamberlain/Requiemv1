@@ -71,7 +71,7 @@ Severity + owner tags follow `DELIVERY.md`:
 | 7 | **Location — foreground / precise** | ⚠️ / ✅ | `ACCESS_FINE_LOCATION` (+`COARSE`) → **Permissions Declaration Form (location)**; from Android 17 the **location button** becomes the recommended minimum scope | `CLLocationManager` → `NSLocationWhenInUseUsageDescription` | Precise location | 🟠 implies who you were with | **2** |
 | 8 | **Health & fitness** | ⚠️ / ⚠️ | Health Connect `android.permission.health.READ_*` → **Health apps declaration form** (+`READ_HEALTH_DATA_HISTORY` for >30 days) | HealthKit → `com.apple.developer.healthkit` entitlement + `NSHealthShareUsageDescription` (+`NSHealthUpdateUsageDescription` if writing) | Health info · Health | ✅ none | **3** |
 | 9 | **Contacts** | ⚠️ / ⚠️ | `READ_CONTACTS` → **contacts declaration form from Sept 2026, mandatory 2027-01-27** for targetSdk 37+; **Contact Picker** is the minimum-scope alternative | `CNContactPickerViewController` (**no string**) vs `CNContactStore` (`NSContactsUsageDescription`) | Contacts · Contacts | 🔴🔴 **entire address book of non-consenting people** | **3 (picker only)** |
-| 10 | **Location — background** | ⚠️ / ⚠️ | FGS `location` needs the **FGS-type declaration + video**. No `ACCESS_BACKGROUND_LOCATION` since 2026-10-14 (§3.4) | `NSLocationAlwaysAndWhenInUseUsageDescription` + `UIBackgroundModes:location` + always-on blue indicator | Precise location | 🟠 | **shipped 2026-08-21, ahead of plan — §3.4** |
+| 10 | **Location — background** | ⚠️ / ⚠️ | `ACCESS_BACKGROUND_LOCATION` + FGS `location` → **background-location declaration + video demo** + FGS-type declaration | `NSLocationAlwaysAndWhenInUseUsageDescription` + `UIBackgroundModes:location` + always-on blue indicator | Precise location | 🟠 | **shipped 2026-08-21, ahead of plan — §3.4** |
 | 11 | **Photos & videos — full library read** | ⚠️ / ⚠️ | `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` → **Photo & Video Permissions declaration**; broad access is for *"gallery apps"* | `PHPhotoLibrary` full auth → `NSPhotoLibraryUsageDescription`; Apple 5.1.1(iii) says *use the picker* | Photos and videos | 🟠 | **4 (only if 1+2 provably insufficient)** |
 | 12 | **App usage / screen time** | ⚠️ / ⛔ | `PACKAGE_USAGE_STATS` (Settings special access, **no runtime prompt, no Play form found**) but *"inventory of other apps on the device"* is named personal & sensitive data | **No path.** `FamilyControls` entitlement is special-request; `DeviceActivityReport` data is sandboxed in-extension and cannot reach your app | App interactions · Installed apps | ✅ none | **4 — Android only** |
 | 13 | **Installed-apps list** | ⛔ / ⛔ | `QUERY_ALL_PACKAGES` → form; permitted uses are *"device search, antivirus apps, file managers, and browsers"* only | No public API; 5.1.2(iv) bans it outright | Installed apps | ✅ | **never** |
@@ -239,6 +239,12 @@ Background is a different animal:
 > shows a map of your day" — with a UI the video can actually show. **Budget two rejection
 > cycles.**
 
+> 🔵 **[code] Update 2026-10-13:** `@capacitor-community/background-geolocation` is gone from both
+> shells. Background location is the LocalHub plugin's own monitor on each platform (Android: motion-gated
+> GPS with an exit geofence and a foreground-service `location` type; iOS: significant-change monitoring),
+> and there is no on-screen trail — "While using" means a current location on request only. The
+> permissions, declarations and disclosures below are unchanged by this; only the implementation behind them.
+
 > 🔴 **[code] Update 2026-08-21: background location now ships on BOTH platforms, ahead of
 > the phased plan below.** The client standardized on
 > `@capacitor-community/background-geolocation` for iOS *and* Android rather than the
@@ -255,18 +261,9 @@ Background is a different animal:
 > Phase 4 release. Budget the "two rejection cycles" above into the critical path for the
 > *next* Play upload, whatever it is.
 
-> 🟢 **[code] Update 2026-10-14: Android no longer declares `ACCESS_BACKGROUND_LOCATION`.**
-> Nothing ever requested it at runtime. On Android the plugin asks only for FINE/COARSE and
-> keeps sampling through its foreground service of type `location`, behind the "Recording
-> location" notification, which Android counts as while-in-use access. Play now needs only
-> the foreground-service `location` declaration and its video for Android. See
-> [`../android/DEVICE_DATA_COMPLIANCE.md`](../android/DEVICE_DATA_COMPLIANCE.md) §3.4. iOS is
-> unchanged.
-
-**Always mode (both platforms).** Settings > Location is Off / While using / Always.
-On iOS, Always requests `NSLocationAlwaysAndWhenInUseUsageDescription` after When-In-Use is
-already granted. On Android it starts the plugin's `location` foreground service with no
-`ACCESS_BACKGROUND_LOCATION`. Either way it
+**Always mode (both platforms).** Settings → Location is Off / While using / Always.
+Always requests `NSLocationAlwaysAndWhenInUseUsageDescription` (iOS) /
+`ACCESS_BACKGROUND_LOCATION` (Android) after When-In-Use/foreground is already granted, and
 starts a continuous watcher that keeps sampling once the app is backgrounded — filtered by
 `distanceFilter` rather than by significant-change. Android shows a persistent "Recording
 location" notification while this is on (the OS's price of admission for a background

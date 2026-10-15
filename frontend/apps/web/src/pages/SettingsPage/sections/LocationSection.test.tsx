@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   needsSettingsUpgrade: false,
   isNativePlatform: vi.fn(() => false),
   isIosPlatform: vi.fn(() => false),
+  isAndroidPlatform: vi.fn(() => false),
   fetchJson: vi.fn(),
   openNativeLocationSettings: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock('@ci/common', async (importOriginal) => ({
   fetchJson: h.fetchJson,
   isNativePlatform: h.isNativePlatform,
   isIosPlatform: h.isIosPlatform,
+  isAndroidPlatform: h.isAndroidPlatform,
   openNativeLocationSettings: h.openNativeLocationSettings,
 }));
 
@@ -38,6 +40,8 @@ beforeEach(() => {
   h.isNativePlatform.mockReturnValue(false);
   h.isIosPlatform.mockReset();
   h.isIosPlatform.mockReturnValue(false);
+  h.isAndroidPlatform.mockReset();
+  h.isAndroidPlatform.mockReturnValue(false);
   h.fetchJson.mockReset();
   h.fetchJson.mockResolvedValue({ total: 0, byProvider: {}, lastFixAt: null });
   h.openNativeLocationSettings.mockReset();
@@ -70,7 +74,7 @@ describe('LocationSection', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'While using' }));
 
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-    expect(screen.getByText(/Record your location while using Companion/)).toBeInTheDocument();
+    expect(screen.getByText(/Use your location while using Companion/)).toBeInTheDocument();
     expect(h.setMode).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Agree' }));
@@ -78,7 +82,7 @@ describe('LocationSection', () => {
     expect(h.setMode).toHaveBeenCalledWith('when_in_use');
   });
 
-  it('shows the Always disclosure on iPhone and requires Agree', async () => {
+  it('shows the Always disclosure on native and requires Agree', async () => {
     h.isNativePlatform.mockReturnValue(true);
     h.isIosPlatform.mockReturnValue(true);
     render(<LocationSection />);
@@ -89,36 +93,7 @@ describe('LocationSection', () => {
     expect(screen.getByText(/Remember places in the background/)).toBeInTheDocument();
     expect(screen.getByText(/no solid blue location indicator/)).toBeInTheDocument();
     expect(screen.getByText(/iOS asks twice/)).toBeInTheDocument();
-    expect(h.setMode).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Agree' }));
-
-    expect(h.setMode).toHaveBeenCalledWith('always');
-  });
-
-  it('shows Android the disclosure Play asks for, without the iPhone steps, and requires Agree', async () => {
-    h.isNativePlatform.mockReturnValue(true);
-    render(<LocationSection />);
-    await waitFor(() => expect(h.fetchJson).toHaveBeenCalled());
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Always' }));
-
-    const dialog = screen.getByRole('alertdialog');
-
-    expect(dialog).toHaveTextContent(/Remember places in the background/);
-    expect(dialog).toHaveTextContent(
-      'Companion collects location data to place your notes, photos and events on your map, even when the app is closed or not in use.',
-    );
-    expect(dialog).toHaveTextContent(/Android shows a notification that Companion is using your location/);
-    expect(dialog).toHaveTextContent(/never used for ads/);
-    expect(dialog).not.toHaveTextContent(/iPhone|iOS/);
-    expect(h.setMode).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(h.setMode).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Always' }));
     fireEvent.click(screen.getByRole('button', { name: 'Agree' }));
 
     expect(h.setMode).toHaveBeenCalledWith('always');
@@ -145,5 +120,40 @@ describe('LocationSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
 
     expect(h.openNativeLocationSettings).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LocationSection background-location disclosure copy', () => {
+  async function openAlwaysDialog() {
+    h.isNativePlatform.mockReturnValue(true);
+    render(<LocationSection />);
+    await waitFor(() => expect(h.fetchJson).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Always' }));
+
+    return screen.getByRole('alertdialog');
+  }
+
+  it('on iOS explains the quiet indicator and the two-step prompt, and says nothing about Android', async () => {
+    h.isIosPlatform.mockReturnValue(true);
+
+    const dialog = await openAlwaysDialog();
+
+    expect(dialog).toHaveTextContent('no solid blue location indicator');
+    expect(dialog).toHaveTextContent('iOS asks twice');
+    expect(dialog).not.toHaveTextContent('Android');
+  });
+
+  it('on Android explains moving-only recording, its notification and Allow all the time, and says nothing about iPhone or activity', async () => {
+    h.isAndroidPlatform.mockReturnValue(true);
+
+    const dialog = await openAlwaysDialog();
+
+    expect(dialog).toHaveTextContent('only while you are on the move');
+    expect(dialog).toHaveTextContent('A notification shows while that is happening');
+    expect(dialog).toHaveTextContent('Allow all the time');
+    expect(dialog).not.toHaveTextContent(/iPhone|iOS/);
+    // Background sampling needs no "Physical activity" grant; the copy must not suggest one.
+    expect(dialog).not.toHaveTextContent(/physical activity/i);
   });
 });

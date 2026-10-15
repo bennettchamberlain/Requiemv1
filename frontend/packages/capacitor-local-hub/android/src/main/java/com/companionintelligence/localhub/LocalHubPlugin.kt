@@ -1,13 +1,20 @@
 package com.companionintelligence.localhub
 
+import android.Manifest
 import android.content.Intent
+import android.os.Build
 import android.net.Uri
 import android.util.Base64
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
+import com.getcapacitor.PermissionState
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.getcapacitor.annotation.Permission
+import com.getcapacitor.annotation.PermissionCallback
+import com.companionintelligence.localhub.motion.MotionTracking
+import com.companionintelligence.localhub.motion.MotionTrackingConfig
 import java.security.SecureRandom
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +43,20 @@ import org.json.JSONObject
  * already safe to use concurrently -- and deliberately share no state with the server
  * lifecycle, so reading a credential does not require the sidecar to be running.
  */
-@CapacitorPlugin(name = "LocalHub")
+@CapacitorPlugin(
+    name = "LocalHub",
+    permissions = [
+        // The two grants motion-gated background sampling needs, as Capacitor aliases so
+        // startSignificantLocationUpdates can walk them in the order Android insists on
+        // (fine first; background on its own prompt). Deliberately no ACTIVITY_RECOGNITION:
+        // the motion signals are permission-free sensors and a geofence (see motion/).
+        Permission(
+            strings = [Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION],
+            alias = LocalHubPlugin.ALIAS_LOCATION,
+        ),
+        Permission(strings = ["android.permission.ACCESS_BACKGROUND_LOCATION"], alias = LocalHubPlugin.ALIAS_BACKGROUND_LOCATION),
+    ],
+)
 class LocalHubPlugin : Plugin() {
     private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val stateMutex = Mutex()
@@ -46,21 +66,45 @@ class LocalHubPlugin : Plugin() {
 
     /**
      * Outlives individual server instances on purpose: [stop] tears down the HTTP listener,
-     * but the queued captures behind it are durable user data, so the database handle is
-     * only released when the plugin itself goes away.
+     * but the queued captures behind it are durable user data. The handle is the process-wide
+     * one from [OutboxStores], shared with the motion tracker, and is never closed here.
      */
     private var outbox: OutboxStore? = null
 
+    /** The pending `startSignificantLocationUpdates` options while its permission prompts run. */
+    private var pendingMotionConfig: MotionTrackingConfig? = null
+
+    /**
+     * Further `startSignificantLocationUpdates` calls that arrived while the prompts were
+     * already running. Android allows one permission request at a time, so a second chain
+     * would lose its request outright and read as "denied"; these instead ride the chain
+     * in flight and are resolved with its outcome, under the newest options.
+     */
+    private val waitingMotionCalls = mutableListOf<PluginCall>()
+
+    override fun load() {
+        // A WebView exists: route the tracker's queued fixes to JS as `significantLocation`
+        // so the hook's lastOutcome follows background sampling. A process started by a
+        // broadcast never gets here, and the tracker queues without a listener just the same.
+        MotionTracking.get(context).listener = { body -> notifyListeners("significantLocation", JSObject.fromJSONObject(body)) }
+        super.load()
+    }
+
+    override fun handleOnResume() {
+        MotionTracking.get(context).onAppResumed()
+        super.handleOnResume()
+    }
+
     override fun handleOnDestroy() {
+        MotionTracking.get(context).listener = null
         // Synchronous best-effort cleanup: handleOnDestroy has no coroutine to await, but
         // NanoHTTPD#stop() already blocks until its listener thread has joined, so this is
         // a real stop, not a fire-and-forget one.
         server?.stop()
         server = null
         token = null
-        // Only closes the handle; every write was already committed to disk before its
-        // HTTP response was sent, so there is nothing here left to flush.
-        outbox?.close()
+        // The shared store stays open for the process (see OutboxStores); every write was
+        // already committed to disk before its HTTP response was sent.
         outbox = null
         pluginScope.cancel()
         super.handleOnDestroy()
@@ -246,8 +290,8 @@ class LocalHubPlugin : Plugin() {
 
     /**
      * One-shot high-accuracy fix ("use my location") is iOS-only for now -- see
-     * `LocationTracker.swift`. Continuous background tracking on Android is owned
-     * entirely by `@capacitor-community/background-geolocation`, not this plugin.
+     * `LocationTracker.swift`. Continuous background tracking on Android is the motion-gated
+     * tracker in this plugin (motion/).
      */
     @PluginMethod
     fun getCurrentLocation(call: PluginCall) {
@@ -267,7 +311,7 @@ class LocalHubPlugin : Plugin() {
         }
     }
 
-    /** Always-authorization two-step is iOS-only. Android uses background-geolocation. */
+    /** Always-authorization two-step is iOS-only; Android's prompts run in startSignificantLocationUpdates. */
     @PluginMethod
     fun getLocationAuthorization(call: PluginCall) {
         val ret = JSObject()
@@ -280,6 +324,92 @@ class LocalHubPlugin : Plugin() {
         val ret = JSObject()
         ret.put("status", "unsupported")
         call.resolve(ret)
+    }
+
+    /**
+     * Android's Always mode: motion-gated background sampling (see
+     * [com.companionintelligence.localhub.motion.MotionGatedTracker]). Walks the permission
+     * prompts Android requires one at a time -- fine location, then background location
+     * (its own prompt from API 30, and a Settings page from 31) -- and arms the tracker once
+     * both are held. A refusal resolves the call and emits `significantLocationError`
+     * `NOT_AUTHORIZED`, the same shape iOS uses, so the web side's "Open Settings" path lights
+     * up. Nothing beyond the location grants is asked for: like iOS's significant-change
+     * monitoring, the motion signals need no "Physical activity" permission.
+     *
+     * Options come from `@ci/common`'s `startSignificantLocationUpdates`; `deviceKey` is
+     * required because without it no record can share the web side's `source_id`.
+     */
+    @PluginMethod
+    fun startSignificantLocationUpdates(call: PluginCall) {
+        val config = MotionTrackingConfig.fromJson(call.data)
+        if (config == null) {
+            call.reject("startSignificantLocationUpdates needs a non-empty deviceKey")
+            return
+        }
+        val chainInFlight = pendingMotionConfig != null
+        pendingMotionConfig = config
+        if (chainInFlight) {
+            waitingMotionCalls += call
+            return
+        }
+        if (getPermissionState(ALIAS_LOCATION) != PermissionState.GRANTED) {
+            requestPermissionForAlias(ALIAS_LOCATION, call, "motionLocationPermission")
+            return
+        }
+        continueAfterLocation(call)
+    }
+
+    @PermissionCallback
+    private fun motionLocationPermission(call: PluginCall) {
+        continueAfterLocation(call)
+    }
+
+    private fun continueAfterLocation(call: PluginCall) {
+        if (getPermissionState(ALIAS_LOCATION) != PermissionState.GRANTED) {
+            finishMotionStart(call, authorized = false)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && getPermissionState(ALIAS_BACKGROUND_LOCATION) != PermissionState.GRANTED) {
+            requestPermissionForAlias(ALIAS_BACKGROUND_LOCATION, call, "motionBackgroundPermission")
+            return
+        }
+        finishMotionStart(call, authorized = true)
+    }
+
+    @PermissionCallback
+    private fun motionBackgroundPermission(call: PluginCall) {
+        finishMotionStart(call, authorized = true)
+    }
+
+    private fun finishMotionStart(call: PluginCall, authorized: Boolean) {
+        val config = pendingMotionConfig
+        val calls = listOf(call) + waitingMotionCalls
+        pendingMotionConfig = null
+        waitingMotionCalls.clear()
+        val backgroundHeld = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            getPermissionState(ALIAS_BACKGROUND_LOCATION) == PermissionState.GRANTED
+        if (!authorized || config == null || !backgroundHeld) {
+            val error = JSObject()
+            error.put("code", "NOT_AUTHORIZED")
+            notifyListeners("significantLocationError", error)
+            calls.forEach { it.resolve() }
+            return
+        }
+        pluginScope.launch {
+            MotionTracking.get(context).arm(config)
+            calls.forEach { it.resolve() }
+        }
+    }
+
+    @PluginMethod
+    fun stopSignificantLocationUpdates(call: PluginCall) {
+        pendingMotionConfig = null
+        waitingMotionCalls.forEach { it.resolve() }
+        waitingMotionCalls.clear()
+        pluginScope.launch {
+            MotionTracking.get(context).disarm()
+            call.resolve()
+        }
     }
 
     /**
@@ -312,7 +442,7 @@ class LocalHubPlugin : Plugin() {
         // application context from it, so holding this store can't leak an Activity. The
         // database itself lands in app-private internal storage
         // (/data/data/<pkg>/databases/), which is where the durability guarantee comes from.
-        val store = outbox ?: OutboxStore(context).also { outbox = it }
+        val store = outbox ?: OutboxStores.shared(context).also { outbox = it }
         val newServer = LocalHubServer(newToken, store)
 
         withContext(Dispatchers.IO) {
@@ -368,6 +498,9 @@ class LocalHubPlugin : Plugin() {
     }
 
     companion object {
+        const val ALIAS_LOCATION = "location"
+        const val ALIAS_BACKGROUND_LOCATION = "backgroundLocation"
+
         /**
          * The credentials the app itself stores: the device API key, its id and capability, and
          * the paired Memory origin mirrored for native consumers. Kept equal to
