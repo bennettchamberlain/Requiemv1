@@ -111,8 +111,10 @@ export type { MediaDimensions } from './services/MediaDimensionsService';
 export { MEDIA_DIMENSIONS_QUEUE } from './listeners/MediaDimensionsBackfillListener';
 export type { File, SignedFile, SavedSearch };
 export type { SavedSearchFilters } from './types';
+export { isValidAreas, isValidBbox, savedSearchAreas } from './types';
 export { resolveSavedSearchDateRange, isRollingDatePreset } from './seeds/resolveDatePreset';
 export { DEFAULT_SAVED_SEARCHES } from './seeds/defaultSavedSearches';
+export { FILE_KINDS, type FileKind, fileKindsPredicate, isFileKind, normalizeFileKinds } from './fileKinds';
 export {
   FileCreatedEvent,
   FileUpdatedEvent,

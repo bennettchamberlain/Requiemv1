@@ -8,7 +8,14 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { SHARE_DISCLOSURE, SharedSearchConsentService, applySearchCeiling } from '@ci/domains/asks';
 import { BrowserActivityEntity, BrowserActivityService } from '@ci/domains/browser-activity';
 import { EntityResolutionService, type ResolvedEntity } from '@ci/domains/entity-resolution';
-import { FileService, SavedSearchService, resolveSavedSearchDateRange } from '@ci/domains/files';
+import {
+  type FileKind,
+  FileService,
+  SavedSearchService,
+  normalizeFileKinds,
+  resolveSavedSearchDateRange,
+  savedSearchAreas,
+} from '@ci/domains/files';
 import { AnswerService } from '@ci/domains/intelligence';
 import {
   CommunicationService,
@@ -189,12 +196,27 @@ interface EventFilter {
   people?: string[];
   places?: string[];
   hasLocation?: boolean;
-  bbox?: number[];
+  areas?: number[][];
 }
 
-/** Where / located-only / map viewport: only events carry a place, so these pin the browse to events. */
+/** Where / located-only / map areas: only events carry a place, so these pin the browse to events. */
 function isPlaceScoped(filter: EventFilter): boolean {
-  return filter.places != null || filter.hasLocation != null || filter.bbox != null;
+  return filter.places != null || filter.hasLocation != null || filter.areas != null;
+}
+
+/**
+ * The map areas a search input asks for: `areas` plus the legacy single
+ * `bbox`, keeping only entries that are exactly four finite numbers, or
+ * undefined when none survive. A malformed entry is dropped rather than
+ * failing the search, as the single box always was.
+ */
+function requestedAreas(input: Pick<SearchInput, 'areas' | 'bbox'>): number[][] | undefined {
+  const candidates = [...(input.areas ?? []), ...(input.bbox != null ? [input.bbox] : [])];
+  const valid = candidates.filter(
+    (area) => Array.isArray(area) && area.length === 4 && area.every((value) => Number.isFinite(value)),
+  );
+
+  return valid.length > 0 ? valid : undefined;
 }
 
 /**
@@ -458,10 +480,7 @@ export class SearchResolver {
       connectors: input.connectors && input.connectors.length > 0 ? input.connectors : undefined,
       people: input.people && input.people.length > 0 ? input.people : undefined,
       places: input.places && input.places.length > 0 ? input.places : undefined,
-      bbox:
-        input.bbox && input.bbox.length === 4 && input.bbox.every((value) => Number.isFinite(value))
-          ? input.bbox
-          : undefined,
+      areas: requestedAreas(input),
       // Forced: a pin is a coordinate. See MapPinsType / findMapPins.
       hasLocation: true,
       ids,
@@ -556,6 +575,8 @@ export class SearchResolver {
         hasLocation: filters.hasLocation,
         semantic: filters.semantic,
         direction: filters.direction,
+        fileKinds: filters.fileKinds,
+        areas: savedSearchAreas(filters),
         // Viewer paging carries over only when the ceiling permits it; sort
         // prefers the viewer's choice, falling back to the owner's saved sort.
         sortBy: input.sortBy ?? filters.sortBy,
@@ -610,19 +631,17 @@ export class SearchResolver {
     const people = input.people && input.people.length > 0 ? input.people : undefined;
     const places = input.places && input.places.length > 0 ? input.places : undefined;
     const hasLocation = input.hasLocation === true ? true : undefined;
-    // Map "Search this area" viewport box [minLon, minLat, maxLon, maxLat]; ignored
-    // unless it carries exactly four finite numbers.
-    const bbox =
-      input.bbox && input.bbox.length === 4 && input.bbox.every((value) => Number.isFinite(value))
-        ? input.bbox
-        : undefined;
+    // Map areas (drawn, or the "Search this area" viewport), ORed; each must
+    // carry exactly four finite numbers to count.
+    const areas = requestedAreas(input);
     const eventFilter =
-      people != null || places != null || hasLocation != null || bbox != null
-        ? { people, places, hasLocation, bbox }
+      people != null || places != null || hasLocation != null || areas != null
+        ? { people, places, hasLocation, areas }
         : undefined;
     // Sent / received: a dimension only messages carry, so like the Where
     // family it pins the browse — to communications (see browseWants).
     const direction = messageDirection(input.direction);
+    const fileKinds = normalizeFileKinds(input.fileKinds);
 
     // No filter signal at all -> fall back to recent timed entities (preserves prior behavior).
     const noInputs =
@@ -632,7 +651,8 @@ export class SearchResolver {
       !hasDate &&
       eventFilter == null &&
       connectors == null &&
-      direction == null;
+      direction == null &&
+      fileKinds == null;
 
     // Build a candidate identifier set from the strongest available signal, then AND the
     // remaining filter dimensions on as post-filters so all filters combine (LifeScope parity).
@@ -689,6 +709,7 @@ export class SearchResolver {
         eventFilter,
         connectors,
         direction,
+        fileKinds,
       };
 
       // Without a decodable id the cursor can only bound the walk by its time, inclusively. That
@@ -733,6 +754,17 @@ export class SearchResolver {
     // events *and* communications (PEOPLE_LINKED_TYPES), each matched by its
     // own service. Every other kind drops out — it has no link to a person and
     // no direction, so it could never match.
+    // Kind filter for candidates the index produced: the timed browse applied
+    // it in SQL; a query or a tag hands back files of every kind.
+    if (fileKinds != null && candidateSource !== 'timed') {
+      const fileIds = identifiers
+        .filter((identifier) => identifier.type === 'file')
+        .map((identifier) => identifier.id);
+      const kept = await this.fileService.filterIdsByKind(serviceContext, fileIds, fileKinds);
+
+      identifiers = identifiers.filter((identifier) => identifier.type !== 'file' || kept.has(identifier.id));
+    }
+
     if ((eventFilter != null || direction != null) && candidateSource !== 'timed') {
       const pinnedToEvents = eventFilter != null && isPlaceScoped(eventFilter);
       const pinnedToMessages = direction != null;
@@ -956,6 +988,7 @@ export class SearchResolver {
       eventFilter,
       connectors,
       direction,
+      fileKinds,
       order = 'DESC',
       limit = 25,
     }: {
@@ -975,6 +1008,8 @@ export class SearchResolver {
       connectors?: string[];
       /** Sent / received — communications only, see browseWants. */
       direction?: string;
+      /** Which kinds of file — files only, see fileKinds.ts. */
+      fileKinds?: readonly FileKind[];
       /**
        * Which way every table is read, and the cursor walked: each type's rows ORDERED, and SEEKED
        * past (afterTime, afterId), in this direction, so the window a type contributes starts at the
@@ -1006,7 +1041,7 @@ export class SearchResolver {
       people?: string[];
       places?: string[];
       hasLocation?: boolean;
-      bbox?: number[];
+      areas?: number[][];
     } = {
       limit,
       order: { startTime: order },
@@ -1062,9 +1097,11 @@ export class SearchResolver {
       endTime?: Date;
       afterTime?: Date;
       afterId?: string;
+      kinds?: readonly FileKind[];
     } = {
       limit,
       order,
+      ...(fileKinds ? { kinds: fileKinds } : {}),
     };
 
     const fileChunkOptions: {
@@ -1218,6 +1255,7 @@ export class SearchResolver {
       eventFilter,
       connectors,
       direction,
+      fileKinds,
     }: {
       includeTypes?: IndexableEntity[];
       excludeTypes?: IndexableEntity[];
@@ -1228,6 +1266,7 @@ export class SearchResolver {
       eventFilter?: EventFilter;
       connectors?: string[];
       direction?: string;
+      fileKinds?: readonly FileKind[];
     },
   ): Promise<number> {
     const wants = (type: IndexableEntity) =>
@@ -1261,7 +1300,12 @@ export class SearchResolver {
             ...(direction ? { direction } : {}),
           })
         : 0,
-      wants('file') ? this.fileService.countEntitiesForFiles(context, dateOptions) : 0,
+      wants('file')
+        ? this.fileService.countEntitiesForFiles(context, {
+            ...dateOptions,
+            ...(fileKinds ? { kinds: fileKinds } : {}),
+          })
+        : 0,
       wants('file-chunk') ? this.fileChunkService.countEntitiesForFileChunks(context, dateOptions) : 0,
       wants('note') ? this.noteService.countEntitiesForNotes(context, dateOptions) : 0,
       wants('content')
@@ -1322,7 +1366,7 @@ export class SearchResolver {
    * Three gates, in order of how specific they are:
    *
    *  1. the caller's explicit include/exclude type filter;
-   *  2. the event-only dimensions (who / where / connector / bbox / hasLocation),
+   *  2. the event-only dimensions (who / where / connector / areas / hasLocation),
    *     which exist only on the event timeline, so setting any restricts the
    *     browse to events;
    *  3. the opt-in gate — {@link BROWSE_OPT_IN_TYPES} plus `file`.
