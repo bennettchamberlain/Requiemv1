@@ -2,9 +2,127 @@ import { createInterface } from 'node:readline';
 import { Readable } from 'node:stream';
 
 import { type CliContext, CliError } from '../context';
+import { json } from '../output';
 
 export interface McpServeOptions {
   stdio?: boolean;
+}
+
+export interface McpInitHooksOptions {
+  host?: string;
+  json?: boolean;
+}
+
+export interface HostHookBundle {
+  host: 'claude-code' | 'cursor' | 'gemini';
+  mcpConfig: Record<string, unknown>;
+  lifecycleHooks: Record<string, unknown>;
+}
+
+/**
+ * `ci mcp init-hooks` — emit ready-to-paste MCP server + lifecycle hook
+ * configurations (`knowl` zero-touch lifecycle pattern) for Claude Code,
+ * Cursor, and Gemini / Antigravity.
+ */
+export async function mcpInitHooksCommand(ctx: CliContext, options: McpInitHooksOptions = {}): Promise<void> {
+  const hostFilter = (options.host ?? 'all').trim().toLowerCase();
+  if (!['all', 'claude-code', 'cursor', 'gemini'].includes(hostFilter)) {
+    throw new CliError('--host must be one of: all, claude-code, cursor, gemini');
+  }
+
+  const baseUrl = ctx.client.baseUrl.replace(/\/+$/, '');
+  const envBlock = {
+    CI_SERVER_URL: baseUrl,
+    CI_API_KEY: ctx.client.apiKey ?? '${CI_API_KEY}',
+  };
+
+  const stdioServerEntry = {
+    command: 'ci',
+    args: ['mcp', 'serve', '--stdio'],
+    env: envBlock,
+  };
+
+  const bundles: HostHookBundle[] = [
+    {
+      host: 'claude-code',
+      mcpConfig: {
+        mcpServers: {
+          'companion-memory': stdioServerEntry,
+        },
+      },
+      lifecycleHooks: {
+        hooks: {
+          SessionStart: [
+            {
+              matcher: '',
+              hooks: [
+                {
+                  type: 'command',
+                  command: `curl -fsSL -H "x-api-key: \${CI_API_KEY}" "${baseUrl}/memory/context"`,
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              matcher: '',
+              hooks: [
+                {
+                  type: 'command',
+                  command: `git diff --name-only HEAD | jq -R -s '{changedPaths: (split("\\n") | map(select(length > 0)))}' | curl -fsSL -X POST -H "content-type: application/json" -H "x-api-key: \${CI_API_KEY}" -d @- "${baseUrl}/memory/drift"`,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+    {
+      host: 'cursor',
+      mcpConfig: {
+        mcpServers: {
+          'companion-memory': stdioServerEntry,
+        },
+      },
+      lifecycleHooks: {
+        version: 1,
+        hooks: {
+          afterFileEdit: [
+            {
+              command: `ci fleet status --json`,
+            },
+          ],
+        },
+      },
+    },
+    {
+      host: 'gemini',
+      mcpConfig: {
+        mcpServers: {
+          'companion-memory': stdioServerEntry,
+        },
+      },
+      lifecycleHooks: {
+        sessionStart: `${baseUrl}/memory/context`,
+        preTurnRecall: `${baseUrl}/memory/recall`,
+        postTurnWrite: `${baseUrl}/memory/turn`,
+        postCommitDrift: `${baseUrl}/memory/drift`,
+      },
+    },
+  ];
+
+  const selected = hostFilter === 'all' ? bundles : bundles.filter((b) => b.host === hostFilter);
+
+  if (options.json) {
+    json(ctx.term, selected.length === 1 ? selected[0] : { hosts: selected });
+
+    return;
+  }
+
+  for (const bundle of selected) {
+    ctx.term.out(`# ${bundle.host} — MCP & Lifecycle Hooks`);
+    ctx.term.out(JSON.stringify({ ...bundle.mcpConfig, ...bundle.lifecycleHooks }, null, 2));
+  }
 }
 
 export interface McpStdioIO {

@@ -43,6 +43,61 @@ export interface CreateAgentMemoryDto {
 
 export type GovernanceRelation = 'none' | 'supersede' | 'conflict';
 
+export interface MemoryDriftMatch {
+  memory: AgentMemory;
+  matchedPaths: string[];
+  referencedPaths: string[];
+  reason: string;
+}
+
+export interface MemoryDriftReport {
+  checkedCount: number;
+  driftedCount: number;
+  matches: MemoryDriftMatch[];
+}
+
+const PATH_TOKEN_RE =
+  /(?:`([^`\n]+?\.[a-z0-9]{1,8})`|(?:\b(?:[\w.-]+\/)+[\w.-]+(?:\.[a-z0-9]{1,8})?\b)|\b([\w-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|sql|py|md|yml|yaml|sh|graphql))\b)/gi;
+
+function normalizeRepoPath(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^['"`]+|['"`.,;:!?)]+$/g, '')
+    .replace(/^\.?\//, '')
+    .replace(/\\/g, '/');
+}
+
+/**
+ * Extract normalized file paths or module paths referenced inside a memory
+ * fragment's `content` or `source` (`knowl` evidence-binding pattern).
+ */
+export function extractReferencedPaths(content: string, source?: string | null): string[] {
+  const found = new Set<string>();
+
+  if (source) {
+    const cleanSource = normalizeRepoPath(source);
+    if (cleanSource.includes('/') || /\.[a-z0-9]{1,8}$/i.test(cleanSource)) {
+      found.add(cleanSource);
+    }
+  }
+
+  for (const match of content.matchAll(PATH_TOKEN_RE)) {
+    const candidate = normalizeRepoPath(match[1] ?? match[2] ?? match[0] ?? '');
+    if (!candidate || candidate.startsWith('http://') || candidate.startsWith('https://')) {
+      continue;
+    }
+
+    // Ignore version numbers like "1.0" or "v2.1"
+    if (/^v?\d+(?:\.\d+)+$/i.test(candidate)) {
+      continue;
+    }
+
+    found.add(candidate);
+  }
+
+  return [...found];
+}
+
 const STOP_WORDS = new Set([
   'a',
   'an',
@@ -340,6 +395,86 @@ export class AgentMemoryService {
     });
 
     return rows.map(AgentMemoryEntity.toEgressType);
+  }
+
+  /**
+   * Detect staleness drift between active governed memories and a list of
+   * modified repository paths (`knowl` blast-radius / drift verification).
+   *
+   * Inspects active memory atoms for path or filename references overlapping
+   * `changedPaths`. Optionally marks drifted memories as `conflicted` so they
+   * appear in the governance review queue (`GET /memory/conflicts`).
+   */
+  async detectDrift(
+    context: ServiceContext,
+    changedPaths: string[],
+    options: { markConflicted?: boolean } = {},
+  ): Promise<MemoryDriftReport> {
+    const normalizedChanges = changedPaths.map(normalizeRepoPath).filter((p) => p.length > 0);
+
+    const active = await this.findActive(context, { take: 200 });
+    if (normalizedChanges.length === 0 || active.length === 0) {
+      return {
+        checkedCount: active.length,
+        driftedCount: 0,
+        matches: [],
+      };
+    }
+
+    const matches: MemoryDriftMatch[] = [];
+
+    for (const memory of active) {
+      const referencedPaths = extractReferencedPaths(memory.content, memory.source);
+      if (referencedPaths.length === 0) {
+        continue;
+      }
+
+      const matchedPaths = normalizedChanges.filter((changed) => {
+        const changedLower = changed.toLowerCase();
+        const changedBase = changedLower.split('/').pop() ?? changedLower;
+
+        return referencedPaths.some((ref) => {
+          const refLower = ref.toLowerCase();
+          const refBase = refLower.split('/').pop() ?? refLower;
+
+          return (
+            changedLower === refLower ||
+            changedLower.endsWith(`/${refLower}`) ||
+            refLower.endsWith(`/${changedLower}`) ||
+            (changedBase.includes('.') && changedBase === refBase)
+          );
+        });
+      });
+
+      if (matchedPaths.length > 0) {
+        matches.push({
+          memory,
+          matchedPaths,
+          referencedPaths,
+          reason: `Referenced path(s) modified: ${matchedPaths.join(', ')}`,
+        });
+      }
+    }
+
+    if (options.markConflicted && matches.length > 0 && typeof this.repository.update === 'function') {
+      const ids = matches.map((m) => m.memory.id);
+      await this.repository.update(
+        {
+          id: In(ids),
+          ...(context.userId !== SYSTEM_USER && { userId: context.userId }),
+        },
+        { status: 'conflicted' },
+      );
+      for (const match of matches) {
+        match.memory = { ...match.memory, status: 'conflicted' };
+      }
+    }
+
+    return {
+      checkedCount: active.length,
+      driftedCount: matches.length,
+      matches,
+    };
   }
 
   private async isGovernanceEnabled(userId: string): Promise<boolean> {

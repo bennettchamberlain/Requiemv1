@@ -117,9 +117,12 @@ export { applyRecencyDecay } from './services/RecallService';
 export {
   AgentMemoryService,
   detectSupersessionOrConflict,
+  extractReferencedPaths,
   inferMemoryCategory,
   type CreateAgentMemoryDto,
   type GovernanceRelation,
+  type MemoryDriftMatch,
+  type MemoryDriftReport,
 } from './services/AgentMemoryService';
 export {
   AGENT_MEMORY_CATEGORIES,

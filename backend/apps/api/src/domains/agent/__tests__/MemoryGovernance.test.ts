@@ -8,8 +8,10 @@ import { type AgentMemoryEntity } from '../entities/AgentMemoryEntity';
 import {
   AgentMemoryService,
   detectSupersessionOrConflict,
+  extractReferencedPaths,
   inferMemoryCategory,
 } from '../services/AgentMemoryService';
+import { MemoryCompactionService } from '../services/MemoryCompactionService';
 import { applyRecencyDecay } from '../services/RecallService';
 
 describe('Memory Governance (knowl pattern) & Reciprocal Rank Fusion', () => {
@@ -239,6 +241,162 @@ describe('Memory Governance (knowl pattern) & Reciprocal Rank Fusion', () => {
       // doc-2 appears in both lists (rank 2 in semantic, rank 1 in keyword) -> highest RRF score
       expect(fused[0].id).toBe('doc-2');
       expect(fused.map((d) => d.id)).toEqual(['doc-2', 'doc-1', 'doc-3']);
+    });
+  });
+
+  describe('Evidence binding & staleness drift detection (knowl pattern)', () => {
+    it('extractReferencedPaths extracts inline file paths, backticked filenames, and path-like sources', () => {
+      const refs = extractReferencedPaths(
+        'Architecture rule: `src/domains/asks/policy.ts` and backend/apps/api/src/domains/agent/RecallService.ts must remain pure; see package.json.',
+        'docs/asks-system-guide.md',
+      );
+      expect(refs).toEqual(
+        expect.arrayContaining([
+          'docs/asks-system-guide.md',
+          'src/domains/asks/policy.ts',
+          'backend/apps/api/src/domains/agent/RecallService.ts',
+          'package.json',
+        ]),
+      );
+    });
+
+    it('detectDrift identifies active governed memories referencing modified files and optionally marks them conflicted', async () => {
+      const rows: AgentMemoryEntity[] = [];
+      const repo = {
+        create: jest.fn((data: Partial<AgentMemoryEntity>) => ({
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          processedAt: null,
+        })),
+        save: jest.fn(async (entity: AgentMemoryEntity) => {
+          rows.push(entity);
+
+          return entity;
+        }),
+        find: jest.fn(async () => rows),
+        update: jest.fn(
+          async (
+            criteria: { id?: { _value?: string[] }; userId?: string },
+            partial: Partial<AgentMemoryEntity>,
+          ) => {
+            const ids: string[] = criteria.id?._value ?? [];
+            for (const r of rows) {
+              if (ids.includes(r.id)) {
+                Object.assign(r, partial);
+              }
+            }
+          },
+        ),
+      } as unknown as Repository<AgentMemoryEntity>;
+
+      const eventService = { send: jest.fn(async () => undefined) } as unknown as EventService;
+      const logger = {
+        setContext: jest.fn(),
+        log: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      } as never;
+
+      const service = new AgentMemoryService(repo, eventService, logger);
+      const ctx = { userId: 'user-1' };
+
+      await service.create(ctx, {
+        id: 'mem-arch',
+        content:
+          'Architecture invariant: backend/apps/api/src/domains/asks/policy.ts enforces disclosure rungs',
+        category: 'architecture',
+      });
+      await service.create(ctx, {
+        id: 'mem-pref',
+        content: 'User prefers dark mode in the web app',
+        category: 'preference',
+      });
+
+      const report = await service.detectDrift(
+        ctx,
+        ['backend/apps/api/src/domains/asks/policy.ts', 'README.md'],
+        { markConflicted: true },
+      );
+
+      expect(report.checkedCount).toBe(2);
+      expect(report.driftedCount).toBe(1);
+      expect(report.matches[0].memory.id).toBe('mem-arch');
+      expect(report.matches[0].memory.status).toBe('conflicted');
+      expect(report.matches[0].matchedPaths).toEqual(['backend/apps/api/src/domains/asks/policy.ts']);
+      expect(rows.find((r) => r.id === 'mem-arch')?.status).toBe('conflicted');
+    });
+  });
+
+  describe('MemoryCompactionService non-person deduplication (Place & Item)', () => {
+    it('reuses existing Place and Item entities by case-insensitive name and deduplicates within a compaction run', async () => {
+      const ollamaService = {
+        chat: jest.fn().mockResolvedValue({
+          message: {
+            content: JSON.stringify({
+              entities: [
+                { type: 'place', name: 'Blue Bottle Coffee', description: 'cafe' },
+                { type: 'place', name: 'blue bottle coffee', description: 'duplicate mention in batch' },
+                { type: 'item', name: 'MacBook Pro M4', description: 'laptop' },
+                { type: 'item', name: 'macbook pro m4', description: 'duplicate item in batch' },
+              ],
+              relationships: [],
+            }),
+          },
+        }),
+      } as never;
+
+      const placeService = {
+        findAll: jest.fn(async () => [{ id: 'place-existing-1', name: 'Blue Bottle Coffee' }]),
+        create: jest.fn(async () => [{ id: 'place-new' }]),
+      } as never;
+
+      const itemService = {
+        findAll: jest.fn(async () => []),
+        create: jest.fn(async () => ({ id: 'item-created-1', name: 'MacBook Pro M4' })),
+      } as never;
+
+      const compaction = new MemoryCompactionService(
+        ollamaService,
+        { markProcessed: jest.fn() } as never,
+        { search: jest.fn(async () => []), findAll: jest.fn(async () => []), create: jest.fn() } as never,
+        { search: jest.fn(async () => []), create: jest.fn() } as never,
+        { getSelfIdentity: jest.fn(async () => null) } as never,
+        placeService,
+        itemService,
+        { resolveType: jest.fn(() => null), upsert: jest.fn() } as never,
+        {
+          setContext: jest.fn(),
+          log: jest.fn(),
+          warn: jest.fn(),
+          debug: jest.fn(),
+          error: jest.fn(),
+        } as never,
+      );
+
+      await compaction.compactForUser({ userId: 'user-1' }, [
+        {
+          id: 'frag-1',
+          userId: 'user-1',
+          sessionId: null,
+          source: 'memory',
+          title: null,
+          content: 'Worked on MacBook Pro M4 at Blue Bottle Coffee',
+          category: 'fact',
+          status: 'active',
+          supersededById: null,
+          validFrom: new Date(),
+          validUntil: null,
+          processedAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
+      // Place matched existing row -> create was never called
+      expect((placeService as { create: jest.Mock }).create).not.toHaveBeenCalled();
+      // Item was created once and deduplicated on second mention in batch
+      expect((itemService as { create: jest.Mock }).create).toHaveBeenCalledTimes(1);
     });
   });
 });

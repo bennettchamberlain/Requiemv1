@@ -45,9 +45,15 @@ export const agentMemorySchema = z.object({
   supersedesId: z.string().uuid().optional(),
 });
 
+export const memoryDriftSchema = z.object({
+  changedPaths: z.array(z.string().min(1).max(1000)).min(1).max(500),
+  markConflicted: z.boolean().optional(),
+});
+
 export type RecallDto = z.infer<typeof recallSchema>;
 export type TurnDto = z.infer<typeof turnSchema>;
 export type AgentMemoryDto = z.infer<typeof agentMemorySchema>;
+export type MemoryDriftDto = z.infer<typeof memoryDriftSchema>;
 
 // ---------------------------------------------------------------------------
 // Response shapes

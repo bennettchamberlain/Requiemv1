@@ -1022,13 +1022,13 @@ asker-supplied `queryType`. `"do you know david miller"` under `queryType: 'cont
 now emits `phraseto_tsquery('english', 'david miller')` rather than OR-joining
 `'david' | 'miller'`.
 
-**G2 — No grant-creation entry point (blocker).** `createAskGrant` is complete on
-the wire — it takes `granteeId` or `granteePeerLinkId`, `maxDisclosure`, scope,
-mode, purpose — and **no UI calls it**. There is no `CREATE_ASK_GRANT` document
-in `asksOperations.ts`. An owner cannot create a standing grant through the
-product. The Grant Manager can only edit and revoke grants that already exist,
-which on a fresh box is none. (`createAskGrant` also has no `expiresAt` field
-yet; set one with `updateAskGrant`.)
+**G2 — No grant-creation entry point (blocker).** ✅ **Local grant creation
+shipped; peer-grant creation from the UI remains open.** `CREATE_ASK_GRANT` is
+now wired in `asksOperations.ts` and `AsksPage.tsx` (`GrantManager`'s
+`onAddGrant` control creates standing grants for local appliance accounts).
+Peer-linked grants can be created via `ci grants create` / `ci grants parse --apply`,
+and `createAskGrant` on GraphQL accepts `granteePeerLinkId`. (`createAskGrant`
+still sets initial expiry via `updateAskGrant`.)
 
 **G3 — Cross-box asks cannot be sent from the page (blocker).** The composer says
 so itself: *"asking across boxes needs an access token from the Portal that your

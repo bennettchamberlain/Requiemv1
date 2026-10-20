@@ -1,7 +1,18 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { ImportApiClient } from '../client';
-import { extractJsonRpcPayloads, mcpServeCommand } from '../commands/mcp';
+import {
+  fleetClaimCommand,
+  fleetRegisterCommand,
+  fleetReleaseCommand,
+  fleetStatusCommand,
+} from '../commands/fleet';
+import { grantsParseCommand, parseGrantSentence } from '../commands/grants/parse';
+import { extractJsonRpcPayloads, mcpInitHooksCommand, mcpServeCommand } from '../commands/mcp';
 import { type CliContext, CliError } from '../context';
 import { MemoryGraphQLClient } from '../graphqlClient';
 import { buildProgram } from '../program';
@@ -203,5 +214,105 @@ describe('ci mcp serve --stdio', () => {
     expect(mcpCmd).toBeDefined();
     const serveCmd = mcpCmd?.commands.find((c) => c.name() === 'serve');
     expect(serveCmd).toBeDefined();
+    const initHooksCmd = mcpCmd?.commands.find((c) => c.name() === 'init-hooks');
+    expect(initHooksCmd).toBeDefined();
+  });
+
+  it('`ci mcp init-hooks` emits host MCP and lifecycle hook configs in JSON mode', async () => {
+    const { ctx, outLines } = makeContext('http://localhost:3030', 'ci_key');
+    await mcpInitHooksCommand(ctx, { host: 'claude-code', json: true });
+    expect(outLines).toHaveLength(1);
+    const parsed = JSON.parse(outLines[0]);
+    expect(parsed.host).toBe('claude-code');
+    expect(parsed.mcpConfig.mcpServers['companion-memory'].args).toEqual(['mcp', 'serve', '--stdio']);
+    expect(parsed.lifecycleHooks.hooks.SessionStart).toBeDefined();
+    expect(parsed.lifecycleHooks.hooks.Stop).toBeDefined();
+  });
+});
+
+describe('ci fleet — multi-agent worktree coordination', () => {
+  it('registers agent sessions, claims files, detects cross-agent collisions, and releases', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ci-fleet-test-'));
+    const stateFile = join(dir, 'fleet.json');
+
+    try {
+      const { ctx: ctx1, outLines: out1 } = makeContext();
+      await fleetRegisterCommand(ctx1, 'agent-alpha', {
+        worktree: '/repo/wt-alpha',
+        branch: 'feat/alpha',
+        task: 'Update ask policy',
+        files: ['backend/apps/api/src/domains/asks/policy.ts'],
+        stateFile,
+        json: true,
+      });
+
+      const res1 = JSON.parse(out1[0]);
+      expect(res1.session.agentId).toBe('agent-alpha');
+      expect(res1.collisions).toEqual([]);
+
+      // Second agent claims the same file -> collision detected!
+      const { ctx: ctx2, outLines: out2 } = makeContext();
+      await fleetClaimCommand(
+        ctx2,
+        'agent-beta',
+        ['./backend/apps/api/src/domains/asks/policy.ts', 'README.md'],
+        { stateFile, json: true },
+      );
+
+      const res2 = JSON.parse(out2[0]);
+      expect(res2.collisions).toEqual([
+        {
+          file: 'backend/apps/api/src/domains/asks/policy.ts',
+          agents: ['agent-alpha', 'agent-beta'],
+        },
+      ]);
+
+      // Status lists both sessions and the collision
+      const { ctx: ctx3, outLines: out3 } = makeContext();
+      await fleetStatusCommand(ctx3, { stateFile, json: true });
+      const status = JSON.parse(out3[0]);
+      expect(status.sessions).toHaveLength(2);
+      expect(status.collisions).toHaveLength(1);
+
+      // Releasing agent-alpha clears the collision
+      const { ctx: ctx4 } = makeContext();
+      await fleetReleaseCommand(ctx4, 'agent-alpha', { stateFile, json: true });
+
+      const { ctx: ctx5, outLines: out5 } = makeContext();
+      await fleetStatusCommand(ctx5, { stateFile, json: true });
+      const afterRelease = JSON.parse(out5[0]);
+      expect(afterRelease.sessions).toHaveLength(1);
+      expect(afterRelease.collisions).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('ci grants parse — natural-language standing grant parser', () => {
+  it('parses natural-language consent instructions and outputs JSON', async () => {
+    const fixed = new Date('2026-10-20T00:00:00.000Z');
+    const parsed = parseGrantSentence(
+      'allow alice@portal.example to ask about photos for 7 days at most summary',
+      fixed,
+    );
+    expect(parsed).toEqual({
+      grantee: 'alice@portal.example',
+      queryType: 'content',
+      dataClass: 'photos',
+      mode: 'auto',
+      maxDisclosure: 'summary',
+      expiresAt: '2026-10-27T00:00:00.000Z',
+    });
+
+    const { ctx, outLines } = makeContext();
+    await grantsParseCommand(ctx, 'block bob@portal.example from location', { json: true });
+    expect(JSON.parse(outLines[0])).toEqual({
+      grantee: 'bob@portal.example',
+      queryType: 'attribute',
+      dataClass: 'location',
+      mode: 'block',
+      maxDisclosure: 'none',
+    });
   });
 });

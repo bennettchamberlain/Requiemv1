@@ -227,6 +227,7 @@ type PersonVariantCandidate = { id: string; name?: string | null };
 
 type CompactionCache = {
   personCandidatesByUserId: Map<string, PersonVariantCandidate[]>;
+  itemsByUserId?: Map<string, Array<{ id: string; name?: string | null }>>;
 };
 
 // ---------------------------------------------------------------------------
@@ -565,15 +566,15 @@ export class MemoryCompactionService {
         continue;
       }
 
-      const key = this.entityKey(entity.type, name);
-      if (type === 'Place' && entityMap.has(key)) {
+      const key = this.entityKey(type, name);
+      if (entityMap.has(key)) {
         continue;
       }
 
       try {
         const entityId = await this.upsertEntity(
           context,
-          entity.type,
+          type.toLowerCase(),
           name,
           entity.description ?? null,
           cache,
@@ -734,6 +735,14 @@ export class MemoryCompactionService {
       }
 
       case 'place': {
+        if (typeof this.placeService.findAll === 'function') {
+          const matches = await this.placeService.findAll(context, { query: name });
+          const existing = (matches ?? []).find((p) => p.name?.trim().toLowerCase() === name.toLowerCase());
+          if (existing) {
+            return existing.id;
+          }
+        }
+
         const [created] = await this.placeService.create(context, {
           name,
           description: description ?? undefined,
@@ -743,10 +752,27 @@ export class MemoryCompactionService {
       }
 
       case 'item': {
+        if (typeof this.itemService.findAll === 'function') {
+          const itemMap = (cache.itemsByUserId ??= new Map());
+          let items: Array<{ id: string; name?: string | null }> | undefined = itemMap.get(context.userId);
+          if (!items) {
+            items = (await this.itemService.findAll(context)) ?? [];
+            itemMap.set(context.userId, items);
+          }
+
+          const existing = items.find(
+            (i: { id: string; name?: string | null }) => i.name?.trim().toLowerCase() === name.toLowerCase(),
+          );
+          if (existing) {
+            return existing.id;
+          }
+        }
+
         const created = await this.itemService.create(context, {
           name,
           description: description ?? undefined,
         });
+        cache.itemsByUserId?.get(context.userId)?.push({ id: created.id, name });
 
         return created.id;
       }
