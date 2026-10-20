@@ -1237,7 +1237,15 @@ function resolveTier(ask: Ask, link: PeerLink | null, householdTier?: TrustTier)
     return householdTier ?? 'household';
   }
 
-  return (link?.trustTier as TrustTier | undefined) ?? 'stranger';
+  // Closes G5(a): `findById` returns revoked links so the owner can still read
+  // their history and attribute audit rows, so a link that has since been
+  // revoked or is not active must clamp to `stranger` rather than supplying its
+  // pre-revocation trustTier to asks remaining in the inbox.
+  if (link == null || link.revokedAt != null || link.status !== 'active') {
+    return 'stranger';
+  }
+
+  return (link.trustTier as TrustTier | undefined) ?? 'stranger';
 }
 
 /**

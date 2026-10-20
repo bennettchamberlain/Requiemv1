@@ -169,6 +169,23 @@ Run `memory check` before selecting a model. A reachable server with no exposed
 models is not ready for chat. Full setup paths and troubleshooting are in
 [Companion Memory setup](../setup/companion-memory.md).
 
+### `mcp serve --stdio`
+
+Bridges newline-delimited JSON-RPC 2.0 on stdin/stdout to the appliance's
+Streamable HTTP `/mcp` endpoint (with automatic fallback to `/api/mcp` when
+behind a gateway prefix). Used by MCP hosts that spawn a local subprocess
+rather than speaking Streamable HTTP directly (Claude Desktop stdio connectors,
+Cursor, Goose, MCP Inspector).
+
+```bash
+CI_SERVER_URL=https://ci-memory.example.com CI_API_KEY=… ci mcp serve --stdio
+```
+
+Preserves the `Mcp-Session-Id` header across requests, unpacks both
+`application/json` and `text/event-stream` responses onto stdout, and sends a
+`DELETE` to close the remote MCP session when stdin closes. See
+[`docs/mcp/clients.md`](../mcp/clients.md).
+
 ### `datasources [--catalog] [--json]`
 
 The registered importers — **71** of them (`datasources/index.ts` is the barrel;

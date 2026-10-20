@@ -22,9 +22,11 @@ import { MemoryCompactionService } from '../services/MemoryCompactionService';
 import { RecallService } from '../services/RecallService';
 import {
   agentMemorySchema,
+  memoryDriftSchema,
   recallSchema,
   turnSchema,
   type AgentMemoryDto,
+  type MemoryDriftDto,
   type RecallDto,
   type TurnDto,
 } from '../types';
@@ -154,6 +156,38 @@ export class MemoryController {
     @Body(new ValidationPipe(agentMemorySchema)) input: AgentMemoryDto,
   ) {
     return this.agentMemoryService.create(toServiceContext(context), input);
+  }
+
+  /**
+   * Lists memory fragments flagged as `conflicted` so agents or users can
+   * reconcile contradictory claims (`knowl` governance pattern).
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  @RequireCapability(READ_CAPABILITY)
+  @Get('conflicts')
+  async conflicts(@Context() context: RequestContext) {
+    const items = await this.agentMemoryService.findConflicts(toServiceContext(context));
+
+    return { items };
+  }
+
+  /**
+   * Checks active governed memories for evidence/path drift against a set of
+   * modified files (`knowl` staleness drift detection).
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  @RequireCapability(READ_CAPABILITY)
+  @HttpCode(200)
+  @Post('drift')
+  async drift(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(memoryDriftSchema)) input: MemoryDriftDto,
+  ) {
+    return this.agentMemoryService.detectDrift(toServiceContext(context), input.changedPaths, {
+      markConflicted: input.markConflicted,
+    });
   }
 
   /**

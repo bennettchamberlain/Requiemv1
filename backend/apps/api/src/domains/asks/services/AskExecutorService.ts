@@ -8,6 +8,7 @@ import {
   type IndexableEntity,
   type PromptSearchResult,
   SearchService,
+  hasNameSubjectFrame,
 } from '@ci/domains/search-next';
 
 import { type Ask } from '../entities/AskEntity';
@@ -127,11 +128,13 @@ export class AskExecutorService {
 
     const result = await this.searchService.searchPrompt(responderContext, {
       prompt: ask.query.prompt,
-      // The archetype the asker declared decides whether the prompt is a NAME or
-      // a topic. That is the only part of the ask besides the text itself that
-      // reaches search, and it can only ever narrow: `subjectIsName` turns an
-      // OR of loose words into one required phrase.
-      subjectIsName: NAME_SUBJECT_QUERY_TYPES.has(ask.query.queryType.toLowerCase()),
+      // The archetype the asker declared — OR a relationship/person-recognition
+      // question frame in the prompt itself (closing G1) — decides whether the
+      // prompt is a NAME or a topic. `subjectIsName` can only ever narrow: it
+      // turns an OR of loose words into one required phrase.
+      subjectIsName:
+        NAME_SUBJECT_QUERY_TYPES.has(ask.query.queryType.toLowerCase()) ||
+        hasNameSubjectFrame(ask.query.prompt),
       maxResults: options.maxResults ?? DEFAULT_MAX_RESULTS,
       ...(includeTypes ? { includeTypes } : {}),
     });

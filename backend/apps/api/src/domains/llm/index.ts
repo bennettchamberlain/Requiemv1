@@ -83,6 +83,12 @@ import { VisionRenditionService } from './services/VisionRenditionService';
 export class LLMModule {}
 
 export { LlmCoreModule } from './core.module';
+export {
+  ChatModelPreferenceModule,
+  ChatModelPreferenceService,
+  type DecisionEnginePreferences,
+  type MemoryGovernancePreferences,
+} from './chat-model-preference.module';
 export { OllamaService } from './services/OllamaService';
 export { PROMPT_MODEL, UTILITY_MODEL, type ChatRequestContext } from './services/OllamaService';
 export { ResidencyPlannerService, type ResidencyReport } from './services/ResidencyPlannerService';
