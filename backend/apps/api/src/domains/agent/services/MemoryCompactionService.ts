@@ -56,9 +56,8 @@ Entity types (use ONLY these exact strings):
   content  — a book, film, show, article, or piece of media
 
 Relationship types — pick the MOST SPECIFIC that applies; do NOT default to KNOWS/RELATED_TO when a specific one fits:
-  Family/social: SIBLING_OF, PARENT_OF, CHILD_OF, SPOUSE, FRIENDS_WITH, WORKS_WITH, KNOWS
-  Other:         LIVES_IN, WORKS_AT, INTERESTED_IN, OWNS, ATTENDED, LIKES, DISLIKES, HAS_SKILL, RELATED_TO
-Relationship types: KNOWS, FRIENDS_WITH, FAMILY_MEMBER, LIVES_IN, WORKS_AT, STUDIES_AT, VISITED, OWNS, INTERESTED_IN, PREFERS, DISLIKES, PARTICIPATED_IN, ASSOCIATED_WITH
+  Family/social: SIBLING_OF, PARENT_OF, CHILD_OF, SPOUSE, FAMILY_MEMBER, FRIENDS_WITH, WORKS_WITH, KNOWS
+  Other:         LIVES_IN, WORKS_AT, STUDIES_AT, VISITED, INTERESTED_IN, OWNS, ATTENDED, PARTICIPATED_IN, PREFERS, LIKES, DISLIKES, HAS_SKILL, ASSOCIATED_WITH, RELATED_TO
 
 How to extract:
 1. Create an entity for every person, place/organization, item, event, content, and notable concept mentioned — including third parties, not just the user.
@@ -566,6 +565,11 @@ export class MemoryCompactionService {
         continue;
       }
 
+      const key = this.entityKey(entity.type, name);
+      if (type === 'Place' && entityMap.has(key)) {
+        continue;
+      }
+
       try {
         const entityId = await this.upsertEntity(
           context,
@@ -576,7 +580,7 @@ export class MemoryCompactionService {
         );
 
         if (entityId != null) {
-          entityMap.set(this.entityKey(entity.type, name), entityId);
+          entityMap.set(key, entityId);
         }
       } catch (err) {
         this.logger.warn('Failed to upsert entity', {

@@ -48,6 +48,8 @@ export class SearchNextModule {}
 export { SearchService, TagService };
 export {
   type AnchoredSearchOptions,
+  RRF_DEFAULT_K,
+  reciprocalRankFusion,
   SEMANTIC_DISTANCE_THRESHOLD,
   SEMANTIC_MAX_RESULTS,
   type SearchModeTaken,
@@ -58,7 +60,7 @@ export {
 export type { EntityCategory, EntityTag, RemoveTagResult, Tag, TimestampedTag, UpdateTagResult };
 export { INDEXABLE_ENTITIES, TAG_KINDS, TAGGABLE_ENTITIES } from './types';
 export type { EntityIdentifier, IndexableEntity, PromptSearchResult, TagKind, TaggableEntity } from './types';
-export { buildPromptQuery } from './promptQuery';
+export { buildPromptQuery, hasNameSubjectFrame } from './promptQuery';
 export { resolveAutoMode } from './services/SearchService';
 export {
   queryTokenCount,

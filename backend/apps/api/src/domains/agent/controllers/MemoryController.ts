@@ -157,6 +157,20 @@ export class MemoryController {
   }
 
   /**
+   * Lists memory fragments flagged as `conflicted` so agents or users can
+   * reconcile contradictory claims (`knowl` governance pattern).
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @RequireScopes(MEMORY_SCOPE)
+  @RequireCapability(READ_CAPABILITY)
+  @Get('conflicts')
+  async conflicts(@Context() context: RequestContext) {
+    const items = await this.agentMemoryService.findConflicts(toServiceContext(context));
+
+    return { items };
+  }
+
+  /**
    * Ingests a conversation turn into the database.
    *
    * Invoked by:

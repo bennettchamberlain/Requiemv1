@@ -155,6 +155,17 @@ describe('AskExecutorService name-subject binding', () => {
       );
     },
   );
+
+  it('SECURITY (G1): forces subjectIsName=true when a topic queryType carries a lowercase "do you know" prompt', async () => {
+    const { service, searchService } = makeService();
+
+    await service.execute(fakeAsk({ query: { queryType: 'content', prompt: 'do you know david miller' } }));
+
+    expect(searchService.searchPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ subjectIsName: true }),
+    );
+  });
 });
 
 describe('AskExecutorService.executeWithMeta', () => {

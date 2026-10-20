@@ -21,6 +21,7 @@ import { grantsShowCommand } from './commands/grants/show';
 import { grantsUpdateCommand } from './commands/grants/update';
 import { importCommand } from './commands/import';
 import { inboxCommand } from './commands/inbox';
+import { mcpServeCommand } from './commands/mcp';
 import { memoryCheckCommand, memoryConfigureCommand, memoryStatusCommand } from './commands/memory';
 import { peersAddCommand } from './commands/peers/add';
 import { peersListCommand } from './commands/peers/list';
@@ -237,6 +238,20 @@ export function buildProgram(deps: ProgramDeps): Command {
     .option('--clear-api-key', 'remove the appliance-saved backend credential')
     .option('--json', 'machine-readable output')
     .action((options) => memoryConfigureCommand(context(), options));
+
+  // ---------------------------------------------------------------------------
+  // MCP — stdio-to-Streamable-HTTP bridge for local MCP hosts (Claude Desktop, Cursor, Goose)
+  // ---------------------------------------------------------------------------
+
+  const mcp = program
+    .command('mcp')
+    .description('Model Context Protocol (MCP) utilities and local stdio bridge');
+
+  mcp
+    .command('serve')
+    .description('Bridge stdin/stdout JSON-RPC to the appliance’s Streamable HTTP /mcp endpoint')
+    .option('--stdio', 'run as a line-delimited JSON-RPC stdio bridge')
+    .action((options) => mcpServeCommand(context(), options));
 
   // ---------------------------------------------------------------------------
   // Peers — who this box will exchange asks with (backend/.../graphql/resolvers/PeerLinkResolver.ts)

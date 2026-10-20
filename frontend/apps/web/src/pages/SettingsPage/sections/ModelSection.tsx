@@ -102,6 +102,13 @@ export function ModelSection() {
   const [imageDescriptionLoading, setImageDescriptionLoading] = useState(true);
   const [imageDescriptionSaving, setImageDescriptionSaving] = useState(false);
   const [imageDescriptionError, setImageDescriptionError] = useState<string | null>(null);
+  const [memoryGovernanceEnabled, setMemoryGovernanceEnabled] = useState(true);
+  const [memoryRecencyDecayEnabled, setMemoryRecencyDecayEnabled] = useState(true);
+  const [contrastiveDecisionEnabled, setContrastiveDecisionEnabled] = useState(true);
+  const [generativeDecisionEnabled, setGenerativeDecisionEnabled] = useState(true);
+  const [governanceLoading, setGovernanceLoading] = useState(true);
+  const [governanceSaving, setGovernanceSaving] = useState(false);
+  const [governanceError, setGovernanceError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!config) {
@@ -142,6 +149,49 @@ export function ModelSection() {
       .finally(() => {
         if (!cancelled) {
           setImageDescriptionLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [headers, ready]);
+
+  useEffect(() => {
+    if (!ready) {
+      setGovernanceLoading(false);
+
+      return;
+    }
+
+    let cancelled = false;
+    setGovernanceLoading(true);
+    void Promise.all([
+      fetchJson<{ memoryGovernanceEnabled: boolean; memoryRecencyDecayEnabled: boolean }>(
+        '/api/personalization/memory-governance',
+        { headers },
+      ),
+      fetchJson<{ contrastiveDecisionEnabled: boolean; generativeDecisionEnabled: boolean }>(
+        '/api/personalization/decision-engine',
+        { headers },
+      ),
+    ])
+      .then(([gov, dec]) => {
+        if (!cancelled) {
+          setMemoryGovernanceEnabled(gov?.memoryGovernanceEnabled !== false);
+          setMemoryRecencyDecayEnabled(gov?.memoryRecencyDecayEnabled !== false);
+          setContrastiveDecisionEnabled(dec?.contrastiveDecisionEnabled !== false);
+          setGenerativeDecisionEnabled(dec?.generativeDecisionEnabled !== false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGovernanceError('Could not load memory governance and decision engine settings.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setGovernanceLoading(false);
         }
       });
 
@@ -230,6 +280,94 @@ export function ModelSection() {
       setImageDescriptionError('Could not save image-description setting.');
     } finally {
       setImageDescriptionSaving(false);
+    }
+  };
+
+  const handleMemoryGovernanceUpdate = async (patch: {
+    memoryGovernanceEnabled?: boolean;
+    memoryRecencyDecayEnabled?: boolean;
+  }) => {
+    if (!ready) {
+      return;
+    }
+
+    const prevGov = memoryGovernanceEnabled;
+    const prevDecay = memoryRecencyDecayEnabled;
+    if (patch.memoryGovernanceEnabled !== undefined) {
+      setMemoryGovernanceEnabled(patch.memoryGovernanceEnabled);
+    }
+
+    if (patch.memoryRecencyDecayEnabled !== undefined) {
+      setMemoryRecencyDecayEnabled(patch.memoryRecencyDecayEnabled);
+    }
+
+    setGovernanceSaving(true);
+    setGovernanceError(null);
+
+    try {
+      const payload = await fetchJson<{
+        memoryGovernanceEnabled: boolean;
+        memoryRecencyDecayEnabled: boolean;
+      }>('/api/personalization/memory-governance', {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(patch),
+      });
+      setMemoryGovernanceEnabled(payload?.memoryGovernanceEnabled !== false);
+      setMemoryRecencyDecayEnabled(payload?.memoryRecencyDecayEnabled !== false);
+    } catch {
+      setMemoryGovernanceEnabled(prevGov);
+      setMemoryRecencyDecayEnabled(prevDecay);
+      setGovernanceError('Could not save memory governance setting.');
+    } finally {
+      setGovernanceSaving(false);
+    }
+  };
+
+  const handleDecisionEngineUpdate = async (patch: {
+    contrastiveDecisionEnabled?: boolean;
+    generativeDecisionEnabled?: boolean;
+  }) => {
+    if (!ready) {
+      return;
+    }
+
+    const prevContrastive = contrastiveDecisionEnabled;
+    const prevGenerative = generativeDecisionEnabled;
+    if (patch.contrastiveDecisionEnabled !== undefined) {
+      setContrastiveDecisionEnabled(patch.contrastiveDecisionEnabled);
+    }
+
+    if (patch.generativeDecisionEnabled !== undefined) {
+      setGenerativeDecisionEnabled(patch.generativeDecisionEnabled);
+    }
+
+    setGovernanceSaving(true);
+    setGovernanceError(null);
+
+    try {
+      const payload = await fetchJson<{
+        contrastiveDecisionEnabled: boolean;
+        generativeDecisionEnabled: boolean;
+      }>('/api/personalization/decision-engine', {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(patch),
+      });
+      setContrastiveDecisionEnabled(payload?.contrastiveDecisionEnabled !== false);
+      setGenerativeDecisionEnabled(payload?.generativeDecisionEnabled !== false);
+    } catch {
+      setContrastiveDecisionEnabled(prevContrastive);
+      setGenerativeDecisionEnabled(prevGenerative);
+      setGovernanceError('Could not save decision engine setting.');
+    } finally {
+      setGovernanceSaving(false);
     }
   };
 
@@ -505,6 +643,104 @@ export function ModelSection() {
             {imageDescriptionError ? (
               <p className="text-sm text-destructive">{imageDescriptionError}</p>
             ) : null}
+          </div>
+
+          <div className="space-y-4 border-t border-border pt-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-foreground">
+                Memory governance &amp; decision engines
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Control governed fact lifecycle, temporal recency weighting, and whether fast Contrastive
+                (System 1) and Generative (System 2) decision engines are active.
+              </p>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="model-memory-governance" className="flex items-center gap-2">
+                  Governed memory supersession
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Classify distilled memories into typed categories, automatically supersede outdated facts,
+                  and surface conflicting claims.
+                </p>
+              </div>
+
+              <Switch
+                id="model-memory-governance"
+                checked={memoryGovernanceEnabled}
+                onCheckedChange={(checked) =>
+                  void handleMemoryGovernanceUpdate({ memoryGovernanceEnabled: checked })
+                }
+                disabled={governanceLoading || governanceSaving || !ready}
+              />
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="model-memory-recency-decay" className="flex items-center gap-2">
+                  Temporal recency decay
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Apply exponential recency weighting during hybrid recall so current state ranks above stale
+                  episodes.
+                </p>
+              </div>
+
+              <Switch
+                id="model-memory-recency-decay"
+                checked={memoryRecencyDecayEnabled}
+                onCheckedChange={(checked) =>
+                  void handleMemoryGovernanceUpdate({ memoryRecencyDecayEnabled: checked })
+                }
+                disabled={governanceLoading || governanceSaving || !ready}
+              />
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="model-contrastive-decision" className="flex items-center gap-2">
+                  Contrastive fast decisions (System 1)
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Use sub-10ms embedding-geometry primitives (Noul, Choice, Score, and candidate reranking)
+                  with cached action vectors for fast routing and gating.
+                </p>
+              </div>
+
+              <Switch
+                id="model-contrastive-decision"
+                checked={contrastiveDecisionEnabled}
+                onCheckedChange={(checked) =>
+                  void handleDecisionEngineUpdate({ contrastiveDecisionEnabled: checked })
+                }
+                disabled={governanceLoading || governanceSaving || !ready}
+              />
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label htmlFor="model-generative-decision" className="flex items-center gap-2">
+                  Generative LLM decisions (System 2)
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Use generative LLM evaluation for deliberate reasoning or as a fallback when contrastive
+                  confidence margin is low.
+                </p>
+              </div>
+
+              <Switch
+                id="model-generative-decision"
+                checked={generativeDecisionEnabled}
+                onCheckedChange={(checked) =>
+                  void handleDecisionEngineUpdate({ generativeDecisionEnabled: checked })
+                }
+                disabled={governanceLoading || governanceSaving || !ready}
+              />
+            </div>
+
+            {governanceError ? <p className="text-sm text-destructive">{governanceError}</p> : null}
           </div>
         </Card.Content>
       </Card>

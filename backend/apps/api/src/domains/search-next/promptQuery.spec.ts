@@ -71,6 +71,16 @@ describe('buildPromptQuery', () => {
       ]);
     });
 
+    it('SECURITY (G1): binds a lowercase relationship question as a phrase even when subjectIsName is false', () => {
+      // An asker sending queryType: 'content' with "do you know david miller"
+      // used to bypass phrase binding and match Steve Miller on 'miller'.
+      expect(buildPromptQuery('do you know david miller')).toEqual([
+        { kind: 'phrase', text: 'david miller' },
+      ]);
+      expect(buildPromptQuery('have you met alice smith')).toEqual([{ kind: 'phrase', text: 'alice smith' }]);
+      expect(buildPromptQuery('who is bob jones?')).toEqual([{ kind: 'phrase', text: 'bob jones' }]);
+    });
+
     it('requires EVERY name an ask mentions, never just one of them', () => {
       // "Yes" because one of the two people is known is the same fabrication in
       // a different shape.

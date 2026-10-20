@@ -1013,13 +1013,14 @@ this and answered*, and *declined*.
 Stated plainly, unsoftened. **This section is the point of the document.** The
 feature reads finished; it is not.
 
-**G1 — Retrieval bypass (high).** Phrase binding fires only on a run of
-**capitalised** words, or on the relationship/identity archetype — and the
-**asker controls both**. Executed against the real corpus: `queryType: 'content'`
-with the prompt `"do you know david miller"` returns **"Yes." unattended** on a
-corpus containing only *Steve* Miller. Capitalised, the same ask correctly
-returns nothing. Capitalisation is a hint the wire format does not promise, and
-`NAME_SUBJECT_QUERY_TYPES` is a string the asker types.
+**G1 — Retrieval bypass (high).** ✅ **Closed.** `buildPromptQuery` and
+`AskExecutorService` now detect person-recognition / relationship speech-act
+frames (`hasNameSubjectFrame` — e.g. `"do you know ..."`, `"have you met ..."`,
+`"who is ..."`, `"are you friends with ..."`) and bind their residual multi-token
+runs as required `'phrase'` groups regardless of capitalisation or the
+asker-supplied `queryType`. `"do you know david miller"` under `queryType: 'content'`
+now emits `phraseto_tsquery('english', 'david miller')` rather than OR-joining
+`'david' | 'miller'`.
 
 **G2 — No grant-creation entry point (blocker).** `createAskGrant` is complete on
 the wire — it takes `granteeId` or `granteePeerLinkId`, `maxDisclosure`, scope,
@@ -1042,13 +1043,16 @@ real resolvers and services against real Postgres. **The gap is reachability, no
 correctness.** Do not read the passing suites as "the feature works"; read them
 as "the feature would work if it had a front door".
 
-**G5 — Peer-link revocation is incomplete in three separate ways.**
-(a) A revoked link still supplies its original **trust tier** to asks already in
-the inbox — `resolveTier` reads `link?.trustTier` from an owner-scoped `findById`
-that returns revoked rows. (b) `updatePeerLink` calls `PeerLinkService.upsert`,
-which sets `revokedAt: null` unconditionally, so **editing a link erases its
-revocation timestamp**. (c) `PeerLinkResolver`'s five operations are **not gated
-by the `ask` feature flag**, while all sixteen of `AskResolver`'s are.
+**G5 — Peer-link revocation is incomplete in three separate ways.** ✅ **Closed.**
+(a) `AskResolver.resolveTier` now clamps any peer link with `revokedAt != null`
+or `status !== 'active'` to the `'stranger'` tier, so asks remaining in the
+inbox after revocation never inherit the pre-revocation `trustTier`.
+(b) `PeerLinkService.upsert` now preserves `existing?.revokedAt` unless
+`data.status === 'active'` is explicitly passed (`createPeerLink`), so
+`updatePeerLink` never clears a revocation timestamp.
+(c) All five operations on `PeerLinkResolver` (`myPeerLinks`, `peerLink`,
+`createPeerLink`, `updatePeerLink`, `revokePeerLink`) are now gated behind the
+`ask` feature flag via `FeatureService`, matching `AskResolver`.
 
 **G6 — A household `auto` grant on a sensitive class discloses full item
 references with no human in the loop.** ⚠️ **Mechanism shipped; the DEFAULT is
