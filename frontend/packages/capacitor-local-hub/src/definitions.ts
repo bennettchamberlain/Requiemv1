@@ -154,6 +154,41 @@ export interface LocalHubPlugin {
   startSignificantLocationUpdates(options?: SignificantLocationOptions): Promise<void>;
 
   stopSignificantLocationUpdates(): Promise<void>;
+
+  /**
+   * Discovers Companion Memory appliances advertising over mDNS / Bonjour on the local network
+   * (default service type `_companion-memory._tcp.`) so air-gapped or offline LAN users can pair
+   * without Portal cloud sign-in or manual IP entry.
+   *
+   * On web, resolves `{ appliances: [], supported: false }` because browser tabs cannot issue
+   * multicast DNS queries.
+   */
+  discoverLanAppliances(options?: DiscoverLanAppliancesOptions): Promise<DiscoverLanAppliancesResult>;
+}
+
+export interface DiscoverLanAppliancesOptions {
+  /** mDNS / Bonjour service type to browse; defaults to `_companion-memory._tcp.`. */
+  serviceType?: string;
+  /** Discovery window in milliseconds (clamped 500..10000; default 2500). */
+  timeoutMs?: number;
+}
+
+export interface DiscoveredLanAppliance {
+  /** Instance name advertised by mDNS / Bonjour (e.g. `Companion Home Hub`). */
+  name: string;
+  /** Resolved hostname or IPv4/IPv6 literal (e.g. `companion-hub.local` or `192.168.1.42`). */
+  host: string;
+  /** Advertised HTTP(S) port. */
+  port: number;
+  /** Canonical base URL (`http(s)://<host>:<port>`) ready for `setApiBaseUrl`. */
+  baseUrl: string;
+  /** Optional TXT record metadata (e.g. `version`, `applianceId`, `tls`). */
+  txt?: Record<string, string>;
+}
+
+export interface DiscoverLanAppliancesResult {
+  appliances: DiscoveredLanAppliance[];
+  supported: boolean;
 }
 
 /**

@@ -14,3 +14,5 @@ export { useBackClosesSheet } from './useBackClosesSheet';
 export { usePreventOverscroll } from './usePreventOverscroll';
 export { useStatusBarScrollToTop } from './useStatusBarScrollToTop';
 export { useRecentSearches } from './useRecentSearches';
+export { classifyDeviceBreakpoint, useDeviceBreakpoint } from './useDeviceBreakpoint';
+export type { DeviceBreakpointState } from './useDeviceBreakpoint';

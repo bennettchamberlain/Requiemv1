@@ -52,15 +52,13 @@ It depends on the web app only as a build artifact (`webDir`), never as an npm i
   `capacitor://localhost`, `http(s)://localhost`, plus the `X-API-Key` header);
   operators can extend it with `CORS_ALLOWED_ORIGINS`.
 
-## Supported devices — iPhone only
+## Supported devices — Universal (iPhone + iPad)
 
-`TARGETED_DEVICE_FAMILY = 1` in **both** the Debug and Release configs of the App
-target, and the `~ipad` orientation variants were removed from `Info.plist` so the
-plist and the build setting cannot disagree. On iPad this ships as an
-iPhone-compatibility app (Apple's scaled phone window), which the `@ci/fe-web` mobile
-layout is designed for. Reversing it means editing **both** configs to `"1,2"`,
-restoring the `~ipad` orientation key, and adding a tablet tier to the layout hooks —
-the plist alone will not do it. See `DELIVERY.md` §1a.
+`TARGETED_DEVICE_FAMILY = "1,2"` in **both** the Debug and Release configs of the App
+and SafariWebExtension targets, paired with `UISupportedInterfaceOrientations~ipad` in
+`Info.plist` (all four orientations) and the 3-tier `compact`/`medium`/`expanded`
+adaptive layout classification in `@ci/common` (`useDeviceLayout`) and `@ci/fe-web`
+(`useDeviceBreakpoint`).
 
 ## First-time setup
 

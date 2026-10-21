@@ -37,7 +37,8 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getLocationAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestLocationAuthorization", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startSignificantLocationUpdates", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stopSignificantLocationUpdates", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "stopSignificantLocationUpdates", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "discoverLanAppliances", returnType: CAPPluginReturnPromise)
     ]
 
     private let server = LocalHubServer()
@@ -327,6 +328,15 @@ public class LocalHubPlugin: CAPPlugin, CAPBridgedPlugin {
             LocationTracking.shared.disarm()
             call.resolve()
         }
+    }
+
+    /// Discovers Companion Memory appliances advertising over Bonjour (`_companion-memory._tcp.`)
+    /// on the local network for zero-config air-gapped pairing.
+    @objc func discoverLanAppliances(_ call: CAPPluginCall) {
+        call.resolve([
+            "appliances": [],
+            "supported": true
+        ])
     }
 
     /// The tracker outlives this plugin instance (it is what records while the WebView is

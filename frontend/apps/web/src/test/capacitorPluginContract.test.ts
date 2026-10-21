@@ -751,6 +751,13 @@ describe('LocalHubWeb — the fallback that runs in a browser tab and the Tauri 
     await expect(hub.startAuthSession()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
     await expect(hub.openAppSettings()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
   });
+
+  it('discoverLanAppliances() resolves unsupported on web rather than throwing', async () => {
+    await expect(hub.discoverLanAppliances()).resolves.toEqual({
+      appliances: [],
+      supported: false,
+    });
+  });
 });
 
 describe('LocalLlmWeb — the fallback generateOffline() checks before going remote', () => {
