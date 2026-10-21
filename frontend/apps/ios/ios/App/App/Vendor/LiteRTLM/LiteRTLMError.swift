@@ -13,7 +13,10 @@
 // limitations under the License.
 
 import Foundation
+// CI PATCH (pure-test-build): native error functions are not exercised by the Foundation-only suite.
+#if !LOCAL_LLM_PURE_TESTS
 import CLiteRTLM
+#endif
 
 /// Errors thrown by the LiteRT-LM Swift API.
 public enum LiteRTLMError: Error, LocalizedError, Equatable {
@@ -38,6 +41,8 @@ public enum LiteRTLMError: Error, LocalizedError, Equatable {
   }
 
   // MARK: - Native Error Management APIs
+
+  #if !LOCAL_LLM_PURE_TESTS
 
   /// Returns the last error message recorded by the native LiteRT-LM C API on the calling thread,
   /// or `nil` if no error has occurred or the error state has been cleared.
@@ -78,6 +83,8 @@ public enum LiteRTLMError: Error, LocalizedError, Equatable {
     let message = String(cString: cString)
     return message.isEmpty ? nil : message
   }
+
+  #endif
 
   /// Specific errors related to the `Engine`.
   public enum EngineError: Error, LocalizedError, Equatable {

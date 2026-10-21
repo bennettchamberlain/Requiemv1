@@ -527,25 +527,17 @@ waiting on two app-store releases. Destructive and external intents always queue
 **A tool's result is bounded before the model sees it.** The appliance answers a tool call with the whole result,
 pretty-printed — 25 hits from `knowledge_search` is ~45 KB — and a small model's context window cannot take that in:
 Qwen3-0.6B's is 1,024 tokens, and its system prompt and tool declarations already use ~500 of them. So `IntentTool`
-passes every successful result through `ToolResultShaper` before it goes back to LiteRT-LM, with a budget of
-`LocalLlmPolicy.toolResultByteBudget(maxTokens)` — half the window in bytes, never under 256 or over 16,384 (512 for
-Qwen3-0.6B, 2,000 for Gemma 4) — which `loadModel` works out from the window it just configured. A result that fits
-goes through byte for byte. Otherwise JSON is pruned and re-emitted compactly: unset columns (`null`, `false`, `""`,
-`[]`, `{}`) and foreign-key UUIDs are dropped, since a hit is mostly those; each object is written answer-first (`type`
-/ `link` / `title`, then when, then what it says, the rest, bookkeeping last) and loses its last members first; strings
-are capped; and every list — the `items` of a search, the `nodes` and `edges` of `memory_recall` — gets an equal share
-of what the object's other members leave, in which the first three hits share the room and a closing note says how
-many were left out. Anything that is not JSON is cut at the budget and ends `…[truncated]`, and so is JSON whose
-budget is too small for that (under about 800 bytes: at Qwen3-0.6B's 512 the synthetic dentist and graph results end
-that way). A refusal or a failed call is a sentence and is not shaped; an error response's body is cut to its first 200
-characters before it becomes one. This is a port of iOS's `ToolResultShaper` (`LocalLLMPolicy.swift`, which is in turn
-the device twin of the appliance's `toolResultBudget.ts`) and is written to give the same text for the same input:
-`SwiftParityTest` checks it against answers the Swift shaper gave for ~360 inputs, and fails when the Swift
-shaper's code is no longer the one those answers were recorded from; after a change to either side,
-`frontend/packages/capacitor-local-llm/android/scripts/regenerate-swift-parity.sh` (it needs `swiftc`) records them
-again. `IntentTool` logs sizes only (`knowledge_search returned 45598 bytes; passing 482 to the model
-(budget 512)`), never the result. The budget is an estimate no device run has measured; `toolResultByteBudget` is the one
-place to tune it, on both platforms.
+passes every successful result through `ToolResultShaper` before it goes back to LiteRT-LM,
+within the model's tool-result budget. The shaper preserves identity and references, reduces the
+result structurally, and reserves the full space needed for its omission note. Nested input is
+bounded before parsing; member removal is bounded rather than repeatedly copying a large map.
+Plain scalar arrays can shrink with their parent, and canonically equivalent keys use a stable
+raw spelling tie-break. These rules match the Swift implementation.
+
+`SwiftParityTest` compares Android output with the current Swift shaper's generated fixtures,
+including timestamp rendering. After changing the shaper, run
+`frontend/packages/capacitor-local-llm/android/scripts/regenerate-swift-parity.sh`; do not edit
+expected output by hand. The logger records byte counts and budgets, never a tool result's content.
 
 **The binding is per-platform, because the runtimes genuinely differ:**
 

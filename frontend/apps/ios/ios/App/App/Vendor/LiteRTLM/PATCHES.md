@@ -90,3 +90,11 @@ waiting for it. The release inside the tool-call `Task` already ran off the call
   `Qwen3DataProcessor::MessageToTemplateInput` (an assistant message that has only `tool_calls`), and
   crash the process. The bench renders through the C entry point and only ever passes messages with a
   `content`; do not call it with anything else.
+
+## `pure-test-build` — `LiteRTLMError.swift`
+
+The Foundation-only suite passes `-D LOCAL_LLM_PURE_TESTS` to compile the actual
+error enums without linking the native framework. That flag excludes only the
+`CLiteRTLM` import and four native error-management functions; production and
+bench builds do not set it and retain the complete upstream API. LiteRT-LM 0.18
+added those functions, which otherwise broke the documented framework-free test.
