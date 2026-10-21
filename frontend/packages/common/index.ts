@@ -4,11 +4,15 @@ export { LoadingPage } from './src/components/loading-page';
 export { Portal } from './src/components/portal';
 export {
   MOBILE_BREAKPOINT,
+  TABLET_MAX_BREAKPOINT,
+  TABLET_MIN_BREAKPOINT,
   DeviceLayoutProvider,
+  resolveDeviceSizeClass,
   useDeviceLayout,
   useOverflowsRight,
   usePageTitle,
 } from './src/hooks';
+export type { DeviceSizeClass } from './src/hooks';
 export { GlobalUID } from './src/utils/GlobalUID';
 export { apiKeyHeaders, getApiKey, setApiKey } from './src/utils/apiAuth';
 export { API_CONTRACT, MIN_SERVER_CONTRACT, memoryContractNotice } from './src/utils/apiContract';
@@ -93,7 +97,15 @@ export {
   streamingFetch,
   type FetchJsonIssue,
 } from './src/utils/fetchJson';
-export { localHubPlugin, localHubSession, type LocalHubSession } from './src/utils/localHub';
+export {
+  discoverLanAppliances,
+  localHubPlugin,
+  localHubSession,
+  type DiscoveredLanAppliance,
+  type DiscoverLanAppliancesOptions,
+  type DiscoverLanAppliancesResult,
+  type LocalHubSession,
+} from './src/utils/localHub';
 export {
   cancelLocalLlmDownload,
   deleteLocalLlmModel,

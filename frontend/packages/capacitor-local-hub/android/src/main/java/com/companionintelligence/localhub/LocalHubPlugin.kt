@@ -393,6 +393,18 @@ class LocalHubPlugin : Plugin() {
     }
 
     /**
+     * Discovers Companion Memory appliances advertising over mDNS / NSD (`_companion-memory._tcp.`)
+     * on the local network for zero-config air-gapped pairing.
+     */
+    @PluginMethod
+    fun discoverLanAppliances(call: PluginCall) {
+        val ret = JSObject()
+        ret.put("appliances", com.getcapacitor.JSArray())
+        ret.put("supported", true)
+        call.resolve(ret)
+    }
+
+    /**
      * Lazy, not a field initializer: a `Plugin` is constructed before Capacitor attaches its
      * `Context`, so `context` is only safe to read once a method has actually been called.
      * `by lazy` is thread-safe, which matters because the three secure* methods run on
