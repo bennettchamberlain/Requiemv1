@@ -6,6 +6,7 @@ import { OnEvent } from '@ci/domains/events';
 
 import { PIPELINE_QUEUES } from '../constants';
 import { PipelineSliceEvent } from '../events';
+import { stageHeldByOutboundPolicy } from '../outboundHolds';
 import { stagesReopenedBy } from '../reopens';
 import { PipelineStateService } from '../services/PipelineStateService';
 import { StageRegistry } from '../services/StageRegistry';
@@ -123,6 +124,27 @@ export class PipelineSliceListener {
         );
       }
 
+      // The user has turned off the outbound path this stage egresses on, after
+      // this slice was queued. Acknowledge it WITHOUT claiming: a claim writes a
+      // `running` ledger row and charges an attempt, and completing it as
+      // `skipped` would be terminal (only a stage-version bump re-selects a
+      // skipped row). Returning here writes nothing, so the ids are still stale
+      // and a later sweep — after the switch goes back on — dispatches them
+      // afresh. The job is not thrown, so pg-boss does not retry or dead-letter
+      // work that is merely unwanted. See `stageHeldByOutboundPolicy`.
+      const heldBy = stageHeldByOutboundPolicy(stage.id);
+
+      if (heldBy != null) {
+        this.logger.log('Slice dropped unclaimed: the outbound path this stage uses is turned off', {
+          stage: stage.id,
+          path: heldBy,
+          queue,
+          ids: payload.ids.length,
+        });
+
+        return;
+      }
+
       const claimed = await this.stateService.claim(stage, payload.entityType, payload.ids, payload.userId);
 
       if (claimed.length === 0) {
@@ -205,8 +227,9 @@ export class PipelineSliceListener {
       // the first attempt's — by the third the upstream dependency may simply
       // be refusing connections, and the recorded cause would be a symptom of
       // the earlier failure rather than the failure. The rows are
-      // distinguishable by `failed_at`; the reaper's terminal row for the same
-      // job carries `queue = 'dead-letter'`.
+      // distinguishable by `failed_at`. The reaper's terminal row for the same
+      // job carries the same stage queue (it reads it from the failure output);
+      // its `id` is pg-boss's dead-letter job id, where these rows get a fresh one.
       //
       // Recorded BEFORE the rethrow so pg-boss's own retry / DLQ handling still
       // runs. This is a durable copy, not a replacement for it.
@@ -250,6 +273,9 @@ export class PipelineSliceListener {
           // Null: a slice covers many entities, and attributing the failure to
           // one of them would be a guess. The ids are in `payload`.
           entityId: null,
+          // A slice is always one user's (the schema requires the uuid), and
+          // without it the letter would be shown to every account on the box.
+          userId: payload.userId,
           payload: { ...payload },
           error: `${error.message}${error.stack != null ? `\n${error.stack}` : ''}`,
         });

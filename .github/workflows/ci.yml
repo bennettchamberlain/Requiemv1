@@ -92,11 +92,11 @@ jobs:
     # 34409425373 (container init 53s, checkout 6s, corepack 1s, cache restore
     # 21s, install 16s, bootstrap + migrations the rest).
     #
-    # Raised again to 65 with the test step's own ceiling: the four step
-    # ceilings below now sum to 58, and this number has to stay above their sum
+    # Raised again to 80 with the test step's own ceiling: the four step
+    # ceilings below now sum to 73, and this number has to stay above their sum
     # PLUS that prefix or the invariant the paragraph above describes is a
-    # fiction. 58 + 2 = 60, so 65 keeps five minutes of slack.
-    timeout-minutes: 65
+    # fiction. 73 + 2 = 75, so 80 keeps five minutes of slack.
+    timeout-minutes: 80
     container:
       image: node:22
     services:
@@ -152,6 +152,7 @@ jobs:
       AUTH_TEST_DATABASE_URL: postgres://companion:ci_test_app_pw@postgres:5432/companion?sslmode=disable
       BROWSER_ACTIVITY_TEST_DATABASE_URL: postgres://companion:ci_test_app_pw@postgres:5432/companion?sslmode=disable
       CONNECTIONS_TEST_DATABASE_URL: postgres://companion:ci_test_app_pw@postgres:5432/companion?sslmode=disable
+      CONVERSATIONS_TEST_DATABASE_URL: postgres://companion:ci_test_app_pw@postgres:5432/companion?sslmode=disable
       EVENTS_TEST_DATABASE_URL: postgres://companion:ci_test_app_pw@postgres:5432/companion?sslmode=disable
       GEOCODE_TEST_DATABASE_URL: postgres://companion:ci_test_app_pw@postgres:5432/companion?sslmode=disable
       IMPORT_TEST_DATABASE_URL: postgres://companion:ci_test_app_pw@postgres:5432/companion?sslmode=disable
@@ -286,6 +287,15 @@ jobs:
       # rate extrapolates the whole suite (with `--coverage`, which this step
       # keeps) to ~39 minutes, so this is ~15% headroom.
       #
+      # Sixty, because forty-five ran out the same way. The suite grew to 1,199
+      # files, and green runs between 2026-09-16 and 2026-10-08 took 25 to 41
+      # minutes. Both attempts of run 37785202514 were killed at exactly 45:00
+      # with ZERO failures, having completed 1,026 and then 1,098 of 1,179 files
+      # that run (the other 20 skip). No gap between finished files exceeded 28
+      # seconds, so nothing hung: those runners were slow. Their rates
+      # extrapolate the whole suite to ~52 and ~48 minutes, and sixty clears
+      # the slower one by ~15%.
+      #
       # Why a bigger ceiling and not shards, the way `pr-gate.yml` (deleted
       # 2026-09-17) used to shard the frontend suite four ways:
       # `coverageThreshold` in jest.config.mjs is scoped to
@@ -333,7 +343,7 @@ jobs:
         run: yarn workspace @ci/tool-core test
 
       - name: Run backend API tests
-        timeout-minutes: 45
+        timeout-minutes: 60
         run: yarn workspace @ci/be-api test --coverage
 
       # @ci/cli's 200 tests across 33 files, which until now ran in NO workflow.
@@ -572,6 +582,13 @@ jobs:
 
       - name: Lint ${{ matrix.name }}
         run: ${{ matrix.command }}
+        env:
+          # The backend lane's type-aware ESLint holds 1.75 to 2 GB of live
+          # heap, and Node's default limit on this runner is about 2 GB, so it
+          # died with "JavaScript heap out of memory" (exit 129) on some runs
+          # and passed on a rerun. Each lane has its own runner, so the others
+          # lose nothing by sharing the setting.
+          NODE_OPTIONS: --max-old-space-size=4096
 
   python:
     name: Check Python
@@ -581,7 +598,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
 

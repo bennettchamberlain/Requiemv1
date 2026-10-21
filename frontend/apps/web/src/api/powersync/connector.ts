@@ -59,7 +59,7 @@
  * outside this client-integration pass's scope, so it's called out here instead of
  * silently patched in.
  */
-import { apiKeyHeaders, buildApiUrl, getApiKey, GlobalUID } from '@ci/common';
+import { apiKeyHeaders, buildApiUrl, getApiBaseUrl, getApiKey, GlobalUID } from '@ci/common';
 import type {
   AbstractPowerSyncDatabase,
   CrudEntry,
@@ -100,6 +100,37 @@ const DELETE_NOTE_MUTATION = `
 /** Tables whose local writes are intentionally not replayed — see the module comment. */
 const READ_ONLY_TABLES = new Set(['tags', 'threads', 'messages', 'files', 'events', 'entities']);
 
+/**
+ * The 503 a Memory server sends when it runs no PowerSync service (every
+ * Marketplace install today). `code` is what current servers send; servers
+ * released before it only send the exception's `message`.
+ */
+const POWERSYNC_NOT_CONFIGURED_CODE = 'POWERSYNC_NOT_CONFIGURED';
+const POWERSYNC_NOT_CONFIGURED_MESSAGE = 'PowerSync is not configured';
+
+/**
+ * Upper bound on the whole token request, body included. The SDK awaits
+ * `fetchCredentials()` without a signal of its own, so a request that never
+ * finishes holds the sync loop, and any `disconnect()` waiting on it, until the
+ * page closes.
+ */
+const TOKEN_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Whether a 503 from the token endpoint means "this server has no PowerSync",
+ * as opposed to a gateway or proxy 503 while the server restarts, which is
+ * worth retrying. Only the API's own JSON body counts.
+ */
+async function isNotConfiguredResponse(response: Response): Promise<boolean> {
+  try {
+    const body = (await response.json()) as { code?: unknown; message?: unknown } | null;
+
+    return body?.code === POWERSYNC_NOT_CONFIGURED_CODE || body?.message === POWERSYNC_NOT_CONFIGURED_MESSAGE;
+  } catch {
+    return false;
+  }
+}
+
 type GraphQLResponse = {
   data?: Record<string, { success?: boolean } | null> | null;
   errors?: Array<{ message: string }>;
@@ -118,8 +149,16 @@ export class GraphQLBackendConnector implements PowerSyncBackendConnector {
   /**
    * @param getAuthToken Reads the current web JWT (or null). Read on every call —
    *   never cached — so a refreshed token is picked up without reconnecting.
+   * @param onSyncUnavailable Called with the API origin that answered when that
+   *   server says it runs no PowerSync service. Returning null alone does not
+   *   stop the SDK: it treats missing credentials as "not signed in yet" and asks
+   *   again after `retryDelayMs` (5 s), for as long as the database stays
+   *   connected. The caller has to disconnect.
    */
-  constructor(private readonly getAuthToken: () => string | null) {}
+  constructor(
+    private readonly getAuthToken: () => string | null,
+    private readonly onSyncUnavailable?: (origin: string) => void,
+  ) {}
 
   async fetchCredentials(): Promise<PowerSyncCredentials | null> {
     const token = this.getAuthToken();
@@ -132,31 +171,45 @@ export class GraphQLBackendConnector implements PowerSyncBackendConnector {
     }
 
     const cutoff = encodeURIComponent(getWorkingSetCutoffIso());
-    const response = await fetch(buildApiUrl(`/api/powersync/token?cutoff=${cutoff}`), {
-      headers: {
-        ...apiKeyHeaders(),
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    // The server this request goes to. The app can point at another one while the
+    // request is in flight, so the answer is reported against this origin.
+    const origin = getApiBaseUrl();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS);
 
-    if (response.status === 503) {
-      // PowerSync is off on this appliance. Stay GraphQL-only; do not retry forever.
-      console.warn('[PowerSync] Token endpoint unavailable; staying GraphQL-only');
+    try {
+      const response = await fetch(buildApiUrl(`/api/powersync/token?cutoff=${cutoff}`), {
+        headers: {
+          ...apiKeyHeaders(),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        signal: controller.signal,
+      });
 
-      return null;
+      if (response.status === 503 && (await isNotConfiguredResponse(response))) {
+        // This server runs no PowerSync service. Stay GraphQL-only and tell the
+        // provider, which disconnects so nothing asks this server again.
+        console.info('[PowerSync] Not configured on this Memory server; staying GraphQL-only');
+        this.onSyncUnavailable?.(origin);
+
+        return null;
+      }
+
+      if (!response.ok) {
+        // Network or server error reaching our own API, including a proxy's 503
+        // while it restarts. Transient, so let PowerSync retry.
+        throw new Error(`Failed to fetch PowerSync credentials (${response.status})`);
+      }
+
+      const body = (await response.json()) as { token: string; powersync_url: string };
+
+      return {
+        endpoint: body.powersync_url,
+        token: body.token,
+      };
+    } finally {
+      clearTimeout(timer);
     }
-
-    if (!response.ok) {
-      // Network/server error reaching our own API — transient, let PowerSync retry.
-      throw new Error(`Failed to fetch PowerSync credentials (${response.status})`);
-    }
-
-    const body = (await response.json()) as { token: string; powersync_url: string };
-
-    return {
-      endpoint: body.powersync_url,
-      token: body.token,
-    };
   }
 
   async uploadData(database: AbstractPowerSyncDatabase): Promise<void> {

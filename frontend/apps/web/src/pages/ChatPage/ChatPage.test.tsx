@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import ChatPage from './ChatPage';
-import { STARTER_PROMPTS, TOOL_STARTER_PROMPTS } from './starterPrompts';
+import { STARTER_PROMPTS, TOOL_STARTER_PROMPTS, starterPromptsFor } from './starterPrompts';
 import type { Message, Thread } from './types';
 
 const navigate = vi.fn();
@@ -21,6 +21,11 @@ vi.mock('react-router-dom', async (importOriginal) => {
 });
 
 const h = vi.hoisted(() => ({
+  /** null = every flag on (the historical default of this suite); otherwise the flags that are. */
+  flags: null as Record<string, boolean> | null,
+  refetchModels: vi.fn(),
+  modelsLoading: false,
+  modelsError: null as Error | null,
   stop: vi.fn(),
   detach: vi.fn(),
   /** `useChatRequester().reset` — leaving a conversation (drops the stream and the on-device badge). */
@@ -77,7 +82,12 @@ vi.mock('@ci/common', async (importOriginal) => {
 vi.mock('@/common/feature', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/common/feature')>();
 
-  return { ...actual, useFeatures: () => ({ isFeatureEnabled: () => true }) };
+  return {
+    ...actual,
+    useFeatures: () => ({
+      isFeatureEnabled: (flag: string) => (h.flags === null ? true : h.flags[flag] === true),
+    }),
+  };
 });
 
 vi.mock('@/hooks', async (importOriginal) => {
@@ -113,9 +123,10 @@ vi.mock('@/hooks', async (importOriginal) => {
         activeModels: h.activeModels,
         toolsSupported: h.toolsSupported,
         toolsEnabled: h.toolsEnabled,
-        loading: false,
+        loading: h.modelsLoading,
+        error: h.modelsError,
       },
-      {},
+      { refetch: h.refetchModels },
     ],
     useCounter: () => [{ count: 0 }, { increment: vi.fn() }],
     // #2558 added `useAuth()` to ChatPageContent so a dispatch thread can call
@@ -214,6 +225,10 @@ describe('ChatPage', () => {
     h.attach.mockClear();
     h.cancel.mockClear();
     h.deleteThread.mockClear();
+    h.refetchModels.mockClear();
+    h.flags = null;
+    h.modelsLoading = false;
+    h.modelsError = null;
     h.reset.mockClear();
     h.resetChat.mockClear();
     h.requesterOpts = null;
@@ -422,7 +437,7 @@ describe('ChatPage', () => {
 
     it('marks a token rate that was estimated from chunks rather than counted', () => {
       h.local = {
-        modelId: 'qwen3-0.6b-int4',
+        modelId: 'gemma-4-e2b-it',
         stats: {
           timeToFirstTokenMs: 300,
           totalMs: 1000,
@@ -437,12 +452,12 @@ describe('ChatPage', () => {
     });
 
     it('shows the badge without numbers while the turn is still streaming', () => {
-      h.local = { modelId: 'qwen3-0.6b-int4', stats: null };
+      h.local = { modelId: 'gemma-4-e2b-it', stats: null };
       renderNew();
 
       const badge = screen.getByTestId('on-device-badge');
 
-      expect(badge).toHaveTextContent('Answered on this phone · Qwen3 0.6B');
+      expect(badge).toHaveTextContent('Answered on this phone · Gemma 4 E2B');
       expect(badge).not.toHaveTextContent('tok/s');
     });
 
@@ -455,7 +470,7 @@ describe('ChatPage', () => {
 
       localStorage.setItem(
         'ci.localLlm.prefs',
-        JSON.stringify({ mode: 'device', modelId: 'qwen3-0.6b-int4' }),
+        JSON.stringify({ mode: 'device', modelId: 'gemma-4-e2b-it' }),
       );
       resetLocalLlmPrefsCache();
       renderNew();
@@ -467,7 +482,7 @@ describe('ChatPage', () => {
       h.selectedModel = null;
       localStorage.setItem(
         'ci.localLlm.prefs',
-        JSON.stringify({ mode: 'appliance', modelId: 'qwen3-0.6b-int4' }),
+        JSON.stringify({ mode: 'appliance', modelId: 'gemma-4-e2b-it' }),
       );
       resetLocalLlmPrefsCache();
       renderNew();
@@ -477,7 +492,7 @@ describe('ChatPage', () => {
 
     it('lets a starter prompt send with no appliance model when the phone can answer', () => {
       h.selectedModel = null;
-      localStorage.setItem('ci.localLlm.prefs', JSON.stringify({ mode: 'auto', modelId: 'qwen3-0.6b-int4' }));
+      localStorage.setItem('ci.localLlm.prefs', JSON.stringify({ mode: 'auto', modelId: 'gemma-4-e2b-it' }));
       resetLocalLlmPrefsCache();
       renderNew();
 
@@ -489,7 +504,6 @@ describe('ChatPage', () => {
     it('reads photos on the phone only when the phone alone answers and its model can see', () => {
       const cases: Array<[string, string, string]> = [
         ['device', 'gemma-4-e2b-it', 'true'],
-        ['device', 'qwen3-0.6b-int4', 'false'], // no vision
         ['auto', 'gemma-4-e2b-it', 'false'], // the appliance may answer, so attach uploads there
         ['appliance', 'gemma-4-e2b-it', 'false'],
       ];
@@ -599,7 +613,7 @@ describe('ChatPage', () => {
     // "Always answer on this phone" never creates a server thread, so there is no thread id to go on — the
     // on-device badge is what says a turn has happened in this chat.
     it('starts a new chat when the Chat link is followed after an on-device turn, which has no thread', () => {
-      h.local = { modelId: 'qwen3-0.6b-int4', stats: null };
+      h.local = { modelId: 'gemma-4-e2b-it', stats: null };
       renderWithProviders(
         <>
           <Link to="/memory/chat">drawer: Chat</Link>
@@ -679,10 +693,9 @@ describe('ChatPage', () => {
      */
     it('blocks uploads only when the phone alone answers and its model cannot read photos', () => {
       const cases: Array<[string, string, string]> = [
-        ['device', 'qwen3-0.6b-int4', 'true'], // nothing local can read a file: attach would only upload
         ['device', 'gemma-4-e2b-it', 'false'], // photos are read on the phone, never uploaded
-        ['auto', 'qwen3-0.6b-int4', 'false'], // the appliance may answer, so attach uploads there on purpose
-        ['appliance', 'qwen3-0.6b-int4', 'false'],
+        ['auto', 'gemma-4-e2b-it', 'false'], // the appliance may answer, so attach uploads there on purpose
+        ['appliance', 'gemma-4-e2b-it', 'false'],
       ];
 
       for (const [mode, modelId, expected] of cases) {
@@ -702,7 +715,7 @@ describe('ChatPage', () => {
      */
     it('lets the speed readout wrap rather than cutting it off with an ellipsis', () => {
       h.local = {
-        modelId: 'qwen3-0.6b-int4',
+        modelId: 'gemma-4-e2b-it',
         stats: {
           timeToFirstTokenMs: 1200,
           totalMs: 4000,
@@ -812,6 +825,51 @@ describe('ChatPage', () => {
       expect(h.submit).toHaveBeenCalledWith({ message: STARTER_PROMPTS[0] });
     });
 
+    /**
+     * A stock install has neither Today (the Brief surface) nor Forecast, so
+     * offering asks about them teaches the user features they cannot see.
+     */
+    it('leaves out starters about surfaces this appliance has switched off', () => {
+      h.flags = { 'insights.page': true, 'import.page': true, 'planning.page': true };
+      renderEmpty();
+
+      for (const gone of [
+        'What is on Brief',
+        'Any suggested actions',
+        'What does tomorrow look like for me',
+        'How accurate are my predictions',
+      ]) {
+        expect(screen.queryByRole('button', { name: gone })).toBeNull();
+      }
+
+      expect(screen.getByRole('button', { name: 'Who is my family' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'How is my import going' })).toBeInTheDocument();
+    });
+
+    it('brings the Brief and Forecast starters back when their pages are on', () => {
+      h.flags = { 'today.page': true, 'forecast.page': true };
+      renderEmpty();
+
+      expect(screen.getByRole('button', { name: 'What is on Brief' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'What does tomorrow look like for me' })).toBeInTheDocument();
+    });
+
+    it('does not name pages that are off in the composer hint or the intro line', () => {
+      h.flags = { 'planning.page': true };
+      renderEmpty();
+
+      expect(screen.getByText('Ask about Memory or Plan — or attach a file')).toBeInTheDocument();
+    });
+
+    it('starterPromptsFor keeps the ungated starters when every flag is off', () => {
+      expect(starterPromptsFor(() => false)).toEqual([
+        'Anything unusual lately',
+        'Where do I usually go next',
+        'Who is my family',
+        'What are my preferences',
+      ]);
+    });
+
     /** …and the ask shows up as the user's turn, so the reply has context. */
     it('echoes the tapped ask into the thread as a user message', () => {
       renderEmpty();
@@ -819,6 +877,51 @@ describe('ChatPage', () => {
       fireEvent.click(screen.getByRole('button', { name: STARTER_PROMPTS[1] }));
 
       expect(screen.getByText(`user: ${STARTER_PROMPTS[1]}`)).toBeInTheDocument();
+    });
+
+    /**
+     * With no model the composer and every starter used to be disabled and the
+     * page said nothing — the fix (Settings → Model) was two screens away.
+     */
+    describe('with no model', () => {
+      it('explains itself and links to Settings → Model instead of showing dead starters', () => {
+        h.selectedModel = null;
+        renderEmpty();
+
+        const state = screen.getByTestId('chat-no-model');
+        expect(state).toHaveTextContent('Chat needs a model');
+
+        const link = screen.getByRole('link', { name: /Open Settings → Model/ });
+        expect(link.getAttribute('href')).toMatch(/\/settings\/model$/);
+
+        expect(screen.queryByRole('list', { name: 'Suggested asks' })).toBeNull();
+      });
+
+      it('distinguishes an unreachable model server from an empty one, and offers a retry', () => {
+        h.selectedModel = null;
+        h.modelsError = new Error('down');
+        renderEmpty();
+
+        expect(screen.getByTestId('chat-no-model')).toHaveTextContent('Chat can’t reach a model');
+
+        fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+        expect(h.refetchModels).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not flash the setup prompt while the model list is still loading', () => {
+        h.selectedModel = null;
+        h.modelsLoading = true;
+        renderEmpty();
+
+        expect(screen.queryByTestId('chat-no-model')).toBeNull();
+      });
+
+      it('still shows the starters once a model is selected', () => {
+        renderEmpty();
+
+        expect(screen.queryByTestId('chat-no-model')).toBeNull();
+        expect(screen.getByRole('list', { name: 'Suggested asks' })).toBeInTheDocument();
+      });
     });
 
     /**
@@ -871,6 +974,7 @@ describe('ChatPage', () => {
       it('offers every starter while the model list is still loading, rather than flashing a short one', () => {
         noTools();
         h.selectedModel = null;
+        h.modelsLoading = true;
         h.activeModels = [];
         renderEmpty();
 
@@ -883,7 +987,7 @@ describe('ChatPage', () => {
         noTools();
         localStorage.setItem(
           'ci.localLlm.prefs',
-          JSON.stringify({ mode: 'device', modelId: 'qwen3-0.6b-int4' }),
+          JSON.stringify({ mode: 'device', modelId: 'gemma-4-e2b-it' }),
         );
         resetLocalLlmPrefsCache();
         renderEmpty();

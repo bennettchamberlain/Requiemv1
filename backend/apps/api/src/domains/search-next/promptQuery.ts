@@ -229,6 +229,25 @@ function isCapitalised(word: string): boolean {
 }
 
 /**
+ * Does the prompt open with an explicit person-recognition / relationship
+ * question frame ("do you know …", "have you met …", "who is …")?
+ *
+ * Closes G1 (`docs/asks-system-guide.md` §9): the asker controls BOTH
+ * capitalisation and `queryType`, so sending `queryType: 'content'` with a
+ * lowercase prompt `"do you know david miller"` used to skip `subjectIsName`
+ * and treat `'david'` and `'miller'` as loose OR-joined topic terms — matching
+ * Steve Miller and answering `"Yes."` unattended. Detecting the relationship
+ * speech-act frame on the prompt text itself forces the residual subject to
+ * bind as a required phrase regardless of `queryType` or casing.
+ */
+const NAME_SUBJECT_FRAME_RE =
+  /^\s*(?:(?:do|does|did)\s+(?:you|we|they|he|she|i)\s+(?:ever\s+)?(?:know|meet|remember)|(?:have|has|had)\s+(?:you|we|they|he|she|i)\s+(?:ever\s+)?(?:met|known|heard\s+of)|who\s+(?:is|was|are|were)|(?:are|is|was|were)\s+(?:you|we|they|he|she)\s+(?:friends|acquainted|familiar|related)\s+with)\b/iu;
+
+export function hasNameSubjectFrame(prompt: string): boolean {
+  return NAME_SUBJECT_FRAME_RE.test(prompt);
+}
+
+/**
  * Split the prompt into runs of words that are adjacent in the ORIGINAL TEXT:
  * punctuation between two words ends the run, ask-frame words end it too.
  *
@@ -286,7 +305,7 @@ function toAdjacentRuns(prompt: string): string[][] {
 export function buildPromptQuery(prompt: string, options: BuildPromptQueryOptions = {}): PromptQueryGroup[] {
   const runs = toAdjacentRuns(prompt);
 
-  if (options.subjectIsName) {
+  if (options.subjectIsName || hasNameSubjectFrame(prompt)) {
     // The residual IS the name. Every run is required, so "Alice? Bob?" asks
     // about both rather than about either — an ask that names two people and
     // gets "Yes" for one of them is the same fabrication in a different shape.

@@ -1,7 +1,8 @@
-import { NotFoundException, UseGuards } from '@nestjs/common';
+import { NotFoundException, Optional, UseGuards } from '@nestjs/common';
 import { Args, ID, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
+import { FeatureService } from '@ci/common/feature';
 import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 import { PersonService } from '@ci/domains/memory';
 import { PeerLinkService } from '@ci/domains/peers';
@@ -73,7 +74,12 @@ export class PeerLinkResolver {
   constructor(
     private readonly peerLinkService: PeerLinkService,
     private readonly personService: PersonService,
+    @Optional() private readonly featureService?: FeatureService,
   ) {}
+
+  private async enabled(): Promise<boolean> {
+    return this.featureService ? this.featureService.isFeatureEnabled('ask') : true;
+  }
 
   /**
    * Every peer this box knows, revoked ones included.
@@ -85,6 +91,10 @@ export class PeerLinkResolver {
    */
   @Query(() => [PeerLinkType])
   async myPeerLinks(@Context() context: RequestContext): Promise<PeerLinkType[]> {
+    if (!(await this.enabled())) {
+      return [];
+    }
+
     const links = await this.peerLinkService.findAll(toServiceContext(context));
 
     return links.map(PeerLinkType.toType);
@@ -95,6 +105,10 @@ export class PeerLinkResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<PeerLinkType | null> {
+    if (!(await this.enabled())) {
+      return null;
+    }
+
     const link = await this.peerLinkService.findById(
       toServiceContext(context),
       GlobalUID.parse('peer-link', gid),
@@ -110,6 +124,10 @@ export class PeerLinkResolver {
     @Context() context: RequestContext,
     @Args('input') input: CreatePeerLinkInput,
   ): Promise<PeerLinkPayload> {
+    if (!(await this.enabled())) {
+      return { success: false };
+    }
+
     const link = await this.peerLinkService.upsert(toServiceContext(context), {
       peerHandle: input.peerHandle,
       memoryEndpoint: input.memoryEndpoint,
@@ -147,6 +165,10 @@ export class PeerLinkResolver {
     @Context() context: RequestContext,
     @Args('input') input: UpdatePeerLinkInput,
   ): Promise<PeerLinkPayload> {
+    if (!(await this.enabled())) {
+      return { success: false };
+    }
+
     const serviceContext = toServiceContext(context);
     const id = GlobalUID.parse('peer-link', input.id);
     const existing = await this.peerLinkService.findById(serviceContext, id);
@@ -191,6 +213,10 @@ export class PeerLinkResolver {
     @Context() context: RequestContext,
     @Args('id', { type: () => ID }) gid: string,
   ): Promise<PeerLinkPayload> {
+    if (!(await this.enabled())) {
+      return { success: false };
+    }
+
     const serviceContext = toServiceContext(context);
     const existing = await this.peerLinkService.findById(serviceContext, GlobalUID.parse('peer-link', gid));
 

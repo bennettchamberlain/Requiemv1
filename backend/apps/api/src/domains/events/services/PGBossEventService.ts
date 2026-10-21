@@ -273,6 +273,11 @@ export class PGBossEventService
   // backstop and becomes a dead-letter generator for the whole appliance.
   private static readonly MIN_JOB_DEADLINE_MS = 60_000;
 
+  // Bound on one complete()/fail() round trip — see `boundedBookkeeping`. Each
+  // is a single-row statement, so thirty seconds is far past healthy and still
+  // releases a held lane long before anyone would notice it had stopped.
+  private static readonly BOOKKEEPING_TIMEOUT_MS = 30_000;
+
   // Bulk-import escape hatch: even with per-event routing, one imported row can
   // legitimately fan out to several enrichment queues. During a bulk load, set
   // CI_QUEUE_SUPPRESS to a comma-separated list of queues to skip enqueuing
@@ -663,6 +668,7 @@ export class PGBossEventService
       priority: options?.priority ?? DEFAULT_JOB_PRIORITY,
       ...(options?.singletonKey ? { singletonKey: options.singletonKey } : {}),
       ...(options?.startAfter !== undefined ? { startAfter: options.startAfter } : {}),
+      ...(options?.retentionMinutes !== undefined ? { retentionMinutes: options.retentionMinutes } : {}),
     };
 
     // If a specific queue is provided and that queue exists, send only to that queue.
@@ -1464,7 +1470,7 @@ export class PGBossEventService
       }
 
       try {
-        await this.boss.complete(queueName, job.id);
+        await this.boundedBookkeeping(this.boss.complete(queueName, job.id), 'complete', queueName, job.id);
       } catch (err: unknown) {
         this.logger.error(
           `Job ${job.id} on queue ${queueName} succeeded but could not be marked complete; ` +
@@ -1563,11 +1569,18 @@ export class PGBossEventService
     );
 
     try {
-      await this.boss.fail(queueName, jobId, {
-        message: reason instanceof Error ? reason.message : String(reason),
-        stack: reason instanceof Error ? reason.stack : undefined,
-        failedAt: new Date().toISOString(),
-      });
+      await this.boundedBookkeeping(
+        this.boss.fail(queueName, jobId, {
+          message: reason instanceof Error ? reason.message : String(reason),
+          stack: reason instanceof Error ? reason.stack : undefined,
+          failedAt: new Date().toISOString(),
+          // See failJob: the dead-letter copy keeps `output` but not the queue.
+          queue: queueName,
+        }),
+        'fail',
+        queueName,
+        jobId,
+      );
     } catch (err: unknown) {
       this.logger.error(
         `Could not record the failure of job ${jobId} on queue ${queueName}; ` +
@@ -1575,6 +1588,52 @@ export class PGBossEventService
         err instanceof Error ? err : new Error(String(err)),
       );
     }
+  }
+
+  /**
+   * Settle a pg-boss acknowledgement round trip, or reject once
+   * {@link BOOKKEEPING_TIMEOUT_MS} has passed.
+   *
+   * `complete()` and `fail()` run INSIDE the job's semaphores — the global slot,
+   * and the per-queue slot (for a lane member, the lane's one shared slot) —
+   * after the listener's own deadline has already been and gone. pg-boss sets no
+   * statement timeout and its pool waits for a connection without limit, so a
+   * round trip that never came back held those slots exactly as a hung listener
+   * did before {@link withDeadline} existed: the row stays `active`, the lane
+   * fetches nothing, and the senders keep enqueueing behind it. Found while
+   * chasing core-1's `llm-background` backlog on 2026-10-17 — which turned out
+   * to be plain saturation, not this — but nothing bounded these two awaits.
+   *
+   * On timeout the callers' existing catches apply: logged, and the row left to
+   * pg-boss's own lease expiry, which is the same outcome as a crash. The round
+   * trip itself is abandoned, not cancelled. If it lands late it settles the
+   * row it was meant for — or, if pg-boss has meanwhile expired the lease and a
+   * worker has re-fetched the same id, that retry's run: the at-least-once edge
+   * {@link withDeadline} already accepts, and a far smaller one than a lane held
+   * for hours.
+   */
+  private boundedBookkeeping<T>(
+    roundTrip: Promise<T>,
+    what: string,
+    queue: string,
+    jobId: string,
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new Error(
+            `pg-boss ${what}() for job ${jobId} on queue ${queue} did not return within ` +
+              `${PGBossEventService.BOOKKEEPING_TIMEOUT_MS} ms`,
+          ),
+        );
+      }, PGBossEventService.BOOKKEEPING_TIMEOUT_MS);
+    });
+
+    return Promise.race([roundTrip, deadline]).finally(() => {
+      clearTimeout(timer);
+    });
   }
 
   private async flush(): Promise<void> {
@@ -1632,9 +1691,15 @@ export class PGBossEventService
    * affected }` (manager.js `mapCommandResponse`), and `affected` is the only
    * way to tell a job that transitioned from one that had already finished —
    * the plan only touches `state < 'completed'`.
+   *
+   * The output always names the queue. When the job is out of retries, pg-boss
+   * copies only its `data` and `output` onto the `dead-letter` queue, so without
+   * this a dead letter cannot say where it died. `DeadLetterReaperListener`
+   * reads `output.queue` back, and replay sends the letter to that queue alone
+   * rather than to every queue that listens for the event.
    */
   async failJob(queue: string, jobId: string, output?: Record<string, unknown>): Promise<boolean> {
-    const result = (await this.boss.fail(queue, jobId, output)) as unknown as
+    const result = (await this.boss.fail(queue, jobId, { ...output, queue })) as unknown as
       { affected?: number } | undefined;
     const failed = (result?.affected ?? 0) > 0;
 
@@ -1725,7 +1790,14 @@ export class PGBossEventService
         const queueSpecificEventName = `${name}:${queue}`;
 
         if (this.eventEmitter.hasListeners(queueSpecificEventName)) {
-          this.eventEmitter.emit(queueSpecificEventName, data, { jobId: job.id, done, fail, defer });
+          this.eventEmitter.emit(queueSpecificEventName, data, {
+            jobId: job.id,
+            // Fetched with includeMetadata, so the row's created_on rides along.
+            enqueuedAt: job.createdOn,
+            done,
+            fail,
+            defer,
+          });
         } else {
           skip();
         }

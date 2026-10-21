@@ -4,7 +4,7 @@ import { IconButton } from '@ci/shadcn';
 import { ChevronLeft, ChevronRight, Download, ExternalLink, X } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 
-import { isSameOriginUrl } from '@/components/entities/resolveMediaUrl';
+import { imageNeedsJpegPreview, isSameOriginUrl } from '@/components/entities/resolveMediaUrl';
 import { FileIcon } from '@/components/icons';
 
 import { EmbedPlayer } from './EmbedPlayer';
@@ -122,7 +122,10 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
   // PAGE, not the poster file, and is never offered as a download.
   const openUrl = current.pageUrl ?? current.fullUrl;
   const canDownload = !current.pageUrl && isSameOriginUrl(current.fullUrl);
-  const isBroken = brokenUrl === current.fullUrl;
+  // HEIC stays the download. The picture on screen is the JPEG preview, because
+  // the phone webview cannot decode the original.
+  const viewSrc = imageNeedsJpegPreview(current.contentType) ? current.thumbUrl : current.fullUrl;
+  const isBroken = !viewSrc || brokenUrl === viewSrc;
 
   // A full-bleed overlay owns its own safe areas: on a phone the status bar /
   // Dynamic Island (top), the home indicator (bottom) and, in landscape, the
@@ -224,7 +227,7 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
             // clicked a tile to get here. Width is bounded by the viewport in
             // both axes via the aspect box so a square Spotify card and a 16:9
             // video both fit without scrolling.
-            <EmbedPlayer player={current.player} title={current.title} fitViewport />
+            <EmbedPlayer player={current.player} title={current.title} pageUrl={openUrl} fitViewport />
           ) : current.kind === 'video' ? (
             // The playable rendition when the server made one (HEVC originals
             // and the like); the download link above still hands over the
@@ -238,10 +241,10 @@ export function MediaLightbox({ entries, index, onClose, onIndexChange }: Props)
             />
           ) : (
             <img
-              key={current.fullUrl}
-              src={current.fullUrl}
+              key={viewSrc}
+              src={viewSrc ?? undefined}
               alt={current.title}
-              onError={() => setBrokenUrl(current.fullUrl)}
+              onError={() => viewSrc && setBrokenUrl(viewSrc)}
               className="max-h-[82vh] max-w-[92vw] rounded-lg object-contain"
             />
           )}

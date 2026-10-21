@@ -1,3 +1,15 @@
+/** The portal config every case reads; a case may change it and `beforeEach` puts it back. */
+const portalConfig = {
+  enabled: true,
+  issuer: 'https://hub.test',
+  jwksUri: 'https://hub.test/api/auth/jwks',
+  audience: 'ci-server,ci-import-tools,ci-even',
+  captureClients: 'ci-import-tools,ci-even',
+  serviceClients: '',
+  applianceAudience: 'urn:ci:device:this-box',
+};
+const initialPortalConfig = { ...portalConfig };
+
 jest.mock('@ci/configuration', () => {
   const actual = jest.requireActual('@ci/configuration').default;
 
@@ -7,11 +19,8 @@ jest.mock('@ci/configuration', () => {
       ...actual,
       auth: {
         ...actual.auth,
-        portal: {
-          enabled: true,
-          issuer: 'https://hub.test',
-          jwksUri: 'https://hub.test/api/auth/jwks',
-          audience: 'ci-server,ci-import-tools,ci-even',
+        get portal() {
+          return portalConfig;
         },
       },
     },
@@ -32,9 +41,11 @@ jest.mock('jose', () => ({
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 
+import { UnauthorizedException } from '@nestjs/common';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import {
+  MEMORY_SIGN_IN_REFUSED_MESSAGE,
   PORTAL_JWKS_COOLDOWN_MS,
   PORTAL_JWKS_FETCH_TIMEOUT_MS,
   PortalTokenService,
@@ -54,7 +65,8 @@ const CLAIM_TRANSACTION = { transaction: 'first-account' };
 
 describe('PortalTokenService', () => {
   let userService: {
-    findByEmail: jest.Mock;
+    findAccountByEmail: jest.Mock;
+    isEmailProven: jest.Mock;
     create: jest.Mock;
     createFirstAccount: jest.Mock;
     findById: jest.Mock;
@@ -64,13 +76,16 @@ describe('PortalTokenService', () => {
   let service: PortalTokenService;
 
   beforeEach(() => {
+    Object.assign(portalConfig, initialPortalConfig);
     mockJwtVerify.mockReset();
     mockCreateRemoteJWKSet.mockReset();
     mockCreateRemoteJWKSet.mockReturnValue('JWKS');
     // A claimed appliance is the steady state (createFirstAccount declines);
     // tests that exercise the first-sign-in claim use `claimsTheAppliance`.
     userService = {
-      findByEmail: jest.fn(),
+      findAccountByEmail: jest.fn(),
+      // The accounts these cases link into carry a proven address unless a case says otherwise.
+      isEmailProven: jest.fn().mockReturnValue(true),
       create: jest.fn(),
       createFirstAccount: jest.fn().mockResolvedValue(null),
       findById: jest.fn(),
@@ -106,83 +121,51 @@ describe('PortalTokenService', () => {
     );
 
   it('verifies against the portal JWKS with the configured issuer + audience', async () => {
-    mockJwtVerify.mockResolvedValue({ payload: { sub: 's1', email: 'liam@ci.computer' } });
+    mockJwtVerify.mockResolvedValue({ payload: { aud: 'ci-server', sub: 's1', email: 'liam@ci.computer' } });
     claimsTheAppliance({ id: 'u1' });
 
     await service.verifyAndProvision(TOKEN);
 
     expect(mockJwtVerify).toHaveBeenCalledWith(TOKEN, 'JWKS', {
       issuer: 'https://hub.test',
-      // PORTAL_OIDC_AUDIENCE plus the issuer URL (better-auth access-token default).
-      audience: ['ci-server', 'ci-import-tools', 'ci-even', 'https://hub.test'],
+      // PORTAL_OIDC_AUDIENCE only. The Portal's own URL is not a client and no longer an audience.
+      audience: ['ci-server', 'ci-import-tools', 'ci-even'],
     });
   });
 
   it('resolves an established (iss,sub) binding without touching email', async () => {
     mockJwtVerify.mockResolvedValue({
-      payload: { iss: 'https://hub.test', sub: 's1', email: 'liam@ci.computer' },
+      payload: { aud: 'ci-server', iss: 'https://hub.test', sub: 's1', email: 'liam@ci.computer' },
     });
     federatedIdentityService.findUserId.mockResolvedValue('u-bound');
     userService.findById.mockResolvedValue({ id: 'u-bound' });
 
-    expect(await service.verifyAndProvision(TOKEN)).toEqual({ id: 'u-bound' });
+    expect(await service.verifyAndProvision(TOKEN)).toMatchObject({ user: { id: 'u-bound' } });
     expect(federatedIdentityService.findUserId).toHaveBeenCalledWith('https://hub.test', 's1');
-    expect(userService.findByEmail).not.toHaveBeenCalled();
+    expect(userService.findAccountByEmail).not.toHaveBeenCalled();
     expect(userService.create).not.toHaveBeenCalled();
   });
 
-  it('claims an UNCLAIMED appliance: provisions the first user and binds it on (iss,sub)', async () => {
+  it('SECURITY: never creates an account, not even the first one on an empty appliance', async () => {
+    // A bearer token used to claim an empty appliance: whoever held any valid Portal token and
+    // reached the box first became its owner and administrator. The first account belongs to a
+    // sign-in (browser, app, Hub) or a signup by whoever sets the Memory up.
     mockJwtVerify.mockResolvedValue({
-      payload: { iss: 'https://hub.test', sub: 's1', email: 'liam@ci.computer', name: 'Liam' },
+      payload: {
+        aud: 'ci-server',
+        iss: 'https://hub.test',
+        sub: 's1',
+        email: 'liam@ci.computer',
+        name: 'Liam',
+      },
     });
-    userService.findByEmail.mockResolvedValue(null);
+    userService.findAccountByEmail.mockResolvedValue(null);
     claimsTheAppliance({ id: 'u-new' });
 
-    const user = await service.verifyAndProvision(TOKEN);
-
-    expect(user).toEqual({ id: 'u-new' });
-    // In the claiming transaction, so the binding exists exactly when the account does.
-    expect(federatedIdentityService.bind).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'u-new',
-        issuer: 'https://hub.test',
-        subject: 's1',
-        bindMethod: 'sub',
-      }),
-      CLAIM_TRANSACTION,
-    );
-  });
-
-  it('SECURITY: decides "unclaimed" in the step that creates the account, never before it', async () => {
-    // Asked first and acted on after, two first sign-ins racing on an empty appliance both saw it
-    // empty and both got in. The ordinary create() — which admits unconditionally — must never be
-    // this path's way in, and there is no separate "is it empty?" question to race.
-    mockJwtVerify.mockResolvedValue({
-      payload: { iss: 'https://hub.test', sub: 's1', email: 'liam@ci.computer' },
-    });
-    claimsTheAppliance({ id: 'u-new' });
-
-    await service.verifyAndProvision(TOKEN);
-
-    expect(userService.createFirstAccount).toHaveBeenCalledTimes(1);
+    expect(await service.verifyAndProvision(TOKEN)).toBeNull();
+    expect(userService.createFirstAccount).not.toHaveBeenCalled();
     expect(userService.create).not.toHaveBeenCalled();
-  });
-
-  it('a sign-in that lost the claim to its OWN identity resolves to the account it claimed', async () => {
-    // A client's first requests arrive together; one claims the appliance, and its account and
-    // binding commit before the others get their answer. Refusing them would sign the owner out
-    // of the box they had just claimed.
-    mockJwtVerify.mockResolvedValue({
-      payload: { iss: 'https://hub.test', sub: 's1', email: 'liam@ci.computer' },
-    });
-    federatedIdentityService.findUserId
-      .mockResolvedValueOnce(null) // path 1, before the race
-      .mockResolvedValueOnce('u-owner'); // after losing it
-    userService.findById.mockResolvedValue({ id: 'u-owner' });
-
-    expect(await service.verifyAndProvision(TOKEN)).toEqual({ id: 'u-owner' });
     expect(federatedIdentityService.bind).not.toHaveBeenCalled();
-    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('SECURITY: a CLAIMED appliance refuses a Portal identity nobody here has bound', async () => {
@@ -190,24 +173,36 @@ describe('PortalTokenService', () => {
     // register one — must not become a fresh local account on it: this was the
     // path by which any Portal user could sign up to any reachable appliance.
     mockJwtVerify.mockResolvedValue({
-      payload: { iss: 'https://hub.test', sub: 'stranger-sub', email: 'stranger@example.com', name: 'S' },
+      payload: {
+        aud: 'ci-server',
+        iss: 'https://hub.test',
+        sub: 'stranger-sub',
+        email: 'stranger@example.com',
+        name: 'S',
+      },
     });
-    userService.findByEmail.mockResolvedValue(null);
+    userService.findAccountByEmail.mockResolvedValue(null);
     userService.createFirstAccount.mockResolvedValue(null);
 
     expect(await service.verifyAndProvision(TOKEN)).toBeNull();
     expect(userService.create).not.toHaveBeenCalled();
     expect(federatedIdentityService.bind).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringMatching(/already has an owner/));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringMatching(/no account here is bound/));
   });
 
   it('links a pre-existing account by VERIFIED email exactly once', async () => {
     mockJwtVerify.mockResolvedValue({
-      payload: { iss: 'https://hub.test', sub: 's1', email: 'liam@ci.computer', email_verified: true },
+      payload: {
+        aud: 'ci-server',
+        iss: 'https://hub.test',
+        sub: 's1',
+        email: 'liam@ci.computer',
+        email_verified: true,
+      },
     });
-    userService.findByEmail.mockResolvedValue({ id: 'u-existing' });
+    userService.findAccountByEmail.mockResolvedValue({ id: 'u-existing' });
 
-    expect(await service.verifyAndProvision(TOKEN)).toEqual({ id: 'u-existing' });
+    expect(await service.verifyAndProvision(TOKEN)).toMatchObject({ user: { id: 'u-existing' } });
     expect(userService.create).not.toHaveBeenCalled();
     // The link is recorded so every LATER request for this (iss,sub) skips email.
     expect(federatedIdentityService.bind).toHaveBeenCalledWith(
@@ -220,13 +215,14 @@ describe('PortalTokenService', () => {
     // hand it to a different subject that merely proves the same address.
     mockJwtVerify.mockResolvedValue({
       payload: {
+        aud: 'ci-server',
         iss: 'https://hub.test',
         sub: 'second-sub',
         email: 'liam@ci.computer',
         email_verified: true,
       },
     });
-    userService.findByEmail.mockResolvedValue({ id: 'u-existing' });
+    userService.findAccountByEmail.mockResolvedValue({ id: 'u-existing' });
     federatedIdentityService.listForUser.mockResolvedValue([
       { id: 'fed-1', userId: 'u-existing', issuer: 'https://hub.test', subject: 'first-sub' },
     ]);
@@ -237,32 +233,49 @@ describe('PortalTokenService', () => {
     expect(federatedIdentityService.listForUser).toHaveBeenCalledWith('u-existing', { oidcOnly: true });
   });
 
+  it('SECURITY: a verified email never adopts an account whose OWN address is unproven', async () => {
+    // The address was typed into signup or an email change, possibly by someone else expecting
+    // this person's first sign-in. The issuer vouches for its account's address, not this one's.
+    mockJwtVerify.mockResolvedValue({
+      payload: {
+        iss: 'https://hub.test',
+        sub: 'friend-sub',
+        email: 'friend@example.com',
+        email_verified: true,
+      },
+    });
+    userService.findAccountByEmail.mockResolvedValue({ id: 'u-planted' });
+    userService.isEmailProven.mockReturnValue(false);
+
+    expect(await service.verifyAndProvision(TOKEN)).toBeNull();
+    expect(federatedIdentityService.bind).not.toHaveBeenCalled();
+    expect(userService.createFirstAccount).not.toHaveBeenCalled();
+  });
+
+  it('SECURITY: a verified email adopts nothing when several accounts match it once case is ignored', async () => {
+    mockJwtVerify.mockResolvedValue({
+      payload: { iss: 'https://hub.test', sub: 's9', email: 'owner@example.com', email_verified: true },
+    });
+    userService.findAccountByEmail.mockResolvedValue('ambiguous');
+
+    expect(await service.verifyAndProvision(TOKEN)).toBeNull();
+    expect(federatedIdentityService.bind).not.toHaveBeenCalled();
+    expect(userService.createFirstAccount).not.toHaveBeenCalled();
+  });
+
   it('SECURITY: an unverified email never adopts an existing account', async () => {
     // The takeover shape: an attacker controls an unverified address at a
     // trusted issuer that collides with a local user. It must not inherit the
     // victim's account — and on a claimed appliance (the victim's account IS
     // the claim) it gets nothing at all, not even a fresh account.
     mockJwtVerify.mockResolvedValue({
-      payload: { iss: 'https://hub.test', sub: 'attacker-sub', email: 'liam@ci.computer' },
+      payload: { aud: 'ci-server', iss: 'https://hub.test', sub: 'attacker-sub', email: 'liam@ci.computer' },
     });
-    userService.findByEmail.mockResolvedValue({ id: 'u-victim' });
+    userService.findAccountByEmail.mockResolvedValue({ id: 'u-victim' });
 
     expect(await service.verifyAndProvision(TOKEN)).toBeNull();
     expect(userService.create).not.toHaveBeenCalled();
     expect(federatedIdentityService.bind).not.toHaveBeenCalled();
-  });
-
-  it('falls back to a deterministic shadow email when the token has no email', async () => {
-    mockJwtVerify.mockResolvedValue({ payload: { iss: 'https://hub.test', sub: 'sub-xyz' } });
-    claimsTheAppliance({ id: 'u2' });
-
-    await service.verifyAndProvision(TOKEN);
-
-    expect(userService.createFirstAccount).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ email: 'oidc-sub-xyz@portal.local' }),
-      expect.any(Function),
-    );
   });
 
   it('returns null for an invalid token (bad signature / issuer / audience / expiry)', async () => {
@@ -302,7 +315,9 @@ describe('PortalTokenService', () => {
   );
 
   it.each(['EdDSA', 'ES256', 'RS256', 'PS256'])('still sends a %s token to the Portal JWKS', async (alg) => {
-    mockJwtVerify.mockResolvedValue({ payload: { iss: 'https://hub.test', sub: 'peer-sub' } });
+    mockJwtVerify.mockResolvedValue({
+      payload: { aud: 'ci-server', iss: 'https://hub.test', sub: 'peer-sub' },
+    });
 
     expect(await service.verifyClaims(fakeJwt(alg))).toEqual({
       issuer: 'https://hub.test',
@@ -335,9 +350,173 @@ describe('PortalTokenService', () => {
     );
   });
 
+  /**
+   * Every Memory trusts the same Portal and signs its users in as the same client, so a token's
+   * client id alone never said which Memory it was for: one Memory could replay a token it received
+   * at another, as the same person, with full authority. Now the authority follows the audience.
+   */
+  describe('which Memory a token is for, and what it may do here', () => {
+    const OWNER = { id: 'u-owner', role: 'admin' };
+    const signedInAs = (payload: Record<string, unknown>) => {
+      mockJwtVerify.mockResolvedValue({ payload: { iss: 'https://hub.test', sub: 's1', ...payload } });
+      federatedIdentityService.findUserId.mockResolvedValue('u-owner');
+      userService.findById.mockResolvedValue(OWNER);
+    };
+
+    const FULL = { user: OWNER, limits: null, credentialRoutes: true, admin: true };
+    const CAPTURE = {
+      user: OWNER,
+      limits: { scopes: ['capture'], capability: 'write' },
+      credentialRoutes: false,
+      admin: false,
+    };
+
+    it('gives a token addressed to this appliance the full authority of its user', async () => {
+      signedInAs({ aud: ['ci-server', 'urn:ci:device:this-box'], azp: 'ci-server', ci_appliance_binding: 1 });
+
+      expect(await service.verifyAndProvision(TOKEN)).toEqual(FULL);
+    });
+
+    it('refuses a token addressed to a different appliance, without looking anyone up', async () => {
+      signedInAs({
+        aud: ['ci-server', 'urn:ci:device:other-box'],
+        azp: 'ci-server',
+        ci_appliance_binding: 1,
+      });
+
+      expect(await service.verifyAndProvision(TOKEN)).toBeNull();
+      expect(federatedIdentityService.findUserId).not.toHaveBeenCalled();
+    });
+
+    it('refuses every addressed token when this appliance has no audience of its own', async () => {
+      portalConfig.applianceAudience = '';
+      signedInAs({ aud: ['ci-server', 'urn:ci:device:this-box'], azp: 'ci-server', ci_appliance_binding: 1 });
+
+      expect(await service.verifyAndProvision(TOKEN)).toBeNull();
+    });
+
+    it('refuses a stamped ci-server token addressed to no appliance, without looking anyone up', async () => {
+      // The id_token a Memory receives when someone signs in to it with Companion, or the one a
+      // phone app from before addressed pairing sends. Here it is no credential: not for keys, not
+      // for capture, not for anything. The answer says what to do instead.
+      signedInAs({ aud: 'ci-server', azp: 'ci-server', ci_appliance_binding: 1 });
+
+      const refused = service.verifyAndProvision(TOKEN);
+
+      await expect(refused).rejects.toThrow(UnauthorizedException);
+      await expect(refused).rejects.toThrow(MEMORY_SIGN_IN_REFUSED_MESSAGE);
+      expect(federatedIdentityService.findUserId).not.toHaveBeenCalled();
+      expect(userService.findAccountByEmail).not.toHaveBeenCalled();
+    });
+
+    it('refuses it the same way when only aud names the client', async () => {
+      signedInAs({ aud: 'ci-server', ci_appliance_binding: 1 });
+
+      await expect(service.verifyAndProvision(TOKEN)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('words the refusal so an older phone app shows it, rather than asking for a new sign-in', () => {
+      // That app reads any message containing "unauthorized" as "sign in again".
+      expect(MEMORY_SIGN_IN_REFUSED_MESSAGE).not.toMatch(/unauthorized/i);
+      expect(MEMORY_SIGN_IN_REFUSED_MESSAGE).toMatch(/up-to-date app/);
+    });
+
+    it("confines another client's stamped token addressed to no appliance to the capture scope", async () => {
+      portalConfig.audience = 'ci-server,ci-hub,ci-import-tools,ci-even';
+      signedInAs({ aud: 'ci-hub', azp: 'ci-hub', ci_appliance_binding: 1 });
+
+      expect(await service.verifyAndProvision(TOKEN)).toEqual(CAPTURE);
+    });
+
+    it('keeps an unaddressed token from an older Portal working for pairing, but not for admin routes', async () => {
+      // Before the Portal addresses tokens, nothing could have addressed this one: phone pairing
+      // mints its key with it, so it keeps credential routes. Admin routes it loses.
+      signedInAs({ aud: 'ci-server' });
+
+      expect(await service.verifyAndProvision(TOKEN)).toEqual({ ...FULL, admin: false });
+    });
+
+    it.each([
+      ['addressed here', { aud: ['ci-import-tools', 'urn:ci:device:this-box'], azp: 'ci-import-tools' }],
+      ['unaddressed, stamped', { aud: 'ci-import-tools', ci_appliance_binding: 1 }],
+      ['unaddressed, older Portal', { aud: 'ci-import-tools' }],
+    ])(
+      'confines a capture client to the capture scope however it was issued (%s)',
+      async (_label, claims) => {
+        signedInAs(claims);
+
+        expect(await service.verifyAndProvision(TOKEN)).toEqual(CAPTURE);
+      },
+    );
+
+    it('refuses a token whose client cannot be told: two accepted clients and no azp', async () => {
+      signedInAs({ aud: ['ci-server', 'ci-even'] });
+
+      expect(await service.verifyAndProvision(TOKEN)).toBeNull();
+    });
+
+    it('refuses a token whose azp names a client this Memory does not accept', async () => {
+      signedInAs({
+        aud: ['ci-server', 'urn:ci:device:this-box'],
+        azp: 'ci-planning',
+        ci_appliance_binding: 1,
+      });
+
+      expect(await service.verifyAndProvision(TOKEN)).toBeNull();
+    });
+
+    describe('service accounts', () => {
+      beforeEach(() => {
+        portalConfig.serviceClients = 'hbpe-sidecar';
+        userService.findById.mockResolvedValue({ id: 'u-owner', role: 'admin' });
+      });
+
+      // The service list is parsed when the service is built.
+      const rebuilt = () =>
+        new PortalTokenService(userService as never, federatedIdentityService as never, logger as never);
+
+      it('confines an addressed service token to the api-key scopes its scope claim names', async () => {
+        mockJwtVerify.mockResolvedValue({
+          payload: {
+            aud: ['ci-server', 'urn:ci:device:this-box'],
+            sub: 'u-owner',
+            azp: 'hbpe-sidecar',
+            scope: 'memory openid not-a-scope',
+          },
+        });
+
+        expect(await rebuilt().verifyAndProvision(TOKEN)).toEqual({
+          user: { id: 'u-owner', role: 'admin' },
+          limits: { scopes: ['memory'], capability: 'write' },
+          credentialRoutes: false,
+          admin: false,
+        });
+      });
+
+      it('refuses a service token not addressed to this appliance', async () => {
+        mockJwtVerify.mockResolvedValue({
+          payload: { aud: 'ci-server', sub: 'u-owner', azp: 'hbpe-sidecar', scope: 'memory' },
+        });
+
+        expect(await rebuilt().verifyAndProvision(TOKEN)).toBeNull();
+        expect(userService.findById).not.toHaveBeenCalled();
+      });
+
+      it('refuses a service token that names no api-key scope', async () => {
+        mockJwtVerify.mockResolvedValue({
+          payload: { aud: ['ci-server', 'urn:ci:device:this-box'], sub: 'u-owner', azp: 'hbpe-sidecar' },
+        });
+
+        expect(await rebuilt().verifyAndProvision(TOKEN)).toBeNull();
+      });
+    });
+  });
+
   describe('verifyClaims', () => {
     it('returns claims WITHOUT provisioning a local user (peer path)', async () => {
-      mockJwtVerify.mockResolvedValue({ payload: { iss: 'https://hub.test', sub: 'peer-sub' } });
+      mockJwtVerify.mockResolvedValue({
+        payload: { aud: 'ci-server', iss: 'https://hub.test', sub: 'peer-sub' },
+      });
 
       expect(await service.verifyClaims(TOKEN)).toEqual({
         issuer: 'https://hub.test',
@@ -406,5 +585,18 @@ describe('shipped PORTAL_OIDC_AUDIENCE default', () => {
 
     expect(new Set(audiences).size).toBe(audiences.length);
     expect(audiences.every((a) => a.length > 0)).toBe(true);
+  });
+
+  it('ships the capture agents as capture clients, and no service account', () => {
+    const raw = readFileSync(resolvePath(__dirname, '../../../../config/default.json'), 'utf8');
+    const { portal } = (
+      JSON.parse(raw) as { auth: { portal: { captureClients: string; serviceClients: string } } }
+    ).auth;
+
+    expect(portal.captureClients.split(',').sort()).toEqual(
+      ['ci-applet', 'ci-browser-extension', 'ci-even', 'ci-import-tools'].sort(),
+    );
+    // Nothing presents a service token: the sidecars authenticate with SIDECAR_AUTH_SECRET.
+    expect(portal.serviceClients).toBe('');
   });
 });

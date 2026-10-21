@@ -4,11 +4,15 @@ export { LoadingPage } from './src/components/loading-page';
 export { Portal } from './src/components/portal';
 export {
   MOBILE_BREAKPOINT,
+  TABLET_MAX_BREAKPOINT,
+  TABLET_MIN_BREAKPOINT,
   DeviceLayoutProvider,
+  resolveDeviceSizeClass,
   useDeviceLayout,
   useOverflowsRight,
   usePageTitle,
 } from './src/hooks';
+export type { DeviceSizeClass } from './src/hooks';
 export { GlobalUID } from './src/utils/GlobalUID';
 export { apiKeyHeaders, getApiKey, setApiKey } from './src/utils/apiAuth';
 export { API_CONTRACT, MIN_SERVER_CONTRACT, memoryContractNotice } from './src/utils/apiContract';
@@ -17,10 +21,12 @@ export {
   buildApiUrl,
   clearPersistedApiBaseUrl,
   getApiBaseUrl,
+  getPersistedApiBaseUrl,
   getWebOrigin,
   initApiBaseUrl,
   isIosPlatform,
   isLocalApplianceOrigin,
+  isAndroidPlatform,
   isNativePlatform,
   isTauriPlatform,
   needsNativeCloudConnect,
@@ -41,8 +47,6 @@ export type { ConnectionMode } from './src/utils/connectionMode';
 export { createHookContext } from './src/utils/createHookContext';
 export {
   BACKGROUND_MAX_ACCURACY_METERS,
-  BACKGROUND_MIN_DISTANCE_METERS,
-  BACKGROUND_MIN_INTERVAL_MS,
   HOME_GEOFENCE_RADIUS_METERS,
   LOCATION_ENABLED_STORAGE_KEY,
   LOCATION_MODE_CHANGE_EVENT,
@@ -93,12 +97,21 @@ export {
   streamingFetch,
   type FetchJsonIssue,
 } from './src/utils/fetchJson';
-export { localHubPlugin, localHubSession, type LocalHubSession } from './src/utils/localHub';
+export {
+  discoverLanAppliances,
+  localHubPlugin,
+  localHubSession,
+  type DiscoveredLanAppliance,
+  type DiscoverLanAppliancesOptions,
+  type DiscoverLanAppliancesResult,
+  type LocalHubSession,
+} from './src/utils/localHub';
 export {
   cancelLocalLlmDownload,
   deleteLocalLlmModel,
   downloadLocalLlmModel,
   ensureLocalLlmLoaded,
+  isAnswerCutShort,
   isContextExhausted,
   isLocalLlmReady,
   LocalLlmGenerationError,
@@ -131,6 +144,7 @@ export {
   LOCAL_LLM_MODEL_LIST,
   evaluateModelFit,
   findLocalLlmModel,
+  gpuAllowedOn,
   formatBytes,
   localLlmModelsFor,
 } from './src/utils/localLlmCatalog';
@@ -143,6 +157,7 @@ export type {
   LocalLlmModelSpec,
   LocalLlmPlatform,
 } from './src/utils/localLlmCatalog';
+export { LOCAL_TOOLS_OFF_REFUSAL, isLocalWriteRequest } from './src/utils/localLlmToolsOff';
 export {
   DEFAULT_LOCAL_LLM_PREFS,
   getLocalLlmPrefs,
@@ -155,9 +170,11 @@ export {
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_MAX_ITEMS,
   OUTBOX_WARN_AT,
+  clearOutbox,
   enqueueOutboxItem,
   getOutboxItem,
   listOutbox,
+  outboxOwnerStamp,
   recordOutboxAttempt,
   removeOutboxItem,
   retryOutboxItem,
@@ -181,6 +198,10 @@ export {
   NOTE_OUTBOX_KIND,
   POSITION_OUTBOX_KIND,
   OutboxQueueProvider,
+  SIGN_OUT_DRAIN_TIMEOUT_MS,
+  clearOutboxAfterSignOut,
+  countUnsentBeforeSignOut,
+  drainOutboxBeforeSignOut,
   finishStagesFor,
   flushOutbox,
   isPermanentFlushFailure,
@@ -193,10 +214,12 @@ export {
 } from './src/utils/outboxFlush';
 export type { FlushOutboxOptions, FlushOutboxSummary, OutboxQueueState } from './src/utils/outboxFlush';
 export {
+  SECURE_STORE_KEYS,
   addAppStateListener,
   addAppUrlOpenListener,
   addBackButtonListener,
   addBackgroundLocationWatcher,
+  startSignificantLocationUpdates,
   closeBrowser,
   exitApp,
   getCurrentDeviceLocation,
@@ -209,6 +232,7 @@ export {
   isDeviceLocationError,
   openAuthSession,
   openExternalUrl,
+  openLinkOutsideApp,
   openNativeAppSettings,
   openNativeLocationSettings,
   removeBackgroundLocationWatcher,
@@ -220,6 +244,7 @@ export {
   secureStorageRemove,
   secureStorageSet,
   setStatusBarStyle,
+  setSystemBarsBackground,
   syncNativeIntentConfig,
   takeNativePhoto,
 } from './src/utils/nativeBridge';
@@ -230,14 +255,18 @@ export type {
   LocalNotification,
   NativeCurrentLocation,
   NativeLocationAuthorization,
+  SignificantLocationOptions,
 } from './src/utils/nativeBridge';
 export { AuthSessionCancelledError, BarcodeScanError, DeviceLocationError } from './src/utils/nativeBridge';
 export {
   OIDC_NATIVE_CALLBACK_URL,
   OIDC_NATIVE_CLIENT_FLAG,
   OIDC_NATIVE_SCHEME,
+  beginNativeOidcSignIn,
   claimNativeOidcCode,
+  hasPendingNativeOidcSignIn,
   parseOidcCallbackUrl,
+  takePendingNativeOidcSignIn,
 } from './src/utils/oidcNative';
 export type { OidcCallbackParams } from './src/utils/oidcNative';
 export {

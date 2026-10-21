@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react';
 
-import { LocalLlmGenerationError, useDeviceLayout } from '@ci/common';
+import { LocalLlmGenerationError } from '@ci/common';
 import { cn } from '@ci/shadcn';
 import * as smd from 'streaming-markdown';
 import { type Parser as StreamingParser } from 'streaming-markdown';
@@ -150,11 +150,6 @@ export function Chat({
       <AssistantMessage renderEmptyContent={true} streamingRef={setTextStreamingRef} />
     </Fragment>,
   ]);
-
-  const { isMobile } = useDeviceLayout();
-  const loaderMargin = useMemo(() => (isMobile ? 'mt-2' : 'mt-4'), [isMobile]);
-  const contentPadding = useMemo(() => (isMobile ? 'p-2' : 'p-4'), [isMobile]);
-  const threadPadding = useMemo(() => (isMobile ? 'pb-0 gap-2' : 'pb-0 gap-4'), [isMobile]);
 
   const flushStream = useCallback((node?: ReactNode): ReactNode => {
     // We need to cut off the flow of streaming text to the current stream blocks.
@@ -442,9 +437,11 @@ export function Chat({
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 w-full relative">
+    <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col">
       {children == null && (messages?.length ?? 0) === 0 && accumulatedMessages.length === 1 && (
-        <div className="flex flex-col flex-1 min-h-0 p-4 items-center justify-center">{emptyState}</div>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-2 device:p-4">
+          {emptyState}
+        </div>
       )}
 
       {(children != null || (messages?.length ?? 0) > 0 || accumulatedMessages.length > 1) && (
@@ -453,9 +450,9 @@ export function Chat({
           onScroll={onScroll}
           data-list-scroll=""
           className={cn(
-            'flex flex-col gap-4 flex-1 min-h-0 overflow-y-scroll',
-            contentPadding,
-            threadPadding,
+            'mx-2 mt-2 flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-border/50 bg-muted/20 p-3 shadow-inner',
+            '[&>*]:min-w-0',
+            'device:mx-0 device:mt-0 device:gap-4 device:rounded-none device:border-0 device:bg-transparent device:p-4 device:pb-0 device:shadow-none',
           )}
         >
           {children}
@@ -464,9 +461,9 @@ export function Chat({
         </div>
       )}
 
-      {hasStartedReceiving === false && <ChatLoader className={loaderMargin} />}
+      {hasStartedReceiving === false && <ChatLoader className="mt-2 device:mt-4" />}
 
-      <div className={cn('w-full', contentPadding)}>
+      <div className="w-full px-2 pb-2 pt-1 device:p-4">
         <ChatInput
           ref={autoFocusRef}
           loading={loading}

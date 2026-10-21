@@ -84,6 +84,11 @@ if (!availability.available) {
 }
 
 // Replaying every migration takes a while; the cases themselves are quick.
+
+/** The app's half of a native sign-in: an S256 challenge and a state value of its own. */
+const APP_CHALLENGE = 'c'.repeat(43);
+const APP_STATE = 's'.repeat(32);
+
 jest.setTimeout(180_000);
 
 const ISSUER = 'https://portal.first-account.test';
@@ -93,9 +98,13 @@ const INTENT_COOKIE = 'oidc_signup_intent';
 
 const b64url = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
-/** A Portal bearer token for `subject`. Only its payload is read (see the `jose` mock). */
+/**
+ * A Portal bearer token for `subject`. Only its payload is read (see the `jose` mock). It names an
+ * accepted client in `aud`, so the service gets past "which client is this for" and the cases below
+ * test what happens to an unbound identity, not a token refused for having no audience.
+ */
 const portalToken = (subject: string, email: string) =>
-  `${b64url({ alg: 'EdDSA', kid: 'k1' })}.${b64url({ iss: ISSUER, sub: subject, email, name: subject })}.sig`;
+  `${b64url({ alg: 'EdDSA', kid: 'k1' })}.${b64url({ iss: ISSUER, aud: 'ci-server', sub: subject, email, name: subject })}.sig`;
 
 /** What the identity provider says about the person behind each authorization code. */
 const identityForCode = new Map<string, { sub: string; iss: string; email: string; name: string }>();
@@ -437,6 +446,9 @@ describeWithDatabase(`first-account gates, against real Postgres (${availability
 
     if (client === 'native') {
       cookies.oidc_client = 'native';
+      // The app's binding, parked by `initiate` (see OidcController.initiate.test.ts).
+      cookies.oidc_native_challenge = APP_CHALLENGE;
+      cookies.oidc_native_state = APP_STATE;
     }
 
     await oidcController.callback(
@@ -547,49 +559,20 @@ describeWithDatabase(`first-account gates, against real Postgres (${availability
     });
   });
 
-  // ── Portal bearer, path 3 ───────────────────────────────────────────────
+  // ── Portal bearer ───────────────────────────────────────────────────────
 
-  describe('a Portal identity nobody here has bound (bearer path 3)', () => {
-    it('admits exactly one of two identities racing to claim an empty appliance', async () => {
-      const race = forceRace(2);
-
+  describe('a Portal identity nobody here has bound (bearer)', () => {
+    it('never claims an empty appliance, however many tokens arrive', async () => {
+      // A bearer token used to create the first account, so whoever held any Portal token and
+      // reached the box first became its owner. It creates nothing now.
       const results = await Promise.all([
         portalTokenService.verifyAndProvision(portalToken('racer-a', 'racer-a@example.invalid')),
         portalTokenService.verifyAndProvision(portalToken('racer-b', 'racer-b@example.invalid')),
       ]);
 
-      const admitted = results.filter((user) => user != null);
-      const [owner] = admitted;
-
-      expect(race).toEqual(SERIALIZED);
-      // "On a claimed appliance the answer is no": the loser gets no account and no binding.
-      expect(admitted).toHaveLength(1);
-      expect(owner!.role).toBe('admin');
-      expect(await accounts()).toEqual([expect.objectContaining({ id: owner!.id, role: 'admin' })]);
-      expect(await bindings()).toEqual([expect.objectContaining({ user_id: owner!.id, issuer: ISSUER })]);
-    });
-
-    it("answers every one of a client's first, concurrent requests with the one account they claim", async () => {
-      // A client that has just signed in fires several requests with the same new token. One claims
-      // the appliance; the others must resolve to that account, not fail — they are the same person.
-      const race = forceRace(3);
-
-      const token = portalToken('burst', 'burst@example.invalid');
-      const settled = await Promise.allSettled(
-        [1, 2, 3].map(() => portalTokenService.verifyAndProvision(token)),
-      );
-
-      expect(race).toEqual(SERIALIZED);
-      expect(settled.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
-
-      const ids = settled.map(
-        (outcome) => (outcome as PromiseFulfilledResult<{ id: string } | null>).value?.id,
-      );
-      const [only] = await accounts();
-
-      expect(ids).toEqual([only.id, only.id, only.id]);
-      expect(await accounts()).toHaveLength(1);
-      expect(await bindings()).toEqual([expect.objectContaining({ user_id: only.id, subject: 'burst' })]);
+      expect(results).toEqual([null, null]);
+      expect(await accounts()).toEqual([]);
+      expect(await bindings()).toEqual([]);
     });
   });
 
@@ -638,10 +621,12 @@ describeWithDatabase(`first-account gates, against real Postgres (${availability
 
         expect(race).toEqual(SERIALIZED);
         expect(destinations.filter((url) => url.includes('?code='))).toEqual([
-          `companion://oidc/callback?code=one-time-${owner.id}`,
+          `companion://oidc/callback?code=one-time-${owner.id}&state=${APP_STATE}`,
         ]);
         // The same answer an unknown identity gets on a claimed appliance.
-        expect(destinations.filter((url) => url.endsWith(`?error=${refusal}`))).toHaveLength(1);
+        expect(
+          destinations.filter((url) => url.endsWith(`?error=${refusal}&state=${APP_STATE}`)),
+        ).toHaveLength(1);
         expect(await accounts()).toEqual([expect.objectContaining({ role: 'admin' })]);
         expect(await bindings()).toEqual([expect.objectContaining({ user_id: owner.id })]);
       },
@@ -713,22 +698,23 @@ describeWithDatabase(`first-account gates, against real Postgres (${availability
       ).toBeNull();
       await expect(signup('stranger')).rejects.toThrow('Must provide a valid signup code');
       expect(redirectedTo(await oidcCallback('stranger-native', 'native'))).toMatch(
-        /\?error=signup_code_required$/,
+        /\?error=signup_code_required&state=s+$/,
       );
       expect((await accounts()).filter((account) => account.deleted_at == null)).toEqual([]);
     });
 
-    it('still lets the next account created re-claim admin', async () => {
-      // The rule claimApplianceIfUnowned and ApplianceAdminGuard share: no LIVE admin means the box
-      // is unowned, so whoever is admitted next — by an invitation, or where signup is open —
-      // becomes its administrator instead of leaving the control plane open to everyone.
+    it('does not let the next account created re-claim admin', async () => {
+      // It used to: no LIVE admin read as "unowned", so whoever was admitted next became admin.
+      // With members still on the box that let a member mint an invitation and sign up their own
+      // administrator. The claim now asks what createFirstAccount asks, so a box whose owner is
+      // awaiting the purge gets no new admin until an operator names one.
       await createAccount('former-owner');
       await softDeleteEveryone();
 
       const heir = await createAccount('heir');
 
-      expect(heir.role).toBe('admin');
-      expect((await accounts()).find((account) => account.id === heir.id)?.role).toBe('admin');
+      expect(heir.role).toBe('user');
+      expect((await accounts()).find((account) => account.id === heir.id)?.role).toBe('user');
     });
   });
 });

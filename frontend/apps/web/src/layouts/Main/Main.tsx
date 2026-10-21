@@ -6,9 +6,12 @@ import { Outlet } from 'react-router-dom';
 
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { GettingStartedBanner } from '@/components/GettingStarted/GettingStartedBanner';
 import { MemoryContractStrip } from '@/components/MemoryContractStrip/MemoryContractStrip';
 import { useBackground, useTheme } from '@/components/ThemePicker';
 import { UnsyncedImportsBanner } from '@/components/UnsyncedImports/UnsyncedImportsBanner';
+import { useCurrentUser } from '@/hooks';
+import { isGettingStartedActive } from '@/lib/gettingStarted';
 
 import { MobileNavigation } from './MobileNavigation/MobileNavigation';
 import { MobileTopBar } from './MobileNavigation/MobileTopBar';
@@ -21,6 +24,8 @@ export function Main() {
   const { isMobile } = useDeviceLayout();
   const { themeState } = useTheme();
   const { glowEnabled } = useBackground();
+  const { user } = useCurrentUser();
+  const gettingStartedActive = isGettingStartedActive(user?.id);
 
   if (isMobile) {
     return (
@@ -49,7 +54,8 @@ export function Main() {
               page content, inert behind the scrim like the rest. Every authenticated
               page passes through this layout, which makes it the one place the
               page-load check reaches "across all pages". */}
-          <UnsyncedImportsBanner />
+          <GettingStartedBanner />
+          <UnsyncedImportsBanner suppressed={gettingStartedActive} />
           <main className="flex-1 min-w-0 overflow-hidden min-h-0 relative">
             {/* Boundary INSIDE Suspense so a failed lazy chunk is caught too,
                 and around the outlet ALONE so the bottom bar and the modal
@@ -62,7 +68,7 @@ export function Main() {
             </Suspense>
           </main>
           <MobileNavigation />
-          <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
+          <Portal id="overlay-modal" className="pointer-events-none fixed inset-0 z-50 empty:hidden" />
         </div>
       </PowerRailProvider>
     );
@@ -85,6 +91,15 @@ export function Main() {
           it there: the background is `fixed` at z-index 0, and a positioned
           sibling later in the DOM would otherwise paint over the whole app. */}
       {glowEnabled ? <AnimatedBackground /> : null}
+      {/* Outside the `relative z-10` shell below, on purpose. That shell is a
+          stacking context, so a toaster inside it — whatever its own z-index —
+          could never paint above anything portaled to <body>. The slot drawer
+          on the calendar is one of those (Radix Sheet, fixed, z-50), and the
+          "Could not put that on the calendar" toast sat behind it, bottom-right
+          under the panel, invisible: the desktop looked like a refused
+          placement did nothing. Same shape as the phone layout above, whose
+          toaster is a sibling of its column for a related reason (inert). */}
+      <Toaster theme={themeState.mode} />
       <div className="relative z-10 grid h-lvh min-h-0 grid-cols-[auto_1fr] grid-rows-[auto_1fr]">
         {/* Left-aligned so the mark stays put when the rail widens. Centering
             it here walks the logo to the middle of the expanded column. */}
@@ -109,9 +124,9 @@ export function Main() {
         <div className="overflow-hidden min-w-0 min-h-0 flex flex-col">
           <MemoryContractStrip />
           {/* Same notice as the phone's, in the same slot: above the page, in flow. */}
-          <UnsyncedImportsBanner />
+          <GettingStartedBanner />
+          <UnsyncedImportsBanner suppressed={gettingStartedActive} />
           <Suspense fallback={<LoadingPage />}>
-            <Toaster theme={themeState.mode} />
             <div className="flex flex-row h-full min-h-0">
               <Portal id="tertiary-navigation" className="h-full" />
               {/* `tabIndex={-1}` so the skip link actually moves focus here
@@ -127,7 +142,7 @@ export function Main() {
             </div>
           </Suspense>
         </div>
-        <Portal id="overlay-modal" className="fixed inset-0 z-50 empty:hidden" />
+        <Portal id="overlay-modal" className="pointer-events-none fixed inset-0 z-50 empty:hidden" />
       </div>
     </PowerRailProvider>
   );

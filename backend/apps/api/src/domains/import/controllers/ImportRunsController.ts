@@ -29,12 +29,14 @@ import {
 import {
   DataSourceCatalogService,
   type DataSourceSummary,
+  type BundleCatalogEntry,
   type SourceCatalogEntry,
 } from '../services/DataSourceCatalogService';
 import { ImportRetentionService, type DiscardedRun } from '../services/ImportRetentionService';
 import { ImportRunService } from '../services/ImportRunService';
 import { ObjectCountService, type ObjectCountEntry } from '../services/ObjectCountService';
 import { isStageStalled } from '../services/stageLiveness';
+import { importRootsCallerFor } from '../sources/importRoots';
 
 /** A run as the progress UI reads it. */
 export interface RunSummary {
@@ -164,7 +166,7 @@ export interface StartPushBody {
 }
 
 export interface RecognizeBody {
-  /** Absolute path on the appliance, within a configured import root. */
+  /** Absolute path on the appliance: the caller's own inbox, or a configured import root (administrator only). */
   path?: string;
 }
 
@@ -212,6 +214,19 @@ export class ImportRunsController {
   }
 
   /**
+   * The export bundles — Google Takeout, Meta Accounts Center, Amazon Privacy
+   * Central — each ONE download that covers several of the catalog's sources.
+   * The wizard shows a bundle as one picker button and one export card in
+   * place of its members' own. Authored beside the guides so every export
+   * instruction the wizard shows comes from the backend.
+   */
+  @UseGuards(JwtOrApiKeyAuthGuard)
+  @Get('sources/bundles')
+  sourceBundles(): BundleCatalogEntry[] {
+    return this.catalog.bundles();
+  }
+
+  /**
    * How much of each memory kind this user's imports have actually put in
    * `ci.*`, per importer — what the picker's tiles show under "24K Mail",
    * "1.2M Photos". Read from the live tables themselves, never from run
@@ -245,9 +260,10 @@ export class ImportRunsController {
    * ends up in access logs and proxy history, and the reply is not cacheable
    * anyway — the folder it describes changes.
    *
-   * Confined to `CI_IMPORT_ROOTS`, exactly as the MCP tool is. A path outside
-   * them answers `allowed: false` with the remedy rather than 4xx: "not
-   * permitted, upload instead" is a state the caller renders, not a fault.
+   * Confined to the caller's own inbox, plus `CI_IMPORT_ROOTS` for the
+   * administrator, exactly as the MCP tool is. A path outside them answers
+   * `allowed: false` with the remedy rather than 4xx: "not permitted, upload
+   * instead" is a state the caller renders, not a fault.
    */
   @UseGuards(JwtOrApiKeyAuthGuard)
   @Post('recognize')
@@ -258,11 +274,12 @@ export class ImportRunsController {
       throw new BadRequestException('path is required');
     }
 
-    // The caller's email scopes which inbox subtree they may read — their own.
+    // The caller's account scopes which inbox subtree they may read — their
+    // own — and only the administrator reaches the configured roots.
     const userId = requireUserId(context);
     const user = await this.users.findById({ userId }, userId);
 
-    return recognizePathWithinRoots(body.path, user?.email ?? null);
+    return recognizePathWithinRoots(body.path, importRootsCallerFor(user));
   }
 
   /** Start importing a staged upload. */

@@ -39,6 +39,8 @@ function makeResolver() {
     // The query path also reaches events through matching media; nothing here has any.
     findEventIdsForMedia: jest.fn().mockResolvedValue([] as string[]),
     countEntitiesForContents: jest.fn().mockResolvedValue(0),
+    // The How filter's ledger lookup for content candidates; none match by default.
+    idsMatchingSourceSystems: jest.fn().mockResolvedValue(new Set<string>()),
   };
   const itemService = {
     getEntitiesForItems: jest.fn().mockResolvedValue([] as Identifier[]),
@@ -592,16 +594,29 @@ describe('SearchResolver.search — the How filter narrows every sourced kind', 
   });
 
   it('keeps the query path to rows from the chosen source, without collapsing it to events', async () => {
-    const { resolver, searchService, entityResolutionService, eventService } = makeResolver();
+    const { resolver, searchService, entityResolutionService, eventService, contentService } = makeResolver();
     searchService.search.mockResolvedValue([
       { type: 'content', id: 'c1' },
+      { type: 'content', id: 'c2' },
       { type: 'note', id: 'n1' },
       { type: 'event', id: 'e1' },
       { type: 'browser-activity', id: 'b1' },
     ] as Identifier[]);
+    // Content is matched on the platform that delivered it, which only the
+    // ledger knows: c1 says `file` in its column and is kept, c2 is not.
+    contentService.idsMatchingSourceSystems.mockResolvedValue(new Set(['c1']));
     entityResolutionService.resolve.mockResolvedValue(
       resolveMap([
-        { type: 'content', id: 'c1', entity: { sourceSystem: 'reddit', updatedAt: new Date('2026-09-01') } },
+        {
+          type: 'content',
+          id: 'c1',
+          entity: { id: 'c1', sourceSystem: 'file', updatedAt: new Date('2026-09-01') },
+        },
+        {
+          type: 'content',
+          id: 'c2',
+          entity: { id: 'c2', sourceSystem: 'file', updatedAt: new Date('2026-09-01') },
+        },
         { type: 'note', id: 'n1', entity: { updatedAt: new Date('2026-09-02') } },
         { type: 'event', id: 'e1', entity: { sourceSystem: 'gmail', startTime: new Date('2026-09-03') } },
         // Browser activity keeps the column's snake_case name on its entity.
@@ -617,6 +632,7 @@ describe('SearchResolver.search — the How filter narrows every sourced kind', 
 
     // Relevance order, i.e. the candidate order the search returned them in.
     expect(nodeIds(result)).toEqual(['content:c1', 'browser-activity:b1']);
+    expect(contentService.idsMatchingSourceSystems).toHaveBeenCalledWith(ctx, ['c1', 'c2'], ['reddit']);
     // The event-only who / where restriction must not have been triggered.
     expect(eventService.getEntitiesForEvents).not.toHaveBeenCalled();
   });

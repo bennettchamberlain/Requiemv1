@@ -115,6 +115,7 @@ All routes require `Authorization: Bearer <token>` except the `OPTIONS` prefligh
 | --- | --- | --- |
 | `POST` | `/api/outbox` | Enqueue one item. `201`, or `507` when full. |
 | `GET` | `/api/outbox` | List items oldest-first. Optional `?status=pending\|needs_attention\|all` (default `all`). |
+| `DELETE` | `/api/outbox` | Remove every item. Sign-out only. `200 {"deleted": n}`. |
 | `GET` | `/api/outbox/{id}` | One item **including** `payload`. `404` if unknown. |
 | `DELETE` | `/api/outbox/{id}` | Remove one item (successful flush, or deliberate user discard). `204` / `404`. |
 | `POST` | `/api/outbox/{id}/attempt` | Record a flush outcome. `204` on success, `200` with the updated item on failure, `404` if unknown. |
@@ -128,7 +129,8 @@ All routes require `Authorization: Bearer <token>` except the `OPTIONS` prefligh
   "kind": "note",                          // opaque to the sidecar ("note" | "capture" | …)
   "payload": { "text": "…" },              // opaque JSON object the flusher POSTs onward
   "capturedAt": "2026-08-13T10:00:00.000Z",// ISO-8601, CLIENT time at capture
-  "idempotencyKey": "01J…"                 // client-generated ULID/UUID
+  "idempotencyKey": "01J…",                // client-generated ULID/UUID
+  "owner": "https://memory.example.com 1a2b…" // optional; opaque account + server stamp
 }
 // 201
 { "id": "…", "status": "pending", "capturedAt": "2026-08-13T10:00:00.000Z", "seq": 1 }
@@ -142,8 +144,14 @@ All routes require `Authorization: Bearer <token>` except the `OPTIONS` prefligh
   differing `payload` on a replay is ignored -- first write wins. Answering `201` on a
   replay is deliberate: the caller retried because it never saw the first response, so it
   should not have to special-case the second one.
-- Missing/blank `kind`, `capturedAt`, or `idempotencyKey`, or a `payload` that isn't a JSON
-  object, are rejected `400 {"error":"invalid_request","detail":"…"}`.
+- `owner` names the account and Memory server the capture belongs to. The sidecar stores it
+  and hands it back on every item; it never interprets it. The web flusher sends a row only
+  under the session it was stamped for, so a capture queued by one person cannot upload
+  into the next account signed in on the same phone. A row from a client that sent no
+  `owner` (or from before the column existed) reads back as `"owner": null`.
+- Missing/blank `kind`, `capturedAt`, or `idempotencyKey`, a `payload` that isn't a JSON
+  object, or an `owner` that is present but not a non-empty string, are rejected
+  `400 {"error":"invalid_request","detail":"…"}`.
 - `507 {"error":"outbox_full","detail":"…"}` when the queue is at its cap (below).
 
 **List** — `GET /api/outbox`
@@ -152,7 +160,7 @@ All routes require `Authorization: Bearer <token>` except the `OPTIONS` prefligh
 {
   "items": [
     { "id": "…", "kind": "note", "capturedAt": "…", "seq": 1,
-      "status": "pending", "attempts": 0, "lastError": null }
+      "status": "pending", "attempts": 0, "lastError": null, "owner": "…" }
   ],
   "counts":   { "pending": 1, "needsAttention": 0, "total": 1 },
   "capacity": { "max": 5000, "used": 1, "warnAt": 4000 }
@@ -166,7 +174,8 @@ All routes require `Authorization: Bearer <token>` except the `OPTIONS` prefligh
 - **List responses deliberately omit `payload`** -- payloads can be large (media, long
   notes) and a queue-depth poll shouldn't stream them. Use `GET /api/outbox/{id}` for the
   full item.
-- `lastError` is always present, `null` when there has been no failure.
+- `lastError` is always present, `null` when there has been no failure. `owner` is always
+  present too, `null` on a row queued without one.
 
 **Attempt** — `POST /api/outbox/{id}/attempt`
 
@@ -292,8 +301,10 @@ out of `start()`. The failure mode is a visible, retryable error — never a que
 mysteriously empty. These rows have never reached any server; losing them would be precisely
 what the outbox exists to prevent.
 
-This is a file-level cutover, not a `SQLiteOpenHelper` version step, so `DATABASE_VERSION`
-stays at `1` and `onUpgrade` still throws. (`SECURITY_ARCHITECTURE.md` §2.1 suggested bumping
+This is a file-level cutover, not a `SQLiteOpenHelper` version step. `DATABASE_VERSION` went
+to `2` later, for the `owner` column alone: `onUpgrade` adds it to an existing table
+(`NULL` on every row already queued) and still throws for any other step. The plaintext
+import copies the v1 columns by name, so a predecessor file without `owner` still imports. (`SECURITY_ARCHITECTURE.md` §2.1 suggested bumping
 it; against a brand-new file that would be a no-op, since `onCreate` runs and `onUpgrade` never
 fires. The guard against destructive upgrades is worth more than the version number.)
 
@@ -557,6 +568,43 @@ the most important one.
   check); this is a straightforward byte-array XOR loop with no exotic API surface, so
   it carries the same "should be correct, unverified" caveat as the rest of the file
   rather than any GCDWebServer-specific uncertainty.
+
+### iOS Always location tracking -- relaunch handling (2026-10-20, uncompiled)
+
+Until this change iOS Always was `SignificantLocationMonitor` started by JavaScript and
+emitting to JavaScript: swiping the app away ended it, nothing restarted it on the
+background relaunches iOS performs for a location event or after a reboot, and a fix with
+no WebView to receive it was lost. It now mirrors the Android design one file at a time:
+
+- `LocationTrackingConfig.swift`, `LocationSamplingGate.swift`, `PositionRecordJson.swift`
+  are the Kotlin files of the same names, by hand. `PositionRecordJsonTest.kt` and the web
+  side's `deviceSourceLocation.test.ts` pin the record shape; the Swift builder has no test
+  of its own yet (no Mac in the environment this was written in) and must be checked against
+  that fixture at the first Xcode build.
+- `LocationTracking.swift` is the tracker: armed state in `UserDefaults`
+  (`TrackingStateStore`), `arm` / `disarm` from the plugin, `onFix` running the gate and
+  enqueueing into the encrypted outbox through `OutboxStore.shared()` -- one connection for
+  the whole process, which `LocalHubServer` now uses too -- and `handleAppLaunch`, which
+  `AppDelegate.application(_:didFinishLaunchingWithOptions:)` calls on every launch. With
+  Always armed it restarts the monitor before the method returns, which is what makes iOS
+  deliver the fix that caused a background relaunch.
+- `SignificantLocationMonitor` additionally keeps one `CLCircularRegion` of
+  `minDistanceMeters` around the last queued fix, exit-only, re-centred on each accepted
+  fix. A region exit is the relaunch trigger iOS is most reliable about after a reboot; the
+  fix Core Location already holds is used when at most two minutes old.
+- A lapsed Always grant (the periodic reminder, or Settings) means a relaunch can start
+  nothing: the tracker posts one local notification, "Location recording paused", and the
+  next app open re-arms through the web side's two-step prompt. The plugin's `load()` and
+  `didBecomeActive` also call `resumeIfArmed()`, so an open repairs it even without the tap.
+
+Not covered, by design of the platform: an app the person force-quit from the switcher is
+not relaunched by iOS for location events until it is next opened.
+
+**Verify on the Mac before trusting any of it:** build; turn Always on; swipe the app
+away; drive ~1 km; open the app and check `GET /api/outbox` lists `positions` rows captured
+while it was gone. Then reboot with Always on and repeat. Expect the geofence to need the
+`location` background mode that `Info.plist` already declares, and expect the record
+fixture test to be the first thing to add once `swiftc` is at hand.
 
 ### Outbox on iOS -- additional unverified surface
 

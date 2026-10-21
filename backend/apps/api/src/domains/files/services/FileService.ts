@@ -14,12 +14,13 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, type FindOptionsWhere } from 'typeorm';
+import { Repository, In, IsNull, type FindOptionsWhere } from 'typeorm';
 import { v4 as uuidv4, v7 as uuidv7 } from 'uuid';
 
 import { isUniqueViolation } from '@ci/common/constants';
 import { SYSTEM_USER, type ServiceContext, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { keysetSeek } from '@ci/common/persistence';
 import { serves } from '@ci/common/roles';
 import config from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
@@ -27,7 +28,10 @@ import { FileUpdatedEvent, FileUploadedEvent } from '@ci/domains/files/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { SignedFile, FileEntity } from '../entities/FileEntity';
+import { type FileKind, fileKindsPredicate } from '../fileKinds';
 import { FileVariant, type CreateFileDto, type UpdateFileDto, type UploadFileDto } from '../types';
+
+import { downloadResponseOverrides } from './downloadResponse';
 
 const BUCKET_REGION = config.staticfiles.bucket ?? 'us-east-1';
 const SIGNATURE_URL = config.staticfiles.auth.signatureUrl ?? config.staticfiles.storageUrl;
@@ -121,6 +125,16 @@ export class FileService implements OnModuleInit {
           existingFileId: existing.id,
         });
 
+        // A pointer row written before rows recorded their connection (or by a
+        // connection since removed) is adopted by the one syncing it now, so
+        // a later disconnect can find it.
+        if (file.connectionId) {
+          await this.fileRepository.update(
+            { id: existing.id, userId: context.userId, connectionId: IsNull() },
+            { connectionId: file.connectionId },
+          );
+        }
+
         return existing;
       }
     }
@@ -162,6 +176,7 @@ export class FileService implements OnModuleInit {
       title: file.title ?? null,
       description: file.description ?? null,
       externalId: file.externalId ?? null,
+      connectionId: file.connectionId ?? null,
       bucket,
       key,
       hash,
@@ -298,6 +313,22 @@ export class FileService implements OnModuleInit {
    * the planner was free to change between pages, repeating or dropping rows
    * at page seams. An unknown `afterId` reads as "from the start", matching
    * what the in-memory paginator did with a stale cursor.
+   *
+   * The anchor's `created_at` is read as TEXT, never through the entity. The
+   * column is `timestamptz(6)`: microseconds, `DEFAULT now()`, and a bulk
+   * upload stamps a whole batch with one. The driver hands an entity's
+   * `Date` back at MILLISECONDS (`.123456` reads as `.123`), so a seek bound
+   * to it sorted the anchor BEFORE ITSELF: `(created_at, id) < (.123, :id)`
+   * is false for every file of the anchor's instant, and the rest of the
+   * batch at a page boundary was never served, while `totalCount` counted
+   * it. The text is Postgres' own spelling with the microseconds intact, and
+   * bound back it is parsed as the column's own type, so the anchor is the
+   * file's exact `(created_at, id)`.
+   *
+   * The seek stays a row-value comparison, not the bounded OR of
+   * `keysetSeekExact`: there is no index on `created_at` here today, so both
+   * plan as a scan, a filter and a top-N sort, and if one is added this form
+   * is the exact index range (see `ItemService.findPage`, which has one).
    */
   async findPage(
     context: ServiceContext,
@@ -312,25 +343,37 @@ export class FileService implements OnModuleInit {
 
     const totalCount = await this.fileRepository.count({ where: scope });
 
-    const query = this.fileRepository
-      .createQueryBuilder('file')
-      .where('file.variant = :variant', { variant: scope.variant })
+    // The originals this call may see, for the page and for the anchor alike: a file the page could
+    // not return (another user's, a variant, a soft-deleted one) is not an anchor either.
+    const visible = () => {
+      const originals = this.fileRepository
+        .createQueryBuilder('file')
+        .where('file.variant = :variant', { variant: scope.variant });
+
+      if (scope.userId != null) {
+        originals.andWhere('file.user_id = :userId', { userId: scope.userId });
+      }
+
+      return originals;
+    };
+
+    const query = visible()
       .orderBy('file.created_at', 'DESC')
       .addOrderBy('file.id', 'DESC')
       // One extra row answers hasNextPage without a second count.
       .take(page.limit + 1);
 
-    if (scope.userId != null) {
-      query.andWhere('file.user_id = :userId', { userId: scope.userId });
-    }
-
     if (page.afterId) {
-      const anchor = await this.fileRepository.findOne({ where: { ...scope, id: page.afterId } });
+      const anchor = await visible()
+        .select('file.id', 'anchor_id')
+        .addSelect('CAST(file.created_at AS text)', 'anchor_created_at')
+        .andWhere('file.id = :anchorId', { anchorId: page.afterId })
+        .getRawOne<{ anchor_id: string; anchor_created_at: string | null }>();
 
-      if (anchor?.createdAt != null) {
+      if (anchor?.anchor_created_at != null) {
         query.andWhere('(file.created_at, file.id) < (:anchorCreatedAt, :anchorId)', {
-          anchorCreatedAt: anchor.createdAt,
-          anchorId: anchor.id,
+          anchorCreatedAt: anchor.anchor_created_at,
+          anchorId: anchor.anchor_id,
         });
       }
     }
@@ -393,6 +436,8 @@ export class FileService implements OnModuleInit {
       afterTime?: Date;
       afterId?: string;
       order?: 'ASC' | 'DESC';
+      /** Only these kinds of file (see `fileKinds.ts`); absent means every kind. */
+      kinds?: readonly FileKind[];
     } = {},
   ): Promise<EntityIdentifier<IndexableEntity>[]> {
     let query = this.fileRepository
@@ -400,6 +445,11 @@ export class FileService implements OnModuleInit {
       .select('file.id', 'id')
       .where('file.user_id = :userId', { userId: context.userId })
       .andWhere('file.variant = :variant', { variant: FileVariant.ORIGINAL });
+
+    if (options.kinds && options.kinds.length > 0) {
+      const kinds = fileKindsPredicate('file.content_type', options.kinds);
+      query = query.andWhere(kinds.sql, kinds.params);
+    }
 
     if (options.startTime) {
       query = query.andWhere('file.updated_at >= :startTime', { startTime: options.startTime });
@@ -409,16 +459,17 @@ export class FileService implements OnModuleInit {
       query = query.andWhere('file.updated_at <= :endTime', { endTime: options.endTime });
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at DESC, id DESC).
+    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at, id), in `order`.
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(file.updated_at < :afterTime OR (file.updated_at = :afterTime AND file.id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('file.updated_at', 'file.id', order, options.afterTime, options.afterId),
       );
     }
 
-    // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query.orderBy('file.updated_at', options.order ?? 'DESC').addOrderBy('file.id', 'DESC');
+    // Deterministic tiebreak so same-timestamp rows page consistently: the id runs the way the time does.
+    query = query.orderBy('file.updated_at', order).addOrderBy('file.id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -436,12 +487,17 @@ export class FileService implements OnModuleInit {
    */
   async countEntitiesForFiles(
     context: ServiceContext,
-    options: { startTime?: Date; endTime?: Date },
+    options: { startTime?: Date; endTime?: Date; kinds?: readonly FileKind[] },
   ): Promise<number> {
     let query = this.fileRepository
       .createQueryBuilder('file')
       .where('file.user_id = :userId', { userId: context.userId })
       .andWhere('file.variant = :variant', { variant: FileVariant.ORIGINAL });
+
+    if (options.kinds && options.kinds.length > 0) {
+      const kinds = fileKindsPredicate('file.content_type', options.kinds);
+      query = query.andWhere(kinds.sql, kinds.params);
+    }
 
     if (options.startTime) {
       query = query.andWhere('file.updated_at >= :startTime', { startTime: options.startTime });
@@ -452,6 +508,34 @@ export class FileService implements OnModuleInit {
     }
 
     return query.getCount();
+  }
+
+  /**
+   * Of `ids`, the files that are one of `kinds`. For the search paths whose
+   * candidates come from the index (a query, a tag) rather than from the
+   * timed browse above, so the kinds filter holds there too.
+   */
+  async filterIdsByKind(
+    context: ServiceContext,
+    ids: readonly string[],
+    kinds: readonly FileKind[],
+  ): Promise<Set<string>> {
+    if (ids.length === 0 || kinds.length === 0) {
+      return new Set(ids);
+    }
+
+    const predicate = fileKindsPredicate('file.content_type', kinds);
+    const rows = await this.fileRepository
+      .createQueryBuilder('file')
+      .select('file.id', 'id')
+      .where('file.id IN (:...ids)', { ids: [...ids] })
+      .andWhere(context.userId === SYSTEM_USER ? '1 = 1' : 'file.user_id = :userId', {
+        userId: context.userId,
+      })
+      .andWhere(predicate.sql, predicate.params)
+      .getRawMany<{ id: string }>();
+
+    return new Set(rows.map((row) => row.id));
   }
 
   async findByHash(context: UserServiceContext, fileHash: string): Promise<SignedFile | null> {
@@ -467,6 +551,29 @@ export class FileService implements OnModuleInit {
     }
 
     return this.signFile(result);
+  }
+
+  /**
+   * Delete POINTER rows (no stored bytes) by their external ids. For a cloud
+   * folder that turned out to be a data export: its files were first recorded
+   * as ordinary pointers, and once the export is imported for real those rows
+   * describe nothing a person would look for. Rows holding bytes are never
+   * touched, whatever their external id.
+   */
+  async removePointersByExternalIds(context: UserServiceContext, externalIds: string[]): Promise<number> {
+    let removed = 0;
+
+    for (let i = 0; i < externalIds.length; i += 1000) {
+      const result = await this.fileRepository.delete({
+        userId: context.userId,
+        externalId: In(externalIds.slice(i, i + 1000)),
+        bucket: IsNull(),
+      });
+
+      removed += result.affected ?? 0;
+    }
+
+    return removed;
   }
 
   async findByExternalId(context: UserServiceContext, externalId: string): Promise<SignedFile | null> {
@@ -579,8 +686,19 @@ export class FileService implements OnModuleInit {
     context: UserServiceContext,
     file: UploadFileDto,
   ): Promise<{ file: SignedFile; deduped: boolean }> {
-    const { thingCapture = false, skipDescription = false, model, ...uploadData } = file;
+    const {
+      thingCapture = false,
+      skipDescription = false,
+      model,
+      memoryCapture = false,
+      capturedAt,
+      ...uploadData
+    } = file;
     const hash = await this.getFileHash(uploadData);
+    // Carried only when set, so the payload of an ordinary upload is unchanged.
+    const captureFlags = memoryCapture
+      ? { memoryCapture: true, ...(capturedAt ? { capturedAt: capturedAt.toISOString() } : {}) }
+      : {};
 
     if (hash) {
       const existing = await this.findByHash(context, hash);
@@ -590,13 +708,18 @@ export class FileService implements OnModuleInit {
           existingFileId: existing.id,
         });
 
-        if (thingCapture) {
+        // A dedup hit is silent for a plain upload (the pipeline has seen the
+        // bytes once already), but a thing capture still wants its vision
+        // pass and a memory capture still wants its content row — both
+        // listeners are idempotent on the existing file.
+        if (thingCapture || memoryCapture) {
           await this.eventService.send(FileUploadedEvent, {
             fileId: existing.id,
             userId: context.userId,
-            thingCapture: true,
+            thingCapture,
             skipDescription,
             model,
+            ...captureFlags,
           });
         }
 
@@ -615,6 +738,7 @@ export class FileService implements OnModuleInit {
       thingCapture,
       skipDescription,
       model,
+      ...captureFlags,
     });
 
     return { file: created, deduped: false };
@@ -829,10 +953,12 @@ export class FileService implements OnModuleInit {
       };
     }
 
+    // Never the stored type verbatim: an uploader picks it, and these links open
+    // on the app's own origin. See downloadResponse.ts.
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: key,
-      ResponseContentType: file.contentType,
+      ...downloadResponseOverrides(file.contentType, file.filename),
     });
 
     const url = await getSignedUrl(this.signatureS3, command, {

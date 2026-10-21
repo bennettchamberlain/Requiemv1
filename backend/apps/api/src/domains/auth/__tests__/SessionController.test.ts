@@ -16,7 +16,7 @@ import { UserService } from '@ci/domains/user';
 
 import { SessionController } from '../controllers/SessionController';
 import { AuthService } from '../services/AuthService';
-import { CsrfService } from '../services/CsrfService';
+import { CsrfService, CsrfValidationError } from '../services/CsrfService';
 import { HubForwardAuthBridgeService } from '../services/HubForwardAuthBridgeService';
 import { LoginThrottleService } from '../services/LoginThrottleService';
 
@@ -69,8 +69,19 @@ const mockLogger = {
   error: jest.fn(),
 };
 
+const validatePassword = jest.fn().mockResolvedValue(mockUser);
+
 const mockUserService = {
-  validatePassword: jest.fn().mockResolvedValue(mockUser),
+  validatePassword,
+  // What the login route calls. Delegates to `validatePassword` so each case can keep saying
+  // whether the password was right; the real one also compares unknown addresses against a
+  // dummy hash, which `UserService.deletion.test.ts` pins.
+  authenticatePassword: jest.fn(
+    async (email: string, password: string): Promise<{ user: unknown; accountExists: boolean }> => ({
+      user: await validatePassword(email, password),
+      accountExists: true,
+    }),
+  ),
   findById: jest.fn().mockResolvedValue(mockUser),
 };
 
@@ -213,6 +224,28 @@ describe('SessionController', () => {
         .send({ username: 'bad@example.com', password: 'wrong' })
         .expect(401);
     });
+
+    it.each([true, false])(
+      'tells the throttle whether the address is an account (%p), and the 401 says nothing either way',
+      async (accountExists) => {
+        mockUserService.authenticatePassword.mockResolvedValueOnce({ user: null, accountExists });
+
+        const response = await request(app.getHttpServer())
+          .post('/authenticate')
+          .set('Cookie', [`${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+          .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
+          .send({ username: 'someone@example.com', password: 'wrong' })
+          .expect(401);
+
+        expect(response.body.message).toBe('Invalid credentials');
+        expect(mockLoginThrottle.recordFailure).toHaveBeenCalledWith(
+          expect.anything(),
+          'someone@example.com',
+          undefined,
+          { accountExists },
+        );
+      },
+    );
 
     it('should ROTATE the CSRF token on login (identity boundary), bound to the new session', async () => {
       // Login is one of the few rotation points; the pre-auth token must not
@@ -524,6 +557,38 @@ describe('SessionController', () => {
 
       expect(mockCsrfService.ensureToken).toHaveBeenCalledWith(undefined, MOCK_SESSION_ID);
       expect(response.body.csrfToken).toBe(MOCK_CSRF_TOKEN);
+    });
+  });
+
+  describe('POST /authenticate/hub-bridge', () => {
+    it("aligns the session for the web app's cookie and header pair", async () => {
+      mockHubBridge.alignSession.mockResolvedValueOnce({ username: 'owner@example.com', replaced: false });
+
+      const response = await request(app.getHttpServer())
+        .post('/authenticate/hub-bridge')
+        .set('Cookie', [`${CSRF_COOKIE_NAME}=${MOCK_CSRF_TOKEN}`])
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
+        .expect(200);
+
+      expect(response.body).toEqual({ username: 'owner@example.com', replaced: false });
+      expect(mockCsrfService.validateToken).toHaveBeenCalledWith(MOCK_CSRF_TOKEN, MOCK_CSRF_TOKEN, null);
+    });
+
+    it("refuses the native app's cookie-less shape: only the web app calls this route", async () => {
+      // The real CsrfService rejects a missing cookie; the shared mock passes everything by default.
+      mockCsrfService.validateToken.mockImplementation((cookie: unknown) => {
+        if (!cookie) {
+          throw new CsrfValidationError('missing', 'Missing CSRF token');
+        }
+      });
+
+      await request(app.getHttpServer())
+        .post('/authenticate/hub-bridge')
+        .set('X-CSRF-Token', MOCK_CSRF_TOKEN)
+        .expect(403);
+
+      expect(mockCsrfService.verifyToken).not.toHaveBeenCalled();
+      expect(mockHubBridge.alignSession).not.toHaveBeenCalled();
     });
   });
 

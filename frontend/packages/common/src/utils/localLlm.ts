@@ -25,6 +25,7 @@ import { getApiBaseUrl, isIosPlatform, isNativePlatform } from './apiBase';
 import {
   evaluateModelFit,
   findLocalLlmModel,
+  gpuAllowedOn,
   localLlmModelsFor,
   type LocalLlmAccelerator,
   type LocalLlmFit,
@@ -75,6 +76,8 @@ export interface LocalLlmLoadResult {
   toolCount: number;
   accelerator: LocalLlmAccelerator;
   fellBackToCpu: boolean;
+  /** The GPU was wanted but withheld: the device is under the model's `gpuMinDeviceMemoryBytes`. */
+  gpuWithheld?: boolean;
   speculativeDecoding: boolean;
 }
 
@@ -106,7 +109,13 @@ export interface LocalLlmPluginApi {
   configureIntentTools(options: { enabled?: boolean; baseUrl?: string; apiKey?: string }): Promise<void>;
   resetConversation(): Promise<void>;
   unloadModel(): Promise<void>;
-  generateStream(options: { prompt: string; enableThinking?: boolean; images?: string[] }): Promise<void>;
+  generateStream(options: {
+    prompt: string;
+    enableThinking?: boolean;
+    thinkingTokenBudget?: number;
+    maxOutputTokens?: number;
+    images?: string[];
+  }): Promise<void>;
   cancel(): Promise<void>;
   addListener(
     eventName: 'modelDownloadProgress',
@@ -335,11 +344,13 @@ export interface LoadLocalLlmOptions {
 export async function ensureLocalLlmLoaded(
   modelId: string,
   options: LoadLocalLlmOptions = {},
-): Promise<LocalLlmLoadResult | { alreadyLoaded: true; accelerator: LocalLlmAccelerator }> {
+): Promise<
+  LocalLlmLoadResult | { alreadyLoaded: true; accelerator: LocalLlmAccelerator; toolCount?: number }
+> {
   const spec = requireModel(modelId);
   const plugin = requirePlugin();
   const current = await plugin.getLoadedModel();
-  const wanted = effectiveAccelerator(spec, options.accelerator);
+  const wanted = effectiveAccelerator(spec, options.accelerator, await deviceTotalMemoryBytes());
   const fallbackKey = `${modelId}:${wanted}`;
 
   // Already resident on the backend we would ask for — or on the CPU because that very request already fell
@@ -352,7 +363,13 @@ export async function ensureLocalLlmLoaded(
       current.accelerator === wanted ||
       (current.accelerator === 'cpu' && gpuFallbacks.has(fallbackKey)))
   ) {
-    return { alreadyLoaded: true, accelerator: current.accelerator ?? wanted };
+    // `toolCount` is what this session's own load reported; a model that was resident before the
+    // WebView started has an unknown count, and an unknown count never triggers the tool-less refusal.
+    return {
+      alreadyLoaded: true,
+      accelerator: current.accelerator ?? wanted,
+      toolCount: toolCounts.get(modelId),
+    };
   }
 
   const baseUrl = getApiBaseUrl();
@@ -377,11 +394,16 @@ export async function ensureLocalLlmLoaded(
     gpuFallbacks.delete(fallbackKey);
   }
 
+  toolCounts.set(modelId, result.toolCount);
+
   return result;
 }
 
 /** `model:accelerator` requests that already fell back to the CPU this session. */
 const gpuFallbacks = new Set<string>();
+
+/** Tools bound by the most recent load of each model this session, for the already-loaded short cut. */
+const toolCounts = new Map<string, number>();
 
 /**
  * The backend to ask for: the user's preference when this model can run on it, otherwise the model's own
@@ -391,8 +413,38 @@ const gpuFallbacks = new Set<string>();
 function effectiveAccelerator(
   spec: LocalLlmModelSpec,
   preferred: LocalLlmAccelerator | undefined,
+  totalMemoryBytes: number | undefined,
 ): LocalLlmAccelerator {
-  return preferred && spec.accelerators.includes(preferred) ? preferred : spec.accelerators[0];
+  const wanted = preferred && spec.accelerators.includes(preferred) ? preferred : spec.accelerators[0];
+
+  // The GPU is withheld on a phone under the model's GPU floor (see `gpuAllowedOn`). Asked for here, not left
+  // to the native side alone, so the already-loaded short cut below compares against the backend that will
+  // actually be used — otherwise a `gpu` preference on a 6 GB phone would reload the model on every turn.
+  return wanted === 'gpu' && !gpuAllowedOn(spec, totalMemoryBytes) && spec.accelerators.includes('cpu')
+    ? 'cpu'
+    : wanted;
+}
+
+/**
+ * The device's RAM as the plugin reports it, read once per plugin instance: it does not change while the app
+ * runs. Keyed on the plugin object rather than held in a module variable so a replaced bridge (tests install a
+ * fresh fake per case) is asked again rather than answered from the previous one's figure.
+ */
+const deviceMemoryByPlugin = new WeakMap<object, Promise<number | undefined>>();
+
+function deviceTotalMemoryBytes(): Promise<number | undefined> {
+  const plugin = requirePlugin();
+  let memory = deviceMemoryByPlugin.get(plugin);
+
+  if (!memory) {
+    memory = plugin
+      .isAvailable()
+      .then((availability) => availability.totalMemoryBytes)
+      .catch(() => undefined);
+    deviceMemoryByPlugin.set(plugin, memory);
+  }
+
+  return memory;
 }
 
 export async function unloadLocalLlm(): Promise<void> {
@@ -424,6 +476,10 @@ export async function resetLocalLlmConversation(): Promise<void> {
 
 export interface StreamLocalLlmOptions {
   enableThinking?: boolean;
+  /** Reasoning cap in tokens; omit for the native default (a quarter of the window). */
+  thinkingTokenBudget?: number;
+  /** Whole-reply cap in tokens; omit for whatever the window has left. */
+  maxOutputTokens?: number;
   /** Bare base64 JPEG/PNG, vision models only. */
   images?: string[];
   signal?: AbortSignal;
@@ -447,6 +503,26 @@ export interface StreamLocalLlmResult {
  */
 export function isContextExhausted(result: StreamLocalLlmResult): boolean {
   return !result.cancelled && result.text === '' && result.thought === '' && result.stats?.outputTokens === 0;
+}
+
+/** A `<tool_call>` the model opened and never closed: it was cut off while writing the call. */
+const UNFINISHED_TOOL_CALL = /<tool_call>(?![\s\S]*<\/tool_call>)[\s\S]*$/;
+
+/**
+ * A turn that ran, produced tokens, and still delivered no answer: the model reasoned (or started a tool
+ * call) until the window was full and the runtime stopped it there, silently. Measured on a device: Qwen3-0.6B
+ * thought for ~350 tokens, opened a `<tool_call>` and stopped mid-JSON; the chat showed reasoning that just
+ * ended. Distinct from {@link isContextExhausted} (an empty second turn) and from a stop (no stats). The
+ * native side now caps reasoning, so this is the backstop that at least says what happened.
+ */
+export function isAnswerCutShort(result: StreamLocalLlmResult): boolean {
+  if (result.cancelled || !result.stats || result.stats.outputTokens === 0) {
+    return false;
+  }
+
+  const answer = result.text.replace(UNFINISHED_TOOL_CALL, '').trim();
+
+  return answer === '' && (result.thought.trim() !== '' || UNFINISHED_TOOL_CALL.test(result.text));
 }
 
 /** The longest reason the chat shows: a native error that echoes its input must not fill a bubble. */
@@ -554,6 +630,8 @@ async function runStream(prompt: string, options: StreamLocalLlmOptions): Promis
     await plugin.generateStream({
       prompt,
       enableThinking: options.enableThinking,
+      thinkingTokenBudget: options.thinkingTokenBudget,
+      maxOutputTokens: options.maxOutputTokens,
       images: options.images && options.images.length > 0 ? options.images : undefined,
     });
   } catch (error) {

@@ -51,7 +51,11 @@ function makePerson(overrides: Partial<Person> = {}): Person {
   } as unknown as Person;
 }
 
-function build(overrides: Record<string, unknown> = {}, personOverrides: Record<string, unknown> = {}) {
+function build(
+  overrides: Record<string, unknown> = {},
+  personOverrides: Record<string, unknown> = {},
+  featureEnabled?: boolean,
+) {
   const service = {
     findAll: jest.fn().mockResolvedValue([makeLink()]),
     findById: jest.fn().mockResolvedValue(makeLink()),
@@ -68,10 +72,15 @@ function build(overrides: Record<string, unknown> = {}, personOverrides: Record<
     ...personOverrides,
   };
 
-  const resolver = new PeerLinkResolver(service as never, personService as never);
+  const featureService =
+    featureEnabled === undefined
+      ? undefined
+      : { isFeatureEnabled: jest.fn().mockResolvedValue(featureEnabled) };
+
+  const resolver = new PeerLinkResolver(service as never, personService as never, featureService as never);
   const context = { userId: OWNER } as never;
 
-  return { resolver, service, personService, context };
+  return { resolver, service, personService, featureService, context };
 }
 
 describe('PeerLinkResolver', () => {
@@ -447,6 +456,31 @@ describe('PeerLinkResolver', () => {
       expect(JSON.stringify(link)).not.toContain('ssn');
       expect(JSON.stringify(link)).not.toContain('do-not-leak');
       expect(JSON.stringify(result)).not.toContain('do-not-leak');
+    });
+  });
+
+  describe('feature-flag gating (G5c)', () => {
+    it('stays dark across all five operations when the `ask` feature flag is disabled', async () => {
+      const { resolver, service, context } = build({}, {}, false);
+      const gid = GlobalUID.encode('peer-link', '01a0-link');
+
+      await expect(resolver.myPeerLinks(context)).resolves.toEqual([]);
+      await expect(resolver.peerLink(context, gid)).resolves.toBeNull();
+      await expect(
+        resolver.createPeerLink(context, {
+          peerHandle: 'ada',
+          memoryEndpoint: 'https://ada.example/agent',
+        }),
+      ).resolves.toEqual({ success: false });
+      await expect(resolver.updatePeerLink(context, { id: gid, displayName: 'Ada' })).resolves.toEqual({
+        success: false,
+      });
+      await expect(resolver.revokePeerLink(context, gid)).resolves.toEqual({ success: false });
+
+      expect(service.findAll).not.toHaveBeenCalled();
+      expect(service.findById).not.toHaveBeenCalled();
+      expect(service.upsert).not.toHaveBeenCalled();
+      expect(service.revoke).not.toHaveBeenCalled();
     });
   });
 });

@@ -42,6 +42,20 @@ describe('Chat', () => {
     expect(queryByText('Start the conversation')).not.toBeInTheDocument();
   });
 
+  it('keeps the mobile transcript inside a rounded, inset scrolling surface', () => {
+    const { container } = renderWithProviders(
+      <Chat messages={[{ role: 'assistant', content: 'hello back' }]} />,
+    );
+
+    expect(container.querySelector('[data-list-scroll]')).toHaveClass(
+      'overflow-y-auto',
+      'overscroll-contain',
+      'rounded-2xl',
+      'mx-2',
+      'device:rounded-none',
+    );
+  });
+
   it('shows the user bubble immediately, even if onSubmit has not resolved', async () => {
     const onSubmit = vi.fn(() => new Promise<boolean>(() => undefined));
     const { getByText, getByRole } = renderWithProviders(<Chat onSubmit={onSubmit} />);

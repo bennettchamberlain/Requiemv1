@@ -1,25 +1,23 @@
 import { randomBytes } from 'crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { isUniqueViolation } from '@ci/common/constants';
 import { SYSTEM_USER } from '@ci/common/context';
 import {
-  FORWARD_AUTH_SIGNATURE_HEADER,
-  FORWARD_AUTH_TIMESTAMP_HEADER,
-  FORWARD_AUTH_USER_HEADER,
-  FORWARD_AUTH_USER_ID_HEADER,
-  FORWARD_AUTH_USER_ID_SIGNATURE_HEADER,
-  FORWARD_AUTH_USER_ISSUER_HEADER,
   type HubStableId,
-  verifyForwardAuthHeaders,
+  type VerifiedHubForwardAuth,
+  forwardAuthPolicy,
+  readForwardAuthHeaders,
+  verifyHubForwardAuth,
 } from '@ci/common/crypto';
 import { LoggerService } from '@ci/common/logging';
 import config from '@ci/configuration';
 import { type CreateUserDto, type User, UserService } from '@ci/domains/user';
 
 import { clearCsrfCookie, clearSessionCookie, setCsrfCookie, setSessionCookie } from '../utils/authCookies';
+import { SpentHubAssertions } from '../utils/spentHubAssertions';
 
 import { AuthService } from './AuthService';
 import { CsrfService } from './CsrfService';
@@ -41,8 +39,14 @@ export interface HubIdentity {
  * - `account_linked_elsewhere`: the account their Hub username names belongs to another person of
  *   the same Hub. Somebody renamed away from this address, and the Hub later gave it to this person.
  * - `account_ambiguous`: no account has exactly this address, and several have it in other cases.
+ * - `account_unproven`: the account their Hub username names has an address nothing proved is
+ *   theirs (typed into signup or a later email change), and this browser is not signed in to it.
+ *   Signing in to that account here with its password, then reloading, links them. Applies to a
+ *   Hub that sends no stable id too: there the address is the whole link, so it is refused the same
+ *   way, and a browser already signed in to that account keeps its session.
  */
-export type HubBridgeRefusal = 'account_unavailable' | 'account_linked_elsewhere' | 'account_ambiguous';
+export type HubBridgeRefusal =
+  'account_unavailable' | 'account_linked_elsewhere' | 'account_ambiguous' | 'account_unproven';
 
 export interface HubBridgeResult {
   /** Verified Hub username (email), or null when headers are absent/disabled/invalid. */
@@ -68,17 +72,23 @@ interface MemorySession {
   email: string | null;
 }
 
+/**
+ * A verified identity and the instant its header set was checked. The ledger judges a spend at
+ * that instant, not after the account lookups: a replay that verified in its last millisecond
+ * must still find its nonce held, however long those lookups take.
+ */
+type VerifiedAt = VerifiedHubForwardAuth & { verifiedAt: number };
+
 /** First-sight races a placement retries before giving up. One is all a second tab can cause. */
 const MAX_PLACEMENT_ATTEMPTS = 3;
 
-function headerValue(req: Request, name: string): string | null {
-  const raw = req.headers[name];
-  if (Array.isArray(raw)) {
-    return raw[0] ?? null;
-  }
+/**
+ * The account this browser is signed in to, asked only when a placement needs the answer: an
+ * account whose address is not proven. Most requests never get that far.
+ */
+type SignedInAs = () => Promise<string | null>;
 
-  return raw ?? null;
-}
+const SIGNED_IN_AS_NOBODY: SignedInAs = async () => null;
 
 function emailsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
   return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
@@ -102,9 +112,17 @@ function emailsEqual(a: string | null | undefined, b: string | null | undefined)
  * By email alone, as before, for a Hub that sends no stable id. That is still the
  * failure the stable id exists to end, kept only so an older Hub works exactly as
  * it always did. See CI-Engineering/architecture/identity/hub-memory-account-link.md.
+ *
+ * ── One session per Hub sign-in ────────────────────────────────────────────
+ *
+ * Reading the identity is free: every request carries it. Minting a session from a
+ * bound assertion spends it ({@link SpentHubAssertions}), so it opens one session and
+ * no more. Which header sets verify at all is `forwardAuthPolicy`'s call.
  */
 @Injectable()
 export class HubForwardAuthBridgeService {
+  private readonly spentAssertions = new SpentHubAssertions();
+
   constructor(
     private readonly userService: UserService,
     private readonly authService: AuthService,
@@ -113,29 +131,71 @@ export class HubForwardAuthBridgeService {
     private readonly logger: LoggerService,
   ) {
     this.logger.setContext(HubForwardAuthBridgeService.name);
+
+    this.warnAboutPolicy();
+  }
+
+  /** Say at boot when the forward-auth settings leave Hub sign-in unbound, or switched off. */
+  private warnAboutPolicy(): void {
+    const cfg = config.auth.hubForwardAuth;
+    if (!cfg.enabled) {
+      return;
+    }
+
+    const policy = forwardAuthPolicy(cfg);
+    if (!policy.bound) {
+      if (!policy.acceptUnbound) {
+        this.logger.warn(
+          'Hub sign-in is off: CI_HUB_FORWARD_AUTH_REQUIRE_AUDIENCE=true requires the bound assertion, but ' +
+            'CI_HUB_FORWARD_AUTH_IDENTITY_SECRET and CI_APP_URN are not both set.',
+        );
+      } else if (!policy.sharedSecret) {
+        this.logger.warn(
+          'Hub sign-in is off: CI_HUB_FORWARD_AUTH_ENABLED is true, but neither CI_HUB_FORWARD_AUTH_SECRET nor ' +
+            'CI_HUB_FORWARD_AUTH_IDENTITY_SECRET with CI_APP_URN is set, so no identity header can verify.',
+        );
+      } else {
+        this.logger.warn(
+          'Hub sign-in accepts identity headers that are not bound to this app: the Hub has not provided ' +
+            'CI_HUB_FORWARD_AUTH_IDENTITY_SECRET and CI_APP_URN. Updating the Hub provides both.',
+        );
+      }
+
+      return;
+    }
+
+    if (policy.acceptUnbound) {
+      this.logger.warn(
+        'CI_HUB_FORWARD_AUTH_REQUIRE_AUDIENCE=false: Hub sign-in also accepts identity headers that are not ' +
+          'bound to this app.',
+      );
+    }
+
+    if (policy.bound.secret === cfg.secret.trim()) {
+      this.logger.warn(
+        'CI_HUB_FORWARD_AUTH_IDENTITY_SECRET is the Hub-wide CI_HUB_FORWARD_AUTH_SECRET, which an older Hub ' +
+          "also gave other apps: any of them can sign this app's identity assertion.",
+      );
+    }
   }
 
   /** The verified Hub identity on this request, or null when the feature is off or headers do not verify. */
   verifyIdentity(req: Request): HubIdentity | null {
+    const verified = this.verify(req);
+
+    return verified ? { username: verified.username, stableId: verified.stableId } : null;
+  }
+
+  private verify(req: Request): VerifiedAt | null {
     const cfg = config.auth.hubForwardAuth;
-    if (!cfg.enabled || !cfg.secret) {
+    if (!cfg.enabled) {
       return null;
     }
 
-    const result = verifyForwardAuthHeaders(
-      cfg.secret,
-      {
-        user: headerValue(req, FORWARD_AUTH_USER_HEADER),
-        timestamp: headerValue(req, FORWARD_AUTH_TIMESTAMP_HEADER),
-        signature: headerValue(req, FORWARD_AUTH_SIGNATURE_HEADER),
-        issuer: headerValue(req, FORWARD_AUTH_USER_ISSUER_HEADER),
-        userId: headerValue(req, FORWARD_AUTH_USER_ID_HEADER),
-        userIdSignature: headerValue(req, FORWARD_AUTH_USER_ID_SIGNATURE_HEADER),
-      },
-      { maxSkewMs: cfg.maxSkewMs },
-    );
+    const now = Date.now();
+    const result = verifyHubForwardAuth(forwardAuthPolicy(cfg), readForwardAuthHeaders(req.headers), { now });
 
-    return result.ok ? { username: result.username, stableId: result.stableId } : null;
+    return result.ok ? { ...result, verifiedAt: now } : null;
   }
 
   /** Verified `X-CI-Hub-User`, or null when the feature is off or headers do not verify. */
@@ -184,7 +244,11 @@ export class HubForwardAuthBridgeService {
       return { username: identity.username, accountId: null };
     }
 
-    const placement = await this.locate(identity.username, identity.stableId);
+    const placement = await this.locate(
+      identity.username,
+      identity.stableId,
+      this.signedInAs(() => this.readSession(req)),
+    );
 
     return {
       username: identity.username,
@@ -198,27 +262,76 @@ export class HubForwardAuthBridgeService {
    * Memory user when they have never opened Memory on this box).
    */
   async alignSession(req: Request, res: Response): Promise<HubBridgeResult> {
-    const identity = this.verifyIdentity(req);
+    const identity = this.verify(req);
     if (!identity) {
       return { username: null, replaced: false };
     }
 
     return identity.stableId
-      ? this.alignByStableId(req, res, identity.username, identity.stableId)
-      : this.alignByEmail(req, res, identity.username);
+      ? this.alignByStableId(req, res, identity, identity.stableId)
+      : this.alignByEmail(req, res, identity);
+  }
+
+  /**
+   * Spend the bound assertion this session is about to be minted from, or refuse to mint.
+   *
+   * Called after the match checks, so a browser that already holds the right session spends
+   * nothing, and before anything is signed out, so a refused replay changes nothing. The unbound
+   * format has no key to spend (`replayKey` is null) and mints as it always did.
+   *
+   * A ledger with no room left is different: that request may well be the Hub person's own, and
+   * the session this browser holds belongs to someone else (it reached here because it did not
+   * match). Left standing, the SPA would fall back to refreshing it. So it is signed out, as a
+   * refused placement is.
+   */
+  private async spendForMint(
+    req: Request,
+    res: Response,
+    identity: VerifiedAt,
+    session: MemorySession | null,
+  ): Promise<void> {
+    if (identity.replayKey == null) {
+      return;
+    }
+
+    const outcome = this.spentAssertions.spend(identity.replayKey, identity.expiresAt, identity.verifiedAt);
+    if (outcome === 'spent') {
+      return;
+    }
+
+    if (outcome === 'full') {
+      await this.signOut(req, res, session);
+      this.logger.warn(
+        `not signing in Hub user ${identity.username}: too many Hub sign-ins in the last ` +
+          'replay window to remember another',
+      );
+
+      throw new ServiceUnavailableException('Too many Hub sign-ins at once. Try again in a minute.');
+    }
+
+    this.logger.warn(`refused a second Memory session from one Hub sign-in for ${identity.username}`);
+
+    throw new UnauthorizedException(
+      'This Hub sign-in has already been used. Reload the page to sign in again.',
+    );
   }
 
   private async alignByStableId(
     req: Request,
     res: Response,
-    username: string,
+    identity: VerifiedAt,
     stableId: HubStableId,
   ): Promise<HubBridgeResult> {
+    const { username } = identity;
     const session = await this.readSession(req);
 
     let placed: { kind: 'account'; user: User } | { kind: 'refused'; reason: HubBridgeRefusal };
     try {
-      placed = await this.place(username, stableId);
+      placed = await this.place(
+        username,
+        stableId,
+        this.signedInAs(async () => session),
+      );
     } catch (error) {
       // Who the Hub person is could not be settled, so nobody can say this session is theirs.
       // Leaving it standing could leave them in someone else's account, so sign it out.
@@ -235,30 +348,46 @@ export class HubForwardAuthBridgeService {
       return { username, replaced: false, refused: placed.reason };
     }
 
-    if (session?.userId === placed.user.id) {
+    if (session?.userId === placed.user.id && (await this.liveSessionUserId(session)) === placed.user.id) {
       return { username, replaced: false };
     }
 
+    await this.spendForMint(req, res, identity, session);
     await this.invalidate(req, session);
 
     return this.issueSessionFor(req, res, placed.user, username, session);
   }
 
   /** The bridge as it was before stable ids, for a Hub that sends none: the account is the address. */
-  private async alignByEmail(req: Request, res: Response, username: string): Promise<HubBridgeResult> {
+  private async alignByEmail(req: Request, res: Response, identity: VerifiedAt): Promise<HubBridgeResult> {
+    const { username } = identity;
     const session = await this.readSession(req);
 
-    if (session && emailsEqual(session.email, username)) {
+    if (
+      session &&
+      emailsEqual(session.email, username) &&
+      (await this.liveSessionUserId(session)) === session.userId
+    ) {
       return { username, replaced: false };
     }
+
+    await this.spendForMint(req, res, identity, session);
 
     // Before the account is found or created, as it always was: if that throws, the
     // previous person's session is already gone.
     await this.invalidate(req, session);
 
-    const user = await this.ensureUser(username);
+    const placed = await this.ensureUser(username);
 
-    return this.issueSessionFor(req, res, user, username, session);
+    if (placed.kind === 'refused') {
+      // The session above is already invalidated; this clears its cookies.
+      await this.signOut(req, res, null);
+      this.logger.warn(`not signing in Hub person ${username}: ${placed.reason}`);
+
+      return { username, replaced: false, refused: placed.reason };
+    }
+
+    return this.issueSessionFor(req, res, placed.user, username, session);
   }
 
   /**
@@ -270,11 +399,12 @@ export class HubForwardAuthBridgeService {
   private async place(
     username: string,
     stableId: HubStableId,
+    signedInAs: SignedInAs,
   ): Promise<{ kind: 'account'; user: User } | { kind: 'refused'; reason: HubBridgeRefusal }> {
     const { issuer, subject } = stableId;
 
     for (let attempt = 1; ; attempt += 1) {
-      const placement = await this.locate(username, stableId);
+      const placement = await this.locate(username, stableId, signedInAs);
 
       try {
         if (placement.kind === 'linked') {
@@ -296,6 +426,12 @@ export class HubForwardAuthBridgeService {
 
           // `bind` returns an existing (issuer, subject) row as it finds it: a racer linked them first.
           if (binding.userId === placement.user.id) {
+            // Adopted on the strength of this browser's own session: the Hub has now vouched for
+            // the address as this person's username, so it counts as proven from here on.
+            if (!this.userService.isEmailProven(placement.user)) {
+              await this.userService.markEmailProven(placement.user.id);
+            }
+
             this.logger.log(
               `linked Hub person ${issuer}#${subject} to existing Memory user ${placement.user.id} (${username})`,
             );
@@ -339,14 +475,21 @@ export class HubForwardAuthBridgeService {
    *    place.
    * 2. Not linked: the account the Hub username names, adopted once. That is the exact address, else
    *    the only case-insensitive match. Refused when another person of this Hub already holds it
-   *    (the takeover a reused username would otherwise be), or when several accounts match.
+   *    (the takeover a reused username would otherwise be), or when several accounts match. Also
+   *    refused when the account's address is not proven, unless this browser is already signed in
+   *    to that very account (`signedInAs`): an address typed into signup or an email change could
+   *    be this person's, planted by someone else to receive their first sign-in.
    * 3. Nobody: a new account, unless an account awaiting its purge still holds the address.
    *
    * "This Hub" is the issuer: a directory of people that lives and dies with the Hub's database.
    * A Memory restored onto a fresh Hub keeps links into a directory that no longer signs anything,
    * and the new Hub's people are adopted by username exactly as before any link existed.
    */
-  private async locate(username: string, { issuer, subject }: HubStableId): Promise<Placement> {
+  private async locate(
+    username: string,
+    { issuer, subject }: HubStableId,
+    signedInAs: SignedInAs = SIGNED_IN_AS_NOBODY,
+  ): Promise<Placement> {
     const linkedUserId = await this.federatedIdentityService.findUserId(issuer, subject);
     if (linkedUserId) {
       const linked = await this.userService.findById({ userId: SYSTEM_USER }, linkedUserId);
@@ -354,7 +497,8 @@ export class HubForwardAuthBridgeService {
       return linked ? { kind: 'linked', user: linked } : { kind: 'refused', reason: 'account_unavailable' };
     }
 
-    const named = await this.findAccountNamed(username);
+    // The exact address, else the only case-insensitive match.
+    const named = await this.userService.findAccountByEmail(username);
     if (named === 'ambiguous') {
       return { kind: 'refused', reason: 'account_ambiguous' };
     }
@@ -362,9 +506,13 @@ export class HubForwardAuthBridgeService {
     if (named) {
       const holder = await this.federatedIdentityService.findForUserFromIssuer(named.id, issuer);
 
-      return holder
-        ? { kind: 'refused', reason: 'account_linked_elsewhere' }
-        : { kind: 'adopt', user: named };
+      if (holder) {
+        return { kind: 'refused', reason: 'account_linked_elsewhere' };
+      }
+
+      return this.userService.isEmailProven(named) || (await signedInAs()) === named.id
+        ? { kind: 'adopt', user: named }
+        : { kind: 'refused', reason: 'account_unproven' };
     }
 
     // `ci.users.email` stays unique across soft-deleted rows (see `checkEmailAvailability`, which
@@ -372,21 +520,6 @@ export class HubForwardAuthBridgeService {
     return (await this.userService.checkEmailAvailability(username))
       ? { kind: 'refused', reason: 'account_unavailable' }
       : { kind: 'create' };
-  }
-
-  /** The live account a Hub username names: its exact address, else the only case-insensitive match. */
-  private async findAccountNamed(username: string): Promise<User | 'ambiguous' | null> {
-    const exact = await this.userService.findByEmail(username);
-    if (exact) {
-      return exact;
-    }
-
-    const folded = await this.userService.findByEmailIgnoringCase(username);
-    if (folded.length > 1) {
-      return 'ambiguous';
-    }
-
-    return folded[0] ?? null;
   }
 
   private async readSession(req: Request): Promise<MemorySession | null> {
@@ -403,6 +536,30 @@ export class HubForwardAuthBridgeService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The account this browser's session belongs to, when the session is still live. A signed
+   * session cookie alone is not enough: logging out deletes the row and leaves the cookie's
+   * signature valid. The previous token is live during rotation grace, just as it is for refresh.
+   */
+  private async liveSessionUserId(session: MemorySession | null): Promise<string | null> {
+    if (!session) {
+      return null;
+    }
+
+    try {
+      return (await this.authService.resolveLiveSession(session.token))?.userId ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** {@link liveSessionUserId}, looked up the first time a placement asks and remembered after. */
+  private signedInAs(session: () => Promise<MemorySession | null>): SignedInAs {
+    let answer: Promise<string | null> | null = null;
+
+    return () => (answer ??= session().then((found) => this.liveSessionUserId(found)));
   }
 
   private async invalidate(req: Request, session: MemorySession | null): Promise<void> {
@@ -456,17 +613,36 @@ export class HubForwardAuthBridgeService {
     };
   }
 
-  private async ensureUser(email: string): Promise<{ id: string; email: string }> {
-    const existing = await this.userService.findByEmail(email);
+  /**
+   * The account a Hub that sends no stable id signs this person in to: the one their username
+   * names, held to the same rules as a first link by stable id ({@link locate}). Refused when
+   * several accounts match the address once case is ignored, or when the one that matches has an
+   * address nothing proved is theirs: without a stable id the address is the whole link, so a
+   * member who typed it into their own account would receive this person's every sign-in. The
+   * caller has already kept the session of a browser signed in to that very account.
+   */
+  private async ensureUser(
+    email: string,
+  ): Promise<
+    | { kind: 'account'; user: { id: string; email: string } }
+    | { kind: 'refused'; reason: Extract<HubBridgeRefusal, 'account_ambiguous' | 'account_unproven'> }
+  > {
+    const existing = await this.userService.findAccountByEmail(email);
+    if (existing === 'ambiguous') {
+      return { kind: 'refused', reason: 'account_ambiguous' };
+    }
+
     if (existing) {
-      return existing;
+      return this.userService.isEmailProven(existing)
+        ? { kind: 'account', user: existing }
+        : { kind: 'refused', reason: 'account_unproven' };
     }
 
     const created = await this.userService.create({ userId: SYSTEM_USER }, this.accountFor(email));
 
     this.logger.log(`JIT-created Memory user for Hub-invited person ${email}`);
 
-    return created;
+    return { kind: 'account', user: created };
   }
 
   /** The account the bridge creates for a Hub person: nobody has seen its password, so none is stamped. */
@@ -476,6 +652,8 @@ export class HubForwardAuthBridgeService {
       email,
       password: randomBytes(32).toString('hex'),
       passwordChosenByUser: false,
+      // The address is the Hub-signed username of the person it is created for.
+      emailProven: true,
     };
   }
 }

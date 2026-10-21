@@ -5,6 +5,7 @@ import { Sheet } from '@ci/shadcn';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { GET_TAG_SUGGESTIONS } from '@/components/TagInput';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 import { withFresherEntity, type EntityItem, type MemoryEntity } from '../../useEntityService';
@@ -119,13 +120,11 @@ describe('EntityDetailScaffold', () => {
    * 496pt wide on a 402pt screen. It ran under the close button and pushed the four
    * header actions (Open full page, Chat, Edit, Delete) off the right edge.
    *
-   * A flex item will not shrink below its longest unbreakable word unless it is
-   * allowed to (`min-w-0`), and a word is only broken where the box is narrower
-   * than it (`break-words`). jsdom does no layout, so what can be pinned here is
-   * the structure that decides it: the title may shrink and wrap, and the actions
-   * beside it may not give way.
+   * On a phone the title now owns the first row and the actions sit beside the
+   * subtitle below it. jsdom does no layout, so pin the responsive grid contract
+   * that creates those rows.
    */
-  it('lets a long unbroken URL in the title wrap, so the header actions are not pushed off screen', async () => {
+  it('gives a long mobile title its own row and moves actions beside the subtitle', async () => {
     const url = 'https://www.threads.com/@hannahstocking/post/DZoTALDGmu6';
 
     renderWithProviders(
@@ -137,15 +136,64 @@ describe('EntityDetailScaffold', () => {
     );
 
     const title = await screen.findByRole('heading', { name: new RegExp(url.replace(/[.?]/g, '\\$&')) });
-    const openFullPage = screen.getByRole('link', { name: /open full page/i });
-    const actions = openFullPage.parentElement;
+    const header = title.parentElement;
+    const actions = screen.getByTestId('entity-detail-actions');
+    const subtitle = header?.querySelector('[data-slot="sheet-description"]');
 
-    // The title can shrink below the URL and breaks it where it must…
-    expect(title).toHaveClass('min-w-0', 'break-words');
-    // …in the same flex row as the actions, which hold their size instead.
-    expect(title.parentElement).toHaveClass('flex');
-    expect(title.parentElement).toContainElement(actions);
-    expect(actions).toHaveClass('shrink-0');
+    expect(header).toHaveClass('grid', 'p-3', 'sm:p-5');
+    expect(title).toHaveClass('col-span-2', 'sm:col-span-1', 'min-w-0', 'break-words');
+    expect(actions).toHaveClass('row-start-2', 'sm:row-start-1', 'shrink-0');
+    expect(subtitle).toHaveClass('col-start-1', 'row-start-2');
+    expect(header).toContainElement(actions);
+
+    const sheet = screen.getByTestId('entity-detail-sheet');
+    expect(sheet.querySelector('[data-slot="sheet-header"]')?.nextElementSibling).toHaveClass(
+      'p-3',
+      'sm:p-5',
+    );
+    expect(screen.getByRole('button', { name: 'Close' }).parentElement).toBe(sheet);
+  });
+
+  it('offers the global tag vocabulary in the shared drawer editor', async () => {
+    renderWithProviders(
+      <EntityDrawerHostProvider value={host}>
+        <Sheet open>
+          <EntityDetailScaffold
+            entity={routableEvent()}
+            title="Mom's birthday"
+            subtitle="Event"
+            taggable
+            tagsEditable
+          />
+        </Sheet>
+      </EntityDrawerHostProvider>,
+      {
+        mocks: [
+          {
+            request: { query: GET_TAG_SUGGESTIONS },
+            result: {
+              data: {
+                tags: {
+                  __typename: 'TagConnection' as const,
+                  edges: [
+                    {
+                      __typename: 'TagEdge' as const,
+                      node: { __typename: 'TagType' as const, label: 'family' },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit details' }));
+    const input = await screen.findByRole('textbox', { name: "Tags for Mom's birthday" });
+    fireEvent.focus(input);
+
+    expect(await screen.findByRole('button', { name: 'family' })).toBeInTheDocument();
   });
 });
 

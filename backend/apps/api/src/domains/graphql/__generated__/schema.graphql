@@ -722,15 +722,11 @@ type CreateConnectionPayload {
 
 input CreateConnectionSyncJobInput {
   connectionId: ID!
-  cursor: JSON
-  data: JSON
   endpointName: String!
   error: JSON
   id: ID
   jobId: ID
-  nextCursor: JSON
   properties: JSON
-  status: String
   type: String!
   userId: ID!
 }
@@ -1439,6 +1435,11 @@ type ForecastBucketType {
   l0Probs: [ProbabilityEntryType!]!
   l1Probs: [ProbabilityEntryType!]!
   l2Probs: [ProbabilityEntryType!]
+
+  """
+  Class to render for this bucket. Not argmax(l0Probs): the posterior is calibrated and answers UNKNOWN for most of a day, so HBPE prior-corrects the label. Null from an HBPE that predates the field.
+  """
+  predictedL0: String
   q10: Float!
   q50: Float!
   q90: Float!
@@ -1490,6 +1491,15 @@ type ForecastType {
 
   """System status of the HBPE engine (COLD_START, TRAINING, READY)"""
   systemStatus: String!
+}
+
+type GeocodeResultType {
+  cached: Boolean!
+  confidence: Float
+  latitude: Float
+  longitude: Float
+  normalizedAddress: String
+  status: String!
 }
 
 enum GrantMode {
@@ -1791,6 +1801,7 @@ type KnownPlaceType {
   label: String!
   locationId: String
   source: String!
+  tags: [String!]!
 }
 
 input LinkItemToProductInput {
@@ -2945,6 +2956,7 @@ type Query {
 
   """Past forecast-vs-actual buckets from hbpe.prediction_log"""
   forecastHistory(days: Int = 5): [ForecastHistoryDayType!]!
+  geocode(query: String!): GeocodeResultType!
   geocodingConfigured: Boolean!
 
   """
@@ -3352,11 +3364,14 @@ type SavedSearchEdge implements Edge {
 }
 
 input SavedSearchFiltersInput {
+  areas: [[Float!]!]
+  bbox: [Float!]
   connectors: [String!]
   datePreset: String
   direction: String
   endTime: String
   eventTypes: [String!]
+  fileKinds: [String!]
   hasLocation: Boolean
   people: [String!]
   places: [String!]
@@ -3364,14 +3379,18 @@ input SavedSearchFiltersInput {
   sortBy: String
   sortOrder: String
   startTime: String
+  view: String
 }
 
 type SavedSearchFiltersType {
+  areas: [[Float!]!]
+  bbox: [Float!]
   connectors: [String!]
   datePreset: String
   direction: String
   endTime: String
   eventTypes: [String!]
+  fileKinds: [String!]
   hasLocation: Boolean
   people: [String!]
   places: [String!]
@@ -3379,6 +3398,7 @@ type SavedSearchFiltersType {
   sortBy: String
   sortOrder: String
   startTime: String
+  view: String
 }
 
 type SavedSearchType implements Node {
@@ -3439,12 +3459,14 @@ type ScheduleTaskPayload {
 
 input SearchInput {
   after: String
+  areas: [[Float!]!]
   bbox: [Float!]
   connectors: [String!]
   direction: String
   endTime: String
   eventTypes: [String!]
   excludeTypes: [String!]
+  fileKinds: [String!]
   first: Int
   hasLocation: Boolean
   includeFiles: Boolean
@@ -3826,7 +3848,6 @@ input UpdateConnectionInput {
   accessToken: String
   active: Boolean
   activeEndpoints: [String!]
-  externalId: String
   id: ID!
   name: String
   needsReauth: Boolean
@@ -3843,15 +3864,11 @@ type UpdateConnectionPayload {
 
 input UpdateConnectionSyncJobInput {
   completedAt: DateTime
-  cursor: JSON
-  data: JSON
   endpointName: String
   error: JSON
   id: ID!
   jobId: ID
-  nextCursor: JSON
   properties: JSON
-  status: String
   type: String
 }
 
@@ -3992,9 +4009,11 @@ input UpdateKnownPlaceInput {
   confidence: Float
   coordinates: KnownPlaceCoordinatesInput
   kind: String!
+  knownPlaceId: String
   label: String!
   locationId: String
   source: String
+  tags: [String!]
 }
 
 input UpdateNoteInput {

@@ -22,6 +22,33 @@ import { JwtOrApiKeyAuthGuard } from '@ci/common/guards';
 
 import { FileService } from '../services/FileService';
 
+/** How far back a device's "I just made this" moment may plausibly sit (an outbox replay after a weekend offline). */
+const CAPTURED_AT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/** How far ahead, for a phone clock that runs a little fast. */
+const CAPTURED_AT_MAX_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * The `capturedAt` form field as a Date, or undefined when it is missing,
+ * unparseable, or not a moment a phone could honestly have just captured at —
+ * more than 30 days back or more than five minutes ahead. An implausible
+ * value is dropped rather than rejected: the upload itself is fine, it just
+ * gets no device-asserted date (see UploadFileDto.capturedAt).
+ */
+export function parseCapturedAt(value: string | undefined, now = Date.now()): Date | undefined {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = new Date(value);
+  const ms = parsed.getTime();
+
+  if (Number.isNaN(ms) || ms < now - CAPTURED_AT_MAX_AGE_MS || ms > now + CAPTURED_AT_MAX_SKEW_MS) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
 @Controller('files')
 export class FilesController {
   constructor(private readonly fileService: FileService) {}
@@ -56,10 +83,18 @@ export class FilesController {
     // CI-Capture actually sends, resolved server-side against ci.events.
     @Body('eventId') eventId?: string,
     @Body('captureTickId') captureTickId?: string,
+    // The phone's Capture sheet: catalogue the upload as content, not just a
+    // file (see UploadFileDto.memoryCapture).
+    @Body('memoryCapture') memoryCapture?: string | boolean,
+    // When the phone's camera or recorder made the media (ISO 8601). Only
+    // meaningful with memoryCapture; see UploadFileDto.capturedAt.
+    @Body('capturedAt') capturedAt?: string,
   ) {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
+
+    const capturedAtDate = parseCapturedAt(capturedAt);
 
     const shouldCaptureThing =
       thingCapture === true ||
@@ -67,6 +102,7 @@ export class FilesController {
       inventoryCapture === true ||
       inventoryCapture === 'true';
     const shouldSkipDescription = skipDescription === true || skipDescription === 'true';
+    const shouldCatalogue = memoryCapture === true || memoryCapture === 'true';
     const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : undefined;
     const linkedEventId =
       typeof eventId === 'string' && eventId.trim().length > 0 ? eventId.trim() : undefined;
@@ -109,6 +145,8 @@ export class FilesController {
             model: selectedModel,
             eventId: linkedEventId,
             captureTickId: linkedCaptureTickId,
+            memoryCapture: shouldCatalogue,
+            ...(shouldCatalogue && capturedAtDate ? { capturedAt: capturedAtDate } : {}),
           });
         }),
       );

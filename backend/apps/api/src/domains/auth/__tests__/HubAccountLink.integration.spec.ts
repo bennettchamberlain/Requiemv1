@@ -106,6 +106,10 @@ describeWithDatabase(`Hub ↔ Memory account link, against real Postgres (${avai
   beforeAll(async () => {
     config.auth.hubForwardAuth.enabled = true;
     config.auth.hubForwardAuth.secret = SECRET;
+    // The headers below are the unbound format; a .env that gives this app its own key would refuse them.
+    config.auth.hubForwardAuth.identitySecret = '';
+    config.auth.hubForwardAuth.audience = '';
+    config.auth.hubForwardAuth.requireAudience = 'auto';
     config.auth.hubForwardAuth.maxSkewMs = 300_000;
 
     scratch = await ScratchDatabase.create({ createdBy: 'auth/HubAccountLink.integration.spec' });
@@ -124,9 +128,14 @@ describeWithDatabase(`Hub ↔ Memory account link, against real Postgres (${avai
       quietLogger() as never,
     );
 
-    // Sessions are not under test: a token names the account it was issued for.
+    // Sessions are not under test: a token names the account it was issued for, and it is live.
+    // The dead-session case is covered by the bridge unit tests.
     const authService = {
       validateSessionToken: (token: string) => ({ sub: sessionUser(token) }),
+      resolveLiveSession: async (token: string) => ({
+        userId: sessionUser(token),
+        sessionId: `sid:${sessionUser(token)}`,
+      }),
       invalidateSession: async () => undefined,
       issueSessionToken: async (userId: string) => ({
         sessionToken: `session:${userId}`,
@@ -236,14 +245,30 @@ describeWithDatabase(`Hub ↔ Memory account link, against real Postgres (${avai
     ).toEqual([PORTAL]);
   });
 
-  it('finds live accounts by address whatever the case, and not deleted ones', async () => {
+  it('stores addresses lower-cased and finds live accounts whatever case the lookup uses, not deleted ones', async () => {
     const live = await createAccount('Owner@Example.com');
-    const gone = await createAccount('OWNER@example.com');
+    const gone = await createAccount('Gone@Example.com');
     await userService.requestDeletion({ userId: SYSTEM_USER }, gone.id);
 
-    expect((await userService.findByEmailIgnoringCase('owner@example.com')).map((user) => user.id)).toEqual([
+    expect(live.email).toBe('owner@example.com');
+    expect((await userService.findByEmailIgnoringCase('OWNER@example.com')).map((user) => user.id)).toEqual([
       live.id,
     ]);
+    expect(await userService.findByEmailIgnoringCase('gone@example.com')).toEqual([]);
+  });
+
+  it('refuses a second account whose address differs only in case', async () => {
+    await createAccount('owner@example.com');
+
+    let error: unknown;
+    try {
+      await createAccount('OWNER@Example.com');
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(isUniqueViolation(error)).toBe(true);
+    expect(await accountCount()).toBe(1);
   });
 
   describe('the bridge', () => {
@@ -308,6 +333,25 @@ describeWithDatabase(`Hub ↔ Memory account link, against real Postgres (${avai
 
       expect(again.accountId).toBe(original.accountId);
       expect((await hubLinks()).map((link) => link.issuer)).toEqual([DIRECTORY, FRESH_DIRECTORY]);
+    });
+
+    it('SECURITY: will not adopt an account whose address someone typed in, and creates nothing', async () => {
+      // The first account is the owner's. The second was signed up, or re-addressed, with the
+      // address of a person who has not arrived yet.
+      await createAccount('owner@example.com');
+      const planted = await createAccount('arriving@example.com');
+
+      const arriving = await signIn('arriving@example.com', nextHubId());
+
+      expect(arriving.result).toMatchObject({ replaced: false, refused: 'account_unproven' });
+      expect(arriving.accountId).toBeNull();
+      expect(await hubLinks()).toEqual([]);
+      expect(await accountCount()).toBe(2);
+      const [row] = await dataSource.query<Array<{ email_proven_at: Date | null }>>(
+        'SELECT email_proven_at FROM ci.users WHERE id = $1',
+        [planted.id],
+      );
+      expect(row.email_proven_at).toBeNull();
     });
 
     it('adopts an account signed up in another case, instead of duplicating it', async () => {

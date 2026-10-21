@@ -5,7 +5,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { chunkedConflictInsert } from '@ci/common/persistence';
+import { chunkedConflictInsert, keysetSeek } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { PersonCreatedEvent, PersonUpdatedEvent, PersonRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -443,19 +443,18 @@ export class PersonService extends EntityService<PersonEntity, Person> {
       .andWhere('person.is_active IS DISTINCT FROM FALSE')
       .andWhere('person.merged_into_entity_id IS NULL');
 
-    // Composite keyset: page strictly past (afterTime, afterId) in
-    // (updated_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
+    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at, entity_id), in
+    // `order` — see keysetSeek.
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(person.updated_at < :afterTime OR (person.updated_at = :afterTime AND person.entity_id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('person.updated_at', 'person.entity_id', order, options.afterTime, options.afterId),
       );
     }
 
-    // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query
-      .orderBy('person.updated_at', options.order ?? 'DESC')
-      .addOrderBy('person.entity_id', 'DESC');
+    // Deterministic tiebreak so same-timestamp rows page consistently: the id runs the way the time does.
+    query = query.orderBy('person.updated_at', order).addOrderBy('person.entity_id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);

@@ -75,6 +75,7 @@ import {
 } from './entities/ReceiptEntity';
 import { type ReceiptLineItem, ReceiptLineItemEntity } from './entities/ReceiptLineItemEntity';
 import { RelationshipEntity } from './entities/RelationshipEntity';
+import { CaptureContentListener } from './listeners/CaptureContentListener';
 import { GraphEventListener } from './listeners/GraphEventListener';
 import { CalendarEventService } from './services/CalendarEventService';
 import { CommunicationService } from './services/CommunicationService';
@@ -164,6 +165,8 @@ import { UserContextService } from './services/UserContextService';
     ItemService,
     UserContextService,
     GraphEventListener,
+    // Turns a phone capture's FileUploadedEvent into a content row.
+    CaptureContentListener,
     PersonService,
     PersonActivityService,
     EntityMergeBlockService,
@@ -297,6 +300,13 @@ export {
 export type { Content } from './entities/ContentEntity';
 // How a graph write spells `entity_type`; `memory.remember` sends the model's type through these.
 export { canonicalEntityType, isStorableEntityType, sameEntityType } from './graph.types';
+// Property keys the appliance keeps (settings, the self claim, identity lists); `memory.remember`
+// refuses to write or remove them (a new entity may carry the identity lists).
+export {
+  OWNER_MANAGED_PROPERTY_KEYS,
+  isOwnerManagedPropertyKey,
+  isOwnerSettingPropertyKey,
+} from './ownerManagedProperties';
 // Which nodes are a Person, a Place or a Concept, under every spelling `ci.entities` holds them in;
 // `memory.forget` sends each to its own purge.
 export { GRAPH_ENTITY_TYPES, graphEntityKindOf, type GraphEntityKind } from './graph.types';
@@ -453,6 +463,10 @@ export {
   searchReachesEvents,
   type MediaEventSearchDeps,
 } from './services/mediaEventSearch';
+// The How filter's rule for content, for the callers that count or filter
+// content in their own SQL (the activity heatmap) rather than through
+// ContentService.
+export { effectiveSourceSystemPredicate } from './services/contentFacetsSql';
 // The object-identity service surface. Exported for the same reason the
 // observation DTOs above are: the API layer, the maintenance jobs and the
 // import path all speak these shapes, and a second definition of any of them is
@@ -469,6 +483,7 @@ export type {
   FindItemsFilter,
   ItemKeyset,
   ItemPage,
+  ItemPosition,
 } from './types';
 export { FIND_OR_CREATE_IDENTITY_CONFIDENCE } from './services/ProductModelService';
 export type { ReceiptExtractionResult, ReceiptPage, ReceiptWithLines } from './services/ReceiptService';

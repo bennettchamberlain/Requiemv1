@@ -4,7 +4,7 @@ import { In, Repository } from 'typeorm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/common/context';
-import { computeChunkSize } from '@ci/common/persistence';
+import { computeChunkSize, keysetSeek } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import { AnswerCreatedEvent, AnswerUpdatedEvent, AnswerRemovedEvent } from '@ci/domains/intelligence/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
@@ -425,20 +425,19 @@ export class AnswerService {
       query = query.andWhere('answer.answered_at <= :endTime', { endTime: options.endTime });
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId) in
-    // (answered_at DESC, answer_id DESC) — see ContentService.getEntitiesForContents.
+    // Composite keyset: page strictly past (afterTime, afterId) in (answered_at, answer_id), in
+    // `order` — see keysetSeek.
     // Answers order by answered_at, which is also what getEntityTimestamp sorts them on.
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(answer.answered_at < :afterTime OR (answer.answered_at = :afterTime AND answer.answer_id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('answer.answered_at', 'answer.answer_id', order, options.afterTime, options.afterId),
       );
     }
 
-    // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query
-      .orderBy('answer.answered_at', options.order ?? 'DESC')
-      .addOrderBy('answer.answer_id', 'DESC');
+    // Deterministic tiebreak so same-timestamp rows page consistently: the id runs the way the time does.
+    query = query.orderBy('answer.answered_at', order).addOrderBy('answer.answer_id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);

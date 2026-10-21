@@ -44,8 +44,14 @@ export SETUP_DATABASE_REPO ?= ci/setup-database
 export SUMMARY_REPO ?= ci/summary-service
 export HBPE_REPO ?= ci/hbpe-service
 
-# Seed user UUID (John Smith) — must match backend/apps/api/scripts/seed-database/data/users.ts
-JOHN_SMITH_USER_ID := b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
+# The seed's target user — must match the SEED_USER_ID default in
+# backend/apps/api/scripts/seed-database/data/users.ts. Override it to point
+# `seed` and `predict` at an existing account instead of John Smith.
+SEED_USER_ID ?= b3b8c7e2-1c2d-4e5f-8a6b-9c0d1e2f3a4b
+# Exported so `make seed SEED_USER_ID=<uuid>` reaches the node process; a
+# variable set on make's command line is not otherwise passed to recipes.
+export SEED_USER_ID
+JOHN_SMITH_USER_ID := $(SEED_USER_ID)
 
 export TAG ?= $(shell git describe --tags --exact-match 2>/dev/null)
 
@@ -407,6 +413,10 @@ oauth-down: ## Release the canonical OAuth host claim
 
 .PHONY: tunnel
 tunnel: ## Expose this running stack at https://dev.companionintelligence.com via Cloudflare Tunnel (see infrastructure/cloudflare/README.md)
+	@# Refuse while .env holds the replace-me- placeholders from .env.default: a
+	@# stack signing tokens and running its object store with committed values is
+	@# open to anyone who has read the repo once it is on the internet.
+	@yarn tsx scripts/dev-stack/env-secrets-cli.ts check .env
 	@command -v cloudflared >/dev/null 2>&1 || { printf "$(RED)cloudflared not found — run: brew install cloudflared$(RESET)\n"; exit 1; }
 	@test -f infrastructure/cloudflare/config.yml || { printf "$(RED)Missing infrastructure/cloudflare/config.yml — copy infrastructure/cloudflare/config.example.yml and fill it in (see README.md)$(RESET)\n"; exit 1; }
 	@printf "$(YELLOW)Exposing https://dev.companionintelligence.com publicly — confirm Cloudflare Access is enabled. Ctrl-C to stop.$(RESET)\n"
@@ -623,9 +633,18 @@ init: ## Initialize repository after checkout
 	@# that diff is the whole point.
 	@uv sync --all-packages --locked
 
+	@# A fresh .env gets its own random secrets, not the committed replace-me-
+	@# placeholders: anyone with the repo can read those, and a dev stack is not
+	@# always reachable from this machine alone (`make tunnel` publishes it).
+	@# Only placeholders are replaced, and only here, on a file this run has just
+	@# created, so an existing .env keeps the values its volumes were set up with.
+	@# The database passwords and the field-encryption key are not placeholders
+	@# and stay as committed (see scripts/dev-stack/env-secrets.ts). If a mint
+	@# fails, the half-made .env is removed so the next run tries again.
 	@if [ ! -f .env ]; then \
-		printf "Copying dotenv template file... "; \
-		cp -v .env.default .env; \
+		printf "Creating .env from the dotenv template, with generated secrets...\n"; \
+		cp .env.default .env && \
+		yarn tsx scripts/dev-stack/env-secrets-cli.ts mint .env || { rm -f .env; exit 1; }; \
 		printf "\n"; \
 	fi
 
@@ -677,8 +696,25 @@ lint: ## Check the source for lint and formatting errors, both stacks
 
 	@sh scripts/check-ci-namespace.sh
 	@node scripts/check-capacitor-native-sync.mjs
+	@node scripts/check-depcheck-ratchet.mjs
+	@node scripts/docs-check.mjs
 
 	@printf "\nNo lint errors found.\n\n"
+
+.PHONY: docs-check
+docs-check: ## Verify normative markdown links and CI workflow references
+	@printf "$(call task_icon,docs-check,📚) Checking documentation integrity...\n\n"
+	@node scripts/docs-check.mjs
+	@printf "$(GREEN)✓$(RESET) Documentation integrity verified.\n\n"
+
+.PHONY: pr-gate
+pr-gate: ## Run the fast local PR gate (docs-check, depcheck ratchet, typecheck, changed unit tests)
+	@printf "$(call task_icon,pr-gate,🚦) Running fast PR gate...\n\n"
+	@node scripts/docs-check.mjs
+	@yarn workspace @ci/be-api depcheck:ratchet
+	@yarn workspaces foreach --all run typecheck
+	@yarn workspace @ci/be-api test:unit --changedSince=origin/main --passWithNoTests
+	@printf "\n$(GREEN)✓$(RESET) Fast PR gate passed.\n\n"
 
 .PHONY: typecheck
 typecheck: ## Typecheck every JS/TS workspace that declares a typecheck script
@@ -1088,7 +1124,19 @@ smoke-stack: ## Boot the built production images and prove the gateway serves th
 	@printf "\nProduction stack boots, serves the web app, and keeps a worker alive. ✅\n\n"
 
 .PHONY: publish
-publish: init ## Publish CI-Server images and metadata to the CI-Portal store
+publish: publish-build ## Publish CI-Server images and metadata to the CI-Portal store
+	@printf "$(call task_icon,publish,📦) Publishing to CI-Portal registry...\n\n"
+
+	@scripts/publish/publish.sh
+
+	@printf "\n"
+
+# Everything `publish` does before it pushes. publish.yml's build job runs this
+# on its own, with a read-only token, and hands the images to a separate push
+# job: `init` runs every allowed dependency install script and `uv sync`, and
+# none of that code should share a job with the registry write token.
+.PHONY: publish-build
+publish-build: init ## Build and smoke-test the production images without pushing them
 	@$(MAKE) build ENV=production GPU=$(GPU)
 
 	@$(MAKE) smoke-api
@@ -1101,19 +1149,13 @@ publish: init ## Publish CI-Server images and metadata to the CI-Portal store
 	@# at a user's first launch.
 	@$(MAKE) smoke-stack
 
-	@printf "$(call task_icon,publish,📦) Publishing to CI-Portal registry...\n\n"
-
-	@scripts/publish/publish.sh
-
-	@printf "\n"
-
 .PHONY: publish-quiet
 publish-quiet: ## Publish to CI-Portal store (quiet mode)
 	@scripts/publish/publish.sh -q
 
 .PHONY: seed
-seed: ## Seed database with John Smith user and demo data
-	@printf "$(call task_icon,seed,🌱) Seeding database...\n\n"
+seed: ## Seed database with demo data (SEED_USER_ID=<uuid> to target an existing user)
+	@printf "$(call task_icon,seed,🌱) Seeding database for user $(SEED_USER_ID)...\n\n"
 
 	@cd backend/apps/api && yarn run exec -- scripts/seed-database/main.ts
 

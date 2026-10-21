@@ -461,4 +461,19 @@ describe('PeerLinkService — a revoked peer does not authenticate', () => {
 
     await expect(service.findActiveByPeerIdentity(IDENTITY.issuer, IDENTITY.subject)).resolves.toEqual([]);
   });
+
+  it('SECURITY (G5b): editing a revoked link via upsert without explicit status=active preserves revokedAt', async () => {
+    const revokedTimestamp = new Date('2026-02-01T00:00:00Z');
+    const rows = [link({ status: 'revoked', revokedAt: revokedTimestamp })];
+    const { service } = makeServiceOverRows(rows);
+
+    const updated = await service.upsert(CTX as never, {
+      ...DTO,
+      displayName: 'Devon (Former)',
+      trustTier: 'stranger',
+    });
+
+    expect(updated.status).toBe('revoked');
+    expect(updated.revokedAt).toEqual(revokedTimestamp);
+  });
 });

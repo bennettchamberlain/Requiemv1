@@ -1,8 +1,9 @@
-import { useState, type ComponentType, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentType, type ReactElement, type ReactNode } from 'react';
 
 import { Badge, Button, Input, Label, Popover, Tooltip, cn } from '@ci/shadcn';
 import { AlertTriangle, Check, ChevronDown, Plus, X } from '@ci/shadcn/icons';
 
+import { MenuShield } from '@/components/MenuShield';
 import { filterValueKey } from '@/pages/MemoryPage/Components/ExplorerToolbar/filterParams';
 
 /**
@@ -23,6 +24,20 @@ import { filterValueKey } from '@/pages/MemoryPage/Components/ExplorerToolbar/fi
 export interface FilterValuePickerProps {
   /** Dimension name: the trigger reads "{label}: all" / "{label}: 2 selected". */
   label: string;
+  /**
+   * A selection the dimension carries besides `values`, in words — the Where
+   * picker's map rectangles, "Map Areas (2)". The toolbar trigger then reads
+   * "Where: Map Areas (2)", "Where: Paris + Map Areas (2)" or "Where: 2
+   * selected + Map Areas (2)", and Clear is offered (it is the caller's
+   * `onClear` that must take the extra selection with it).
+   */
+  extraSummary?: string;
+  /**
+   * The toolbar trigger counts the values ("1 selected") instead of naming a
+   * single one. Where sets it: a street address is too long for the trigger,
+   * most of all on a phone.
+   */
+  countValues?: boolean;
   icon?: ComponentType<{ className?: string }>;
   values: string[];
   /** Commit one value; return an error message to show, or null on success. */
@@ -33,10 +48,25 @@ export interface FilterValuePickerProps {
   options: string[];
   /** `options` is the complete vocabulary: no free text, flag values outside it. */
   optionsKnown?: boolean;
+  /**
+   * How a value reads on screen (`amazon_music` → "Amazon Music"). Display
+   * only: `onAdd` / `onRemove` are still given the value itself, which is what
+   * the URL carries and the backend matches. The search box matches either.
+   */
+  formatValue?: (value: string) => string;
   /** Fired as the search box changes; when set, `options` are trusted as already filtered. */
   onSearch?: (query: string) => void;
   onOpenChange?: (open: boolean) => void;
   loading?: boolean;
+  /**
+   * `options` is one page of more: when the end of the list comes into view
+   * the picker calls `onLoadMore`, and `loadingMore` says a page is on its way.
+   * Pass `hasMore` only while another call can produce something, or an
+   * end that is in view asks again and again.
+   */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
   searchPlaceholder: string;
   /** Shown when nothing is listed. */
   emptyText: string;
@@ -55,7 +85,7 @@ export interface FilterValuePickerProps {
   variant: 'toolbar' | 'field';
   /**
    * The caller's own trigger in place of the variant's, given the selected
-   * values — the phone filter sheet opens this same picker from a row. It
+   * values as displayed — the phone filter sheet opens this same picker from a row. It
    * becomes the popover trigger, so it must pass its props and ref on to a
    * button.
    */
@@ -70,6 +100,8 @@ function includesValue(values: string[], value: string): boolean {
 
 export function FilterValuePicker({
   label,
+  extraSummary,
+  countValues = false,
   icon: Icon,
   values,
   onAdd,
@@ -77,9 +109,13 @@ export function FilterValuePicker({
   onClear,
   options,
   optionsKnown = false,
+  formatValue,
   onSearch,
   onOpenChange,
   loading = false,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
   searchPlaceholder,
   emptyText,
   unknownValueHint,
@@ -92,10 +128,43 @@ export function FilterValuePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  // State, not a ref: the row mounts with the popover's content, after the
+  // open click's own render, and the observer must be built when it does.
+  const [endRow, setEndRow] = useState<HTMLLIElement | null>(null);
+
+  // The next page is asked for when the list's end scrolls into view (or is
+  // in view from the start, when a page is shorter than the list). The row
+  // is rendered only while there is more, so a list that has run out, or a
+  // page that failed, stops asking.
+  useEffect(() => {
+    if (!endRow || !hasMore || !onLoadMore) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onLoadMore();
+        }
+      },
+      { root: listRef.current, rootMargin: '120px' },
+    );
+
+    observer.observe(endRow);
+
+    return () => observer.disconnect();
+  }, [endRow, hasMore, onLoadMore, options.length]);
+
+  const display = (value: string) => formatValue?.(value) ?? value;
 
   const trimmed = query.trim();
+  // Typed text finds a value by what is shown ("amazon music") or by the
+  // value itself ("amazon_music").
   const matchesQuery = (value: string) =>
-    trimmed.length === 0 || filterValueKey(value).includes(filterValueKey(trimmed));
+    trimmed.length === 0 ||
+    filterValueKey(value).includes(filterValueKey(trimmed)) ||
+    filterValueKey(display(value)).includes(filterValueKey(trimmed));
 
   // Selected values lead the list (so a free-text pattern can be unticked
   // even though no option spells it), then the options not yet selected. A
@@ -147,15 +216,18 @@ export function FilterValuePicker({
   const isUnknown = (value: string) => optionsKnown && !includesValue(options, value);
 
   const triggerText = () => {
-    if (values.length === 0) {
+    const named =
+      values.length === 0
+        ? null
+        : values.length === 1 && !countValues
+          ? display(values[0])
+          : `${values.length} selected`;
+
+    if (named == null && !extraSummary) {
       return `${label}: all`;
     }
 
-    if (values.length === 1) {
-      return `${label}: ${values[0]}`;
-    }
-
-    return `${label}: ${values.length} selected`;
+    return `${label}: ${[named, extraSummary].filter(Boolean).join(' + ')}`;
   };
 
   const panel = (
@@ -170,7 +242,7 @@ export function FilterValuePicker({
             onClear();
             setError(null);
           }}
-          disabled={values.length === 0}
+          disabled={values.length === 0 && !extraSummary}
           className="h-7 px-2 text-xs text-muted-foreground"
         >
           Clear
@@ -199,6 +271,7 @@ export function FilterValuePicker({
         </p>
       )}
       <ul
+        ref={listRef}
         role="listbox"
         aria-label={`${label} options`}
         aria-multiselectable
@@ -220,7 +293,7 @@ export function FilterValuePicker({
                 )}
               >
                 <Check className={cn('h-4 w-4 shrink-0', selected ? 'opacity-100' : 'opacity-0')} />
-                <span className="truncate">{value}</span>
+                <span className="truncate">{display(value)}</span>
                 {isUnknown(value) && unknownValueHint && (
                   <AlertTriangle className="ml-auto h-3.5 w-3.5 shrink-0 text-warning-foreground" />
                 )}
@@ -245,6 +318,11 @@ export function FilterValuePicker({
         {listed.length === 0 && !canCommitFreeText && (
           <li className="px-2 py-1.5 text-xs text-muted-foreground">{loading ? 'Searching…' : emptyText}</li>
         )}
+        {hasMore && onLoadMore && (
+          <li ref={setEndRow} aria-busy={loadingMore} className="px-2 py-1.5 text-xs text-muted-foreground">
+            {loadingMore ? 'Loading more…' : 'More…'}
+          </li>
+        )}
       </ul>
       {footer && <div className="border-t border-border pt-2">{footer}</div>}
       {hint && <p className="border-t border-border px-1 pt-2 text-xs text-muted-foreground">{hint}</p>}
@@ -254,6 +332,7 @@ export function FilterValuePicker({
   const popover = (trigger: ReactNode) => (
     <Popover open={open} onOpenChange={changeOpen} modal={modal}>
       <Popover.Trigger asChild>{trigger}</Popover.Trigger>
+      <MenuShield open={open} />
       <Popover.Content
         align="start"
         sideOffset={4}
@@ -271,7 +350,7 @@ export function FilterValuePicker({
   );
 
   if (renderTrigger) {
-    return popover(renderTrigger(values));
+    return popover(renderTrigger(values.map(display)));
   }
 
   if (variant === 'toolbar') {
@@ -298,11 +377,11 @@ export function FilterValuePicker({
                 className={cn('max-w-[220px] gap-1', unknown && 'border-warning text-warning-foreground')}
               >
                 {unknown && <AlertTriangle className="h-3 w-3 shrink-0" />}
-                <span className="truncate">{value}</span>
+                <span className="truncate">{display(value)}</span>
                 <button
                   type="button"
                   onClick={() => onRemove(value)}
-                  aria-label={`Remove ${value}`}
+                  aria-label={`Remove ${display(value)}`}
                   className="hover:bg-background/60 -mr-1 rounded p-0.5"
                 >
                   <X className="h-3 w-3" />

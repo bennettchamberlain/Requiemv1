@@ -162,7 +162,11 @@ export class PeerLinkService {
       personEntityId: data.personEntityId ?? existing?.personEntityId ?? null,
       trustTier: data.trustTier ?? existing?.trustTier ?? 'peer',
       status: data.status ?? existing?.status ?? 'active',
-      revokedAt: null,
+      // Closes G5(b): editing a link via `updatePeerLink` (where `data.status` is
+      // omitted) must preserve an existing `revokedAt` timestamp rather than
+      // unconditionally wiping it to null. Explicit re-activation (`status: 'active'`)
+      // clears `revokedAt`.
+      revokedAt: data.status === 'active' ? null : (existing?.revokedAt ?? null),
     });
 
     // ═══ BOTH OR NEITHER — CHECKED ON THE MERGED ROW, NOT THE INPUT ═══

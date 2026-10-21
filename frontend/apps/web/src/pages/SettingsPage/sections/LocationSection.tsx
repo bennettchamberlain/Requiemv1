@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   fetchJson,
+  isIosPlatform,
   isNativePlatform,
   openNativeLocationSettings,
   type LocationTrackingMode,
@@ -46,6 +47,7 @@ export function LocationSection() {
   const [stats, setStats] = useState<PositionStats | null>(null);
   const [pendingMode, setPendingMode] = useState<Exclude<LocationTrackingMode, 'off'> | null>(null);
   const showAlways = isNativePlatform();
+  const ios = isIosPlatform();
 
   const refreshStats = useCallback(async () => {
     if (!authenticated) {
@@ -210,17 +212,39 @@ export function LocationSection() {
         <AlertDialog.Content>
           <AlertDialog.Header className="text-left">
             <AlertDialog.Title>Remember places in the background?</AlertDialog.Title>
-            <AlertDialog.Description>
-              <span className="block">
-                Companion records location even when the app is closed, so memories can get places after you
-                leave. iOS shows the blue location indicator; Android shows a persistent notification.
-              </span>
-              <span className="mt-2 block">
-                iOS asks twice: Allow While Using the App, then Always Allow. If the second prompt does not
-                appear, use Open Settings and set Location to Always. Locations go only to your Companion
-                server, never ads. You can stay on While Using and keep using Companion.
-              </span>
-            </AlertDialog.Description>
+            {ios ? (
+              <AlertDialog.Description>
+                <span className="block">
+                  Companion records a place when you move a meaningful distance, including after you leave the
+                  app. On iPhone that stays quiet while you are still — no solid blue location indicator.
+                  Android shows a persistent notification while Always is on, which the system requires.
+                </span>
+                <span className="mt-2 block">
+                  iOS asks twice: Allow While Using the App, then Always Allow. If the second prompt does not
+                  appear, use Open Settings and set Location to Always. Locations go only to your Companion
+                  server, never ads. You can stay on While Using and keep using Companion.
+                </span>
+              </AlertDialog.Description>
+            ) : (
+              // Play reviews this as the background-location disclosure. It has to name location data
+              // and the feature it serves, then say collection goes on when the app is closed or not in use.
+              <AlertDialog.Description>
+                <span className="block">
+                  Companion collects location data to place your notes, photos and events on your map, even
+                  when the app is closed or not in use.
+                </span>
+                <span className="mt-2 block">
+                  While this is on, Android shows a notification that Companion is using your location.
+                  Recording continues after you close the app. If your phone restarts or Companion is updated,
+                  a notification asks you to open the app so recording can resume. Android then asks for
+                  notification and location access if you haven&apos;t allowed them yet.
+                </span>
+                <span className="mt-2 block">
+                  Locations go only to your Companion server and are never used for ads. You can stay on While
+                  using and keep using Companion.
+                </span>
+              </AlertDialog.Description>
+            )}
           </AlertDialog.Header>
           <AlertDialog.Footer>
             <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
@@ -260,5 +284,5 @@ function modeDescription(mode: LocationTrackingMode, native: boolean): string {
     return 'Companion records your location in the background, including while your phone is locked or the app is closed, so it can attach places to your notes, photos and events on the map.';
   }
 
-  return 'While Companion is open, this device records your location when you move about 50 metres or every five minutes. Fixes are stored privately in your position history.';
+  return 'While Companion is open, this device records your location when you move about 150 metres or every five minutes. Fixes are stored privately in your position history.';
 }

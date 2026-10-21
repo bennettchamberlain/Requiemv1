@@ -30,10 +30,13 @@ function keep(event: SyntheticEvent): void {
  * Nothing is under it to fall through to, and its own clicks are kept to
  * itself regardless: a dismiss dismisses, and does nothing else.
  */
-export function UnsyncedImportsBanner() {
-  const { visible, syncNow, dismiss } = useUnsyncedImportsNotice();
+export function UnsyncedImportsBanner({ suppressed = false }: { suppressed?: boolean }) {
+  const { visible, syncNow, dismiss } = useUnsyncedImportsNotice({ suppressed });
 
-  if (!visible) {
+  // Held back while the getting-started banner is up: it already says "read but
+  // not saved yet" with its own Save button, and two prompts for one fact is
+  // nagging.
+  if (!visible || suppressed) {
     return null;
   }
 

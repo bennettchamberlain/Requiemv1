@@ -6,14 +6,26 @@
  * Reporting is opt-out — on wherever a DSN is configured, off when the user
  * says so. With no `SENTRY_DSN` this module initialises nothing and
  * the process makes no outbound connection. See `common/telemetry/settings.ts`
- * for the kill switches.
+ * for the kill switches, and `common/telemetry/runtimeGate.ts` for the switch
+ * the user can flip while the appliance is running.
  */
 
 import './bootstrap';
 
 import * as Sentry from '@sentry/nestjs';
 
-import { resolveTelemetrySettings, scrubEvent } from '@ci/common/telemetry';
+import {
+  dropWhenUserOptedOut,
+  gateSentryTransport,
+  isCrashReportsUserEnabled,
+  isKeyInUrlRequest,
+  resolveTelemetrySettings,
+  scrubBreadcrumb,
+  scrubEvent,
+  scrubLog,
+  scrubSpan,
+  scrubTransaction,
+} from '@ci/common/telemetry';
 
 export const COMPONENT = 'ci-server-api';
 
@@ -67,9 +79,48 @@ if (telemetry.enabled && telemetry.dsn) {
     // note bodies and message text. Mirrors include_local_variables=False in
     // the Python services.
     includeLocalVariables: false,
+    // The two outbound-request integrations are rebuilt with one option set:
+    // requests to hosts that take the owner's API key in the URL are not
+    // recorded as spans or breadcrumbs at all. See
+    // `common/telemetry/outgoingRequests.ts`. Every other option keeps the SDK
+    // default, which is what `httpIntegration()` and
+    // `nativeNodeFetchIntegration()` with no arguments give.
     integrations: (defaults) =>
-      defaults.filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name)),
-    beforeSend: scrubEvent,
+      defaults
+        .filter((integration) => !MANUALLY_HANDLED_INTEGRATIONS.has(integration.name))
+        .map((integration) => {
+          if (integration.name === 'Http') {
+            return Sentry.httpIntegration({ ignoreOutgoingRequests: isKeyInUrlRequest });
+          }
+
+          if (integration.name === 'NodeFetch') {
+            return Sentry.nativeNodeFetchIntegration({ ignoreOutgoingRequests: isKeyInUrlRequest });
+          }
+
+          return integration;
+        }),
+    // The user's runtime switch (Settings -> Privacy -> "What leaves your
+    // appliance"), on top of the env kill switches that decided whether we got
+    // here at all. `Sentry.init` has run before Nest, so the choice cannot
+    // decide whether to initialise — it decides whether anything is SENT. The
+    // four beforeSend* hooks are the early drop; the transport wrapper is the
+    // guarantee for everything the hooks do not see (sessions, client reports,
+    // profiles). See `common/telemetry/runtimeGate.ts`.
+    //
+    // Every item type that can carry request data is also scrubbed, not just
+    // errors. A sampled request's transaction holds `request.url` and the
+    // query string, and its outbound fetch spans hold `url.full`/`url.query`
+    // (the user's search terms, an address being geocoded). beforeSendSpan has
+    // no opt-out branch because it cannot drop a span: the SDK keeps the
+    // original when it returns null. beforeSendTransaction drops the whole
+    // transaction instead.
+    beforeSend: (event) => (isCrashReportsUserEnabled() ? scrubEvent(event) : null),
+    beforeSendTransaction: (event) => (isCrashReportsUserEnabled() ? scrubTransaction(event) : null),
+    beforeSendSpan: scrubSpan,
+    beforeSendLog: (log) => (isCrashReportsUserEnabled() ? scrubLog(log) : null),
+    beforeSendMetric: dropWhenUserOptedOut,
+    beforeBreadcrumb: scrubBreadcrumb,
+    transport: (transportOptions) => gateSentryTransport(Sentry.makeNodeTransport(transportOptions)),
   });
 
   Sentry.setTag('component', COMPONENT);

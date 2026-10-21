@@ -33,6 +33,10 @@ vi.mock('@/components/ThemePicker', () => ({
   useTheme: () => ({ themeState: { mode: 'light' } }),
   useBackground: () => ({ glowEnabled: false }),
 }));
+// The shell reads the signed-in user to hold the unsynced-imports row back while
+// the getting-started banner is up; neither is under test here.
+vi.mock('@/hooks', () => ({ useCurrentUser: () => ({ user: null }) }));
+vi.mock('@/components/GettingStarted/GettingStartedBanner', () => ({ GettingStartedBanner: () => null }));
 vi.mock('@/components/AnimatedBackground', () => ({ AnimatedBackground: () => null }));
 vi.mock('@/components/AppErrorBoundary', () => ({
   AppErrorBoundary: ({ children }: { children: ReactNode }) => children,
@@ -118,7 +122,7 @@ describe('Main: the unsynced-imports notice', () => {
     expectInOrder(screen.getByTestId('top-bar'), screen.getByTestId('contract-strip'), banner, page, overlay);
     // Modals portal into this slot (`fixed inset-0 z-50`), which is later in the
     // tree and so over anything in the flow.
-    expect(overlay).toHaveClass('fixed', 'z-50');
+    expect(overlay).toHaveClass('fixed', 'z-50', 'pointer-events-none');
     // And it is not a toast: no sonner container holds it.
     expect(banner.closest('[data-sonner-toaster]')).toBeNull();
     expect(toast).not.toHaveBeenCalled();
@@ -150,6 +154,24 @@ describe('Main: the unsynced-imports notice', () => {
     // tap on it reached the drawer row beneath.
     await waitFor(() => expect(banner).toHaveAttribute('inert'));
     expect(screen.getByRole('navigation', { name: 'Drawer' })).not.toHaveAttribute('inert');
+  });
+});
+
+describe('Main: toasts on the desktop', () => {
+  // The shell is `relative z-10`: a stacking context. A toaster inside it can
+  // never paint above anything portaled to <body>, however large its own
+  // z-index — and the calendar's slot drawer is one of those (Radix Sheet,
+  // fixed, z-50). The "Could not put that on the calendar" toast sat behind
+  // that panel, bottom-right, so a refused placement looked like nothing.
+  it('keeps the toaster outside the z-indexed shell', () => {
+    layout.isMobile = false;
+    renderMain();
+
+    const toaster = screen.getByRole('region', { name: /^Notifications/ });
+    const shell = screen.getByRole('main').closest('.z-10') as HTMLElement;
+
+    expect(shell).not.toBeNull();
+    expect(shell.contains(toaster)).toBe(false);
   });
 });
 

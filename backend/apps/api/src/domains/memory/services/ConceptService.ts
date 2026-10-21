@@ -5,7 +5,7 @@ import { v7 as uuid7 } from 'uuid';
 
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
-import { chunkedConflictInsert } from '@ci/common/persistence';
+import { chunkedConflictInsert, keysetSeek } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -238,19 +238,18 @@ export class ConceptService extends EntityService<ConceptEntity, Concept> {
       query = query.andWhere('concept.updated_at <= :endTime', { endTime: options.endTime });
     }
 
-    // Composite keyset: page strictly past (afterTime, afterId) in
-    // (updated_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
+    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at, entity_id), in
+    // `order` — see keysetSeek.
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(concept.updated_at < :afterTime OR (concept.updated_at = :afterTime AND concept.entity_id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('concept.updated_at', 'concept.entity_id', order, options.afterTime, options.afterId),
       );
     }
 
-    // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query
-      .orderBy('concept.updated_at', options.order ?? 'DESC')
-      .addOrderBy('concept.entity_id', 'DESC');
+    // Deterministic tiebreak so same-timestamp rows page consistently: the id runs the way the time does.
+    query = query.orderBy('concept.updated_at', order).addOrderBy('concept.entity_id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);

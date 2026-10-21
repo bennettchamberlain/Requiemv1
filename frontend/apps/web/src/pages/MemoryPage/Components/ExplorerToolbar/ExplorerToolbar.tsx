@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 
-import { useMutation } from '@apollo/client';
-import { ENTITY_TYPE_MAP } from '@ci/common/src/constants';
+import { useMutation, useQuery } from '@apollo/client';
+import { GlobalUID, useDeviceLayout } from '@ci/common';
 import { Badge, Button, Dialog, Input, Label, Popover, Select, Tooltip, cn, useToast } from '@ci/shadcn';
 import {
   Activity,
@@ -23,14 +23,17 @@ import {
   Tag,
   Users,
   X,
+  Image as ImageIcon,
 } from '@ci/shadcn/icons';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
 import { useFeatures } from '@/common/feature';
+import { MenuShield } from '@/components/MenuShield';
 import { ActivityFilter } from '@/components/SearchBox/ActivityFilter';
 import { ConnectorFilter } from '@/components/SearchBox/ConnectorFilter';
 import { MESSAGE_DIRECTION_LABELS, readMessageDirection } from '@/components/SearchBox/DirectionToggle';
 import { EntityTypeFilter } from '@/components/SearchBox/EntityTypeFilter';
+import { FileKindFilter } from '@/components/SearchBox/FileKindFilter';
 import {
   FILTER_DRAG_TYPE,
   isFilterDrag,
@@ -39,15 +42,20 @@ import {
 } from '@/components/SearchBox/filterDrag';
 import { EntityNameFilter } from '@/components/SearchBox/NameFilter';
 import { SEARCH_PANEL_LAYER_PROPS } from '@/components/SearchBox/SearchBox';
-import { AVAILABLE_ENTITY_TYPES, useDropdown } from '@/components/SearchBox/useDropdown';
+import { AVAILABLE_ENTITY_TYPES, savedEntityTypesFor, useDropdown } from '@/components/SearchBox/useDropdown';
 import { type FragmentType } from '@/graphql';
 import { useDateTimeFormat } from '@/hooks/useDateTimeFormat';
 import type { DateTimeFormatter } from '@/lib/dateTimeFormat';
+import { filterValueLabel, sourceFilterLabel } from '@/lib/sourceNames';
 
 import { CREATE_SAVED_SEARCH } from '../../../SavedSearchesPage/CreateSavedSearchModal';
+import { UPDATE_SAVED_SEARCH } from '../../../SavedSearchesPage/EditSavedSearchModal';
 import type { SavedSearchGridItemFragment } from '../../../SavedSearchesPage/SavedSearch';
 import { ShareSavedSearchModal } from '../../../SavedSearchesPage/ShareSavedSearchModal';
+import { AREAS_PARAM, LEGACY_BBOX_PARAM, readAreasParam } from '../../bbox';
+import { fileKindLabel } from '../../fileKinds';
 import { buildSavedSearchFilters } from '../../savedSearchFilters';
+import { GET_SAVED_SEARCH } from '../../useSavedSearchResolution';
 
 import {
   WHEN_PRESET_GRID,
@@ -57,6 +65,7 @@ import {
 } from './datePresets';
 import {
   FILTER_PARAMS,
+  LOADED_SEARCH_PARAM,
   addEntityFilter,
   countActiveFilters,
   eventsInPlay,
@@ -64,6 +73,7 @@ import {
   narrowedEntityTypes,
   peopleInPlay,
   readCsvParam,
+  readListParam,
   removeEntityFilter,
   writeCsvFilterParam,
 } from './filterParams';
@@ -117,6 +127,39 @@ function timeInputValue(value: string, fallback: string): string {
 
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
+
+/**
+ * A typed date worth applying. A date field reports a value as soon as its
+ * three parts are filled, so typing the year 2026 passes through the years 2,
+ * 20 and 202 on the way — real dates, and never the one meant. Four digits
+ * is the tell that the year is finished.
+ */
+function isCompleteDateValue(value: string): boolean {
+  const match = /^(\d{4})-\d{2}-\d{2}$/.exec(value);
+
+  return match != null && Number(match[1]) >= 1000;
+}
+
+/** The local day a `yyyy-mm-dd` names, for pointing the calendar at it. */
+function localDateFromInputValue(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+
+  return new Date(year, month - 1, day);
+}
+
+/** The month the calendar opens on: where the range starts, else today. */
+function calendarMonthFor(dateFrom: string, dateTo: string): Date {
+  const shown = dateInputValue(dateFrom) || dateInputValue(dateTo);
+
+  return shown ? localDateFromInputValue(shown) : new Date();
+}
+
+// The years the calendar's year dropdown offers. Back far enough for a
+// scanned childhood photo, forward far enough for a calendar entry booked
+// years out; a date typed outside it still applies, the grid just cannot
+// page to it.
+const CALENDAR_START_MONTH = new Date(1900, 0);
+const CALENDAR_YEARS_AHEAD = 10;
 
 function isCompleteTimeValue(value: string): boolean {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
@@ -320,11 +363,15 @@ function readNativeFilterDrag(event: DragEvent): ReturnType<typeof readFilterDra
 function FilterDropArea() {
   const [searchParams, setSearchParams] = useSearchParams();
   const dateTimeFormat = useDateTimeFormat();
+  // On a phone the chips, Clear all and the save controls share ONE
+  // horizontally scrolling line; see the drop area's class note below.
+  const { isMobile } = useDeviceLayout();
+  const phone = isMobile === true;
   const selections = useMemo(
     () => ({
-      person: readCsvParam(searchParams, 'people'),
-      place: readCsvParam(searchParams, 'places'),
-      tag: readCsvParam(searchParams, 'tags'),
+      person: readListParam(searchParams, 'people'),
+      place: readListParam(searchParams, 'places'),
+      tag: readListParam(searchParams, 'tags'),
     }),
     [searchParams],
   );
@@ -338,13 +385,14 @@ function FilterDropArea() {
   const selectedTypes = narrowedEntityTypes(searchParams);
   const sources = readCsvParam(searchParams, 'connectors');
   const activities = readCsvParam(searchParams, 'eventTypes');
+  const fileKinds = readCsvParam(searchParams, 'fileKinds');
   const dateFrom = searchParams.get('from') ?? '';
   const dateTo = searchParams.get('to') ?? '';
   const whenPreset = searchParams.get('when');
   const hasDateRange = Boolean(dateFrom || dateTo || isRollingDatePreset(whenPreset));
   const hasLocation = searchParams.get('hasLocation') === '1';
   const semantic = searchParams.get('semantic') === '1';
-  const hasMapArea = Boolean(searchParams.get('bbox'));
+  const mapAreaCount = readAreasParam(searchParams)?.length ?? 0;
   const direction = readMessageDirection(searchParams.get('direction'));
   // Which view the chips are being read against: a filter this view cannot
   // apply is shown struck through rather than quietly ignored.
@@ -357,7 +405,7 @@ function FilterDropArea() {
     hasDateRange ||
     hasLocation ||
     semantic ||
-    hasMapArea ||
+    mapAreaCount > 0 ||
     direction != null ||
     Object.values(selections).some((values) => values.length > 0);
   const [error, setError] = useState<string | null>(null);
@@ -476,6 +524,34 @@ function FilterDropArea() {
     ? 'Drop to add'
     : 'Drag a person, place, or tag from the search results here to filter';
 
+  const clearButton = hasSelections && (
+    <Button
+      // Explicit: the drop area can render inside the header SearchBox's
+      // <form>, where a default (submit) button would commit the search
+      // right after clearing. On desktop it sits outside the chip scroller so
+      // a wide window cannot clip it behind the save controls; on a phone it
+      // ends the scrolling line instead (see the drop area's class note).
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+      onClick={clearAll}
+    >
+      Clear all
+    </Button>
+  );
+
+  // Save leads: on a phone this group rides at the head of a line that
+  // scrolls sideways with nothing to say so, and "searches can be saved" is
+  // the one thing in it that must be seen without scrolling.
+  const saveControls = (
+    <div className="flex shrink-0 items-center gap-2">
+      <SaveSearchButton />
+      <SavedSearchPicker />
+      <FilterCountLabel />
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -513,15 +589,20 @@ function FilterDropArea() {
             }
           }}
           className={cn(
-            // w-full on a phone so this row wraps and Clear all lands on the
-            // next line, outside this scroller. overflow-hidden here used to
-            // clip that button once the save controls took the remaining width.
+            // w-full on a phone: this area IS the whole line there, and the
+            // save controls (ahead of the chips, so Save is always in view)
+            // plus Clear all (after them) ride inside its scroller, so one
+            // filter costs one line, not two. On desktop they
+            // sit beside it instead (`device:flex-1`); overflow-hidden here
+            // used to clip Clear all once the save controls took the
+            // remaining width, so the area never clips.
             'relative flex h-9 min-h-9 min-w-0 w-full select-none items-center gap-1.5 transition-colors device:w-auto device:flex-1',
             isDropTarget && 'rounded-md bg-accent/40',
           )}
         >
           {hasSelections ? (
             <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain">
+              {phone && saveControls}
               {selectedTypes !== null && (
                 <FilterChip
                   icon={Shapes}
@@ -560,8 +641,8 @@ function FilterDropArea() {
                 <FilterChip
                   key={`source:${name}`}
                   icon={Database}
-                  label={name}
-                  removeLabel={`Remove source ${name}`}
+                  label={sourceFilterLabel(name)}
+                  removeLabel={`Remove source ${sourceFilterLabel(name)}`}
                   inactiveReason={reasonFor('connectors')}
                   onRemove={() => removeCsvValue('connectors', name)}
                 />
@@ -570,10 +651,22 @@ function FilterDropArea() {
                 <FilterChip
                   key={`activity:${name}`}
                   icon={Activity}
-                  label={name}
-                  removeLabel={`Remove activity ${name}`}
+                  label={filterValueLabel(name)}
+                  removeLabel={`Remove activity ${filterValueLabel(name)}`}
                   inactiveReason={reasonFor('eventTypes')}
                   onRemove={() => removeCsvValue('eventTypes', name)}
+                />
+              ))}
+              {/* Which kind of file — set by a saved search (Recent Images) rather
+                  than a picker, but a chip all the same so it can be seen and removed. */}
+              {fileKinds.map((name) => (
+                <FilterChip
+                  key={`file-kind:${name}`}
+                  icon={ImageIcon}
+                  label={fileKindLabel(name)}
+                  removeLabel={`Remove file kind ${fileKindLabel(name)}`}
+                  inactiveReason={reasonFor('fileKinds')}
+                  onRemove={() => removeCsvValue('fileKinds', name)}
                 />
               ))}
               {direction != null && (
@@ -652,21 +745,23 @@ function FilterDropArea() {
                   }
                 />
               )}
-              {hasMapArea && (
+              {mapAreaCount > 0 && (
                 <FilterChip
                   icon={MapIcon}
-                  label="Map area"
-                  removeLabel="Remove map area"
-                  inactiveReason={reasonFor('bbox')}
+                  label={mapAreaCount === 1 ? 'Map area' : `Map areas (${mapAreaCount})`}
+                  removeLabel={mapAreaCount === 1 ? 'Remove map area' : 'Remove map areas'}
+                  inactiveReason={reasonFor('areas')}
                   onRemove={() =>
                     setSearchParams((params) => {
-                      params.delete('bbox');
+                      params.delete(AREAS_PARAM);
+                      params.delete(LEGACY_BBOX_PARAM);
 
                       return params;
                     })
                   }
                 />
               )}
+              {phone && clearButton}
             </div>
           ) : (
             // pointer-events-none keeps the icon swap from firing its own
@@ -677,26 +772,8 @@ function FilterDropArea() {
             </div>
           )}
         </div>
-        {hasSelections && (
-          <Button
-            // Explicit: the drop area can render inside the header SearchBox's
-            // <form>, where a default (submit) button would commit the search
-            // right after clearing. Kept outside the chip scroller so a phone
-            // width cannot clip it behind the save controls.
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
-            onClick={clearAll}
-          >
-            Clear all
-          </Button>
-        )}
-        <div className="flex shrink-0 items-center gap-2">
-          <FilterCountLabel />
-          <SavedSearchPicker />
-          <SaveSearchButton />
-        </div>
+        {!phone && clearButton}
+        {!phone && saveControls}
       </div>
       {error && (
         <p className="text-xs text-destructive" role="alert">
@@ -808,6 +885,12 @@ export function DateControl({
   const toTimeValue = timeInputValue(dateTo, END_OF_DAY_TIME);
   const [draftFromTime, setDraftFromTime] = useState(fromTimeValue);
   const [draftToTime, setDraftToTime] = useState(toTimeValue);
+  const [draftFromDate, setDraftFromDate] = useState(fromDateValue);
+  const [draftToDate, setDraftToDate] = useState(toDateValue);
+  // Held here rather than left to the calendar so a typed date can turn the
+  // grid to its month.
+  const [calendarMonth, setCalendarMonth] = useState(() => calendarMonthFor(dateFrom, dateTo));
+  const calendarEndMonth = useMemo(() => new Date(new Date().getFullYear() + CALENDAR_YEARS_AHEAD, 11), []);
 
   useEffect(() => {
     if (rangeHasDetailedTime(dateFrom, dateTo)) {
@@ -819,6 +902,11 @@ export function DateControl({
     setDraftFromTime(fromTimeValue);
     setDraftToTime(toTimeValue);
   }, [fromTimeValue, toTimeValue]);
+
+  useEffect(() => {
+    setDraftFromDate(fromDateValue);
+    setDraftToDate(toDateValue);
+  }, [fromDateValue, toDateValue]);
 
   // "Specific time" adds its two inputs at the foot of a popover that, on a
   // phone, already runs to the bottom edge of the screen. Bring them into view
@@ -871,6 +959,80 @@ export function DateControl({
     applyTime(part, nextValue);
   };
 
+  // One end of the range, typed. `value` is a complete yyyy-mm-dd, or '' to
+  // leave that end open.
+  const applyDate = (part: 'from' | 'to', value: string) => {
+    let nextFromDate = part === 'from' ? value : fromDateValue;
+    let nextToDate = part === 'to' ? value : toDateValue;
+
+    // A start typed past the end (or an end before the start) is a new range
+    // beginning there, not an empty one: the other end comes along to the same
+    // day and can then be typed in turn.
+    if (nextFromDate && nextToDate && nextFromDate > nextToDate) {
+      if (part === 'from') {
+        nextToDate = nextFromDate;
+      } else {
+        nextFromDate = nextToDate;
+      }
+    }
+
+    setDateRange(
+      nextFromDate
+        ? dateTimeIso(nextFromDate, timeExpanded ? fromTimeValue : START_OF_DAY_TIME, 'start')
+        : undefined,
+      nextToDate ? dateTimeIso(nextToDate, timeExpanded ? toTimeValue : END_OF_DAY_TIME, 'end') : undefined,
+    );
+
+    if (value) {
+      setCalendarMonth(localDateFromInputValue(value));
+    }
+  };
+
+  const handleDateChange = (part: 'from' | 'to', value: string) => {
+    if (part === 'from') {
+      setDraftFromDate(value);
+    } else {
+      setDraftToDate(value);
+    }
+
+    if (isCompleteDateValue(value)) {
+      applyDate(part, value);
+    }
+  };
+
+  // Leaving the field (or Enter) settles it. Emptied on purpose, that end of
+  // the range opens; left half-typed or at a year still being typed, it goes
+  // back to the date in force — a date field reports '' for both, and
+  // `badInput` is what tells an unfinished entry from an empty one.
+  const commitDate = (part: 'from' | 'to', input: HTMLInputElement) => {
+    const applied = part === 'from' ? fromDateValue : toDateValue;
+    const { value } = input;
+
+    if (isCompleteDateValue(value)) {
+      if (value !== applied) {
+        applyDate(part, value);
+      }
+
+      return;
+    }
+
+    if (value === '' && !input.validity.badInput) {
+      if (applied) {
+        applyDate(part, '');
+      }
+
+      return;
+    }
+
+    input.value = applied;
+
+    if (part === 'from') {
+      setDraftFromDate(applied);
+    } else {
+      setDraftToDate(applied);
+    }
+  };
+
   const clearDetailedTime = () => {
     setTimeExpanded(false);
     setDraftFromTime(START_OF_DAY_TIME);
@@ -907,6 +1069,7 @@ export function DateControl({
           setCustomMode(
             whenPreset === 'custom' || (!isRollingDatePreset(whenPreset) && Boolean(dateFrom || dateTo)),
           );
+          setCalendarMonth(calendarMonthFor(dateFrom, dateTo));
         }
       }}
     >
@@ -921,6 +1084,7 @@ export function DateControl({
           </Button>
         )}
       </Popover.Trigger>
+      <MenuShield open={open} />
       <Popover.Content
         // Never taller than the room the popover has, scrolling inside instead.
         // The calendar, the time fields and Clear range outgrow the screen on a
@@ -966,12 +1130,52 @@ export function DateControl({
 
         {showCustomPicker && (
           <>
+            {/* The same range as the grid below, for typing: quicker than
+                paging to a date years back. */}
+            <div className="grid grid-cols-2 gap-2 border-t px-3 pt-3">
+              {(
+                [
+                  ['from', 'memory-filter-start-date', 'Start date', draftFromDate],
+                  ['to', 'memory-filter-end-date', 'End date', draftToDate],
+                ] as const
+              ).map(([part, id, label, draft]) => (
+                <div key={part} className="space-y-1.5">
+                  <Label htmlFor={id} className="text-xs text-muted-foreground">
+                    {label}
+                  </Label>
+                  <Input
+                    id={id}
+                    type="date"
+                    // Without it a date field takes a six-digit year.
+                    max="9999-12-31"
+                    value={draft}
+                    onChange={(event) => handleDateChange(part, event.target.value)}
+                    onBlur={(event) => commitDate(part, event.currentTarget)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        commitDate(part, event.currentTarget);
+                      }
+                    }}
+                    // The grid below is the picker; the field's own would be a
+                    // second calendar, and its button leaves no room for the date.
+                    className="h-8 px-2 [&::-webkit-calendar-picker-indicator]:hidden"
+                  />
+                </div>
+              ))}
+            </div>
             {/* Only the grid itself is deferred, not the controls beside it:
                 "Clear range" and the time fields stay synchronous so opening the
                 popover still gives you something to act on immediately. */}
             <Suspense fallback={null}>
               <Calendar
                 mode="range"
+                // Month and year dropdowns in the caption, so a date years
+                // away is two picks rather than a click per month.
+                captionLayout="dropdown"
+                startMonth={CALENDAR_START_MONTH}
+                endMonth={calendarEndMonth}
+                month={calendarMonth}
+                onMonthChange={setCalendarMonth}
                 selected={selectedRange}
                 onSelect={(range) => {
                   const fromDate = range?.from ? localDateInputValue(range.from) : '';
@@ -1197,11 +1401,20 @@ function FilterControlsRow({
   const showWho = peopleInPlay(searchParams, pathname);
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div
+      // On a phone this is one line that scrolls sideways, like the What strip
+      // above it: wrapped, When / How / Who / Where / the toggles / sort ran
+      // two to a row and ate half the screen. From `device:` up it wraps as
+      // before. The vertical padding is cancelled by the negative margin, so
+      // the line costs no height; it only keeps the focus ring inside the
+      // scroller's clip.
+      className="scrollbar-none flex min-w-0 items-center gap-2 overscroll-x-contain max-device:-my-0.5 max-device:overflow-x-auto max-device:py-0.5 device:flex-wrap"
+    >
       {includeEntityTypeFilter && <EntityTypeFilter modal={modal} label="What" />}
-      <DateControl />
+      <DateControl modal={modal} />
 
       <ConnectorFilter modal={modal} label="How" />
+      <FileKindFilter modal={modal} label="Kind" />
       {showEventDimensions && <ActivityFilter modal={modal} label="Activity" />}
       {showWho && <EntityNameFilter kind="person" modal={modal} />}
       {showEventDimensions && <EntityNameFilter kind="place" modal={modal} />}
@@ -1223,9 +1436,9 @@ function FilterControlsRow({
 
       {showSave && (
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <FilterCountLabel />
-          <SavedSearchPicker onOpen={onOpenSavedSearch} />
           <SaveSearchButton />
+          <SavedSearchPicker onOpen={onOpenSavedSearch} />
+          <FilterCountLabel />
         </div>
       )}
     </div>
@@ -1257,7 +1470,13 @@ export function SearchPanelFilters({
  * — rendered inline after the What categories in MemoryEntityTypeNav.
  */
 export function MemoryExplorerFilterControls() {
-  return <FilterControlsRow modal={false} showSave={false} />;
+  // Modal on a phone: a modal menu swallows the tap that closes it, so tapping
+  // away cannot also open whatever was under the finger (the first row of the
+  // list, usually). Desktop keeps the lighter non-modal menus, whose outside
+  // click goes through — no scroll lock, no scrollbar jump.
+  const { isMobile } = useDeviceLayout();
+
+  return <FilterControlsRow modal={isMobile === true} showSave={false} />;
 }
 
 /**
@@ -1320,9 +1539,20 @@ function FilterCountLabel() {
  * it becomes the dialog trigger, so it must pass its props and ref on.
  */
 export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [{ selectedEntityTypes }] = useDropdown();
   const { toast } = useToast();
+
+  // The saved search these filters were loaded from, when there is one: Save
+  // then offers to update it in place as well as to save a new one. The
+  // resolver that loaded it put the same query in the cache, so this is a
+  // cache read, not a round trip.
+  const loadedId = searchParams.get(LOADED_SEARCH_PARAM);
+  const { data: loadedData } = useQuery(GET_SAVED_SEARCH, {
+    variables: { id: GlobalUID.encode('saved-search', loadedId ?? '') },
+    skip: !loadedId,
+  });
+  const loaded = loadedId ? (loadedData?.savedSearch ?? null) : null;
   // Sharing (the "make public" control) is gated while the access model is hardened.
   const { isFeatureEnabled } = useFeatures();
   const sharingEnabled = isFeatureEnabled('shared.search');
@@ -1334,7 +1564,7 @@ export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
     typeof SavedSearchGridItemFragment
   > | null>(null);
 
-  const [createSavedSearch, { loading }] = useMutation(CREATE_SAVED_SEARCH, {
+  const [createSavedSearch, { loading: creating }] = useMutation(CREATE_SAVED_SEARCH, {
     // Drop the cached list so the Saved Searches page refetches it with the new entry.
     update(cache, { data }) {
       if (data?.createSavedSearch?.success) {
@@ -1342,6 +1572,25 @@ export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
         cache.gc();
       }
     },
+  });
+  const [updateSavedSearch, { loading: updating }] = useMutation(UPDATE_SAVED_SEARCH, {
+    // The row itself updates by id; the list is dropped because it is ordered
+    // by last change and this search just moved to the top of it.
+    update(cache, { data }) {
+      if (data?.updateSavedSearch?.success) {
+        cache.evict({ id: 'ROOT_QUERY', fieldName: 'savedSearches' });
+        cache.gc();
+      }
+    },
+  });
+  const loading = creating || updating;
+
+  // What the explorer is showing right now, in the shape a saved search stores.
+  const currentDefinition = () => ({
+    query: searchParams.get('search')?.trim() || undefined,
+    tags: readListParam(searchParams, 'tags'),
+    entityTypes: savedEntityTypesFor(selectedEntityTypes),
+    filters: buildSavedSearchFilters(searchParams),
   });
 
   const handleSave = async (share: boolean) => {
@@ -1351,12 +1600,7 @@ export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
       return;
     }
 
-    const query = searchParams.get('search')?.trim() || undefined;
-    const tags = searchParams.get('tags')?.split(',').filter(Boolean) ?? [];
-    const entityTypes = selectedEntityTypes.map(
-      (type) => ENTITY_TYPE_MAP[type as keyof typeof ENTITY_TYPE_MAP],
-    );
-    const filters = buildSavedSearchFilters(searchParams);
+    const { query, tags, entityTypes, filters } = currentDefinition();
 
     try {
       const result = await createSavedSearch({
@@ -1377,6 +1621,17 @@ export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
         toast.success(`Saved search “${trimmed}”`);
         setName('');
         setOpen(false);
+        // The explorer is now showing the search it just saved, so the next
+        // Save offers to update that one rather than the search it was
+        // loaded from before.
+        setSearchParams(
+          (params) => {
+            params.set(LOADED_SEARCH_PARAM, GlobalUID.parse('saved-search', created.id));
+
+            return params;
+          },
+          { replace: true },
+        );
         // Hand the new search to the share modal so the user can grab a link
         // without a trip to the Saved Searches page.
         if (share) {
@@ -1387,6 +1642,44 @@ export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
       }
     } catch {
       toast.error('Failed to save search');
+    }
+  };
+
+  // Write the current filters back over the loaded search, keeping its name
+  // and description. Every stored dimension is sent explicitly — `null` for an
+  // empty query or filter set, `[]` for no tags or types — because the update
+  // leaves out any field it is not given, and "I removed that filter" has to
+  // reach the row.
+  const handleUpdate = async () => {
+    if (!loaded) {
+      return;
+    }
+
+    const { query, tags, entityTypes, filters } = currentDefinition();
+
+    try {
+      const result = await updateSavedSearch({
+        variables: {
+          input: {
+            id: loaded.id,
+            name: loaded.name,
+            query: query ?? null,
+            entityTypes,
+            tags,
+            filters: filters ?? null,
+          },
+        },
+      });
+
+      if (result.data?.updateSavedSearch?.success) {
+        toast.success(`Updated “${loaded.name}”`);
+        setName('');
+        setOpen(false);
+      } else {
+        toast.error(`Failed to update “${loaded.name}”`);
+      }
+    } catch {
+      toast.error(`Failed to update “${loaded.name}”`);
     }
   };
 
@@ -1411,6 +1704,25 @@ export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
             sort) so you can reuse them later.
           </Dialog.Description>
         </Dialog.Header>
+
+        {loaded && (
+          <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
+            <p className="text-muted-foreground">
+              These filters were loaded from{' '}
+              <span className="font-medium text-foreground">“{loaded.name}”</span>.
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={handleUpdate}
+              disabled={loading}
+            >
+              {updating ? 'Updating…' : `Update “${loaded.name}”`}
+            </Button>
+            <p className="text-xs text-muted-foreground">Or give it a new name below to keep both.</p>
+          </div>
+        )}
 
         <div className="space-y-2 py-2">
           <Label htmlFor="saved-search-name">Name</Label>
@@ -1440,7 +1752,7 @@ export function SaveSearchButton({ trigger }: { trigger?: ReactElement } = {}) {
             </Button>
           )}
           <Button onClick={() => handleSave(false)} disabled={loading || !name.trim()}>
-            {loading ? 'Saving…' : 'Save'}
+            {creating ? 'Saving…' : loaded ? 'Save as new' : 'Save'}
           </Button>
         </Dialog.Footer>
       </Dialog.Content>

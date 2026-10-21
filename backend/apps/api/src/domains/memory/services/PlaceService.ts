@@ -5,13 +5,14 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { isUniqueViolation } from '@ci/common/constants';
 import { type ServiceContext, SYSTEM_USER, type UserServiceContext } from '@ci/common/context';
-import { computeChunkSize } from '@ci/common/persistence';
+import { computeChunkSize, keysetSeek } from '@ci/common/persistence';
 import { isGeocodingConfigured } from '@ci/configuration';
 import { EventService } from '@ci/domains/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
 import { PlaceEntity, type Place, type PlaceKind } from '../entities/PlaceEntity';
 import { PlaceCreatedEvent, PlaceUpdatedEvent, PlaceRemovedEvent } from '../events';
+import { GRAPH_ENTITY_TYPES } from '../graph.types';
 import type { CreatePlaceDto, UpdatePlaceDto } from '../types';
 
 import {
@@ -26,6 +27,14 @@ import {
 import { EVENT_HAPPENED_SQL } from './eventHappened';
 import { GraphDeltaWriter } from './GraphDeltaWriter';
 import { type PurgedPlaces, purgePlaceAggregates } from './placePurge';
+
+/**
+ * The row types a place is stored under. `PlaceEntity` maps the whole of `ci.entities`, so a lookup
+ * by id alone also finds a Person or a Concept; `update` and `remove` match on these too. Without it,
+ * an id of the owner's own Person let `updatePlace` merge into that Person's properties, where the
+ * owner's settings live under `planner` (the autonomy dial among them).
+ */
+const PLACE_ENTITY_TYPES = In([...GRAPH_ENTITY_TYPES.place]);
 
 /** One Google-style address component ({long_name, short_name, types[]}). */
 interface AddressComponent {
@@ -200,8 +209,9 @@ export class PlaceService {
     // races safely with concurrent callers for the same cell. Loser sees zero
     // rows affected; both fall through to the SELECT below and return the same
     // id. location_point carries FULL precision (snap lives only in the index).
-    // A bounded feature is an area, not an address: keep place_kind honest so
-    // the hierarchy and the UI don't label a whole city "address".
+    // A bounded feature is an area. A bare point is not a kind: labeling every
+    // geocode "address" is what made the places list a stack of Address badges.
+    // The street stays on the name; the user picks a kind.
     const bounds = normalizeBounds(input.bounds);
 
     await this.placeRepository.manager.query(
@@ -219,7 +229,7 @@ export class PlaceService {
         JSON.stringify(properties),
         input.lng,
         input.lat,
-        bounds ? 'neighborhood' : 'address',
+        bounds ? 'neighborhood' : null,
         bounds != null,
         bounds?.west ?? 0,
         bounds?.south ?? 0,
@@ -399,7 +409,11 @@ export class PlaceService {
     await this.placeRepository.manager.query(
       `UPDATE ci.entities
           SET location_point = COALESCE(location_point, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography),
-              place_kind = COALESCE(place_kind, 'address'),
+              place_kind = CASE
+                WHEN place_kind IS NOT NULL THEN place_kind
+                WHEN $5::boolean THEN 'neighborhood'
+                ELSE NULL
+              END,
               location_boundary = COALESCE(
                 location_boundary,
                 CASE WHEN $5::boolean
@@ -951,17 +965,18 @@ export class PlaceService {
       .where('place.entity_type = :entityType', { entityType: 'Location' })
       .andWhere('place.owner_user_id = :userId', { userId: context.userId });
 
-    // Composite keyset: page strictly past (afterTime, afterId) in
-    // (updated_at DESC, entity_id DESC) — see ContentService.getEntitiesForContents.
+    // Composite keyset: page strictly past (afterTime, afterId) in (updated_at, entity_id), in
+    // `order` — see keysetSeek.
+    const order = options.order ?? 'DESC';
+
     if (options.afterTime && options.afterId) {
       query = query.andWhere(
-        '(place.updated_at < :afterTime OR (place.updated_at = :afterTime AND place.entity_id < :afterId))',
-        { afterTime: options.afterTime, afterId: options.afterId },
+        ...keysetSeek('place.updated_at', 'place.entity_id', order, options.afterTime, options.afterId),
       );
     }
 
-    // Deterministic tiebreak so same-timestamp rows page consistently.
-    query = query.orderBy('place.updated_at', options.order ?? 'DESC').addOrderBy('place.entity_id', 'DESC');
+    // Deterministic tiebreak so same-timestamp rows page consistently: the id runs the way the time does.
+    query = query.orderBy('place.updated_at', order).addOrderBy('place.entity_id', order);
 
     if (options.limit) {
       query = query.limit(options.limit);
@@ -1078,9 +1093,12 @@ export class PlaceService {
   async update(context: ServiceContext, id: string, data: UpdatePlaceDto): Promise<Place | null> {
     const { properties, latitude, longitude, place_kind, parent_place_id, ...rest } = data;
 
+    // Places only (see PLACE_ENTITY_TYPES): without the type, `updatePlace` could rename the
+    // owner's own Person or write its `planner` settings through its free-form properties.
     const place = await this.placeRepository.findOne({
       where: {
         id: id,
+        entityType: PLACE_ENTITY_TYPES,
         ...(context.userId !== SYSTEM_USER && {
           user: {
             id: context.userId,
@@ -1125,6 +1143,7 @@ export class PlaceService {
         result = await this.placeRepository.update(
           {
             id,
+            entityType: PLACE_ENTITY_TYPES,
             ...(context.userId !== SYSTEM_USER && {
               user: {
                 id: context.userId,
@@ -1163,9 +1182,11 @@ export class PlaceService {
   }
 
   async remove(context: ServiceContext, id: string): Promise<boolean> {
+    // Places only (see PLACE_ENTITY_TYPES), so `deletePlace` cannot delete a Person or a Concept.
     const place = await this.placeRepository.findOne({
       where: {
         id: id,
+        entityType: PLACE_ENTITY_TYPES,
         ...(context.userId !== SYSTEM_USER && {
           user: {
             id: context.userId,
@@ -1194,6 +1215,7 @@ export class PlaceService {
 
     await this.placeRepository.delete({
       id,
+      entityType: PLACE_ENTITY_TYPES,
       ...(context.userId !== SYSTEM_USER && {
         user: {
           id: context.userId,

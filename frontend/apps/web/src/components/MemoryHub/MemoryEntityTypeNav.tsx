@@ -1,11 +1,13 @@
 import { useState, type ComponentType, type CSSProperties, type ReactNode } from 'react';
 
 import { useQuery } from '@apollo/client';
+import { useDeviceLayout } from '@ci/common';
 import { Button, DropdownMenu, cn } from '@ci/shadcn';
 import { ChevronDown, Shapes, Tag as TagIcon } from '@ci/shadcn/icons';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
+import { MenuShield } from '@/components/MenuShield';
 import { AVAILABLE_ENTITY_TYPES, useDropdown } from '@/components/SearchBox/useDropdown';
 import { TagInput } from '@/components/TagInput';
 import { gql } from '@/graphql';
@@ -233,6 +235,7 @@ function GroupWhatDropdown({
   isGroupActive,
   onSelectOnly,
   onToggleType,
+  modal,
 }: {
   category: Extract<WhatCategory, { kind: 'group' }>;
   selectedEntityTypes: string[];
@@ -241,6 +244,8 @@ function GroupWhatDropdown({
   isGroupActive: (types: string[]) => boolean;
   onSelectOnly: (entityType: string) => void;
   onToggleType: (entityType: string) => void;
+  /** See {@link MemoryEntityTypeNav}: modal on a phone, so a tap away only closes the menu. */
+  modal: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const types = entityTypesForCategory(category);
@@ -254,7 +259,7 @@ function GroupWhatDropdown({
   const { CheckboxItem, Content, Label, Separator, Trigger } = DropdownMenu;
 
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={modal} open={open} onOpenChange={setOpen}>
       {/* No tooltip: the label already expands inline on hover (expandLabelClass). */}
       <Trigger asChild>
         <button
@@ -271,6 +276,7 @@ function GroupWhatDropdown({
         </button>
       </Trigger>
 
+      <MenuShield open={open} />
       <Content align="start" sideOffset={4} className="z-[9999] w-56 p-2">
         <Label className="px-1 pb-2 text-sm font-medium">{category.label}</Label>
         <Separator className="mb-1" />
@@ -349,11 +355,13 @@ function EventsWhatDropdown({
   selected,
   active,
   onSelectOnly,
+  modal,
 }: {
   category: Extract<WhatCategory, { kind: 'events' }>;
   selected: boolean;
   active: boolean;
   onSelectOnly: () => void;
+  modal: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -388,7 +396,7 @@ function EventsWhatDropdown({
   };
 
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={modal} open={open} onOpenChange={setOpen}>
       {/* No tooltip: the label already expands inline on hover (expandLabelClass). */}
       <Trigger asChild>
         <button
@@ -405,6 +413,7 @@ function EventsWhatDropdown({
         </button>
       </Trigger>
 
+      <MenuShield open={open} />
       <Content align="start" sideOffset={4} className="z-[9999] max-h-80 w-56 overflow-y-auto p-2">
         <div className="flex items-center justify-between px-1 pb-2">
           <Label className="p-0 text-sm font-medium">Events</Label>
@@ -460,7 +469,15 @@ function EventsWhatDropdown({
   );
 }
 
-function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange: (next: string[]) => void }) {
+function TagWhatDropdown({
+  tags,
+  onTagsChange,
+  modal,
+}: {
+  tags: string[];
+  onTagsChange: (next: string[]) => void;
+  modal: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const active = tags.length > 0;
   const { data } = useQuery(GET_TAGS, { skip: !open });
@@ -470,7 +487,7 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
   const valueLabel = active ? tags.join(', ') : 'Tag';
 
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={modal} open={open} onOpenChange={setOpen}>
       {/* No tooltip: the label already expands inline on hover (expandLabelClass). */}
       <Trigger asChild>
         <button
@@ -486,6 +503,7 @@ function TagWhatDropdown({ tags, onTagsChange }: { tags: string[]; onTagsChange:
         </button>
       </Trigger>
 
+      <MenuShield open={open} />
       <Content align="start" sideOffset={4} className="z-[9999] w-80 p-3">
         <Label className="mb-2 block text-sm font-medium">Tags</Label>
         <TagInput
@@ -529,6 +547,12 @@ export function MemoryEntityTypeNav({ actions }: { actions?: ReactNode }) {
   const [searchParams] = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilterCount = countActiveFilters(searchParams);
+  // The What menus are modal on a phone: a modal menu swallows the tap that
+  // closes it, so tapping away cannot also open whatever was under the finger.
+  // Desktop keeps the non-modal menus (no scroll lock, no scrollbar jump), the
+  // same split MemoryExplorerFilterControls makes for When / How / Who.
+  const { isMobile } = useDeviceLayout();
+  const modal = isMobile === true;
   const filtersLabel = activeFilterCount > 0 ? `Filters, ${activeFilterCount} active` : 'Filters';
 
   return (
@@ -633,6 +657,7 @@ export function MemoryEntityTypeNav({ actions }: { actions?: ReactNode }) {
                     isGroupActive={isGroupActive}
                     onSelectOnly={selectOnlyEntityType}
                     onToggleType={toggleEntityType}
+                    modal={modal}
                   />
                 );
               }
@@ -645,11 +670,12 @@ export function MemoryEntityTypeNav({ actions }: { actions?: ReactNode }) {
                     selected={isEntityTypeSelected(category.entityType)}
                     active={isGroupActive(entityTypesForCategory(category))}
                     onSelectOnly={() => selectOnlyEntityType(category.entityType)}
+                    modal={modal}
                   />
                 );
               }
 
-              return <TagWhatDropdown key={category.id} tags={tags} onTagsChange={setTags} />;
+              return <TagWhatDropdown key={category.id} tags={tags} onTagsChange={setTags} modal={modal} />;
             })}
           </div>
         </div>

@@ -469,8 +469,11 @@ Then open `https://<project>.localhost` (e.g. **https://ci-server.localhost**) a
 
 ```
 Username: jsmith@example.com
-Password: replace-me-pw-000000
+Password: the AUTH_DEFAULT_USER_PASSWORD value in your .env
 ```
+
+`make init` generates that password, along with the other secrets, when it creates
+`.env`. A `.env` from before that change still holds `replace-me-pw-000000`.
 
 With the stack up and seeded, this is also the state from which to capture UI
 screenshots for the docs — see the [screenshot capture guide](docs/screenshots.md)
@@ -560,7 +563,8 @@ current shell without installing, `source scripts/gh-packages-auth.sh`.
 | `make smoke-api` | Verify the built API image can run `migrate` with production-only dependencies (a devDependency in either half fails the container at startup). Runs as part of `make publish` |
 | `make staging` | Run the staging deployment |
 | `make production` | Run the production deployment |
-| `make publish` | Publish CI-Server images and metadata to the CI-Portal store (builds `ENV=production`, then `smoke-api`) |
+| `make publish` | Publish CI-Server images and metadata to the CI-Portal store (runs `publish-build`, then pushes) |
+| `make publish-build` | Everything `publish` does before the push: `init`, `build ENV=production`, `smoke-api` and `smoke-stack`. `publish.yml`'s build job runs this with a read-only token and pushes from a separate job |
 | `make publish-quiet` | Publish to the CI-Portal store in quiet mode (skips the build/smoke steps) |
 | `make seed-production` | Seed the production database via an ephemeral proxy |
 

@@ -46,6 +46,8 @@ import {
   rhythmClaims,
   rhythmLabel,
   rhythmWaitingLabel,
+  PHONE_SHEET_VH,
+  scrollTopForSelectedHour,
   spanForDay,
   topClusters,
   utcDateKey,
@@ -949,6 +951,11 @@ interface VerticalCalendarProps {
   timeZone?: string;
   footer?: ReactNode;
   className?: string;
+  /**
+   * The phone add sheet is open. Scroll the tapped hour to just above it.
+   * Does not lengthen the day — midnight stays the end of the scroller.
+   */
+  liftSelectedHour?: boolean;
 }
 
 /**
@@ -977,6 +984,7 @@ export function VerticalCalendar({
   timeZone,
   footer,
   className,
+  liftSelectedHour = false,
 }: VerticalCalendarProps) {
   const fmt = useDateTimeFormat();
   const zone = timeZone ?? detectBrowserTimeZone();
@@ -984,6 +992,7 @@ export function VerticalCalendar({
   const today = startOfLocalDay(now, zone);
   const nowPct = (zonedMinutesOfDay(now, zone) / MINUTES_PER_DAY) * 100;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrolledDayKey = useRef<string | null>(null);
 
   const rhythmByDate = useMemo(() => new Map(rhythm.map((day) => [day.date, day])), [rhythm]);
   const lookup = useCallback((utcDate: string) => rhythmByDate.get(utcDate), [rhythmByDate]);
@@ -1028,12 +1037,49 @@ export function VerticalCalendar({
       return;
     }
 
+    // A slot tap replaces `start` with a new Date for the same day. That used
+    // to run this effect and yank the viewport back to now.
+    const dayKey = dayStarts.map((day) => day.getTime()).join(',');
+
+    if (scrolledDayKey.current === dayKey) {
+      return;
+    }
+
+    scrolledDayKey.current = dayKey;
+
     const clock = new Date();
     const lookingAtToday = dayStarts.some((day) => sameLocalDay(day, clock, zone));
     const minutes = lookingAtToday ? zonedMinutesOfDay(clock, zone) : 7 * 60;
     const y = (minutes / MINUTES_PER_DAY) * GRID_HEIGHT_PX - pane.clientHeight / 3;
     pane.scrollTop = Math.max(0, y);
   }, [dayStarts, zone]);
+
+  const selectedMinute = selectedSlot && !selectedSlot.allDay ? selectedSlot.instant.getTime() : null;
+
+  useEffect(() => {
+    if (selectedMinute === null) {
+      return;
+    }
+
+    const pane = scrollRef.current;
+
+    if (!pane || pane.clientHeight === 0) {
+      return;
+    }
+
+    const y = (zonedMinutesOfDay(new Date(selectedMinute), zone) / MINUTES_PER_DAY) * GRID_HEIGHT_PX;
+    const paneBottom = pane.getBoundingClientRect().bottom;
+    const sheetTop = window.innerHeight * (1 - PHONE_SHEET_VH);
+    const occlusion = liftSelectedHour ? Math.max(0, paneBottom - sheetTop) : 0;
+
+    pane.scrollTop = scrollTopForSelectedHour({
+      hourY: y,
+      scrollTop: pane.scrollTop,
+      clientHeight: pane.clientHeight,
+      scrollHeight: pane.scrollHeight,
+      occlusionPx: occlusion,
+    });
+  }, [liftSelectedHour, selectedMinute, zone]);
 
   const handleMoveEvent = useCallback(
     (eventId: string, startTime: Date) => {

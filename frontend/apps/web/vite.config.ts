@@ -144,7 +144,8 @@ export default defineConfig({
               // measured live against /api/llm/generate. Requests matching no
               // rule are not intercepted at all, which is exactly what a
               // long-lived stream needs.
-              urlPattern: /\/api\/(?!authenticate\/oidc|llm\/generate|llm\/threads\/[^/]+\/stream|mcp\b)/,
+              urlPattern:
+                /\/api\/(?!authenticate\/oidc|llm\/generate|llm\/threads\/[^/]+\/stream|live\/changes|mcp\b)/,
               handler: 'NetworkOnly',
               options: {
                 backgroundSync: {
@@ -170,7 +171,14 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',
+    // Loopback unless DEV_LISTEN_HOST says otherwise. This was `0.0.0.0`, which
+    // put the dev server, and through its `/api` and `/static` proxies the API
+    // and the object store, on the network of whoever ran it. Set
+    // DEV_LISTEN_HOST=0.0.0.0 in .env to test from a phone on the LAN or over the
+    // tailnet, which is what the `.ts.net` allowedHosts entry and the capacitor
+    // CORS origins below are for. `make dev` passes the same variable to the API
+    // (scripts/dev-stack/overmind-env.ts).
+    host: process.env.DEV_LISTEN_HOST || '127.0.0.1',
     // When WEB_PORT is set, bind exactly that port and fail rather than
     // drifting to the next free one, which is Vite's default. A reverse proxy
     // in front routes to this exact port, so a silent fallback would leave it

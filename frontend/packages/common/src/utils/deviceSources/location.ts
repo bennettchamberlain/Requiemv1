@@ -72,8 +72,12 @@ export type LocationSourceKind = 'gps' | 'wifi' | 'cell_tower' | 'manual' | 'inf
  * This gate is the difference between ~300 fixes a day and ~86,000. `watchPosition` fires
  * on every sensor update; without it the queue, the request volume and the hypertable all
  * grow by two orders of magnitude for no extra information.
+ *
+ * One gate for every mode. Until 2026-10-14 "While using" kept a tighter 50 m trail than
+ * Always; nothing about the app being on screen makes a denser trail more useful, and the
+ * looser gate is what lets the native location request idle between fixes.
  */
-export const MIN_DISTANCE_METERS = 50;
+export const MIN_DISTANCE_METERS = 150;
 
 /** ...or this much time passed since the last recorded fix. */
 export const MIN_INTERVAL_MS = 5 * 60 * 1000;

@@ -47,6 +47,7 @@ import {
   edgeProjectionSourcesFor,
   isRepresentedElsewhere,
   toCanonical,
+  withOrigin,
   type CanonicalRecord,
   type Destination,
 } from '../push/canonical';
@@ -111,6 +112,12 @@ type TrustMode = 'cautious' | 'balanced' | 'hands_off';
 const PUSH_BATCH = 500;
 
 /** The `staged_items` columns a {@link StagedItem} is built from, camel-cased. */
+/** What a batch row carries about its run's origin — see `withOrigin`. */
+interface RunOrigin {
+  originPlatform?: string | null;
+  originConnectionId?: string | null;
+}
+
 const STAGED_ITEM_COLUMNS = `id, run_id AS "runId", user_id AS "userId", data_source AS "dataSource",
               classification, content_hash AS "contentHash", occurred_at AS "occurredAt",
               timespan_end AS "timespanEnd", latitude, longitude, filename,
@@ -1940,9 +1947,19 @@ export class PushStage implements ImportStageRunner {
    * parser staged it, and a record's participants and its edges stay near each
    * other rather than being scattered across batches.
    */
-  private async nextBatch(runId: string): Promise<StagedItem[]> {
-    return this.dataSource.query<StagedItem[]>(
-      `SELECT ${STAGED_ITEM_COLUMNS}
+  /**
+   * The next rows to push, each carrying its run's `origin_platform` — the
+   * platform a connection fetched the run's bytes from, if one did (see
+   * `withOrigin`). Read with the batch rather than in a query of its
+   * own so it shares the batch read's retry and adds no round trip.
+   */
+  private async nextBatch(runId: string): Promise<Array<StagedItem & RunOrigin>> {
+    return this.dataSource.query<Array<StagedItem & RunOrigin>>(
+      `SELECT ${STAGED_ITEM_COLUMNS},
+              (SELECT r.origin_platform FROM ci_import.import_runs r
+                WHERE r.id = staged_items.run_id) AS "originPlatform",
+              (SELECT r.origin_connection_id FROM ci_import.import_runs r
+                WHERE r.id = staged_items.run_id) AS "originConnectionId"
          FROM ci_import.staged_items
         WHERE run_id = $1::uuid AND push_status = 'pending'
         ORDER BY id
@@ -2130,10 +2147,8 @@ export class PushStage implements ImportStageRunner {
       }
     }
 
-    const ownerPhones = identity.phones;
-
     for (const candidate of candidates) {
-      const match = matchOwner(identity, candidate, { phones: ownerPhones });
+      const match = matchOwner(identity, candidate);
       if (shouldMapContactToSelf(match, trustMode)) {
         return true;
       }
@@ -2153,7 +2168,7 @@ export class PushStage implements ImportStageRunner {
    */
   private async pushBatch(
     context: StageRunContext,
-    batch: StagedItem[],
+    batch: Array<StagedItem & RunOrigin>,
     counts: DestinationCounts,
     isSelf: IsSelf,
     selfEntityId: string | null,
@@ -2168,7 +2183,10 @@ export class PushStage implements ImportStageRunner {
     );
 
     const plans: RowPlan[] = batch.map((row) => {
-      const record = toCanonical(row);
+      const record = withOrigin(toCanonical(row), {
+        platform: row.originPlatform,
+        connectionId: row.originConnectionId,
+      });
 
       return {
         row,
