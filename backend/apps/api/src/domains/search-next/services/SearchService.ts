@@ -229,7 +229,52 @@ type BaseSearchOptions = {
    * tie-break; the default is rank. Lexical modes only, like `since` / `until`.
    */
   sort?: 'relevance' | 'recent';
+  /**
+   * Hybrid fusion strategy:
+   * - `'weighted'` (default): 50/50 normalized score average.
+   * - `'rrf'`: Reciprocal Rank Fusion ($\sum_i \frac{1}{k + \text{rank}_i}$, $k=60$),
+   *   which is invariant to outlier `ts_rank` spikes.
+   */
+  fusionMode?: 'weighted' | 'rrf';
 };
+
+export const RRF_DEFAULT_K = 60;
+
+/**
+ * Reciprocal Rank Fusion (`knowl` / Cormack et al. pattern): combines ranked
+ * lists from heterogeneous retrieval channels (e.g. pgvector cosine similarity
+ * and Postgres `ts_rank`) using rank positions rather than raw score magnitudes:
+ *
+ * $$\text{RRF}(d) = \sum_{L \in \text{lists}} \frac{1}{k + \text{rank}_L(d)}$$
+ *
+ * where $\text{rank}_L(d) \ge 1$ is the 1-based rank of document $d$ in list $L$.
+ */
+export function reciprocalRankFusion<T extends { id: string; type: IndexableEntity }>(
+  rankedLists: ReadonlyArray<ReadonlyArray<T>>,
+  k: number = RRF_DEFAULT_K,
+): Array<T & { score: number }> {
+  const fusedScores = new Map<string, number>();
+  const itemsByKey = new Map<string, T>();
+
+  for (const list of rankedLists) {
+    list.forEach((item, index) => {
+      const key = `${item.type}:${item.id}`;
+      const rank = index + 1;
+      fusedScores.set(key, (fusedScores.get(key) ?? 0) + 1 / (k + rank));
+      if (!itemsByKey.has(key)) {
+        itemsByKey.set(key, item);
+      }
+    });
+  }
+
+  const results: Array<T & { score: number }> = [];
+  fusedScores.forEach((score, key) => {
+    const item = itemsByKey.get(key)!;
+    results.push({ ...item, score });
+  });
+
+  return results.sort((a, b) => b.score - a.score);
+}
 
 /**
  * Each indexed row's OWN time, as SQL over the index row (`entity_type`, `entity_id`): when a
@@ -1103,6 +1148,16 @@ export class SearchService {
     ]);
     const semanticResults = semanticLeg.results;
     const keywordResults = keywordLeg.results;
+
+    if (options.fusionMode === 'rrf') {
+      const rrfFused = reciprocalRankFusion([semanticResults, keywordResults]);
+
+      return {
+        results: rrfFused.slice(0, maxResults),
+        totalMatches: null,
+        limit: maxResults,
+      };
+    }
 
     // Normalize keyword scores (ts_rank scores vary widely, normalize to 0-1)
     const maxKeywordScore = Math.max(...keywordResults.map((r) => r.score), 0.001);

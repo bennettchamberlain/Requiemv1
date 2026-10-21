@@ -32,6 +32,20 @@ export const nullableEnabledSchema = z.object({ enabled: z.boolean().nullable() 
 /** `chatModel: null` clears the override and returns to the appliance default. */
 export const chatModelSchema = z.object({ chatModel: z.string().trim().min(1).nullable() }).strip();
 
+export const memoryGovernanceSchema = z
+  .object({
+    memoryGovernanceEnabled: z.boolean().optional(),
+    memoryRecencyDecayEnabled: z.boolean().optional(),
+  })
+  .strip();
+
+export const decisionEngineSchema = z
+  .object({
+    contrastiveDecisionEnabled: z.boolean().optional(),
+    generativeDecisionEnabled: z.boolean().optional(),
+  })
+  .strip();
+
 @UseGuards(JwtOrApiKeyAuthGuard)
 @Controller('personalization')
 export class PersonalizationController {
@@ -173,5 +187,71 @@ export class PersonalizationController {
     );
 
     return { enabled };
+  }
+
+  /**
+   * Settings → Model "Memory governance & recency decay" (`knowl` pattern):
+   * controls automatic fact supersession/conflict detection and exponential
+   * recency decay during hybrid recall.
+   */
+  @Get('memory-governance')
+  async getMemoryGovernance(@Context() context: RequestContext) {
+    return this.chatModelPreference.getMemoryGovernancePreferences(context.userId!);
+  }
+
+  @Post('memory-governance')
+  async updateMemoryGovernance(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(memoryGovernanceSchema))
+    body: { memoryGovernanceEnabled?: boolean; memoryRecencyDecayEnabled?: boolean },
+  ) {
+    const serviceContext = toServiceContext(context);
+    if (body.memoryGovernanceEnabled !== undefined) {
+      await this.chatModelPreference.setMemoryGovernanceEnabled(serviceContext, body.memoryGovernanceEnabled);
+    }
+
+    if (body.memoryRecencyDecayEnabled !== undefined) {
+      await this.chatModelPreference.setMemoryRecencyDecayEnabled(
+        serviceContext,
+        body.memoryRecencyDecayEnabled,
+      );
+    }
+
+    return this.chatModelPreference.getMemoryGovernancePreferences(context.userId!);
+  }
+
+  /**
+   * Settings → Model "Decision engines" (`CLM` Contrastive System 1 +
+   * Generative System 2): lets the user toggle the fast embedding-geometry
+   * contrastive decision layer and the generative LLM decision layer
+   * independently.
+   */
+  @Get('decision-engine')
+  async getDecisionEngine(@Context() context: RequestContext) {
+    return this.chatModelPreference.getDecisionEnginePreferences(context.userId!);
+  }
+
+  @Post('decision-engine')
+  async updateDecisionEngine(
+    @Context() context: RequestContext,
+    @Body(new ValidationPipe(decisionEngineSchema))
+    body: { contrastiveDecisionEnabled?: boolean; generativeDecisionEnabled?: boolean },
+  ) {
+    const serviceContext = toServiceContext(context);
+    if (body.contrastiveDecisionEnabled !== undefined) {
+      await this.chatModelPreference.setContrastiveDecisionEnabled(
+        serviceContext,
+        body.contrastiveDecisionEnabled,
+      );
+    }
+
+    if (body.generativeDecisionEnabled !== undefined) {
+      await this.chatModelPreference.setGenerativeDecisionEnabled(
+        serviceContext,
+        body.generativeDecisionEnabled,
+      );
+    }
+
+    return this.chatModelPreference.getDecisionEnginePreferences(context.userId!);
   }
 }
