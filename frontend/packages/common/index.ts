@@ -36,14 +36,31 @@ export {
   subscribeApiBaseUrl,
 } from './src/utils/apiBase';
 export {
+  APP_LOCK_GRACES,
+  APP_LOCK_GRACE_LABELS,
+  appLockPlugin,
+  describeBiometry,
+  lockScreenQueueNote,
+} from './src/utils/appLock';
+export type {
+  AppLockBiometry,
+  AppLockGrace,
+  AppLockPluginBridge,
+  AppLockSettings,
+  AppLockStatus,
+} from './src/utils/appLock';
+export {
   CONNECTION_REPROBE_INTERVAL_MS,
   LOCAL_PROBE_TIMEOUT_MS,
   REMOTE_PROBE_TIMEOUT_MS,
   ConnectionModeProvider,
   resolveConnectionMode,
   useConnectionMode,
+  useOptionalConnectionMode,
+  getLatestConnectionMode,
+  registerCachedDataProbe,
 } from './src/utils/connectionMode';
-export type { ConnectionMode } from './src/utils/connectionMode';
+export type { CachedDataProbe, ConnectionMode } from './src/utils/connectionMode';
 export { createHookContext } from './src/utils/createHookContext';
 export {
   BACKGROUND_MAX_ACCURACY_METERS,
@@ -120,6 +137,7 @@ export {
   onLocalLlmDownloadProgress,
   probeLocalLlm,
   resetLocalLlmConversation,
+  setLocalSearchReplicaFile,
   streamLocalLlm,
   unloadLocalLlm,
 } from './src/utils/localLlm';

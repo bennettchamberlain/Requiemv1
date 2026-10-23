@@ -50,6 +50,16 @@ export const REMOTE_PROBE_TIMEOUT_MS = 3_000;
 export const CONNECTION_REPROBE_INTERVAL_MS = 30_000;
 
 /**
+ * The last mode the probe settled on, readable outside React — for code that hands the mode to a
+ * native plugin at a moment of its own (loading the on-device model). `fresh` until a probe answers.
+ */
+let latestConnectionMode: ConnectionMode = 'fresh';
+
+export function getLatestConnectionMode(): ConnectionMode {
+  return latestConnectionMode;
+}
+
+/**
  * Runs a health request under a bound that covers the whole exchange, and
  * reports only whether it succeeded.
  *
@@ -117,6 +127,40 @@ async function probeLocal(): Promise<boolean> {
   return probed.ok;
 }
 
+/**
+ * Answers "does this device hold data it could show with no server?" — the
+ * difference between "cached" and "fresh" when neither probe succeeds. The
+ * PowerSync provider in the web app registers one (how many documents its
+ * replica holds); this package knows nothing about that storage, so the probe
+ * is injected rather than imported. Absent, the answer is "fresh".
+ */
+export type CachedDataProbe = () => Promise<boolean>;
+
+let cachedDataProbe: CachedDataProbe | null = null;
+
+/** Install the probe; returns the uninstaller. The latest registration wins. */
+export function registerCachedDataProbe(probe: CachedDataProbe): () => void {
+  cachedDataProbe = probe;
+
+  return () => {
+    if (cachedDataProbe === probe) {
+      cachedDataProbe = null;
+    }
+  };
+}
+
+async function hasCachedData(): Promise<boolean> {
+  if (!cachedDataProbe) {
+    return false;
+  }
+
+  try {
+    return await cachedDataProbe();
+  } catch {
+    return false;
+  }
+}
+
 interface ConnectionSnapshot {
   mode: ConnectionMode;
   /** Set only when the remote health body says the two sides cannot talk. */
@@ -136,11 +180,12 @@ async function inspectConnection(): Promise<ConnectionSnapshot> {
     return { mode: 'local', contractNotice: null };
   }
 
-  // TODO(cached-detection): once a durable local cache/outbox exists (LocalHub
-  // Phase 2+ SQLite outbox, or the PowerSync local DB), check here whether it
-  // holds any data and resolve "cached" instead of "fresh". There is no such
-  // signal yet, so — per this pass's scope — we do not invent one and always
-  // fall through to "fresh".
+  // Neither side answers. "cached" when the device holds synced data the
+  // search box and lists can still show; "fresh" when it holds nothing.
+  if (await hasCachedData()) {
+    return { mode: 'cached', contractNotice: null };
+  }
+
   return { mode: 'fresh', contractNotice: null };
 }
 
@@ -228,6 +273,7 @@ function useConnectionModeState(): ConnectionModeState {
           return;
         }
 
+        latestConnectionMode = resolved.mode;
         setMode(resolved.mode);
         setContractNotice(resolved.contractNotice);
         setIsResolved(true);
@@ -311,6 +357,14 @@ function useConnectionModeState(): ConnectionModeState {
   return { mode, contractNotice, isResolved, refresh };
 }
 
-const { Provider, useHookContext } = createHookContext(useConnectionModeState, 'useConnectionMode');
+const { Provider, useHookContext, useOptionalHookContext } = createHookContext(
+  useConnectionModeState,
+  'useConnectionMode',
+);
 
-export { Provider as ConnectionModeProvider, useHookContext as useConnectionMode };
+export {
+  Provider as ConnectionModeProvider,
+  useHookContext as useConnectionMode,
+  /** The mode when a provider is mounted, null otherwise — for UI that is also rendered outside one. */
+  useOptionalHookContext as useOptionalConnectionMode,
+};

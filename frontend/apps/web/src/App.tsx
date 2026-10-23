@@ -23,6 +23,7 @@ import {
 
 import { ApolloProvider } from '@/api/ApolloProvider';
 import { FeaturesProvider, useFeatures } from '@/common/feature';
+import { AppLockGate } from '@/components/AppLock/AppLockGate';
 import { MemoryHubLayout, MemoryHubRoute } from '@/components/MemoryHub';
 import NotFoundPage from '@/components/NotFound';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -54,6 +55,7 @@ const LazyPowerSyncProvider = lazy(() =>
 
 const ChatPage = lazy(() => import('@/pages/ChatPage'));
 const CommunicationPage = lazy(() => import('@/pages/CommunicationPage'));
+const LocalRecordPage = lazy(() => import('@/pages/LocalRecordPage'));
 const ConceptPage = lazy(() => import('@/pages/ConceptPage'));
 const ConnectionPage = lazy(() => import('@/pages/ConnectionPage'));
 const ContentPage = lazy(() => import('@/pages/ContentPage'));
@@ -199,7 +201,11 @@ function Providers({ children }: { children: ReactNode }) {
                           {/* Inside Apollo: it reads the signed-in person's time format and
                               timezone, and hands every page the formatters that apply them. */}
                           <DateTimeFormatProvider>
-                            <PowerSyncBoundary>{children}</PowerSyncBoundary>
+                            {/* Inside PowerSync and the outbox: the lock covers the page, never the
+                                sync behind it (SECURITY_ARCHITECTURE § 4.4). */}
+                            <PowerSyncBoundary>
+                              <AppLockGate>{children}</AppLockGate>
+                            </PowerSyncBoundary>
                           </DateTimeFormatProvider>
                         </ApolloProvider>
                       </CaptureModalProvider>
@@ -848,6 +854,18 @@ function AppRoutes() {
             element={
               <ProtectedRoute>
                 <CommunicationPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* The record this phone holds for any entity, from its synced
+              search documents: where an offline search result or list row
+              opens, since the per-type pages above need the appliance. */}
+          <Route
+            path="/memory/saved/:type/:id"
+            element={
+              <ProtectedRoute>
+                <LocalRecordPage />
               </ProtectedRoute>
             }
           />

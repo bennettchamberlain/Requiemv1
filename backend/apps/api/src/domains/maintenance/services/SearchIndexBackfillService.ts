@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from '@ci/common/logging';
 import { BrowserActivityCreatedEvent } from '@ci/domains/browser-activity/events';
+import { ThreadCreatedEvent } from '@ci/domains/conversations/events';
 import { EventService as SignallingEventService } from '@ci/domains/events';
 import { FileCreatedEvent } from '@ci/domains/files/events';
 import {
@@ -13,11 +14,15 @@ import {
   EventCreatedEvent,
   ItemCreatedEvent,
   PersonCreatedEvent,
+  PlaceCreatedEvent,
   ProductCreatedEvent,
   ReceiptCreatedEvent,
 } from '@ci/domains/memory/events';
+import { NoteCreatedEvent } from '@ci/domains/notes/events';
+import { TaskCreatedEvent } from '@ci/domains/planning/events';
 import { PositionCreatedEvent } from '@ci/domains/position/events';
 import { ENTITY_SOURCE_MAP } from '@ci/domains/search-ingress';
+import { DEVICE_INDEXED_ENTITIES } from '@ci/domains/search-next';
 
 /**
  * The search-index pgboss queue the *SearchIndexListeners consume. Re-emitting a
@@ -52,6 +57,17 @@ export const BACKFILLABLE_ENTITIES = [
   // so like `person` they are only ever indexed by this sweep.
   'product',
   'receipt',
+  // Indexed live, by a listener on every create/update — but with no pipeline
+  // stage and, until 2026-10-21, no lane here either, so a row written before
+  // its device document existed (ci_search.mobile_search_documents, 2026-10-19)
+  // never got one: the phone could not find a single note or chat thread.
+  // These lanes re-drive the same listener for exactly those rows; on a
+  // converged install they find nothing. `task` events carry the owner (the
+  // task listener scopes its read by it), hence `ownerColumn` below.
+  'note',
+  'thread',
+  'task',
+  'place',
 ] as const;
 
 export type BackfillableEntity = (typeof BACKFILLABLE_ENTITIES)[number];
@@ -124,7 +140,20 @@ export function normalizeBackfillEntityTypes(types: readonly BackfillableEntity[
  * payload field its listener reads the id from. Drives the bulk enqueue so a
  * page of ids becomes one `sendMany` call instead of N awaited `send`s.
  */
-const EVENT_BY_TYPE: Record<BackfillableEntity, { event: string; idField: string }> = {
+const EVENT_BY_TYPE: Record<
+  BackfillableEntity,
+  {
+    event: string;
+    idField: string;
+    /**
+     * Set when the listener reads the row's owner from the payload too
+     * (`TaskSearchIndexListener` scopes its read by `payload.userId`; a
+     * SYSTEM_USER read returns nothing). The source column the sweep selects it
+     * from.
+     */
+    owner?: { field: string; column: string };
+  }
+> = {
   communication: { event: CommunicationCreatedEvent, idField: 'communicationId' },
   event: { event: EventCreatedEvent, idField: 'eventId' },
   content: { event: ContentCreatedEvent, idField: 'contentId' },
@@ -136,6 +165,10 @@ const EVENT_BY_TYPE: Record<BackfillableEntity, { event: string; idField: string
   position: { event: PositionCreatedEvent, idField: 'positionId' },
   product: { event: ProductCreatedEvent, idField: 'productId' },
   receipt: { event: ReceiptCreatedEvent, idField: 'receiptId' },
+  note: { event: NoteCreatedEvent, idField: 'noteId' },
+  thread: { event: ThreadCreatedEvent, idField: 'threadId' },
+  task: { event: TaskCreatedEvent, idField: 'taskId', owner: { field: 'userId', column: 'user_id' } },
+  place: { event: PlaceCreatedEvent, idField: 'placeId' },
 };
 
 /**
@@ -372,7 +405,7 @@ export class SearchIndexBackfillService {
     batchSize: number,
     limitPerType: number | undefined,
   ): Promise<{ count: number; error?: string }> {
-    const { event, idField } = EVENT_BY_TYPE[entityType];
+    const { event, idField, owner } = EVENT_BY_TYPE[entityType];
     let after: PageCursor | null = null;
     let enqueued = 0;
 
@@ -394,7 +427,10 @@ export class SearchIndexBackfillService {
         if (page.length > 0) {
           await this.events.sendMany(
             SEARCH_INDEX_QUEUE,
-            page.map((row) => ({ name: event, data: { [idField]: row.id } })),
+            page.map((row) => ({
+              name: event,
+              data: owner ? { [idField]: row.id, [owner.field]: row.owner } : { [idField]: row.id },
+            })),
           );
           enqueued += page.length;
         }
@@ -440,8 +476,11 @@ export class SearchIndexBackfillService {
     entityType: BackfillableEntity,
     batchSize: number,
     after: PageCursor | null,
-  ): Promise<Array<{ id: string; ts?: string | null }>> {
+  ): Promise<Array<{ id: string; ts?: string | null; owner?: string }>> {
     const source = ENTITY_SOURCE_MAP[entityType];
+    // The owner column, for listeners that read it from the payload (see EVENT_BY_TYPE).
+    const ownerColumn = EVENT_BY_TYPE[entityType].owner?.column;
+    const ownerSelect = ownerColumn ? `, s."${ownerColumn}"::text AS owner` : '';
     const discriminator = source.discriminator
       ? `AND s."${source.discriminator.column}" = '${source.discriminator.value}'`
       : '';
@@ -457,18 +496,31 @@ export class SearchIndexBackfillService {
              ON ps.entity_type = $1 AND ps.entity_id = s."${source.idColumn}" AND ps.stage = '${pipelineStage}'`
       : '';
     const pipelineExcluded = pipelineStage ? 'AND ps.entity_id IS NULL' : '';
+    // A device-indexed type is also "missing" when its index row has no
+    // plain-text document (ci_search.mobile_search_documents, added 2026-10-19 beside an
+    // index that already existed). Re-emitting the row's event rewrites both
+    // halves through the one shared statement. Types the pipeline covers are
+    // still excluded above by their ledger row — the pipeline's own stage
+    // version bump re-runs those.
+    const deviceIndexed = (DEVICE_INDEXED_ENTITIES as readonly string[]).includes(entityType);
+    const documentJoin = deviceIndexed
+      ? `LEFT JOIN ci_search.mobile_search_documents d
+             ON d.entity_type = $1 AND d.entity_id = s."${source.idColumn}"`
+      : '';
+    const documentMissing = deviceIndexed ? 'OR d.entity_id IS NULL' : '';
     const timeColumn = TIME_PAGED_TYPES[entityType];
 
     if (timeColumn != null) {
       return this.dataSource.query(
-        `SELECT s."${source.idColumn}"::text AS id, s."${timeColumn}"::text AS ts
+        `SELECT s."${source.idColumn}"::text AS id, s."${timeColumn}"::text AS ts${ownerSelect}
            FROM "${source.schema}"."${source.table}" s
            LEFT JOIN ci_search.embeddings e
              ON e.entity_type = $1 AND e.entity_id = s."${source.idColumn}"
            LEFT JOIN ci_search.index_skips k
              ON k.entity_type = $1 AND k.entity_id = s."${source.idColumn}"
+           ${documentJoin}
            ${pipelineJoin}
-          WHERE e.entity_id IS NULL
+          WHERE (e.entity_id IS NULL ${documentMissing})
             AND k.entity_id IS NULL
             ${pipelineExcluded}
             ${discriminator}
@@ -482,14 +534,15 @@ export class SearchIndexBackfillService {
     }
 
     return this.dataSource.query(
-      `SELECT s."${source.idColumn}"::text AS id
+      `SELECT s."${source.idColumn}"::text AS id${ownerSelect}
          FROM "${source.schema}"."${source.table}" s
          LEFT JOIN ci_search.embeddings e
            ON e.entity_type = $1 AND e.entity_id = s."${source.idColumn}"
          LEFT JOIN ci_search.index_skips k
            ON k.entity_type = $1 AND k.entity_id = s."${source.idColumn}"
+         ${documentJoin}
          ${pipelineJoin}
-        WHERE e.entity_id IS NULL
+        WHERE (e.entity_id IS NULL ${documentMissing})
           AND k.entity_id IS NULL
           ${pipelineExcluded}
           ${discriminator}
