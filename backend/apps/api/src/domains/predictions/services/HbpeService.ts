@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -65,7 +66,9 @@ export class HbpeService {
 
   constructor(
     private readonly logger: LoggerService,
-    circuitBreaker?: SidecarCircuitBreaker,
+    // Nothing provides a breaker; the `?` alone does not stop Nest resolving the type, and
+    // without `@Optional()` every module that imports PredictionsModule failed to boot.
+    @Optional() circuitBreaker?: SidecarCircuitBreaker,
   ) {
     this.logger.setContext('HbpeService');
     this.circuitBreaker = circuitBreaker ?? new SidecarCircuitBreaker({ name: 'hbpe' });
