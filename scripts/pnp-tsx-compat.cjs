@@ -23,6 +23,7 @@ const pnpResolveFilename = Module._resolveFilename;
 
 Module._resolveFilename = function pnpTsxResolveFilename(request, parent, isMain, options) {
   if (options && typeof options === 'object' && 'conditions' in options) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose
     const { conditions: _conditions, ...rest } = options;
     const cleaned = Object.keys(rest).length > 0 ? rest : undefined;
     return pnpResolveFilename.call(this, request, parent, isMain, cleaned);

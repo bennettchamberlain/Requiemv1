@@ -87,7 +87,11 @@ export default [
     //
     // frontend/apps/android/scripts/dev-android.cjs is what `yarn android` runs
     // under Node, outside the Yarn workspaces (see that app's README).
+    //
+    // scripts/pnp-tsx-compat.cjs is preloaded with `--require` between .pnp.cjs
+    // and tsx, so it has to stay plain CommonJS too.
     files: [
+      'scripts/*.cjs',
       'frontend/apps/desktop/scripts/*.cjs',
       'frontend/apps/android/scripts/*.cjs',
       'backend/apps/cli/bin/*.cjs',
