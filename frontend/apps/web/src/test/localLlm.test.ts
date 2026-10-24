@@ -527,6 +527,8 @@ describe('ensureLocalLlmLoaded', () => {
       enabled: true,
       baseUrl: 'https://memory.example.com',
       apiKey: 'key-123',
+      connectionMode: 'fresh',
+      localSearch: undefined,
     });
   });
 
