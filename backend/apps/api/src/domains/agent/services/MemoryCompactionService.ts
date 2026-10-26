@@ -999,7 +999,12 @@ export class MemoryCompactionService {
     }
 
     try {
-      await this.personService.update(context, node.id, { name: incomingName });
+      await this.personService.update(
+        context,
+        node.id,
+        { name: incomingName },
+        { source: 'MemoryCompactionService.promotePersonName' },
+      );
       node.name = incomingName;
     } catch {
       // Promotion is cosmetic; the merge (shared id) is the real win.
