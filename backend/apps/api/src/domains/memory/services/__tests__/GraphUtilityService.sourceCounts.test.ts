@@ -114,8 +114,8 @@ describe('GraphUtilityService.getEntityCountsBySource', () => {
 
   it('attributes a file the message carries when no content row names it', async () => {
     // A tweet's or DM's media gets no content row when X no longer serves the
-    // URL (durableMediaUrl), and a WhatsApp photo never had one. The file is
-    // reachable only through communications.attachments, so without that lane
+    // URL (durableMediaUrl), and an MMS part is stored as a file alone. The file
+    // is reachable only through communications.attachments, so without that lane
     // it falls through to the bare linked_table 'files' and counts as derived.
     const sql = await sqlOf();
 

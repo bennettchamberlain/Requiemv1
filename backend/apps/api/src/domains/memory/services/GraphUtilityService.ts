@@ -1617,9 +1617,9 @@ export class GraphUtilityService {
           -- A stored photo or document is a ci.files row. Two records can name
           -- it: the content row an import made for it (external_id), and the
           -- message that carries it (communications.attachments). A tweet's or
-          -- DM's media gets no content row when X no longer serves its URL, and
-          -- a WhatsApp or Messenger photo never had one, so the message is the
-          -- only record that says where the file came from.
+          -- DM's media gets no content row when X no longer serves its URL (and
+          -- an MMS part is stored as a file alone), so the message is the only
+          -- record that says where the file came from.
           SELECT c.external_id AS file_id, rs.platform, rs.source_system, rs.first_seen
           FROM ci.content c
           JOIN ci.record_sources rs
