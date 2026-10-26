@@ -36,6 +36,37 @@ import { type PurgedPlaces, purgePlaceAggregates } from './placePurge';
  */
 const PLACE_ENTITY_TYPES = In([...GRAPH_ENTITY_TYPES.place]);
 
+/**
+ * How near a place a photo must have been taken to count as taken there when
+ * nothing links it to the place: the stay radius the Places page clusters
+ * photos and positions with (`DEFAULT_STAY_RADIUS_M`), so every photo of a
+ * cluster someone named is at the place they named.
+ */
+export const PHOTO_AT_PLACE_METERS = 150;
+
+/** Lowercased words joined by single spaces, for matching a place name inside a query. */
+function placeNameWords(text: string): string {
+  return text
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * Whether `query` names the place `name`: the whole name, as whole words,
+ * anywhere in the query. "Blue Bottle Coffee", "photos from blue bottle
+ * coffee" and "Blue Bottle Coffee, SF" name "Blue Bottle Coffee"; "Blue
+ * Bottle" and "coffee" do not, and stay a search of the photos' text.
+ */
+export function queryNamesPlace(query: string, name: string): boolean {
+  const words = placeNameWords(name);
+
+  return words.length >= 3 && ` ${placeNameWords(query)} `.includes(` ${words} `);
+}
+
 /** One Google-style address component ({long_name, short_name, types[]}). */
 interface AddressComponent {
   long_name?: string;
@@ -684,6 +715,88 @@ export class PlaceService {
     });
 
     return out;
+  }
+
+  /**
+   * Photos and videos taken at a place the query names ({@link queryNamesPlace}),
+   * newest first, for `media.findPhotos`.
+   *
+   * A photo's text never names the place it was taken at: its search row is
+   * its file name and, once described, what it shows. So "photos from Blue
+   * Bottle Coffee" found none of the seven photos the place was named from on
+   * the Places page, because their events carry GPS and no
+   * `location_entity_id`. A photo is at a place when its event is linked to the
+   * place, lies inside the place's boundary, or was taken within
+   * {@link PHOTO_AT_PLACE_METERS} of its point. Imported photos reach their
+   * event through `metadata.FileId`, captured ones through `files.event_id`.
+   */
+  async photosAtNamedPlace(
+    context: UserServiceContext,
+    query: string,
+  ): Promise<{ places: Array<{ id: string; name: string }>; fileIds: string[] }> {
+    const trimmed = query.trim();
+
+    if (trimmed.length < 3) {
+      return { places: [], fileIds: [] };
+    }
+
+    const candidates: Array<{ id: string; name: string }> = await this.placeRepository.manager.query(
+      `SELECT entity_id AS id, name
+         FROM ci.entities
+        WHERE entity_type = 'Location'
+          AND owner_user_id = $1
+          AND is_active
+          AND merged_into_entity_id IS NULL
+          AND length(btrim(name)) >= 3
+          AND strpos(lower($2), lower(btrim(name))) > 0`,
+      [context.userId, trimmed],
+    );
+    const places = candidates.filter((place) => queryNamesPlace(trimmed, place.name));
+
+    if (places.length === 0) {
+      return { places: [], fileIds: [] };
+    }
+
+    const rows: Array<{ file_id: string }> = await this.placeRepository.manager.query(
+      `WITH place AS (
+         SELECT entity_id, location_point, location_boundary
+           FROM ci.entities
+          WHERE owner_user_id = $1 AND entity_id = ANY($2::uuid[])
+       ),
+       at_place AS (
+         SELECT e.event_id, e.start_time, e.metadata->>'FileId' AS file_id
+           FROM ci.events e
+           JOIN place p
+             ON e.location_entity_id = p.entity_id
+             OR (e.location_coordinates IS NOT NULL AND (
+                  (p.location_boundary IS NOT NULL AND ST_Covers(p.location_boundary, e.location_coordinates))
+                  OR (p.location_point IS NOT NULL
+                      AND ST_DWithin(e.location_coordinates, p.location_point, $3))))
+          WHERE e.user_id = $1
+            AND NOT e.is_deleted
+       ),
+       linked AS (
+         SELECT f.id, a.start_time
+           FROM at_place a
+           JOIN ci.files f ON f.id::text = a.file_id
+         UNION ALL
+         SELECT f.id, a.start_time
+           FROM at_place a
+           JOIN ci.files f ON f.event_id = a.event_id
+       )
+       SELECT l.id AS file_id
+         FROM linked l
+         JOIN ci.files f ON f.id = l.id
+        WHERE f.user_id = $1
+          AND f.deleted_at IS NULL
+          AND f.variant = 'ORIGINAL'
+          AND (f.content_type LIKE 'image/%' OR f.content_type LIKE 'video/%')
+        GROUP BY l.id
+        ORDER BY MAX(l.start_time) DESC`,
+      [context.userId, places.map((place) => place.id), PHOTO_AT_PLACE_METERS],
+    );
+
+    return { places, fileIds: rows.map((row) => row.file_id) };
   }
 
   /**

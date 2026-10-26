@@ -353,6 +353,7 @@ export { MAX_EXPANDED_OCCURRENCES, MAX_RECURRING_MASTERS } from './services/Cale
 export * from './recurrence';
 export type { PlaceKind } from './entities/PlaceEntity';
 export type { PlaceVisitStats } from './services/PlaceService';
+export { PHOTO_AT_PLACE_METERS, queryNamesPlace } from './services/PlaceService';
 export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
 export { previewFromContent } from './entities/CommunicationEntity';
 export type { BlockReason } from './services/EntityMergeBlockService';
