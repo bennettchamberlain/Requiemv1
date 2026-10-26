@@ -327,6 +327,35 @@ async function refreshSession(): Promise<AuthResponse | undefined> {
   }
 }
 
+/**
+ * The session check: the Hub bridge, then the refresh. Boot runs it, and so does every
+ * retry while Memory does not answer it, so a check that first gets an answer on a retry
+ * still lets the bridge replace a Memory session that names someone other than the Hub
+ * person before the refresh resumes that session. Resolves the access token, or null for
+ * none. Throws what the bridge or the refresh throws, so a timeout ends the check at the
+ * first request left unanswered.
+ *
+ * `subject` is the person the token the app already holds names, or null when it holds
+ * none. A session the bridge placed for someone else must not inherit that person's
+ * PowerSync replica; with no token (boot), the replica is taken to be the previous Memory
+ * person's.
+ */
+async function checkSession(subject: string | null): Promise<string | null> {
+  const bridged = await alignHubSession();
+
+  if (bridged?.replaced && bridged.accessToken) {
+    if (!subject || subject !== jwtDecode<JwtPayload>(bridged.accessToken).sub) {
+      await disconnectAndClearPowerSyncForLogout();
+    }
+
+    return bridged.accessToken;
+  }
+
+  const data = await refreshSession();
+
+  return data?.accessToken ?? null;
+}
+
 interface JwtPayload {
   sub: string;
   iat: number;
@@ -617,6 +646,10 @@ function useAuth(): ReturnValue {
 
   const decoded = useMemo(() => (accessToken ? jwtDecode<JwtPayload>(accessToken) : null), [accessToken]);
   const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
+  // Who the held token names, for the retry loop's session check, which outlives a render.
+  const subjectRef = useRef<string | null>(null);
+
+  subjectRef.current = decoded?.sub ?? null;
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -990,16 +1023,7 @@ function useAuth(): ReturnValue {
           return;
         }
 
-        const bridged = await alignHubSession();
-
-        if (bridged?.replaced && bridged.accessToken) {
-          // Stale PowerSync replica belongs to the previous Memory person.
-          await disconnectAndClearPowerSyncForLogout();
-          setAccessToken(bridged.accessToken);
-        } else {
-          const data = await refreshSession();
-          setAccessToken(data?.accessToken ?? null);
-        }
+        setAccessToken(await checkSession(null));
       } catch (err: unknown) {
         // No valid session cookie, user will need to log in. Unless Memory did not
         // answer at all, which says nothing about the session: retry instead.
@@ -1029,9 +1053,9 @@ function useAuth(): ReturnValue {
       }
 
       asking = true;
-      refreshSession()
-        .then((data) => {
-          setAccessToken(data?.accessToken ?? null);
+      checkSession(subjectRef.current)
+        .then((token) => {
+          setAccessToken(token);
           setUnreachable(false);
         })
         .catch((err: unknown) => {

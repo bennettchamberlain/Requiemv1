@@ -100,13 +100,13 @@ export function requestConnectionRefresh(): void {
  * reports only whether it succeeded.
  *
  * The probes own their `AbortController` rather than passing `fetchJson`'s
- * `timeout`, because that option clears its timer the moment response headers
- * arrive (see `fetchJson`) and so never covers reading the body. A server that
- * answers and then stalls mid-body would outlive its budget — and since the
- * re-probe timer fires regardless, every tick would leave another hung request
- * open against the same origin until the browser's per-host connection pool is
- * full and the app's own requests queue behind them. Aborting cancels the body
- * read too, so each probe releases its connection when its budget expires.
+ * `timeout`. That option covers a success body, but it still ends at an error
+ * response's headers (see `fetchJson`), and the error body is then read under
+ * `fetchJson`'s own 3 s bound rather than the probe's budget, so a server that
+ * answers an error and then stalls its body would outlive that budget. One
+ * signal for the whole exchange keeps every probe inside its budget, and
+ * aborting cancels the body read too, so each probe releases its connection
+ * when its budget expires.
  *
  * `fetchJson` only installs its own timer when the caller passes no signal, so
  * handing it one is the supported way to take over.
@@ -234,11 +234,12 @@ export async function resolveConnectionMode(): Promise<ConnectionMode> {
   return (await inspectConnection()).mode;
 }
 
-// Nothing bounds a resolve as a whole. `fetchJson` clears its abort timer the
-// moment response headers arrive, so a server that answers and then stalls its
-// body leaves the probe pending indefinitely; on native, the sidecar's `start()`
-// bridge call has no timeout of its own either. Left unbounded, one such hang
-// pins `inFlightRef` below for the life of the page, and every later refresh —
+// Nothing bounds a resolve as a whole. A probe's abort ends only a request that
+// honours its signal, and CapacitorHttp on native does not take one, so a server
+// that answers and then stalls leaves the probe pending for as long as the
+// native request runs; on native, the sidecar's `start()` bridge call has no
+// timeout of its own either. Left unbounded, one such hang pins `inFlightRef`
+// below for the life of the page, and every later refresh —
 // including the re-probe timer that exists to recover from exactly this — would
 // short-circuit and never run again. Twice the slowest probe budget: long enough
 // that a healthy-but-distant appliance is never cut off, short enough that a

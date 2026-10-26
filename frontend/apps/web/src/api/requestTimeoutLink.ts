@@ -9,9 +9,11 @@
  * never gets to say it cannot reach Memory.
  *
  * Unsubscribing here (Apollo does it on a refetch or unmount) unsubscribes the transport,
- * which aborts the request, so a deadline never leaves a stale request behind.
+ * which aborts the request, so a deadline never leaves a stale request behind. Except on
+ * native: `apiFetch` goes through CapacitorHttp there, which ignores the abort signal, so
+ * the operation still fails at the deadline but the native request runs on to its own end.
  */
-import { ApolloLink, Observable, type FetchResult } from '@apollo/client';
+import { ApolloLink, Observable, type FetchResult, type ObservableSubscription } from '@apollo/client';
 
 /** What an operation fails with when its `timeoutMs` passes. `name` is the DOM's own name for it. */
 export class RequestTimeoutError extends Error {
@@ -30,12 +32,14 @@ export function createRequestTimeoutLink(): ApolloLink {
     }
 
     return new Observable<FetchResult>((observer) => {
+      let subscription: ObservableSubscription | null = null;
+
       const timer = setTimeout(() => {
-        subscription.unsubscribe();
+        subscription?.unsubscribe();
         observer.error(new RequestTimeoutError(timeoutMs));
       }, timeoutMs);
 
-      const subscription = forward(operation).subscribe({
+      subscription = forward(operation).subscribe({
         next: (result) => {
           clearTimeout(timer);
           observer.next(result);
@@ -52,7 +56,7 @@ export function createRequestTimeoutLink(): ApolloLink {
 
       return () => {
         clearTimeout(timer);
-        subscription.unsubscribe();
+        subscription?.unsubscribe();
       };
     });
   });

@@ -534,7 +534,9 @@ export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T |
   }
 
   // The deadline covers reading a success body too: aborting the signal errors the body
-  // stream, so a server that sends headers and then stalls cannot outlive `timeout`. An
+  // stream, so a server that sends headers and then stalls cannot outlive `timeout`. It also
+  // means a 2xx whose headers arrive in time and whose body arrives after the deadline
+  // rejects with `AbortError`, even when the server has already applied the write. An
   // error response gives up the deadline at its headers and reads its body under
   // `ERROR_BODY_TIMEOUT_MS` instead, as before.
   // clear in `finally`: if fetch() rejects (network error, DNS failure) before
