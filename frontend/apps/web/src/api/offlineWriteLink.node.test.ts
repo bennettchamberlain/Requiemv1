@@ -1,45 +1,47 @@
-import { ApolloLink, Observable, execute, gql, type FetchResult } from '@apollo/client';
+import { ApolloLink, Observable, execute, type FetchResult } from '@apollo/client';
 import {
   recordResolvedConnectionMode,
   resetRecordedConnectionMode,
 } from '@ci/common/src/utils/connectionMode';
 import { OfflineWriteError } from '@ci/common/src/utils/offlineWrites';
-import type { DocumentNode } from 'graphql';
+import { parse, type DocumentNode } from 'graphql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createOfflineWriteLink, isGuardedMutation, isNoteOperationName } from './offlineWriteLink';
 
-const DELETE_PERSON = gql`
+// parse(), not gql: these reuse real operation names on purpose, and web codegen
+// collects every gql document under src/, where duplicate names stop it.
+const DELETE_PERSON = parse(`
   mutation DeleteMemoryPerson($id: ID!) {
     deleteMemoryPerson(id: $id) {
       success
     }
   }
-`;
+`);
 
-const UPDATE_NOTE = gql`
+const UPDATE_NOTE = parse(`
   mutation UpdateNoteDetail($input: UpdateNoteInput!) {
     updateNote(input: $input) {
       success
     }
   }
-`;
+`);
 
-const ANONYMOUS_NOTE = gql`
+const ANONYMOUS_NOTE = parse(`
   mutation {
     deleteNote(input: { id: "x" }) {
       success
     }
   }
-`;
+`);
 
-const SEARCH = gql`
+const SEARCH = parse(`
   query Search($q: String!) {
     search(query: $q) {
       id
     }
   }
-`;
+`);
 
 function run(link: ApolloLink, query: DocumentNode, operationName?: string): Promise<FetchResult> {
   return new Promise((resolve, reject) => {
