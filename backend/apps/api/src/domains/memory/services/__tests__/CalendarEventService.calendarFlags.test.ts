@@ -213,6 +213,21 @@ describe('CalendarEventService — calendar flags survive create and update', ()
       expect(patched()).toEqual({ category: 'social' });
     });
 
+    it('clears the description when the event page saves it empty', async () => {
+      await service.update({ userId: 'user-1' } as ServiceContext, 'e1', { description: '' });
+
+      expect(baseRepo.update).toHaveBeenCalledWith({ id: 'e1' }, { description: null });
+    });
+
+    it('leaves the description alone when the patch sends none', async () => {
+      await service.update({ userId: 'user-1' } as ServiceContext, 'e1', {
+        description: null,
+        category: 'social',
+      } as unknown as UpdateEventDto);
+
+      expect(baseRepo.update).not.toHaveBeenCalled();
+    });
+
     it('refuses to clear the tombstone — un-deleting is restore(), not a field patch', async () => {
       // Deliberately still truthiness-guarded: `restore` re-publishes the search
       // index and the graph delta, and a field patch would bring the row back
