@@ -145,7 +145,7 @@ describe('useModel', () => {
   // The page sends its selection with every turn, so picking the first listed
   // model (gemma3:270m, the most recently pulled) overrode the Hub's default
   // (qwen3.5:9b) for every user who had never chosen one.
-  it("selects the appliance default, not the first listed model, when the user has no preference", async () => {
+  it('selects the appliance default, not the first listed model, when the user has no preference', async () => {
     setFetch({ state: { ...defaultServerState(), defaultChatModel: 'qwen-vl' } });
 
     const { result } = renderHook(() => useModel(), { wrapper });
