@@ -56,7 +56,10 @@ export function createEntityReference(config: EntityReferenceConfig) {
     },
 
     parseHTML() {
-      return [{ tag: `a[data-entity-uid]` }];
+      // StarterKit's Link mark also matches the anchor (`a[href]`), and at equal
+      // priority ProseMirror tries mark rules before node rules, so without this
+      // a saved reference reloads as a plain link. 51 beats Link's default 50.
+      return [{ tag: `a[data-entity-uid]`, priority: 51 }];
     },
 
     renderHTML({ node, HTMLAttributes }) {
