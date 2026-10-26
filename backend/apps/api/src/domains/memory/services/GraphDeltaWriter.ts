@@ -45,7 +45,7 @@ function sortedJson(value: unknown): string {
 
 /**
  * The `changedFields` of an edit: each of `keys` whose value differs between
- * `before` and `after`, as `{ old, new }`. Missing, null and '' are all "empty",
+ * `before` and `after`, as `{ old, new }`. Missing, null, '' and [] are all "empty",
  * so a form that sends every field back unchanged records nothing.
  */
 export function changedFieldsBetween(
@@ -53,7 +53,8 @@ export function changedFieldsBetween(
   after: Record<string, unknown>,
   keys: Iterable<string>,
 ): Record<string, GraphDeltaChangedField> {
-  const isEmpty = (value: unknown) => value === undefined || value === null || value === '';
+  const isEmpty = (value: unknown) =>
+    value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
   const changed: Record<string, GraphDeltaChangedField> = {};
 
   for (const key of keys) {
@@ -205,6 +206,11 @@ export class GraphDeltaWriter {
     });
   }
 
+  /**
+   * `changedFields` is stored as given. It used to gain a `name` entry with the
+   * current name on both sides when the caller sent none, which put an
+   * `old == new` pair in every edit's delta that the panel then had to hide.
+   */
   entityUpdated(args: {
     entityId: string;
     entityType: string;
@@ -216,11 +222,6 @@ export class GraphDeltaWriter {
     changedByUserId?: string | null;
     manager?: EntityManager;
   }): Promise<void> {
-    const fields = { ...args.changedFields };
-    if (fields.name === undefined) {
-      fields.name = { old: args.name ?? null, new: args.name ?? null };
-    }
-
     return this.record({
       nodeType: 'entity',
       changeType: 'updated',
@@ -231,7 +232,7 @@ export class GraphDeltaWriter {
       changeReason: args.changeReason,
       changedByUserId: args.changedByUserId,
       manager: args.manager,
-      changedFields: fields,
+      changedFields: args.changedFields,
     });
   }
 

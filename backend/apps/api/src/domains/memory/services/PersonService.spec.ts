@@ -325,6 +325,20 @@ describe('PersonService Change History', () => {
     expect(deltas.entityUpdated).not.toHaveBeenCalled();
   });
 
+  it('leaves an empty list the person never had out of a nickname-only edit', async () => {
+    const { service, deltas } = makeDeltaService(robin());
+
+    await service.patch(CONTEXT, 'p1', {
+      name: 'Robin Hale',
+      propertiesPatch: { nickname: 'Robbie', addresses: [], emails: [], phones: [] },
+    });
+
+    expect(deltas.entityUpdated).toHaveBeenCalledTimes(1);
+    expect(deltas.entityUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ changedFields: { nickname: { old: 'Rob', new: 'Robbie' } } }),
+    );
+  });
+
   /** A repository whose UPDATE really changes what the next read returns, for `update` (applyUpdate). */
   function makeUpdateService(stored: PersonEntity) {
     const deltas = { entityUpdated: jest.fn(async () => undefined) };
