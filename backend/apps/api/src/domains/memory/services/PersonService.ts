@@ -553,10 +553,23 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     return query.getCount();
   }
 
-  async update(context: ServiceContext, id: string, data: UpdatePersonDto): Promise<Person | null> {
+  /**
+   * @param options.source Who is writing, for Change History (`change_source`):
+   *   the syncs and background writers that come through here name themselves,
+   *   e.g. `TransformGoogleContacts.processContact`.
+   */
+  async update(
+    context: ServiceContext,
+    id: string,
+    data: UpdatePersonDto,
+    options: { source?: string } = {},
+  ): Promise<Person | null> {
     const { properties, ...rest } = data;
+    let beforeRow = null as PersonEntity | null;
 
     const after = await this.applyUpdate(context, id, (before) => {
+      beforeRow = before;
+
       if (!properties) {
         return rest;
       }
@@ -615,11 +628,52 @@ export class PersonService extends EntityService<PersonEntity, Person> {
       return null;
     }
 
+    if (beforeRow) {
+      await this.recordUpdate(context, beforeRow, after, options.source ?? 'PersonService.update');
+    }
+
     await this.eventService.send(PersonUpdatedEvent, {
       personId: id,
     });
 
     return PersonEntity.toEgressType(after);
+  }
+
+  /**
+   * One Change History row for an {@link update}: name, description and every
+   * property key whose value moved between the row as it was and as it is now.
+   * A sync that writes the same bag back records nothing.
+   */
+  private async recordUpdate(
+    context: ServiceContext,
+    before: PersonEntity,
+    after: PersonEntity,
+    source: string,
+  ): Promise<void> {
+    const was = (before.properties ?? {}) as Record<string, unknown>;
+    const now = (after.properties ?? {}) as Record<string, unknown>;
+    const changedFields = {
+      ...changedFieldsBetween(
+        { name: before.name, description: before.description },
+        { name: after.name, description: after.description },
+        ['name', 'description'],
+      ),
+      ...changedFieldsBetween(was, now, new Set([...Object.keys(was), ...Object.keys(now)])),
+    };
+
+    if (Object.keys(changedFields).length === 0) {
+      return;
+    }
+
+    await this.graphDeltaWriter?.entityUpdated({
+      entityId: after.id,
+      entityType: 'Person',
+      name: after.name,
+      changedFields,
+      ownerUserId: after.userId ?? null,
+      changeSource: source,
+      changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+    });
   }
 
   /**

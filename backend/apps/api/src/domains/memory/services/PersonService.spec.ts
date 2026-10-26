@@ -324,4 +324,61 @@ describe('PersonService Change History', () => {
 
     expect(deltas.entityUpdated).not.toHaveBeenCalled();
   });
+
+  /** A repository whose UPDATE really changes what the next read returns, for `update` (applyUpdate). */
+  function makeUpdateService(stored: PersonEntity) {
+    const deltas = { entityUpdated: jest.fn(async () => undefined) };
+    let current = stored;
+    const repository: Record<string, unknown> = {
+      findOne: jest.fn(async () => current),
+      update: jest.fn(async (_where: unknown, patch: Partial<PersonEntity>) => {
+        current = Object.assign(new PersonEntity(), current, patch);
+
+        return { affected: 1 };
+      }),
+      target: PersonEntity,
+      metadata: { target: PersonEntity, primaryColumns: [{ propertyName: 'id' }] },
+    };
+    repository.manager = {
+      transaction: jest.fn(async (cb: (m: unknown) => unknown) => cb({ getRepository: () => repository })),
+    };
+    const service = new PersonService(
+      repository as never,
+      { setContext: jest.fn() } as never,
+      { send: jest.fn(async () => []) } as never,
+      deltas as never,
+    );
+
+    return { service, deltas };
+  }
+
+  it('records what a sync changed, naming the sync', async () => {
+    const { service, deltas } = makeUpdateService(robin());
+
+    await service.update(
+      CONTEXT,
+      'p1',
+      { name: 'Robin J. Hale', properties: { nickname: 'Rob', job_title: 'Pilot', website: '' } },
+      { source: 'TransformFacebookProfile.transform' },
+    );
+
+    expect(deltas.entityUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: 'p1',
+        changeSource: 'TransformFacebookProfile.transform',
+        changedFields: {
+          name: { old: 'Robin Hale', new: 'Robin J. Hale' },
+          job_title: { old: null, new: 'Pilot' },
+        },
+      }),
+    );
+  });
+
+  it('records nothing for a sync that writes the same bag back', async () => {
+    const { service, deltas } = makeUpdateService(robin());
+
+    await service.update(CONTEXT, 'p1', { properties: { nickname: 'Rob', job_title: null, website: '' } });
+
+    expect(deltas.entityUpdated).not.toHaveBeenCalled();
+  });
 });
