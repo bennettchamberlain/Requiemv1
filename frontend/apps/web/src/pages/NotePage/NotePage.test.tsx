@@ -311,6 +311,63 @@ describe('NotePage — offline capture', () => {
   });
 });
 
+describe('NotePage — a save that hangs', () => {
+  const SLOW_SAVE_MS = 8000;
+
+  it('stops saying "Saving" once a save has gone unanswered for a while', async () => {
+    const noteGlobalId = GlobalUID.encode('note', 'abc-uuid');
+
+    renderWithProviders(<NotePage />, {
+      route: '/notes/abc-uuid',
+      path: '/notes/:id',
+      mocks: [
+        {
+          request: { query: GET_NOTE, variables: { id: noteGlobalId } },
+          result: {
+            data: {
+              note: {
+                __typename: 'NoteType',
+                id: noteGlobalId,
+                title: 'Trip ideas',
+                content: '<p>Trip ideas</p>',
+                updatedAt: '2026-08-01T00:00:00.000Z',
+              },
+            },
+          },
+        },
+        {
+          // Behind the gateway, a stopped Memory leaves the request open for 30 s or more.
+          request: {
+            query: UPDATE_NOTE,
+            variables: {
+              input: { id: noteGlobalId, content: '<p>Trip ideas in May</p>', title: 'Trip ideas in May' },
+            },
+          },
+          delay: Infinity,
+          result: { data: { updateNote: { success: true, note: null } } },
+        },
+      ],
+    });
+
+    await screen.findByTestId('chat-menu');
+    type('<p>Trip ideas in May</p>');
+    await flushAutosave();
+
+    expect(await screen.findByText('Saving')).toBeInTheDocument();
+    expect(screen.queryByText(/not saved yet/i)).not.toBeInTheDocument();
+
+    // A real wait, like the autosave above: the timer starts when the save does.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SLOW_SAVE_MS));
+    });
+
+    expect(screen.getByText("Not saved yet — your Companion isn't answering.")).toBeInTheDocument();
+    expect(screen.queryByText('Saving')).not.toBeInTheDocument();
+    // Nothing failed yet, so nothing is queued; the text is still in the editor.
+    expect(common.captureNote).not.toHaveBeenCalled();
+  }, 20_000);
+});
+
 describe('NotePage — toolbar on a phone', () => {
   const noteGlobalId = GlobalUID.encode('note', 'abc-uuid');
   const savedNote = {

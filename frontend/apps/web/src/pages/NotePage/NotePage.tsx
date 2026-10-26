@@ -39,6 +39,13 @@ import { useEntityReference } from './useEntityReference';
 const AUTOSAVE_THROTTLE_MS = 1000;
 
 /**
+ * How long a save may stay unanswered before the toolbar stops saying "Saving".
+ * Behind the Hub's gateway a request to a stopped Memory hangs for 30 s or more
+ * before it fails, and until then the spinner was all the page showed.
+ */
+const SLOW_SAVE_MS = 8000;
+
+/**
  * The save status's words ("Saving", "Saved offline", "5m"). A phone's toolbar has
  * no room left beside the formatting buttons, so there only the icon shows and the
  * words stay in the accessible name; wider screens show both, as before.
@@ -178,6 +185,21 @@ export function RemoteNotePage() {
   authoredContentRef.current = authoredContent;
 
   const note = data?.note;
+
+  const saving = updating || creating;
+  const [savingTooLong, setSavingTooLong] = useState(false);
+
+  useEffect(() => {
+    if (!saving) {
+      setSavingTooLong(false);
+
+      return;
+    }
+
+    const timer = setTimeout(() => setSavingTooLong(true), SLOW_SAVE_MS);
+
+    return () => clearTimeout(timer);
+  }, [saving]);
 
   // One editor for a draft and the id it mints. A new route id would otherwise
   // remount the editor and focus it at the start, which is the same moment the
@@ -432,7 +454,14 @@ export function RemoteNotePage() {
                     <TriangleAlert className="text-destructive h-4 w-4" strokeWidth={1.5} />
                     <div>{saveError}</div>
                   </>
-                ) : updating || creating ? (
+                ) : saving && savingTooLong ? (
+                  // The text stays in the editor, and the save either lands or fails
+                  // into the "Not saved" state above; until then, say it is stuck.
+                  <>
+                    <TriangleAlert className="text-amber-300 h-4 w-4" strokeWidth={1.5} />
+                    <div>Not saved yet — your Companion isn't answering.</div>
+                  </>
+                ) : saving ? (
                   <>
                     <Spinner size={12} variant="circle" color="rgb(6,108,128)" />
                     <div className={STATUS_WORDS}>Saving</div>
