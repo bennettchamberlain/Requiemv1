@@ -13,6 +13,7 @@ import introspectionResult from '@/graphql/possibleTypes';
 import { useAuth } from '@/hooks';
 
 import { createOfflineWriteLink } from './offlineWriteLink';
+import { createRequestTimeoutLink } from './requestTimeoutLink';
 
 export function ApolloProvider({ children }: { children: ReactNode }) {
   const [{ authToken, authenticated }] = useAuth();
@@ -53,7 +54,7 @@ export function ApolloProvider({ children }: { children: ReactNode }) {
     const offlineWriteLink = createOfflineWriteLink();
 
     return new ApolloClient({
-      link: offlineWriteLink.concat(authLink).concat(httpLink),
+      link: offlineWriteLink.concat(createRequestTimeoutLink()).concat(authLink).concat(httpLink),
       cache: new InMemoryCache({
         possibleTypes: introspectionResult.possibleTypes,
       }),

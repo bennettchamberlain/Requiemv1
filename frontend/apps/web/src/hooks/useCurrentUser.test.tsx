@@ -3,7 +3,7 @@ import { setApiBaseUrl } from '@ci/common';
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { forgetUser, rememberUser } from './rememberedUser';
+import { MEMORY_ANSWER_DEADLINE_MS, forgetUser, rememberUser } from './rememberedUser';
 import { useCurrentUser } from './useCurrentUser';
 
 const h = vi.hoisted(() => ({ authToken: 'tok' as string | null }));
@@ -66,7 +66,39 @@ describe('useCurrentUser', () => {
     expect(result.current.user).toBeNull();
   });
 
+  it('gives the profile query a deadline, so a Memory that never answers still ends in an error', () => {
+    mockedUseQuery.mockReturnValue({
+      data: undefined,
+      loading: true,
+      error: undefined,
+    } as unknown as ReturnType<typeof useQuery>);
+
+    renderHook(() => useCurrentUser());
+
+    const options = mockedUseQuery.mock.calls.at(-1)?.[1] as { context: { timeoutMs: number } };
+    expect(options.context.timeoutMs).toBe(MEMORY_ANSWER_DEADLINE_MS);
+  });
+
   describe('when Memory does not answer for the profile', () => {
+    it('reports unreachable after the deadline error', () => {
+      mockedUseQuery.mockReturnValue({
+        data: undefined,
+        loading: false,
+        error: {
+          networkError: Object.assign(new Error(`No answer within ${MEMORY_ANSWER_DEADLINE_MS} ms`), {
+            name: 'TimeoutError',
+          }),
+          graphQLErrors: [],
+        },
+        refetch: vi.fn(),
+      } as unknown as ReturnType<typeof useQuery>);
+
+      const { result } = renderHook(() => useCurrentUser());
+
+      expect(result.current.unreachable).toBe(true);
+      expect(result.current.loading).toBe(false);
+    });
+
     it.each([
       ['a network failure', { networkError: Object.assign(new Error('Failed to fetch'), {}), graphQLErrors: [] }],
       ['a gateway 502', { networkError: Object.assign(new Error('502'), { statusCode: 502 }), graphQLErrors: [] }],

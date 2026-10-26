@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { bindPowerSyncDatabase } from '@/api/powersync/session';
 
+import { MEMORY_ANSWER_DEADLINE_MS } from './rememberedUser';
 import { AuthProvider, useAuth } from './useAuth';
 
 vi.mock('jwt-decode', () => ({ jwtDecode: vi.fn() }));
@@ -44,6 +45,15 @@ function setFetch(handler: Handler) {
   vi.stubGlobal('fetch', mock);
 
   return mock;
+}
+
+/** A request that is accepted and never answered: it ends only when its signal aborts, as a real fetch does. */
+function hang(init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () =>
+      reject(new DOMException('The operation was aborted.', 'AbortError')),
+    );
+  });
 }
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -188,6 +198,141 @@ describe('useAuth', () => {
 
       await act(async () => {
         await result.current[1].refresh();
+      });
+
+      expect(result.current[0].authToken).toBe('initial-token');
+      expect(result.current[0].unreachable).toBe(true);
+      expect(result.current[0].error).toBeNull();
+    });
+  });
+
+  describe('when Memory takes the session check and never answers', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('gives up at the deadline and reports Memory unreachable, not signed out', async () => {
+      const fetchMock = setFetch((_url, init) => hang(init));
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS - 1000);
+      });
+      expect(result.current[0].initializing).toBe(true);
+      expect(result.current[0].unreachable).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      expect(result.current[0].initializing).toBe(false);
+      expect(result.current[0].unreachable).toBe(true);
+      // A timeout is not an "expired session": no error for the login page to show.
+      expect(result.current[0].error).toBeNull();
+      // One deadline in all: the csrf prime timing out ends the check, so neither the Hub
+      // bridge nor the refresh waits out a deadline of its own behind it.
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/api/authenticate/csrf']);
+    });
+
+    it('waits out a slow Memory that answers within the deadline', async () => {
+      let answer: (res: Response) => void = () => undefined;
+
+      setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/refresh')) {
+          return new Promise<Response>((resolve) => {
+            answer = resolve;
+            init?.signal?.addEventListener('abort', () => undefined);
+          });
+        }
+
+        return emptyResponse();
+      });
+      document.cookie = 'csrfToken=csrf-abc';
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS - 7000);
+      });
+      expect(result.current[0].unreachable).toBe(false);
+
+      await act(async () => {
+        answer(jsonResponse({ accessToken: 'slow' }));
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+      });
+
+      expect(result.current[0].authToken).toBe('slow');
+      expect(result.current[0].unreachable).toBe(false);
+      expect(result.current[0].error).toBeNull();
+    });
+
+    it('signs in by itself once Memory answers again, asking once at a time meanwhile', async () => {
+      let memoryUp = false;
+      let refreshCalls = 0;
+
+      const fetchMock = setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/refresh')) {
+          refreshCalls += 1;
+
+          return memoryUp ? jsonResponse({ accessToken: 'back' }) : hang(init);
+        }
+
+        return url.endsWith('/api/authenticate/hub-bridge') && !memoryUp ? hang(init) : emptyResponse();
+      });
+      document.cookie = 'csrfToken=csrf-abc';
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+      });
+      expect(result.current[0].unreachable).toBe(true);
+      expect(refreshCalls).toBe(0);
+
+      // The first retry hangs for a full deadline; the ticks during it send nothing more.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+      });
+      expect(refreshCalls).toBe(1);
+      expect(result.current[0].unreachable).toBe(true);
+      expect(result.current[0].authToken).toBeNull();
+
+      memoryUp = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(result.current[0].authToken).toBe('back');
+      expect(result.current[0].unreachable).toBe(false);
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    it('keeps the token when a later refresh is never answered', async () => {
+      document.cookie = 'csrfToken=csrf-abc';
+      let refreshCalls = 0;
+
+      setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/refresh')) {
+          refreshCalls += 1;
+
+          return refreshCalls === 1 ? jsonResponse({ accessToken: 'initial-token' }) : hang(init);
+        }
+
+        return emptyResponse();
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current[0].authToken).toBe('initial-token'));
+
+      await act(async () => {
+        const refreshing = result.current[1].refresh();
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+        await refreshing;
       });
 
       expect(result.current[0].authToken).toBe('initial-token');

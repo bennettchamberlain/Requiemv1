@@ -5,7 +5,13 @@ import { getApiBaseUrl, isNativePlatform, subscribeApiBaseUrl } from '@ci/common
 
 import { gql } from '@/graphql';
 
-import { isApplianceOutage, isProfileUnanswered, recallUser, rememberUser } from './rememberedUser';
+import {
+  isApplianceOutage,
+  isProfileUnanswered,
+  MEMORY_ANSWER_DEADLINE_MS,
+  recallUser,
+  rememberUser,
+} from './rememberedUser';
 import { useAuth } from './useAuth';
 
 /** How often the profile is asked for again while Memory is not answering. */
@@ -44,6 +50,9 @@ export function useCurrentUser() {
     // `entity` resolves independently; a graph lookup failure must not discard
     // the rest of `me` and strand the session behind an infinite spinner.
     errorPolicy: 'all',
+    // A Memory that takes the request and never answers fails nothing; the deadline
+    // (requestTimeoutLink.ts) turns that into the network error `unreachable` reads.
+    context: { timeoutMs: MEMORY_ANSWER_DEADLINE_MS },
   });
 
   // A phone keeps the profile the appliance last gave it, and answers with it while the
