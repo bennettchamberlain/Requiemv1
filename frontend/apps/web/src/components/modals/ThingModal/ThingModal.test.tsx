@@ -208,7 +208,7 @@ describe('ThingModal dates', () => {
     colors: null,
     colorHex: null,
     materials: null,
-    unitSystem: 'METRIC',
+    unitSystem: 'METRIC' as const,
     lengthMm: null,
     widthMm: null,
     heightMm: null,
@@ -258,7 +258,12 @@ describe('ThingModal dates', () => {
 
     // An importer's order time: 8 pm on Sep 30 in Los Angeles, already Oct 1 in UTC.
     renderWithProviders(
-      <ThingModal open onClose={vi.fn()} item={{ ...CAMERA, acquiredAt: '2026-10-01T03:00:00.000Z' }} />,
+      <ThingModal
+        open
+        onClose={vi.fn()}
+        item={{ ...CAMERA, acquiredAt: '2026-10-01T03:00:00.000Z' }}
+        create={false}
+      />,
     );
 
     expect(screen.getByLabelText('Acquired')).toHaveValue('2026-09-30');
