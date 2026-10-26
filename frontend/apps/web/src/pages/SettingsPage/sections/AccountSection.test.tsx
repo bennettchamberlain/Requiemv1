@@ -547,6 +547,27 @@ describe('AccountSection — change password', () => {
     expect(() => findCall('PATCH', '/api/account/password')).toThrow();
   });
 
+  it('drops the mismatch message as soon as a password is edited again', async () => {
+    render(<AccountSection />);
+
+    fireEvent.change(
+      await screen.findByLabelText('Current password', { selector: '#passwordCurrentPassword' }),
+      {
+        target: { value: 'my-password' },
+      },
+    );
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new-password-1' } });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'different' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update password' }));
+    expect(await screen.findByText('New passwords do not match.')).toBeInTheDocument();
+
+    // The next try is too short, which the browser refuses before the form submits, so
+    // nothing but the edit itself can take the old message away.
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'short' } });
+
+    expect(screen.queryByText('New passwords do not match.')).not.toBeInTheDocument();
+  });
+
   it('labels the action "Set a password" and skips current-password for a federated account without one', async () => {
     h.hasFederatedIdentity = true;
     h.hasOwnPassword = false;
