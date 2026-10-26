@@ -48,9 +48,11 @@ export class NoteService {
   ): Promise<Note | null> {
     const { emitCreated = true } = options;
 
+    // `data.id` is spread first so an explicit `id: undefined` (GraphQL createNote
+    // without a client id) can't overwrite the minted one.
     const record = this.noteRepository.create({
-      id: data.id || uuidv7(),
       ...data,
+      id: data.id || uuidv7(),
       userId: context.userId,
     });
 
@@ -84,8 +86,8 @@ export class NoteService {
 
     const entities = data.map((item) =>
       this.noteRepository.create({
-        id: item.id || uuidv7(),
         ...item,
+        id: item.id || uuidv7(),
         userId: context.userId,
       }),
     );

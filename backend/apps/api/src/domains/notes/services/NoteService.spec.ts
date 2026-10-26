@@ -358,4 +358,34 @@ describe('NoteService single create still emits', () => {
 
     expect(send).not.toHaveBeenCalled();
   });
+
+  it('mints an id when the caller passes id: undefined (GraphQL createNote with no client id)', async () => {
+    const { service, save, send } = makeService();
+
+    const note = await service.create(CONTEXT, { id: undefined, title: 'Shopping list', content: '<p>eggs</p>' });
+
+    const saved = save.mock.calls[0][0] as NoteEntity;
+    expect(saved.id).toEqual(expect.any(String));
+    expect(saved.id).not.toBe('');
+    expect(note?.id).toBe(saved.id);
+    expect(send.mock.calls[0][1]).toEqual({ noteId: saved.id });
+  });
+
+  it('keeps a client-minted id', async () => {
+    const { service, save } = makeService();
+
+    await service.create(CONTEXT, { id: 'client-id', title: 'One', content: 'a' });
+
+    expect((save.mock.calls[0][0] as NoteEntity).id).toBe('client-id');
+  });
+});
+
+describe('NoteService createMany ids', () => {
+  it('mints an id for a row that passes id: undefined', async () => {
+    const { service, insert } = makeService();
+
+    await service.createMany(CONTEXT, [{ id: undefined, title: 'One', content: 'a' }]);
+
+    expect((insert.values as NoteEntity[])[0].id).toEqual(expect.any(String));
+  });
 });
