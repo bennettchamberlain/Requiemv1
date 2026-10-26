@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
  * The real editor, driven the way a person does: Enter and the list and quote
- * buttons. Each of these builds new nodes, and when two copies of
+ * buttons. Each of these builds new nodes. When two copies of
  * prosemirror-model are installed they throw "Can not convert <> to a
  * Fragment (looks like multiple versions of prosemirror-model were loaded)"
  * and leave the note unchanged.
@@ -27,31 +27,21 @@ describe('note editor commands', () => {
       </Editor>,
     );
 
-    return { onUpdate, lastHtml: () => onUpdate.mock.lastCall?.[0] };
-  }
-
-  async function prosemirror() {
-    let node: HTMLElement | null = null;
-
-    await waitFor(() => {
-      node = document.querySelector<HTMLElement>('.ProseMirror');
-      expect(node).not.toBeNull();
-    });
-
-    return node as unknown as HTMLElement;
+    return { lastHtml: () => onUpdate.mock.lastCall?.[0] };
   }
 
   it('starts a new paragraph on Enter', async () => {
     const { lastHtml } = renderEditor();
-    const editable = await prosemirror();
+    const editable = await screen.findByRole('textbox');
+
+    // The editor autofocuses with the caret at the start, a tick after it
+    // mounts. Wait for that to land, or it puts the caret back after we move it.
+    await waitFor(() => expect(editable).toHaveFocus());
 
     // Put the caret after "Shopping list", where a person starts the next line.
     const text = editable.querySelector('p')?.firstChild as Text;
-    editable.focus();
     window.getSelection()?.collapse(text, text.length);
     document.dispatchEvent(new Event('selectionchange'));
-    // ProseMirror reads a DOM selection change on a short timer, not at once.
-    await new Promise((resolve) => setTimeout(resolve, 100));
 
     fireEvent.keyDown(editable, { key: 'Enter', code: 'Enter', keyCode: 13 });
 
@@ -64,7 +54,7 @@ describe('note editor commands', () => {
     ['Quote', '<blockquote>'],
   ])('%s wraps the paragraph', async (name, tag) => {
     const { lastHtml } = renderEditor();
-    await prosemirror();
+    await screen.findByRole('textbox');
 
     fireEvent.click(screen.getByRole('button', { name }));
 
