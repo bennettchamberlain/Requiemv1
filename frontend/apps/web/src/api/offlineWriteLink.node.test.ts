@@ -9,8 +9,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createOfflineWriteLink, isGuardedMutation, isNoteOperationName } from './offlineWriteLink';
 
-// parse(), not gql: these reuse real operation names on purpose, and web codegen
-// collects every gql document under src/, where duplicate names stop it.
+// parse(), not gql: these reuse real operation names on purpose. Web codegen reads every
+// gql document under src/ and fails on two operations that share a name but not their text.
 const DELETE_PERSON = parse(`
   mutation DeleteMemoryPerson($id: ID!) {
     deleteMemoryPerson(id: $id) {
@@ -45,7 +45,11 @@ const SEARCH = parse(`
 
 function run(link: ApolloLink, query: DocumentNode, operationName?: string): Promise<FetchResult> {
   return new Promise((resolve, reject) => {
-    execute(link, { query, operationName }).subscribe({ next: resolve, error: reject });
+    execute(link, { query, operationName }).subscribe({
+      next: resolve,
+      error: reject,
+      complete: () => reject(new Error('the link completed without a result')),
+    });
   });
 }
 
