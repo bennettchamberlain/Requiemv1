@@ -486,6 +486,18 @@ export class DatabaseSearchTool extends BaseTool<DatabaseSearchInput, SearchTool
     };
   }
 
+  /**
+   * Files by id as search hits (type, link, no object-store address), in the
+   * order given, for a caller that found them some other way than the index:
+   * media.findPhotos' photos taken at a named place.
+   */
+  async resolveFileHits(context: ToolExecutionContext, fileIds: string[]): Promise<SearchResultItem[]> {
+    return this.resolveEntities(
+      toServiceContext(context),
+      fileIds.map((id) => ({ type: 'file' as const, id })),
+    );
+  }
+
   private async resolveEntities(
     context: UserServiceContext,
     results: EntityIdentifier<IndexableEntity>[],
