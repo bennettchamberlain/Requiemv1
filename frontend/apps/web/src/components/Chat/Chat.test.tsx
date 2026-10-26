@@ -169,6 +169,27 @@ describe('Chat', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 
+  it("skips the server's keep-alive frames, before the reply and between its tokens", async () => {
+    // Sent so a proxy that holds the headers until the first body byte lets the reply stream.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const encoder = new FrameEncoder();
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encodeFrame(Channel.KEEPALIVE, ''));
+        controller.enqueue(encoder.encodeFrame(Channel.TEXT, 'Hello '));
+        controller.enqueue(encoder.encodeFrame(Channel.KEEPALIVE, ''));
+        controller.enqueue(encoder.encodeFrame(Channel.TEXT, 'there.\n\n'));
+        controller.close();
+      },
+    });
+
+    const { container } = renderWithProviders(<Chat messages={[{ role: 'user', content: 'hi' }]} readable={readable} />);
+
+    await waitFor(() => expect(container.textContent).toContain('Hello there.'));
+    expect(warn).not.toHaveBeenCalledWith('Ignored unsupported chunk channel:', expect.anything());
+    warn.mockRestore();
+  });
+
   /**
    * A turn whose stream dies — the on-device model failing right after a tool call was the case that motivated this.
    * The notice always says the reply is incomplete; it adds the reason only when the failure carries one.

@@ -183,6 +183,11 @@ export function Chat({
 
   const handleFrameChunk = useCallback(
     (chunk: Decoded) => {
+      // The server's "still going" frame: nothing to show, and not a channel change.
+      if (chunk.channel === Channel.KEEPALIVE) {
+        return true;
+      }
+
       if (!supportedChannels.has(chunk.channel)) {
         console.warn('Ignored unsupported chunk channel:', chunk.channel);
 
