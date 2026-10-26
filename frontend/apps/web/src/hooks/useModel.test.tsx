@@ -201,6 +201,26 @@ describe('useModel', () => {
     );
   });
 
+  // Describe images is a per-model setting that Settings > Model reloads on this
+  // revision; reloading on the optimistic selection raced the save and showed
+  // the old model's value.
+  it('bumps chatModelRevision once the server has recorded a switch, and not when it refuses', async () => {
+    const { fetchMock } = setFetch();
+    const { result } = renderHook(() => useModel(), { wrapper });
+    await waitFor(() => expect(result.current[0].loading).toBe(false));
+    expect(result.current[0].chatModelRevision).toBe(0);
+
+    act(() => result.current[1].selectModel('qwen-vl'));
+    await waitFor(() => expect(result.current[0].chatModelRevision).toBe(1));
+
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve({ ok: false, status: 500, text: async () => '{}' } as Response),
+    );
+    act(() => result.current[1].selectModel('llama3'));
+    await waitFor(() => expect(result.current[0].selectedModel).toBe('qwen-vl'));
+    expect(result.current[0].chatModelRevision).toBe(1);
+  });
+
   it('reverts the selection if the server rejects the write', async () => {
     const { fetchMock } = setFetch();
     const { result } = renderHook(() => useModel(), { wrapper });
