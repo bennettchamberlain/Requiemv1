@@ -120,9 +120,33 @@ describe('readSelfIdentity', () => {
     await expect(readSelfIdentity(db, 'user-1')).resolves.toEqual({
       names: ['Liam Broza'],
       email: 'liam.broza@example.com',
+      emails: [],
       phones: ['+15551212'],
     });
     expect(calls[0].params).toEqual(['user-1']);
+  });
+
+  it("collects the self Person's own addresses, from its properties and its identifier rows", async () => {
+    const { db, calls } = readerFor([
+      { name: null, email: 'liam.broza@example.com', phones_json: null },
+      {
+        name: 'Liam Broza',
+        email: null,
+        phones_json: [],
+        emails_json: ['liam.broza@example.com', 'liam@work.example'],
+      },
+      { name: null, email: null, phones_json: [], emails_json: ['lb@alias.example'] },
+      { name: null, email: null, phones_json: ['4155550100'], emails_json: [] },
+    ] as never);
+
+    await expect(readSelfIdentity(db, 'user-1')).resolves.toEqual({
+      names: ['Liam Broza'],
+      email: 'liam.broza@example.com',
+      emails: ['liam.broza@example.com', 'liam@work.example', 'lb@alias.example'],
+      phones: ['4155550100'],
+    });
+    expect(calls[0].sql).toContain('FROM ci.entity_identifiers i');
+    expect(calls[0].sql).toContain("i.kind IN ('email', 'phone')");
   });
 
   it('asks for the account row and the un-merged is_self Person, in one round-trip', async () => {
@@ -146,6 +170,7 @@ describe('readSelfIdentity', () => {
     await expect(readSelfIdentity(db, 'user-1')).resolves.toEqual({
       names: [],
       email: null,
+      emails: [],
       phones: [],
     });
   });
@@ -174,6 +199,25 @@ describe('matchOwner / shouldMapContactToSelf', () => {
     expect(shouldMapContactToSelf(name, 'cautious')).toBe(false);
     expect(shouldMapContactToSelf(name, 'balanced')).toBe(true);
     expect(shouldMapContactToSelf(name, 'hands_off')).toBe(true);
+  });
+});
+
+describe('a second address on the self Person', () => {
+  const id = identity({ emails: ['Liam@Work.example'] });
+
+  it('is the owner, as an identifier, a participant and a contact', () => {
+    expect(matchOwnerIdentifier(id, 'email', 'liam@work.example')).toMatchObject({ kind: 'email' });
+    expect(matchOwner(id, '"LB" <liam@work.example>')).toMatchObject({ kind: 'email' });
+    expect(isOwnerContact(id, { name: 'LB', emails: ['liam@work.example'], phones: [] }, 'cautious')).toBe(
+      true,
+    );
+  });
+
+  it('is never read as a name: only the account address lends its local part', () => {
+    const work = identity({ names: [], email: null, emails: ['info@work.example'] });
+
+    expect(makeIsSelf(work)).toBe(NOBODY_IS_SELF);
+    expect(matchOwner(work, 'Info')).toBeNull();
   });
 });
 
