@@ -165,8 +165,10 @@ describe('useSearchService — answering from this device', () => {
 
     const { result } = renderHook(() => useSearchService({ searchQuery: 'packing' }));
 
-    await waitFor(() => expect(result.current.source).toBe('device'));
-    expect(result.current.data).toEqual([deviceNode]);
+    // `source` flips to 'device' on the first render, before the local search
+    // has resolved, so wait on the data rather than on the source.
+    await waitFor(() => expect(result.current.data).toEqual([deviceNode]));
+    expect(result.current.source).toBe('device');
 
     mockedUseQuery.mockReturnValue({
       data: undefined,

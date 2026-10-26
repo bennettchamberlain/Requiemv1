@@ -205,6 +205,7 @@ export function SavedSearchFiltersEditor({ value, onChange, vocabulary = {} }: P
 
     onChange({ ...value, [field]: new Date(`${dateStr}${time}`).toISOString(), datePreset: undefined });
   };
+
   const rollingWhen = isRollingDatePreset(value.datePreset) ? datePresetLabel(value.datePreset) : null;
 
   return (
