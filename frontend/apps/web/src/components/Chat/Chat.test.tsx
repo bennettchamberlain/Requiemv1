@@ -241,6 +241,84 @@ describe('Chat', () => {
     });
   });
 
+  /**
+   * The textarea is disabled while a turn loads and streams, which drops focus to <body>, and the focus calls made
+   * when the stream finished ran while it was still disabled. After a reply the box had no focus, so the next
+   * message needed a click first.
+   */
+  describe('focus after a reply', () => {
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    const reply = [
+      { role: 'user', content: 'hi there' },
+      { role: 'assistant', content: 'hello back' },
+    ];
+
+    it('gives the box focus back once the reply has finished and the box is enabled again', async () => {
+      const { rerender } = renderWithProviders(<Chat autoFocus loading />);
+      const textbox = screen.getByRole('textbox');
+      await nextFrame();
+
+      // The finished reply lands while `streaming` is still set, so the box is still disabled when the existing
+      // focus calls run. A browser drops focus from a disabled control; jsdom does not, so blur it here.
+      rerender(<Chat autoFocus streaming messages={reply} />);
+      expect(textbox).toBeDisabled();
+      await nextFrame();
+      textbox.blur();
+      expect(textbox).not.toHaveFocus();
+
+      rerender(<Chat autoFocus messages={reply} />);
+
+      await waitFor(() => expect(textbox).toHaveFocus());
+    });
+
+    it('gives it back again after a later disable, such as a thread refetch', async () => {
+      const { rerender } = renderWithProviders(<Chat autoFocus messages={reply} />);
+      const textbox = screen.getByRole('textbox');
+      await waitFor(() => expect(textbox).toHaveFocus());
+
+      // What a browser does when the control is disabled (jsdom cannot blur a disabled control, so blur first).
+      textbox.blur();
+      rerender(<Chat autoFocus disabled messages={reply} />);
+      expect(textbox).not.toHaveFocus();
+      rerender(<Chat autoFocus messages={reply} />);
+
+      await waitFor(() => expect(textbox).toHaveFocus());
+    });
+
+    it('leaves focus where the person moved it while the reply streamed', async () => {
+      const { rerender } = renderWithProviders(
+        <>
+          <button type="button">Elsewhere</button>
+          <Chat autoFocus streaming />
+        </>,
+      );
+      const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+      // Let the mount-time focus attempt run first; it is not what is under test.
+      await nextFrame();
+      elsewhere.focus();
+
+      rerender(
+        <>
+          <button type="button">Elsewhere</button>
+          <Chat autoFocus />
+        </>,
+      );
+
+      await nextFrame();
+      expect(elsewhere).toHaveFocus();
+    });
+
+    it('does nothing without autoFocus', async () => {
+      const { rerender } = renderWithProviders(<Chat streaming />);
+      const textbox = screen.getByRole('textbox');
+
+      rerender(<Chat />);
+
+      await nextFrame();
+      expect(textbox).not.toHaveFocus();
+    });
+  });
+
   it('submits a typed message through ChatInput', async () => {
     const onSubmit = vi.fn().mockReturnValue(true);
     const { getByRole } = renderWithProviders(<Chat onSubmit={onSubmit} />);
