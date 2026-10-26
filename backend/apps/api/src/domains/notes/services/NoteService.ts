@@ -48,6 +48,23 @@ export class NoteService {
   ): Promise<Note | null> {
     const { emitCreated = true } = options;
 
+    if (data.id) {
+      // A client-minted id (a phone replaying its offline create). `save()` below
+      // UPDATEs whatever row already holds that id, unscoped by owner, so a
+      // colliding id would rewrite another user's note and hand it to this one.
+      // The same guard as captureMany's: such an id is refused, never written.
+      const existing = await this.noteRepository.findOne({
+        where: { id: data.id },
+        select: { id: true, userId: true },
+      });
+
+      if (existing && existing.userId !== context.userId) {
+        this.logger.warn('Refused a created note whose id belongs to another user.');
+
+        return null;
+      }
+    }
+
     // `data.id` is spread first so an explicit `id: undefined` (GraphQL createNote
     // without a client id) can't overwrite the minted one.
     const record = this.noteRepository.create({

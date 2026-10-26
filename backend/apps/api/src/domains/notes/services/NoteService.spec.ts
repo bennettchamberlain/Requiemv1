@@ -378,6 +378,25 @@ describe('NoteService single create still emits', () => {
 
     expect((save.mock.calls[0][0] as NoteEntity).id).toBe('client-id');
   });
+
+  it("refuses a client-minted id that belongs to another user's note", async () => {
+    const stranger = Object.assign(new NoteEntity(), { id: 'client-id', userId: 'someone-else' });
+    const { service, save, send } = makeService([], stranger);
+
+    const note = await service.create(CONTEXT, { id: 'client-id', title: 'Mine', content: 'a' });
+
+    expect(note).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('does not look up an owner when the server mints the id', async () => {
+    const { service, findOne } = makeService();
+
+    await service.create(CONTEXT, { id: undefined, title: 'One', content: 'a' });
+
+    expect(findOne).not.toHaveBeenCalled();
+  });
 });
 
 describe('NoteService createMany ids', () => {
