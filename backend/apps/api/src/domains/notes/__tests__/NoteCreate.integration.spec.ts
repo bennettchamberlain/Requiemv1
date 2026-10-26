@@ -13,14 +13,14 @@ import { NoteService } from '../services/NoteService';
 /**
  * `NoteService.create` (GraphQL `createNote`) against a real Postgres.
  *
- * `NoteService.spec.ts` mocks the repository, and the mock cannot show either of the
- * two things these tests are about: that `ci.notes.id` has no default, so a create
- * that loses its minted id fails in the database, and that `repository.save()` with
- * a client-minted id UPDATEs whatever row holds it, whoever owns it.
+ * `NoteService.spec.ts` mocks the repository. A mock cannot show what these tests are
+ * about: `ci.notes.id` has no default, so a create that loses its minted id fails in
+ * the database. A client-minted id that is already taken must not be written over,
+ * whoever owns the row.
  *
  * Same database setup as `NoteCapture.integration.spec.ts`: `NOTES_TEST_DATABASE_URL`,
- * else `DATABASE_URL`, else `.env`'s `DATABASE_*` values, and it skips (saying why)
- * when none answers.
+ * else `DATABASE_URL`, else `.env`'s `DATABASE_*` values. With none answering, it
+ * skips and says why.
  */
 
 const DATABASE_ENV = {
@@ -31,10 +31,10 @@ const availability = databaseAvailability(DATABASE_ENV);
 const describeWithDb = availability.available ? describe : describe.skip;
 
 if (!availability.available) {
-  console.warn(`[notes/NoteCreate.integration] SKIPPED — ${availability.reason}`);
+  console.warn(`[notes/NoteCreate.integration] SKIPPED: ${availability.reason}`);
 }
 
-describeWithDb('NoteService.create — in Postgres', () => {
+describeWithDb('NoteService.create in Postgres', () => {
   let dataSource: DataSource;
   let schemaLock: SchemaLock | null = null;
   let service: NoteService;
@@ -101,13 +101,19 @@ describeWithDb('NoteService.create — in Postgres', () => {
   });
 
   const readNote = async (id: string) => {
-    const [row] = await dataSource.query('SELECT id, title, content, user_id FROM ci.notes WHERE id = $1', [id]);
+    const [row] = await dataSource.query('SELECT id, title, content, user_id FROM ci.notes WHERE id = $1', [
+      id,
+    ]);
 
     return row as { id: string; title: string; content: string; user_id: string } | undefined;
   };
 
   it('stores a note the client sent no id for (createNote passes id: undefined)', async () => {
-    const note = await service.create(owner, { id: undefined, title: 'Shopping list', content: '<p>eggs</p>' });
+    const note = await service.create(owner, {
+      id: undefined,
+      title: 'Shopping list',
+      content: '<p>eggs</p>',
+    });
 
     expect(note?.id).toEqual(expect.any(String));
 
@@ -118,11 +124,11 @@ describeWithDb('NoteService.create — in Postgres', () => {
     expect(send).toHaveBeenCalledWith('note.created', { noteId: note!.id });
   });
 
-  it('keeps a client-minted id, and a replay of it stays one row', async () => {
+  it('keeps a client-minted id and a replay of it stays one row', async () => {
     const id = uuidv7();
 
-    await service.create(owner, { id, title: 'Offline', content: '<p>first</p>' });
-    await service.create(owner, { id, title: 'Offline', content: '<p>first</p>' });
+    const first = await service.create(owner, { id, title: 'Offline', content: '<p>first</p>' });
+    const replay = await service.create(owner, { id, title: 'Offline', content: '<p>first</p>' });
 
     const [{ count }] = await dataSource.query('SELECT COUNT(*)::int AS count FROM ci.notes WHERE id = $1', [
       id,
@@ -130,9 +136,27 @@ describeWithDb('NoteService.create — in Postgres', () => {
 
     expect(count).toBe(1);
     expect((await readNote(id))?.user_id).toBe(owner.userId);
+
+    // createNote's NoteType.createdAt and updatedAt are non-null, so a replay has to
+    // hand back the stored timestamps (save() on an existing row returned neither).
+    expect(first?.createdAt).toEqual(expect.any(Date));
+    expect(replay?.createdAt).toEqual(first?.createdAt);
+    expect(replay?.updatedAt).toEqual(expect.any(Date));
   });
 
-  it("refuses a client-minted id that is another user's note, and leaves their note alone", async () => {
+  it('a replayed create does not write over an edit made since it first landed', async () => {
+    const id = uuidv7();
+
+    await service.create(owner, { id, title: 'Offline', content: '<p>first</p>' });
+    await service.update(owner, id, { content: '<p>edited on the web</p>' });
+
+    const replay = await service.create(owner, { id, title: 'Offline', content: '<p>first</p>' });
+
+    expect(replay?.content).toBe('<p>edited on the web</p>');
+    expect((await readNote(id))?.content).toBe('<p>edited on the web</p>');
+  });
+
+  it("refuses a client-minted id that is another user's note and leaves their note alone", async () => {
     const id = uuidv7();
 
     await service.create(stranger, { id, title: 'Theirs', content: '<p>theirs</p>' });
