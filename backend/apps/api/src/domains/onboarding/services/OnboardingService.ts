@@ -5,7 +5,12 @@ import { type UserServiceContext } from '@ci/common/context';
 import { FeatureService } from '@ci/common/feature';
 import { LoggerService } from '@ci/common/logging';
 import { MessageService, ThreadService } from '@ci/domains/conversations';
-import { RelationshipService, RelationshipType, EntityIdentifierService } from '@ci/domains/graph';
+import {
+  RelationshipService,
+  RelationshipType,
+  EntityIdentifierService,
+  GraphIngestService,
+} from '@ci/domains/graph';
 import { ActionService, AnswerService, QuestionService } from '@ci/domains/intelligence';
 import { ConceptService, PersonService } from '@ci/domains/memory';
 import { UserService } from '@ci/domains/user';
@@ -96,6 +101,14 @@ const RELATIONSHIP_MAP: Record<
   coworker: { type: RelationshipType.WORKS_WITH, bidirectional: true },
   complicated: { type: RelationshipType.KNOWS, bidirectional: true },
 };
+
+/**
+ * How many times {@link OnboardingService.createPersonForUser} tries to point
+ * the account at its self Person. A try only fails when the pointer moved since
+ * it was read, and the next one is made against the value found; running out
+ * takes a pointer that keeps moving, or an account row that is gone.
+ */
+const SELF_POINTER_ATTEMPTS = 3;
 
 const DEFAULT_PROGRESS: OnboardingProgressResponse = {
   stepKey: 'intro',
@@ -265,52 +278,118 @@ export class OnboardingService {
     // Prefer the existing users.entity_id pointer (e.g. from ensureSelfEntity)
     // over inserting a second is_self Person.
     if (user.entityId) {
-      const existing = await this.personService.findById(context, user.entityId);
+      const existing = await this.adoptSelfPerson(
+        context,
+        user.entityId,
+        displayName,
+        properties,
+        user.email,
+      );
       if (existing) {
-        await this.personService.patch(context, existing.id, {
-          name: displayName,
-          propertiesPatch: {
-            ...(existing.properties ?? {}),
-            ...properties,
-          },
-        });
-        await this.claimSelfIdentifiers(context.userId!, existing.id, displayName, user.email);
-        await this.entityIdentifierService.repointToEntity(
-          context.userId!,
-          existing.id,
-          'email',
-          user.email ?? '',
-          'self',
-        );
-
         return existing;
       }
     }
 
+    // Created under the key the import's provisioner upserts the owner's self
+    // Person on (GraphIngestService.ensureSelfEntityForOwner, which PushStage
+    // runs for an account with no pointer yet). The two can run at once, both
+    // having read no pointer, and on one key they cannot make two Persons:
+    // whichever inserts first makes the row, and PersonService.create hands an
+    // existing row for the key back instead of inserting another.
     const id = uuidv7();
     const person = await this.personService.create(context, {
       id,
       name: displayName,
       properties,
       description: 'This is you!',
+      ...GraphIngestService.selfEntityLink(user.id),
     });
 
-    await this.userService.update(context, user.id, {
-      entityId: person.id,
-    });
+    // The pointer only moves while it still holds what was read, so a writer
+    // that set it in between is never overwritten.
+    let expected = user.entityId ?? null;
 
-    await this.claimSelfIdentifiers(context.userId!, person.id, displayName, user.email);
-    if (user.email) {
-      await this.entityIdentifierService.repointToEntity(
-        context.userId!,
-        person.id,
-        'email',
-        user.email,
-        'self',
-      );
+    for (let attempt = 0; attempt < SELF_POINTER_ATTEMPTS; attempt += 1) {
+      const pointer = await this.userService.setEntityIdIfUnchanged(context, user.id, person.id, expected);
+
+      if (pointer === person.id && person.id === id) {
+        // The usual signup: this call made the Person, and the account points at it.
+        await this.claimSelfIdentifiers(context.userId!, person.id, displayName, user.email);
+        if (user.email) {
+          await this.entityIdentifierService.repointToEntity(
+            context.userId!,
+            person.id,
+            'email',
+            user.email,
+            'self',
+          );
+        }
+
+        return person;
+      }
+
+      if (pointer != null) {
+        // The key handed back the self Person an import had already made
+        // (pointer === person.id), or the account was pointed at another
+        // Person since it was read. Either is the owner's: fold onboarding in.
+        const adopted = await this.adoptSelfPerson(context, pointer, displayName, properties, user.email);
+        if (adopted) {
+          if (adopted.id !== person.id) {
+            // Not this key's row: something outside the shared upsert set the
+            // pointer. Nothing is deleted; the warning names both rows.
+            this.logger.warn('The account was pointed at another self Person during onboarding', {
+              userId: user.id,
+              selfEntityId: person.id,
+              pointer: adopted.id,
+            });
+          }
+
+          return adopted;
+        }
+      }
+
+      // No Person to adopt: the pointer was cleared since it was read, the
+      // account row is gone, or it names no Person. Try again against the value
+      // just observed rather than taking a null as a win.
+      expected = pointer;
     }
 
-    return person;
+    throw new Error('Could not point the account at its self Person');
+  }
+
+  /**
+   * Fold the onboarding details into the Person a `users.entity_id` pointer
+   * names. Null when the pointer is dangling.
+   */
+  private async adoptSelfPerson(
+    context: UserServiceContext,
+    personId: string,
+    displayName: string,
+    properties: Record<string, unknown>,
+    email: string | null | undefined,
+  ) {
+    const existing = await this.personService.findById(context, personId);
+    if (!existing) {
+      return null;
+    }
+
+    await this.personService.patch(context, existing.id, {
+      name: displayName,
+      propertiesPatch: {
+        ...(existing.properties ?? {}),
+        ...properties,
+      },
+    });
+    await this.claimSelfIdentifiers(context.userId!, existing.id, displayName, email);
+    await this.entityIdentifierService.repointToEntity(
+      context.userId!,
+      existing.id,
+      'email',
+      email ?? '',
+      'self',
+    );
+
+    return existing;
   }
 
   private async claimSelfIdentifiers(
