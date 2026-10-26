@@ -168,6 +168,11 @@ test("with no query the newest documents come first and undated ones last") {
   expectEqual(result["totalMatches"] as? Int, 4, "count")
 }
 
+test("a query of only whitespace or newlines is no query, as on Android") {
+  expectEqual(titles(try search(LocalSearchArgs(query: " \n\t "))), ["Harbour walk", "Lunch at Harbour Grill", "Groceries", "Maria Hall"], "newest first")
+  expectEqual(try search(LocalSearchArgs(query: "\n"))["totalMatches"] as? Int, 4, "count")
+}
+
 test("sort: recent orders a text query by time instead of rank") {
   expectEqual(
     titles(try search(LocalSearchArgs(query: "harbour", sort: "recent"))),
@@ -210,6 +215,15 @@ test("the keychain account and location are the SQLite plugin's") {
     LocalSearchStore.fileURL(location: "Documents", file: "x.db")?.deletingLastPathComponent().lastPathComponent,
     FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].lastPathComponent, "the plugin's default")
   expectEqual(LocalSearchStore.fileURL(location: "Elsewhere/x", file: "x.db"), nil, "a location the plugin refuses")
+  expectEqual(LocalSearchStore.fileURL(location: "", file: "x.db"), nil, "an empty location")
+
+  let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+  for spelling in ["Cache", "cache", "CACHE"] {
+    expectEqual(LocalSearchStore.fileURL(location: "\(spelling)/a", file: "x.db"), caches.appendingPathComponent("a/x.db"), "\(spelling) matches case-insensitively")
+  }
+  expectEqual(
+    LocalSearchStore.fileURL(location: "Applications/a", file: "x.db"),
+    FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask)[0].appendingPathComponent("a/x.db"), "Applications")
 }
 
 test("keychainPassphrase reads the item the plugin writes: generic password, service unlockSecret") {

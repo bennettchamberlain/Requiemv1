@@ -924,8 +924,12 @@ describe('the committed iOS project matches its sources', () => {
       .sort();
   }
 
-  /** The files the `App` target's Sources phase compiles, by name — the phase that lists `AppDelegate.swift`. */
-  function compiledByApp(): string[] {
+  /**
+   * The files the `App` target's Sources phase compiles — the phase that lists `AppDelegate.swift` — as paths relative to
+   * `App/`'s parent, each resolved the way Xcode does: the build file's `fileRef`, then the `path` of that reference
+   * under the `path` of every group above it. `null` stands for an entry that does not resolve to a file reference.
+   */
+  function compiledByApp(): { path: string | null; name: string }[] {
     const project = read(join(IOS, 'App.xcodeproj/project.pbxproj'));
     const phase = [...project.matchAll(/isa = PBXSourcesBuildPhase;[\s\S]*?files = \(([\s\S]*?)\);/g)]
       .map((match) => match[1])
@@ -933,22 +937,81 @@ describe('the committed iOS project matches its sources', () => {
 
     expect(phase, 'the App target has a Sources build phase').toBeDefined();
 
-    return [...phase!.matchAll(/\/\* (\S+\.swift) in Sources \*\//g)].map((match) => match[1]).sort();
+    const unquote = (value: string) => value.replace(/^"|"$/g, '');
+    const fileRefOf = new Map(
+      [
+        ...project.matchAll(
+          /([0-9A-F]{24}) \/\* [^*]* \*\/ = \{isa = PBXBuildFile; fileRef = ([0-9A-F]{24})/g,
+        ),
+      ].map((match) => [match[1], match[2]] as const),
+    );
+    const fileRefPath = new Map(
+      [
+        ...project.matchAll(
+          /([0-9A-F]{24}) \/\* [^*]* \*\/ = \{isa = PBXFileReference;[^}]*?\bpath = ("[^"]*"|[^;]+);/g,
+        ),
+      ].map((match) => [match[1], unquote(match[2])] as const),
+    );
+    const parentOf = new Map<string, string>();
+    const groupPath = new Map<string, string>();
+
+    for (const group of project.matchAll(
+      /([0-9A-F]{24})(?: \/\*[^*]*\*\/)? = \{\s*isa = PBXGroup;([\s\S]*?)\n\t\t\};/g,
+    )) {
+      const [, id, body] = group;
+      const path = body.match(/\n\t\t\tpath = ("[^"]*"|[^;]+);/);
+
+      if (path) {
+        groupPath.set(id, unquote(path[1]));
+      }
+
+      for (const child of body.match(/children = \(([\s\S]*?)\);/)?.[1].matchAll(/([0-9A-F]{24})/g) ?? []) {
+        parentOf.set(child[1], id);
+      }
+    }
+
+    return [...phase!.matchAll(/([0-9A-F]{24}) \/\* (\S+\.swift) in Sources \*\//g)].map(
+      ([, buildFile, name]) => {
+        const reference = fileRefOf.get(buildFile);
+        const own = reference ? fileRefPath.get(reference) : undefined;
+
+        if (!reference || own === undefined) {
+          return { path: null, name };
+        }
+
+        const segments = [own];
+
+        for (let id = parentOf.get(reference); id; id = parentOf.get(id)) {
+          const path = groupPath.get(id);
+
+          if (path) {
+            segments.unshift(path);
+          }
+        }
+
+        return { path: segments.join('/'), name };
+      },
+    );
   }
 
   it('compiles every Swift file under App/App, and nothing that is not there', () => {
-    const onDisk = swiftFiles(APP_SOURCES).map((file) => file.split('/').pop()!);
+    const onDisk = swiftFiles(APP_SOURCES, IOS);
     const compiled = compiledByApp();
 
-    expect(new Set(onDisk).size, 'file names under App/App are unique (the project lists them by name)').toBe(
-      onDisk.length,
-    );
     expect(
-      onDisk.filter((file) => !compiled.includes(file)),
+      compiled.filter((entry) => entry.path === null).map((entry) => entry.name),
+      'Sources entries whose file reference cannot be resolved',
+    ).toEqual([]);
+
+    const paths = compiled.map((entry) => entry.path!);
+
+    expect(new Set(paths).size, 'no file is compiled twice').toBe(paths.length);
+    expect(
+      onDisk.filter((file) => !paths.includes(file)),
       'Swift files on disk that no Sources phase compiles',
     ).toEqual([]);
     expect(
-      compiled.filter((file) => !onDisk.includes(file)),
+      paths.filter((path) => !existsSync(join(IOS, path))),
       'Sources entries for files that no longer exist',
     ).toEqual([]);
   });

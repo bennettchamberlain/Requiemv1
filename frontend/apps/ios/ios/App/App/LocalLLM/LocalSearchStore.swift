@@ -50,18 +50,19 @@ final class LocalSearchStore {
   // MARK: - Where the plugin keeps things
 
   /// `<databaseLocation>/<file>` as `@capacitor-community/sqlite`'s `UtilsFile.getFolderURL` resolves it: the first
-  /// path segment names a sandbox directory (`Library`, `Documents`/`default`, `Cache`, `tmp`), the rest is a
-  /// subfolder. nil for a location the plugin itself would refuse. `Documents` is what it uses when the
-  /// config sets none.
+  /// path segment names a sandbox directory (`Applications`, `Library`, `Documents`/`default`, `tmp`, or `cache` in
+  /// any case), the rest is a subfolder. nil for any other first segment, which the plugin refuses, and for an
+  /// empty location. `Documents` is what the plugin uses when the config sets none.
   static func fileURL(location: String, file: String, fileManager: FileManager = .default) -> URL? {
     let parts = location.split(separator: "/", maxSplits: 1).map(String.init)
     guard let root = parts.first else { return nil }
 
     let directory: FileManager.SearchPathDirectory
     switch root {
+    case "Applications": directory = .applicationDirectory
     case "Library": directory = .libraryDirectory
     case "Documents", "default": directory = .documentDirectory
-    case "Cache", "cache": directory = .cachesDirectory
+    case _ where root.caseInsensitiveCompare("cache") == .orderedSame: directory = .cachesDirectory
     case "tmp": return parts.dropFirst().reduce(fileManager.temporaryDirectory) { $0.appendingPathComponent($1) }.appendingPathComponent(file)
     default: return nil
     }
@@ -125,7 +126,7 @@ final class LocalSearchStore {
     defer { sqlite3_close(db) }
 
     let scope = Self.scope(args)
-    let query = args.query.trimmingCharacters(in: .whitespaces)
+    let query = args.query.trimmingCharacters(in: .whitespacesAndNewlines)
     let total = try Self.countStatement(args).map { try count(db, $0) } ?? 0
 
     if args.countOnly {
@@ -148,7 +149,7 @@ final class LocalSearchStore {
   struct Statement { let sql: String; let params: [String] }
 
   static func scope(_ args: LocalSearchArgs) -> [String] {
-    let asked = args.entityTypes.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { leanEntityTypes.contains($0) }
+    let asked = args.entityTypes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { leanEntityTypes.contains($0) }
     if asked.isEmpty { return leanEntityTypes }
     var seen = Set<String>()
     return asked.filter { seen.insert($0).inserted }
@@ -174,7 +175,7 @@ final class LocalSearchStore {
 
   private static func clauses(_ args: LocalSearchArgs, ordered: Bool) -> (from: String, whereSql: String, params: [String], hasQuery: Bool)? {
     let types = scope(args)
-    let hasQuery = !args.query.trimmingCharacters(in: .whitespaces).isEmpty
+    let hasQuery = !args.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     let match = matchExpression(args.query)
     if hasQuery && match == nil { return nil }
 
