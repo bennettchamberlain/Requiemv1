@@ -28,6 +28,12 @@ type Value = [
   {
     selectedModel: string | null;
     selectedVisionModel: string | null;
+    /**
+     * Bumped each time the server confirms a chat-model switch. Settings that
+     * belong to the model (Describe images) reload on it: reloading on
+     * `selectedModel` alone would race the save and read the old model's value.
+     */
+    chatModelRevision: number;
     thinkingSupported: boolean;
     thinkingEnabled: boolean;
     toolsSupported: boolean;
@@ -56,6 +62,7 @@ function useModel(): Value {
   const [error, setError] = useState<Error | null>(null);
   const [toolsPreferred, setToolsPreferred] = useState<boolean>(true);
   const [thinkingPreferred, setThinkingPreferred] = useState<boolean>(true);
+  const [chatModelRevision, setChatModelRevision] = useState<number>(0);
 
   const initialRequestRef = useRef<boolean>(false);
 
@@ -85,10 +92,12 @@ function useModel(): Value {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatModel: model }),
-      }).catch(() => {
-        setSelectedModel(previous);
-        toast.error("Couldn't switch models — your choice wasn't saved. Try again.");
-      });
+      })
+        .then(() => setChatModelRevision((revision) => revision + 1))
+        .catch(() => {
+          setSelectedModel(previous);
+          toast.error("Couldn't switch models — your choice wasn't saved. Try again.");
+        });
     },
     [activeModels, headers, selectedModel, toast],
   );
@@ -248,6 +257,7 @@ function useModel(): Value {
     {
       selectedModel,
       selectedVisionModel,
+      chatModelRevision,
       thinkingSupported,
       thinkingEnabled,
       toolsSupported,
