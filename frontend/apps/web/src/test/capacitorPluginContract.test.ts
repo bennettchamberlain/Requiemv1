@@ -898,3 +898,76 @@ describe('SpeechWeb — the fallback must never reach the browser speech APIs', 
     expect(capability.reason).toBeTruthy();
   });
 });
+
+/**
+ * The committed iOS project must name what `cap sync` and Xcode will build. Two files drift from the sources next to
+ * them without any compiler noticing until a Mac builds the app: the Xcode project (a Swift file added, renamed or
+ * deleted on disk but not in `project.pbxproj` compiles nowhere, or points at nothing) and `Podfile.lock` (`cap sync`
+ * rewrites it from the plugins, so a stale one leaves every sync with a dirty tree, and an Xcode run that skips the sync
+ * stops at "The sandbox is not in sync with the Podfile.lock"). Both went stale in the 0.18.0 LiteRT-LM bump and the
+ * app-lock plugin, and the iOS app did not build from `main` for days.
+ */
+describe('the committed iOS project matches its sources', () => {
+  const IOS = join(ROOT, 'frontend/apps/ios/ios/App');
+  const APP_SOURCES = join(IOS, 'App');
+
+  /** Every `.swift` under `dir`, relative to `base`, sorted. */
+  function swiftFiles(dir: string, base = dir): string[] {
+    return readdirSync(dir, { withFileTypes: true })
+      .flatMap((entry) =>
+        entry.isDirectory()
+          ? swiftFiles(join(dir, entry.name), base)
+          : entry.name.endsWith('.swift')
+            ? [join(dir, entry.name).slice(base.length + 1)]
+            : [],
+      )
+      .sort();
+  }
+
+  /** The files the `App` target's Sources phase compiles, by name — the phase that lists `AppDelegate.swift`. */
+  function compiledByApp(): string[] {
+    const project = read(join(IOS, 'App.xcodeproj/project.pbxproj'));
+    const phase = [...project.matchAll(/isa = PBXSourcesBuildPhase;[\s\S]*?files = \(([\s\S]*?)\);/g)]
+      .map((match) => match[1])
+      .find((files) => files.includes('AppDelegate.swift in Sources'));
+
+    expect(phase, 'the App target has a Sources build phase').toBeDefined();
+
+    return [...phase!.matchAll(/\/\* (\S+\.swift) in Sources \*\//g)].map((match) => match[1]).sort();
+  }
+
+  it('compiles every Swift file under App/App, and nothing that is not there', () => {
+    const onDisk = swiftFiles(APP_SOURCES).map((file) => file.split('/').pop()!);
+    const compiled = compiledByApp();
+
+    expect(new Set(onDisk).size, 'file names under App/App are unique (the project lists them by name)').toBe(
+      onDisk.length,
+    );
+    expect(
+      onDisk.filter((file) => !compiled.includes(file)),
+      'Swift files on disk that no Sources phase compiles',
+    ).toEqual([]);
+    expect(
+      compiled.filter((file) => !onDisk.includes(file)),
+      'Sources entries for files that no longer exist',
+    ).toEqual([]);
+  });
+
+  it('Podfile.lock covers every pod the Podfile declares', () => {
+    const podfile = read(join(IOS, 'Podfile'));
+    const lock = read(join(IOS, 'Podfile.lock'));
+    const declared = [...podfile.matchAll(/^\s*pod '([^']+)'/gm)].map((match) => match[1]);
+
+    expect(declared.length).toBeGreaterThan(0);
+
+    for (const pod of declared) {
+      expect(
+        lock,
+        `${pod} is in Podfile.lock's DEPENDENCIES — run \`yarn cap sync ios\` and commit the lock`,
+      ).toMatch(new RegExp(`^ {2}- "?${pod} \\(from `, 'm'));
+      expect(lock, `${pod} is in Podfile.lock's EXTERNAL SOURCES`).toMatch(
+        new RegExp(`^ {2}${pod}:\\n {4}:path:`, 'm'),
+      );
+    }
+  });
+});

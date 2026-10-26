@@ -511,10 +511,14 @@ public class LocalLLMPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     // The phone's replica, when the web layer has one, and whether it answers ahead of the appliance.
-    // UNCOMPILED — see LocalSearch.swift. The keychain prefix is the SQLite plugin's `iosKeychainPrefix`.
+    // The SQLite plugin's own config says where it keeps the file and which keychain prefix holds its key.
     CompanionToolContext.localSearchPreferred = (call.getString("connectionMode") ?? "connected") != "connected"
     if let databaseFile = call.getObject("localSearch")?["databaseFile"] as? String, !databaseFile.isEmpty {
-      LocalSearchStore.shared = LocalSearchStore(databaseFile: databaseFile, keychainPrefix: "")
+      let sqlite = bridge?.config.getPluginConfig("CapacitorSQLite")
+      LocalSearchStore.shared = LocalSearchStore(
+        databaseFile: databaseFile,
+        databaseLocation: sqlite?.getString("iosDatabaseLocation") ?? "Documents",
+        keychainPrefix: sqlite?.getString("iosKeychainPrefix") ?? "")
     } else {
       LocalSearchStore.shared = nil
     }

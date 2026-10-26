@@ -74,6 +74,13 @@ VITE_DISABLE_PWA=true yarn workspace @ci/fe-web build
 yarn sync          # copies web assets + installs native plugin code
 ```
 
+`cap sync` runs `pod install`, which rewrites `ios/App/Podfile.lock` whenever the plugin set changes (a new
+`@ci/capacitor-*` package, a version bump). **Commit the lock when it changes**: Xcode refuses to build if the
+`Pods/` it finds was installed from a different lock than the committed one ("The sandbox is not in sync with the
+Podfile.lock"), and a lock that lags leaves every sync with a dirty tree. Likewise a Swift file added under
+`ios/App/App` has to be added to the `App` target in `App.xcodeproj` (the Xcode app does it; by hand, use the
+`xcodeproj` gem that ships with CocoaPods). `capacitorPluginContract.test.ts` fails when either drifts.
+
 `yarn build` (= `build:web` + `cap sync`) rebuilds + syncs from this directory.
 Android is a separate package — build it from [`frontend/apps/android`](../android).
 
@@ -451,6 +458,14 @@ the vendored `LiteRTLMError.swift`, together with `tests/local-llm-pure/main.swi
 (including the stripping of leaked chat-template markers such as `<|endoftext|>`), how a failed generation is worded
 for the log and for JS, and the shaping of tool results. The project has no XCTest target, so these are plain
 assertions that exit non-zero; anything that needs the engine, Capacitor or the xcframework is out of reach there.
+
+**Checking the phone's own search on a Mac.** `bash scripts/test-local-search.sh` (needs `swiftc`, `clang` and a
+prior `yarn cap sync ios`, which leaves the SQLCipher pod's sources in `ios/App/Pods`) builds that pod for the Mac,
+compiles the app's own `LocalSearchStore.swift` with `tests/local-search/main.swift`, and runs `knowledge_search`'s
+store against a real encrypted SQLite file with the replica's table and FTS index: text and count queries, type and
+date filters, ordering, a wrong key, and the keychain lookup (it adds and removes one test item in the login
+keychain). What it does not cover is the phone: the file's real location (`iosDatabaseLocation`) and the plugin's
+real keychain item, which exist only after the web layer has opened the replica on a device that is signed in.
 
 - **Android:** minSdk stays 23; the plugin itself gates on `Build.VERSION.SDK_INT >= 31`
   (LiteRT-LM's AAR requires Android 12), so older devices keep the rest of the app.
