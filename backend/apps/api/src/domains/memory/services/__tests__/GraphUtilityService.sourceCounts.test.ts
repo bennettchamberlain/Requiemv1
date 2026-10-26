@@ -112,6 +112,31 @@ describe('GraphUtilityService.getEntityCountsBySource', () => {
     expect(sql).toContain("e.linked_table = 'files' AND fs.file_id = e.linked_id::text");
   });
 
+  it('attributes a file the message carries when no content row names it', async () => {
+    // A tweet's or DM's media gets no content row when X no longer serves the
+    // URL (durableMediaUrl), and a WhatsApp photo never had one. The file is
+    // reachable only through communications.attachments, so without that lane
+    // it falls through to the bare linked_table 'files' and counts as derived.
+    const sql = await sqlOf();
+
+    expect(sql).toContain('FROM ci.communications m');
+    expect(sql).toContain('jsonb_array_elements(');
+    expect(sql).toContain("a ->> 'type' = 'file'");
+    expect(sql).toContain("rs.record_table = 'communications' AND rs.record_id = m.id");
+    // Both lanes feed one earliest-arrival pick per file.
+    expect(sql).toContain('FROM file_arrivals ORDER BY file_id, first_seen ASC');
+  });
+
+  it('does not let a non-array attachments value fail the whole stats query', async () => {
+    // jsonb_array_elements raises on a scalar or object, and the planner may
+    // evaluate it before any WHERE filter, so the guard has to wrap the argument.
+    const sql = await sqlOf();
+
+    expect(sql).toContain(
+      "CASE WHEN jsonb_typeof(m.attachments) = 'array' THEN m.attachments ELSE '[]'::jsonb END",
+    );
+  });
+
   it('spells a ledger source as the import route, so one importer is one row', async () => {
     // People from an import are filed under linked_table 'import:venmo'; the
     // payments' ledger platform is 'venmo'. Same prefix, same bucket.

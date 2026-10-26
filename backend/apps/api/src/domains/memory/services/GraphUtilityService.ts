@@ -1579,7 +1579,8 @@ export class GraphUtilityService {
    *                                 out on this device"). The record's earliest
    *                                 arrival names its platform (or source
    *                                 system); a File entity reads it through the
-   *                                 content row that names the file.
+   *                                 content row or the message that names the
+   *                                 file.
    *  5. `linked_table`            — the origin table / import route, minus the
    *                                 content-free values in {@link GENERIC_SOURCE_KEYS}.
    *  6. `properties.importerType` — the *record shape* ("contact"), not an
@@ -1612,19 +1613,37 @@ export class GraphUtilityService {
     const rows: Array<{ source: string; kind: EntitySourceKind; count: number }> =
       await this.entityRepo.manager.query(
         `
-        WITH file_sources AS (
-          -- A stored photo or document is a ci.files row; the content row the
-          -- import made for it names the file in external_id and has the ledger
-          -- arrival. One source per file, the earliest arrival.
-          SELECT DISTINCT ON (c.external_id)
-                 c.external_id AS file_id,
-                 COALESCE(NULLIF(rs.platform, ''), NULLIF(rs.source_system, '')) AS src
+        WITH file_arrivals AS (
+          -- A stored photo or document is a ci.files row. Two records can name
+          -- it: the content row an import made for it (external_id), and the
+          -- message that carries it (communications.attachments). A tweet's or
+          -- DM's media gets no content row when X no longer serves its URL, and
+          -- a WhatsApp or Messenger photo never had one, so the message is the
+          -- only record that says where the file came from.
+          SELECT c.external_id AS file_id, rs.platform, rs.source_system, rs.first_seen
           FROM ci.content c
           JOIN ci.record_sources rs
             ON rs.user_id = c.user_id AND rs.record_table = 'content' AND rs.record_id = c.id
           WHERE c.user_id = $1
             AND c.external_id_kind = 'file'
-          ORDER BY c.external_id, rs.first_seen ASC
+          UNION ALL
+          SELECT a ->> 'id', rs.platform, rs.source_system, rs.first_seen
+          FROM ci.communications m
+          CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN jsonb_typeof(m.attachments) = 'array' THEN m.attachments ELSE '[]'::jsonb END
+          ) a
+          JOIN ci.record_sources rs
+            ON rs.user_id = m.user_id AND rs.record_table = 'communications' AND rs.record_id = m.id
+          WHERE m.user_id = $1
+            AND a ->> 'type' = 'file'
+        ),
+        file_sources AS (
+          -- One source per file, the earliest arrival.
+          SELECT DISTINCT ON (file_id)
+                 file_id,
+                 COALESCE(NULLIF(platform, ''), NULLIF(source_system, '')) AS src
+          FROM file_arrivals
+          ORDER BY file_id, first_seen ASC
         ),
         candidates AS (
           SELECT CASE WHEN properties ->> 'is_self' = 'true' THEN $2 END AS self_src,
