@@ -898,3 +898,139 @@ describe('SpeechWeb — the fallback must never reach the browser speech APIs', 
     expect(capability.reason).toBeTruthy();
   });
 });
+
+/**
+ * The committed iOS project must name what `cap sync` and Xcode will build. Two files drift from the sources next to
+ * them without any compiler noticing until a Mac builds the app: the Xcode project (a Swift file added, renamed or
+ * deleted on disk but not in `project.pbxproj` compiles nowhere, or points at nothing) and `Podfile.lock` (`cap sync`
+ * rewrites it from the plugins, so a stale one leaves every sync with a dirty tree, and an Xcode run that skips the sync
+ * stops at "The sandbox is not in sync with the Podfile.lock"). Both went stale in the 0.18.0 LiteRT-LM bump and the
+ * app-lock plugin, and the iOS app did not build from `main` for days.
+ */
+describe('the committed iOS project matches its sources', () => {
+  const IOS = join(ROOT, 'frontend/apps/ios/ios/App');
+  const APP_SOURCES = join(IOS, 'App');
+
+  /** Every `.swift` under `dir`, relative to `base`, sorted. */
+  function swiftFiles(dir: string, base = dir): string[] {
+    return readdirSync(dir, { withFileTypes: true })
+      .flatMap((entry) =>
+        entry.isDirectory()
+          ? swiftFiles(join(dir, entry.name), base)
+          : entry.name.endsWith('.swift')
+            ? [join(dir, entry.name).slice(base.length + 1)]
+            : [],
+      )
+      .sort();
+  }
+
+  /**
+   * The files the `App` target's Sources phase compiles — the phase that lists `AppDelegate.swift` — as paths relative to
+   * `App/`'s parent, each resolved the way Xcode does: the build file's `fileRef`, then the `path` of that reference
+   * under the `path` of every group above it. `null` stands for an entry that does not resolve to a file reference.
+   */
+  function compiledByApp(): { path: string | null; name: string }[] {
+    const project = read(join(IOS, 'App.xcodeproj/project.pbxproj'));
+    const phase = [...project.matchAll(/isa = PBXSourcesBuildPhase;[\s\S]*?files = \(([\s\S]*?)\);/g)]
+      .map((match) => match[1])
+      .find((files) => files.includes('AppDelegate.swift in Sources'));
+
+    expect(phase, 'the App target has a Sources build phase').toBeDefined();
+
+    const unquote = (value: string) => value.replace(/^"|"$/g, '');
+    const fileRefOf = new Map(
+      [
+        ...project.matchAll(
+          /([0-9A-F]{24}) \/\* [^*]* \*\/ = \{isa = PBXBuildFile; fileRef = ([0-9A-F]{24})/g,
+        ),
+      ].map((match) => [match[1], match[2]] as const),
+    );
+    const fileRefPath = new Map(
+      [
+        ...project.matchAll(
+          /([0-9A-F]{24}) \/\* [^*]* \*\/ = \{isa = PBXFileReference;[^}]*?\bpath = ("[^"]*"|[^;]+);/g,
+        ),
+      ].map((match) => [match[1], unquote(match[2])] as const),
+    );
+    const parentOf = new Map<string, string>();
+    const groupPath = new Map<string, string>();
+
+    for (const group of project.matchAll(
+      /([0-9A-F]{24})(?: \/\*[^*]*\*\/)? = \{\s*isa = PBXGroup;([\s\S]*?)\n\t\t\};/g,
+    )) {
+      const [, id, body] = group;
+      const path = body.match(/\n\t\t\tpath = ("[^"]*"|[^;]+);/);
+
+      if (path) {
+        groupPath.set(id, unquote(path[1]));
+      }
+
+      for (const child of body.match(/children = \(([\s\S]*?)\);/)?.[1].matchAll(/([0-9A-F]{24})/g) ?? []) {
+        parentOf.set(child[1], id);
+      }
+    }
+
+    return [...phase!.matchAll(/([0-9A-F]{24}) \/\* (\S+\.swift) in Sources \*\//g)].map(
+      ([, buildFile, name]) => {
+        const reference = fileRefOf.get(buildFile);
+        const own = reference ? fileRefPath.get(reference) : undefined;
+
+        if (!reference || own === undefined) {
+          return { path: null, name };
+        }
+
+        const segments = [own];
+
+        for (let id = parentOf.get(reference); id; id = parentOf.get(id)) {
+          const path = groupPath.get(id);
+
+          if (path) {
+            segments.unshift(path);
+          }
+        }
+
+        return { path: segments.join('/'), name };
+      },
+    );
+  }
+
+  it('compiles every Swift file under App/App, and nothing that is not there', () => {
+    const onDisk = swiftFiles(APP_SOURCES, IOS);
+    const compiled = compiledByApp();
+
+    expect(
+      compiled.filter((entry) => entry.path === null).map((entry) => entry.name),
+      'Sources entries whose file reference cannot be resolved',
+    ).toEqual([]);
+
+    const paths = compiled.map((entry) => entry.path!);
+
+    expect(new Set(paths).size, 'no file is compiled twice').toBe(paths.length);
+    expect(
+      onDisk.filter((file) => !paths.includes(file)),
+      'Swift files on disk that no Sources phase compiles',
+    ).toEqual([]);
+    expect(
+      paths.filter((path) => !existsSync(join(IOS, path))),
+      'Sources entries for files that no longer exist',
+    ).toEqual([]);
+  });
+
+  it('Podfile.lock covers every pod the Podfile declares', () => {
+    const podfile = read(join(IOS, 'Podfile'));
+    const lock = read(join(IOS, 'Podfile.lock'));
+    const declared = [...podfile.matchAll(/^\s*pod '([^']+)'/gm)].map((match) => match[1]);
+
+    expect(declared.length).toBeGreaterThan(0);
+
+    for (const pod of declared) {
+      expect(
+        lock,
+        `${pod} is in Podfile.lock's DEPENDENCIES — run \`yarn cap sync ios\` and commit the lock`,
+      ).toMatch(new RegExp(`^ {2}- "?${pod} \\(from `, 'm'));
+      expect(lock, `${pod} is in Podfile.lock's EXTERNAL SOURCES`).toMatch(
+        new RegExp(`^ {2}${pod}:\\n {4}:path:`, 'm'),
+      );
+    }
+  });
+});

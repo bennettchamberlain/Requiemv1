@@ -45,7 +45,7 @@ enum CompanionToolContext {
   static var structuredResults = false
   /// Set by `LocalLLMPlugin.configureIntentTools` from the web layer's `connectionMode`: anything but
   /// `connected`. The phone's own search (`LocalSearchTool`) then answers `knowledge_search` ahead of
-  /// the appliance's, whose call would fail anyway. UNCOMPILED — see LocalSearch.swift.
+  /// the appliance's, whose call would fail anyway.
   static var localSearchPreferred = false
 
   /// Runs an intent after re-checking the server's ruling.
@@ -111,7 +111,7 @@ enum CompanionToolContext {
   /// The phone's search joins the set when a replica is on this phone: in place of the appliance's
   /// `knowledge_search` while not connected, and as the whole set when the catalog gave none —
   /// which until 2026-10-22 left the model with no tools at all. Mirrors Android's
-  /// `IntentToolProvider.toolsForLoad`. UNCOMPILED — see LocalSearch.swift.
+  /// `IntentToolProvider.toolsForLoad`.
   static func withLocalSearch(_ appliance: [any Tool]) -> [any Tool] {
     guard let store = LocalSearchStore.shared, store.isAvailable else { return appliance }
     let applianceSearch = appliance.contains { type(of: $0).name == LocalSearchTool.name && !($0 is LocalSearchTool) }
