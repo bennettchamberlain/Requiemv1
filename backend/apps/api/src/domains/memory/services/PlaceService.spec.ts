@@ -214,3 +214,63 @@ describe('PlaceService.update', () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+describe('PlaceService Change History', () => {
+  it('records a place added by hand', async () => {
+    const { service } = makeService();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deltas = (service as any).graphDeltaWriter;
+
+    await service.create(CONTEXT, { id: 'pl1', name: 'Corner Cafe' });
+
+    expect(deltas.entityCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: 'pl1',
+        entityType: 'Location',
+        name: 'Corner Cafe',
+        changeSource: 'PlaceService.create',
+      }),
+    );
+  });
+
+  it('records only what a place edit changed', async () => {
+    const existing = Object.assign(new PlaceEntity(), {
+      id: 'pl1',
+      entityType: 'Location',
+      name: 'Cafe',
+      description: null,
+      placeKind: null,
+      parentPlaceId: null,
+      locationPoint: { type: 'Point', coordinates: [-122.41, 37.8] },
+      properties: { type: 'venue' },
+    });
+    const entityUpdated = jest.fn(async () => undefined);
+    const repository = {
+      update: jest.fn(async () => ({ affected: 1 })),
+      findOne: jest.fn(async () => existing),
+      metadata: { target: PlaceEntity, columns: { length: 8 } },
+    };
+    const service = new PlaceService(
+      repository as never,
+      { send: jest.fn(async () => []) } as never,
+      {
+        entityUpdated,
+      } as never,
+    );
+
+    await service.update(CONTEXT, 'pl1', {
+      name: 'Corner Cafe',
+      latitude: 37.8,
+      longitude: -122.41,
+      properties: { type: 'venue' },
+    });
+
+    expect(entityUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: 'pl1',
+        changeSource: 'PlaceService.update',
+        changedFields: { name: { old: 'Cafe', new: 'Corner Cafe' } },
+      }),
+    );
+  });
+});

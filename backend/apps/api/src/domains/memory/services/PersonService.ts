@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Repository } from 'typeorm';
 import { v7 as uuid7 } from 'uuid';
@@ -23,6 +23,7 @@ import {
   personAppearanceListSql,
 } from './appearanceBrowse';
 import { EntityService } from './EntityService';
+import { GraphDeltaWriter, changedFieldsBetween } from './GraphDeltaWriter';
 import { type JsonbLeafPatch, buildJsonbLeafPatchSql } from './jsonbLeafPatch';
 import { type PurgedPeople, purgePersonAggregates } from './personPurge';
 
@@ -109,6 +110,9 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     personRepository: Repository<PersonEntity>,
     private readonly logger: LoggerService,
     private readonly eventService: EventService,
+    // Change History. Optional so unit harnesses that build the service by hand
+    // keep working; the module always provides it.
+    @Optional() private readonly graphDeltaWriter?: GraphDeltaWriter,
   ) {
     super(personRepository, PersonEntity);
     this.logger.setContext(PersonService.name);
@@ -156,7 +160,7 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     // always fires here.
     let entity: PersonEntity;
     try {
-      entity = await this.repository.manager.transaction((manager) => {
+      entity = await this.repository.manager.transaction(async (manager) => {
         const instance = this.repository.create({
           id: data.id || uuid7(),
           name: data.name,
@@ -169,7 +173,21 @@ export class PersonService extends EntityService<PersonEntity, Person> {
           ...typedColumnsFromProperties(properties),
         });
 
-        return this.persistCreate(manager, instance);
+        const saved = await this.persistCreate(manager, instance);
+
+        await this.graphDeltaWriter?.entityCreated({
+          entityId: saved.id,
+          entityType: 'Person',
+          name: saved.name,
+          description: saved.description,
+          properties: saved.properties,
+          ownerUserId: context.userId,
+          changeSource: 'PersonService.create',
+          changedByUserId: context.userId,
+          manager,
+        });
+
+        return saved;
       });
     } catch (err) {
       // Lost a race to a concurrent insert of the same linked key (23505) —
@@ -655,6 +673,11 @@ export class PersonService extends EntityService<PersonEntity, Person> {
       return this.findById(context, id);
     }
 
+    // What the row held, so Change History can say what this edit changed.
+    const before = this.graphDeltaWriter
+      ? await this.repository.findOne({ where: { id, ...this.scopeToUser(context) } })
+      : null;
+
     let qb = this.repository
       .createQueryBuilder()
       .update()
@@ -676,11 +699,50 @@ export class PersonService extends EntityService<PersonEntity, Person> {
       return null;
     }
 
+    if (before) {
+      await this.recordPatch(context, before, data);
+    }
+
     await this.eventService.send(PersonUpdatedEvent, {
       personId: id,
     });
 
     return this.findById(context, id);
+  }
+
+  /**
+   * One Change History row for a {@link patch}, holding only the fields whose
+   * value moved. The Edit Person form sends every field back, changed or not,
+   * so the patch itself is not the change.
+   */
+  private async recordPatch(
+    context: ServiceContext,
+    before: PersonEntity,
+    data: { name?: string; description?: string; propertiesPatch?: Record<string, unknown> },
+  ): Promise<void> {
+    const patchKeys = Object.keys(data.propertiesPatch ?? {});
+    const changedFields = {
+      ...changedFieldsBetween(
+        { name: before.name, description: before.description },
+        { name: data.name ?? before.name, description: data.description ?? before.description },
+        ['name', 'description'],
+      ),
+      ...changedFieldsBetween(before.properties ?? {}, data.propertiesPatch ?? {}, patchKeys),
+    };
+
+    if (Object.keys(changedFields).length === 0) {
+      return;
+    }
+
+    await this.graphDeltaWriter?.entityUpdated({
+      entityId: before.id,
+      entityType: 'Person',
+      name: data.name ?? before.name,
+      changedFields,
+      ownerUserId: before.userId,
+      changeSource: 'PersonService.patch',
+      changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+    });
   }
 
   /**

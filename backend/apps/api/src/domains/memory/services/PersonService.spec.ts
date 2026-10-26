@@ -234,3 +234,94 @@ describe('PersonService single create still emits', () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+describe('PersonService Change History', () => {
+  function makeDeltaService(stored: PersonEntity | null) {
+    const deltas = {
+      entityCreated: jest.fn(async () => undefined),
+      entityUpdated: jest.fn(async () => undefined),
+    };
+    const updateQb: Record<string, jest.Mock> = {};
+    for (const step of ['update', 'set', 'where', 'andWhere', 'setParameter']) {
+      updateQb[step] = jest.fn(() => updateQb);
+    }
+
+    updateQb.execute = jest.fn(async () => ({ affected: 1 }));
+    const repository: Record<string, unknown> = {
+      create: jest.fn((partial: Partial<PersonEntity>) => Object.assign(new PersonEntity(), partial)),
+      save: jest.fn(async (entity: PersonEntity) => entity),
+      findOne: jest.fn(async () => stored),
+      target: PersonEntity,
+      metadata: { target: PersonEntity, primaryColumns: [{ propertyName: 'id' }] },
+      createQueryBuilder: jest.fn(() => updateQb),
+    };
+    repository.manager = {
+      transaction: jest.fn(async (cb: (m: unknown) => unknown) => cb({ getRepository: () => repository })),
+    };
+    const service = new PersonService(
+      repository as never,
+      { setContext: jest.fn() } as never,
+      { send: jest.fn(async () => []) } as never,
+      deltas as never,
+    );
+
+    return { service, deltas };
+  }
+
+  const robin = () =>
+    Object.assign(new PersonEntity(), {
+      id: 'p1',
+      name: 'Robin Hale',
+      description: null,
+      userId: USER,
+      properties: { nickname: 'Rob', job_title: null, website: '' },
+    });
+
+  it('records a person added by hand', async () => {
+    const { service, deltas } = makeDeltaService(null);
+
+    await service.create(CONTEXT, { id: 'p1', name: 'Robin Hale' });
+
+    expect(deltas.entityCreated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: 'p1',
+        entityType: 'Person',
+        name: 'Robin Hale',
+        changeSource: 'PersonService.create',
+      }),
+    );
+  });
+
+  it('records only the fields an edit changed', async () => {
+    const { service, deltas } = makeDeltaService(robin());
+
+    await service.patch(CONTEXT, 'p1', {
+      name: 'Robin Hale',
+      description: '',
+      propertiesPatch: { nickname: 'Robbie', job_title: 'Tester', website: null },
+    });
+
+    expect(deltas.entityUpdated).toHaveBeenCalledTimes(1);
+    expect(deltas.entityUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityId: 'p1',
+        changeSource: 'PersonService.patch',
+        changedFields: {
+          nickname: { old: 'Rob', new: 'Robbie' },
+          job_title: { old: null, new: 'Tester' },
+        },
+      }),
+    );
+  });
+
+  it('records nothing when the edit sends every field back unchanged', async () => {
+    const { service, deltas } = makeDeltaService(robin());
+
+    await service.patch(CONTEXT, 'p1', {
+      name: 'Robin Hale',
+      propertiesPatch: { nickname: 'Rob', job_title: null, website: null },
+    });
+
+    expect(deltas.entityUpdated).not.toHaveBeenCalled();
+  });
+});

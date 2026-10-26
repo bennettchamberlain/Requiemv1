@@ -429,3 +429,70 @@ describe('RelationshipService.upsert', () => {
     expect(result?.strength).toBe(3);
   });
 });
+
+describe('RelationshipService Change History', () => {
+  function withDeltas() {
+    const repo = { ...makeRepo(), delete: jest.fn(async () => ({ affected: 1 })) };
+    const { service } = makeService(repo);
+    const record = jest.fn(async () => undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (service as any).graphDeltaWriter = { record };
+
+    return { service, repo, record };
+  }
+
+  it('records a link added in the app on both ends', async () => {
+    const { service, record } = withDeltas();
+
+    await service.create(ownerCtx, {
+      fromNodeId: 'p1',
+      fromNodeType: 'person',
+      toNodeId: 'p2',
+      toNodeType: 'person',
+      type: 'KNOWS',
+    });
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeType: 'relationship',
+        changeType: 'created',
+        relationshipType: 'KNOWS',
+        fromEntityId: 'p1',
+        toEntityId: 'p2',
+        ownerUserId: 'owner-1',
+        changeSource: 'RelationshipService.create',
+      }),
+    );
+  });
+
+  it('records a link removed in the app', async () => {
+    const { service, repo, record } = withDeltas();
+    repo.findOne.mockResolvedValue({
+      id: 'r1',
+      fromNodeId: 'p1',
+      toNodeId: 'p2',
+      type: 'KNOWS',
+      userId: 'owner-1',
+      properties: {},
+    });
+
+    await expect(service.delete(ownerCtx, 'r1')).resolves.toBe(true);
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changeType: 'deleted',
+        relationshipId: 'r1',
+        changeSource: 'RelationshipService.delete',
+      }),
+    );
+  });
+
+  it('records nothing when there was no link to remove', async () => {
+    const { service, repo, record } = withDeltas();
+    repo.findOne.mockResolvedValue(null);
+    repo.delete.mockResolvedValue({ affected: 0 });
+
+    await expect(service.delete(ownerCtx, 'r1')).resolves.toBe(false);
+    expect(record).not.toHaveBeenCalled();
+  });
+});

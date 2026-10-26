@@ -25,7 +25,7 @@ import {
   placeAppearanceListSql,
 } from './appearanceBrowse';
 import { EVENT_HAPPENED_SQL } from './eventHappened';
-import { GraphDeltaWriter } from './GraphDeltaWriter';
+import { GraphDeltaWriter, changedFieldsBetween } from './GraphDeltaWriter';
 import { type PurgedPlaces, purgePlaceAggregates } from './placePurge';
 
 /**
@@ -816,6 +816,17 @@ export class PlaceService {
         // they were just persisted. Populate them from the saved row.
         placeResult.loadPropertiesFromJsonb();
 
+        await this.graphDeltaWriter.entityCreated({
+          entityId: placeResult.id,
+          entityType: 'Location',
+          name: placeResult.name,
+          description: placeResult.description,
+          properties: placeResult.properties,
+          ownerUserId: context.userId,
+          changeSource: 'PlaceService.create',
+          changedByUserId: context.userId,
+        });
+
         return PlaceEntity.toEgressType(placeResult);
       }),
     );
@@ -1169,6 +1180,43 @@ export class PlaceService {
 
       if (result.affected === 0) {
         return null;
+      }
+
+      // Only what moved: the place form sends every field back on each save.
+      const changedFields = {
+        ...changedFieldsBetween(
+          { name: place.name, description: place.description },
+          { name: rest.name ?? place.name, description: rest.description ?? place.description },
+          ['name', 'description'],
+        ),
+        ...changedFieldsBetween(
+          {
+            coordinates: place.locationPoint?.coordinates ?? null,
+            place_kind: place.placeKind,
+            parent_place_id: place.parentPlaceId,
+          },
+          {
+            coordinates: typed.locationPoint
+              ? typed.locationPoint.coordinates
+              : (place.locationPoint?.coordinates ?? null),
+            place_kind: typed.placeKind !== undefined ? typed.placeKind : place.placeKind,
+            parent_place_id: typed.parentPlaceId !== undefined ? typed.parentPlaceId : place.parentPlaceId,
+          },
+          ['coordinates', 'place_kind', 'parent_place_id'],
+        ),
+        ...changedFieldsBetween(place.properties ?? {}, props, Object.keys(properties ?? {})),
+      };
+
+      if (Object.keys(changedFields).length > 0) {
+        await this.graphDeltaWriter.entityUpdated({
+          entityId: id,
+          entityType: 'Location',
+          name: rest.name ?? place.name,
+          changedFields,
+          ownerUserId: typeof context.userId === 'string' ? context.userId : null,
+          changeSource: 'PlaceService.update',
+          changedByUserId: typeof context.userId === 'string' ? context.userId : null,
+        });
       }
 
       await this.eventService.send(PlaceUpdatedEvent, {
