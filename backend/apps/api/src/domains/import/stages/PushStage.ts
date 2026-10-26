@@ -80,11 +80,10 @@ import {
 import { claimedCoordinates, legacyKeyClaims, planLegacyKeyMoves } from '../push/legacyKeys';
 import {
   type IsSelf,
+  isOwnerContact,
   makeIsSelf,
-  matchOwner,
   NOBODY_IS_SELF,
   readSelfIdentity,
-  shouldMapContactToSelf,
   type SelfIdentity,
 } from '../push/self';
 import {
@@ -2122,39 +2121,20 @@ export class PushStage implements ImportStageRunner {
     trustMode: TrustMode,
   ): boolean {
     const props = input.properties ?? {};
-    const candidates: string[] = [];
-    if (typeof input.name === 'string') {
-      candidates.push(input.name);
-    }
+    const strings = (single: unknown, list: unknown): string[] =>
+      [single, ...(Array.isArray(list) ? list : [])].filter(
+        (value): value is string => typeof value === 'string' && value.trim().length > 0,
+      );
 
-    if (typeof props.email === 'string') {
-      candidates.push(props.email);
-    }
-
-    for (const email of Array.isArray(props.emails) ? props.emails : []) {
-      if (typeof email === 'string') {
-        candidates.push(email);
-      }
-    }
-
-    if (typeof props.phone === 'string') {
-      candidates.push(props.phone);
-    }
-
-    for (const phone of Array.isArray(props.phones) ? props.phones : []) {
-      if (typeof phone === 'string') {
-        candidates.push(phone);
-      }
-    }
-
-    for (const candidate of candidates) {
-      const match = matchOwner(identity, candidate);
-      if (shouldMapContactToSelf(match, trustMode)) {
-        return true;
-      }
-    }
-
-    return false;
+    return isOwnerContact(
+      identity,
+      {
+        name: typeof input.name === 'string' ? input.name : null,
+        emails: strings(props.email, props.emails),
+        phones: strings(props.phone, props.phones),
+      },
+      trustMode,
+    );
   }
 
   /**

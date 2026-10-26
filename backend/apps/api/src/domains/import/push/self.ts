@@ -452,6 +452,40 @@ export function shouldMapContactToSelf(
 }
 
 /**
+ * Whether a contact the push is about to mint is the owner, so it maps onto the
+ * self Person instead of becoming a Person of its own.
+ *
+ * The rule {@link matchParticipantOwner} applies to a message's participants,
+ * over a contact's handles. A contact that carries an email or a phone is the
+ * owner only when one of them IS the owner's: its display name is whatever the
+ * sender typed, so a mail from `"<owner name>" <x@elsewhere>` stays somebody
+ * else. Matched on the name, it became the owner, the push filed the mail as
+ * sent by them, and a SENT edge from the owner was projected that nothing
+ * later took back. Only a contact with no handle at all (a chat display name)
+ * is matched by name, and {@link shouldMapContactToSelf} gates that on trust.
+ */
+export function isOwnerContact(
+  identity: SelfIdentity,
+  contact: { name?: string | null; emails: readonly string[]; phones: readonly string[] },
+  trustMode: 'cautious' | 'balanced' | 'hands_off',
+): boolean {
+  const handleMatches = [
+    ...contact.emails.map((email) => matchOwnerIdentifier(identity, 'email', normalizeEmail(email) ?? '')),
+    ...contact.phones.map((phone) => matchOwnerIdentifier(identity, 'phone', normalizePhone(phone) ?? '')),
+  ];
+
+  if (handleMatches.some((match) => shouldMapContactToSelf(match, trustMode))) {
+    return true;
+  }
+
+  if (contact.emails.length > 0 || contact.phones.length > 0 || !contact.name) {
+    return false;
+  }
+
+  return shouldMapContactToSelf(matchOwner(identity, contact.name), trustMode);
+}
+
+/**
  * Trust dial for folding owner stubs into self (mirrors `person_self_merge` /
  * graph_entity decide rules without importing PersonalizationService — that
  * barrel closes a maintenance ↔ llm ↔ tools ↔ import cycle).

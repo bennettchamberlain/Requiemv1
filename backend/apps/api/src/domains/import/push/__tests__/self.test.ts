@@ -1,6 +1,7 @@
 import {
   decideSelfCollation,
   isExactOwnerIdentifier,
+  isOwnerContact,
   makeIsSelf,
   matchOwner,
   matchOwnerIdentifier,
@@ -173,6 +174,41 @@ describe('matchOwner / shouldMapContactToSelf', () => {
     expect(shouldMapContactToSelf(name, 'cautious')).toBe(false);
     expect(shouldMapContactToSelf(name, 'balanced')).toBe(true);
     expect(shouldMapContactToSelf(name, 'hands_off')).toBe(true);
+  });
+});
+
+describe('isOwnerContact', () => {
+  const id = identity({ phones: ['+1 415-555-0100'] });
+
+  it("is not the owner when the contact has the owner's name but somebody else's address", () => {
+    // A mail from "Liam Broza" <stranger@example.net>: the push filed it as sent by the owner.
+    for (const trust of ['cautious', 'balanced', 'hands_off'] as const) {
+      expect(
+        isOwnerContact(id, { name: 'Liam Broza', emails: ['stranger@example.net'], phones: [] }, trust),
+      ).toBe(false);
+    }
+
+    expect(
+      isOwnerContact(id, { name: 'Liam Broza', emails: [], phones: ['+1 212-555-0199'] }, 'balanced'),
+    ).toBe(false);
+  });
+
+  it("is the owner when one of the contact's handles is the owner's, whatever the name", () => {
+    expect(
+      isOwnerContact(
+        id,
+        { name: 'LB', emails: ['other@example.org', 'Liam.Broza@example.com'], phones: [] },
+        'cautious',
+      ),
+    ).toBe(true);
+    expect(isOwnerContact(id, { name: null, emails: [], phones: ['(415) 555-0100'] }, 'cautious')).toBe(true);
+  });
+
+  it('still matches a contact with no handle by name, outside cautious', () => {
+    // A WhatsApp sender name: the case the name match exists for.
+    expect(isOwnerContact(id, { name: 'Liam Broza', emails: [], phones: [] }, 'balanced')).toBe(true);
+    expect(isOwnerContact(id, { name: 'Liam Broza', emails: [], phones: [] }, 'cautious')).toBe(false);
+    expect(isOwnerContact(id, { name: 'Alice Example', emails: [], phones: [] }, 'hands_off')).toBe(false);
   });
 });
 
