@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 
 import { fetchJson, FetchJsonError } from '@ci/common';
 import { Button, Card, Dialog, Input, Label, PasswordInput } from '@ci/shadcn';
@@ -154,6 +154,14 @@ export function AccountSection() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSavedNote, setPasswordSavedNote] = useState<string | null>(null);
+
+  // An error is about the values it was shown for. Editing a field clears it: the browser's own
+  // checks (a too-short password) stop the next submit before handleChangePassword runs, so
+  // "New passwords do not match." otherwise stayed beside a message about something else.
+  const editPasswordField = (set: (value: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+    set(e.target.value);
+    setPasswordError(null);
+  };
 
   const handleChangePassword = async (e: FormEvent) => {
     e.preventDefault();
@@ -361,7 +369,7 @@ export function AccountSection() {
                       id="passwordCurrentPassword"
                       autoComplete="current-password"
                       value={passwordCurrentPassword}
-                      onChange={(e) => setPasswordCurrentPassword(e.target.value)}
+                      onChange={editPasswordField(setPasswordCurrentPassword)}
                       disabled={passwordSaving}
                       required
                     />
@@ -375,7 +383,7 @@ export function AccountSection() {
                     autoComplete="new-password"
                     minLength={MIN_PASSWORD_LENGTH}
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
+                    onChange={editPasswordField(setNewPassword)}
                     disabled={passwordSaving}
                     required
                   />
@@ -387,7 +395,7 @@ export function AccountSection() {
                     id="confirmNewPassword"
                     autoComplete="new-password"
                     value={confirmNewPassword}
-                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    onChange={editPasswordField(setConfirmNewPassword)}
                     disabled={passwordSaving}
                     required
                   />
