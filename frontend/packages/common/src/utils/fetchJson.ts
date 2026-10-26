@@ -533,12 +533,23 @@ export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T |
     rest.signal = controller.signal;
   }
 
+  // The deadline covers reading a success body too: aborting the signal errors the body
+  // stream, so a server that sends headers and then stalls cannot outlive `timeout`. It also
+  // means a 2xx whose headers arrive in time and whose body arrives after the deadline
+  // rejects with `AbortError`, even when the server has already applied the write. An
+  // error response gives up the deadline at its headers and reads its body under
+  // `ERROR_BODY_TIMEOUT_MS` instead, as before.
   // clear in `finally`: if fetch() rejects (network error, DNS failure) before
   // the timeout fires, skipping the clear would leave the timer pending — it
   // would later abort an already-settled request and keep the event loop alive.
   let res: Response;
+  let text: string | undefined;
   try {
     res = await nativeAwareFetch(resolved, rest, timeout);
+
+    if (res.ok) {
+      text = await res.text();
+    }
   } finally {
     if (timeoutId != null) {
       clearTimeout(timeoutId);
@@ -549,8 +560,6 @@ export async function fetchJson<T>(input: RequestInfo, init?: Opts): Promise<T |
     const { serverMessage, issues } = await parseErrorBody(res);
     throw new FetchJsonError(res.status, res.statusText, serverMessage, issues);
   }
-
-  const text = await res.text();
 
   return text ? (JSON.parse(text) as T) : undefined;
 }

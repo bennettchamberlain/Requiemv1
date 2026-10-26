@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { bindPowerSyncDatabase } from '@/api/powersync/session';
 
+import { MEMORY_ANSWER_DEADLINE_MS } from './rememberedUser';
 import { AuthProvider, useAuth } from './useAuth';
 
 vi.mock('jwt-decode', () => ({ jwtDecode: vi.fn() }));
@@ -44,6 +45,15 @@ function setFetch(handler: Handler) {
   vi.stubGlobal('fetch', mock);
 
   return mock;
+}
+
+/** A request that is accepted and never answered: it ends only when its signal aborts, as a real fetch does. */
+function hang(init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () =>
+      reject(new DOMException('The operation was aborted.', 'AbortError')),
+    );
+  });
 }
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -188,6 +198,251 @@ describe('useAuth', () => {
 
       await act(async () => {
         await result.current[1].refresh();
+      });
+
+      expect(result.current[0].authToken).toBe('initial-token');
+      expect(result.current[0].unreachable).toBe(true);
+      expect(result.current[0].error).toBeNull();
+    });
+  });
+
+  describe('when Memory takes the session check and never answers', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('gives up at the deadline and reports Memory unreachable, not signed out', async () => {
+      const fetchMock = setFetch((_url, init) => hang(init));
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS - 1000);
+      });
+      expect(result.current[0].initializing).toBe(true);
+      expect(result.current[0].unreachable).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      expect(result.current[0].initializing).toBe(false);
+      expect(result.current[0].unreachable).toBe(true);
+      // A timeout is not an "expired session": no error for the login page to show.
+      expect(result.current[0].error).toBeNull();
+      // One deadline in all: the csrf prime timing out ends the check, so neither the Hub
+      // bridge nor the refresh waits out a deadline of its own behind it.
+      expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/api/authenticate/csrf']);
+    });
+
+    it('waits out a slow Memory that answers within the deadline', async () => {
+      let answer: (res: Response) => void = () => undefined;
+
+      setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/refresh')) {
+          return new Promise<Response>((resolve) => {
+            answer = resolve;
+            init?.signal?.addEventListener('abort', () => undefined);
+          });
+        }
+
+        return emptyResponse();
+      });
+      document.cookie = 'csrfToken=csrf-abc';
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS - 7000);
+      });
+      expect(result.current[0].unreachable).toBe(false);
+
+      await act(async () => {
+        answer(jsonResponse({ accessToken: 'slow' }));
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+      });
+
+      expect(result.current[0].authToken).toBe('slow');
+      expect(result.current[0].unreachable).toBe(false);
+      expect(result.current[0].error).toBeNull();
+    });
+
+    it('signs in by itself once Memory answers again, asking once at a time meanwhile', async () => {
+      let memoryUp = false;
+      let bridgeCalls = 0;
+      let refreshCalls = 0;
+
+      const fetchMock = setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/refresh')) {
+          refreshCalls += 1;
+
+          return memoryUp ? jsonResponse({ accessToken: 'back' }) : hang(init);
+        }
+
+        if (url.endsWith('/api/authenticate/hub-bridge')) {
+          bridgeCalls += 1;
+
+          return memoryUp ? emptyResponse() : hang(init);
+        }
+
+        return emptyResponse();
+      });
+      document.cookie = 'csrfToken=csrf-abc';
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+      });
+      expect(result.current[0].unreachable).toBe(true);
+      expect(bridgeCalls).toBe(1);
+      expect(refreshCalls).toBe(0);
+
+      // The first retry asks the bridge again, which hangs for a full deadline; the ticks
+      // during it send nothing more.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+      });
+      expect(bridgeCalls).toBe(2);
+      expect(refreshCalls).toBe(0);
+      expect(result.current[0].unreachable).toBe(true);
+      expect(result.current[0].authToken).toBeNull();
+
+      memoryUp = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      await waitFor(() => expect(result.current[0].authToken).toBe('back'));
+      expect(result.current[0].unreachable).toBe(false);
+      // The timed-out bridge ended its check without a refresh; the next retry ran the whole
+      // check, the bridge and then the refresh.
+      expect(bridgeCalls).toBe(3);
+      expect(refreshCalls).toBe(1);
+      expect(fetchMock.mock.calls.map(([url]) => String(url)).slice(-2)).toEqual([
+        '/api/authenticate/hub-bridge',
+        '/api/authenticate/refresh',
+      ]);
+    });
+
+    it('lets the Hub bridge replace the session on a retry instead of resuming the cookie', async () => {
+      const disconnect = vi.fn().mockResolvedValue(undefined);
+      bindPowerSyncDatabase({ disconnectAndClear: disconnect } as never);
+      let memoryUp = false;
+      let refreshCalls = 0;
+
+      setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/hub-bridge')) {
+          // The Hub names someone other than the Memory cookie.
+          return memoryUp ? jsonResponse({ accessToken: 'hub-token', replaced: true }) : hang(init);
+        }
+
+        if (url.endsWith('/api/authenticate/refresh')) {
+          refreshCalls += 1;
+
+          return jsonResponse({ accessToken: 'cookie-token' });
+        }
+
+        return emptyResponse();
+      });
+      document.cookie = 'csrfToken=csrf-abc';
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+      });
+      expect(result.current[0].unreachable).toBe(true);
+
+      memoryUp = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      await waitFor(() => expect(result.current[0].authToken).toBe('hub-token'));
+      expect(result.current[0].unreachable).toBe(false);
+      expect(refreshCalls).toBe(0);
+      expect(disconnect).toHaveBeenCalled();
+    });
+
+    it('never signs the person out when the Hub bridge times out', async () => {
+      document.cookie = 'csrfToken=csrf-abc';
+      let bridgeCalls = 0;
+      let refreshCalls = 0;
+
+      setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/hub-bridge')) {
+          bridgeCalls += 1;
+
+          // Answers at boot, then never again.
+          return bridgeCalls === 1 ? emptyResponse() : hang(init);
+        }
+
+        if (url.endsWith('/api/authenticate/refresh')) {
+          refreshCalls += 1;
+
+          // Signs in at boot; later the session cookie is refused.
+          return refreshCalls === 1
+            ? jsonResponse({ accessToken: 'initial-token' })
+            : emptyResponse(false, 401);
+        }
+
+        return emptyResponse();
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current[0].authToken).toBe('initial-token'));
+
+      // A later refresh gets a 401, and the bridge it then asks never answers.
+      await act(async () => {
+        const refreshing = result.current[1].refresh();
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+        await refreshing;
+      });
+
+      expect(bridgeCalls).toBe(2);
+      expect(result.current[0].authToken).toBe('initial-token');
+      expect(result.current[0].unreachable).toBe(true);
+      expect(result.current[0].error).toBeNull();
+
+      // The first retry's bridge times out as well, which ends that check before its refresh;
+      // the next retry asks the bridge again.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000 + MEMORY_ANSWER_DEADLINE_MS + 10_000);
+      });
+
+      expect(bridgeCalls).toBe(4);
+      expect(refreshCalls).toBe(2);
+      expect(result.current[0].authToken).toBe('initial-token');
+      expect(result.current[0].unreachable).toBe(true);
+      expect(result.current[0].error).toBeNull();
+    });
+
+    it('keeps the token when a later refresh is never answered', async () => {
+      document.cookie = 'csrfToken=csrf-abc';
+      let refreshCalls = 0;
+
+      setFetch((url, init) => {
+        if (url.endsWith('/api/authenticate/refresh')) {
+          refreshCalls += 1;
+
+          return refreshCalls === 1 ? jsonResponse({ accessToken: 'initial-token' }) : hang(init);
+        }
+
+        return emptyResponse();
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current[0].authToken).toBe('initial-token'));
+
+      await act(async () => {
+        const refreshing = result.current[1].refresh();
+        await vi.advanceTimersByTimeAsync(MEMORY_ANSWER_DEADLINE_MS);
+        await refreshing;
       });
 
       expect(result.current[0].authToken).toBe('initial-token');

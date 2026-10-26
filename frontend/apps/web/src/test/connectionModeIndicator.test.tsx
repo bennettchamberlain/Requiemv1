@@ -160,8 +160,8 @@ describe('ConnectionModeIndicator', () => {
   it('recovers from a probe that never settles instead of hiding the chip for the life of the page', async () => {
     vi.useFakeTimers();
 
-    // Answers its headers and then stalls forever — fetchJson clears its abort
-    // timer once headers arrive, so nothing inside the probe can end this.
+    // Answers its headers and then stalls forever, and the body ignores the
+    // probe's abort signal, so nothing inside the probe can end this.
     const fetchMock = vi.fn(
       () =>
         new Promise<Response>((resolve) => {

@@ -36,7 +36,7 @@ import { disconnectAndClearPowerSyncForLogout } from '@/api/powersync/session';
 import { forgetFeatures } from '@/common/feature/rememberedFeatures';
 import { registerNativePushToken } from '@/lib/registerNativePushToken';
 
-import { forgetUser } from './rememberedUser';
+import { forgetUser, MEMORY_ANSWER_DEADLINE_MS } from './rememberedUser';
 
 const authChannel = new BroadcastChannel('auth');
 
@@ -123,7 +123,7 @@ function withCsrfHeader(headers?: HeadersInit): HeadersInit {
  * token and only mints when the cookie is absent/invalid, so calling this can
  * never invalidate another tab or an open server-rendered form.
  */
-async function primeCsrfCookie(): Promise<boolean> {
+async function primeCsrfCookie({ bounded = false }: { bounded?: boolean } = {}): Promise<boolean> {
   // Native is cookie-less: its cross-origin webview can neither read nor send the
   // SameSite cookie, so it captures the signed token from the response BODY and
   // echoes it as the header (see getCsrfToken). The request must also be
@@ -141,6 +141,7 @@ async function primeCsrfCookie(): Promise<boolean> {
       method: 'GET',
       credentials: native ? 'omit' : 'include',
       skipApiKey: true,
+      ...(bounded ? { timeout: MEMORY_ANSWER_DEADLINE_MS } : {}),
     });
 
     if (native) {
@@ -150,7 +151,14 @@ async function primeCsrfCookie(): Promise<boolean> {
     }
 
     return true;
-  } catch {
+  } catch (err: unknown) {
+    // The session check passes `bounded`: a prime that never answers must end that check
+    // as "Memory did not answer", not as a failed prime followed by a second wait for the
+    // refresh. Login and logout keep treating every failure as a failed prime.
+    if (bounded && isRequestTimeout(err)) {
+      throw err;
+    }
+
     return false;
   }
 }
@@ -233,15 +241,23 @@ async function alignHubSession(): Promise<(AuthResponse & { replaced?: boolean }
 
   try {
     if (!getCsrfToken()) {
-      await primeCsrfCookie();
+      await primeCsrfCookie({ bounded: true });
     }
 
     return await fetchJson<AuthResponse & { replaced?: boolean }>('/api/authenticate/hub-bridge', {
       method: 'POST',
       headers: withCsrfHeader(),
       credentials: 'include',
+      timeout: MEMORY_ANSWER_DEADLINE_MS,
     });
-  } catch {
+  } catch (err: unknown) {
+    // The bridge is best effort, and any answer that is not a replaced session is
+    // ignored. Memory not answering at all is not: the refresh behind it would wait the
+    // same deadline again, so end the session check here.
+    if (isRequestTimeout(err)) {
+      throw err;
+    }
+
     return undefined;
   }
 }
@@ -250,21 +266,34 @@ async function alignHubSession(): Promise<(AuthResponse & { replaced?: boolean }
 const UNREACHABLE_RETRY_MS = 5000;
 
 /**
+ * Whether a session call was cut off by its own deadline (`MEMORY_ANSWER_DEADLINE_MS`).
+ * None of these calls is handed a caller signal, so an abort here can only be that
+ * deadline (while waiting for the headers or for the body); `fetchJson` raises it as an
+ * `AbortError`, a runtime's own timeout as a `TimeoutError`. Matched by name rather than
+ * `instanceof`, since `DOMException` does not extend `Error` in every runtime.
+ */
+function isRequestTimeout(err: unknown): boolean {
+  const name = err != null && typeof err === 'object' ? (err as { name?: unknown }).name : undefined;
+
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
+/**
  * Whether a failed session call means Memory did not answer, rather than that it
- * answered "no session": a network failure, or a 5xx from Memory or the gateway in
- * front of it. A 4xx is an answer.
+ * answered "no session": a network failure, no answer within the deadline, or a 5xx
+ * from Memory or the gateway in front of it. A 4xx is an answer.
  */
 function isUnansweredAuthError(err: unknown): boolean {
   if (err instanceof FetchJsonError) {
     return err.status >= 500;
   }
 
-  return err instanceof TypeError;
+  return err instanceof TypeError || isRequestTimeout(err);
 }
 
 async function refreshSession(): Promise<AuthResponse | undefined> {
   if (!getCsrfToken()) {
-    await primeCsrfCookie();
+    await primeCsrfCookie({ bounded: true });
   }
 
   try {
@@ -272,6 +301,7 @@ async function refreshSession(): Promise<AuthResponse | undefined> {
       method: 'POST',
       headers: withCsrfHeader(),
       credentials: 'include',
+      timeout: MEMORY_ANSWER_DEADLINE_MS,
     });
   } catch (err: unknown) {
     if (!(err instanceof FetchJsonError) || err.status !== 403) {
@@ -284,7 +314,7 @@ async function refreshSession(): Promise<AuthResponse | undefined> {
     // token. Gate the retry on that success (primeCsrfCookie returns res.ok): a
     // failed prime leaves the same rejected cookie in place, so the retry would
     // only burn the one-shot budget on a certain second 403 and log the user out.
-    if (!(await primeCsrfCookie())) {
+    if (!(await primeCsrfCookie({ bounded: true }))) {
       throw err;
     }
 
@@ -292,8 +322,38 @@ async function refreshSession(): Promise<AuthResponse | undefined> {
       method: 'POST',
       headers: withCsrfHeader(),
       credentials: 'include',
+      timeout: MEMORY_ANSWER_DEADLINE_MS,
     });
   }
+}
+
+/**
+ * The session check: the Hub bridge, then the refresh. Boot runs it, and so does every
+ * retry while Memory does not answer it, so a check that first gets an answer on a retry
+ * still lets the bridge replace a Memory session that names someone other than the Hub
+ * person before the refresh resumes that session. Resolves the access token, or null for
+ * none. Throws what the bridge or the refresh throws, so a timeout ends the check at the
+ * first request left unanswered.
+ *
+ * `subject` is the person the token the app already holds names, or null when it holds
+ * none. A session the bridge placed for someone else must not inherit that person's
+ * PowerSync replica; with no token (boot), the replica is taken to be the previous Memory
+ * person's.
+ */
+async function checkSession(subject: string | null): Promise<string | null> {
+  const bridged = await alignHubSession();
+
+  if (bridged?.replaced && bridged.accessToken) {
+    if (!subject || subject !== jwtDecode<JwtPayload>(bridged.accessToken).sub) {
+      await disconnectAndClearPowerSyncForLogout();
+    }
+
+    return bridged.accessToken;
+  }
+
+  const data = await refreshSession();
+
+  return data?.accessToken ?? null;
 }
 
 interface JwtPayload {
@@ -586,6 +646,10 @@ function useAuth(): ReturnValue {
 
   const decoded = useMemo(() => (accessToken ? jwtDecode<JwtPayload>(accessToken) : null), [accessToken]);
   const isExpired = useCallback(() => (decoded ? Date.now() >= decoded.exp * 1000 : true), [decoded]);
+  // Who the held token names, for the retry loop's session check, which outlives a render.
+  const subjectRef = useRef<string | null>(null);
+
+  subjectRef.current = decoded?.sub ?? null;
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -888,7 +952,16 @@ function useAuth(): ReturnValue {
       setAccessToken(data?.accessToken ?? null);
     } catch (err: unknown) {
       if (err instanceof FetchJsonError && err.status === 401) {
-        const bridged = await alignHubSession();
+        let bridged: Awaited<ReturnType<typeof alignHubSession>>;
+
+        try {
+          bridged = await alignHubSession();
+        } catch {
+          // Memory answered the refresh, then stopped answering the bridge.
+          setUnreachable(true);
+
+          return;
+        }
 
         if (bridged?.replaced && bridged.accessToken) {
           const nextSubject = jwtDecode<JwtPayload>(bridged.accessToken).sub;
@@ -950,16 +1023,7 @@ function useAuth(): ReturnValue {
           return;
         }
 
-        const bridged = await alignHubSession();
-
-        if (bridged?.replaced && bridged.accessToken) {
-          // Stale PowerSync replica belongs to the previous Memory person.
-          await disconnectAndClearPowerSyncForLogout();
-          setAccessToken(bridged.accessToken);
-        } else {
-          const data = await refreshSession();
-          setAccessToken(data?.accessToken ?? null);
-        }
+        setAccessToken(await checkSession(null));
       } catch (err: unknown) {
         // No valid session cookie, user will need to log in. Unless Memory did not
         // answer at all, which says nothing about the session: retry instead.
@@ -978,10 +1042,20 @@ function useAuth(): ReturnValue {
       return;
     }
 
+    // A check can now run longer than the interval (it waits out its deadline), so a
+    // tick leaves the previous one to finish rather than stacking requests on a Memory
+    // that is not answering.
+    let asking = false;
+
     const timer = setInterval(() => {
-      refreshSession()
-        .then((data) => {
-          setAccessToken(data?.accessToken ?? null);
+      if (asking) {
+        return;
+      }
+
+      asking = true;
+      checkSession(subjectRef.current)
+        .then((token) => {
+          setAccessToken(token);
           setUnreachable(false);
         })
         .catch((err: unknown) => {
@@ -990,6 +1064,9 @@ function useAuth(): ReturnValue {
             setAccessToken(null);
             setUnreachable(false);
           }
+        })
+        .finally(() => {
+          asking = false;
         });
     }, UNREACHABLE_RETRY_MS);
 

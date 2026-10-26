@@ -17,6 +17,15 @@ import type { ApolloError } from '@apollo/client';
 
 const STORAGE_KEY = 'ci.rememberedUser';
 
+/**
+ * How long the boot requests (the session check and the `me` profile) wait for Memory
+ * before the page treats it as not answering. A Memory that accepts the connection and
+ * never replies (hung, or swamped) fails no request, so without a deadline the page sits
+ * on the loader instead of the "Can't reach Memory" card. Generous on purpose: a busy
+ * dev build takes 5-18 s per page, and that must still open the page, not the card.
+ */
+export const MEMORY_ANSWER_DEADLINE_MS = 25_000;
+
 interface Remembered<User> {
   origin: string;
   user: User;
