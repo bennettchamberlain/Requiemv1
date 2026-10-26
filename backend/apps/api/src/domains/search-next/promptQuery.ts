@@ -353,6 +353,7 @@ export function buildPromptQuery(prompt: string, options: BuildPromptQueryOption
         if (!PHOTO_KIND_WORDS.has(run[index].toLowerCase())) {
           groups.push({ kind: 'term', text: run[index] });
         }
+
         index += 1;
         continue;
       }

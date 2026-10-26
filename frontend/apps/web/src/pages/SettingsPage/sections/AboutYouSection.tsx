@@ -45,11 +45,13 @@ export function familyRoleLabel(member: AboutYouView['family'][number]): string 
       if (member.direction) {
         return member.direction === 'incoming' ? 'parent' : 'child';
       }
+
       break;
     case 'CHILD_OF':
       if (member.direction) {
         return member.direction === 'incoming' ? 'child' : 'parent';
       }
+
       break;
   }
 

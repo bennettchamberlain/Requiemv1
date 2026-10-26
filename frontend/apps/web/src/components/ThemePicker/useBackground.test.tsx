@@ -1,5 +1,6 @@
-import { act, renderHook } from '@testing-library/react';
 import { useEffect, useState } from 'react';
+
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BackgroundProvider, GLOW_STORAGE_KEY, readTexturePalette, useBackground } from './useBackground';
