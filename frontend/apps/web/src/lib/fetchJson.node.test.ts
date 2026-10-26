@@ -146,6 +146,50 @@ describe('fetchJson error responses', () => {
     expect((err as Error).name).toBe('AbortError');
   });
 
+  it('aborts a success body that stalls after the headers once `timeout` passes', async () => {
+    vi.useFakeTimers();
+    // Like a real fetch, aborting the request signal errors the body stream.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: unknown, init?: RequestInit) => {
+        const body = new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener('abort', () =>
+              controller.error(new DOMException('The operation was aborted.', 'AbortError')),
+            );
+          },
+        });
+
+        return new Response(body, { status: 200 });
+      }),
+    );
+
+    const pending = fetchJson('/api/session', { timeout: 1_000 }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(999);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await pending;
+
+    expect(err).not.toBeInstanceOf(FetchJsonError);
+    expect((err as Error).name).toBe('AbortError');
+  });
+
+  it('clears the timeout once the success body is read', async () => {
+    vi.useFakeTimers();
+    stubFetch(jsonResponse(200, 'OK', { accessToken: 'token' }));
+
+    await expect(fetchJson('/api/session', { timeout: 1_000 })).resolves.toEqual({ accessToken: 'token' });
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('returns parsed JSON for 2xx responses', async () => {
     stubFetch(jsonResponse(200, 'OK', { accessToken: 'token' }));
 

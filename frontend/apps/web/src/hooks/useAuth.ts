@@ -268,8 +268,9 @@ const UNREACHABLE_RETRY_MS = 5000;
 /**
  * Whether a session call was cut off by its own deadline (`MEMORY_ANSWER_DEADLINE_MS`).
  * None of these calls is handed a caller signal, so an abort here can only be that
- * deadline; `fetchJson` raises it as an `AbortError`, a runtime's own timeout as a
- * `TimeoutError`.
+ * deadline (while waiting for the headers or for the body); `fetchJson` raises it as an
+ * `AbortError`, a runtime's own timeout as a `TimeoutError`. Matched by name rather than
+ * `instanceof`, since `DOMException` does not extend `Error` in every runtime.
  */
 function isRequestTimeout(err: unknown): boolean {
   const name = err != null && typeof err === 'object' ? (err as { name?: unknown }).name : undefined;
