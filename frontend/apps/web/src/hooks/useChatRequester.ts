@@ -18,7 +18,7 @@ import {
 import { useToast } from '@ci/shadcn';
 
 import type { FormData } from '@/components/Chat';
-import { Channel, FrameEncoder } from '@/components/Chat/utils';
+import { Channel, FrameDecoder, FrameEncoder } from '@/components/Chat/utils';
 
 import { useModel } from './useModel';
 import { useSessionAuth } from './useSessionAuth';
@@ -108,10 +108,15 @@ function pipeMonitor(
   onFlush: () => void,
 ): ReadableStream<Uint8Array> {
   let hasSeenFirstChunk = false;
+  // The server sends keep-alive frames (Channel.KEEPALIVE) from the moment the turn starts, so the
+  // body's first bytes are not the reply's. Counting them hid the "working" dots at once and left
+  // the page blank until the model spoke. Frames are decoded only until one on another channel
+  // arrives.
+  const decoder = new FrameDecoder();
 
   const monitor = new TransformStream({
     transform(chunk, controller) {
-      if (!hasSeenFirstChunk) {
+      if (!hasSeenFirstChunk && decoder.push(chunk).some((frame) => frame.channel !== Channel.KEEPALIVE)) {
         hasSeenFirstChunk = true;
         onFirstChunk();
       }

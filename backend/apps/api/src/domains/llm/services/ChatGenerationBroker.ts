@@ -15,6 +15,9 @@ type Listener = (event: { type: 'chunk'; chunk: ChatGenerationChunk } | { type: 
 /** How often a viewer gets a keep-alive frame while the turn runs; see {@link ChatGenerationBroker.pipeToResponse}. */
 export const KEEPALIVE_INTERVAL_MS = 15_000;
 
+/** The keep-alive frame is always the same five bytes: channel 3, no flags, empty payload. */
+const KEEPALIVE_FRAME = Buffer.from(new FrameEncoder().encodeFrame(Channel.KEEPALIVE, ''));
+
 interface Session {
   abort: AbortController;
   text: string;
@@ -176,11 +179,11 @@ export class ChatGenerationBroker {
 
     // Body bytes now, not at the model's first token. Cloudflare's tunnel holds the response headers
     // until the first body byte, so through a Hub's public address `fetch()` did not resolve for the
-    // whole wait (109.5 s on core-7): the reply never streamed and Stop never appeared. Repeated while
-    // the turn runs, so a long tool call or model load does not leave the connection idle.
+    // whole wait (109.5 s on core-7): the reply never streamed and Stop never appeared. Repeated after
+    // every quiet interval, so a long tool call or model load does not leave the connection idle.
     const keepAlive = () => {
       if (!res.writableEnded) {
-        res.write(Buffer.from(this.encoder.encodeFrame(Channel.KEEPALIVE, '')));
+        res.write(KEEPALIVE_FRAME);
       }
     };
 
@@ -192,17 +195,23 @@ export class ChatGenerationBroker {
     keepAliveTimer.unref?.();
 
     const listener: Listener = (event) => {
+      if (event.type === 'done') {
+        clearInterval(keepAliveTimer);
+      }
+
       if (res.writableEnded) {
         return;
       }
 
       if (event.type === 'chunk') {
         res.write(Buffer.from(this.encoder.encodeFrame(event.chunk.channel, event.chunk.text)));
+        // A frame just went out, so the connection is not idle: the next keep-alive is due one
+        // interval from now, not on the fixed beat.
+        keepAliveTimer.refresh();
 
         return;
       }
 
-      clearInterval(keepAliveTimer);
       res.end();
     };
 
