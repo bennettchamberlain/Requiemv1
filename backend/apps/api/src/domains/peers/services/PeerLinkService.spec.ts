@@ -5,6 +5,11 @@ import { type PeerLinkEntity } from '../entities/PeerLinkEntity';
 
 import { PeerLinkService } from './PeerLinkService';
 
+/** The one GrantService call `upsert` makes, on a re-activation only. */
+function makeGrantService(revoked = 0) {
+  return { revokeForPeerLink: jest.fn().mockResolvedValue(revoked) };
+}
+
 function makeService() {
   const repository = {
     findOne: jest.fn().mockResolvedValue(null),
@@ -12,9 +17,10 @@ function makeService() {
     save: jest.fn().mockImplementation((row: unknown) => Promise.resolve({ ...(row as object) })),
   };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn() };
-  const service = new PeerLinkService(repository as never, logger as never);
+  const grantService = makeGrantService();
+  const service = new PeerLinkService(repository as never, logger as never, grantService as never);
 
-  return { service, repository };
+  return { service, repository, grantService };
 }
 
 const CTX = { userId: 'owner-1' };
@@ -332,7 +338,14 @@ function makeServiceOverRows(rows: FakeRow[]) {
   };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn() };
 
-  return { service: new PeerLinkService(repository as never, logger as never), repository, rows };
+  const grantService = makeGrantService();
+
+  return {
+    service: new PeerLinkService(repository as never, logger as never, grantService as never),
+    repository,
+    rows,
+    grantService,
+  };
 }
 
 const IDENTITY = { issuer: 'https://portal.example.com', subject: 'devon-sub' };
@@ -483,7 +496,7 @@ describe('PeerLinkService — a revoked peer does not authenticate', () => {
     const rows = [
       link({ status: 'revoked', revokedAt: new Date('2026-02-01T00:00:00Z'), trustTier: 'peer' }),
     ];
-    const { service, repository } = makeServiceOverRows(rows);
+    const { service, repository, grantService } = makeServiceOverRows(rows);
     // `upsert` saves a merged copy rather than the row it read, so store it
     // back the way Postgres would before asking again.
     repository.save.mockImplementation((row: FakeRow) => {
@@ -495,6 +508,9 @@ describe('PeerLinkService — a revoked peer does not authenticate', () => {
     const relinked = await service.upsert(CTX as never, { ...DTO, trustTier: 'stranger', status: 'active' });
 
     expect(relinked).toMatchObject({ status: 'active', revokedAt: null, trustTier: 'stranger' });
+    // SECURITY: the grants given before the link was ended do not come back
+    // with it. A new link has none, and a re-added one starts over.
+    expect(grantService.revokeForPeerLink).toHaveBeenCalledWith(CTX, rows[0].id);
     await expect(service.findActiveByPeerIdentity(IDENTITY.issuer, IDENTITY.subject)).resolves.toHaveLength(
       1,
     );
@@ -517,5 +533,75 @@ describe('PeerLinkService — a revoked peer does not authenticate', () => {
     await expect(service.upsert(CTX as never, { ...DTO, status: 'active' })).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+
+  it('tells a re-add that clashes on the identity what to do, without naming a pair it never sent', async () => {
+    const rows = [link({ status: 'revoked', revokedAt: new Date('2026-02-01T00:00:00Z') })];
+    const { service, repository } = makeServiceOverRows(rows);
+
+    repository.save.mockRejectedValue(
+      Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'peer_links_owner_identity_live_uniq',
+      }),
+    );
+
+    const refusal = service.upsert(CTX as never, { ...DTO, status: 'active' });
+
+    await expect(refusal).rejects.toThrow(/re-add this one with a different peerIssuer and peerSubject/);
+    await expect(refusal).rejects.not.toThrow(new RegExp(IDENTITY.subject));
+  });
+
+  it('reports a re-activation that clashes on the live KEY index as a 409', async () => {
+    // The revoked row keeps its signing key too, and that index is partial on
+    // `revoked_at IS NULL` in the same way.
+    const rows = [link({ status: 'revoked', revokedAt: new Date('2026-02-01T00:00:00Z') })];
+    const { service, repository } = makeServiceOverRows(rows);
+
+    repository.save.mockRejectedValue(
+      Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint: 'peer_links_owner_key_live_uniq',
+      }),
+    );
+
+    await expect(service.upsert(CTX as never, { ...DTO, status: 'active' })).rejects.toThrow(/signing key/);
+  });
+
+  it('does not read a nameless 23505 as an identity clash when the re-activated link has no identity', async () => {
+    const rows = [
+      link({
+        status: 'revoked',
+        revokedAt: new Date('2026-02-01T00:00:00Z'),
+        peerIssuer: null,
+        peerSubject: null,
+      }),
+    ];
+    const { service, repository } = makeServiceOverRows(rows);
+    const err = Object.assign(new Error('duplicate key'), { driverError: { code: '23505' } });
+
+    repository.save.mockRejectedValue(err);
+
+    await expect(service.upsert(CTX as never, { ...DTO, status: 'active' })).rejects.toBe(err);
+  });
+
+  it('logs a re-activation, as revoke() logs a revocation', async () => {
+    const rows = [link({ status: 'revoked', revokedAt: new Date('2026-02-01T00:00:00Z') })];
+    const repository = {
+      findOne: jest.fn().mockResolvedValue(rows[0]),
+      create: jest.fn().mockImplementation((row: unknown) => row),
+      save: jest.fn().mockImplementation((row: unknown) => Promise.resolve(row)),
+    };
+    const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn() };
+    const grantService = makeGrantService(2);
+    const service = new PeerLinkService(repository as never, logger as never, grantService as never);
+
+    await service.upsert(CTX as never, { ...DTO, status: 'active' });
+    await service.upsert(CTX as never, { ...DTO, displayName: 'Devon' });
+
+    expect(logger.log).toHaveBeenCalledTimes(1);
+    expect(logger.log).toHaveBeenCalledWith('peer link re-activated: devon; 2 old grant(s) revoked');
+    // Only the re-activation touches grants. An edit of a live link leaves them.
+    expect(grantService.revokeForPeerLink).toHaveBeenCalledTimes(1);
   });
 });

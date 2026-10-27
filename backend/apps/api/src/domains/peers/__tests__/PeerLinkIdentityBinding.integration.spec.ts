@@ -117,7 +117,10 @@ describeWithDatabase(`peer identity binding — against real Postgres (${availab
       );
     }
 
-    service = new PeerLinkService(dataSource.getRepository(PeerLinkEntity), noopLogger);
+    // This suite never re-activates a link, so no grant is ever revoked.
+    service = new PeerLinkService(dataSource.getRepository(PeerLinkEntity), noopLogger, {
+      revokeForPeerLink: async () => 0,
+    } as never);
   });
 
   afterAll(async () => {
