@@ -56,15 +56,93 @@ function placeNameWords(text: string): string {
 }
 
 /**
+ * {@link placeNameWords} for a `ci.entities.name` in SQL, close enough to be a
+ * prefilter: lowercased, NFKD with the Latin combining accents (U+0300 to
+ * U+036F) dropped and every run of other characters a single space. A plain
+ * `strpos` on the raw name refused "Peet’s Coffee" (the curly apostrophe a
+ * phone keyboard types) for a place stored as "Peet's Coffee". It refused
+ * "Cafe Reveille" for "Café Réveille" too, before {@link queryNamesPlace} could
+ * see either.
+ */
+function placeNameWordsSql(column: string): string {
+  return `btrim(regexp_replace(regexp_replace(normalize(lower(${column}), NFKD), '[\\u0300-\\u036f]', '', 'g'), '[^[:alnum:]]+', ' ', 'g'))`;
+}
+
+/**
+ * Scripts written without spaces between words. A place name in one of them
+ * has no word boundaries to match on, so it is matched anywhere in the query:
+ * "東京タワー" is in "東京タワーの写真" though the query is one run of letters.
+ */
+const UNSPACED_SCRIPT =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+
+/**
  * Whether `query` names the place `name`: the whole name, as whole words,
  * anywhere in the query. "Blue Bottle Coffee", "photos from blue bottle
  * coffee" and "Blue Bottle Coffee, SF" name "Blue Bottle Coffee"; "Blue
- * Bottle" and "coffee" do not, and stay a search of the photos' text.
+ * Bottle" and "coffee" do not and stay a search of the photos' text.
  */
 export function queryNamesPlace(query: string, name: string): boolean {
-  const words = placeNameWords(name);
+  const nameWords = placeNameWords(name);
 
-  return words.length >= 3 && ` ${placeNameWords(query)} `.includes(` ${words} `);
+  if (nameWords.length < 3) {
+    return false;
+  }
+
+  const queryWords = placeNameWords(query);
+
+  return UNSPACED_SCRIPT.test(nameWords)
+    ? queryWords.includes(nameWords)
+    : ` ${queryWords} `.includes(` ${nameWords} `);
+}
+
+/**
+ * The places a query names, less any whose name is part of another one's: a
+ * query for "Blue Bottle Coffee" names that place and not the user's
+ * "Coffee". "Mom's Home" is not also "Home". Places sharing one name all
+ * stay.
+ */
+function mostSpecificPlaces<T extends { name: string }>(places: T[]): T[] {
+  const names = places.map((place) => placeNameWords(place.name));
+
+  return places.filter(
+    (place, index) =>
+      !names.some((other, j) => j !== index && other !== names[index] && queryNamesPlace(other, place.name)),
+  );
+}
+
+/**
+ * "This event's coordinate was measured", for raw SQL that aliases
+ * `ci.events` as `event`. The location estimator copies a coordinate onto an
+ * event from another one up to a day away. A photo with an estimate was not
+ * taken where the estimate says. The two markers are the ones
+ * `KnownPlacesService.buildKnownPlaces` leaves out: `location_source` is
+ * `estimated`, or `reverse_geocoded` over an estimate whose
+ * `inference_sources.method` is `temporal_nn` (the legacy reverse-geocode leg
+ * renamed the first). They are copies of that service's literals and must
+ * stay identical to them.
+ */
+const MEASURED_LOCATION_SQL = `(COALESCE(event.metadata->>'location_source', '') <> 'estimated'
+       AND NOT (COALESCE(event.metadata->>'location_source', '') = 'reverse_geocoded'
+                AND COALESCE(event.inference_sources->>'method', '') = 'temporal_nn'))`;
+
+/**
+ * The relationship types a known place rides on (`KnownPlacesService`'s
+ * `KNOWN_PLACE_RELATIONSHIP_TYPES`, copied because that service imports this
+ * one). The name the user gave a place on the Places page is the
+ * relationship's `properties.label` (beside its `aliases`). It is not always
+ * the Location's own name.
+ */
+const KNOWN_PLACE_RELATIONSHIP_TYPES = ['LIVES_IN', 'WORKS_AT', 'VISITED'];
+
+/** What {@link PlaceService.photosAtNamedPlace} found. */
+export interface PhotosAtNamedPlace {
+  /** The places the query names, each under the name it matched by. */
+  places: Array<{ id: string; name: string }>;
+  /** The newest photos and videos taken at any of them, at most the `limit` asked for. */
+  fileIds: string[];
+  /** How many photos and videos were taken at them in all. */
+  total: number;
 }
 
 /** One Google-style address component ({long_name, short_name, types[]}). */
@@ -719,7 +797,8 @@ export class PlaceService {
 
   /**
    * Photos and videos taken at a place the query names ({@link queryNamesPlace}),
-   * newest first, for `media.findPhotos`.
+   * newest first, for `media.findPhotos`: at most `limit` of them plus how
+   * many there are in all.
    *
    * A photo's text never names the place it was taken at: its search row is
    * its file name and, once described, what it shows. So "photos from Blue
@@ -727,76 +806,158 @@ export class PlaceService {
    * the Places page, because their events carry GPS and no
    * `location_entity_id`. A photo is at a place when its event is linked to the
    * place, lies inside the place's boundary, or was taken within
-   * {@link PHOTO_AT_PLACE_METERS} of its point. Imported photos reach their
-   * event through `metadata.FileId`, captured ones through `files.event_id`.
+   * {@link PHOTO_AT_PLACE_METERS} of its point. Only an event that happened
+   * ({@link EVENT_HAPPENED_SQL}) and whose coordinate was measured
+   * ({@link MEASURED_LOCATION_SQL}) counts. Imported and phone-captured photos
+   * reach their event through `metadata.FileId`, CI-Capture's through
+   * `files.event_id`.
+   *
+   * A place is named by its own name or by the label or an alias the user gave
+   * it on the Places page. When one named place's name is part of another's,
+   * only the longer one counts ({@link mostSpecificPlaces}).
    */
   async photosAtNamedPlace(
     context: UserServiceContext,
     query: string,
-  ): Promise<{ places: Array<{ id: string; name: string }>; fileIds: string[] }> {
+    limit: number,
+  ): Promise<PhotosAtNamedPlace> {
     const trimmed = query.trim();
+    const none: PhotosAtNamedPlace = { places: [], fileIds: [], total: 0 };
 
     if (trimmed.length < 3) {
-      return { places: [], fileIds: [] };
+      return none;
     }
 
+    // A loose prefilter: the raw name inside the raw query, or the name's
+    // words inside the query's. queryNamesPlace decides.
     const candidates: Array<{ id: string; name: string }> = await this.placeRepository.manager.query(
-      `SELECT entity_id AS id, name
-         FROM ci.entities
-        WHERE entity_type = 'Location'
-          AND owner_user_id = $1
-          AND is_active
-          AND merged_into_entity_id IS NULL
-          AND length(btrim(name)) >= 3
-          AND strpos(lower($2), lower(btrim(name))) > 0`,
-      [context.userId, trimmed],
+      `SELECT DISTINCT c.id, btrim(c.name) AS name
+         FROM (
+           SELECT entity_id AS id, name
+             FROM ci.entities
+            WHERE entity_type = 'Location'
+              AND owner_user_id = $1
+              AND is_active IS DISTINCT FROM FALSE
+              AND merged_into_entity_id IS NULL
+           UNION ALL
+           SELECT r.to_entity_id, given.name
+             FROM ci.relationships r
+             JOIN ci.users u ON u.entity_id = r.from_entity_id AND u.id = $1
+             JOIN ci.entities l
+               ON l.entity_id = r.to_entity_id
+              AND l.owner_user_id = $1
+              AND l.entity_type = 'Location'
+              AND l.is_active IS DISTINCT FROM FALSE
+              AND l.merged_into_entity_id IS NULL
+            CROSS JOIN LATERAL (
+              SELECT r.properties->>'label' AS name
+              UNION ALL
+              SELECT alias
+                FROM jsonb_array_elements_text(
+                       CASE WHEN jsonb_typeof(r.properties->'aliases') = 'array'
+                            THEN r.properties->'aliases' ELSE '[]'::jsonb END) AS alias
+            ) given
+            WHERE r.owner_user_id = $1
+              AND r.relationship_type = ANY($4::text[])
+              AND r.is_active
+         ) c
+        WHERE length(btrim(c.name)) >= 3
+          AND (strpos(lower($2), lower(btrim(c.name))) > 0
+               OR strpos($3, ${placeNameWordsSql('c.name')}) > 0)`,
+      [context.userId, trimmed, placeNameWords(trimmed), KNOWN_PLACE_RELATIONSHIP_TYPES],
     );
-    const places = candidates.filter((place) => queryNamesPlace(trimmed, place.name));
+
+    // One entry per place, under the longest name it matched by.
+    const byId = new Map<string, { id: string; name: string }>();
+
+    for (const candidate of candidates) {
+      const kept = byId.get(candidate.id);
+
+      if (queryNamesPlace(trimmed, candidate.name) && (!kept || candidate.name.length > kept.name.length)) {
+        byId.set(candidate.id, candidate);
+      }
+    }
+
+    const places = mostSpecificPlaces([...byId.values()]);
 
     if (places.length === 0) {
-      return { places: [], fileIds: [] };
+      return none;
     }
 
-    const rows: Array<{ file_id: string }> = await this.placeRepository.manager.query(
+    // Each way an event can be at a place is its own arm, so each can use its
+    // index: events_location_entity_idx for the link and the geometry GIST
+    // index on location_coordinates for the two spatial tests, through a
+    // bounding box wide enough for the radius at the place's latitude (110 km
+    // per degree is less than a degree of latitude anywhere) before the exact
+    // geography test.
+    const rows: Array<{ file_id: string; total: string }> = await this.placeRepository.manager.query(
       `WITH place AS (
          SELECT entity_id, location_point, location_boundary
            FROM ci.entities
           WHERE owner_user_id = $1 AND entity_id = ANY($2::uuid[])
        ),
        at_place AS (
-         SELECT e.event_id, e.start_time, e.metadata->>'FileId' AS file_id
-           FROM ci.events e
-           JOIN place p
-             ON e.location_entity_id = p.entity_id
-             OR (e.location_coordinates IS NOT NULL AND (
-                  (p.location_boundary IS NOT NULL AND ST_Covers(p.location_boundary, e.location_coordinates))
-                  OR (p.location_point IS NOT NULL
-                      AND ST_DWithin(e.location_coordinates, p.location_point, $3))))
-          WHERE e.user_id = $1
-            AND NOT e.is_deleted
+         SELECT event.event_id, event.start_time, event.metadata->>'FileId' AS file_id
+           FROM ci.events event
+          WHERE event.user_id = $1
+            AND event.location_entity_id = ANY($2::uuid[])
+            AND ${EVENT_HAPPENED_SQL}
+            AND ${MEASURED_LOCATION_SQL}
+         UNION
+         SELECT event.event_id, event.start_time, event.metadata->>'FileId'
+           FROM place p
+           JOIN ci.events event
+             ON event.location_coordinates::geometry && ST_Expand(
+                  p.location_point::geometry,
+                  $3 / 110000.0 / GREATEST(cos(radians(ST_Y(p.location_point::geometry))), 0.01))
+            AND ST_DWithin(event.location_coordinates, p.location_point, $3)
+          WHERE p.location_point IS NOT NULL
+            AND event.location_coordinates IS NOT NULL
+            AND event.user_id = $1
+            AND ${EVENT_HAPPENED_SQL}
+            AND ${MEASURED_LOCATION_SQL}
+         UNION
+         SELECT event.event_id, event.start_time, event.metadata->>'FileId'
+           FROM place p
+           JOIN ci.events event
+             ON event.location_coordinates::geometry && p.location_boundary::geometry
+            AND ST_Covers(p.location_boundary, event.location_coordinates)
+          WHERE p.location_boundary IS NOT NULL
+            AND event.location_coordinates IS NOT NULL
+            AND event.user_id = $1
+            AND ${EVENT_HAPPENED_SQL}
+            AND ${MEASURED_LOCATION_SQL}
        ),
        linked AS (
-         SELECT f.id, a.start_time
+         -- Cast only a FileId shaped like a uuid: a bad one would fail the
+         -- whole query. Comparing as text would scan every user's files.
+         SELECT CASE WHEN a.file_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                     THEN a.file_id::uuid END AS file_id,
+                a.start_time
            FROM at_place a
-           JOIN ci.files f ON f.id::text = a.file_id
          UNION ALL
          SELECT f.id, a.start_time
            FROM at_place a
            JOIN ci.files f ON f.event_id = a.event_id
        )
-       SELECT l.id AS file_id
+       SELECT f.id AS file_id, count(*) OVER () AS total
          FROM linked l
-         JOIN ci.files f ON f.id = l.id
+         JOIN ci.files f ON f.id = l.file_id
         WHERE f.user_id = $1
           AND f.deleted_at IS NULL
           AND f.variant = 'ORIGINAL'
           AND (f.content_type LIKE 'image/%' OR f.content_type LIKE 'video/%')
-        GROUP BY l.id
-        ORDER BY MAX(l.start_time) DESC`,
-      [context.userId, places.map((place) => place.id), PHOTO_AT_PLACE_METERS],
+        GROUP BY f.id
+        ORDER BY MAX(l.start_time) DESC, f.id
+        LIMIT GREATEST($4::int, 1)`,
+      [context.userId, places.map((place) => place.id), PHOTO_AT_PLACE_METERS, limit],
     );
 
-    return { places, fileIds: rows.map((row) => row.file_id) };
+    return {
+      places,
+      fileIds: rows.slice(0, Math.max(limit, 0)).map((row) => row.file_id),
+      total: rows.length > 0 ? Number(rows[0].total) : 0,
+    };
   }
 
   /**

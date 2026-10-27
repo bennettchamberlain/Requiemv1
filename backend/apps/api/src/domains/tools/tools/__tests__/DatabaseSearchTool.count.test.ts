@@ -76,7 +76,7 @@ function makeTool(options: {
 
 /** A PlaceService with no place the query names, so media.findPhotos searches text as before. */
 function noPlaces() {
-  return { photosAtNamedPlace: jest.fn().mockResolvedValue({ places: [], fileIds: [] }) } as never;
+  return { photosAtNamedPlace: jest.fn().mockResolvedValue({ places: [], fileIds: [], total: 0 }) } as never;
 }
 
 describe('DatabaseSearchTool — honest counts', () => {
