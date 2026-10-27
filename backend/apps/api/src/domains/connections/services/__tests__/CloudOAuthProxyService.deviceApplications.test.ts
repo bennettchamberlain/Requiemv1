@@ -29,6 +29,7 @@ describe('CloudOAuthProxyService.getDeviceApplications', () => {
   const realFetch = global.fetch;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     fetchMock.mockReset();
     global.fetch = fetchMock as unknown as typeof fetch;
   });
@@ -50,6 +51,7 @@ describe('CloudOAuthProxyService.getDeviceApplications', () => {
     expect(apps).toEqual([{ name: 'ci-hermes' }]);
     expect(fetchMock).toHaveBeenCalledWith('https://portal.example.com/api/devices/applications', {
       headers: { 'x-device-key': 'device-key-1' },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -63,5 +65,16 @@ describe('CloudOAuthProxyService.getDeviceApplications', () => {
       'CI Portal device applications request failed',
       expect.objectContaining({ status: 401 }),
     );
+  });
+
+  it('answers an empty list when Companion Portal does not answer in time', async () => {
+    fetchMock.mockRejectedValue(
+      Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }),
+    );
+
+    await expect(new CloudOAuthProxyService(logger).getDeviceApplications()).resolves.toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith('CI Portal device applications request errored', {
+      error: 'The operation was aborted due to timeout',
+    });
   });
 });
