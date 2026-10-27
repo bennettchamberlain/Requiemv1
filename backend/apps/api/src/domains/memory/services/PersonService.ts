@@ -28,6 +28,33 @@ import { GraphDeltaWriter, changedFieldsBetween } from './GraphDeltaWriter';
 import { type JsonbLeafPatch, buildJsonbLeafPatchSql } from './jsonbLeafPatch';
 import { type PurgedPeople, purgePersonAggregates } from './personPurge';
 
+/**
+ * Keys a sync stamps into a person's bag on every run, whatever else it changes:
+ * Google Contacts' `last_synced_at` and Facebook's `facebook_data.last_synced`.
+ */
+const SYNC_STAMP_KEYS = new Set(['last_synced', 'last_synced_at']);
+
+/**
+ * A properties value without its sync stamps, at any depth, for Change History.
+ * A re-sync that moves only a stamp has not changed the person, and recording
+ * one would add a row per contact on every sync.
+ */
+function withoutSyncStamps(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(withoutSyncStamps);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !SYNC_STAMP_KEYS.has(key))
+        .map(([key, nested]) => [key, withoutSyncStamps(nested)]),
+    );
+  }
+
+  return value;
+}
+
 /** Map properties JSONB identity keys onto the typed Person columns. */
 function typedColumnsFromProperties(properties: Record<string, unknown> = {}): {
   firstName: string | null;
@@ -698,7 +725,8 @@ export class PersonService extends EntityService<PersonEntity, Person> {
   /**
    * One Change History row for an {@link update}: name, description and every
    * property key whose value moved between the row as it was and as it is now.
-   * A sync that writes the same bag back records nothing.
+   * A sync that writes the same bag back records nothing, sync stamps aside
+   * (see {@link withoutSyncStamps}).
    */
   private async recordUpdate(
     context: ServiceContext,
@@ -706,8 +734,8 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     after: PersonEntity,
     source: string,
   ): Promise<void> {
-    const was = (before.properties ?? {}) as Record<string, unknown>;
-    const now = (after.properties ?? {}) as Record<string, unknown>;
+    const was = withoutSyncStamps(before.properties ?? {}) as Record<string, unknown>;
+    const now = withoutSyncStamps(after.properties ?? {}) as Record<string, unknown>;
     const changedFields = {
       ...changedFieldsBetween(
         { name: before.name, description: before.description },
@@ -857,12 +885,14 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     data: { name?: string; description?: string; propertiesPatch?: Record<string, unknown> },
   ): Promise<void> {
     const patchKeys = Object.keys(data.propertiesPatch ?? {});
+    // `!== undefined`, not `??`: an explicit null is a clear that `patch` writes.
+    const name = data.name !== undefined ? data.name : before.name;
+    const description = data.description !== undefined ? data.description : before.description;
     const changedFields = {
-      ...changedFieldsBetween(
-        { name: before.name, description: before.description },
-        { name: data.name ?? before.name, description: data.description ?? before.description },
-        ['name', 'description'],
-      ),
+      ...changedFieldsBetween({ name: before.name, description: before.description }, { name, description }, [
+        'name',
+        'description',
+      ]),
       ...changedFieldsBetween(before.properties ?? {}, data.propertiesPatch ?? {}, patchKeys),
     };
 
@@ -873,7 +903,7 @@ export class PersonService extends EntityService<PersonEntity, Person> {
     await this.graphDeltaWriter?.entityUpdated({
       entityId: before.id,
       entityType: 'Person',
-      name: data.name ?? before.name,
+      name,
       changedFields,
       ownerUserId: before.userId,
       changeSource: 'PersonService.patch',
