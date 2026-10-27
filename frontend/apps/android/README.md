@@ -339,39 +339,64 @@ into `android/` with
 
 ```bash
 cd frontend/apps/android
-# assets/ holds: icon-only.png, icon-foreground.png, icon-background.png (1024²).
-# icon-only/-foreground are verified copies of @companionintelligence/assets logos/app-icon-source.png
-# (logo.app-icon) — regenerate them with `yarn workspace @ci/fe-web brand:sync`, never hand-edit.
+# assets/ holds: icon-only.png, icon-foreground.png, icon-background.png (1024²)
 #                splash.png, splash-dark.png (2732²)
+# icon-only/-foreground/-background are the Companion Memory store icon (see below), NOT mirrors
+# of @companionintelligence/assets logos/app-icon-source.png (the company aperture mark).
 npx @capacitor/assets generate \
-  --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#0b1418' \
+  --iconBackgroundColor '#041620' --iconBackgroundColorDark '#041620' \
   --splashBackgroundColor '#ffffff' --splashBackgroundColorDark '#0b1418'
 ```
+
+**The installed icon must match the Play listing** (Play rejected 1007 under Misleading
+Claims when it did not, #3056). The listing shows the Companion Memory icon: a solid teal
+brain with a white node network and a dark M on `#041620`. The sources are built from that
+one opaque 1024² master:
+
+- `assets/icon-only.png` — the master itself (full-bleed, opaque). Source of the legacy
+  `ic_launcher.png` / `ic_launcher_round.png`.
+- `assets/icon-foreground.png` — the master with the ground removed (colour-to-alpha against
+  `#041620`, so the glow becomes translucent teal); composited over `#041620` it gives the master
+  back to within 1/255.
+- `assets/icon-background.png` — flat `#041620`, the same colour as
+  `res/values/ic_launcher_background.xml` and every `mipmap-*/ic_launcher_background.png`. Keep all
+  of them equal or the foreground shows a faint seam.
+
+The adaptive XML insets both layers 16.7 %, so each layer PNG is the 72 dp visible window and the
+brain sits well inside the 66 dp safe zone.
+
+**The committed `res/` is not byte-for-byte what that command writes.** Run against these sources
+it carries the same artwork, but it writes the adaptive layers at 36–192 px (the committed ones are
+54–288 px), pads the legacy square icon by a flat 8 px and does not round its corners (the committed
+ones keep a rounded-square mask), and rewrites `mipmap-anydpi-v26/ic_launcher*.xml` without the
+`<monochrome>` element. Prefer editing the committed layers; if you do regenerate, restore the layer
+sizes and the XML from git and re-add the two stencils below.
 
 **Two single-colour rasters are NOT produced by that command and survive it only if
 re-added.** Android tints a notification's small icon and (from Android 13) a themed
 launcher icon as a stencil: it reads the alpha channel and fills the shape with the bar's
 or the launcher's colour, so the multi-colour launcher icon cannot serve — on Samsung it
-showed as a filled blob that never matched the bar. Both come from the brand repo's
-`icons/svg/memory-mark-mono.svg` (`icon.memory-mark-mono`: the mark with the hub dials
-and halos removed and the M weighted up so it reads at 24 px), rasterised white on
-transparent with a headless Chrome at device scale 1:
+showed as a filled blob that never matched the bar. Both are the brain silhouette with the M knocked
+out, white on transparent (the vector master's alpha, aligned to the raster node for node; the node
+network is left out because it turns to mush at these sizes):
 
 - `android/app/src/main/res/drawable-*/ic_stat_memory.png` — 24 dp (24/36/48/72/96 px),
-  the mark filling the box. Every notification the app posts uses it: the location
+  the silhouette filling 84 % of the box height, the M stroked slightly heavier so it reads at
+  24 px. Every notification the app posts uses it: the location
   foreground service and the resume nudge (`@ci/capacitor-local-hub`), the model download
   and the generation service (`@ci/capacitor-local-llm`). The plugins look it up by name
   in the host app's resources (`NotificationIcons.kt` in each) rather than shipping it,
   since it is the app's brand, and fall back to what they used before if a host has none.
 - `android/app/src/main/res/mipmap-*/ic_launcher_monochrome.png` — the 108 dp adaptive
-  layer (54–288 px) with the mark at 66 %, the safe zone, referenced by the `<monochrome>`
+  layer (54–288 px) with the silhouette 52 % of the layer high (inside the 66 dp safe circle),
+  referenced by the `<monochrome>`
   element in `mipmap-anydpi-v26/ic_launcher*.xml`. `@capacitor/assets generate` rewrites
   those XML files without it: put the element back after regenerating.
 
-The current icon is the CI globe mark (rendered from
-`frontend/apps/web/public/logo.svg` at 1024px). Re-run after changing the artwork,
-then rebuild. (`assets/` is shared in shape with the iOS package but generated
-separately; `icon-only.png` is what the iOS side needs, so keep it present.)
+The splash (`assets/splash*.png`) still shows the CI globe; before Android 12 that is what
+`@drawable/splash` draws, and Android 12+ shows the launcher icon instead. Re-run after
+changing the artwork, then rebuild. (`assets/` is shared in shape with the iOS package but
+generated separately; `icon-only.png` is what the iOS side needs, so keep it present.)
 
 ## Native auth (wired)
 
