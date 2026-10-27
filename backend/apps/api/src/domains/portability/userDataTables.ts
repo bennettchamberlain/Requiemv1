@@ -80,7 +80,41 @@ export const DISCOVER_USER_TABLES_SQL = `
               AND k.conrelid = format('%I.%I', c.table_schema, c.table_name)::regclass
               AND k.confrelid <> k.conrelid
               AND NOT k.condeferred
-         ) AS parents
+         ) AS parents,
+         (
+           SELECT json_agg(json_build_object('column', ca.attname, 'key', pa.attname))
+             FROM pg_constraint k
+             JOIN pg_attribute ca ON ca.attrelid = k.conrelid AND ca.attnum = k.conkey[1]
+             JOIN pg_attribute pa ON pa.attrelid = k.confrelid AND pa.attnum = k.confkey[1]
+            WHERE k.contype = 'f'
+              AND k.conrelid = format('%I.%I', c.table_schema, c.table_name)::regclass
+              AND k.confrelid = k.conrelid
+              AND cardinality(k.conkey) = 1
+              AND NOT k.condeferred
+              AND NOT ca.attnotnull
+         ) AS self_references,
+         (
+           SELECT json_agg(json_build_object('column', ca.attname, 'parent', pn.nspname || '.' || p.relname, 'key', pa.attname))
+             FROM pg_constraint k
+             JOIN pg_class p ON p.oid = k.confrelid
+             JOIN pg_namespace pn ON pn.oid = p.relnamespace
+             JOIN pg_attribute ca ON ca.attrelid = k.conrelid AND ca.attnum = k.conkey[1]
+             JOIN pg_attribute pa ON pa.attrelid = k.confrelid AND pa.attnum = k.confkey[1]
+            WHERE k.contype = 'f'
+              AND k.conrelid = format('%I.%I', c.table_schema, c.table_name)::regclass
+              AND k.confrelid <> k.conrelid
+              AND cardinality(k.conkey) = 1
+              AND NOT k.condeferred
+              AND NOT ca.attnotnull
+         ) AS nullable_references,
+         (
+           SELECT a.attname::text
+             FROM pg_index i
+             JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+            WHERE i.indrelid = format('%I.%I', c.table_schema, c.table_name)::regclass
+              AND i.indisprimary
+              AND i.indnkeyatts = 1
+         ) AS primary_key
   FROM information_schema.columns c
   JOIN information_schema.tables t
     ON t.table_schema = c.table_schema AND t.table_name = c.table_name
@@ -106,6 +140,11 @@ export function qualifiedName(table: Pick<UserScopedTable, 'schema' | 'table'>):
   return `${table.schema}.${table.table}`;
 }
 
+/** {@link qualifiedName} with each part through {@link quoteIdentifier}, for SQL. */
+export function quotedTableName(table: Pick<UserScopedTable, 'schema' | 'table'>): string {
+  return `${quoteIdentifier(table.schema)}.${quoteIdentifier(table.table)}`;
+}
+
 export function isExcluded(table: Pick<UserScopedTable, 'schema' | 'table'>): boolean {
   return EXCLUDED_TABLES.has(qualifiedName(table));
 }
@@ -120,6 +159,12 @@ export interface DiscoveredUserColumn {
   generated?: string[] | null;
   /** Tables this one references through a foreign key that is checked at once (not deferred). */
   parents?: string[] | null;
+  /** This table's own nullable columns that reference another of its rows; see {@link UserScopedTable.selfReferences}. */
+  self_references?: Array<{ column: string; key: string }> | null;
+  /** Nullable, single-column, checked-at-once foreign keys into other tables; input to {@link UserScopedTable.laterReferences}. */
+  nullable_references?: Array<{ column: string; parent: string; key: string }> | null;
+  /** The table's primary key when it is one column. */
+  primary_key?: string | null;
 }
 
 /**
@@ -144,6 +189,7 @@ export interface DiscoveredUserColumn {
 export function groupUserTables(rows: readonly DiscoveredUserColumn[]): UserScopedTable[] {
   const byName = new Map<string, UserScopedTable>();
   const parents = new Map<string, string[]>();
+  const nullableReferences = new Map<string, Array<{ column: string; parent: string; key: string }>>();
 
   for (const row of rows) {
     if (isExcluded(row)) {
@@ -152,6 +198,10 @@ export function groupUserTables(rows: readonly DiscoveredUserColumn[]): UserScop
 
     if (Array.isArray(row.parents)) {
       parents.set(qualifiedName(row), row.parents);
+    }
+
+    if (Array.isArray(row.nullable_references)) {
+      nullableReferences.set(qualifiedName(row), row.nullable_references);
     }
 
     const column = row.user_column as UserColumn;
@@ -177,10 +227,34 @@ export function groupUserTables(rows: readonly DiscoveredUserColumn[]): UserScop
       // Fail closed: a row without a column list can accept no imported rows.
       columns: Array.isArray(row.columns) ? row.columns : [],
       generatedColumns: Array.isArray(row.generated) ? row.generated : [],
+      selfReferences: Array.isArray(row.self_references) ? row.self_references : [],
+      laterReferences: [],
+      primaryKey: row.primary_key ?? null,
     });
   }
 
-  return orderParentsFirst([...byName.values()], parents);
+  const ordered = orderParentsFirst([...byName.values()], parents);
+  const position = new Map(ordered.map((table, index) => [qualifiedName(table), index]));
+
+  // Only a cycle leaves a table ahead of one it references (see
+  // orderParentsFirst); those references are the ones the import sets late.
+  ordered.forEach((table, index) => {
+    table.laterReferences = (nullableReferences.get(qualifiedName(table)) ?? []).flatMap(
+      ({ column, parent, key }) => {
+        const at = position.get(parent);
+
+        if (at === undefined || at <= index) {
+          return [];
+        }
+
+        const { schema, table: name, userColumn } = ordered[at];
+
+        return [{ column, parent: { schema, table: name, key, userColumn } }];
+      },
+    );
+  });
+
+  return ordered;
 }
 
 /**
@@ -193,8 +267,14 @@ export function groupUserTables(rows: readonly DiscoveredUserColumn[]): UserScop
  * may not set, so a child written before its parent failed the whole import:
  * alphabetically `ci.messages` comes before `ci.threads`, and
  * `ci_search.mobile_search_documents` before `ci_search.vectors`. Deferred
- * constraints are checked at commit and do not count. A cycle, if one ever
- * appears, falls back to discovery order for the tables in it.
+ * constraints are checked at commit and do not count.
+ *
+ * A cycle falls back to discovery order for the tables in it, and only for
+ * them: `ci.objects` and `ci.receipt_line_items` point at each other, and
+ * `ci.object_observations`, which sorts first, points at `ci.objects` without
+ * being part of the cycle, so it still waits for `ci.objects`. The reference
+ * that then points forward (`ci.objects.acquisition_line_item_id`) is set
+ * once every row is in; see {@link UserScopedTable.laterReferences}.
  */
 export function orderParentsFirst(
   tables: readonly UserScopedTable[],
@@ -204,16 +284,144 @@ export function orderParentsFirst(
   const placed = new Set<string>();
   const ordered: UserScopedTable[] = [];
   const pending = [...tables];
+  const waitsOn = (name: string) =>
+    (parents.get(name) ?? []).filter((parent) => names.has(parent) && !placed.has(parent));
 
   while (pending.length > 0) {
-    const ready = pending.findIndex((table) =>
-      (parents.get(qualifiedName(table)) ?? []).every((parent) => !names.has(parent) || placed.has(parent)),
-    );
-    const [next] = pending.splice(ready === -1 ? 0 : ready, 1);
+    let ready = pending.findIndex((table) => waitsOn(qualifiedName(table)).length === 0);
+
+    if (ready === -1) {
+      // Every table left waits on another table left. Follow the waits from the
+      // first one until a table repeats: that table is on a cycle.
+      const walked: string[] = [];
+      let current = qualifiedName(pending[0]);
+
+      while (!walked.includes(current)) {
+        walked.push(current);
+        current = waitsOn(current)[0];
+      }
+
+      const cycle = new Set(walked.slice(walked.indexOf(current)));
+      ready = pending.findIndex((table) => cycle.has(qualifiedName(table)));
+    }
+
+    const [next] = pending.splice(ready, 1);
 
     ordered.push(next);
     placed.add(qualifiedName(next));
   }
 
   return ordered;
+}
+
+/**
+ * Every single-column foreign key out of a table in {@link USER_DATA_SCHEMAS}.
+ * Input to {@link findLinkTables}.
+ */
+export const DISCOVER_LINK_REFERENCES_SQL = `
+  SELECT cn.nspname AS schema,
+         c.relname AS table,
+         ca.attname AS column,
+         pn.nspname AS parent_schema,
+         p.relname AS parent_table,
+         pa.attname AS parent_column,
+         k.confdeltype AS delete_action
+    FROM pg_constraint k
+    JOIN pg_class c ON c.oid = k.conrelid
+    JOIN pg_namespace cn ON cn.oid = c.relnamespace
+    JOIN pg_class p ON p.oid = k.confrelid
+    JOIN pg_namespace pn ON pn.oid = p.relnamespace
+    JOIN pg_attribute ca ON ca.attrelid = k.conrelid AND ca.attnum = k.conkey[1]
+    JOIN pg_attribute pa ON pa.attrelid = k.confrelid AND pa.attnum = k.confkey[1]
+   WHERE k.contype = 'f'
+     AND cardinality(k.conkey) = 1
+     AND cn.nspname = ANY($1)
+   ORDER BY 1, 2, 3
+`;
+
+/**
+ * The columns an INSERT may name on one table: everything but
+ * `GENERATED ALWAYS` and `IDENTITY ALWAYS` columns, which the database fills.
+ */
+export const DISCOVER_INSERTABLE_COLUMNS_SQL = `
+  SELECT a.attname AS column
+    FROM pg_attribute a
+   WHERE a.attrelid = format('%I.%I', $1::text, $2::text)::regclass
+     AND a.attnum > 0
+     AND NOT a.attisdropped
+     AND a.attgenerated = ''
+     AND a.attidentity <> 'a'
+   ORDER BY a.attnum
+`;
+
+export interface DiscoveredLinkReference {
+  schema: string;
+  table: string;
+  column: string;
+  parent_schema: string;
+  parent_table: string;
+  parent_column: string;
+  delete_action: string;
+}
+
+/**
+ * A table with no user column whose rows hang off the account's rows:
+ * `ci_search.entity_tag` (a tag on an entity), `hbpe.l1_event_cluster` and
+ * `hbpe.l2_content_cluster` (HBPE's cluster of an event or a piece of content).
+ * Their foreign keys into the account's tables refuse the import's delete
+ * (NO ACTION), and an archive does not carry them, so the import sets them
+ * aside first and puts back the ones whose rows came back.
+ */
+export interface LinkTable {
+  schema: string;
+  table: string;
+  /** Every foreign key out of the table. `userColumn` is set when the parent is one of the account's tables. */
+  references: ReadonlyArray<{
+    column: string;
+    parent: { schema: string; table: string; column: string; userColumn: string | null };
+  }>;
+}
+
+/**
+ * The {@link LinkTable}s among the foreign keys discovery found: tables that
+ * are not the account's own (no user column), not `ci.users`, and that hold a
+ * NO ACTION or RESTRICT key into one of `userTables`.
+ */
+export function findLinkTables(
+  references: readonly DiscoveredLinkReference[],
+  userTables: readonly UserScopedTable[],
+): LinkTable[] {
+  const userColumnOf = new Map(userTables.map((table) => [qualifiedName(table), table.userColumn]));
+  const byTable = new Map<string, LinkTable & { blocks: boolean }>();
+
+  for (const reference of references) {
+    const name = qualifiedName(reference);
+
+    if (userColumnOf.has(name) || name === 'ci.users' || isExcluded(reference)) {
+      continue;
+    }
+
+    const parentName = `${reference.parent_schema}.${reference.parent_table}`;
+    const userColumn = userColumnOf.get(parentName) ?? null;
+    const entry =
+      byTable.get(name) ??
+      ({ schema: reference.schema, table: reference.table, references: [], blocks: false } as LinkTable & {
+        blocks: boolean;
+      });
+
+    (entry.references as LinkTable['references'][number][]).push({
+      column: reference.column,
+      parent: {
+        schema: reference.parent_schema,
+        table: reference.parent_table,
+        column: reference.parent_column,
+        userColumn,
+      },
+    });
+    entry.blocks ||=
+      userColumn !== null && (reference.delete_action === 'a' || reference.delete_action === 'r');
+    byTable.set(name, entry);
+  }
+
+  return [...byTable.values()].filter((entry) => entry.blocks).map(({ blocks: _blocks, ...table }) => table);
 }
