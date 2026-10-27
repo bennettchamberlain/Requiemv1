@@ -9,8 +9,8 @@
  * `memory_forget`, no Approvals card.
  *
  * Now the second generation is offered tools too, but only while every call so
- * far succeeded and none repeated an earlier call (re-advertising tools after a
- * failed remember once had Qwen retrying for minutes), and a third generation
+ * far was a read that succeeded and none repeated an earlier call (re-advertising
+ * tools after a failed remember once had Qwen retrying for minutes), and a third generation
  * always answers in prose. These pin both halves: the act happens, and the
  * loop stays bounded.
  */
@@ -21,6 +21,8 @@ import { OllamaService, TOOL_OFFER_ROUNDS, type ChatRequestContext } from '../Ol
 
 const MODEL = 'test-model';
 const READ = { access: 'read', sensitivity: 'personal', destructive: false, external: false };
+const WRITE = { access: 'write', sensitivity: 'personal', destructive: false, external: false };
+const DELETE = { access: 'delete', sensitivity: 'personal', destructive: true, external: false };
 const ENTITY_ID = '0199a1b2-0000-7000-8000-000000000001';
 
 function makeLogger() {
@@ -33,7 +35,7 @@ function makeLogger() {
   } as any;
 }
 
-function fakeTool(name: string, domain: string, execute: jest.Mock) {
+function fakeTool(name: string, domain: string, execute: jest.Mock, privacy: object = READ) {
   return {
     schema: {
       name,
@@ -41,7 +43,7 @@ function fakeTool(name: string, domain: string, execute: jest.Mock) {
       title: name,
       description: name,
       parameters: { type: 'object' },
-      privacy: READ,
+      privacy,
       localCapable: false,
     },
     execute,
@@ -105,6 +107,11 @@ async function setup(rounds: any[][], options: { searchFails?: boolean } = {}) {
       : { success: true, data: { items: [{ id: ENTITY_ID, name: 'Test Café Delete' }] }, executionTimeMs: 1 },
   );
   const forget = jest.fn(async () => ({ success: true, data: { forgotten: 1 }, executionTimeMs: 1 }));
+  const remember = jest.fn(async () => ({
+    success: true,
+    data: { results: [], createdNodes: 1, failures: 0 },
+    executionTimeMs: 1,
+  }));
   const registry = new ToolRegistry(
     makeLogger(),
     { send: jest.fn().mockResolvedValue([]) } as any,
@@ -116,7 +123,8 @@ async function setup(rounds: any[][], options: { searchFails?: boolean } = {}) {
   await registry.registerProvider(
     fakeProvider([
       fakeTool('knowledge.search', 'knowledge', search),
-      fakeTool('memory.forget', 'memory', forget),
+      fakeTool('memory.forget', 'memory', forget, DELETE),
+      fakeTool('memory.remember', 'memory', remember, WRITE),
     ]),
   );
 
@@ -129,7 +137,7 @@ async function setup(rounds: any[][], options: { searchFails?: boolean } = {}) {
     new ModelTierRouter(),
   );
 
-  return { service, driver, search, forget };
+  return { service, driver, search, forget, remember };
 }
 
 const context: ChatRequestContext = { userId: 'user-1' };
@@ -223,6 +231,34 @@ describe('OllamaService.chatStream lookup, then act', () => {
     expect(driver.requests.map((request) => request.tools !== undefined)).toEqual([true, true, false]);
     // A repeat means the model is looping, so the closing round is the forced one.
     expect(driver.requests[2].salvageTools).toBe(false);
+    expect(driver.requests[2].messages[driver.requests[2].messages.length - 1].content).toContain(
+      'do not call any more tools',
+    );
+  });
+
+  it('does not offer tools again after a write: a second round is for acting on a lookup', async () => {
+    const { service, driver, remember } = await setup([
+      calls(call('memory_remember', { operations: [{ kind: 'entity.create', name: 'Test Café Delete' }] })),
+      prose('Saved it.'),
+    ]);
+
+    await turn(service);
+
+    expect(remember).toHaveBeenCalledTimes(1);
+    expect(driver.requests.map((request) => request.tools !== undefined)).toEqual([true, false]);
+    expect(driver.requests[1].salvageTools).toBe(false);
+  });
+
+  it('counts a call as repeated across tool-name spellings and argument key order', async () => {
+    const { service, driver, search } = await setup([
+      calls(call('knowledge_search', { query: 'Test Café Delete', limit: 5 })),
+      calls(call('knowledge.search', { limit: 5, query: 'Test Café Delete' })),
+      prose('Nothing more found.'),
+    ]);
+
+    await turn(service);
+
+    expect(search).toHaveBeenCalledTimes(2);
     expect(driver.requests[2].messages[driver.requests[2].messages.length - 1].content).toContain(
       'do not call any more tools',
     );

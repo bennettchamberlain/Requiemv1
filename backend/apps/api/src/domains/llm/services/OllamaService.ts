@@ -18,6 +18,7 @@ import {
   unguardToolResult,
 } from '@ci/common/prompt/untrustedBlock';
 import config, { UTILITY_MODEL_EXPLICITLY_CONFIGURED } from '@ci/configuration';
+import { stableJson } from '@ci/domains/graph/utils/ingestedProperties';
 import { ModelTierRouter, TIER_PROFILES, type RoutingDecision } from '@ci/domains/model-routing';
 import {
   ToolRegistry,
@@ -107,9 +108,13 @@ export const PROMPT_MODEL = config.llm.chatModel;
  */
 export const TOOL_OFFER_ROUNDS = 2;
 
-/** A tool call's identity within a turn: the same tool with the same arguments is the same call. */
+/**
+ * A tool call's identity within a turn: the same tool with the same arguments is the same call.
+ * The name is the one the registry executes, so `knowledge.search` salvaged from markup and a
+ * native `knowledge_search` are one tool, and the arguments compare regardless of key order.
+ */
 function toolCallKey(call: ToolCall): string {
-  return `${call.function.name}:${JSON.stringify(call.function.arguments ?? {})}`;
+  return `${canonicalizeExecutableToolName(call.function.name)}:${stableJson(call.function.arguments ?? {})}`;
 }
 
 /**
@@ -913,12 +918,13 @@ export class OllamaService implements OnModuleInit {
     const toolCalls: ToolCall[] = [];
     const accumulatedMessages: OllamaMessage[] = [];
     // Up to TOOL_OFFER_ROUNDS rounds offer tools, then a prose follow-up. A
-    // later round is offered tools only while every call so far succeeded and
-    // none repeated an earlier one: re-advertising tools after a failed or
-    // partial remember made Qwen retry for minutes on a 2-slot vLLM, and a
-    // model repeating a call is going round in circles. Tool XML the model
-    // writes into its text is salvaged only in a round that offered tools
-    // (salvageTools); any other round's markup is stripped, never run.
+    // later round is offered tools only while every call so far was a read
+    // that succeeded and none repeated an earlier one: re-advertising tools
+    // after a failed or partial remember made Qwen retry for minutes on a
+    // 2-slot vLLM, and a model repeating a call is going round in circles.
+    // Tool XML the model writes into its text is salvaged only in a round that
+    // offered tools (salvageTools); any other round's markup is stripped, never
+    // run.
     const maxToolRounds = TOOL_OFFER_ROUNDS + 1;
     let generateRounds = 0;
     let toolsStillOffered = true;
@@ -971,11 +977,22 @@ export class OllamaService implements OnModuleInit {
 
         accumulatedMessages.push(...toolEvaluations);
 
-        const repeatedCall = iterationToolCalls.some((call) => callsMade.has(toolCallKey(call)));
+        const iterationKeys = iterationToolCalls.map(toolCallKey);
+        const repeatedCall = iterationKeys.some((key) => callsMade.has(key));
 
-        iterationToolCalls.forEach((call) => callsMade.add(toolCallKey(call)));
+        iterationKeys.forEach((key) => callsMade.add(key));
 
-        if (failedCalls > 0 || repeatedCall) {
+        // After a write the turn has acted: it answers next instead of being
+        // handed the tools again. A second round exists to act on a lookup.
+        // Offered again after a write, a model can repeat it (the repeat runs
+        // before it is caught) or chain further writes from text it read.
+        const wroteSomething = iterationToolCalls.some(
+          (call) =>
+            self.toolRegistry.getTool(canonicalizeExecutableToolName(call.function.name))?.schema.privacy
+              .access !== 'read',
+        );
+
+        if (failedCalls > 0 || repeatedCall || wroteSomething) {
           toolsStillOffered = false;
         }
 
@@ -1028,10 +1045,13 @@ export class OllamaService implements OnModuleInit {
               signal,
               enableThinking,
               // Markup is read as a tool call only in a round that offered
-              // tools. The follow-up round offers none, and text the model
+              // tools. The closing round offers none, and text the model
               // writes there is the answer: when it quotes an email or an
               // invite that carries tool markup, salvaging it would run a call
-              // nobody asked for, with the owner's authority.
+              // nobody asked for, with the owner's authority. A second tool
+              // round reads the first round's results and still salvages, so
+              // the registry's capability and approval gate is what bounds a
+              // call quoted from one.
               salvageTools: iterationWillCallTools,
               // Every round that offers no tools (the follow-up, the forced
               // prose round) keeps its markup out of the streamed text and
