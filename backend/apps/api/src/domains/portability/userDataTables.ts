@@ -365,12 +365,14 @@ export interface DiscoveredLinkReference {
 }
 
 /**
- * A table with no user column whose rows hang off the account's rows:
- * `ci_search.entity_tag` (a tag on an entity), `hbpe.l1_event_cluster` and
- * `hbpe.l2_content_cluster` (HBPE's cluster of an event or a piece of content).
- * Their foreign keys into the account's tables refuse the import's delete
- * (NO ACTION), and an archive does not carry them, so the import sets them
- * aside first and puts back the ones whose rows came back.
+ * A table with no user column whose rows hang off the account's rows. Some
+ * refuse the import's delete (NO ACTION): `ci_search.entity_tag` (a tag on an
+ * entity), `hbpe.l1_event_cluster` and `hbpe.l2_content_cluster` (HBPE's
+ * cluster of an event or a piece of content). Others go with it by cascade:
+ * `ci.message_files` (a chat message's attachments), `ci.task_dependencies`,
+ * the search tags' categories and directions. An archive carries none of
+ * them, so the import sets them aside first and puts back the ones whose rows
+ * came back.
  */
 export interface LinkTable {
   schema: string;
@@ -385,14 +387,15 @@ export interface LinkTable {
 /**
  * The {@link LinkTable}s among the foreign keys discovery found: tables that
  * are not the account's own (no user column), not `ci.users`, and that hold a
- * NO ACTION or RESTRICT key into one of `userTables`.
+ * NO ACTION, RESTRICT or CASCADE key into one of `userTables`. A SET NULL key
+ * only mentions the account's row, and that row survives the delete.
  */
 export function findLinkTables(
   references: readonly DiscoveredLinkReference[],
   userTables: readonly UserScopedTable[],
 ): LinkTable[] {
   const userColumnOf = new Map(userTables.map((table) => [qualifiedName(table), table.userColumn]));
-  const byTable = new Map<string, LinkTable & { blocks: boolean }>();
+  const byTable = new Map<string, LinkTable & { hangsOff: boolean }>();
 
   for (const reference of references) {
     const name = qualifiedName(reference);
@@ -405,8 +408,8 @@ export function findLinkTables(
     const userColumn = userColumnOf.get(parentName) ?? null;
     const entry =
       byTable.get(name) ??
-      ({ schema: reference.schema, table: reference.table, references: [], blocks: false } as LinkTable & {
-        blocks: boolean;
+      ({ schema: reference.schema, table: reference.table, references: [], hangsOff: false } as LinkTable & {
+        hangsOff: boolean;
       });
 
     (entry.references as LinkTable['references'][number][]).push({
@@ -418,10 +421,11 @@ export function findLinkTables(
         userColumn,
       },
     });
-    entry.blocks ||=
-      userColumn !== null && (reference.delete_action === 'a' || reference.delete_action === 'r');
+    entry.hangsOff ||= userColumn !== null && ['a', 'r', 'c'].includes(reference.delete_action);
     byTable.set(name, entry);
   }
 
-  return [...byTable.values()].filter((entry) => entry.blocks).map(({ blocks: _blocks, ...table }) => table);
+  return [...byTable.values()]
+    .filter((entry) => entry.hangsOff)
+    .map(({ hangsOff: _hangsOff, ...table }) => table);
 }

@@ -205,16 +205,27 @@ describe('findLinkTables', () => {
     ]);
   });
 
-  it('leaves out account tables, ci.users and tables whose keys cascade', () => {
+  it('leaves out account tables, ci.users and a table that only mentions an account row', () => {
     expect(
       findLinkTables(
         [
           reference('ci.events', 'thread_id', 'ci_search.tags', 'a'),
           reference('ci.users', 'entity_id', 'ci.events', 'a'),
-          reference('ci_search.tag_categories', 'category_tag_id', 'ci_search.tags', 'c'),
+          reference('ci.ask_audit', 'event_id', 'ci.events', 'n'),
         ],
         userTables,
       ),
     ).toEqual([]);
+  });
+
+  it('finds a table whose rows go with an account row by cascade', () => {
+    // ci.message_files: the import's delete would take a message's attachments
+    // with it, and an archive does not carry them.
+    expect(
+      findLinkTables(
+        [reference('ci_search.tag_categories', 'category_tag_id', 'ci_search.tags', 'c')],
+        userTables,
+      ).map(({ table }) => table),
+    ).toEqual(['tag_categories']);
   });
 });

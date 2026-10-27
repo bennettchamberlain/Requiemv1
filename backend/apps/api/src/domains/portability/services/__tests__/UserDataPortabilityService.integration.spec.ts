@@ -809,6 +809,59 @@ describeWithDatabase(
         expect(warn).not.toHaveBeenCalled();
       });
 
+      it("keeps a chat message's attachment, which the delete would take by cascade", async () => {
+        const threadId = randomUUID();
+        const messageId = randomUUID();
+        const fileId = randomUUID();
+
+        await dataSource.query(
+          'INSERT INTO ci.threads (thread_id, user_id, title) VALUES ($1::uuid, $2::uuid, $3)',
+          [threadId, testUserId, 'Trip'],
+        );
+        await dataSource.query(
+          `INSERT INTO ci.messages (message_id, user_id, thread_id, role, content) VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', 'see attached')`,
+          [messageId, testUserId, threadId],
+        );
+        await dataSource.query(
+          `INSERT INTO ci.files (id, user_id, content_type, filename) VALUES ($1::uuid, $2::uuid, 'image/png', 'ticket.png')`,
+          [fileId, testUserId],
+        );
+        await dataSource.query(
+          'INSERT INTO ci.message_files (message_id, file_id) VALUES ($1::uuid, $2::uuid)',
+          [messageId, fileId],
+        );
+
+        try {
+          await service.importNdjsonStream(
+            { userId: testUserId } as never,
+            streamOf([
+              manifest(),
+              { type: 'row', table: 'ci.threads', row: { thread_id: threadId, title: 'Trip' } },
+              {
+                type: 'row',
+                table: 'ci.messages',
+                row: { message_id: messageId, thread_id: threadId, role: 'user', content: 'see attached' },
+              },
+              {
+                type: 'row',
+                table: 'ci.files',
+                row: { id: fileId, content_type: 'image/png', filename: 'ticket.png' },
+              },
+            ]),
+            'jane@example.com',
+          );
+
+          const attachments = await dataSource.query(
+            'SELECT file_id::text FROM ci.message_files WHERE message_id = $1::uuid',
+            [messageId],
+          );
+          expect(attachments).toEqual([{ file_id: fileId }]);
+        } finally {
+          await dataSource.query('DELETE FROM ci.message_files WHERE message_id = $1::uuid', [messageId]);
+          await dataSource.query('DELETE FROM ci.files WHERE id = $1::uuid', [fileId]);
+        }
+      });
+
       it('leaves out the links whose rows the archive does not bring back (legacy path)', async () => {
         await service.importArchive(
           { userId: testUserId } as never,
