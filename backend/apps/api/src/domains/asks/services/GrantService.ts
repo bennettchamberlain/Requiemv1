@@ -92,6 +92,40 @@ export class GrantService {
   }
 
   /**
+   * Revoke every live grant this owner addressed to one peer link, as
+   * {@link revoke} does for one. Returns how many it revoked.
+   *
+   * For a link the owner ended and then added back: the link keeps its id, so
+   * without this its old grants (an `auto` one included) would answer the next
+   * ask from that peer with no review, although a re-added link is meant to
+   * start over like a new one.
+   */
+  async revokeForPeerLink(context: UserServiceContext, peerLinkId: string): Promise<number> {
+    const live = await this.grantRepository.find({
+      where: { ownerUserId: context.userId, granteePeerLinkId: peerLinkId, revokedAt: IsNull() },
+    });
+
+    if (live.length === 0) {
+      return 0;
+    }
+
+    const now = new Date();
+
+    for (const grant of live) {
+      grant.revokedAt = now;
+      grant.revocationReason = 'revoked';
+    }
+
+    await this.grantRepository.save(live);
+
+    for (const grant of live) {
+      await this.withdrawPreAuthorization(grant);
+    }
+
+    return live.length;
+  }
+
+  /**
    * CHANGE a standing grant — the Grant Manager's `onChangeMode(grantId, mode)`,
    * and the only expressible edit before this existed was "write a second row",
    * which left both rows live and both matching.

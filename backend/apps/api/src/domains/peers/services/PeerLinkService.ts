@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { type UserServiceContext } from '@ci/common/context';
 import { LoggerService } from '@ci/common/logging';
+import { GrantService } from '@ci/domains/asks';
 
 import {
   isPeerTrustTier,
@@ -37,6 +38,32 @@ export interface CreatePeerLinkDto {
 const IDENTITY_CONSTRAINT = 'peer_links_owner_identity_live_uniq';
 
 /**
+ * The live signing-key index (`20260826155700_add_peer_link_signing_keys.sql`).
+ * Nothing in `upsert` writes a key, so the only way a write here trips it is by
+ * re-activating a revoked row that still carries one.
+ */
+const KEY_CONSTRAINT = 'peer_links_owner_key_live_uniq';
+
+/**
+ * The constraint a `23505` names, or `null` when the error is not a unique
+ * violation at all. A violation whose name a pooler dropped comes back as
+ * `{ constraint: undefined }`, which callers must tell apart from `null`.
+ */
+function uniqueViolation(err: unknown): { constraint: unknown } | null {
+  const candidate = err as {
+    code?: unknown;
+    constraint?: unknown;
+    driverError?: { code?: unknown; constraint?: unknown };
+  } | null;
+
+  if ((candidate?.driverError?.code ?? candidate?.code) !== '23505') {
+    return null;
+  }
+
+  return { constraint: candidate?.driverError?.constraint ?? candidate?.constraint };
+}
+
+/**
  * Was this write refused because another LIVE link of this owner's already
  * claims the same `(peer_issuer, peer_subject)`?
  *
@@ -48,19 +75,23 @@ const IDENTITY_CONSTRAINT = 'peer_links_owner_identity_live_uniq';
  * keeps surfacing as itself.
  */
 function isIdentityConflict(err: unknown): boolean {
-  const candidate = err as {
-    code?: unknown;
-    constraint?: unknown;
-    driverError?: { code?: unknown; constraint?: unknown };
-  } | null;
+  const violation = uniqueViolation(err);
 
-  if ((candidate?.driverError?.code ?? candidate?.code) !== '23505') {
-    return false;
-  }
+  return violation != null && (violation.constraint == null || violation.constraint === IDENTITY_CONSTRAINT);
+}
 
-  const constraint = candidate?.driverError?.constraint ?? candidate?.constraint;
+/** Was this write refused by the live signing-key index, by name? */
+function isKeyConflict(err: unknown): boolean {
+  return uniqueViolation(err)?.constraint === KEY_CONSTRAINT;
+}
 
-  return constraint == null || constraint === IDENTITY_CONSTRAINT;
+/**
+ * Does this row fall inside the identity index's predicate (setting
+ * `revoked_at` aside)? Both columns non-null and non-empty, exactly as
+ * `peer_links_owner_identity_live_uniq` spells it.
+ */
+function carriesIdentity(row: Pick<PeerLinkEntity, 'peerIssuer' | 'peerSubject'>): boolean {
+  return !!row.peerIssuer && !!row.peerSubject;
 }
 
 /**
@@ -102,6 +133,9 @@ export class PeerLinkService {
     @InjectRepository(PeerLinkEntity)
     private readonly repository: Repository<PeerLinkEntity>,
     private readonly logger: LoggerService,
+    // Re-activating a revoked link revokes the grants still addressed to it;
+    // see `upsert`.
+    private readonly grantService: GrantService,
   ) {
     this.logger.setContext(PeerLinkService.name);
   }
@@ -186,9 +220,13 @@ export class PeerLinkService {
     // it coherent. Refusing every unrelated edit to such a row would turn a
     // legacy inconsistency into an outage.
     const touchesIdentity = peerIssuer !== undefined || peerSubject !== undefined;
-    // Re-activating a revoked link puts its stored binding back into the live
-    // identity index, so it can clash there without naming an identity at all.
+    // Re-activating a revoked link puts its stored row back into the partial
+    // `revoked_at IS NULL` indexes, so it can clash there without naming an
+    // identity or a key at all. Only a row that carries an identity can clash on
+    // the identity index, so an unbound one never has a pooler's nameless
+    // `23505` read as an identity clash.
     const reactivates = existing?.revokedAt != null && record.revokedAt == null;
+    const reactivatesIdentity = reactivates && carriesIdentity(record);
 
     if (touchesIdentity && (record.peerIssuer == null) !== (record.peerSubject == null)) {
       throw new BadRequestException(
@@ -196,8 +234,10 @@ export class PeerLinkService {
       );
     }
 
+    let saved: PeerLinkEntity;
+
     try {
-      return PeerLinkEntity.toEgressType(await this.repository.save(record));
+      saved = await this.repository.save(record);
     } catch (err) {
       // ═══ ONE LIVE LINK PER (OWNER, IDENTITY) — WHY THE DB DECIDES ═══
       //
@@ -206,15 +246,48 @@ export class PeerLinkService {
       // is the only place that cannot be lost to a race, so the check lives
       // there and this catch exists to give it an honest status code instead of
       // the bare 500 an unhandled `23505` becomes.
-      if ((touchesIdentity || reactivates) && isIdentityConflict(err)) {
+      if (touchesIdentity && isIdentityConflict(err)) {
         throw new ConflictException(
           'Another active peer link already claims that (peerIssuer, peerSubject) — ' +
             'revoke it first, or re-bind that link instead',
         );
       }
 
+      // The caller named no identity, and the stored one is write-only, so the
+      // message cannot point at a pair they typed. It says what they can do.
+      if (reactivatesIdentity && isIdentityConflict(err)) {
+        throw new ConflictException(
+          `Another active peer link now claims the identity ${data.peerHandle} was bound to. ` +
+            'Revoke that link first, or re-add this one with a different peerIssuer and peerSubject.',
+        );
+      }
+
+      if (reactivates && isKeyConflict(err)) {
+        throw new ConflictException(
+          `Another active peer link now holds the signing key ${data.peerHandle} was bound to. ` +
+            'Revoke that link first.',
+        );
+      }
+
       throw err;
     }
+
+    if (reactivates) {
+      // ═══ A RE-ADDED LINK STARTS OVER, GRANTS INCLUDED ═══
+      //
+      // The row keeps its id, and grants address a peer by that id, so the
+      // grants the owner gave this peer before ending the link would apply to
+      // its next ask, an `auto` one with no review. A re-added link starts at
+      // Stranger like a new one (`createPeerLink`), and a new one has no
+      // grants. `revoke()` leaves them alone, so this is where they go.
+      const revokedGrants = await this.grantService.revokeForPeerLink(context, saved.id);
+
+      // The counterpart of the line `revoke()` logs: a link coming back is as
+      // much a change to who can ask as one going away.
+      this.logger.log(`peer link re-activated: ${data.peerHandle}; ${revokedGrants} old grant(s) revoked`);
+    }
+
+    return PeerLinkEntity.toEgressType(saved);
   }
 
   async findAll(context: UserServiceContext): Promise<PeerLink[]> {
