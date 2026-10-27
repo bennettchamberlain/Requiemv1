@@ -42,6 +42,17 @@ function mockResponse() {
 }
 
 describe('ChatGenerationBroker', () => {
+  // Every attached viewer starts a keep-alive interval. Fake timers keep the tests that never end
+  // their turn from leaving a real one running behind them.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
   // The appliance gateway's generic `/api/` location buffers a proxied response
   // by default, which turns a token stream into bursts. `/api/llm/generate` is
   // unbuffered by config, but re-attaching to a turn in flight
@@ -77,46 +88,69 @@ describe('ChatGenerationBroker', () => {
   });
 
   it('repeats the keep-alive while the model is quiet, and stops once the turn ends', () => {
-    jest.useFakeTimers();
+    const broker = new ChatGenerationBroker();
+    broker.ensure('thread-1');
+    const { res, chunks } = mockResponse();
 
-    try {
-      const broker = new ChatGenerationBroker();
-      broker.ensure('thread-1');
-      const { res, chunks } = mockResponse();
+    broker.pipeToResponse(res as never, 'thread-1');
+    jest.advanceTimersByTime(KEEPALIVE_INTERVAL_MS * 2);
+    broker.publish('thread-1', { channel: Channel.TEXT, text: 'Hi' });
+    broker.complete('thread-1');
+    jest.advanceTimersByTime(KEEPALIVE_INTERVAL_MS * 3);
 
-      broker.pipeToResponse(res as never, 'thread-1');
-      jest.advanceTimersByTime(KEEPALIVE_INTERVAL_MS * 2);
-      broker.publish('thread-1', { channel: Channel.TEXT, text: 'Hi' });
-      broker.complete('thread-1');
-      jest.advanceTimersByTime(KEEPALIVE_INTERVAL_MS * 3);
+    expect(frameChannels(Buffer.concat(chunks))).toEqual([
+      Channel.KEEPALIVE,
+      Channel.KEEPALIVE,
+      Channel.KEEPALIVE,
+      Channel.TEXT,
+    ]);
+    expect(jest.getTimerCount()).toBe(0);
+  });
 
-      expect(frameChannels(Buffer.concat(chunks))).toEqual([
-        Channel.KEEPALIVE,
-        Channel.KEEPALIVE,
-        Channel.KEEPALIVE,
-        Channel.TEXT,
-      ]);
-      expect(jest.getTimerCount()).toBe(0);
-    } finally {
-      jest.useRealTimers();
+  it('sends no keep-alive while frames keep arriving', () => {
+    const broker = new ChatGenerationBroker();
+    broker.ensure('thread-1');
+    const { res, chunks } = mockResponse();
+
+    broker.pipeToResponse(res as never, 'thread-1');
+
+    for (let i = 0; i < 4; i += 1) {
+      jest.advanceTimersByTime(KEEPALIVE_INTERVAL_MS - 1);
+      broker.publish('thread-1', { channel: Channel.TEXT, text: `t${i}` });
     }
+
+    jest.advanceTimersByTime(KEEPALIVE_INTERVAL_MS);
+
+    expect(frameChannels(Buffer.concat(chunks))).toEqual([
+      Channel.KEEPALIVE,
+      Channel.TEXT,
+      Channel.TEXT,
+      Channel.TEXT,
+      Channel.TEXT,
+      Channel.KEEPALIVE,
+    ]);
   });
 
   it('stops the keep-alive when the viewer goes away', () => {
-    jest.useFakeTimers();
+    const broker = new ChatGenerationBroker();
+    broker.ensure('thread-1');
+    const { res, closeHandlers } = mockResponse();
 
-    try {
-      const broker = new ChatGenerationBroker();
-      broker.ensure('thread-1');
-      const { res, closeHandlers } = mockResponse();
+    broker.pipeToResponse(res as never, 'thread-1');
+    closeHandlers.forEach((handler) => handler());
 
-      broker.pipeToResponse(res as never, 'thread-1');
-      closeHandlers.forEach((handler) => handler());
+    expect(jest.getTimerCount()).toBe(0);
+  });
 
-      expect(jest.getTimerCount()).toBe(0);
-    } finally {
-      jest.useRealTimers();
-    }
+  it('stops the keep-alive when the turn is stopped', () => {
+    const broker = new ChatGenerationBroker();
+    broker.ensure('thread-1');
+    const { res } = mockResponse();
+
+    broker.pipeToResponse(res as never, 'thread-1');
+    broker.abort('thread-1');
+
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   it('does not abort the generation signal when an HTTP viewer disconnects', () => {
