@@ -7,7 +7,11 @@ import { type ServiceContext, type UserServiceContext, SYSTEM_USER } from '@ci/c
 import { LoggerService } from '@ci/common/logging';
 import { chunkedConflictInsert, keysetSeek } from '@ci/common/persistence';
 import { EventService } from '@ci/domains/events';
-import { USER_EDITED_KEYS, userEditedKeys } from '@ci/domains/graph/utils/ingestedProperties';
+import {
+  USER_EDITED_KEYS,
+  userEditedKeys,
+  userEditedListSql,
+} from '@ci/domains/graph/utils/ingestedProperties';
 import { PersonCreatedEvent, PersonUpdatedEvent, PersonRemovedEvent } from '@ci/domains/memory/events';
 import type { EntityIdentifier, IndexableEntity } from '@ci/domains/search-next';
 
@@ -132,31 +136,46 @@ const PERSON_NAME_LOOKS_IMPLAUSIBLE_SQL = `CASE
 END`;
 
 /**
- * `jsonb_build_object('user_edited_keys', …)` for a hand edit in
- * {@link PersonService.patch}: the keys already listed, plus each patched key
- * whose stored value differs from the one arriving (a missing key reads as
- * null, so clearing a value that was there counts and "clearing" an absent one
- * does not), plus `name` / `description` when this edit changes the column.
- * Evaluated inside the UPDATE, so `properties`, `name` and `description` are
- * the row as it was before this statement.
+ * A jsonb value with the form's empties (JSON null, `""`, `[]`) read as SQL
+ * NULL, so a field the form sends back blank compares equal to one the row
+ * never had.
+ */
+function emptyJsonbSql(value: string): string {
+  return `NULLIF(NULLIF(NULLIF(${value}, 'null'::jsonb), '""'::jsonb), '[]'::jsonb)`;
+}
+
+/**
+ * `{"user_edited_keys": […]}` for a hand edit in {@link PersonService.patch}, or
+ * `{}` when there is nothing to list: the keys already listed, plus each
+ * patched key whose stored value differs from the one arriving (missing, null,
+ * `""` and `[]` all read as empty, so clearing a value that was there counts and
+ * "clearing" an absent one does not), plus `name` / `description` when this
+ * edit changes the column (NULL and `''` alike: the form sends a blank
+ * description as `''`). Evaluated inside the UPDATE, so `properties`, `name`
+ * and `description` are the row as it was before this statement.
  */
 function handEditedKeysSql(data: { name?: string; description?: string }): string {
   const sources = [
-    `SELECT jsonb_array_elements_text(CASE WHEN jsonb_typeof(properties -> '${USER_EDITED_KEYS}') = 'array' ` +
-      `THEN properties -> '${USER_EDITED_KEYS}' ELSE '[]'::jsonb END) AS key`,
+    `SELECT held.member #>> '{}' AS key FROM jsonb_array_elements(${userEditedListSql('properties')}) AS held(member) ` +
+      `WHERE jsonb_typeof(held.member) = 'string'`,
     `SELECT patched.key FROM jsonb_each(:propertiesPatch::jsonb) AS patched(key, value) ` +
-      `WHERE COALESCE(properties -> patched.key, 'null'::jsonb) IS DISTINCT FROM patched.value`,
+      `WHERE ${emptyJsonbSql('properties -> patched.key')} IS DISTINCT FROM ${emptyJsonbSql('patched.value')}`,
     ...(data.name !== undefined
-      ? [`SELECT 'name' WHERE name IS DISTINCT FROM CAST(:editedName AS text)`]
+      ? [`SELECT 'name' WHERE NULLIF(name, '') IS DISTINCT FROM NULLIF(CAST(:editedName AS text), '')`]
       : []),
     ...(data.description !== undefined
-      ? [`SELECT 'description' WHERE description IS DISTINCT FROM CAST(:editedDescription AS text)`]
+      ? [
+          `SELECT 'description' WHERE NULLIF(description, '') IS DISTINCT FROM ` +
+            `NULLIF(CAST(:editedDescription AS text), '')`,
+        ]
       : []),
   ];
 
   return (
-    `jsonb_build_object('${USER_EDITED_KEYS}', (SELECT COALESCE(jsonb_agg(DISTINCT edited.key ORDER BY edited.key), '[]'::jsonb) ` +
-    `FROM (${sources.join(' UNION ')}) AS edited))`
+    `(SELECT CASE WHEN listed.keys IS NULL THEN '{}'::jsonb ` +
+    `ELSE jsonb_build_object('${USER_EDITED_KEYS}', listed.keys) END ` +
+    `FROM (SELECT jsonb_agg(DISTINCT edited.key ORDER BY edited.key) AS keys ` +
+    `FROM (${sources.join(' UNION ')}) AS edited) AS listed)`
   );
 }
 
@@ -666,8 +685,11 @@ export class PersonService extends EntityService<PersonEntity, Person> {
         }
       }
 
+      // The list is only ever written by a hand edit, never taken from a caller's bag.
       if (USER_EDITED_KEYS in stored) {
         merged[USER_EDITED_KEYS] = stored[USER_EDITED_KEYS];
+      } else {
+        delete merged[USER_EDITED_KEYS];
       }
 
       const typedAll = typedColumnsFromProperties(properties);
