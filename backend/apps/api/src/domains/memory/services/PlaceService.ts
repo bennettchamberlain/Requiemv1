@@ -1295,7 +1295,10 @@ export class PlaceService {
       .createQueryBuilder('place')
       .select('place.id', 'id')
       .where('place.entity_type = :entityType', { entityType: 'Location' })
-      .andWhere('place.owner_user_id = :userId', { userId: context.userId });
+      .andWhere('place.owner_user_id = :userId', { userId: context.userId })
+      // A place the user asked Memory to forget, or merged into another, is not
+      // one of their places any more (findAll leaves both out the same way).
+      .andWhere('place.is_active IS DISTINCT FROM FALSE');
 
     // Composite keyset: page strictly past (afterTime, afterId) in (updated_at, entity_id), in
     // `order` — see keysetSeek.
@@ -1376,7 +1379,8 @@ export class PlaceService {
     let query = this.placeRepository
       .createQueryBuilder('place')
       .where('place.entity_type = :entityType', { entityType: 'Location' })
-      .andWhere('place.owner_user_id = :userId', { userId: context.userId });
+      .andWhere('place.owner_user_id = :userId', { userId: context.userId })
+      .andWhere('place.is_active IS DISTINCT FROM FALSE');
 
     if (options.startTime) {
       query = query.andWhere('place.updated_at >= :startTime', { startTime: options.startTime });

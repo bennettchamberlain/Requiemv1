@@ -1350,15 +1350,6 @@ export class SearchResolver {
           return null;
         }
 
-        // A person the user asked Memory to forget is archived (is_active false)
-        // and un-indexed, but an index row written before or after that (see
-        // PersonSearchIndexListener) must not bring them back: every search
-        // surface, the header box, the Add relationship picker and the note `[[`
-        // menu, reads its rows from here.
-        if (entry.type === 'person' && (entry.entity as { isActive?: boolean }).isActive === false) {
-          return null;
-        }
-
         // People/places date-filter by first real activity in the window. The
         // identifier carries that instant as sortTime; copy it onto the loaded
         // entity as appearedAt so getEntityTimestamp, the cursor, and the
