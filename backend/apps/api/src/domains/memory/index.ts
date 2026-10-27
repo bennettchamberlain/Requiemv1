@@ -353,7 +353,7 @@ export { MAX_EXPANDED_OCCURRENCES, MAX_RECURRING_MASTERS } from './services/Cale
 // impose SCHEDULE_EVENT_TYPES and LIVE_EVENT_SQL on it.
 export * from './recurrence';
 export type { PlaceKind } from './entities/PlaceEntity';
-export type { PlaceVisitStats } from './services/PlaceService';
+export type { PhotosAtNamedPlace, PlaceVisitStats } from './services/PlaceService';
 export { PHOTO_AT_PLACE_METERS, queryNamesPlace } from './services/PlaceService';
 export { EntityMergeBlockEntity, orderPair, pairKey } from './entities/EntityMergeBlockEntity';
 export { previewFromContent } from './entities/CommunicationEntity';
