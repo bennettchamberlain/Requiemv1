@@ -153,6 +153,55 @@ describe('ToolRegistry.executeTool — a queue ruling parks the call', () => {
   });
 });
 
+describe('ToolRegistry.executeTool — a call that could never run is not queued', () => {
+  async function harnessWithCheck(checkInput: jest.Mock) {
+    const built = await harness(FORGET, QUEUE_RULING);
+    (built.tool as any).checkInput = checkInput;
+
+    return built;
+  }
+
+  it('answers TOOL_INVALID_INPUT with the reason and writes nothing to the queue', async () => {
+    const checkInput = jest.fn(() => 'entityIds.0: Invalid uuid');
+    const { registry, tool, propose, record } = await harnessWithCheck(checkInput);
+
+    const result = await registry.executeTool('memory_forget', context(), { entityIds: ['a name'] });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toStrictEqual({
+      code: 'TOOL_INVALID_INPUT',
+      message: 'Nothing was queued for confirmation: entityIds.0: Invalid uuid',
+      retryable: false,
+    });
+    expect(checkInput).toHaveBeenCalledWith({ entityIds: ['a name'] });
+    expect(propose).not.toHaveBeenCalled();
+    expect((tool as any).execute).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('queues as before when the tool finds the input well formed', async () => {
+    const checkInput = jest.fn(() => undefined);
+    const { registry, propose } = await harnessWithCheck(checkInput);
+
+    const result = await registry.executeTool('memory_forget', context(), { entityIds: ['e-1'] });
+
+    expect(result.error?.code).toBe('TOOL_QUEUED');
+    expect(checkInput).toHaveBeenCalledTimes(1);
+    expect(propose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask a call the gate lets run (execute validates it itself)', async () => {
+    const checkInput = jest.fn(() => 'never asked');
+    const { registry, tool } = await harness(FORGET, EXECUTE_RULING);
+    (tool as any).checkInput = checkInput;
+
+    await registry.executeTool('memory_forget', context(), {});
+
+    expect(checkInput).not.toHaveBeenCalled();
+    expect((tool as any).execute).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ToolRegistry.executeTool — an execute ruling is the unchanged path', () => {
   it('runs the tool and still emits the behavioural signal', async () => {
     const { registry, tool, propose, record } = await harness(FORGET, EXECUTE_RULING);

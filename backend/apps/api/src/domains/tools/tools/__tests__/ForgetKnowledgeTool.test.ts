@@ -3326,3 +3326,23 @@ describe('ForgetKnowledgeTool failures', () => {
     });
   });
 });
+
+describe('ForgetKnowledgeTool.checkInput, asked before a forget is queued for confirmation', () => {
+  const tool = () => makeTool(makeGraphUtility({ nodes: {} }));
+
+  it('accepts a call naming entity ids', () => {
+    expect(tool().checkInput({ entityIds: [E1], mode: 'archive' })).toBeUndefined();
+  });
+
+  it('names the field when an id is not a uuid (a name in place of the id)', () => {
+    expect(tool().checkInput({ entityIds: ['RC-llm bogus name'], mode: 'archive' })).toBe(
+      'entityIds.0: Invalid uuid',
+    );
+  });
+
+  it('refuses the singular `entityId` a model sends, saying which field it needs', () => {
+    expect(tool().checkInput({ entityId: E1 })).toBe(
+      'input: Provide entityIds and/or relationshipIds to forget',
+    );
+  });
+});

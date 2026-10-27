@@ -34,6 +34,21 @@ export abstract class BaseTool<TInput = any, TOutput = any> {
   }
 
   /**
+   * Why `input` would fail {@link validateInput}, or `undefined` when it passes. The registry asks
+   * this before it queues a call for confirmation (see `ToolHandle.checkInput`), so a call that
+   * could only fail is refused at once instead of becoming a card in Approvals.
+   */
+  checkInput(input: unknown): string | undefined {
+    try {
+      this.validateInput(input);
+
+      return undefined;
+    } catch (error) {
+      return describeInvalidInput(error);
+    }
+  }
+
+  /**
    * Public execution method with error handling and observability
    */
   async execute(context: RequestContext, input: unknown): Promise<ToolResult<TOutput>> {
@@ -153,6 +168,27 @@ export abstract class BaseTool<TInput = any, TOutput = any> {
 
     return input;
   }
+}
+
+/**
+ * One sentence for an input that failed validation. A zod error's own `message` is its issues as a
+ * JSON array; this lists them as `path: message` instead (`entityIds.0: Invalid uuid`), which is
+ * what a model reading the error needs to fix its call.
+ */
+function describeInvalidInput(error: unknown): string {
+  const issues = (error as { issues?: unknown } | null)?.issues;
+
+  if (Array.isArray(issues) && issues.length > 0) {
+    return issues
+      .map((issue: { path?: unknown; message?: unknown }) => {
+        const path = Array.isArray(issue.path) && issue.path.length > 0 ? issue.path.join('.') : 'input';
+
+        return `${path}: ${String(issue.message)}`;
+      })
+      .join('; ');
+  }
+
+  return toolErrorMessage(error);
 }
 
 /**
