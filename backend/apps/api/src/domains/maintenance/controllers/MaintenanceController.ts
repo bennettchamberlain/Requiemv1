@@ -5,6 +5,7 @@ import {
   Controller,
   Get,
   Headers,
+  Logger,
   NotFoundException,
   Param,
   Post,
@@ -21,6 +22,7 @@ import { z } from 'zod/v3';
 import { Context, type RequestContext, toServiceContext } from '@ci/common/context';
 import { FULL_CAPABILITY, READ_CAPABILITY, RequireCapability, WRITE_CAPABILITY } from '@ci/common/decorators';
 import { ApplianceAdminGuard, JwtOrApiKeyAuthGuard } from '@ci/common/guards';
+import { summarizeDatabaseError } from '@ci/common/persistence';
 import { ValidationPipe } from '@ci/common/pipes';
 import config from '@ci/configuration';
 import { UNFURL_SWEEP_QUEUE, UnfurlSweepRequestEvent } from '@ci/domains/embed/events';
@@ -467,6 +469,30 @@ const ESTIMATE_DEFAULT_LIMIT = 500;
 
 /** Default batch size for the media-dimensions backfill when the body omits a limit. */
 const MEDIA_DIMENSIONS_DEFAULT_LIMIT = 500;
+
+/**
+ * The `error` line a streamed run ends with when it throws.
+ *
+ * A database error's own message names internal relations and constraints, or
+ * on a connection failure the server's address, and the stream is answered to
+ * any account holding a write key. So a database failure is told by its kind
+ * and code, and its message goes to the log. Anything else (a service's own
+ * message) is passed on as before.
+ */
+function streamErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const summary = summarizeDatabaseError(err);
+
+  if (summary == null) {
+    return message;
+  }
+
+  Logger.error(`A streamed maintenance run failed in the database: ${message}`, 'MaintenanceController');
+
+  return summary.kind === 'unavailable'
+    ? `The database was unavailable during this run (${summary.code}).`
+    : `The database refused a write in this run (SQLSTATE ${summary.code}).`;
+}
 
 /**
  * Operator-facing maintenance endpoints. POST /api/maintenance/geocode-locations
@@ -1730,7 +1756,7 @@ export class MaintenanceController {
       const result = await run(emit);
       emit({ type: 'result', ...result });
     } catch (err) {
-      emit({ type: 'error', error: (err as Error).message });
+      emit({ type: 'error', error: streamErrorMessage(err) });
     } finally {
       if (!res.writableEnded) {
         res.end();
