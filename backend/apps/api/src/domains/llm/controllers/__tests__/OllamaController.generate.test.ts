@@ -178,9 +178,47 @@ describe('OllamaController generate attach', () => {
         expect.objectContaining({ userId: 'user-1' }),
         ACTION_ID,
         'thread-1',
+        null,
       );
       expect(chatTurnService.enqueueGenerate).toHaveBeenCalledWith(
         expect.objectContaining({ promptMessageId: 'user-msg', assistantMessageId: 'assistant-msg' }),
+      );
+    });
+
+    it('relinks an action whose thread was archived to the thread it starts', async () => {
+      const actions = actionService({
+        id: ACTION_ID,
+        title: 'Confirm home',
+        text: 'Is Mint Plaza home?',
+        threadId: 'thread-archived',
+      });
+      const threadService = {
+        findById: jest.fn(async () => null),
+        create: jest.fn(async () => thread),
+      };
+      const messageService = {
+        create: jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'action-msg' })
+          .mockResolvedValueOnce({ id: 'user-msg' })
+          .mockResolvedValueOnce({ id: 'assistant-msg' }),
+      };
+      const { controller } = buildController({ threadService, messageService }, actions);
+      const { res } = mockResponse();
+
+      await controller.generate(
+        context as never,
+        { prompt: 'Why do you suggest this?', threadId: null, actionId: ACTION_ID } as never,
+        res as never,
+        {} as never,
+      );
+
+      expect(threadService.create).toHaveBeenCalled();
+      expect(actions.attachThread).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1' }),
+        ACTION_ID,
+        'thread-1',
+        'thread-archived',
       );
     });
 

@@ -211,7 +211,9 @@ export class OllamaController {
    * thread, so a reload showed the bare action again. So the thread opens with
    * the action's own text as the assistant's first message (what the window
    * already shows as the first bubble), takes the action's title, and the
-   * action is linked to it. An action that already has a thread is continued.
+   * action is linked to it. An action that already has a thread is continued;
+   * one whose thread was archived is relinked to the new one, or every visit
+   * would start another thread the action never points at.
    */
   private async startThread(
     context: UserServiceContext,
@@ -246,7 +248,7 @@ export class OllamaController {
         });
       }
 
-      await this.actionService.attachThread(context, action.id, thread.id);
+      await this.actionService.attachThread(context, action.id, thread.id, action.threadId ?? null);
     }
 
     return thread;

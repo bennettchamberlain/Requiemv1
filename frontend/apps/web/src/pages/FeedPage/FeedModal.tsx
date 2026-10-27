@@ -96,14 +96,25 @@ export function FeedModal({ onClose }: Props) {
   // action and links to it (`actionId` below). Later turns in this window
   // continue that thread; it is not loaded here, because the turns already on
   // screen are this window's own, and a reload reads it through the action.
-  const [startedThreadId, setStartedThreadId] = useState<string | null>(null);
+  // Kept with the action it was started for, so a window that moves to
+  // another action does not carry on in this one's thread.
+  const [started, setStarted] = useState<{ actionId: string; threadId: string } | null>(null);
+  const startedThreadId = started && started.actionId === action?.id ? started.threadId : null;
+  const handleNewThread = useCallback(
+    (threadId: string) => {
+      if (action?.id) {
+        setStarted({ actionId: action.id, threadId });
+      }
+    },
+    [action?.id],
+  );
   const [
     { stream, loading: chatRequestLoading, streaming: chatRequestStreaming, hasStartedReceiving },
     { submit: submitChatRequest, stop: stopChatRequest, attach: attachChatStream, detach: detachChatStream },
   ] = useChatRequester({
     threadId: thread?.id ?? startedThreadId,
     actionId: action?.id ?? null,
-    onNewThread: setStartedThreadId,
+    onNewThread: handleNewThread,
   });
 
   useEffect(() => {
@@ -195,8 +206,20 @@ export function FeedModal({ onClose }: Props) {
 
   const messages = useMemo(() => {
     const baseMessages = thread?.messages ?? [];
+
+    const generating = thread?.generationStatus === 'queued' || thread?.generationStatus === 'running';
+    const withoutInFlight =
+      generating && baseMessages[baseMessages.length - 1]?.role === 'assistant'
+        ? baseMessages.slice(0, -1)
+        : baseMessages;
+
+    // A thread the server opened about this action already starts with the
+    // action's own text (`OllamaController.startThread`). Prepending it again
+    // showed it twice.
+    const opensWithAction =
+      withoutInFlight[0]?.role === 'assistant' && withoutInFlight[0]?.content === action?.text;
     const actionMessage =
-      action?.text != null
+      action?.text != null && !opensWithAction
         ? [
             {
               role: 'assistant',
@@ -204,12 +227,6 @@ export function FeedModal({ onClose }: Props) {
             },
           ]
         : [];
-
-    const generating = thread?.generationStatus === 'queued' || thread?.generationStatus === 'running';
-    const withoutInFlight =
-      generating && baseMessages[baseMessages.length - 1]?.role === 'assistant'
-        ? baseMessages.slice(0, -1)
-        : baseMessages;
 
     if (isMobile) {
       return [...actionMessage, ...withoutInFlight];
@@ -282,15 +299,12 @@ export function FeedModal({ onClose }: Props) {
         showCloseButton={false}
         // Radix focuses the first focusable element, the Close button, whose
         // tooltip opens on focus; the first Esc then only closed the tooltip.
-        // Start in the chat box instead, or on the window itself while the
-        // action is still loading and the box is disabled.
+        // Park focus on the window instead. The action is still loading when
+        // the window opens, so the chat box is disabled here; `autoFocus` on
+        // the Chat below moves focus into it once the action arrives.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-
-          const content = event.currentTarget as HTMLElement | null;
-          const input = content?.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)');
-
-          (input ?? content)?.focus();
+          (event.currentTarget as HTMLElement | null)?.focus();
         }}
       >
         <Dialog.Header
@@ -366,6 +380,7 @@ export function FeedModal({ onClose }: Props) {
           </div>
 
           <Chat
+            autoFocus
             placeholder={renderTitle ? 'Continue the conversation...' : ''}
             disabled={!renderTitle}
             loading={chatRequestLoading}
