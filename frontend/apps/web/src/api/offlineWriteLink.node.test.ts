@@ -1,45 +1,47 @@
-import { ApolloLink, Observable, execute, gql, type FetchResult } from '@apollo/client';
+import { ApolloLink, Observable, execute, type FetchResult } from '@apollo/client';
 import {
   recordResolvedConnectionMode,
   resetRecordedConnectionMode,
 } from '@ci/common/src/utils/connectionMode';
 import { OfflineWriteError } from '@ci/common/src/utils/offlineWrites';
-import type { DocumentNode } from 'graphql';
+import { parse, type DocumentNode } from 'graphql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createOfflineWriteLink, isGuardedMutation, isNoteOperationName } from './offlineWriteLink';
 
-const DELETE_PERSON = gql`
-  mutation DeleteMemoryPerson($id: ID!) {
+// Parsed, not gql-tagged: these are shapes for the guard to classify, not operations the
+// app sends, and the GraphQL codegen validates every gql`` in src against the schema.
+const DELETE_PERSON = parse(`
+  mutation OfflineGuardDeleteMemoryPerson($id: ID!) {
     deleteMemoryPerson(id: $id) {
       success
     }
   }
-`;
+`);
 
-const UPDATE_NOTE = gql`
-  mutation UpdateNoteDetail($input: UpdateNoteInput!) {
+const UPDATE_NOTE = parse(`
+  mutation OfflineGuardUpdateNoteDetail($input: UpdateNoteInput!) {
     updateNote(input: $input) {
       success
     }
   }
-`;
+`);
 
-const ANONYMOUS_NOTE = gql`
+const ANONYMOUS_NOTE = parse(`
   mutation {
     deleteNote(input: { id: "x" }) {
       success
     }
   }
-`;
+`);
 
-const SEARCH = gql`
-  query Search($q: String!) {
+const SEARCH = parse(`
+  query OfflineGuardSearch($q: String!) {
     search(query: $q) {
       id
     }
   }
-`;
+`);
 
 function run(link: ApolloLink, query: DocumentNode, operationName?: string): Promise<FetchResult> {
   return new Promise((resolve, reject) => {
@@ -57,14 +59,14 @@ describe('isNoteOperationName', () => {
       'CreateNote',
       'UpdateNote',
       'DeleteNote',
-      'UpdateNoteDetail',
+      'OfflineGuardUpdateNoteDetail',
       'DeleteMemoryNote',
       'DeleteNotes',
     ]) {
       expect(isNoteOperationName(name)).toBe(true);
     }
 
-    for (const name of ['DeleteMemoryPerson', 'UpdateNotebook', 'Noteworthy', undefined]) {
+    for (const name of ['OfflineGuardDeleteMemoryPerson', 'UpdateNotebook', 'Noteworthy', undefined]) {
       expect(isNoteOperationName(name)).toBe(false);
     }
   });
@@ -72,10 +74,10 @@ describe('isNoteOperationName', () => {
 
 describe('isGuardedMutation', () => {
   it('guards a mutation, exempts notes and queries', () => {
-    expect(isGuardedMutation(DELETE_PERSON, 'DeleteMemoryPerson')).toBe(true);
-    expect(isGuardedMutation(UPDATE_NOTE, 'UpdateNoteDetail')).toBe(false);
+    expect(isGuardedMutation(DELETE_PERSON, 'OfflineGuardDeleteMemoryPerson')).toBe(true);
+    expect(isGuardedMutation(UPDATE_NOTE, 'OfflineGuardUpdateNoteDetail')).toBe(false);
     expect(isGuardedMutation(ANONYMOUS_NOTE)).toBe(false);
-    expect(isGuardedMutation(SEARCH, 'Search')).toBe(false);
+    expect(isGuardedMutation(SEARCH, 'OfflineGuardSearch')).toBe(false);
   });
 });
 
@@ -90,7 +92,9 @@ describe('createOfflineWriteLink', () => {
     recordResolvedConnectionMode('local');
     const { link, terminal } = linkWithTerminal();
 
-    await expect(run(link, DELETE_PERSON, 'DeleteMemoryPerson')).rejects.toBeInstanceOf(OfflineWriteError);
+    await expect(run(link, DELETE_PERSON, 'OfflineGuardDeleteMemoryPerson')).rejects.toBeInstanceOf(
+      OfflineWriteError,
+    );
     expect(terminal).not.toHaveBeenCalled();
   });
 
@@ -98,17 +102,19 @@ describe('createOfflineWriteLink', () => {
     recordResolvedConnectionMode('local');
     const { link, terminal } = linkWithTerminal();
 
-    await expect(run(link, UPDATE_NOTE, 'UpdateNoteDetail')).resolves.toEqual({ data: { ok: true } });
-    await expect(run(link, SEARCH, 'Search')).resolves.toEqual({ data: { ok: true } });
+    await expect(run(link, UPDATE_NOTE, 'OfflineGuardUpdateNoteDetail')).resolves.toEqual({
+      data: { ok: true },
+    });
+    await expect(run(link, SEARCH, 'OfflineGuardSearch')).resolves.toEqual({ data: { ok: true } });
     expect(terminal).toHaveBeenCalledTimes(2);
   });
 
   it('forwards every mutation while connected, and before the first probe', async () => {
     const { link, terminal } = linkWithTerminal();
 
-    await run(link, DELETE_PERSON, 'DeleteMemoryPerson');
+    await run(link, DELETE_PERSON, 'OfflineGuardDeleteMemoryPerson');
     recordResolvedConnectionMode('connected');
-    await run(link, DELETE_PERSON, 'DeleteMemoryPerson');
+    await run(link, DELETE_PERSON, 'OfflineGuardDeleteMemoryPerson');
     expect(terminal).toHaveBeenCalledTimes(2);
   });
 });

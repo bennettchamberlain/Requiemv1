@@ -1013,6 +1013,7 @@ export type CreateSavedSearchInput = {
   description?: InputMaybe<Scalars['String']['input']>;
   entityTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   filters?: InputMaybe<SavedSearchFiltersInput>;
+  id?: InputMaybe<Scalars['String']['input']>;
   name?: InputMaybe<Scalars['String']['input']>;
   query?: InputMaybe<Scalars['String']['input']>;
   tags?: InputMaybe<Array<Scalars['String']['input']>>;

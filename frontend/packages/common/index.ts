@@ -48,6 +48,7 @@ export type {
   AppLockPluginBridge,
   AppLockSettings,
   AppLockStatus,
+  LockScreenQueueCounts,
 } from './src/utils/appLock';
 export {
   CONNECTION_REPROBE_INTERVAL_MS,
@@ -80,7 +81,7 @@ export {
   captureNote,
   createLocationSampler,
   deviceSourceKey,
-  fixFromBackgroundGeolocationLocation,
+  fixFromNativeLocationEvent,
   fixFromGeolocationPosition,
   forgetQueuedNote,
   haversineMeters,
@@ -96,7 +97,7 @@ export {
   writeLocationTrackingMode,
 } from './src/utils/deviceSources';
 export type {
-  BackgroundGeolocationLocation,
+  NativeLocationEvent,
   CaptureLocationOptions,
   DeviceLocationFix,
   LocationCaptureOutcome,
@@ -249,7 +250,6 @@ export {
   addAppStateListener,
   addAppUrlOpenListener,
   addBackButtonListener,
-  addBackgroundLocationWatcher,
   startSignificantLocationUpdates,
   closeBrowser,
   exitApp,
@@ -266,7 +266,6 @@ export {
   openLinkOutsideApp,
   openNativeAppSettings,
   openNativeLocationSettings,
-  removeBackgroundLocationWatcher,
   requestNativeLocationAuthorization,
   requestNotificationPermission,
   scanQrCode,
@@ -280,7 +279,7 @@ export {
   takeNativePhoto,
 } from './src/utils/nativeBridge';
 export type {
-  BackgroundGeolocationError,
+  NativeLocationError,
   BarcodeScanErrorCode,
   DeviceLocationErrorCode,
   LocalNotification,
