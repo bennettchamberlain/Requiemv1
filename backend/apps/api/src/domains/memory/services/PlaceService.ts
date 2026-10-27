@@ -1504,12 +1504,15 @@ export class PlaceService {
       }
 
       // Only what moved: the place form sends every field back on each save.
+      // `!== undefined`, not `??`: an explicit null description is a clear the
+      // UPDATE above wrote.
+      const name = rest.name !== undefined ? rest.name : place.name;
+      const description = rest.description !== undefined ? rest.description : place.description;
       const changedFields = {
-        ...changedFieldsBetween(
-          { name: place.name, description: place.description },
-          { name: rest.name ?? place.name, description: rest.description ?? place.description },
-          ['name', 'description'],
-        ),
+        ...changedFieldsBetween({ name: place.name, description: place.description }, { name, description }, [
+          'name',
+          'description',
+        ]),
         ...changedFieldsBetween(
           {
             coordinates: place.locationPoint?.coordinates ?? null,
@@ -1531,8 +1534,8 @@ export class PlaceService {
       if (Object.keys(changedFields).length > 0) {
         await this.graphDeltaWriter.entityUpdated({
           entityId: id,
-          entityType: 'Location',
-          name: rest.name ?? place.name,
+          entityType: place.entityType,
+          name,
           changedFields,
           ownerUserId: typeof context.userId === 'string' ? context.userId : null,
           changeSource: 'PlaceService.update',
