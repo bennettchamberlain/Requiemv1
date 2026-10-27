@@ -30,15 +30,13 @@ const MAP = {
   'public/logo-180x180.png': 'icons/png/apple-touch-icon-180.png',
   'public/logo-192x192.png': 'icons/png/icon-192.png',
   'public/logo-512x512.png': 'icons/png/icon-512.png',
-  // the Capacitor shells' icon sources — regenerate the native sets with @capacitor/assets
-  // from inside frontend/apps/{ios,android} (they are not yarn workspaces; see their READMEs)
-  '../ios/assets/icon-only.png': 'logos/app-icon-source.png', // logo.app-icon
-  '../ios/assets/icon-foreground.png': 'logos/app-icon-source.png',
-  // NOT the Android ones: #3056 moved frontend/apps/android/assets/icon-{only,foreground}.png
-  // to the Play store listing's artwork (the desktop app's icon source, flattened onto
-  // #04141C) after Play rejected a build whose launcher icon did not match the listing.
-  // That artwork is not in @companionintelligence/assets, so mirroring logos/app-icon-source.png
-  // there would put the rejected icon back. Re-add them once the store icon is in the canon.
+  // NOT the Capacitor shells' icon sources (frontend/apps/{ios,android}/assets/icon-*.png).
+  // Both hold the Companion Memory store icon (the brain on #041620 that the App Store and
+  // Play listings show), and that artwork is not in @companionintelligence/assets, whose
+  // logos/app-icon-source.png is the company aperture mark. #3056 took the Android ones out
+  // after Play rejected a build whose launcher icon did not match the listing; the iOS ones
+  // follow for the same reason, so mirroring the company mark there would put a mismatched
+  // icon back into both stores. Re-add them once the store icon is in the canon.
 };
 
 const sha = (b) => createHash('sha256').update(b).digest('hex');
