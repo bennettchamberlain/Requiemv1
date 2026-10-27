@@ -6,9 +6,8 @@
  * calls each one produces. When the follow-up round ALSO came back as tool
  * calls (salvage can produce them with no tools advertised, and a model can
  * repeat a call it already made), the loop executed those calls and then broke
- * at the cap — so the turn's last message was a
- * role:'tool' row and the viewer's stream closed without one visible
- * character. Measured live: two knowledge_search rounds that both returned
+ * at the cap. The turn's last message was a role:'tool' row and the viewer's
+ * stream closed without one visible character. Measured live: two knowledge_search rounds that both returned
  * `[]`, then nothing, read by the user as "the chat froze".
  *
  * The fix buys exactly one more generation after a cap-terminated tool round,
@@ -144,7 +143,7 @@ async function drain(stream: AsyncGenerator<any> & { messages: any[] }) {
 }
 
 describe('OllamaService.chatStream forced prose round', () => {
-  it('grants one tools-off generation when the round cap lands on tool calls, so the turn ends in prose', async () => {
+  it('grants one tools-off generation when the follow-up repeats its tool call, so the turn ends in prose', async () => {
     const { service, tool, driver } = await setup([
       [toolCallChunk()],
       [toolCallChunk()],
