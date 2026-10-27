@@ -112,7 +112,9 @@ describeWithDatabase(
       const users = [testUserId, otherUserId];
 
       await dataSource.query('DELETE FROM ci.notes WHERE user_id = ANY($1::uuid[])', [users]);
+      await dataSource.query('DELETE FROM ci.objects WHERE user_id = ANY($1::uuid[])', [users]);
       await dataSource.query('DELETE FROM ci.receipts WHERE user_id = ANY($1::uuid[])', [users]);
+      await dataSource.query('DELETE FROM ci.product_models WHERE user_id = ANY($1::uuid[])', [users]);
       await dataSource.query('DELETE FROM ci.federated_identities WHERE user_id = ANY($1::uuid[])', [users]);
       await dataSource.query('DELETE FROM ci.mcp_server_configs WHERE user_id = ANY($1::uuid[])', [users]);
       await dataSource.query('DELETE FROM ci.messages WHERE user_id = ANY($1::uuid[])', [users]);
@@ -447,6 +449,441 @@ describeWithDatabase(
       expect(row.content).toBe('hello');
     });
 
+    it('restores an object and the receipt line it was minted from, though each names the other', async () => {
+      // ci.objects.acquisition_line_item_id and ci.receipt_line_items.minted_object_id
+      // are both checked at once, so whichever table goes first names a row
+      // that is not in yet. Every receipt-minted object has both.
+      const receiptId = randomUUID();
+      const lineItemId = randomUUID();
+      const objectId = randomUUID();
+
+      await service.importArchive(
+        { userId: testUserId } as never,
+        {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          userId: testUserId,
+          profile: null,
+          tables: {
+            'ci.entities': [{ entity_id: objectId, entity_type: 'Item', name: 'Kettle' }],
+            'ci.receipts': [{ receipt_id: receiptId }],
+            'ci.receipt_line_items': [
+              {
+                line_item_id: lineItemId,
+                receipt_id: receiptId,
+                line_number: 1,
+                description: 'Kettle',
+                minted_object_id: objectId,
+              },
+            ],
+            'ci.objects': [{ object_id: objectId, acquisition_line_item_id: lineItemId }],
+          },
+          fileBlobs: [],
+        } as UserDataArchive,
+      );
+
+      const [object] = await dataSource.query(
+        'SELECT acquisition_line_item_id FROM ci.objects WHERE object_id = $1::uuid',
+        [objectId],
+      );
+      const [line] = await dataSource.query(
+        'SELECT minted_object_id FROM ci.receipt_line_items WHERE line_item_id = $1::uuid',
+        [lineItemId],
+      );
+
+      expect(object.acquisition_line_item_id).toBe(lineItemId);
+      expect(line.minted_object_id).toBe(objectId);
+    });
+
+    describe('rows of one table that point at each other', () => {
+      // An export lists rows in storage order. Edit a message after it was
+      // answered and its row moves after the reply, so the reply comes first and
+      // names a parent the import has not inserted yet.
+      const threadId = randomUUID();
+      const parentId = randomUUID();
+      const replyId = randomUUID();
+
+      beforeEach(() => {
+        noopServices.userService.findById = jest.fn().mockResolvedValue({ email: 'jane@example.com' });
+      });
+
+      const parentOf = async (messageId: string): Promise<string | null> => {
+        const [row] = await dataSource.query(
+          'SELECT parent_message_id FROM ci.messages WHERE message_id = $1::uuid',
+          [messageId],
+        );
+
+        return row?.parent_message_id ?? null;
+      };
+
+      it('restores a reply listed before the message it answers, with the link', async () => {
+        const result = await service.importNdjsonStream(
+          { userId: testUserId } as never,
+          streamOf([
+            manifest(),
+            { type: 'row', table: 'ci.threads', row: { thread_id: threadId, title: 'Trip' } },
+            {
+              type: 'row',
+              table: 'ci.messages',
+              row: {
+                message_id: replyId,
+                thread_id: threadId,
+                role: 'assistant',
+                content: 'a',
+                parent_message_id: parentId,
+              },
+            },
+            {
+              type: 'row',
+              table: 'ci.messages',
+              row: { message_id: parentId, thread_id: threadId, role: 'user', content: 'q, edited' },
+            },
+          ]),
+          'jane@example.com',
+        );
+
+        expect(result.rowsImported).toBe(3);
+        expect(await parentOf(replyId)).toBe(parentId);
+      });
+
+      it('restores two places of one name under different parents', async () => {
+        // entities_admin_place_uniq keys on COALESCE(parent_place_id, ...), so
+        // two Springfields with their parents emptied on insert collide.
+        const regions = [randomUUID(), randomUUID()];
+        const cities = [randomUUID(), randomUUID()];
+        const place = (entityId: string, name: string, placeKind: string, parentPlaceId: string | null) => ({
+          entity_id: entityId,
+          entity_type: 'Location',
+          name,
+          place_kind: placeKind,
+          parent_place_id: parentPlaceId,
+        });
+
+        await service.importArchive(
+          { userId: testUserId } as never,
+          {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            userId: testUserId,
+            profile: null,
+            tables: {
+              'ci.entities': [
+                place(regions[0], 'Illinois', 'region', null),
+                place(regions[1], 'Missouri', 'region', null),
+                place(cities[0], 'Springfield', 'city', regions[0]),
+                place(cities[1], 'Springfield', 'city', regions[1]),
+              ],
+            },
+            fileBlobs: [],
+          } as UserDataArchive,
+        );
+
+        const rows = (await dataSource.query(
+          'SELECT entity_id, parent_place_id FROM ci.entities WHERE entity_id = ANY($1::uuid[])',
+          [cities],
+        )) as Array<{ entity_id: string; parent_place_id: string }>;
+
+        expect(Object.fromEntries(rows.map((row) => [row.entity_id, row.parent_place_id]))).toEqual({
+          [cities[0]]: regions[0],
+          [cities[1]]: regions[1],
+        });
+      });
+
+      it('restores two places of one name listed before their parents', async () => {
+        // Updating a region moves it after the cities in it. Inserted with
+        // their parents empty, the two Springfields would collide.
+        const regions = [randomUUID(), randomUUID()];
+        const cities = [randomUUID(), randomUUID()];
+        const place = (entityId: string, name: string, placeKind: string, parentPlaceId: string | null) => ({
+          entity_id: entityId,
+          entity_type: 'Location',
+          name,
+          place_kind: placeKind,
+          parent_place_id: parentPlaceId,
+        });
+
+        await service.importArchive(
+          { userId: testUserId } as never,
+          {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            userId: testUserId,
+            profile: null,
+            tables: {
+              'ci.entities': [
+                place(cities[0], 'Springfield', 'city', regions[0]),
+                place(cities[1], 'Springfield', 'city', regions[1]),
+                place(regions[0], 'Illinois', 'region', null),
+                place(regions[1], 'Missouri', 'region', null),
+              ],
+            },
+            fileBlobs: [],
+          } as UserDataArchive,
+        );
+
+        const rows = (await dataSource.query(
+          'SELECT entity_id, parent_place_id FROM ci.entities WHERE entity_id = ANY($1::uuid[])',
+          [cities],
+        )) as Array<{ entity_id: string; parent_place_id: string }>;
+
+        expect(Object.fromEntries(rows.map((row) => [row.entity_id, row.parent_place_id]))).toEqual({
+          [cities[0]]: regions[0],
+          [cities[1]]: regions[1],
+        });
+      });
+
+      it('restores a merged product model listed before the model it was merged into', async () => {
+        // product_models_brand_model_uniq covers only unmerged models; with the
+        // merge link empty on insert the two would hold the same key.
+        const survivor = randomUUID();
+        const merged = randomUUID();
+        const model = (productId: string, mergedInto: string | null) => ({
+          product_id: productId,
+          owner_user_id: testUserId,
+          title: 'Kettle',
+          brand: 'Acme',
+          model_number: 'K1',
+          merged_into_product_id: mergedInto,
+        });
+
+        await service.importNdjsonStream(
+          { userId: testUserId } as never,
+          streamOf([
+            manifest(),
+            { type: 'row', table: 'ci.product_models', row: model(merged, survivor) },
+            { type: 'row', table: 'ci.product_models', row: model(survivor, null) },
+          ]),
+          'jane@example.com',
+        );
+
+        const [row] = await dataSource.query(
+          'SELECT merged_into_product_id FROM ci.product_models WHERE product_id = $1::uuid',
+          [merged],
+        );
+
+        expect(row.merged_into_product_id).toBe(survivor);
+      });
+
+      it("does not link a row to another account's row", async () => {
+        const theirThread = randomUUID();
+        const theirMessage = randomUUID();
+
+        await dataSource.query(
+          'INSERT INTO ci.threads (thread_id, user_id, title) VALUES ($1::uuid, $2::uuid, $3)',
+          [theirThread, otherUserId, 'theirs'],
+        );
+        await dataSource.query(
+          `INSERT INTO ci.messages (message_id, user_id, thread_id, role, content) VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', 'theirs')`,
+          [theirMessage, otherUserId, theirThread],
+        );
+
+        await service.importArchive(
+          { userId: testUserId } as never,
+          {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            userId: testUserId,
+            profile: null,
+            tables: {
+              'ci.threads': [{ thread_id: threadId, title: 'Trip' }],
+              'ci.messages': [
+                {
+                  message_id: replyId,
+                  thread_id: threadId,
+                  role: 'user',
+                  content: 'mine',
+                  parent_message_id: theirMessage,
+                },
+              ],
+            },
+            fileBlobs: [],
+          } as UserDataArchive,
+        );
+
+        expect(await parentOf(replyId)).toBeNull();
+        const [theirs] = await dataSource.query(
+          'SELECT user_id, content FROM ci.messages WHERE message_id = $1::uuid',
+          [theirMessage],
+        );
+        expect(theirs).toEqual({ user_id: otherUserId, content: 'theirs' });
+      });
+    });
+
+    describe('links that hang off the account rows without a user column', () => {
+      // A tag on an event (ci_search.entity_tag) and HBPE's cluster of it
+      // (hbpe.l1_event_cluster) both refuse the delete of what they point at,
+      // and an archive carries neither.
+      const eventId = randomUUID();
+      const tagId = randomUUID();
+      const clusterId = randomUUID();
+      const eventRows = {
+        'ci.entities': [{ entity_id: eventId, entity_type: 'Event', name: 'Trip to Leeds' }],
+        'ci.events': [{ event_id: eventId, start_time: new Date().toISOString() }],
+        'ci_search.tags': [{ id: tagId, label: 'travel' }],
+        'hbpe.l1_clusters': [{ cluster_id: clusterId, l0_class: 'calendar', label: 'trips' }],
+      };
+
+      const links = async () =>
+        Promise.all([
+          dataSource.query('SELECT entity_id::text FROM ci_search.entity_tag WHERE tag_id = $1::uuid', [
+            tagId,
+          ]),
+          dataSource.query('SELECT cluster_id::text FROM hbpe.l1_event_cluster WHERE event_id = $1::uuid', [
+            eventId,
+          ]),
+        ]);
+
+      beforeEach(async () => {
+        noopServices.userService.findById = jest.fn().mockResolvedValue({ email: 'jane@example.com' });
+        await dataSource.query(
+          `INSERT INTO ci.entities (entity_id, entity_type, owner_user_id, name) VALUES ($1::uuid, 'Event', $2::uuid, 'Trip to Leeds')`,
+          [eventId, testUserId],
+        );
+        await dataSource.query(
+          'INSERT INTO ci.events (event_id, user_id, start_time) VALUES ($1::uuid, $2::uuid, NOW())',
+          [eventId, testUserId],
+        );
+        await dataSource.query(
+          `INSERT INTO ci_search.tags (id, user_id, label) VALUES ($1::uuid, $2::uuid, 'travel')`,
+          [tagId, testUserId],
+        );
+        await dataSource.query(
+          `INSERT INTO ci_search.entity_tag (entity_type, entity_id, tag_id) VALUES ('Event', $1::uuid, $2::uuid)`,
+          [eventId, tagId],
+        );
+        await dataSource.query(
+          `INSERT INTO hbpe.l1_clusters (cluster_id, user_id, l0_class, label) VALUES ($1::uuid, $2::uuid, 'calendar', 'trips')`,
+          [clusterId, testUserId],
+        );
+        await dataSource.query(
+          'INSERT INTO hbpe.l1_event_cluster (event_id, cluster_id, similarity) VALUES ($1::uuid, $2::uuid, 0.9)',
+          [eventId, clusterId],
+        );
+      });
+
+      afterEach(async () => {
+        await dataSource.query('DELETE FROM ci_search.entity_tag WHERE tag_id = $1::uuid', [tagId]);
+        await dataSource.query('DELETE FROM hbpe.l1_event_cluster WHERE event_id = $1::uuid', [eventId]);
+        await dataSource.query('DELETE FROM hbpe.l1_clusters WHERE cluster_id = $1::uuid', [clusterId]);
+        await dataSource.query('DELETE FROM ci_search.tags WHERE id = $1::uuid', [tagId]);
+        await dataSource.query('DELETE FROM ci.events WHERE event_id = $1::uuid', [eventId]);
+      });
+
+      it('imports an export of the same account and keeps the tag and the cluster', async () => {
+        await service.importNdjsonStream(
+          { userId: testUserId } as never,
+          streamOf([
+            manifest(),
+            ...Object.entries(eventRows).flatMap(([table, rows]) =>
+              rows.map((row) => ({ type: 'row', table, row })),
+            ),
+          ]),
+          'jane@example.com',
+        );
+
+        expect(await links()).toEqual([[{ entity_id: eventId }], [{ cluster_id: clusterId }]]);
+      });
+
+      it('reports no left-out links when every one came back', async () => {
+        const warn = jest.fn();
+        const quiet = noopServices.logger.warn;
+        noopServices.logger.warn = warn;
+
+        try {
+          await service.importArchive(
+            { userId: testUserId } as never,
+            {
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              userId: testUserId,
+              profile: null,
+              tables: eventRows,
+              fileBlobs: [],
+            } as UserDataArchive,
+          );
+        } finally {
+          noopServices.logger.warn = quiet;
+        }
+
+        expect(await links()).toEqual([[{ entity_id: eventId }], [{ cluster_id: clusterId }]]);
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it("keeps a chat message's attachment, which the delete would take by cascade", async () => {
+        const threadId = randomUUID();
+        const messageId = randomUUID();
+        const fileId = randomUUID();
+
+        await dataSource.query(
+          'INSERT INTO ci.threads (thread_id, user_id, title) VALUES ($1::uuid, $2::uuid, $3)',
+          [threadId, testUserId, 'Trip'],
+        );
+        await dataSource.query(
+          `INSERT INTO ci.messages (message_id, user_id, thread_id, role, content) VALUES ($1::uuid, $2::uuid, $3::uuid, 'user', 'see attached')`,
+          [messageId, testUserId, threadId],
+        );
+        await dataSource.query(
+          `INSERT INTO ci.files (id, user_id, content_type, filename) VALUES ($1::uuid, $2::uuid, 'image/png', 'ticket.png')`,
+          [fileId, testUserId],
+        );
+        await dataSource.query(
+          'INSERT INTO ci.message_files (message_id, file_id) VALUES ($1::uuid, $2::uuid)',
+          [messageId, fileId],
+        );
+
+        try {
+          await service.importNdjsonStream(
+            { userId: testUserId } as never,
+            streamOf([
+              manifest(),
+              { type: 'row', table: 'ci.threads', row: { thread_id: threadId, title: 'Trip' } },
+              {
+                type: 'row',
+                table: 'ci.messages',
+                row: { message_id: messageId, thread_id: threadId, role: 'user', content: 'see attached' },
+              },
+              {
+                type: 'row',
+                table: 'ci.files',
+                row: { id: fileId, content_type: 'image/png', filename: 'ticket.png' },
+              },
+            ]),
+            'jane@example.com',
+          );
+
+          const attachments = await dataSource.query(
+            'SELECT file_id::text FROM ci.message_files WHERE message_id = $1::uuid',
+            [messageId],
+          );
+          expect(attachments).toEqual([{ file_id: fileId }]);
+        } finally {
+          await dataSource.query('DELETE FROM ci.message_files WHERE message_id = $1::uuid', [messageId]);
+          await dataSource.query('DELETE FROM ci.files WHERE id = $1::uuid', [fileId]);
+        }
+      });
+
+      it('leaves out the links whose rows the archive does not bring back (legacy path)', async () => {
+        await service.importArchive(
+          { userId: testUserId } as never,
+          {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            userId: testUserId,
+            profile: null,
+            // The event and its tag are back; the cluster is not.
+            tables: {
+              'ci.entities': eventRows['ci.entities'],
+              'ci.events': eventRows['ci.events'],
+              'ci_search.tags': eventRows['ci_search.tags'],
+            },
+            fileBlobs: [],
+          } as UserDataArchive,
+        );
+
+        expect(await links()).toEqual([[{ entity_id: eventId }], []]);
+      });
+    });
+
     describe('the person the account itself is', () => {
       // Every onboarded account has one, and ci.users.entity_id points at it with a
       // NO ACTION foreign key that the app's role cannot defer or switch off.
@@ -500,6 +937,39 @@ describeWithDatabase(
             exportedAt: new Date().toISOString(),
             userId: testUserId,
             profile: { entityId: selfId } as never,
+            tables: { 'ci.entities': [selfRow] },
+            fileBlobs: [],
+          } as UserDataArchive,
+        );
+
+        expect(await selfPointer()).toBe(selfId);
+      });
+
+      it('ignores a profile entityId that is not a string on the legacy path', async () => {
+        await service.importArchive(
+          { userId: testUserId } as never,
+          {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            userId: testUserId,
+            profile: { entityId: { not: 'an id' } } as never,
+            tables: { 'ci.entities': [selfRow] },
+            fileBlobs: [],
+          } as UserDataArchive,
+        );
+
+        // The previous pointer is the fallback, and the archive brought that person back.
+        expect(await selfPointer()).toBe(selfId);
+      });
+
+      it('ignores a profile entityId that is not a uuid instead of failing the import', async () => {
+        await service.importArchive(
+          { userId: testUserId } as never,
+          {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            userId: testUserId,
+            profile: { entityId: 'not-a-uuid' } as never,
             tables: { 'ci.entities': [selfRow] },
             fileBlobs: [],
           } as UserDataArchive,
