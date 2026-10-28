@@ -15,4 +15,7 @@ export 'src/config.dart';
 export 'src/db.dart';
 export 'src/embeddings.dart';
 export 'src/geocoder.dart';
+export 'src/graph/conclusion.dart';
+export 'src/graph/concluder.dart';
+export 'src/graph/graph_block.dart';
 export 'src/queries.dart';

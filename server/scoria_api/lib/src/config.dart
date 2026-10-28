@@ -11,6 +11,7 @@ class Config {
     this.pgUrl,
     this.ollamaUrl,
     this.embeddingModel = 'nomic-embed-text',
+    this.concludeModel = 'llama3.2:3b',
     this.sessionTtl = const Duration(days: 7),
     this.agentUrl,
     this.agentToken,
@@ -37,6 +38,7 @@ class Config {
       pgUrl: e['SCORIA_PG_URL'],
       ollamaUrl: e['OLLAMA_URL'],
       embeddingModel: e['SCORIA_EMBEDDING_MODEL'] ?? 'nomic-embed-text',
+      concludeModel: e['SCORIA_CONCLUDE_MODEL'] ?? 'llama3.2:3b',
       agentUrl: e['SCORIA_AGENT_URL'],
       agentToken: e['SCORIA_AGENT_TOKEN'],
       agentModel: e['SCORIA_AGENT_MODEL'] ?? 'openclaw/default',
@@ -62,6 +64,10 @@ class Config {
   /// Ollama base URL for embeddings. Null disables semantic search.
   final String? ollamaUrl;
   final String embeddingModel;
+
+  /// Small local model that reads a memory and proposes graph edges.
+  /// Kept off the chat model so a conclusion does not evict the harness.
+  final String concludeModel;
   final Duration sessionTtl;
 
   /// OpenAI-compatible agent harness (OpenClaw gateway by default:

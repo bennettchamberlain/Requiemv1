@@ -11,6 +11,7 @@ import 'package:scoria_api/src/config.dart';
 import 'package:scoria_api/src/db.dart';
 import 'package:scoria_api/src/embeddings.dart';
 import 'package:scoria_api/src/geocoder.dart';
+import 'package:scoria_api/src/graph/graph_block.dart';
 import 'package:scoria_api/src/queries.dart';
 import 'package:scoria_jobs/scoria_jobs.dart';
 import 'package:shelf/shelf.dart';
@@ -80,6 +81,7 @@ class ScoriaApp {
     ..get('/places/recent', _authed(_placesRecent))
     ..get('/presence/overlap/<other>', _authed(_presenceOverlap))
     ..get('/jobs', _authed(_jobsList))
+    ..get('/graph', _authed((r, c) => _one(c, 'graph')))
     ..get('/chat/sessions', _authed(_chatSessions))
     ..post('/chat/sessions', _authed(_chatCreate))
     ..delete('/chat/sessions/<id>', _authed(_chatDelete))
@@ -326,6 +328,7 @@ class ScoriaApp {
     if (!embedded) {
       await _enqueue(c, 'embed', {'memory_id': id}, subjectId: id);
     }
+    await _enqueueConclude(c, id);
     return id;
   }
 
@@ -774,7 +777,10 @@ class ScoriaApp {
         'web fetch). The signed-in user is "$name" (handle ${person['handle']}). '
         'Current local time: ${now.toIso8601String()} (${now.timeZoneName}). '
         'For anything about the user\'s life, people, places, plans or past, '
-        'search memory before answering. For facts about the world, use the web. '
+        'search memory before answering. The memory profile includes a life '
+        'graph of goals, projects, habits and relationships: verified '
+        'relationships and parent/child containment are established, proposed '
+        'relationships are not facts. For facts about the world, use the web. '
         'Be accurate; say when you do not know. Keep answers concise and '
         'conversational; this is a chat on a phone.';
   }
@@ -824,6 +830,8 @@ class ScoriaApp {
         lines.add(_memoryLine(m));
       }
     }
+    final graph = await _lifeGraph(c);
+    if (graph.isNotEmpty) lines.add(graph);
     return _json({'block': lines.join('\n')});
   }
 
@@ -937,6 +945,32 @@ class ScoriaApp {
   }
 
   // ---- helpers --------------------------------------------------------------
+
+  /// The profile still works when the graph query is unavailable.
+  Future<String> _lifeGraph(gel.Client c) async {
+    try {
+      final raw = jsonDecode(await c.querySingleJSON(queries['graph']));
+      if (raw is! Map) return '';
+      return lifeGraphBlock(raw.cast<String, dynamic>());
+    } on Object {
+      return '';
+    }
+  }
+
+  Future<void> _enqueueConclude(gel.Client c, String memoryId) async {
+    if (jobs == null) return;
+    final me = jsonDecode(
+      await c.querySingleJSON('select global current_person { id }'),
+    );
+    if (me is! Map) return;
+    await _enqueue(
+      c,
+      'conclude',
+      {'memory_id': memoryId, 'person_id': me['id']},
+      subjectId: memoryId,
+      options: SendOptions(singletonKey: memoryId),
+    );
+  }
 
   /// Sends to PGBoss and mirrors a `JobRecord` as the caller, so the jobs
   /// page is policy-scoped like everything else. The worker updates the

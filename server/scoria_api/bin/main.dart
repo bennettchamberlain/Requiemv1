@@ -29,6 +29,27 @@ Future<void> main() async {
       'derive-presence',
       const QueueOptions(policy: QueuePolicy.stately),
     );
+    await jobs.createQueue(
+      'conclude',
+      const QueueOptions(policy: QueuePolicy.singleton),
+    );
+  }
+
+  JobRunner? runner;
+  if (jobs != null && config.ollamaUrl != null) {
+    final concluder = GraphConcluder(
+      db: db,
+      ollama: Uri.parse(config.ollamaUrl!),
+      model: config.concludeModel,
+    );
+    runner = JobRunner(
+      jobs,
+      log: (message, [error]) {
+        stdout.writeln(error == null ? message : '$message $error');
+      },
+    );
+    await runner.work('conclude', concluder.run);
+    await runner.start();
   }
 
   final app = ScoriaApp(
@@ -64,6 +85,7 @@ Future<void> main() async {
   );
 
   ProcessSignal.sigint.watch().listen((_) async {
+    await runner?.stop();
     await server.close(force: true);
     await db.close();
     exit(0);

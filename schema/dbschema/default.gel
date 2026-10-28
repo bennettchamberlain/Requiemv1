@@ -47,6 +47,26 @@ module default {
     created, retry, active, completed, cancelled, failed
   >;
 
+  # Open nodes the jobs discover. Goals, projects and habits are their own
+  # types; everything else (a person, a place, a thing) is an Entity.
+  scalar type EntityKind extending enum<
+    person, organization, place, object, concept, event
+  >;
+
+  scalar type PursuitStatus extending enum<active, paused, done, dropped>;
+
+  # Life-graph edges. `part_of` is also written onto Thing.parent once verified,
+  # so containment is a column you can join, not only a row you have to walk.
+  scalar type EdgeKind extending enum<
+    part_of, supports, pursues, practices, prefers, dislikes,
+    located_at, knows, related
+  >;
+
+  # A job may propose an edge from one memory. It is verified when the user
+  # stated it (a note) or a second memory concludes the same edge. Rejected
+  # stays rejected.
+  scalar type EdgeStatus extending enum<proposed, verified, rejected>;
+
   scalar type Embedding extending ext::pgvector::vector<768>;
 
   # ---------------------------------------------------------------------------
@@ -341,6 +361,81 @@ module default {
     index on ((.owner, .occurred_at));
     index ext::pgvector::hnsw_cosine(m := 16, ef_construction := 128)
       on (.embedding);
+
+    # Memories the graph was concluded from. Table side of "this note is about
+    # that goal / habit / entity".
+    multi about: Thing;
+  }
+
+  # ---------------------------------------------------------------------------
+  # Life graph. One row per thing, so a goal is a Goal and not a bag of JSON.
+  # `parent` is encapsulation: a project contains a goal, a goal contains a
+  # habit. Edges are the other relationships, filled by the conclude job.
+  # ---------------------------------------------------------------------------
+  abstract type Thing extending Owned {
+    required name: str;
+    summary: str;
+    parent: Thing {
+      on target delete allow;
+    };
+    multi parts := .<parent[is Thing];
+
+    index on ((.owner, .name));
+  }
+
+  type Entity extending Thing {
+    overloaded required data_class: str { default := 'entity' };
+    required kind: EntityKind { default := EntityKind.concept };
+
+    constraint exclusive on ((.owner, .kind, .name));
+  }
+
+  type Goal extending Thing {
+    overloaded required data_class: str { default := 'goal' };
+    required status: PursuitStatus { default := PursuitStatus.active };
+    why: str;
+    target_on: cal::local_date;
+
+    constraint exclusive on ((.owner, .name));
+  }
+
+  type Project extending Thing {
+    overloaded required data_class: str { default := 'project' };
+    required status: PursuitStatus { default := PursuitStatus.active };
+    outcome: str;
+    started_on: cal::local_date;
+    target_on: cal::local_date;
+
+    constraint exclusive on ((.owner, .name));
+  }
+
+  type Habit extending Thing {
+    overloaded required data_class: str { default := 'habit' };
+    cue: str;
+    routine: str;
+    cadence: str;
+    required active: bool { default := true };
+
+    constraint exclusive on ((.owner, .name));
+  }
+
+  # A relationship between two things. Not the social Relationship above.
+  type Edge extending Owned {
+    overloaded required data_class: str { default := 'graph' };
+
+    required source: Thing {
+      on target delete delete source;
+    };
+    required target: Thing {
+      on target delete delete source;
+    };
+    required kind: EdgeKind;
+    required status: EdgeStatus { default := EdgeStatus.proposed };
+    # Comma-separated memory ids that support this edge.
+    evidence: str;
+
+    constraint exclusive on ((.owner, .source, .target, .kind));
+    index on ((.owner, .status));
   }
 
   # A conversation with the agent harness. Class `chat`, sensitive by default:
