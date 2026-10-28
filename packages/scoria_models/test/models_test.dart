@@ -37,4 +37,28 @@ void main() {
     expect(edge.source?.name, 'Alex');
     expect(GraphEdge.fromJson(edge.toJson()).kind, 'knows');
   });
+
+  test('ChatCatalog and tool calls include results', () {
+    final catalog = ChatCatalog.fromJson({
+      'default_provider': 'parasail',
+      'providers': {
+        'parasail': {'available': true, 'model': 'parasail-glm-53-flash'},
+      },
+      'tools': [
+        {
+          'name': 'memory_search',
+          'description': 'Search memory',
+          'available': true,
+        },
+      ],
+    });
+    expect(catalog.defaultProvider, 'parasail');
+    expect(catalog.tools.single.name, 'memory_search');
+    final call = ChatToolCall(
+      name: 'now',
+      arguments: '{}',
+      result: '2026-10-28',
+    );
+    expect(call.toJson()['result'], '2026-10-28');
+  });
 }

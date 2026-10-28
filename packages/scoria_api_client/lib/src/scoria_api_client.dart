@@ -144,6 +144,47 @@ class ScoriaApiClient {
   Future<void> chatDelete(String sessionId) =>
       _delete('/chat/sessions/$sessionId');
 
+  Future<ChatCatalog> chatTools() async => ChatCatalog.fromJson(
+    await _get('/chat/tools') as Map<String, dynamic>,
+  );
+
+  Future<ChatCatalog> putConnection(
+    String id, {
+    String? apiKey,
+    bool? enabled,
+  }) async => ChatCatalog.fromJson(
+    await _put('/chat/connections/$id', {
+      if (apiKey != null) 'api_key': apiKey,
+      if (enabled != null) 'enabled': enabled,
+    }) as Map<String, dynamic>,
+  );
+
+  Future<ChatCatalog> deleteConnection(String id) async =>
+      ChatCatalog.fromJson(
+        await _deleteJson('/chat/connections/$id') as Map<String, dynamic>,
+      );
+
+  Future<OneGrant?> oneGrant() async {
+    try {
+      return OneGrant.fromJson(await _get('/one/grant') as Map<String, dynamic>);
+    } on ScoriaApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  Future<void> oneGrantDelete() => _delete('/one/grant');
+
+  Future<List<String>> oneSync({List<String>? platforms}) async {
+    final json = await _post('/one/sync', {
+      if (platforms != null) 'platforms': platforms,
+    });
+    return ((json as Map<String, dynamic>)['enqueued'] as List<dynamic>? ??
+            const [])
+        .map((e) => e.toString())
+        .toList();
+  }
+
   Future<List<ChatMessage>> chatMessages(String sessionId) async => _list(
     await _get('/chat/sessions/$sessionId/messages'),
     ChatMessage.fromJson,
@@ -152,13 +193,20 @@ class ScoriaApiClient {
   /// Sends one turn and streams the reply. The stream is the server's SSE
   /// feed decoded into [ChatStreamEvent]s; it completes after [ChatDone] or
   /// [ChatFailed].
-  Stream<ChatStreamEvent> chatSend(String sessionId, String content) async* {
+  Stream<ChatStreamEvent> chatSend(
+    String sessionId,
+    String content, {
+    String? provider,
+  }) async* {
     final req = http.Request(
       'POST',
       _baseUrl.resolve('chat/sessions/$sessionId/messages'),
     )
       ..headers.addAll({..._headers, 'accept': 'text/event-stream'})
-      ..body = jsonEncode({'content': content});
+      ..body = jsonEncode({
+        'content': content,
+        if (provider != null && provider.isNotEmpty) 'provider': provider,
+      });
     final res = await _http.send(req);
     if (res.statusCode != 200) {
       final body = await res.stream.bytesToString();
@@ -203,6 +251,7 @@ class ScoriaApiClient {
           ChatToolCall(
             name: map['name'] as String? ?? '',
             arguments: map['arguments'] as String? ?? '',
+            result: map['result'] as String?,
           ),
         );
       case 'done':
@@ -239,9 +288,21 @@ class ScoriaApiClient {
     );
   }
 
+  Future<Object?> _put(String path, Object body) async {
+    final uri = _baseUrl.resolve(path.substring(1));
+    return _decode(
+      await _http.put(uri, headers: _headers, body: jsonEncode(body)),
+    );
+  }
+
   Future<void> _delete(String path) async {
     final uri = _baseUrl.resolve(path.substring(1));
     _decode(await _http.delete(uri, headers: _headers));
+  }
+
+  Future<Object?> _deleteJson(String path) async {
+    final uri = _baseUrl.resolve(path.substring(1));
+    return _decode(await _http.delete(uri, headers: _headers));
   }
 
   Object? _decode(http.Response r) {

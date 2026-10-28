@@ -14,10 +14,10 @@ final class AgentText extends AgentEvent {
   final String text;
 }
 
-/// A tool the harness invoked (OpenClaw surfaces these as `tool_calls`
-/// deltas when the agent's policy allows; many turns have none).
+/// A tool the model invoked.
 final class AgentToolCall extends AgentEvent {
-  const AgentToolCall(this.name, this.arguments);
+  const AgentToolCall(this.id, this.name, this.arguments);
+  final String id;
   final String name;
   final String arguments;
 }
@@ -29,11 +29,11 @@ final class AgentDone extends AgentEvent {
   final String? finishReason;
 }
 
-/// Client for an OpenAI-compatible `/v1/chat/completions` harness. Built for
-/// the OpenClaw gateway (`model` is an agent target such as
-/// `openclaw/default`, and `x-openclaw-session-key` keeps one gateway
-/// session per Scoria chat), but anything speaking the same wire format
-/// works, so the harness is swappable by URL.
+/// Client for an OpenAI-compatible `/v1/chat/completions` endpoint.
+///
+/// Parasail (`https://api.parasail.io/v1`), Ollama (`http://127.0.0.1:11434`),
+/// and OpenClaw (`http://127.0.0.1:18789`) all speak this. OpenClaw is the
+/// only one that keeps its own transcript (`model` starts with `openclaw`).
 class AgentClient {
   AgentClient({
     required Uri baseUrl,
@@ -62,26 +62,64 @@ class AgentClient {
   /// new turn is sent; a generic harness gets the whole history.
   bool get keepsOwnHistory => model.startsWith('openclaw');
 
+  /// `https://api.parasail.io/v1` + `chat/completions` must keep `/v1`.
+  /// `Uri.resolve` drops the last segment when the path has no trailing slash.
+  static Uri _join(Uri base, String child) {
+    final s = base.toString();
+    return Uri.parse(s.endsWith('/') ? '$s$child' : '$s/$child');
+  }
+
+  static Uri completionsUri(Uri base) {
+    final path = base.path;
+    if (path.endsWith('/v1') || path.endsWith('/v1/')) {
+      return _join(base, 'chat/completions');
+    }
+    return _join(base, 'v1/chat/completions');
+  }
+
+  static Uri modelsUri(Uri base) {
+    final path = base.path;
+    if (path.endsWith('/v1') || path.endsWith('/v1/')) {
+      return _join(base, 'models');
+    }
+    return _join(base, 'v1/models');
+  }
+
   /// Streams a turn. `messages` is in OpenAI shape. `user` is the
   /// conversation key (`conv:<session id>`), reused for the whole chat.
+  /// `tools` is the OpenAI tools array; omitted for OpenClaw.
   Stream<AgentEvent> stream(
     List<Map<String, dynamic>> messages, {
     String? user,
+    List<Map<String, dynamic>>? tools,
   }) async* {
-    final req = http.Request('POST', _baseUrl.resolve('v1/chat/completions'))
-      ..headers.addAll(_headers)
-      ..body = jsonEncode({
-        'model': model,
-        'messages': messages,
-        'stream': true,
-        if (user != null) 'user': user,
-      });
-    final res = await _http.send(req).timeout(timeout);
+    Future<http.StreamedResponse> send({required bool withTools}) {
+      final req = http.Request('POST', completionsUri(_baseUrl))
+        ..headers.addAll(_headers)
+        ..body = jsonEncode({
+          'model': model,
+          'messages': messages,
+          'stream': true,
+          if (user != null) 'user': user,
+          if (withTools && tools != null && tools.isNotEmpty) 'tools': tools,
+        });
+      return _http.send(req).timeout(timeout);
+    }
+
+    var res = await send(withTools: tools != null && tools.isNotEmpty);
+    if (res.statusCode == 400 && tools != null && tools.isNotEmpty) {
+      final body = await res.stream.bytesToString();
+      if (body.toLowerCase().contains('tool')) {
+        res = await send(withTools: false);
+      } else {
+        throw AgentException(res.statusCode, body);
+      }
+    }
     if (res.statusCode != 200) {
       final body = await res.stream.bytesToString();
       throw AgentException(res.statusCode, body);
     }
-    final toolBuffers = <int, ({String name, StringBuffer args})>{};
+    final toolBuffers = <int, ({String id, String name, StringBuffer args})>{};
     String? modelUsed;
     String? finish;
     await for (final line
@@ -117,21 +155,18 @@ class AgentClient {
             final call = tc as Map<String, dynamic>;
             final idx = call['index'] as int? ?? 0;
             final fn = call['function'] as Map<String, dynamic>? ?? const {};
-            final buf = toolBuffers.putIfAbsent(
-              idx,
-              () => (name: fn['name'] as String? ?? '', args: StringBuffer()),
-            );
-            final name = fn['name'] as String?;
-            if (name != null && buf.name.isEmpty) {
-              toolBuffers[idx] = (name: name, args: buf.args);
-            }
-            buf.args.write(fn['arguments'] as String? ?? '');
+            final existing = toolBuffers[idx];
+            final id = call['id'] as String? ?? existing?.id ?? 'call_$idx';
+            final name = fn['name'] as String? ?? existing?.name ?? '';
+            final buf = existing?.args ?? StringBuffer();
+            buf.write(fn['arguments'] as String? ?? '');
+            toolBuffers[idx] = (id: id, name: name, args: buf);
           }
         }
       }
     }
     for (final b in toolBuffers.values) {
-      yield AgentToolCall(b.name, b.args.toString());
+      yield AgentToolCall(b.id, b.name, b.args.toString());
     }
     yield AgentDone(model: modelUsed, finishReason: finish);
   }
@@ -153,7 +188,7 @@ class AgentClient {
     try {
       final r = await _http
           .get(
-            _baseUrl.resolve('v1/models'),
+            modelsUri(_baseUrl),
             headers: {if (_token != null) 'authorization': 'Bearer $_token'},
           )
           .timeout(const Duration(seconds: 3));

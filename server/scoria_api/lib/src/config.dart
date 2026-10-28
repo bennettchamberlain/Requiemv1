@@ -16,6 +16,11 @@ class Config {
     this.agentUrl,
     this.agentToken,
     this.agentModel = 'openclaw/default',
+    this.chatProvider = 'auto',
+    this.parasailChatModel = 'parasail-glm-53-flash',
+    this.ollamaChatModel = 'llama3.2',
+    this.youApiKey,
+    this.connectPublicUrl = 'http://127.0.0.1:8788',
     this.googleMapsApiKey,
     this.geocodeUserAgent = 'scoria-api (local)',
     this.parasailApiKey,
@@ -48,6 +53,16 @@ class Config {
       agentUrl: e['SCORIA_AGENT_URL'],
       agentToken: e['SCORIA_AGENT_TOKEN'],
       agentModel: e['SCORIA_AGENT_MODEL'] ?? 'openclaw/default',
+      chatProvider: (e['SCORIA_CHAT_PROVIDER'] ?? 'auto').toLowerCase(),
+      parasailChatModel:
+          e['PARASAIL_MODEL'] ??
+          e['SCORIA_PARASAIL_CHAT_MODEL'] ??
+          'parasail-glm-53-flash',
+      ollamaChatModel: e['SCORIA_CHAT_MODEL'] ?? 'llama3.2',
+      youApiKey: _blankToNull(e['YDC_API_KEY'] ?? e['YOU_WEB_SEARCH_TOKEN']),
+      connectPublicUrl:
+          e['CONNECT_PUBLIC_URL'] ??
+          'http://127.0.0.1:${e['CONNECT_PORT'] ?? '8788'}',
       googleMapsApiKey: _blankToNull(
         e['GOOGLE_MAPS_API_KEY'] ?? e['GEOCODING_API_KEY'],
       ),
@@ -85,13 +100,25 @@ class Config {
   final String concludeModel;
   final Duration sessionTtl;
 
-  /// OpenAI-compatible agent harness (OpenClaw gateway by default:
-  /// `http://127.0.0.1:18789`). Null disables `/chat`.
+  /// Optional OpenClaw gateway. Chat no longer requires this — Parasail
+  /// and Ollama are first-class. `http://127.0.0.1:18789` when used.
   final String? agentUrl;
   final String? agentToken;
 
   /// Agent target. For OpenClaw this is an agent id, not a provider model.
   final String agentModel;
+
+  /// `auto` | `parasail` | `ollama` | `agent`. Auto prefers Parasail, then
+  /// local Ollama, then an explicit OpenClaw gateway.
+  final String chatProvider;
+  final String parasailChatModel;
+  final String ollamaChatModel;
+
+  /// You.com search key for the `web_search` chat tool.
+  final String? youApiKey;
+
+  /// One Connect sidecar the Flutter app can open (authorize + status).
+  final String connectPublicUrl;
 
   /// Google Geocoding key. Null means Nominatim (OpenStreetMap), which needs
   /// no key but is rate-limited to one request per second.

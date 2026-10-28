@@ -129,3 +129,4 @@ schema/.gel/
 __pycache__/
 *.pyc
 connect/node_modules/
+.secrets/

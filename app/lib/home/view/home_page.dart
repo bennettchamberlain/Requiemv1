@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:scoria_app/chat/chat.dart';
 import 'package:scoria_app/jobs/jobs.dart';
 import 'package:scoria_app/memory/memory.dart';
+import 'package:scoria_app/tools/tools.dart';
 import 'package:scoria_app/session/session.dart';
 import 'package:scoria_models/scoria_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -22,6 +23,7 @@ class _HomePageState extends State<HomePage> {
   static const _pages = <Widget>[
     ChatPage(),
     MemoryPage(),
+    ToolsPage(),
     JobsPage(),
     // PositionsPage(),   // background location + presence overlap
     // PeoplePage(),      // relationships, tiers, consent grants
@@ -32,6 +34,7 @@ class _HomePageState extends State<HomePage> {
   static const _destinations = <({IconData icon, String label})>[
     (icon: LucideIcons.messageCircle, label: 'Chat'),
     (icon: LucideIcons.brain, label: 'Memory'),
+    (icon: LucideIcons.wrench, label: 'Tools'),
     (icon: LucideIcons.listTodo, label: 'Jobs'),
     // Places: LucideIcons.mapPin
     // People: LucideIcons.users

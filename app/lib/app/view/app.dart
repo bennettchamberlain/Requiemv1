@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_app/config/chat_settings_cubit.dart';
 import 'package:scoria_app/config/server_cubit.dart';
 import 'package:scoria_app/home/home.dart';
 import 'package:scoria_app/l10n/l10n.dart';
@@ -25,6 +26,7 @@ class App extends StatelessWidget {
       providers: [
         BlocProvider(create: (_) => SessionCubit()),
         BlocProvider(create: (_) => ServerCubit(prefs: prefs)),
+        BlocProvider(create: (_) => ChatSettingsCubit(prefs: prefs)),
       ],
       child: Builder(
         builder: (context) {

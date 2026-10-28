@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
 import 'package:scoria_app/chat/chat.dart';
+import 'package:scoria_app/config/chat_settings_cubit.dart';
 import 'package:scoria_app/ui/chrome.dart';
 import 'package:scoria_models/scoria_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -14,9 +15,10 @@ class ChatPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (context) =>
-          ChatBloc(api: context.read<ScoriaApiClient>())
-            ..add(const ChatStarted()),
+      create: (context) => ChatBloc(
+        api: context.read<ScoriaApiClient>(),
+        provider: () => context.read<ChatSettingsCubit>().state,
+      )..add(const ChatStarted()),
       child: const ChatView(),
     );
   }
@@ -279,7 +281,7 @@ class _ConversationState extends State<_Conversation> {
                           maxLines: 5,
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _send(),
-                          placeholder: const Text('Ask Scoria…'),
+                          placeholder: const Text('Ask Requiem…'),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -362,14 +364,17 @@ class _Bubble extends StatelessWidget {
                     runSpacing: 6,
                     children: [
                       for (final t in tools)
-                        ShadBadge.outline(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(LucideIcons.wrench, size: 12),
-                              const SizedBox(width: 4),
-                              Text(t.name),
-                            ],
+                        Tooltip(
+                          message: t.result ?? t.arguments,
+                          child: ShadBadge.outline(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(LucideIcons.wrench, size: 12),
+                                const SizedBox(width: 4),
+                                Text(t.name),
+                              ],
+                            ),
                           ),
                         ),
                     ],
@@ -404,7 +409,7 @@ class _Hint extends StatelessWidget {
     padding: const EdgeInsets.all(24),
     child: Text(
       'Ask about your memories, places you have been, or anything in the '
-      'world. Scoria searches your memory first, then the web.',
+      'world. Requiem searches memory first, then the web.',
       textAlign: TextAlign.center,
       style: ShadTheme.of(context).textTheme.muted,
     ),

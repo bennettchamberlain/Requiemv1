@@ -89,6 +89,7 @@ class ChatMessage {
         ChatToolCall(
           name: t['name'] as String? ?? '',
           arguments: t['arguments'] as String? ?? '',
+          result: t['result'] as String?,
         ),
     ];
   }
@@ -105,12 +106,132 @@ class ChatMessage {
 }
 
 class ChatToolCall {
-  const ChatToolCall({required this.name, required this.arguments});
+  const ChatToolCall({
+    required this.name,
+    required this.arguments,
+    this.result,
+  });
 
   final String name;
   final String arguments;
+  final String? result;
 
-  Map<String, dynamic> toJson() => {'name': name, 'arguments': arguments};
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'arguments': arguments,
+    if (result != null) 'result': result,
+  };
+}
+
+/// What `/chat/tools` reports: inference providers and host tools.
+class ChatCatalog {
+  const ChatCatalog({
+    required this.defaultProvider,
+    required this.providers,
+    required this.tools,
+    this.connections = const [],
+  });
+
+  factory ChatCatalog.fromJson(Map<String, dynamic> json) => ChatCatalog(
+    defaultProvider: json['default_provider'] as String? ?? 'off',
+    providers: {
+      for (final e in (json['providers'] as Map<String, dynamic>? ?? {}).entries)
+        e.key: ChatProviderInfo.fromJson(e.value as Map<String, dynamic>),
+    },
+    tools: [
+      for (final t
+          in (json['tools'] as List<dynamic>? ?? const []).cast<Map<String, dynamic>>())
+        ChatToolInfo.fromJson(t),
+    ],
+    connections: [
+      for (final c
+          in (json['connections'] as List<dynamic>? ?? const [])
+              .cast<Map<String, dynamic>>())
+        ChatConnection.fromJson(c),
+    ],
+  );
+
+  final String defaultProvider;
+  final Map<String, ChatProviderInfo> providers;
+  final List<ChatToolInfo> tools;
+  final List<ChatConnection> connections;
+}
+
+class ChatProviderInfo {
+  const ChatProviderInfo({required this.available, this.model});
+
+  factory ChatProviderInfo.fromJson(Map<String, dynamic> json) =>
+      ChatProviderInfo(
+        available: json['available'] as bool? ?? false,
+        model: json['model'] as String?,
+      );
+
+  final bool available;
+  final String? model;
+}
+
+class ChatToolInfo {
+  const ChatToolInfo({
+    required this.name,
+    required this.description,
+    this.available = true,
+    this.enabled = true,
+  });
+
+  factory ChatToolInfo.fromJson(Map<String, dynamic> json) => ChatToolInfo(
+    name: json['name'] as String,
+    description: json['description'] as String? ?? '',
+    available: json['available'] as bool? ?? true,
+    enabled: json['enabled'] as bool? ?? true,
+  );
+
+  final String name;
+  final String description;
+  final bool available;
+  final bool enabled;
+}
+
+class ChatConnection {
+  const ChatConnection({
+    required this.id,
+    required this.label,
+    required this.kind,
+    required this.connected,
+    this.description,
+    this.authorizeUrl,
+    this.platforms = const [],
+    this.model,
+    this.hasSecret = false,
+    this.connectedAt,
+  });
+
+  factory ChatConnection.fromJson(Map<String, dynamic> json) => ChatConnection(
+    id: json['id'] as String,
+    label: json['label'] as String? ?? json['id'] as String,
+    kind: json['kind'] as String? ?? 'key',
+    connected: json['connected'] as bool? ?? false,
+    description: json['description'] as String?,
+    authorizeUrl: json['authorize_url'] as String?,
+    platforms: (json['platforms'] as List<dynamic>? ?? const [])
+        .map((e) => e.toString())
+        .toList(),
+    model: json['model'] as String?,
+    hasSecret: json['has_secret'] as bool? ?? false,
+    connectedAt: json['connected_at'] == null
+        ? null
+        : DateTime.tryParse(json['connected_at'] as String),
+  );
+
+  final String id;
+  final String label;
+  final String kind;
+  final bool connected;
+  final String? description;
+  final String? authorizeUrl;
+  final List<String> platforms;
+  final String? model;
+  final bool hasSecret;
+  final DateTime? connectedAt;
 }
 
 /// Streamed increments while a reply is being produced.

@@ -93,6 +93,27 @@ Future<void> main() async {
     await runner.start();
   }
 
+  final parasailChat = config.parasailApiKey == null
+      ? null
+      : AgentClient(
+          baseUrl: Uri.parse(config.parasailBaseUrl),
+          token: config.parasailApiKey,
+          model: config.parasailChatModel,
+        );
+  final ollamaChat = config.ollamaUrl == null
+      ? null
+      : AgentClient(
+          baseUrl: Uri.parse(config.ollamaUrl!),
+          model: config.ollamaChatModel,
+        );
+  final gateway = config.agentUrl == null
+      ? null
+      : AgentClient(
+          baseUrl: Uri.parse(config.agentUrl!),
+          token: config.agentToken,
+          model: config.agentModel,
+        );
+
   final app = ScoriaApp(
     config: config,
     db: db,
@@ -100,13 +121,9 @@ Future<void> main() async {
     jobs: jobs,
     embeddings: local,
     cloudEmbeddings: cloud,
-    agent: config.agentUrl == null
-        ? null
-        : AgentClient(
-            baseUrl: Uri.parse(config.agentUrl!),
-            token: config.agentToken,
-            model: config.agentModel,
-          ),
+    parasailChat: parasailChat,
+    ollamaChat: ollamaChat,
+    agent: gateway,
   );
 
   final server = await io.serve(
@@ -118,7 +135,7 @@ Future<void> main() async {
     'scoria-api on :${server.port} '
     '(gel=${config.gelDsn}, pgboss=${jobs != null}, '
     'embeddings=${local != null}, cloud=${cloud != null}, '
-    'agent=${config.agentUrl ?? 'off'}, '
+    'chat=${app.defaultChatLabel}, '
     'geocoder=${app.geocoder.provider}, queries=${queries.names.length})',
   );
 

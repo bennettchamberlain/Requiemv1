@@ -8,6 +8,9 @@ library;
 
 export 'src/agent.dart';
 export 'src/app.dart';
+export 'src/chat/prefs.dart';
+export 'src/chat/tools.dart';
+export 'src/chat/turn.dart';
 export 'src/auth/api_key.dart';
 export 'src/auth/password.dart';
 export 'src/auth/session_token.dart';

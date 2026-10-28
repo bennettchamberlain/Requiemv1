@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:gel/gel.dart' as gel;
 import 'package:scoria_api/src/agent.dart';
 import 'package:scoria_api/src/auth/api_key.dart';
 import 'package:scoria_api/src/auth/password.dart';
+import 'package:scoria_api/src/chat/prefs.dart';
+import 'package:scoria_api/src/chat/tools.dart';
+import 'package:scoria_api/src/chat/turn.dart';
 import 'package:scoria_api/src/auth/session_token.dart';
 import 'package:scoria_api/src/config.dart';
 import 'package:scoria_api/src/db.dart';
@@ -24,8 +28,8 @@ import 'package:shelf_router/shelf_router.dart';
 /// Three kinds of caller reach this process:
 /// - the Flutter app with a session token (`/auth/signin`);
 /// - machines with an API key (`sk_…`): the OpenClaw memory plugin, scripts;
-/// - the agent harness indirectly, through `/chat`, which forwards a turn to
-///   the OpenAI-compatible endpoint of the OpenClaw gateway and streams back.
+/// - `/chat`, which talks to Parasail or local Ollama (OpenClaw optional)
+///   and runs host tools (memory, graph, You.com) on this process.
 class ScoriaApp {
   ScoriaApp({
     required this.config,
@@ -35,6 +39,8 @@ class ScoriaApp {
     this.embeddings,
     this.cloudEmbeddings,
     this.agent,
+    this.parasailChat,
+    this.ollamaChat,
     Geocoder? geocoder,
     Password? password,
   }) : _password = password ?? const Password(),
@@ -53,6 +59,8 @@ class ScoriaApp {
   final Embeddings? embeddings;
   final ParasailEmbeddings? cloudEmbeddings;
   final AgentClient? agent;
+  final AgentClient? parasailChat;
+  final AgentClient? ollamaChat;
   final Geocoder geocoder;
   final Password _password;
   final SessionToken _tokens;
@@ -101,6 +109,9 @@ class ScoriaApp {
     ..get('/presence/overlap/<other>', _authed(_presenceOverlap))
     ..get('/jobs', _authed(_jobsList))
     ..get('/graph', _authed((r, c) => _one(c, 'graph')))
+    ..get('/chat/tools', _authed(_chatTools))
+    ..put('/chat/connections/<id>', _authed(_chatConnectionPut))
+    ..delete('/chat/connections/<id>', _authed(_chatConnectionDelete))
     ..get('/chat/sessions', _authed(_chatSessions))
     ..post('/chat/sessions', _authed(_chatCreate))
     ..delete('/chat/sessions/<id>', _authed(_chatDelete))
@@ -126,14 +137,32 @@ class ScoriaApp {
     ..post('/api/memory/write', _authed(_ciWrite))
     ..post('/api/memory/turn', _authed(_ciTurn));
 
-  Future<Response> _health(Request r) async => _json({
-    'ok': true,
-    'agent': agent == null ? null : await agent!.ping(),
-    'embeddings': embeddings != null,
-    'cloud_embeddings': cloudEmbeddings != null,
-    'geocoder': geocoder.provider,
-    'jobs': jobs != null,
-  });
+  Future<Response> _health(Request r) async {
+    final chat = _resolveChat();
+    return _json({
+      'ok': true,
+      'agent': chat == null ? null : await chat.ping(),
+      'chat': {
+        'provider': defaultChatLabel,
+        'model': chat?.model,
+        'parasail': parasailChat != null,
+        'ollama': ollamaChat != null,
+        'gateway': agent != null,
+      },
+      'embeddings': embeddings != null,
+      'cloud_embeddings': cloudEmbeddings != null,
+      'geocoder': geocoder.provider,
+      'jobs': jobs != null,
+    });
+  }
+
+  String get defaultChatLabel {
+    final c = _resolveChat();
+    if (identical(c, parasailChat)) return 'parasail';
+    if (identical(c, ollamaChat)) return 'ollama';
+    if (identical(c, agent)) return 'agent';
+    return 'off';
+  }
 
   // ---- auth -----------------------------------------------------------------
 
@@ -677,6 +706,180 @@ class ScoriaApp {
 
   // ---- chat -----------------------------------------------------------------
 
+  AgentClient? _resolveChat([String? want]) {
+    final pick = (want ?? config.chatProvider).trim().toLowerCase();
+    return switch (pick) {
+      'parasail' => parasailChat,
+      'ollama' => ollamaChat,
+      'agent' => agent,
+      _ => parasailChat ?? ollamaChat ?? agent,
+    };
+  }
+
+  ToolPrefsStore get _prefsStore => ToolPrefsStore(
+    Directory('${config.hackathonRoot ?? Directory.current.path}/.secrets'),
+  );
+
+  ChatToolbox _toolboxFor(ToolPrefs prefs) => ChatToolbox(
+    searchMemory: _searchMemory,
+    recentMemory: (c, limit) async {
+      final rows = jsonDecode(
+        await c.queryJSON(queries['memory_feed'], {
+          'before': null,
+          'limit': limit,
+        }),
+      ) as List<dynamic>;
+      return rows.cast<Map<String, dynamic>>();
+    },
+    getMemory: (c, id) async {
+      if (id.isEmpty) return null;
+      final row = await c.querySingleJSON(queries['memory_get'], {'id': id});
+      if (row == 'null') return null;
+      return jsonDecode(row) as Map<String, dynamic>;
+    },
+    remember: (c, title, body) => _upsertMemory(
+      c,
+      kind: 'note',
+      title: title,
+      body: body,
+      occurredAt: DateTime.now().toUtc(),
+      source: 'chat',
+      sourceId: _digest('chat:$title:$body:${DateTime.now().toIso8601String()}'),
+    ),
+    lifeGraph: (c) async {
+      final row = await c.querySingleJSON(queries['graph']);
+      if (row == 'null') return null;
+      return jsonDecode(row) as Map<String, dynamic>;
+    },
+    youApiKey: prefs.youKey ?? config.youApiKey,
+    disabled: prefs.disabled,
+  );
+
+  Future<String?> _personId(gel.Client c) async {
+    final row = await c.querySingleJSON('select global current_person { id }');
+    if (row == 'null') return null;
+    return (jsonDecode(row) as Map<String, dynamic>)['id'] as String?;
+  }
+
+  Future<Response> _chatTools(Request r, gel.Client c) async {
+    final personId = await _personId(c);
+    final prefs = personId == null
+        ? const ToolPrefs()
+        : await _prefsStore.read(personId);
+    final box = _toolboxFor(prefs);
+    final grantJson = await c.querySingleJSON(queries['one_grant_get']);
+    final grant = grantJson == 'null'
+        ? null
+        : jsonDecode(grantJson) as Map<String, dynamic>;
+    final oneLive = grant != null && grant['revoked_at'] == null;
+    final youOn = box.webAvailable;
+    return _json({
+      'default_provider': defaultChatLabel,
+      'providers': {
+        'parasail': {
+          'available': parasailChat != null,
+          'model': parasailChat?.model,
+        },
+        'ollama': {
+          'available': ollamaChat != null,
+          'model': ollamaChat?.model,
+        },
+        'agent': {'available': agent != null, 'model': agent?.model},
+      },
+      'tools': box.catalogFor(),
+      'connections': [
+        {
+          'id': 'you',
+          'label': 'You.com',
+          'kind': 'key',
+          'connected': youOn,
+          'has_secret': youOn,
+          'description':
+              'Web search for the agent. Paste a You.com key or keep the '
+              'server key from .env.',
+        },
+        {
+          'id': 'one',
+          'label': 'One Connect',
+          'kind': 'oauth',
+          'connected': oneLive,
+          'platforms': oneLive
+              ? grant['platforms']
+              : const ['gmail', 'google-calendar', 'github'],
+          'connected_at': oneLive ? grant['connected_at'] : null,
+          'authorize_url': personId == null
+              ? null
+              : '${config.connectPublicUrl.replaceAll(RegExp(r'/$'), '')}'
+                    '/api/one/authorize?person=$personId',
+          'description':
+              'Gmail, Google Calendar, and GitHub. One holds the tokens.',
+        },
+        {
+          'id': 'parasail',
+          'label': 'Parasail',
+          'kind': 'inference',
+          'connected': parasailChat != null,
+          'model': parasailChat?.model,
+          'description': 'Cloud brain for chat. Set PARASAIL_API_KEY on the server.',
+        },
+        {
+          'id': 'ollama',
+          'label': 'Ollama',
+          'kind': 'inference',
+          'connected': ollamaChat != null,
+          'model': ollamaChat?.model,
+          'description': 'Local model on this machine.',
+        },
+      ],
+    });
+  }
+
+  Future<Response> _chatConnectionPut(Request r, gel.Client c) async {
+    final personId = await _personId(c);
+    if (personId == null) return _error(401, 'unauthorized', 'no person');
+    final id = r.params['id']!;
+    final b = await _body(r);
+    var prefs = await _prefsStore.read(personId);
+    if (id == 'you') {
+      final key = b['api_key'] as String?;
+      if (key != null) prefs = prefs.copyWith(youKey: key);
+      if (b['enabled'] is bool) {
+        prefs = _setEnabled(prefs, 'web_search', b['enabled'] as bool);
+      }
+    } else if (id == 'one' || id == 'parasail' || id == 'ollama') {
+      return _error(400, 'bad_request', 'use the dedicated action for $id');
+    } else {
+      if (b['enabled'] is! bool) {
+        return _error(400, 'bad_request', 'enabled required');
+      }
+      prefs = _setEnabled(prefs, id, b['enabled'] as bool);
+    }
+    await _prefsStore.write(personId, prefs);
+    return _chatTools(r, c);
+  }
+
+  Future<Response> _chatConnectionDelete(Request r, gel.Client c) async {
+    final personId = await _personId(c);
+    if (personId == null) return _error(401, 'unauthorized', 'no person');
+    final id = r.params['id']!;
+    if (id != 'you') {
+      return _error(400, 'bad_request', 'can only clear the You.com key');
+    }
+    final prefs = await _prefsStore.read(personId);
+    await _prefsStore.write(personId, prefs.copyWith(clearYouKey: true));
+    return _chatTools(r, c);
+  }
+
+  static ToolPrefs _setEnabled(ToolPrefs prefs, String name, bool on) {
+    final next = {...prefs.disabled};
+    if (on) {
+      next.remove(name);
+    } else {
+      next.add(name);
+    }
+    return prefs.copyWith(disabled: next);
+  }
+
   Future<Response> _chatSessions(Request r, gel.Client c) =>
       _many(c, 'chat_sessions', {'limit': 100});
 
@@ -707,14 +910,18 @@ class ScoriaApp {
 
   /// One turn. Stores the user message, streams the harness reply as SSE
   /// (`delta`, `tool`, `done`, `error` events), stores the assistant
-  /// message when the stream ends.
+  /// message when the stream ends. Host tools run for Parasail / Ollama.
   Future<Response> _chatSend(Request r, gel.Client c) async {
-    final harness = agent;
+    final b = await _body(r);
+    final harness = _resolveChat(b['provider'] as String?);
     if (harness == null) {
-      return _error(503, 'agent_unavailable', 'SCORIA_AGENT_URL is not set');
+      return _error(
+        503,
+        'agent_unavailable',
+        'No chat model. Set PARASAIL_API_KEY or OLLAMA_URL.',
+      );
     }
     final sessionId = r.params['id']!;
-    final b = await _body(r);
     final content = (b['content'] as String?)?.trim();
     if (content == null || content.isEmpty) {
       return _error(400, 'bad_request', 'content required');
@@ -767,35 +974,28 @@ class ScoriaApp {
     }
 
     unawaited(() async {
-      final text = StringBuffer();
-      final tools = <Map<String, dynamic>>[];
-      String? modelUsed;
       emit('user', userMsg);
       try {
-        await for (final ev in harness.stream(
-          frame,
+        final turn = await runChatTurn(
+          harness: harness,
+          frame: frame,
+          toolbox: harness.keepsOwnHistory
+              ? null
+              : _toolboxFor(
+                  await _prefsStore.read(await _personId(c) ?? ''),
+                ),
+          db: c,
+          emit: emit,
           user: 'conv:${session['agent_session_key']}',
-        )) {
-          switch (ev) {
-            case AgentText(text: final t):
-              text.write(t);
-              emit('delta', {'text': t});
-            case AgentToolCall(:final name, :final arguments):
-              tools.add({'name': name, 'arguments': arguments});
-              emit('tool', {'name': name, 'arguments': arguments});
-            case AgentDone(model: final m, :final finishReason):
-              modelUsed = m;
-              emit('finish', {'model': m, 'reason': finishReason});
-          }
-        }
-        final reply = text.toString().trim();
+        );
+        final reply = turn.text.trim();
         final assistant = await _appendMessage(
           c,
           sessionId,
           'assistant',
           reply.isEmpty ? '(no reply)' : reply,
-          toolCalls: tools.isEmpty ? null : tools,
-          model: modelUsed,
+          toolCalls: turn.tools.isEmpty ? null : turn.tools,
+          model: turn.model,
         );
         emit('done', {'message': assistant});
       } on Object catch (e) {
@@ -856,17 +1056,15 @@ class ScoriaApp {
   String _systemFrame(Map<String, dynamic> person) {
     final name = person['display_name'] ?? person['handle'];
     final now = DateTime.now();
-    return 'You are Scoria, ${name}\'s personal assistant with access to their '
-        'memory (memory_search / memory_get) and the outside world (web search, '
-        'web fetch). The signed-in user is "$name" (handle ${person['handle']}). '
+    return 'You are Requiem, ${name}\'s personal assistant. The day is twenty-four '
+        'hours; spend them. The signed-in user is "$name" (handle ${person['handle']}). '
         'Current local time: ${now.toIso8601String()} (${now.timeZoneName}). '
-        'For anything about the user\'s life, people, places, plans or past, '
-        'search memory before answering. The memory profile includes a life '
-        'graph of goals, projects, habits and relationships: verified '
-        'relationships and parent/child containment are established, proposed '
-        'relationships are not facts. For facts about the world, use the web. '
-        'Be accurate; say when you do not know. Keep answers concise and '
-        'conversational; this is a chat on a phone.';
+        'Tools: memory_search, memory_recent, memory_get, remember, life_graph, '
+        'web_search, now. For anything about the user\'s life, people, places, '
+        'plans or past, search memory (and life_graph) before answering. '
+        'Verified graph edges are facts; proposed edges are not. For facts about '
+        'the world, use web_search. Be accurate; say when you do not know. '
+        'Keep answers concise and conversational; this is a chat on a phone.';
   }
 
   static String _titleFrom(String content) {

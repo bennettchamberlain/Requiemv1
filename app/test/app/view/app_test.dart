@@ -23,6 +23,19 @@ void main() {
         ),
       );
       when(api.chatSessions).thenAnswer((_) async => []);
+      when(api.chatTools).thenAnswer(
+        (_) async => const ChatCatalog(
+          defaultProvider: 'parasail',
+          providers: {
+            'parasail': ChatProviderInfo(
+              available: true,
+              model: 'parasail-glm-53-flash',
+            ),
+            'ollama': ChatProviderInfo(available: true, model: 'llama3.2'),
+          },
+          tools: [],
+        ),
+      );
       when(api.memoryFeed).thenAnswer((_) async => []);
       when(() => api.jobs(limit: 200)).thenAnswer((_) async => []);
 

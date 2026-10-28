@@ -12,7 +12,7 @@ part 'chat_state.dart';
 /// session's messages; a send streams the reply token by token into
 /// `draftReply` until the server confirms the stored assistant message.
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
-  new({required this._api}) : super(const ChatState()) {
+  new({required this._api, this.provider}) : super(const ChatState()) {
     on<ChatStarted>(_onStarted);
     on<ChatSessionOpened>(_onOpened);
     on<ChatNewSessionRequested>(_onNew);
@@ -22,6 +22,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   final ScoriaApiClient _api;
+  final String Function()? provider;
 
   static EventTransformer<T> _sequential<T>() =>
       (events, mapper) => events.asyncExpand(mapper);
@@ -110,7 +111,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           clearError: true,
         ),
       );
-      await for (final ev in _api.chatSend(open.id, text)) {
+      await for (final ev in _api.chatSend(
+        open.id,
+        text,
+        provider: provider?.call(),
+      )) {
         switch (ev) {
           case ChatUserStored(:final message):
             emit(state.copyWith(messages: [...state.messages, message]));
@@ -167,7 +172,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   static String _msg(Exception e) => switch (e) {
     ScoriaApiException(:final statusCode, :final message) =>
       statusCode == 503
-          ? 'The agent is not running on the server (SCORIA_AGENT_URL).'
+          ? 'No chat model. Set PARASAIL_API_KEY or start Ollama.'
           : message,
     _ => '$e',
   };
