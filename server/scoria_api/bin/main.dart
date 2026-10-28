@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:postgres/postgres.dart';
 import 'package:scoria_api/scoria_api.dart';
-import 'package:scoria_api/src/embeddings.dart';
 import 'package:scoria_jobs/scoria_jobs.dart';
 import 'package:shelf/shelf_io.dart' as io;
 
@@ -43,6 +42,13 @@ Future<void> main() async {
             baseUrl: Uri.parse(config.ollamaUrl!),
             model: config.embeddingModel,
           ),
+    agent: config.agentUrl == null
+        ? null
+        : AgentClient(
+            baseUrl: Uri.parse(config.agentUrl!),
+            token: config.agentToken,
+            model: config.agentModel,
+          ),
   );
 
   final server = await io.serve(
@@ -53,7 +59,8 @@ Future<void> main() async {
   stdout.writeln(
     'scoria-api on :${server.port} '
     '(gel=${config.gelDsn}, pgboss=${jobs != null}, '
-    'embeddings=${app.embeddings != null}, queries=${queries.names.length})',
+    'embeddings=${app.embeddings != null}, agent=${config.agentUrl ?? 'off'}, '
+    'geocoder=${app.geocoder.provider}, queries=${queries.names.length})',
   );
 
   ProcessSignal.sigint.watch().listen((_) async {

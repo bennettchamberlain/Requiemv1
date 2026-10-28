@@ -1,11 +1,12 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:scoria_app/chat/chat.dart';
 import 'package:scoria_app/jobs/jobs.dart';
 import 'package:scoria_app/memory/memory.dart';
 import 'package:scoria_app/session/session.dart';
 import 'package:scoria_models/scoria_models.dart';
 
-/// Shell with one destination per feature. Only memory and jobs are live;
+/// Shell with one destination per feature. Chat, memory and jobs are live;
 /// the rest are stubbed until their server slices exist.
 class HomePage extends StatefulWidget {
   const new({super.key});
@@ -18,6 +19,7 @@ class _HomePageState extends State<HomePage> {
   var _index = 0;
 
   static const _pages = <Widget>[
+    ChatPage(),
     MemoryPage(),
     JobsPage(),
     // PositionsPage(),   // background location + presence overlap
@@ -31,6 +33,11 @@ class _HomePageState extends State<HomePage> {
     final person = context.select<SessionCubit, Person?>((c) => c.state.person);
     final wide = MediaQuery.sizeOf(context).width >= 700;
     final destinations = [
+      const NavigationDestination(
+        icon: Icon(Icons.chat_bubble_outline),
+        selectedIcon: Icon(Icons.chat_bubble),
+        label: 'Chat',
+      ),
       const NavigationDestination(
         icon: Icon(Icons.memory_outlined),
         selectedIcon: Icon(Icons.memory),

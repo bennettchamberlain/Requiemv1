@@ -1,0 +1,393 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_app/chat/chat.dart';
+import 'package:scoria_models/scoria_models.dart';
+
+/// Chat with the Scoria agent. Phone: list of conversations, tap to open.
+/// Wide: list on the left, conversation on the right.
+class ChatPage extends StatelessWidget {
+  const new({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (context) =>
+          ChatBloc(api: context.read<ScoriaApiClient>())
+            ..add(const ChatStarted()),
+      child: const ChatView(),
+    );
+  }
+}
+
+class ChatView extends StatelessWidget {
+  const new({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 700;
+    final hasOpen = context.select<ChatBloc, bool>((b) => b.state.open != null);
+    if (wide) {
+      return Row(
+        children: [
+          SizedBox(width: 300, child: _SessionList(showAppBar: true)),
+          const VerticalDivider(width: 1),
+          Expanded(
+            child: hasOpen ? const _Conversation() : const _EmptyConversation(),
+          ),
+        ],
+      );
+    }
+    return hasOpen ? const _Conversation(showBack: true) : _SessionList();
+  }
+}
+
+class _SessionList extends StatelessWidget {
+  _SessionList({this.showAppBar = true});
+
+  final bool showAppBar;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<ChatBloc>().state;
+    return Scaffold(
+      appBar: showAppBar
+          ? AppBar(
+              title: const Text('Chat'),
+              actions: [
+                IconButton(
+                  key: const Key('chat_new_button'),
+                  tooltip: 'New chat',
+                  icon: const Icon(Icons.add_comment_outlined),
+                  onPressed: () => context.read<ChatBloc>().add(
+                    const ChatNewSessionRequested(),
+                  ),
+                ),
+              ],
+            )
+          : null,
+      body: switch (state.status) {
+        ChatStatus.initial || ChatStatus.loading when state.sessions.isEmpty =>
+          const Center(child: CircularProgressIndicator()),
+        ChatStatus.failure when state.sessions.isEmpty => _Retry(
+          message: state.error ?? 'Could not load chats',
+          onRetry: () => context.read<ChatBloc>().add(const ChatStarted()),
+        ),
+        _ when state.sessions.isEmpty => const _EmptyList(),
+        _ => RefreshIndicator(
+          onRefresh: () async =>
+              context.read<ChatBloc>().add(const ChatStarted()),
+          child: ListView.separated(
+            itemCount: state.sessions.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final s = state.sessions[i];
+              return Dismissible(
+                key: ValueKey(s.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20),
+                  child: const Icon(Icons.delete_outline),
+                ),
+                onDismissed: (_) =>
+                    context.read<ChatBloc>().add(ChatSessionDeleted(s)),
+                child: ListTile(
+                  selected: state.open?.id == s.id,
+                  leading: const Icon(Icons.forum_outlined),
+                  title: Text(
+                    s.title ?? 'New chat',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    '${s.messageCount} messages'
+                    '${s.lastMessageAt != null ? ' · ${_ago(s.lastMessageAt!)}' : ''}',
+                  ),
+                  onTap: () =>
+                      context.read<ChatBloc>().add(ChatSessionOpened(s)),
+                ),
+              );
+            },
+          ),
+        ),
+      },
+      floatingActionButton: showAppBar
+          ? null
+          : FloatingActionButton(
+              onPressed: () =>
+                  context.read<ChatBloc>().add(const ChatNewSessionRequested()),
+              child: const Icon(Icons.add_comment_outlined),
+            ),
+    );
+  }
+}
+
+class _Conversation extends StatefulWidget {
+  const new({this.showBack = false});
+
+  final bool showBack;
+
+  @override
+  State<_Conversation> createState() => _ConversationState();
+}
+
+class _ConversationState extends State<_Conversation> {
+  final _controller = TextEditingController();
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    context.read<ChatBloc>().add(ChatMessageSent(text));
+    _controller.clear();
+  }
+
+  void _scrollToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<ChatBloc, ChatState>(
+      listenWhen: (p, c) =>
+          p.messages.length != c.messages.length ||
+          p.draftReply != c.draftReply,
+      listener: (_, _) => _scrollToEnd(),
+      builder: (context, state) {
+        final open = state.open;
+        return Scaffold(
+          appBar: AppBar(
+            leading: widget.showBack
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () =>
+                        context.read<ChatBloc>().add(const ChatBackToList()),
+                  )
+                : null,
+            title: Text(open?.title ?? 'New chat'),
+          ),
+          body: Column(
+            children: [
+              Expanded(
+                child:
+                    state.status == ChatStatus.loading && state.messages.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView(
+                        controller: _scroll,
+                        padding: const EdgeInsets.all(12),
+                        children: [
+                          if (state.messages.isEmpty && !state.sending)
+                            const _Hint(),
+                          for (final m in state.messages) _Bubble.message(m),
+                          if (state.sending)
+                            _Bubble.draft(
+                              state.draftReply,
+                              tools: state.draftTools,
+                            ),
+                        ],
+                      ),
+              ),
+              if (state.error != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    state.error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          key: const Key('chat_composer'),
+                          controller: _controller,
+                          minLines: 1,
+                          maxLines: 5,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _send(),
+                          decoration: const InputDecoration(
+                            hintText: 'Ask Scoria…',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        key: const Key('chat_send_button'),
+                        onPressed: state.sending ? null : _send,
+                        icon: state.sending
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.arrow_upward),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _Bubble extends StatelessWidget {
+  new message(ChatMessage m)
+    : role = m.role,
+      text = m.content,
+      tools = m.toolCalls ?? const [],
+      streaming = false;
+
+  const new draft(this.text, {this.tools = const []})
+    : role = 'assistant',
+      streaming = true;
+
+  final String role;
+  final String text;
+  final List<ChatToolCall> tools;
+  final bool streaming;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final mine = role == 'user';
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+        ),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: mine ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (tools.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Wrap(
+                    spacing: 6,
+                    children: [
+                      for (final t in tools)
+                        Chip(
+                          visualDensity: VisualDensity.compact,
+                          avatar: const Icon(Icons.build_outlined, size: 14),
+                          label: Text(t.name),
+                        ),
+                    ],
+                  ),
+                ),
+              if (text.isEmpty && streaming)
+                const SizedBox(
+                  width: 36,
+                  height: 16,
+                  child: LinearProgressIndicator(),
+                )
+              else
+                SelectableText(_plain(text)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Strip the markdown a model tends to add; the bubble shows plain text.
+  static String _plain(String s) => s
+      .replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1')
+      .replaceAll(RegExp(r'`([^`]+)`'), r'$1')
+      .replaceAll(RegExp(r'^#+\s*', multiLine: true), '');
+}
+
+class _Hint extends StatelessWidget {
+  const new();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(24),
+    child: Text(
+      'Ask about your memories, places you have been, or anything in the '
+      'world. Scoria searches your memory first, then the web.',
+      textAlign: TextAlign.center,
+      style: Theme.of(context).textTheme.bodyMedium
+          ?.copyWith(color: Theme.of(context).colorScheme.outline),
+    ),
+  );
+}
+
+class _EmptyList extends StatelessWidget {
+  const new();
+
+  @override
+  Widget build(BuildContext context) => const Center(
+    child: Padding(
+      padding: EdgeInsets.all(24),
+      child: Text('No chats yet. Start one with the + button.'),
+    ),
+  );
+}
+
+class _EmptyConversation extends StatelessWidget {
+  const new();
+
+  @override
+  Widget build(BuildContext context) =>
+      const Center(child: Text('Pick a chat or start a new one.'));
+}
+
+class _Retry extends StatelessWidget {
+  const new({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(message, textAlign: TextAlign.center),
+        const SizedBox(height: 12),
+        FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
+      ],
+    ),
+  );
+}
+
+String _ago(DateTime t) {
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 1) return 'now';
+  if (d.inHours < 1) return '${d.inMinutes}m';
+  if (d.inDays < 1) return '${d.inHours}h';
+  return '${d.inDays}d';
+}

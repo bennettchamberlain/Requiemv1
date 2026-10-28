@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_app/config/server_cubit.dart';
 import 'package:scoria_app/session/session.dart';
 import 'package:scoria_app/sign_in/sign_in.dart';
 
@@ -42,6 +43,8 @@ class SignInView extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
+                  const _ServerField(),
+                  const SizedBox(height: 12),
                   const _HandleField(),
                   const SizedBox(height: 12),
                   const _PasswordField(),
@@ -58,6 +61,42 @@ class SignInView extends StatelessWidget {
   }
 }
 
+/// Where the server is. Prefilled from the saved value; edits persist.
+class _ServerField extends StatefulWidget {
+  const new();
+
+  @override
+  State<_ServerField> createState() => _ServerFieldState();
+}
+
+class _ServerFieldState extends State<_ServerField> {
+  late final _controller = TextEditingController(
+    text: context.read<ServerCubit>().state,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      key: const Key('signIn_server_textField'),
+      controller: _controller,
+      autocorrect: false,
+      keyboardType: TextInputType.url,
+      decoration: const InputDecoration(
+        labelText: 'Server',
+        helperText: 'e.g. 192.168.1.20:8787 (your Scoria machine on Wi-Fi)',
+        prefixIcon: Icon(Icons.dns_outlined),
+      ),
+      onChanged: (v) => context.read<ServerCubit>().set(v),
+    );
+  }
+}
+
 class _HandleField extends StatelessWidget {
   const new();
 
@@ -65,7 +104,6 @@ class _HandleField extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       key: const Key('signIn_handle_textField'),
-      autofocus: true,
       autocorrect: false,
       decoration: const InputDecoration(labelText: 'Handle'),
       onChanged: (v) => context.read<SignInBloc>().add(SignInHandleChanged(v)),

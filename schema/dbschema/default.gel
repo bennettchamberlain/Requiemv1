@@ -97,6 +97,34 @@ module default {
       using (global service_mode ?? false);
   }
 
+  # Long-lived bearer credential for machines (the OpenClaw memory plugin,
+  # scripts). Only the hash is stored; scoria-api resolves hash -> person in
+  # service_mode, exactly like LocalCredential. Owner can list/revoke.
+  type ApiKey {
+    required person: Person;
+    required label: str;
+    required token_hash: str { constraint exclusive };
+    required prefix: str;
+    required scopes: array<str> { default := ['memory', 'chat'] };
+    required created_at: datetime { default := datetime_of_statement() };
+    last_used_at: datetime;
+    revoked_at: datetime;
+
+    index on (.person);
+
+    access policy service_all
+      allow all
+      using (global service_mode ?? false);
+
+    access policy owner_manages
+      allow select, update, delete
+      using (global current_person_id ?= .person.id);
+
+    access policy owner_creates
+      allow insert
+      using (global current_person_id ?= .person.id);
+  }
+
   type Relationship {
     required owner: Person;
     required other: Person;
@@ -313,6 +341,38 @@ module default {
     index on ((.owner, .occurred_at));
     index ext::pgvector::hnsw_cosine(m := 16, ef_construction := 128)
       on (.embedding);
+  }
+
+  # A conversation with the agent harness. Class `chat`, sensitive by default:
+  # nobody sees your chats by tier, only by explicit grant.
+  type ChatSession extending Owned {
+    overloaded required data_class: str { default := 'chat' };
+    overloaded required sensitive: bool { default := true };
+
+    title: str;
+    # Harness-side continuity key (OpenClaw session key). Stable per session.
+    required agent_session_key: str { default := <str>uuid_generate_v4() };
+    last_message_at: datetime;
+    multi messages := .<session[is ChatMessage];
+
+    index on ((.owner, .last_message_at));
+  }
+
+  type ChatMessage extending Owned {
+    overloaded required data_class: str { default := 'chat' };
+    overloaded required sensitive: bool { default := true };
+
+    required session: ChatSession {
+      on target delete delete source;
+    };
+    required role: str;         # user | assistant | tool | system
+    required content: str;
+    tool_calls: json;           # what the harness did to answer (for the UI)
+    model: str;
+    required seq: int32;
+
+    constraint exclusive on ((.session, .seq));
+    index on ((.session, .seq));
   }
 
   # Mirror of a PGBoss job for the jobs page. Worker writes it. Class `job`.

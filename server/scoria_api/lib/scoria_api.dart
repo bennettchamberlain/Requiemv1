@@ -6,9 +6,13 @@
 /// `global current_person_id` set, so Napalm policies are the authorization.
 library;
 
+export 'src/agent.dart';
 export 'src/app.dart';
+export 'src/auth/api_key.dart';
 export 'src/auth/password.dart';
 export 'src/auth/session_token.dart';
 export 'src/config.dart';
 export 'src/db.dart';
+export 'src/embeddings.dart';
+export 'src/geocoder.dart';
 export 'src/queries.dart';

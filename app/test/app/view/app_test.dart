@@ -22,6 +22,7 @@ void main() {
           person: const Person(id: 'p1', handle: 'admin', isSuperadmin: true),
         ),
       );
+      when(api.chatSessions).thenAnswer((_) async => []);
       when(api.memoryFeed).thenAnswer((_) async => []);
       when(() => api.jobs(limit: 200)).thenAnswer((_) async => []);
 
@@ -41,7 +42,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(HomePage), findsOneWidget);
-      expect(find.text('Nothing here yet.'), findsOneWidget);
+      // Chat is the first tab; with no sessions it shows the empty hint.
+      expect(
+        find.text('No chats yet. Start one with the + button.'),
+        findsOneWidget,
+      );
+      verify(api.chatSessions).called(1);
     });
   });
 }

@@ -4,6 +4,7 @@
 /// API accepts. Policies live in the schema, not here.
 library;
 
+export 'src/chat.dart';
 export 'src/job_record.dart';
 export 'src/memory_item.dart';
 export 'src/person.dart';
