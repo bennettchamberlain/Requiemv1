@@ -175,6 +175,11 @@ class ScoriaApiClient {
 
   Future<void> oneGrantDelete() => _delete('/one/grant');
 
+  /// Connect from the Flutter app. Stays on this API host — no :8788.
+  Future<OneConnectResult> oneConnect() async => OneConnectResult.fromJson(
+    await _post('/one/connect', const {}) as Map<String, dynamic>,
+  );
+
   Future<List<String>> oneSync({List<String>? platforms}) async {
     final json = await _post('/one/sync', {
       if (platforms != null) 'platforms': platforms,

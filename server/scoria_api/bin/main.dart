@@ -79,9 +79,21 @@ Future<void> main() async {
     final root = config.hackathonRoot ?? _guessHackathonRoot();
     final python = config.pythonBin;
     if (Directory('$root/etl').existsSync()) {
+      final fixture = File('$root/etl/fixtures/sample.json');
+      final oneSecret = Platform.environment['ONE_SECRET'];
       await runner.work(
         'etl',
-        PythonJob(python: python, module: 'etl.worker', workdir: root).run,
+        PythonJob(
+          python: python,
+          module: 'etl.worker',
+          workdir: root,
+          environment: {
+            'PYTHONPATH': root,
+            'SCORIA_API_URL': 'http://127.0.0.1:${config.port}',
+            if ((oneSecret == null || oneSecret.isEmpty) && fixture.existsSync())
+              'SCORIA_ETL_FIXTURE': fixture.path,
+          },
+        ).run,
       );
     }
     if (Directory('$root/swarm').existsSync()) {

@@ -126,6 +126,7 @@ class ScoriaApp {
     ..post('/one/authorize', _oneProxy)
     ..get('/one/callback', _oneProxy)
     ..post('/one/callback', _oneProxy)
+    ..post('/one/connect', _authed(_oneConnect))
     ..get('/one/grant', _authed(_oneGrantGet))
     ..put('/one/grant', _authed(_oneGrantPut))
     ..delete('/one/grant', _authed(_oneGrantDelete))
@@ -817,9 +818,9 @@ class ScoriaApp {
               ? null
               : '/one/authorize?person=$personId',
           'description': oneLive
-              ? 'Gmail, Calendar, and GitHub are linked. Sync pulls new mail and events.'
-              : 'Gmail, Calendar, and GitHub. One holds the tokens. '
-                    'Connect opens on this same Requiem server, not :8788.',
+              ? 'Gmail, Calendar, and GitHub are linked. Sync pulls them into memory.'
+              : 'Connect from this app. Requiem talks to the server you already '
+                    'use — the laptop never has to reach :8788.',
         },
         {
           'id': 'parasail',
@@ -1257,6 +1258,49 @@ class ScoriaApp {
     }
   }
 
+  static const _lifePlatforms = ['gmail', 'google-calendar', 'github'];
+
+  /// Flutter calls this on the API host it already talks to. If the One
+  /// sidecar has keys, we return an authorize URL on that same host. If
+  /// not, we record a local grant and queue fixture ETL so the divide
+  /// still works.
+  Future<Response> _oneConnect(Request r, gel.Client c) async {
+    final personId = await _personId(c);
+    if (personId == null) return _error(401, 'unauthorized', 'no person');
+    if (await _connectReady()) {
+      return _json({
+        'mode': 'oauth',
+        'authorize_url': '/one/authorize?person=$personId',
+      });
+    }
+    final grantJson = await c.querySingleJSON(queries['one_grant_upsert'], {
+      'one_user_id': 'local:$personId',
+      'space_id': null,
+      'platforms': _lifePlatforms,
+    });
+    await _enqueueEtl(c, personId, _lifePlatforms);
+    return _json({
+      'mode': 'local',
+      'grant': jsonDecode(grantJson),
+      'enqueued': _lifePlatforms,
+    });
+  }
+
+  Future<void> _enqueueEtl(
+    gel.Client c,
+    String personId,
+    List<String> platforms,
+  ) async {
+    for (final platform in platforms) {
+      await _enqueue(
+        c,
+        'etl',
+        {'person_id': personId, 'platform': platform},
+        options: SendOptions(singletonKey: '$personId:$platform'),
+      );
+    }
+  }
+
   Future<Response> _oneGrantGet(Request r, gel.Client c) =>
       _one(c, 'one_grant_get');
 
@@ -1314,23 +1358,12 @@ class ScoriaApp {
 
   Future<Response> _oneSync(Request r, gel.Client c) async {
     final b = await _body(r);
-    final platforms = (b['platforms'] as List<dynamic>? ??
-            const ['gmail', 'google-calendar', 'github'])
+    final platforms = (b['platforms'] as List<dynamic>? ?? _lifePlatforms)
         .map((e) => e.toString())
         .toList();
-    final me = jsonDecode(
-      await c.querySingleJSON('select global current_person { id }'),
-    );
-    if (me is! Map) return _error(401, 'unauthorized', 'no person');
-    final personId = me['id'] as String;
-    for (final platform in platforms) {
-      await _enqueue(
-        c,
-        'etl',
-        {'person_id': personId, 'platform': platform},
-        options: SendOptions(singletonKey: '$personId:$platform'),
-      );
-    }
+    final personId = await _personId(c);
+    if (personId == null) return _error(401, 'unauthorized', 'no person');
+    await _enqueueEtl(c, personId, platforms);
     return _json({'enqueued': platforms});
   }
 

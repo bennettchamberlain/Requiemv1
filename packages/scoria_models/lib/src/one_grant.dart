@@ -41,6 +41,37 @@ class OneGrant {
   };
 }
 
+/// Result of `POST /one/connect`. `local` means this Requiem recorded the
+/// grant and queued ETL (fixtures when One keys are missing). `oauth`
+/// means the client should open [authorizeUrl] on the same API host.
+class OneConnectResult {
+  const OneConnectResult({
+    required this.mode,
+    this.authorizeUrl,
+    this.enqueued = const [],
+    this.grant,
+  });
+
+  factory OneConnectResult.fromJson(Map<String, dynamic> json) =>
+      OneConnectResult(
+        mode: json['mode'] as String? ?? 'local',
+        authorizeUrl: json['authorize_url'] as String?,
+        enqueued: (json['enqueued'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        grant: json['grant'] == null
+            ? null
+            : OneGrant.fromJson(json['grant'] as Map<String, dynamic>),
+      );
+
+  final String mode;
+  final String? authorizeUrl;
+  final List<String> enqueued;
+  final OneGrant? grant;
+
+  bool get isOauth => mode == 'oauth';
+}
+
 class SyncCursor {
   const SyncCursor({
     required this.id,

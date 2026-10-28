@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
@@ -6,6 +5,7 @@ import 'package:scoria_app/config/chat_settings_cubit.dart';
 import 'package:scoria_app/ui/chrome.dart';
 import 'package:scoria_models/scoria_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Manage inference, You.com, One Connect, and which tools the agent may use.
 class ToolsPage extends StatefulWidget {
@@ -86,6 +86,44 @@ class _ToolsPageState extends State<ToolsPage> {
     );
     if (key == null || key.isEmpty) return;
     await _apply(() => _api.putConnection('you', apiKey: key));
+  }
+
+  Future<void> _connectOne() async {
+    setState(() => _busy = true);
+    try {
+      final result = await _api.oneConnect();
+      if (!mounted) return;
+      if (result.isOauth) {
+        final url = _absolute(result.authorizeUrl);
+        if (url != null) {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        }
+        setState(() => _busy = false);
+        return;
+      }
+      await _load();
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ShadToaster.of(context).show(
+        ShadToast(
+          title: const Text('Connected'),
+          description: Text(
+            result.enqueued.isEmpty
+                ? 'Grant saved on this Requiem.'
+                : 'Syncing ${result.enqueued.join(', ')} into memory.',
+          ),
+        ),
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ShadToaster.of(context).show(
+        ShadToast.destructive(
+          title: const Text('Connect'),
+          description: Text('$e'),
+        ),
+      );
+    }
   }
 
   Future<void> _syncOne() async {
@@ -174,12 +212,12 @@ class _ToolsPageState extends State<ToolsPage> {
                             padding: const EdgeInsets.only(bottom: 8),
                             child: _ConnectionCard(
                               connection: c,
-                              authorizeUrl: _absolute(c.authorizeUrl),
                               busy: _busy,
                               onYouKey: _setYouKey,
                               onClearYou: () => _apply(
                                 () => _api.deleteConnection('you'),
                               ),
+                              onConnectOne: _connectOne,
                               onSyncOne: _syncOne,
                               onDisconnectOne: _disconnectOne,
                             ),
@@ -248,16 +286,16 @@ class _ConnectionCard extends StatelessWidget {
     required this.busy,
     required this.onYouKey,
     required this.onClearYou,
+    required this.onConnectOne,
     required this.onSyncOne,
     required this.onDisconnectOne,
-    this.authorizeUrl,
   });
 
   final ChatConnection connection;
-  final String? authorizeUrl;
   final bool busy;
   final VoidCallback onYouKey;
   final VoidCallback onClearYou;
+  final VoidCallback onConnectOne;
   final VoidCallback onSyncOne;
   final VoidCallback onDisconnectOne;
 
@@ -275,9 +313,7 @@ class _ConnectionCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(child: Text(c.label, style: theme.textTheme.small)),
               Text(
-                c.id == 'one' && !c.connected && !c.ready
-                    ? 'not configured'
-                    : (c.connected ? 'connected' : 'off'),
+                c.connected ? 'connected' : 'off',
                 style: theme.textTheme.muted.copyWith(
                   color: c.connected
                       ? theme.colorScheme.foreground
@@ -305,16 +341,6 @@ class _ConnectionCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(c.model!, style: theme.textTheme.muted),
           ],
-          if (c.id == 'one' && !c.connected && !c.ready) ...[
-            const SizedBox(height: 8),
-            Text(
-              'One is not configured on this server yet. Add ONE_CLIENT_ID '
-              'and ONE_CONNECT_KEY, restart Connect, then a Connect button '
-              'will show here. Do not open :8788 from your laptop — Requiem '
-              'proxies Connect through the same host as the API.',
-              style: theme.textTheme.muted,
-            ),
-          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -331,6 +357,11 @@ class _ConnectionCard extends StatelessWidget {
                     child: const Text('Use server key'),
                   ),
               ],
+              if (c.id == 'one' && !c.connected)
+                ShadButton(
+                  onPressed: busy ? null : onConnectOne,
+                  child: const Text('Connect accounts'),
+                ),
               if (c.id == 'one' && c.connected) ...[
                 ShadButton.outline(
                   onPressed: busy ? null : onSyncOne,
@@ -341,27 +372,6 @@ class _ConnectionCard extends StatelessWidget {
                   child: const Text('Disconnect'),
                 ),
               ],
-              if (c.id == 'one' && !c.connected && c.ready && authorizeUrl != null)
-                ShadButton.outline(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          await Clipboard.setData(
-                            ClipboardData(text: authorizeUrl!),
-                          );
-                          if (context.mounted) {
-                            ShadToaster.of(context).show(
-                              const ShadToast(
-                                title: Text('Copied Connect link'),
-                                description: Text(
-                                  'Open it on this same host as the API.',
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                  child: const Text('Connect accounts'),
-                ),
             ],
           ),
         ],
