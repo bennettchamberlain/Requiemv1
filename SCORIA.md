@@ -19,6 +19,9 @@ packages/
   scoria_jobs           PGBoss 10 schema + queue + runner in Dart (raw Postgres)
 server/scoria_api       shelf server: /auth/signin, /me, /memory, /positions,
                         /presence/overlap/:id, /jobs, /admin/people
+server/scoria_voice     Python: PersonaPlex full-duplex voice (toggle on/off) + whisper
+                        STT + Ollama "brain" with memory/web/time/persona tools;
+                        /console, /api/chat (WS), /api/events (SSE). See its README.
 app/                    Flutter (very_good, bloc): sign_in, memory, jobs features
 napalmv2/               git submodule — the database
 ```
@@ -43,6 +46,10 @@ cd server/scoria_api && SCORIA_SESSION_SECRET=$(openssl rand -hex 32) \
 
 # 4. app
 cd app && flutter run -d linux --dart-define=SCORIA_API_URL=http://localhost:8080
+
+# 5. voice (optional; needs the HF token + Ollama) — see server/scoria_voice/README.md
+cd server/scoria_voice && HF_TOKEN_FILE=~/devel/mynamehf.txt SCORIA_HANDLE=admin \
+  SCORIA_PASSWORD=… VOICE_SSL_DIR=/tmp/voice-ssl .venv/bin/scoria-voice   # https://localhost:8998/console
 ```
 
 Napalm from source (owns Postgres via `--backend-dsn`):
