@@ -141,8 +141,15 @@ class _HandleField extends StatelessWidget {
   }
 }
 
-class _PasswordField extends StatelessWidget {
+class _PasswordField extends StatefulWidget {
   const new();
+
+  @override
+  State<_PasswordField> createState() => _PasswordFieldState();
+}
+
+class _PasswordFieldState extends State<_PasswordField> {
+  var _obscure = true;
 
   @override
   Widget build(BuildContext context) {
@@ -152,12 +159,26 @@ class _PasswordField extends StatelessWidget {
         const _Label('Password'),
         ShadInput(
           key: const Key('signIn_password_textField'),
-          obscureText: true,
+          obscureText: _obscure,
           placeholder: const Text('Password'),
           onChanged: (v) =>
               context.read<SignInBloc>().add(SignInPasswordChanged(v)),
           onSubmitted: (_) =>
               context.read<SignInBloc>().add(const SignInSubmitted()),
+          trailing: SizedBox.square(
+            dimension: 24,
+            child: OverflowBox(
+              maxWidth: 28,
+              maxHeight: 28,
+              child: ShadIconButton(
+                key: const Key('signIn_password_visibility_button'),
+                iconSize: 16,
+                padding: const EdgeInsets.all(2),
+                icon: Icon(_obscure ? LucideIcons.eyeOff : LucideIcons.eye),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+          ),
         ),
       ],
     );

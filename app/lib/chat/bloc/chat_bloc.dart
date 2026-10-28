@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_app/chat/parts/chat_part.dart';
 import 'package:scoria_models/scoria_models.dart';
 
 part 'chat_event.dart';
@@ -156,12 +157,77 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
     } on Exception catch (err) {
-      emit(state.copyWith(sending: false, draftReply: '', error: _msg(err)));
+      emit(
+        state.copyWith(
+          sending: false,
+          draftReply: '',
+          draftTools: const [],
+          error: _msg(err),
+          messages: _localSearchTurn(
+            messages: state.messages,
+            query: text,
+            partial: state.draftReply,
+          ),
+        ),
+      );
     }
     if (state.sending) {
       // Stream ended without a terminal event (connection dropped).
-      emit(state.copyWith(sending: false, error: 'connection lost'));
+      emit(
+        state.copyWith(
+          sending: false,
+          error: 'connection lost',
+          draftReply: '',
+          messages: _localSearchTurn(
+            messages: state.messages,
+            query: text,
+            partial: state.draftReply,
+          ),
+        ),
+      );
     }
+  }
+
+  /// When the agent cannot be reached, still show the user's words and a
+  /// You.com search surface for that text.
+  static List<ChatMessage> _localSearchTurn({
+    required List<ChatMessage> messages,
+    required String query,
+    required String partial,
+  }) {
+    final next = [...messages];
+    if (!next.any((m) => m.role == 'user' && m.content == query)) {
+      next.add(_local(role: 'user', content: query, seq: next.length + 1));
+    }
+    final userAt = next.lastIndexWhere(
+      (m) => m.role == 'user' && m.content == query,
+    );
+    final replied = next.skip(userAt + 1).any((m) => m.role == 'assistant');
+    if (!replied) {
+      final fence = scoriaWebSearchFence(query);
+      final content = partial.trim().isEmpty
+          ? fence
+          : '${partial.trim()}\n\n$fence';
+      next.add(
+        _local(role: 'assistant', content: content, seq: next.length + 1),
+      );
+    }
+    return next;
+  }
+
+  static ChatMessage _local({
+    required String role,
+    required String content,
+    required int seq,
+  }) {
+    final stamp = DateTime.now().toUtc();
+    return ChatMessage(
+      id: 'local-$role-${stamp.microsecondsSinceEpoch}',
+      role: role,
+      content: content,
+      seq: seq,
+      createdAt: stamp,
+    );
   }
 
   static String _titleFrom(String content) {

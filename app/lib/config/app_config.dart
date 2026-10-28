@@ -5,4 +5,7 @@ abstract final class AppConfig {
     'SCORIA_API_URL',
     defaultValue: 'http://localhost:8090',
   );
+
+  /// You.com Web Search key. Pass `--dart-define=YDC_API_KEY=...`.
+  static const ydcApiKey = String.fromEnvironment('YDC_API_KEY');
 }

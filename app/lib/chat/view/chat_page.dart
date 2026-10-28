@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
 import 'package:scoria_app/chat/chat.dart';
+import 'package:scoria_app/chat/parts/chat_part_view.dart';
 import 'package:scoria_app/config/chat_settings_cubit.dart';
 import 'package:scoria_app/ui/chrome.dart';
 import 'package:scoria_models/scoria_models.dart';
@@ -341,7 +342,9 @@ class _Bubble extends StatelessWidget {
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+          maxWidth: mine
+              ? MediaQuery.sizeOf(context).width * 0.72
+              : MediaQuery.sizeOf(context).width * 0.92,
         ),
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4),
@@ -353,52 +356,22 @@ class _Bubble extends StatelessWidget {
                 ? null
                 : Border.all(color: theme.colorScheme.border),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (tools.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final t in tools)
-                        Tooltip(
-                          message: t.result ?? t.arguments,
-                          child: ShadBadge.outline(
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(LucideIcons.wrench, size: 12),
-                                const SizedBox(width: 4),
-                                Text(t.name),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              if (text.isEmpty && streaming)
-                const SizedBox(width: 72, child: ShadProgress(minHeight: 6))
-              else
-                SelectableText(
-                  _plain(text),
+          child: mine
+              ? SelectableText(
+                  text,
                   style: theme.textTheme.p.copyWith(color: foreground),
+                )
+              : ChatMessageBody(
+                  text: text,
+                  foreground: foreground,
+                  tools: tools,
+                  streaming: streaming,
                 ),
-            ],
-          ),
         ),
       ),
     );
   }
 
-  /// Strip the markdown a model tends to add; the bubble shows plain text.
-  static String _plain(String s) => s
-      .replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1')
-      .replaceAll(RegExp('`([^`]+)`'), r'$1')
-      .replaceAll(RegExp(r'^#+\s*', multiLine: true), '');
 }
 
 class _Hint extends StatelessWidget {
