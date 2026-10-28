@@ -67,13 +67,22 @@ class AppView extends StatelessWidget {
     final status = context.select<SessionCubit, SessionStatus>(
       (c) => c.state.status,
     );
-    return ShadApp(
-      builder: scoriaMaterialTheme,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: status == SessionStatus.authenticated
-          ? const HomePage()
-          : const SignInPage(),
+    return ShadApp.custom(
+      appBuilder: (context) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: Theme.of(context),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          builder: (context, child) => ShadAppBuilder(
+            builder: scoriaMaterialTheme,
+            child: child,
+          ),
+          home: status == SessionStatus.authenticated
+              ? const HomePage()
+              : const SignInPage(),
+        );
+      },
     );
   }
 }

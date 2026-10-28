@@ -7,11 +7,20 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 extension PumpApp on WidgetTester {
   Future<void> pumpApp(Widget widget) {
     return pumpWidget(
-      ShadApp(
-        builder: scoriaMaterialTheme,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: widget,
+      ShadApp.custom(
+        appBuilder: (context) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: Theme.of(context),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            builder: (context, child) => ShadAppBuilder(
+              builder: scoriaMaterialTheme,
+              child: child,
+            ),
+            home: widget,
+          );
+        },
       ),
     );
   }

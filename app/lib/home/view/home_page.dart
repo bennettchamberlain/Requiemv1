@@ -154,7 +154,7 @@ class _BottomNav extends StatelessWidget {
       ),
       child: SafeArea(
         child: SizedBox(
-          height: 64,
+          height: 56,
           child: Row(
             children: [
               for (var i = 0; i < _HomePageState._destinations.length; i++)
@@ -196,6 +196,8 @@ class _NavButton extends StatelessWidget {
     final glyph = Icon(icon, size: 16);
     return ShadButton.ghost(
       width: double.infinity,
+      height: stacked ? 56 : null,
+      padding: stacked ? const EdgeInsets.symmetric(horizontal: 4) : null,
       mainAxisAlignment: stacked
           ? MainAxisAlignment.center
           : MainAxisAlignment.start,
@@ -207,7 +209,13 @@ class _NavButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 glyph,
-                Text(label, style: theme.textTheme.small),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: theme.textTheme.small.copyWith(fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             )
           : Text(label),
