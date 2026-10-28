@@ -22,7 +22,7 @@ class ServerCubit extends Cubit<String> {
     await _prefs?.setString(_key, value);
   }
 
-  /// `192.168.1.5:8787` -> `http://192.168.1.5:8787/`; keeps a scheme if
+  /// `192.168.1.5:8090` -> `http://192.168.1.5:8090/`; keeps a scheme if
   /// one is given; guarantees the trailing slash `Uri.resolve` needs.
   static Uri _normalise(String raw) {
     var s = raw.trim();

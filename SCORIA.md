@@ -1,4 +1,7 @@
-# Scoria
+# Scoria (Requiem)
+
+The product name is **Requiem**: memento mori — twenty-four hours, spend them.
+The codebase is still Scoria.
 
 Scoria is the slim, local-only successor to CI-Server: a Dart server appliance
 in front of **Napalm v2** (a Gel/EdgeDB fork) plus a Flutter client. Napalm owns

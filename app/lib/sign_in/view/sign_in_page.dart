@@ -23,6 +23,7 @@ class SignInView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final muted = ShadTheme.of(context).textTheme.muted;
     return BlocListener<SignInBloc, SignInState>(
       listenWhen: (p, c) => c.status == SignInStatus.success,
       listener: (context, state) {
@@ -32,14 +33,26 @@ class SignInView extends StatelessWidget {
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: const Padding(
-              padding: EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
               child: ShadCard(
-                title: Text('Scoria'),
-                description: Text(
-                  'Sign in to the machine that holds memory.',
+                title: const Text('Requiem'),
+                description: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Memento mori.',
+                      style: muted.copyWith(fontStyle: FontStyle.italic),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Twenty-four hours. That is the whole day. '
+                      'This machine remembers so you can spend what is left.',
+                      style: muted,
+                    ),
+                  ],
                 ),
-                child: Column(
+                child: const Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -94,12 +107,12 @@ class _ServerFieldState extends State<_ServerField> {
           autocorrect: false,
           keyboardType: TextInputType.url,
           leading: const Icon(LucideIcons.server, size: 16),
-          placeholder: const Text('http://localhost:8787'),
+          placeholder: const Text('http://localhost:8090'),
           onChanged: (v) => context.read<ServerCubit>().set(v),
         ),
         const SizedBox(height: 6),
         Text(
-          'e.g. 192.168.1.20:8787 (your Scoria machine on Wi-Fi)',
+          'e.g. localhost:8090 (this Requiem / Scoria API)',
           style: muted,
         ),
       ],

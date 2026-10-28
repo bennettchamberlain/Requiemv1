@@ -18,6 +18,12 @@ class Config {
     this.agentModel = 'openclaw/default',
     this.googleMapsApiKey,
     this.geocodeUserAgent = 'scoria-api (local)',
+    this.parasailApiKey,
+    this.parasailBaseUrl = 'https://api.parasail.io/v1',
+    this.parasailEmbedModel = 'parasail-bge-m3',
+    this.internalSecret,
+    this.pythonBin = 'python3',
+    this.hackathonRoot,
   });
 
   factory Config.fromEnv([Map<String, String>? env]) {
@@ -47,6 +53,15 @@ class Config {
       ),
       geocodeUserAgent:
           e['SCORIA_GEOCODE_USER_AGENT'] ?? 'scoria-api (self-hosted)',
+      parasailApiKey: _blankToNull(e['PARASAIL_API_KEY']),
+      parasailBaseUrl: e['PARASAIL_BASE_URL'] ?? 'https://api.parasail.io/v1',
+      parasailEmbedModel: e['PARASAIL_EMBED_MODEL'] ?? 'parasail-bge-m3',
+      internalSecret: _blankToNull(e['SCORIA_INTERNAL_SECRET']),
+      pythonBin: e['SCORIA_PYTHON'] ??
+          (e['VIRTUAL_ENV'] == null
+              ? 'python3'
+              : '${e['VIRTUAL_ENV']}/bin/python'),
+      hackathonRoot: _blankToNull(e['HACKATHON_ROOT'] ?? e['REQUIEM_ROOT']),
     );
   }
 
@@ -82,6 +97,20 @@ class Config {
   /// no key but is rate-limited to one request per second.
   final String? googleMapsApiKey;
   final String geocodeUserAgent;
+
+  /// Parasail cloud embeddings. Null disables the cloud vector column.
+  final String? parasailApiKey;
+  final String parasailBaseUrl;
+  final String parasailEmbedModel;
+
+  /// Shared secret for Connect `userStore` callbacks. Not a user credential.
+  final String? internalSecret;
+
+  /// Python used to run ETL / weaver jobs.
+  final String pythonBin;
+
+  /// Requiem repo root (`etl/` and `swarm/` live here).
+  final String? hackathonRoot;
 
   static String? _blankToNull(String? s) =>
       s == null || s.trim().isEmpty ? null : s.trim();

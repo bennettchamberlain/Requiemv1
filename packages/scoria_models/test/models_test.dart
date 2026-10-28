@@ -19,4 +19,22 @@ void main() {
   test('JobState parses unknown as created', () {
     expect(JobState.parse('weird'), JobState.created);
   });
+
+  test('OneGrant and GraphEdge round-trip', () {
+    final grant = OneGrant.fromJson({
+      'id': 'g',
+      'one_user_id': 'u1',
+      'platforms': ['gmail'],
+    });
+    expect(grant.platforms, ['gmail']);
+    final edge = GraphEdge.fromJson({
+      'id': 'e',
+      'kind': 'knows',
+      'status': 'proposed',
+      'source': {'id': 'a', 'name': 'Alex'},
+      'target': {'id': 'b', 'name': 'Scoria'},
+    });
+    expect(edge.source?.name, 'Alex');
+    expect(GraphEdge.fromJson(edge.toJson()).kind, 'knows');
+  });
 }

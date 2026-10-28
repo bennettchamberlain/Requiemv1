@@ -120,3 +120,12 @@ app/windows/flutter/ephemeral/
 app/linux/flutter/ephemeral/
 app/macos/Flutter/ephemeral/
 schema/.gel/
+
+# Requiem / event local
+.env
+.venv/
+.one/
+.onerc
+__pycache__/
+*.pyc
+connect/node_modules/

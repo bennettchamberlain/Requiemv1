@@ -10,6 +10,20 @@ Future<void> main() async {
   final db = Db.connect(config);
   final queries = await NamedQueries.load(config.queriesDir);
 
+  final cloud = config.parasailApiKey == null
+      ? null
+      : ParasailEmbeddings(
+          apiKey: config.parasailApiKey!,
+          model: config.parasailEmbedModel,
+          baseUrl: config.parasailBaseUrl,
+        );
+  final local = config.ollamaUrl == null
+      ? null
+      : Embeddings(
+          baseUrl: Uri.parse(config.ollamaUrl!),
+          model: config.embeddingModel,
+        );
+
   PgBossQueue? jobs;
   if (config.pgUrl case final url?) {
     final u = Uri.parse(url);
@@ -33,22 +47,49 @@ Future<void> main() async {
       'conclude',
       const QueueOptions(policy: QueuePolicy.singleton),
     );
+    await jobs.createQueue(
+      'etl',
+      const QueueOptions(policy: QueuePolicy.singleton),
+    );
+    await jobs.createQueue(
+      'weave',
+      const QueueOptions(policy: QueuePolicy.singleton),
+    );
   }
 
   JobRunner? runner;
-  if (jobs != null && config.ollamaUrl != null) {
-    final concluder = GraphConcluder(
-      db: db,
-      ollama: Uri.parse(config.ollamaUrl!),
-      model: config.concludeModel,
-    );
+  if (jobs != null) {
     runner = JobRunner(
       jobs,
       log: (message, [error]) {
         stdout.writeln(error == null ? message : '$message $error');
       },
     );
-    await runner.work('conclude', concluder.run);
+    await runner.work('embed', EmbedJob(db: db, local: local, cloud: cloud).run);
+    if (config.ollamaUrl != null) {
+      await runner.work(
+        'conclude',
+        GraphConcluder(
+          db: db,
+          ollama: Uri.parse(config.ollamaUrl!),
+          model: config.concludeModel,
+        ).run,
+      );
+    }
+    final root = config.hackathonRoot ?? _guessHackathonRoot();
+    final python = config.pythonBin;
+    if (Directory('$root/etl').existsSync()) {
+      await runner.work(
+        'etl',
+        PythonJob(python: python, module: 'etl.worker', workdir: root).run,
+      );
+    }
+    if (Directory('$root/swarm').existsSync()) {
+      await runner.work(
+        'weave',
+        PythonJob(python: python, module: 'swarm.weave', workdir: root).run,
+      );
+    }
     await runner.start();
   }
 
@@ -57,12 +98,8 @@ Future<void> main() async {
     db: db,
     queries: queries,
     jobs: jobs,
-    embeddings: config.ollamaUrl == null
-        ? null
-        : Embeddings(
-            baseUrl: Uri.parse(config.ollamaUrl!),
-            model: config.embeddingModel,
-          ),
+    embeddings: local,
+    cloudEmbeddings: cloud,
     agent: config.agentUrl == null
         ? null
         : AgentClient(
@@ -80,7 +117,8 @@ Future<void> main() async {
   stdout.writeln(
     'scoria-api on :${server.port} '
     '(gel=${config.gelDsn}, pgboss=${jobs != null}, '
-    'embeddings=${app.embeddings != null}, agent=${config.agentUrl ?? 'off'}, '
+    'embeddings=${local != null}, cloud=${cloud != null}, '
+    'agent=${config.agentUrl ?? 'off'}, '
     'geocoder=${app.geocoder.provider}, queries=${queries.names.length})',
   );
 
@@ -90,4 +128,20 @@ Future<void> main() async {
     await db.close();
     exit(0);
   });
+}
+
+String _guessHackathonRoot() {
+  final here = Directory.current.path;
+  for (final root in [
+    here,
+    '$here/..',
+    '$here/../..',
+    '$here/../../..',
+  ]) {
+    if (Directory('$root/etl').existsSync() &&
+        Directory('$root/swarm').existsSync()) {
+      return root;
+    }
+  }
+  return here;
 }

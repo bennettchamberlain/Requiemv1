@@ -50,7 +50,7 @@ module default {
   # Open nodes the jobs discover. Goals, projects and habits are their own
   # types; everything else (a person, a place, a thing) is an Entity.
   scalar type EntityKind extending enum<
-    person, organization, place, object, concept, event
+    person, organization, place, object, concept, event, `group`
   >;
 
   scalar type PursuitStatus extending enum<active, paused, done, dropped>;
@@ -68,6 +68,9 @@ module default {
   scalar type EdgeStatus extending enum<proposed, verified, rejected>;
 
   scalar type Embedding extending ext::pgvector::vector<768>;
+  # Parasail serverless embeddings on this event key are BGE-M3 (1024).
+  # GritLM-7B (4096) was not deployed; keep the column typed to the live model.
+  scalar type EmbeddingCloud extending ext::pgvector::vector<1024>;
 
   # ---------------------------------------------------------------------------
   # People and accounts
@@ -356,11 +359,16 @@ module default {
     embedding: Embedding;
     embedded_at: datetime;
     embedding_model: str;
+    embedding_cloud: EmbeddingCloud;
+    embedded_cloud_at: datetime;
+    embedding_cloud_model: str;
 
     constraint exclusive on ((.owner, .source, .source_id));
     index on ((.owner, .occurred_at));
     index ext::pgvector::hnsw_cosine(m := 16, ef_construction := 128)
       on (.embedding);
+    index ext::pgvector::hnsw_cosine(m := 16, ef_construction := 128)
+      on (.embedding_cloud);
 
     # Memories the graph was concluded from. Table side of "this note is about
     # that goal / habit / entity".
@@ -468,6 +476,35 @@ module default {
 
     constraint exclusive on ((.session, .seq));
     index on ((.session, .seq));
+  }
+
+  # One Connect grant pointer. One holds the OAuth tokens; we store the
+  # user id One gave us, not a secret.
+  type OneGrant extending Owned {
+    overloaded required data_class: str { default := 'connection' };
+
+    required one_user_id: str;
+    space_id: str;
+    required platforms: array<str> { default := <array<str>>[] };
+    connected_at: datetime { default := datetime_of_statement() };
+    revoked_at: datetime;
+
+    constraint exclusive on (.owner);
+    index on (.one_user_id);
+  }
+
+  # Per-connector sync cursor. Replaces encrypted token + sync_state.
+  type SyncCursor extending Owned {
+    overloaded required data_class: str { default := 'connection' };
+
+    required platform: str;
+    required endpoint: str;
+    cursor: json;
+    last_synced_at: datetime;
+    last_error: str;
+
+    constraint exclusive on ((.owner, .platform, .endpoint));
+    index on ((.owner, .platform));
   }
 
   # Mirror of a PGBoss job for the jobs page. Worker writes it. Class `job`.

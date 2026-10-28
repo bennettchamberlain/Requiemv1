@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "one": {
+      "type": "http",
+      "url": "https://mcp.withone.ai/mcp"
+    },
+    "you": {
+      "url": "https://api.you.com/mcp"
+    },
+    "you-docs": {
+      "url": "https://you.com/docs/_mcp/server"
+    }
+  }
+}

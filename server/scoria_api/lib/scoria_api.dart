@@ -18,4 +18,7 @@ export 'src/geocoder.dart';
 export 'src/graph/conclusion.dart';
 export 'src/graph/concluder.dart';
 export 'src/graph/graph_block.dart';
+export 'src/jobs/embed_job.dart';
+export 'src/jobs/python_job.dart';
+export 'src/parasail_embeddings.dart';
 export 'src/queries.dart';

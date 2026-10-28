@@ -11,6 +11,7 @@ import 'package:scoria_api/src/config.dart';
 import 'package:scoria_api/src/db.dart';
 import 'package:scoria_api/src/embeddings.dart';
 import 'package:scoria_api/src/geocoder.dart';
+import 'package:scoria_api/src/parasail_embeddings.dart';
 import 'package:scoria_api/src/graph/graph_block.dart';
 import 'package:scoria_api/src/queries.dart';
 import 'package:scoria_jobs/scoria_jobs.dart';
@@ -32,6 +33,7 @@ class ScoriaApp {
     required this.queries,
     this.jobs,
     this.embeddings,
+    this.cloudEmbeddings,
     this.agent,
     Geocoder? geocoder,
     Password? password,
@@ -49,6 +51,7 @@ class ScoriaApp {
   final NamedQueries queries;
   final PgBossQueue? jobs;
   final Embeddings? embeddings;
+  final ParasailEmbeddings? cloudEmbeddings;
   final AgentClient? agent;
   final Geocoder geocoder;
   final Password _password;
@@ -61,8 +64,24 @@ class ScoriaApp {
 
   Handler get handler => const Pipeline()
       .addMiddleware(logRequests())
+      .addMiddleware(_cors)
       .addMiddleware(_errors)
       .addHandler(_router.call);
+
+  static const _corsHeaders = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers':
+        'authorization, content-type, x-api-key, x-scoria-internal',
+    'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  };
+
+  static Handler _cors(Handler inner) => (Request r) async {
+    if (r.method == 'OPTIONS') {
+      return Response.ok('', headers: _corsHeaders);
+    }
+    final res = await inner(r);
+    return res.change(headers: {..._corsHeaders, ...res.headers});
+  };
 
   Router get _router => Router()
     ..get('/health', _health)
@@ -87,6 +106,17 @@ class ScoriaApp {
     ..delete('/chat/sessions/<id>', _authed(_chatDelete))
     ..get('/chat/sessions/<id>/messages', _authed(_chatMessages))
     ..post('/chat/sessions/<id>/messages', _authed(_chatSend))
+    ..get('/graph/candidates', _authed(_weaveCandidates))
+    ..post('/graph/entities', _authed(_graphEntity))
+    ..post('/graph/edges', _authed(_graphEdge))
+    ..patch('/graph/edges/<id>', _authed(_graphEdgeStatus))
+    ..get('/one/grant', _authed(_oneGrantGet))
+    ..put('/one/grant', _authed(_oneGrantPut))
+    ..delete('/one/grant', _authed(_oneGrantDelete))
+    ..post('/one/sync', _authed(_oneSync))
+    ..get('/one/cursors', _authed((r, c) => _many(c, 'sync_cursor_list')))
+    ..put('/one/cursors', _authed(_syncCursorPut))
+    ..post('/internal/one/grant', _internal(_internalGrant))
     ..post('/admin/people', _authed(_createPerson))
     // Companion Intelligence memory-plugin contract (OpenClaw's
     // `companionintelligence` plugin speaks exactly this).
@@ -100,6 +130,7 @@ class ScoriaApp {
     'ok': true,
     'agent': agent == null ? null : await agent!.ping(),
     'embeddings': embeddings != null,
+    'cloud_embeddings': cloudEmbeddings != null,
     'geocoder': geocoder.provider,
     'jobs': jobs != null,
   });
@@ -163,6 +194,24 @@ class ScoriaApp {
         return _error(401, 'unauthorized', 'missing or expired token');
       }
       return next(r, db.asPerson(personId));
+    };
+  }
+
+  Handler _internal(
+    Future<Response> Function(Request r, gel.Client caller) next,
+  ) {
+    return (Request r) async {
+      final secret = config.internalSecret;
+      final got = r.headers['x-scoria-internal'];
+      if (secret == null || got == null || got != secret) {
+        return _error(401, 'unauthorized', 'internal secret required');
+      }
+      final b = await _body(r);
+      final personId = b['person_id'] as String?;
+      if (personId == null) {
+        return _error(400, 'bad_request', 'person_id required');
+      }
+      return next(r.change(context: {'internal_body': b}), db.asPerson(personId));
     };
   }
 
@@ -305,11 +354,13 @@ class ScoriaApp {
     });
     final id = (jsonDecode(json) as Map<String, dynamic>)['id'] as String;
     var embedded = false;
+    var cloudEmbedded = false;
+    final text = [if (title != null) title, if (body != null) body]
+        .join('\n')
+        .trim();
     if (embeddings case final emb?) {
       try {
-        final vector = await emb.embed(
-          [if (title != null) title, if (body != null) body].join('\n').trim(),
-        );
+        final vector = await emb.embed(text);
         await c.execute(
           r'''
           update MemoryItem filter .id = <uuid>$id set {
@@ -325,10 +376,29 @@ class ScoriaApp {
         embedded = false;
       }
     }
-    if (!embedded) {
+    if (cloudEmbeddings case final emb?) {
+      try {
+        final vector = await emb.embed(text);
+        await c.execute(
+          r'''
+          update MemoryItem filter .id = <uuid>$id set {
+            embedding_cloud := <EmbeddingCloud><array<float32>>$vector,
+            embedded_cloud_at := datetime_of_statement(),
+            embedding_cloud_model := <str>$model,
+          }
+          ''',
+          {'id': id, 'vector': vector, 'model': emb.model},
+        );
+        cloudEmbedded = true;
+      } on Object {
+        cloudEmbedded = false;
+      }
+    }
+    if (!embedded || (cloudEmbeddings != null && !cloudEmbedded)) {
       await _enqueue(c, 'embed', {'memory_id': id}, subjectId: id);
     }
     await _enqueueConclude(c, id);
+    await _enqueueWeave(c, id);
     return id;
   }
 
@@ -352,6 +422,20 @@ class ScoriaApp {
     String q,
     int limit,
   ) async {
+    if (cloudEmbeddings case final emb?) {
+      try {
+        final vector = await emb.embed(q);
+        final rows = jsonDecode(
+          await c.queryJSON(queries['memory_search_cloud'], {
+            'embedding': vector,
+            'limit': limit,
+          }),
+        ) as List<dynamic>;
+        if (rows.isNotEmpty) return rows.cast<Map<String, dynamic>>();
+      } on Object {
+        // fall through to local
+      }
+    }
     if (embeddings case final emb?) {
       try {
         final vector = await emb.embed(q);
@@ -906,6 +990,276 @@ class ScoriaApp {
     return '- [$when ${m['kind']}] ${m['title'] ?? '(untitled)'}$where$snippet';
   }
 
+  // ---- One Connect + weave graph -------------------------------------------
+
+  Future<Response> _oneGrantGet(Request r, gel.Client c) =>
+      _one(c, 'one_grant_get');
+
+  Future<Response> _oneGrantPut(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final userId = b['one_user_id'] as String?;
+    if (userId == null || userId.isEmpty) {
+      return _error(400, 'bad_request', 'one_user_id required');
+    }
+    final platforms = (b['platforms'] as List<dynamic>? ?? const [])
+        .map((e) => e.toString())
+        .toList();
+    return Response.ok(
+      await c.querySingleJSON(queries['one_grant_upsert'], {
+        'one_user_id': userId,
+        'space_id': b['space_id'],
+        'platforms': platforms,
+      }),
+      headers: _jsonHeaders,
+    );
+  }
+
+  Future<Response> _oneGrantDelete(Request r, gel.Client c) async {
+    await c.execute(
+      r'''
+      update OneGrant
+      filter .owner = global current_person
+      set { revoked_at := datetime_of_statement() }
+      ''',
+    );
+    return _json({'ok': true});
+  }
+
+  Future<Response> _internalGrant(Request r, gel.Client c) async {
+    final b = (r.context['internal_body'] as Map<String, dynamic>?) ??
+        await _body(r);
+    if (b['revoked'] == true) return _oneGrantDelete(r, c);
+    if (b['lookup'] == true) return _oneGrantGet(r, c);
+    final userId = b['one_user_id'] as String?;
+    if (userId == null || userId.isEmpty) {
+      return _error(400, 'bad_request', 'one_user_id required');
+    }
+    final platforms = (b['platforms'] as List<dynamic>? ?? const [])
+        .map((e) => e.toString())
+        .toList();
+    return Response.ok(
+      await c.querySingleJSON(queries['one_grant_upsert'], {
+        'one_user_id': userId,
+        'space_id': b['space_id'],
+        'platforms': platforms,
+      }),
+      headers: _jsonHeaders,
+    );
+  }
+
+  Future<Response> _oneSync(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final platforms = (b['platforms'] as List<dynamic>? ??
+            const ['gmail', 'google-calendar', 'github'])
+        .map((e) => e.toString())
+        .toList();
+    final me = jsonDecode(
+      await c.querySingleJSON('select global current_person { id }'),
+    );
+    if (me is! Map) return _error(401, 'unauthorized', 'no person');
+    final personId = me['id'] as String;
+    for (final platform in platforms) {
+      await _enqueue(
+        c,
+        'etl',
+        {'person_id': personId, 'platform': platform},
+        options: SendOptions(singletonKey: '$personId:$platform'),
+      );
+    }
+    return _json({'enqueued': platforms});
+  }
+
+  Future<Response> _syncCursorPut(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final platform = b['platform'] as String?;
+    final endpoint = b['endpoint'] as String?;
+    if (platform == null || endpoint == null) {
+      return _error(400, 'bad_request', 'platform and endpoint required');
+    }
+    return Response.ok(
+      await c.querySingleJSON(queries['sync_cursor_upsert'], {
+        'platform': platform,
+        'endpoint': endpoint,
+        'cursor': b['cursor'] == null ? null : jsonEncode(b['cursor']),
+        'last_error': b['last_error'],
+      }),
+      headers: _jsonHeaders,
+    );
+  }
+
+  Future<Response> _weaveCandidates(Request r, gel.Client c) async {
+    final limit = int.tryParse(r.url.queryParameters['limit'] ?? '') ?? 40;
+    return Response.ok(
+      await c.querySingleJSON(queries['weave_candidates'], {
+        'limit': limit.clamp(1, 200),
+      }),
+      headers: _jsonHeaders,
+    );
+  }
+
+  Future<Response> _graphEntity(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final name = b['name'] as String?;
+    final type = b['type'] as String? ?? 'entity';
+    if (name == null || name.trim().isEmpty) {
+      return _error(400, 'bad_request', 'name required');
+    }
+    final json = await c.querySingleJSON(
+      r'''
+      select (
+        insert Entity {
+          owner := assert_exists(global current_person),
+          name := <str>$name,
+          summary := <optional str>$summary,
+          kind := <EntityKind><str>$kind,
+        }
+        unless conflict on ((.owner, .kind, .name))
+        else (
+          update Entity set {
+            summary := (<optional str>$summary) ?? .summary,
+            updated_at := datetime_of_statement(),
+          }
+        )
+      ) { id, name, summary, kind }
+      ''',
+      {
+        'name': name.trim(),
+        'summary': b['summary'],
+        'kind': b['kind'] as String? ?? 'concept',
+      },
+    );
+    if (type != 'entity') {
+      // Typed life objects reuse the concluder upserts via name+type.
+      await c.querySingleJSON(
+        type == 'goal'
+            ? r'''
+              select (
+                insert Goal {
+                  owner := assert_exists(global current_person),
+                  name := <str>$name,
+                  summary := <optional str>$summary,
+                }
+                unless conflict on ((.owner, .name))
+                else (update Goal set {
+                  summary := (<optional str>$summary) ?? .summary,
+                })
+              ) { id, name, summary }
+              '''
+            : type == 'project'
+            ? r'''
+              select (
+                insert Project {
+                  owner := assert_exists(global current_person),
+                  name := <str>$name,
+                  summary := <optional str>$summary,
+                }
+                unless conflict on ((.owner, .name))
+                else (update Project set {
+                  summary := (<optional str>$summary) ?? .summary,
+                })
+              ) { id, name, summary }
+              '''
+            : type == 'habit'
+            ? r'''
+              select (
+                insert Habit {
+                  owner := assert_exists(global current_person),
+                  name := <str>$name,
+                  summary := <optional str>$summary,
+                }
+                unless conflict on ((.owner, .name))
+                else (update Habit set {
+                  summary := (<optional str>$summary) ?? .summary,
+                })
+              ) { id, name, summary }
+              '''
+            : r'select { id := <str>$name }',
+        {'name': name.trim(), 'summary': b['summary']},
+      );
+    }
+    return Response.ok(json, headers: _jsonHeaders);
+  }
+
+  Future<Response> _graphEdge(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final source = b['source_name'] as String? ?? b['source'] as String?;
+    final target = b['target_name'] as String? ?? b['target'] as String?;
+    final kind = b['kind'] as String?;
+    if (source == null || target == null || kind == null) {
+      return _error(400, 'bad_request', 'source, target, kind required');
+    }
+    final sourceId = await _thingId(c, source);
+    final targetId = await _thingId(c, target);
+    if (sourceId == null || targetId == null) {
+      return _error(404, 'not_found', 'source or target thing missing');
+    }
+    final evidence = (b['evidence'] as List<dynamic>? ?? const [])
+        .map((e) => e.toString())
+        .join(',');
+    final status = b['status'] as String? ?? 'proposed';
+    final json = await c.querySingleJSON(
+      r'''
+      select (
+        insert Edge {
+          owner := assert_exists(global current_person),
+          source := assert_single((select Thing filter .id = <uuid>$source)),
+          target := assert_single((select Thing filter .id = <uuid>$target)),
+          kind := <EdgeKind><str>$kind,
+          status := <EdgeStatus><str>$status,
+          evidence := <optional str>$evidence,
+        }
+        unless conflict on ((.owner, .source, .target, .kind))
+        else (
+          update Edge set {
+            evidence := (<optional str>$evidence) ?? .evidence,
+            updated_at := datetime_of_statement(),
+          }
+        )
+      ) {
+        id, kind, status, evidence,
+        source: { id, name },
+        target: { id, name },
+      }
+      ''',
+      {
+        'source': sourceId,
+        'target': targetId,
+        'kind': kind,
+        'status': status,
+        'evidence': evidence.isEmpty ? null : evidence,
+      },
+    );
+    return Response.ok(json, headers: _jsonHeaders);
+  }
+
+  Future<Response> _graphEdgeStatus(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final status = b['status'] as String?;
+    if (status == null) return _error(400, 'bad_request', 'status required');
+    final json = await c.querySingleJSON(queries['edge_set_status'], {
+      'id': r.params['id'],
+      'status': status,
+      'evidence': b['evidence'],
+    });
+    return json == 'null'
+        ? _error(404, 'not_found', 'edge not found')
+        : Response.ok(json, headers: _jsonHeaders);
+  }
+
+  Future<String?> _thingId(gel.Client c, String name) async {
+    final rows = jsonDecode(
+      await c.queryJSON(
+        r'''
+        select Thing { id }
+        filter str_lower(.name) = str_lower(<str>$name)
+        ''',
+        {'name': name},
+      ),
+    ) as List<dynamic>;
+    if (rows.length != 1) return null;
+    return (rows.first as Map<String, dynamic>)['id'] as String;
+  }
+
   // ---- admin ----------------------------------------------------------------
 
   /// Superadmin creates an account. The Person insert is policy-gated, so a
@@ -955,6 +1309,24 @@ class ScoriaApp {
     } on Object {
       return '';
     }
+  }
+
+  Future<void> _enqueueWeave(gel.Client c, String memoryId) async {
+    if (jobs == null) return;
+    final me = jsonDecode(
+      await c.querySingleJSON('select global current_person { id }'),
+    );
+    if (me is! Map) return;
+    await _enqueue(
+      c,
+      'weave',
+      {'memory_id': memoryId, 'person_id': me['id']},
+      subjectId: memoryId,
+      options: SendOptions(
+        singletonKey: me['id'] as String,
+        startAfter: const Duration(seconds: 20),
+      ),
+    );
   }
 
   Future<void> _enqueueConclude(gel.Client c, String memoryId) async {

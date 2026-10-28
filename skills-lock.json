@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "grill-me": {
+      "source": "youdotcom-oss/agent-skills",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/grill-me/SKILL.md",
+      "computedHash": "6ee919ae87c0bc4fe2b40abb2d11a7d3640a54e4dc9fd115ad9957b1fb08d046"
+    },
+    "karpathy-guidelines": {
+      "source": "youdotcom-oss/agent-skills",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/karpathy-guidelines/SKILL.md",
+      "computedHash": "41e8ca055bbde13d240776a14a076a59614057200340c243130a76ba4e64cac8"
+    },
+    "tdd": {
+      "source": "youdotcom-oss/agent-skills",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/tdd/SKILL.md",
+      "computedHash": "47c08d26094f98ecebc33b3c30a50b3bc38c7740a28d28a80372ecf7862e0ac5"
+    },
+    "you-discover": {
+      "source": "youdotcom-oss/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/you-discover/SKILL.md",
+      "computedHash": "d615c7eccfa0611f053c7ae9b78d3d652a27ceaba6df5d5bfe0c2b5cf1ad060a"
+    },
+    "you-finance": {
+      "source": "youdotcom-oss/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/you-finance/SKILL.md",
+      "computedHash": "3ff0b6dbaaea4e7aa34ce76a97fc5a6f8d2190a58c92cccf825e02fcf8c235fa"
+    },
+    "you-research": {
+      "source": "youdotcom-oss/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/you-research/SKILL.md",
+      "computedHash": "9188a11147725ab5a5f7e6484db56d0e6871f718958a61cae7f719fa440455e4"
+    },
+    "you-web": {
+      "source": "youdotcom-oss/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/you-web/SKILL.md",
+      "computedHash": "e04ce511db02754536c10fb8d85d2cb36772d8c6ae030baea291e58ce9ecd08e"
+    }
+  }
+}

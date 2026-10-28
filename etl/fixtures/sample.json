@@ -1,0 +1,35 @@
+{
+  "gmail": {
+    "messages": [
+      {
+        "id": "g-alex-1",
+        "subject": "Scoria graph review with Alex",
+        "from": "Alex Chen <alex@example.com>",
+        "snippet": "Alex will send the GitHub PR for the weaver before Friday standup.",
+        "date": "2026-10-27T16:00:00Z"
+      }
+    ]
+  },
+  "google-calendar": {
+    "items": [
+      {
+        "id": "c-standup-1",
+        "summary": "Friday standup with Alex",
+        "description": "Review the weaver swarm and GitHub activity.",
+        "start": { "dateTime": "2026-10-31T17:00:00Z" },
+        "attendees": [{ "email": "alex@example.com" }]
+      }
+    ]
+  },
+  "github": {
+    "events": [
+      {
+        "id": "gh-1",
+        "type": "PullRequestEvent",
+        "created_at": "2026-10-27T18:10:00Z",
+        "repo": { "name": "scoria/weaver" },
+        "payload": { "action": "opened", "title": "Alex: life graph weaver" }
+      }
+    ]
+  }
+}
