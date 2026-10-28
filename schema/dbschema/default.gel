@@ -1,0 +1,368 @@
+using extension pgvector;
+
+module default {
+  # ---------------------------------------------------------------------------
+  # Caller identity. scoria-api sets `current_person_id` per request on a
+  # non-superuser role. Policies read `current_person` for flags.
+  # ---------------------------------------------------------------------------
+  global current_person_id: uuid;
+  global current_person := (
+    select Person filter .id = global current_person_id
+  );
+
+  # Set only by the scoria-api process for credential lookups. Never by a
+  # caller. Replaced by Napalm LocalAuth (`POST /db/{id}/signin`) once the
+  # Napalm server is the runtime.
+  global service_mode: bool;
+
+  # ---------------------------------------------------------------------------
+  # Enums. Tier is ORDERED: "at least friend" is `.tier >= Tier.friend`.
+  # Order and membership are placeholders until the tier list settles.
+  # ---------------------------------------------------------------------------
+  scalar type Tier extending enum<
+    stranger,
+    acquaintance,
+    coworker,
+    peer,
+    work_friend,
+    friend,
+    close_friend,
+    family,
+    household,
+    best_friend
+  >;
+
+  scalar type GrantMode extending enum<auto, review, block>;
+
+  # Disclosure ladder, coarsest first. Applied in scoria-api, stored here.
+  scalar type Disclosure extending enum<
+    none, boolean, count, summary, redacted, full
+  >;
+
+  scalar type AskStatus extending enum<
+    pending, approved, denied, answered, expired, revoked
+  >;
+
+  scalar type JobState extending enum<
+    created, retry, active, completed, cancelled, failed
+  >;
+
+  scalar type Embedding extending ext::pgvector::vector<768>;
+
+  # ---------------------------------------------------------------------------
+  # People and accounts
+  # ---------------------------------------------------------------------------
+  type Person {
+    required handle: str {
+      constraint exclusive;
+      constraint min_len_value(2);
+    };
+    display_name: str;
+    email: str { constraint exclusive };
+    required is_superadmin: bool { default := false };
+    disabled_at: datetime;
+    required created_at: datetime { default := datetime_of_statement() };
+
+    # The directory is visible to every signed-in person.
+    access policy people_directory
+      allow select
+      using (exists global current_person_id);
+
+    # scoria-api resolves handle -> person during sign-in, before anyone
+    # is signed in. Only the service role gets this; it reads, never writes.
+    access policy service_reads
+      allow select
+      using (global service_mode ?? false);
+
+    access policy self_edits
+      allow update
+      using (global current_person_id ?= .id);
+
+    access policy superadmin_manages
+      allow insert, update, delete
+      using (global current_person.is_superadmin ?? false);
+  }
+
+  # Password credential for local sign-in. Invisible to every caller;
+  # only the server in service_mode can read or write it.
+  type LocalCredential {
+    required person: Person { constraint exclusive };
+    required password_hash: str;
+    required algorithm: str { default := 'pbkdf2-sha256' };
+    required created_at: datetime { default := datetime_of_statement() };
+    rotated_at: datetime;
+
+    access policy service_only
+      allow all
+      using (global service_mode ?? false);
+  }
+
+  type Relationship {
+    required owner: Person;
+    required other: Person;
+    required tier: Tier;
+    required created_at: datetime { default := datetime_of_statement() };
+
+    constraint exclusive on ((.owner, .other));
+
+    access policy owner_all
+      allow all
+      using (global current_person_id ?= .owner.id);
+
+    # The other party may see how they are classified.
+    access policy other_reads
+      allow select
+      using (global current_person_id ?= .other.id);
+  }
+
+  # Tier -> data classes unlocked by default. Rows, not policy text.
+  type TierAccess {
+    required tier: Tier;
+    required data_class: str;
+
+    constraint exclusive on ((.tier, .data_class));
+
+    access policy anyone_reads
+      allow select
+      using (exists global current_person_id);
+
+    access policy superadmin_writes
+      allow insert, update, delete
+      using (global current_person.is_superadmin ?? false);
+  }
+
+  # Standing consent: owner x grantee x data class x mode.
+  # Grants supersede; they are never updated in place.
+  type ConsentGrant {
+    required owner: Person;
+    required grantee: Person;
+    required data_class: str;
+    required mode: GrantMode;
+    max_disclosure: Disclosure;
+    expires_at: datetime;
+    revoked_at: datetime;
+    revocation_reason: str;
+    supersedes: ConsentGrant;
+    required created_at: datetime { default := datetime_of_statement() };
+
+    index on ((.owner, .grantee, .data_class));
+
+    access policy owner_all
+      allow all
+      using (global current_person_id ?= .owner.id);
+
+    access policy grantee_reads
+      allow select
+      using (global current_person_id ?= .grantee.id);
+
+    access policy superadmin_revokes
+      allow update
+      using (global current_person.is_superadmin ?? false);
+  }
+
+  # ---------------------------------------------------------------------------
+  # Owned data. Every grantable thing extends this. The row gate lives here.
+  # ---------------------------------------------------------------------------
+  abstract type Owned {
+    required owner: Person;
+    required data_class: str;
+    required sensitive: bool { default := false };
+    required created_at: datetime { default := datetime_of_statement() };
+    updated_at: datetime;
+
+    index on ((.owner, .data_class));
+
+    access policy owner_all
+      allow all
+      using (global current_person_id ?= .owner.id);
+
+    # Relationship tier unlocks the class by default, unless sensitive.
+    access policy tier_default_reads
+      allow select
+      using (
+        not .sensitive
+        and exists (
+          select TierAccess
+          filter .data_class = __subject__.data_class
+            and .tier <= (
+              select Relationship
+              filter .owner = __subject__.owner
+                and .other.id = global current_person_id
+            ).tier
+        )
+      );
+
+    # An active auto grant unlocks the class, sensitive or not.
+    access policy auto_grant_reads
+      allow select
+      using (
+        exists (
+          select ConsentGrant
+          filter .owner = __subject__.owner
+            and .grantee.id = global current_person_id
+            and .data_class = __subject__.data_class
+            and .mode = GrantMode.auto
+            and not exists .revoked_at
+            and ((.expires_at > datetime_of_statement()) ?? true)
+        )
+      );
+
+    # A block always wins. '*' blocks every class.
+    access policy blocks
+      deny select
+      using (
+        exists (
+          select ConsentGrant
+          filter .owner = __subject__.owner
+            and .grantee.id = global current_person_id
+            and .mode = GrantMode.block
+            and not exists .revoked_at
+            and (.data_class = __subject__.data_class or .data_class = '*')
+        )
+      );
+  }
+
+  # ---------------------------------------------------------------------------
+  # Places are geocoder output: shared reference data, not owned.
+  # Coordinates are plain floats for now; ext::postgis is a later migration.
+  # ---------------------------------------------------------------------------
+  type Place {
+    required name: str;
+    city: str;
+    region: str;
+    country: str;
+    required lat: float64;
+    required lng: float64;
+    provider: str;
+    provider_id: str;
+    required created_at: datetime { default := datetime_of_statement() };
+
+    constraint exclusive on ((.provider, .provider_id));
+    index on ((.city, .country));
+
+    access policy signed_in_reads
+      allow select
+      using (exists global current_person_id);
+
+    access policy signed_in_writes
+      allow insert, update
+      using (exists global current_person_id);
+  }
+
+  # Raw location trail. Class `location`, sensitive. Flutter writes these.
+  type Position extending Owned {
+    overloaded required data_class: str { default := 'location' };
+    overloaded required sensitive: bool { default := true };
+
+    required at: datetime;
+    required lat: float64;
+    required lng: float64;
+    accuracy_m: float32;
+    speed_mps: float32;
+    source: str;
+    device_id: str;
+    place: Place;
+
+    index on ((.owner, .at));
+  }
+
+  # Derived: one row per person x day x place. Class `presence`.
+  # "Which days were we in the same city" joins on this, never on Position.
+  type Presence extending Owned {
+    overloaded required data_class: str { default := 'presence' };
+
+    required day: cal::local_date;
+    required place: Place;
+    required first_seen: datetime;
+    required last_seen: datetime;
+    required sample_count: int32 { default := 1 };
+
+    constraint exclusive on ((.owner, .day, .place));
+    index on ((.owner, .day));
+  }
+
+  # Derived: two people co-located. Class `encounter`.
+  type Encounter extending Owned {
+    overloaded required data_class: str { default := 'encounter' };
+
+    required with_person: Person;
+    required day: cal::local_date;
+    required place: Place;
+    required first_seen: datetime;
+    required last_seen: datetime;
+
+    constraint exclusive on ((.owner, .with_person, .day, .place));
+  }
+
+  # A memory. Idempotent on (owner, source, source_id).
+  type MemoryItem extending Owned {
+    overloaded required data_class: str { default := 'memory' };
+
+    required kind: str;
+    title: str;
+    body: str;
+    required occurred_at: datetime;
+    required source: str;
+    required source_id: str;
+    place: Place;
+    embedding: Embedding;
+    embedded_at: datetime;
+    embedding_model: str;
+
+    constraint exclusive on ((.owner, .source, .source_id));
+    index on ((.owner, .occurred_at));
+    index ext::pgvector::hnsw_cosine(m := 16, ef_construction := 128)
+      on (.embedding);
+  }
+
+  # Mirror of a PGBoss job for the jobs page. Worker writes it. Class `job`.
+  type JobRecord extending Owned {
+    overloaded required data_class: str { default := 'job' };
+
+    required name: str;
+    required state: JobState;
+    pgboss_id: uuid;
+    subject: Owned;
+    attempt: int16 { default := 0 };
+    started_at: datetime;
+    completed_at: datetime;
+    error: str;
+
+    index on ((.owner, .state));
+  }
+
+  # ---------------------------------------------------------------------------
+  # Asks. Not Owned: an ask has two parties and no tier default applies.
+  # disclosure_ceiling is stamped at consent and never re-derived.
+  # ---------------------------------------------------------------------------
+  type Ask {
+    required asker: Person;
+    required responder: Person;
+    required question: str;
+    required query_type: str;
+    required data_class: str;
+    required status: AskStatus { default := AskStatus.pending };
+    disclosure_ceiling: Disclosure;
+    consent_basis: ConsentGrant;
+    answer: json;
+    backing_count: int32;
+    required created_at: datetime { default := datetime_of_statement() };
+    decided_at: datetime;
+    expires_at: datetime;
+
+    index on ((.responder, .status));
+    index on ((.asker, .status));
+
+    access policy responder_all
+      allow all
+      using (global current_person_id ?= .responder.id);
+
+    access policy asker_creates
+      allow insert
+      using (global current_person_id ?= .asker.id);
+
+    access policy asker_reads
+      allow select
+      using (global current_person_id ?= .asker.id);
+  }
+}

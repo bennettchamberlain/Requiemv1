@@ -1,0 +1,7 @@
+{
+    "@@locale": "es",
+    "memoryAppBarTitle": "Memoria",
+    "@memoryAppBarTitle": {
+        "description": "Title of the memory page"
+    }
+}

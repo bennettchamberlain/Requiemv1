@@ -1,0 +1,13 @@
+name: scoria_models
+description: Shared Scoria domain models (Person, MemoryItem, JobRecord, Presence)
+version: 0.1.0+1
+publish_to: none
+
+resolution: workspace
+environment:
+  sdk: ^3.13.0
+
+dev_dependencies:
+  mocktail: ^1.0.5
+  test: ^1.26.3
+  very_good_analysis: ^11.0.0

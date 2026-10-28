@@ -1,0 +1,28 @@
+name: scoria_api
+description: "scoria-api: Dart server over Napalm (sign-in, ingest, memory, jobs)"
+version: 0.1.0+1
+publish_to: none
+
+resolution: workspace
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  crypto: ^3.0.6
+  gel: ^0.6.0
+  http: ^1.2.0
+  postgres: ^3.5.0
+  scoria_jobs:
+    path: ../../packages/scoria_jobs
+  scoria_models:
+    path: ../../packages/scoria_models
+  shelf: ^1.4.2
+  shelf_router: ^1.1.4
+
+dev_dependencies:
+  mocktail: ^1.0.5
+  test: ^1.26.3
+  very_good_analysis: ^11.0.0
+
+executables:
+  scoria_api: main

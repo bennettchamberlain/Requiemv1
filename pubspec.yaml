@@ -1,0 +1,11 @@
+# Pub workspace root for the Dart packages and server. The Flutter app
+# resolves separately: flutter_test needs analyzer >=8, gel 0.6 needs <8.
+name: scoria_workspace
+publish_to: none
+environment:
+  sdk: ^3.13.0
+workspace:
+  - packages/scoria_models
+  - packages/scoria_api_client
+  - packages/scoria_jobs
+  - server/scoria_api
