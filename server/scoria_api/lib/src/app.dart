@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:gel/gel.dart' as gel;
+import 'package:http/http.dart' as http;
 import 'package:scoria_api/src/agent.dart';
 import 'package:scoria_api/src/auth/api_key.dart';
 import 'package:scoria_api/src/auth/password.dart';
@@ -121,6 +122,10 @@ class ScoriaApp {
     ..post('/graph/entities', _authed(_graphEntity))
     ..post('/graph/edges', _authed(_graphEdge))
     ..patch('/graph/edges/<id>', _authed(_graphEdgeStatus))
+    ..get('/one/authorize', _oneProxy)
+    ..post('/one/authorize', _oneProxy)
+    ..get('/one/callback', _oneProxy)
+    ..post('/one/callback', _oneProxy)
     ..get('/one/grant', _authed(_oneGrantGet))
     ..put('/one/grant', _authed(_oneGrantPut))
     ..delete('/one/grant', _authed(_oneGrantDelete))
@@ -803,16 +808,18 @@ class ScoriaApp {
           'label': 'One Connect',
           'kind': 'oauth',
           'connected': oneLive,
+          'ready': await _connectReady(),
           'platforms': oneLive
-              ? grant['platforms']
-              : const ['gmail', 'google-calendar', 'github'],
+              ? grant!['platforms']
+              : const <String>[],
           'connected_at': oneLive ? grant['connected_at'] : null,
           'authorize_url': personId == null
               ? null
-              : '${config.connectPublicUrl.replaceAll(RegExp(r'/$'), '')}'
-                    '/api/one/authorize?person=$personId',
-          'description':
-              'Gmail, Google Calendar, and GitHub. One holds the tokens.',
+              : '/one/authorize?person=$personId',
+          'description': oneLive
+              ? 'Gmail, Calendar, and GitHub are linked. Sync pulls new mail and events.'
+              : 'Gmail, Calendar, and GitHub. One holds the tokens. '
+                    'Connect opens on this same Requiem server, not :8788.',
         },
         {
           'id': 'parasail',
@@ -1189,6 +1196,66 @@ class ScoriaApp {
   }
 
   // ---- One Connect + weave graph -------------------------------------------
+
+  Future<bool> _connectReady() async {
+    try {
+      final r = await http
+          .get(Uri.parse('${config.connectSidecarUrl}/health'))
+          .timeout(const Duration(seconds: 2));
+      if (r.statusCode != 200) return false;
+      final body = jsonDecode(r.body);
+      return body is Map && body['connect'] == true;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Browser hits the same host as the Flutter API (usually forwarded 8090).
+  /// We pass the OAuth dance through to the Connect sidecar on loopback.
+  Future<Response> _oneProxy(Request r) async {
+    final action = r.url.pathSegments.isEmpty
+        ? 'authorize'
+        : r.url.pathSegments.last;
+    final target = Uri.parse(
+      '${config.connectSidecarUrl}/api/one/$action',
+    ).replace(query: r.requestedUri.query);
+    try {
+      final req = http.Request(r.method, target)
+        ..headers.addAll({
+          'accept': r.headers['accept'] ?? '*/*',
+          if (r.headers['content-type'] != null)
+            'content-type': r.headers['content-type']!,
+          if (r.headers['cookie'] != null) 'cookie': r.headers['cookie']!,
+        })
+        ..bodyBytes = await r.read().fold<List<int>>(
+          <int>[],
+          (a, b) => a..addAll(b),
+        );
+      final res = await req.send().timeout(const Duration(seconds: 30));
+      final bytes = await res.stream.toBytes();
+      return Response(
+        res.statusCode,
+        body: bytes,
+        headers: {
+          if (res.headers['content-type'] != null)
+            'content-type': res.headers['content-type']!,
+          if (res.headers['location'] != null)
+            'location': res.headers['location']!,
+        },
+      );
+    } on Object catch (e) {
+      return Response(
+        503,
+        body:
+            '<!doctype html><meta charset="utf-8"><title>One Connect</title>'
+            '<body style="font:16px/1.4 system-ui;max-width:36rem;margin:3rem auto">'
+            '<h1>One Connect is not reachable</h1>'
+            '<p>Requiem could not reach the Connect sidecar. '
+            'This is not a 8788 link — stay on this host. $e</p></body>',
+        headers: const {'content-type': 'text/html; charset=utf-8'},
+      );
+    }
+  }
 
   Future<Response> _oneGrantGet(Request r, gel.Client c) =>
       _one(c, 'one_grant_get');

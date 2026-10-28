@@ -21,6 +21,7 @@ class Config {
     this.ollamaChatModel = 'llama3.2',
     this.youApiKey,
     this.connectPublicUrl = 'http://127.0.0.1:8788',
+    this.connectSidecarUrl = 'http://127.0.0.1:8788',
     this.googleMapsApiKey,
     this.geocodeUserAgent = 'scoria-api (local)',
     this.parasailApiKey,
@@ -62,6 +63,8 @@ class Config {
       youApiKey: _blankToNull(e['YDC_API_KEY'] ?? e['YOU_WEB_SEARCH_TOKEN']),
       connectPublicUrl:
           e['CONNECT_PUBLIC_URL'] ??
+          'http://127.0.0.1:${e['CONNECT_PORT'] ?? '8788'}',
+      connectSidecarUrl:
           'http://127.0.0.1:${e['CONNECT_PORT'] ?? '8788'}',
       googleMapsApiKey: _blankToNull(
         e['GOOGLE_MAPS_API_KEY'] ?? e['GEOCODING_API_KEY'],
@@ -117,8 +120,10 @@ class Config {
   /// You.com search key for the `web_search` chat tool.
   final String? youApiKey;
 
-  /// One Connect sidecar the Flutter app can open (authorize + status).
+  /// Advertised Connect URL. Prefer the API proxy (`/one/authorize`) so
+  /// a forwarded 8090 is enough; this is the loopback sidecar.
   final String connectPublicUrl;
+  final String connectSidecarUrl;
 
   /// Google Geocoding key. Null means Nominatim (OpenStreetMap), which needs
   /// no key but is rate-limited to one request per second.

@@ -45,6 +45,7 @@ const userStore = {
 };
 
 let connect;
+let handlers;
 try {
   const mod = await import("@withone/connect/server");
   const handlersMod = await import("@withone/connect/node");
@@ -57,7 +58,7 @@ try {
       connectKey: process.env.ONE_CONNECT_KEY,
       userStore,
     });
-    var handlers = handlersMod.createOneConnectHandlers(connect, {
+    handlers = handlersMod.createOneConnectHandlers(connect, {
       identifyUser: async (req) => {
         const url = new URL(req.url, "http://local");
         return url.searchParams.get("person") || req.headers["x-scoria-person"] || null;
@@ -75,14 +76,24 @@ const server = createServer(async (req, res) => {
     res.end(html);
     return;
   }
-  if (url.pathname.startsWith("/api/one/") && handlers) {
-    const action = url.pathname.split("/").pop();
-    req.url = url.pathname + url.search;
-    if (typeof handlers === "function") {
-      return handlers(req, res);
+  if (url.pathname.startsWith("/api/one/")) {
+    if (handlers) {
+      const action = url.pathname.split("/").pop();
+      req.url = url.pathname + url.search;
+      if (typeof handlers === "function") {
+        return handlers(req, res);
+      }
+      const fn = handlers[action] || handlers.GET || handlers.handle;
+      if (fn) return fn(req, res);
     }
-    const fn = handlers[action] || handlers.GET || handlers.handle;
-    if (fn) return fn(req, res);
+    res.writeHead(503, { "content-type": "text/html; charset=utf-8" });
+    res.end(`<!doctype html><meta charset="utf-8"><title>One Connect</title>
+<body style="font:16px/1.4 system-ui;max-width:36rem;margin:3rem auto">
+<h1>One is not configured</h1>
+<p>This Requiem has no <code>ONE_CLIENT_ID</code> / <code>ONE_CONNECT_KEY</code> yet, so there is nothing to authorize.</p>
+<p>Create an app at <a href="https://app.withone.ai/developers/connect">app.withone.ai/developers/connect</a>, put the keys in <code>.env</code>, restart Connect, then come back from the Tools tab.</p>
+</body>`);
+    return;
   }
   if (url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
@@ -93,6 +104,6 @@ const server = createServer(async (req, res) => {
   res.end("not found");
 });
 
-server.listen(PORT, "127.0.0.1", () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`one-connect on :${PORT} (sdk=${Boolean(connect)})`);
 });

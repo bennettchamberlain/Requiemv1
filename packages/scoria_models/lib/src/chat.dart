@@ -202,6 +202,7 @@ class ChatConnection {
     this.platforms = const [],
     this.model,
     this.hasSecret = false,
+    this.ready = false,
     this.connectedAt,
   });
 
@@ -217,6 +218,7 @@ class ChatConnection {
         .toList(),
     model: json['model'] as String?,
     hasSecret: json['has_secret'] as bool? ?? false,
+    ready: json['ready'] as bool? ?? false,
     connectedAt: json['connected_at'] == null
         ? null
         : DateTime.tryParse(json['connected_at'] as String),
@@ -231,6 +233,7 @@ class ChatConnection {
   final List<String> platforms;
   final String? model;
   final bool hasSecret;
+  final bool ready;
   final DateTime? connectedAt;
 }
 

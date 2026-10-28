@@ -71,6 +71,14 @@ class _ToolsPageState extends State<ToolsPage> {
     }
   }
 
+  String? _absolute(String? path) {
+    if (path == null || path.isEmpty) return null;
+    if (path.startsWith('http')) return path;
+    return _api.baseUrl
+        .resolve(path.startsWith('/') ? path.substring(1) : path)
+        .toString();
+  }
+
   Future<void> _setYouKey() async {
     final key = await showShadDialog<String>(
       context: context,
@@ -166,6 +174,7 @@ class _ToolsPageState extends State<ToolsPage> {
                             padding: const EdgeInsets.only(bottom: 8),
                             child: _ConnectionCard(
                               connection: c,
+                              authorizeUrl: _absolute(c.authorizeUrl),
                               busy: _busy,
                               onYouKey: _setYouKey,
                               onClearYou: () => _apply(
@@ -241,9 +250,11 @@ class _ConnectionCard extends StatelessWidget {
     required this.onClearYou,
     required this.onSyncOne,
     required this.onDisconnectOne,
+    this.authorizeUrl,
   });
 
   final ChatConnection connection;
+  final String? authorizeUrl;
   final bool busy;
   final VoidCallback onYouKey;
   final VoidCallback onClearYou;
@@ -264,7 +275,9 @@ class _ConnectionCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(child: Text(c.label, style: theme.textTheme.small)),
               Text(
-                c.connected ? 'connected' : 'off',
+                c.id == 'one' && !c.connected && !c.ready
+                    ? 'not configured'
+                    : (c.connected ? 'connected' : 'off'),
                 style: theme.textTheme.muted.copyWith(
                   color: c.connected
                       ? theme.colorScheme.foreground
@@ -292,9 +305,15 @@ class _ConnectionCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(c.model!, style: theme.textTheme.muted),
           ],
-          if (c.authorizeUrl != null) ...[
+          if (c.id == 'one' && !c.connected && !c.ready) ...[
             const SizedBox(height: 8),
-            SelectableText(c.authorizeUrl!, style: theme.textTheme.muted),
+            Text(
+              'One is not configured on this server yet. Add ONE_CLIENT_ID '
+              'and ONE_CONNECT_KEY, restart Connect, then a Connect button '
+              'will show here. Do not open :8788 from your laptop — Requiem '
+              'proxies Connect through the same host as the API.',
+              style: theme.textTheme.muted,
+            ),
           ],
           const SizedBox(height: 10),
           Wrap(
@@ -312,38 +331,37 @@ class _ConnectionCard extends StatelessWidget {
                     child: const Text('Use server key'),
                   ),
               ],
-              if (c.id == 'one') ...[
-                if (c.authorizeUrl != null)
-                  ShadButton.outline(
-                    onPressed: busy
-                        ? null
-                        : () async {
-                            await Clipboard.setData(
-                              ClipboardData(text: c.authorizeUrl!),
-                            );
-                            if (context.mounted) {
-                              ShadToaster.of(context).show(
-                                const ShadToast(
-                                  title: Text('Copied Connect link'),
-                                  description: Text(
-                                    'Open it after One keys are in .env.',
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                    child: const Text('Copy Connect link'),
-                  ),
+              if (c.id == 'one' && c.connected) ...[
                 ShadButton.outline(
                   onPressed: busy ? null : onSyncOne,
                   child: const Text('Sync now'),
                 ),
-                if (c.connected)
-                  ShadButton.ghost(
-                    onPressed: busy ? null : onDisconnectOne,
-                    child: const Text('Disconnect'),
-                  ),
+                ShadButton.ghost(
+                  onPressed: busy ? null : onDisconnectOne,
+                  child: const Text('Disconnect'),
+                ),
               ],
+              if (c.id == 'one' && !c.connected && c.ready && authorizeUrl != null)
+                ShadButton.outline(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          await Clipboard.setData(
+                            ClipboardData(text: authorizeUrl!),
+                          );
+                          if (context.mounted) {
+                            ShadToaster.of(context).show(
+                              const ShadToast(
+                                title: Text('Copied Connect link'),
+                                description: Text(
+                                  'Open it on this same host as the API.',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                  child: const Text('Connect accounts'),
+                ),
             ],
           ),
         ],
