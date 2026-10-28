@@ -568,6 +568,80 @@ List<String> spokenLinesOf(String content) {
   return fallback.isEmpty ? const [] : [fallback];
 }
 
+/// Types and titles of the GenUI the last assistant turn drew.
+/// The next send carries this so speech can refer to the screen.
+String screenNoteOf(String content) {
+  final lines = <String>[];
+  void walk(ChatPart part) {
+    if (lines.length >= 16) return;
+    switch (part) {
+      case ChatMemory(:final title, :final kind):
+        lines.add('memory: $title ($kind)');
+      case ChatPlace(:final name):
+        lines.add('place: $name');
+      case ChatPerson(:final name, :final relation):
+        lines.add(
+          relation.isEmpty ? 'person: $name' : 'person: $name ($relation)',
+        );
+      case ChatQuote(:final text):
+        final clip = text.length > 80 ? text.substring(0, 77) : text;
+        lines.add('quote: $clip');
+      case ChatMetric(:final label, :final value):
+        lines.add('metric: $label $value');
+      case ChatLink(:final title):
+        lines.add('link: $title');
+      case ChatWebSearch(:final query):
+        lines.add('webSearch: $query');
+      case ChatCard(:final title, :final children):
+        lines.add('card: $title');
+        for (final child in children) {
+          walk(child);
+        }
+      case ChatChecklist(:final title, :final items):
+        lines.add('checklist: $title');
+        for (final item in items.take(6)) {
+          lines.add('check: ${item.text}');
+        }
+      case ChatTimeline(:final title, :final children):
+        if (title.isNotEmpty) lines.add('timeline: $title');
+        for (final child in children) {
+          walk(child);
+        }
+      case ChatGraph(:final nodes, :final edges):
+        for (final node in nodes.take(6)) {
+          final kind = node.kind.isEmpty ? 'thing' : node.kind;
+          lines.add('$kind: ${node.name}');
+        }
+        for (final edge in edges.take(6)) {
+          final status = edge.status.isEmpty ? 'proposed' : edge.status;
+          lines.add('edge: ${edge.source} ${edge.kind} ${edge.target} ($status)');
+        }
+      case ChatColumn(:final children) ||
+          ChatRow(:final children) ||
+          ChatList(:final children):
+        for (final child in children) {
+          walk(child);
+        }
+      default:
+        break;
+    }
+  }
+
+  for (final segment in parseChatSegments(content)) {
+    if (segment case ChatBlock(:final part)) walk(part);
+    if (lines.length >= 16) break;
+  }
+  return lines.take(16).join('\n');
+}
+
+/// Screen note from the newest assistant message in the open chat.
+String screenNoteOfMessages(List<ChatMessage> messages) {
+  for (var i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role == 'assistant') return screenNoteOf(messages[i].content);
+  }
+  return '';
+}
+
 String _spokenFallback(String text) {
   final plain = text
       .replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1')

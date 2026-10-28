@@ -116,6 +116,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         open.id,
         text,
         provider: provider?.call(),
+        screen: screenNoteOfMessages(state.messages),
       )) {
         switch (ev) {
           case ChatUserStored(:final message):

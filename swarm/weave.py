@@ -29,19 +29,16 @@ def main() -> int:
     job = json.load(sys.stdin)
     data = job.get("data") or {}
     base = os.environ.get("SCORIA_API_URL", "http://127.0.0.1:8080").rstrip("/")
-    token = os.environ.get("SCORIA_API_TOKEN", "")
+    token = str(data.get("token") or os.environ.get("SCORIA_API_TOKEN") or "").strip()
     headers = {"authorization": f"Bearer {token}"} if token else {}
 
     with httpx.Client(timeout=45) as http:
-        cand = http.get(f"{base}/graph/candidates", params={"limit": 40}, headers=headers)
-        cand.raise_for_status()
-        snapshot = cand.json()
-        memories = snapshot.get("memories") or []
+        memories, things = _corpus(http, base, headers)
         if not memories:
             print(json.dumps({"skipped": True, "reason": "no memories"}))
             return 0
-        conclusion = _conclude(memories, snapshot.get("things") or [])
-        wrote = {"things": 0, "edges": 0, "grounded": 0}
+        conclusion = _weave_corpus(memories, things)
+        wrote = {"things": 0, "edges": 0, "verified": 0, "pages": _pages(len(memories)), "grounded": 0}
         allowed = _names(memories)
         for thing in conclusion.get("things") or []:
             name = str(thing.get("name") or "")
@@ -65,12 +62,14 @@ def main() -> int:
                     "target": dst,
                     "kind": edge.get("kind") or "related",
                     "evidence": edge.get("evidence") or [data.get("memory_id")],
-                    "status": "proposed",
+                    "status": edge.get("status") or "proposed",
                 },
                 headers=headers,
             )
             if r.is_success:
                 wrote["edges"] += 1
+                if edge.get("status") == "verified":
+                    wrote["verified"] += 1
         public = [
             t
             for t in (conclusion.get("things") or [])
@@ -81,12 +80,90 @@ def main() -> int:
             try:
                 from swarm.crew import run_crew
 
-                extra = run_crew(snapshot)
+                extra = run_crew({"memories": memories[:12], "things": things[:40]})
                 wrote["crew"] = extra
             except Exception as exc:  # noqa: BLE001
                 wrote["crew_error"] = str(exc)
     print(json.dumps(wrote))
     return 0
+
+
+PAGE = 40
+CAP = 400
+
+
+def _pages(count: int) -> int:
+    return (count + PAGE - 1) // PAGE if count else 0
+
+
+def _corpus(http: httpx.Client, base: str, headers: dict) -> tuple[list, list]:
+    """Walk the caller's memories, not only the newest page."""
+    memories: list = []
+    things: list = []
+    offset = 0
+    while offset < CAP:
+        cand = http.get(
+            f"{base}/graph/candidates",
+            params={"limit": PAGE, "offset": offset},
+            headers=headers,
+        )
+        cand.raise_for_status()
+        snapshot = cand.json()
+        page = snapshot.get("memories") or []
+        if offset == 0:
+            things = snapshot.get("things") or []
+        if not page:
+            break
+        memories.extend(page)
+        if len(page) < PAGE:
+            break
+        offset += PAGE
+    return memories, things
+
+
+def _weave_corpus(memories: list, things: list) -> dict:
+    merged_things: list = []
+    merged_edges: list = []
+    seen: set[str] = set()
+    for start in range(0, len(memories), 20):
+        batch = memories[start : start + 20]
+        conclusion = _conclude(batch, things)
+        for thing in conclusion.get("things") or []:
+            name = str(thing.get("name") or "").strip().lower()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            merged_things.append(thing)
+        merged_edges.extend(conclusion.get("edges") or [])
+    return {"things": merged_things, "edges": promote_edges(merged_edges)}
+
+
+def promote_edges(edges: list) -> list:
+    """An edge becomes verified when two different memories agree."""
+    grouped: dict[tuple[str, str, str], dict] = {}
+    for edge in edges:
+        source = str(edge.get("source") or "").strip()
+        target = str(edge.get("target") or "").strip()
+        kind = str(edge.get("kind") or "related")
+        if not source or not target:
+            continue
+        key = (source.lower(), target.lower(), kind)
+        slot = grouped.setdefault(key, {"edge": edge, "evidence": []})
+        raw = edge.get("evidence") or []
+        if isinstance(raw, str):
+            raw = [part.strip() for part in raw.split(",") if part.strip()]
+        for item in raw:
+            text = str(item).strip()
+            if text and text not in slot["evidence"]:
+                slot["evidence"].append(text)
+    promoted = []
+    for slot in grouped.values():
+        edge = dict(slot["edge"])
+        evidence = slot["evidence"]
+        edge["evidence"] = evidence
+        edge["status"] = "verified" if len(evidence) >= 2 else "proposed"
+        promoted.append(edge)
+    return promoted
 
 
 def _conclude(memories: list, things: list) -> dict:

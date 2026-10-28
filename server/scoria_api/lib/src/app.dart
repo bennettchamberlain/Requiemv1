@@ -972,7 +972,10 @@ class ScoriaApp {
     // What the harness sees. OpenClaw keeps its own transcript per `user`,
     // so it gets the system frame and the new turn only.
     final frame = <Map<String, dynamic>>[
-      {'role': 'system', 'content': _systemFrame(person)},
+      {
+        'role': 'system',
+        'content': _systemFrame(person, screen: b['screen'] as String?),
+      },
     ];
     if (harness.keepsOwnHistory) {
       frame.add({'role': 'user', 'content': content});
@@ -1076,9 +1079,14 @@ class ScoriaApp {
     return jsonDecode(json) as Map<String, dynamic>;
   }
 
-  String _systemFrame(Map<String, dynamic> person) {
+  String _systemFrame(Map<String, dynamic> person, {String? screen}) {
     final name = person['display_name'] ?? person['handle'];
     final now = DateTime.now();
+    final shown = (screen ?? '').trim();
+    final onScreen = shown.isEmpty
+        ? ''
+        : ' On screen right now, only these parts are visible. Speech may '
+              'refer to these titles and must not invent others:\n$shown\n';
     return 'You are Requiem, $name\'s personal assistant. The day is twenty-four '
         'hours; spend them. The signed-in user is "$name" (handle ${person['handle']}). '
         'Current local time: ${now.toIso8601String()} (${now.timeZoneName}). '
@@ -1091,6 +1099,11 @@ class ScoriaApp {
         'search memory and life_graph before answering. Verified graph edges '
         'are facts; proposed edges are not. For the public world, use '
         'web_search (You.com). Be accurate; say when you do not know. '
+        'Match the tone to the ask. Recall: specific, name the memory. '
+        'People: say verified or proposed to match the edge. '
+        'World: search, then show links. A plan: a short checklist. '
+        'Small talk: one or two sentences, no tools and no cards. '
+        '$onScreen'
         'Keep prose short. After tools, emit a visual surface when it helps, '
         'using one or more fenced blocks:\n'
         '```scoria\n'
@@ -1425,20 +1438,30 @@ class ScoriaApp {
     String personId,
     List<String> platforms,
   ) async {
+    final token = _jobToken(personId);
     for (final platform in platforms) {
       await _enqueue(
         c,
         'etl',
-        {'person_id': personId, 'platform': platform},
+        {'person_id': personId, 'platform': platform, 'token': token},
         options: SendOptions(singletonKey: '$personId:$platform'),
       );
     }
   }
 
+  /// Short-lived bearer so a background job writes as this person.
+  /// Napalm policies still apply. The jobs page stores no token.
+  String _jobToken(String personId) => _tokens.issue(
+    personId,
+    DateTime.now().toUtc().add(const Duration(hours: 6)),
+  );
+
   Future<Response> _oneGrantGet(Request r, gel.Client c) =>
       _one(c, 'one_grant_get');
 
   Future<Response> _oneGrantPut(Request r, gel.Client c) async {
+    final personId = await _personId(c);
+    if (personId == null) return _error(401, 'unauthorized', 'no person');
     final b = await _body(r);
     final userId = b['one_user_id'] as String?;
     if (userId == null || userId.isEmpty) {
@@ -1447,14 +1470,17 @@ class ScoriaApp {
     final platforms = (b['platforms'] as List<dynamic>? ?? const [])
         .map((e) => e.toString())
         .toList();
-    return Response.ok(
-      await c.querySingleJSON(queries['one_grant_upsert'], {
-        'one_user_id': userId,
-        'space_id': b['space_id'],
-        'platforms': platforms,
-      }),
-      headers: _jsonHeaders,
+    final json = await c.querySingleJSON(queries['one_grant_upsert'], {
+      'one_user_id': userId,
+      'space_id': b['space_id'],
+      'platforms': platforms,
+    });
+    await _enqueueEtl(
+      c,
+      personId,
+      platforms.isEmpty ? _lifePlatforms : platforms,
     );
+    return Response.ok(json, headers: _jsonHeaders);
   }
 
   Future<Response> _oneGrantDelete(Request r, gel.Client c) async {
@@ -1480,14 +1506,20 @@ class ScoriaApp {
     final platforms = (b['platforms'] as List<dynamic>? ?? const [])
         .map((e) => e.toString())
         .toList();
-    return Response.ok(
-      await c.querySingleJSON(queries['one_grant_upsert'], {
-        'one_user_id': userId,
-        'space_id': b['space_id'],
-        'platforms': platforms,
-      }),
-      headers: _jsonHeaders,
-    );
+    final personId = b['person_id'] as String?;
+    final json = await c.querySingleJSON(queries['one_grant_upsert'], {
+      'one_user_id': userId,
+      'space_id': b['space_id'],
+      'platforms': platforms,
+    });
+    if (personId != null) {
+      await _enqueueEtl(
+        c,
+        personId,
+        platforms.isEmpty ? _lifePlatforms : platforms,
+      );
+    }
+    return Response.ok(json, headers: _jsonHeaders);
   }
 
   Future<Response> _oneSync(Request r, gel.Client c) async {
@@ -1521,9 +1553,11 @@ class ScoriaApp {
 
   Future<Response> _weaveCandidates(Request r, gel.Client c) async {
     final limit = int.tryParse(r.url.queryParameters['limit'] ?? '') ?? 40;
+    final offset = int.tryParse(r.url.queryParameters['offset'] ?? '') ?? 0;
     return Response.ok(
       await c.querySingleJSON(queries['weave_candidates'], {
         'limit': limit.clamp(1, 200),
+        'offset': offset.clamp(0, 5000),
       }),
       headers: _jsonHeaders,
     );
@@ -1641,9 +1675,14 @@ class ScoriaApp {
           evidence := <optional str>$evidence,
         }
         unless conflict on ((.owner, .source, .target, .kind))
-        else (
+          else (
           update Edge set {
             evidence := (<optional str>$evidence) ?? .evidence,
+            status := (
+              EdgeStatus.verified
+              if (<str>$status = 'verified' or .status = EdgeStatus.verified)
+              else .status
+            ),
             updated_at := datetime_of_statement(),
           }
         )
@@ -1752,7 +1791,11 @@ class ScoriaApp {
     await _enqueue(
       c,
       'weave',
-      {'memory_id': memoryId, 'person_id': me['id']},
+      {
+        'memory_id': memoryId,
+        'person_id': me['id'],
+        'token': _jobToken(me['id'] as String),
+      },
       subjectId: memoryId,
       options: SendOptions(
         singletonKey: me['id'] as String,

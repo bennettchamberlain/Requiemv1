@@ -1,5 +1,5 @@
-# Recent memories plus the current life-graph snapshot for a weave pass.
-# variables: $limit (int64)
+# A page of memories plus the current life-graph snapshot for a weave pass.
+# variables: $limit (int64), $offset (int64)
 select {
   memories := (
     select MemoryItem {
@@ -14,6 +14,7 @@ select {
     }
     filter .owner = global current_person
     order by .occurred_at desc
+    offset <int64>$offset
     limit <int64>$limit
   ),
   things := (

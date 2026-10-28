@@ -144,6 +144,47 @@ Here is the plan.
     });
   });
 
+  test('screenNoteOf lists the parts a reply drew', () {
+    const content = '''
+Here is the week.
+
+```scoria
+{"type":"timeline","title":"Memory","children":[{"type":"memory","title":"Standup","kind":"event"}]}
+```
+
+```scoria
+{"type":"graph","entities":[{"name":"Ada","kind":"person"}],"edges":[{"source":"Ada","target":"Standup","kind":"knows","status":"verified"}]}
+```
+''';
+    expect(
+      screenNoteOf(content),
+      'timeline: Memory\n'
+      'memory: Standup (event)\n'
+      'person: Ada\n'
+      'edge: Ada knows Standup (verified)',
+    );
+    final at = DateTime.utc(2026, 10, 28);
+    expect(
+      screenNoteOfMessages([
+        ChatMessage(
+          id: '1',
+          role: 'user',
+          content: 'what is on',
+          seq: 1,
+          createdAt: at,
+        ),
+        ChatMessage(
+          id: '2',
+          role: 'assistant',
+          content: content,
+          seq: 2,
+          createdAt: at,
+        ),
+      ]),
+      screenNoteOf(content),
+    );
+  });
+
   test('YouHit.listFromResponse reads web hits', () {
     final hits = YouHit.listFromResponse({
       'results': {

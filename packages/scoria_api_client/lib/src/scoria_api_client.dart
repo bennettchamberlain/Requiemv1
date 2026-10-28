@@ -237,6 +237,7 @@ class ScoriaApiClient {
     String sessionId,
     String content, {
     String? provider,
+    String? screen,
   }) async* {
     final req = http.Request(
       'POST',
@@ -246,6 +247,7 @@ class ScoriaApiClient {
       ..body = jsonEncode({
         'content': content,
         if (provider != null && provider.isNotEmpty) 'provider': provider,
+        if (screen != null && screen.trim().isNotEmpty) 'screen': screen.trim(),
       });
     final res = await _http.send(req);
     if (res.statusCode != 200) {

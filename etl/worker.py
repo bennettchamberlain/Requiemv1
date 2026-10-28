@@ -31,7 +31,7 @@ def main() -> int:
         return 1
 
     base = os.environ.get("SCORIA_API_URL", "http://127.0.0.1:8080").rstrip("/")
-    token = os.environ.get("SCORIA_API_TOKEN", "")
+    token = str(data.get("token") or os.environ.get("SCORIA_API_TOKEN") or "").strip()
     headers = {"authorization": f"Bearer {token}"} if token else {}
 
     result: dict = {"platform": platform, "upserted": 0}
