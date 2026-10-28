@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scoria voice console</title>
+<style>
+  :root { color-scheme: light dark; font: 14px/1.4 system-ui, sans-serif; }
+  body { margin: 0; display: grid; grid-template-columns: 360px 1fr; height: 100vh; }
+  aside { padding: 16px; border-right: 1px solid #8884; overflow: auto; }
+  main { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
+  h1 { font-size: 16px; margin: 0 0 12px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; margin: 18px 0 6px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  button { padding: 6px 10px; border-radius: 6px; border: 1px solid #8886; background: transparent; cursor: pointer; }
+  button.primary { background: #3b82f6; color: white; border-color: transparent; }
+  button:disabled { opacity: .5; cursor: default; }
+  textarea, input, select { width: 100%; box-sizing: border-box; padding: 6px; border-radius: 6px; border: 1px solid #8886; background: transparent; color: inherit; font: inherit; }
+  textarea { min-height: 90px; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid #8886; }
+  .on { border-color: #16a34a; color: #16a34a; }
+  .off { border-color: #8886; opacity: .7; }
+  .busy { border-color: #f59e0b; color: #f59e0b; }
+  #log { overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+  .ev { padding: 6px 10px; border-radius: 8px; max-width: 70ch; white-space: pre-wrap; }
+  .ev.user { align-self: flex-end; background: #3b82f622; }
+  .ev.persona { background: #8882; }
+  .ev.brain { font-size: 12px; opacity: .85; border-left: 2px solid #f59e0b; }
+  .ev.brain.say { opacity: 1; border-left-color: #16a34a; font-size: 14px; }
+  .ev.session, .ev.personaev { font-size: 12px; opacity: .6; align-self: center; }
+  .refine { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: #8882; margin: 2px 4px 2px 0; display: inline-block; }
+  #topbar { padding: 10px 16px; border-bottom: 1px solid #8884; display: flex; gap: 10px; align-items: center; }
+  #ask { padding: 10px 16px; border-top: 1px solid #8884; display: flex; gap: 8px; }
+  small { opacity: .6; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Scoria voice</h1>
+  <div class="row">
+    <span id="engine" class="pill off">engine</span>
+    <span id="brain" class="pill off">brain</span>
+    <span id="stt" class="pill off">stt</span>
+    <span id="memory" class="pill off">memory</span>
+  </div>
+  <div class="row">
+    <button id="toggle" class="primary">Load voice model</button>
+    <a href="/" target="_blank"><button>Open talk UI</button></a>
+  </div>
+  <small id="enginfo"></small>
+
+  <h2>Voice</h2>
+  <select id="voice"></select>
+
+  <h2>Meta prompt</h2>
+  <textarea id="base"></textarea>
+  <div class="row"><button id="saveBase">Save &amp; inject</button></div>
+  <h2>Refinements (live)</h2>
+  <div id="refinements"></div>
+  <div class="row">
+    <input id="refine" placeholder="e.g. speak slower and call me Ben">
+    <button id="addRefine">Add</button>
+  </div>
+
+  <h2>Manual</h2>
+  <input id="say" placeholder="Force the voice to say this…">
+  <div class="row"><button id="sayBtn">Say</button><button id="sayNow">Say (interrupt)</button></div>
+  <input id="brief" placeholder="Inject a fact brief…">
+  <div class="row"><button id="briefBtn">Brief</button><button id="muteOn">Mute</button><button id="muteOff">Unmute</button></div>
+</aside>
+<main>
+  <div id="topbar"><strong>Conversation</strong> <small id="sess"></small></div>
+  <div id="log"></div>
+  <form id="ask"><input id="askText" placeholder="Type to the brain (goes through the same path as speech)"><button class="primary">Send</button></form>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let status = null;
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  return r.json();
+}
+function pill(el, on, text, busy) { el.className = 'pill ' + (busy ? 'busy' : on ? 'on' : 'off'); el.textContent = text; }
+function render(s) {
+  status = s;
+  const e = s.engine;
+  pill($('engine'), e.loaded, e.loading ? 'engine loading…' : e.loaded ? `engine on · ${e.device}` : 'engine off', e.loading);
+  pill($('brain'), s.brain.enabled && s.brain.model, s.brain.model ? `brain · ${s.brain.model}` : 'brain off');
+  pill($('stt'), s.stt.enabled, s.stt.enabled ? `stt · ${s.stt.model}` : 'stt off');
+  pill($('memory'), s.memory.available, s.memory.available ? `memory · ${s.memory.person}` : 'memory off');
+  $('toggle').textContent = e.loaded ? 'Unload voice model' : 'Load voice model';
+  $('toggle').disabled = e.loading;
+  $('enginfo').textContent = e.error ? `error: ${e.error}` : e.loaded ? `loaded in ${e.load_seconds?.toFixed(0)}s · ${e.gpu_mem_gb?.toFixed(1)} GB on GPU` : '';
+  $('sess').textContent = s.session ? `live · ${s.session.turns} turns · ${s.session.injected_frames} injected frames` : 'no live session';
+  if (document.activeElement !== $('base')) $('base').value = s.persona.base;
+  $('refinements').innerHTML = s.persona.refinements.map((r, i) => `<span class="refine">${r} <a href="#" data-i="${i}">×</a></span>`).join('') || '<small>none</small>';
+  const v = $('voice'); if (v.options.length !== s.voices.length) { v.innerHTML = s.voices.map(x => `<option>${x}</option>`).join(''); }
+  v.value = s.persona.voice;
+}
+async function refresh() { render(await api('GET', '/api/status')); }
+$('toggle').onclick = async () => { $('toggle').disabled = true; pill($('engine'), false, status.engine.loaded ? 'unloading…' : 'loading…', true); render(await api('POST', '/api/engine', { on: !status.engine.loaded })); };
+$('saveBase').onclick = async () => render({ ...status, persona: await api('PUT', '/api/persona', { base: $('base').value }) });
+$('addRefine').onclick = async () => { const t = $('refine').value.trim(); if (!t) return; $('refine').value = ''; render({ ...status, persona: await api('PUT', '/api/persona', { refine: t }) }); };
+$('refinements').onclick = async ev => { const i = ev.target.dataset.i; if (i === undefined) return; ev.preventDefault(); const refs = status.persona.refinements.filter((_, k) => k != i); render({ ...status, persona: await api('PUT', '/api/persona', { refinements: refs }) }); };
+$('voice').onchange = async () => render({ ...status, persona: await api('PUT', '/api/persona', { voice: $('voice').value, inject: false }) });
+$('sayBtn').onclick = () => api('POST', '/api/say', { text: $('say').value });
+$('sayNow').onclick = () => api('POST', '/api/say', { text: $('say').value, interrupt: true });
+$('briefBtn').onclick = () => api('POST', '/api/brief', { text: $('brief').value });
+$('muteOn').onclick = () => api('POST', '/api/mute', { mute: true });
+$('muteOff').onclick = () => api('POST', '/api/mute', { mute: false });
+$('ask').onsubmit = ev => { ev.preventDefault(); const t = $('askText').value.trim(); if (!t) return; $('askText').value = ''; api('POST', '/api/ask', { text: t }); };
+
+function addLog(ev) {
+  const log = $('log'); const d = document.createElement('div');
+  const t = new Date((ev.ts || Date.now() / 1000) * 1000).toLocaleTimeString();
+  if (ev.type === 'user_text') { d.className = 'ev user'; d.textContent = ev.text; }
+  else if (ev.type === 'persona_text') { d.className = 'ev persona'; d.textContent = ev.text; }
+  else if (ev.type === 'brain') { d.className = 'ev brain ' + ev.kind; d.textContent = `${ev.kind}: ${ev.text}` + (ev.data?.result ? `\n↳ ${ev.data.result}` : ''); }
+  else if (ev.type === 'session') { d.className = 'ev session'; d.textContent = `${t} session ${ev.state}` + (ev.voice ? ` · ${ev.voice}` : ''); refresh(); }
+  else if (ev.type === 'persona') { d.className = 'ev personaev'; d.textContent = 'meta prompt updated'; refresh(); }
+  else return;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+const es = new EventSource('/api/events');
+es.onmessage = m => addLog(JSON.parse(m.data));
+refresh(); setInterval(refresh, 4000);
+</script>
+</body>
+</html>

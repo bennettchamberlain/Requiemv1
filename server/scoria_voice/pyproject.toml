@@ -1,0 +1,40 @@
+[project]
+name = "scoria-voice"
+version = "0.1.0"
+description = "Full-duplex voice for Scoria: PersonaPlex mouth + ears, local LLM brain with memory and tools"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  # PersonaPlex (NVIDIA Moshi fork). Pinned to the commit we read; its pins on
+  # torch<2.5 / huggingface-hub<0.25 are relaxed by installing with --no-deps
+  # and supplying the runtime deps below (see README).
+  "moshi-personaplex @ git+https://github.com/NVIDIA/personaplex.git@main#subdirectory=moshi",
+  "numpy>=1.26,<2.2",
+  "safetensors>=0.4,<0.5",
+  "huggingface-hub>=0.30",
+  "einops==0.7",
+  "sentencepiece==0.2",
+  "sphn>=0.1.4,<0.2",
+  "aiohttp>=3.10.5",
+  "faster-whisper>=1.1",
+  "ollama>=0.4",
+  "httpx>=0.27",
+  "ddgs>=9.0",
+  "trafilatura>=1.12",
+  "pyloudnorm>=0.1",
+  "soundfile>=0.12",
+]
+
+[project.scripts]
+scoria-voice = "scoria_voice.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["scoria_voice*"]
+
+[tool.uv]
+# torch comes from the ROCm index; installed separately so the resolver does
+# not try to satisfy moshi's torch<2.5 pin from PyPI.
+override-dependencies = ["torch>=2.14", "huggingface-hub>=0.30"]
