@@ -10,6 +10,7 @@ select MemoryItem {
   body,
   occurred_at,
   owner: { id, handle },
+  place: { id, name, city, region, country, lat, lng },
   distance := ext::pgvector::cosine_distance(.embedding, q),
 }
 filter exists .embedding

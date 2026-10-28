@@ -30,6 +30,7 @@ class Config {
     this.internalSecret,
     this.pythonBin = 'python3',
     this.hackathonRoot,
+    this.voiceUrl = 'http://127.0.0.1:8998',
   });
 
   factory Config.fromEnv([Map<String, String>? env]) {
@@ -80,6 +81,7 @@ class Config {
               ? 'python3'
               : '${e['VIRTUAL_ENV']}/bin/python'),
       hackathonRoot: _blankToNull(e['HACKATHON_ROOT'] ?? e['REQUIEM_ROOT']),
+      voiceUrl: e['VOICE_URL'] ?? 'http://127.0.0.1:8998',
     );
   }
 
@@ -143,6 +145,9 @@ class Config {
 
   /// Requiem repo root (`etl/` and `swarm/` live here).
   final String? hackathonRoot;
+
+  /// PersonaVoice sidecar (PersonaPlex + local STT). Thinking is Parasail.
+  final String voiceUrl;
 
   static String? _blankToNull(String? s) =>
       s == null || s.trim().isEmpty ? null : s.trim();

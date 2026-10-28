@@ -121,7 +121,11 @@ class ChatToolbox {
     }
     try {
       return switch (name) {
-        'now' => DateTime.now().toIso8601String(),
+        'now' => jsonEncode({
+          'type': 'metric',
+          'label': 'now',
+          'value': DateTime.now().toIso8601String(),
+        }),
         'memory_search' => formatMemories(
           await searchMemory(c, '${args['query'] ?? ''}', _int(args['limit'], 8)),
         ),
@@ -129,8 +133,11 @@ class ChatToolbox {
           await recentMemory(c, _int(args['limit'], 10)),
         ),
         'memory_get' => formatMemory(await getMemory(c, '${args['id'] ?? ''}')),
-        'remember' =>
-          'saved ${await remember(c, '${args['title'] ?? 'note'}', args['body'] as String?)}',
+        'remember' => formatRemember(
+          await remember(c, '${args['title'] ?? 'note'}', args['body'] as String?),
+          '${args['title'] ?? 'note'}',
+          args['body'] as String?,
+        ),
         'life_graph' => formatGraph(await lifeGraph(c)),
         'web_search' => await _webSearch('${args['query'] ?? ''}'),
         _ => 'unknown tool $name',
@@ -141,84 +148,122 @@ class ChatToolbox {
   }
 
   Future<String> _webSearch(String query) async {
-    if (!webAvailable) return 'web search is not configured';
+    if (!webAvailable) {
+      return jsonEncode({
+        'type': 'text',
+        'text': 'web search is not configured',
+      });
+    }
     final q = query.trim();
-    if (q.isEmpty) return 'query required';
+    if (q.isEmpty) {
+      return jsonEncode({'type': 'text', 'text': 'query required'});
+    }
     final r = await _http.get(
       Uri.https('api.you.com', '/v1/search', {'query': q, 'count': '5'}),
       headers: {'X-API-Key': youApiKey!},
     );
     if (r.statusCode >= 400) {
-      return 'web search failed (${r.statusCode})';
+      return jsonEncode({
+        'type': 'text',
+        'text': 'web search failed (${r.statusCode})',
+      });
     }
     final json = jsonDecode(r.body) as Map<String, dynamic>;
     final hits =
         ((json['results'] as Map<String, dynamic>?)?['web'] as List<dynamic>?) ??
         const [];
-    if (hits.isEmpty) return 'no results';
-    return hits
-        .take(5)
-        .map((h) {
-          final m = h as Map<String, dynamic>;
-          return '${m['title']}: ${m['description'] ?? m['url']}';
-        })
-        .join('\n');
+    if (hits.isEmpty) {
+      return jsonEncode({'type': 'text', 'text': 'no results'});
+    }
+    return jsonEncode({
+      'type': 'column',
+      'children': [
+        {'type': 'heading', 'text': q},
+        for (final h in hits.take(5))
+          {
+            'type': 'link',
+            'title': (h as Map<String, dynamic>)['title'] ?? '',
+            'url': h['url'] ?? '',
+            'snippet': h['description'] ?? '',
+          },
+      ],
+    });
   }
 
   static String formatMemories(List<Map<String, dynamic>> rows) {
-    if (rows.isEmpty) return 'no memories';
-    return rows.map(formatMemoryRow).join('\n');
+    if (rows.isEmpty) {
+      return jsonEncode({'type': 'text', 'text': 'no memories'});
+    }
+    return jsonEncode({
+      'type': 'timeline',
+      'title': 'Memory',
+      'children': [for (final row in rows) memoryPart(row)],
+    });
   }
 
   static String formatMemory(Map<String, dynamic>? row) {
-    if (row == null) return 'not found';
-    return formatMemoryRow(row);
+    if (row == null) {
+      return jsonEncode({'type': 'text', 'text': 'not found'});
+    }
+    return jsonEncode(memoryPart(row));
   }
 
-  static String formatMemoryRow(Map<String, dynamic> row) {
-    final title = row['title'] ?? row['kind'] ?? 'memory';
-    final body = row['body'];
-    final when = row['occurred_at'] ?? row['created_at'];
-    final snippet = body == null
-        ? ''
-        : ': ${body.toString().replaceAll(RegExp(r'\s+'), ' ')}';
-    final cut = snippet.length > 240 ? '${snippet.substring(0, 237)}…' : snippet;
-    return '${row['id']}  $title$cut${when == null ? '' : '  ($when)'}';
+  static String formatRemember(String id, String title, String? body) {
+    return jsonEncode({
+      'type': 'memory',
+      'id': id,
+      'title': title,
+      'kind': 'note',
+      'body': body ?? '',
+    });
   }
+
+  static Map<String, dynamic> memoryPart(Map<String, dynamic> row) {
+    final place = row['place'];
+    return {
+      'type': 'memory',
+      'id': '${row['id'] ?? ''}',
+      'title': '${row['title'] ?? row['kind'] ?? 'memory'}',
+      'kind': '${row['kind'] ?? 'note'}',
+      'when': '${row['occurred_at'] ?? row['created_at'] ?? ''}',
+      'body': row['body'] == null
+          ? ''
+          : row['body'].toString().replaceAll(RegExp(r'\s+'), ' '),
+      if (place is Map)
+        'place': {
+          'type': 'place',
+          'name': place['name'] ?? '',
+          'city': place['city'] ?? '',
+          'region': place['region'] ?? '',
+          'country': place['country'] ?? '',
+        },
+    };
+  }
+
+  static String formatMemoryRow(Map<String, dynamic> row) =>
+      jsonEncode(memoryPart(row));
 
   static String formatGraph(Map<String, dynamic>? g) {
-    if (g == null) return 'empty graph';
-    final buf = StringBuffer();
-    void list(String label, Object? raw) {
-      final rows = raw as List<dynamic>? ?? const [];
-      if (rows.isEmpty) return;
-      buf.writeln('$label:');
-      for (final r in rows.take(20)) {
-        final m = r as Map<String, dynamic>;
-        final extra = m['summary'] ?? m['why'] ?? m['kind'] ?? '';
-        buf.writeln(
-          extra.toString().isEmpty
-              ? '- ${m['name']}'
-              : '- ${m['name']} ($extra)',
-        );
-      }
+    if (g == null) {
+      return jsonEncode({'type': 'text', 'text': 'empty graph'});
     }
-
-    list('goals', g['goals']);
-    list('projects', g['projects']);
-    list('habits', g['habits']);
-    list('entities', g['entities']);
-    final edges = g['edges'] as List<dynamic>? ?? const [];
-    if (edges.isNotEmpty) {
-      buf.writeln('edges:');
-      for (final e in edges.take(30)) {
-        final m = e as Map<String, dynamic>;
-        final src = (m['source'] as Map<String, dynamic>?)?['name'];
-        final tgt = (m['target'] as Map<String, dynamic>?)?['name'];
-        buf.writeln('- $src ${m['kind']} $tgt (${m['status']})');
-      }
+    List<dynamic> listOf(String key) =>
+        g[key] is List ? g[key]! as List<dynamic> : const [];
+    final payload = {
+      'type': 'graph',
+      'goals': listOf('goals'),
+      'projects': listOf('projects'),
+      'habits': listOf('habits'),
+      'entities': listOf('entities'),
+      'edges': listOf('edges'),
+    };
+    final empty = payload.values
+        .whereType<List<dynamic>>()
+        .every((rows) => rows.isEmpty);
+    if (empty) {
+      return jsonEncode({'type': 'text', 'text': 'empty graph'});
     }
-    return buf.isEmpty ? 'empty graph' : buf.toString().trim();
+    return jsonEncode(payload);
   }
 
   static int _int(Object? v, int fallback) {

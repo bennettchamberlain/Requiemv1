@@ -237,6 +237,38 @@ class ChatConnection {
   final DateTime? connectedAt;
 }
 
+/// PersonaVoice sidecar as seen through `/voice/status`.
+class VoiceStatus {
+  const VoiceStatus({
+    required this.available,
+    this.url,
+    this.live = false,
+    this.provider,
+    this.model,
+  });
+
+  factory VoiceStatus.fromJson(Map<String, dynamic> json) {
+    final brain = json['brain'] is Map
+        ? Map<String, dynamic>.from(json['brain'] as Map)
+        : const <String, dynamic>{};
+    return VoiceStatus(
+      available: json['available'] as bool? ?? false,
+      url: json['url'] as String?,
+      live: json['session'] is Map,
+      provider: brain['provider'] as String?,
+      model: brain['model'] as String?,
+    );
+  }
+
+  static const unavailable = VoiceStatus(available: false);
+
+  final bool available;
+  final String? url;
+  final bool live;
+  final String? provider;
+  final String? model;
+}
+
 /// Streamed increments while a reply is being produced.
 sealed class ChatStreamEvent {
   const ChatStreamEvent();

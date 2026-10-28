@@ -10,6 +10,7 @@ select MemoryItem {
   body,
   occurred_at,
   owner: { id, handle },
+  place: { id, name, city, region, country, lat, lng },
   distance := <float64>0.5,
 }
 filter (.title ilike pattern) or (.body ilike pattern)

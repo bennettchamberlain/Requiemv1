@@ -1,8 +1,10 @@
 # scoria-voice
 
 Full-duplex voice for Scoria. [PersonaPlex](https://github.com/NVIDIA/personaplex)
-(NVIDIA's Moshi fork) is the mouth and the ears; a local LLM through Ollama is
-the brain, with Scoria memory and the web as tools.
+(NVIDIA's Moshi fork) is the mouth and the ears. Thinking prefers Parasail
+when `PARASAIL_API_KEY` is set, then a local Ollama model. Scoria memory and
+the web stay as tools. Flutter chat speaks on the device (mic + TTS) and
+renders generative UI; this sidecar is the room speaker when the engine is on.
 
 ```
 mic ──opus──▶ session ──▶ Mimi ──▶ PersonaPlex LM ──▶ Mimi ──opus──▶ speaker
@@ -41,7 +43,8 @@ printf 'torch>=2.14\nhuggingface-hub>=0.30\n' > /tmp/overrides.txt
 uv pip install --python .venv/bin/python --override /tmp/overrides.txt -e .   # moshi-personaplex pins torch 2.4 / hf-hub 0.24; override
 
 export HF_TOKEN_FILE=~/devel/mynamehf.txt              # or HF_TOKEN=…
-export SCORIA_HANDLE=admin SCORIA_PASSWORD=…           # memory tools (scoria-api on :8787)
+export SCORIA_HANDLE=admin SCORIA_PASSWORD=…           # memory tools (scoria-api on :8090)
+export PARASAIL_API_KEY=…                              # brain thinking (Ollama if unset)
 export VOICE_SSL_DIR=~/.local/state/scoria-voice/ssl   # browsers need https for the mic
 .venv/bin/scoria-voice                                 # https://localhost:8998
 ```
@@ -52,7 +55,10 @@ UI (it connects to the same `/api/chat`).
 
 | env | default | meaning |
 |---|---|---|
-| `BRAIN_MODEL` | best present of `gpt-oss:120b, qwen3.5:122b, gpt-oss:20b, qwen3.5:32b, qwen3.5:9b` | Ollama model |
+| `BRAIN_PROVIDER` | `auto` | `auto` / `parasail` / `ollama`. Auto uses Parasail when a key is set |
+| `PARASAIL_API_KEY` | unset | Cloud thinking. Same key as scoria-api chat |
+| `PARASAIL_MODEL` | `parasail-glm-53-flash` | Parasail chat model for the brain |
+| `BRAIN_MODEL` | best present of `gpt-oss:120b, qwen3.5:122b, gpt-oss:20b, qwen3.5:32b, qwen3.5:9b` | Ollama fallback |
 | `WHISPER_MODEL` | `distil-large-v3` | faster-whisper model (CPU int8) |
 | `VOICE_AUTOLOAD` | `0` | load weights at startup instead of on toggle |
 | `VOICE_CPU_OFFLOAD` | `0` | PersonaPlex layer offload if VRAM is short |

@@ -111,6 +111,9 @@ class ScoriaApp {
     ..get('/jobs', _authed(_jobsList))
     ..get('/graph', _authed((r, c) => _one(c, 'graph')))
     ..get('/chat/tools', _authed(_chatTools))
+    ..get('/voice/status', _authed(_voiceStatus))
+    ..post('/voice/ask', _authed(_voiceAsk))
+    ..post('/voice/say', _authed(_voiceSay))
     ..put('/chat/connections/<id>', _authed(_chatConnectionPut))
     ..delete('/chat/connections/<id>', _authed(_chatConnectionDelete))
     ..get('/chat/sessions', _authed(_chatSessions))
@@ -159,6 +162,7 @@ class ScoriaApp {
       'cloud_embeddings': cloudEmbeddings != null,
       'geocoder': geocoder.provider,
       'jobs': jobs != null,
+      'voice': await _voicePeek(),
     });
   }
 
@@ -838,6 +842,12 @@ class ScoriaApp {
           'model': ollamaChat?.model,
           'description': 'Local model on this machine.',
         },
+        {
+          'id': 'voice',
+          'label': 'PersonaVoice',
+          'kind': 'speech',
+          ...await _voiceConnection(),
+        },
       ],
     });
   }
@@ -854,7 +864,7 @@ class ScoriaApp {
       if (b['enabled'] is bool) {
         prefs = _setEnabled(prefs, 'web_search', b['enabled'] as bool);
       }
-    } else if (id == 'one' || id == 'parasail' || id == 'ollama') {
+    } else if (id == 'one' || id == 'parasail' || id == 'ollama' || id == 'voice') {
       return _error(400, 'bad_request', 'use the dedicated action for $id');
     } else {
       if (b['enabled'] is! bool) {
@@ -1064,15 +1074,39 @@ class ScoriaApp {
   String _systemFrame(Map<String, dynamic> person) {
     final name = person['display_name'] ?? person['handle'];
     final now = DateTime.now();
-    return 'You are Requiem, ${name}\'s personal assistant. The day is twenty-four '
+    return 'You are Requiem, $name\'s personal assistant. The day is twenty-four '
         'hours; spend them. The signed-in user is "$name" (handle ${person['handle']}). '
         'Current local time: ${now.toIso8601String()} (${now.timeZoneName}). '
+        'Tools run as this person on Gel/Napalm: access policies decide what '
+        'memory and graph rows exist. Nested shapes (owner, place, parent, '
+        'parts, edges) come back in one query — do not invent rows you did '
+        'not receive. '
         'Tools: memory_search, memory_recent, memory_get, remember, life_graph, '
-        'web_search, now. For anything about the user\'s life, people, places, '
-        'plans or past, search memory (and life_graph) before answering. '
-        'Verified graph edges are facts; proposed edges are not. For facts about '
-        'the world, use web_search. Be accurate; say when you do not know. '
-        'Keep answers concise and conversational; this is a chat on a phone.';
+        'web_search, now. For the user\'s life, people, places, plans or past, '
+        'search memory and life_graph before answering. Verified graph edges '
+        'are facts; proposed edges are not. For the public world, use '
+        'web_search (You.com). Be accurate; say when you do not know. '
+        'Keep prose short. After tools, emit a visual surface when it helps, '
+        'using one or more fenced blocks:\n'
+        '```scoria\n'
+        '{"type":"card","title":"...","subtitle":"..."}\n'
+        '```\n'
+        'Catalog (type + fields): '
+        'text(text), heading(text), divider, column(children), row(children), '
+        'list(children), card(title,subtitle,children,detail), '
+        'link(title,url,snippet,detail), image(url,alt), '
+        'webSearch(query), speech(text), '
+        'memory(id,title,kind,when,body,place), '
+        'place(name,city,region,country), person(name,handle,relation), '
+        'quote(text,attribution), metric(value,label,detail), badge(text), '
+        'timeline(title,children), checklist(title,items[{text,done}]), '
+        'graph(goals,projects,habits,entities,edges), '
+        'actions(items[{label,prompt,url}]). '
+        'Tool results already arrive as these parts; do not repeat a tool '
+        'surface unless you are adding a new one. Prefer memory/timeline for '
+        'recall, graph for the life graph, link/webSearch for You.com, '
+        'checklist for plans, actions to offer a follow-up, speech for a '
+        'line the device should say. Spoken text is plain English.';
   }
 
   static String _titleFrom(String content) {
@@ -1197,6 +1231,93 @@ class ScoriaApp {
   }
 
   // ---- One Connect + weave graph -------------------------------------------
+
+  Future<Map<String, dynamic>?> _voicePeek() async {
+    try {
+      final r = await http
+          .get(Uri.parse('${config.voiceUrl}/api/status'))
+          .timeout(const Duration(milliseconds: 800));
+      if (r.statusCode != 200) return null;
+      final body = jsonDecode(r.body);
+      return body is Map<String, dynamic> ? body : null;
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _voiceConnection() async {
+    final remote = await _voicePeek();
+    final brain = remote?['brain'] is Map
+        ? Map<String, dynamic>.from(remote!['brain'] as Map)
+        : const <String, dynamic>{};
+    final session = remote?['session'];
+    final live = session is Map;
+    final model = brain['model'] as String?;
+    final provider = brain['provider'] as String?;
+    return {
+      'connected': remote != null,
+      'ready': live,
+      'model': model,
+      'description': remote == null
+          ? 'Local mouth and ears (PersonaPlex + Whisper). Thinking is '
+                'Parasail. Start scoria-voice on :8998 — chat still speaks '
+                'on this device without it.'
+          : live
+          ? 'Speaking on the voice box. Brain: ${provider ?? 'unknown'}'
+                '${model == null ? '' : ' · $model'}.'
+          : 'Sidecar is up. Toggle the engine in /console to talk out loud '
+                'there; chat already speaks on this device.',
+    };
+  }
+
+  Future<Response> _voiceStatus(Request r, gel.Client c) async {
+    final remote = await _voicePeek();
+    return _json({
+      'available': remote != null,
+      'url': config.voiceUrl,
+      if (remote != null) ...remote,
+    });
+  }
+
+  Future<Response> _voiceAsk(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final text = (b['text'] as String?)?.trim() ?? '';
+    if (text.isEmpty) return _error(400, 'bad_request', 'text required');
+    return _voicePost('/api/ask', {'text': text});
+  }
+
+  Future<Response> _voiceSay(Request r, gel.Client c) async {
+    final b = await _body(r);
+    final text = (b['text'] as String?)?.trim() ?? '';
+    if (text.isEmpty) return _error(400, 'bad_request', 'text required');
+    return _voicePost('/api/say', {
+      'text': text,
+      'interrupt': b['interrupt'] == true,
+    });
+  }
+
+  Future<Response> _voicePost(String path, Map<String, dynamic> body) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('${config.voiceUrl}$path'),
+            headers: const {'content-type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 60));
+      return Response(
+        res.statusCode,
+        body: res.body,
+        headers: _jsonHeaders,
+      );
+    } on Object {
+      return _error(
+        503,
+        'voice_unavailable',
+        'PersonaVoice is not running on ${config.voiceUrl}',
+      );
+    }
+  }
 
   Future<bool> _connectReady() async {
     try {

@@ -61,4 +61,17 @@ void main() {
     );
     expect(call.toJson()['result'], '2026-10-28');
   });
+
+  test('VoiceStatus reads a live sidecar', () {
+    final status = VoiceStatus.fromJson({
+      'available': true,
+      'url': 'http://127.0.0.1:8998',
+      'brain': {'provider': 'parasail', 'model': 'parasail-glm-53-flash'},
+      'session': {'turns': 1},
+    });
+    expect(status.available, isTrue);
+    expect(status.live, isTrue);
+    expect(status.provider, 'parasail');
+    expect(status.model, 'parasail-glm-53-flash');
+  });
 }

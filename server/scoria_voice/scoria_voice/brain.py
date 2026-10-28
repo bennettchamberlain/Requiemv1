@@ -1,9 +1,11 @@
-"""The brain: a local LLM with memory and web tools that decides what the voice says.
+"""The brain: thinking that decides what the local voice says.
 
-For every user utterance the brain either stays out of the way (small talk —
-PersonaPlex handles it better and faster) or answers with tools and hands the
-voice two things: a short spoken reply (forced onto the text stream) and a
-fact brief (injected as a `<system>` block) so follow-ups stay grounded.
+Speech stays on this box (PersonaPlex + Whisper). Thinking prefers Parasail
+when a key is set, then falls back to a local Ollama model. For every user
+utterance the brain either stays out of the way (small talk — PersonaPlex
+handles it better and faster) or answers with tools and hands the voice two
+things: a short spoken reply (forced onto the text stream) and a fact brief
+(injected as a `<system>` block) so follow-ups stay grounded.
 """
 
 from __future__ import annotations
@@ -88,23 +90,50 @@ async def pick_brain_model(client: ollama.AsyncClient, preferred: str | None, ca
     return next(iter(sorted(present)), None)
 
 
+@dataclass
+class _Call:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class _Turn:
+    content: str
+    tool_calls: list[_Call] = field(default_factory=list)
+
+
 class Brain:
     def __init__(self, cfg, memory: MemoryClient | None, persona: Persona, on_event: OnEvent, on_persona_change: Callable[[str], Awaitable[None]]):
         self.cfg = cfg
         self.client = ollama.AsyncClient(host=cfg.ollama_url)
         self.model: str | None = None
+        self.provider: str = "ollama"
         self.memory = memory
         self.persona = persona
         self.on_event = on_event
         self.on_persona_change = on_persona_change
         self.history: list[dict[str, Any]] = []  # recent dialogue, both sides
         self._busy = asyncio.Lock()
-        self._http = httpx.AsyncClient(timeout=20, follow_redirects=True, headers={"user-agent": "scoria-voice/0.1"})
+        self._http = httpx.AsyncClient(timeout=60, follow_redirects=True, headers={"user-agent": "scoria-voice/0.1"})
+
+    def _use_parasail(self) -> bool:
+        if self.cfg.brain_provider == "ollama":
+            return False
+        return bool(self.cfg.parasail_api_key)
 
     async def start(self) -> None:
+        if self._use_parasail():
+            self.provider = "parasail"
+            self.model = self.cfg.parasail_model
+            log.info("brain: parasail %s", self.model)
+            return
+        self.provider = "ollama"
         self.model = await pick_brain_model(self.client, self.cfg.brain_model, self.cfg.brain_candidates)
         log.info("brain model: %s", self.model)
         # Pre-load and pin the model so the first utterance does not pay a 10 s cold start.
+        if not self.model:
+            return
         try:
             await self.client.chat(model=self.model, messages=[{"role": "user", "content": "hi"}], options={"num_predict": 1}, keep_alive=KEEP_ALIVE)
         except Exception as e:  # noqa: BLE001
@@ -137,27 +166,44 @@ class Brain:
         await self.on_event(BrainEvent("thinking", user_text))
         messages = [{"role": "system", "content": SYSTEM.format(persona=self.persona.render(), now=time.strftime("%A %Y-%m-%d %H:%M %Z"))}, *self.history]
         facts: list[str] = []
+        openai = self.provider == "parasail"
         for _round in range(5):
             try:
-                resp = await self.client.chat(model=self.model, messages=messages, tools=TOOLS, options={"temperature": 0.3, "num_predict": 200}, keep_alive=KEEP_ALIVE, think=False)
-            except TypeError:
-                resp = await self.client.chat(model=self.model, messages=messages, tools=TOOLS, options={"temperature": 0.3, "num_predict": 200}, keep_alive=KEEP_ALIVE)
+                turn = await self._complete(messages)
             except Exception as e:  # noqa: BLE001
                 await self.on_event(BrainEvent("error", f"{type(e).__name__}: {e}"))
                 return None
-            msg = resp.message
-            if msg.tool_calls:
-                messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": [tc.model_dump() for tc in msg.tool_calls]})
-                for tc in msg.tool_calls:
-                    name = tc.function.name
-                    args = tc.function.arguments or {}
-                    result = await self._tool(name, args)
-                    await self.on_event(BrainEvent("tool", f"{name}({json.dumps(args)[:120]})", data={"result": result[:400]}))
-                    if name in ("memory_search", "memory_recent", "web_search", "fetch_url", "now"):
-                        facts.append(f"{name}: {result[:600]}")
-                    messages.append({"role": "tool", "content": result, "tool_name": name})
+            if turn.tool_calls:
+                if openai:
+                    messages.append({
+                        "role": "assistant",
+                        "content": turn.content or None,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                            }
+                            for tc in turn.tool_calls
+                        ],
+                    })
+                else:
+                    messages.append({
+                        "role": "assistant",
+                        "content": turn.content,
+                        "tool_calls": [{"type": "function", "function": {"name": tc.name, "arguments": tc.arguments}} for tc in turn.tool_calls],
+                    })
+                for tc in turn.tool_calls:
+                    result = await self._tool(tc.name, tc.arguments)
+                    await self.on_event(BrainEvent("tool", f"{tc.name}({json.dumps(tc.arguments)[:120]})", data={"result": result[:400]}))
+                    if tc.name in ("memory_search", "memory_recent", "web_search", "fetch_url", "now"):
+                        facts.append(f"{tc.name}: {result[:600]}")
+                    if openai:
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+                    else:
+                        messages.append({"role": "tool", "content": result, "tool_name": tc.name})
                 continue
-            reply = (msg.content or "").strip()
+            reply = turn.content.strip()
             break
         else:
             reply = ""
@@ -173,6 +219,46 @@ class Brain:
             brief = f"Facts you now know: {reply}"
             await self.on_event(BrainEvent("brief", brief))
         return reply
+
+    async def _complete(self, messages: list[dict[str, Any]]) -> _Turn:
+        if self.provider == "parasail":
+            return await self._parasail_turn(messages)
+        return await self._ollama_turn(messages)
+
+    async def _parasail_turn(self, messages: list[dict[str, Any]]) -> _Turn:
+        url = f"{self.cfg.parasail_base_url.rstrip('/')}/chat/completions"
+        r = await self._http.post(
+            url,
+            headers={"authorization": f"Bearer {self.cfg.parasail_api_key}", "content-type": "application/json"},
+            json={"model": self.model, "messages": messages, "tools": TOOLS, "temperature": 0.3},
+            timeout=60,
+        )
+        r.raise_for_status()
+        msg = r.json()["choices"][0]["message"]
+        calls: list[_Call] = []
+        for i, raw in enumerate(msg.get("tool_calls") or []):
+            fn = raw.get("function") or {}
+            args = fn.get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args) if args.strip() else {}
+                except json.JSONDecodeError:
+                    args = {"_raw": args}
+            if not isinstance(args, dict):
+                args = {}
+            calls.append(_Call(id=str(raw.get("id") or f"call_{i}"), name=str(fn.get("name") or ""), arguments=args))
+        return _Turn(content=msg.get("content") or "", tool_calls=calls)
+
+    async def _ollama_turn(self, messages: list[dict[str, Any]]) -> _Turn:
+        try:
+            resp = await self.client.chat(model=self.model, messages=messages, tools=TOOLS, options={"temperature": 0.3, "num_predict": 200}, keep_alive=KEEP_ALIVE, think=False)
+        except TypeError:
+            resp = await self.client.chat(model=self.model, messages=messages, tools=TOOLS, options={"temperature": 0.3, "num_predict": 200}, keep_alive=KEEP_ALIVE)
+        msg = resp.message
+        calls: list[_Call] = []
+        for i, tc in enumerate(msg.tool_calls or []):
+            calls.append(_Call(id=f"call_{i}", name=tc.function.name, arguments=tc.function.arguments or {}))
+        return _Turn(content=msg.content or "", tool_calls=calls)
 
     # ---- tools -------------------------------------------------------------
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
@@ -15,13 +17,23 @@ class ChatPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
+    final chat = BlocProvider(
       create: (context) => ChatBloc(
         api: context.read<ScoriaApiClient>(),
         provider: () => context.read<ChatSettingsCubit>().state,
       )..add(const ChatStarted()),
       child: const ChatView(),
     );
+    try {
+      context.read<VoiceCubit>();
+      return chat;
+    } on Object {
+      return BlocProvider(
+        create: (context) =>
+            VoiceCubit(api: context.read<ScoriaApiClient>()),
+        child: chat,
+      );
+    }
   }
 }
 
@@ -216,12 +228,26 @@ class _ConversationState extends State<_Conversation> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<ChatBloc, ChatState>(
+    return BlocListener<VoiceCubit, VoiceState>(
       listenWhen: (p, c) =>
-          p.messages.length != c.messages.length ||
-          p.draftReply != c.draftReply,
-      listener: (_, _) => _scrollToEnd(),
-      builder: (context, state) {
+          p.heardSeq != c.heardSeq && (c.lastHeard ?? '').isNotEmpty,
+      listener: (context, voice) {
+        context.read<ChatBloc>().add(ChatMessageSent(voice.lastHeard!));
+      },
+      child: BlocConsumer<ChatBloc, ChatState>(
+        listenWhen: (p, c) =>
+            p.messages.length != c.messages.length ||
+            p.draftReply != c.draftReply,
+        listener: (context, state) {
+          _scrollToEnd();
+          if (state.sending || state.messages.isEmpty) return;
+          final last = state.messages.last;
+          if (last.role != 'assistant') return;
+          unawaited(
+            context.read<VoiceCubit>().speakReply(last.id, last.content),
+          );
+        },
+        builder: (context, state) {
         final open = state.open;
         final theme = ShadTheme.of(context);
         return Scaffold(
@@ -237,6 +263,7 @@ class _ConversationState extends State<_Conversation> {
                         ),
                       )
                     : null,
+                actions: const [_VoiceToggle()],
               ),
               Expanded(
                 child:
@@ -274,6 +301,8 @@ class _ConversationState extends State<_Conversation> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      const _MicButton(),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: ShadInput(
                           key: const Key('chat_composer'),
@@ -282,7 +311,19 @@ class _ConversationState extends State<_Conversation> {
                           maxLines: 5,
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _send(),
-                          placeholder: const Text('Ask Requiem…'),
+                          placeholder: Text(
+                            context.select<VoiceCubit, String>((v) {
+                              if (v.state.listening) {
+                                final partial = v.state.partial.trim();
+                                return partial.isEmpty
+                                    ? 'Listening…'
+                                    : partial;
+                              }
+                              return v.state.enabled
+                                  ? 'Ask Requiem, or speak…'
+                                  : 'Ask Requiem…';
+                            }),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -307,7 +348,55 @@ class _ConversationState extends State<_Conversation> {
             ],
           ),
         );
-      },
+        },
+      ),
+    );
+  }
+}
+
+class _VoiceToggle extends StatelessWidget {
+  const _VoiceToggle();
+
+  @override
+  Widget build(BuildContext context) {
+    final voice = context.watch<VoiceCubit>().state;
+    return ShadIconButton.ghost(
+      key: const Key('chat_voice_toggle'),
+      icon: Icon(
+        voice.enabled ? LucideIcons.volume2 : LucideIcons.volumeOff,
+        size: 16,
+      ),
+      onPressed: () => unawaited(
+        context.read<VoiceCubit>().setEnabled(on: !voice.enabled),
+      ),
+    );
+  }
+}
+
+class _MicButton extends StatelessWidget {
+  const _MicButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final voice = context.watch<VoiceCubit>().state;
+    final sending = context.select<ChatBloc, bool>((b) => b.state.sending);
+    final theme = ShadTheme.of(context);
+    return ShadIconButton.ghost(
+      key: const Key('chat_mic_button'),
+      icon: Icon(
+        voice.listening ? LucideIcons.circle : LucideIcons.mic,
+        size: 16,
+        color: voice.listening ? theme.colorScheme.destructive : null,
+      ),
+      onPressed: sending
+          ? null
+          : () {
+              final cubit = context.read<VoiceCubit>();
+              if (!cubit.state.enabled) {
+                unawaited(cubit.setEnabled(on: true));
+              }
+              unawaited(cubit.toggleListen());
+            },
     );
   }
 }
@@ -382,7 +471,9 @@ class _Hint extends StatelessWidget {
     padding: const EdgeInsets.all(24),
     child: Text(
       'Ask about your memories, places you have been, or anything in the '
-      'world. Requiem searches memory first, then the web.',
+      'world. Requiem searches memory first, then the web. Turn on the '
+      'speaker to hear replies; the mic speaks from this device while '
+      'thinking stays on Parasail.',
       textAlign: TextAlign.center,
       style: ShadTheme.of(context).textTheme.muted,
     ),

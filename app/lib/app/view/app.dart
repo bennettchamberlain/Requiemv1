@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_app/chat/voice_cubit.dart';
 import 'package:scoria_app/config/chat_settings_cubit.dart';
 import 'package:scoria_app/config/server_cubit.dart';
 import 'package:scoria_app/home/home.dart';
@@ -39,11 +40,17 @@ class App extends StatelessWidget {
                   baseUrl: server.uri,
                   tokenProvider: () => session.token,
                 ),
-            child: BlocListener<ServerCubit, String>(
-              // Re-point the live client when the user edits the URL.
-              listener: (context, _) =>
-                  context.read<ScoriaApiClient>().baseUrl = server.uri,
-              child: const AppView(),
+            child: BlocProvider(
+              create: (context) => VoiceCubit(
+                api: context.read<ScoriaApiClient>(),
+                prefs: prefs,
+              ),
+              child: BlocListener<ServerCubit, String>(
+                // Re-point the live client when the user edits the URL.
+                listener: (context, _) =>
+                    context.read<ScoriaApiClient>().baseUrl = server.uri,
+                child: const AppView(),
+              ),
             ),
           );
         },

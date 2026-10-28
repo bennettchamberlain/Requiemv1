@@ -70,6 +70,78 @@ Look at this.
       final segments = parseChatSegments('```scoria\n{"type":"text"');
       expect(segments, [const ChatBlockPending()]);
     });
+
+    test('a speech fence is a spoken line', () {
+      const content = '''
+Here is the plan.
+
+```scoria
+{"type":"speech","text":"Dinner is at seven."}
+```
+''';
+      final segments = parseChatSegments(content);
+      expect(segments.first, isA<ChatProse>());
+      expect(
+        (segments.last as ChatBlock).part,
+        const ChatSpeech('Dinner is at seven.'),
+      );
+      expect(spokenLinesOf(content), ['Dinner is at seven.']);
+    });
+
+    test('prose is spoken when there is no speech part', () {
+      expect(
+        spokenLinesOf('Hello there. More after that. Ignored third.'),
+        ['Hello there. More after that.'],
+      );
+    });
+
+    test('memory, place, graph and actions parse from the catalog', () {
+      const content = '''
+```scoria
+{"type":"timeline","title":"Memory","children":[{"type":"memory","id":"m1","title":"Standup","kind":"event","when":"2026-10-28","body":"Alex","place":{"type":"place","name":"Cafe","city":"Oakland"}}]}
+```
+
+```scoria
+{"type":"graph","goals":[{"name":"ship chat","why":"the phone"}],"edges":[{"kind":"knows","status":"verified","source":{"name":"Alex"},"target":{"name":"standup"}}]}
+```
+
+```scoria
+{"type":"actions","items":[{"label":"Search more","prompt":"search memory for Alex"}]}
+```
+''';
+      final segments = parseChatSegments(content);
+      expect(segments, hasLength(3));
+      final timeline = (segments[0] as ChatBlock).part as ChatTimeline;
+      final memory = timeline.children.single as ChatMemory;
+      expect(memory.title, 'Standup');
+      expect(memory.place?.city, 'Oakland');
+      final graph = (segments[1] as ChatBlock).part as ChatGraph;
+      expect(graph.nodes.single.name, 'ship chat');
+      expect(graph.edges.single.source, 'Alex');
+      expect(
+        (segments[2] as ChatBlock).part,
+        const ChatActions([
+          ChatAction(label: 'Search more', prompt: 'search memory for Alex'),
+        ]),
+      );
+    });
+
+    test('a memory_search tool result becomes a timeline', () {
+      final segments = parseChatSegments(
+        '',
+        tools: [
+          ChatToolCall(
+            name: 'memory_search',
+            arguments: '{"query":"Alex"}',
+            result:
+                '{"type":"timeline","title":"Memory","children":[{"type":"memory","title":"Standup","kind":"event"}]}',
+          ),
+        ],
+      );
+      final timeline = (segments.single as ChatBlock).part as ChatTimeline;
+      expect(timeline.title, 'Memory');
+      expect((timeline.children.single as ChatMemory).title, 'Standup');
+    });
   });
 
   test('YouHit.listFromResponse reads web hits', () {

@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:scoria_app/chat/bloc/chat_bloc.dart';
 import 'package:scoria_app/chat/parts/chat_part.dart';
 import 'package:scoria_app/chat/parts/you_search.dart';
+import 'package:scoria_app/chat/voice_cubit.dart';
 import 'package:scoria_app/ui/chrome.dart';
 import 'package:scoria_models/scoria_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -129,7 +132,396 @@ class ChatPartView extends StatelessWidget {
         query: query,
         client: searchClient,
       ),
+      ChatSpeech(:final text) => _SpeechView(text),
+      final ChatMemory memory => _MemoryView(memory),
+      final ChatPlace place => _PlaceView(place),
+      final ChatPerson person => _PersonView(person),
+      final ChatQuote quote => _QuoteView(quote),
+      final ChatMetric metric => _MetricView(metric),
+      ChatBadge(:final text) => ShadBadge.outline(child: Text(text)),
+      final ChatTimeline timeline => _TimelineView(timeline),
+      final ChatCheck check => _CheckView(check),
+      final ChatChecklist list => _ChecklistView(list),
+      final ChatGraph graph => _GraphView(graph),
+      ChatActions(:final items) => _ActionsView(items),
     };
+  }
+}
+
+class _SpeechView extends StatelessWidget {
+  const _SpeechView(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    VoiceCubit? voice;
+    try {
+      voice = context.watch<VoiceCubit>();
+    } on Object {
+      voice = null;
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+        child: Row(
+          children: [
+            Icon(
+              LucideIcons.volume2,
+              size: 14,
+              color: theme.colorScheme.mutedForeground,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(text, style: theme.textTheme.muted),
+            ),
+            ShadIconButton.ghost(
+              icon: const Icon(LucideIcons.play, size: 14),
+              onPressed: text.trim().isEmpty || voice == null
+                  ? null
+                  : () => voice!.speak(text),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MemoryView extends StatelessWidget {
+  const _MemoryView(this.memory);
+
+  final ChatMemory memory;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return _Disclosure(
+      detail: memory.body.length > 160 ? ChatText(memory.body) : null,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.background,
+          borderRadius: const BorderRadius.all(Radius.circular(8)),
+          border: Border.all(color: theme.colorScheme.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (memory.kind.isNotEmpty)
+                    ShadBadge.outline(child: Text(memory.kind)),
+                  if (memory.when.isNotEmpty)
+                    Text(memory.when, style: theme.textTheme.muted),
+                ],
+              ),
+              if (memory.title.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(memory.title, style: theme.textTheme.p),
+              ],
+              if (memory.body.isNotEmpty)
+                Text(
+                  memory.body.length > 160
+                      ? '${memory.body.substring(0, 157)}…'
+                      : memory.body,
+                  style: theme.textTheme.muted,
+                ),
+              if (memory.place != null) ...[
+                const SizedBox(height: 6),
+                _PlaceView(memory.place!),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaceView extends StatelessWidget {
+  const _PlaceView(this.place);
+
+  final ChatPlace place;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Row(
+      children: [
+        Icon(
+          LucideIcons.mapPin,
+          size: 14,
+          color: theme.colorScheme.mutedForeground,
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Text(place.line, style: theme.textTheme.muted)),
+      ],
+    );
+  }
+}
+
+class _PersonView extends StatelessWidget {
+  const _PersonView(this.person);
+
+  final ChatPerson person;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final initial = (person.name.isEmpty ? '?' : person.name[0]).toUpperCase();
+    return Row(
+      children: [
+        ShadAvatar(
+          null,
+          size: const Size.square(28),
+          placeholder: Text(initial, style: theme.textTheme.small),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                person.name.isEmpty ? person.handle : person.name,
+                style: theme.textTheme.p,
+              ),
+              if (person.handle.isNotEmpty || person.relation.isNotEmpty)
+                Text(
+                  [
+                    if (person.handle.isNotEmpty) person.handle,
+                    if (person.relation.isNotEmpty) person.relation,
+                  ].join(' · '),
+                  style: theme.textTheme.muted,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuoteView extends StatelessWidget {
+  const _QuoteView(this.quote);
+
+  final ChatQuote quote;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(color: theme.colorScheme.border, width: 3),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(quote.text, style: theme.textTheme.p),
+            if (quote.attribution.isNotEmpty)
+              Text(quote.attribution, style: theme.textTheme.muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricView extends StatelessWidget {
+  const _MetricView(this.metric);
+
+  final ChatMetric metric;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (metric.label.isNotEmpty)
+              Text(metric.label, style: theme.textTheme.muted),
+            Text(metric.value, style: theme.textTheme.h4),
+            if (metric.detail.isNotEmpty)
+              Text(metric.detail, style: theme.textTheme.muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TimelineView extends StatelessWidget {
+  const _TimelineView(this.timeline);
+
+  final ChatTimeline timeline;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (timeline.title.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(timeline.title, style: theme.textTheme.h4),
+          ),
+        for (final child in timeline.children) ...[
+          ChatPartView(child),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _CheckView extends StatelessWidget {
+  const _CheckView(this.check);
+
+  final ChatCheck check;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Row(
+      children: [
+        Icon(
+          check.done ? LucideIcons.circleCheck : LucideIcons.circle,
+          size: 14,
+          color: theme.colorScheme.mutedForeground,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            check.text,
+            style: theme.textTheme.p.copyWith(
+              decoration: check.done ? TextDecoration.lineThrough : null,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChecklistView extends StatelessWidget {
+  const _ChecklistView(this.list);
+
+  final ChatChecklist list;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (list.title.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(list.title, style: theme.textTheme.h4),
+          ),
+        for (final item in list.items) _CheckView(item),
+      ],
+    );
+  }
+}
+
+class _GraphView extends StatelessWidget {
+  const _GraphView(this.graph);
+
+  final ChatGraph graph;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (graph.nodes.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final node in graph.nodes)
+                ShadBadge.outline(
+                  child: Text(
+                    [
+                      if (node.kind.isNotEmpty) node.kind,
+                      node.name,
+                      if (node.status.isNotEmpty) node.status,
+                    ].join(' · '),
+                  ),
+                ),
+            ],
+          ),
+        if (graph.edges.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          for (final edge in graph.edges)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${edge.source} ${edge.kind} ${edge.target}'
+                '${edge.status.isEmpty ? '' : ' (${edge.status})'}',
+                style: theme.textTheme.muted,
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ActionsView extends StatelessWidget {
+  const _ActionsView(this.items);
+
+  final List<ChatAction> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final item in items)
+          ShadButton.outline(
+            onPressed: () => _run(context, item),
+            child: Text(item.label),
+          ),
+      ],
+    );
+  }
+
+  void _run(BuildContext context, ChatAction item) {
+    if (item.url.isNotEmpty) {
+      unawaited(_open(item.url));
+      return;
+    }
+    final prompt = item.prompt.trim();
+    if (prompt.isEmpty) return;
+    try {
+      context.read<ChatBloc>().add(ChatMessageSent(prompt));
+    } on Object {
+      // Rendered outside a chat session.
+    }
   }
 }
 

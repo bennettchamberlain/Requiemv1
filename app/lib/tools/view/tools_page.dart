@@ -226,8 +226,9 @@ class _ToolsPageState extends State<ToolsPage> {
                       Text('Inference', style: theme.textTheme.h4),
                       const SizedBox(height: 6),
                       Text(
-                        'Parasail is the cloud brain. Local is Ollama. '
-                        'Auto follows the server.',
+                        'Parasail is the cloud brain for chat and spoken '
+                        'thinking. Local is Ollama. Speech stays on this '
+                        'device, and on PersonaVoice if that sidecar is up.',
                         style: theme.textTheme.muted,
                       ),
                       const SizedBox(height: 12),
@@ -384,6 +385,7 @@ class _ConnectionCard extends StatelessWidget {
     'one' => LucideIcons.link,
     'parasail' => LucideIcons.cloud,
     'ollama' => LucideIcons.cpu,
+    'voice' => LucideIcons.audioLines,
     _ => LucideIcons.wrench,
   };
 }

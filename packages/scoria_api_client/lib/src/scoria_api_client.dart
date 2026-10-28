@@ -164,6 +164,31 @@ class ScoriaApiClient {
         await _deleteJson('/chat/connections/$id') as Map<String, dynamic>,
       );
 
+  Future<VoiceStatus> voiceStatus() async {
+    try {
+      return VoiceStatus.fromJson(
+        await _get('/voice/status') as Map<String, dynamic>,
+      );
+    } on ScoriaApiException catch (e) {
+      if (e.statusCode == 404) return VoiceStatus.unavailable;
+      rethrow;
+    }
+  }
+
+  /// Typed line for the voice brain (Parasail). Speaks if a session is live.
+  Future<Map<String, dynamic>> voiceAsk(String text) async =>
+      await _post('/voice/ask', {'text': text}) as Map<String, dynamic>;
+
+  /// Force PersonaPlex to say [text] on the voice box.
+  Future<Map<String, dynamic>> voiceSay(
+    String text, {
+    bool interrupt = false,
+  }) async =>
+      await _post('/voice/say', {
+        'text': text,
+        'interrupt': interrupt,
+      }) as Map<String, dynamic>;
+
   Future<OneGrant?> oneGrant() async {
     try {
       return OneGrant.fromJson(await _get('/one/grant') as Map<String, dynamic>);

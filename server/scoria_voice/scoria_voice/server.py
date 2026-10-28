@@ -105,7 +105,13 @@ class App:
         st = self.engine.status()
         return {
             "engine": st.__dict__,
-            "brain": {"enabled": self.brain is not None, "model": self.brain.model if self.brain else None, "ollama": self.cfg.ollama_url},
+            "brain": {
+                "enabled": self.brain is not None,
+                "provider": self.brain.provider if self.brain else None,
+                "model": self.brain.model if self.brain else None,
+                "ollama": self.cfg.ollama_url,
+                "parasail": bool(self.cfg.parasail_api_key),
+            },
             "stt": {"enabled": self.transcriber is not None, "model": self.cfg.whisper_model},
             "memory": {"available": bool(self.memory and self.memory.available), "person": (self.memory.person or {}).get("handle") if self.memory else None},
             "session": None if self.session is None or self.session.close else {"started_at": self.session.started_at, "turns": len(self.session.transcript), "injected_frames": self.session.injected_frames},

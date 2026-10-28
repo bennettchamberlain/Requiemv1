@@ -27,10 +27,10 @@ void main() {
   });
 
   group('ChatToolbox formatting', () {
-    test('memories and graph collapse to readable lines', () {
+    test('memories and graph collapse to GenUI JSON', () {
       expect(
         ChatToolbox.formatMemories(const []),
-        'no memories',
+        contains('no memories'),
       );
       expect(
         ChatToolbox.formatMemoryRow({
@@ -39,7 +39,7 @@ void main() {
           'body': 'Alex and the team',
           'occurred_at': '2026-10-28',
         }),
-        contains('Friday standup'),
+        allOf(contains('"type":"memory"'), contains('Friday standup')),
       );
       expect(
         ChatToolbox.formatGraph({
@@ -55,7 +55,7 @@ void main() {
             },
           ],
         }),
-        allOf(contains('ship chat'), contains('Alex knows standup')),
+        allOf(contains('"type":"graph"'), contains('ship chat'), contains('Alex')),
       );
     });
   });
