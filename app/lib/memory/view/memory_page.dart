@@ -2,7 +2,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
 import 'package:scoria_app/memory/memory.dart';
+import 'package:scoria_app/ui/chrome.dart';
 import 'package:scoria_models/scoria_models.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MemoryPage extends StatelessWidget {
   const new({super.key});
@@ -24,31 +26,41 @@ class MemoryView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Memory'),
-        // TODO(scoria): semantic search needs OLLAMA_URL on the server.
-        // actions: [IconButton(icon: Icon(Icons.search), onPressed: ...)],
-      ),
-      body: BlocListener<MemoryBloc, MemoryState>(
-        listenWhen: (p, c) => c.error != null && p.error != c.error,
-        listener: (context, state) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(content: Text(state.error!)));
-        },
-        child: const _MemoryBody(),
-      ),
-      floatingActionButton: FloatingActionButton(
-        key: const Key('memory_addNote_fab'),
-        onPressed: () => _showAddNote(context),
-        child: const Icon(Icons.edit_note),
+      body: Column(
+        children: [
+          ScoriaHeader(
+            title: 'Memory',
+            // TODO(scoria): semantic search needs OLLAMA_URL on the server.
+            actions: [
+              ShadIconButton.ghost(
+                key: const Key('memory_addNote_fab'),
+                icon: const Icon(LucideIcons.squarePen, size: 16),
+                onPressed: () => _showAddNote(context),
+              ),
+            ],
+          ),
+          Expanded(
+            child: BlocListener<MemoryBloc, MemoryState>(
+              listenWhen: (p, c) => c.error != null && p.error != c.error,
+              listener: (context, state) {
+                ShadToaster.of(context).show(
+                  ShadToast.destructive(
+                    title: const Text('Memory'),
+                    description: Text(state.error!),
+                  ),
+                );
+              },
+              child: const _MemoryBody(),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Future<void> _showAddNote(BuildContext context) async {
     final bloc = context.read<MemoryBloc>();
-    final result = await showDialog<({String title, String body})>(
+    final result = await showShadDialog<({String title, String body})>(
       context: context,
       builder: (_) => const _AddNoteDialog(),
     );
@@ -72,13 +84,17 @@ class _MemoryBody extends StatelessWidget {
     switch (state.status) {
       case MemoryStatus.initial:
       case MemoryStatus.loading:
-        return const Center(child: CircularProgressIndicator());
+        return const ScoriaSkeleton();
       case MemoryStatus.failure when state.items.isEmpty:
-        return _Retry(message: state.error ?? 'Could not load memory');
+        return ScoriaFailure(
+          message: state.error ?? 'Could not load memory',
+          onRetry: () =>
+              context.read<MemoryBloc>().add(const MemoryRefreshed()),
+        );
       case MemoryStatus.failure:
       case MemoryStatus.success:
         if (state.items.isEmpty) {
-          return const Center(child: Text('Nothing here yet.'));
+          return const ScoriaEmpty('Nothing here yet.');
         }
         return RefreshIndicator(
           onRefresh: () async {
@@ -98,12 +114,12 @@ class _MemoryBody extends StatelessWidget {
             child: ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
               itemCount: state.items.length + (state.hasMore ? 1 : 0),
-              separatorBuilder: (_, _) => const Divider(height: 1),
+              separatorBuilder: (_, _) => const ScoriaDivider.horizontal(),
               itemBuilder: (context, i) {
                 if (i >= state.items.length) {
                   return const Padding(
                     padding: EdgeInsets.all(16),
-                    child: Center(child: CircularProgressIndicator()),
+                    child: ScoriaSkeleton(rows: 1),
                   );
                 }
                 return _MemoryTile(item: state.items[i]);
@@ -122,24 +138,55 @@ class _MemoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
     final when = item.occurredAt.toLocal();
     final stamp =
         '${when.year}-${_two(when.month)}-${_two(when.day)} '
         '${_two(when.hour)}:${_two(when.minute)}';
-    return ListTile(
-      leading: Icon(_iconFor(item.kind)),
-      title: Text(item.title ?? '(untitled ${item.kind})'),
-      subtitle: Text(
-        [stamp, item.source, ?item.place?.city, ?item.body].join(' · '),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      onTap: () => showDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: Text(item.title ?? item.kind),
-          content: SingleChildScrollView(
+    final subtitle = [
+      stamp,
+      item.source,
+      ?item.place?.city,
+      ?item.body,
+    ].join(' · ');
+    return Material(
+      color: theme.colorScheme.background,
+      child: InkWell(
+        onTap: () => showShadDialog<void>(
+          context: context,
+          builder: (_) => ShadDialog(
+            title: Text(item.title ?? item.kind),
             child: Text(item.body ?? '(no body)\n\n$stamp · ${item.source}'),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                _iconFor(item.kind),
+                size: 16,
+                color: theme.colorScheme.mutedForeground,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title ?? '(untitled ${item.kind})',
+                      style: theme.textTheme.p,
+                    ),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.muted,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -149,36 +196,12 @@ class _MemoryTile extends StatelessWidget {
   static String _two(int n) => n.toString().padLeft(2, '0');
 
   static IconData _iconFor(String kind) => switch (kind) {
-    'note' => Icons.sticky_note_2_outlined,
-    'photo' => Icons.photo_outlined,
-    'message' => Icons.chat_bubble_outline,
-    'event' => Icons.event_outlined,
-    _ => Icons.memory,
+    'note' => LucideIcons.stickyNote,
+    'photo' => LucideIcons.image,
+    'message' => LucideIcons.messageCircle,
+    'event' => LucideIcons.calendar,
+    _ => LucideIcons.brain,
   };
-}
-
-class _Retry extends StatelessWidget {
-  const new({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          FilledButton.tonal(
-            onPressed: () =>
-                context.read<MemoryBloc>().add(const MemoryRefreshed()),
-            child: const Text('Retry'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _AddNoteDialog extends StatefulWidget {
@@ -201,41 +224,45 @@ class _AddNoteDialogState extends State<_AddNoteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return ShadDialog(
       title: const Text('New note'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            key: const Key('memory_addNote_title'),
-            controller: _title,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Title'),
-          ),
-          TextField(
-            key: const Key('memory_addNote_body'),
-            controller: _body,
-            minLines: 2,
-            maxLines: 6,
-            decoration: const InputDecoration(labelText: 'Body'),
-          ),
-        ],
-      ),
       actions: [
-        TextButton(
+        ShadButton.outline(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
+        ShadButton(
           key: const Key('memory_addNote_save'),
           onPressed: () {
             if (_title.text.trim().isEmpty) return;
-            Navigator.of(context)
-                .pop((title: _title.text.trim(), body: _body.text.trim()));
+            Navigator.of(context).pop((
+              title: _title.text.trim(),
+              body: _body.text.trim(),
+            ));
           },
           child: const Text('Save'),
         ),
       ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ShadInput(
+            key: const Key('memory_addNote_title'),
+            controller: _title,
+            autofocus: true,
+            placeholder: const Text('Title'),
+          ),
+          const SizedBox(height: 8),
+          ShadInput(
+            key: const Key('memory_addNote_body'),
+            controller: _body,
+            minLines: 2,
+            maxLines: 6,
+            placeholder: const Text('Body'),
+          ),
+        ],
+      ),
     );
   }
 }

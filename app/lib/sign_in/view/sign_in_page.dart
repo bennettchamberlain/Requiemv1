@@ -4,6 +4,7 @@ import 'package:scoria_api_client/scoria_api_client.dart';
 import 'package:scoria_app/config/server_cubit.dart';
 import 'package:scoria_app/session/session.dart';
 import 'package:scoria_app/sign_in/sign_in.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SignInPage extends StatelessWidget {
   const new({super.key});
@@ -30,28 +31,28 @@ class SignInView extends StatelessWidget {
       child: Scaffold(
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Scoria',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  const _ServerField(),
-                  const SizedBox(height: 12),
-                  const _HandleField(),
-                  const SizedBox(height: 12),
-                  const _PasswordField(),
-                  const SizedBox(height: 16),
-                  const _ErrorText(),
-                  const _SubmitButton(),
-                ],
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: const Padding(
+              padding: EdgeInsets.all(24),
+              child: ShadCard(
+                title: Text('Scoria'),
+                description: Text(
+                  'Sign in to the machine that holds memory.',
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _ServerField(),
+                    SizedBox(height: 12),
+                    _HandleField(),
+                    SizedBox(height: 12),
+                    _PasswordField(),
+                    SizedBox(height: 16),
+                    _ErrorText(),
+                    _SubmitButton(),
+                  ],
+                ),
               ),
             ),
           ),
@@ -82,17 +83,26 @@ class _ServerFieldState extends State<_ServerField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      key: const Key('signIn_server_textField'),
-      controller: _controller,
-      autocorrect: false,
-      keyboardType: TextInputType.url,
-      decoration: const InputDecoration(
-        labelText: 'Server',
-        helperText: 'e.g. 192.168.1.20:8787 (your Scoria machine on Wi-Fi)',
-        prefixIcon: Icon(Icons.dns_outlined),
-      ),
-      onChanged: (v) => context.read<ServerCubit>().set(v),
+    final muted = ShadTheme.of(context).textTheme.muted;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _Label('Server'),
+        ShadInput(
+          key: const Key('signIn_server_textField'),
+          controller: _controller,
+          autocorrect: false,
+          keyboardType: TextInputType.url,
+          leading: const Icon(LucideIcons.server, size: 16),
+          placeholder: const Text('http://localhost:8787'),
+          onChanged: (v) => context.read<ServerCubit>().set(v),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'e.g. 192.168.1.20:8787 (your Scoria machine on Wi-Fi)',
+          style: muted,
+        ),
+      ],
     );
   }
 }
@@ -102,11 +112,18 @@ class _HandleField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      key: const Key('signIn_handle_textField'),
-      autocorrect: false,
-      decoration: const InputDecoration(labelText: 'Handle'),
-      onChanged: (v) => context.read<SignInBloc>().add(SignInHandleChanged(v)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _Label('Handle'),
+        ShadInput(
+          key: const Key('signIn_handle_textField'),
+          autocorrect: false,
+          placeholder: const Text('Handle'),
+          onChanged: (v) =>
+              context.read<SignInBloc>().add(SignInHandleChanged(v)),
+        ),
+      ],
     );
   }
 }
@@ -116,14 +133,34 @@ class _PasswordField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      key: const Key('signIn_password_textField'),
-      obscureText: true,
-      decoration: const InputDecoration(labelText: 'Password'),
-      onChanged: (v) =>
-          context.read<SignInBloc>().add(SignInPasswordChanged(v)),
-      onSubmitted: (_) =>
-          context.read<SignInBloc>().add(const SignInSubmitted()),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _Label('Password'),
+        ShadInput(
+          key: const Key('signIn_password_textField'),
+          obscureText: true,
+          placeholder: const Text('Password'),
+          onChanged: (v) =>
+              context.read<SignInBloc>().add(SignInPasswordChanged(v)),
+          onSubmitted: (_) =>
+              context.read<SignInBloc>().add(const SignInSubmitted()),
+        ),
+      ],
+    );
+  }
+}
+
+class _Label extends StatelessWidget {
+  const new(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(text, style: ShadTheme.of(context).textTheme.small),
     );
   }
 }
@@ -137,10 +174,9 @@ class _ErrorText extends StatelessWidget {
     if (error == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        error,
-        style: TextStyle(color: Theme.of(context).colorScheme.error),
-        textAlign: TextAlign.center,
+      child: ShadAlert.destructive(
+        title: const Text('Could not sign in'),
+        description: Text(error),
       ),
     );
   }
@@ -152,15 +188,21 @@ class _SubmitButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<SignInBloc>().state;
-    return FilledButton(
+    final submitting = state.status == SignInStatus.submitting;
+    return ShadButton(
       key: const Key('signIn_submit_button'),
+      width: double.infinity,
+      enabled: state.canSubmit,
       onPressed: state.canSubmit
           ? () => context.read<SignInBloc>().add(const SignInSubmitted())
           : null,
-      child: state.status == SignInStatus.submitting
-          ? const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+      child: submitting
+          ? SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: ShadTheme.of(context).colorScheme.primaryForeground,
+              ),
             )
           : const Text('Sign in'),
     );

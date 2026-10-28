@@ -6,6 +6,8 @@ import 'package:scoria_app/home/home.dart';
 import 'package:scoria_app/l10n/l10n.dart';
 import 'package:scoria_app/session/session.dart';
 import 'package:scoria_app/sign_in/sign_in.dart';
+import 'package:scoria_app/ui/chrome.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class App extends StatelessWidget {
@@ -56,13 +58,8 @@ class AppView extends StatelessWidget {
     final status = context.select<SessionCubit, SessionStatus>(
       (c) => c.state.status,
     );
-    return MaterialApp(
-      theme: ThemeData(
-        appBarTheme: AppBarTheme(
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        ),
-        useMaterial3: true,
-      ),
+    return ShadApp(
+      builder: scoriaMaterialTheme,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: status == SessionStatus.authenticated

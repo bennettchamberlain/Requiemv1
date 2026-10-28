@@ -2,7 +2,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
 import 'package:scoria_app/chat/chat.dart';
+import 'package:scoria_app/ui/chrome.dart';
 import 'package:scoria_models/scoria_models.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Chat with the Scoria agent. Phone: list of conversations, tap to open.
 /// Wide: list on the left, conversation on the right.
@@ -28,98 +30,149 @@ class ChatView extends StatelessWidget {
     final wide = MediaQuery.sizeOf(context).width >= 700;
     final hasOpen = context.select<ChatBloc, bool>((b) => b.state.open != null);
     if (wide) {
-      return Row(
+      return const Row(
         children: [
-          SizedBox(width: 300, child: _SessionList(showAppBar: true)),
-          const VerticalDivider(width: 1),
-          Expanded(
-            child: hasOpen ? const _Conversation() : const _EmptyConversation(),
-          ),
+          SizedBox(width: 300, child: _SessionList()),
+          ScoriaDivider.vertical(),
+          Expanded(child: _WideConversation()),
         ],
       );
     }
-    return hasOpen ? const _Conversation(showBack: true) : _SessionList();
+    return hasOpen ? const _Conversation(showBack: true) : const _SessionList();
+  }
+}
+
+class _WideConversation extends StatelessWidget {
+  const new();
+
+  @override
+  Widget build(BuildContext context) {
+    final hasOpen = context.select<ChatBloc, bool>((b) => b.state.open != null);
+    return hasOpen ? const _Conversation() : const _EmptyConversation();
   }
 }
 
 class _SessionList extends StatelessWidget {
-  _SessionList({this.showAppBar = true});
-
-  final bool showAppBar;
+  const new();
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<ChatBloc>().state;
     return Scaffold(
-      appBar: showAppBar
-          ? AppBar(
-              title: const Text('Chat'),
-              actions: [
-                IconButton(
-                  key: const Key('chat_new_button'),
-                  tooltip: 'New chat',
-                  icon: const Icon(Icons.add_comment_outlined),
-                  onPressed: () => context.read<ChatBloc>().add(
-                    const ChatNewSessionRequested(),
-                  ),
+      body: Column(
+        children: [
+          ScoriaHeader(
+            title: 'Chat',
+            actions: [
+              ShadIconButton.ghost(
+                key: const Key('chat_new_button'),
+                icon: const Icon(LucideIcons.squarePen, size: 16),
+                onPressed: () => context.read<ChatBloc>().add(
+                  const ChatNewSessionRequested(),
                 ),
-              ],
-            )
-          : null,
-      body: switch (state.status) {
-        ChatStatus.initial || ChatStatus.loading when state.sessions.isEmpty =>
-          const Center(child: CircularProgressIndicator()),
-        ChatStatus.failure when state.sessions.isEmpty => _Retry(
-          message: state.error ?? 'Could not load chats',
-          onRetry: () => context.read<ChatBloc>().add(const ChatStarted()),
-        ),
-        _ when state.sessions.isEmpty => const _EmptyList(),
-        _ => RefreshIndicator(
-          onRefresh: () async =>
-              context.read<ChatBloc>().add(const ChatStarted()),
-          child: ListView.separated(
-            itemCount: state.sessions.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) {
-              final s = state.sessions[i];
-              return Dismissible(
-                key: ValueKey(s.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  color: Theme.of(context).colorScheme.errorContainer,
+              ),
+            ],
+          ),
+          Expanded(child: _list(context, state)),
+        ],
+      ),
+    );
+  }
+
+  Widget _list(BuildContext context, ChatState state) {
+    return switch (state.status) {
+      ChatStatus.initial || ChatStatus.loading when state.sessions.isEmpty =>
+        const ScoriaSkeleton(),
+      ChatStatus.failure when state.sessions.isEmpty => ScoriaFailure(
+        message: state.error ?? 'Could not load chats',
+        onRetry: () => context.read<ChatBloc>().add(const ChatStarted()),
+      ),
+      _ when state.sessions.isEmpty => const _EmptyList(),
+      _ => RefreshIndicator(
+        onRefresh: () async =>
+            context.read<ChatBloc>().add(const ChatStarted()),
+        child: ListView.separated(
+          itemCount: state.sessions.length,
+          separatorBuilder: (_, _) => const ScoriaDivider.horizontal(),
+          itemBuilder: (context, i) {
+            final s = state.sessions[i];
+            return Dismissible(
+              key: ValueKey(s.id),
+              direction: DismissDirection.endToStart,
+              background: ColoredBox(
+                color: ShadTheme.of(context).colorScheme.destructive,
+                child: Align(
                   alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  child: const Icon(Icons.delete_outline),
-                ),
-                onDismissed: (_) =>
-                    context.read<ChatBloc>().add(ChatSessionDeleted(s)),
-                child: ListTile(
-                  selected: state.open?.id == s.id,
-                  leading: const Icon(Icons.forum_outlined),
-                  title: Text(
-                    s.title ?? 'New chat',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 20),
+                    child: Icon(
+                      LucideIcons.trash2,
+                      color: ShadTheme.of(
+                        context,
+                      ).colorScheme.destructiveForeground,
+                    ),
                   ),
-                  subtitle: Text(
-                    '${s.messageCount} messages'
-                    '${s.lastMessageAt != null ? ' · ${_ago(s.lastMessageAt!)}' : ''}',
-                  ),
-                  onTap: () =>
-                      context.read<ChatBloc>().add(ChatSessionOpened(s)),
                 ),
-              );
-            },
+              ),
+              onDismissed: (_) =>
+                  context.read<ChatBloc>().add(ChatSessionDeleted(s)),
+              child: _SessionTile(
+                session: s,
+                selected: state.open?.id == s.id,
+              ),
+            );
+          },
+        ),
+      ),
+    };
+  }
+}
+
+class _SessionTile extends StatelessWidget {
+  const new({required this.session, required this.selected});
+
+  final ChatSession session;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final when = session.lastMessageAt;
+    final subtitle =
+        '${session.messageCount} messages'
+        '${when != null ? ' · ${_ago(when)}' : ''}';
+    return Material(
+      color: selected ? theme.colorScheme.accent : theme.colorScheme.background,
+      child: InkWell(
+        onTap: () => context.read<ChatBloc>().add(ChatSessionOpened(session)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                LucideIcons.messageCircle,
+                size: 16,
+                color: theme.colorScheme.mutedForeground,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      session.title ?? 'New chat',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.p,
+                    ),
+                    Text(subtitle, style: theme.textTheme.muted),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      },
-      floatingActionButton: showAppBar
-          ? null
-          : FloatingActionButton(
-              onPressed: () =>
-                  context.read<ChatBloc>().add(const ChatNewSessionRequested()),
-              child: const Icon(Icons.add_comment_outlined),
-            ),
+      ),
     );
   }
 }
@@ -167,23 +220,25 @@ class _ConversationState extends State<_Conversation> {
       listener: (_, _) => _scrollToEnd(),
       builder: (context, state) {
         final open = state.open;
+        final theme = ShadTheme.of(context);
         return Scaffold(
-          appBar: AppBar(
-            leading: widget.showBack
-                ? IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () =>
-                        context.read<ChatBloc>().add(const ChatBackToList()),
-                  )
-                : null,
-            title: Text(open?.title ?? 'New chat'),
-          ),
           body: Column(
             children: [
+              ScoriaHeader(
+                title: open?.title ?? 'New chat',
+                leading: widget.showBack
+                    ? ShadIconButton.ghost(
+                        icon: const Icon(LucideIcons.arrowLeft, size: 16),
+                        onPressed: () => context.read<ChatBloc>().add(
+                          const ChatBackToList(),
+                        ),
+                      )
+                    : null,
+              ),
               Expanded(
                 child:
                     state.status == ChatStatus.loading && state.messages.isEmpty
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const ScoriaSkeleton()
                     : ListView(
                         controller: _scroll,
                         padding: const EdgeInsets.all(12),
@@ -204,8 +259,8 @@ class _ConversationState extends State<_Conversation> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Text(
                     state.error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.destructive,
                     ),
                   ),
                 ),
@@ -217,32 +272,30 @@ class _ConversationState extends State<_Conversation> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
-                        child: TextField(
+                        child: ShadInput(
                           key: const Key('chat_composer'),
                           controller: _controller,
                           minLines: 1,
                           maxLines: 5,
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _send(),
-                          decoration: const InputDecoration(
-                            hintText: 'Ask Scoria…',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
+                          placeholder: const Text('Ask Scoria…'),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      IconButton.filled(
+                      ShadIconButton(
                         key: const Key('chat_send_button'),
+                        enabled: !state.sending,
                         onPressed: state.sending ? null : _send,
                         icon: state.sending
-                            ? const SizedBox.square(
-                                dimension: 18,
+                            ? SizedBox.square(
+                                dimension: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
+                                  color: theme.colorScheme.primaryForeground,
                                 ),
                               )
-                            : const Icon(Icons.arrow_upward),
+                            : const Icon(LucideIcons.arrowUp, size: 16),
                       ),
                     ],
                   ),
@@ -274,20 +327,29 @@ class _Bubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = ShadTheme.of(context);
     final mine = role == 'user';
+    final background = mine
+        ? theme.colorScheme.primary
+        : theme.colorScheme.muted;
+    final foreground = mine
+        ? theme.colorScheme.primaryForeground
+        : theme.colorScheme.foreground;
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+          maxWidth: MediaQuery.sizeOf(context).width * 0.72,
         ),
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: mine ? scheme.primaryContainer : scheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(16),
+            color: background,
+            borderRadius: const BorderRadius.all(Radius.circular(8)),
+            border: mine
+                ? null
+                : Border.all(color: theme.colorScheme.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -297,24 +359,29 @@ class _Bubble extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Wrap(
                     spacing: 6,
+                    runSpacing: 6,
                     children: [
                       for (final t in tools)
-                        Chip(
-                          visualDensity: VisualDensity.compact,
-                          avatar: const Icon(Icons.build_outlined, size: 14),
-                          label: Text(t.name),
+                        ShadBadge.outline(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(LucideIcons.wrench, size: 12),
+                              const SizedBox(width: 4),
+                              Text(t.name),
+                            ],
+                          ),
                         ),
                     ],
                   ),
                 ),
               if (text.isEmpty && streaming)
-                const SizedBox(
-                  width: 36,
-                  height: 16,
-                  child: LinearProgressIndicator(),
-                )
+                const SizedBox(width: 72, child: ShadProgress(minHeight: 6))
               else
-                SelectableText(_plain(text)),
+                SelectableText(
+                  _plain(text),
+                  style: theme.textTheme.p.copyWith(color: foreground),
+                ),
             ],
           ),
         ),
@@ -325,7 +392,7 @@ class _Bubble extends StatelessWidget {
   /// Strip the markdown a model tends to add; the bubble shows plain text.
   static String _plain(String s) => s
       .replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1')
-      .replaceAll(RegExp(r'`([^`]+)`'), r'$1')
+      .replaceAll(RegExp('`([^`]+)`'), r'$1')
       .replaceAll(RegExp(r'^#+\s*', multiLine: true), '');
 }
 
@@ -339,8 +406,7 @@ class _Hint extends StatelessWidget {
       'Ask about your memories, places you have been, or anything in the '
       'world. Scoria searches your memory first, then the web.',
       textAlign: TextAlign.center,
-      style: Theme.of(context).textTheme.bodyMedium
-          ?.copyWith(color: Theme.of(context).colorScheme.outline),
+      style: ShadTheme.of(context).textTheme.muted,
     ),
   );
 }
@@ -362,26 +428,7 @@ class _EmptyConversation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      const Center(child: Text('Pick a chat or start a new one.'));
-}
-
-class _Retry extends StatelessWidget {
-  const new({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(message, textAlign: TextAlign.center),
-        const SizedBox(height: 12),
-        FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
-      ],
-    ),
-  );
+      const ScoriaEmpty('Pick a chat or start a new one.');
 }
 
 String _ago(DateTime t) {
