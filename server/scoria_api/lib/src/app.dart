@@ -19,6 +19,7 @@ import 'package:scoria_api/src/geocoder.dart';
 import 'package:scoria_api/src/parasail_embeddings.dart';
 import 'package:scoria_api/src/graph/graph_block.dart';
 import 'package:scoria_api/src/queries.dart';
+import 'package:scoria_api/src/voice/supervisor.dart';
 import 'package:scoria_jobs/scoria_jobs.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
@@ -46,6 +47,7 @@ class ScoriaApp {
     Password? password,
   }) : _password = password ?? const Password(),
        _tokens = SessionToken(config.sessionSecret),
+       voice = VoiceSupervisor(config),
        geocoder =
            geocoder ??
            Geocoder(
@@ -63,6 +65,7 @@ class ScoriaApp {
   final AgentClient? parasailChat;
   final AgentClient? ollamaChat;
   final Geocoder geocoder;
+  final VoiceSupervisor voice;
   final Password _password;
   final SessionToken _tokens;
   final ApiKeys _apiKeys = const ApiKeys();
@@ -112,6 +115,8 @@ class ScoriaApp {
     ..get('/graph', _authed((r, c) => _one(c, 'graph')))
     ..get('/chat/tools', _authed(_chatTools))
     ..get('/voice/status', _authed(_voiceStatus))
+    ..post('/voice/start', _authed(_voiceStart))
+    ..post('/voice/stop', _authed(_voiceStop))
     ..post('/voice/ask', _authed(_voiceAsk))
     ..post('/voice/say', _authed(_voiceSay))
     ..put('/chat/connections/<id>', _authed(_chatConnectionPut))
@@ -1232,41 +1237,37 @@ class ScoriaApp {
 
   // ---- One Connect + weave graph -------------------------------------------
 
-  Future<Map<String, dynamic>?> _voicePeek() async {
-    try {
-      final r = await http
-          .get(Uri.parse('${config.voiceUrl}/api/status'))
-          .timeout(const Duration(milliseconds: 800));
-      if (r.statusCode != 200) return null;
-      final body = jsonDecode(r.body);
-      return body is Map<String, dynamic> ? body : null;
-    } on Object {
-      return null;
-    }
-  }
+  Future<Map<String, dynamic>?> _voicePeek() => voice.peek();
 
   Future<Map<String, dynamic>> _voiceConnection() async {
     final remote = await _voicePeek();
     final brain = remote?['brain'] is Map
         ? Map<String, dynamic>.from(remote!['brain'] as Map)
         : const <String, dynamic>{};
-    final session = remote?['session'];
-    final live = session is Map;
+    final engine = remote?['engine'] is Map
+        ? Map<String, dynamic>.from(remote!['engine'] as Map)
+        : const <String, dynamic>{};
+    final loaded = engine['loaded'] == true;
+    final loading = engine['loading'] == true;
     final model = brain['model'] as String?;
-    final provider = brain['provider'] as String?;
+    final keep = remote?['keep_until'] as String?;
     return {
       'connected': remote != null,
-      'ready': live,
+      'ready': loaded,
       'model': model,
+      'connected_at': keep,
       'description': remote == null
-          ? 'Local mouth and ears (PersonaPlex + Whisper). Thinking is '
-                'Parasail. Start scoria-voice on :8998 — chat still speaks '
-                'on this device without it.'
-          : live
-          ? 'Speaking on the voice box. Brain: ${provider ?? 'unknown'}'
+          ? 'Local mouth and ears. Press Start — this machine loads '
+                'PersonaPlex and keeps it warm for six hours. Chat still '
+                'speaks on the phone without it.'
+          : loading
+          ? 'Loading weights. First start is the long one; after that it '
+                'stays resident for six hours.'
+          : loaded
+          ? 'Warm'
+                '${keep == null ? '' : ' until $keep'}'
                 '${model == null ? '' : ' · $model'}.'
-          : 'Sidecar is up. Toggle the engine in /console to talk out loud '
-                'there; chat already speaks on this device.',
+          : 'Sidecar is up. Press Load to put PersonaPlex on the GPU.',
     };
   }
 
@@ -1277,6 +1278,18 @@ class ScoriaApp {
       'url': config.voiceUrl,
       if (remote != null) ...remote,
     });
+  }
+
+  Future<Response> _voiceStart(Request r, gel.Client c) async {
+    try {
+      return _json(await voice.start());
+    } on StateError catch (e) {
+      return _error(503, 'voice_unavailable', e.message);
+    }
+  }
+
+  Future<Response> _voiceStop(Request r, gel.Client c) async {
+    return _json(await voice.stop());
   }
 
   Future<Response> _voiceAsk(Request r, gel.Client c) async {

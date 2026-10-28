@@ -4,6 +4,7 @@ and a control API for the toggle, the meta prompt, and manual say/brief."""
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import logging
 import os
@@ -41,6 +42,9 @@ class App:
         self.session: Session | None = None
         self.subscribers: set[asyncio.Queue] = set()
         self.recent_events: list[dict] = []
+        self.keep_until: float | None = None
+        self._hold_task: asyncio.Task | None = None
+        self._load_task: asyncio.Task | None = None
 
     # ---- events ---------------------------------------------------------------
 
@@ -74,7 +78,8 @@ class App:
             self.brain = Brain(self.cfg, self.memory, self.persona, self.broadcast_brain, self._persona_changed)
             await self.brain.start()
         if self.cfg.autoload:
-            asyncio.create_task(self.load_all())
+            self.hold()
+            self._ensure_load()
 
     async def ensure_stt(self) -> None:
         """Load whisper on first use (it may need a ~1.5 GB download); never blocks the port."""
@@ -95,6 +100,45 @@ class App:
     async def load_all(self) -> None:
         """Engine toggle ON: PersonaPlex weights and the STT model together."""
         await asyncio.gather(self.engine.load(), self.ensure_stt())
+        self.hold()
+
+    def hold(self) -> None:
+        """Keep weights resident for keep_alive_seconds after this moment."""
+        self.keep_until = time.time() + max(60, int(self.cfg.keep_alive_seconds))
+        if self._hold_task is None or self._hold_task.done():
+            self._hold_task = asyncio.create_task(self._hold_watch())
+
+    def _ensure_load(self) -> None:
+        if self.engine.loaded or self.engine.loading:
+            return
+        if self._load_task is not None and not self._load_task.done():
+            return
+        self._load_task = asyncio.create_task(self._load_held())
+
+    async def _load_held(self) -> None:
+        try:
+            await self.load_all()
+        except Exception:  # noqa: BLE001
+            log.exception("engine load failed")
+        await self.broadcast({"type": "engine", **self.status_dict()})
+
+    async def _hold_watch(self) -> None:
+        try:
+            await self._hold_loop()
+        except asyncio.CancelledError:
+            return
+
+    async def _hold_loop(self) -> None:
+        while self.keep_until is not None:
+            remaining = self.keep_until - time.time()
+            if remaining <= 0:
+                if self.session is not None and not self.session.close:
+                    self.session.close = True
+                await self.engine.unload()
+                self.keep_until = None
+                await self.broadcast({"type": "engine", **self.status_dict()})
+                return
+            await asyncio.sleep(min(remaining, 30))
 
     async def broadcast_brain(self, ev) -> None:
         await self.broadcast({"type": "brain", **ev.to_dict()})
@@ -117,6 +161,12 @@ class App:
             "session": None if self.session is None or self.session.close else {"started_at": self.session.started_at, "turns": len(self.session.transcript), "injected_frames": self.session.injected_frames},
             "persona": self.persona.to_dict(),
             "voices": self.engine.voices(),
+            "keep_until": (
+                dt.datetime.fromtimestamp(self.keep_until).astimezone().isoformat()
+                if self.keep_until
+                else None
+            ),
+            "keep_seconds": max(0, int(self.keep_until - time.time())) if self.keep_until else 0,
         }
 
     async def h_status(self, _):
@@ -126,14 +176,16 @@ class App:
         body = await request.json()
         on = bool(body.get("on", True))
         if on:
-            try:
-                await self.load_all()
-            except Exception as e:  # noqa: BLE001
-                return web.json_response({"error": str(e)}, status=500)
-        else:
-            if self.session is not None and not self.session.close:
-                self.session.close = True
-            await self.engine.unload()
+            self.hold()
+            self._ensure_load()
+            return web.json_response(self.status_dict())
+        if self.session is not None and not self.session.close:
+            self.session.close = True
+        self.keep_until = None
+        if self._hold_task is not None:
+            self._hold_task.cancel()
+            self._hold_task = None
+        await self.engine.unload()
         return web.json_response(self.status_dict())
 
     async def h_persona_get(self, _):
@@ -156,6 +208,7 @@ class App:
         body = await request.json()
         if self.session is None or self.session.close:
             return web.json_response({"error": "no live session"}, status=409)
+        self.hold()
         n = self.session.say(str(body.get("text", "")), interrupt=bool(body.get("interrupt", False)))
         return web.json_response({"queued_tokens": n})
 
@@ -179,6 +232,7 @@ class App:
         text = str(body.get("text", "")).strip()
         if not text:
             return web.json_response({"error": "text required"}, status=400)
+        self.hold()
         if self.session is not None and not self.session.close:
             await self.session._on_user_utterance(text, time.time(), time.time())  # noqa: SLF001
             return web.json_response({"ok": True, "live": True})
@@ -219,6 +273,7 @@ class App:
                 return ws
         if self.session is not None and not self.session.close:
             self.session.close = True
+        self.hold()
         self.session = Session(self.engine, self.persona, self.brain, self.transcriber, self.broadcast, self.memory)
         return await self.session.run(request)
 

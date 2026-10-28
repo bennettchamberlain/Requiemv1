@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_models/scoria_models.dart';
 import 'package:scoria_app/chat/parts/chat_part.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -14,7 +17,11 @@ class VoiceState extends Equatable {
     this.sttAvailable = false,
     this.ttsAvailable = false,
     this.sidecarLive = false,
+    this.sidecarLoaded = false,
+    this.sidecarLoading = false,
+    this.sidecarStarting = false,
     this.sidecarModel,
+    this.keepUntil,
     this.partial = '',
     this.lastHeard,
     this.heardSeq = 0,
@@ -29,7 +36,11 @@ class VoiceState extends Equatable {
   final bool sttAvailable;
   final bool ttsAvailable;
   final bool sidecarLive;
+  final bool sidecarLoaded;
+  final bool sidecarLoading;
+  final bool sidecarStarting;
   final String? sidecarModel;
+  final DateTime? keepUntil;
   final String partial;
   final String? lastHeard;
   final int heardSeq;
@@ -43,7 +54,11 @@ class VoiceState extends Equatable {
     bool? sttAvailable,
     bool? ttsAvailable,
     bool? sidecarLive,
+    bool? sidecarLoaded,
+    bool? sidecarLoading,
+    bool? sidecarStarting,
     String? sidecarModel,
+    DateTime? keepUntil,
     String? partial,
     String? lastHeard,
     int? heardSeq,
@@ -60,9 +75,13 @@ class VoiceState extends Equatable {
       sttAvailable: sttAvailable ?? this.sttAvailable,
       ttsAvailable: ttsAvailable ?? this.ttsAvailable,
       sidecarLive: sidecarLive ?? this.sidecarLive,
+      sidecarLoaded: sidecarLoaded ?? this.sidecarLoaded,
+      sidecarLoading: sidecarLoading ?? this.sidecarLoading,
+      sidecarStarting: sidecarStarting ?? this.sidecarStarting,
       sidecarModel: clearSidecarModel
           ? null
           : sidecarModel ?? this.sidecarModel,
+      keepUntil: keepUntil ?? this.keepUntil,
       partial: partial ?? this.partial,
       lastHeard: clearHeard ? null : lastHeard ?? this.lastHeard,
       heardSeq: heardSeq ?? this.heardSeq,
@@ -79,7 +98,11 @@ class VoiceState extends Equatable {
     sttAvailable,
     ttsAvailable,
     sidecarLive,
+    sidecarLoaded,
+    sidecarLoading,
+    sidecarStarting,
     sidecarModel,
+    keepUntil,
     partial,
     lastHeard,
     heardSeq,
@@ -109,7 +132,7 @@ class VoiceCubit extends Cubit<VoiceState> {
     await _prefs?.setBool(_enabledKey, on);
     if (on) {
       await prepareSpeak();
-      await refreshSidecar();
+      unawaited(startSidecar());
     } else {
       await stopListen();
       await _tts?.stop();
@@ -117,19 +140,52 @@ class VoiceCubit extends Cubit<VoiceState> {
     }
   }
 
+  void applyStatus(VoiceStatus status) {
+    emit(
+      state.copyWith(
+        sidecarLive: status.available && (status.live || status.loaded),
+        sidecarLoaded: status.loaded,
+        sidecarLoading: status.loading,
+        sidecarModel: status.model ?? status.provider,
+        keepUntil: status.keepUntil,
+        clearSidecarModel: status.model == null && status.provider == null,
+        clearError: true,
+      ),
+    );
+  }
+
   Future<void> refreshSidecar() async {
     try {
-      final status = await _api.voiceStatus();
+      applyStatus(await _api.voiceStatus());
+    } on Object {
       emit(
         state.copyWith(
-          sidecarLive: status.available && status.live,
-          sidecarModel: status.model ?? status.provider,
-          clearSidecarModel: status.model == null && status.provider == null,
+          sidecarLive: false,
+          sidecarLoaded: false,
+          sidecarLoading: false,
+          clearSidecarModel: true,
         ),
       );
-    } on Object {
-      emit(state.copyWith(sidecarLive: false, clearSidecarModel: true));
     }
+  }
+
+  /// Start or warm the GPU sidecar. Returns when it is loaded or the
+  /// poll budget runs out. First start can take a couple of minutes.
+  Future<void> startSidecar() async {
+    if (state.sidecarStarting) return;
+    emit(state.copyWith(sidecarStarting: true, clearError: true));
+    try {
+      applyStatus(await _api.voiceStart());
+      for (var i = 0; i < 90 && !state.sidecarLoaded; i++) {
+        if (!state.sidecarLoading && i > 2) break;
+        await Future<void>.delayed(const Duration(seconds: 2));
+        applyStatus(await _api.voiceStatus());
+      }
+    } on Object catch (e) {
+      emit(state.copyWith(error: '$e', sidecarStarting: false));
+      return;
+    }
+    emit(state.copyWith(sidecarStarting: false));
   }
 
   Future<bool> prepareSpeak() async {

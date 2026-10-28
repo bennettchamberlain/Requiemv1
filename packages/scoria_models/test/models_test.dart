@@ -66,11 +66,17 @@ void main() {
     final status = VoiceStatus.fromJson({
       'available': true,
       'url': 'http://127.0.0.1:8998',
+      'starting': true,
+      'keep_until': '2026-10-29T04:00:00-0700',
+      'keep_seconds': 21600,
       'brain': {'provider': 'parasail', 'model': 'parasail-glm-53-flash'},
+      'engine': {'loaded': false, 'loading': true},
       'session': {'turns': 1},
     });
     expect(status.available, isTrue);
     expect(status.live, isTrue);
+    expect(status.loading, isTrue);
+    expect(status.keepSeconds, 21600);
     expect(status.provider, 'parasail');
     expect(status.model, 'parasail-glm-53-flash');
   });

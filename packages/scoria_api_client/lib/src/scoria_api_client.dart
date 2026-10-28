@@ -175,6 +175,16 @@ class ScoriaApiClient {
     }
   }
 
+  /// Spawn the sidecar if it is down, then load weights in the background.
+  Future<VoiceStatus> voiceStart() async => VoiceStatus.fromJson(
+    await _post('/voice/start', const {}) as Map<String, dynamic>,
+  );
+
+  /// Unload GPU weights. The process stays up so the next start is faster.
+  Future<VoiceStatus> voiceStop() async => VoiceStatus.fromJson(
+    await _post('/voice/stop', const {}) as Map<String, dynamic>,
+  );
+
   /// Typed line for the voice brain (Parasail). Speaks if a session is live.
   Future<Map<String, dynamic>> voiceAsk(String text) async =>
       await _post('/voice/ask', {'text': text}) as Map<String, dynamic>;

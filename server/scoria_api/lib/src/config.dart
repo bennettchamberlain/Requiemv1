@@ -31,6 +31,9 @@ class Config {
     this.pythonBin = 'python3',
     this.hackathonRoot,
     this.voiceUrl = 'http://127.0.0.1:8998',
+    this.voiceBin,
+    this.voiceWorkdir,
+    this.voiceKeepAlive = const Duration(hours: 6),
   });
 
   factory Config.fromEnv([Map<String, String>? env]) {
@@ -41,6 +44,7 @@ class Config {
         'SCORIA_SESSION_SECRET must be set to at least 32 characters',
       );
     }
+    final root = _blankToNull(e['HACKATHON_ROOT'] ?? e['REQUIEM_ROOT']);
     return Config(
       port: int.parse(e['SCORIA_PORT'] ?? '8080'),
       gelDsn: e['GEL_DSN'] ?? 'gel://admin@127.0.0.1:5656/main',
@@ -80,8 +84,15 @@ class Config {
           (e['VIRTUAL_ENV'] == null
               ? 'python3'
               : '${e['VIRTUAL_ENV']}/bin/python'),
-      hackathonRoot: _blankToNull(e['HACKATHON_ROOT'] ?? e['REQUIEM_ROOT']),
+      hackathonRoot: root,
       voiceUrl: e['VOICE_URL'] ?? 'http://127.0.0.1:8998',
+      voiceBin: _blankToNull(e['VOICE_BIN']) ?? _defaultVoiceBin(root),
+      voiceWorkdir:
+          _blankToNull(e['VOICE_WORKDIR']) ??
+          (root == null ? null : '$root/server/scoria_voice'),
+      voiceKeepAlive: Duration(
+        seconds: int.tryParse(e['VOICE_KEEP_ALIVE_SEC'] ?? '') ?? 6 * 3600,
+      ),
     );
   }
 
@@ -148,6 +159,15 @@ class Config {
 
   /// PersonaVoice sidecar (PersonaPlex + local STT). Thinking is Parasail.
   final String voiceUrl;
+  final String? voiceBin;
+  final String? voiceWorkdir;
+  final Duration voiceKeepAlive;
+
+  static String? _defaultVoiceBin(String? root) {
+    if (root == null) return null;
+    final path = '$root/server/scoria_voice/.venv/bin/scoria-voice';
+    return File(path).existsSync() ? path : null;
+  }
 
   static String? _blankToNull(String? s) =>
       s == null || s.trim().isEmpty ? null : s.trim();

@@ -27,6 +27,7 @@ class Config:
     cpu_offload: bool = False
     default_voice: str = "NATF2.pt"
     autoload: bool = False  # load weights at startup instead of on toggle
+    keep_alive_seconds: int = 6 * 3600  # stay loaded this long after last touch
 
     # Brain: Parasail for thinking when a key is present; Ollama otherwise.
     brain_provider: str = "auto"  # auto | parasail | ollama
@@ -71,6 +72,7 @@ class Config:
             cpu_offload=e.get("VOICE_CPU_OFFLOAD", "0") == "1",
             default_voice=e.get("VOICE_DEFAULT_VOICE", "NATF2.pt"),
             autoload=e.get("VOICE_AUTOLOAD", "0") == "1",
+            keep_alive_seconds=int(e.get("VOICE_KEEP_ALIVE_SEC", str(6 * 3600))),
             brain_provider=(e.get("BRAIN_PROVIDER") or e.get("SCORIA_CHAT_PROVIDER") or "auto").lower(),
             ollama_url=e.get("OLLAMA_URL", "http://127.0.0.1:11434"),
             brain_model=e.get("BRAIN_MODEL") or None,

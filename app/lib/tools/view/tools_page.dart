@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_app/chat/voice_cubit.dart';
 import 'package:scoria_app/config/chat_settings_cubit.dart';
 import 'package:scoria_app/ui/chrome.dart';
 import 'package:scoria_models/scoria_models.dart';
@@ -150,6 +151,41 @@ class _ToolsPageState extends State<ToolsPage> {
     }
   }
 
+  Future<void> _startVoice() async {
+    setState(() => _busy = true);
+    try {
+      await context.read<VoiceCubit>().startSidecar();
+      await _load();
+      if (!mounted) return;
+      final voice = context.read<VoiceCubit>().state;
+      ShadToaster.of(context).show(
+        ShadToast(
+          title: Text(
+            voice.sidecarLoaded ? 'Voice is warm' : 'Voice is starting',
+          ),
+          description: Text(
+            voice.sidecarLoaded
+                ? (voice.keepUntil == null
+                      ? 'PersonaPlex will stay loaded for six hours.'
+                      : 'Warm until ${voice.keepUntil}.')
+                : 'Weights are loading on this machine. Chat already speaks '
+                      'on the device.',
+          ),
+        ),
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      ShadToaster.of(context).show(
+        ShadToast.destructive(
+          title: const Text('PersonaVoice'),
+          description: Text('$e'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _disconnectOne() async {
     setState(() => _busy = true);
     try {
@@ -220,6 +256,7 @@ class _ToolsPageState extends State<ToolsPage> {
                               onConnectOne: _connectOne,
                               onSyncOne: _syncOne,
                               onDisconnectOne: _disconnectOne,
+                              onStartVoice: _startVoice,
                             ),
                           ),
                       const SizedBox(height: 16),
@@ -290,6 +327,7 @@ class _ConnectionCard extends StatelessWidget {
     required this.onConnectOne,
     required this.onSyncOne,
     required this.onDisconnectOne,
+    required this.onStartVoice,
   });
 
   final ChatConnection connection;
@@ -299,6 +337,7 @@ class _ConnectionCard extends StatelessWidget {
   final VoidCallback onConnectOne;
   final VoidCallback onSyncOne;
   final VoidCallback onDisconnectOne;
+  final VoidCallback onStartVoice;
 
   @override
   Widget build(BuildContext context) {
@@ -373,6 +412,17 @@ class _ConnectionCard extends StatelessWidget {
                   child: const Text('Disconnect'),
                 ),
               ],
+              if (c.id == 'voice')
+                ShadButton(
+                  onPressed: busy ? null : onStartVoice,
+                  child: Text(
+                    !c.connected
+                        ? 'Start voice'
+                        : c.ready
+                        ? 'Keep warm'
+                        : 'Load engine',
+                  ),
+                ),
             ],
           ),
         ],

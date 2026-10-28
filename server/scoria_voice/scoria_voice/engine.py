@@ -149,13 +149,15 @@ class Engine:
         self.other_mimi.streaming_forever(1)
         self.lm_gen.streaming_forever(1)
         log.info("warming up")
-        self._warmup()
+        # One frame is enough to compile kernels; extra frames used to add
+        # seconds to every cold start.
+        self._warmup(frames=1)
         self._load_seconds = time.time() - t0
         log.info("engine ready in %.1fs on %s", self._load_seconds, self.device)
 
-    def _warmup(self) -> None:
+    def _warmup(self, frames: int = 1) -> None:
         assert self.mimi and self.other_mimi and self.lm_gen
-        for _ in range(4):
+        for _ in range(max(1, frames)):
             chunk = torch.zeros(1, 1, self.frame_size, dtype=torch.float32, device=self.device)
             codes = self.mimi.encode(chunk)
             _ = self.other_mimi.encode(chunk)

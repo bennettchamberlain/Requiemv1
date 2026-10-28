@@ -243,20 +243,34 @@ class VoiceStatus {
     required this.available,
     this.url,
     this.live = false,
+    this.loaded = false,
+    this.loading = false,
     this.provider,
     this.model,
+    this.keepUntil,
+    this.keepSeconds = 0,
   });
 
   factory VoiceStatus.fromJson(Map<String, dynamic> json) {
     final brain = json['brain'] is Map
         ? Map<String, dynamic>.from(json['brain'] as Map)
         : const <String, dynamic>{};
+    final engine = json['engine'] is Map
+        ? Map<String, dynamic>.from(json['engine'] as Map)
+        : const <String, dynamic>{};
     return VoiceStatus(
       available: json['available'] as bool? ?? false,
       url: json['url'] as String?,
       live: json['session'] is Map,
+      loaded: engine['loaded'] == true,
+      loading:
+          engine['loading'] == true || json['starting'] == true,
       provider: brain['provider'] as String?,
       model: brain['model'] as String?,
+      keepUntil: json['keep_until'] == null
+          ? null
+          : DateTime.tryParse(json['keep_until'] as String),
+      keepSeconds: (json['keep_seconds'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -265,8 +279,12 @@ class VoiceStatus {
   final bool available;
   final String? url;
   final bool live;
+  final bool loaded;
+  final bool loading;
   final String? provider;
   final String? model;
+  final DateTime? keepUntil;
+  final int keepSeconds;
 }
 
 /// Streamed increments while a reply is being produced.
