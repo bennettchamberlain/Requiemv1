@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:scoria_api_client/scoria_api_client.dart';
+import 'package:scoria_app/config/app_config.dart';
 import 'package:scoria_app/config/server_cubit.dart';
 import 'package:scoria_app/session/session.dart';
 import 'package:scoria_app/sign_in/sign_in.dart';
@@ -107,12 +109,15 @@ class _ServerFieldState extends State<_ServerField> {
           autocorrect: false,
           keyboardType: TextInputType.url,
           leading: const Icon(LucideIcons.server, size: 16),
-          placeholder: const Text('http://localhost:8090'),
+          placeholder: Text(AppConfig.apiUrl),
           onChanged: (v) => context.read<ServerCubit>().set(v),
         ),
         const SizedBox(height: 6),
         Text(
-          'e.g. localhost:8090 (this Requiem / Scoria API)',
+          kIsWeb
+              ? 'e.g. localhost:8090 (this Requiem API)'
+              : 'This phone cannot use localhost. Use the Mac Tailscale '
+                    'or Wi-Fi address, e.g. ${AppConfig.apiUrl}',
           style: muted,
         ),
       ],

@@ -1,1 +1,4 @@
 #include "Generated.xcconfig"
+DEVELOPMENT_TEAM=UF9XFYW84B
+CODE_SIGN_IDENTITY=Apple Development
+CODE_SIGN_STYLE=Automatic

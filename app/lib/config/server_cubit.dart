@@ -1,4 +1,5 @@
 import 'package:bloc/bloc.dart';
+import 'package:flutter/foundation.dart';
 import 'package:scoria_app/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,7 +9,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ServerCubit extends Cubit<String> {
   new({SharedPreferences? prefs, String? initial})
     : _prefs = prefs,
-      super(initial ?? prefs?.getString(_key) ?? AppConfig.apiUrl);
+      super(initial ?? _initial(prefs));
+
+  static String _initial(SharedPreferences? prefs) {
+    return rewriteLoopback(prefs?.getString(_key) ?? AppConfig.apiUrl);
+  }
+
+  /// Phones cannot reach the Mac via localhost. A device build that
+  /// passed `--dart-define=SCORIA_API_URL=...` replaces loopback with that.
+  static String rewriteLoopback(String url) {
+    if (kIsWeb) return url;
+    final parsed = Uri.tryParse(url.contains('://') ? url : 'http://$url');
+    if (parsed == null) return AppConfig.apiUrl;
+    if (parsed.host == 'localhost' || parsed.host == '127.0.0.1') {
+      return AppConfig.apiUrl;
+    }
+    return url;
+  }
 
   static const _key = 'scoria.server_url';
   final SharedPreferences? _prefs;
